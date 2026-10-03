@@ -87,6 +87,10 @@ pub enum Command {
     /// A hairline round every selected cell, or every edge taken away — `grind_sheet::format::
     /// bordered`, the call every other shell's Borders control makes. The grid draws them
     /// (`look::border_strokes`).
+    /// Wrap the selected cells' text at their column's width (`Toggle::Wrap`); on when the active
+    /// cell is already wrapped, off. The grid breaks it with `grind_core::layout::wrap` and grows
+    /// the row to hold it.
+    WrapText,
     BordersAll,
     BordersNone,
     /// Copy the selection as it is *shown* — a formula's formatted result rather than its source
@@ -302,6 +306,7 @@ impl Command {
         Command::FillAcross,
         Command::InsertChart,
         Command::DeleteChart,
+        Command::WrapText,
         Command::BordersAll,
         Command::BordersNone,
         Command::CopyValue,
@@ -731,6 +736,10 @@ pub const MENUS: &[Menu] = &[
                 label: "&Highlight…",
             },
             Item::Verb {
+                command: Command::WrapText,
+                label: "&Wrap Text",
+            },
+            Item::Verb {
                 command: Command::BordersAll,
                 label: "All Bord&ers",
             },
@@ -1029,6 +1038,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::FillAcross
         | Command::InsertChart
         | Command::DeleteChart
+        | Command::WrapText
         | Command::BordersAll
         | Command::BordersNone
         | Command::HideRows
@@ -1556,6 +1566,7 @@ mod tests {
                 Command::AlignCenter,
                 Command::AlignRight,
                 Command::PickColor,
+                Command::WrapText,
                 Command::BordersAll,
                 Command::BordersNone,
                 Command::PickBackground,

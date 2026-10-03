@@ -34,65 +34,16 @@ pub use gdi_half::paint;
 mod gdi_half {
     use windows::Win32::Foundation::{COLORREF, POINT, RECT};
     use windows::Win32::Graphics::Gdi::{
-        GetTextMetricsW, HDC, IntersectClipRect, Polygon, Polyline, RestoreDC, SaveDC,
-        SetTextColor, TEXTMETRICW, TextOutW,
+        HDC, IntersectClipRect, Polygon, Polyline, RestoreDC, SaveDC, SetTextColor, TextOutW,
     };
 
-    use grind_core::layout::Metrics;
-    use grind_core::style::TextStyle;
     use grind_sheet::chart_paint::{self, Colours, Mark};
 
     use super::frame_of;
-    use crate::gdi::{self, Brush, Font, Pen, Selected};
+    use crate::gdi::{self, Brush, Pen, Selected};
     use crate::sheet::geom::GridGeom;
+    use crate::sheet::measure::CellMetrics;
     use crate::theme::{Mode, Rgb, Theme};
-
-    /// Measures in the font a mark will be drawn in: the cell face at the style's point size.
-    struct ChartMetrics<'a> {
-        dc: HDC,
-        face: &'a str,
-        dpi: u32,
-    }
-
-    impl ChartMetrics<'_> {
-        fn font(&self, style: &TextStyle) -> Font {
-            let points = style
-                .font_size
-                .as_deref()
-                .and_then(|size| size.strip_suffix("pt"))
-                .and_then(|size| size.parse::<f64>().ok())
-                .unwrap_or(9.0);
-            let px = (points * f64::from(self.dpi) / 72.0).round() as i32;
-            Font::new(
-                self.face,
-                px.max(6),
-                style.font_weight.as_deref() == Some("bold"),
-            )
-        }
-    }
-
-    impl Metrics for ChartMetrics<'_> {
-        fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>) {
-            let font = self.font(style);
-            let _selected = Selected::font(self.dc, &font);
-            let mut prefix = String::new();
-            for c in text.chars() {
-                prefix.push(c);
-                out.push(gdi::text_width(self.dc, &prefix) as f32);
-            }
-        }
-
-        fn line_height(&self, style: &TextStyle) -> f32 {
-            let font = self.font(style);
-            let _selected = Selected::font(self.dc, &font);
-            let mut tm = TEXTMETRICW::default();
-            // SAFETY: the DC is live and `tm` is a local that outlives the call.
-            unsafe {
-                let _ = GetTextMetricsW(self.dc, &mut tm);
-            }
-            tm.tmHeight as f32
-        }
-    }
 
     /// Every chart on the sheet that meets the body, drawn over the cells: a card on the page,
     /// then its title, legend, plot and labels. Clipped to the body so a chart scrolled under a
@@ -118,10 +69,11 @@ mod gdi_half {
             accent: theme.accent.into(),
             dark: theme.mode == Mode::Dark,
         };
-        let metrics = ChartMetrics {
+        let metrics = CellMetrics {
             dc,
             face,
             dpi: geom.dpi,
+            default_pt: 9.0,
         };
         // SAFETY: the DC is live; the clip is undone by the matching `RestoreDC` below.
         let saved = unsafe {
@@ -153,7 +105,7 @@ mod gdi_half {
         colour.into()
     }
 
-    fn put(dc: HDC, _face: &str, metrics: &ChartMetrics, mark: Mark) {
+    fn put(dc: HDC, _face: &str, metrics: &CellMetrics, mark: Mark) {
         match mark {
             Mark::Fill { rect, color } => {
                 let (l, t) = (rect.x.round() as i32, rect.y.round() as i32);

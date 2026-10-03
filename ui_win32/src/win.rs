@@ -114,6 +114,7 @@ use crate::sheet::draw::{self, FormatStrip, Frame};
 use crate::sheet::format;
 use crate::sheet::geom::{GridGeom, Hit, MAX_COLS, MAX_ROWS, Rect, Sizes, mm_to_px, scale};
 use crate::sheet::keymap::{self, Dir, Selection};
+use crate::sheet::measure;
 use crate::sheet::state::{self, Outcome, Seed};
 use crate::sheet::status;
 use crate::surrogate;
@@ -583,6 +584,39 @@ impl Sheet {
             height,
             dpi,
         };
+        // Every row with no height of its own grows to hold what is in it — a cell that wraps,
+        // or one set in a larger face (L3). Measured in GDI, the engine that draws it.
+        if let Some(dib) = gdi::Dib::new(1, 1) {
+            let metrics = measure::CellMetrics {
+                dc: dib.dc(),
+                face: face(),
+                dpi,
+                default_pt: theme::text::CELL * 72.0 / 96.0,
+            };
+            let row_h = scale(draw::ROW_H, dpi);
+            // A cell's padding either side (`draw`'s `PAD`, 4 pixels at 100%).
+            let pad = scale(4.0, dpi).round();
+            let grown = grind_sheet::autoheight::grown_rows(
+                &self.app,
+                self.sheet,
+                &|col| self.geom.cols.size_of(col),
+                pad,
+                2.0 * scale(2.0, dpi),
+                row_h,
+                &metrics,
+            );
+            if !grown.is_empty() {
+                let mut sizes: Vec<(u32, f64)> = grown;
+                // The document's own heights, and its hidden rows, go on after — `Sizes::new`
+                // keeps the last entry given for a row, so they win.
+                let to_px = mm_to_px(dpi);
+                sizes.extend(heights.iter().filter_map(|(row, length)| {
+                    Some((*row, grind_core::style::length_mm(length).map(&to_px)?))
+                }));
+                sizes.extend(hidden_rows.iter().map(|row| (*row, 0.0)));
+                self.geom.rows = Sizes::new(row_h, MAX_ROWS, sizes);
+            }
+        }
         // A window that grew may now show past the last row; clamp rather than leave the view
         // parked in blank space below the sheet.
         self.geom.first_row = self.geom.first_row.min(self.geom.max_first_row());
@@ -3251,6 +3285,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::FillAcross => fill_across(hwnd),
         Command::InsertChart => insert_chart(hwnd),
         Command::DeleteChart => delete_chart(hwnd),
+        Command::WrapText => wrap_text(hwnd),
         Command::BordersAll => borders(hwnd, true),
         Command::BordersNone => borders(hwnd, false),
         Command::CopyValue => copy_value(hwnd),
@@ -3537,6 +3572,19 @@ fn fill_across(hwnd: HWND) {
         });
     }
     refresh(hwnd);
+}
+
+/// Format ▸ Wrap Text — `Toggle::Wrap` flipped over the selection, from the active cell's state.
+fn wrap_text(hwnd: HWND) {
+    format_write(hwnd, |state, start, end| {
+        let style = active_style(state);
+        state.app.set_style(
+            state.sheet,
+            start,
+            end,
+            grind_sheet::format::Toggle::Wrap.flipped(&style),
+        )
+    });
 }
 
 /// Format ▸ All Borders / No Borders — read the active cell's style, set or clear the hairline on
@@ -5037,6 +5085,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::FillAcross
         | Command::InsertChart
         | Command::DeleteChart
+        | Command::WrapText
         | Command::BordersAll
         | Command::BordersNone
         | Command::HideRows
@@ -6102,6 +6151,7 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::FillAcross
         | Command::InsertChart
         | Command::DeleteChart
+        | Command::WrapText
         | Command::BordersAll
         | Command::BordersNone
         | Command::HideRows

@@ -25,6 +25,7 @@ pub mod draw;
 pub mod format;
 pub mod geom;
 pub mod keymap;
+pub mod measure;
 pub mod state;
 pub mod status;
 pub mod tabs;

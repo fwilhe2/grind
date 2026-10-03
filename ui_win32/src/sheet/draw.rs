@@ -122,6 +122,11 @@ mod windows_impl {
         SetBkMode, SetTextColor, TRANSPARENT,
     };
 
+    use grind_core::style::TextStyle;
+    use grind_sheet::look;
+    use grind_sheet::model::CellValue;
+    use grind_sheet::style::CellStyle;
+
     use super::{Align, Appearance, GridGeom, Selection, Theme};
     use crate::gdi::{self, Font, Selected};
     use crate::sheet::assist::{Ink, Piece};
@@ -137,6 +142,85 @@ mod windows_impl {
     /// `3,710.0…`. A band's padding costs nothing but a band; a cell's is paid for in the
     /// document's own numbers.
     const PAD: f64 = 4.0;
+
+    /// A wrapping cell's text: `grind_core::layout::wrap` breaks it at the column's width, each
+    /// line is aligned across the cell as one line would be, and the block of lines is placed down
+    /// it by the cell's vertical alignment. Drawn inside a clip of the cell.
+    fn draw_wrapped(
+        dc: HDC,
+        frame: &Frame,
+        text: &str,
+        value: &CellValue,
+        style: Option<&CellStyle>,
+        cell: (i32, i32, i32, i32),
+        ink: Rgb,
+    ) {
+        use windows::Win32::Graphics::Gdi::{IntersectClipRect, RestoreDC, SaveDC};
+        let (left, top, right, bottom) = cell;
+        let dpi = frame.geom.dpi;
+        let metrics = crate::sheet::measure::CellMetrics {
+            dc,
+            face: frame.face,
+            dpi,
+            default_pt: f64::from(frame.font_px) * 72.0 / f64::from(dpi),
+        };
+        let pad = crate::sheet::geom::scale(PAD, dpi).round();
+        let text_style = look::text_style(style);
+        let room = (f64::from(right - left) - 2.0 * pad).max(1.0);
+        let laid = grind_core::layout::wrap(
+            &[grind_core::layout::Fragment {
+                text,
+                style: &text_style,
+            }],
+            room as f32,
+            &metrics,
+        );
+        let block = f64::from(laid.height());
+        let y0 = match look::valign(style) {
+            look::VAlign::Top => f64::from(top) + 2.0,
+            look::VAlign::Middle => f64::from(top) + (f64::from(bottom - top) - block) / 2.0,
+            look::VAlign::Bottom => f64::from(bottom) - 2.0 - block,
+        };
+        let font = metrics.font(&text_style);
+        let _selected = Selected::font(dc, &font);
+        // SAFETY: the DC is live; the clip is undone by the matching `RestoreDC`.
+        let saved = unsafe {
+            let saved = SaveDC(dc);
+            IntersectClipRect(dc, left, top, right, bottom);
+            saved
+        };
+        for line in laid.lines() {
+            let piece: String = text
+                .chars()
+                .skip(line.start)
+                .take(line.end.saturating_sub(line.start))
+                .collect::<String>()
+                .trim_end()
+                .to_owned();
+            let line_top = (y0 + f64::from(line.top)).round() as i32;
+            let line_bottom = line_top + metrics_line_height(&metrics, &text_style);
+            draw_text(
+                dc,
+                &piece,
+                left,
+                line_top,
+                right,
+                line_bottom,
+                look::align(value, style),
+                ink,
+                pad,
+            );
+        }
+        // SAFETY: restoring the state saved above.
+        unsafe {
+            let _ = RestoreDC(dc, saved);
+        }
+    }
+
+    fn metrics_line_height(metrics: &crate::sheet::measure::CellMetrics, style: &TextStyle) -> i32 {
+        use grind_core::layout::Metrics;
+        metrics.line_height(style).round() as i32
+    }
 
     /// The padding between a band's edge and the sentence in it — the notice bar, the assist
     /// band and the status bar, all of which are text on a ground rather than text in a box.
@@ -399,6 +483,22 @@ mod windows_impl {
                         look.background.is_some(),
                         theme,
                     );
+                    // A wrapping text cell is broken at its column's width by the core's own
+                    // breaker, measured in the font it is drawn in, and drawn a line at a time;
+                    // what the row is not tall enough for is cut by the cell (L3 grew the row).
+                    let style = frame.viewport.style(row, col);
+                    if grind_sheet::look::wraps(style) && !grind_sheet::numfmt::is_number(value) {
+                        draw_wrapped(
+                            dc,
+                            frame,
+                            text,
+                            value,
+                            style,
+                            (left, top, right, bottom),
+                            ink,
+                        );
+                        continue;
+                    }
                     // A number that does not fit is **never** elided: `DrawTextW`'s ellipsis
                     // turned `3,710.00 €` into `3,710.0…`, a magnitude with a digit missing.
                     // Measured in the cell's own font (the bold one is selected above), against

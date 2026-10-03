@@ -198,7 +198,7 @@ borders, which that window does not draw either.
 |---|---|---|---|---|---|---|
 | Bold, italic | ● | ● | ● | ● | ● | ● |
 | Alignment | ● | ● | ● | ● | ● | ● |
-| Wrap text | ● | ● | ● | ● | ○ ˣ | ● |
+| Wrap text | ● | ● | ● | ● | ● ʷʷ | ● |
 | Borders | ● | ● ᵃ | ● | ● | ● ʷᵇ | ● |
 | Text colour, cell background | ● | ● | ● | ● | ● | ● |
 | Clear formatting | ● | ● | ● | ● | ● | ● |
@@ -211,7 +211,7 @@ borders, which that window does not draw either.
 | **Drawn**: bold, italic, alignment | — | ● | ● | ● | ● | ● |
 | **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● | ● |
 | **Drawn**: borders | — | ◐ ᵉ | ○ | ● | ◐ ʷᵇ | ◐ ³ |
-| **Drawn**: wrapped text | — | ● | ○ | ● | ○ | ● ¹ |
+| **Drawn**: wrapped text | — | ● | ○ | ● | ● ʷʷ | ● ¹ |
 | **Drawn**: a number too wide for its column is `###`, never cut (`numfmt::overflow`) | — | ● | ● | ● | ● | ● |
 
 ᵃ **Closed 2026-10-02.** A *Borders* toggle in the format bar writes `format::bordered` — a hairline on every edge, or none — over the selection, the same call the terminal, the browser and the Mac make; a per-edge width or colour is still `grind sheet style --border`'s.
@@ -222,6 +222,7 @@ currencies `numfmt::CURRENCIES` offers; any other symbol and the locale are `gri
 Decimals), and the three currencies of `numfmt::CURRENCIES` — Format ▸ Currency and the cells'
 context menu, a currency cell keeping its own decimals and grouping (`ui_win32/src/sheet/currency.rs`).
 No grouping toggle and no other symbol.
+ʷʷ Closed 2026-10-02: Format ▸ Wrap Text; the grid breaks a wrapped cell with `grind_core::layout::wrap` over GDI measurements (`sheet/measure.rs`) and grows rows through `grind_sheet::autoheight` (hoisted from the Mac) — checked by a Wine render.
 ʷᵇ Closed 2026-10-02: Format ▸ All Borders / Remove Borders (`format::bordered`), and the grid draws every edge through `look::border_strokes` — the Mac's geometry, hoisted — checked by a Wine render. `dashed` and `dotted` draw solid.
 ˣ Named in `doc/windows-shell.md`'s "What it will not do": this window draws neither wrapped text
 nor borders, and a control whose effect cannot be seen is not offered.
@@ -258,7 +259,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Set a column width or row height | ● | ● | ● | ● ᵖᵃ | ● | ● |
 | Drag a track edge to resize | — | ● | ○ | ○ | ○ | ● |
 | Autofit a column | ● | ● | ○ | ○ | ● ᶠᶜ | ● |
-| Row auto-height from content (L3) | — | ● | ○ | ○ | ○ | ● |
+| Row auto-height from content (L3) | — | ● | ○ | ○ | ● ʷʷ | ● |
 | **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |
 | Hide / unhide a row or column | ● | ● | ● | ● | ● | ● |
 | **Honours** hidden tracks | ● | ● | ● | ● | ● | ● |
