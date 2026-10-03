@@ -580,37 +580,46 @@ fn saving_an_unedited_document_changes_nothing_at_all() {
     }
 }
 
-/// Splicing refuses rather than guesses, and the refusal is the whole writer falling back.
-///
-/// Named cases rather than an inferred one: a fallback that fires silently would make R6
-/// untestable, and each of these is a boundary `odf::source` documents.
+/// What a cell splice cannot express — a cell in a row the file does not spell, a number
+/// format the file has no style for — is spliced **a row at a time** into the file's own table
+/// instead: the rows nobody touched are their own bytes, LibreOffice's `calcext:` mirrors and
+/// cached `text:p` included, and so is every part of the file outside the body. One edit is a
+/// few lines of diff, never a rewrite.
 #[test]
-fn what_cannot_be_spliced_regenerates() {
+fn what_cannot_be_spliced_by_cell_is_spliced_by_row() {
+    let path = data("kb", "minimal-libreoffice.fods");
+    let before = std::fs::read_to_string(&path).unwrap();
     let doc = |edit: &dyn Fn(&grind_sheet::App)| {
         let app = grind_sheet::App::new();
-        app.open_file(&data("kb", "minimal-libreoffice.fods"))
-            .unwrap();
+        app.open_file(&path).unwrap();
         edit(&app);
         String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap()
     };
-    // A regenerated body is written by this build's own writer, which never spells LibreOffice's
-    // `calcext:` mirror of a value type (R4); a spliced one keeps the file's cells as they were.
-    // What a regenerate no longer does is drop the rest of the file — `office:settings` stays,
-    // and so does every other part outside the body (`envelope::merge`).
-    let regenerated = |xml: &str| {
+    let changed = |after: &str| {
         assert!(
-            xml.contains("office:settings") && xml.contains("office:master-styles"),
+            after.contains("office:settings") && after.contains("office:master-styles"),
             "a save dropped what the model does not own"
         );
-        !xml.contains("calcext:value-type")
+        let old: std::collections::HashSet<&str> = before.lines().collect();
+        let new: std::collections::HashSet<&str> = after.lines().collect();
+        (old.difference(&new).count(), new.difference(&old).count())
     };
+    let untouched_rows = before.matches("calcext:value-type").count();
 
-    // A cell in a row the file does not spell at all.
-    assert!(regenerated(&doc(&|app| {
+    // A cell in a row the file does not spell at all: appended rows, nothing else moved.
+    let after = doc(&|app| {
         app.set_cell(0, Pos::new(500, 0), 1.0).unwrap();
-    })));
-    // A number format, which needs a `style:style` the source file does not contain.
-    assert!(regenerated(&doc(&|app| {
+    });
+    assert_eq!(after.matches("calcext:value-type").count(), untouched_rows);
+    let (removed, added) = changed(&after);
+    assert!(
+        removed <= 1 && added <= 4,
+        "{removed} out, {added} in:\n{after}"
+    );
+
+    // A number format, which needs a `style:style` the file does not contain: the one cell
+    // and the one declaration.
+    let after = doc(&|app| {
         app.set_format(
             0,
             Pos::new(0, 0),
@@ -623,11 +632,20 @@ fn what_cannot_be_spliced_regenerates() {
             )),
         )
         .unwrap();
-    })));
-    // And the case that does splice, so the three above are not passing for a shared reason.
-    assert!(!regenerated(&doc(&|app| {
+    });
+    assert!(after.contains("number:percentage-style"));
+    let (removed, added) = changed(&after);
+    assert!(
+        removed <= 3 && added <= 4,
+        "{removed} out, {added} in:\n{after}"
+    );
+
+    // And the case that splices a single cell, for comparison.
+    let after = doc(&|app| {
         app.set_cell(0, Pos::new(0, 0), 7.0).unwrap();
-    })));
+    });
+    let (removed, added) = changed(&after);
+    assert!(removed <= 3 && added <= 3, "{removed} out, {added} in");
 }
 
 /// The first cell of sheet 0 holding a value or a formula, in row-major order.
@@ -712,4 +730,39 @@ fn the_default_palette_is_the_one_the_sample_document_uses() {
         grind_sheet::style::PALETTE.len(),
         "the fixture stopped covering the whole palette"
     );
+}
+
+/// **The guard.** A cell holding an annotation is rewritten from the model when its value
+/// changes, and the model has no annotation — so the save is refused, naming it, and the file is
+/// left as it was. An edit to any other cell keeps the annotation, because its row is the file's.
+#[test]
+fn a_save_that_would_drop_an_annotation_is_refused() {
+    let original = std::fs::read_to_string(data("kb", "minimal-libreoffice.fods")).unwrap();
+    // The annotation goes into A1's own element, wherever the file wrote it.
+    let a1 = original
+        .find("<table:table-cell office:value-type")
+        .expect("a valued cell");
+    let close = a1 + original[a1..].find("</table:table-cell>").expect("closed");
+    let annotated = format!(
+        "{}<office:annotation><text:p>checked</text:p></office:annotation>{}",
+        &original[..close],
+        &original[close..]
+    );
+    let open = || {
+        let app = grind_sheet::App::new();
+        app.open_bytes("annotated.fods", annotated.as_bytes())
+            .unwrap();
+        app
+    };
+    let app = open();
+    app.set_cell(0, Pos::new(0, 0), 42.0).unwrap();
+    match app.save_bytes(Form::Flat) {
+        Err(error) => assert!(error.to_string().contains("office:annotation"), "{error}"),
+        Ok(_) => panic!("a save that drops an annotation went ahead"),
+    }
+
+    let app = open();
+    app.set_cell(0, Pos::new(1, 0), 42.0).unwrap();
+    let saved = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+    assert!(saved.contains("<office:annotation><text:p>checked</text:p></office:annotation>"));
 }

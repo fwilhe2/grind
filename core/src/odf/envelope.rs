@@ -277,10 +277,18 @@ pub fn merge(original: &[u8], generated: &[u8]) -> Option<Vec<u8>> {
     let g = scan(generated)?;
     let g_body = g.find_top("body").map(|(_, node)| node.range.clone());
 
-    // Namespaces: what the generated parts need that the original root does not give them.
+    // Namespaces: what the generated parts need that the original root does not give them —
+    // only the prefixes those parts actually spell.
+    let taken = taken_bytes(&g, generated);
+    let uses = |prefix: &str| {
+        let element = format!("<{prefix}:");
+        let attribute = format!(" {prefix}:");
+        let window = |needle: &str| taken.windows(needle.len()).any(|w| w == needle.as_bytes());
+        window(&element) || window(&attribute)
+    };
     let mut on_root = String::new();
     let mut local = String::new();
-    for (prefix, uri) in &g.declarations {
+    for (prefix, uri) in g.declarations.iter().filter(|(prefix, _)| uses(prefix)) {
         match o.binding(prefix) {
             Some(bound) if bound == uri => {}
             Some(_) => local.push_str(&format!(" xmlns:{prefix}=\"{uri}\"")),
@@ -382,6 +390,24 @@ pub fn merge(original: &[u8], generated: &[u8]) -> Option<Vec<u8>> {
     insert_before(&mut out, None);
     out.extend_from_slice(&original[o.root_end.start..]);
     Some(out)
+}
+
+/// Everything [`merge`] can take from a generated document: its body and the children of its
+/// styles containers.
+fn taken_bytes(g: &Tree, generated: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for (index, node) in g.top() {
+        match node.local.as_str() {
+            "body" => out.extend_from_slice(&generated[node.range.clone()]),
+            "automatic-styles" | "styles" | "font-face-decls" => {
+                for child in g.children(index) {
+                    out.extend_from_slice(&generated[child.range.clone()]);
+                }
+            }
+            _ => out.extend_from_slice(&generated[node.range.clone()]),
+        }
+    }
+    out
 }
 
 /// Inside the one element each `office:body` holds — `office:text`, `office:spreadsheet` — when
@@ -613,12 +639,22 @@ pub fn check_against(original: &[u8], output: &[u8]) -> Result<()> {
 /// the rest went down. Those are content the model never saw, and a save that drops them makes
 /// the file worse. `None` when the document cannot be read at all.
 pub fn body_vocabulary(document: &[u8]) -> Option<BTreeMap<String, usize>> {
+    vocabulary_within(document, None)
+}
+
+/// [`body_vocabulary`], counting only elements whose start tag lies inside one of `ranges` —
+/// `None` for the whole body.
+fn vocabulary_within(
+    document: &[u8],
+    ranges: Option<&[Range<usize>]>,
+) -> Option<BTreeMap<String, usize>> {
     let mut reader = NsReader::from_reader(document);
     let mut buf = Vec::new();
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     // Depth inside `office:body`, 0 when outside it.
     let mut inside = 0usize;
     loop {
+        let from = reader.buffer_position() as usize;
         let event = reader.read_event_into(&mut buf).ok()?;
         match event {
             Event::Start(ref e) | Event::Empty(ref e) => {
@@ -629,9 +665,17 @@ pub fn body_vocabulary(document: &[u8]) -> Option<BTreeMap<String, usize>> {
                     _ => String::new(),
                 };
                 let element = format!("{{{uri}}}{}", local.as_ref());
+                let counted = ranges.is_none_or(|ranges| ranges.iter().any(|r| r.contains(&from)));
                 if inside == 0 {
                     if Ns::from_uri(&uri) == Ns::Office && local.as_ref() == "body" && !empty {
                         inside = 1;
+                    }
+                    buf.clear();
+                    continue;
+                }
+                if !counted {
+                    if !empty {
+                        inside += 1;
                     }
                     buf.clear();
                     continue;
@@ -669,10 +713,28 @@ pub fn body_vocabulary(document: &[u8]) -> Option<BTreeMap<String, usize>> {
 /// — each spelled with the prefixes `original` declares (`2 × text:note`,
 /// `text:list@text:style-name`). Empty is the only answer a save may go ahead on.
 pub fn losses(original: &[u8], output: &[u8], owned: &dyn Fn(&str) -> bool) -> Option<Vec<String>> {
+    losses_allowing(original, output, owned, &[])
+}
+
+/// [`losses`], with everything inside `removed` — byte ranges of `original` a person deleted
+/// outright, a whole sheet — allowed to go: the deletion is the edit, not a loss.
+pub fn losses_allowing(
+    original: &[u8],
+    output: &[u8],
+    owned: &dyn Fn(&str) -> bool,
+    removed: &[Range<usize>],
+) -> Option<Vec<String>> {
     if original == output {
         return Some(Vec::new());
     }
-    let before = body_vocabulary(original)?;
+    let mut before = body_vocabulary(original)?;
+    if !removed.is_empty() {
+        for (key, count) in vocabulary_within(original, Some(removed))? {
+            if let Some(total) = before.get_mut(&key) {
+                *total = total.saturating_sub(count);
+            }
+        }
+    }
     let after = body_vocabulary(output)?;
     let prefixes: Vec<(String, String)> = scan(original)
         .map(|tree| tree.declarations)
@@ -736,7 +798,8 @@ pub fn set_attributes(element: &str, changes: &[(&str, Option<&str>)]) -> String
             tag.push_str(&format!(" {name}=\"{}\"", crate::odf::xml::esc(v)));
         }
     }
-    let mut out = tag;
+    // An attribute removed from the end of a tag that broke its lines leaves the break behind.
+    let mut out = tag.trim_end().to_owned();
     out.push_str(&element[body_end..]);
     out
 }

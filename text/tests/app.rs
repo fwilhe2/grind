@@ -982,8 +982,10 @@ fn an_image_that_needs_a_namespace_the_file_never_declared_forces_a_regenerate()
         .expect("inserts");
     let after = opened.save_bytes(Form::Flat).expect("saves");
     let after = String::from_utf8(after).expect("utf-8");
+    // Every prefix it now spells, and no other: an image with no size of its own carries no
+    // `svg:` attribute, so `svg` is declared only if one appears.
     assert!(
-        after.contains("xmlns:draw") && after.contains("xmlns:svg"),
+        after.contains("xmlns:draw") && (!after.contains(" svg:") || after.contains("xmlns:svg")),
         "a regenerated document declares what it now uses: {after}"
     );
 

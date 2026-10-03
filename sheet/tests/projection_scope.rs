@@ -132,7 +132,10 @@ fn fields(name: &str) -> Vec<String> {
             // and comments all fail one of these, which is why this is a filter and not a
             // parser: nothing else in these two declarations has that shape.
             let line = line.trim();
-            let line = line.strip_prefix("pub ").unwrap_or(line);
+            let line = line
+                .strip_prefix("pub ")
+                .or_else(|| line.strip_prefix("pub(crate) "))
+                .unwrap_or(line);
             let (field, _) = line.split_once(": ")?;
             field
                 .chars()

@@ -83,12 +83,46 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
         if !lost.is_empty() {
             return Err(grind_core::Error::WouldLose(lost));
         }
+        verify(doc, &content)?;
     }
     match (form, source.and_then(|source| source.package.as_deref())) {
         (Form::Package, Some(original)) => envelope::repackage(original, &content, &[], &[], &[]),
         (Form::Package, None) => write_package(MIMETYPE, &String::from_utf8_lossy(&content)),
         _ => Ok(content),
     }
+}
+
+/// **The edits themselves, checked**: what is about to replace somebody's file is read back and
+/// every block's kind, table cell and text compared with the document being saved. A splice
+/// that kept the file's bytes where it should have written the model's would otherwise be a
+/// save that quietly undid an edit — the one failure worse than a refused save.
+fn verify(doc: &Document, content: &[u8]) -> Result<()> {
+    let refuse = |why: String| -> Result<()> {
+        Err(grind_core::Error::Xml(format!(
+            "not saved: the file would not read back as the document ({why}) — this is a bug"
+        )))
+    };
+    let back = match super::read(content) {
+        Ok(back) => back,
+        Err(error) => return refuse(error.to_string()),
+    };
+    if back.blocks.len() != doc.blocks.len() {
+        return refuse(format!(
+            "{} blocks, not {}",
+            back.blocks.len(),
+            doc.blocks.len()
+        ));
+    }
+    for (i, (mine, theirs)) in doc.blocks.iter().zip(&back.blocks).enumerate() {
+        if mine.kind != theirs.kind || mine.text() != theirs.text() {
+            return refuse(format!("block p{}", i + 1));
+        }
+        let cell = |b: &Block| b.cell.as_ref().map(|c| (c.table.clone(), c.row, c.column));
+        if cell(mine) != cell(theirs) {
+            return refuse(format!("block p{}'s table cell", i + 1));
+        }
+    }
+    Ok(())
 }
 
 /// Whether a body key ([`envelope::body_vocabulary`]) is this writer's to change: an element of
@@ -204,6 +238,21 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
             continue;
         }
         let at = source.blocks.get(&block.id)?;
+        // A block that moved into or out of a list, to another depth, or into another table
+        // cell needs elements around it the splice does not touch: regenerate instead.
+        let depth = match block.kind {
+            BlockKind::ListItem { depth } => depth,
+            _ => 0,
+        };
+        let same_cell =
+            |a: &Option<crate::model::Cell>, b: &Option<crate::model::Cell>| match (a, b) {
+                (None, None) => true,
+                (Some(a), Some(b)) => a.is_same(b),
+                _ => false,
+            };
+        if depth != at.depth || !same_cell(&block.cell, &at.cell) {
+            return None;
+        }
         let mut out = String::new();
         // No indentation: the bytes before the element are still the file's own, so the
         // element goes back exactly where it started.

@@ -270,10 +270,29 @@ impl Builder {
             return;
         };
         let lists = self.open_lists.clone();
+        let (depth, cell) = self
+            .doc
+            .blocks
+            .last()
+            .filter(|block| block.id == id)
+            .map(|block| {
+                let depth = match block.kind {
+                    BlockKind::ListItem { depth } => depth,
+                    _ => 0,
+                };
+                (depth, block.cell.clone())
+            })
+            .unwrap_or_default();
         if let Some(source) = self.doc.source.as_deref_mut() {
-            source
-                .blocks
-                .insert(id, super::source::Block { range, keep });
+            source.blocks.insert(
+                id,
+                super::source::Block {
+                    range,
+                    keep,
+                    depth,
+                    cell,
+                },
+            );
             if !lists.is_empty() {
                 source.lists.insert(id, lists);
             }

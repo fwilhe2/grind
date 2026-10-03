@@ -62,10 +62,12 @@ pub fn read(bytes: &[u8]) -> Result<Document> {
         &mut builder,
     )?;
     let locale = builder.doc.locale.clone();
+    let epoch = (builder.doc.null_date, builder.doc.null_year);
     let chart_parts = std::mem::take(&mut builder.chart_parts);
     if let Some(source) = builder.doc.source.as_deref_mut() {
         source.locale = locale;
         source.chart_parts = chart_parts;
+        source.epoch = epoch;
     }
     Ok(builder.doc)
 }

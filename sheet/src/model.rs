@@ -113,6 +113,45 @@ mod pairs {
     }
 }
 
+/// Where a sheet came from and what has been done to it since — the bookkeeping a [`Sheet`]
+/// carries for a save that writes it back into the table it was read from.
+///
+/// Kept **on the sheet** rather than beside the document, because a sheet moves: deleting one
+/// and undoing the deletion brings it back inside an action, at an index that may differ, and
+/// what was touched before it left has to come back with it — a row taken for untouched would
+/// be written as the file's old bytes, silently undoing the edit. Over-reporting is always
+/// safe (a touched cell is rewritten from the model); under-reporting never is.
+///
+/// Equal to every other `Provenance`, so a sheet's equality is about its content alone: a sheet
+/// read from a `.fods` and the same sheet read from its projection are the same sheet.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct Provenance {
+    /// Which `table:table` of the file the sheet was read from.
+    pub table: Option<usize>,
+    /// Cells whose value, formula, format or style has been written since.
+    pub cells: BTreeSet<Pos>,
+    /// Of those, the ones whose format or style was written — whose `table:style-name` a save
+    /// has to replace rather than keep.
+    pub looks: BTreeSet<Pos>,
+    /// And the ones whose value or formula was written. A cell only restyled keeps the file's
+    /// own element — a hyperlink, rich text, an annotation inside it — with a new style name.
+    pub values: BTreeSet<Pos>,
+    /// Rows whose height or hidden flag has changed since.
+    pub rows: BTreeSet<u32>,
+    /// Whether a column's width or hidden flag has changed since.
+    pub columns: bool,
+    /// Whether a chart has been added, removed or changed since.
+    pub charts: bool,
+    /// Whether the filter has changed since — which moves `table:visibility` on any row.
+    pub filter: bool,
+}
+
+impl PartialEq for Provenance {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
 /// One sheet: a sparse set of columns.
 ///
 /// Columns past the last used one simply do not exist, and trailing empty columns are
@@ -192,6 +231,13 @@ pub struct Sheet {
     /// is the model these hold.
     #[serde(default)]
     charts: Vec<crate::chart::Chart>,
+    /// Which `table:table` of the file this sheet was read from, when it was — a save that
+    /// regenerates this sheet writes it *into that element*, keeping every row nobody touched
+    /// and every attribute and child the model does not read (`odf::write`). Bookkeeping, not
+    /// content: it is never written, never projected, and two sheets that differ only here are
+    /// equal ([`Provenance`]).
+    #[serde(default)]
+    pub(crate) origin: Provenance,
 }
 
 impl Sheet {
@@ -209,6 +255,7 @@ impl Sheet {
             manually_hidden_rows: BTreeSet::new(),
             filter: None,
             charts: Vec::new(),
+            origin: Provenance::default(),
         }
     }
 
@@ -643,6 +690,9 @@ pub struct Edits {
     /// contain, so it cannot be spliced into it — see `odf::source`. False is sticky: once a
     /// document has had a format changed, saving it regenerates.
     pub only_values: bool,
+    /// Whether a named expression has been added, changed or removed — which is what makes a
+    /// regenerating save write `table:named-expressions` rather than keep the file's.
+    pub names: bool,
 }
 
 impl Default for Edits {
@@ -650,6 +700,7 @@ impl Default for Edits {
         Self {
             cells: Default::default(),
             only_values: true,
+            names: false,
         }
     }
 }

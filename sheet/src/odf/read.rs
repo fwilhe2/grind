@@ -22,6 +22,7 @@ use crate::style::{CellStyle, EDGES};
 
 use super::context::{Attrs, Context};
 use super::names::{Name, Ns};
+use super::source;
 
 /// The sheet limits, which are also the clamp for every repeat count (§9).
 use crate::{MAX_COLS, MAX_ROWS};
@@ -241,6 +242,12 @@ impl Builder {
         }
     }
 
+    /// The whole extent of an element of the source, given its start tag's span.
+    fn extent(&self, start_tag: std::ops::Range<usize>) -> Option<std::ops::Range<usize>> {
+        let source = self.doc.source.as_deref()?;
+        grind_core::odf::xml::element_extent(&source.bytes, start_tag)
+    }
+
     /// Record the package this document is being read from, so a chart's `xlink:href` can
     /// later be resolved against it. Called from `odf::read` before parsing starts.
     pub fn set_package(&mut self, bytes: Vec<u8>) {
@@ -320,6 +327,18 @@ impl Builder {
         repeat: u32,
     ) {
         let end = self.col_decl.saturating_add(repeat).min(MAX_COLS);
+        // Each column's default cell style as the file named it, for a save that rewrites the
+        // column declarations (`source::Table::column_defaults`).
+        if let Some(table) = self
+            .doc
+            .source
+            .as_deref_mut()
+            .and_then(|source| source.tables.last_mut())
+        {
+            table
+                .column_defaults
+                .push((self.col_decl..end, style.clone()));
+        }
         // A column that names no default style still has to occupy its slots, or every
         // later declaration lands on the wrong column.
         if style.is_some() {
@@ -465,9 +484,23 @@ impl Context<Builder> for Root {
 struct Body;
 
 impl Context<Builder> for Body {
-    fn start_child(&mut self, name: &Name, _a: &Attrs, _b: &mut Builder) -> Option<Ctx> {
-        name.is(Ns::Office, "spreadsheet")
-            .then(|| Box::new(Spreadsheet) as Ctx)
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if !name.is(Ns::Office, "spreadsheet") {
+            return None;
+        }
+        // Where the body's content is, for a save that splices into it (`source::Source::body`).
+        if let Some(range) = b.extent(attrs.span())
+            && let Some(source) = b.doc.source.as_deref_mut()
+        {
+            let close = source.bytes[range.clone()]
+                .iter()
+                .rposition(|c| *c == b'<')
+                .map_or(range.end, |p| range.start + p);
+            if attrs.span() != range {
+                source.body = Some(attrs.span().end..close);
+            }
+        }
+        Some(Box::new(Spreadsheet) as Ctx)
     }
 }
 
@@ -475,8 +508,29 @@ struct Spreadsheet;
 
 impl Context<Builder> for Spreadsheet {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if !name.is(Ns::Table, "table") {
+            // Every other child of the body, recorded with what it is, so a save that
+            // regenerates the body carries it through (`source::Part`).
+            let kind = match name.local.as_str() {
+                _ if name.ns != Ns::Table => source::PartKind::Other,
+                "calculation-settings" => source::PartKind::CalculationSettings,
+                "named-expressions" => source::PartKind::NamedExpressions,
+                "database-ranges" => source::PartKind::DatabaseRanges,
+                _ => source::PartKind::Other,
+            };
+            if let Some(range) = b.extent(attrs.span())
+                && let Some(source) = b.doc.source.as_deref_mut()
+            {
+                let after_tables = !source.tables.is_empty();
+                source.parts.push(source::Part {
+                    kind,
+                    range,
+                    after_tables,
+                });
+            }
+        }
         if name.is(Ns::Table, "named-expressions") {
-            return Some(Box::new(NamedExpressions));
+            return Some(Box::new(NamedExpressions { local: None }));
         }
         if name.is(Ns::Table, "database-ranges") {
             return Some(Box::new(DatabaseRanges));
@@ -495,19 +549,50 @@ impl Context<Builder> for Spreadsheet {
         }
         let sheet_name = attrs.get(Ns::Table, "name").unwrap_or("Sheet").to_owned();
         b.start_sheet(sheet_name);
-        Some(Box::new(Table))
+        // R6 one level up: where this table sits and what its start tag says, so a save that
+        // regenerates the sheet splices it back into this element (`source::Table`).
+        let range = b.extent(attrs.span());
+        if let Some(source) = b.doc.source.as_deref_mut()
+            && let Some(range) = range
+        {
+            let keep = source
+                .bytes
+                .get(attrs.span())
+                .map(|tag| source::attributes(tag, &["table:name"]))
+                .unwrap_or_default();
+            let index = source.tables.len();
+            source.tables.push(source::Table {
+                range,
+                start: attrs.span(),
+                keep,
+                ..Default::default()
+            });
+            if let Some(sheet) = b.doc.sheets.last_mut() {
+                sheet.origin.table = Some(index);
+            }
+        }
+        Some(Box::new(Table { top: true }))
     }
 }
 
 /// `table:named-expressions` (§5.11), which appears both here and inside a `table:table`
 /// for sheet-local names. Both land in the same map — see [`Document::names`].
-struct NamedExpressions;
+struct NamedExpressions {
+    /// The `source::Table` this element sits in, for sheet-local names.
+    local: Option<usize>,
+}
 
 impl Context<Builder> for NamedExpressions {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         let Some(key) = attrs.get(Ns::Table, "name") else {
             return Some(Box::new(super::context::Ignore));
         };
+        if let Some(table) = self.local
+            && let Some(source) = b.doc.source.as_deref_mut()
+            && let Some((_, names)) = source.tables.get_mut(table).and_then(|t| t.names.as_mut())
+        {
+            names.push(key.to_lowercase());
+        }
         // A named *range* carries a bare cell-range address; a named *expression* carries a
         // formula. Storing the range as the reference it stands for — brackets and all —
         // means the evaluator has one kind of thing to parse rather than two.
@@ -630,6 +715,14 @@ impl Context<Builder> for Frame {
             legend: pending.legend,
         };
         if let Some(part) = pending.part {
+            if let Some(table) = b
+                .doc
+                .source
+                .as_deref_mut()
+                .and_then(|source| source.tables.last_mut())
+            {
+                table.charts.push(part.clone());
+            }
             b.chart_parts.push(part);
         }
         let sheet = &mut b.doc.sheets[b.sheet];
@@ -1156,10 +1249,15 @@ impl Context<Builder> for FilterCondition {
     }
 }
 
-struct Table;
+struct Table {
+    /// Whether this is the `table:table` itself rather than a row or column group inside it —
+    /// only its own children are the table's columns, charts and names (`source::Table`).
+    top: bool,
+}
 
 impl Context<Builder> for Table {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        self.record(name, attrs, b);
         match (name.ns, name.local.as_str()) {
             (Ns::Table, "table-row") => {
                 b.col = 0;
@@ -1197,15 +1295,21 @@ impl Context<Builder> for Table {
                 Some(Box::new(super::context::Ignore))
             }
             (Ns::Table, "table-column-group" | "table-header-columns" | "table-columns") => {
-                Some(Box::new(Table))
+                Some(Box::new(Table { top: false }))
             }
             // Row and column groups nest real rows inside a wrapper. Recursing with the
             // same context keeps the cursor continuous instead of losing the contents.
             (Ns::Table, "table-row-group" | "table-header-rows" | "table-rows") => {
-                Some(Box::new(Table))
+                Some(Box::new(Table { top: false }))
             }
             // Sheet-local names (§5.11).
-            (Ns::Table, "named-expressions") => Some(Box::new(NamedExpressions)),
+            (Ns::Table, "named-expressions") => Some(Box::new(NamedExpressions {
+                local: b
+                    .doc
+                    .source
+                    .as_deref()
+                    .and_then(|s| s.tables.len().checked_sub(1)),
+            })),
             // A sheet's charts (rng:15678) — `doc/chart-format.md`.
             (Ns::Table, "shapes") => Some(Box::new(Shapes)),
             _ => None,
@@ -1264,6 +1368,56 @@ impl Context<Builder> for Row {
 
     fn end(&mut self, b: &mut Builder) {
         b.finish_row(self.repeat);
+    }
+}
+
+impl Table {
+    /// Where this child of a table sits, for a save that splices the sheet back into the file
+    /// (`source::Table`): every row element at any depth, and the table's own columns, charts
+    /// and names.
+    fn record(&self, name: &Name, attrs: &Attrs, b: &mut Builder) {
+        if name.ns != Ns::Table {
+            return;
+        }
+        let local = name.local.as_str();
+        let interesting = local == "table-row"
+            || (self.top
+                && matches!(
+                    local,
+                    "table-column"
+                        | "table-column-group"
+                        | "table-header-columns"
+                        | "table-columns"
+                        | "shapes"
+                        | "named-expressions"
+                ));
+        if !interesting {
+            return;
+        }
+        let Some(range) = b.extent(attrs.span()) else {
+            return;
+        };
+        let first = b.row;
+        let repeat = attrs.count(Ns::Table, "number-rows-repeated", MAX_ROWS);
+        let Some(table) = b
+            .doc
+            .source
+            .as_deref_mut()
+            .and_then(|source| source.tables.last_mut())
+        else {
+            return;
+        };
+        match local {
+            "table-row" => table.rows.push(source::RowElement {
+                range,
+                start: attrs.span(),
+                first,
+                repeat,
+            }),
+            "shapes" => table.shapes = Some(range),
+            "named-expressions" => table.names = Some((range, Vec::new())),
+            _ => table.columns.push(range),
+        }
     }
 }
 

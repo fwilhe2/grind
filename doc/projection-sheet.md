@@ -146,6 +146,7 @@ thing that grows.
 | `Sheet::hidden_cols` | `col` |
 | `Sheet::manually_hidden_rows` | `row` |
 | `Sheet::filter` | `filter` |
+| `Sheet::origin` | gap: which `table:table` of the file the sheet was read from — R6's bookkeeping for a regenerating save, equal across every sheet and never written. The same argument as `Document::source` |
 | `Sheet::charts` | gap: `doc/dsl.md` §3.8 — expressible, verbose, and nobody hand-writes one, so charts go in for bijectivity rather than for authoring and are not in yet. Loop F excludes them **by name**, and `charts_are_the_one_named_gap` fails the day they stop being a gap |
 
 ## What this document is not

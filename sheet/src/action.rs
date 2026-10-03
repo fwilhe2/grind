@@ -385,6 +385,7 @@ impl Document {
     /// batch that is rejected has changed nothing, and a batch that is applied has recorded
     /// everything before the first write.
     fn note(&mut self, action: &Action) {
+        self.touch(action);
         match action {
             Action::SetCell { sheet, pos, .. } | Action::SetFormula { sheet, pos, .. } => {
                 self.edits.cells.insert((*sheet, *pos));
@@ -414,7 +415,10 @@ impl Document {
             // Not a cell either: `table:database-ranges` is its own element, and the
             // `table:visibility` it implies sits on rows rather than cells.
             Action::SetFilter { .. } => self.edits.only_values = false,
-            Action::SetName { .. } => self.edits.only_values = false,
+            Action::SetName { .. } => {
+                self.edits.only_values = false;
+                self.edits.names = true;
+            }
             // The default cell style is not a splice site: it lives in `office:styles`, which
             // the regenerating writer writes fresh.
             Action::SetLocale { .. } => self.edits.only_values = false,
@@ -433,6 +437,62 @@ impl Document {
             | Action::ReshapeChart { .. }
             | Action::ReplaceChart { .. } => self.edits.only_values = false,
             Action::Batch(actions) => actions.iter().for_each(|a| self.note(a)),
+        }
+    }
+
+    /// Record on the sheet itself what this action touches (`model::Provenance`), so a save
+    /// that regenerates it rewrites exactly that and keeps the rest of the file's own table.
+    ///
+    /// Noted before the action applies, so inside a batch a sheet that is about to be inserted
+    /// may be noted on whichever sheet holds its index now — over-reporting, which is safe —
+    /// and is noted again, correctly, when its own action applies.
+    fn touch(&mut self, action: &Action) {
+        fn sheet(doc: &mut Document, index: usize) -> Option<&mut crate::model::Provenance> {
+            doc.sheets.get_mut(index).map(|s| &mut s.origin)
+        }
+        match action {
+            Action::SetCell { sheet: i, pos, .. } | Action::SetFormula { sheet: i, pos, .. } => {
+                if let Some(p) = sheet(self, *i) {
+                    p.cells.insert(*pos);
+                    p.values.insert(*pos);
+                }
+            }
+            Action::SetFormat { sheet: i, pos, .. } | Action::SetStyle { sheet: i, pos, .. } => {
+                if let Some(p) = sheet(self, *i) {
+                    p.cells.insert(*pos);
+                    p.looks.insert(*pos);
+                }
+            }
+            Action::SetRowHeight { sheet: i, row, .. }
+            | Action::SetRowHidden { sheet: i, row, .. } => {
+                if let Some(p) = sheet(self, *i) {
+                    p.rows.insert(*row);
+                }
+            }
+            Action::SetColWidth { sheet: i, .. } | Action::SetColHidden { sheet: i, .. } => {
+                if let Some(p) = sheet(self, *i) {
+                    p.columns = true;
+                }
+            }
+            Action::SetFilter { sheet: i, .. } => {
+                if let Some(p) = sheet(self, *i) {
+                    p.filter = true;
+                }
+            }
+            Action::InsertChart { sheet: i, .. }
+            | Action::RemoveChart { sheet: i, .. }
+            | Action::ReshapeChart { sheet: i, .. }
+            | Action::ReplaceChart { sheet: i, .. } => {
+                if let Some(p) = sheet(self, *i) {
+                    p.charts = true;
+                }
+            }
+            Action::Batch(actions) => actions.iter().for_each(|a| self.touch(a)),
+            Action::SetName { .. }
+            | Action::SetLocale { .. }
+            | Action::InsertSheet { .. }
+            | Action::RemoveSheet { .. }
+            | Action::RenameSheet { .. } => {}
         }
     }
 

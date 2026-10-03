@@ -31,17 +31,21 @@
 //!   many columns, so splitting means emitting whole rows and the diff stops being small —
 //!   which is the entire point. Rows are recorded only where `table:number-rows-repeated` is
 //!   absent or 1.
-//! * **Only values and formulas splice.** A changed number format or cell style needs a new
-//!   `style:style` in `office:automatic-styles`, which is a second splice site and a pool to
-//!   merge with the document's own; [`crate::model::Edits::only_values`] goes false and the
-//!   writer regenerates.
+//! * **Only values and formulas splice cell by cell.** Anything else — a format or a style, a
+//!   row's height, a column's width, a chart, a name, a sheet added or removed — is spliced *a
+//!   row at a time* into the file's own table instead (`odf::write`'s `plan`): untouched rows
+//!   are their own bytes, a repeated row is split around the rows that changed, a restyled cell
+//!   keeps its own element with a new style name, and the table's start tag, its columns and
+//!   its charts are rewritten only when they changed. [`Table`] is where all of that sits;
+//!   `model::Provenance`, on each sheet, is what changed.
 //! * **A package splices its `content.xml`.** [`Source::bytes`] is that part and
 //!   [`Source::package`] the archive around it, rebuilt from its own entries on save.
 //!
-//! Every one of those falls back to regenerating the **body**, merged back into the original
-//! (`grind_core::odf::envelope::merge`) so that every part outside `office:body` is the file's
-//! own — saving never makes an existing file worse there. What a regenerated body can still
-//! drop is `doc/not-doing.md` §2's list.
+//! Every part outside `office:body` is the file's own either way
+//! (`grind_core::odf::envelope::merge`). **Saving never makes an existing file worse**: what a
+//! save still cannot carry — a chart regenerated after a rename, a value typed into the covered
+//! half of a merge — makes it an `Error::WouldLose` rather than a smaller file, and every save
+//! is read back and compared with the document before it replaces anything.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -76,6 +80,88 @@ pub struct Source {
     /// The package directories holding the charts the model read (`Object 1`, …): what a
     /// regenerating save replaces, every other directory being kept.
     pub chart_parts: Vec<String>,
+    /// Every `table:table` of the file, in file order — what a regenerating save splices a
+    /// sheet back into (`model::Provenance::table` is the index here).
+    pub tables: Vec<Table>,
+    /// The children of `office:spreadsheet` that are not tables, each with what it is: the
+    /// prelude ahead of the first table and the epilogue after the last, carried verbatim
+    /// unless the model owns and changed them.
+    pub parts: Vec<Part>,
+    /// `null-date` and `null-year` as the file stated them, so `table:calculation-settings` —
+    /// which also says whether criteria take wildcards, whether search is case-sensitive and
+    /// a dozen other things the evaluator assumes — goes back as the file's own unless the
+    /// epoch changed.
+    pub epoch: (i64, i64),
+    /// The content of `office:spreadsheet` — between its start tag and its end tag.
+    pub body: Option<Range<usize>>,
+}
+
+/// One `table:table` of the file, and where everything a save may replace sits inside it.
+#[derive(Clone, Debug, Default)]
+pub struct Table {
+    /// The whole element.
+    pub range: Range<usize>,
+    /// Its start tag.
+    pub start: Range<usize>,
+    /// The start tag's attributes other than `table:name`, verbatim — the table's style (and
+    /// with it, its master page), print ranges, protection.
+    pub keep: String,
+    /// `table:shapes` — where the sheet's charts are.
+    pub shapes: Option<Range<usize>>,
+    /// The column declarations: every `table:table-column` and column group directly in the
+    /// table, in order.
+    pub columns: Vec<Range<usize>>,
+    /// Every row element, wherever it sits (inside a header-row or row group too), in order.
+    pub rows: Vec<RowElement>,
+    /// Sheet-local `table:named-expressions`, and the names in it.
+    pub names: Option<(Range<usize>, Vec<String>)>,
+    /// `table:default-cell-style-name` by column run, as declared — kept by a save that
+    /// rewrites the column declarations, since the model does not carry it.
+    pub column_defaults: Vec<(Range<u32>, Option<String>)>,
+    /// The package directories of this table's charts (`Object 1`, …) — dropped from the
+    /// package only by a save that writes this table's charts again.
+    pub charts: Vec<String>,
+}
+
+impl Table {
+    /// The default cell style the file declared for `col`.
+    pub fn column_default(&self, col: u32) -> Option<&str> {
+        self.column_defaults
+            .iter()
+            .find(|(cols, _)| cols.contains(&col))
+            .and_then(|(_, style)| style.as_deref())
+    }
+}
+
+/// One `table:table-row` of the file.
+#[derive(Clone, Debug)]
+pub struct RowElement {
+    /// The whole element.
+    pub range: Range<usize>,
+    /// Its start tag.
+    pub start: Range<usize>,
+    /// The first row it stands for, and how many (`table:number-rows-repeated`).
+    pub first: u32,
+    pub repeat: u32,
+}
+
+/// What a non-table child of `office:spreadsheet` is, as far as a save cares.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PartKind {
+    CalculationSettings,
+    NamedExpressions,
+    DatabaseRanges,
+    /// Anything else — content validations, label ranges, a data pilot, a vendor's own.
+    Other,
+}
+
+/// One non-table child of `office:spreadsheet`.
+#[derive(Clone, Debug)]
+pub struct Part {
+    pub kind: PartKind,
+    pub range: Range<usize>,
+    /// Whether it came after the last table.
+    pub after_tables: bool,
 }
 
 /// One cell element of the source file.
@@ -112,19 +198,27 @@ pub struct Cell {
 /// writes (R4 — allowed, but not something to carry forward onto a value it no longer
 /// matches).
 pub fn kept_attributes(start_tag: &[u8]) -> String {
-    const DROP: [&str; 10] = [
-        "office:value-type",
-        "office:value",
-        "office:date-value",
-        "office:time-value",
-        "office:boolean-value",
-        "office:string-value",
-        "office:currency",
-        "table:formula",
-        "table:number-columns-repeated",
-        "calcext:value-type",
-    ];
+    attributes(start_tag, &DROP)
+}
 
+/// What [`kept_attributes`] drops: what the writer always emits, and what describes a value
+/// that is no longer the cell's.
+pub const DROP: [&str; 10] = [
+    "office:value-type",
+    "office:value",
+    "office:date-value",
+    "office:time-value",
+    "office:boolean-value",
+    "office:string-value",
+    "office:currency",
+    "table:formula",
+    "table:number-columns-repeated",
+    "calcext:value-type",
+];
+
+/// Every attribute of a start tag except those named in `drop`, spelled as the file spelled
+/// them.
+pub fn attributes(start_tag: &[u8], drop: &[&str]) -> String {
     let Ok(tag) = std::str::from_utf8(start_tag) else {
         return String::new();
     };
@@ -149,7 +243,7 @@ pub fn kept_attributes(start_tag: &[u8]) -> String {
             break;
         };
         let end = open + 1 + len + 1;
-        if !name.is_empty() && !DROP.contains(&name) {
+        if !name.is_empty() && !drop.contains(&name) {
             out.push(' ');
             out.push_str(name);
             out.push('=');
@@ -169,6 +263,10 @@ impl Source {
             package: None,
             locale: None,
             chart_parts: Vec::new(),
+            tables: Vec::new(),
+            parts: Vec::new(),
+            epoch: (0, 0),
+            body: None,
         }
     }
 

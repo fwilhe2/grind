@@ -114,12 +114,11 @@ character offset. The last two keep meaning the same place after you edit somewh
 document.
 
 Page size, margins, headers, footers and page breaks are read and kept — they are simply never
-*drawn* as pages — and so is everything else outside the document's body: its styles, master
-pages, fonts, metadata and settings, and in a `.odt` every other part of the zip. An edit this
-build cannot write in place (a new paragraph, say) regenerates only the **body** and merges it
-back into the file it came from. Inside the body the model still drops what it does not carry —
-a list's own numbering style, a footnote in a paragraph you edit, a section — so until that is
-closed, keep a copy of a document LibreOffice wrote before editing its structure here.
+*drawn* as pages. **Saving never makes a file worse**: an edit is written into the file it came
+from, so its styles, master pages, metadata and every paragraph, row and cell you did not touch
+stay exactly as they were, and a save that would drop something this build cannot carry — a
+footnote in a paragraph you edited, say — is refused with a message naming it rather than
+written. `doc/not-doing.md` lists what is still refused, and the one gap known.
 
 **Line** layout, though, lives in the shared core, so `j`, `k`, Home and End mean exactly the same
 thing in every front end and the command line can answer them too; each front end supplies only
@@ -413,9 +412,8 @@ the document and renames it into place, so a crash or a full disk mid-save leave
 rather than half of the new one.
 
 Strictness on the way out, tolerance on the way in: everything written is valid ODF, and
-everything LibreOffice writes reads, and unknown elements and attributes are kept intact for as
-long as the document is edited in place rather than regenerated (see above for what a
-regenerating save loses).
+everything LibreOffice writes reads, unknown elements and attributes included — and they are
+still there after you save.
 
 ## How it is checked
 

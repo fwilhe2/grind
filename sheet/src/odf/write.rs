@@ -15,20 +15,20 @@
 //! exactly the formats in use: §5.3's pooling rule is not an optimisation here, it is the
 //! only construct ODF has for saying a cell looks a certain way.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 use std::sync::LazyLock;
 
-use super::names::{CHART, DRAW, FO, NUMBER, OFFICE, STYLE, SVG, TABLE, TEXT, XLINK};
+use super::names::{CALCEXT, CHART, DRAW, FO, NUMBER, OFFICE, STYLE, SVG, TABLE, TEXT, XLINK};
 // Packaging, the manifest, the ODF version and XML escaping are the same for every document
 // type (§1.1, §1.3), so they live in `grind-core` and are reached here by the names this
 // file always used.
-use crate::Result;
 use crate::chart::Axis;
 use crate::formula::date;
 use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
 use crate::numfmt::{self, Format, Kind, Part};
 use crate::style::{CellStyle, EDGES};
+use crate::{MAX_ROWS, Result};
 use grind_core::odf::envelope;
 use grind_core::odf::package::{self, SubDocument, VERSION, write_package_with};
 use grind_core::odf::xml::esc;
@@ -63,6 +63,13 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
         // fails leaves the original on disk, and one that writes something unreadable does not.
         if let Some(source) = source {
             envelope::check_against(&source.bytes, &spliced)?;
+            let allowed = overwritten(doc, source);
+            let lost = envelope::losses_allowing(&source.bytes, &spliced, &owned, &allowed)
+                .unwrap_or_default();
+            if !lost.is_empty() {
+                return Err(grind_core::Error::WouldLose(lost).into());
+            }
+            verify(doc, &spliced)?;
         }
         return match source.and_then(|source| source.package.as_deref()) {
             Some(original) => Ok(envelope::repackage(original, &spliced, &[], &[], &[])?),
@@ -81,7 +88,8 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
             .collect(),
         _ => HashSet::new(),
     };
-    let (generated, objects) = content(doc, form, &taken);
+    let origin = source.filter(|source| source.body.is_some());
+    let (generated, objects) = content(doc, form, &taken, origin);
     let content =
         match source.and_then(|source| envelope::merge(&source.bytes, generated.as_bytes())) {
             Some(merged) if original.is_none() => patch_locale(merged, doc, source),
@@ -89,8 +97,27 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
             None => generated.into_bytes(),
         };
 
+    // Whatever touched somebody's file is checked before it can replace it: a save that fails
+    // leaves the original on disk, and one that writes something unreadable — or that drops
+    // what the model never read — does not.
     if let Some(source) = source {
         envelope::check_against(&source.bytes, &content)?;
+        // A sheet somebody deleted takes its contents with it — that is the edit, not a loss.
+        let removed: Vec<std::ops::Range<usize>> = source
+            .tables
+            .iter()
+            .enumerate()
+            .filter(|(ti, _)| !doc.sheets.iter().any(|s| s.origin.table == Some(*ti)))
+            .map(|(_, t)| t.range.clone())
+            .collect();
+        let mut allowed = removed;
+        allowed.extend(overwritten(doc, source));
+        let lost = envelope::losses_allowing(&source.bytes, &content, &owned, &allowed)
+            .unwrap_or_default();
+        if !lost.is_empty() {
+            return Err(grind_core::Error::WouldLose(lost).into());
+        }
+        verify(doc, &content)?;
     }
     match (form, original, source) {
         (Form::Package, Some(original), Some(source)) => {
@@ -152,6 +179,243 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
             )?)
         }
         _ => Ok(content),
+    }
+}
+
+/// The paragraphs of every cell somebody typed a new value into: the text that value replaced —
+/// a hyperlink or a run of bold in it included — is the edit, not a loss, exactly as typing over
+/// such a cell in LibreOffice replaces it. An annotation beside the paragraphs is not text the
+/// value replaced, and is not in these ranges.
+fn overwritten(doc: &Document, source: &super::source::Source) -> Vec<std::ops::Range<usize>> {
+    let bytes = &source.bytes;
+    let mut out = Vec::new();
+    for sheet in &doc.sheets {
+        let Some((ti, t)) = sheet
+            .origin
+            .table
+            .and_then(|ti| source.tables.get(ti).map(|t| (ti, t)))
+        else {
+            continue;
+        };
+        for pos in &sheet.origin.values {
+            let Some(e) = t
+                .rows
+                .iter()
+                .find(|e| (e.first..e.first.saturating_add(e.repeat)).contains(&pos.row))
+            else {
+                continue;
+            };
+            let cells = source
+                .rows
+                .get(&(ti, e.first))
+                .cloned()
+                .unwrap_or_else(|| scan_cells(bytes, e).0);
+            let Some(cell) = cells.iter().find(|c| c.cols.contains(&pos.col)) else {
+                continue;
+            };
+            out.extend(paragraphs(bytes, cell.range.clone()));
+        }
+    }
+    out
+}
+
+/// The `text:p` children of an element, by their extents.
+fn paragraphs(bytes: &[u8], element: std::ops::Range<usize>) -> Vec<std::ops::Range<usize>> {
+    let mut out = Vec::new();
+    let Some(open_end) = bytes[element.clone()].iter().position(|c| *c == b'>') else {
+        return out;
+    };
+    let mut at = element.start + open_end + 1;
+    let end = element.end;
+    while at < end {
+        let Some(lt) = bytes[at..end].iter().position(|c| *c == b'<') else {
+            break;
+        };
+        let start = at + lt;
+        if bytes.get(start + 1) == Some(&b'/') {
+            break;
+        }
+        let Some(tag_end) = bytes[start..end].iter().position(|c| *c == b'>') else {
+            break;
+        };
+        let Some(range) = grind_core::odf::xml::element_extent(bytes, start..start + tag_end + 1)
+        else {
+            break;
+        };
+        let tag = &bytes[start..start + tag_end + 1];
+        let name_end = tag
+            .iter()
+            .position(|c| c.is_ascii_whitespace() || *c == b'>' || *c == b'/')
+            .unwrap_or(tag.len());
+        if tag[..name_end].ends_with(b":p") {
+            out.push(range.clone());
+        }
+        at = range.end;
+    }
+    out
+}
+
+/// **The edits themselves, checked**: what is about to replace somebody's file is read back and
+/// every sheet's name, and every cell's value and formula, compared with the document being
+/// saved. A splice that kept the file's bytes where it should have written the model's would
+/// otherwise be a save that quietly undid an edit — the one failure worse than a refused save.
+/// Styles are not compared: a cell written into a column with a default style of its own reads
+/// back with it, which is the file's meaning and not a lost edit.
+fn verify(doc: &Document, content: &[u8]) -> Result<()> {
+    let refuse = |why: String| -> Result<()> {
+        Err(grind_core::Error::Xml(format!(
+            "not saved: the file would not read back as the document ({why}) — this is a bug"
+        ))
+        .into())
+    };
+    let back = match super::read(content) {
+        Ok(back) => back,
+        Err(error) => return refuse(error.to_string()),
+    };
+    if back.sheets.len() != doc.sheets.len() {
+        return refuse(format!(
+            "{} sheets, not {}",
+            back.sheets.len(),
+            doc.sheets.len()
+        ));
+    }
+    for (mine, theirs) in doc.sheets.iter().zip(&back.sheets) {
+        if mine.name != theirs.name {
+            return refuse(format!(
+                "sheet {:?} came back as {:?}",
+                mine.name, theirs.name
+            ));
+        }
+        if !mine.formulas().eq(theirs.formulas()) {
+            let at = mine
+                .formulas()
+                .zip(theirs.formulas())
+                .find(|(a, b)| a != b)
+                .map_or(String::new(), |((pos, _), _)| {
+                    crate::a1::format(Some(&mine.name), pos)
+                });
+            return refuse(format!("a formula at {at}"));
+        }
+        // Values on every row either side carries anything on — the sparse way round a sheet
+        // whose one far cell would make its rectangle enormous.
+        let cols = mine.used_cols().max(theirs.used_cols());
+        let rows: BTreeSet<u32> = mine
+            .rows_carrying()
+            .into_iter()
+            .chain(theirs.rows_carrying())
+            .flatten()
+            .collect();
+        for row in rows {
+            for col in 0..cols {
+                let pos = Pos::new(row, col);
+                if mine.get(pos) != theirs.get(pos) {
+                    return refuse(crate::a1::format(Some(&mine.name), pos));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether a body key ([`envelope::body_vocabulary`]) is this writer's to change: what it
+/// writes from the model when it rewrites a row, the column declarations, a sheet's charts, the
+/// names or the filters. A count of anything else going down — a merge, an annotation, rich
+/// text in a cell, a validation, a header-row group — is content the model never saw, and the
+/// save is refused rather than allowed to drop it.
+fn owned(key: &str) -> bool {
+    let (element, attribute) = match key.split_once('@') {
+        Some((element, attribute)) => (element, Some(attribute)),
+        None => (key, None),
+    };
+    let in_ns = |uri: &str, k: &str| k.starts_with(&format!("{{{uri}}}"));
+    let is = |uri: &str, locals: &[&str]| {
+        locals
+            .iter()
+            .any(|local| element == format!("{{{uri}}}{local}"))
+    };
+    // A chart is the model's, all of it: its frame, its own document (inline in the flat form)
+    // and that document's styles — nothing else in a spreadsheet's body is in these namespaces.
+    let chart = in_ns(CHART, element)
+        || in_ns(STYLE, element)
+        || is(DRAW, &["frame", "object"])
+        || is(
+            OFFICE,
+            &[
+                "document",
+                "document-content",
+                "automatic-styles",
+                "body",
+                "chart",
+            ],
+        )
+        || is(TABLE, &["shapes"]);
+    if chart {
+        return true;
+    }
+    let modelled = is(OFFICE, &["spreadsheet"])
+        || is(TABLE, &["table", "table-column", "table-row", "table-cell"])
+        || is(TEXT, &["p", "s", "tab", "line-break"])
+        || is(
+            TABLE,
+            &["named-expressions", "named-expression", "named-range"],
+        )
+        || is(
+            TABLE,
+            &["database-ranges", "database-range", "filter", "filter-and"],
+        )
+        || is(TABLE, &["filter-condition", "filter-set-item"])
+        || is(TABLE, &["calculation-settings", "null-date"]);
+    let Some(attribute) = attribute else {
+        return modelled;
+    };
+    let attr = |uri: &str, local: &str| attribute == format!("{{{uri}}}{local}");
+    // LibreOffice's mirror of the value type (R4), restated on every cell it writes.
+    if attr(CALCEXT, "value-type") {
+        return true;
+    }
+    match () {
+        _ if is(TABLE, &["table-cell"]) => {
+            attr(OFFICE, "value-type")
+                || attr(OFFICE, "value")
+                || attr(OFFICE, "date-value")
+                || attr(OFFICE, "time-value")
+                || attr(OFFICE, "boolean-value")
+                || attr(OFFICE, "string-value")
+                || attr(OFFICE, "currency")
+                || attr(TABLE, "formula")
+                || attr(TABLE, "number-columns-repeated")
+                || attr(TABLE, "style-name")
+        }
+        _ if is(TABLE, &["table-row"]) => {
+            attr(TABLE, "style-name")
+                || attr(TABLE, "number-rows-repeated")
+                || attr(TABLE, "visibility")
+        }
+        _ if is(TABLE, &["table-column"]) => {
+            attr(TABLE, "style-name")
+                || attr(TABLE, "number-columns-repeated")
+                || attr(TABLE, "visibility")
+                || attr(TABLE, "default-cell-style-name")
+        }
+        // The rest of a table's start tag is kept whatever happens to its name.
+        _ if is(TABLE, &["table"]) => true,
+        _ if is(TABLE, &["named-expression", "named-range"]) => true,
+        _ if is(
+            TABLE,
+            &[
+                "database-range",
+                "filter",
+                "filter-condition",
+                "filter-set-item",
+            ],
+        ) =>
+        {
+            true
+        }
+        _ if is(TABLE, &["calculation-settings"]) => attr(TABLE, "null-year"),
+        _ if is(TABLE, &["null-date"]) => true,
+        _ if is(TEXT, &["s"]) => attr(TEXT, "c"),
+        _ => false,
     }
 }
 
@@ -317,7 +581,12 @@ fn rewrite(sheet: &Sheet, row: u32, at: &super::source::Cell, null_date: i64) ->
 /// The `content.xml` payload, which in the flat form is the whole document (§7.1–7.3) — and,
 /// in the package form, the charts' own documents, which live beside it there
 /// ([`Objects`]).
-fn content(doc: &Document, form: Form, taken: &HashSet<String>) -> (String, Vec<SubDocument>) {
+fn content(
+    doc: &Document,
+    form: Form,
+    taken: &HashSet<String>,
+    origin: Option<&super::source::Source>,
+) -> (String, Vec<SubDocument>) {
     let root = match form {
         Form::Package => "office:document-content",
         // The flat form is one XML document; the projection never reaches here, because
@@ -325,7 +594,16 @@ fn content(doc: &Document, form: Form, taken: &HashSet<String>) -> (String, Vec<
         Form::Flat | Form::Projection => "office:document",
     };
 
-    let pool = Pool::new(doc);
+    // Written for the file the document came from, the pool holds only what this save writes
+    // itself (everything else is the file's own bytes), under names the file does not use.
+    let plans = origin.map(|source| plan(doc, source));
+    let scopes: Option<Vec<Scope>> = plans
+        .as_ref()
+        .map(|plans| plans.iter().map(|plan| plan.scope.clone_scope()).collect());
+    let mut pool = Pool::scoped(doc, scopes.as_deref());
+    if let Some(source) = origin {
+        pool.avoid(&envelope::automatic_style_names(&source.bytes));
+    }
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     // Declare only the namespaces this part actually uses (§1.4). `table:formula`'s `of:`
     // prefix is part of the *string*, not a namespace-resolved name (§4), so no `xmlns:of`.
@@ -370,55 +648,926 @@ fn content(doc: &Document, form: Form, taken: &HashSet<String>) -> (String, Vec<
         pool.write(&mut out);
     }
     out.push_str(" <office:body>\n  <office:spreadsheet>\n");
-    // The epoch, and only when it is not the default — writing the default would be
-    // correct but LibreOffice omits it, and matching that keeps our output diffable
-    // against a file it wrote. First in the element, which is where the schema puts it.
-    if doc.null_date != date::DEFAULT_NULL_DATE || doc.null_year != date::DEFAULT_NULL_YEAR {
-        let year = match doc.null_year != date::DEFAULT_NULL_YEAR {
-            true => format!(" table:null-year=\"{}\"", doc.null_year),
-            false => String::new(),
-        };
-        let _ = writeln!(
-            out,
-            "   <table:calculation-settings{year}><table:null-date table:value-type=\"date\" \
-             table:date-value=\"{}\"/></table:calculation-settings>",
-            date::format_date(0.0, doc.null_date)
-        );
-    }
     let mut objects = Objects::new(form, taken.clone());
-    for sheet in &doc.sheets {
-        table(
-            &mut out,
-            sheet,
-            doc.null_date,
-            doc.locale.as_ref(),
-            &pool,
-            &mut objects,
-        );
-    }
-    // §5.11, and *after* the tables: the schema's `office-spreadsheet-content-epilogue`
-    // (line 8263) is where `table-functions` sits, and `table:named-expressions` is its
-    // first member. LibreOffice reads them in either position, so loop C cannot see this —
-    // only the RELAX NG schema can, which is what `kb.rs` validates against. Every name is
-    // written as `table:named-expression`, since the reader stores a named range as the
-    // reference it stands for and the two forms are interchangeable on the way out.
-    if !doc.names.is_empty() {
-        out.push_str("   <table:named-expressions>\n");
-        for (name, expression) in &doc.names {
-            let _ = writeln!(
-                out,
-                "    <table:named-expression table:name=\"{}\" table:expression=\"{}\"/>",
-                esc(name),
-                esc(expression)
-            );
+    match (origin, &plans) {
+        (Some(source), Some(plans)) => {
+            // The file's own content follows its own start tag, whitespace and all.
+            out.pop();
+            out.push_str(&origin_body(doc, source, plans, &pool, &mut objects));
+            out.push('\n');
         }
-        out.push_str("   </table:named-expressions>\n");
+        _ => {
+            out.push_str(&calculation_settings(doc));
+            for sheet in &doc.sheets {
+                table(
+                    &mut out,
+                    sheet,
+                    doc.null_date,
+                    doc.locale.as_ref(),
+                    &pool,
+                    &mut objects,
+                );
+            }
+            out.push_str(&named_expressions(doc));
+            // §9.4, and `table-database-ranges` is `table-functions`' second member — so after
+            // the names, for the same schema reason. One range per sheet: [`Sheet::filter`].
+            database_ranges(&mut out, doc);
+        }
     }
-    // §9.4, and `table-database-ranges` is `table-functions`' second member — so after the
-    // names, for the same schema reason. One range per sheet: [`Sheet::filter`].
-    database_ranges(&mut out, doc);
     let _ = write!(out, "  </office:spreadsheet>\n </office:body>\n</{root}>\n");
     (out, objects.documents)
+}
+
+/// `table:calculation-settings` for the epoch, and only when it is not the default — writing
+/// the default would be correct but LibreOffice omits it, and matching that keeps our output
+/// diffable against a file it wrote. First in the body, which is where the schema puts it.
+fn calculation_settings(doc: &Document) -> String {
+    if doc.null_date == date::DEFAULT_NULL_DATE && doc.null_year == date::DEFAULT_NULL_YEAR {
+        return String::new();
+    }
+    let year = match doc.null_year != date::DEFAULT_NULL_YEAR {
+        true => format!(" table:null-year=\"{}\"", doc.null_year),
+        false => String::new(),
+    };
+    format!(
+        "   <table:calculation-settings{year}><table:null-date table:value-type=\"date\" \
+         table:date-value=\"{}\"/></table:calculation-settings>\n",
+        date::format_date(0.0, doc.null_date)
+    )
+}
+
+/// §5.11, and *after* the tables: the schema's `office-spreadsheet-content-epilogue` (line 8263)
+/// is where `table-functions` sits, and `table:named-expressions` is its first member.
+/// LibreOffice reads them in either position, so loop C cannot see this — only the RELAX NG
+/// schema can, which is what `kb.rs` validates against. Every name is written as
+/// `table:named-expression`, since the reader stores a named range as the reference it stands
+/// for and the two forms are interchangeable on the way out.
+fn named_expressions(doc: &Document) -> String {
+    if doc.names.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("   <table:named-expressions>\n");
+    for (name, expression) in &doc.names {
+        let _ = writeln!(
+            out,
+            "    <table:named-expression table:name=\"{}\" table:expression=\"{}\"/>",
+            esc(name),
+            esc(expression)
+        );
+    }
+    out.push_str("   </table:named-expressions>\n");
+    out
+}
+
+// --- writing a sheet back into the table it was read from -----------------------------------
+//
+// A regenerating save of a document read from a file is a splice over the file's own
+// `office:spreadsheet`: every table nobody touched is its own bytes, and a table somebody did is
+// its own bytes with patches — the rows that changed, the columns if a width did, the charts if
+// one did, the start tag if the sheet was renamed. Everything the model does not read (a merge,
+// an annotation, a validation, a header-row group, a vendor's attribute) lives in the bytes that
+// are not patched, which is how saving never makes the file worse. What a patch cannot carry is
+// caught by `losses` and refused.
+
+/// What a save does with one row element of the file.
+enum RowFix {
+    /// Its own bytes.
+    Keep,
+    /// Its own bytes, split around the rows it stands for that changed — a repeated element is
+    /// split the way a repeated cell is, into copies of itself before and after and one patched
+    /// copy per changed row — each changed row with these cells rewritten and, maybe, a new
+    /// start tag.
+    Patch(BTreeMap<u32, RowPatch>),
+    /// Written again from the model: a run of rows whose visibility the filter now splits in
+    /// ways too many to copy, which the guard then judges.
+    Rewrite,
+}
+
+/// One changed row of a row element.
+#[derive(Default)]
+struct RowPatch {
+    /// Columns whose cells were written.
+    cells: Vec<u32>,
+    /// Whether its height was set.
+    height: bool,
+    /// Its `table:visibility` when that moved — `Some(None)` for visible again.
+    visibility: Option<Option<&'static str>>,
+}
+
+/// What a save writes of one sheet.
+struct Plan {
+    /// The `source::Table` it splices into — `None` for a sheet the file did not have.
+    table: Option<usize>,
+    /// One per row element of that table, in order.
+    rows: Vec<RowFix>,
+    /// Rows past everything the file's rows covered, written from the model.
+    append: Option<std::ops::Range<u32>>,
+    scope: Scope,
+}
+
+impl Scope {
+    fn clone_scope(&self) -> Scope {
+        Scope {
+            all: self.all,
+            cells: self.cells.clone(),
+            rows: self.rows.clone(),
+            heights: self.heights.clone(),
+            columns: self.columns,
+        }
+    }
+}
+
+/// The value of one attribute of a start tag as the file spelled it, by qualified name.
+fn tag_attr<'t>(tag: &'t str, name: &str) -> Option<&'t str> {
+    let at = tag.find(&format!(" {name}="))? + name.len() + 2;
+    let quote = tag[at..].chars().next()?;
+    let rest = &tag[at + 1..];
+    Some(&rest[..rest.find(quote)?])
+}
+
+/// The value of the first attribute whose qualified name ends with `suffix` (`:number-columns-
+/// repeated`), whatever prefix the file spelled it with.
+fn suffix_attr<'t>(tag: &'t str, suffix: &str) -> Option<&'t str> {
+    let at = tag.find(&format!("{suffix}="))? + suffix.len() + 1;
+    let quote = tag[at..].chars().next()?;
+    let rest = &tag[at + 1..];
+    Some(&rest[..rest.find(quote)?])
+}
+
+/// The prefix the file binds the table namespace to — `table` in every file LibreOffice wrote.
+fn table_prefix(source: &super::source::Source) -> String {
+    envelope::prefix_for(&source.bytes, TABLE).unwrap_or_else(|| "table".to_owned())
+}
+
+fn plan(doc: &Document, source: &super::source::Source) -> Vec<Plan> {
+    let tp = table_prefix(source);
+    doc.sheets
+        .iter()
+        .map(|sheet| {
+            let p = &sheet.origin;
+            let Some((ti, t)) = p
+                .table
+                .and_then(|ti| source.tables.get(ti).map(|t| (ti, t)))
+            else {
+                return Plan {
+                    table: None,
+                    rows: Vec::new(),
+                    append: None,
+                    scope: Scope {
+                        all: true,
+                        ..Default::default()
+                    },
+                };
+            };
+            let visibility = Visibility::of(sheet, doc.null_date, doc.locale.as_ref());
+            let mut scope = Scope {
+                columns: p.columns,
+                ..Default::default()
+            };
+            let extent = cols_or_rows_extent(sheet, doc.null_date, doc.locale.as_ref());
+            let mut rows = Vec::with_capacity(t.rows.len());
+            let mut covered = 0u32;
+            for e in &t.rows {
+                let span = e.first..e.first.saturating_add(e.repeat);
+                covered = covered.max(span.end);
+                let tag = std::str::from_utf8(&source.bytes[e.start.clone()]).unwrap_or("");
+                let mut patches: BTreeMap<u32, RowPatch> = BTreeMap::new();
+                for pos in p.cells.iter().filter(|pos| span.contains(&pos.row)) {
+                    patches.entry(pos.row).or_default().cells.push(pos.col);
+                    if p.looks.contains(pos) {
+                        scope.cells.insert(*pos);
+                    }
+                }
+                for row in p.rows.iter().filter(|row| span.contains(row)) {
+                    patches.entry(*row).or_default().height = true;
+                    scope.heights.insert(*row);
+                }
+                // Visibility: whenever the filter or a hand-hidden row may have moved it, every
+                // row whose wanted value is not what this element says.
+                if p.filter || p.rows.iter().any(|row| span.contains(row)) {
+                    let said = tag_attr(tag, &format!("{tp}:visibility"));
+                    let hidden_here = visibility
+                        .manual
+                        .range(span.clone())
+                        .chain(visibility.filtered.range(span.clone()))
+                        .copied()
+                        .collect::<BTreeSet<u32>>();
+                    let candidates: Vec<u32> = match said {
+                        // Visible as written: only the rows now hidden can differ.
+                        None => hidden_here.into_iter().collect(),
+                        // Hidden as written: every row of it may differ, which for a long run
+                        // is more copies than the element is worth.
+                        Some(_) if span.len() <= 10_000 => span.clone().collect(),
+                        Some(_) => {
+                            rows.push(RowFix::Rewrite);
+                            scope
+                                .rows
+                                .push(span.start..span.end.min(extent.max(span.start + 1)));
+                            continue;
+                        }
+                    };
+                    for row in candidates {
+                        let wanted = visibility.value(row);
+                        if wanted != said {
+                            patches.entry(row).or_default().visibility = Some(wanted);
+                        }
+                    }
+                }
+                // A cell past what the file's row spells is written from the model, so the
+                // pool needs its look whatever touched it.
+                rows.push(match patches.is_empty() {
+                    true => RowFix::Keep,
+                    false => RowFix::Patch(patches),
+                });
+            }
+            let append = (extent > covered).then_some(covered..extent);
+            if let Some(range) = &append {
+                scope.rows.push(range.clone());
+            }
+            Plan {
+                table: Some(ti),
+                rows,
+                append,
+                scope,
+            }
+        })
+        .collect()
+}
+
+/// `bytes[range]` with `patches` (absolute ranges into `bytes`, sorted, not overlapping; an
+/// empty range is an insertion) applied.
+fn apply(
+    bytes: &[u8],
+    range: std::ops::Range<usize>,
+    mut patches: Vec<(std::ops::Range<usize>, String)>,
+) -> String {
+    patches.sort_by_key(|(r, _)| (r.start, r.end));
+    let mut out = String::with_capacity(range.len());
+    let mut at = range.start;
+    for (r, text) in patches {
+        if r.start < at {
+            continue;
+        }
+        out.push_str(&String::from_utf8_lossy(&bytes[at..r.start]));
+        out.push_str(&text);
+        at = r.end;
+    }
+    out.push_str(&String::from_utf8_lossy(&bytes[at..range.end]));
+    out
+}
+
+/// The range of an element together with the whitespace in front of it, for removing it
+/// without leaving its line behind.
+fn with_leading_space(bytes: &[u8], range: std::ops::Range<usize>) -> std::ops::Range<usize> {
+    let start = bytes[..range.start]
+        .iter()
+        .rposition(|c| !c.is_ascii_whitespace())
+        .map_or(range.start, |p| p + 1);
+    start..range.end
+}
+
+/// The whitespace in front of the element at `start`, back to its line's start — the file's
+/// own indentation, which a new sibling written beside it borrows.
+fn indent_of(bytes: &[u8], start: usize) -> String {
+    let line = bytes[..start]
+        .iter()
+        .rposition(|c| *c == b'\n')
+        .map_or(0, |p| p + 1);
+    let lead = &bytes[line..start];
+    match lead.iter().all(u8::is_ascii_whitespace) {
+        true => String::from_utf8_lossy(lead).into_owned(),
+        false => String::new(),
+    }
+}
+
+/// Text this writer produced for a block-level element, re-indented to sit after `after` in the
+/// file: the writer's own leading spaces dropped, the file's indentation in their place.
+fn beside(bytes: &[u8], after: usize, text: &str) -> String {
+    let indent = indent_of(bytes, after);
+    let mut out = String::new();
+    for line in text.lines().filter(|l| !l.trim().is_empty()) {
+        out.push('\n');
+        out.push_str(&indent);
+        out.push_str(line.trim_start());
+    }
+    out
+}
+
+fn origin_body(
+    doc: &Document,
+    source: &super::source::Source,
+    plans: &[Plan],
+    pool: &Pool,
+    objects: &mut Objects,
+) -> String {
+    let Some(inner) = source.body.clone() else {
+        return String::new();
+    };
+    let bytes = &source.bytes;
+    let mut patches: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+
+    // Tables nobody has any more.
+    let kept: HashSet<usize> = plans.iter().filter_map(|plan| plan.table).collect();
+    for (ti, t) in source.tables.iter().enumerate() {
+        if !kept.contains(&ti) {
+            patches.push((with_leading_space(bytes, t.range.clone()), String::new()));
+        }
+    }
+
+    // The sheets, in the model's order: each spliced back into its table, or — a sheet the
+    // file did not have — written after the one before it.
+    let first_table = source.tables.first().map(|t| t.range.start);
+    let epilogue = source
+        .parts
+        .iter()
+        .find(|part| part.after_tables)
+        .map(|part| part.range.start);
+    let mut cursor = first_table.or(epilogue).unwrap_or(inner.end);
+    let mut cursor_is_end = false;
+    let anchor = source
+        .tables
+        .first()
+        .map(|t| t.range.start)
+        .unwrap_or(cursor);
+    for (plan, sheet) in plans.iter().zip(&doc.sheets) {
+        match plan.table {
+            Some(ti) => {
+                let t = &source.tables[ti];
+                let text = patched_table(doc, sheet, t, plan, source, pool, objects);
+                patches.push((t.range.clone(), text));
+                cursor = t.range.end;
+                cursor_is_end = true;
+            }
+            None => {
+                let mut text = String::new();
+                table(
+                    &mut text,
+                    sheet,
+                    doc.null_date,
+                    doc.locale.as_ref(),
+                    pool,
+                    objects,
+                );
+                let placed = beside(bytes, anchor, &text);
+                // After a table: a line of its own following it. Before the first: ahead of
+                // it, on a line of its own, and the newline goes after.
+                let placed = match cursor_is_end {
+                    true => placed,
+                    false => format!(
+                        "{}\n{}",
+                        placed.trim_start_matches('\n'),
+                        indent_of(bytes, cursor)
+                    ),
+                };
+                patches.push((cursor..cursor, placed));
+            }
+        }
+    }
+    let tables_end = source.tables.last().map(|t| t.range.end);
+
+    // The epoch: the file's own `table:calculation-settings` unless the epoch moved.
+    let part = |kind| source.parts.iter().find(|part| part.kind == kind);
+    use super::source::PartKind;
+    if (doc.null_date, doc.null_year) != source.epoch {
+        let ours = calculation_settings(doc);
+        match part(PartKind::CalculationSettings) {
+            Some(existing) => patches.push((existing.range.clone(), ours.trim().to_owned())),
+            None if !ours.is_empty() => {
+                let at = first_table.unwrap_or(inner.end);
+                patches.push((at..at, format!("{}\n{}", ours.trim(), indent_of(bytes, at))));
+            }
+            None => {}
+        }
+    }
+
+    // Names: the file's own, globally and per table, unless somebody changed one — then the
+    // model's, all of them, in one place.
+    let after_tables = tables_end.unwrap_or(inner.end);
+    if doc.edits.names {
+        let ours = named_expressions(doc);
+        match part(PartKind::NamedExpressions) {
+            Some(existing) if ours.is_empty() => patches.push((
+                with_leading_space(bytes, existing.range.clone()),
+                String::new(),
+            )),
+            Some(existing) => patches.push((existing.range.clone(), ours.trim().to_owned())),
+            None if !ours.is_empty() => {
+                patches.push((after_tables..after_tables, beside(bytes, anchor, &ours)))
+            }
+            None => {}
+        }
+    }
+
+    // Filters: the file's own database ranges unless a filter changed.
+    if doc.sheets.iter().any(|sheet| sheet.origin.filter) {
+        let mut ours = String::new();
+        database_ranges(&mut ours, doc);
+        match part(PartKind::DatabaseRanges) {
+            Some(existing) if ours.is_empty() => patches.push((
+                with_leading_space(bytes, existing.range.clone()),
+                String::new(),
+            )),
+            Some(existing) => patches.push((existing.range.clone(), ours.trim().to_owned())),
+            None if !ours.is_empty() => {
+                // After the names, wherever they are.
+                let at = part(PartKind::NamedExpressions).map_or(after_tables, |p| p.range.end);
+                patches.push((at..at, beside(bytes, anchor, &ours)))
+            }
+            None => {}
+        }
+    }
+
+    let text = apply(bytes, inner.clone(), patches);
+    text.trim_end().to_owned()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn patched_table(
+    doc: &Document,
+    sheet: &Sheet,
+    t: &super::source::Table,
+    plan: &Plan,
+    source: &super::source::Source,
+    pool: &Pool,
+    objects: &mut Objects,
+) -> String {
+    let bytes = &source.bytes;
+    let tp = table_prefix(source);
+    let mut patches: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+    let tag = std::str::from_utf8(&bytes[t.start.clone()]).unwrap_or("");
+
+    // Renamed: the start tag again, its other attributes the file's own.
+    if tag_attr(tag, &format!("{tp}:name")).map(unescape) != Some(sheet.name.clone()) {
+        let qname = tag[1..]
+            .split(|c: char| c.is_whitespace() || c == '>' || c == '/')
+            .next()
+            .unwrap_or("table:table");
+        patches.push((
+            t.start.clone(),
+            format!("<{qname} {tp}:name=\"{}\"{}>", esc(&sheet.name), t.keep),
+        ));
+    }
+
+    // Charts: the file's own unless one changed.
+    if sheet.origin.charts {
+        let mut ours = String::new();
+        write_shapes(&mut ours, sheet, objects);
+        match &t.shapes {
+            Some(range) => patches.push((range.clone(), ours.trim().to_owned())),
+            None if !ours.is_empty() => {
+                let at = t.start.end;
+                let first = t.columns.first().map_or(at, |r| r.start);
+                patches.push((at..at, beside(bytes, first, &ours)));
+            }
+            None => {}
+        }
+    }
+
+    // Columns: the file's own unless a width or a hidden flag changed.
+    if sheet.origin.columns {
+        let mut ours = String::new();
+        write_columns(&mut ours, sheet, pool, Some(t));
+        match (t.columns.first(), t.columns.last()) {
+            (Some(first), Some(last)) => {
+                let block = beside(bytes, first.start, &ours);
+                patches.push((first.start..last.end, block.trim_start().to_owned()));
+            }
+            _ => {
+                let at = t.shapes.as_ref().map_or(t.start.end, |r| r.end);
+                let next = t.rows.first().map_or(at, |r| r.range.start);
+                patches.push((at..at, beside(bytes, next, &ours)));
+            }
+        }
+    }
+
+    // Rows.
+    let visibility = Visibility::of(sheet, doc.null_date, doc.locale.as_ref());
+    for (e, fix) in t.rows.iter().zip(&plan.rows) {
+        match fix {
+            RowFix::Keep => {}
+            RowFix::Patch(changed) => {
+                let text = split_row(sheet, doc, e, changed, source, pool, &tp);
+                patches.push((e.range.clone(), text));
+            }
+            RowFix::Rewrite => {
+                let extent = cols_or_rows_extent(sheet, doc.null_date, doc.locale.as_ref());
+                let span = e.first..e.first.saturating_add(e.repeat);
+                let written = span.start..span.end.min(extent.max(span.start));
+                let mut ours = String::new();
+                write_rows(
+                    &mut ours,
+                    sheet,
+                    written.clone(),
+                    doc.null_date,
+                    pool,
+                    &visibility,
+                );
+                // What the element covered past the model's last row stays covered — empty.
+                if span.end > written.end && written.end < MAX_ROWS {
+                    let _ = writeln!(
+                        ours,
+                        "    <table:table-row{}><table:table-cell/></table:table-row>",
+                        count(span.end - written.end, "rows")
+                    );
+                }
+                if ours.is_empty() {
+                    ours.push_str("    <table:table-row><table:table-cell/></table:table-row>\n");
+                }
+                let block = beside(bytes, e.start.start, &ours);
+                patches.push((e.range.clone(), block.trim_start().to_owned()));
+            }
+        }
+    }
+    if let Some(range) = &plan.append {
+        let mut ours = String::new();
+        write_rows(
+            &mut ours,
+            sheet,
+            range.clone(),
+            doc.null_date,
+            pool,
+            &visibility,
+        );
+        let at = t
+            .rows
+            .last()
+            .map(|r| r.range.end)
+            .or(t.columns.last().map(|r| r.end))
+            .unwrap_or(t.start.end);
+        let like = t.rows.last().map_or(at, |r| r.range.start);
+        patches.push((at..at, beside(bytes, like, &ours)));
+    }
+
+    // Sheet-local names go when the names were rewritten globally.
+    if doc.edits.names
+        && let Some((range, _)) = &t.names
+    {
+        patches.push((with_leading_space(bytes, range.clone()), String::new()));
+    }
+
+    apply(bytes, t.range.clone(), patches)
+}
+
+/// One row element of the file, split around its changed rows: copies of the element for the
+/// untouched runs (its `table:number-rows-repeated` set to each run's length), and one copy per
+/// changed row with that row's start tag and cells patched. An element standing for one row is
+/// the degenerate case — one patched copy.
+#[allow(clippy::too_many_arguments)]
+fn split_row(
+    sheet: &Sheet,
+    doc: &Document,
+    e: &super::source::RowElement,
+    changed: &BTreeMap<u32, RowPatch>,
+    source: &super::source::Source,
+    pool: &Pool,
+    tp: &str,
+) -> String {
+    let bytes = &source.bytes;
+    let tag = String::from_utf8_lossy(&bytes[e.start.clone()]).into_owned();
+    let repeated = format!("{tp}:number-rows-repeated");
+    let indent = indent_of(bytes, e.range.start);
+    // The element as written, standing for `n` rows.
+    let copy = |n: u32| {
+        let count = (n > 1).then(|| n.to_string());
+        let new_tag = envelope::set_attributes(&tag, &[(repeated.as_str(), count.as_deref())]);
+        let mut out = new_tag;
+        out.push_str(&String::from_utf8_lossy(&bytes[e.start.end..e.range.end]));
+        out
+    };
+    // Its cells, recorded by the reader for a row that stood for itself and read out of the
+    // element's own bytes otherwise.
+    let (cells, width) = scan_all_cells(bytes, e);
+    let span_end = e.first.saturating_add(e.repeat);
+    let visibility = Visibility::of(sheet, doc.null_date, doc.locale.as_ref());
+
+    let mut pieces: Vec<String> = Vec::new();
+    let mut cursor = e.first;
+    for (row, patch) in changed {
+        if *row > cursor {
+            pieces.push(copy(row - cursor));
+        }
+        let patched = patched_row(
+            sheet, doc, e, *row, patch, &tag, &cells, width, source, pool, tp,
+        );
+        pieces.push(match patched {
+            Some(text) => text,
+            // A written column the file's row cannot place — inside a merge's covered half —
+            // and so the row from the model, whose losses the guard then names.
+            None => {
+                let mut ours = String::new();
+                write_rows(
+                    &mut ours,
+                    sheet,
+                    *row..row + 1,
+                    doc.null_date,
+                    pool,
+                    &visibility,
+                );
+                ours.trim().to_owned()
+            }
+        });
+        cursor = row + 1;
+    }
+    if cursor < span_end {
+        pieces.push(copy(span_end - cursor));
+    }
+    pieces.join(&format!("\n{indent}"))
+}
+
+/// One row of a row element with its start tag and cells patched.
+#[allow(clippy::too_many_arguments)]
+fn patched_row(
+    sheet: &Sheet,
+    doc: &Document,
+    e: &super::source::RowElement,
+    row: u32,
+    patch: &RowPatch,
+    tag: &str,
+    cells: &[Scanned],
+    width: u32,
+    source: &super::source::Source,
+    pool: &Pool,
+    tp: &str,
+) -> Option<String> {
+    let bytes = &source.bytes;
+    let repeated = format!("{tp}:number-rows-repeated");
+    let mut changes: Vec<(String, Option<String>)> = vec![(repeated, None)];
+    if patch.height {
+        let style = pool.row_attr(sheet.row_height(row));
+        changes.push((
+            format!("{tp}:style-name"),
+            tag_attr(&style, "table:style-name").map(str::to_owned),
+        ));
+    }
+    if let Some(wanted) = patch.visibility {
+        changes.push((format!("{tp}:visibility"), wanted.map(str::to_owned)));
+    }
+    let refs: Vec<(&str, Option<&str>)> = changes
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_deref()))
+        .collect();
+    let new_tag = envelope::set_attributes(tag, &refs);
+
+    // The cells: a restyled cell's own element with a new style name, a rewritten cell from the
+    // model, everything else the file's bytes.
+    let mut inside: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+    // The touched columns, by the element holding them.
+    let mut by_element: BTreeMap<usize, Vec<u32>> = BTreeMap::new();
+    for col in patch.cells.iter().filter(|col| **col < width) {
+        let index = cells.iter().position(|s| s.cell.cols.contains(col))?;
+        by_element.entry(index).or_default().push(*col);
+    }
+    for (index, cols) in by_element {
+        let scanned = &cells[index];
+        let element = &scanned.cell;
+        let restyled_only = cols
+            .iter()
+            .all(|col| !sheet.origin.values.contains(&Pos::new(row, *col)));
+        if restyled_only {
+            // Only looks changed: the element's own bytes, split around the restyled columns
+            // with the pool's style name on each — whatever it holds stays, a merge's covered
+            // half included.
+            inside.push((
+                element.range.clone(),
+                restyle(sheet, row, element, &cols, bytes, pool, tp),
+            ));
+            continue;
+        }
+        // A value in the covered half of a merge has nowhere to go but out of the merge: the row
+        // from the model, whose losses the guard then names.
+        if scanned.covered {
+            return None;
+        }
+        inside.push((
+            element.range.clone(),
+            rewrite_cells(sheet, row, element, doc.null_date, pool),
+        ));
+    }
+    // Columns past the last cell the file's row spells: an empty run up to the first of them,
+    // then each from the model.
+    let beyond: Vec<u32> = patch
+        .cells
+        .iter()
+        .copied()
+        .filter(|c| *c >= width)
+        .collect();
+    if let Some(last) = beyond.iter().max() {
+        let mut ours = String::new();
+        let mut col = width;
+        while col <= *last {
+            let pos = Pos::new(row, col);
+            let look = (effective(sheet, pos), sheet.style(pos));
+            if !carries(sheet, pos) {
+                let run = (col..=*last)
+                    .take_while(|c| !carries(sheet, Pos::new(row, *c)))
+                    .count() as u32;
+                let _ = write!(ours, "<table:table-cell{}/>", count(run, "columns"));
+                col += run;
+                continue;
+            }
+            let attr = pool.attr(look);
+            cell(
+                &mut ours,
+                &sheet.get(pos),
+                sheet.formula(pos),
+                sheet.kind(pos),
+                look,
+                doc.null_date,
+                1,
+                &attr,
+            );
+            col += 1;
+        }
+        let close = bytes[e.range.clone()]
+            .iter()
+            .rposition(|c| *c == b'<')
+            .map_or(e.range.end, |p| e.range.start + p);
+        inside.push((close..close, ours));
+    }
+    let body = apply(bytes, e.start.end..e.range.end, inside);
+    Some(format!("{new_tag}{body}"))
+}
+
+/// A cell element whose columns `restyled` only had their look changed: copies of the element
+/// for the runs between them (`table:number-columns-repeated` set to each run's length) and a
+/// copy per restyled column carrying the pool's style for it.
+fn restyle(
+    sheet: &Sheet,
+    row: u32,
+    element: &super::source::Cell,
+    restyled: &[u32],
+    bytes: &[u8],
+    pool: &Pool,
+    tp: &str,
+) -> String {
+    let tag_end = bytes[element.range.clone()]
+        .iter()
+        .position(|c| *c == b'>')
+        .map_or(element.range.end, |p| element.range.start + p + 1);
+    let tag = String::from_utf8_lossy(&bytes[element.range.start..tag_end]).into_owned();
+    let rest = String::from_utf8_lossy(&bytes[tag_end..element.range.end]).into_owned();
+    let repeated = format!("{tp}:number-columns-repeated");
+    let styled = format!("{tp}:style-name");
+    let copy = |n: u32, style: Option<Option<String>>| {
+        let count = (n > 1).then(|| n.to_string());
+        let mut changes: Vec<(&str, Option<&str>)> = vec![(repeated.as_str(), count.as_deref())];
+        if let Some(style) = &style {
+            changes.push((styled.as_str(), style.as_deref()));
+        }
+        format!("{}{rest}", envelope::set_attributes(&tag, &changes))
+    };
+    let mut out = String::new();
+    let mut cursor = element.cols.start;
+    let mut sorted = restyled.to_vec();
+    sorted.sort_unstable();
+    sorted.dedup();
+    for col in sorted {
+        if col > cursor {
+            out.push_str(&copy(col - cursor, None));
+        }
+        let pos = Pos::new(row, col);
+        let attr = pool.attr((effective(sheet, pos), sheet.style(pos)));
+        out.push_str(&copy(
+            1,
+            Some(tag_attr(&attr, "table:style-name").map(str::to_owned)),
+        ));
+        cursor = col + 1;
+    }
+    if cursor < element.cols.end {
+        out.push_str(&copy(element.cols.end - cursor, None));
+    }
+    out
+}
+
+/// The cell elements of a row element, read out of its own bytes — what the reader records only
+/// for a row standing for itself (`source::Source::rows`).
+/// One cell element of a row, read out of its bytes: [`super::source::Cell`] plus whether it is
+/// the covered half of a merge — which holds a position and a style but no value of its own.
+struct Scanned {
+    cell: super::source::Cell,
+    covered: bool,
+}
+
+fn scan_cells(bytes: &[u8], e: &super::source::RowElement) -> (Vec<super::source::Cell>, u32) {
+    let (all, width) = scan_all_cells(bytes, e);
+    (
+        all.into_iter()
+            .filter(|s| !s.covered)
+            .map(|s| s.cell)
+            .collect(),
+        width,
+    )
+}
+
+fn scan_all_cells(bytes: &[u8], e: &super::source::RowElement) -> (Vec<Scanned>, u32) {
+    let mut cells = Vec::new();
+    let end = bytes[e.range.clone()]
+        .iter()
+        .rposition(|c| *c == b'<')
+        .map_or(e.range.end, |p| e.range.start + p);
+    let mut at = e.start.end;
+    let mut col = 0u32;
+    while at < end {
+        let Some(lt) = bytes[at..end].iter().position(|c| *c == b'<') else {
+            break;
+        };
+        let start = at + lt;
+        // The start tag, to its `>` outside any quoted value.
+        let mut quote = None;
+        let mut close = None;
+        for (i, c) in bytes[start..end].iter().enumerate() {
+            match (quote, *c) {
+                (None, b'"' | b'\'') => quote = Some(*c),
+                (Some(q), c) if c == q => quote = None,
+                (None, b'>') => {
+                    close = Some(start + i + 1);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let Some(tag_end) = close else { break };
+        let tag = String::from_utf8_lossy(&bytes[start..tag_end]).into_owned();
+        let qname = tag[1..]
+            .split(|c: char| c.is_whitespace() || c == '>' || c == '/')
+            .next()
+            .unwrap_or("");
+        let Some(range) = grind_core::odf::xml::element_extent(bytes, start..tag_end) else {
+            break;
+        };
+        if qname.ends_with(":table-cell") || qname.ends_with(":covered-table-cell") {
+            let repeat = suffix_attr(&tag, ":number-columns-repeated")
+                .and_then(|n| n.trim().parse::<u32>().ok())
+                .unwrap_or(1)
+                .max(1);
+            cells.push(Scanned {
+                cell: super::source::Cell {
+                    range: range.clone(),
+                    cols: col..col.saturating_add(repeat),
+                    keep: super::source::kept_attributes(tag.as_bytes()),
+                },
+                covered: qname.ends_with(":covered-table-cell"),
+            });
+            col = col.saturating_add(repeat);
+        }
+        at = range.end;
+    }
+    (cells, col)
+}
+
+/// XML's five entities, undone — enough to compare an attribute the file spelled with a name.
+fn unescape(value: &str) -> String {
+    value
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
+/// One cell element of the file, rewritten from the sheet — [`rewrite`] for a save that may
+/// also have changed a cell's look: a cell whose format or style was written takes the pool's
+/// style in place of the file's, and every other cell the element covers keeps the file's.
+fn rewrite_cells(
+    sheet: &Sheet,
+    row: u32,
+    at: &super::source::Cell,
+    null_date: i64,
+    pool: &Pool,
+) -> String {
+    let looks = &sheet.origin.looks;
+    let restyled_keep =
+        super::source::attributes(format!("<x{}>", at.keep).as_bytes(), &["table:style-name"]);
+    let mut out = String::new();
+    let mut col = at.cols.start;
+    while col < at.cols.end {
+        let pos = Pos::new(row, col);
+        let (value, formula, kind) = (sheet.get(pos), sheet.formula(pos), sheet.kind(pos));
+        let restyled = looks.contains(&pos);
+        let look = (effective(sheet, pos), sheet.style(pos));
+        let repeat = match formula.is_some() {
+            true => 1,
+            false => (col..at.cols.end)
+                .take_while(|c| {
+                    let p = Pos::new(row, *c);
+                    sheet.get(p) == value
+                        && sheet.formula(p).is_none()
+                        && sheet.kind(p) == kind
+                        && looks.contains(&p) == restyled
+                        && (!restyled || (effective(sheet, p), sheet.style(p)) == look)
+                })
+                .count() as u32,
+        };
+        let attrs = match restyled {
+            true => format!("{restyled_keep}{}", pool.attr(look)),
+            false => at.keep.clone(),
+        };
+        cell(
+            &mut out, &value, formula, kind, look, null_date, repeat, &attrs,
+        );
+        col += repeat.max(1);
+    }
+    out
 }
 
 /// `office:styles` — which this writer fills with exactly one thing, the document's locale on
@@ -562,10 +1711,32 @@ struct Pool<'a> {
     col_index: HashMap<&'a str, usize>,
     rows: Vec<&'a str>,
     row_index: HashMap<&'a str, usize>,
+    /// Where each family's numbering starts — `ce`, `co`, `ro` and `N` — so that a pool written
+    /// into a file that already declares `ce1`…`ce9` starts at `ce10` and never takes a name the
+    /// file uses (`envelope::merge` keeps the file's own automatic styles beside these).
+    offsets: [usize; 4],
+}
+
+/// What a regenerating save writes of one sheet, when it is spliced back into the file's own
+/// table rather than written whole — the only cells and tracks the pool needs styles for.
+#[derive(Default)]
+struct Scope {
+    /// The whole sheet: a sheet the file did not have.
+    all: bool,
+    /// Cells whose look this save writes.
+    cells: BTreeSet<Pos>,
+    /// Rows this save writes whole.
+    rows: Vec<std::ops::Range<u32>>,
+    /// Rows whose height this save writes on a start tag of the file's.
+    heights: BTreeSet<u32>,
+    /// Whether this save writes the column declarations.
+    columns: bool,
 }
 
 impl<'a> Pool<'a> {
-    fn new(doc: &'a Document) -> Self {
+    /// The pool for exactly what a save writes: everything (`None`), or per sheet what
+    /// [`Scope`] says.
+    fn scoped(doc: &'a Document, scopes: Option<&[Scope]>) -> Self {
         let mut pool = Pool {
             formats: Vec::new(),
             index: HashMap::new(),
@@ -575,17 +1746,35 @@ impl<'a> Pool<'a> {
             col_index: HashMap::new(),
             rows: Vec::new(),
             row_index: HashMap::new(),
+            offsets: [0; 4],
         };
-        for sheet in &doc.sheets {
+        for (i, sheet) in doc.sheets.iter().enumerate() {
+            let scope = scopes.and_then(|scopes| scopes.get(i));
+            let all = scope.is_none_or(|scope| scope.all);
+            let row_written = |row: u32| {
+                all || scope.is_some_and(|scope| {
+                    scope.heights.contains(&row) || scope.rows.iter().any(|r| r.contains(&row))
+                })
+            };
+            let cell_written = |pos: Pos| {
+                all || scope.is_some_and(|scope| {
+                    scope.cells.contains(&pos) || scope.rows.iter().any(|r| r.contains(&pos.row))
+                })
+            };
             // `entry` rather than `insert`, which would overwrite the index of a size
             // already pooled and point its first tracks at a later style.
-            for (_, width) in sheet.col_widths() {
-                let next = pool.cols.len();
-                if *pool.col_index.entry(width).or_insert(next) == next {
-                    pool.cols.push(width);
+            if all || scope.is_some_and(|scope| scope.columns) {
+                for (_, width) in sheet.col_widths() {
+                    let next = pool.cols.len();
+                    if *pool.col_index.entry(width).or_insert(next) == next {
+                        pool.cols.push(width);
+                    }
                 }
             }
-            for (_, height) in sheet.row_heights() {
+            for (row, height) in sheet.row_heights() {
+                if !row_written(row) {
+                    continue;
+                }
                 let next = pool.rows.len();
                 if *pool.row_index.entry(height).or_insert(next) == next {
                     pool.rows.push(height);
@@ -595,6 +1784,9 @@ impl<'a> Pool<'a> {
             let dated = sheet.kinds().map(|(pos, _)| pos);
             let styled = sheet.styles().map(|(pos, _)| pos);
             for pos in formatted.chain(dated).chain(styled) {
+                if !cell_written(pos) {
+                    continue;
+                }
                 let look = (effective(sheet, pos), sheet.style(pos));
                 if let Some(format) = look.0 {
                     pool.add(format);
@@ -626,10 +1818,38 @@ impl<'a> Pool<'a> {
         }
     }
 
+    /// Start every family's numbering past the names `reserved` already uses.
+    fn avoid(&mut self, reserved: &HashSet<String>) {
+        for (slot, prefix) in ["ce", "co", "ro", "N"].iter().enumerate() {
+            self.offsets[slot] = reserved
+                .iter()
+                .filter_map(|name| name.strip_prefix(prefix)?.parse::<usize>().ok())
+                .map(|n| n + 1)
+                .max()
+                .unwrap_or(0);
+        }
+    }
+
+    fn ce(&self, i: usize) -> String {
+        format!("ce{}", i + self.offsets[0])
+    }
+
+    fn co(&self, i: usize) -> String {
+        format!("co{}", i + self.offsets[1])
+    }
+
+    fn ro(&self, i: usize) -> String {
+        format!("ro{}", i + self.offsets[2])
+    }
+
+    fn n(&self, i: usize) -> String {
+        format!("N{}", i + self.offsets[3])
+    }
+
     /// ` table:style-name="ce3"`, or nothing when the cell has neither format nor styling.
     fn attr(&self, look: Look) -> String {
         match self.look_index.get(&look) {
-            Some(i) => format!(" table:style-name=\"ce{i}\""),
+            Some(i) => format!(" table:style-name=\"{}\"", self.ce(*i)),
             None => String::new(),
         }
     }
@@ -637,7 +1857,7 @@ impl<'a> Pool<'a> {
     /// ` table:style-name="co3"` for a column's width, or nothing for a default one.
     fn col_attr(&self, width: Option<&str>) -> String {
         match width.and_then(|w| self.col_index.get(w)) {
-            Some(i) => format!(" table:style-name=\"co{i}\""),
+            Some(i) => format!(" table:style-name=\"{}\"", self.co(*i)),
             None => String::new(),
         }
     }
@@ -645,7 +1865,7 @@ impl<'a> Pool<'a> {
     /// The row twin of [`Pool::col_attr`].
     fn row_attr(&self, height: Option<&str>) -> String {
         match height.and_then(|h| self.row_index.get(h)) {
-            Some(i) => format!(" table:style-name=\"ro{i}\""),
+            Some(i) => format!(" table:style-name=\"{}\"", self.ro(*i)),
             None => String::new(),
         }
     }
@@ -673,12 +1893,13 @@ impl<'a> Pool<'a> {
         }
         for (i, (format, style)) in self.looks.iter().enumerate() {
             let data = match format.and_then(|f| self.index.get(f)) {
-                Some(n) => format!(" style:data-style-name=\"N{n}\""),
+                Some(n) => format!(" style:data-style-name=\"{}\"", self.n(*n)),
                 None => String::new(),
             };
             let _ = write!(
                 out,
-                "  <style:style style:name=\"ce{i}\" style:family=\"table-cell\"{data}"
+                "  <style:style style:name=\"{}\" style:family=\"table-cell\"{data}",
+                self.ce(i)
             );
             match style {
                 Some(style) => {
@@ -693,16 +1914,18 @@ impl<'a> Pool<'a> {
         for (i, width) in self.cols.iter().enumerate() {
             let _ = writeln!(
                 out,
-                "  <style:style style:name=\"co{i}\" style:family=\"table-column\">\
+                "  <style:style style:name=\"{}\" style:family=\"table-column\">\
                  <style:table-column-properties style:column-width=\"{}\"/></style:style>",
+                self.co(i),
                 esc(width)
             );
         }
         for (i, height) in self.rows.iter().enumerate() {
             let _ = writeln!(
                 out,
-                "  <style:style style:name=\"ro{i}\" style:family=\"table-row\">\
+                "  <style:style style:name=\"{}\" style:family=\"table-row\">\
                  <style:table-row-properties style:row-height=\"{}\"/></style:style>",
+                self.ro(i),
                 esc(height)
             );
         }
@@ -783,7 +2006,7 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
         ),
         None => String::new(),
     };
-    let mut out = format!("<{element} style:name=\"N{i}\"{locale}>");
+    let mut out = format!("<{element} style:name=\"{}\"{locale}>", pool.n(i));
     for part in &format.parts {
         // `number:style="long"` is the spec's spelling of "padded"; short is the default and
         // is written by omission, which is what LibreOffice does too.
@@ -866,8 +2089,9 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
         };
         let _ = write!(
             out,
-            "<style:map style:condition=\"{}\" style:apply-style-name=\"N{target}\"/>",
-            esc(&format!("value(){}{}", map.op.spelling(), map.value))
+            "<style:map style:condition=\"{}\" style:apply-style-name=\"{}\"/>",
+            esc(&format!("value(){}{}", map.op.spelling(), map.value)),
+            pool.n(*target)
         );
     }
     let _ = write!(out, "</{element}>");
@@ -1259,59 +2483,126 @@ fn table(
     pool: &Pool,
     objects: &mut Objects,
 ) {
-    let cols = sheet.used_cols().max(1);
-    // A sized or hidden track past the last value still has to be declared, or the layout
-    // is lost — widening or hiding an empty column is a perfectly ordinary thing to do.
-    let declared = cols
-        .max(last(sheet.col_widths()))
-        .max(last_index(sheet.hidden_cols()));
     let rows = cols_or_rows_extent(sheet, null_date, locale);
 
     let _ = writeln!(out, "   <table:table table:name=\"{}\">", esc(&sheet.name));
     // Before the columns, which is where the schema puts it (rng:15961, ahead of
     // rng:15963-15964's `table-columns-and-groups`/`table-rows-and-groups`).
     write_shapes(out, sheet, objects);
-    // Both the column block and the row block are mandatory, even for an all-empty sheet
-    // (§3.2), which is why everything here has a `.max(1)` behind it. Neighbouring columns
-    // of equal width and hidden state are one declaration, which is what the reader's
-    // repeat handling reads back and what keeps a sheet's declarations to a handful.
+    write_columns(out, sheet, pool, None);
+
+    if rows == 0 {
+        out.push_str("    <table:table-row><table:table-cell/></table:table-row>\n");
+    }
+    let visibility = Visibility::of(sheet, null_date, locale);
+    write_rows(out, sheet, 0..rows, null_date, pool, &visibility);
+
+    out.push_str("   </table:table>\n");
+}
+
+/// The column declarations: both the column block and the row block are mandatory, even for an
+/// all-empty sheet (§3.2), which is why everything here has a `.max(1)` behind it. Neighbouring
+/// columns of equal width, hidden state and default cell style are one declaration, which is
+/// what the reader's repeat handling reads back and what keeps a sheet's declarations to a
+/// handful. `defaults` is the file's own `table:default-cell-style-name` per column, when the
+/// sheet is being written back into the table it was read from — the model does not carry it.
+fn write_columns(
+    out: &mut String,
+    sheet: &Sheet,
+    pool: &Pool,
+    defaults: Option<&super::source::Table>,
+) {
+    let cols = sheet.used_cols().max(1);
+    // A sized or hidden track past the last value still has to be declared, or the layout
+    // is lost — widening or hiding an empty column is a perfectly ordinary thing to do.
+    let mut declared = cols
+        .max(last(sheet.col_widths()))
+        .max(last_index(sheet.hidden_cols()));
+    if let Some(table) = defaults {
+        // Every column the file gave a default style keeps it — the file's own run, however
+        // far past the content it reached.
+        let reach = table
+            .column_defaults
+            .iter()
+            .filter(|(_, style)| style.is_some())
+            .map(|(cols, _)| cols.end)
+            .max()
+            .unwrap_or(0);
+        declared = declared.max(reach);
+    }
+    let default = |col: u32| defaults.and_then(|table| table.column_default(col));
     let mut col = 0;
     while col < declared {
         let width = sheet.col_width(col);
         let hidden = sheet.col_hidden(col);
+        let style = default(col);
         let run = (col..declared)
-            .take_while(|c| sheet.col_width(*c) == width && sheet.col_hidden(*c) == hidden)
+            .take_while(|c| {
+                sheet.col_width(*c) == width
+                    && sheet.col_hidden(*c) == hidden
+                    && default(*c) == style
+            })
             .count() as u32;
+        let style = match style {
+            Some(name) => format!(" table:default-cell-style-name=\"{}\"", esc(name)),
+            None => String::new(),
+        };
         let _ = writeln!(
             out,
-            "    <table:table-column{}{}{}/>",
+            "    <table:table-column{}{}{}{style}/>",
             pool.col_attr(width),
             collapse(hidden),
             count(run, "columns")
         );
         col += run;
     }
+}
 
-    if rows == 0 {
-        out.push_str("    <table:table-row><table:table-cell/></table:table-row>\n");
+/// What the filter hides, written out as `table:visibility="filter"` (§9.4). Derived here rather
+/// than stored, so the attribute cannot drift from the conditions — see [`crate::filter`]. Rows
+/// hidden by hand are stored, and write `"collapse"` instead — LibreOffice keeps the two
+/// spellings apart, and a row that is both wins `"collapse"`, the more structural of the two.
+struct Visibility {
+    filtered: BTreeSet<u32>,
+    manual: BTreeSet<u32>,
+}
+
+impl Visibility {
+    fn of(sheet: &Sheet, null_date: i64, locale: Option<&grind_core::locale::Locale>) -> Self {
+        Visibility {
+            filtered: sheet.hidden_rows(null_date, locale).into_iter().collect(),
+            manual: sheet.manually_hidden_rows().collect(),
+        }
     }
 
-    // What the filter hides, written out as `table:visibility="filter"` (§9.4). Derived
-    // here rather than stored, so the attribute cannot drift from the conditions — see
-    // [`crate::filter`]. Rows hidden by hand are stored, and write `"collapse"` instead —
-    // LibreOffice keeps the two spellings apart, and a row that is both wins `"collapse"`,
-    // the more structural of the two.
-    let filtered: std::collections::BTreeSet<u32> =
-        sheet.hidden_rows(null_date, locale).into_iter().collect();
-    let manual: std::collections::BTreeSet<u32> = sheet.manually_hidden_rows().collect();
-    let visibility = |row: u32| -> &'static str {
-        match (manual.contains(&row), filtered.contains(&row)) {
-            (true, _) => " table:visibility=\"collapse\"",
-            (false, true) => " table:visibility=\"filter\"",
-            (false, false) => "",
+    fn attr(&self, row: u32) -> &'static str {
+        match self.value(row) {
+            Some("collapse") => " table:visibility=\"collapse\"",
+            Some(_) => " table:visibility=\"filter\"",
+            None => "",
         }
-    };
+    }
 
+    /// The value of `table:visibility` for this row, `None` being the default, visible.
+    fn value(&self, row: u32) -> Option<&'static str> {
+        match (self.manual.contains(&row), self.filtered.contains(&row)) {
+            (true, _) => Some("collapse"),
+            (false, true) => Some("filter"),
+            (false, false) => None,
+        }
+    }
+}
+
+/// The rows in `range`, each as the model has it.
+fn write_rows(
+    out: &mut String,
+    sheet: &Sheet,
+    range: std::ops::Range<u32>,
+    null_date: i64,
+    pool: &Pool,
+    visibility: &Visibility,
+) {
+    let cols = sheet.used_cols().max(1);
     // Which rows carry anything, asked once of the sheet's sparse storage rather than of every
     // cell in the used rectangle — see `Sheet::rows_carrying` for the sheet that never finished.
     let carrying = sheet.rows_carrying();
@@ -1320,17 +2611,19 @@ fn table(
         carrying.get(i).is_none_or(|range| range.start > row)
     };
 
-    let mut row = 0;
-    while row < rows {
+    let mut row = range.start;
+    while row < range.end {
         let height = sheet.row_height(row);
         // Interior blank rows collapse into one repeated row (§3.3) — the main file-size
         // lever, and the difference between a 20-row sheet and 20 rows plus a megabyte of
         // nothing after one stray edit at row 50 000. A row of a different height stops the
         // run, or the height would spread down the sheet.
         // A hidden row stops the run too, for the same reason a differently sized one does.
-        let blank = (row..rows)
+        let blank = (row..range.end)
             .take_while(|r| {
-                is_blank(*r) && sheet.row_height(*r) == height && visibility(*r) == visibility(row)
+                is_blank(*r)
+                    && sheet.row_height(*r) == height
+                    && visibility.attr(*r) == visibility.attr(row)
             })
             .count() as u32;
         if blank > 0 {
@@ -1338,17 +2631,15 @@ fn table(
                 out,
                 "    <table:table-row{}{}{}><table:table-cell/></table:table-row>",
                 pool.row_attr(height),
-                visibility(row),
+                visibility.attr(row),
                 count(blank, "rows")
             );
             row += blank;
             continue;
         }
-        write_row(out, sheet, row, cols, null_date, pool, visibility(row));
+        write_row(out, sheet, row, cols, null_date, pool, visibility.attr(row));
         row += 1;
     }
-
-    out.push_str("   </table:table>\n");
 }
 
 /// The row extent: the last used row, the last sized one, and the last one hidden by hand
@@ -1611,7 +2902,7 @@ mod tests {
     use super::*;
 
     fn flat(doc: &Document) -> String {
-        content(doc, Form::Flat, &HashSet::new()).0
+        content(doc, Form::Flat, &HashSet::new(), None).0
     }
 
     #[test]
@@ -1849,7 +3140,7 @@ mod tests {
     fn the_package_starts_with_an_uncompressed_mimetype_entry() {
         let bytes = write_package_with(
             MIMETYPE,
-            &content(&Document::default(), Form::Package, &HashSet::new()).0,
+            &content(&Document::default(), Form::Package, &HashSet::new(), None).0,
             None,
             &[],
         )

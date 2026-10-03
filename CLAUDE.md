@@ -671,6 +671,13 @@ Rules that are cheap now, expensive to break later:
 4. **Whatever any GUI can do, the CLI can do.** A UI-only feature is a bug.
 5. **No filesystem assumptions.** Every `*_file` has a `*_bytes` twin.
 6. **Every feature must survive a LibreOffice round-trip** (loop C).
+7. **Saving never makes an existing file worse.** A save that cannot splice is written *into
+   the file it came from* — `grind_core::odf::envelope` keeps everything outside the body, each
+   app's writer keeps every block, row and cell nobody touched as the file's own bytes — and
+   what it still cannot carry is refused (`Error::WouldLose`) rather than dropped. Every such
+   save is also read back and compared with the document before it is written.
+   `sheet/tests/never_worse.rs` and `text/tests/never_worse.rs` hold every vendored
+   LibreOffice document to it under ordinary edits; their `REFUSED` lists are the ratchet.
 
 ### The crates
 

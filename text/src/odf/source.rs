@@ -138,6 +138,11 @@ pub struct Block {
     /// vendor added; re-deriving the start tag from the model would silently drop all of it.
     /// Keeping the *attributes* rather than one of them is what makes that safe.
     pub keep: String,
+    /// How many lists it sat in, and which table cell — the context a splice cannot change,
+    /// since both are elements *around* the block's own. A block whose context moved
+    /// regenerates the body instead.
+    pub depth: u32,
+    pub cell: Option<crate::model::Cell>,
 }
 
 /// The attributes of a block's start tag, minus the ones the writer produces from the model.
