@@ -6,7 +6,7 @@
 //!
 //! `std::fs::write` truncates the target and then fills it, so a crash, a full disk or a killed
 //! process between the two destroys the user's document — the one thing an editor must not do.
-//! [`write`] writes a sibling temporary file, flushes it to disk and renames it over the target;
+//! [`write()`] writes a sibling temporary file, flushes it to disk and renames it over the target;
 //! a rename within one directory is atomic on every platform this suite runs on.
 //!
 //! What it deliberately keeps of the file it replaces: its **permissions**, and its *identity*
