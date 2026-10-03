@@ -850,6 +850,116 @@ impl Ui {
         }
     }
 
+    /// The blocks a paragraph verb acts on: every one the selection touches, or the caret's.
+    fn touched(&self) -> std::ops::RangeInclusive<usize> {
+        match self.doc.selection() {
+            Some((from, to)) => from.block..=to.block,
+            None => self.doc.caret().block..=self.doc.caret().block,
+        }
+    }
+
+    /// *Move Paragraph Up / Down*, with the selection going along.
+    fn shift_paragraphs(self: &Rc<Self>, up: bool) {
+        let selection = self.doc.selection();
+        let caret = self.doc.caret();
+        if let Err(why) = grind_text::blocks::shift(&self.app, self.touched(), up) {
+            return self.toast(&why);
+        }
+        let step = |c: grind_text::Caret| grind_text::Caret {
+            block: if up { c.block - 1 } else { c.block + 1 },
+            ..c
+        };
+        match selection {
+            Some((from, to)) => self.doc.select(step(from), step(to)),
+            None => self.doc.go_to(step(caret)),
+        }
+    }
+
+    /// *Delete Paragraph*, the caret at the start of what followed.
+    fn delete_paragraphs(self: &Rc<Self>) {
+        match grind_text::blocks::remove(&self.app, self.touched()) {
+            Ok(block) => self.doc.go_to(grind_text::Caret { block, offset: 0 }),
+            Err(why) => self.toast(&why),
+        }
+    }
+
+    /// One question with an entry in an alert, the answer handed to `then` when it is confirmed.
+    fn ask(
+        self: &Rc<Self>,
+        title: &str,
+        body: &str,
+        default: &str,
+        then: impl Fn(&Rc<Self>, String) + 'static,
+    ) {
+        let entry = gtk::Entry::builder()
+            .text(default)
+            .activates_default(true)
+            .build();
+        let dialog = adw::AlertDialog::new(Some(title), Some(body));
+        dialog.set_extra_child(Some(&entry));
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("ok", "OK");
+        dialog.set_response_appearance("ok", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("ok"));
+        dialog.set_close_response("cancel");
+        dialog.choose(
+            &self.window,
+            gio::Cancellable::NONE,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |response| {
+                    if response == "ok" {
+                        then(&ui, entry.text().trim().to_owned());
+                    }
+                }
+            ),
+        );
+    }
+
+    /// *Bookmark Here…* — a name, then `App::set_bookmark` on the caret's block, and the bookmark
+    /// overlay on so it can be seen.
+    fn add_bookmark(self: &Rc<Self>) {
+        self.ask(
+            "Bookmark",
+            "A name for this paragraph, to go to by address (#name).",
+            "",
+            |ui, name| {
+                let name = name.trim_start_matches('#').to_owned();
+                if name.is_empty() {
+                    return;
+                }
+                match ui.app.set_bookmark(&name, Some(ui.doc.caret().block)) {
+                    Ok(_) => ui.toast(&format!("#{name} anchored here")),
+                    Err(error) => ui.toast(&error.to_string()),
+                }
+            },
+        );
+    }
+
+    /// *Paragraph Style Name…* — `App::set_style` over the touched blocks; empty removes it.
+    fn name_style(self: &Rc<Self>) {
+        let current = self
+            .app
+            .get_viewport(self.touched().start().to_owned()..self.touched().start() + 1)
+            .iter()
+            .next()
+            .and_then(|block| block.style.clone())
+            .unwrap_or_default();
+        self.ask(
+            "Paragraph Style",
+            "A style name, kept in the document and not interpreted. Empty removes it.",
+            &current,
+            |ui, name| {
+                let touched = ui.touched();
+                let style = (!name.is_empty()).then_some(name);
+                if let Err(error) = ui.app.set_style(*touched.start()..touched.end() + 1, style) {
+                    ui.toast(&error.to_string());
+                }
+            },
+        );
+    }
+
     /// Insert a table below the caret's block — the window's `grind text table`.
     ///
     /// Two spin buttons and nothing else: a table's *size* is the only thing this build can
@@ -1177,6 +1287,14 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("list-item", &["<Control>l"][..], |ui| {
             ui.set_kind(BlockKind::ListItem { depth: 1 }, None)
         }),
+        // Whole paragraphs, from the page's context menu: the touched blocks swapped past their
+        // neighbour or deleted (`grind_text::blocks`), a bookmark anchored on the caret's block,
+        // and a paragraph style name typed in. No accelerators: Alt+Up is the toolkit's.
+        ("paragraph-up", &[][..], |ui| ui.shift_paragraphs(true)),
+        ("paragraph-down", &[][..], |ui| ui.shift_paragraphs(false)),
+        ("paragraph-delete", &[][..], |ui| ui.delete_paragraphs()),
+        ("bookmark", &[][..], |ui| ui.add_bookmark()),
+        ("style-name", &[][..], |ui| ui.name_style()),
         ("indent", &[][..], |ui| ui.indent(1)),
         ("outdent", &[][..], |ui| ui.indent(-1)),
         ("about", &[][..], |ui| ui.about()),

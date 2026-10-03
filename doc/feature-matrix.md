@@ -353,7 +353,7 @@ it, and dragging one moves it. There is no dialog, and resizing or recolouring o
 | **Editing** | | | | | | |
 | Type, Enter, Backspace, Delete | ● | ● | ● | ● | ● | ● |
 | Markdown as you type (`**bold**`, `# `, ``` ``` ```) | ● | ● | ● | ● | ● | ● |
-| Insert / delete / move whole blocks by address | ● | ○ | ● ᵇ | ○ | ○ | ◐ ³ |
+| Insert / delete / move whole blocks by address | ● | ◐ ᵍᵖ | ● ᵇ | ◐ ᵍᵖ | ◐ ᵍᵖ | ◐ ³ |
 | System clipboard | — | ● ᶜ | ◐ ᵈ | ● | ● | ● |
 | Find | ● | ● | ● ᶠ | ● ˣ | ● ʷ | ● |
 | Replace | ● | ● ʸ | ● | ● ˣ | ● ʷ | ● |
@@ -374,11 +374,11 @@ it, and dragging one moves it. There is no dialog, and resizing or recolouring o
 | Title, Subtitle | ● | ● | ● | ● | ● | ● ² |
 | List item | ● | ● | ● | ● | ● | ● |
 | Change a list item's depth | ● | ● ⁿ | ● ᵐ | ● ⁿ | ● ᵒ | ● |
-| A named paragraph style | ● | ○ | ● | ● ᶻ | ● ᶻ | ● |
+| A named paragraph style | ● | ● ᵍᵖ | ● | ● ᶻ | ● ᶻ | ● |
 | **Addressing and navigation** | | | | | | |
 | `p12`, `p12+40`, `#bookmark`, `§2.1.3` | ● | ● | ● | ● | ● | ● ³ |
 | Outline, each row a jump | ● | ● | ● | ● | ● | ● ⁴ |
-| Create a bookmark | ● | ○ | ● | ● ᶻ | ● ᶻ | ● |
+| Create a bookmark | ● | ● ᵍᵖ | ● | ● ᶻ | ● ᶻ | ● |
 | Show where bookmarks anchor (V7) | ● | ● | ◐ ˡ | ◐ ˡ | ◐ ˡ | ● |
 | **Pictures** | | | | | | |
 | Insert an image | ● | ● | ○ | ○ | ● | ● |
@@ -429,6 +429,7 @@ either side of it, which is the `ponytail` `doc/tui-shell.md` records.
 ʷ Edit ▸ Find… (Ctrl+F), Find Next/Previous (F3/Shift+F3) and Replace… (Ctrl+H) over the page, closed 2026-10-02: `grind_text::find` finds (ignoring case) and steps, the hit is selected, and `App::replace` writes (exactly, one undo step).
 ʸ A second row in the find bar — *Replace with* and **Replace All** (`App::replace`: every occurrence, exact, one undo step); closed 2026-10-02. Its widget test skips without a display.
 ᶻ Closed 2026-10-02, each a prompt over the core's own verb: the browser's palette verbs *Insert a table…*, *Bookmark this paragraph…* and *Name this paragraph's style…*, and the Windows Format menu's *Insert Table…* (Ctrl+Shift+T), *Bookmark Here…* (Ctrl+Shift+B) and *Paragraph Style Name…*. A table's size and place are `grind_text::table`'s — below the caret's block or table, never last — which the GNOME window asks too.
+ᵍᵖ Move paragraph up/down and delete paragraph (`grind_text::blocks`, by caret and selection, not by address), 2026-10-02: the GNOME page's context menu, the browser's palette, the Windows Format menu. The GNOME context menu also has *Bookmark Here…* and *Paragraph Style Name…* (an alert with an entry). Insert-by-address is still the CLI's and the terminal's.
 ˣ The palette is the find box, as over cells (Ctrl+F, or two characters typed after the verbs); picking a hit selects it, F3/Shift+F3 step, and Ctrl+H is *Replace in the document…* — closed 2026-10-02, over `grind_text::find`.
 ᵗ The model reads a `table:number-columns-spanned`, writes it back with the covered positions it
 implies, projects it as `span=` and (in `grind-text-gtk`) draws it merged. Nothing **creates**

@@ -232,6 +232,13 @@ pub fn context_menu_model() -> gtk::gio::Menu {
     let selection = gtk::gio::Menu::new();
     selection.append(Some("Select All"), Some("win.select-all"));
     model.append_section(None, &selection);
+    let paragraph = gtk::gio::Menu::new();
+    paragraph.append(Some("Move Paragraph Up"), Some("win.paragraph-up"));
+    paragraph.append(Some("Move Paragraph Down"), Some("win.paragraph-down"));
+    paragraph.append(Some("Delete Paragraph"), Some("win.paragraph-delete"));
+    paragraph.append(Some("Bookmark Here…"), Some("win.bookmark"));
+    paragraph.append(Some("Paragraph Style Name…"), Some("win.style-name"));
+    model.append_section(None, &paragraph);
     model
 }
 
