@@ -385,7 +385,7 @@ it, and dragging one moves it. There is no dialog, and resizing or recolouring o
 | **Drawn**: family, size | — | ● ⁱ | ○ ʰ | ● | ◐ ʳ | ● |
 | **Block structure** | | | | | | |
 | Paragraph, Heading 1–3 | ● | ● | ● | ● | ● | ● |
-| Heading 4–6 | ● | ● | ● | ◐ ʲ | ● | ● ² |
+| Heading 4–6 | ● | ● | ● | ● | ● | ● ² |
 | Title, Subtitle | ● | ● | ● | ● | ● | ● ² |
 | List item | ● | ● | ● | ● | ● | ● |
 | Change a list item's depth | ● | ● ⁿ | ● ᵐ | ● ⁿ | ● ᵒ | ● |

@@ -743,6 +743,8 @@ impl Ui {
             "block.h2" => self.set_kind(BlockKind::Heading { level: 2 }, None),
             "block.h3" => self.set_kind(BlockKind::Heading { level: 3 }, None),
             "block.h4" => self.set_kind(BlockKind::Heading { level: 4 }, None),
+            "block.h5" => self.set_kind(BlockKind::Heading { level: 5 }, None),
+            "block.h6" => self.set_kind(BlockKind::Heading { level: 6 }, None),
             "block.list" => self.set_kind(BlockKind::ListItem { depth: 1 }, None),
             "block.up" => self.move_blocks(true),
             "block.down" => self.move_blocks(false),
@@ -1741,7 +1743,7 @@ fn named_block(block: Option<&BlockView>) -> String {
         _ => {}
     }
     match &block.kind {
-        BlockKind::Heading { level } => format!("block.h{}", level.clamp(&1, &4)),
+        BlockKind::Heading { level } => format!("block.h{}", level.clamp(&1, &6)),
         BlockKind::ListItem { .. } => "block.list".to_owned(),
         BlockKind::Paragraph => "block.body".to_owned(),
     }
@@ -1967,7 +1969,7 @@ mod tests {
         // Deeper than the picker offers, clamped to the deepest it does.
         assert_eq!(
             named_block(Some(&block(BlockKind::Heading { level: 9 }, None))),
-            "block.h4"
+            "block.h6"
         );
     }
 

@@ -327,6 +327,8 @@ pub const TEXT: &[Command] = &[
     cmd("block.h2", "Heading 2", "Structure", "Ctrl+2", true),
     cmd("block.h3", "Heading 3", "Structure", "Ctrl+3", false),
     cmd("block.h4", "Heading 4", "Structure", "", false),
+    cmd("block.h5", "Heading 5", "Structure", "", false),
+    cmd("block.h6", "Heading 6", "Structure", "", false),
     cmd("block.title", "Title", "Structure", "", false),
     cmd("block.subtitle", "Subtitle", "Structure", "", false),
     cmd("block.list", "List item", "Structure", "", false),
