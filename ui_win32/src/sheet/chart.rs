@@ -28,7 +28,7 @@ pub fn frame_of(chart: &Chart, dpi: u32, zoom: f64) -> Option<(f64, f64, f64, f6
 }
 
 #[cfg(windows)]
-pub use gdi_half::paint;
+pub use gdi_half::{paint, paint_in};
 
 #[cfg(windows)]
 mod gdi_half {
@@ -99,6 +99,39 @@ mod gdi_half {
         unsafe {
             let _ = RestoreDC(dc, -1);
             let _ = saved;
+        }
+    }
+
+    /// One chart drawn to fill `width` × `height` pixels at the DC's origin — the preview dialog's
+    /// picture. The same marks as [`paint`], over the same `chart_paint::draw`, with the frame
+    /// the dialog's rather than the chart's own ODF position.
+    pub fn paint_in(
+        dc: HDC,
+        theme: Theme,
+        face: &str,
+        dpi: u32,
+        size: (i32, i32),
+        chart: &grind_sheet::Chart,
+        data: &grind_sheet::ChartData,
+    ) {
+        let colours = Colours {
+            page: theme.background.into(),
+            ink: theme.text.into(),
+            grid: theme.grid_line.into(),
+            header_ink: theme.text.blend(theme.background, 0.45).into(),
+            accent: theme.accent.into(),
+            dark: theme.mode == Mode::Dark,
+        };
+        let metrics = CellMetrics {
+            dc,
+            face,
+            dpi,
+            default_pt: 9.0,
+            zoom: 1.0,
+        };
+        let frame = chart_paint::Rect::new(0.0, 0.0, f64::from(size.0), f64::from(size.1));
+        for mark in chart_paint::draw(chart, data, frame, &colours, &metrics) {
+            put(dc, face, &metrics, mark);
         }
     }
 

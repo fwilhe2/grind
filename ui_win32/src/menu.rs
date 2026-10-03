@@ -83,6 +83,9 @@ pub enum Command {
     /// A chart of the table the selection means, placed beside it (`grind_sheet::verbs::
     /// insert_chart`), and the last chart taken away again. Drawn by `sheet/chart.rs`.
     InsertChart,
+    /// The chart `InsertChart` would make, drawn in a dialog with Insert and Cancel
+    /// (`verbs::preview_insert_chart`); nothing is written unless Insert is pressed.
+    PreviewChart,
     DeleteChart,
     /// The last chart's kind, title and legend, asked for in words (`verbs::restyle_chart`).
     RestyleChart,
@@ -329,6 +332,7 @@ impl Command {
         Command::FillRight,
         Command::FillAcross,
         Command::InsertChart,
+        Command::PreviewChart,
         Command::DeleteChart,
         Command::RestyleChart,
         Command::WrapText,
@@ -689,6 +693,10 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::InsertChart,
                 label: "Insert &Chart",
+            },
+            Item::Verb {
+                command: Command::PreviewChart,
+                label: "Chart &Preview…",
             },
             Item::Verb {
                 command: Command::RestyleChart,
@@ -1124,6 +1132,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::FormulaToValue
         | Command::FillAcross
         | Command::InsertChart
+        | Command::PreviewChart
         | Command::DeleteChart
         | Command::RestyleChart
         | Command::WrapText
@@ -1515,6 +1524,7 @@ mod tests {
             Command::FormulaToValue,
             Command::FillAcross,
             Command::InsertChart,
+            Command::PreviewChart,
             Command::DeleteChart,
             Command::RestyleChart,
             Command::BordersAll,

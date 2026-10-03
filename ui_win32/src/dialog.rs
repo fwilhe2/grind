@@ -1426,3 +1426,276 @@ extern "system" fn filter_proc(
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
     }
 }
+
+// ---------------------------------------------------------------------------
+// The chart preview
+// ---------------------------------------------------------------------------
+
+const PREVIEW_CLASS: &str = "GrindChartPreviewClass";
+static PREVIEW_REGISTERED: AtomicBool = AtomicBool::new(false);
+
+/// What the preview window owns while it is up: the chart to draw, and whether Insert was chosen.
+struct Preview {
+    chart: grind_sheet::Chart,
+    data: grind_sheet::ChartData,
+    dpi: u32,
+    theme: Theme,
+    /// How tall the strip of buttons under the picture is, in pixels.
+    strip: i32,
+    insert: bool,
+    finished: bool,
+    _font: Option<Font>,
+}
+
+/// Show the chart *Insert Chart* would make and ask whether to insert it: `true` for **Insert**,
+/// `false` for Cancel, Escape or closing it. The picture is `sheet/chart.rs`'s own marks over
+/// `grind_sheet::chart_paint`, so what is previewed is what the grid then draws. Nothing is
+/// written here; the caller inserts on `true`.
+///
+/// A nested message loop like every function in this file: the caller has released its borrow.
+pub fn chart_preview(
+    owner: HWND,
+    chart: &grind_sheet::Chart,
+    data: &grind_sheet::ChartData,
+    dpi: u32,
+) -> bool {
+    let class = gdi::wide(PREVIEW_CLASS);
+    // SAFETY: as `prompt` — the class name outlives the calls, and the boxed state is handed to
+    // the popup and taken back in `WM_NCDESTROY`.
+    unsafe {
+        let Ok(instance) = GetModuleHandleW(None) else {
+            return false;
+        };
+        if !PREVIEW_REGISTERED.swap(true, Ordering::SeqCst) {
+            let wc = WNDCLASSW {
+                lpfnWndProc: Some(preview_proc),
+                hInstance: instance.into(),
+                lpszClassName: PCWSTR(class.as_ptr()),
+                hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
+                ..Default::default()
+            };
+            if RegisterClassW(&wc) == 0 {
+                PREVIEW_REGISTERED.store(false, Ordering::SeqCst);
+                return false;
+            }
+        }
+        let owner_dpi = GetDpiForWindow(owner).max(96);
+        let px = |value: f64| crate::sheet::geom::scale(value, owner_dpi).round() as i32;
+        let (w, h) = (px(480.0), px(380.0));
+        let mut owner_rect = Default::default();
+        let _ = GetWindowRect(owner, &mut owner_rect);
+        let x = owner_rect.left + ((owner_rect.right - owner_rect.left) - w) / 2;
+        let y = owner_rect.top + ((owner_rect.bottom - owner_rect.top) - h) / 3;
+
+        let theme = theme();
+        let strip = px(46.0);
+        let state = Box::new(Preview {
+            chart: chart.clone(),
+            data: data.clone(),
+            dpi,
+            theme,
+            strip,
+            insert: false,
+            finished: false,
+            _font: None,
+        });
+        let title = gdi::wide("Chart Preview");
+        let Ok(popup) = CreateWindowExW(
+            Default::default(),
+            PCWSTR(class.as_ptr()),
+            PCWSTR(title.as_ptr()),
+            WS_POPUP | WS_CAPTION | WS_SYSMENU,
+            x,
+            y,
+            w,
+            h,
+            Some(owner),
+            None::<HMENU>,
+            Some(instance.into()),
+            Some(Box::into_raw(state).cast()),
+        ) else {
+            return false;
+        };
+        let font = Font::new(crate::gdi::ui_face(), px(crate::theme::text::BODY), false);
+        let button = (px(84.0), px(26.0));
+        let pad = px(12.0);
+        let client = gdi::client_rect(popup);
+        let row = client.bottom - strip + (strip - button.1) / 2;
+        let make = |text: &str, id: i32, left: i32, default: bool| -> HWND {
+            let class = gdi::wide("BUTTON");
+            let text = gdi::wide(text);
+            let style = WS_CHILD
+                | WS_VISIBLE
+                | WS_TABSTOP
+                | match default {
+                    true => windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(
+                        BS_DEFPUSHBUTTON as u32,
+                    ),
+                    false => Default::default(),
+                };
+            let control = CreateWindowExW(
+                Default::default(),
+                PCWSTR(class.as_ptr()),
+                PCWSTR(text.as_ptr()),
+                style,
+                left,
+                row,
+                button.0,
+                button.1,
+                Some(popup),
+                Some(HMENU(id as usize as *mut std::ffi::c_void)),
+                Some(instance.into()),
+                None,
+            )
+            .unwrap_or_default();
+            SendMessageW(
+                control,
+                WM_SETFONT,
+                Some(WPARAM(font.handle().0 as usize)),
+                Some(LPARAM(1)),
+            );
+            control
+        };
+        let insert = make(
+            "Insert",
+            IDOK.0,
+            client.right - pad - button.0 * 2 - px(8.0),
+            true,
+        );
+        make("Cancel", IDCANCEL.0, client.right - pad - button.0, false);
+        with_preview(popup, |preview| preview._font = Some(font));
+
+        let _ = EnableWindow(owner, false);
+        let _ = ShowWindow(popup, SW_SHOW);
+        let _ = SetFocus(Some(insert));
+
+        let mut message = MSG::default();
+        loop {
+            if with_preview(popup, |preview| preview.finished).unwrap_or(true) {
+                break;
+            }
+            if GetMessageW(&mut message, None, 0, 0).0 <= 0 {
+                PostQuitMessage(0);
+                break;
+            }
+            if IsDialogMessageW(popup, &message).as_bool() {
+                continue;
+            }
+            let _ = TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        let chosen = with_preview(popup, |preview| preview.insert).unwrap_or(false);
+        let _ = EnableWindow(owner, true);
+        let _ = SetActiveWindow(owner);
+        let _ = DestroyWindow(popup);
+        chosen
+    }
+}
+
+/// Run `f` with the preview's state — `with_prompt`'s arrangement, and its rule.
+unsafe fn with_preview<T>(hwnd: HWND, f: impl FnOnce(&mut Preview) -> T) -> Option<T> {
+    // SAFETY: the slot holds either null or the pointer stored in `WM_NCCREATE`.
+    let raw = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut Preview;
+    if raw.is_null() {
+        return None;
+    }
+    // SAFETY: exclusive for the duration of this call.
+    Some(f(unsafe { &mut *raw }))
+}
+
+extern "system" fn preview_proc(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
+    use windows::Win32::UI::WindowsAndMessaging::{WM_CLOSE, WM_PAINT};
+    match message {
+        WM_NCCREATE => {
+            // SAFETY: `lparam` is this message's `CREATESTRUCTW`.
+            unsafe {
+                let create = &*(lparam.0 as *const CREATESTRUCTW);
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, create.lpCreateParams as isize);
+                DefWindowProcW(hwnd, message, wparam, lparam)
+            }
+        }
+        // Painted whole in `WM_PAINT`, through a back buffer, so there is nothing to erase.
+        WM_ERASEBKGND => LRESULT(1),
+        WM_PAINT => {
+            let mut ps = PAINTSTRUCT::default();
+            // SAFETY: `BeginPaint`/`EndPaint` are paired, and the borrow does not dispatch.
+            unsafe {
+                let dc = BeginPaint(hwnd, &mut ps);
+                let rect = gdi::client_rect(hwnd);
+                let (w, h) = (rect.right - rect.left, rect.bottom - rect.top);
+                with_preview(hwnd, |preview| {
+                    if let Some(buffer) = gdi::BackBuffer::new(dc, w, h) {
+                        buffer.clear(preview.theme.backdrop);
+                        let pad = 12;
+                        let size = (w - pad * 2, (h - preview.strip - pad * 2).max(1));
+                        // The chart is drawn at the picture's own origin: a window origin
+                        // shifts the whole mark list without the painter knowing.
+                        let _ = windows::Win32::Graphics::Gdi::SetViewportOrgEx(
+                            buffer.dc(),
+                            pad,
+                            pad,
+                            None,
+                        );
+                        crate::sheet::chart::paint_in(
+                            buffer.dc(),
+                            preview.theme,
+                            crate::gdi::ui_face(),
+                            preview.dpi,
+                            size,
+                            &preview.chart,
+                            &preview.data,
+                        );
+                        let _ = windows::Win32::Graphics::Gdi::SetViewportOrgEx(
+                            buffer.dc(),
+                            0,
+                            0,
+                            None,
+                        );
+                        buffer.present(dc);
+                    }
+                });
+                let _ = EndPaint(hwnd, &ps);
+            }
+            LRESULT(0)
+        }
+        WM_COMMAND => {
+            let id = (wparam.0 & 0xffff) as i32;
+            if id == IDOK.0 || id == IDCANCEL.0 {
+                // SAFETY: one borrow, no dispatch.
+                unsafe {
+                    with_preview(hwnd, |preview| {
+                        preview.insert = id == IDOK.0;
+                        preview.finished = true;
+                    });
+                }
+            }
+            LRESULT(0)
+        }
+        WM_CLOSE => {
+            // SAFETY: one borrow, no dispatch.
+            unsafe {
+                with_preview(hwnd, |preview| preview.finished = true);
+            }
+            LRESULT(0)
+        }
+        WM_NCDESTROY => {
+            // SAFETY: the pointer came from `Box::into_raw`; reconstituting it once frees it.
+            unsafe {
+                let raw = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Preview;
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+                if !raw.is_null() {
+                    drop(Box::from_raw(raw));
+                }
+                DefWindowProcW(hwnd, message, wparam, lparam)
+            }
+        }
+        // SAFETY: the default handler with the arguments it was given.
+        _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
+    }
+}

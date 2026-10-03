@@ -805,6 +805,7 @@ pub fn resolve_range(app: &App, addr: &str) -> Result<(usize, crate::Pos, crate:
 /// named none) and its values, coerced the way an empty or textual cell coerces into a chart's
 /// axis: a number as itself, anything else as `0.0` — a chart draws a bar of nothing rather
 /// than refusing the whole picture over one cell that is not a number.
+#[derive(Clone, Debug, PartialEq)]
 pub struct ChartData {
     pub kind: ChartKind,
     pub categories: Vec<String>,

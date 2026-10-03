@@ -3537,6 +3537,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::FillRight => fill(hwnd, false),
         Command::FillAcross => fill_across(hwnd),
         Command::InsertChart => insert_chart(hwnd),
+        Command::PreviewChart => preview_chart(hwnd),
         Command::DeleteChart => delete_chart(hwnd),
         Command::RestyleChart => restyle_chart(hwnd),
         Command::WrapText => wrap_text(hwnd),
@@ -3787,6 +3788,32 @@ fn insert_chart(hwnd: HWND) {
                 Err(error) => error.to_string(),
             }));
         });
+    }
+    refresh(hwnd);
+}
+
+/// Data ▸ Chart Preview… — the chart Insert would make, drawn in a dialog of its own; **Insert**
+/// there is the same `insert_chart` as the menu's, and Cancel writes nothing. The borrow is
+/// released before the dialog opens (decision 7).
+fn preview_chart(hwnd: HWND) {
+    // SAFETY: one borrow, ended before the modal below.
+    let made = unsafe {
+        with_sheet(hwnd, |state| {
+            let (start, end) = state.selection.rect();
+            let made =
+                grind_sheet::verbs::preview_insert_chart(&state.app, state.sheet, start, end);
+            if let Err(error) = &made {
+                state.say(Some(error.to_string()));
+            }
+            made.ok().map(|(chart, data)| (chart, data, state.geom.dpi))
+        })
+        .flatten()
+    };
+    if let Some((chart, data, dpi)) = made
+        && crate::dialog::chart_preview(hwnd, &chart, &data, dpi)
+    {
+        insert_chart(hwnd);
+        return;
     }
     refresh(hwnd);
 }
@@ -5589,6 +5616,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::FormulaToValue
         | Command::FillAcross
         | Command::InsertChart
+        | Command::PreviewChart
         | Command::DeleteChart
         | Command::RestyleChart
         | Command::WrapText
@@ -6713,6 +6741,7 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::FormulaToValue
         | Command::FillAcross
         | Command::InsertChart
+        | Command::PreviewChart
         | Command::DeleteChart
         | Command::RestyleChart
         | Command::WrapText
