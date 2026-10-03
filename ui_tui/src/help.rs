@@ -35,6 +35,8 @@ Visual mode — one notation for emphasis, whichever document it is:
 
 Saving and leaving, both:
   :w [file]   :q   :q!   :wq or :x       :about  which build this is
+  :new [sheet|text]   :open <file>       another document in this terminal, of either kind
+                                         (:new! and :open! when unsaved work may go)
 ";
 
 /// Which build this is, for `:about` — the same stamp `--version` prints and every other shell

@@ -166,6 +166,8 @@ pub struct App {
     /// set the document is unsaved, whatever the undo stack says — an import clears it.
     imported: Option<String>,
     quit: bool,
+    /// Set by `:new` and `:open`; the event loop takes it and swaps the pane.
+    switch: Option<crate::app::Switch>,
 }
 
 impl App {
@@ -202,6 +204,7 @@ impl App {
             help_height: 20,
             imported: None,
             quit: false,
+            switch: None,
         }
     }
 
@@ -225,6 +228,16 @@ impl App {
 
     pub fn should_quit(&self) -> bool {
         self.quit
+    }
+
+    /// The pane this one asked to be replaced by, once.
+    pub fn take_switch(&mut self) -> Option<crate::app::Switch> {
+        self.switch.take()
+    }
+
+    /// The flag the event loop repaints on.
+    pub fn redraw_flag(&self) -> Arc<RedrawFlag> {
+        self.redraw.clone()
     }
 
     pub fn on_key(&mut self, key: KeyEvent) {
@@ -1009,6 +1022,12 @@ impl App {
             "help" | "h?" => self.help.open(),
             "about" | "version" => self.status = crate::help::about(),
             "q" => self.cmd_quit(false),
+            "new" => self.cmd_new("", false),
+            "new!" => self.cmd_new("", true),
+            _ if cmd.starts_with("new ") => self.cmd_new(cmd[4..].trim(), false),
+            _ if cmd.starts_with("new! ") => self.cmd_new(cmd[5..].trim(), true),
+            _ if cmd.starts_with("open ") => self.cmd_open(cmd[5..].trim(), false),
+            _ if cmd.starts_with("open! ") => self.cmd_open(cmd[6..].trim(), true),
             "q!" => self.cmd_quit(true),
             "w" => {
                 self.cmd_write(None);
@@ -1690,6 +1709,43 @@ impl App {
                 self.status = e.to_string();
                 false
             }
+        }
+    }
+
+    /// `:new [sheet|text]` — an empty document in this terminal, of this pane's kind unless one is
+    /// named. Replaces this pane, so unsaved work is refused unless the verb is `:new!`.
+    fn cmd_new(&mut self, which: &str, force: bool) {
+        let kind = match which {
+            "" => grind_core::DocumentKind::Spreadsheet,
+            "sheet" => grind_core::DocumentKind::Spreadsheet,
+            "text" => grind_core::DocumentKind::Text,
+            other => {
+                self.status = format!("not a document kind: {other} (sheet or text)");
+                return;
+            }
+        };
+        if !force && self.unsaved() {
+            self.status = "unsaved changes — :new! to discard, :w to save".to_string();
+            return;
+        }
+        self.switch = Some(crate::app::Switch::New(kind));
+    }
+
+    /// `:open <path>` — that file in this terminal, whichever kind its bytes say it is. Replaces
+    /// this pane, so unsaved work is refused unless the verb is `:open!`.
+    fn cmd_open(&mut self, path: &str, force: bool) {
+        if path.is_empty() {
+            self.status = "usage: :open <path>".to_string();
+            return;
+        }
+        if !force && self.unsaved() {
+            self.status = "unsaved changes — :open! to discard, :w to save".to_string();
+            return;
+        }
+        let path = std::path::PathBuf::from(path);
+        match crate::sniff(&path) {
+            Ok(kind) => self.switch = Some(crate::app::Switch::Open(path, kind)),
+            Err(error) => self.status = format!("{}: {error}", path.display()),
         }
     }
 
@@ -3137,6 +3193,31 @@ mod tests {
         press(&mut app, KeyCode::Enter);
         assert!(!app.calculations.is_open());
         assert_eq!(app.active, Pos::new(3, 2));
+    }
+
+    /// `:new` and `:open` ask the event loop to swap the pane, and refuse to lose unsaved work.
+    #[test]
+    fn new_and_open_ask_for_another_pane() {
+        let mut app = app();
+        app.run_command("new text");
+        assert_eq!(
+            app.take_switch(),
+            Some(crate::app::Switch::New(grind_core::DocumentKind::Text))
+        );
+        app.run_command("open /definitely/not/a/file.fods");
+        assert!(app.take_switch().is_none());
+        assert!(app.status.contains("not/a/file"), "{}", app.status);
+        app.core
+            .enter(0, Pos::new(0, 0), "1", RecalcMode::Document)
+            .unwrap();
+        app.run_command("new");
+        assert!(
+            app.take_switch().is_none(),
+            "unsaved work is not thrown away"
+        );
+        assert!(app.status.contains("unsaved"), "{}", app.status);
+        app.run_command("new!");
+        assert!(app.take_switch().is_some());
     }
 
     /// `:functions` is a pane of the catalog, and Enter starts an edit with the chosen function.

@@ -58,9 +58,9 @@ numbered, under each table, so they cannot collide with the lettered ones.
 | Reads all three forms (`.ods`/`.fods`, `.odt`/`.fodt`, `.grind`) | ● | ● | ● | ● | ● | ● | ● |
 | Writes all three forms | ● | ● | ● | ● | ● | ● | ● |
 | Flat-first default (`doc/flat-first.md`) | ● | ● | ● | ● | ● | ● | ● ¹ |
-| New, empty document | ● | ● | ● | ◐ ᵃ | ● | ● | ● |
+| New, empty document | ● | ● | ● | ● ᵗⁿ | ● | ● | ● |
 | A **welcome screen** with no document open | — | ○ | ○ | ○ | ● | ● | ● |
-| New document of the *other* kind, in place | — ⁱ | ○ | ○ | ○ | ● | ● | ● ² |
+| New document of the *other* kind, in place | — ⁱ | ○ | ○ | ● ᵗⁿ | ● | ● | ● ² |
 | Undo / redo — spreadsheet | ◐ ᵇ | ● | — | ● | ● | ● | ● |
 | Undo / redo — text | ○ ᶜ | — | ● | ● | ● | ● | ● |
 | Code view — the projection, read-only (D9) | ● | ● | ● | ● | ● | ● | ● |
@@ -74,6 +74,7 @@ numbered, under each table, so they cannot collide with the lettered ones.
 | `.deb` + `.rpm` | ● | ● | ● | ● | — | — | — ⁷ |
 | Accessibility floor | — ᵍ | announce | announce | terminal | ARIA labels | system caret | text area, announce |
 
+ᵗⁿ `:new [sheet|text]` and `:open <file>` (`!` to discard unsaved work) replace the pane in the same terminal; the event loop swaps it (`app::Switch`) — checked in a pty, 2026-10-02.
 ᵃ `grind-tui --sheet` / `--text` starts an empty document; there is no in-session "new".
 ⁱ `grind sheet new` / `grind text new` make one, which is the same capability; "in place" is a
 question only a window with one document open at a time has. The two GTK shells are one document

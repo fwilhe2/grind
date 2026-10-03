@@ -328,6 +328,8 @@ pub struct App {
     /// The window's height as of the last frame — what a page key in the help pane scrolls by.
     help_height: usize,
     quit: bool,
+    /// Set by `:new` and `:open`; the event loop takes it and swaps the pane.
+    switch: Option<crate::app::Switch>,
 }
 
 impl App {
@@ -366,11 +368,22 @@ impl App {
             problems: crate::problems::Problems::default(),
             help_height: 20,
             quit: false,
+            switch: None,
         }
     }
 
     pub fn should_quit(&self) -> bool {
         self.quit
+    }
+
+    /// The pane this one asked to be replaced by, once.
+    pub fn take_switch(&mut self) -> Option<crate::app::Switch> {
+        self.switch.take()
+    }
+
+    /// The flag the event loop repaints on.
+    pub fn redraw_flag(&self) -> Arc<RedrawFlag> {
+        self.redraw.clone()
     }
 
     pub fn on_key(&mut self, key: KeyEvent) {
@@ -894,6 +907,12 @@ impl App {
             "help" | "h?" => self.help.open(),
             "about" | "version" => self.status = crate::help::about(),
             "q" => self.cmd_quit(false),
+            "new" => self.cmd_new("", false),
+            "new!" => self.cmd_new("", true),
+            _ if cmd.starts_with("new ") => self.cmd_new(cmd[4..].trim(), false),
+            _ if cmd.starts_with("new! ") => self.cmd_new(cmd[5..].trim(), true),
+            _ if cmd.starts_with("open ") => self.cmd_open(cmd[5..].trim(), false),
+            _ if cmd.starts_with("open! ") => self.cmd_open(cmd[6..].trim(), true),
             "q!" => self.cmd_quit(true),
             "w" => {
                 self.cmd_write(None);
@@ -967,6 +986,43 @@ impl App {
     /// Whether there is anything a quit would lose.
     fn unsaved(&self) -> bool {
         self.redraw.edits() != self.saved_at
+    }
+
+    /// `:new [sheet|text]` — an empty document in this terminal, of this pane's kind unless one is
+    /// named. Replaces this pane, so unsaved work is refused unless the verb is `:new!`.
+    fn cmd_new(&mut self, which: &str, force: bool) {
+        let kind = match which {
+            "" => grind_core::DocumentKind::Text,
+            "sheet" => grind_core::DocumentKind::Spreadsheet,
+            "text" => grind_core::DocumentKind::Text,
+            other => {
+                self.status = format!("not a document kind: {other} (sheet or text)");
+                return;
+            }
+        };
+        if !force && self.unsaved() {
+            self.status = "unsaved changes — :new! to discard, :w to save".to_string();
+            return;
+        }
+        self.switch = Some(crate::app::Switch::New(kind));
+    }
+
+    /// `:open <path>` — that file in this terminal, whichever kind its bytes say it is. Replaces
+    /// this pane, so unsaved work is refused unless the verb is `:open!`.
+    fn cmd_open(&mut self, path: &str, force: bool) {
+        if path.is_empty() {
+            self.status = "usage: :open <path>".to_string();
+            return;
+        }
+        if !force && self.unsaved() {
+            self.status = "unsaved changes — :open! to discard, :w to save".to_string();
+            return;
+        }
+        let path = std::path::PathBuf::from(path);
+        match crate::sniff(&path) {
+            Ok(kind) => self.switch = Some(crate::app::Switch::Open(path, kind)),
+            Err(error) => self.status = format!("{}: {error}", path.display()),
+        }
     }
 
     fn cmd_quit(&mut self, force: bool) {

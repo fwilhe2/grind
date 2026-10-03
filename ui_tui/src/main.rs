@@ -114,16 +114,99 @@ fn main() -> ExitCode {
         None => kind.unwrap_or(DocumentKind::Spreadsheet),
     };
 
-    let result = match kind {
-        DocumentKind::Text => run_text(path),
-        _ => run_sheet(path),
-    };
+    let result = session(kind, path);
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("grind-tui: {error}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// The terminal, and the panes that come and go in it: the first is what the command line named,
+/// and `:new` and `:open` (`app::Switch`) replace it without leaving the terminal.
+fn session(kind: DocumentKind, path: Option<PathBuf>) -> io::Result<()> {
+    // Read before the terminal is taken, so an unreadable file is an error on a normal screen.
+    let mut next = Some(prepare(kind, path)?);
+    let mut terminal = setup_terminal()?;
+    let mut result = Ok(());
+    while let Some(pane) = next.take() {
+        match run_pane(&mut terminal, pane) {
+            Ok(Some(switch)) => {
+                let (kind, path) = match switch {
+                    app::Switch::New(kind) => (kind, None),
+                    app::Switch::Open(path, kind) => (kind, Some(path)),
+                };
+                match prepare(kind, path) {
+                    Ok(pane) => next = Some(pane),
+                    Err(error) => result = Err(error),
+                }
+            }
+            Ok(None) => {}
+            Err(error) => result = Err(error),
+        }
+    }
+    restore_terminal();
+    result
+}
+
+/// A pane, built and loaded but not yet running.
+enum Pane {
+    Sheet(Box<sheet::app::App>),
+    Text(Box<text::app::App>),
+}
+
+fn prepare(kind: DocumentKind, path: Option<PathBuf>) -> io::Result<Pane> {
+    let redraw = Arc::new(RedrawFlag::default());
+    redraw.raise(); // paint the first frame before waiting for input
+    match kind {
+        DocumentKind::Text => {
+            let core = Arc::new(grind_text::App::new());
+            if let Some(path) = &path {
+                core.open_file(path)
+                    .map_err(|e| io::Error::other(format!("{}: {e}", path.display())))?;
+            }
+            Ok(Pane::Text(Box::new(text::app::App::new(
+                core, redraw, path,
+            ))))
+        }
+        _ => {
+            let core = Arc::new(grind_sheet::App::new());
+            let (mut path, mut imported) = (path, None);
+            if let Some(given) = path.clone() {
+                let bytes = std::fs::read(&given)?;
+                if import::is_workbook(&bytes) {
+                    // No path: `:w` must be told where the ODF document goes.
+                    imported = Some(
+                        import::open(&core, &given, &bytes)
+                            .map_err(|e| io::Error::other(format!("{}: {e}", given.display())))?,
+                    );
+                    path = None;
+                } else if import::is_delimited(&given, &bytes) {
+                    // A CSV is opened the way a workbook is: a new document, and no path.
+                    imported = Some(
+                        import::open_delimited(&core, &given, &bytes)
+                            .map_err(|e| io::Error::other(format!("{}: {e}", given.display())))?,
+                    );
+                    path = None;
+                } else {
+                    core.open_bytes(&given.display().to_string(), &bytes)
+                        .map_err(|e| io::Error::other(format!("{}: {e}", given.display())))?;
+                }
+            }
+            Ok(Pane::Sheet(Box::new(
+                sheet::app::App::new(core, redraw, path).imported(imported),
+            )))
+        }
+    }
+}
+
+/// Run one pane until it quits or asks to be replaced.
+fn run_pane(terminal: &mut Tui, pane: Pane) -> io::Result<Option<app::Switch>> {
+    match pane {
+        Pane::Sheet(mut pane) => event_loop(terminal, &mut *pane),
+        Pane::Text(mut pane) => event_loop(terminal, &mut *pane),
     }
 }
 
@@ -143,62 +226,6 @@ fn sniff(path: &Path) -> io::Result<DocumentKind> {
     })
 }
 
-fn run_sheet(mut path: Option<PathBuf>) -> io::Result<()> {
-    let core = Arc::new(grind_sheet::App::new());
-    let mut imported = None;
-    if let Some(given) = path.clone() {
-        let bytes = std::fs::read(&given)?;
-        if import::is_workbook(&bytes) {
-            // No path: `:w` must be told where the ODF document goes.
-            imported = Some(
-                import::open(&core, &given, &bytes)
-                    .map_err(|e| io::Error::other(format!("{}: {e}", given.display())))?,
-            );
-            path = None;
-        } else if import::is_delimited(&given, &bytes) {
-            // A CSV is opened the way a workbook is: a new document, and no path.
-            imported = Some(
-                import::open_delimited(&core, &given, &bytes)
-                    .map_err(|e| io::Error::other(format!("{}: {e}", given.display())))?,
-            );
-            path = None;
-        } else {
-            core.open_bytes(&given.display().to_string(), &bytes)
-                .map_err(|e| io::Error::other(format!("{}: {e}", given.display())))?;
-        }
-    }
-    let redraw = Arc::new(RedrawFlag::default());
-    redraw.raise(); // paint the first frame before waiting for input
-
-    let mut terminal = setup_terminal()?;
-    let result = event_loop(
-        &mut terminal,
-        &redraw,
-        &mut sheet::app::App::new(core, redraw.clone(), path).imported(imported),
-    );
-    restore_terminal();
-    result
-}
-
-fn run_text(path: Option<PathBuf>) -> io::Result<()> {
-    let core = Arc::new(grind_text::App::new());
-    if let Some(path) = &path {
-        core.open_file(path)
-            .map_err(|e| io::Error::other(format!("{}: {e}", path.display())))?;
-    }
-    let redraw = Arc::new(RedrawFlag::default());
-    redraw.raise();
-
-    let mut terminal = setup_terminal()?;
-    let result = event_loop(
-        &mut terminal,
-        &redraw,
-        &mut text::app::App::new(core, redraw.clone(), path),
-    );
-    restore_terminal();
-    result
-}
-
 /// What the loop needs of a shell — and all either of them has in common.
 ///
 /// Three methods rather than a shared widget: a grid and a flow have no rendering in common,
@@ -208,6 +235,10 @@ trait Shell {
     fn draw(&mut self, frame: &mut ratatui::Frame<'_>);
     fn on_key(&mut self, key: ratatui::crossterm::event::KeyEvent);
     fn should_quit(&self) -> bool;
+    /// A request to be replaced by another pane, taken once.
+    fn take_switch(&mut self) -> Option<app::Switch>;
+    /// The redraw flag the loop waits on.
+    fn redraw(&self) -> Arc<RedrawFlag>;
 }
 
 macro_rules! shell {
@@ -222,6 +253,12 @@ macro_rules! shell {
             fn should_quit(&self) -> bool {
                 <$t>::should_quit(self)
             }
+            fn take_switch(&mut self) -> Option<app::Switch> {
+                <$t>::take_switch(self)
+            }
+            fn redraw(&self) -> Arc<RedrawFlag> {
+                <$t>::redraw_flag(self)
+            }
         }
     };
 }
@@ -229,7 +266,10 @@ macro_rules! shell {
 shell!(sheet::app::App);
 shell!(text::app::App);
 
-fn event_loop<S: Shell>(terminal: &mut Tui, redraw: &RedrawFlag, shell: &mut S) -> io::Result<()> {
+fn event_loop<S: Shell>(terminal: &mut Tui, shell: &mut S) -> io::Result<Option<app::Switch>> {
+    let redraw = shell.redraw();
+    // The terminal is shared by successive panes, and the last one's picture is still on it.
+    terminal.clear()?;
     while !shell.should_quit() {
         if redraw.take() {
             terminal.draw(|frame| shell.draw(frame))?;
@@ -240,8 +280,11 @@ fn event_loop<S: Shell>(terminal: &mut Tui, redraw: &RedrawFlag, shell: &mut S) 
             Event::Resize(_, _) => redraw.raise(),
             _ => {}
         }
+        if let Some(switch) = shell.take_switch() {
+            return Ok(Some(switch));
+        }
     }
-    Ok(())
+    Ok(None)
 }
 
 fn setup_terminal() -> io::Result<Tui> {

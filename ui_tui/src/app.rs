@@ -11,7 +11,20 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use grind_core::Observer;
+use std::path::PathBuf;
+
+use grind_core::{DocumentKind, Observer};
+
+/// A request from a pane to replace itself — what `:new` and `:open` ask the event loop for, since a
+/// pane cannot build its own successor (it may be the other kind of document). The loop swaps
+/// the pane and keeps the terminal, which is the in-session "new" and "open" a window has.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Switch {
+    /// An empty document of this kind.
+    New(DocumentKind),
+    /// This file, whose kind was read from its bytes by `crate::sniff`.
+    Open(PathBuf, DocumentKind),
+}
 
 /// Set by the core whenever the document changes; the event loop redraws when it is. The
 /// shell's half of doc/plan.md rule 3.
