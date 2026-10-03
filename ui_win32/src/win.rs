@@ -465,6 +465,9 @@ struct Sheet {
     /// something in it and no height draws over the headers. Always set through [`Sheet::hint`],
     /// which is what keeps the two agreeing, exactly as [`Sheet::say`] does for the notice bar.
     hint: Vec<assist::Piece>,
+    /// The reference being pointed at while a formula is typed (point mode): where its text is in
+    /// the editor, as bytes, and the cell it names.
+    pointing: Option<(std::ops::Range<usize>, Pos)>,
     /// Whether the formula bar shows the friendly *reading* of a formula rather than the text
     /// that would be typed back in — View ▸ Friendly Formulas. Presentation state, like the
     /// selection and the overlays: nothing here is ever written, and the document's formula stays
@@ -1313,6 +1316,7 @@ fn opened_sheet_on(app: grind_sheet::App, path: Option<PathBuf>, theme: Theme) -
         needle: String::new(),
         assist: assist::Assist::default(),
         hint: Vec::new(),
+        pointing: None,
         // **On**, which is `ui_sheet_gtk`'s own default (`chrome::formula_bar(.., true)`) and is
         // the reason to have one default rather than two: a formula reads the same in both
         // windows unless somebody says otherwise. It costs nothing to be wrong about, either —
@@ -2509,7 +2513,24 @@ fn refresh_bands(hwnd: HWND) {
 /// it. `false` means the key was not claimed: back to `DefWindowProc` from the window, and back
 /// to the control from a child, which is what leaves the editor its caret and its own selection.
 fn on_key(hwnd: HWND, mode: state::Mode, vk: u32) -> bool {
-    match state::on_key(mode, keymap::key_for(vk), mods()) {
+    let key = keymap::key_for(vk);
+    let held = mods();
+    // Point mode: where a reference could go, an arrow points at a cell and writes its address
+    // (`assist::ref_eligible`, as the GNOME and Mac windows do); anything else ends it. Only in
+    // Enter mode starts one — in Edit mode (F2) the arrows are the caret's — but a reference
+    // already being pointed at keeps moving in either.
+    if mode.is_editing() {
+        let arrow = matches!(
+            key,
+            keymap::Key::Left | keymap::Key::Right | keymap::Key::Up | keymap::Key::Down
+        );
+        if arrow && !held.ctrl && !held.shift && !held.alt && point_at(hwnd, mode, key) {
+            return true;
+        }
+        // SAFETY: one borrow, no dialog.
+        unsafe { with_sheet(hwnd, |state| state.pointing = None) };
+    }
+    match state::on_key(mode, key, held) {
         Outcome::Passthrough => false,
         // Opening the name box moves the focus and shows a window, so it happens with nothing
         // borrowed — decision 7's rule, applied to a control rather than to a dialog.
@@ -2551,6 +2572,60 @@ fn on_key(hwnd: HWND, mode: state::Mode, vk: u32) -> bool {
             true
         }
     }
+}
+
+/// An arrow as point mode: start a reference one cell off the edited cell, or move the one being
+/// pointed at, through `EM_REPLACESEL` so Ctrl+Z in the control still undoes it. `false` when a
+/// reference could not go here and the arrow is the editor's (or, in Enter mode, a commit).
+fn point_at(hwnd: HWND, mode: state::Mode, key: keymap::Key) -> bool {
+    let Some((edit, text)) = editor_text(hwnd) else {
+        return false;
+    };
+    let caret = editor_caret(edit, &text);
+    // SAFETY: one borrow, nothing inside dispatches.
+    let Some((pending, active)) = (unsafe {
+        with_sheet(hwnd, |state| {
+            (state.pointing.clone(), state.selection.active)
+        })
+    }) else {
+        return false;
+    };
+    let eligible =
+        mode == state::Mode::Enter && grind_sheet::formula::assist::ref_eligible(&text, caret);
+    if pending.is_none() && !eligible {
+        return false;
+    }
+    let from = pending.as_ref().map_or(active, |(_, cell)| *cell);
+    let cell = match key {
+        keymap::Key::Up => Pos::new(from.row.saturating_sub(1), from.col),
+        keymap::Key::Down => Pos::new((from.row + 1).min(MAX_ROWS - 1), from.col),
+        keymap::Key::Left => Pos::new(from.row, from.col.saturating_sub(1)),
+        _ => Pos::new(from.row, (from.col + 1).min(MAX_COLS - 1)),
+    };
+    let reference = grind_sheet::a1::format(None, cell);
+    let span = pending.map_or(caret..caret, |(span, _)| span);
+    let wide = gdi::wide(&reference);
+    select(
+        edit,
+        state::caret_at(&text, span.start),
+        state::caret_at(&text, span.end),
+    );
+    // SAFETY: nothing is borrowed, and the buffer is a NUL-terminated local that outlives the
+    // call; the message goes to this window's own control and dispatches synchronously.
+    unsafe {
+        SendMessageW(
+            edit,
+            EM_REPLACESEL,
+            Some(WPARAM(1)),
+            Some(LPARAM(wide.as_ptr() as isize)),
+        );
+    }
+    // `editor_changed` ran inside the message above and a keystroke clears nothing: remember the
+    // reference after it, so it is the typed text that ends pointing and not the replacement.
+    let end = span.start + reference.len();
+    // SAFETY: one borrow, no dialog.
+    unsafe { with_sheet(hwnd, |state| state.pointing = Some((span.start..end, cell))) };
+    true
 }
 
 /// A character, after the keyboard layout and after the IME. `true` means it started an edit or
