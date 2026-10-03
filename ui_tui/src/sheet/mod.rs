@@ -49,6 +49,7 @@ Spreadsheet:
                              FUNC is sum (the default), average, count, count-numbers,
                              min, max, stdev or var
   :csv-in <file>  :csv-out <file>
+  :formulas               — show each formula instead of its result (a reading; the same word undoes it)
   :roles  :names          — what each cell is, and what it is called (a reading;
                             nothing is written, and the same word turns it off)
   :source                 — the document as its projection, read-only; j/k moves and

@@ -179,6 +179,13 @@ pub const SHEET: &[Command] = &[
     // behind a confirmation.
     cmd("view.roles", "Show what each cell is", "View", "", true),
     cmd("view.names", "Show where names live", "View", "", false),
+    cmd(
+        "view.formulas",
+        "Show formulas instead of results",
+        "View",
+        "",
+        false,
+    ),
     // `doc/dsl.md` §6. The same command turns it off, like the two above, and for the same
     // reason: it is a *reading* of the document and writes nothing.
     cmd("view.source", "Show the source", "View", "", false),

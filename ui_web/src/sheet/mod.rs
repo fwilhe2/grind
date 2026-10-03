@@ -193,6 +193,9 @@ pub struct Ui {
     /// everything else here: a view mode is a reading of the document and never a change to
     /// it, so turning one off puts the page back exactly.
     overlays: Cell<grind_sheet::view::Overlays>,
+    /// Whether a formula cell shows its formula instead of its result (`grind sheet view
+    /// --formulas`). A reading, like the overlays: nothing is written.
+    formulas: Cell<bool>,
     message: RefCell<String>,
     /// The word the last cell picked from the palette was found by — what F3 and Shift+F3
     /// step through, and what *Replace in every cell…* offers to replace.
@@ -226,6 +229,7 @@ impl Ui {
             dragging: Cell::new(false),
             assist: RefCell::new(assist::Assist::default()),
             overlays: Cell::new(grind_sheet::view::Overlays::NONE),
+            formulas: Cell::new(false),
             message: RefCell::new(String::new()),
             needle: RefCell::new(String::new()),
             filter_field: Cell::new(None),
@@ -397,7 +401,13 @@ impl Ui {
                 // second *view*, never a second copy.
                 let text = match active && editing {
                     true => self.dom.formula.value(),
-                    false => viewport.text(row, col).unwrap_or_default().to_string(),
+                    false => self
+                        .formulas
+                        .get()
+                        .then(|| self.app.formula(self.sheet.get(), pos).ok().flatten())
+                        .flatten()
+                        .and_then(|_| self.app.input_text(self.sheet.get(), pos).ok())
+                        .unwrap_or_else(|| viewport.text(row, col).unwrap_or_default().to_string()),
                 };
                 cell.set_text_content(Some(&text));
                 let numeric = matches!(viewport.get(row, col), Some(CellValue::Number(_)));
@@ -742,6 +752,14 @@ impl Ui {
             "sheet.recalc" => self.recalc(),
             "view.roles" => self.overlay(true),
             "view.names" => self.overlay(false),
+            "view.formulas" => {
+                self.formulas.set(!self.formulas.get());
+                self.request_repaint();
+                self.set_message(match self.formulas.get() {
+                    true => "Formulas are shown instead of their results — nothing was written; run it again to stop".to_owned(),
+                    false => "Results are shown again".to_owned(),
+                });
+            }
             "edit.clear" => self.clear(),
             "edit.fill-down" => self.fill(true),
             "edit.fill-right" => self.fill(false),

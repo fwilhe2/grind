@@ -133,6 +133,9 @@ pub struct App {
     /// like everything else here, because a view mode is a reading of the document and
     /// never a change to it.
     overlays: grind_sheet::view::Overlays,
+    /// Whether a formula cell shows its formula instead of what it came to — `:formulas`, the
+    /// reading `grind sheet view --formulas` prints. Presentation state; nothing is written.
+    formulas: bool,
     /// The last `:find`, and where it matched.
     find: Find,
     /// The completion band, while a formula is being typed (`super::assist`).
@@ -186,6 +189,7 @@ impl App {
             register: String::new(),
             status: String::new(),
             overlays: grind_sheet::view::Overlays::NONE,
+            formulas: false,
             find: Find::default(),
             assist: Assist::default(),
             functions: crate::pick::Pick::default(),
@@ -1025,6 +1029,13 @@ impl App {
             "lint hints" | "lint!" => self.cmd_lint(true),
             "roles" => self.cmd_overlay(true),
             "names" => self.cmd_overlay(false),
+            "formulas" => {
+                self.formulas = !self.formulas;
+                self.status = match self.formulas {
+                    true => "formulas shown instead of their results \u{2014} :formulas again puts them back".to_owned(),
+                    false => "results shown again".to_owned(),
+                };
+            }
             "bold" => self.toggle_style(|style| toggle(&mut style.font_weight, "bold")),
             "italic" => self.toggle_style(|style| toggle(&mut style.font_style, "italic")),
             "wrap" => self.toggle_style(|style| toggle(&mut style.wrap, "wrap")),
@@ -2070,7 +2081,15 @@ impl App {
             )];
             for (c, width) in &cols {
                 let (r, c) = (r, *c);
-                let text = viewport.as_ref().and_then(|v| v.text(r, c)).unwrap_or("");
+                let shown_formula = self
+                    .formulas
+                    .then(|| self.core.formula(self.sheet, Pos::new(r, c)).ok().flatten())
+                    .flatten()
+                    .and_then(|_| self.core.input_text(self.sheet, Pos::new(r, c)).ok());
+                let text = shown_formula
+                    .as_deref()
+                    .or_else(|| viewport.as_ref().and_then(|v| v.text(r, c)))
+                    .unwrap_or("");
                 let cell = viewport.as_ref().and_then(|v| v.style(r, c));
                 let numeric = matches!(
                     viewport.as_ref().and_then(|v| v.get(r, c)),
