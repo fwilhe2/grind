@@ -179,6 +179,9 @@ pub struct Ui {
     // the core neither knows nor keeps it.
     sheet: Cell<usize>,
     selection: Cell<Selection>,
+    /// The reference being pointed at while a formula is typed (point mode): where its text is in
+    /// the formula bar, as bytes, and the cell it names.
+    pointing: RefCell<Option<(std::ops::Range<usize>, Pos)>>,
     scroll: Cell<Pos>,
     editing: Cell<bool>,
     /// Whether the pointer is down and dragging a rectangle out.
@@ -217,6 +220,7 @@ impl Ui {
             pending,
             sheet: Cell::new(0),
             selection: Cell::new(Selection::default()),
+            pointing: RefCell::new(None),
             scroll: Cell::new(Pos::new(0, 0)),
             editing: Cell::new(false),
             dragging: Cell::new(false),
@@ -644,6 +648,23 @@ impl Ui {
             }
             return;
         }
+        // Point mode: where a reference could go, an arrow points at a cell and writes its address
+        // (`assist::ref_eligible`, as the GNOME and Mac windows do); anything else ends it.
+        let plain = !(event.ctrl_key() || event.meta_key() || event.alt_key() || event.shift_key());
+        if self.editing.get()
+            && plain
+            && matches!(
+                key.as_str(),
+                "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight"
+            )
+            && self.point_at(&key).unwrap_or(false)
+        {
+            event.prevent_default();
+            return;
+        }
+        if !matches!(key.as_str(), "Shift" | "Control" | "Alt" | "Meta") {
+            self.pointing.replace(None);
+        }
         let chord = Chord {
             key: &key,
             // ⌘ on macOS, Ctrl everywhere else, resolved here so the keymap never
@@ -662,6 +683,40 @@ impl Ui {
         if let Err(error) = self.apply(action) {
             web_sys::console::error_1(&error);
         }
+    }
+
+    /// An arrow in the formula bar as point mode: start a reference one cell off the cell being
+    /// edited, or move the one being pointed at. `Ok(false)` when a reference could not go here,
+    /// and the arrow is the caret's.
+    fn point_at(&self, key: &str) -> Result<bool, JsValue> {
+        let text = self.dom.formula.value();
+        let units = self.dom.formula.selection_start()?.unwrap_or(0) as usize;
+        let caret = utf16::byte_of(&text, units);
+        let pending = self.pointing.borrow().clone();
+        if pending.is_none() && !grind_sheet::formula::assist::ref_eligible(&text, caret) {
+            return Ok(false);
+        }
+        let from = pending
+            .as_ref()
+            .map_or(self.selection.get().active, |(_, cell)| *cell);
+        let cell = match key {
+            "ArrowUp" => Pos::new(from.row.saturating_sub(1), from.col),
+            "ArrowDown" => Pos::new((from.row + 1).min(grind_sheet::MAX_ROWS - 1), from.col),
+            "ArrowLeft" => Pos::new(from.row, from.col.saturating_sub(1)),
+            _ => Pos::new(from.row, (from.col + 1).min(grind_sheet::MAX_COLS - 1)),
+        };
+        let reference = grind_sheet::a1::format(None, cell);
+        let span = pending.map_or(caret..caret, |(span, _)| span);
+        let end = span.start + reference.len();
+        let mut next = text.clone();
+        next.replace_range(span.clone(), &reference);
+        self.dom.formula.set_value(&next);
+        let at = utf16::units_before(&next, end) as u32;
+        self.dom.formula.set_selection_range(at, at)?;
+        self.pointing.replace(Some((span.start..end, cell)));
+        self.request_repaint();
+        self.refresh_assist()?;
+        Ok(true)
     }
 
     pub fn apply(&self, action: Action) -> Result<(), JsValue> {
