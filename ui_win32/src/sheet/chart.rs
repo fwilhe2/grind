@@ -5,7 +5,7 @@
 //! The grid's charts — where a chart sits (portable) and putting its marks down (GDI).
 //!
 //! `grind_sheet::chart_paint` decides where every bar, point, slice and label of a chart goes,
-//! over a [`Metrics`]; the Mac draws the same list. This file is this window's half: a frame in
+//! over a `Metrics`; the Mac draws the same list. This file is this window's half: a frame in
 //! pixels from the chart's ODF lengths, a `Metrics` that measures in the font the label will be
 //! drawn in (decision 3: one engine for measuring and drawing), and one GDI call per mark.
 //! Read-only here — a chart is a picture on this grid; adding one is Sheet ▸ Insert Chart.

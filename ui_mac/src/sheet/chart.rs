@@ -5,13 +5,10 @@
 //! A chart, as a list of [`Op`]s — portable, so where every bar, point, slice and label goes is
 //! tested on Linux and the Mac only puts it down.
 //!
-//! The fourth renderer of `doc/chart-format.md`'s shapes, after the GTK shell's `snapshot()`, the
-//! browser's SVG and the writer's own `chart:` XML. It draws from [`ChartData`] and [`Chart`] as
-//! those do, scales the plot against [`axis_ticks`] rather than the tallest bar — so a chart has
-//! the same axis here as in either other window — sweeps a pie with [`pie_slices`], so it runs the
-//! same way round, and colours every mark with [`effective_color`]. Unlike the browser's, text is
-//! *measured*, through the same `Metrics` the grid's cells are, so a legend or a tick label is
-//! placed on its real width.
+//! Where every mark goes is `grind_sheet::chart_paint`'s, hoisted out of this file when the
+//! Windows grid wanted charts too; what is here is the Mac's half — where a chart's frame sits on
+//! the sheet, which one a point is in, what a context menu changes — and [`draw`], which turns the
+//! shared marks into this shell's [`Op`]s.
 //!
 //! **Read-only.** A chart is a picture on this grid: nothing here is hit-tested, and adding or
 //! editing one is the CLI's and the GNOME window's (`doc/feature-matrix.md`).
