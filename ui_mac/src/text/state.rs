@@ -501,15 +501,7 @@ impl Page {
     /// in one `App::move_blocks` — one undo step — with the caret and the selection going with
     /// them. Refused at the top or the bottom, where there is nowhere to go.
     pub fn move_paragraphs(&mut self, app: &App, up: bool) -> Result<(), Refused> {
-        let blocks = self.blocks();
-        let (first, last) = (*blocks.start(), *blocks.end());
-        let to = match up {
-            true if first > 0 => first - 1,
-            false if last + 1 < app.block_count() => last + 2,
-            _ => return Err("there is nowhere to move it".to_owned()),
-        };
-        app.move_blocks(first..last + 1, to)
-            .map_err(|error| error.to_string())?;
+        grind_text::blocks::shift(app, self.blocks(), up)?;
         let step = |caret: &mut Caret| match up {
             true => caret.block -= 1,
             false => caret.block += 1,
@@ -523,18 +515,8 @@ impl Page {
     /// start of what followed them. Refused when they are every block there is, since a page
     /// always has somewhere for a caret to be (`Document::default`).
     pub fn delete_paragraphs(&mut self, app: &App) -> Result<(), Refused> {
-        let blocks = self.blocks();
-        let (first, last) = (*blocks.start(), *blocks.end());
-        if first == 0 && last + 1 >= app.block_count() {
-            return Err("a page keeps at least one paragraph".to_owned());
-        }
-        app.delete(first..last + 1)
-            .map_err(|error| error.to_string())?;
-        let at = Caret {
-            block: first.min(app.block_count().saturating_sub(1)),
-            offset: 0,
-        };
-        self.place(at, false);
+        let block = grind_text::blocks::remove(app, self.blocks())?;
+        self.place(Caret { block, offset: 0 }, false);
         Ok(())
     }
 }
