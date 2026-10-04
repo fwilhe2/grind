@@ -40,8 +40,17 @@ pub struct Options {
 pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     setter.hint(app.font_generics());
     let geometry = options.paper.or(app.page()).unwrap_or_default();
-    let (left, top) = (pt(geometry.left), pt(geometry.top));
-    let (width, height) = (pt(geometry.text_width()), pt(geometry.text_height()));
+    let (left, margin_top) = (pt(geometry.left), pt(geometry.top));
+    let width = pt(geometry.text_width());
+    // The header from the top margin down and the footer from the bottom margin up, each with
+    // the space between it and the body: what is left is the body's (`doc/odt-format.md` §5c,
+    // fact 9).
+    let (header, footer) = app.marginals();
+    let header = header.map(|m| Marginal::lay_out(app, setter, &m, width));
+    let footer = footer.map(|m| Marginal::lay_out(app, setter, &m, width));
+    let room = |m: &Option<Marginal<'_>>| m.as_ref().map_or(0.0, |m| m.height + m.spacing);
+    let top = margin_top + room(&header);
+    let height = (pt(geometry.text_height()) - room(&header) - room(&footer)).max(1.0);
     let faces = role_faces(setter);
     let across = flow::across(app, width, &SPACING);
     let viewport = app.get_viewport(0..app.block_count());
@@ -108,6 +117,14 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 if let Some((from, to)) = lines(&mut ops, app, view, piece, face, origin) {
                     cover(caret(piece.index, from), caret(piece.index, to));
                 }
+            }
+            let count = pages.len();
+            if let Some(header) = &header {
+                header.draw(&mut ops, (left, margin_top), number + 1, count);
+            }
+            if let Some(footer) = &footer {
+                let bottom = pt(geometry.height) - pt(geometry.bottom);
+                footer.draw(&mut ops, (left, bottom - footer.height), number + 1, count);
             }
             Page {
                 width: pt(geometry.width) as f32,
@@ -409,6 +426,106 @@ fn lines(
         }
     }
     Some(span)
+}
+
+/// A header or footer laid out once for every page: each paragraph in the face and alignment its
+/// own paragraph style gives it, the height it takes, and the space between it and the body.
+///
+/// ponytail: a tab is drawn as a space, where Writer's `Header` and `Footer` styles put tab stops
+/// at the centre and the right edge — tab stops are not read anywhere yet.
+struct Marginal<'a> {
+    paragraphs: Vec<(grind_text::marginal::Paragraph, RoleFace<'a>, Align)>,
+    width: f64,
+    /// The header's own height, its content's or its `fo:min-height`, in points.
+    height: f64,
+    spacing: f64,
+}
+
+impl<'a> Marginal<'a> {
+    fn lay_out(
+        app: &App,
+        setter: &'a Typesetter,
+        marginal: &grind_text::marginal::Marginal,
+        width: f64,
+    ) -> Self {
+        let paragraphs: Vec<_> = marginal
+            .paragraphs
+            .iter()
+            .map(|paragraph| {
+                let resolved = app.resolve_style(paragraph.style.as_deref());
+                let props = resolved.props;
+                let align = Align::parse(props.text_align.as_deref());
+                let stated = TextStyle {
+                    font_family: props.font_family,
+                    font_size: props.font_size,
+                    font_weight: props.font_weight,
+                    font_style: props.font_style,
+                };
+                let face = RoleFace::stating(setter, grind_text::look::Role::Body, stated);
+                (paragraph.clone(), face, align)
+            })
+            .collect();
+        let mut out = Marginal {
+            paragraphs,
+            width,
+            height: 0.0,
+            spacing: pt(marginal.spacing),
+        };
+        // Measured with the fields at one digit; a page number does not wrap a header line.
+        let content: f64 = out
+            .paragraphs
+            .iter()
+            .map(|(paragraph, face, _)| f64::from(out.wrap(&paragraph.text(1, 1), face).height()))
+            .sum();
+        out.height = content.max(pt(marginal.min_height));
+        out
+    }
+
+    fn wrap(&self, text: &str, face: &RoleFace<'_>) -> grind_core::layout::Layout {
+        let style = TextStyle::default();
+        wrap(
+            &[Fragment {
+                text,
+                style: &style,
+            }],
+            self.width as f32,
+            face,
+        )
+    }
+
+    /// Draw it with its top at `(left, top)`, on page `page` of `pages`. Decoration to a tagged
+    /// PDF: a header repeats on every page and is no part of the reading order.
+    fn draw(&self, ops: &mut Vec<Op>, (left, top): (f64, f64), page: usize, pages: usize) {
+        let mut y = top as f32;
+        for (paragraph, face, align) in &self.paragraphs {
+            let text = paragraph.text(page, pages).replace('\t', " ");
+            let layout = self.wrap(&text, face);
+            let chars: Vec<char> = text.chars().collect();
+            let style = face.style(&TextStyle::default());
+            let setter = face.setter();
+            for line in layout.lines() {
+                let piece: String = chars[line.start..line.end].iter().collect();
+                let piece = piece.trim_end_matches('\n').trim_end();
+                if piece.is_empty() {
+                    continue;
+                }
+                let shaped = setter.shape(piece, &style);
+                let content: f32 = shaped.glyphs.iter().map(|g| g.x_advance).sum();
+                let fit = align::fit(*align, self.width as f32, content, 0, true);
+                ops.push(Op::Text {
+                    x: left as f32 + fit.offset,
+                    y: y + line.top + layout.baseline(),
+                    face: shaped.face,
+                    size: shaped.size,
+                    glyphs: shaped.glyphs,
+                    text: piece.to_owned(),
+                    color: Rgb::BLACK,
+                    mark: Mark::Decoration,
+                });
+            }
+            y += layout.height();
+        }
+    }
 }
 
 /// A picture block on paper: the picture at the size the document gives it, fitted to the
@@ -1095,6 +1212,70 @@ mod tests {
         });
         assert_eq!(family.as_deref(), Some("Liberation Sans"));
         assert_eq!(t.substitutions()[0].used, "Liberation Sans");
+    }
+
+    /// `doc/odt-format.md` §5c fact 9: the header sits on the top margin and the footer on the
+    /// bottom one, the body between them less their spacing, and the page fields are each
+    /// page's own — Writer's 48 lines a page, `pg 2 of 3`.
+    #[test]
+    fn headers_and_footers_take_their_room_and_number_the_pages() {
+        let lines: String = (1..=120)
+            .map(|i| format!(r#"<text:p text:style-name="N">fill {i}</text:p>"#))
+            .collect();
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles>
+              <style:style style:name="N" style:family="paragraph"><style:text-properties fo:font-family="'Liberation Serif'" fo:font-size="12pt"/></style:style>
+              <style:style style:name="H" style:family="paragraph"><style:paragraph-properties fo:text-align="center"/><style:text-properties fo:font-family="'Liberation Serif'" fo:font-size="12pt"/></style:style>
+              <style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/>
+                <style:header-style><style:header-footer-properties fo:min-height="0cm" fo:margin-bottom="0.5cm"/></style:header-style>
+                <style:footer-style><style:header-footer-properties fo:min-height="0cm" fo:margin-top="0.5cm"/></style:footer-style></style:page-layout>
+            </office:automatic-styles>
+            <office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1">
+              <style:header><text:p text:style-name="N">headline</text:p></style:header>
+              <style:footer><text:p text:style-name="H">pg <text:page-number>1</text:page-number> of <text:page-count>3</text:page-count></text:p></style:footer>
+            </style:master-page></office:master-styles>
+            <office:body><office:text>{lines}</office:text></office:body></office:document>"#
+        );
+        let app = App::new();
+        app.open_bytes("hf.fodt", bytes.as_bytes()).unwrap();
+        let doc = typeset(&app, &setter(), &Options::default());
+        let body: Vec<usize> = doc
+            .pages
+            .iter()
+            .map(|page| {
+                texts(page)
+                    .iter()
+                    .filter(|t| t.2.starts_with("fill"))
+                    .count()
+            })
+            .collect();
+        assert_eq!(body, vec![48, 48, 24]);
+        let page = &doc.pages[1];
+        let texts = texts(page);
+        let header = texts
+            .iter()
+            .find(|t| t.2 == "headline")
+            .expect("a header on page 2");
+        assert!(
+            (header.1 - (56.6929 + 10.6934) as f32).abs() < 0.01,
+            "{}",
+            header.1
+        );
+        let footer = texts
+            .iter()
+            .find(|t| t.2 == "pg 2 of 3")
+            .expect("page 2's own footer");
+        let bottom_baseline = 841.8898 - 56.6929 - 13.7988 + 10.6934;
+        assert!(
+            (footer.1 - bottom_baseline as f32).abs() < 0.01,
+            "{}",
+            footer.1
+        );
+        assert!(footer.0 > 250.0, "centred: {}", footer.0);
+        let first = texts.iter().find(|t| t.2.starts_with("fill")).unwrap();
+        let below_header = 56.6929 + 13.7988 + 72.0 / 2.54 * 0.5 + 10.6934;
+        assert!((first.1 - below_header as f32).abs() < 0.01, "{}", first.1);
     }
 
     #[test]
