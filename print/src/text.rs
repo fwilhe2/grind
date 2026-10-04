@@ -44,9 +44,11 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     let across = flow::across(app, width, &SPACING);
     let viewport = app.get_viewport(0..app.block_count());
     let blocks = block_faces(app, setter, &viewport);
+    let spacing = block_spacing(app, &viewport);
     let column = Column {
         faces: &faces,
         blocks: &blocks,
+        spacing: &spacing,
         width,
         across: &across,
     };
@@ -177,6 +179,30 @@ fn block_faces<'a>(
             (stated != TextStyle::default()).then(|| {
                 let role = grind_text::look::Role::of(&view.kind, view.style.as_deref());
                 (view.index, RoleFace::stating(setter, role, stated))
+            })
+        })
+        .collect()
+}
+
+/// The space above and below every block whose paragraph style the document declares, in
+/// points — added, as Writer adds them (`doc/odt-format.md` §5c, fact 5). A margin in a unit with
+/// no length (a percentage of a parent this build does not keep) counts as none.
+fn block_spacing(
+    app: &App,
+    viewport: &grind_text::Viewport,
+) -> std::collections::HashMap<usize, (f64, f64)> {
+    let points = |value: &Option<String>| value.as_deref().and_then(length_mm).map_or(0.0, pt);
+    viewport
+        .iter()
+        .filter_map(|view| {
+            let resolved = app.paragraph(view.index)?;
+            // A block in a table is spaced by its cell, which the flow places itself.
+            (resolved.declared && view.cell.is_none()).then(|| {
+                let props = &resolved.props;
+                (
+                    view.index,
+                    (points(&props.margin_top), points(&props.margin_bottom)),
+                )
             })
         })
         .collect()
@@ -784,6 +810,34 @@ mod tests {
             "the role's scale and weight"
         );
         assert_eq!(face("plain"), Some(("Liberation Sans".into(), false, 12.0)));
+    }
+
+    /// `doc/odt-format.md` §5c facts 5 and 6, on paper: a declared style's space below and the
+    /// next one's space above add, and the first paragraph's space above is applied.
+    #[test]
+    fn a_declared_styles_spacing_adds_as_writers_does() {
+        let bytes = r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:styles>
+              <style:style style:name="A" style:family="paragraph"><style:paragraph-properties fo:margin-top="1cm" fo:margin-bottom="1cm"/></style:style>
+              <style:style style:name="B" style:family="paragraph"><style:paragraph-properties fo:margin-top="0.5cm" fo:margin-bottom="0.5cm"/></style:style>
+            </office:styles>
+            <office:body><office:text><text:p text:style-name="A">one</text:p><text:p text:style-name="B">two</text:p></office:text></office:body></office:document>"#;
+        let app = App::new();
+        app.open_bytes("s.fodt", bytes.as_bytes()).unwrap();
+        let page = &typeset(&app, &setter(), &Options::default()).pages[0];
+        let y = |want: &str| texts(page).into_iter().find(|t| t.2 == want).unwrap().1;
+        let cm = 72.0 / 2.54;
+        let first_baseline = 56.6929 + cm + 10.6934;
+        assert!(
+            (y("one") - first_baseline as f32).abs() < 0.01,
+            "{}",
+            y("one")
+        );
+        let between = y("two") - y("one");
+        assert!(
+            (between - (13.7988 + 1.5 * cm) as f32).abs() < 0.01,
+            "{between}"
+        );
     }
 
     #[test]

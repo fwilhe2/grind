@@ -161,6 +161,9 @@ pub struct Column<'a> {
     /// A face of its own for each block whose paragraph style states something about its text,
     /// by block index; every other block is set in its role's face.
     pub blocks: &'a HashMap<usize, RoleFace<'a>>,
+    /// The space above and below each block whose declared paragraph style decides it, in
+    /// points ([`grind_text::Faces::spacing`]); every other block is spaced as on screen.
+    pub spacing: &'a HashMap<usize, (f64, f64)>,
     /// The text area's width, in points.
     pub width: f64,
     pub across: &'a HashMap<usize, Across>,
@@ -185,6 +188,10 @@ impl grind_text::Faces for Column<'_> {
             None => SPACING.measure(kind, self.width),
         };
         ((width as f32).max(1.0), self.face(index, kind, style))
+    }
+
+    fn spacing(&self, index: usize) -> Option<(f64, f64)> {
+        self.spacing.get(&index).copied()
     }
 }
 
@@ -263,9 +270,11 @@ mod tests {
             },
         )]);
         let blocks = HashMap::new();
+        let spacing = HashMap::new();
         let column = Column {
             faces: &faces,
             blocks: &blocks,
+            spacing: &spacing,
             width: 480.0,
             across: &across,
         };
