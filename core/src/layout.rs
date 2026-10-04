@@ -62,6 +62,16 @@ pub trait Metrics {
 
     /// The height of one line set in `style`, in the same unit.
     fn line_height(&self, style: &TextStyle) -> f32;
+
+    /// How far below a line's top its baseline sits, for text set in `style`.
+    ///
+    /// Only something that places glyphs itself needs this — the PDF (`doc/pdf-export.md`),
+    /// whose text is positioned on a baseline. A toolkit that draws a run from the top of its
+    /// box works its baseline out on its own, so the shells keep the default: four fifths of
+    /// the line, which is close for most Latin faces and never matters to them.
+    fn ascent(&self, style: &TextStyle) -> f32 {
+        self.line_height(style) * 0.8
+    }
 }
 
 /// One character wide per character, one unit tall.
@@ -141,9 +151,17 @@ pub struct Layout {
     /// Cumulative advance at every caret offset `0..=len`, measured from the start of the whole
     /// text rather than of its line. Line-relative x is a subtraction (see [`Layout::x_at`]).
     xs: Vec<f32>,
+    /// Distance from each line's top to its baseline: the largest ascent of any fragment, by
+    /// the same rule that makes every line as tall as the tallest one ([`wrap`]).
+    baseline: f32,
 }
 
 impl Layout {
+    /// How far below the top of each line its baseline sits ([`Metrics::ascent`]).
+    pub fn baseline(&self) -> f32 {
+        self.baseline
+    }
+
     pub fn lines(&self) -> &[Line] {
         &self.lines
     }
@@ -257,6 +275,7 @@ pub fn wrap(fragments: &[Fragment<'_>], width: f32, metrics: &dyn Metrics) -> La
     xs.push(0.0);
     let mut text = String::new();
     let mut heights: Vec<f32> = Vec::new();
+    let mut ascents: Vec<f32> = Vec::new();
     let mut fragment_advances = Vec::new();
     for fragment in fragments {
         let origin = *xs.last().expect("xs starts with one element");
@@ -267,12 +286,18 @@ pub fn wrap(fragments: &[Fragment<'_>], width: f32, metrics: &dyn Metrics) -> La
         }
         text.push_str(fragment.text);
         heights.push(metrics.line_height(fragment.style));
+        ascents.push(metrics.ascent(fragment.style));
     }
     let len = xs.len() - 1;
     // A line is as tall as the tallest thing that could be on it. Per-line height would need
     // the breaks first, and mixed font sizes inside one paragraph are rare enough that the
     // simpler rule is the honest trade — named here rather than discovered.
     let height = heights.iter().copied().fold(0.0_f32, f32::max).max(1.0);
+    // An empty paragraph has no fragment to ask, and still has a line to sit on.
+    let baseline = match ascents.iter().copied().reduce(f32::max) {
+        Some(ascent) => ascent,
+        None => metrics.ascent(&TextStyle::default()),
+    };
 
     // UAX #14 hands back *byte* indices; everything else here counts characters, so map once.
     let mut char_of_byte = vec![0usize; text.len() + 1];
@@ -336,7 +361,11 @@ pub fn wrap(fragments: &[Fragment<'_>], width: f32, metrics: &dyn Metrics) -> La
         push(start, len, &mut top, &mut lines);
     }
 
-    Layout { lines, xs }
+    Layout {
+        lines,
+        xs,
+        baseline,
+    }
 }
 
 #[cfg(test)]
@@ -369,6 +398,71 @@ mod tests {
             .iter()
             .map(|line| chars[line.start..line.end].iter().collect())
             .collect()
+    }
+
+    /// A provider whose text is ten units tall with an ascent of seven, unless the style asks
+    /// for a size, in which case both scale with it — enough to tell max-of-ascents from
+    /// anything else.
+    struct Tall;
+
+    impl Metrics for Tall {
+        fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>) {
+            Fixed.advances(text, style, out)
+        }
+        fn line_height(&self, style: &TextStyle) -> f32 {
+            10.0 * scale(style)
+        }
+        fn ascent(&self, style: &TextStyle) -> f32 {
+            7.0 * scale(style)
+        }
+    }
+
+    fn scale(style: &TextStyle) -> f32 {
+        if style.font_size.is_some() { 2.0 } else { 1.0 }
+    }
+
+    #[test]
+    fn a_line_sits_on_the_largest_ascent_in_it() {
+        let small = TextStyle::default();
+        let big = TextStyle {
+            font_size: Some("24pt".into()),
+            ..TextStyle::default()
+        };
+        let one = wrap(
+            &[Fragment {
+                text: "ab",
+                style: &small,
+            }],
+            0.0,
+            &Tall,
+        );
+        assert_eq!(one.baseline(), 7.0);
+        let mixed = wrap(
+            &[
+                Fragment {
+                    text: "ab",
+                    style: &small,
+                },
+                Fragment {
+                    text: "CD",
+                    style: &big,
+                },
+            ],
+            0.0,
+            &Tall,
+        );
+        assert_eq!(mixed.baseline(), 14.0);
+        assert_eq!(mixed.lines()[0].height, 20.0);
+    }
+
+    #[test]
+    fn a_provider_that_knows_no_ascent_puts_the_baseline_four_fifths_down() {
+        assert_eq!(plain("x").baseline(), 0.8);
+        assert_eq!(
+            plain("").baseline(),
+            0.8,
+            "an empty block still has a line to sit on"
+        );
     }
 
     #[test]
