@@ -231,6 +231,20 @@ impl Fonts {
 
     /// The face to set `family` in, at this weight and slant.
     pub fn resolve(&self, family: Option<&str>, bold: bool, italic: bool) -> Resolved {
+        self.resolve_hinted(family, bold, italic, None)
+    }
+
+    /// [`Fonts::resolve`], with what kind of face the family is (`style:font-family-generic`:
+    /// `roman`, `swiss`, `modern`, …) for the last step: a family nothing here has, and nothing
+    /// is metric-compatible with, falls back to the bundled face of that kind rather than to
+    /// Writer's serif.
+    pub fn resolve_hinted(
+        &self,
+        family: Option<&str>,
+        bold: bool,
+        italic: bool,
+        generic: Option<&str>,
+    ) -> Resolved {
         let asked = family.map(str::trim).filter(|f| !f.is_empty());
         let found = |name: &str, how: Match| {
             self.nearest(name, bold, italic)
@@ -251,7 +265,14 @@ impl Fonts {
                 };
                 found(generic, Match::Generic)
             })
-            .or_else(|| found(DEFAULT, Match::Fallback))
+            .or_else(|| {
+                let kind = match generic {
+                    Some("swiss") => "Liberation Sans",
+                    Some("modern") => "Liberation Mono",
+                    _ => DEFAULT,
+                };
+                found(kind, Match::Fallback)
+            })
             .unwrap_or(Resolved {
                 // Only a database built by hand with no Liberation in it gets here; its first
                 // face is as good an answer as any, and an empty one has none to give.
@@ -408,6 +429,30 @@ mod tests {
         assert_eq!(
             named(&fonts, &r),
             ("Liberation Serif".to_owned(), false, true)
+        );
+    }
+
+    /// A family nobody has, whose font declaration says what kind of face it is
+    /// (`style:font-family-generic`), falls back to the bundled face of that kind — still a
+    /// substitution, and still reported as one, but the right shape of letter.
+    #[test]
+    fn a_missing_family_falls_back_to_the_kind_of_face_its_declaration_names() {
+        let fonts = Fonts::bundled();
+        for (generic, face) in [
+            ("swiss", "Liberation Sans"),
+            ("roman", "Liberation Serif"),
+            ("modern", "Liberation Mono"),
+            ("decorative", "Liberation Serif"),
+        ] {
+            let r = fonts.resolve_hinted(Some("Adwaita Sans"), false, false, Some(generic));
+            assert_eq!(r.how, Match::Fallback, "{generic}");
+            assert_eq!(named(&fonts, &r).0, face, "{generic}");
+        }
+        // A family that is here wins over its hint.
+        let r = fonts.resolve_hinted(Some("Liberation Serif"), false, false, Some("swiss"));
+        assert_eq!(
+            (r.how.clone(), named(&fonts, &r).0),
+            (Match::Exact, "Liberation Serif".to_owned())
         );
     }
 

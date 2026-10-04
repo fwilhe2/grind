@@ -38,6 +38,7 @@ pub struct Options {
 
 /// Typeset `app`'s document with `setter`'s fonts.
 pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
+    setter.hint(app.font_generics());
     let geometry = options.paper.or(app.page()).unwrap_or_default();
     let (left, top) = (pt(geometry.left), pt(geometry.top));
     let (width, height) = (pt(geometry.text_width()), pt(geometry.text_height()));
@@ -1075,6 +1076,25 @@ mod tests {
             Some((false, false, 12.0)),
             "a heading style stating nothing is body text"
         );
+    }
+
+    /// A family nobody has falls back to the kind of face its declaration says it is.
+    #[test]
+    fn an_uninstalled_sans_family_prints_in_the_bundled_sans() {
+        let bytes = r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:font-face-decls><style:font-face style:name="Adwaita Sans" svg:font-family="'Adwaita Sans'" style:font-family-generic="swiss"/></office:font-face-decls>
+            <office:styles><style:style style:name="Standard" style:family="paragraph"><style:text-properties style:font-name="Adwaita Sans"/></style:style></office:styles>
+            <office:body><office:text><text:p text:style-name="Standard">sans</text:p></office:text></office:body></office:document>"#;
+        let app = App::new();
+        app.open_bytes("g.fodt", bytes.as_bytes()).unwrap();
+        let t = setter();
+        let page = &typeset(&app, &t, &Options::default()).pages[0];
+        let family = page.ops.iter().find_map(|op| match op {
+            Op::Text { face, .. } => Some(t.fonts().face(*face).family.clone()),
+            _ => None,
+        });
+        assert_eq!(family.as_deref(), Some("Liberation Sans"));
+        assert_eq!(t.substitutions()[0].used, "Liberation Sans");
     }
 
     #[test]

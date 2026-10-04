@@ -62,6 +62,9 @@ type Asked = (Option<String>, bool, bool);
 /// Shapes text in the faces of a [`Fonts`], and remembers what it had to substitute.
 pub struct Typesetter {
     fonts: Fonts,
+    /// What kind of face each family the document declares is (`style:font-family-generic`), for
+    /// falling back on a family that is not here ([`Fonts::resolve_hinted`]).
+    generics: RefCell<HashMap<String, String>>,
     shapers: RefCell<HashMap<FaceId, harfrust::ShaperData>>,
     resolved: RefCell<BTreeMap<Asked, Resolved>>,
 }
@@ -70,6 +73,7 @@ impl Typesetter {
     pub fn new(fonts: Fonts) -> Self {
         Typesetter {
             fonts,
+            generics: RefCell::new(HashMap::new()),
             shapers: RefCell::new(HashMap::new()),
             resolved: RefCell::new(BTreeMap::new()),
         }
@@ -77,6 +81,12 @@ impl Typesetter {
 
     pub fn fonts(&self) -> &Fonts {
         &self.fonts
+    }
+
+    /// Tell the typesetter what kind of face each of the document's families is, before it sets
+    /// any of them — `grind_text::App::font_generics`.
+    pub fn hint(&self, generics: HashMap<String, String>) {
+        *self.generics.borrow_mut() = generics;
     }
 
     /// Which face and size `style` sets text in. Remembered, so the report can say afterwards
@@ -90,8 +100,10 @@ impl Typesetter {
             .borrow_mut()
             .entry(key)
             .or_insert_with(|| {
-                self.fonts
-                    .resolve(style.font_family.as_deref(), bold, italic)
+                let family = style.font_family.as_deref();
+                let generics = self.generics.borrow();
+                let generic = family.and_then(|f| generics.get(f)).map(String::as_str);
+                self.fonts.resolve_hinted(family, bold, italic, generic)
             })
             .face;
         (face, size_of(style))
