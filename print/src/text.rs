@@ -46,10 +46,12 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     let viewport = app.get_viewport(0..app.block_count());
     let blocks = block_faces(app, setter, &viewport);
     let spacing = block_spacing(app, &viewport);
+    let breaks = block_breaks(app, &viewport);
     let column = Column {
         faces: &faces,
         blocks: &blocks,
         spacing: &spacing,
+        breaks: &breaks,
         width,
         across: &across,
     };
@@ -210,6 +212,35 @@ fn block_spacing(
                 };
                 (view.index, room)
             })
+        })
+        .collect()
+}
+
+/// Every block whose paragraph style says something about page breaks around it: a page break
+/// before or after (`page`, and `even-page`/`odd-page` as a page, since this build prints no
+/// blank pages), and `fo:keep-with-next` (`always`, or `auto` to let even a heading go).
+fn block_breaks(
+    app: &App,
+    viewport: &grind_text::Viewport,
+) -> std::collections::HashMap<usize, grind_text::page::Breaks> {
+    let page = |value: &Option<String>| {
+        matches!(value.as_deref(), Some("page" | "even-page" | "odd-page"))
+    };
+    viewport
+        .iter()
+        .filter(|view| view.cell.is_none())
+        .filter_map(|view| {
+            let props = app.paragraph(view.index)?.props;
+            let breaks = grind_text::page::Breaks {
+                page_before: page(&props.break_before),
+                page_after: page(&props.break_after),
+                keep_with_next: match props.keep_with_next.as_deref() {
+                    Some("always") => Some(true),
+                    Some("auto") => Some(false),
+                    _ => None,
+                },
+            };
+            (breaks != grind_text::page::Breaks::default()).then_some((view.index, breaks))
         })
         .collect()
 }
@@ -982,6 +1013,23 @@ mod tests {
             right <= (595.2756 - 56.6929 - 3.0 * cm) as f32 + 0.01,
             "{right}"
         );
+    }
+
+    /// A style's `fo:break-before="page"` starts its paragraph on a page of its own.
+    #[test]
+    fn a_styles_page_break_starts_a_new_page() {
+        let bytes = r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles><style:style style:name="P1" style:family="paragraph"><style:paragraph-properties fo:break-before="page"/></style:style></office:automatic-styles>
+            <office:body><office:text><text:p>one</text:p><text:p text:style-name="P1">two</text:p></office:text></office:body></office:document>"#;
+        let app = App::new();
+        app.open_bytes("b.fodt", bytes.as_bytes()).unwrap();
+        let doc = typeset(&app, &setter(), &Options::default());
+        let pages: Vec<Vec<String>> = doc
+            .pages
+            .iter()
+            .map(|page| texts(page).into_iter().map(|t| t.2).collect())
+            .collect();
+        assert_eq!(pages, vec![vec!["one".to_owned()], vec!["two".to_owned()]]);
     }
 
     #[test]

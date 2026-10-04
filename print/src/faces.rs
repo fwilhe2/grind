@@ -172,6 +172,9 @@ pub struct Column<'a> {
     /// The space above and below each block whose declared paragraph style decides it, in
     /// points ([`grind_text::Faces::spacing`]); every other block is spaced as on screen.
     pub spacing: &'a HashMap<usize, Room>,
+    /// What each block's paragraph style says about page breaks around it
+    /// ([`grind_text::Faces::breaks`]); a block with nothing to say keeps the paginator's rules.
+    pub breaks: &'a HashMap<usize, grind_text::page::Breaks>,
     /// The text area's width, in points.
     pub width: f64,
     pub across: &'a HashMap<usize, Across>,
@@ -201,6 +204,10 @@ impl grind_text::Faces for Column<'_> {
 
     fn spacing(&self, index: usize) -> Option<grind_text::flow::Space> {
         self.spacing.get(&index).map(|room| room.space)
+    }
+
+    fn breaks(&self, index: usize) -> Option<grind_text::page::Breaks> {
+        self.breaks.get(&index).copied()
     }
 }
 
@@ -280,10 +287,12 @@ mod tests {
         )]);
         let blocks = HashMap::new();
         let spacing = HashMap::new();
+        let breaks = HashMap::new();
         let column = Column {
             faces: &faces,
             blocks: &blocks,
             spacing: &spacing,
+            breaks: &breaks,
             width: 480.0,
             across: &across,
         };
