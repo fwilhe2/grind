@@ -13,3 +13,170 @@ pub mod metrics;
 pub mod ops;
 pub mod pdf;
 pub mod text;
+
+use grind_core::page::PageGeometry;
+use grind_text::App;
+
+pub use fonts::Fonts;
+pub use metrics::{Substitution, Typesetter};
+
+/// What the caller decides about an export.
+#[derive(Clone, Debug, Default)]
+pub struct Options {
+    /// Print on this paper instead of the page the document states ([`text::Options::paper`]).
+    pub paper: Option<PageGeometry>,
+    /// The PDF's title, shown in a viewer's title bar.
+    pub title: Option<String>,
+}
+
+/// What an export did — part of the output, not an afterthought, as the xlsx filter's report is.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Report {
+    pub pages: usize,
+    /// The paper it was printed on.
+    pub page: PageGeometry,
+    /// Every family set in another face than the one it named.
+    pub substitutions: Vec<Substitution>,
+    /// Characters no face had a glyph for, drawn as the face's empty box.
+    pub missing_glyphs: usize,
+}
+
+impl Report {
+    /// The one sentence every client shows after an export.
+    pub fn summary(&self) -> String {
+        let paper = self.page.iso_name().unwrap_or_else(|| {
+            let mm = |v: f64| (v * 10.0).round() / 10.0;
+            format!("{} × {} mm", mm(self.page.width), mm(self.page.height))
+        });
+        let mut out = format!(
+            "{} page{}, {paper}.",
+            self.pages,
+            if self.pages == 1 { "" } else { "s" }
+        );
+        for sub in &self.substitutions {
+            out.push_str(&format!(
+                " \u{201c}{}\u{201d} set in {}{}.",
+                sub.asked,
+                sub.used,
+                if sub.compatible {
+                    " (same metrics)"
+                } else {
+                    ""
+                }
+            ));
+        }
+        if self.missing_glyphs > 0 {
+            out.push_str(&format!(
+                " {} character{} had no glyph in any font.",
+                self.missing_glyphs,
+                if self.missing_glyphs == 1 { "" } else { "s" }
+            ));
+        }
+        out
+    }
+}
+
+/// Typeset `app`'s document and write it as a PDF, in `fonts`.
+pub fn export(app: &App, fonts: Fonts, options: &Options) -> Result<(Vec<u8>, Report), String> {
+    let setter = Typesetter::new(fonts);
+    let page = options.paper.or(app.page()).unwrap_or_default();
+    let doc = text::typeset(app, &setter, &text::Options { paper: Some(page) });
+    let missing_glyphs = doc
+        .pages
+        .iter()
+        .flat_map(|page| &page.ops)
+        .map(|op| match op {
+            // Glyph 0 is `.notdef` in every OpenType face: the box a face draws for a character
+            // it has no glyph for.
+            ops::Op::Text { glyphs, .. } => glyphs.iter().filter(|g| g.id == 0).count(),
+            _ => 0,
+        })
+        .sum();
+    let metadata = pdf::Metadata {
+        title: options.title.clone(),
+    };
+    let bytes = pdf::write(&doc, setter.fonts(), &metadata)?;
+    let report = Report {
+        pages: doc.pages.len(),
+        page,
+        substitutions: setter.substitutions(),
+        missing_glyphs,
+    };
+    Ok((bytes, report))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use grind_text::{BlockKind, Caret, CharStyle};
+
+    #[test]
+    fn an_export_reports_its_pages_and_its_paper() {
+        let app = App::new();
+        app.insert(0, BlockKind::Paragraph, "Hello").unwrap();
+        let (bytes, report) = export(&app, Fonts::bundled(), &Options::default()).unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+        assert_eq!(report.pages, 1);
+        assert_eq!(report.page, PageGeometry::a4());
+        assert_eq!(report.substitutions, vec![]);
+        assert_eq!(report.missing_glyphs, 0);
+        assert_eq!(report.summary(), "1 page, A4.");
+    }
+
+    #[test]
+    fn a_substitution_and_a_missing_glyph_are_both_in_the_summary() {
+        let app = App::new();
+        app.insert(0, BlockKind::Paragraph, "Arial and 漢字")
+            .unwrap();
+        let arial = CharStyle {
+            font_family: Some("Arial".into()),
+            ..CharStyle::default()
+        };
+        app.set_char_style(
+            Caret {
+                block: 0,
+                offset: 0,
+            },
+            Caret {
+                block: 0,
+                offset: 5,
+            },
+            &arial,
+        )
+        .unwrap();
+        let options = Options {
+            paper: PageGeometry::paper("a5"),
+            ..Options::default()
+        };
+        let (_, report) = export(&app, Fonts::bundled(), &options).unwrap();
+        assert_eq!(report.missing_glyphs, 2);
+        assert_eq!(
+            report.summary(),
+            "1 page, A5. \u{201c}Arial\u{201d} set in Liberation Sans (same metrics). \
+             2 characters had no glyph in any font."
+        );
+    }
+
+    #[test]
+    fn a_page_of_no_iso_size_is_given_in_millimetres() {
+        let report = Report {
+            pages: 3,
+            page: PageGeometry {
+                width: 215.9,
+                height: 279.4,
+                ..PageGeometry::a4()
+            },
+            substitutions: vec![Substitution {
+                asked: "Fancy".into(),
+                used: "Liberation Serif".into(),
+                compatible: false,
+            }],
+            missing_glyphs: 1,
+        };
+        assert_eq!(
+            report.summary(),
+            "3 pages, 215.9 × 279.4 mm. \u{201c}Fancy\u{201d} set in Liberation Serif. \
+             1 character had no glyph in any font."
+        );
+    }
+}
