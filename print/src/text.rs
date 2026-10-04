@@ -20,7 +20,7 @@ use grind_text::{App, BlockKind, BlockView, Caret, paint, picture_of};
 
 use crate::faces::{Column, RoleFace, SPACING, role_faces};
 use crate::metrics::Typesetter;
-use crate::ops::{Document, Heading, Op, Page, Rgb};
+use crate::ops::{Document, Element, Heading, Mark, Op, Page, Rgb};
 
 /// The gap between a picture and its caption, in points.
 const CAPTION_GAP: f64 = 4.0;
@@ -82,7 +82,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 };
                 let origin = (left + piece.left, top + piece.top);
                 if let Some(figure) = figure(view, piece.width, body) {
-                    figure.draw(&mut ops, origin, setter, body);
+                    figure.draw(&mut ops, origin, setter, body, piece.index);
                     let length = view.runs.last().map_or(0, |run| run.end());
                     cover(caret(piece.index, 0), caret(piece.index, length));
                     continue;
@@ -111,7 +111,40 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
             }
         })
         .collect();
-    Document { pages, outline }
+    let structure = viewport
+        .iter()
+        .map(|view| {
+            let block = view.index;
+            if let Some(cell) = &view.cell {
+                return Element::Cell {
+                    block,
+                    table: cell.table.clone(),
+                    row: cell.row,
+                    column: cell.column,
+                };
+            }
+            if let Some((_, caption)) = picture_of(view) {
+                return Element::Figure {
+                    block,
+                    alt: caption.map(str::to_owned).filter(|c| !c.trim().is_empty()),
+                };
+            }
+            match view.kind {
+                BlockKind::Heading { level } => Element::Heading {
+                    block,
+                    level,
+                    title: view.text.clone(),
+                },
+                BlockKind::ListItem { depth } => Element::ListItem { block, depth },
+                BlockKind::Paragraph => Element::Paragraph { block },
+            }
+        })
+        .collect();
+    Document {
+        pages,
+        outline,
+        structure,
+    }
 }
 
 fn caret(block: usize, offset: usize) -> Caret {
@@ -174,6 +207,7 @@ fn lines(
                 glyphs: setter.shape(mark, &style).glyphs,
                 text: mark.to_owned(),
                 color: Rgb::BLACK,
+                mark: Mark::Label(view.index),
             });
         }
         for cut in paint::pieces(&view.runs, line.start, line.end) {
@@ -209,6 +243,7 @@ fn lines(
                     glyphs: shaped.glyphs,
                     text: text.to_owned(),
                     color,
+                    mark: Mark::Content(view.index),
                 });
                 // Where an underline and a strike sit, as fractions of the size: close to what
                 // the bundled faces' own `post` and `OS/2` tables say, and the same for any face.
@@ -289,6 +324,7 @@ impl Figure {
         (x, y): (f64, f64),
         setter: &Typesetter,
         body: &RoleFace<'_>,
+        block: usize,
     ) {
         ops.push(Op::Image {
             x: x as f32,
@@ -297,6 +333,7 @@ impl Figure {
             height: self.picture as f32,
             mime: self.mime.clone(),
             data: self.data.clone(),
+            mark: Mark::Content(block),
         });
         let Some(caption) = &self.caption else {
             return;
@@ -316,6 +353,7 @@ impl Figure {
                 glyphs: setter.shape(&text, &style).glyphs,
                 text,
                 color: Rgb::BLACK,
+                mark: Mark::Content(block),
             });
         }
     }
@@ -599,6 +637,52 @@ mod tests {
                 .iter()
                 .any(|p| p.start.is_some_and(|c| c.offset > 0))
         );
+    }
+
+    #[test]
+    fn every_block_is_in_the_structure_and_its_text_is_marked_as_its_own() {
+        let app = doc(&[
+            (BlockKind::Heading { level: 2 }, "Two"),
+            (BlockKind::Paragraph, "para"),
+            (BlockKind::ListItem { depth: 1 }, "item"),
+        ]);
+        app.insert_table(3, 1, 2, Some("T".into())).unwrap();
+        let typeset = typeset(&app, &setter(), &Options::default());
+        use crate::ops::{Element, Mark};
+        assert_eq!(
+            typeset.structure,
+            vec![
+                Element::Heading {
+                    block: 0,
+                    level: 2,
+                    title: "Two".into()
+                },
+                Element::Paragraph { block: 1 },
+                Element::ListItem { block: 2, depth: 1 },
+                Element::Cell {
+                    block: 3,
+                    table: "T".into(),
+                    row: 0,
+                    column: 0
+                },
+                Element::Cell {
+                    block: 4,
+                    table: "T".into(),
+                    row: 0,
+                    column: 1
+                },
+            ]
+        );
+        let marks: Vec<(String, Mark)> = typeset.pages[0]
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                Op::Text { text, mark, .. } => Some((text.clone(), *mark)),
+                _ => None,
+            })
+            .collect();
+        assert!(marks.contains(&("para".into(), Mark::Content(1))));
+        assert!(marks.contains(&("\u{2022}".into(), Mark::Label(2))));
     }
 
     #[test]

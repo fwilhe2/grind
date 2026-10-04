@@ -35,6 +35,57 @@ impl Rgb {
     }
 }
 
+/// What a piece of content *is*, for a tagged PDF's structure: part of a block's text, the
+/// label in front of a list item, or decoration a reader should skip (a table's rule, a
+/// highlight behind a word).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mark {
+    Content(usize),
+    Label(usize),
+    Decoration,
+}
+
+/// One block's place in the document's structure.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Element {
+    Paragraph {
+        block: usize,
+    },
+    Heading {
+        block: usize,
+        level: u32,
+        title: String,
+    },
+    ListItem {
+        block: usize,
+        depth: u32,
+    },
+    Figure {
+        block: usize,
+        alt: Option<String>,
+    },
+    /// A block in a table cell. `table` is the table's name, which is what tells one table from
+    /// the next in a flat sequence of blocks.
+    Cell {
+        block: usize,
+        table: String,
+        row: u32,
+        column: u32,
+    },
+}
+
+impl Element {
+    pub fn block(&self) -> usize {
+        match self {
+            Element::Paragraph { block }
+            | Element::Heading { block, .. }
+            | Element::ListItem { block, .. }
+            | Element::Figure { block, .. }
+            | Element::Cell { block, .. } => *block,
+        }
+    }
+}
+
 /// One thing to put on a page.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Op {
@@ -48,6 +99,7 @@ pub enum Op {
         glyphs: Vec<Glyph>,
         text: String,
         color: Rgb,
+        mark: Mark,
     },
     /// A filled rectangle: a highlight behind text.
     Rect {
@@ -72,6 +124,7 @@ pub enum Op {
         height: f32,
         mime: String,
         data: Arc<Vec<u8>>,
+        mark: Mark,
     },
 }
 
@@ -103,6 +156,8 @@ pub struct Heading {
 pub struct Document {
     pub pages: Vec<Page>,
     pub outline: Vec<Heading>,
+    /// Every block that printed, in document order, as what it is.
+    pub structure: Vec<Element>,
 }
 
 #[cfg(test)]

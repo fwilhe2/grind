@@ -155,6 +155,7 @@ fn draw(pixmap: &mut Pixmap, op: &Op, fonts: &Fonts, scaled: Transform, glyphs: 
             height,
             mime,
             data,
+            ..
         } => {
             let decoded = match mime.as_str() {
                 "image/png" => Pixmap::decode_png(data).ok(),
@@ -308,6 +309,7 @@ mod tests {
             glyphs: shaped.glyphs,
             text: "MMMM".into(),
             color: Rgb::BLACK,
+            mark: crate::ops::Mark::Decoration,
         });
         let raster = render(&page, setter.fonts(), 1.0);
         let inked = |x0: u32, y0: u32, x1: u32, y1: u32| {
