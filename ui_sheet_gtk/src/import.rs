@@ -72,7 +72,7 @@ pub fn open(app: &App, path: &Path, bytes: &[u8]) -> Result<Opened, String> {
     Ok(opened)
 }
 
-/// Everything [`open`] does except hand the document to an `App`: the whole of the slow part —
+/// Everything `open` does except hand the document to an `App`: the whole of the slow part —
 /// a large workbook takes a minute — and it touches no window and no `App`, so it is the half a
 /// worker thread runs while the window stays alive.
 pub fn prepare(path: &Path, bytes: &[u8]) -> Result<(grind_sheet::Document, Opened), String> {
