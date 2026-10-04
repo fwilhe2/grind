@@ -1490,7 +1490,88 @@ fn inline_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
             None
         }
         (Ns::Draw, "frame") => Some(open_frame(attrs, b)),
+        // A field's text is its cached value (rng:8549 onwards) — what Writer last computed and
+        // what a reader of the page sees. Read as text so "Figure 1." shows its 1; the element
+        // itself is not modelled, so an edit that would regenerate the paragraph and flatten
+        // the field is refused by the save's loss check rather than written.
+        (Ns::Text, local) if FIELDS.contains(&local) => Some(Box::new(FieldText)),
         _ => None,
+    }
+}
+
+/// The text fields whose cached value is shown (rng:8549–9116): every field that carries one as
+/// character content. `text:page-number` and `text:page-count` included — in the body they are
+/// rare, and their cached value is all a continuous view has.
+const FIELDS: &[&str] = &[
+    "sequence",
+    "sequence-ref",
+    "date",
+    "time",
+    "page-number",
+    "page-count",
+    "page-continuation",
+    "chapter",
+    "file-name",
+    "template-name",
+    "sheet-name",
+    "title",
+    "subject",
+    "keywords",
+    "description",
+    "initial-creator",
+    "creator",
+    "creation-date",
+    "creation-time",
+    "modification-date",
+    "modification-time",
+    "print-date",
+    "print-time",
+    "printed-by",
+    "editing-cycles",
+    "editing-duration",
+    "author-name",
+    "author-initials",
+    "sender-firstname",
+    "sender-lastname",
+    "sender-initials",
+    "sender-title",
+    "sender-position",
+    "sender-email",
+    "sender-phone-private",
+    "sender-fax",
+    "sender-company",
+    "sender-phone-work",
+    "sender-street",
+    "sender-city",
+    "sender-postal-code",
+    "sender-country",
+    "sender-state-or-province",
+    "variable-get",
+    "variable-set",
+    "variable-input",
+    "user-field-get",
+    "user-field-input",
+    "user-defined",
+    "expression",
+    "text-input",
+    "placeholder",
+    "conditional-text",
+    "hidden-text",
+    "bookmark-ref",
+    "reference-ref",
+    "note-ref",
+    "word-count",
+    "character-count",
+    "paragraph-count",
+    "page-variable-get",
+];
+
+/// A field: its character content, the cached value, into the run it sits in.
+struct FieldText;
+
+impl Context<Builder> for FieldText {
+    fn text(&mut self, text: &str, b: &mut Builder) {
+        b.push_text(text);
     }
 }
 

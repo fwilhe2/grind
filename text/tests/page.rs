@@ -188,3 +188,45 @@ fn a_document_with_no_header_or_footer_has_none_and_saves_unchanged() {
     let doc = read_bytes("x.fodt", &bytes).unwrap();
     assert_eq!(odf::write(&doc, Form::Flat).unwrap(), bytes);
 }
+
+/// A field's own text is its cached value, and it is what a reader of the page sees: Writer's
+/// `Figure <text:sequence>1</text:sequence>.` reads "Figure 1.". Shown and never flattened: a
+/// save that would turn the field into plain text is refused, never written.
+#[test]
+fn a_fields_cached_text_is_shown_and_never_flattened_on_save() {
+    let bytes = flat(
+        r#"<office:body><office:text><text:p>Figure <text:sequence text:name="Illustration" text:formula="ooow:Figure">1</text:sequence>. Caption.</text:p><text:p>Dated <text:date>4 October 2026</text:date> and <text:author-name>Max</text:author-name>.</text:p></office:text></office:body>"#,
+    );
+    // `flat` puts the body in itself; this document is its own body.
+    let bytes = String::from_utf8(bytes).unwrap().replace("<office:body><office:text><text:p>Hi</text:p></office:text></office:body></office:document>", "</office:document>").into_bytes();
+    let app = grind_text::App::new();
+    app.open_bytes("f.fodt", &bytes).unwrap();
+    let view = app.get_viewport(0..app.block_count());
+    let texts: Vec<String> = view.iter().map(|b| b.text.clone()).collect();
+    assert_eq!(
+        texts,
+        vec!["Figure 1. Caption.", "Dated 4 October 2026 and Max."]
+    );
+    assert_eq!(
+        app.save_bytes(Form::Flat).unwrap(),
+        bytes,
+        "untouched, it saves as it was"
+    );
+    app.insert_text(
+        grind_text::Caret {
+            block: 0,
+            offset: 0,
+        },
+        "A ",
+    )
+    .unwrap();
+    let saved = app.save_bytes(Form::Flat);
+    match saved {
+        Err(grind_text::Error::WouldLose(_)) => {}
+        Ok(bytes) => assert!(
+            String::from_utf8_lossy(&bytes).contains("<text:sequence"),
+            "the field survives"
+        ),
+        Err(other) => panic!("{other}"),
+    }
+}
