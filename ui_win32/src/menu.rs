@@ -169,6 +169,9 @@ pub enum Command {
     /// Write the selected blocks, or the whole document when nothing is selected, as CommonMark
     /// (`App::export_markdown`). Nothing is stored, so the document is untouched by it.
     ExportMarkdown,
+    /// The document typeset and written as a PDF (`grind_print::export`, `doc/pdf-export.md`),
+    /// the export's report on the notice bar. Nothing is stored.
+    ExportPdf,
     Recalculate,
     /// Every function this build implements, as a list to pick from — `sheet/assist.rs`'s
     /// `function_lines`, which is `grind sheet functions --long`'s four columns in a dialog.
@@ -376,6 +379,7 @@ impl Command {
         Command::ExportCsv,
         Command::ImportMarkdown,
         Command::ExportMarkdown,
+        Command::ExportPdf,
         Command::Recalculate,
         Command::FunctionList,
         Command::ExplainFormula,
@@ -556,6 +560,11 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::ExportMarkdown,
                 label: "&Export Markdown…",
+            },
+            // The page on paper (`doc/pdf-export.md`), the word processor's alone.
+            Item::Verb {
+                command: Command::ExportPdf,
+                label: "Export &PDF…\tCtrl+Shift+E",
             },
             Item::Separator,
             Item::Verb {
@@ -1257,7 +1266,8 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::ParagraphDelete
         // Markdown is blocks: they land between a document's paragraphs and come out of them.
         | Command::ImportMarkdown
-        | Command::ExportMarkdown => matches!(kind, Text),
+        | Command::ExportMarkdown
+        | Command::ExportPdf => matches!(kind, Text),
         // The two New verbs and the way back to the welcome screen mean the same thing over either
         // document: they replace what the window is showing, and what it is showing now does not
         // change what they do.
@@ -1544,6 +1554,7 @@ mod tests {
             Command::ParagraphDelete,
             Command::ImportMarkdown,
             Command::ExportMarkdown,
+            Command::ExportPdf,
         ] {
             assert!(applies_to(command, Text), "{command:?}");
             assert!(!applies_to(command, Spreadsheet), "{command:?}");

@@ -346,17 +346,38 @@ pub fn open_markdown_path(owner: HWND) -> Option<PathBuf> {
 
 /// Ask where to write markdown out.
 pub fn save_markdown_path(owner: HWND, suggested: &str) -> Option<PathBuf> {
-    let filters = vec![(gdi::wide("Markdown"), gdi::wide("*.md"))];
+    save_one_type(
+        owner,
+        suggested,
+        ("Markdown", "*.md", "md"),
+        "Export Markdown",
+    )
+}
+
+/// Ask where to write a PDF (`doc/pdf-export.md`).
+pub fn save_pdf_path(owner: HWND, suggested: &str) -> Option<PathBuf> {
+    save_one_type(owner, suggested, ("PDF", "*.pdf", "pdf"), "Export PDF")
+}
+
+/// A save dialog for one file type: its name, its pattern and the extension it defaults to.
+fn save_one_type(
+    owner: HWND,
+    suggested: &str,
+    (kind, pattern, extension): (&str, &str, &str),
+    title: &str,
+) -> Option<PathBuf> {
+    let filters = vec![(gdi::wide(kind), gdi::wide(pattern))];
     let specs = specs(&filters);
     let name = gdi::wide(suggested);
-    let extension = gdi::wide("md");
+    let extension = gdi::wide(extension);
+    let title = gdi::wide(title);
     // SAFETY: every buffer outlives the dialog, which is modal. **A nested message loop.**
     unsafe {
         let dialog: IFileSaveDialog =
             CoCreateInstance(&FileSaveDialog, None, CLSCTX_INPROC_SERVER).ok()?;
         let _ = dialog.SetFileTypes(&specs);
         let _ = dialog.SetDefaultExtension(PCWSTR(extension.as_ptr()));
-        let _ = dialog.SetTitle(PCWSTR(gdi::wide("Export Markdown").as_ptr()));
+        let _ = dialog.SetTitle(PCWSTR(title.as_ptr()));
         let _ = dialog.SetFileName(PCWSTR(name.as_ptr()));
         dialog.Show(Some(owner)).ok()?;
         item_path(&dialog.GetResult().ok()?)

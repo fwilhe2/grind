@@ -37,6 +37,9 @@ grind-core = { path = "../core" }
 grind-xlsx = { path = "../xlsx", optional = true }
 grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
+# Export PDF (doc/pdf-export.md): the bundled faces, and the machine's for a family a document
+# names, which fontdb finds in Windows' own font directory.
+grind-print = { path = "../print" }
 
 # Target-gated on purpose, and this is the design rather than a tidy-up.
 #

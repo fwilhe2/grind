@@ -3702,7 +3702,8 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::ParagraphDown
         | Command::ParagraphDelete
         | Command::ImportMarkdown
-        | Command::ExportMarkdown => {}
+        | Command::ExportMarkdown
+        | Command::ExportPdf => {}
         Command::Shortcuts => show_shortcuts(hwnd),
         Command::About => dialog::about(hwnd),
     }
@@ -5796,6 +5797,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::ParagraphDelete
         | Command::ImportMarkdown
         | Command::ExportMarkdown
+        | Command::ExportPdf
         | Command::ShowSource
         | Command::CheckDocument
         | Command::ToggleFormulas
@@ -6834,6 +6836,7 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::ParagraphDelete => text_delete_paragraphs(hwnd),
         Command::ImportMarkdown => text_import_markdown(hwnd),
         Command::ExportMarkdown => text_export_markdown(hwnd),
+        Command::ExportPdf => text_export_pdf(hwnd),
         Command::ShowSource => show_source(hwnd),
         Command::CheckDocument => check_document(hwnd),
         Command::ToggleNames => text_toggle_names(hwnd),
@@ -7616,6 +7619,58 @@ fn text_export_markdown(hwnd: HWND) {
     unsafe {
         with_text(hwnd, |text| {
             text.say(Some(format!("Wrote {}.", path.display())));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// File ▸ Export PDF… — the document typeset and written as a PDF (`doc/pdf-export.md`); the
+/// notice bar is the export's own report, which names any family it had to substitute.
+fn text_export_pdf(hwnd: HWND) {
+    // SAFETY: one borrow, released before the dialog.
+    let stem = unsafe {
+        with_text(hwnd, |text| {
+            text.path
+                .as_deref()
+                .or(text.imported.as_deref())
+                .and_then(Path::file_stem)
+                .map(|stem| stem.to_string_lossy().into_owned())
+        })
+    }
+    .flatten()
+    .unwrap_or_else(|| "Untitled".to_owned());
+    let Some(path) = dialog::save_pdf_path(hwnd, &format!("{stem}.pdf")) else {
+        return;
+    };
+    // SAFETY: one borrow, taken after the dialog has closed.
+    let exported = unsafe {
+        with_text(hwnd, |text| {
+            let options = grind_print::Options {
+                paper: None,
+                title: Some(stem.clone()),
+            };
+            grind_print::export(&text.app, grind_print::fonts_for(&text.app), &options)
+        })
+    };
+    let (bytes, report) = match exported {
+        Some(Ok(done)) => done,
+        Some(Err(why)) => return dialog::error(hwnd, &why),
+        None => return,
+    };
+    if let Err(error) = grind_core::atomic::write(&path, bytes) {
+        return dialog::error(
+            hwnd,
+            &format!("Could not write {}:\n\n{error}", path.display()),
+        );
+    }
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_text(hwnd, |text| {
+            text.say(Some(format!(
+                "Wrote {} — {}",
+                path.display(),
+                report.summary()
+            )));
         });
     }
     refresh(hwnd);
