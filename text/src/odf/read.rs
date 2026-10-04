@@ -116,6 +116,21 @@ pub struct Builder {
     /// The header or footer paragraph being read, and those of it already read.
     marginal: Option<crate::marginal::Paragraph>,
     marginal_done: Vec<crate::marginal::Paragraph>,
+    /// Every table-cell style read so far, and whether it was automatic.
+    cell_styles: HashMap<String, (bool, crate::table_look::CellLook)>,
+    /// Every table-column style's width in millimetres, and whether it was automatic.
+    column_styles: HashMap<String, (bool, Option<f64>)>,
+    /// Each table's look as read, by name: its column styles in order, its heading rows and the
+    /// style each cell names — resolved once every style is known.
+    table_pending: HashMap<String, PendingLook>,
+}
+
+/// A table's look before its styles are resolved.
+#[derive(Default)]
+struct PendingLook {
+    columns: Vec<Option<String>>,
+    header_rows: std::collections::BTreeSet<u32>,
+    cells: Vec<((u32, u32), String)>,
 }
 
 /// The room a page layout gives a header or footer, in millimetres: `(min-height, spacing)`.
@@ -199,12 +214,40 @@ impl Builder {
             layout_marginals: HashMap::new(),
             marginal: None,
             marginal_done: Vec::new(),
+            cell_styles: HashMap::new(),
+            column_styles: HashMap::new(),
+            table_pending: HashMap::new(),
         }
     }
 
     /// Settle [`Document::page`] once every part has been read: the master page called
     /// `Standard` (what Writer applies when nothing says otherwise), or the first one there is,
     /// and the page layout it names. A master page naming a layout nobody declared is no page.
+    /// Resolve every table's look against the cell and column styles, once every part is read.
+    pub fn settle_table_looks(&mut self) {
+        for (name, pending) in std::mem::take(&mut self.table_pending) {
+            let columns = pending
+                .columns
+                .iter()
+                .map(|style| {
+                    let style = style.as_deref()?;
+                    self.column_styles.get(style).and_then(|(_, width)| *width)
+                })
+                .collect();
+            let cells = pending
+                .cells
+                .into_iter()
+                .filter_map(|(at, style)| Some((at, self.cell_styles.get(&style)?.1.clone())))
+                .collect();
+            let look = crate::table_look::TableLook {
+                columns,
+                header_rows: pending.header_rows,
+                cells,
+            };
+            self.doc.table_looks.insert(name, look);
+        }
+    }
+
     /// Hand the paragraph styles to the document once every part is read.
     pub fn settle_paragraph_styles(&mut self) {
         self.doc.paragraph_styles = std::mem::take(&mut self.paragraph_styles)
@@ -299,6 +342,8 @@ impl Builder {
     /// Drop every automatic style read so far — called after `styles.xml`, whose automatic
     /// styles only that part can refer to.
     pub fn forget_automatic_styles(&mut self) {
+        self.cell_styles.retain(|_, (automatic, _)| !*automatic);
+        self.column_styles.retain(|_, (automatic, _)| !*automatic);
         self.paragraph_styles
             .retain(|_, (automatic, _)| !*automatic);
         self.styles.retain(|_, style| !style.automatic);
@@ -644,6 +689,67 @@ impl Context<Builder> for MarginalInline {
     }
 }
 
+/// A `table-cell` or `table-column` style: a cell's fill, borders, padding and vertical
+/// alignment, or a column's width (`crate::table_look`).
+struct TableStyleDef {
+    name: String,
+    column: bool,
+    automatic: bool,
+}
+
+impl Context<Builder> for TableStyleDef {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        let mm = |local: &str| {
+            attrs
+                .get(Ns::Fo, local)
+                .and_then(grind_core::style::length_mm)
+        };
+        if self.column && name.is(Ns::Style, "table-column-properties") {
+            let width = attrs
+                .get(Ns::Style, "column-width")
+                .and_then(grind_core::style::length_mm);
+            if b.column_styles.len() < MAX_STYLES {
+                b.column_styles
+                    .insert(self.name.clone(), (self.automatic, width));
+            }
+        } else if !self.column && name.is(Ns::Style, "table-cell-properties") {
+            let all = attrs.get(Ns::Fo, "border").map(str::to_owned);
+            let side = |local: &str| {
+                attrs
+                    .get(Ns::Fo, local)
+                    .map(str::to_owned)
+                    .or_else(|| all.clone())
+            };
+            let pad = mm("padding").unwrap_or(0.0);
+            let padding = |local: &str| mm(local).unwrap_or(pad);
+            let look = crate::table_look::CellLook {
+                background: attrs
+                    .get(Ns::Fo, "background-color")
+                    .filter(|c| *c != "transparent")
+                    .map(str::to_owned),
+                border: [
+                    side("border-top"),
+                    side("border-right"),
+                    side("border-bottom"),
+                    side("border-left"),
+                ],
+                padding: [
+                    padding("padding-top"),
+                    padding("padding-right"),
+                    padding("padding-bottom"),
+                    padding("padding-left"),
+                ],
+                vertical_align: attrs.get(Ns::Style, "vertical-align").map(str::to_owned),
+            };
+            if b.cell_styles.len() < MAX_STYLES {
+                b.cell_styles
+                    .insert(self.name.clone(), (self.automatic, look));
+            }
+        }
+        None
+    }
+}
+
 /// Where a paragraph style's properties go when it closes.
 enum ParagraphTarget {
     /// `style:default-style style:family="paragraph"`, the root of every chain.
@@ -810,6 +916,14 @@ impl Context<Builder> for Styles {
             && b.doc.styles.len() < MAX_STYLES
         {
             b.doc.styles.insert(declared.to_owned());
+        }
+        if let Some(family @ ("table-cell" | "table-column")) = attrs.get(Ns::Style, "family") {
+            let declared = attrs.get(Ns::Style, "name")?.to_owned();
+            return Some(Box::new(TableStyleDef {
+                name: declared,
+                column: family == "table-column",
+                automatic: self.automatic,
+            }));
         }
         if attrs.get(Ns::Style, "family") == Some("paragraph") {
             let declared = attrs.get(Ns::Style, "name")?.to_owned();
@@ -1006,6 +1120,8 @@ struct Table {
     /// Whether this context is the `table:table` itself, rather than one of the row containers
     /// inside it — which is to say, whether its `end` is the one that closes the table.
     owns: bool,
+    /// Whether its rows are the table's heading (`table:table-header-rows`).
+    header: bool,
 }
 
 impl Table {
@@ -1022,14 +1138,20 @@ impl Table {
             }
         };
         b.tables.push(OpenTable { name, row: 0 });
-        Table { owns: true }
+        Table {
+            owns: true,
+            header: false,
+        }
     }
 
     /// A container of rows that is not the table — a header-row group, or one of the two
     /// grouping elements. It shares the table's name and its row counter, and closing it
     /// closes nothing.
-    fn group() -> Self {
-        Table { owns: false }
+    fn group(header: bool) -> Self {
+        Table {
+            owns: false,
+            header,
+        }
     }
 }
 
@@ -1040,12 +1162,34 @@ impl Context<Builder> for Table {
             // and the two grouping elements. Reading them as row containers is one arm and
             // keeps a header row's cells, which are ordinary cells with a style this model does
             // not carry anyway.
-            (Ns::Table, "table-header-rows" | "table-row-group" | "table-rows") => {
-                Some(Box::new(Table::group()))
+            (Ns::Table, "table-header-rows") => Some(Box::new(Table::group(true))),
+            (
+                Ns::Table,
+                "table-row-group"
+                | "table-rows"
+                | "table-columns"
+                | "table-header-columns"
+                | "table-column-group",
+            ) => Some(Box::new(Table::group(self.header))),
+            (Ns::Table, "table-column") => {
+                let repeated = attrs.count(Ns::Table, "number-columns-repeated", MAX_TABLE_SPAN);
+                let style = attrs.get(Ns::Table, "style-name").map(str::to_owned);
+                if let Some(table) = b.tables.last() {
+                    let pending = b.table_pending.entry(table.name.clone()).or_default();
+                    for _ in 0..repeated.max(1) {
+                        pending.columns.push(style.clone());
+                    }
+                }
+                None
             }
             (Ns::Table, "table-row") => {
                 let repeated = attrs.count(Ns::Table, "number-rows-repeated", MAX_TABLE_SPAN);
-                Some(Box::new(Row::open(repeated, b)))
+                let row = Row::open(repeated, b);
+                if self.header {
+                    let pending = b.table_pending.entry(row.table.clone()).or_default();
+                    pending.header_rows.extend(row.row..row.row + row.repeated);
+                }
+                Some(Box::new(row))
             }
             _ => None,
         }
@@ -1117,6 +1261,14 @@ impl Context<Builder> for Row {
         self.column += repeated;
         if covered {
             return None;
+        }
+        if let Some(style) = attrs.get(Ns::Table, "style-name") {
+            let pending = b.table_pending.entry(self.table.clone()).or_default();
+            for offset in 0..repeated {
+                pending
+                    .cells
+                    .push(((self.row, column + offset), style.to_owned()));
+            }
         }
         let cell = crate::model::Cell {
             table: self.table.clone(),

@@ -311,3 +311,59 @@ fn a_cells_content_is_written_like_any_other_block() {
     assert_eq!(back.blocks[0].text(), "a\tb  c", "tab and spaces survived");
     assert_eq!(back.blocks[0].cell, doc.blocks[0].cell);
 }
+
+/// What a table *looks* like — its column widths, its cells' styles and which rows are its
+/// heading — read for showing and printing and never written (`grind_text::table_look`).
+#[test]
+fn a_tables_widths_cell_styles_and_header_rows_are_read() {
+    let bytes = br##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:mimetype="application/vnd.oasis.opendocument.text">
+<office:styles>
+  <style:style style:name="Head" style:family="table-cell"><style:table-cell-properties fo:border="0.5pt solid #174a5b" fo:padding="0.07in" fo:background-color="#287271" style:vertical-align="middle"/></style:style>
+  <style:style style:name="Body" style:family="table-cell"><style:table-cell-properties fo:border-bottom="1pt solid #000000" fo:padding-left="0.1in"/></style:style>
+</office:styles>
+<office:automatic-styles>
+  <style:style style:name="W1" style:family="table-column"><style:table-column-properties style:column-width="1.5in"/></style:style>
+  <style:style style:name="W2" style:family="table-column"><style:table-column-properties style:column-width="2in"/></style:style>
+</office:automatic-styles>
+<office:body><office:text><table:table table:name="T">
+  <table:table-column table:style-name="W1"/><table:table-column table:style-name="W2" table:number-columns-repeated="2"/>
+  <table:table-header-rows><table:table-row>
+    <table:table-cell table:style-name="Head"><text:p>a</text:p></table:table-cell><table:table-cell table:style-name="Head"><text:p>b</text:p></table:table-cell><table:table-cell><text:p>c</text:p></table:table-cell>
+  </table:table-row></table:table-header-rows>
+  <table:table-row>
+    <table:table-cell table:style-name="Body"><text:p>1</text:p></table:table-cell><table:table-cell><text:p>2</text:p></table:table-cell><table:table-cell><text:p>3</text:p></table:table-cell>
+  </table:table-row>
+</table:table></office:text></office:body></office:document>"##;
+    let doc = grind_text::read_bytes("t.fodt", bytes).unwrap();
+    let look = doc.table_looks.get("T").expect("the table's look");
+    let widths: Vec<Option<f64>> = look.columns.clone();
+    assert_eq!(widths.len(), 3);
+    assert!((widths[0].unwrap() - 38.1).abs() < 1e-9 && (widths[2].unwrap() - 50.8).abs() < 1e-9);
+    assert!(look.header_rows.contains(&0) && !look.header_rows.contains(&1));
+    let head = look.cell(0, 0).expect("a styled cell");
+    assert_eq!(head.background.as_deref(), Some("#287271"));
+    assert_eq!(
+        head.border[0].as_deref(),
+        Some("0.5pt solid #174a5b"),
+        "fo:border is every side"
+    );
+    assert!((head.padding[0] - 1.778).abs() < 1e-9);
+    assert_eq!(head.vertical_align.as_deref(), Some("middle"));
+    let body = look.cell(1, 0).unwrap();
+    assert_eq!(
+        (body.border[0].as_deref(), body.border[2].as_deref()),
+        (None, Some("1pt solid #000000"))
+    );
+    assert!((body.padding[3] - 2.54).abs() < 1e-9 && body.padding[0] == 0.0);
+    assert!(look.cell(1, 1).is_none(), "an unstyled cell has no look");
+    assert_eq!(
+        grind_text::odf::write(&doc, grind_text::Form::Flat).unwrap(),
+        bytes.to_vec(),
+        "reading the look changes nothing on save"
+    );
+}

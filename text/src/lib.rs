@@ -66,6 +66,7 @@ pub mod picture;
 pub mod projection;
 pub mod style;
 pub mod table;
+pub mod table_look;
 pub mod word;
 
 pub use action::Action;
@@ -802,6 +803,18 @@ impl App {
             ),
             declared: name.is_some_and(|n| state.doc.paragraph_styles.contains_key(n)),
         }
+    }
+
+    /// The look of the table named `name` — widths, cell styles, heading rows
+    /// ([`Document::table_looks`]) — read for showing and printing.
+    pub fn table_look(&self, name: &str) -> Option<table_look::TableLook> {
+        self.state
+            .read()
+            .unwrap()
+            .doc
+            .table_looks
+            .get(name)
+            .cloned()
     }
 
     /// What kind of face each declared font family is ([`Document::font_generics`]).

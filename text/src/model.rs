@@ -592,6 +592,9 @@ pub struct Document {
     /// Every named character style the document declares, by name — what a run's kept style
     /// name stands for, shown and never written (`crate::paragraph::shown`).
     pub char_styles: std::collections::HashMap<String, crate::paragraph::NamedChar>,
+    /// Each table's look, by table name — widths, cell styles, heading rows — read for showing
+    /// and printing and never written (`crate::table_look`).
+    pub table_looks: std::collections::HashMap<String, crate::table_look::TableLook>,
     /// The page's header and footer — the master page [`Document::page`] comes from — read for
     /// printing and never written (`crate::marginal`).
     pub header: Option<crate::marginal::Marginal>,
@@ -659,6 +662,7 @@ impl Document {
             paragraph_styles: std::collections::HashMap::new(),
             font_generics: std::collections::HashMap::new(),
             char_styles: std::collections::HashMap::new(),
+            table_looks: std::collections::HashMap::new(),
             header: None,
             footer: None,
             next_id: 0,
