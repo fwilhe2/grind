@@ -738,6 +738,13 @@ impl App {
             .collect()
     }
 
+    /// The page this document says it is set on, or `None` when it states none — in which case
+    /// whoever prints it uses A4 (`doc/pdf-export.md`, decision 7). Read from the master page
+    /// and never written ([`Document::page`]).
+    pub fn page(&self) -> Option<grind_core::page::PageGeometry> {
+        self.state.read().unwrap().doc.page
+    }
+
     // --- layout ---
     //
     // `doc/text-layout.md`, decided: the engine is `grind_core::layout` and these four methods

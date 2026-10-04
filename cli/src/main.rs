@@ -711,6 +711,7 @@ fn text_document(app: &TextApp, file: &Path, changed: bool, written: bool) -> Te
         characters: counts.characters,
         headings: counts.headings,
         bookmarks: app.bookmarks().into_iter().map(|(name, _)| name).collect(),
+        page: None,
         can_undo: app.can_undo(),
         can_redo: app.can_redo(),
     }
@@ -2291,6 +2292,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 let app = open_text(file)?;
                 let mut report = text_document(&app, file, false, false);
                 report.kind = Some(DocumentKind::Text.label());
+                report.page = Some(report::PageReport::new(app.page()));
                 Ok(Report::TextDocument(report))
             }
             kind => Err(unsupported(file, Some(kind))),

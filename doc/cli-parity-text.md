@@ -185,6 +185,7 @@ had no width and therefore no lines.
   would not carry. `--rules` lists them, `--off <rule>` silences one, and an *error*-severity
   finding exits non-zero. Nothing is written
 - `counts` — `grind text words` — blocks, headings, words, characters
+- `page` — `grind info`, whose `page` line (and JSON `page` object) is the page the master page names, or the A4 a document stating none prints on (`doc/pdf-export.md` P2)
 - `bookmarks` — `grind text name` with no name, which lists them all; and `grind text name
   <name>` prints where one is
 

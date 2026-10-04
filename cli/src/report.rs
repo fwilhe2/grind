@@ -406,8 +406,41 @@ pub struct TextDocumentReport {
     pub characters: usize,
     pub headings: usize,
     pub bookmarks: Vec<String>,
+    /// The page it prints on. Only `grind info` fills it in, for the reason [`Self::kind`] gives.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page: Option<PageReport>,
     pub can_undo: bool,
     pub can_redo: bool,
+}
+
+/// The page a text document prints on (`doc/pdf-export.md` P2).
+#[derive(Debug, Serialize)]
+pub struct PageReport {
+    /// The ISO 216 name when it is one (`"A4"`), either way up.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub width_mm: f64,
+    pub height_mm: f64,
+    /// Top, bottom, left, right.
+    pub margins_mm: [f64; 4],
+    /// Whether the document states this page. `false` is the A4 it gets when it states none.
+    pub stated: bool,
+}
+
+impl PageReport {
+    pub fn new(page: Option<grind_core::page::PageGeometry>) -> Self {
+        let geometry = page.unwrap_or_default();
+        // Hundredths of a millimetre: enough to tell 210 from 210.01, and short enough not to
+        // print the float noise an inch-to-millimetre conversion leaves behind.
+        let round = |mm: f64| (mm * 100.0).round() / 100.0;
+        PageReport {
+            name: geometry.iso_name(),
+            width_mm: round(geometry.width),
+            height_mm: round(geometry.height),
+            margins_mm: [geometry.top, geometry.bottom, geometry.left, geometry.right].map(round),
+            stated: page.is_some(),
+        }
+    }
 }
 
 /// `grind lint`, for either application.
@@ -628,6 +661,16 @@ impl Report {
                 );
                 for name in &doc.bookmarks {
                     println!("#{name}");
+                }
+                if let Some(page) = &doc.page {
+                    let [top, bottom, left, right] = page.margins_mm;
+                    println!(
+                        "page\t{}\t{} × {} mm\tmargins {top} {bottom} {left} {right} mm{}",
+                        page.name.as_deref().unwrap_or("custom"),
+                        page.width_mm,
+                        page.height_mm,
+                        if page.stated { "" } else { "\t(default)" },
+                    );
                 }
                 println!(
                     "{}{}{}{}{}",
