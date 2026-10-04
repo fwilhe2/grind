@@ -530,6 +530,19 @@ impl Block {
     }
 }
 
+/// `style:default-style style:family="paragraph"`'s `fo:widows` and `fo:orphans` (rng:12512,
+/// rng:12517): the fewest lines a paragraph split across pages leaves at the top of the next page
+/// and at the foot of this one. `None` when the document states nothing, which Writer reads as
+/// no control at all (`doc/odt-format.md` §5c, fact 3).
+///
+/// Only the default style for now: a named paragraph style's own values wait for paragraph
+/// styles to be resolved (`doc/pdf-export.md` P5).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ParagraphDefaults {
+    pub widows: Option<u32>,
+    pub orphans: Option<u32>,
+}
+
 /// A text document.
 #[derive(Clone, Debug)]
 pub struct Document {
@@ -562,6 +575,9 @@ pub struct Document {
     /// a document this build wrote or generated has none. `None` means the document stated no
     /// page, and whoever prints it uses A4 ([`grind_core::page::PageGeometry::default`]).
     pub page: Option<grind_core::page::PageGeometry>,
+    /// What the document's **default paragraph style** says about how a paragraph breaks across
+    /// pages — read and never written, as [`Document::page`] is (`doc/odt-format.md` §5c).
+    pub paragraphs: ParagraphDefaults,
     /// The next id to hand out. Monotonic, never reused, so a stale [`BlockId`] is always
     /// stale rather than silently pointing at something new.
     next_id: u64,
@@ -621,6 +637,7 @@ impl Document {
             bookmarks: BTreeMap::new(),
             styles: std::collections::BTreeSet::new(),
             page: None,
+            paragraphs: ParagraphDefaults::default(),
             next_id: 0,
             source: None,
             projection_source: None,

@@ -124,7 +124,8 @@ and an `.fodt` this build regenerates declares nothing either. The set exists so
 undeclared is that known loss stated out loud rather than a round-trip failure — loop F compares
 blocks, runs and bookmarks, which is what the projection is bijective with.
 
-`Document::page` — the page the document's master page names — has no node either, for the
+`Document::page` — the page the document's master page names — and `Document::paragraphs` — the
+default paragraph style's widows and orphans — have no node either, for the
 same reason: it is read and never written. The envelope carries `office:master-styles` and the
 page layouts out of an `.fodt` byte for byte, a `.grind` has no envelope, and a document read
 from one prints on A4 like any document that states no page (`doc/pdf-export.md` P2). Giving a

@@ -185,6 +185,7 @@ had no width and therefore no lines.
   would not carry. `--rules` lists them, `--off <rule>` silences one, and an *error*-severity
   finding exits non-zero. Nothing is written
 - `counts` — `grind text words` — blocks, headings, words, characters
+- `paragraph_defaults` — `grind text pages` and `export-pdf`, whose page breaks honour the default paragraph style's widows and orphans (`doc/odt-format.md` §5c); no verb prints them on their own, since they mean nothing apart from a page
 - `page` — `grind info`, whose `page` line (and JSON `page` object) is the page the master page names, or the A4 a document stating none prints on (`doc/pdf-export.md` P2)
 - `bookmarks` — `grind text name` with no name, which lists them all; and `grind text name
   <name>` prints where one is

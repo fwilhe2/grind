@@ -478,6 +478,23 @@ impl Context<Builder> for MasterStyles {
     }
 }
 
+/// `style:default-style style:family="paragraph"` — only its widows and orphans, which is what
+/// a page needs from it (`doc/odt-format.md` §5c).
+struct DefaultParagraph;
+
+impl Context<Builder> for DefaultParagraph {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Style, "paragraph-properties") {
+            let count = |local: &str| attrs.get(Ns::Fo, local).and_then(|v| v.trim().parse().ok());
+            b.doc.paragraphs = crate::model::ParagraphDefaults {
+                widows: count("widows"),
+                orphans: count("orphans"),
+            };
+        }
+        None
+    }
+}
+
 /// `style:page-layout` (rng:12213): its `style:page-layout-properties` (rng:12248) are the
 /// page's size and margins, read by [`grind_core::page::PageGeometry::from_properties`].
 struct PageLayout {
@@ -514,6 +531,11 @@ impl Context<Builder> for Styles {
         if name.is(Ns::Style, "page-layout") {
             let name = attrs.get(Ns::Style, "name")?.to_owned();
             return Some(Box::new(PageLayout { name }));
+        }
+        if name.is(Ns::Style, "default-style")
+            && attrs.get(Ns::Style, "family") == Some("paragraph")
+        {
+            return Some(Box::new(DefaultParagraph));
         }
         if !name.is(Ns::Style, "style") {
             return None;

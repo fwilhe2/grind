@@ -49,15 +49,14 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     };
     let body = &faces[0];
     let picture = |view: &BlockView, measure: f64| figure(view, measure, body).map(|f| f.height);
-    let pages = paginate(
-        app,
-        &column,
-        width,
-        height,
-        &SPACING,
-        Rules::default(),
-        &picture,
-    );
+    // The document's own widows and orphans, and none where it states none — what Writer does
+    // (`doc/odt-format.md` §5c, fact 3).
+    let stated = app.paragraph_defaults();
+    let breaking = Rules {
+        orphans: stated.orphans.unwrap_or(0) as usize,
+        widows: stated.widows.unwrap_or(0) as usize,
+    };
+    let pages = paginate(app, &column, width, height, &SPACING, breaking, &picture);
     let viewport = app.get_viewport(0..app.block_count());
 
     let mut outline = Vec::new();
@@ -683,6 +682,29 @@ mod tests {
             .collect();
         assert!(marks.contains(&("para".into(), Mark::Content(1))));
         assert!(marks.contains(&("\u{2022}".into(), Mark::Label(2))));
+    }
+
+    /// `doc/odt-format.md` §5c fact 3: a paragraph that does not fit leaves a lone line on the
+    /// next page when the document states no widows, and two when it states two.
+    #[test]
+    fn widows_are_the_documents_own_and_none_when_it_states_none() {
+        let lines_on = |widows: Option<&str>| {
+            let props = widows.map_or(String::new(), |w| {
+                format!(r#"<office:styles><style:default-style style:family="paragraph"><style:paragraph-properties fo:widows="{w}" fo:orphans="{w}"/></style:default-style></office:styles>"#)
+            });
+            // A page with room for exactly four lines of 12 pt Liberation Serif (13.8 pt each),
+            // and a paragraph of five.
+            let height = 4.0 * 13.8 * 25.4 / 72.0 + 0.5;
+            let bytes = format!(
+                r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">{props}<office:automatic-styles><style:page-layout style:name="pm"><style:page-layout-properties fo:page-width="10cm" fo:page-height="{height}mm"/></style:page-layout></office:automatic-styles><office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm"/></office:master-styles><office:body><office:text><text:p>a<text:line-break/>b<text:line-break/>c<text:line-break/>d<text:line-break/>e</text:p></office:text></office:body></office:document>"#
+            );
+            let app = App::new();
+            app.open_bytes("w.fodt", bytes.as_bytes()).unwrap();
+            let doc = typeset(&app, &setter(), &Options::default());
+            doc.pages.iter().map(|p| texts(p).len()).collect::<Vec<_>>()
+        };
+        assert_eq!(lines_on(None), vec![4, 1]);
+        assert_eq!(lines_on(Some("2")), vec![3, 2]);
     }
 
     #[test]

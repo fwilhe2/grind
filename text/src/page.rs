@@ -42,8 +42,9 @@ pub struct Rules {
 }
 
 impl Default for Rules {
-    /// Two and two: the typographer's usual minimum, and ours until a document's own
-    /// `fo:orphans`/`fo:widows` are read (P5).
+    /// Two and two: the typographer's usual minimum, and what Writer writes on a new document's
+    /// default paragraph style. A caller printing a real document passes that document's own
+    /// instead — `grind_print` does, and none where it states none (`doc/odt-format.md` §5c).
     fn default() -> Self {
         Rules {
             orphans: 2,

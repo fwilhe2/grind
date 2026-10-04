@@ -71,8 +71,8 @@ pub use grind_core::layout::{self, Fixed, Layout, Metrics};
 pub use grind_core::{DocumentKind, Error, Form, Observer, Result, kind};
 pub use loc::{Caret, Loc, Target};
 pub use model::{
-    Block, BlockId, BlockKind, Cell, Document, MAX_LIST_DEPTH, NAMED_STYLES, Run, indent_kind,
-    named_style_for,
+    Block, BlockId, BlockKind, Cell, Document, MAX_LIST_DEPTH, NAMED_STYLES, ParagraphDefaults,
+    Run, indent_kind, named_style_for,
 };
 pub use style::CharStyle;
 
@@ -744,6 +744,11 @@ impl App {
     /// and never written ([`Document::page`]).
     pub fn page(&self) -> Option<grind_core::page::PageGeometry> {
         self.state.read().unwrap().doc.page
+    }
+
+    /// The default paragraph style's widows and orphans ([`Document::paragraphs`]).
+    pub fn paragraph_defaults(&self) -> ParagraphDefaults {
+        self.state.read().unwrap().doc.paragraphs
     }
 
     // --- layout ---
