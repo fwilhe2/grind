@@ -35,16 +35,29 @@ pub const SPACING: Spacing = Spacing {
     cell_pad: 4.0,
 };
 
-/// One role's face on paper: a [`Metrics`] that sets a run in its own formatting where it has
-/// some, and in the role's where it has none.
+/// One block's face on paper: a [`Metrics`] that sets a run in its own formatting where it has
+/// some, in its paragraph style's where the run says nothing (`stated`), and in the role's
+/// where neither does.
 pub struct RoleFace<'a> {
     setter: &'a Typesetter,
     role: Role,
+    /// What the block's paragraph style states — family, size, weight, slant — resolved down its
+    /// chain (`grind_text::paragraph`). Empty for a role's own face.
+    stated: TextStyle,
 }
 
 impl<'a> RoleFace<'a> {
     pub fn new(setter: &'a Typesetter, role: Role) -> Self {
-        RoleFace { setter, role }
+        RoleFace::stating(setter, role, TextStyle::default())
+    }
+
+    /// A role's face under what a paragraph style states.
+    pub fn stating(setter: &'a Typesetter, role: Role, stated: TextStyle) -> Self {
+        RoleFace {
+            setter,
+            role,
+            stated,
+        }
     }
 
     pub fn setter(&self) -> &'a Typesetter {
@@ -54,15 +67,16 @@ impl<'a> RoleFace<'a> {
     /// What a run formatted `run` is really set in, in a block of this role: every property the
     /// run leaves unsaid filled in from the role, and a percentage size made absolute.
     pub fn style(&self, run: &TextStyle) -> TextStyle {
-        let base = BODY_PT * self.role.scale();
+        let role = BODY_PT * self.role.scale();
+        let base = match self.stated.font_size.as_deref().map(str::trim) {
+            Some(value) if value.ends_with('%') => percent_of(value, role),
+            Some(value) => grind_core::style::length_mm(value)
+                .filter(|mm| *mm > 0.0)
+                .map_or(role, |mm| mm * 72.0 / 25.4),
+            None => role,
+        };
         let size = match run.font_size.as_deref().map(str::trim) {
-            Some(value) if value.ends_with('%') => value
-                .trim_end_matches('%')
-                .trim()
-                .parse::<f64>()
-                .ok()
-                .filter(|percent| *percent > 0.0)
-                .map_or(base, |percent| base * percent / 100.0),
+            Some(value) if value.ends_with('%') => percent_of(value, base),
             Some(value) if grind_core::style::length_mm(value).is_some_and(|mm| mm > 0.0) => {
                 return self.with_role(run, value.to_owned());
             }
@@ -73,20 +87,27 @@ impl<'a> RoleFace<'a> {
 
     /// `run` with the role's family, weight and slant wherever it states none, at `size`.
     fn with_role(&self, run: &TextStyle, size: String) -> TextStyle {
+        let stated = &self.stated;
         TextStyle {
-            font_family: run.font_family.clone().or_else(|| {
-                self.role
-                    .mono()
-                    .then(|| grind_text::markdown::MONOSPACE.to_owned())
-            }),
+            font_family: run
+                .font_family
+                .clone()
+                .or_else(|| {
+                    self.role
+                        .mono()
+                        .then(|| grind_text::markdown::MONOSPACE.to_owned())
+                })
+                .or_else(|| stated.font_family.clone()),
             font_size: Some(size),
             font_weight: run
                 .font_weight
                 .clone()
+                .or_else(|| stated.font_weight.clone())
                 .or_else(|| self.role.bold().then(|| "bold".to_owned())),
             font_style: run
                 .font_style
                 .clone()
+                .or_else(|| stated.font_style.clone())
                 .or_else(|| self.role.italic().then(|| "italic".to_owned())),
         }
     }
@@ -104,6 +125,18 @@ impl Metrics for RoleFace<'_> {
     fn ascent(&self, style: &TextStyle) -> f32 {
         self.setter.ascent(&self.style(style))
     }
+}
+
+/// `value` (`"130%"`) of `base` points, or `base` itself when it is not a positive percentage.
+fn percent_of(value: &str, base: f64) -> f64 {
+    value
+        .trim()
+        .trim_end_matches('%')
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|percent| *percent > 0.0)
+        .map_or(base, |percent| base * percent / 100.0)
 }
 
 /// A size in points as an ODF length, without the float noise a scale leaves (`21.6pt`, not
@@ -125,14 +158,20 @@ pub fn role_faces(setter: &Typesetter) -> Vec<RoleFace<'_>> {
 /// `Faces::of` is called while `App` holds its read lock ([`grind_text::flow::across`]).
 pub struct Column<'a> {
     pub faces: &'a [RoleFace<'a>],
+    /// A face of its own for each block whose paragraph style states something about its text,
+    /// by block index; every other block is set in its role's face.
+    pub blocks: &'a HashMap<usize, RoleFace<'a>>,
     /// The text area's width, in points.
     pub width: f64,
     pub across: &'a HashMap<usize, Across>,
 }
 
 impl Column<'_> {
-    /// The face a block of `kind` and `style` is set in.
-    pub fn face(&self, kind: &BlockKind, style: Option<&str>) -> &RoleFace<'_> {
+    /// The face the block at `index`, of `kind` and `style`, is set in.
+    pub fn face(&self, index: usize, kind: &BlockKind, style: Option<&str>) -> &RoleFace<'_> {
+        if let Some(face) = self.blocks.get(&index) {
+            return face;
+        }
         let role = Role::of(kind, style);
         let slot = Role::ALL.iter().position(|each| *each == role).unwrap_or(0);
         &self.faces[slot]
@@ -145,7 +184,7 @@ impl grind_text::Faces for Column<'_> {
             Some(cell) => cell.width,
             None => SPACING.measure(kind, self.width),
         };
-        ((width as f32).max(1.0), self.face(kind, style))
+        ((width as f32).max(1.0), self.face(index, kind, style))
     }
 }
 
@@ -223,8 +262,10 @@ mod tests {
                 width: 120.0,
             },
         )]);
+        let blocks = HashMap::new();
         let column = Column {
             faces: &faces,
+            blocks: &blocks,
             width: 480.0,
             across: &across,
         };

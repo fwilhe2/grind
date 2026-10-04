@@ -42,8 +42,11 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     let (width, height) = (pt(geometry.text_width()), pt(geometry.text_height()));
     let faces = role_faces(setter);
     let across = flow::across(app, width, &SPACING);
+    let viewport = app.get_viewport(0..app.block_count());
+    let blocks = block_faces(app, setter, &viewport);
     let column = Column {
         faces: &faces,
+        blocks: &blocks,
         width,
         across: &across,
     };
@@ -57,7 +60,6 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         widows: stated.widows.unwrap_or(0) as usize,
     };
     let pages = paginate(app, &column, width, height, &SPACING, breaking, &picture);
-    let viewport = app.get_viewport(0..app.block_count());
 
     let mut outline = Vec::new();
     let pages = pages
@@ -96,7 +98,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                         y: origin.1 as f32,
                     });
                 }
-                let face = column.face(&view.kind, view.style.as_deref());
+                let face = column.face(view.index, &view.kind, view.style.as_deref());
                 if let Some((from, to)) = lines(&mut ops, app, view, piece, face, origin) {
                     cover(caret(piece.index, from), caret(piece.index, to));
                 }
@@ -144,6 +146,40 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         outline,
         structure,
     }
+}
+
+/// A face for every block whose paragraph style says something about its text
+/// (`doc/pdf-export.md` P5): all four properties when the document declares the block's style,
+/// and only the default style's family when it does not — such a block keeps the screen's own
+/// size and weight for its role, which is the better guess for a heading whose style is missing.
+fn block_faces<'a>(
+    app: &App,
+    setter: &'a Typesetter,
+    viewport: &grind_text::Viewport,
+) -> std::collections::HashMap<usize, RoleFace<'a>> {
+    viewport
+        .iter()
+        .filter_map(|view| {
+            let resolved = app.paragraph(view.index)?;
+            let props = resolved.props;
+            let stated = match resolved.declared {
+                true => TextStyle {
+                    font_family: props.font_family,
+                    font_size: props.font_size,
+                    font_weight: props.font_weight,
+                    font_style: props.font_style,
+                },
+                false => TextStyle {
+                    font_family: props.font_family,
+                    ..TextStyle::default()
+                },
+            };
+            (stated != TextStyle::default()).then(|| {
+                let role = grind_text::look::Role::of(&view.kind, view.style.as_deref());
+                (view.index, RoleFace::stating(setter, role, stated))
+            })
+        })
+        .collect()
 }
 
 fn caret(block: usize, offset: usize) -> Caret {
@@ -705,6 +741,49 @@ mod tests {
         };
         assert_eq!(lines_on(None), vec![4, 1]);
         assert_eq!(lines_on(Some("2")), vec![3, 2]);
+    }
+
+    /// `doc/pdf-export.md` P5: a block whose style the document declares is set as that style
+    /// says; one whose style it does not declare keeps the screen's face, in the document's own
+    /// default family.
+    #[test]
+    fn a_declared_style_sets_its_blocks_face() {
+        let bytes = r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:styles>
+              <style:default-style style:family="paragraph"><style:text-properties fo:font-family="'Liberation Sans'" fo:font-size="12pt"/></style:default-style>
+              <style:style style:name="Heading" style:family="paragraph"><style:text-properties fo:font-size="14pt"/></style:style>
+              <style:style style:name="Heading_20_1" style:family="paragraph" style:parent-style-name="Heading"><style:text-properties fo:font-size="130%" fo:font-weight="bold" fo:font-family="'Liberation Mono'"/></style:style>
+            </office:styles>
+            <office:body><office:text>
+              <text:h text:style-name="Heading_20_1" text:outline-level="1">declared</text:h>
+              <text:h text:style-name="Undeclared" text:outline-level="1">undeclared</text:h>
+              <text:p>plain</text:p>
+            </office:text></office:body></office:document>"#;
+        let app = App::new();
+        app.open_bytes("s.fodt", bytes.as_bytes()).unwrap();
+        let t = setter();
+        let page = &typeset(&app, &t, &Options::default()).pages[0];
+        let face = |want: &str| {
+            page.ops.iter().find_map(|op| match op {
+                Op::Text {
+                    text, face, size, ..
+                } if text == want => {
+                    let f = t.fonts().face(*face);
+                    Some((f.family.clone(), f.bold, *size))
+                }
+                _ => None,
+            })
+        };
+        assert_eq!(
+            face("declared"),
+            Some(("Liberation Mono".into(), true, 18.2))
+        );
+        assert_eq!(
+            face("undeclared"),
+            Some(("Liberation Sans".into(), true, 21.6)),
+            "the role's scale and weight"
+        );
+        assert_eq!(face("plain"), Some(("Liberation Sans".into(), false, 12.0)));
     }
 
     #[test]
