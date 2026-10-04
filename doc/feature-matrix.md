@@ -426,6 +426,17 @@ it, and dragging one moves it. There is no dialog, and resizing or recolouring o
 | Edit inside a cell | ● | ● | ● ᵖ | ● ᵖ | ● ᵖ | ● |
 | **Draws** a table as a grid | — | ● | ● ᵠ | ● | ● ᵖ | ● |
 | Merge cells, set a column width | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ ᵗ | ○ |
+| **Paper** (`doc/pdf-export.md`) | | | | | | |
+| Export a PDF | ● | ● | ● | ● | ● | ● |
+| Where each page begins | ● | — | ● | — | — | — |
+| Print preview | ● ᵖᵖ | ● | ○ | ● | ● | ● ᵖᵖ |
+| Print | — | ● | ○ | ● ᵖᵖ | ● ᵖᵖ | ● |
+
+ᵖᵖ The CLI's preview is one page as a PNG (`grind text preview`). The Mac's is the system print
+panel's own, over the PDF itself; the browser prints by opening the PDF in the browser's viewer,
+and Windows, which has no API that prints a PDF, sends the preview's rasters at the printer's
+resolution. Every preview anywhere is `grind_print::raster` of the display list the PDF is
+written from, except the Mac's, which is the PDF. The terminal cannot show a page at all.
 
 ᵃ Visual mode (`v`), which is the same anchor-plus-caret model under vi's spelling.
 ᵇ `o` opens a paragraph below, `X` deletes the block, `:move <address>` puts it elsewhere.
@@ -579,13 +590,14 @@ freeze panes · sort · printing · pivot tables · macros
 other client does (`doc/not-doing.md` §3, *Autosave*).
 
 **Word processor.** Footnotes · fields (`text:page-number`, `text:date`, …) · style
-*definitions* (a named character style is kept and never interpreted) · pages · printing · an
+*definitions* (a named character style is kept and never interpreted) · a paginated *editing*
+view (pages are an output now, §7's Paper rows, never a place to type) · an
 image anchored mid-sentence, which draws as the placeholder character everywhere · a table's own
 style (column widths, borders), merging cells from any client, and `table:formula` in a cell —
 the last of which is gated on `doc/odt-format.md` §5's unanswered question about whether a
 Writer table's formula is OpenFormula at all.
 
-**Both.** Pagination and RTL, both gated — RTL by explicit decision in `doc/text-layout.md`.
+**Both.** Pagination as an editing view, and RTL, both gated — RTL by explicit decision in `doc/text-layout.md`.
 Editing the code view (`doc/dsl.md` §6.4). `grind test` is built (D8) and, like `grind build`,
 is the CLI's alone by R11: no shell links the generator.
 

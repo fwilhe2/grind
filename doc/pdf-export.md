@@ -306,10 +306,12 @@ a user-visible capability (CLAUDE.md: a feature without a line there is invisibl
 | P1 | Open. Until it is done nothing below claims to match Writer: widows and orphans are two each by our own choice, and line height is the face's ascent + descent + line gap |
 | P2 | **Done**: `grind_core::page`, `Document::page`, `grind info`'s `page` line |
 | P3 | **Done, apart from system fonts**: `Fonts` (bundled Liberation, metric-compatible twins, generics, Writer's default), `Typesetter` (harfrust, points), `Metrics::ascent` and `Layout::baseline`. Per-glyph fallback is not built: a character no face has is counted in the report, not drawn from another face |
-| P4 | **Done, untagged**: `grind_text::page::paginate`, `grind-print`'s `faces`, `ops`, `text` (typeset) and `pdf` (krilla); outline, title; `grind text export-pdf` and `grind text pages`. Tagged PDF and PDF/A are still to come |
+| P3 | system fonts **done** too: `fonts_for` reads only the families a document names (and their twins) from the machine, `--bundled-fonts` turns it off |
+| P4 | **Done**: `grind_text::page::paginate`, `grind-print`'s `faces`, `ops`, `text` (typeset) and `pdf` (krilla); outline, title, **tagged** (H1–H6, P, L/LI/Lbl/LBody, Table/TR/TD, Figure); `grind text export-pdf` and `grind text pages`. PDF/A is still to come |
 | P5 | Open |
-| P6 | **Half**: `raster.rs`, its `hayro` cross-check, and `grind text preview`. No shell has a preview window yet |
-| P7–P9 | Open |
+| P6 | **Done**: `raster.rs`, its `hayro` cross-check, `grind text preview`, and the GNOME window's Print Preview, Export and Print (`gtk::PrintDialog` over the PDF) |
+| P7 | **Done**: the terminal (`:pdf`, `:pages`), the browser (a second wasm module loaded on first use; export, a canvas preview, print through the browser's viewer), Windows (export, a page preview, print as rasters through `StartDocW`) and the Mac (export, print through PDFKit, whose panel is the preview). The Windows and Mac halves are type-checked and linted from Linux and not yet run; Windows links and starts under Wine |
+| P8–P9 | Open |
 
 | | What | Size | Exit criterion |
 |---|---|---|---|
