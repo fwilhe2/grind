@@ -617,7 +617,14 @@ oracle turned out to be unable to answer the font questions (fact 4).
    **default paragraph style** (`style:default-style style:family="paragraph"`) —
    `text/tests/data/edited-default-paragraph-style.fodt` does — which is where a reader that does
    not yet resolve named paragraph styles finds them.
-4. **The pinned image has no Liberation fonts.** The same document set in Liberation Serif
+5. **Paragraph spacing adds; it does not collapse.** A paragraph with `fo:margin-bottom="1cm"`
+   followed by one with `fo:margin-top="0.5cm"` puts 42.52 pt between the first's line and the
+   second's beyond the line itself — 28.35 + 14.17, not the larger of the two (26.8.1.1). A
+   screen's habit of collapsing adjacent margins is not Writer's.
+6. **The first paragraph's space above is applied at the top of the first page** (its line
+   starts 28.35 pt below the top margin for a 1 cm `fo:margin-top`), and **a paragraph that
+   starts a later page drops its space above**: its line sits on the top margin (26.8.1.1).
+7. **The pinned image has no Liberation fonts.** The same document set in Liberation Serif
    comes out in **DejaVu Serif** from the pin (`pdffonts`), so line breaks and page breaks
    measured there are DejaVu's. Loop G cannot use the pin as it stands; it needs the bundled
    faces installed in the image first (`doc/pdf-export.md` P9).
