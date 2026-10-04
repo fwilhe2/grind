@@ -27,6 +27,7 @@ mod geom;
 mod keymap;
 mod lint;
 mod metrics;
+mod print;
 mod theme;
 mod view;
 
@@ -71,6 +72,10 @@ fn main() -> ExitCode {
     // so the mode is assertable the same way the rest of this widget is. Not a user feature
     // either — the window's own menu item is.
     let mut names = false;
+    // `--preview` opens Print Preview over the document, and with `--render-to` it is the
+    // preview window that is drawn — the same kind of assertable output for the page's own
+    // window (`doc/pdf-export.md` P6).
+    let mut preview = false;
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
         match arg {
@@ -79,6 +84,7 @@ fn main() -> ExitCode {
                     args.next().unwrap_or_else(|| "document.png".into()),
                 ));
             }
+            arg if arg == "--preview" => preview = true,
             arg if arg == "--overlay" => match args.next().as_deref().and_then(|a| a.to_str()) {
                 Some("names") => names = true,
                 other => {
@@ -138,8 +144,12 @@ fn main() -> ExitCode {
             ui.doc.set_names(true);
         }
         ui.window.present();
+        let previewed = preview.then(|| print::preview(&ui));
         if let Some(target) = render_to.clone() {
-            render_once(&ui.window, target);
+            match &previewed {
+                Some(window) => render_once(window.upcast_ref(), target, &ui.window),
+                None => render_once(ui.window.upcast_ref(), target, &ui.window),
+            }
         }
     });
 
@@ -1316,6 +1326,12 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("save-as", &["<Control><Shift>s"][..], |ui| ui.save_as()),
         ("import-markdown", &[][..], |ui| ui.import_markdown()),
         ("export-markdown", &[][..], |ui| ui.export_markdown()),
+        // The page, three ways (`doc/pdf-export.md`): one typesetting for all of them.
+        ("export-pdf", &["<Control><Shift>e"][..], print::export_pdf),
+        ("print-preview", &["<Control><Shift>p"][..], |ui| {
+            print::preview(ui);
+        }),
+        ("print", &["<Control>p"][..], print::print),
         ("undo", &["<Control>z"][..], |ui| {
             ui.app.undo();
         }),
@@ -1407,6 +1423,9 @@ fn shortcut_rows() -> Vec<ShortcutGroup> {
                 ("Open", "<Control>o"),
                 ("Save", "<Control>s"),
                 ("Save As", "<Control><Shift>s"),
+                ("Export PDF", "<Control><Shift>e"),
+                ("Print preview", "<Control><Shift>p"),
+                ("Print", "<Control>p"),
                 ("Undo", "<Control>z"),
                 ("Redo", "<Control><Shift>z <Control>y"),
                 ("Find", "<Control>f"),
@@ -1475,6 +1494,12 @@ fn primary_menu() -> gio::Menu {
     markdown.append(Some("Import Markdown…"), Some("win.import-markdown"));
     markdown.append(Some("Export Markdown…"), Some("win.export-markdown"));
     menu.append_section(None, &markdown);
+
+    let paper = gio::Menu::new();
+    paper.append(Some("Export PDF…"), Some("win.export-pdf"));
+    paper.append(Some("Print Preview"), Some("win.print-preview"));
+    paper.append(Some("Print…"), Some("win.print"));
+    menu.append_section(None, &paper);
 
     // **The document and the window, and nothing about the selection** — the HIG's rule for a
     // primary menu, which the spreadsheet's already keeps (`doc/sheet-shell.md`, "Four
@@ -1684,8 +1709,9 @@ fn save_name(path: Option<&Path>) -> String {
 /// Draw one frame, write it and quit — how a machine checks that the view still draws.
 ///
 /// Not a user feature. A refactor is proved one when the PNG comes back byte-identical.
-fn render_once(window: &adw::ApplicationWindow, target: PathBuf) {
+fn render_once(window: &gtk::Window, target: PathBuf, main: &adw::ApplicationWindow) {
     let window = window.clone();
+    let main = main.clone();
     glib::timeout_add_local_once(std::time::Duration::from_millis(600), move || {
         let width = window.width();
         let height = window.height();
@@ -1693,12 +1719,25 @@ fn render_once(window: &adw::ApplicationWindow, target: PathBuf) {
         let snapshot = gtk::Snapshot::new();
         paintable.snapshot(&snapshot, f64::from(width), f64::from(height));
 
+        // The window's own renderer when it has one; otherwise a cairo renderer realized with
+        // no surface, which draws offscreen — what a display with no compositor attached
+        // (Broadway with no browser on it) needs.
+        let offscreen = || {
+            let renderer = gtk::gsk::CairoRenderer::new();
+            renderer.realize(None::<&gtk::gdk::Surface>).ok()?;
+            Some(renderer.upcast::<gtk::gsk::Renderer>())
+        };
         let result = window
             .native()
             .and_then(|native| native.renderer())
-            .zip(snapshot.to_node())
-            .map(|(renderer, node)| renderer.render_texture(&node, None))
+            .or_else(offscreen)
             .ok_or_else(|| "the window has no renderer yet".to_owned())
+            .and_then(|renderer| {
+                snapshot
+                    .to_node()
+                    .map(|node| renderer.render_texture(&node, None))
+                    .ok_or_else(|| format!("nothing was drawn in {width} × {height}"))
+            })
             .and_then(|texture| texture.save_to_png(&target).map_err(|e| e.to_string()));
 
         match result {
@@ -1706,6 +1745,7 @@ fn render_once(window: &adw::ApplicationWindow, target: PathBuf) {
             Err(error) => eprintln!("grind-text-gtk: --render-to: {error}"),
         }
         window.close();
+        main.close();
     });
 }
 

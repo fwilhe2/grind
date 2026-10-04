@@ -329,7 +329,13 @@ The three it left owed are built too:
 scripts/run.sh text-gtk                     # the sample text document, in a window
 cargo run -p grind-text-gtk -- report.fodt
 cargo run -p grind-text-gtk -- report.fodt --render-to /tmp/page.png   # one frame, then exit
+cargo run -p grind-text-gtk -- report.fodt --preview --render-to /tmp/preview.png  # Print Preview
 cargo test -p grind-text-gtk                # geom, keys, and — where there is a display — the widget
+
+# No X server and no Xvfb? Broadway is a display, and a headless browser is its compositor: with
+# no client attached the windows are never mapped and nothing is drawn.
+gtk4-broadwayd :7 & firefox --headless --no-remote --profile /tmp/ff http://127.0.0.1:8087/ &
+GDK_BACKEND=broadway BROADWAY_DISPLAY=:7 cargo run -p grind-text-gtk -- report.fodt --preview --render-to /tmp/preview.png
 
 ui_web/build.sh release && ui_web/smoke.sh release   # the browser boundary, in jsdom
 scripts/run.sh web /tmp/grind-demo/sample.fodt       # served next to the page, opened with ?doc=
