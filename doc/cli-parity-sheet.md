@@ -247,6 +247,15 @@ stops ratcheting.
 - `set_observer` — not exposed: the core pushes changes to shells that stay running
   (`doc/plan.md` rule 3). A CLI process exits before a notification could matter, and there
   is no user-facing behaviour behind it.
+- `defer_recalc` — not exposed: it exists so a shell can do the recalculation an edit owes on
+  a worker thread instead of inside the edit. A CLI process has no UI thread to keep alive and
+  recalculates in one go.
+- `take_recalc_owed` — not exposed: `defer_recalc`'s other half, asking whether one is owed.
+- `recalc_in_place` — not exposed: it is `grind sheet recalc` computed under a read lock, with
+  a progress callback and a refusal to write over a document that moved meanwhile. The user-visible
+  half is `recalc`, which a process with nobody else writing does not need the difference of.
+- `open_document` — not exposed: `open_bytes` with the slow half (`read_bytes`) already done,
+  so a shell can run that on a worker thread. Every subcommand's open is the one-call form.
 
 ## Beyond `App`
 

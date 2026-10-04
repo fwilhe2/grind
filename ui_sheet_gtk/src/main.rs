@@ -187,6 +187,10 @@ struct Ui {
     loading: Cell<bool>,
     /// A file is being read on a worker thread (`load_then`).
     opening: Cell<bool>,
+    /// A recalculation is running on a worker thread (`recalc_in_background`).
+    recalculating: Cell<bool>,
+    /// The actions `set_busy` switched off, to switch back on.
+    parked: RefCell<Vec<gio::SimpleAction>>,
     /// `editor`'s latch: a close that is waiting on a save must not ask again.
     closing: Cell<bool>,
 }
@@ -317,6 +321,8 @@ impl Ui {
             dirty: Cell::new(false),
             loading: Cell::new(false),
             opening: Cell::new(false),
+            recalculating: Cell::new(false),
+            parked: RefCell::new(Vec::new()),
             imported: RefCell::new(None),
             closing: Cell::new(false),
         });
@@ -334,6 +340,10 @@ impl Ui {
         // has released the lock.
         let (sender, receiver) = async_channel::unbounded::<()>();
         self.app.set_observer(Arc::new(Bridge(sender)));
+        // An edit's ripple is a recalculation of the whole document, which for a big one is
+        // minutes: it is owed rather than done inside the edit, and paid for here, off this
+        // thread, with the window still drawn (`recalc_in_background`).
+        self.app.defer_recalc(true);
         glib::spawn_future_local(glib::clone!(
             #[strong(rename_to = ui)]
             self,
@@ -345,6 +355,9 @@ impl Ui {
                     ui.dirty.set(!ui.loading.replace(false));
                     ui.refresh();
                     ui.grid.invalidate();
+                    if ui.app.take_recalc_owed() {
+                        ui.recalc_in_background(true, false);
+                    }
                 }
             }
         ));
@@ -626,19 +639,127 @@ impl Ui {
 
     fn recalculate(self: &Rc<Self>) {
         self.banner.set_revealed(false);
-        match self.app.recalc() {
-            Ok(recalc) if recalc.spoiled > 0 => self.undoable_toast(&counted(
-                recalc.spoiled,
-                "cell became an error",
-                "cells became errors",
-            )),
-            Ok(recalc) if recalc.changed > 0 => self.toast(&counted(
-                recalc.changed,
-                "cell recalculated",
-                "cells recalculated",
-            )),
-            Ok(_) => self.toast("Already up to date"),
-            Err(error) => self.toast(&error.to_string()),
+        self.recalc_in_background(false, true);
+    }
+
+    /// Recalculate the whole document on a worker thread (`App::recalc_in_place`), with a toast
+    /// that says how far it has got. `merge` folds the result into the undo entry of the edit
+    /// that owed it; `force` writes it even where it would turn a saved value into an error,
+    /// which is what asking for a recalculation (F9, the banner) means and an edit's ripple
+    /// does not.
+    ///
+    /// The window stays drawn, because the worker holds only a read lock; it is `set_busy` that
+    /// keeps it from being written to, since a writer waiting behind that lock would stop every
+    /// repaint behind it.
+    fn recalc_in_background(self: &Rc<Self>, merge: bool, force: bool) {
+        if self.recalculating.replace(true) {
+            return;
+        }
+        let notice = adw::Toast::builder()
+            .title("Recalculating…")
+            .timeout(0)
+            .build();
+        self.toasts.add_toast(notice.clone());
+        self.set_busy(true);
+
+        let progress = Arc::new((
+            std::sync::atomic::AtomicUsize::new(0),
+            std::sync::atomic::AtomicUsize::new(0),
+        ));
+        let finished = Rc::new(Cell::new(false));
+        glib::timeout_add_local(
+            std::time::Duration::from_millis(150),
+            glib::clone!(
+                #[strong]
+                notice,
+                #[strong]
+                progress,
+                #[strong]
+                finished,
+                move || {
+                    if finished.get() {
+                        return glib::ControlFlow::Break;
+                    }
+                    let done = progress.0.load(std::sync::atomic::Ordering::Relaxed);
+                    let total = progress.1.load(std::sync::atomic::Ordering::Relaxed);
+                    if let Some(percent) = (done * 100).checked_div(total) {
+                        notice.set_title(&format!("Recalculating… {percent}%"));
+                    }
+                    glib::ControlFlow::Continue
+                }
+            ),
+        );
+
+        let ui = self.clone();
+        glib::spawn_future_local(async move {
+            let app = ui.app.clone();
+            let result = gio::spawn_blocking(move || {
+                app.recalc_in_place(merge, force, |done, total| {
+                    progress.0.store(done, std::sync::atomic::Ordering::Relaxed);
+                    progress
+                        .1
+                        .store(total, std::sync::atomic::Ordering::Relaxed);
+                })
+            })
+            .await;
+            finished.set(true);
+            notice.dismiss();
+            ui.set_busy(false);
+            ui.recalculating.set(false);
+            match result {
+                // The document changed while it was being computed: ask again, on the new one.
+                Ok(Ok(None)) => ui.recalc_in_background(false, force),
+                Ok(Ok(Some(recalc))) if !force => {
+                    if recalc.spoiled > 0 {
+                        ui.grid.report(Notice::RecalcSkipped(recalc.spoiled));
+                    }
+                }
+                Ok(Ok(Some(recalc))) if recalc.spoiled > 0 => ui.undoable_toast(&counted(
+                    recalc.spoiled,
+                    "cell became an error",
+                    "cells became errors",
+                )),
+                Ok(Ok(Some(recalc))) if recalc.changed > 0 => ui.toast(&counted(
+                    recalc.changed,
+                    "cell recalculated",
+                    "cells recalculated",
+                )),
+                Ok(Ok(Some(_))) => ui.toast("Already up to date"),
+                Ok(Err(error)) => ui.toast(&error.to_string()),
+                Err(_) => ui.toast("Recalculation failed"),
+            }
+            ui.refresh();
+            ui.grid.invalidate();
+        });
+    }
+
+    /// Shut the window against edits while a worker thread has the document: the page, the bars
+    /// and every action — which takes the menus, the buttons and the accelerators with it. The
+    /// close button stays, and so do scrolling and the tabs of the grid it is showing.
+    fn set_busy(&self, busy: bool) {
+        self.stack.set_sensitive(!busy);
+        self.strip.widget.set_sensitive(!busy);
+        self.formula_bar.widget.set_sensitive(!busy);
+        self.find.bar.set_sensitive(!busy);
+        if busy {
+            self.undo.set_sensitive(false);
+            self.redo.set_sensitive(false);
+            let mut parked = self.parked.borrow_mut();
+            for name in self.window.list_actions() {
+                if let Some(action) = self
+                    .window
+                    .lookup_action(&name)
+                    .and_downcast::<gio::SimpleAction>()
+                    && action.is_enabled()
+                {
+                    action.set_enabled(false);
+                    parked.push(action);
+                }
+            }
+        } else {
+            for action in self.parked.borrow_mut().drain(..) {
+                action.set_enabled(true);
+            }
         }
     }
 
@@ -747,7 +868,7 @@ impl Ui {
             .timeout(0)
             .build();
         self.toasts.add_toast(notice.clone());
-        self.stack.set_sensitive(false);
+        self.set_busy(true);
         let ui = self.clone();
         let path = path.to_owned();
         glib::spawn_future_local(async move {
@@ -760,7 +881,7 @@ impl Ui {
             })
             .await;
             notice.dismiss();
-            ui.stack.set_sensitive(true);
+            ui.set_busy(false);
             ui.opening.set(false);
             match prepared {
                 Ok(Ok((document, opened, imports))) => {

@@ -101,6 +101,10 @@ pub struct Engine<'a> {
     cache: HashMap<Address, Value>,
     visiting: HashSet<Address>,
     depth: usize,
+    /// [`Sheet::cell_extent`] per sheet, asked once. It walks every formula the sheet has, and
+    /// `area` is asked once per reference: a Monte-Carlo workbook with 300,000 formulas and
+    /// twenty thousand `B45:NTQ45`s spent half its recalculation there.
+    extents: std::cell::RefCell<HashMap<usize, (u32, u32)>>,
 }
 
 impl<'a> Engine<'a> {
@@ -110,6 +114,7 @@ impl<'a> Engine<'a> {
             cache: HashMap::new(),
             visiting: HashSet::new(),
             depth: 0,
+            extents: std::cell::RefCell::new(HashMap::new()),
         }
     }
 
@@ -349,22 +354,29 @@ impl<'a> Engine<'a> {
         // nothing to any Small Group function — so this is the same answer as iterating to
         // the evaluator's limit, minus a million reads.
         // Values and formulas only (`Sheet::cell_extent`): a styled blank is still empty.
-        let (used_rows, used_cols) = self.doc.sheet(sheet)?.cell_extent();
-        let axis = |a: Option<u32>, b: Option<u32>, used: u32| match (a, b) {
+        let extent = || {
+            *self.extents.borrow_mut().entry(sheet).or_insert_with(|| {
+                self.doc
+                    .sheet(sheet)
+                    .map_or((0, 0), crate::Sheet::cell_extent)
+            })
+        };
+        self.doc.sheet(sheet)?;
+        let axis = |a: Option<u32>, b: Option<u32>, used: fn((u32, u32)) -> u32| match (a, b) {
             (Some(a), Some(b)) => a.min(b)..a.max(b) + 1,
-            _ => 0..used,
+            _ => 0..used(extent()),
         };
         Some(Area {
             sheet,
             rows: axis(
                 reference.start.row.map(|a| a.index),
                 end.row.map(|a| a.index),
-                used_rows,
+                |extent| extent.0,
             ),
             cols: axis(
                 reference.start.col.map(|a| a.index),
                 end.col.map(|a| a.index),
-                used_cols,
+                |extent| extent.1,
             ),
         })
     }

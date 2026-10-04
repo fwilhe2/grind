@@ -382,6 +382,14 @@ struct State {
     doc: Document,
     undo: Vec<Action>,
     redo: Vec<Action>,
+    /// Bumped by every [`App::mutate`], so a computation done under a *read* lock can tell, when
+    /// it comes to write its answer, that the document moved underneath it.
+    version: u64,
+    /// [`App::defer_recalc`]: `RecalcMode::Document` records that a recalculation is owed
+    /// instead of doing it.
+    defer_recalc: bool,
+    /// A recalculation was deferred and nobody has done it yet ([`App::take_recalc_owed`]).
+    recalc_owed: bool,
 }
 
 /// The application. Shells hold an `Arc<App>` and call these methods.
@@ -423,7 +431,9 @@ impl App {
     fn mutate<R>(&self, f: impl FnOnce(&mut State) -> R) -> R {
         let result = {
             let mut state = self.state.write().unwrap();
-            f(&mut state)
+            let result = f(&mut state);
+            state.version += 1;
+            result
         };
         // Before the notification, because an observer reads straight back in and must not
         // be handed a reading of the document as it was.
@@ -1299,6 +1309,7 @@ impl App {
     /// so rather than quietly writing the file back.
     pub fn recalc(&self) -> Result<Recalc> {
         self.mutate(|state| {
+            state.recalc_owed = false;
             let (updates, spoiled) = recalculated(&state.doc);
             let changed = updates.len();
             if changed > 0 {
@@ -1310,6 +1321,75 @@ impl App {
                 state.redo.clear();
             }
             Ok(Recalc { changed, spoiled })
+        })
+    }
+
+    /// Make `RecalcMode::Document` *owe* a recalculation rather than perform one.
+    ///
+    /// A full recalculation is as slow as the document is big — a minute for a Monte-Carlo
+    /// workbook of 600,000 formulas — and [`App::enter`] does it with the write lock held, so
+    /// every read, a repaint included, waits for it. A shell that cannot afford that turns this
+    /// on, learns that one is owed from [`App::take_recalc_owed`], and does it off its UI thread
+    /// with [`App::recalc_in_place`], which holds only a read lock while it computes.
+    pub fn defer_recalc(&self, on: bool) {
+        let mut state = self.state.write().unwrap();
+        state.defer_recalc = on;
+        if !on {
+            state.recalc_owed = false;
+        }
+    }
+
+    /// Whether a recalculation was deferred ([`App::defer_recalc`]) since the last one, clearing
+    /// the answer.
+    pub fn take_recalc_owed(&self) -> bool {
+        std::mem::take(&mut self.state.write().unwrap().recalc_owed)
+    }
+
+    /// [`App::recalc`] for a caller that cannot stand still: the answer is computed under a
+    /// **read** lock, so the document can still be read (and drawn) the whole time, and written
+    /// only when it is done — if nothing else changed it meanwhile. `progress` is called with
+    /// `(formulas done, formulas in all)` as it goes.
+    ///
+    /// `merge` puts the result in the undo entry on top of the stack, which is how a deferred
+    /// recalculation becomes part of the edit that owed it, as [`RecalcMode::Document`] does.
+    /// `force` writes even when recalculating would break cached values (`Recalc::spoiled`).
+    ///
+    /// `Ok(None)` means the document changed while this was computing, so the answer would have
+    /// been about a document that no longer exists: nothing was written, and a caller that still
+    /// wants one asks again. Whoever calls this must not write to the document meanwhile — a
+    /// writer queued behind this read lock makes every later reader wait for it too.
+    pub fn recalc_in_place(
+        &self,
+        merge: bool,
+        force: bool,
+        progress: impl FnMut(usize, usize),
+    ) -> Result<Option<Recalc>> {
+        let (version, (updates, spoiled)) = {
+            let state = self.state.read().unwrap();
+            (state.version, recalculated_with(&state.doc, progress))
+        };
+        self.mutate(|state| {
+            if state.version != version {
+                return Ok(None);
+            }
+            state.recalc_owed = false;
+            let changed = updates.len();
+            if changed > 0 && (spoiled == 0 || force) {
+                let inverse = state
+                    .doc
+                    .apply(Action::Batch(updates))
+                    .expect("every sheet index came from the document itself");
+                match state.undo.pop() {
+                    Some(edit) if merge => state.undo.push(Action::Batch(vec![inverse, edit])),
+                    Some(edit) => {
+                        state.undo.push(edit);
+                        state.undo.push(inverse);
+                    }
+                    None => state.undo.push(inverse),
+                }
+                state.redo.clear();
+            }
+            Ok(Some(Recalc { changed, spoiled }))
         })
     }
 
@@ -2838,6 +2918,10 @@ fn commit_after(
     }
     let recalc = match mode {
         RecalcMode::No => None,
+        RecalcMode::Document if state.defer_recalc => {
+            state.recalc_owed = true;
+            None
+        }
         RecalcMode::Document => {
             let (updates, spoiled) = recalculated(&state.doc);
             let changed = updates.len();
@@ -2992,7 +3076,12 @@ fn validate_name(name: &str) -> Result<()> {
 /// One walk, shared by [`App::recalc`] (which applies it) and [`App::stale`] (which counts
 /// it), so "what recalculating would do" and "what recalculating does" cannot drift apart.
 fn recalculated(doc: &Document) -> (Vec<Action>, usize) {
-    let differences = differences(doc);
+    recalculated_with(doc, |_, _| {})
+}
+
+/// [`recalculated`], reporting `(done, total)` formulas as it walks them.
+fn recalculated_with(doc: &Document, progress: impl FnMut(usize, usize)) -> (Vec<Action>, usize) {
+    let differences = differences(doc, progress);
     let spoiled = differences.iter().filter(|(.., spoiled)| *spoiled).count();
     let updates = differences
         .into_iter()
@@ -3010,13 +3099,22 @@ fn recalculated(doc: &Document) -> (Vec<Action>, usize) {
 /// writes the new values, and [`lint::STALE_VALUE`] reports that the old ones are wrong. A
 /// second implementation of "what counts as stale" is exactly the kind of disagreement
 /// `doc/dsl.md` §4.3 exists to catch in *documents*, and it would be worse in the code.
-fn differences(doc: &Document) -> Vec<(usize, Pos, CellValue, bool)> {
+fn differences(
+    doc: &Document,
+    mut progress: impl FnMut(usize, usize),
+) -> Vec<(usize, Pos, CellValue, bool)> {
     let mut out = Vec::new();
+    let total: usize = doc.sheets.iter().map(|s| s.formulas().count()).sum();
+    let mut done = 0;
     // The engine borrows the document immutably and memoises per cell, so this is one pass
     // whatever the dependency order.
     let mut engine = formula::eval::Engine::new(doc);
     for (index, sheet) in doc.sheets.iter().enumerate() {
         for (pos, _) in sheet.formulas() {
+            done += 1;
+            if done % 2048 == 0 {
+                progress(done, total);
+            }
             let at = formula::eval::Address::new(index, pos);
             let value = formula::eval::to_cell(engine.value(at));
             let previous = sheet.get(pos);
@@ -3120,7 +3218,7 @@ fn references_renamed(doc: &Document, from: &str, to: &str) -> Vec<Action> {
 /// The spoiled ones are dropped here rather than in the rule, because *which* differences are
 /// this engine's fault is a fact about the evaluator and belongs beside it.
 fn stale_cells(doc: &Document) -> Vec<(usize, Pos, CellValue)> {
-    differences(doc)
+    differences(doc, |_, _| {})
         .into_iter()
         .filter(|(.., spoiled)| !spoiled)
         .map(|(sheet, pos, value, _)| (sheet, pos, value))

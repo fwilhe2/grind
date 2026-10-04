@@ -738,6 +738,43 @@ fn an_edit_and_its_ripple_undo_together() {
     assert_eq!(app.formula(0, p(1, 0)).unwrap(), None);
 }
 
+/// A shell that cannot stand still defers the ripple and does it off its UI thread: the edit
+/// lands at once, the recalculation is owed, and paying it joins the edit's own undo entry.
+#[test]
+fn a_deferred_recalculation_is_owed_then_paid_into_the_same_undo_entry() {
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 1.0).unwrap();
+    app.set_formula(0, p(1, 0), "=[.A1]*10").unwrap();
+    app.defer_recalc(true);
+
+    let outcome = app.enter(0, p(0, 0), "5", RecalcMode::Document).unwrap();
+    assert_eq!(outcome.recalc, None, "nothing was recalculated");
+    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(10.0));
+    assert!(app.take_recalc_owed());
+    assert!(!app.take_recalc_owed(), "taking clears it");
+
+    let seen = AtomicUsize::new(0);
+    let done = app
+        .recalc_in_place(true, false, |_, _| {
+            seen.fetch_add(1, Ordering::SeqCst);
+        })
+        .unwrap();
+    assert_eq!(
+        done,
+        Some(Recalc {
+            changed: 1,
+            spoiled: 0
+        })
+    );
+    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(50.0));
+
+    assert!(app.undo());
+    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Number(1.0));
+    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(10.0));
+    assert!(app.undo(), "the next undo is the formula's own");
+    assert_eq!(app.formula(0, p(1, 0)).unwrap(), None);
+}
+
 /// The edit lands even when its recalculation cannot: refusing would make a document that
 /// uses one unimplemented function read-only, which is worse than leaving it stale.
 #[test]

@@ -559,6 +559,14 @@ window still drawn, and a second open refused while one runs. The shared half al
 write-then-read round trip (about a third of the time) can hand over a `Document` directly. Also
 worth a look: peak memory, since a styled blank costs a cell.
 
+**The same goes for an edit's recalculation** (2026-10-04): `RecalcMode::Document` recalculated all
+600,000 formulas of that workbook inside the edit, with the write lock held, so every repaint
+waited too — 85 s, of which `Engine::area` re-scanning every formula per open range (`B45:NTQ45`)
+was most, now memoised: 14 s. `grind-sheet-gtk` calls `App::defer_recalc(true)`, pays what is owed
+with `App::take_recalc_owed` + `App::recalc_in_place` on a worker (a read lock, a progress toast,
+the window's actions switched off by `Ui::set_busy`) and the result joins the edit's undo entry.
+Every other shell still recalculates inside the edit and freezes the same way on a big document.
+
 ## 9. Absent from every client
 
 Not a parity problem — a feature line. Each has its row in `doc/not-doing.md` or a gate in a
