@@ -420,6 +420,12 @@ pub trait Faces {
     fn breaks(&self, _index: usize) -> Option<page::Breaks> {
         None
     }
+
+    /// How far the block at `index`'s first line starts in from its others, in the face's unit
+    /// (`fo:text-indent`); zero, the default, for every screen.
+    fn first_indent(&self, _index: usize) -> f32 {
+        0.0
+    }
 }
 
 /// Every block set alike: one width, one provider.
@@ -843,6 +849,23 @@ impl App {
             .block(index)
             .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(index))))?;
         Ok(lay_out(block, width, metrics))
+    }
+
+    /// [`App::layout_block`] with the first line `first` further in and breaking that much
+    /// shorter — `fo:text-indent`, which only a printed page honours (`doc/pdf-export.md` P5).
+    pub fn layout_block_indented(
+        &self,
+        index: usize,
+        width: f32,
+        metrics: &dyn Metrics,
+        first: f32,
+    ) -> Result<Layout> {
+        let state = self.state.read().unwrap();
+        let block = state
+            .doc
+            .block(index)
+            .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(index))))?;
+        Ok(lay_out_indented(block, width, metrics, first))
     }
 
     /// One block laid out as if `text` had been typed at `at` — an **input method's
@@ -1878,6 +1901,10 @@ fn set_out(block: &Block, index: usize, faces: &dyn Faces) -> Layout {
 /// this build does not read style definitions (`doc/text-core.md`). The seam is unchanged: when
 /// definitions arrive, they are resolved into the same `TextStyle` and nothing here moves.
 fn lay_out(block: &Block, width: f32, metrics: &dyn Metrics) -> Layout {
+    lay_out_indented(block, width, metrics, 0.0)
+}
+
+fn lay_out_indented(block: &Block, width: f32, metrics: &dyn Metrics, first: f32) -> Layout {
     let default = grind_core::style::TextStyle::default();
     let styles: Vec<grind_core::style::TextStyle> = block
         .runs
@@ -1905,7 +1932,7 @@ fn lay_out(block: &Block, width: f32, metrics: &dyn Metrics) -> Layout {
             style: &default,
         });
     }
-    layout::wrap(&fragments, width, metrics)
+    layout::wrap_indented(&fragments, width, metrics, first)
 }
 
 /// The formatting of every run that `start..end` touches, in order.

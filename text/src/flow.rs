@@ -465,7 +465,7 @@ pub fn lay_out(
         let height = match picture(view, f64::from(width)) {
             Some(height) => height,
             None => app
-                .layout_block(index, width, metrics)
+                .layout_block_indented(index, width, metrics, faces.first_indent(index))
                 .map(|layout| f64::from(layout.height()))
                 .unwrap_or(0.0),
         };

@@ -227,6 +227,8 @@ pub struct Column<'a> {
     /// What each block's paragraph style says about page breaks around it
     /// ([`grind_text::Faces::breaks`]); a block with nothing to say keeps the paginator's rules.
     pub breaks: &'a HashMap<usize, grind_text::page::Breaks>,
+    /// Each block's first-line indent in points, where its paragraph style states one.
+    pub indents: &'a HashMap<usize, f32>,
     /// The text area's width, in points.
     pub width: f64,
     pub across: &'a HashMap<usize, Across>,
@@ -260,6 +262,10 @@ impl grind_text::Faces for Column<'_> {
 
     fn breaks(&self, index: usize) -> Option<grind_text::page::Breaks> {
         self.breaks.get(&index).copied()
+    }
+
+    fn first_indent(&self, index: usize) -> f32 {
+        self.indents.get(&index).copied().unwrap_or(0.0)
     }
 }
 
@@ -364,7 +370,9 @@ mod tests {
         let blocks = HashMap::new();
         let spacing = HashMap::new();
         let breaks = HashMap::new();
+        let indents = HashMap::new();
         let column = Column {
+            indents: &indents,
             faces: &faces,
             blocks: &blocks,
             spacing: &spacing,

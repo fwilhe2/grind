@@ -57,7 +57,17 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     let blocks = block_faces(app, setter, &viewport);
     let spacing = block_spacing(app, &viewport);
     let breaks = block_breaks(app, &viewport);
+    let indents: std::collections::HashMap<usize, f32> = viewport
+        .iter()
+        .filter(|view| view.cell.is_none())
+        .filter_map(|view| {
+            let props = app.paragraph(view.index)?.props;
+            let first = props.text_indent.as_deref().and_then(length_mm).map(pt)?;
+            (first != 0.0).then_some((view.index, first as f32))
+        })
+        .collect();
     let column = Column {
+        indents: &indents,
         faces: &faces,
         blocks: &blocks,
         spacing: &spacing,
@@ -114,7 +124,8 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                     });
                 }
                 let face = column.face(view.index, &view.kind, view.style.as_deref());
-                if let Some((from, to)) = lines(&mut ops, app, view, piece, face, origin) {
+                let first = grind_text::Faces::first_indent(&column, view.index);
+                if let Some((from, to)) = lines(&mut ops, app, view, piece, face, first, origin) {
                     cover(caret(piece.index, from), caret(piece.index, to));
                 }
             }
@@ -301,10 +312,11 @@ fn lines(
     view: &BlockView,
     piece: &Piece,
     face: &RoleFace<'_>,
+    first: f32,
     (left, top): (f64, f64),
 ) -> Option<(usize, usize)> {
     let layout = app
-        .layout_block(view.index, piece.width as f32, face)
+        .layout_block_indented(view.index, piece.width as f32, face, first)
         .ok()?;
     let first = layout.lines().get(piece.lines.start)?;
     let last = layout.lines().get(piece.lines.end.checked_sub(1)?)?;
@@ -1302,6 +1314,38 @@ mod tests {
             ys[0]
         );
         assert!((ys[1] - ys[0] - 27.5977).abs() < 0.01, "{}", ys[1] - ys[0]);
+    }
+
+    /// fact 11 on paper: a 2 cm first-line indent starts the first line 2 cm in and the rest at
+    /// the margin.
+    #[test]
+    fn a_first_line_indent_moves_the_first_line_alone() {
+        let words = "word ".repeat(50);
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles><style:style style:name="I" style:family="paragraph"><style:paragraph-properties fo:text-indent="2cm"/></style:style></office:automatic-styles>
+            <office:body><office:text><text:p text:style-name="I">{words}</text:p></office:text></office:body></office:document>"#
+        );
+        let app = App::new();
+        app.open_bytes("i.fodt", bytes.as_bytes()).unwrap();
+        let page = &typeset(&app, &setter(), &Options::default()).pages[0];
+        let texts = texts(page);
+        let first_line = texts[0].1;
+        let first_x = texts
+            .iter()
+            .filter(|t| t.1 == first_line)
+            .map(|t| t.0)
+            .fold(f32::MAX, f32::min);
+        let second_x = texts
+            .iter()
+            .filter(|t| t.1 > first_line)
+            .map(|t| t.0)
+            .fold(f32::MAX, f32::min);
+        assert!(
+            (first_x - (56.6929 + 72.0 / 2.54 * 2.0) as f32).abs() < 0.01,
+            "{first_x}"
+        );
+        assert!((second_x - 56.6929).abs() < 0.01, "{second_x}");
     }
 
     #[test]

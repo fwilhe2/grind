@@ -250,7 +250,8 @@ fn units(
             return whole;
         }
         let (width, metrics) = faces.of(slot.index, &view.kind, view.style.as_deref());
-        match app.layout_block(slot.index, width, metrics) {
+        match app.layout_block_indented(slot.index, width, metrics, faces.first_indent(slot.index))
+        {
             Ok(layout) if !layout.lines().is_empty() => layout
                 .lines()
                 .iter()

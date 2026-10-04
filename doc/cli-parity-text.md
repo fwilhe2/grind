@@ -186,6 +186,7 @@ had no width and therefore no lines.
   finding exits non-zero. Nothing is written
 - `counts` — `grind text words` — blocks, headings, words, characters
 - `font_generics` — `grind text export-pdf`, `pages` and `preview`, which fall back to a face of the declared kind when a family is not installed; nothing prints the map on its own
+- `layout_block_indented` — `grind text export-pdf`, `pages` and `preview`, for a paragraph with a first-line indent; `grind text view --width` lays out without one, as every screen does
 - `marginals` — `grind text export-pdf` and `preview`, which draw the header and footer on every page; nothing prints them on their own
 - `resolve_style` — the same, for a header or footer paragraph's style
 - `paragraph` — `grind text pages` and `export-pdf`, which lay every block out by its resolved paragraph style (`doc/pdf-export.md` P5); no verb prints a style's resolution on its own yet
