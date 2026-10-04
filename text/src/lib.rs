@@ -58,6 +58,7 @@ pub mod look;
 pub mod markdown;
 pub mod model;
 pub mod odf;
+pub mod page;
 pub mod paint;
 pub mod picture;
 pub mod projection;
