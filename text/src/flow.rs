@@ -144,6 +144,9 @@ pub struct Flow {
     slots: Vec<Slot>,
     cells: Vec<CellBox>,
     height: f64,
+    /// The space under the last block, which `height` already includes — what the next block's
+    /// space above is collapsed against ([`Flow::push`]) or added to ([`Flow::push_spaced`]).
+    pending: f64,
     /// The text column's width, which is what an ordinary block is measured at.
     measure: f64,
 }
@@ -156,6 +159,7 @@ impl Flow {
             slots: Vec::new(),
             cells: Vec::new(),
             height: top,
+            pending: 0.0,
             measure,
         }
     }
@@ -169,7 +173,7 @@ impl Flow {
         let top = match self.slots.is_empty() {
             // Nothing above the first block for its own space to sit under.
             true => self.height,
-            false => self.height + (space_before - gap).max(0.0),
+            false => self.height - self.pending + self.pending.max(space_before),
         };
         self.slots.push(Slot {
             index,
@@ -179,6 +183,24 @@ impl Flow {
             width: (self.measure - indent).max(1.0),
         });
         self.height = top + height + gap;
+        self.pending = gap;
+    }
+
+    /// Add a block with the space a document's own paragraph style puts above and below it —
+    /// **added** to the space under the block before, never collapsed against it, and applied
+    /// above the very first block too, which is what Writer does (`doc/odt-format.md` §5c, facts
+    /// 5 and 6). What a printed page wants; a screen keeps [`Flow::push`]'s collapsing.
+    pub fn push_spaced(&mut self, index: usize, height: f64, indent: f64, above: f64, below: f64) {
+        let top = self.height + above;
+        self.slots.push(Slot {
+            index,
+            top,
+            height,
+            indent,
+            width: (self.measure - indent).max(1.0),
+        });
+        self.height = top + height + below;
+        self.pending = below;
     }
 
     /// Put a block at an exact box rather than under the last one — what a table needs, since
@@ -203,9 +225,11 @@ impl Flow {
         self.cells.push(cell);
     }
 
-    /// Move the running height to `to` — where the next stacked block starts.
-    pub fn advance(&mut self, to: f64) {
+    /// Move the running height to `to` — where the next stacked block starts — of which the
+    /// last `pending` is space under what was placed, for the next block to collapse against.
+    pub fn advance(&mut self, to: f64, pending: f64) {
         self.height = self.height.max(to);
+        self.pending = pending;
     }
 
     /// The measure an ordinary block is laid out at.
@@ -445,13 +469,17 @@ pub fn lay_out(
         }
         let (height, _) = height_of(index, view);
         let style = view.style.as_deref();
-        flow.push(
-            index,
-            height,
-            spacing.indent_of(&view.kind),
-            spacing.above(&view.kind, style),
-            spacing.gap,
-        );
+        let indent = spacing.indent_of(&view.kind);
+        match faces.spacing(index) {
+            Some((above, below)) => flow.push_spaced(index, height, indent, above, below),
+            None => flow.push(
+                index,
+                height,
+                indent,
+                spacing.above(&view.kind, style),
+                spacing.gap,
+            ),
+        }
         index += 1;
     }
     flow
@@ -570,7 +598,7 @@ fn lay_out_table(
             at += block_height + gap;
         }
     }
-    flow.advance(top + heights.iter().sum::<f64>() + gap);
+    flow.advance(top + heights.iter().sum::<f64>() + gap, gap);
 }
 
 #[cfg(test)]
@@ -729,6 +757,47 @@ mod tests {
             };
             (width as f32, &Fixed)
         }
+    }
+
+    /// Every block one unit tall at `Fixed`, with the spacing a paper face asks for: two above
+    /// and three below each, except block 1, which keeps the screen's collapsed rule.
+    struct Spaced;
+
+    impl Faces for Spaced {
+        fn of(&self, _: usize, _: &BlockKind, _: Option<&str>) -> (f32, &dyn Metrics) {
+            (100.0, &Fixed)
+        }
+        fn spacing(&self, index: usize) -> Option<(f64, f64)> {
+            (index != 1).then_some((2.0, 3.0))
+        }
+    }
+
+    #[test]
+    fn spacing_a_face_states_adds_and_is_applied_above_the_first_block() {
+        let app = App::new();
+        for (at, text) in ["a", "b", "c"].iter().enumerate() {
+            app.insert(at, BlockKind::Paragraph, text).unwrap();
+        }
+        app.delete(3..4).unwrap();
+        let tight = Spacing {
+            top: 10.0,
+            gap: 1.0,
+            heading: 0.0,
+            indent: 0.0,
+            cell_pad: 0.0,
+        };
+        let flow = lay_out(&app, &Spaced, 100.0, &tight, &no_pictures);
+        let tops: Vec<f64> = flow.slots().iter().map(|s| s.top).collect();
+        // Block 0: the page's top, plus its own two above. Block 1 states nothing, so it sits
+        // under block 0's three below, collapsed with the gap the screen would leave. Block 2
+        // adds its two above to block 1's gap below — added, as Writer adds them
+        // (`doc/odt-format.md` §5c, fact 5).
+        assert_eq!(tops, vec![12.0, 16.0, 20.0]);
+        assert_eq!(
+            flow.height(),
+            24.0,
+            "block 2's own three below are the flow's last"
+        );
     }
 
     fn laid_out(app: &App, column: f64) -> Flow {

@@ -404,6 +404,14 @@ pub trait Faces {
     /// `width` is in whatever unit the returned provider answers in, and zero or less means do
     /// not wrap — the same contract [`App::layout_block`] has, because it is the same width.
     fn of(&self, index: usize, kind: &BlockKind, style: Option<&str>) -> (f32, &dyn Metrics);
+
+    /// The space above and below the block at `index`, when its own paragraph style decides it:
+    /// added to its neighbours' rather than collapsed, and applied above the first block too
+    /// ([`flow::Flow::push_spaced`]). `None`, the default, is a screen's own spacing — what every
+    /// shell wants; a printed page answers from the document's styles (`doc/pdf-export.md` P5).
+    fn spacing(&self, _index: usize) -> Option<(f64, f64)> {
+        None
+    }
 }
 
 /// Every block set alike: one width, one provider.
