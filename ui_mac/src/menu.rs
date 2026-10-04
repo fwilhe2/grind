@@ -117,6 +117,12 @@ pub enum Command {
     /// The page as CommonMark, the selected paragraphs or all of it — File ▸ Export as
     /// Markdown….
     ExportMarkdown,
+    /// The page typeset and written as a PDF (`grind_print::export`, `doc/pdf-export.md`) —
+    /// File ▸ Export as PDF….
+    ExportPdf,
+    /// The same PDF handed to the system's print panel through PDFKit, whose preview is then the
+    /// PDF itself — File ▸ Print….
+    Print,
     /// A formula worked out at the active cell without storing it — Edit ▸ Evaluate….
     Evaluate,
     /// The locale the document speaks in, asked for — Format ▸ Document Locale….
@@ -261,6 +267,8 @@ impl Command {
             Command::ImportCsvWith,
             Command::ImportMarkdown,
             Command::ExportMarkdown,
+            Command::ExportPdf,
+            Command::Print,
             Command::About,
             Command::InsertChart,
             Command::PreviewChart,
@@ -305,6 +313,8 @@ impl Command {
                 | Command::ImportCsvWith
                 | Command::ImportMarkdown
                 | Command::ExportMarkdown
+                | Command::ExportPdf
+                | Command::Print
                 | Command::InsertTable
                 | Command::InsertBookmark
                 | Command::InsertPicture
@@ -353,6 +363,8 @@ impl Command {
             | Command::InsertPicture
             | Command::ImportMarkdown
             | Command::ExportMarkdown
+            | Command::ExportPdf
+            | Command::Print
             | Command::MoveParagraph(_)
             | Command::DeleteParagraph
             | Command::ParagraphStyle => text,
@@ -823,10 +835,14 @@ pub static MENUS: &[Menu] = &[
             command("Export as CSV…", None, Command::ExportCsv),
             command("Import Markdown…", None, Command::ImportMarkdown),
             command("Export as Markdown…", None, Command::ExportMarkdown),
+            command("Export as PDF…", None, Command::ExportPdf),
             Item::Submenu {
                 title: "Revert To",
                 menu: &REVERT_TO,
             },
+            Item::Separator,
+            // Where every Mac application keeps it, at the key every one uses.
+            command("Print…", key("p", CMD), Command::Print),
         ],
     },
     Menu {
@@ -1183,6 +1199,7 @@ mod tests {
             (Action::Standard("openDocument:"), "⌘O"),
             (Action::Standard("saveDocument:"), "⌘S"),
             (Action::Standard("duplicateDocument:"), "⇧⌘S"),
+            (Action::Command(Command::Print), "⌘P"),
             (Action::Standard("performClose:"), "⌘W"),
             (Action::Standard("undo:"), "⌘Z"),
             (Action::Standard("redo:"), "⇧⌘Z"),
@@ -1329,6 +1346,9 @@ mod tests {
         assert!(!Command::Mark(Emphasis::Underline).applies(sheet));
         assert!(!Command::Number(Preset::Currency).applies(text));
         assert!(Command::Block(Block::Heading(2)).applies(text));
+        for paper in [Command::ExportPdf, Command::Print] {
+            assert!(paper.applies(text) && !paper.applies(sheet), "{paper:?}");
+        }
     }
 
     /// A context menu row is a menu-bar row: the same title for the same action, so a verb has

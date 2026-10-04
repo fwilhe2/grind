@@ -699,7 +699,13 @@ the sidebar as a section of its own — address, formula and value, each a jump 
 it asked for (`App::calculations`, the GNOME window's dialog as a list of places); Format ▸ Paragraph ▸ **Move Up, Move Down and Delete Paragraph**
 over the paragraphs the selection touches, one undo step each (`App::move_blocks`, `App::delete`); and Format ▸ Paragraph ▸ **Style…**, a named paragraph style on them
 (`App::set_style`), kept and not interpreted unless it is Title or Subtitle; and `canAsynchronouslyWriteToURL:` answering NO
-where *Risks* says it does, rather than by `NSDocument`'s default. `doc/feature-matrix.md`'s Mac
+where *Risks* says it does, rather than by `NSDocument`'s default. And **the page on paper**
+(`doc/pdf-export.md`): File ▸ **Export as PDF…**, `grind_print::export` set in the bundled faces and
+the Mac's own, telling only when a family was substituted or a character had no glyph; and File ▸
+**Print…** (⌘P), the same PDF handed to the system's print panel through PDFKit
+(`PDFDocument::printOperationForPrintInfo`), so the panel's own preview *is* the PDF — the one
+client where the native preview is also the truest one, which is why there is no preview window
+of this shell's own. Type-checked and linted for both Apple targets; not yet run. `doc/feature-matrix.md`'s Mac
 column carries each.
 
 ## Conventions made mechanical

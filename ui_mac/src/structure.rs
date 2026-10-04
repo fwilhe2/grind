@@ -389,6 +389,8 @@ impl TextPane {
             Command::InsertPicture => return self.insert_picture(mtm),
             Command::ImportMarkdown => return self.import_markdown(mtm),
             Command::ExportMarkdown => return self.export_markdown(mtm),
+            Command::ExportPdf => return self.export_pdf(mtm),
+            Command::Print => return self.print(mtm),
             Command::MoveParagraph(up) => {
                 return self.act_on(|page, app, _| page.move_paragraphs(app, up));
             }
@@ -490,6 +492,69 @@ impl TextPane {
             });
         if let Err(why) = done {
             prompt::tell(mtm, "That could not be exported.", &why);
+        }
+    }
+
+    /// The page typeset as a PDF, in the bundled faces and the Mac's own (`doc/pdf-export.md`).
+    fn pdf(&self) -> Result<(Vec<u8>, grind_print::Report), String> {
+        let options = grind_print::Options::default();
+        grind_print::export(&self.app, grind_print::fonts_for(&self.app), &options)
+    }
+
+    /// File ▸ Export as PDF…: the page typeset and written where the save panel says. A family
+    /// set in another face is said afterwards, since that is the one thing worth knowing about a
+    /// PDF that came out.
+    fn export_pdf(&self, mtm: MainThreadMarker) {
+        let panel = NSSavePanel::savePanel(mtm);
+        panel.setNameFieldStringValue(&NSString::from_str("Untitled.pdf"));
+        if panel.runModal() != NSModalResponseOK {
+            return;
+        }
+        let Some(path) = panel.URL().and_then(|url| url.to_file_path()) else {
+            return;
+        };
+        let done = self.pdf().and_then(|(bytes, report)| {
+            grind_core::atomic::write(&path, bytes)
+                .map(|()| report)
+                .map_err(|error| format!("{}: {error}", path.display()))
+        });
+        match done {
+            Ok(report) if !report.substitutions.is_empty() || report.missing_glyphs > 0 => {
+                prompt::tell(mtm, "The PDF was exported.", &report.summary());
+            }
+            Ok(_) => {}
+            Err(why) => prompt::tell(mtm, "That could not be exported.", &why),
+        }
+    }
+
+    /// File ▸ Print…: the same PDF handed to the system's print panel through PDFKit — so the
+    /// panel's own preview is the PDF, page for page, rather than a second drawing of the page.
+    fn print(&self, mtm: MainThreadMarker) {
+        use objc2::AllocAnyThread;
+        use objc2_foundation::NSData;
+        use objc2_pdf_kit::{PDFDocument, PDFPrintScalingMode};
+        let bytes = match self.pdf() {
+            Ok((bytes, _)) => bytes,
+            Err(why) => return prompt::tell(mtm, "That could not be printed.", &why),
+        };
+        let data = NSData::with_bytes(&bytes);
+        // SAFETY: `data` is a complete PDF that outlives the document made from it.
+        let Some(document) = (unsafe { PDFDocument::initWithData(PDFDocument::alloc(), &data) })
+        else {
+            return prompt::tell(mtm, "That could not be printed.", "PDFKit refused the PDF.");
+        };
+        // SAFETY: on the main thread, as the marker proves; the operation runs modally and is
+        // done with the document when it returns.
+        let operation = unsafe {
+            document.printOperationForPrintInfo_scalingMode_autoRotate(
+                None,
+                PDFPrintScalingMode::PageScaleNone,
+                true,
+                mtm,
+            )
+        };
+        if let Some(operation) = operation {
+            operation.runOperation();
         }
     }
 

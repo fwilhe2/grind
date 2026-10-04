@@ -24,6 +24,9 @@ grind-core = { path = "../core" }
 grind-xlsx = { path = "../xlsx", optional = true }
 grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
+# File ▸ Export as PDF… and Print… (doc/pdf-export.md): the bundled faces, and the Mac's own for a
+# family a document names, which fontdb finds in the system's font directories.
+grind-print = { path = "../print" }
 # `--render-to`'s PNG (`png.rs`): both already in the workspace through `zip`, with the backend
 # `zip` asks for, so this adds no crate.
 crc32fast = "1"
@@ -89,6 +92,8 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
     "NSPanel",
     "NSPasteboard",
     "NSPopUpButton",
+    "NSPrintInfo",
+    "NSPrintOperation",
     "NSResponder",
     "NSRunningApplication",
     "NSSavePanel",
@@ -116,6 +121,13 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
     "NSWindow",
     "NSWindowController",
     "NSWorkspace",
+] }
+# Print… hands the PDF to the system's print panel through PDFKit, so the panel's preview is the
+# PDF itself rather than a second drawing of the page (doc/pdf-export.md §3).
+objc2-pdf-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "objc2-app-kit",
+    "PDFDocument",
 ] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = [
     "std",

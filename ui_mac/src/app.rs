@@ -270,6 +270,8 @@ impl Delegate {
             | Command::InsertPicture
             | Command::ImportMarkdown
             | Command::ExportMarkdown
+            | Command::ExportPdf
+            | Command::Print
             | Command::MoveParagraph(_)
             | Command::DeleteParagraph
             | Command::ParagraphStyle => {
