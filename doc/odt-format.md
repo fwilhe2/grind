@@ -628,6 +628,15 @@ oracle turned out to be unable to answer the font questions (fact 4).
    margin to margin **except the paragraph's last**, which stays at the start — and a line that
    ends in a `text:line-break` **is** stretched (two words on it went one to each margin).
    `center` centres a line between the margins and `end` puts it against the right one.
+9. **Headers and footers** (26.8.1.1): a master page's `style:header` is set from the page's
+   **top margin** down, and the body starts below it by the header's own height (its content's,
+   or `fo:min-height` when that is more) plus its `fo:margin-bottom` from
+   `style:header-style/style:header-footer-properties`; a `style:footer` ends at the **bottom
+   margin**, and the body ends above it by its height plus its `fo:margin-top`. With 2 cm
+   margins, one 12 pt line in each and 0.5 cm spacing, an A4 page holds 48 body lines where it
+   held 52. Their paragraphs take their own paragraph styles (a centred footer is centred), and
+   `text:page-number` is the page it is printed on and `text:page-count` the document's pages
+   (`pg 1 of 3`, `pg 2 of 3`). The text written inside either field is only its cached value.
 7. **The pinned image has no Liberation fonts.** The same document set in Liberation Serif
    comes out in **DejaVu Serif** from the pin (`pdffonts`), so line breaks and page breaks
    measured there are DejaVu's. Loop G cannot use the pin as it stands; it needs the bundled
