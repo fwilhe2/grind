@@ -116,6 +116,10 @@ pub struct Builder {
     /// The header or footer paragraph being read, and those of it already read.
     marginal: Option<crate::marginal::Paragraph>,
     marginal_done: Vec<crate::marginal::Paragraph>,
+    /// Whether the blocks being read are an index's generated entries ([`Block::generated`]).
+    generating: bool,
+    /// The innermost section open around the blocks being read ([`Block::section`]).
+    section: Option<usize>,
     /// Every table-cell style read so far, and whether it was automatic.
     cell_styles: HashMap<String, (bool, crate::table_look::CellLook)>,
     /// Every table-column style's width in millimetres, and whether it was automatic.
@@ -214,6 +218,8 @@ impl Builder {
             layout_marginals: HashMap::new(),
             marginal: None,
             marginal_done: Vec::new(),
+            generating: false,
+            section: None,
             cell_styles: HashMap::new(),
             column_styles: HashMap::new(),
             table_pending: HashMap::new(),
@@ -394,6 +400,17 @@ impl Builder {
         // Where it sits in a table, if a `table:table-cell` is open around it. The second axis
         // of the flat sequence, and the only line in this function that knows tables exist.
         block.cell = self.cell.clone();
+        block.generated = self.generating;
+        block.section = self.section;
+        // Every section the block is inside holds it, the outer ones too.
+        let mut at = self.section;
+        while let Some(index) = at {
+            let Some(section) = self.doc.sections.get_mut(index) else {
+                break;
+            };
+            section.blocks.push(id);
+            at = section.parent;
+        }
         self.doc.blocks.push(block);
         id
     }
@@ -461,6 +478,12 @@ impl Builder {
     /// Remember an element of `office:text` the model does not read, and which block it came
     /// after (`super::source::Sibling`).
     fn record_sibling(&mut self, start_tag: std::ops::Range<usize>) {
+        // Inside a section an unread element is carried with the section's own bytes when the
+        // section is untouched, and a section rebuilt without it is refused by the save's loss
+        // check — kept twice, it would be written twice.
+        if self.section.is_some() {
+            return;
+        }
         let after = self.doc.blocks.last().map(|block| block.id);
         let Some(source) = self.doc.source.as_deref_mut() else {
             return;
@@ -1069,7 +1092,11 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
                 depth => BlockKind::ListItem { depth },
             };
             let id = b.open(kind, style);
-            b.record(id, attrs.span());
+            // An index's entry has no place in the file a splice could write it back to: the
+            // index element is kept whole instead (`Builder::generating`).
+            if !b.generating {
+                b.record(id, attrs.span());
+            }
             Some(Box::new(Paragraph))
         }
         (Ns::Text, "h") => {
@@ -1082,7 +1109,11 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
                 .filter(|n| *n > 0)
                 .unwrap_or(1);
             let id = b.open(BlockKind::Heading { level }, style);
-            b.record(id, attrs.span());
+            // An index's entry has no place in the file a splice could write it back to: the
+            // index element is kept whole instead (`Builder::generating`).
+            if !b.generating {
+                b.record(id, attrs.span());
+            }
             Some(Box::new(Paragraph))
         }
         (Ns::Text, "list") => {
@@ -1102,7 +1133,116 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         // it belongs here beside the paragraph and not somewhere special: in a text document a
         // table is a *block*, and its cells hold blocks in turn.
         (Ns::Table, "table") => Some(Box::new(Table::open(attrs.get(Ns::Table, "name"), b))),
+        // A section (rng:16697) holds the document's own text: its blocks are read in place,
+        // so they are shown and a splice edits them inside it. What a section *is* — its own
+        // columns, a protected range — is not modelled, and a regenerate that would drop the
+        // wrapper is refused by the save's loss check.
+        (Ns::Text, "section") => {
+            let start = b
+                .doc
+                .source
+                .as_deref()
+                .and_then(|source| source.bytes.get(attrs.span()))
+                .and_then(|tag| std::str::from_utf8(tag).ok())
+                .filter(|tag| !tag.trim_end().ends_with("/>"))
+                .map(str::to_owned)
+                .unwrap_or_else(|| {
+                    let name = attrs.get(Ns::Text, "name").unwrap_or("Section");
+                    format!(
+                        "<text:section text:name=\"{}\">",
+                        name.replace('"', "&quot;")
+                    )
+                });
+            let parent = b.section;
+            let range = b
+                .doc
+                .source
+                .as_deref()
+                .and_then(|source| element_extent(&source.bytes, attrs.span()));
+            b.section = Some(b.doc.sections.len());
+            b.doc.sections.push(crate::model::Section {
+                start,
+                parent,
+                range,
+                blocks: Vec::new(),
+            });
+            Some(Box::new(SectionText { parent }))
+        }
+        // An index (rng:17154 onwards): the element is kept whole, as any element the model has
+        // no block for is, and the entries its `text:index-body` last generated are read as
+        // blocks marked generated — shown, never written as blocks.
+        (Ns::Text, local) if INDEXES.contains(&local) => {
+            b.record_sibling(attrs.span());
+            Some(Box::new(Index))
+        }
         _ => None,
+    }
+}
+
+/// A section's content: the body's own blocks, with the section put back as the innermost one
+/// when it closes.
+struct SectionText {
+    parent: Option<usize>,
+}
+
+impl Context<Builder> for SectionText {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        Text.start_child(name, attrs, b)
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        b.section = self.parent;
+    }
+}
+
+/// The index elements whose generated entries are shown.
+const INDEXES: &[&str] = &[
+    "table-of-content",
+    "illustration-index",
+    "alphabetical-index",
+    "table-index",
+    "object-index",
+    "user-index",
+    "bibliography",
+];
+
+/// An index: its source (how it is generated) is skipped; its body is what was generated.
+struct Index;
+
+impl Context<Builder> for Index {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        match (name.ns, name.local.as_str()) {
+            (Ns::Text, "index-body" | "index-title") => Some(Box::new(Index)),
+            (Ns::Text, "p" | "h") => {
+                b.generating = true;
+                let child = block_child(name, attrs, b);
+                Some(Box::new(Generated(child)))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// One generated entry: the paragraph it is, read as any paragraph is, with the flag lowered
+/// when it closes.
+struct Generated(Option<Ctx>);
+
+impl Context<Builder> for Generated {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        self.0.as_mut()?.start_child(name, attrs, b)
+    }
+
+    fn text(&mut self, text: &str, b: &mut Builder) {
+        if let Some(inner) = self.0.as_mut() {
+            inner.text(text, b);
+        }
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        if let Some(inner) = self.0.as_mut() {
+            inner.end(b);
+        }
+        b.generating = false;
     }
 }
 

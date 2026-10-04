@@ -1951,6 +1951,7 @@ mod tests {
             marks: Vec::new(),
             // This pane draws no tables yet (`doc/web-shell.md`), so a fixture never is in one.
             cell: None,
+            generated: false,
         }
     }
 

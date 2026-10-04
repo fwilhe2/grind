@@ -213,6 +213,9 @@ pub struct BlockView {
     /// analysis and this costs a walk of the block's own runs, which the line above already
     /// does.
     pub marks: Vec<(usize, String)>,
+    /// Whether it is an index's generated entry rather than the document's own text
+    /// ([`Block::generated`]) — shown, and not to be edited.
+    pub generated: bool,
     /// Where this block sits in a table, when it is in one (`model::Cell`) — the second axis of
     /// the flat sequence, carried here for the reason every other field is: a shell drawing a
     /// grid needs the block's text and its coordinate at the same moment, and two calls would
@@ -587,6 +590,7 @@ impl App {
                 styled: block.is_styled(),
                 marks: marks(block),
                 cell: block.cell.clone(),
+                generated: block.generated,
             })
             .collect();
         Viewport {
@@ -1519,6 +1523,13 @@ impl App {
             if !text.is_empty() {
                 block.runs.push(Run::plain(text));
             }
+            // Inside a section when both neighbours are — between two paragraphs of a section
+            // is in it, and a regenerate would otherwise split the section in two around it.
+            let section = |at: Option<usize>| at.and_then(|i| state.doc.blocks.get(i)?.section);
+            let before = section(index.checked_sub(1));
+            if before.is_some() && before == section(Some(index)) {
+                block.section = before;
+            }
             Self::commit(
                 state,
                 Action::InsertBlock {
@@ -2204,6 +2215,7 @@ mod tests {
             styled: false,
             marks: Vec::new(),
             cell: None,
+            generated: false,
         }
     }
 
@@ -2350,9 +2362,12 @@ mod tests {
                <office:annotation><text:p>a comment</text:p></office:annotation>
                <text:p>after</text:p>"#,
         );
+        // A section's text and a table of contents' generated entries are read (sections are
+        // the document's own text; an index's entries are shown, never written); a comment and
+        // an empty bibliography are still inert.
         assert_eq!(
             doc.text(),
-            "before\nafter",
+            "before\ninside a section\nTOC\nafter",
             "an unrecognised subtree is swallowed whole, contents included"
         );
     }

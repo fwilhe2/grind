@@ -113,6 +113,15 @@ them is obviously right. Choosing between them is a design question **D2 reopens
 answers**, and until it is answered a paragraph's image is dropped and the prose around it is
 not. `text/tests/loop_f.rs`'s `images_are_the_one_named_gap` fails the day that changes.
 
+## Generated index entries: the second named gap
+
+A table of contents', list of figures' or other index's `text:index-body` paragraphs are read as
+blocks marked `generated` — shown in every view and printed, never written as blocks, since a
+save puts the index element back as the file had it. A projection has no index element to put
+them back in, so it leaves them out, and loop F compares both sides without them. Converting
+such a document to `.grind` drops its indexes' last generated entries — which is what they are:
+generated, and Writer's *Update Index* writes them again.
+
 ## What a projection does not carry, and why that is not a gap
 
 `Document::styles` — the set of style names the file this document was read from *declares* —

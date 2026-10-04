@@ -620,6 +620,18 @@ fn content(
         // The projection never reaches here — `write` refuses it before there is any XML.
         Form::Flat | Form::Projection => "office:document",
     };
+    // An index's generated entries are never written as blocks: the index element they came
+    // from is carried whole, as every element the model has no block for is.
+    let without;
+    let doc = match doc.blocks.iter().any(|block| block.generated) {
+        true => {
+            let mut copy = doc.clone();
+            copy.blocks.retain(|block| !block.generated);
+            without = copy;
+            &without
+        }
+        false => doc,
+    };
     let pool = Pool::of(doc, source, reserved);
     let used = Used::of(doc, &pool);
 
@@ -710,13 +722,40 @@ fn body(out: &mut String, doc: &Document, pool: &Pool, origin: Option<&Origin>) 
     };
     carry(out, None);
 
+    // The sections open in the output, outermost first: each unit below is wrapped in its
+    // first block's sections, closing and opening only what differs from the unit before.
+    let mut open: Vec<usize> = Vec::new();
     let mut index = 0;
     while index < doc.blocks.len() {
+        let wanted = section_path(doc, doc.blocks[index].section);
+        let keep = open.iter().zip(&wanted).take_while(|(a, b)| a == b).count();
+        while open.len() > keep {
+            open.pop();
+            let _ = writeln!(out, "{}</text:section>", pad(3, origin));
+        }
+        // An untouched section — every block it held, in order, none edited — goes back as the
+        // file's own bytes, so one edit elsewhere stays one line of diff.
+        if let (Some(&outer), Some(origin)) = (wanted.get(keep), origin)
+            && let Some(bytes) = untouched_section(doc, outer, index, origin)
+        {
+            let _ = writeln!(out, "{}{bytes}", pad(3, Some(origin)));
+            let held = doc.sections[outer].blocks.len();
+            for i in index..index + held {
+                carry(out, Some(i));
+            }
+            index += held;
+            continue;
+        }
+        for &section in &wanted[keep..] {
+            let _ = writeln!(out, "{}{}", pad(3, origin), doc.sections[section].start);
+            open.push(section);
+        }
+        let here = doc.blocks[index].section;
         match doc.blocks[index].cell {
             None => {
                 let mut end = doc.blocks[index..]
                     .iter()
-                    .position(|block| block.cell.is_some())
+                    .position(|block| block.cell.is_some() || block.section != here)
                     .map_or(doc.blocks.len(), |offset| index + offset);
                 // A kept element after one of these blocks ends the run there, so that a list
                 // it followed closes before it, as it did in the file.
@@ -739,6 +778,42 @@ fn body(out: &mut String, doc: &Document, pool: &Pool, origin: Option<&Origin>) 
             }
         }
     }
+    for _ in open {
+        let _ = writeln!(out, "{}</text:section>", pad(3, origin));
+    }
+}
+
+/// The file's own bytes for the section at `section`, when the blocks from `index` on are
+/// exactly the blocks it held, in order, and none of them has been edited.
+fn untouched_section<'a>(
+    doc: &Document,
+    section: usize,
+    index: usize,
+    origin: &Origin<'a>,
+) -> Option<&'a str> {
+    let info = doc.sections.get(section)?;
+    let held = doc.blocks.get(index..index + info.blocks.len())?;
+    let same = held.len() == info.blocks.len()
+        && held
+            .iter()
+            .zip(&info.blocks)
+            .all(|(block, id)| block.id == *id && !origin.edited.contains(id));
+    if !same || held.is_empty() {
+        return None;
+    }
+    std::str::from_utf8(origin.source.bytes.get(info.range.clone()?)?).ok()
+}
+
+/// The sections a block in `section` is inside, outermost first.
+fn section_path(doc: &Document, section: Option<usize>) -> Vec<usize> {
+    let mut path = Vec::new();
+    let mut at = section;
+    while let Some(index) = at.filter(|i| *i < doc.sections.len() && path.len() < 64) {
+        path.push(index);
+        at = doc.sections[index].parent;
+    }
+    path.reverse();
+    path
 }
 
 /// The file a regenerated body is being written for, and what has changed since it was read.

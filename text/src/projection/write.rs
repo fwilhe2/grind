@@ -26,6 +26,9 @@ pub fn project(doc: &Document) -> Projection {
     let mut index = 0;
     while index < doc.blocks.len() {
         match doc.blocks[index].cell {
+            // An index's generated entries are not the document's text, and a projection has no
+            // index to put them back in: left out, a named gap (`doc/projection-text.md`).
+            None if doc.blocks[index].generated => index += 1,
             None => {
                 write_block(&mut out, doc, index, &doc.blocks[index]);
                 index += 1;

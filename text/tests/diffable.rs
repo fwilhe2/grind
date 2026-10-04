@@ -147,7 +147,7 @@ fn typing_one_character_changes_one_line() {
 fn erasing_across_a_block_boundary_regenerates() {
     let app = open(RICH.as_bytes());
     let (from, to) = app
-        .resolve_caret_range(&grind_text::loc::parse_range("p2+16:p3+0").expect("parses"))
+        .resolve_caret_range(&grind_text::loc::parse_range("p1+5:p2+0").expect("parses"))
         .expect("resolves");
     app.erase(from, to).expect("erases");
 

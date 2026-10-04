@@ -230,3 +230,65 @@ fn a_fields_cached_text_is_shown_and_never_flattened_on_save() {
         Err(other) => panic!("{other}"),
     }
 }
+
+/// A table of contents' entries are what Writer last generated (`text:index-body`): shown as
+/// blocks marked generated, and never written as such — a save puts the index element back as
+/// the file had it, so a structural edit elsewhere still saves and keeps the index whole.
+#[test]
+fn an_indexs_entries_are_shown_and_its_element_kept_on_save() {
+    let bytes = String::from_utf8(flat("")).unwrap().replace(
+        "<text:p>Hi</text:p>",
+        r#"<text:p>Before</text:p><text:table-of-content text:name="Contents"><text:table-of-content-source text:outline-level="3"/><text:index-body><text:index-title text:name="Contents"><text:p text:style-name="IndexTitle">Contents</text:p></text:index-title><text:p text:style-name="IndexLevel1">Abstract<text:tab/>1</text:p></text:index-body></text:table-of-content><text:p>After</text:p>"#,
+    ).into_bytes();
+    let app = grind_text::App::new();
+    app.open_bytes("i.fodt", &bytes).unwrap();
+    let view = app.get_viewport(0..app.block_count());
+    let shown: Vec<(String, bool)> = view.iter().map(|b| (b.text.clone(), b.generated)).collect();
+    assert_eq!(
+        shown,
+        vec![
+            ("Before".into(), false),
+            ("Contents".into(), true),
+            ("Abstract\t1".into(), true),
+            ("After".into(), false),
+        ]
+    );
+    assert_eq!(app.save_bytes(Form::Flat).unwrap(), bytes);
+    // A structural edit regenerates the body; the index comes back as it was, once.
+    app.insert(4, grind_text::BlockKind::Paragraph, "New")
+        .unwrap();
+    let saved = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+    assert_eq!(
+        saved.matches("<text:table-of-content ").count(),
+        1,
+        "{saved}"
+    );
+    assert_eq!(saved.matches("Abstract").count(), 1, "{saved}");
+    assert!(saved.contains("New"));
+}
+
+/// A section's paragraphs are the document's own text: read as blocks, where they had been
+/// kept as one opaque element and shown as nothing.
+#[test]
+fn a_sections_paragraphs_are_read() {
+    let bytes = String::from_utf8(flat("")).unwrap().replace(
+        "<text:p>Hi</text:p>",
+        r#"<text:p>Before</text:p><text:section text:name="S1"><text:p>Inside</text:p><text:h text:outline-level="2">Deeper</text:h></text:section><text:p>After</text:p>"#,
+    ).into_bytes();
+    let app = grind_text::App::new();
+    app.open_bytes("s.fodt", &bytes).unwrap();
+    let view = app.get_viewport(0..app.block_count());
+    let texts: Vec<String> = view.iter().map(|b| b.text.clone()).collect();
+    assert_eq!(texts, vec!["Before", "Inside", "Deeper", "After"]);
+    assert_eq!(
+        app.save_bytes(Form::Flat).unwrap(),
+        bytes,
+        "untouched, as it was"
+    );
+    app.set_text(1, "Changed").unwrap();
+    let saved = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+    assert!(
+        saved.contains("<text:section text:name=\"S1\"><text:p>Changed</text:p>"),
+        "{saved}"
+    );
+}

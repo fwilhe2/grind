@@ -418,6 +418,14 @@ fn a_block_inserted_regenerates_rather_than_splicing_into_the_wrong_line() {
 /// whichever `Document` handed it out and is a fact about a session, never about a document —
 /// the same reason `Document::source` and `Document::edits` are not projected.
 fn differences(a: &Document, b: &Document) -> Vec<String> {
+    // An index's generated entries are the projection's one other named gap: left out of it, so
+    // left out of the comparison on both sides.
+    let own = |doc: &Document| {
+        let mut doc = doc.clone();
+        doc.blocks.retain(|block| !block.generated);
+        doc
+    };
+    let (a, b) = (&own(a), &own(b));
     let mut out = Vec::new();
     if a.blocks.len() != b.blocks.len() {
         out.push(format!("{} blocks vs {}", a.blocks.len(), b.blocks.len()));

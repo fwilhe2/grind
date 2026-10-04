@@ -483,6 +483,14 @@ pub struct Block {
     /// Where this block sits in a table, when it is in one. See [`Cell`].
     pub cell: Option<Cell>,
     pub runs: Vec<Run>,
+    /// Whether it is an index's last generated entry — a table of contents' or a list of
+    /// figures' `text:index-body` paragraph — rather than the document's own text. Shown like
+    /// any block; never written as one, since a save puts the index element back as the file
+    /// had it (`crate::odf::write`), and so an edit to one is refused rather than lost.
+    pub generated: bool,
+    /// The innermost `text:section` it is in, as an index into [`Document::sections`] — kept
+    /// so that a regenerated body wraps it in its section again rather than dropping it.
+    pub section: Option<usize>,
 }
 
 impl Block {
@@ -493,6 +501,8 @@ impl Block {
             style: None,
             cell: None,
             runs: Vec::new(),
+            generated: false,
+            section: None,
         }
     }
 
@@ -539,6 +549,18 @@ impl Block {
 pub struct ParagraphDefaults {
     pub widows: Option<u32>,
     pub orphans: Option<u32>,
+}
+
+/// One `text:section`: its start tag as the file spelled it, and the section it is inside.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Section {
+    pub start: String,
+    pub parent: Option<usize>,
+    /// The whole element's bytes in the file it was read from, and the blocks it held there in
+    /// order — so a regenerated body writes an untouched section back as those bytes, one edit
+    /// staying one line of diff.
+    pub range: Option<std::ops::Range<usize>>,
+    pub blocks: Vec<crate::model::BlockId>,
 }
 
 /// A text document.
@@ -595,6 +617,11 @@ pub struct Document {
     /// Each table's look, by table name — widths, cell styles, heading rows — read for showing
     /// and printing and never written (`crate::table_look`).
     pub table_looks: std::collections::HashMap<String, crate::table_look::TableLook>,
+    /// Every `text:section` the body has, in the order they open: each one's start tag exactly
+    /// as the file spelled it, and the section it is inside. What a regenerated body wraps a
+    /// section's blocks in again ([`Block::section`]); the section's own properties are not
+    /// otherwise modelled.
+    pub sections: Vec<crate::model::Section>,
     /// The page's header and footer — the master page [`Document::page`] comes from — read for
     /// printing and never written (`crate::marginal`).
     pub header: Option<crate::marginal::Marginal>,
@@ -663,6 +690,7 @@ impl Document {
             font_generics: std::collections::HashMap::new(),
             char_styles: std::collections::HashMap::new(),
             table_looks: std::collections::HashMap::new(),
+            sections: Vec::new(),
             header: None,
             footer: None,
             next_id: 0,
