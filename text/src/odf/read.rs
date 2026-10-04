@@ -102,6 +102,10 @@ pub struct Builder {
     /// Every `style:page-layout` read so far, by name. In `office:automatic-styles` of
     /// `styles.xml` in a package and of the one document in the flat form.
     page_layouts: HashMap<String, grind_core::page::PageGeometry>,
+    /// Every paragraph style read so far, and whether it was automatic — an automatic one belongs
+    /// to its part, so `styles.xml`'s are forgotten before `content.xml` is read, as
+    /// [`Builder::styles`]' are.
+    paragraph_styles: HashMap<String, (bool, crate::paragraph::ParagraphStyle)>,
     /// Every `style:master-page` read so far: its name and the page layout it names, in
     /// document order, so "the first one" means what the file said first.
     master_pages: Vec<(String, String)>,
@@ -172,6 +176,7 @@ impl Builder {
             frame_depth: 0,
             package: None,
             page_layouts: HashMap::new(),
+            paragraph_styles: HashMap::new(),
             master_pages: Vec::new(),
         }
     }
@@ -179,6 +184,14 @@ impl Builder {
     /// Settle [`Document::page`] once every part has been read: the master page called
     /// `Standard` (what Writer applies when nothing says otherwise), or the first one there is,
     /// and the page layout it names. A master page naming a layout nobody declared is no page.
+    /// Hand the paragraph styles to the document once every part is read.
+    pub fn settle_paragraph_styles(&mut self) {
+        self.doc.paragraph_styles = std::mem::take(&mut self.paragraph_styles)
+            .into_iter()
+            .map(|(name, (_, style))| (name, style))
+            .collect();
+    }
+
     pub fn settle_page(&mut self) {
         let master = self
             .master_pages
@@ -243,6 +256,8 @@ impl Builder {
     /// Drop every automatic style read so far — called after `styles.xml`, whose automatic
     /// styles only that part can refer to.
     pub fn forget_automatic_styles(&mut self) {
+        self.paragraph_styles
+            .retain(|_, (automatic, _)| !*automatic);
         self.styles.retain(|_, style| !style.automatic);
     }
 
@@ -478,20 +493,73 @@ impl Context<Builder> for MasterStyles {
     }
 }
 
-/// `style:default-style style:family="paragraph"` — only its widows and orphans, which is what
-/// a page needs from it (`doc/odt-format.md` §5c).
-struct DefaultParagraph;
+/// Where a paragraph style's properties go when it closes.
+enum ParagraphTarget {
+    /// `style:default-style style:family="paragraph"`, the root of every chain.
+    Default,
+    Named {
+        name: String,
+        parent: Option<String>,
+        automatic: bool,
+    },
+}
 
-impl Context<Builder> for DefaultParagraph {
+/// A paragraph style — named, automatic or the default — read for the properties a page needs
+/// (`crate::paragraph`). Everything else in it is an `Ignore` subtree, as before.
+struct ParagraphStyleDef {
+    target: ParagraphTarget,
+    props: crate::paragraph::ParagraphProps,
+}
+
+impl Context<Builder> for ParagraphStyleDef {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        let get = |local: &str| attrs.get(Ns::Fo, local).map(str::to_owned);
+        let props = &mut self.props;
         if name.is(Ns::Style, "paragraph-properties") {
-            let count = |local: &str| attrs.get(Ns::Fo, local).and_then(|v| v.trim().parse().ok());
-            b.doc.paragraphs = crate::model::ParagraphDefaults {
-                widows: count("widows"),
-                orphans: count("orphans"),
-            };
+            props.margin_top = get("margin-top").or_else(|| get("margin"));
+            props.margin_bottom = get("margin-bottom").or_else(|| get("margin"));
+            props.margin_left = get("margin-left").or_else(|| get("margin"));
+            props.margin_right = get("margin-right").or_else(|| get("margin"));
+            props.text_indent = get("text-indent");
+            props.line_height = get("line-height");
+            props.text_align = get("text-align");
+            props.break_before = get("break-before");
+            props.break_after = get("break-after");
+            props.keep_with_next = get("keep-with-next");
+            props.widows = get("widows");
+            props.orphans = get("orphans");
+        } else if name.is(Ns::Style, "text-properties") {
+            // The family the way a run's is read: the font-face indirection first, resolved to
+            // the family it stands for, and the XSL-FO quoting taken off.
+            props.font_family = attrs
+                .get(Ns::Style, "font-name")
+                .and_then(|face| b.fonts.get(face).cloned())
+                .or_else(|| get("font-family").map(|family| style::unquote_family(&family)));
+            props.font_size = get("font-size");
+            props.font_weight = get("font-weight");
+            props.font_style = get("font-style");
         }
         None
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        let props = std::mem::take(&mut self.props);
+        match &self.target {
+            ParagraphTarget::Default => *b.doc.default_paragraph = props,
+            ParagraphTarget::Named {
+                name,
+                parent,
+                automatic,
+            } => {
+                if b.paragraph_styles.len() < MAX_STYLES {
+                    let style = crate::paragraph::ParagraphStyle {
+                        parent: parent.clone(),
+                        props,
+                    };
+                    b.paragraph_styles.insert(name.clone(), (*automatic, style));
+                }
+            }
+        }
     }
 }
 
@@ -535,7 +603,10 @@ impl Context<Builder> for Styles {
         if name.is(Ns::Style, "default-style")
             && attrs.get(Ns::Style, "family") == Some("paragraph")
         {
-            return Some(Box::new(DefaultParagraph));
+            return Some(Box::new(ParagraphStyleDef {
+                target: ParagraphTarget::Default,
+                props: crate::paragraph::ParagraphProps::default(),
+            }));
         }
         if !name.is(Ns::Style, "style") {
             return None;
@@ -544,6 +615,17 @@ impl Context<Builder> for Styles {
             && b.doc.styles.len() < MAX_STYLES
         {
             b.doc.styles.insert(declared.to_owned());
+        }
+        if attrs.get(Ns::Style, "family") == Some("paragraph") {
+            let declared = attrs.get(Ns::Style, "name")?.to_owned();
+            return Some(Box::new(ParagraphStyleDef {
+                target: ParagraphTarget::Named {
+                    name: declared,
+                    parent: attrs.get(Ns::Style, "parent-style-name").map(str::to_owned),
+                    automatic: self.automatic,
+                },
+                props: crate::paragraph::ParagraphProps::default(),
+            }));
         }
         if attrs.get(Ns::Style, "family") != Some("text") {
             return None;

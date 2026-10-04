@@ -531,12 +531,10 @@ impl Block {
 }
 
 /// `style:default-style style:family="paragraph"`'s `fo:widows` and `fo:orphans` (rng:12512,
-/// rng:12517): the fewest lines a paragraph split across pages leaves at the top of the next page
-/// and at the foot of this one. `None` when the document states nothing, which Writer reads as
-/// no control at all (`doc/odt-format.md` §5c, fact 3).
-///
-/// Only the default style for now: a named paragraph style's own values wait for paragraph
-/// styles to be resolved (`doc/pdf-export.md` P5).
+/// rng:12517), as counts: the fewest lines a paragraph split across pages leaves at the top of
+/// the next page and at the foot of this one. `None` when the document states nothing, which
+/// Writer reads as no control at all (`doc/odt-format.md` §5c, fact 3). Derived from
+/// [`Document::default_paragraph`] rather than stored beside it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ParagraphDefaults {
     pub widows: Option<u32>,
@@ -575,9 +573,17 @@ pub struct Document {
     /// a document this build wrote or generated has none. `None` means the document stated no
     /// page, and whoever prints it uses A4 ([`grind_core::page::PageGeometry::default`]).
     pub page: Option<grind_core::page::PageGeometry>,
-    /// What the document's **default paragraph style** says about how a paragraph breaks across
-    /// pages — read and never written, as [`Document::page`] is (`doc/odt-format.md` §5c).
-    pub paragraphs: ParagraphDefaults,
+    /// The document's **default paragraph style** (`style:default-style style:family=
+    /// "paragraph"`), the root under every paragraph style chain — read and never written, as
+    /// [`Document::page`] is (`crate::paragraph`, `doc/pdf-export.md` P5).
+    ///
+    /// Boxed: sixteen optional strings inline would make every `Document`, and so every
+    /// `App`, several hundred bytes larger for a value read once per print.
+    pub default_paragraph: Box<crate::paragraph::ParagraphProps>,
+    /// Every paragraph style the document declares, by name: the named ones of `office:styles`
+    /// and the automatic ones of the body's own part. Read and never written; a block's
+    /// `style` names one, and [`crate::paragraph::resolve`] walks its chain.
+    pub paragraph_styles: std::collections::HashMap<String, crate::paragraph::ParagraphStyle>,
     /// The next id to hand out. Monotonic, never reused, so a stale [`BlockId`] is always
     /// stale rather than silently pointing at something new.
     next_id: u64,
@@ -637,7 +643,8 @@ impl Document {
             bookmarks: BTreeMap::new(),
             styles: std::collections::BTreeSet::new(),
             page: None,
-            paragraphs: ParagraphDefaults::default(),
+            default_paragraph: Box::default(),
+            paragraph_styles: std::collections::HashMap::new(),
             next_id: 0,
             source: None,
             projection_source: None,

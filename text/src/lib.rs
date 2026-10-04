@@ -60,6 +60,7 @@ pub mod model;
 pub mod odf;
 pub mod page;
 pub mod paint;
+pub mod paragraph;
 pub mod picture;
 pub mod projection;
 pub mod style;
@@ -746,9 +747,31 @@ impl App {
         self.state.read().unwrap().doc.page
     }
 
-    /// The default paragraph style's widows and orphans ([`Document::paragraphs`]).
+    /// The default paragraph style's widows and orphans ([`Document::default_paragraph`]).
     pub fn paragraph_defaults(&self) -> ParagraphDefaults {
-        self.state.read().unwrap().doc.paragraphs
+        let state = self.state.read().unwrap();
+        let count = |value: &Option<String>| value.as_deref().and_then(|v| v.trim().parse().ok());
+        ParagraphDefaults {
+            widows: count(&state.doc.default_paragraph.widows),
+            orphans: count(&state.doc.default_paragraph.orphans),
+        }
+    }
+
+    /// The block at `index`'s paragraph style, resolved down its chain to the default style —
+    /// what a page lays it out by (`paragraph::resolve`, `doc/pdf-export.md` P5). `None` for no
+    /// such block.
+    pub fn paragraph(&self, index: usize) -> Option<paragraph::Resolved> {
+        let state = self.state.read().unwrap();
+        let block = state.doc.block(index)?;
+        let style = block.style.as_deref();
+        Some(paragraph::Resolved {
+            props: paragraph::resolve(
+                &state.doc.paragraph_styles,
+                &state.doc.default_paragraph,
+                style,
+            ),
+            declared: style.is_some_and(|name| state.doc.paragraph_styles.contains_key(name)),
+        })
     }
 
     // --- layout ---

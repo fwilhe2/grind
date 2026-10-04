@@ -123,26 +123,21 @@ fn reading_the_page_changes_nothing_on_save() {
 /// them, and Writer states them on its default paragraph style.
 #[test]
 fn the_default_paragraph_styles_widows_and_orphans_are_read() {
-    let doc = read_file(&data("edited-default-paragraph-style.fodt")).unwrap();
+    let opened = |bytes: &[u8]| {
+        let app = grind_text::App::new();
+        app.open_bytes("x.fodt", bytes).unwrap();
+        let stated = app.paragraph_defaults();
+        (stated.widows, stated.orphans)
+    };
+    let file = |name: &str| std::fs::read(data(name)).unwrap();
     assert_eq!(
-        (doc.paragraphs.widows, doc.paragraphs.orphans),
+        opened(&file("edited-default-paragraph-style.fodt")),
         (Some(2), Some(2))
     );
-    let doc = read_file(&data("numbered-list.fodt")).unwrap();
-    assert_eq!(
-        (doc.paragraphs.widows, doc.paragraphs.orphans),
-        (None, None)
+    assert_eq!(opened(&file("numbered-list.fodt")), (None, None));
+    let made = flat(
+        r#"<office:styles><style:default-style style:family="paragraph"><style:paragraph-properties fo:widows="3" fo:orphans="nonsense"/></style:default-style>
+           <style:default-style style:family="table"><style:paragraph-properties fo:widows="9"/></style:default-style></office:styles>"#,
     );
-    let doc = read_bytes(
-        "x.fodt",
-        &flat(
-            r#"<office:styles><style:default-style style:family="paragraph"><style:paragraph-properties fo:widows="3" fo:orphans="nonsense"/></style:default-style>
-               <style:default-style style:family="table"><style:paragraph-properties fo:widows="9"/></style:default-style></office:styles>"#,
-        ),
-    )
-    .unwrap();
-    assert_eq!(
-        (doc.paragraphs.widows, doc.paragraphs.orphans),
-        (Some(3), None)
-    );
+    assert_eq!(opened(&made), (Some(3), None));
 }
