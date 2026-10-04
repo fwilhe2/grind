@@ -167,3 +167,38 @@ fn pages_lists_where_each_page_begins_and_ends() {
     let a6 = ok(&["text", "pages", &file, "--paper", "a6"]);
     assert!(a6.lines().count() > rows.len(), "{a6}");
 }
+
+/// A page as a PNG at a resolution — the preview, from the command line (rule 4).
+#[test]
+#[cfg(feature = "pdf")]
+fn preview_draws_one_page_as_a_png() {
+    let dir = Sandbox::new("preview");
+    let out = dir.path("p1.png");
+    ok(&[
+        "text",
+        "preview",
+        &writer("numbered-list.fodt"),
+        &out,
+        "--dpi",
+        "36",
+    ]);
+    let png = std::fs::read(&out).expect("the PNG was written");
+    assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+    // The IHDR's width and height: half of A4's points at 36 dpi.
+    let be = |at: usize| u32::from_be_bytes(png[at..at + 4].try_into().unwrap());
+    assert_eq!((be(16), be(20)), (297, 420));
+
+    let past = grind(&[
+        "text",
+        "preview",
+        &writer("numbered-list.fodt"),
+        &out,
+        "--page",
+        "2",
+    ]);
+    assert!(!past.status.success());
+    assert!(
+        String::from_utf8_lossy(&past.stderr).contains("1 page"),
+        "says how many there are"
+    );
+}

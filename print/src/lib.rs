@@ -99,6 +99,42 @@ pub fn pages(
         .collect()
 }
 
+/// The document typeset, every page as a display list, for a client that shows pages — a
+/// preview window draws [`raster::render`] of whichever page it is on, and the typesetting is
+/// done once rather than per page turned.
+pub fn typeset(app: &App, fonts: Fonts, options: &Options) -> (ops::Document, Typesetter) {
+    let setter = Typesetter::new(fonts);
+    let doc = text::typeset(
+        app,
+        &setter,
+        &text::Options {
+            paper: options.paper,
+        },
+    );
+    (doc, setter)
+}
+
+/// One page, 0-based, rasterised at `scale` pixels per point — or `Err` naming how many pages
+/// there are when there is no such page.
+pub fn preview(
+    app: &App,
+    fonts: Fonts,
+    options: &Options,
+    page: usize,
+    scale: f32,
+) -> Result<raster::Raster, String> {
+    let (doc, setter) = typeset(app, fonts, options);
+    let count = doc.pages.len();
+    let page = doc.pages.get(page).ok_or_else(|| {
+        format!(
+            "there is no page {}: the document is {count} page{}",
+            page + 1,
+            if count == 1 { "" } else { "s" }
+        )
+    })?;
+    Ok(raster::render(page, setter.fonts(), scale))
+}
+
 /// Typeset `app`'s document and write it as a PDF, in `fonts`.
 pub fn export(app: &App, fonts: Fonts, options: &Options) -> Result<(Vec<u8>, Report), String> {
     let setter = Typesetter::new(fonts);

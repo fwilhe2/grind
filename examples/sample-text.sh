@@ -296,6 +296,9 @@ if "$GRIND" text export-pdf --help >/dev/null 2>&1; then
     say "export-pdf: the document on A4, and once more on A5 landscape"
     text export-pdf "$doc" "$out/sample.pdf"
     text export-pdf "$doc" "$out/sample-a5.pdf" --paper a5-landscape
+    text pages "$doc" --paper a6
+    say "preview: the first page as the PDF prints it, at screen resolution"
+    text preview "$doc" "$out/sample-page1.png"
 fi
 
 # --- build: a document generated from a script -------------------------------------------------

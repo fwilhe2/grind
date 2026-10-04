@@ -444,6 +444,35 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             )
         }
 
+        #[cfg(feature = "pdf")]
+        TextCommand::Preview {
+            file,
+            out,
+            page,
+            dpi,
+            paper,
+        } => {
+            let app = open_text(file)?;
+            let options = grind_print::Options {
+                paper: *paper,
+                title: None,
+            };
+            if !(1.0..=1200.0).contains(dpi) {
+                return Err(format!("--dpi {dpi}: between 1 and 1200"));
+            }
+            let index = page.checked_sub(1).ok_or("pages are counted from 1")?;
+            let raster = grind_print::preview(
+                &app,
+                grind_print::Fonts::bundled(),
+                &options,
+                index,
+                dpi / 72.0,
+            )?;
+            grind_core::atomic::write(out, raster.png())
+                .map_err(|e| format!("{}: {e}", out.display()))?;
+            text_lines(vec![show_path(out)])
+        }
+
         TextCommand::ExportMd { file, range, out } => {
             let app = open_text(file)?;
             let blocks = match range {
@@ -1178,6 +1207,23 @@ enum TextCommand {
     #[cfg(feature = "pdf")]
     Pages {
         file: PathBuf,
+        /// Lay out on this paper instead of the document's own page, e.g. a4 or a5-landscape
+        #[arg(long, value_parser = paper)]
+        paper: Option<grind_core::page::PageGeometry>,
+    },
+
+    /// Draw one page as a PNG — the print preview, exactly as the PDF prints it
+    #[cfg(feature = "pdf")]
+    Preview {
+        file: PathBuf,
+        /// Where to write the PNG
+        out: PathBuf,
+        /// Which page, from 1
+        #[arg(long, default_value_t = 1)]
+        page: usize,
+        /// Resolution in dots per inch; 96 is a screen at 100%
+        #[arg(long, default_value_t = 96.0)]
+        dpi: f32,
         /// Lay out on this paper instead of the document's own page, e.g. a4 or a5-landscape
         #[arg(long, value_parser = paper)]
         paper: Option<grind_core::page::PageGeometry>,
