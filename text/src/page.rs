@@ -80,6 +80,9 @@ pub struct Piece {
     pub left: f64,
     /// The measure its lines were broken at.
     pub width: f64,
+    /// Whether this is a table's heading row repeated at the top of a page the table continues
+    /// on: drawn again, and no part of the reading order.
+    pub repeat: bool,
 }
 
 /// One page: what is on it, in the text area's coordinates.
@@ -120,6 +123,8 @@ pub fn paginate(
     };
     // A page break after the block before: the next unit starts a page wherever it is.
     let mut break_pending = false;
+    let mut heading: Vec<(&str, usize)> = Vec::new();
+    let mut heading_closed = false;
     for (at, unit) in units.iter().enumerate() {
         if std::mem::take(&mut break_pending) && !cut.fresh() {
             cut.turn(unit.top());
@@ -149,25 +154,40 @@ pub fn paginate(
                 top,
                 bottom,
                 cells,
+                table,
+                header,
             } => {
+                // The heading rows of the table in hand, kept to repeat on every page it
+                // continues on; a table's first non-heading row closes the list.
+                if heading.first().is_some_and(|&(t, _)| t != table.as_str()) {
+                    heading.clear();
+                }
+                if *header && !heading_closed {
+                    heading.push((table.as_str(), at));
+                } else {
+                    heading_closed = !*header;
+                }
                 if *bottom - cut.origin > height + EPS && !cut.fresh() {
                     cut.turn(*top);
+                    if !*header && heading.first().is_some_and(|&(t, _)| t == table.as_str()) {
+                        let first = heading.first().map_or(*top, |&(_, i)| units[i].top());
+                        let mut tall = 0.0;
+                        for &(_, i) in &heading {
+                            if let Unit::Row {
+                                slots,
+                                cells,
+                                bottom,
+                                ..
+                            } = &units[i]
+                            {
+                                cut.place_row(slots, cells, first, true);
+                                tall = bottom - first;
+                            }
+                        }
+                        cut.origin = top - tall;
+                    }
                 }
-                let origin = cut.origin;
-                let page = cut.page();
-                for (slot, count) in slots {
-                    page.pieces.push(Piece {
-                        index: slot.index,
-                        lines: 0..*count,
-                        top: slot.top - origin,
-                        left: slot.indent,
-                        width: slot.width,
-                    });
-                }
-                page.cells.extend(cells.iter().map(|cell| CellBox {
-                    top: cell.top - origin,
-                    ..*cell
-                }));
+                cut.place_row(slots, cells, cut.origin, false);
             }
         }
     }
@@ -206,6 +226,9 @@ enum Unit {
         top: f64,
         bottom: f64,
         cells: Vec<CellBox>,
+        /// The table it is a row of, and whether it is one of that table's heading rows.
+        table: String,
+        header: bool,
     },
 }
 
@@ -304,13 +327,16 @@ fn units(
                         *b = b.max(bottom);
                     }
                     _ => {
-                        row = Some(key);
+                        let header = faces.header_row(&key.0, key.1);
                         out.push(Unit::Row {
                             slots: vec![(*slot, lines.len())],
                             top,
                             bottom,
                             cells: Vec::new(),
+                            table: key.0.clone(),
+                            header,
                         });
+                        row = Some(key);
                     }
                 }
             }
@@ -318,16 +344,23 @@ fn units(
     }
     // A row's cells are the boxes that start where it does, and a cell's box reaches the row's
     // full height, so the row is at least as tall as its tallest box.
+    // Found by the first block each holds, since a cell's own padding or centring puts its text
+    // anywhere in it.
     for unit in &mut out {
         if let Unit::Row {
-            top, bottom, cells, ..
+            slots,
+            top,
+            bottom,
+            cells,
+            ..
         } = unit
         {
             cells.extend(
                 laid.cells()
                     .iter()
-                    .filter(|cell| (cell.top - *top).abs() < EPS),
+                    .filter(|cell| slots.iter().any(|(slot, _)| slot.index == cell.first)),
             );
+            *top = cells.iter().map(|cell| cell.top).fold(*top, f64::min);
             *bottom = cells.iter().map(CellBox::bottom).fold(*bottom, f64::max);
         }
     }
@@ -359,6 +392,34 @@ impl Cut {
         self.origin = at;
     }
 
+    /// Place a row's blocks and cells on the current page, its flow coordinates taken from
+    /// `origin` — the page's own for a row in its place, the heading's first row for a heading
+    /// repeated at the top. `repeat` marks a repeated heading, which is no part of the reading
+    /// order.
+    fn place_row(
+        &mut self,
+        slots: &[(flow::Slot, usize)],
+        cells: &[CellBox],
+        origin: f64,
+        repeat: bool,
+    ) {
+        let page = self.page();
+        for (slot, count) in slots {
+            page.pieces.push(Piece {
+                index: slot.index,
+                lines: 0..*count,
+                top: slot.top - origin,
+                left: slot.indent,
+                width: slot.width,
+                repeat,
+            });
+        }
+        page.cells.extend(cells.iter().map(|cell| CellBox {
+            top: cell.top - origin,
+            ..*cell
+        }));
+    }
+
     /// Place a block, splitting it between lines as often as it takes.
     fn block(&mut self, slot: &flow::Slot, lines: &[Line], rules: Rules) {
         let mut start = 0;
@@ -388,6 +449,7 @@ impl Cut {
                     top,
                     left: slot.indent,
                     width: slot.width,
+                    repeat: false,
                 });
                 start += take;
             }
@@ -650,6 +712,60 @@ mod tests {
             shape(&broken(&app, 5.0, &[(1, loose)])),
             vec![vec![(0, 0..4), (1, 0..1)], vec![(2, 0..3)]]
         );
+    }
+
+    /// A face that marks row 0 of every table as its heading.
+    struct Headed;
+
+    impl Faces for Headed {
+        fn of(&self, _: usize, _: &BlockKind, _: Option<&str>) -> (f32, &dyn crate::Metrics) {
+            (10.0, &Fixed)
+        }
+        fn header_row(&self, _table: &str, row: u32) -> bool {
+            row == 0
+        }
+    }
+
+    #[test]
+    fn a_tables_heading_rows_repeat_at_the_top_of_every_page_it_continues_on() {
+        let app = App::new();
+        app.insert_table(0, 7, 1, Some("T".into())).unwrap();
+        let count = app.block_count();
+        for index in 0..count {
+            app.insert_text(
+                Caret {
+                    block: index,
+                    offset: 0,
+                },
+                "c",
+            )
+            .unwrap();
+        }
+        let pages = paginate(
+            &app,
+            &Headed,
+            10.0,
+            3.0,
+            &TIGHT,
+            Rules::default(),
+            &|_, _| None,
+        );
+        let shaped: Vec<Vec<(usize, bool)>> = pages
+            .iter()
+            .map(|page| {
+                page.pieces
+                    .iter()
+                    .filter(|p| p.index < 7)
+                    .map(|p| (p.index, p.repeat))
+                    .collect()
+            })
+            .collect();
+        // Three rows a page: the heading and two rows, then the heading again on every page.
+        assert_eq!(shaped[0], vec![(0, false), (1, false), (2, false)]);
+        assert_eq!(shaped[1], vec![(0, true), (3, false), (4, false)]);
+        assert_eq!(shaped[2], vec![(0, true), (5, false), (6, false)]);
+        assert_eq!(pages[1].pieces[0].top, 0.0, "the heading at the top");
+        assert_eq!(pages[1].pieces[1].top, 1.0, "the next row under it");
     }
 
     #[test]

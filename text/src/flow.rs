@@ -135,6 +135,9 @@ pub struct CellBox {
     pub left: f64,
     pub width: f64,
     pub height: f64,
+    /// The first block in the cell, by index — how a painter finds which cell this is, and so
+    /// its style ([`crate::table_look`]).
+    pub first: usize,
 }
 
 impl CellBox {
@@ -387,15 +390,75 @@ pub fn cell_x(cell: &Cell, columns: u32, column: f64) -> (f64, f64) {
     )
 }
 
+/// [`cell_x`] for a table whose columns state their own widths (`widths`, one per column, `None`
+/// where a column states none): a column that states nothing shares what the stated ones leave,
+/// and a table wider than the column is scaled down to fit it, since a printed page has no
+/// sideways scroll.
+pub fn cell_x_with(cell: &Cell, columns: u32, column: f64, widths: &[Option<f64>]) -> (f64, f64) {
+    let count = columns.max(1) as usize;
+    let stated: f64 = widths.iter().take(count).flatten().sum();
+    let unstated = (0..count)
+        .filter(|&i| widths.get(i).copied().flatten().is_none())
+        .count();
+    let share = match unstated {
+        0 => 0.0,
+        n => ((column - stated) / n as f64).max(0.0),
+    };
+    let each: Vec<f64> = (0..count)
+        .map(|i| widths.get(i).copied().flatten().unwrap_or(share))
+        .collect();
+    let total: f64 = each.iter().sum();
+    let scale = if total > column && total > 0.0 {
+        column / total
+    } else {
+        1.0
+    };
+    let first = (cell.column as usize).min(count);
+    let last = (first + cell.columns_spanned.max(1) as usize).min(count);
+    let left: f64 = each[..first].iter().sum::<f64>() * scale;
+    let width: f64 = each[first..last].iter().sum::<f64>() * scale;
+    (left, width)
+}
+
+/// Where a cell of a table sits across the column, by the table's own widths when its face
+/// states them ([`Faces::columns`]) and in equal shares otherwise.
+fn place_cell(
+    faces: &dyn Faces,
+    table: &str,
+    cell: &Cell,
+    columns: u32,
+    column: f64,
+) -> (f64, f64) {
+    match faces.columns(table) {
+        Some(widths) => cell_x_with(cell, columns, column, &widths),
+        None => cell_x(cell, columns, column),
+    }
+}
+
+/// A cell's padding — top, right, bottom, left — its face's for it, or the spacing's all round.
+fn padding(faces: &dyn Faces, cell: &Cell, spacing: &Spacing) -> [f64; 4] {
+    faces
+        .cell_pad(&cell.table, cell.row, cell.column)
+        .unwrap_or([spacing.cell_pad; 4])
+}
+
 /// Where one block sits inside a cell whose box starts at `left` and is `width` wide: inside
 /// the padding, and a list item further in by its own indent, so that its bullet has somewhere
 /// to go that is still inside the cell.
-fn in_cell(kind: &BlockKind, left: f64, width: f64, spacing: &Spacing) -> Across {
-    let pad = spacing.cell_pad;
+fn in_cell(kind: &BlockKind, left: f64, width: f64, spacing: &Spacing, pad: [f64; 4]) -> Across {
     let indent = spacing.indent_of(kind);
     Across {
-        left: left + pad + indent,
-        width: (width - 2.0 * pad - indent).max(1.0),
+        left: left + pad[3] + indent,
+        width: (width - pad[1] - pad[3] - indent).max(1.0),
+    }
+}
+
+/// A [`Faces`] that answers nothing — every table in equal shares, padded by the spacing.
+struct Plain;
+
+impl Faces for Plain {
+    fn of(&self, _: usize, _: &BlockKind, _: Option<&str>) -> (f32, &dyn crate::Metrics) {
+        (1.0, &crate::Fixed)
     }
 }
 
@@ -406,6 +469,17 @@ fn in_cell(kind: &BlockKind, left: f64, width: f64, spacing: &Spacing) -> Across
 /// Built before the shell's `Faces` and handed to it, because `Faces::of` is called while `App`
 /// holds its read lock and so may not ask the document which cell a block is in.
 pub fn across(app: &App, column: f64, spacing: &Spacing) -> HashMap<usize, Across> {
+    across_with(app, column, spacing, &Plain)
+}
+
+/// [`across`] with a table's own column widths and cell padding, as `looks` states them
+/// ([`Faces::columns`], [`Faces::cell_pad`]) — what a printed page lays a table out by.
+pub fn across_with(
+    app: &App,
+    column: f64,
+    spacing: &Spacing,
+    looks: &dyn Faces,
+) -> HashMap<usize, Across> {
     let count = app.block_count();
     let viewport = app.get_viewport(0..count);
     let mut out = HashMap::new();
@@ -426,8 +500,9 @@ pub fn across(app: &App, column: f64, spacing: &Spacing) -> HashMap<usize, Acros
             let Some(cell) = view.cell.as_ref() else {
                 continue;
             };
-            let (left, width) = cell_x(cell, table.columns, column);
-            out.insert(at, in_cell(&view.kind, left, width, spacing));
+            let (left, width) = place_cell(looks, &cell.table, cell, table.columns, column);
+            let pad = padding(looks, cell, spacing);
+            out.insert(at, in_cell(&view.kind, left, width, spacing, pad));
         }
         index = table.blocks.end.max(index + 1);
     }
@@ -483,7 +558,9 @@ pub fn lay_out(
         if view.cell.is_some()
             && let Some(table) = app.table(index)
         {
-            lay_out_table(&mut flow, &viewport, &table, column, spacing, &height_of);
+            lay_out_table(
+                &mut flow, &viewport, &table, column, spacing, faces, &height_of,
+            );
             index = table.blocks.end.max(index + 1);
             continue;
         }
@@ -547,9 +624,9 @@ fn lay_out_table(
     table: &Table,
     column: f64,
     spacing: &Spacing,
+    faces: &dyn Faces,
     height_of: &dyn Fn(usize, &BlockView) -> (f64, f64),
 ) {
-    let pad = spacing.cell_pad;
     let gap = spacing.gap;
     // The same gap above a table a paragraph would leave, collapsed the same way: the running
     // height already ends one gap below whatever came before.
@@ -563,16 +640,28 @@ fn lay_out_table(
         .flat_map(|run| run.blocks.iter().copied())
         .filter_map(|index| Some((index, height_of(index, viewport.get(index)?))))
         .collect();
-    let content = |run: &CellRun| -> f64 {
+    // The text's own height in a cell, and the cell's with its padding.
+    let text = |run: &CellRun| -> f64 {
         let stacked: f64 = run
             .blocks
             .iter()
             .map(|index| measured.get(index).map_or(0.0, |m| m.0) + gap)
             .sum();
-        (stacked - gap).max(0.0) + 2.0 * pad
+        (stacked - gap).max(0.0)
+    };
+    let content = |run: &CellRun| -> f64 {
+        let pad = padding(faces, run.cell, spacing);
+        text(run) + pad[0] + pad[2]
     };
 
-    let mut heights = vec![2.0 * pad; rows];
+    let mut heights = vec![2.0 * spacing.cell_pad; rows];
+    // A row with only padded cells is as tall as their padding, not the spacing's.
+    for run in &cells {
+        let pad = padding(faces, run.cell, spacing);
+        if let Some(height) = heights.get_mut(run.cell.row as usize) {
+            *height = height.min(pad[0] + pad[2]);
+        }
+    }
     for run in &cells {
         let over = run.cell.rows_spanned.max(1) as usize;
         let first = run.cell.row as usize;
@@ -597,19 +686,25 @@ fn lay_out_table(
         };
         let over = run.cell.rows_spanned.max(1) as usize;
         let height: f64 = heights.iter().skip(row).take(over).sum();
-        let (left, width) = cell_x(run.cell, table.columns, column);
+        let (left, width) = place_cell(faces, &run.cell.table, run.cell, table.columns, column);
+        let pad = padding(faces, run.cell, spacing);
         flow.cell(CellBox {
             top: cell_top,
             left,
             width,
             height,
+            first: run.blocks.first().copied().unwrap_or(0),
         });
-        let mut at = cell_top + pad;
+        // A cell whose face centres it vertically puts its text halfway down what the row
+        // leaves it.
+        let slack = (height - text(run) - pad[0] - pad[2]).max(0.0);
+        let centred = faces.cell_centred(&run.cell.table, run.cell.row, run.cell.column);
+        let mut at = cell_top + pad[0] + if centred { slack / 2.0 } else { 0.0 };
         for &index in &run.blocks {
             let Some(view) = viewport.get(index) else {
                 continue;
             };
-            let place = in_cell(&view.kind, left, width, spacing);
+            let place = in_cell(&view.kind, left, width, spacing, pad);
             // The width the lines were really broken at, which is the `Faces`' answer — the same
             // as `place.width` in any shell whose `Faces` reads [`across`].
             let (block_height, measure) =
@@ -822,6 +917,55 @@ mod tests {
             24.0,
             "block 2's own three below are the flow's last"
         );
+    }
+
+    /// A face with a table's own column widths and padding.
+    struct Widths;
+
+    impl Faces for Widths {
+        fn of(&self, _: usize, _: &BlockKind, _: Option<&str>) -> (f32, &dyn Metrics) {
+            (100.0, &Fixed)
+        }
+        fn columns(&self, _table: &str) -> Option<Vec<Option<f64>>> {
+            Some(vec![Some(60.0), None, Some(90.0)])
+        }
+        fn cell_pad(&self, _table: &str, row: u32, _column: u32) -> Option<[f64; 4]> {
+            (row == 0).then_some([3.0, 1.0, 3.0, 2.0])
+        }
+    }
+
+    #[test]
+    fn a_tables_own_widths_and_padding_place_its_cells() {
+        let app = App::new();
+        app.insert_table(0, 2, 3, Some("W".into())).unwrap();
+        let tight = Spacing {
+            top: 0.0,
+            gap: 0.0,
+            heading: 0.0,
+            indent: 0.0,
+            cell_pad: 1.0,
+        };
+        let across = across_with(&app, 300.0, &tight, &Widths);
+        // 60 and 90 stated, the rest of 300 for the one that states nothing.
+        assert_eq!(
+            (across[&0].width, across[&1].width, across[&2].width),
+            (60.0 - 3.0, 150.0 - 3.0, 90.0 - 3.0)
+        );
+        assert_eq!(across[&0].left, 2.0, "the cell's own left padding");
+        let flow = lay_out(&app, &Widths, 300.0, &tight, &no_pictures);
+        let first = flow.slot(0).unwrap();
+        assert_eq!(first.top, 3.0, "the cell's own top padding");
+        let cells = flow.cells();
+        assert_eq!(
+            (cells[0].left, cells[0].width, cells[0].first),
+            (0.0, 60.0, 0)
+        );
+        assert_eq!(
+            cells[0].height,
+            1.0 + 3.0 + 3.0,
+            "a line and the row's padding"
+        );
+        assert_eq!(cells[1].left, 60.0);
     }
 
     fn laid_out(app: &App, column: f64) -> Flow {
@@ -1073,7 +1217,13 @@ mod tests {
     /// cell and not over the rule or in the neighbour.
     #[test]
     fn a_list_item_in_a_cell_is_indented_inside_it() {
-        let item = in_cell(&BlockKind::ListItem { depth: 1 }, 100.0, 100.0, &SPACING);
+        let item = in_cell(
+            &BlockKind::ListItem { depth: 1 },
+            100.0,
+            100.0,
+            &SPACING,
+            [SPACING.cell_pad; 4],
+        );
         let (pad, indent) = (SPACING.cell_pad, SPACING.indent);
         assert_eq!(item.left, 100.0 + pad + indent);
         assert_eq!(item.width, 100.0 - 2.0 * pad - indent);

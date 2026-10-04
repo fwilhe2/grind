@@ -432,6 +432,29 @@ pub trait Faces {
     fn first_indent(&self, _index: usize) -> f32 {
         0.0
     }
+
+    /// The table named `table`'s own column widths, one per column in the face's unit, `None`
+    /// for a column that states none. `None` altogether, the default, is equal shares — what
+    /// every screen draws, since no screen reads a table's look yet.
+    fn columns(&self, _table: &str) -> Option<Vec<Option<f64>>> {
+        None
+    }
+
+    /// A cell's own padding — top, right, bottom, left — or `None` for the spacing's.
+    fn cell_pad(&self, _table: &str, _row: u32, _column: u32) -> Option<[f64; 4]> {
+        None
+    }
+
+    /// Whether a cell's text is centred vertically in its row (`style:vertical-align`).
+    fn cell_centred(&self, _table: &str, _row: u32, _column: u32) -> bool {
+        false
+    }
+
+    /// Whether `row` of the table named `table` is one of its heading rows, which a printed page
+    /// repeats at the top of every page the table continues on.
+    fn header_row(&self, _table: &str, _row: u32) -> bool {
+        false
+    }
 }
 
 /// Every block set alike: one width, one provider.
