@@ -459,13 +459,13 @@ pub fn run_attributes(
         // *measured*: `fragment_attributes` puts the same family on the measuring layout from
         // the same run's `TextStyle`, so the caret goes where the ink does. Drawing one
         // without the other is the drift this pair exists to prevent.
-        if let Some(family) = run.props.font_family.as_deref() {
+        if let Some(family) = run.shown.font_family.as_deref() {
             mark(pango::AttrString::new_family(family).into());
         }
         // The size, on the same terms and for the same reason: `fragment_attributes` put it on
         // the measuring layout and `line_height` made the line tall enough to hold it, so this
         // is the third of three and none of them is optional.
-        if let Some(size) = size_units(run.props.font_size.as_deref(), base) {
+        if let Some(size) = size_units(run.shown.font_size.as_deref(), base) {
             mark(pango::AttrSize::new(size).into());
         }
         // The two colours. Neither changes how wide anything is, so neither has a measuring
@@ -473,23 +473,23 @@ pub fn run_attributes(
         // chosen on white paper is still readable on a dark page, and a yellow highlight does
         // not carry the dark theme's white text across it.
         if let Some((r, g, b)) =
-            paper.ink(run.props.color.as_deref(), run.props.background.as_deref())
+            paper.ink(run.shown.color.as_deref(), run.shown.background.as_deref())
         {
             mark(pango::AttrColor::new_foreground(r, g, b).into());
         }
-        if let Some((r, g, b)) = channels(run.props.background.as_deref()) {
+        if let Some((r, g, b)) = channels(run.shown.background.as_deref()) {
             mark(pango::AttrColor::new_background(r, g, b).into());
         }
-        if run.props.is_bold() {
+        if run.shown.is_bold() {
             mark(pango::AttrInt::new_weight(pango::Weight::Bold).into());
         }
-        if run.props.is_italic() {
+        if run.shown.is_italic() {
             mark(pango::AttrInt::new_style(pango::Style::Italic).into());
         }
-        if run.props.is_underlined() {
+        if run.shown.is_underlined() {
             mark(pango::AttrInt::new_underline(pango::Underline::Single).into());
         }
-        if run.props.is_struck() {
+        if run.shown.is_struck() {
             mark(pango::AttrInt::new_strikethrough(true).into());
         }
     }

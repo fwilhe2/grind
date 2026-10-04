@@ -15,7 +15,7 @@ use grind_sheet::{App, CellValue, Pos};
 /// The spreadsheet a script built, or the message it failed with.
 fn spreadsheet(source: &str) -> App {
     match build(source, "<test>").unwrap_or_else(|e| panic!("{e}")) {
-        Artifact::Spreadsheet(app) => app,
+        Artifact::Spreadsheet(app) => *app,
         Artifact::Text(_) => panic!("that script built a text document"),
     }
 }
@@ -286,7 +286,7 @@ fn an_address_comes_from_the_core() {
 
 fn text(source: &str) -> grind_text::App {
     match build(source, "<test>").unwrap_or_else(|e| panic!("{e}")) {
-        Artifact::Text(app) => app,
+        Artifact::Text(app) => *app,
         Artifact::Spreadsheet(_) => panic!("that script built a spreadsheet"),
     }
 }

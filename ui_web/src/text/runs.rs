@@ -81,7 +81,7 @@ pub fn cut(
             });
             Piece {
                 range: start..end,
-                props: run.map(|run| run.props.clone()).unwrap_or_default(),
+                props: run.map(|run| run.shown.clone()).unwrap_or_default(),
                 href: run.and_then(|run| run.href.clone()),
                 selected: selection
                     .as_ref()
@@ -160,6 +160,7 @@ mod tests {
         RunView {
             start,
             text: text.to_owned(),
+            shown: props.clone(),
             props,
             style: None,
             href: None,

@@ -75,8 +75,10 @@ pub use data::{Data, Directory, NoData};
 /// script *returned*, never by the output's name, which is the same rule
 /// `grind_core::kind` follows on the way in.
 pub enum Artifact {
-    Spreadsheet(grind_sheet::App),
-    Text(grind_text::App),
+    // Both boxed: each `App` is a few hundred bytes and they differ by hundreds, which is a
+    // lopsided enum for a value made once per build.
+    Spreadsheet(Box<grind_sheet::App>),
+    Text(Box<grind_text::App>),
 }
 
 impl Artifact {
@@ -276,17 +278,17 @@ pub(crate) fn materialise(value: Dynamic, script: &str) -> Result<Artifact, Erro
     let named = value.type_name().to_owned();
     if let Some(book) = value.clone().try_cast::<sheet::Book>() {
         return sheet::materialise(&book)
-            .map(Artifact::Spreadsheet)
+            .map(|app| Artifact::Spreadsheet(Box::new(app)))
             .map_err(|e| Error::at(script, e));
     }
     if let Some(one) = value.clone().try_cast::<sheet::Sheet>() {
         return sheet::materialise(&sheet::Book::of(one))
-            .map(Artifact::Spreadsheet)
+            .map(|app| Artifact::Spreadsheet(Box::new(app)))
             .map_err(|e| Error::at(script, e));
     }
     if let Some(doc) = value.try_cast::<text::Doc>() {
         return text::materialise(&doc)
-            .map(Artifact::Text)
+            .map(|app| Artifact::Text(Box::new(app)))
             .map_err(|e| Error::at(script, e));
     }
     Err(Error::at(

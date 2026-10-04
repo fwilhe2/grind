@@ -21,6 +21,8 @@ use std::collections::HashMap;
 
 use grind_core::style::length_mm;
 
+use crate::style::CharStyle;
+
 /// The properties of a paragraph style that decide how its text is laid out on a page — ODF
 /// values kept verbatim, as every style property in this suite is.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -111,6 +113,45 @@ pub struct Resolved {
 pub struct ParagraphStyle {
     pub parent: Option<String>,
     pub props: ParagraphProps,
+}
+
+/// One named character style (`style:style style:family="text"` in `office:styles`): what it
+/// formats, and the style it inherits the rest from — read for showing and never written.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NamedChar {
+    pub parent: Option<String>,
+    pub props: CharStyle,
+}
+
+/// What a run looks like: the named character styles it carries (`names`, outermost first,
+/// space-separated as the model keeps them), each down its own chain, and the run's direct
+/// formatting over all of them.
+pub fn shown(
+    styles: &HashMap<String, NamedChar>,
+    names: Option<&str>,
+    direct: &CharStyle,
+) -> CharStyle {
+    let mut out = CharStyle::default();
+    for name in names
+        .unwrap_or_default()
+        .split(' ')
+        .filter(|n| !n.is_empty())
+    {
+        let mut chain: Vec<&NamedChar> = Vec::new();
+        let mut at = Some(name);
+        while let Some(style) = at.and_then(|n| styles.get(n)) {
+            if chain.len() == MAX_DEPTH || chain.iter().any(|seen| std::ptr::eq(*seen, style)) {
+                break;
+            }
+            chain.push(style);
+            at = style.parent.as_deref();
+        }
+        for style in chain.iter().rev() {
+            out.layer(&style.props);
+        }
+    }
+    out.layer(direct);
+    out
 }
 
 /// How deep a chain is followed before it is taken to be a cycle — far past anything Writer

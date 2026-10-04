@@ -323,6 +323,18 @@ impl Builder {
             })
             .collect();
         styles.sort_by(|a, b| a.name.cmp(&b.name));
+        self.doc.char_styles = self
+            .styles
+            .iter()
+            .filter(|(_, style)| !style.automatic)
+            .map(|(name, style)| {
+                let named = crate::paragraph::NamedChar {
+                    parent: style.parent.clone(),
+                    props: style.props.clone(),
+                };
+                (name.clone(), named)
+            })
+            .collect();
         if let Some(source) = self.doc.source.as_deref_mut() {
             source.styles = styles;
         }

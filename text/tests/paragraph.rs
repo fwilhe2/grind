@@ -162,3 +162,43 @@ fn a_fonts_generic_family_is_read_from_its_declaration() {
     );
     assert_eq!(generics.get("Odd"), None);
 }
+
+/// A named character style on a span — `<text:span text:style-name="BoldRun">` — is shown as
+/// that style says: the run keeps the name (nothing about writing changes), and the view hands
+/// a painter the formatting the name stands for, under the run's own.
+#[test]
+fn a_named_character_style_is_shown_and_measured_as_it_says() {
+    let app = app(
+        r##"<office:styles>
+             <style:style style:name="Strong" style:family="text"><style:text-properties fo:font-weight="bold"/></style:style>
+             <style:style style:name="Red" style:family="text" style:parent-style-name="Strong"><style:text-properties fo:color="#ad4c41"/></style:style>
+           </office:styles>"##,
+        r#"<text:p>a <text:span text:style-name="Red">red</text:span> word</text:p>"#,
+    );
+    let view = app.get_viewport(0..1);
+    let run = view
+        .get(0)
+        .unwrap()
+        .runs
+        .iter()
+        .find(|r| r.text == "red")
+        .unwrap()
+        .clone();
+    assert_eq!(run.style.as_deref(), Some("Red"), "the name is kept");
+    assert_eq!(run.props.font_weight, None, "nothing direct");
+    assert_eq!(
+        run.shown.font_weight.as_deref(),
+        Some("bold"),
+        "from Red's parent"
+    );
+    assert_eq!(run.shown.color.as_deref(), Some("#ad4c41"));
+    let plain = view
+        .get(0)
+        .unwrap()
+        .runs
+        .iter()
+        .find(|r| r.text == "a ")
+        .unwrap()
+        .clone();
+    assert_eq!(plain.shown, plain.props);
+}

@@ -589,6 +589,9 @@ pub struct Document {
     /// `system`) — for a printer to fall back on when the family is not installed. Read and
     /// never written.
     pub font_generics: std::collections::HashMap<String, String>,
+    /// Every named character style the document declares, by name — what a run's kept style
+    /// name stands for, shown and never written (`crate::paragraph::shown`).
+    pub char_styles: std::collections::HashMap<String, crate::paragraph::NamedChar>,
     /// The page's header and footer — the master page [`Document::page`] comes from — read for
     /// printing and never written (`crate::marginal`).
     pub header: Option<crate::marginal::Marginal>,
@@ -655,6 +658,7 @@ impl Document {
             default_paragraph: Box::default(),
             paragraph_styles: std::collections::HashMap::new(),
             font_generics: std::collections::HashMap::new(),
+            char_styles: std::collections::HashMap::new(),
             header: None,
             footer: None,
             next_id: 0,

@@ -65,7 +65,9 @@ pub fn pieces(runs: &[RunView], from: usize, to: usize) -> Vec<Piece<'_>> {
         out.push(Piece {
             start,
             text: &run.text[head..tail],
-            props: &run.props,
+            // What it looks like — its named style under its direct formatting — since that
+            // is what a painter draws (`RunView::shown`).
+            props: &run.shown,
         });
     }
     out
@@ -150,13 +152,15 @@ mod tests {
     use grind_core::style::TextStyle;
 
     fn run(start: usize, text: &str, bold: bool) -> RunView {
+        let props = CharStyle {
+            font_weight: bold.then(|| "bold".to_owned()),
+            ..CharStyle::default()
+        };
         RunView {
             start,
             text: text.to_owned(),
-            props: CharStyle {
-                font_weight: bold.then(|| "bold".to_owned()),
-                ..CharStyle::default()
-            },
+            shown: props.clone(),
+            props,
             style: None,
             href: None,
             image: None,

@@ -1896,7 +1896,7 @@ impl App {
             let under_caret = caret == Some(start);
             drawn_caret |= under_caret;
             let mut style = run
-                .map(|run| terminal_style(&run.props))
+                .map(|run| terminal_style(&run.shown))
                 .unwrap_or_default();
             if heading {
                 style = style.add_modifier(Modifier::BOLD);

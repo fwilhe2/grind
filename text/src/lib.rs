@@ -232,6 +232,11 @@ pub struct RunView {
     pub text: String,
     /// The direct character formatting on it.
     pub props: CharStyle,
+    /// What it looks like: its named character style's formatting, down that style's chain,
+    /// with [`RunView::props`] over it (`paragraph::shown`). What a painter draws and a layout
+    /// measures; `props` is what a toolbar reads and writes, since a name is not formatting
+    /// somebody applied.
+    pub shown: CharStyle,
     /// The named character style it carries, which this build does not interpret
     /// ([`crate::style`]).
     pub style: Option<String>,
@@ -554,7 +559,7 @@ impl App {
                 kind: block.kind.clone(),
                 style: block.style.clone(),
                 text: block.text(),
-                runs: run_views(block),
+                runs: run_views(block, &state.doc.char_styles),
                 styled: block.is_styled(),
                 marks: marks(block),
                 cell: block.cell.clone(),
@@ -848,7 +853,7 @@ impl App {
             .doc
             .block(index)
             .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(index))))?;
-        Ok(lay_out(block, width, metrics))
+        Ok(lay_out(block, width, metrics, &state.doc.char_styles))
     }
 
     /// [`App::layout_block`] with the first line `first` further in and breaking that much
@@ -865,7 +870,13 @@ impl App {
             .doc
             .block(index)
             .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(index))))?;
-        Ok(lay_out_indented(block, width, metrics, first))
+        Ok(lay_out_indented(
+            block,
+            width,
+            metrics,
+            first,
+            &state.doc.char_styles,
+        ))
     }
 
     /// One block laid out as if `text` had been typed at `at` — an **input method's
@@ -906,7 +917,7 @@ impl App {
             model::coalesce(&mut runs);
             block.runs = runs;
         }
-        Ok(lay_out(&block, width, metrics))
+        Ok(lay_out(&block, width, metrics, &state.doc.char_styles))
     }
 
     /// The x of a caret within its line — what a shell remembers as the **goal column** while
@@ -926,7 +937,7 @@ impl App {
             .doc
             .block(at.block)
             .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(at.block))))?;
-        Ok(set_out(block, at.block, faces).x_at(at.offset))
+        Ok(set_out(block, at.block, faces, &state.doc.char_styles).x_at(at.offset))
     }
 
     /// Move a caret `delta` lines — **the Down and Up arrows**, and Page Down with a bigger
@@ -959,6 +970,7 @@ impl App {
                 .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(block))))?,
             block,
             faces,
+            &state.doc.char_styles,
         );
         let mut offset = at.offset.min(layout.len());
         let step = if delta < 0 { -1 } else { 1 };
@@ -977,7 +989,12 @@ impl App {
                 _ => break,
             };
             block = next;
-            layout = set_out(&state.doc.blocks[block], block, faces);
+            layout = set_out(
+                &state.doc.blocks[block],
+                block,
+                faces,
+                &state.doc.char_styles,
+            );
             let line = match step > 0 {
                 true => 0,
                 false => layout.lines().len().saturating_sub(1),
@@ -998,7 +1015,7 @@ impl App {
             .doc
             .block(at.block)
             .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(at.block))))?;
-        let layout = set_out(block, at.block, faces);
+        let layout = set_out(block, at.block, faces, &state.doc.char_styles);
         let line = layout.lines()[layout.line_at(at.offset)];
         Ok((
             Caret {
@@ -1880,9 +1897,9 @@ fn caret_formatting(head: &[Run], tail: &[Run]) -> (Option<String>, CharStyle, O
 /// One function so that every caret operation asks the same question the same way. The
 /// alternative — each of them doing its own lookup — is how a motion ends up measuring one
 /// block with another's font, which is exactly the bug [`Faces`] exists to close.
-fn set_out(block: &Block, index: usize, faces: &dyn Faces) -> Layout {
+fn set_out(block: &Block, index: usize, faces: &dyn Faces, named: &Named) -> Layout {
     let (width, metrics) = faces.of(index, &block.kind, block.style.as_deref());
-    lay_out(block, width, metrics)
+    lay_out(block, width, metrics, named)
 }
 
 /// Break one block into lines.
@@ -1900,16 +1917,31 @@ fn set_out(block: &Block, index: usize, faces: &dyn Faces) -> Layout {
 /// A run carrying only a **named** character style still measures with the default, because
 /// this build does not read style definitions (`doc/text-core.md`). The seam is unchanged: when
 /// definitions arrive, they are resolved into the same `TextStyle` and nothing here moves.
-fn lay_out(block: &Block, width: f32, metrics: &dyn Metrics) -> Layout {
-    lay_out_indented(block, width, metrics, 0.0)
+/// The named character styles a layout measures runs by ([`paragraph::shown`]).
+type Named = std::collections::HashMap<String, paragraph::NamedChar>;
+
+fn lay_out(block: &Block, width: f32, metrics: &dyn Metrics, named: &Named) -> Layout {
+    lay_out_indented(block, width, metrics, 0.0, named)
 }
 
-fn lay_out_indented(block: &Block, width: f32, metrics: &dyn Metrics, first: f32) -> Layout {
+fn lay_out_indented(
+    block: &Block,
+    width: f32,
+    metrics: &dyn Metrics,
+    first: f32,
+    named: &Named,
+) -> Layout {
     let default = grind_core::style::TextStyle::default();
+    // Measured as shown: a run's named style is part of how wide it is.
     let styles: Vec<grind_core::style::TextStyle> = block
         .runs
         .iter()
-        .map(|run| run.props().map(CharStyle::metrics).unwrap_or_default())
+        .map(|run| match run {
+            Run::Text { style, props, .. } => {
+                paragraph::shown(named, style.as_deref(), props).metrics()
+            }
+            _ => run.props().map(CharStyle::metrics).unwrap_or_default(),
+        })
         .collect();
     let mut fragments: Vec<layout::Fragment<'_>> = block
         .runs
@@ -2018,7 +2050,10 @@ fn marks(block: &Block) -> Vec<(usize, String)> {
     out
 }
 
-fn run_views(block: &Block) -> Vec<RunView> {
+fn run_views(
+    block: &Block,
+    named: &std::collections::HashMap<String, paragraph::NamedChar>,
+) -> Vec<RunView> {
     let mut out = Vec::new();
     let mut start = 0usize;
     for run in &block.runs {
@@ -2045,10 +2080,12 @@ fn run_views(block: &Block) -> Vec<RunView> {
             }),
             _ => None,
         };
+        let props = run.props().cloned().unwrap_or_default();
         out.push(RunView {
             start,
             text: run.text().to_owned(),
-            props: run.props().cloned().unwrap_or_default(),
+            shown: paragraph::shown(named, style.as_deref(), &props),
+            props,
             style,
             href,
             image,
@@ -2096,6 +2133,7 @@ mod tests {
             start: 0,
             text: "\u{fffc}".to_owned(),
             props: CharStyle::default(),
+            shown: CharStyle::default(),
             style: None,
             href: None,
             image: Some(ImageView {
@@ -2112,6 +2150,7 @@ mod tests {
             start,
             text: text.to_owned(),
             props: CharStyle::default(),
+            shown: CharStyle::default(),
             style: None,
             href: None,
             image: None,
