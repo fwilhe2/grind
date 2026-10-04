@@ -298,6 +298,19 @@ The first PDF should arrive early, and fidelity should then go up one ratchet at
 Each milestone ends green on its own and adds a line to `examples/sample-text.sh` where it adds
 a user-visible capability (CLAUDE.md: a feature without a line there is invisible).
 
+### Where it stands (2026-10-04)
+
+| | State |
+|---|---|
+| P0 | **Done**: this document; the spike's numbers are in §7 |
+| P1 | Open. Until it is done nothing below claims to match Writer: widows and orphans are two each by our own choice, and line height is the face's ascent + descent + line gap |
+| P2 | **Done**: `grind_core::page`, `Document::page`, `grind info`'s `page` line |
+| P3 | **Done, apart from system fonts**: `Fonts` (bundled Liberation, metric-compatible twins, generics, Writer's default), `Typesetter` (harfrust, points), `Metrics::ascent` and `Layout::baseline`. Per-glyph fallback is not built: a character no face has is counted in the report, not drawn from another face |
+| P4 | **Done, untagged**: `grind_text::page::paginate`, `grind-print`'s `faces`, `ops`, `text` (typeset) and `pdf` (krilla); outline, title; `grind text export-pdf` and `grind text pages`. Tagged PDF and PDF/A are still to come |
+| P5 | Open |
+| P6 | **Half**: `raster.rs`, its `hayro` cross-check, and `grind text preview`. No shell has a preview window yet |
+| P7–P9 | Open |
+
 | | What | Size | Exit criterion |
 |---|---|---|---|
 | **P0** | **Decision and spike.** This document reviewed; `doc/not-doing.md`, `doc/text-layout.md` and `doc/text-core.md` amended as in the table at the top. A throwaway spike: one paragraph of Liberation Serif through harfrust → krilla → a PDF that `qpdf --check` and `pdftotext` accept. Licences read from each `Cargo.toml`, `cargo tree -d` clean, wasm build of the stack measured | small | the numbers (binary and wasm delta) written here |
