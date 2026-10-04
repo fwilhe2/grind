@@ -89,6 +89,7 @@ shorter than one being edited.
 | Evaluate | `:eval <formula>` — what it would come to, storing nothing | — |
 | Find | `:find <text>`, then `n`/`N`; every match marked in the grid; `:s/old/new/` | `:find <text>`, then `n`/`N`; every match marked in the line; `:s/old/new/` |
 | Outline | — | `:outline` — a pane, one row per heading, indented; `Enter` goes to one |
+| Paper | — | `:pdf <file>` — the document typeset and written as a PDF, the export's report on the status bar; `:pages` — where each page of that PDF begins, in the outline's pane, `Enter` goes to the top of one (`doc/pdf-export.md`). A terminal cannot *show* a page, so there is no preview: a named gap |
 | View modes | `:roles` — what each cell is, coloured and marked with one glyph; `:names` — a named cell underlined, the name and the formula read through its names on the formula line | `:names` — where each bookmark anchors, after the line it falls on |
 | Problems | `:lint`, `:lint hints` — what the document says about itself; `j`/`k` moves, `Enter` goes to the finding | the same pane, the same keys |
 | Help | `:help` — the key list, over the document, scrollable | the same, with its own section |

@@ -38,6 +38,8 @@ Word processor:
   :md-in <file>  :md-out <file>     — markdown read in before this block, or the selection
                                       (else the whole document) written out as CommonMark
   :image <file>                     — a picture below this block (drawn by the other windows)
+  :pdf <file>    :pages             — the document as a PDF, ready to print; where each of its
+                                      pages begins, Enter goes to one
   :move <address>                   — this block, put before that one
   :mark <name>   :mark!             — anchor a bookmark here, or drop the one that is
   :names         — show where each bookmark anchors, which is otherwise invisible

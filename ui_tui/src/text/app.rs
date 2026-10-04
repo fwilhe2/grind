@@ -943,6 +943,12 @@ impl App {
             "find" => self.cmd_find(""),
             "mark!" => self.cmd_unmark(),
             "table" => self.cmd_table("2 2"),
+            #[cfg(feature = "pdf")]
+            "pdf" => self.status = "usage: :pdf <file>".to_string(),
+            #[cfg(feature = "pdf")]
+            _ if cmd.starts_with("pdf ") => self.cmd_pdf(cmd[4..].trim()),
+            #[cfg(feature = "pdf")]
+            "pages" => self.cmd_pages(),
             _ if cmd.starts_with("md-in ") => self.cmd_md_in(cmd[6..].trim()),
             _ if cmd.starts_with("md-out ") => self.cmd_md_out(cmd[7..].trim()),
             _ if cmd.starts_with("mark ") => self.cmd_mark(cmd[5..].trim()),
@@ -1001,6 +1007,55 @@ impl App {
             }
             Err(e) => self.status = e.to_string(),
         }
+    }
+
+    /// `:pdf <file>` — the document typeset on its own page (A4 when it states none) and written
+    /// as a PDF; the status bar is the export's own report.
+    #[cfg(feature = "pdf")]
+    fn cmd_pdf(&mut self, path: &str) {
+        let title = std::path::Path::new(path)
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned());
+        let options = grind_print::Options { paper: None, title };
+        let result = grind_print::export(&self.core, grind_print::fonts_for(&self.core), &options)
+            .and_then(|(bytes, report)| {
+                grind_core::atomic::write(path, bytes)
+                    .map(|()| report)
+                    .map_err(|e| format!("{path}: {e}"))
+            });
+        self.status = match result {
+            Ok(report) => format!("{} \u{2014} wrote {path}", report.summary()),
+            Err(e) => e,
+        };
+    }
+
+    /// `:pages` — where each page of the PDF begins, in the outline's pane: a terminal cannot show
+    /// a page, but it can say where one starts and go there.
+    #[cfg(feature = "pdf")]
+    fn cmd_pages(&mut self) {
+        let options = grind_print::Options::default();
+        let pages = grind_print::pages(&self.core, grind_print::fonts_for(&self.core), &options);
+        let mut here = None;
+        let rows: Vec<crate::pick::Row> = pages
+            .iter()
+            .enumerate()
+            .filter_map(|(number, (start, _))| {
+                let start = (*start)?;
+                let address = grind_text::loc::format_offset(start.block, start.offset);
+                if start <= self.caret {
+                    here = Some(address.clone());
+                }
+                Some(crate::pick::Row {
+                    address,
+                    label: format!("Page {}", number + 1),
+                    depth: 0,
+                })
+            })
+            .collect();
+        let count = pages.len();
+        self.outline
+            .open(&format!("Pages ({count})"), rows, here.as_deref());
+        self.status.clear();
     }
 
     /// `:md-out <file>` — the selection's blocks, or the whole document, as CommonMark.
@@ -2524,6 +2579,38 @@ mod tests {
         press(&mut app, KeyCode::Char('u'));
         assert_eq!(app.core.block_count(), 2, "one import, one undo");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// `:pdf <file>` writes the document as a PDF and says what the export did, the way every
+    /// other client shows `grind_print::Report::summary` (`doc/pdf-export.md`).
+    #[cfg(feature = "pdf")]
+    #[test]
+    fn pdf_writes_the_document_on_paper() {
+        let dir = std::env::temp_dir().join(format!("grind-tui-pdf-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("out.pdf");
+        let mut app = app(&["one", "two"]);
+        app.run_command(&format!("pdf {}", file.display()));
+        assert!(app.status.starts_with("1 page, A4."), "{}", app.status);
+        assert!(std::fs::read(&file).unwrap().starts_with(b"%PDF-"));
+        app.run_command("pdf");
+        assert!(app.status.starts_with("usage:"), "{}", app.status);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// `:pages` lists where each page begins, in the pane the outline uses, so Enter on a row is
+    /// a jump to the top of that page.
+    #[cfg(feature = "pdf")]
+    #[test]
+    fn pages_lists_each_page_as_a_jump() {
+        let long = "The quick brown fox jumps over the lazy dog. ".repeat(60);
+        let mut app = app(&[&long, &long, &long, &long]);
+        app.run_command("pages");
+        let rows = app.outline.rows();
+        assert!(rows.len() >= 2, "{} rows", rows.len());
+        assert_eq!(rows[0].address, "p1+0");
+        assert_eq!(rows[0].label, "Page 1");
+        assert!(rows[1].address.starts_with('p') && rows[1].address.contains('+'));
     }
 
     /// A list item is indented and wears a bullet, and the bullet is **drawn** rather than typed

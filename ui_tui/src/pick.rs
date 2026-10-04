@@ -96,6 +96,12 @@ impl Pick {
         self.rows = Vec::new();
     }
 
+    /// Every row, in order — what a test reads to see what a pane was opened on.
+    #[cfg(all(test, feature = "pdf"))]
+    pub fn rows(&self) -> &[Row] {
+        &self.rows
+    }
+
     pub fn selected(&self) -> Option<&Row> {
         self.rows.get(self.selected)
     }

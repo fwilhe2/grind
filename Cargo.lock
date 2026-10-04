@@ -1245,6 +1245,7 @@ name = "grind-tui"
 version = "0.0.0"
 dependencies = [
  "grind-core",
+ "grind-print",
  "grind-sheet",
  "grind-text",
  "grind-xlsx",
