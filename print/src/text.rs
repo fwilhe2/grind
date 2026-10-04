@@ -179,10 +179,14 @@ fn block_faces<'a>(
                     ..TextStyle::default()
                 },
             };
-            (stated != TextStyle::default()).then(|| {
-                let role = grind_text::look::Role::of(&view.kind, view.style.as_deref());
-                (view.index, RoleFace::stating(setter, role, stated))
-            })
+            // A declared style is the whole answer, so its block is set as body text under it:
+            // a heading style that states no size or weight is not given the screen's.
+            let role = match resolved.declared {
+                true => grind_text::look::Role::Body,
+                false => grind_text::look::Role::of(&view.kind, view.style.as_deref()),
+            };
+            (resolved.declared || stated != TextStyle::default())
+                .then(|| (view.index, RoleFace::stating(setter, role, stated)))
         })
         .collect()
 }
@@ -1030,6 +1034,47 @@ mod tests {
             .map(|page| texts(page).into_iter().map(|t| t.2).collect())
             .collect();
         assert_eq!(pages, vec![vec!["one".to_owned()], vec!["two".to_owned()]]);
+    }
+
+    /// A declared style is the whole answer: what it does not state is the default, upright and
+    /// regular at the default size — never the screen's guess for the block's role, which is
+    /// what made Writer's `Subtitle` print in italic.
+    #[test]
+    fn a_declared_style_is_complete_without_the_screens_role() {
+        let bytes = r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:styles>
+              <style:style style:name="Subtitle" style:family="paragraph"><style:text-properties fo:font-size="18pt"/></style:style>
+              <style:style style:name="Heading_20_1" style:family="paragraph"/>
+            </office:styles>
+            <office:body><office:text>
+              <text:p text:style-name="Subtitle">sub</text:p>
+              <text:h text:style-name="Heading_20_1" text:outline-level="1">head</text:h>
+            </office:text></office:body></office:document>"#;
+        let app = App::new();
+        app.open_bytes("c.fodt", bytes.as_bytes()).unwrap();
+        let t = setter();
+        let page = &typeset(&app, &t, &Options::default()).pages[0];
+        let face = |want: &str| {
+            page.ops.iter().find_map(|op| match op {
+                Op::Text {
+                    text, face, size, ..
+                } if text == want => {
+                    let f = t.fonts().face(*face);
+                    Some((f.bold, f.italic, *size))
+                }
+                _ => None,
+            })
+        };
+        assert_eq!(
+            face("sub"),
+            Some((false, false, 18.0)),
+            "upright, as the style says nothing"
+        );
+        assert_eq!(
+            face("head"),
+            Some((false, false, 12.0)),
+            "a heading style stating nothing is body text"
+        );
     }
 
     #[test]
