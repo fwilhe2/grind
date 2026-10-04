@@ -154,6 +154,8 @@ pub struct Layout {
     /// Distance from each line's top to its baseline: the largest ascent of any fragment, by
     /// the same rule that makes every line as tall as the tallest one ([`wrap`]).
     baseline: f32,
+    /// How far the first line starts in from the others ([`wrap_indented`]); negative hangs.
+    first: f32,
 }
 
 impl Layout {
@@ -210,7 +212,15 @@ impl Layout {
     pub fn x_at(&self, offset: usize) -> f32 {
         let offset = offset.min(self.len());
         let line = &self.lines[self.line_at(offset)];
-        self.xs[offset] - self.xs[line.start]
+        self.xs[offset] - self.xs[line.start] + self.indent_of(line.start)
+    }
+
+    /// The first-line indent for the line starting at `start`, and nothing for any other.
+    fn indent_of(&self, start: usize) -> f32 {
+        match start {
+            0 => self.first,
+            _ => 0.0,
+        }
     }
 
     /// The caret offset nearest to `x` on `line` — hit-testing a click.
@@ -223,6 +233,7 @@ impl Layout {
             return self.len();
         };
         let origin = self.xs[line.start];
+        let x = x - self.indent_of(line.start);
         let mut best = line.start;
         let mut best_d = f32::INFINITY;
         for offset in line.start..=line.end {
@@ -269,6 +280,18 @@ impl Layout {
 /// Unicode says a line may end rather than at ASCII spaces — which is the difference between
 /// wrapping prose and wrapping English prose.
 pub fn wrap(fragments: &[Fragment<'_>], width: f32, metrics: &dyn Metrics) -> Layout {
+    wrap_indented(fragments, width, metrics, 0.0)
+}
+
+/// [`wrap`], with the first line starting `first` further in than the others and breaking that
+/// much shorter — `fo:text-indent` (`doc/odt-format.md` §5c, fact 11). Negative hangs: the first
+/// line starts further out and has that much more room. Only a printed page asks for it today.
+pub fn wrap_indented(
+    fragments: &[Fragment<'_>],
+    width: f32,
+    metrics: &dyn Metrics,
+    first: f32,
+) -> Layout {
     // One `advances` call per fragment, concatenated into a single cumulative array over the
     // whole text. `xs[i]` is the x of caret offset `i`, before any line breaking.
     let mut xs = Vec::with_capacity(64);
@@ -321,7 +344,11 @@ pub fn wrap(fragments: &[Fragment<'_>], width: f32, metrics: &dyn Metrics) -> La
         *top += height;
     };
 
-    let fits = |from: usize, to: usize| width <= 0.0 || xs[to] - xs[from] <= width;
+    // The first line has the indent less room; every other line the whole width.
+    let fits = |from: usize, to: usize, first_line: bool| {
+        let room = width - if first_line { first } else { 0.0 };
+        width <= 0.0 || xs[to] - xs[from] <= room
+    };
 
     for (byte, opportunity) in linebreaks(&text) {
         let at = char_of_byte[byte];
@@ -332,7 +359,7 @@ pub fn wrap(fragments: &[Fragment<'_>], width: f32, metrics: &dyn Metrics) -> La
         // none did, this run is wider than the whole line, so it gets a line of its own further
         // down. A mandatory break is checked here too: the end of a paragraph is still allowed
         // to be the moment a line turns out not to fit.
-        if !fits(start, at)
+        if !fits(start, at, lines.is_empty())
             && let Some(end) = last_fit
         {
             push(start, end, &mut top, &mut lines);
@@ -347,7 +374,7 @@ pub fn wrap(fragments: &[Fragment<'_>], width: f32, metrics: &dyn Metrics) -> La
             }
             start = at;
             last_fit = None;
-        } else if fits(start, at) {
+        } else if fits(start, at, lines.is_empty()) {
             last_fit = Some(at);
         } else {
             // Still too wide on a line of its own: an unbreakable run has to go somewhere, and
@@ -365,6 +392,7 @@ pub fn wrap(fragments: &[Fragment<'_>], width: f32, metrics: &dyn Metrics) -> La
         lines,
         xs,
         baseline,
+        first,
     }
 }
 
@@ -462,6 +490,42 @@ mod tests {
             plain("").baseline(),
             0.8,
             "an empty block still has a line to sit on"
+        );
+    }
+
+    /// `doc/odt-format.md` §5c fact 11: a first-line indent starts the first line further in and
+    /// breaks it shorter by as much; every other line is as it was. A negative one hangs.
+    #[test]
+    fn a_first_line_indent_moves_and_shortens_the_first_line_alone() {
+        let style = TextStyle::default();
+        let text = "aaaa bbbb cccc dd";
+        let fragments = [Fragment {
+            text,
+            style: &style,
+        }];
+        let indented = wrap_indented(&fragments, 10.0, &Fixed, 3.0);
+        let lines: Vec<(usize, usize)> =
+            indented.lines().iter().map(|l| (l.start, l.end)).collect();
+        // "aaaa " fits the seven left on the first line; "aaaa bbbb" would not.
+        assert_eq!(lines, vec![(0, 5), (5, 15), (15, 17)]);
+        assert_eq!(indented.x_at(0), 3.0);
+        assert_eq!(indented.x_at(2), 5.0);
+        assert_eq!(
+            indented.x_at(6),
+            1.0,
+            "the second line starts at the margin"
+        );
+        assert_eq!(
+            indented.offset_at(0, 3.5),
+            0,
+            "a click at the indent is the first character"
+        );
+        assert_eq!(indented.offset_at(0, 5.0), 2);
+        let hanging = wrap_indented(&fragments, 10.0, &Fixed, -2.0);
+        assert_eq!(hanging.lines()[0].end, 10, "twelve wide: \"aaaa bbbb \"");
+        assert_eq!(
+            wrap_indented(&fragments, 10.0, &Fixed, 0.0),
+            wrap(&fragments, 10.0, &Fixed)
         );
     }
 
