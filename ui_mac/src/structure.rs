@@ -46,6 +46,15 @@ impl Pane {
                     .fill(sheet, selection.anchor, start, end, RecalcMode::Document)
                     .map(|_| ())
             }
+            // A whole row or column is cut to the part in use first (`nav::target`).
+            Command::Merge(merge) => {
+                let used = self.app.used_extent(sheet).unwrap_or((0, 0));
+                let (start, end) = grind_sheet::nav::target(selection, used);
+                match merge {
+                    true => self.app.merge(sheet, start, end).map(|_| ()),
+                    false => self.app.unmerge(sheet, start, end).map(|_| ()),
+                }
+            }
             Command::Rows(Track::Hide) => self
                 .app
                 .set_row_hidden(sheet, verbs::rows(selection), true)

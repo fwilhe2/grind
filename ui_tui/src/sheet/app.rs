@@ -472,7 +472,27 @@ impl App {
             rows: &rows,
             cols: &cols,
         };
+        let before = self.active;
         self.active = keymap::moved(self.active, motion, extent, self.visible_rows, folded);
+        // A merge is one cell: a step leaves it from its far edge (`nav::through_merges`).
+        // Not while a Visual selection is growing — its corner goes where the keys put it.
+        if let (keymap::Motion::By(dir), None) = (motion, self.anchor) {
+            use grind_sheet::nav;
+            let dir = match dir {
+                Dir::Left => nav::Dir::Left,
+                Dir::Right => nav::Dir::Right,
+                Dir::Up => nav::Dir::Up,
+                Dir::Down => nav::Dir::Down,
+            };
+            let merges = nav::merges(&self.core, self.sheet);
+            self.active = nav::through_merges(
+                nav::Selection::at(before),
+                nav::Selection::at(self.active),
+                nav::Motion::By(dir),
+                &merges,
+            )
+            .active;
+        }
     }
 
     /// `w` `b` `}` `{` — jump to the next edge of the data: `grind_sheet::nav`'s rule over the
@@ -1101,6 +1121,8 @@ impl App {
             _ if cmd.starts_with("chart ") => self.cmd_restyle_chart(cmd[6..].trim()),
             "yank-values" => self.cmd_yank_values(),
             "find" => self.cmd_find(""),
+            "merge" => self.cmd_merge(true),
+            "unmerge" => self.cmd_merge(false),
             "hide" => self.cmd_hide(true, false),
             "hide rows" => self.cmd_hide(true, true),
             "show" => self.cmd_hide(false, false),
@@ -1578,6 +1600,31 @@ impl App {
     /// Explicit rather than guessed from the shape of the selection: a rectangle covers both axes,
     /// and a verb that hid a column when you meant a row is a verb you have to undo to find out
     /// what it did.
+    /// `:merge` / `:unmerge` — the selection into one cell, or every merge in it taken away;
+    /// `grind sheet merge`'s twin, one undo step either way. What the covered cells held stays,
+    /// out of sight.
+    fn cmd_merge(&mut self, merge: bool) {
+        let (start, end) = self.rect();
+        let done = match merge {
+            true => self
+                .core
+                .merge(self.sheet, start, end)
+                .map(|_| "merged \u{2014} u takes it back".to_owned()),
+            false => self
+                .core
+                .unmerge(self.sheet, start, end)
+                .map(|n| format!("unmerged {n} range(s)")),
+        };
+        match done {
+            Ok(said) => {
+                self.leave_visual();
+                self.active = start;
+                self.status = said;
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
     fn cmd_hide(&mut self, hidden: bool, rows: bool) {
         let (start, end) = self.rect();
         let done = match rows {
@@ -2148,6 +2195,14 @@ impl App {
             self.help.draw(frame, area, &crate::sheet::help());
             return;
         }
+        // Wherever the cursor landed inside a merge — a jump, a search, a go-to — it is on the
+        // merge, which is to say on its top-left cell. A Visual corner is left where it was.
+        if self.anchor.is_none()
+            && !matches!(self.mode, Mode::Insert { .. })
+            && let Ok(Some((anchor, _))) = self.core.merge_at(self.sheet, self.active)
+        {
+            self.active = anchor;
+        }
         if self.charts.is_open() {
             self.charts
                 .draw_titled(frame, area, &self.charts_text, " charts — j/k scroll ");
@@ -2282,7 +2337,48 @@ impl App {
                     false => HEADER_ROW,
                 },
             )];
-            for (c, width) in &cols {
+            let mut index = 0;
+            while index < cols.len() {
+                let (c, width) = &cols[index];
+                index += 1;
+                // A merge is one cell: its top-left cell's text across every column of it on
+                // screen, on the first of its rows on screen, and nothing in the cells it
+                // covers.
+                if let Some(m) = viewport.as_ref().and_then(|v| v.merge_at(r, *c)) {
+                    let mut span = usize::from(*width);
+                    while let Some((next, w)) = cols.get(index)
+                        && *next <= m.end.col
+                    {
+                        span += usize::from(*w);
+                        index += 1;
+                    }
+                    let first_row = rows
+                        .iter()
+                        .copied()
+                        .find(|row| (m.anchor.row..=m.end.row).contains(row));
+                    let text = match first_row == Some(r) {
+                        true => m.text.as_str(),
+                        false => "",
+                    };
+                    let numeric = matches!(m.value, CellValue::Number(_));
+                    let mut style = terminal_style(m.style.as_ref());
+                    if m.anchor == self.active || self.selected(m.anchor) {
+                        style = style.add_modifier(Modifier::REVERSED);
+                    }
+                    spans.push(Span::styled(
+                        geom::pad(
+                            text,
+                            span,
+                            alignment(m.style.as_ref(), numeric),
+                            match numeric {
+                                true => geom::Fit::Number,
+                                false => geom::Fit::Text,
+                            },
+                        ),
+                        style,
+                    ));
+                    continue;
+                }
                 let (r, c) = (r, *c);
                 let shown_formula = self
                     .formulas
@@ -2799,6 +2895,38 @@ mod tests {
                     .to_string()
             })
             .collect()
+    }
+
+    /// A merge is one cell: its text across every column of it, nothing from the cells it
+    /// covers, and the cursor stepping over it rather than into it.
+    #[test]
+    fn a_merge_is_drawn_across_its_columns_and_stepped_over() {
+        let mut app = app();
+        app.core
+            .set_cell(0, Pos::new(0, 0), "Heading across")
+            .unwrap();
+        app.core.set_cell(0, Pos::new(0, 1), "hidden").unwrap();
+        app.core
+            .merge(0, Pos::new(0, 0), Pos::new(0, 2))
+            .expect("a merge");
+        let screen = screen(&mut app, 60, 8).join("\n");
+        assert!(screen.contains("Heading across"), "{screen}");
+        assert!(!screen.contains("hidden"), "{screen}");
+
+        press(&mut app, KeyCode::Char('l'));
+        assert_eq!(app.active, Pos::new(0, 3), "Right leaves from the far edge");
+        press(&mut app, KeyCode::Char('h'));
+        assert_eq!(
+            app.active,
+            Pos::new(0, 0),
+            "and Left lands on the top-left cell"
+        );
+
+        // `:unmerge` over it shows what it covered again.
+        app.run_command("unmerge");
+        assert_eq!(app.core.merges(0).unwrap(), vec![]);
+        let after = super::tests::screen(&mut app, 60, 8).join("\n");
+        assert!(after.contains("hidden"), "{after}");
     }
 
     /// **D9 in this shell.** `:source` shows the projection, the cursor lands on the active

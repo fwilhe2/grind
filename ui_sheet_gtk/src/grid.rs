@@ -199,6 +199,28 @@ impl Grid {
         self.imp().clear();
     }
 
+    /// Merge the selection into one cell, or take every merge in it away — `grind sheet merge`'s
+    /// twin, one undo step either way. A whole row or column is cut to the part in use first
+    /// (`nav::target`), so a header click followed by Merge is not a million-row merge.
+    pub fn merge(&self, merge: bool) {
+        let imp = self.imp();
+        let Some(app) = imp.app.borrow().clone() else {
+            return;
+        };
+        let sheet = imp.sheet.get();
+        let used = app.used_extent(sheet).unwrap_or((0, 0));
+        let (start, end) = grind_sheet::nav::target(imp.selection.get(), used);
+        match merge {
+            true if app.merge(sheet, start, end).is_ok() => {
+                self.set_selection(Selection::at(start));
+            }
+            true => {}
+            false => {
+                let _ = app.unmerge(sheet, start, end);
+            }
+        }
+    }
+
     /// Select the used extent — Ctrl+A's twin, `grind_sheet::nav::all`: the active cell stays
     /// at A1, so the view goes home rather than to the far corner.
     pub fn select_all(&self) {
@@ -632,6 +654,8 @@ pub fn cell_menu_model() -> gio::Menu {
     model.append_section(None, &edits);
 
     let range = gio::Menu::new();
+    range.append(Some("Merge Cells"), Some("win.merge"));
+    range.append(Some("Unmerge Cells"), Some("win.unmerge"));
     range.append(Some("Name This Range…"), Some("win.names"));
     range.append(Some("Filter Rows"), Some("win.filter"));
     range.append(Some("Format as Table…"), Some("win.format-table"));
@@ -1403,7 +1427,18 @@ mod imp {
                 return;
             }
             let active = self.selection.get().active;
-            let cell = self.geom().cell_rect(active.row, active.col);
+            // Over the whole merge when the cell is one's top-left.
+            let merge = self
+                .app
+                .borrow()
+                .as_ref()
+                .and_then(|app| app.merge_at(self.sheet.get(), active).ok().flatten());
+            let cell = match merge {
+                Some((start, end)) => self
+                    .geom()
+                    .range_rect((start.row, start.col), (end.row, end.col)),
+                None => self.geom().cell_rect(active.row, active.col),
+            };
             // Measured from the text, not from the widget: a `gtk::Text` asks for a width
             // in characters and knows nothing about what it is holding, so an unmeasured
             // editor clips a formula at the column's edge.
@@ -1762,6 +1797,12 @@ mod imp {
             for row in 0..used_rows {
                 let mut tallest: f32 = 0.0;
                 for col in 0..used_cols {
+                    // A merge is not measured against one column, and a row it spans is
+                    // not grown for it: the merge's own height is its rows', as LibreOffice
+                    // draws one.
+                    if viewport.merge_at(row, col).is_some() {
+                        continue;
+                    }
                     let Some(style) = viewport.style(row, col) else {
                         continue;
                     };
@@ -2041,7 +2082,11 @@ mod imp {
                     // A hidden or filtered track is drawn as gone, so a cursor may not stop on
                     // one — `nav::onto_visible`, the rule the Windows and Mac grids apply.
                     let geom = self.geom();
-                    grind_sheet::nav::onto_visible(moved, motion, &geom.rows, &geom.cols)
+                    let moved =
+                        grind_sheet::nav::onto_visible(moved, motion, &geom.rows, &geom.cols);
+                    // A merge is one cell: a step leaves it from its far edge.
+                    let merges = grind_sheet::nav::merges(&app, self.sheet.get());
+                    grind_sheet::nav::through_merges(self.selection.get(), moved, motion, &merges)
                 }
                 Action::SelectAll => {
                     let Some(app) = self.app.borrow().clone() else {
@@ -3444,6 +3489,15 @@ mod imp {
         /// The one place a selection changes: scroll it into view, repaint, and tell
         /// whoever is listening.
         pub fn set_selection(&self, selection: Selection) {
+            // Wherever a single cell lands inside a merge — a click, a menu, a go-to — it
+            // lands on the merge, which is to say on its top-left cell.
+            let selection = match self.app.borrow().clone() {
+                Some(app) => {
+                    let merges = grind_sheet::nav::merges(&app, self.sheet.get());
+                    grind_sheet::nav::onto_merge(selection, &merges)
+                }
+                None => selection,
+            };
             self.selection.set(selection);
             self.refresh_buffer();
             self.scroll_into_view(selection.active);
@@ -3709,9 +3763,7 @@ mod imp {
             }
             f.snapshot
                 .append_color(&with_alpha(f.palette.accent, 0.12), &rect(x, y, w, h));
-            let active = f
-                .geom
-                .cell_rect(f.selection.active.row, f.selection.active.col);
+            let active = Self::active_rect(f);
             f.snapshot.append_color(
                 &f.palette.background,
                 &rect(active.x, active.y, active.w, active.h),
@@ -3792,10 +3844,22 @@ mod imp {
                     );
                 }
             }
-            let cell = f
-                .geom
-                .cell_rect(f.selection.active.row, f.selection.active.col);
-            outline(f.snapshot, cell, f.palette.accent, 2.0);
+            outline(f.snapshot, Self::active_rect(f), f.palette.accent, 2.0);
+        }
+
+        /// The active cell's rectangle — the whole merge when it is one's top-left cell.
+        fn active_rect(f: &Frame) -> Rect {
+            let active = f.selection.active;
+            match f
+                .cells
+                .as_ref()
+                .and_then(|cells| cells.merge_at(active.row, active.col))
+            {
+                Some(m) => f
+                    .geom
+                    .range_rect((m.anchor.row, m.anchor.col), (m.end.row, m.end.col)),
+                None => f.geom.cell_rect(active.row, active.col),
+            }
         }
 
         /// The fill handle on the selection's bottom-right corner, and the rectangle a drag
@@ -3830,16 +3894,42 @@ mod imp {
             );
         }
 
+        /// The grid lines — except through a merge, whose inside is one cell.
         fn draw_lines(&self, f: &Frame) {
+            let merges = f.cells.as_ref().map_or(&[][..], |cells| cells.merges());
+            let area = |m: &grind_sheet::Merged| {
+                f.geom
+                    .range_rect((m.anchor.row, m.anchor.col), (m.end.row, m.end.col))
+            };
             for row in f.rows.clone() {
                 let y = f.geom.cell_rect(row, 0).y;
-                f.snapshot
-                    .append_color(&f.palette.lines, &rect(f.geom.header_w, y, f.width, 1.0));
+                let holes: Vec<(f64, f64)> = merges
+                    .iter()
+                    .filter(|m| m.anchor.row < row && row <= m.end.row)
+                    .map(|m| {
+                        let r = area(m);
+                        (r.x + 1.0, r.x + r.w)
+                    })
+                    .collect();
+                for (x0, x1) in crate::geom::segments(f.geom.header_w, f.width, &holes) {
+                    f.snapshot
+                        .append_color(&f.palette.lines, &rect(x0, y, x1 - x0, 1.0));
+                }
             }
             for col in f.cols.clone() {
                 let x = f.geom.cell_rect(0, col).x;
-                f.snapshot
-                    .append_color(&f.palette.lines, &rect(x, f.geom.header_h, 1.0, f.height));
+                let holes: Vec<(f64, f64)> = merges
+                    .iter()
+                    .filter(|m| m.anchor.col < col && col <= m.end.col)
+                    .map(|m| {
+                        let r = area(m);
+                        (r.y + 1.0, r.y + r.h)
+                    })
+                    .collect();
+                for (y0, y1) in crate::geom::segments(f.geom.header_h, f.height, &holes) {
+                    f.snapshot
+                        .append_color(&f.palette.lines, &rect(x, y0, 1.0, y1 - y0));
+                }
             }
         }
 
@@ -3857,6 +3947,10 @@ mod imp {
             }
             for row in f.rows.clone() {
                 for col in f.cols.clone() {
+                    // A merge is filled whole, below.
+                    if cells.merge_at(row, col).is_some() {
+                        continue;
+                    }
                     let Some(fill) = cells.style(row, col).and_then(|s| s.background.as_deref())
                     else {
                         continue;
@@ -3871,6 +3965,22 @@ mod imp {
                         .append_color(&color, &rect(cell.x, cell.y, cell.w, cell.h));
                 }
             }
+            // A merge is one cell, filled with its top-left cell's fill.
+            for m in cells.merges() {
+                let Some(color) = m
+                    .style
+                    .as_ref()
+                    .and_then(|s| s.background.as_deref())
+                    .and_then(crate::theme::color)
+                else {
+                    continue;
+                };
+                let cell = f
+                    .geom
+                    .range_rect((m.anchor.row, m.anchor.col), (m.end.row, m.end.col));
+                f.snapshot
+                    .append_color(&color, &rect(cell.x, cell.y, cell.w, cell.h));
+            }
         }
 
         /// The four `fo:border-*` edges, over the grid lines.
@@ -3881,32 +3991,42 @@ mod imp {
         /// meaning of a ruled table.
         fn draw_borders(&self, f: &Frame) {
             let Some(cells) = &f.cells else { return };
-            for row in f.rows.clone() {
-                for col in f.cols.clone() {
-                    let Some(style) = cells.style(row, col) else {
+            // A merge is drawn with its top-left cell's borders round the whole of it, which
+            // is the cell style LibreOffice draws a merge with.
+            let merged = cells.merges().iter().filter_map(|m| {
+                let area = f
+                    .geom
+                    .range_rect((m.anchor.row, m.anchor.col), (m.end.row, m.end.col));
+                Some((m.style.as_ref()?, area))
+            });
+            let plain = f.rows.clone().flat_map(|row| {
+                f.cols.clone().filter_map(move |col| {
+                    if cells.merge_at(row, col).is_some() {
+                        return None;
+                    }
+                    Some((cells.style(row, col)?, f.geom.cell_rect(row, col)))
+                })
+            });
+            for (style, cell) in plain.chain(merged) {
+                for (edge, border) in style.borders.iter().enumerate() {
+                    let Some((points, _, color)) =
+                        border.as_deref().and_then(grind_sheet::style::border_parts)
+                    else {
                         continue;
                     };
-                    let cell = f.geom.cell_rect(row, col);
-                    for (edge, border) in style.borders.iter().enumerate() {
-                        let Some((points, _, color)) =
-                            border.as_deref().and_then(grind_sheet::style::border_parts)
-                        else {
-                            continue;
-                        };
-                        let Some(color) = crate::theme::color(color) else {
-                            continue;
-                        };
-                        // A hairline is still a line: a 0.5pt border must not round to zero.
-                        let t = (points * 4.0 / 3.0).max(1.0);
-                        // `style::EDGES` order — left, right, top, bottom.
-                        let edge = match edge {
-                            0 => rect(cell.x, cell.y, t, cell.h),
-                            1 => rect(cell.x + cell.w - t, cell.y, t, cell.h),
-                            2 => rect(cell.x, cell.y, cell.w, t),
-                            _ => rect(cell.x, cell.y + cell.h - t, cell.w, t),
-                        };
-                        f.snapshot.append_color(&color, &edge);
-                    }
+                    let Some(color) = crate::theme::color(color) else {
+                        continue;
+                    };
+                    // A hairline is still a line: a 0.5pt border must not round to zero.
+                    let t = (points * 4.0 / 3.0).max(1.0);
+                    // `style::EDGES` order — left, right, top, bottom.
+                    let edge = match edge {
+                        0 => rect(cell.x, cell.y, t, cell.h),
+                        1 => rect(cell.x + cell.w - t, cell.y, t, cell.h),
+                        2 => rect(cell.x, cell.y, cell.w, t),
+                        _ => rect(cell.x, cell.y + cell.h - t, cell.w, t),
+                    };
+                    f.snapshot.append_color(&color, &edge);
                 }
             }
         }
@@ -3942,6 +4062,10 @@ mod imp {
             for row in rows.clone() {
                 for col in fetch.clone() {
                     if editing == Some(Pos::new(row, col)) {
+                        continue;
+                    }
+                    // A merge is drawn whole, below; what its covered cells hold is not drawn.
+                    if viewport.merge_at(row, col).is_some() {
                         continue;
                     }
                     let Some(value) = viewport.get(row, col) else {
@@ -4053,7 +4177,10 @@ mod imp {
                     // …except past a filter button, which is a control in the way.
                     if !fits && align == Align::Left && !capped {
                         let stop = (col + 1..fetch.end)
-                            .find(|c| viewport.get(row, *c).is_some_and(|v| !v.is_empty()))
+                            .find(|c| {
+                                viewport.get(row, *c).is_some_and(|v| !v.is_empty())
+                                    || viewport.merge_at(row, *c).is_some()
+                            })
                             .map_or(f.width + geom.scroll_x, |c| geom.cell_rect(row, c).x);
                         paint.w = (stop - cell.x).max(cell.w);
                     }
@@ -4073,10 +4200,99 @@ mod imp {
                     );
                 }
             }
+            self.draw_merged(f, &layout, editing, pad, lead);
             // The layout is shared and reused, so anything set for one cell has to be unset
             // or the headers inherit it.
             layout.set_attributes(None);
             layout.set_width(-1);
+        }
+
+        /// Each merge's text, laid out across the whole merge — its top-left cell's text and
+        /// look, whether or not that cell is in view. Nothing spills out of a merge and
+        /// nothing spills into one: it is a cell, as wide as it is.
+        fn draw_merged(
+            &self,
+            f: &Frame,
+            layout: &pango::Layout,
+            editing: Option<Pos>,
+            pad: f64,
+            lead: f64,
+        ) {
+            let Some(viewport) = &f.cells else { return };
+            for m in viewport.merges() {
+                if editing == Some(m.anchor) {
+                    continue;
+                }
+                let formula = self
+                    .formulas
+                    .get()
+                    .then(|| {
+                        let app = self.app.borrow().clone()?;
+                        app.formula(self.sheet.get(), m.anchor).ok().flatten()?;
+                        app.input_text(self.sheet.get(), m.anchor).ok()
+                    })
+                    .flatten();
+                let text = formula.as_deref().unwrap_or(&m.text);
+                if text.is_empty() {
+                    continue;
+                }
+                let style = m.style.as_ref();
+                layout.set_attributes(self.cell_attrs(style).as_ref());
+                let role = self
+                    .overlays
+                    .get()
+                    .roles
+                    .then(|| viewport.role(m.anchor.row, m.anchor.col))
+                    .flatten();
+                let color = role
+                    .and_then(|role| crate::theme::role_color(role, &f.palette))
+                    .unwrap_or_else(|| {
+                        crate::theme::ink(
+                            style.and_then(|s| s.color.as_deref()),
+                            style.and_then(|s| s.background.as_deref()),
+                            &f.palette,
+                        )
+                    });
+                let align = style
+                    .and_then(|s| s.align.as_deref())
+                    .and_then(look::by_style)
+                    .unwrap_or_else(|| look::by_type(&m.value));
+                let valign = look::valign(style);
+                let wrapping = style.is_some_and(|s| s.wrap.as_deref() == Some("wrap"));
+                let cell = f
+                    .geom
+                    .range_rect((m.anchor.row, m.anchor.col), (m.end.row, m.end.col));
+                layout.set_width(match wrapping {
+                    true => ((cell.w - 2.0 * pad).max(1.0) * f64::from(pango::SCALE)) as i32,
+                    false => -1,
+                });
+                layout.set_text(text);
+                let (mut w, mut h) = layout.pixel_size();
+                let fits = wrapping || f64::from(w) <= cell.w - 2.0 * pad;
+                let mut align = align;
+                // The same rule as any cell: a number that does not fit is never cut.
+                if !fits && !wrapping && grind_sheet::numfmt::is_number(&m.value) {
+                    layout.set_text("#");
+                    let hash = f64::from(layout.pixel_size().0).max(1.0);
+                    layout.set_text(&grind_sheet::numfmt::overflow(cell.w - 2.0 * pad, hash));
+                    (w, h) = layout.pixel_size();
+                    align = Align::Right;
+                }
+                draw_text(
+                    f.snapshot,
+                    layout,
+                    color,
+                    &cell,
+                    cell,
+                    w,
+                    h,
+                    (align, valign),
+                    match align {
+                        Align::Right => pad,
+                        _ => lead,
+                    },
+                );
+            }
         }
 
         /// `doc/view-modes.md` Part II in the grid: what every cell *is*, in two channels.

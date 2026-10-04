@@ -101,6 +101,8 @@ pub const SHEET: &[Command] = &[
     cmd("edit.clear", "Clear contents", "Edit", "Delete", false),
     cmd("edit.fill-down", "Fill down", "Edit", "Ctrl+D", true),
     cmd("edit.fill-right", "Fill right", "Edit", "Ctrl+R", false),
+    cmd("edit.merge", "Merge cells", "Edit", "", false),
+    cmd("edit.unmerge", "Unmerge cells", "Edit", "", false),
     cmd(
         "edit.select-all",
         "Select the whole sheet",

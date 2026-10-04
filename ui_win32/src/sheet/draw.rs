@@ -398,6 +398,10 @@ mod windows_impl {
                     if rect.w <= 0.0 || rect.h <= 0.0 {
                         continue;
                     }
+                    // A merge is drawn whole, below: one cell, with no hairline through it.
+                    if frame.viewport.merge_at(row, col).is_some() {
+                        continue;
+                    }
                     let empty = grind_sheet::model::CellValue::Empty;
                     let value = frame.viewport.get(row, col).unwrap_or(&empty);
                     let look = Appearance::of(value, frame.viewport.style(row, col));
@@ -534,6 +538,71 @@ mod windows_impl {
             }
         }
 
+        // Each merge, as one cell over its whole area: its top-left cell's ground, text and
+        // look, whether or not that cell is in view, and its hairlines only round the outside.
+        {
+            let _font = Selected::font(dc, &regular);
+            for m in frame.viewport.merges() {
+                let area = merged_rect(frame, m);
+                if area.w <= 0.0 || area.h <= 0.0 {
+                    continue;
+                }
+                let (left, top, right, bottom) = area.edges();
+                let look = Appearance::of(&m.value, m.style.as_ref());
+                let (row, col) = (m.anchor.row, m.anchor.col);
+                let selected = frame.selection.contains(row, col);
+                let active = frame.selection.active == m.anchor;
+                let ground = super::ground(look.background, theme, selected, active);
+                if let Some(fill) = ground {
+                    gdi::fill(dc, left, top, right, bottom, fill);
+                }
+                gdi::fill(dc, right - 1, top, right, bottom, theme.grid_line);
+                gdi::fill(dc, left, bottom - 1, right, bottom, theme.grid_line);
+                let text = frame
+                    .formula_text
+                    .get(&(row, col))
+                    .map(String::as_str)
+                    .unwrap_or(&m.text);
+                if text.is_empty() {
+                    continue;
+                }
+                let _bold = look.bold.then(|| Selected::font(dc, &bold));
+                let ink = crate::theme::document_ink(
+                    look.text,
+                    ground.unwrap_or(theme.background),
+                    look.background.is_some(),
+                    theme,
+                );
+                let style = m.style.as_ref();
+                if grind_sheet::look::wraps(style) && !grind_sheet::numfmt::is_number(&m.value) {
+                    draw_wrapped(
+                        dc,
+                        frame,
+                        text,
+                        &m.value,
+                        style,
+                        (left, top, right, bottom),
+                        ink,
+                    );
+                    continue;
+                }
+                let pad = crate::sheet::geom::scale(PAD, g.dpi);
+                let room = f64::from(right - left) - 2.0 * pad.round() - 1.0;
+                let hashes;
+                let text = match grind_sheet::numfmt::is_number(&m.value)
+                    && f64::from(gdi::text_width(dc, text)) > room
+                {
+                    true => {
+                        let hash = f64::from(gdi::text_width(dc, "#"));
+                        hashes = grind_sheet::numfmt::overflow(room, hash);
+                        hashes.as_str()
+                    }
+                    false => text,
+                };
+                draw_text(dc, text, left, top, right, bottom, look.align, ink, pad);
+            }
+        }
+
         // The cells' own borders, after every cell so that a neighbour's fill cannot cover half of
         // a line centred on the edge they share. `look::border_strokes` is the geometry — the
         // Mac draws the same list — in points, so the cell goes in as points and the strokes come
@@ -542,15 +611,25 @@ mod windows_impl {
             let to_pt = 72.0 / (f64::from(g.dpi) * g.zoom);
             let to_px = f64::from(g.dpi) * g.zoom / 72.0;
             let dark = theme.mode == crate::theme::Mode::Dark;
-            for row in g.visible_rows() {
-                for col in g.visible_cols() {
-                    let Some(style) = frame.viewport.style(row, col) else {
-                        continue;
-                    };
+            // A merge's borders are its top-left cell's, round the whole of it.
+            let plain = g.visible_rows().flat_map(|row| {
+                g.visible_cols().filter_map(move |col| {
+                    if frame.viewport.merge_at(row, col).is_some() {
+                        return None;
+                    }
+                    Some((frame.viewport.style(row, col)?, g.cell_rect(row, col)))
+                })
+            });
+            let merged = frame
+                .viewport
+                .merges()
+                .iter()
+                .filter_map(|m| Some((m.style.as_ref()?, merged_rect(frame, m))));
+            for (style, rect) in plain.chain(merged) {
+                {
                     if style.borders.iter().all(Option::is_none) {
                         continue;
                     }
-                    let rect = g.cell_rect(row, col);
                     for stroke in grind_sheet::look::border_strokes(
                         (
                             rect.x * to_pt,
@@ -1108,9 +1187,26 @@ mod windows_impl {
     /// its bottom edge is twenty million pixels down. Each edge is drawn only where the body
     /// actually reaches it, so the two sides of a tall selection are drawn and its bottom is
     /// not, which is what the eye wants anyway.
+    /// A merge's whole area, from its top-left cell's corner to its bottom-right cell's.
+    fn merged_rect(frame: &Frame, m: &grind_sheet::Merged) -> crate::sheet::geom::Rect {
+        let first = frame.geom.cell_rect(m.anchor.row, m.anchor.col);
+        let last = frame.geom.cell_rect(m.end.row, m.end.col);
+        crate::sheet::geom::Rect {
+            w: last.x + last.w - first.x,
+            h: last.y + last.h - first.y,
+            ..first
+        }
+    }
+
     fn outline(dc: HDC, frame: &Frame) {
         let g = frame.geom;
-        let (start, end) = frame.selection.rect();
+        let (start, mut end) = frame.selection.rect();
+        // A single cell that is a merge is outlined round the whole of it.
+        if start == end
+            && let Some(m) = frame.viewport.merge_at(start.row, start.col)
+        {
+            end = m.end;
+        }
         let first = g.cell_rect(start.row, start.col);
         let last = g.cell_rect(end.row, end.col);
         let body = g.body();

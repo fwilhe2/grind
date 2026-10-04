@@ -528,6 +528,10 @@ impl Pane {
 
     /// Make `selection` the selection: redraw, scroll the active cell into sight, and say so.
     pub fn select(&self, selection: Selection) {
+        // A single cell inside a merge is the merge — its top-left cell — however it was
+        // reached: a click, a go-to, a sidebar row.
+        let merges = grind_sheet::nav::merges(&self.app, self.sheet.get());
+        let selection = grind_sheet::nav::onto_merge(selection, &merges);
         if selection == self.selection.get() {
             return;
         }

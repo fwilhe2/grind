@@ -124,6 +124,9 @@ pub enum Command {
     /// The active cell copied into every selected cell, references shifted — Edit ▸ Fill ▸
     /// Across Selection.
     FillAcross,
+    /// The selection into one cell (`true`), or every merge in it taken away — Edit ▸ Merge
+    /// Cells and Unmerge Cells, `App::merge`/`App::unmerge`.
+    Merge(bool),
     /// Every formula in the document listed in the sidebar, searched — View ▸ Calculations….
     Calculations,
     /// Every formula shown in its cell rather than its value — View ▸ Formulas.
@@ -268,6 +271,8 @@ impl Command {
             Command::DocumentLocale,
             Command::ShowFormulas,
             Command::FillAcross,
+            Command::Merge(true),
+            Command::Merge(false),
             Command::Calculations,
             Command::InsertTable,
             Command::InsertBookmark,
@@ -377,6 +382,7 @@ impl Command {
             | Command::DocumentLocale
             | Command::ShowFormulas
             | Command::FillAcross
+            | Command::Merge(_)
             | Command::Calculations
             | Command::ExportCsv
             | Command::ImportCsvWith
@@ -850,6 +856,8 @@ pub static MENUS: &[Menu] = &[
                 title: "Fill",
                 menu: &FILL,
             },
+            command("Merge Cells", None, Command::Merge(true)),
+            command("Unmerge Cells", None, Command::Merge(false)),
             Item::Separator,
             command("Delete Sheet", None, Command::DeleteSheet),
         ],

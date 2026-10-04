@@ -261,6 +261,9 @@ pub struct Merged {
     pub anchor: Pos,
     /// The bottom-right cell, inclusive.
     pub end: Pos,
+    /// The top-left cell's value — what decides, with no alignment of its own, which side of
+    /// the merge its text sits on.
+    pub value: CellValue,
     /// What the top-left cell displays.
     pub text: String,
     /// How the top-left cell looks — the look of the whole area.
@@ -1498,6 +1501,7 @@ impl App {
                 .map(|(anchor, span)| Merged {
                     anchor,
                     end: span.end(anchor),
+                    value: s.get(anchor),
                     text: render_in(s, anchor, state.doc.null_date, state.doc.locale.as_ref()),
                     style: s.style(anchor).cloned(),
                 })

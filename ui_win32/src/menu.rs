@@ -80,6 +80,10 @@ pub enum Command {
     /// The cell the selection grew from, copied across the whole selection, references shifted —
     /// one `App::fill`.
     FillAcross,
+    /// The selection into one cell, or every merge in it taken away — `App::merge` and
+    /// `App::unmerge` over the selection cut to the used part (`nav::target`).
+    MergeCells,
+    UnmergeCells,
     /// A chart of the table the selection means, placed beside it (`grind_sheet::verbs::
     /// insert_chart`), and the last chart taken away again. Drawn by `sheet/chart.rs`.
     InsertChart,
@@ -337,6 +341,8 @@ impl Command {
         Command::FillDown,
         Command::FillRight,
         Command::FillAcross,
+        Command::MergeCells,
+        Command::UnmergeCells,
         Command::InsertChart,
         Command::PreviewChart,
         Command::DeleteChart,
@@ -688,6 +694,15 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::FitColumns,
                 label: "&Fit Column Width",
+            },
+            Item::Separator,
+            Item::Verb {
+                command: Command::MergeCells,
+                label: "&Merge Cells",
+            },
+            Item::Verb {
+                command: Command::UnmergeCells,
+                label: "Unmer&ge Cells",
             },
         ],
     },
@@ -1148,6 +1163,8 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::CopyValue
         | Command::FormulaToValue
         | Command::FillAcross
+        | Command::MergeCells
+        | Command::UnmergeCells
         | Command::InsertChart
         | Command::PreviewChart
         | Command::DeleteChart
@@ -1545,6 +1562,8 @@ mod tests {
             Command::CopyValue,
             Command::FormulaToValue,
             Command::FillAcross,
+            Command::MergeCells,
+            Command::UnmergeCells,
             Command::InsertChart,
             Command::PreviewChart,
             Command::DeleteChart,

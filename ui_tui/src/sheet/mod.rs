@@ -45,6 +45,7 @@ Spreadsheet:
   :eval <formula>         — what it would come to, storing nothing
   :charts   — the sheet's charts, drawn in characters
   :width [n|auto]  :fit  :height [n]   :hide  :show   — the columns the selection covers
+  :merge  :unmerge        — the selection into one cell, or every merge in it undone
   :name <name>  :name!    — define a name over the selection, or drop the one on it
   :rename <old> <new>     — rename a name, every formula that uses it following
   :inline <name>          — write a name's definition into every use and drop it

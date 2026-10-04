@@ -670,7 +670,11 @@ impl Sheet {
                 let to = keymap::moved(self.selection, motion, extend, extent, &occupied);
                 // A hidden track is drawn as gone, so a cursor may not stop on one — see
                 // `keymap::onto_visible`, which is the rule and has the tests.
-                self.selection = keymap::onto_visible(to, motion, &self.geom.rows, &self.geom.cols);
+                let to = keymap::onto_visible(to, motion, &self.geom.rows, &self.geom.cols);
+                // A merge is one cell: a step leaves it from its far edge.
+                let merges = grind_sheet::nav::merges(&self.app, self.sheet);
+                self.selection =
+                    grind_sheet::nav::through_merges(self.selection, to, motion, &merges);
             }
             // Everything the sheet *uses*, with the active cell at A1 so that the view goes
             // home rather than to the far corner. An empty sheet selects the one cell it has.
@@ -688,7 +692,12 @@ impl Sheet {
     /// view may not start after the active cell (it would be above the top) and may not start
     /// before the least first track that shows it (it would be below the bottom). A cell already
     /// in view falls between the two and nothing moves.
+    ///
+    /// It is also where a single cell that landed inside a merge — a click, a go-to — is moved
+    /// onto the merge's top-left cell, since every way of moving the selection ends here.
     fn reveal(&mut self) {
+        let merges = grind_sheet::nav::merges(&self.app, self.sheet);
+        self.selection = grind_sheet::nav::onto_merge(self.selection, &merges);
         let (body, active) = (self.geom.body(), self.selection.active);
         let g = &mut self.geom;
         let need = g.rows.start_showing(active.row, body.h);
@@ -3561,6 +3570,8 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::FillDown => fill(hwnd, true),
         Command::FillRight => fill(hwnd, false),
         Command::FillAcross => fill_across(hwnd),
+        Command::MergeCells => merge_cells(hwnd, true),
+        Command::UnmergeCells => merge_cells(hwnd, false),
         Command::InsertChart => insert_chart(hwnd),
         Command::PreviewChart => preview_chart(hwnd),
         Command::DeleteChart => delete_chart(hwnd),
@@ -3785,6 +3796,33 @@ fn fill(hwnd: HWND, down: bool) {
                 }
             }
             state.say(Some(notice::filled(cells, down)));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Sheet ▸ Merge Cells and Unmerge Cells — `App::merge`/`App::unmerge` over the selection, a whole
+/// row or column cut to the part in use (`nav::target`); what the covered cells held stays.
+fn merge_cells(hwnd: HWND, merge: bool) {
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+            let (start, end) = grind_sheet::nav::target(state.selection, used);
+            let said = match merge {
+                true => match state.app.merge(state.sheet, start, end) {
+                    Ok(_) => {
+                        state.selection = Selection::at(start);
+                        None
+                    }
+                    Err(error) => Some(error.to_string()),
+                },
+                false => match state.app.unmerge(state.sheet, start, end) {
+                    Ok(_) => None,
+                    Err(error) => Some(error.to_string()),
+                },
+            };
+            state.say(said);
         });
     }
     refresh(hwnd);
@@ -5642,6 +5680,8 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::CopyValue
         | Command::FormulaToValue
         | Command::FillAcross
+        | Command::MergeCells
+        | Command::UnmergeCells
         | Command::InsertChart
         | Command::PreviewChart
         | Command::DeleteChart
@@ -6771,6 +6811,8 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::CopyValue
         | Command::FormulaToValue
         | Command::FillAcross
+        | Command::MergeCells
+        | Command::UnmergeCells
         | Command::InsertChart
         | Command::PreviewChart
         | Command::DeleteChart

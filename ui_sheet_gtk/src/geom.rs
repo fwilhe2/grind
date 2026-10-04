@@ -285,6 +285,19 @@ impl GridGeom {
         }
     }
 
+    /// The rectangle from one cell's top-left corner to another's bottom-right — a merge, a
+    /// selection, a reference — in widget space.
+    pub fn range_rect(&self, start: (u32, u32), end: (u32, u32)) -> Rect {
+        let a = self.cell_rect(start.0, start.1);
+        let b = self.cell_rect(end.0, end.1);
+        Rect {
+            x: a.x,
+            y: a.y,
+            w: b.x + b.w - a.x,
+            h: b.y + b.h - a.y,
+        }
+    }
+
     /// The rows visible in a widget `height`, end-exclusive. A partially visible row at
     /// either edge is included: half a row still has to be drawn.
     pub fn visible_rows(&self, height: f64) -> std::ops::Range<u32> {
@@ -414,8 +427,48 @@ fn keep_in(scroll: f64, start: f64, size: f64, page: f64, margin: f64) -> f64 {
     scroll
 }
 
+/// A line from `from` to `to`, with the `holes` taken out — what a grid line is where a merge
+/// crosses it, since the inside of a merge is one cell and has no line through it. The holes
+/// may overlap and come in any order; what is left is in order and never empty.
+pub fn segments(from: f64, to: f64, holes: &[(f64, f64)]) -> Vec<(f64, f64)> {
+    let mut holes: Vec<(f64, f64)> = holes.iter().copied().filter(|(a, b)| b > a).collect();
+    holes.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut out = Vec::new();
+    let mut at = from;
+    for (start, end) in holes {
+        if start > at {
+            out.push((at, start.min(to)));
+        }
+        at = at.max(end);
+        if at >= to {
+            break;
+        }
+    }
+    if at < to {
+        out.push((at, to));
+    }
+    out.retain(|(a, b)| b > a);
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_grid_line_stops_at_a_merge_and_starts_again_after_it() {
+        use super::segments;
+        assert_eq!(segments(0.0, 100.0, &[]), [(0.0, 100.0)]);
+        assert_eq!(
+            segments(0.0, 100.0, &[(60.0, 70.0), (20.0, 30.0)]),
+            [(0.0, 20.0), (30.0, 60.0), (70.0, 100.0)]
+        );
+        // Overlapping holes, and one running past the end.
+        assert_eq!(
+            segments(0.0, 100.0, &[(10.0, 40.0), (30.0, 50.0), (90.0, 120.0)]),
+            [(0.0, 10.0), (50.0, 90.0)]
+        );
+        assert!(segments(0.0, 100.0, &[(-5.0, 200.0)]).is_empty());
+    }
+
     use super::*;
 
     fn geom() -> GridGeom {

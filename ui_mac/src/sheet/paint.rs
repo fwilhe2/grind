@@ -216,9 +216,31 @@ pub fn cells(
         return ops;
     };
 
+    // A merge's whole area, from its top-left cell's corner to its bottom-right cell's.
+    let merged = |m: &grind_sheet::Merged| {
+        let first = grid.cell(m.anchor.row, m.anchor.col);
+        let last = grid.cell(m.end.row, m.end.col);
+        Rect::new(
+            first.x,
+            first.y,
+            last.right() - first.x,
+            last.bottom() - first.y,
+        )
+    };
+    let merge_fill = |m: &grind_sheet::Merged| {
+        m.style
+            .as_ref()
+            .and_then(|style| style.background.as_deref())
+            .and_then(color::parse)
+    };
+
     // Grounds the document chose. `transparent` is a real value and means no fill.
     for row in rows.clone() {
         for col in cols.clone() {
+            // A merge is filled whole, after the grid lines, which covers the ones inside it.
+            if viewport.merge_at(row, col).is_some() {
+                continue;
+            }
             let fill = viewport
                 .style(row, col)
                 .and_then(|style| style.background.as_deref())
@@ -253,12 +275,34 @@ pub fn cells(
         }
     }
 
-    // The borders the document drew, over the grid lines they replace.
+    // A merge is one cell: its ground over the whole of it but its own far edges, so no grid
+    // line runs through it and the lines round it stay.
+    for m in viewport.merges() {
+        let area = merged(m);
+        let inside = Rect::new(area.x, area.y, area.w - hairline, area.h - hairline);
+        if let Some(rect) = within(inside, &view) {
+            ops.push(Op::Fill {
+                rect,
+                color: merge_fill(m).unwrap_or(palette.page),
+            });
+        }
+    }
+
+    // The borders the document drew, over the grid lines they replace — a merge's are its
+    // top-left cell's, round the whole of it.
     for row in rows.clone() {
         for col in cols.clone() {
+            if viewport.merge_at(row, col).is_some() {
+                continue;
+            }
             if let Some(style) = viewport.style(row, col) {
                 ops.extend(borders(grid.cell(row, col), style, palette, hairline));
             }
+        }
+    }
+    for m in viewport.merges() {
+        if let Some(style) = &m.style {
+            ops.extend(borders(merged(m), style, palette, hairline));
         }
     }
 
@@ -267,6 +311,10 @@ pub fn cells(
     // The text — read over the wider columns, and drawn where it reaches the view.
     for row in rows {
         for col in fetch.clone() {
+            // A merge's text is drawn whole, below.
+            if viewport.merge_at(row, col).is_some() {
+                continue;
+            }
             // With formulas shown, a formula's own text — set as text, so it reads from the left.
             let formula = look
                 .formulas
@@ -332,6 +380,7 @@ pub fn cells(
                     let needed = width(metrics, &text, &look::text_style(style)) + 2.0 * PAD_X;
                     let empty = |col: u32| {
                         fetch.contains(&col)
+                            && viewport.merge_at(row, col).is_none()
                             && viewport.text(row, col).is_none_or(str::is_empty)
                             && app
                                 .formula(sheet, Pos::new(row, col))
@@ -375,8 +424,51 @@ pub fn cells(
             ops.push(op);
         }
     }
+    // Each merge's text, across the whole merge, whether or not its top-left cell is in view.
+    for m in viewport.merges() {
+        let area = merged(m);
+        if area.intersection(&view).is_empty() {
+            continue;
+        }
+        let formula = look
+            .formulas
+            .then(|| app.formula(sheet, m.anchor).ok().flatten())
+            .flatten()
+            .and_then(|_| app.input_text(sheet, m.anchor).ok());
+        let text = formula.as_deref().unwrap_or(&m.text);
+        if text.is_empty() {
+            continue;
+        }
+        let value = match &formula {
+            Some(formula) => grind_sheet::CellValue::Text(formula.clone()),
+            None => m.value.clone(),
+        };
+        let style = m.style.as_ref();
+        let ink = color::document_ink(
+            style
+                .and_then(|style| style.color.as_deref())
+                .and_then(color::parse),
+            merge_fill(m),
+            palette.page,
+            palette.ink,
+            palette.dark,
+        );
+        if look::wraps(style) && !numfmt::is_number(&value) {
+            ops.extend(wrapped_text(text, &value, style, area, ink, metrics));
+            continue;
+        }
+        ops.push(cell_text(one_line(text), &value, style, area, ink, metrics));
+    }
     ops.extend(name_outlines(grid, &view, viewport.names(), palette));
-    ops.extend(selection_outline(grid, &view, selection, palette.accent));
+    // A single cell that is a merge is outlined round the whole of it.
+    let outlined = match viewport.merge_at(selection.active.row, selection.active.col) {
+        Some(m) if selection.is_single() => Selection {
+            anchor: m.anchor,
+            active: m.end,
+        },
+        _ => selection,
+    };
+    ops.extend(selection_outline(grid, &view, outlined, palette.accent));
     ops
 }
 
@@ -878,6 +970,46 @@ mod tests {
         assert!(
             texts.iter().any(|(t, ..)| *t == "2500"),
             "a formula draws its value"
+        );
+    }
+
+    /// A merge is one cell: its text centred across all of it, nothing drawn from the cells it
+    /// covers, and its ground laid over the grid lines inside it.
+    #[test]
+    fn a_merge_is_one_cell_across_its_columns() {
+        let app = App::new();
+        app.enter(0, Pos::new(4, 0), "Title", RecalcMode::No)
+            .unwrap();
+        app.enter(0, Pos::new(4, 1), "under", RecalcMode::No)
+            .unwrap();
+        app.set_style(
+            0,
+            Pos::new(4, 0),
+            Pos::new(4, 0),
+            Some(CellStyle {
+                align: Some("center".into()),
+                ..CellStyle::default()
+            }),
+        )
+        .unwrap();
+        app.merge(0, Pos::new(4, 0), Pos::new(4, 2)).unwrap();
+        let ops = drawn(&app);
+        let texts = texts(&ops);
+        assert!(!texts.iter().any(|(t, ..)| *t == "under"), "{texts:?}");
+        let (_, x, _) = *texts.iter().find(|(t, ..)| *t == "Title").unwrap();
+        assert_eq!(
+            x,
+            (3.0 * geom::COL_W - 5.0) / 2.0,
+            "centred on three columns"
+        );
+        let y = 4.0 * geom::ROW_H;
+        assert!(
+            ops.iter().any(|op| matches!(op, Op::Fill { rect, color }
+                if *color == Palette::LIGHT.page
+                    && rect.x == 0.0
+                    && rect.y == y
+                    && rect.w == 3.0 * geom::COL_W - HAIR)),
+            "the inside of the merge is painted over its grid lines"
         );
     }
 

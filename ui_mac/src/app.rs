@@ -254,6 +254,7 @@ impl Delegate {
             | Command::FormulaToValue
             | Command::Evaluate
             | Command::FillAcross
+            | Command::Merge(_)
             | Command::Calculations
             | Command::DocumentLocale
             | Command::ExportCsv

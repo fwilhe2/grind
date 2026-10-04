@@ -2131,6 +2131,12 @@ fn actions() -> Vec<Verb> {
         verb("clear", &[], "Clear Contents", "Selection", |ui| {
             ui.grid.clear()
         }),
+        verb("merge", &[], "Merge Cells", "Selection", |ui| {
+            ui.grid.merge(true)
+        }),
+        verb("unmerge", &[], "Unmerge Cells", "Selection", |ui| {
+            ui.grid.merge(false)
+        }),
         verb(
             "select-all",
             &[],

@@ -40,7 +40,9 @@ pub fn apply(
             let occupied = nav::occupied(app, sheet);
             let moved = nav::moved(selection, motion, extend, extent, &occupied);
             // A hidden track is drawn as gone, so a cursor may not stop on one.
-            nav::onto_visible(moved, motion, &grid.rows, &grid.cols)
+            let moved = nav::onto_visible(moved, motion, &grid.rows, &grid.cols);
+            // A merge is one cell: a step leaves it from its far edge.
+            nav::through_merges(selection, moved, motion, &nav::merges(app, sheet))
         }
         GridAction::Collapse => Selection::at(selection.active),
         // Emptying cells is an edit, and M4's; until then the key does nothing to the selection.

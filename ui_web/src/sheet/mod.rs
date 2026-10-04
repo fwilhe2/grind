@@ -409,16 +409,38 @@ impl Ui {
             line.append_child(&header)?;
 
             for &col in &shown {
-                let pos = Pos::new(row, col);
+                // A merge is one `<td>`, spanning what of it is on screen, written where its
+                // first row and column on screen meet; the cells it covers are not written.
+                let merge = viewport.merge_at(row, col);
+                if let Some(m) = merge {
+                    let top = m.anchor.row.max(rows.start);
+                    let left = shown
+                        .iter()
+                        .copied()
+                        .find(|c| (m.anchor.col..=m.end.col).contains(c));
+                    if row != top || Some(col) != left {
+                        continue;
+                    }
+                }
+                let pos = merge.map_or(Pos::new(row, col), |m| m.anchor);
                 let cell = self.dom.document.create_element("td")?;
+                if let Some(m) = merge {
+                    let span = shown
+                        .iter()
+                        .filter(|c| (m.anchor.col..=m.end.col).contains(*c))
+                        .count();
+                    let down = (m.anchor.row.max(rows.start)..=m.end.row.min(rows.end - 1)).count();
+                    cell.set_attribute("colspan", &span.to_string())?;
+                    cell.set_attribute("rowspan", &down.to_string())?;
+                }
                 let active = pos == selection.active;
                 cell.set_class_name(match (active, selection.contains(pos)) {
                     (true, _) => "cell active",
                     (_, true) => "cell selected",
                     _ => "cell",
                 });
-                cell.set_attribute("data-row", &row.to_string())?;
-                cell.set_attribute("data-col", &col.to_string())?;
+                cell.set_attribute("data-row", &pos.row.to_string())?;
+                cell.set_attribute("data-col", &pos.col.to_string())?;
                 // While editing, the active cell shows what is being typed. The
                 // text still comes from the one `<input>` that holds it — this is a
                 // second *view*, never a second copy.
@@ -430,10 +452,16 @@ impl Ui {
                         .then(|| self.app.formula(self.sheet.get(), pos).ok().flatten())
                         .flatten()
                         .and_then(|_| self.app.input_text(self.sheet.get(), pos).ok())
-                        .unwrap_or_else(|| viewport.text(row, col).unwrap_or_default().to_string()),
+                        .unwrap_or_else(|| match merge {
+                            Some(m) => m.text.clone(),
+                            None => viewport.text(row, col).unwrap_or_default().to_string(),
+                        }),
                 };
                 cell.set_text_content(Some(&text));
-                let numeric = matches!(viewport.get(row, col), Some(CellValue::Number(_)));
+                let numeric = match merge {
+                    Some(m) => matches!(m.value, CellValue::Number(_)),
+                    None => matches!(viewport.get(row, col), Some(CellValue::Number(_))),
+                };
                 if numeric && !(active && editing) {
                     numbers.push(cell.clone());
                 }
@@ -450,7 +478,11 @@ impl Ui {
                         }
                     }
                     None => {
-                        let css = css_of(viewport.style(row, col), numeric, dark);
+                        let style = match merge {
+                            Some(m) => m.style.as_ref(),
+                            None => viewport.style(row, col),
+                        };
+                        let css = css_of(style, numeric, dark);
                         if !css.is_empty() {
                             cell.set_attribute("style", &css)?;
                         }
@@ -801,6 +833,8 @@ impl Ui {
             "edit.clear" => self.clear(),
             "edit.fill-down" => self.fill(true),
             "edit.fill-right" => self.fill(false),
+            "edit.merge" => self.merge(true),
+            "edit.unmerge" => self.merge(false),
             "edit.select-all" => self.select_all(),
             "sheet.hide-rows" => self.hide_rows(true),
             "sheet.unhide-rows" => self.hide_rows(false),
@@ -1463,6 +1497,37 @@ impl Ui {
             }
         }
         self.set_message(format!("Filled {cells} cell(s)"));
+    }
+
+    /// Merge the selection into one cell, or take every merge in it away — `grind sheet merge`'s
+    /// twin, one undo step either way.
+    fn merge(&self, merge: bool) {
+        let sheet = self.sheet.get();
+        // A whole row or column is cut to the part in use, as every verb over one is.
+        let selection = self.selection.get();
+        let used = self.app.used_extent(sheet).unwrap_or((0, 0));
+        let (start, end) = grind_sheet::nav::target(
+            grind_sheet::nav::Selection {
+                anchor: selection.anchor,
+                active: selection.active,
+            },
+            used,
+        );
+        let said = match merge {
+            true => match self.app.merge(sheet, start, end) {
+                Ok(_) => {
+                    self.set_selection(Selection::at(start));
+                    "Merged — what the other cells held is kept, out of sight".to_owned()
+                }
+                Err(error) => error.to_string(),
+            },
+            false => match self.app.unmerge(sheet, start, end) {
+                Ok(0) => "Nothing here is merged".to_owned(),
+                Ok(n) => format!("Unmerged {n} range(s)"),
+                Err(error) => error.to_string(),
+            },
+        };
+        self.set_message(said);
     }
 
     /// Zoom by a factor, within the range where text is still text and a grid still a grid.
@@ -2184,6 +2249,12 @@ impl Ui {
             &steps(MAX_ROWS, &hidden_rows),
             &steps(MAX_COLS, &hidden_cols),
         );
+        // A merge is one cell: a step leaves it from its far edge.
+        let before = nav::Selection {
+            anchor: selection.anchor,
+            active: selection.active,
+        };
+        let moved = nav::through_merges(before, moved, motion, &nav::merges(&self.app, sheet));
         self.set_selection(Selection {
             anchor: moved.anchor,
             active: moved.active,
@@ -2191,6 +2262,17 @@ impl Ui {
     }
 
     fn set_selection(&self, selection: Selection) {
+        // A single cell inside a merge is the merge — its top-left cell — however it was
+        // reached: a click, a go-to, a search.
+        let selection = match self
+            .app
+            .merge_at(self.sheet.get(), selection.active)
+            .ok()
+            .flatten()
+        {
+            Some((anchor, _)) if selection.anchor == selection.active => Selection::at(anchor),
+            _ => selection,
+        };
         self.selection.set(selection);
         self.scroll.set(layout::follow(
             self.scroll.get(),

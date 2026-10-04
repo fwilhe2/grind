@@ -284,6 +284,8 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | **Honours** hidden tracks | ● | ● | ● | ● | ● | ● |
 | Create or clear a filter | ● | ● | ● ᵗᵘ | ● | ● | ● |
 | **Honours** a filter | ● | ● | ● | ● | ● | ● |
+| Merge / unmerge cells | ● | ● ᵐᵍ | ● ᵐᵍ | ● ᵐᵍ | ● ᵐᵍ | ● ᵐᵍ |
+| **Draws** a merge as one cell | ● ᵐᵈ | ● | ● | ● | ● | ● |
 | Define, redefine or delete a name | ● | ● | ● | ● ᵖᵃ | ● ʷⁿ | ● ³ |
 | Rename a name, carrying every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ● ʷⁿ | ● ³ |
 | Inline a name into every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ● ʷⁿ | ● ³ |
@@ -318,6 +320,8 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 ᵗˢ While `:format …` is typed the status bar appends `→ <what the active cell would show>` (`App::shown_as`, nothing written); the browser's palette rows and Win32's chooser show the same beside each row — 2026-10-03.
 ᵗʷ `grind-tui` with no file and neither `--sheet` nor `--text` opens `welcome.rs` — s, t, o, the arrows and Enter, with a path prompt for Open — and `:welcome` goes back from either pane (refused over unsaved work; `:welcome!` discards) — 2026-10-03.
 ʷᶠ Ctrl+K ▸ *Fit column width to text* — widest text in cells × an estimated 7.4px plus padding (`layout::fit_px`), estimated rather than measured because the grid's size is declared (`CELL`) — 2026-10-03.
+ᵐᵍ Added 2026-10-04 with merges themselves (`App::merge`/`unmerge`, `grind sheet merge [--unmerge]`): the palette and the cell menu's *Merge Cells* / *Unmerge Cells* in the GNOME window, `:merge`/`:unmerge` in the terminal, Ctrl+K's *Merge cells* / *Unmerge cells* in the browser, Sheet ▸ Merge Cells / Unmerge Cells on Windows, Edit ▸ Merge Cells / Unmerge Cells on the Mac. Every one cuts a whole row or column to the part in use first (`nav::target`). One undo step; what the covered cells held stays, out of sight. An arrow key steps over a merge and a click inside one lands on its top-left cell (`nav::through_merges`, `nav::onto_merge`) in all five. A selection *extended* across a merge is not grown to take in the whole of it — a named gap, `doc/not-doing.md` §3.
+ᵐᵈ `grind sheet merge` with no range lists them; `grind sheet view` prints the grid, and a merge's covered cells show nothing there unless they hold a value.
 ᵃ The **widths** are honoured, in whole terminal cells (`ui_tui/src/sheet/geom.rs`); a row is
 one line of a terminal, so a **height** is stored and not drawn and `:height` says so on the
 status line. Both are written back untouched either way.

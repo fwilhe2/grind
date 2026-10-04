@@ -713,6 +713,14 @@ default here as everywhere. A dialog rather than a docked panel for `Calculation
 list is consulted, acted on and closed, and `lint.rs` says so. **Nothing about the rules is in
 this shell** — a diagnostic arrives with its own address, and jumping to one is `a1`'s job.
 
+**Merged cells** (2026-10-04) — drawn as one cell: the top-left cell's fill, borders and text
+across the whole merge, no grid line through it (`geom::segments` cuts each line round it), and a
+long label in a neighbour stops at one rather than running under it. The active cell's outline,
+the in-cell editor and a click all take the merge whole; an arrow key steps over it
+(`nav::through_merges`). *Merge Cells* and *Unmerge Cells* are in the palette and the cell menu.
+A wrapped merge does not grow its rows (`measure_rows` skips it), which is LibreOffice's own
+behaviour.
+
 **Find and replace** — Ctrl+F, or Ctrl+H with the replace row already open (`find.rs`). A
 `gtk::SearchBar` under the formula bar, the word processor's shape: it searches every sheet as
 it is typed, "2 of 7", Enter and Shift+Enter walking the hits in reading order and wrapping,
@@ -749,8 +757,7 @@ paste`) · rich clipboard flavours, so a copy carries values and formulas as tex
 nothing else · freeze panes (the same-widget-headers
 design accommodates them) · window-state persistence (needs a GSettings schema —
 post-packaging) · autosave (the Mac's alone, by platform convention) · a manage-names dialog (the capability exists; `sheet name`
-reaches it) · merged-cell rendering (the model does not carry spans; cells render
-unmerged) · full grid accessibility · typing during a background recalc · locale argument
+reaches it) · full grid accessibility · typing during a background recalc · locale argument
 separators · **the document's default cell font size**, which the reader does not keep (the
 `ponytail:` on `Styles` in `sheet/src/odf/read.rs`, and the cost of lifting it): a cell's
 `fo:font-size` is drawn as a multiple of ODF's 10pt default rather than as an absolute, so
