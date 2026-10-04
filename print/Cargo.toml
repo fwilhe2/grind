@@ -26,3 +26,11 @@ grind-text = { path = "../text" }
 skrifa = "=0.42.1"
 harfrust = "=0.8.4"
 fontdb = { version = "0.24", default-features = false, features = ["std", "fs"], optional = true }
+# The PDF writer (doc/pdf-export.md §2): glyphs our own layout placed, subset and embedded, with
+# `ToUnicode`, tagging and PDF/A. `simple-text` stays off — harfrust shapes, so there is one
+# shaper in the binary — and `raster-images` is what embeds a PNG or a JPEG.
+krilla = { version = "=0.8.2", default-features = false, features = ["raster-images"] }
+
+[dev-dependencies]
+# Reading a PDF back to check what was written: its pages and their sizes.
+hayro-syntax = "0.8"

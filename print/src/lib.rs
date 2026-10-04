@@ -11,4 +11,5 @@ pub mod faces;
 pub mod fonts;
 pub mod metrics;
 pub mod ops;
+pub mod pdf;
 pub mod text;
