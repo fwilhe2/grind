@@ -99,6 +99,12 @@ pub struct Builder {
     /// `content.xml` (`Pictures/foo.jpg`) that a `draw:image`'s `xlink:href` may point at, and
     /// resolving one means going back to the archive it came from.
     package: Option<Vec<u8>>,
+    /// Every `style:page-layout` read so far, by name. In `office:automatic-styles` of
+    /// `styles.xml` in a package and of the one document in the flat form.
+    page_layouts: HashMap<String, grind_core::page::PageGeometry>,
+    /// Every `style:master-page` read so far: its name and the page layout it names, in
+    /// document order, so "the first one" means what the file said first.
+    master_pages: Vec<(String, String)>,
 }
 
 /// One `table:table` being read: its name, and the row number the next row in it takes.
@@ -165,7 +171,21 @@ impl Builder {
             image: None,
             frame_depth: 0,
             package: None,
+            page_layouts: HashMap::new(),
+            master_pages: Vec::new(),
         }
+    }
+
+    /// Settle [`Document::page`] once every part has been read: the master page called
+    /// `Standard` (what Writer applies when nothing says otherwise), or the first one there is,
+    /// and the page layout it names. A master page naming a layout nobody declared is no page.
+    pub fn settle_page(&mut self) {
+        let master = self
+            .master_pages
+            .iter()
+            .find(|(name, _)| name == "Standard")
+            .or_else(|| self.master_pages.first());
+        self.doc.page = master.and_then(|(_, layout)| self.page_layouts.get(layout).copied());
     }
 
     /// Record the package this document is being read from, so a `draw:image`'s `xlink:href`
@@ -406,6 +426,7 @@ impl Context<Builder> for Root {
             (Ns::Office, "automatic-styles") => Some(Box::new(Styles { automatic: true })),
             (Ns::Office, "styles") => Some(Box::new(Styles { automatic: false })),
             (Ns::Office, "font-face-decls") => Some(Box::new(FontFaces)),
+            (Ns::Office, "master-styles") => Some(Box::new(MasterStyles)),
             _ => None,
         }
     }
@@ -438,6 +459,42 @@ impl Context<Builder> for FontFaces {
     }
 }
 
+/// `office:master-styles` — only each `style:master-page`'s name and the page layout it names.
+/// Its headers and footers are content this build does not model yet (`doc/pdf-export.md` P8).
+struct MasterStyles;
+
+impl Context<Builder> for MasterStyles {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Style, "master-page")
+            && let (Some(master), Some(layout)) = (
+                attrs.get(Ns::Style, "name"),
+                attrs.get(Ns::Style, "page-layout-name"),
+            )
+            && b.master_pages.len() < MAX_STYLES
+        {
+            b.master_pages.push((master.to_owned(), layout.to_owned()));
+        }
+        None
+    }
+}
+
+/// `style:page-layout` (rng:12213): its `style:page-layout-properties` (rng:12248) are the
+/// page's size and margins, read by [`grind_core::page::PageGeometry::from_properties`].
+struct PageLayout {
+    name: String,
+}
+
+impl Context<Builder> for PageLayout {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Style, "page-layout-properties") && b.page_layouts.len() < MAX_STYLES {
+            let page =
+                grind_core::page::PageGeometry::from_properties(|local| attrs.get(Ns::Fo, local));
+            b.page_layouts.insert(self.name.clone(), page);
+        }
+        None
+    }
+}
+
 /// `office:automatic-styles` or `office:styles` — the `style:style` declarations.
 ///
 /// Only family `text` is *collected*. A paragraph or table style is a `None` here and therefore
@@ -454,6 +511,10 @@ struct Styles {
 
 impl Context<Builder> for Styles {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Style, "page-layout") {
+            let name = attrs.get(Ns::Style, "name")?.to_owned();
+            return Some(Box::new(PageLayout { name }));
+        }
         if !name.is(Ns::Style, "style") {
             return None;
         }

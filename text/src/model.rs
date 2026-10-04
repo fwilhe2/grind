@@ -554,6 +554,14 @@ pub struct Document {
     /// `doc/text-core.md`'s known loss, and `undeclared-style` reporting every style of a
     /// round-tripped document is the loss made visible rather than a false positive.
     pub styles: std::collections::BTreeSet<String>,
+    /// The page the document says it is set on: the `style:page-layout` of its `Standard`
+    /// master page, or of its first one when none is called that (`doc/pdf-export.md` P2).
+    ///
+    /// **Read, never written.** The envelope already carries `office:master-styles` and the
+    /// page layouts out byte for byte (R6), so there is nothing for a writer to do with it, and
+    /// a document this build wrote or generated has none. `None` means the document stated no
+    /// page, and whoever prints it uses A4 ([`grind_core::page::PageGeometry::default`]).
+    pub page: Option<grind_core::page::PageGeometry>,
     /// The next id to hand out. Monotonic, never reused, so a stale [`BlockId`] is always
     /// stale rather than silently pointing at something new.
     next_id: u64,
@@ -612,6 +620,7 @@ impl Document {
             blocks: Vec::new(),
             bookmarks: BTreeMap::new(),
             styles: std::collections::BTreeSet::new(),
+            page: None,
             next_id: 0,
             source: None,
             projection_source: None,
