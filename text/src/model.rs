@@ -584,6 +584,11 @@ pub struct Document {
     /// and the automatic ones of the body's own part. Read and never written; a block's
     /// `style` names one, and [`crate::paragraph::resolve`] walks its chain.
     pub paragraph_styles: std::collections::HashMap<String, crate::paragraph::ParagraphStyle>,
+    /// What kind of face each declared font family is — `style:font-family-generic` on its
+    /// `style:font-face` (rng:10418: `roman`, `swiss`, `modern`, `decorative`, `script`,
+    /// `system`) — for a printer to fall back on when the family is not installed. Read and
+    /// never written.
+    pub font_generics: std::collections::HashMap<String, String>,
     /// The next id to hand out. Monotonic, never reused, so a stale [`BlockId`] is always
     /// stale rather than silently pointing at something new.
     next_id: u64,
@@ -645,6 +650,7 @@ impl Document {
             page: None,
             default_paragraph: Box::default(),
             paragraph_styles: std::collections::HashMap::new(),
+            font_generics: std::collections::HashMap::new(),
             next_id: 0,
             source: None,
             projection_source: None,

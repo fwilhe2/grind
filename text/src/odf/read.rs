@@ -466,8 +466,13 @@ impl Context<Builder> for FontFaces {
                 .or_else(|| attrs.get(Ns::Fo, "font-family"))
                 && b.fonts.len() < MAX_STYLES
             {
-                b.fonts
-                    .insert(declared.to_owned(), style::unquote_family(family));
+                let family = style::unquote_family(family);
+                if let Some(generic) = attrs.get(Ns::Style, "font-family-generic") {
+                    b.doc
+                        .font_generics
+                        .insert(family.clone(), generic.to_owned());
+                }
+                b.fonts.insert(declared.to_owned(), family);
             }
         }
         None

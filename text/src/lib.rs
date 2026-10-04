@@ -772,6 +772,11 @@ impl App {
         }
     }
 
+    /// What kind of face each declared font family is ([`Document::font_generics`]).
+    pub fn font_generics(&self) -> std::collections::HashMap<String, String> {
+        self.state.read().unwrap().doc.font_generics.clone()
+    }
+
     /// The block at `index`'s paragraph style, resolved down its chain to the default style —
     /// what a page lays it out by (`paragraph::resolve`, `doc/pdf-export.md` P5). `None` for no
     /// such block.

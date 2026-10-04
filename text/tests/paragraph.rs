@@ -143,3 +143,22 @@ fn writers_own_title_is_centred_by_its_style() {
         "from Heading, its parent"
     );
 }
+
+/// `style:font-family-generic` on a font declaration says what kind of face a family is — what a
+/// printer falls back on when the family itself is not installed.
+#[test]
+fn a_fonts_generic_family_is_read_from_its_declaration() {
+    let app = app(
+        r#"<office:font-face-decls>
+             <style:font-face style:name="Adwaita Sans" svg:font-family="'Adwaita Sans'" style:font-family-generic="swiss"/>
+             <style:font-face style:name="Odd" svg:font-family="Odd"/>
+           </office:font-face-decls>"#,
+        "<text:p>a</text:p>",
+    );
+    let generics = app.font_generics();
+    assert_eq!(
+        generics.get("Adwaita Sans").map(String::as_str),
+        Some("swiss")
+    );
+    assert_eq!(generics.get("Odd"), None);
+}
