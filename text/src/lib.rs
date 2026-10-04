@@ -409,7 +409,7 @@ pub trait Faces {
     /// added to its neighbours' rather than collapsed, and applied above the first block too
     /// ([`flow::Flow::push_spaced`]). `None`, the default, is a screen's own spacing — what every
     /// shell wants; a printed page answers from the document's styles (`doc/pdf-export.md` P5).
-    fn spacing(&self, _index: usize) -> Option<(f64, f64)> {
+    fn spacing(&self, _index: usize) -> Option<flow::Space> {
         None
     }
 }

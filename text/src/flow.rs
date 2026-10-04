@@ -88,6 +88,16 @@ impl Spacing {
     }
 }
 
+/// The room a document's own paragraph style gives a block ([`Faces::spacing`]): the space
+/// above and below it, added to its neighbours' (`doc/odt-format.md` §5c, fact 5), and how far
+/// its text starts in from the column's left edge.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Space {
+    pub above: f64,
+    pub below: f64,
+    pub left: f64,
+}
+
 /// One block's box in the flow.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Slot {
@@ -190,17 +200,27 @@ impl Flow {
     /// **added** to the space under the block before, never collapsed against it, and applied
     /// above the very first block too, which is what Writer does (`doc/odt-format.md` §5c, facts
     /// 5 and 6). What a printed page wants; a screen keeps [`Flow::push`]'s collapsing.
-    pub fn push_spaced(&mut self, index: usize, height: f64, indent: f64, above: f64, below: f64) {
-        let top = self.height + above;
+    ///
+    /// `width` is the measure the block was laid out at, which its face decided — a style's side
+    /// margins make it narrower than the column less its indent.
+    pub fn push_spaced(
+        &mut self,
+        index: usize,
+        height: f64,
+        indent: f64,
+        space: Space,
+        width: f64,
+    ) {
+        let top = self.height + space.above;
         self.slots.push(Slot {
             index,
             top,
             height,
-            indent,
-            width: (self.measure - indent).max(1.0),
+            indent: indent + space.left,
+            width: width.max(1.0),
         });
-        self.height = top + height + below;
-        self.pending = below;
+        self.height = top + height + space.below;
+        self.pending = space.below;
     }
 
     /// Put a block at an exact box rather than under the last one — what a table needs, since
@@ -467,11 +487,11 @@ pub fn lay_out(
             index = table.blocks.end.max(index + 1);
             continue;
         }
-        let (height, _) = height_of(index, view);
+        let (height, width) = height_of(index, view);
         let style = view.style.as_deref();
         let indent = spacing.indent_of(&view.kind);
         match faces.spacing(index) {
-            Some((above, below)) => flow.push_spaced(index, height, indent, above, below),
+            Some(space) => flow.push_spaced(index, height, indent, space, width),
             None => flow.push(
                 index,
                 height,
@@ -767,8 +787,12 @@ mod tests {
         fn of(&self, _: usize, _: &BlockKind, _: Option<&str>) -> (f32, &dyn Metrics) {
             (100.0, &Fixed)
         }
-        fn spacing(&self, index: usize) -> Option<(f64, f64)> {
-            (index != 1).then_some((2.0, 3.0))
+        fn spacing(&self, index: usize) -> Option<Space> {
+            (index != 1).then_some(Space {
+                above: 2.0,
+                below: 3.0,
+                left: 0.0,
+            })
         }
     }
 

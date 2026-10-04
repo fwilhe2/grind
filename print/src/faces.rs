@@ -154,6 +154,14 @@ pub fn role_faces(setter: &Typesetter) -> Vec<RoleFace<'_>> {
         .collect()
 }
 
+/// The room a declared paragraph style gives its block on paper, in points: the flow's
+/// [`grind_text::flow::Space`], and the right margin, which only narrows the measure.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Room {
+    pub space: grind_text::flow::Space,
+    pub right: f64,
+}
+
 /// The page's [`grind_text::Faces`]. The cell map is built before this is, because
 /// `Faces::of` is called while `App` holds its read lock ([`grind_text::flow::across`]).
 pub struct Column<'a> {
@@ -163,7 +171,7 @@ pub struct Column<'a> {
     pub blocks: &'a HashMap<usize, RoleFace<'a>>,
     /// The space above and below each block whose declared paragraph style decides it, in
     /// points ([`grind_text::Faces::spacing`]); every other block is spaced as on screen.
-    pub spacing: &'a HashMap<usize, (f64, f64)>,
+    pub spacing: &'a HashMap<usize, Room>,
     /// The text area's width, in points.
     pub width: f64,
     pub across: &'a HashMap<usize, Across>,
@@ -183,15 +191,16 @@ impl Column<'_> {
 
 impl grind_text::Faces for Column<'_> {
     fn of(&self, index: usize, kind: &BlockKind, style: Option<&str>) -> (f32, &dyn Metrics) {
-        let width = match self.across.get(&index) {
-            Some(cell) => cell.width,
-            None => SPACING.measure(kind, self.width),
+        let width = match (self.across.get(&index), self.spacing.get(&index)) {
+            (Some(cell), _) => cell.width,
+            (None, Some(room)) => SPACING.measure(kind, self.width) - room.space.left - room.right,
+            (None, None) => SPACING.measure(kind, self.width),
         };
         ((width as f32).max(1.0), self.face(index, kind, style))
     }
 
-    fn spacing(&self, index: usize) -> Option<(f64, f64)> {
-        self.spacing.get(&index).copied()
+    fn spacing(&self, index: usize) -> Option<grind_text::flow::Space> {
+        self.spacing.get(&index).map(|room| room.space)
     }
 }
 

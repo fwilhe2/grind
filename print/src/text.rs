@@ -191,7 +191,7 @@ fn block_faces<'a>(
 fn block_spacing(
     app: &App,
     viewport: &grind_text::Viewport,
-) -> std::collections::HashMap<usize, (f64, f64)> {
+) -> std::collections::HashMap<usize, crate::faces::Room> {
     let points = |value: &Option<String>| value.as_deref().and_then(length_mm).map_or(0.0, pt);
     viewport
         .iter()
@@ -200,10 +200,15 @@ fn block_spacing(
             // A block in a table is spaced by its cell, which the flow places itself.
             (resolved.declared && view.cell.is_none()).then(|| {
                 let props = &resolved.props;
-                (
-                    view.index,
-                    (points(&props.margin_top), points(&props.margin_bottom)),
-                )
+                let room = crate::faces::Room {
+                    space: grind_text::flow::Space {
+                        above: points(&props.margin_top),
+                        below: points(&props.margin_bottom),
+                        left: points(&props.margin_left),
+                    },
+                    right: points(&props.margin_right),
+                };
+                (view.index, room)
             })
         })
         .collect()
@@ -936,6 +941,46 @@ mod tests {
             middle.0 > 250.0 && (middle.0 as f64) < centre,
             "{}",
             middle.0
+        );
+    }
+
+    /// A declared style's side margins narrow the block: it starts its left margin in from the
+    /// text area, and wraps that much and its right margin sooner.
+    #[test]
+    fn a_declared_styles_side_margins_narrow_the_block() {
+        let words = "word ".repeat(60);
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:styles><style:style style:name="Quote" style:family="paragraph"><style:paragraph-properties fo:margin-left="2cm" fo:margin-right="3cm"/></style:style></office:styles>
+            <office:body><office:text><text:p text:style-name="Quote">{words}</text:p></office:text></office:body></office:document>"#
+        );
+        let app = App::new();
+        app.open_bytes("q.fodt", bytes.as_bytes()).unwrap();
+        let page = &typeset(&app, &setter(), &Options::default()).pages[0];
+        let cm = 72.0 / 2.54;
+        let mut right = 0.0_f32;
+        for op in &page.ops {
+            if let Op::Text {
+                x, glyphs, text, ..
+            } = op
+            {
+                assert!(
+                    (x - (56.6929 + 2.0 * cm) as f32).abs() < 0.01 || *x > 100.0,
+                    "{x}"
+                );
+                if !text.ends_with(' ') {
+                    right = right.max(x + glyphs.iter().map(|g| g.x_advance).sum::<f32>());
+                }
+            }
+        }
+        let first = texts(page)[0].0;
+        assert!(
+            (first - (56.6929 + 2.0 * cm) as f32).abs() < 0.01,
+            "{first}"
+        );
+        assert!(
+            right <= (595.2756 - 56.6929 - 3.0 * cm) as f32 + 0.01,
+            "{right}"
         );
     }
 
