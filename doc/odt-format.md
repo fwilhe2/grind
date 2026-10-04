@@ -637,6 +637,17 @@ oracle turned out to be unable to answer the font questions (fact 4).
    held 52. Their paragraphs take their own paragraph styles (a centred footer is centred), and
    `text:page-number` is the page it is printed on and `text:page-count` the document's pages
    (`pg 1 of 3`, `pg 2 of 3`). The text written inside either field is only its cached value.
+10. **Line height** (26.8.1.1, Liberation Serif 12 pt, natural line 13.8 pt). A proportional
+   `fo:line-height="200%"` makes every line 27.6 pt — the natural line times the share — with
+   **all** the extra *below* the text: the first line's glyphs sit exactly where a single-spaced
+   line's would, and the paragraph's last line keeps its full height. A fixed length makes every
+   line exactly that tall (0.6 cm, 1 cm and 2 cm give pitches of 17.01, 28.35 and 56.69 pt);
+   where its baseline sits inside it is **only approximately** known: the extra over the natural
+   height splits above and below the baseline close to the face's ascent : descent (1825 : 443),
+   which predicts the baseline 0.2–0.4 pt lower than measured. Measured: 13.09, 22.14 and
+   44.84 pt below the line's top for the three lengths.
+11. **A first-line indent** (`fo:text-indent="2cm"`) starts only the paragraph's first line
+   56.69 pt in; the line breaks shorter by as much and the rest start at the margin (26.8.1.1).
 7. **The pinned image has no Liberation fonts.** The same document set in Liberation Serif
    comes out in **DejaVu Serif** from the pin (`pdffonts`), so line breaks and page breaks
    measured there are DejaVu's. Loop G cannot use the pin as it stands; it needs the bundled
