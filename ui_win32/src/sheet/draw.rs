@@ -603,6 +603,38 @@ mod windows_impl {
             }
         }
 
+        // Each checkbox: a box in the ink on the paper, filled with the accent and ticked when
+        // its linked cell says so.
+        {
+            let _font = Selected::font(dc, &bold);
+            for &(pos, ticked) in frame.viewport.checkboxes() {
+                let b = g.checkbox(pos.row, pos.col);
+                if b.w < 4.0 {
+                    continue;
+                }
+                let (left, top, right, bottom) = b.edges();
+                gdi::fill(dc, left, top, right, bottom, theme.text);
+                let inner = match ticked {
+                    true => theme.accent,
+                    false => theme.background,
+                };
+                gdi::fill(dc, left + 1, top + 1, right - 1, bottom - 1, inner);
+                if ticked {
+                    draw_text(
+                        dc,
+                        "\u{2713}",
+                        left,
+                        top,
+                        right,
+                        bottom,
+                        Align::Center,
+                        theme.background,
+                        0.0,
+                    );
+                }
+            }
+        }
+
         // The cells' own borders, after every cell so that a neighbour's fill cannot cover half of
         // a line centred on the edge they share. `look::border_strokes` is the geometry — the
         // Mac draws the same list — in points, so the cell goes in as points and the strokes come

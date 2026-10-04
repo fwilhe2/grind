@@ -459,6 +459,37 @@ pub fn cells(
         }
         ops.push(cell_text(one_line(text), &value, style, area, ink, metrics));
     }
+    // Each checkbox: a box in the ink, filled with the accent and ticked when its linked cell
+    // says so.
+    for &(pos, ticked) in viewport.checkboxes() {
+        let b = checkbox_box(grid.cell(pos.row, pos.col));
+        if b.w < 4.0 || b.intersection(&view).is_empty() {
+            continue;
+        }
+        ops.push(Op::Fill {
+            rect: b,
+            color: palette.ink,
+        });
+        let inner = Rect::new(b.x + 1.0, b.y + 1.0, b.w - 2.0, b.h - 2.0);
+        ops.push(Op::Fill {
+            rect: inner,
+            color: match ticked {
+                true => palette.accent,
+                false => palette.page,
+            },
+        });
+        if ticked {
+            ops.push(Op::Path {
+                points: vec![
+                    (b.x + b.w * 0.22, b.y + b.h * 0.52),
+                    (b.x + b.w * 0.42, b.y + b.h * 0.72),
+                    (b.x + b.w * 0.78, b.y + b.h * 0.30),
+                ],
+                fill: None,
+                stroke: Some((palette.page, (b.w / 7.0).max(1.0))),
+            });
+        }
+    }
     ops.extend(name_outlines(grid, &view, viewport.names(), palette));
     // A single cell that is a merge is outlined round the whole of it.
     let outlined = match viewport.merge_at(selection.active.row, selection.active.col) {
@@ -471,6 +502,20 @@ pub fn cells(
     ops.extend(selection_outline(grid, &view, outlined, palette.accent));
     ops
 }
+
+/// The box of a checkbox drawn in `cell`: a square at its leading edge, [`CHECKBOX`] points
+/// where the cell has room and smaller where it has not, centred down it — what is drawn, and
+/// what a click has to land in to tick it (`select::checkbox_click`).
+pub fn checkbox_box(cell: Rect) -> Rect {
+    let side = CHECKBOX
+        .min(cell.h - 2.0)
+        .min(cell.w - 2.0 * PAD_X)
+        .max(0.0);
+    Rect::new(cell.x + PAD_X, cell.y + (cell.h - side) / 2.0, side, side)
+}
+
+/// A checkbox's box, in points.
+const CHECKBOX: f64 = 12.0;
 
 /// A cell's own borders, each centred on the grid line it stands on — so a cell's right border
 /// and its neighbour's left one are the same line, and either covers the hairline under it.
@@ -1011,6 +1056,36 @@ mod tests {
                     && rect.w == 3.0 * geom::COL_W - HAIR)),
             "the inside of the merge is painted over its grid lines"
         );
+    }
+
+    /// A checkbox is a box in its cell, and a ticked one is filled and checked.
+    #[test]
+    fn a_checkbox_is_drawn_ticked_by_its_linked_cell() {
+        let app = App::new();
+        app.set_checkbox(
+            0,
+            Pos::new(1, 0),
+            Some(grind_sheet::Checkbox {
+                link: Some(grind_sheet::Link {
+                    sheet: None,
+                    pos: Pos::new(1, 2),
+                }),
+                ..Default::default()
+            }),
+        )
+        .unwrap();
+        let ticks = |ops: &[Op]| {
+            ops.iter()
+                .filter(|op| matches!(op, Op::Path { .. }))
+                .count()
+        };
+        assert_eq!(ticks(&drawn(&app)), 0);
+        app.toggle_checkbox(0, Pos::new(1, 0)).unwrap();
+        let ops = drawn(&app);
+        assert_eq!(ticks(&ops), 1);
+        let b = checkbox_box(Grid::of(&app, 0).cell(1, 0));
+        assert!(ops.iter().any(|op| matches!(op, Op::Fill { rect, color }
+            if *color == Palette::LIGHT.accent && rect.x == b.x + 1.0)));
     }
 
     #[test]

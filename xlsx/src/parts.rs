@@ -33,6 +33,14 @@ pub fn count(package: &mut Package, sheet_part: &str, report: &mut Report, seen:
         }
         match rel.kind {
             RelType::Drawing => {
+                // A drawing whose every shape is a form control's DrawingML twin is not a
+                // drawing anybody made: the controls are read from VML (`controls.rs`).
+                if package
+                    .part(&rel.target)
+                    .is_some_and(|bytes| only_control_twins(&bytes))
+                {
+                    continue;
+                }
                 report.drop_one(Dropped::Drawing);
                 let charts = package
                     .rels(&rel.target, seen)
@@ -51,6 +59,18 @@ pub fn count(package: &mut Package, sheet_part: &str, report: &mut Report, seen:
             _ => {}
         }
     }
+}
+
+/// Whether every anchored shape in a DrawingML drawing is the twin of a VML form control —
+/// marked by an `a14:compatExt` naming the VML shape (`doc/xlsx-format.md` §4.11). Counted on
+/// the bytes: one anchor element per shape, one `compatExt` per twin, and a drawing with no
+/// anchors at all is still a drawing.
+fn only_control_twins(bytes: &[u8]) -> bool {
+    let count = |needle: &[u8]| bytes.windows(needle.len()).filter(|w| *w == needle).count();
+    let anchors = count(b"twoCellAnchor") + count(b"oneCellAnchor") + count(b"absoluteAnchor");
+    // Each anchor element's name appears twice, in its start tag and its end tag.
+    let anchors = anchors / 2;
+    anchors > 0 && count(b"compatExt") >= anchors
 }
 
 /// How many `<comment>`s a comments part holds. A part that will not parse holds none that

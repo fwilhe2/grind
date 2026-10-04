@@ -108,6 +108,15 @@ pub struct Table {
     pub keep: String,
     /// `table:shapes` — where the sheet's charts are.
     pub shapes: Option<Range<usize>>,
+    /// `office:forms` — the sheet's form controls, its checkboxes among them.
+    pub forms: Option<Range<usize>>,
+    /// Each `form:checkbox` element in it, by its identifier.
+    pub checkbox_elements: HashMap<String, Range<usize>>,
+    /// Where a new checkbox goes: just before the end tag of the first `form:form`.
+    pub form_end: Option<usize>,
+    /// Every checkbox as it was read — the cell it was placed in, its identifier and what it
+    /// said — so a save copies an unchanged one's own element and changes only the rest.
+    pub checkboxes: std::collections::BTreeMap<crate::model::Pos, (String, crate::model::Checkbox)>,
     /// The column declarations: every `table:table-column` and column group directly in the
     /// table, in order.
     pub columns: Vec<Range<usize>>,

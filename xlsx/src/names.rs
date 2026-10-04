@@ -40,6 +40,11 @@ pub enum Ns {
     /// theme resolves to [`Ns::Other`], its colours come back unresolved, and the report
     /// counts them rather than this table guessing (`doc/xlsx-format.md` §4.2).
     Drawing,
+    /// VML, the drawing language of Excel before DrawingML, still where a form control lives
+    /// (`doc/xlsx-format.md` §4.11): `v:shape`.
+    Vml,
+    /// VML's Excel vocabulary: `x:ClientData` and what a control says in it.
+    VmlExcel,
     /// No namespace at all. Most SpreadsheetML *attributes* are unprefixed (`<sheet name=…
     /// sheetId=…>`), so this is a real answer rather than an error case.
     None,
@@ -100,6 +105,9 @@ pub const REL_S: &str = "http://purl.oclc.org/ooxml/officeDocument/relationships
 pub const PACKAGE_RELS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
 pub const CONTENT_TYPES: &str = "http://schemas.openxmlformats.org/package/2006/content-types";
 pub const MCE: &str = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+/// VML and its Excel vocabulary — one spelling in every file, since VML predates both flavours.
+pub const VML: &str = "urn:schemas-microsoft-com:vml";
+pub const VML_EXCEL: &str = "urn:schemas-microsoft-com:office:excel";
 
 impl Ns {
     pub fn from_uri(uri: &str) -> Ns {
@@ -110,6 +118,8 @@ impl Ns {
             CONTENT_TYPES => Ns::ContentTypes,
             MCE => Ns::Mce,
             DRAWING_T => Ns::Drawing,
+            VML => Ns::Vml,
+            VML_EXCEL => Ns::VmlExcel,
             "" => Ns::None,
             _ => Ns::Other,
         }
@@ -150,6 +160,9 @@ pub enum RelType {
     Chart,
     /// A worksheet's comments part (X5). Its VML anchor (`vmlDrawing`) is not a `Drawing`.
     Comments,
+    /// A worksheet's legacy VML drawing: a comment's anchor, and every form control's own
+    /// spelling (`controls.rs`).
+    VmlDrawing,
     /// A worksheet's pivot table definition (X5).
     PivotTable,
     /// A worksheet's table definition (`xl/tables/tableN.xml`) — read, because a structured
@@ -182,6 +195,7 @@ impl RelType {
             Some("drawing") => RelType::Drawing,
             Some("chart") => RelType::Chart,
             Some("comments") => RelType::Comments,
+            Some("vmlDrawing") => RelType::VmlDrawing,
             Some("pivotTable") => RelType::PivotTable,
             Some("table") => RelType::Table,
             Some("calcChain") => RelType::CalcChain,

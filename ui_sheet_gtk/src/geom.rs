@@ -427,6 +427,19 @@ fn keep_in(scroll: f64, start: f64, size: f64, page: f64, margin: f64) -> f64 {
     scroll
 }
 
+/// The box of a checkbox drawn in `cell`: a square at the cell's leading edge, `side` tall
+/// where the cell has room for that and as tall as the cell allows where it has not, centred
+/// down it. What a click has to land in to tick it, and what is drawn.
+pub fn checkbox_rect(cell: Rect, side: f64, pad: f64) -> Rect {
+    let side = side.min(cell.h - 2.0).min(cell.w - 2.0 * pad).max(0.0);
+    Rect {
+        x: cell.x + pad,
+        y: cell.y + (cell.h - side) / 2.0,
+        w: side,
+        h: side,
+    }
+}
+
 /// A line from `from` to `to`, with the `holes` taken out — what a grid line is where a merge
 /// crosses it, since the inside of a merge is one cell and has no line through it. The holes
 /// may overlap and come in any order; what is left is in order and never empty.
@@ -453,6 +466,22 @@ pub fn segments(from: f64, to: f64, holes: &[(f64, f64)]) -> Vec<(f64, f64)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_checkbox_is_a_square_at_the_cells_leading_edge() {
+        use super::{Rect, checkbox_rect};
+        let cell = Rect {
+            x: 100.0,
+            y: 20.0,
+            w: 80.0,
+            h: 30.0,
+        };
+        let b = checkbox_rect(cell, 14.0, 4.0);
+        assert_eq!((b.x, b.y, b.w, b.h), (104.0, 28.0, 14.0, 14.0));
+        // A squat row shrinks the box rather than spilling it.
+        let low = checkbox_rect(Rect { h: 10.0, ..cell }, 14.0, 4.0);
+        assert_eq!((low.w, low.h), (8.0, 8.0));
+    }
+
     #[test]
     fn a_grid_line_stops_at_a_merge_and_starts_again_after_it() {
         use super::segments;

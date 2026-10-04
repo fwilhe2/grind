@@ -42,6 +42,8 @@ pub const PX_PER_MM: f64 = 96.0 / 25.4;
 /// A filter dropdown button's (min, max) side length, in design units — `GridGeom::filter_button`
 /// clamps a cell's own height into this band, the same pair `ui_sheet_gtk/src/geom.rs` uses.
 const FILTER_BUTTON: (f64, f64) = (9.0, 18.0);
+/// A checkbox's box, in device-independent pixels — a little under a line of cell text.
+const CHECKBOX: f64 = 13.0;
 
 /// A length at 100% scaling, in the pixels a display at `dpi` actually has.
 ///
@@ -365,6 +367,24 @@ impl GridGeom {
     /// Where an autofilter's dropdown button sits inside one cell of its heading row — a
     /// square anchored to the cell's right edge, the GTK grid's `filter_button` mirrored.
     /// `None` when the cell is too small to hold a button and still show any of its text.
+    /// The box of a checkbox drawn in a cell: a square at the cell's leading edge, `CHECKBOX`
+    /// device-independent pixels where the cell has room and smaller where it has not, centred
+    /// down it. What is drawn, and what a click has to land in to tick it.
+    pub fn checkbox(&self, row: u32, col: u32) -> Rect {
+        let cell = self.cell_rect(row, col);
+        let pad = scale(3.0, self.dpi);
+        let side = scale(CHECKBOX, self.dpi)
+            .min(cell.h - 2.0)
+            .min(cell.w - 2.0 * pad)
+            .max(0.0);
+        Rect {
+            x: cell.x + pad,
+            y: cell.y + (cell.h - side) / 2.0,
+            w: side,
+            h: side,
+        }
+    }
+
     pub fn filter_button(&self, row: u32, col: u32) -> Option<Rect> {
         let cell = self.cell_rect(row, col);
         let (min, max) = (

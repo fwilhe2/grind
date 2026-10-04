@@ -21,8 +21,10 @@
 //! * external hyperlinks on the item notes, a sheet with its grid lines off, and every row
 //!   22.5 points tall by hand.
 //!
-//! The merges are carried. The conditional rules are counted and not carried: that is the
-//! next piece of work (`doc/conditional-format.md`), and the count is what says so.
+//! The merges are carried, and so are the checkboxes — Excel's form controls, spelled in the
+//! sheet's VML drawing, each linked to its tick in column E. The conditional rules are counted
+//! and not carried: that is the next piece of work (`doc/conditional-format.md`), and the count
+//! is what says so.
 
 use std::io::{Cursor, Write};
 
@@ -215,6 +217,7 @@ fn checklist() -> Vec<u8> {
   <printOptions/>
   <pageMargins bottom="0.787401575" footer="0.0" header="0.0" left="0.7" right="0.7" top="0.787401575"/>
   <pageSetup orientation="landscape"/>
+  <legacyDrawing r:id="rId3"/>
 </worksheet>"#
     );
 
@@ -222,6 +225,7 @@ fn checklist() -> Vec<u8> {
         r#"<Relationships xmlns="{PKG}">
   <Relationship Id="rId1" Type="{REL}/hyperlink" Target="https://example.invalid/letter" TargetMode="External"/>
   <Relationship Id="rId2" Type="{REL}/hyperlink" Target="https://example.invalid/vans" TargetMode="External"/>
+  <Relationship Id="rId3" Type="{REL}/vmlDrawing" Target="../drawings/vmlDrawing1.vml"/>
 </Relationships>"#
     );
 
@@ -264,7 +268,47 @@ fn checklist() -> Vec<u8> {
         ("xl/styles.xml", styles),
         ("xl/worksheets/sheet1.xml", sheet),
         ("xl/worksheets/_rels/sheet1.xml.rels", sheet_rels),
+        ("xl/drawings/vmlDrawing1.vml", vml()),
     ])
+}
+
+/// The checkboxes, as Excel's VML spells one per item (`doc/xlsx-format.md` §4.11): in column B,
+/// each linked to its row's tick in the hidden column E. Row 9's is anchored a row too high with
+/// an offset carrying it down, the way a real file placed one of its boxes, and row 5's is ticked.
+fn vml() -> String {
+    let shape = |row0: u32, dy: u32, row1: u32, dy1: u32, link: &str, checked: bool| {
+        let checked = match checked {
+            true => "<x:Checked>1</x:Checked>",
+            false => "",
+        };
+        format!(
+            r##"<v:shape type="#_x0000_t201" style='position:absolute;width:16.5pt;height:21pt' filled="f" stroked="f">
+  <v:textbox style='mso-direction-alt:auto'><div style='text-align:left'></div></v:textbox>
+  <x:ClientData ObjectType="Checkbox"><x:SizeWithCells/>
+   <x:Anchor>
+    1, 0, {row0}, {dy}, 2, 0, {row1}, {dy1}</x:Anchor>
+   <x:AutoFill>False</x:AutoFill><x:TextVAlign>Center</x:TextVAlign>
+   <x:FmlaLink>{link}</x:FmlaLink>{checked}<x:NoThreeD/>
+  </x:ClientData>
+ </v:shape>"##
+        )
+    };
+    let shapes = [
+        shape(4, 0, 4, 28, "$E5", true),
+        shape(5, 0, 5, 28, "$E6", false),
+        shape(6, 0, 6, 28, "$E7", false),
+        shape(7, 0, 7, 28, "$E8", true),
+        // A row too high, 48 pixels down: its middle is in row 9.
+        shape(7, 48, 9, 0, "$E9", false),
+        shape(11, 0, 11, 28, "$E12", false),
+    ]
+    .concat();
+    format!(
+        r#"<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
+ <o:shapelayout v:ext="edit"><o:idmap v:ext="edit" data="1"/></o:shapelayout>
+ {shapes}
+</xml>"#
+    )
 }
 
 fn p(row: u32, col: u32) -> Pos {
@@ -334,6 +378,33 @@ fn the_ticks_are_booleans_in_a_hidden_column() {
             .formula(p(12, 1))
             .is_some_and(|f| f.contains("COUNTIF"))
     );
+}
+
+/// Every item's checkbox lands in its own row of column B, linked to that row's tick — the one
+/// anchored a row too high included — and ticking one writes the tick the summary counts.
+#[test]
+fn the_checkboxes_are_linked_to_the_ticks() {
+    let (document, report) = grind_xlsx::import_bytes(&checklist()).expect("it imports");
+    let sheet = &document.sheets[0];
+    let boxes: Vec<(Pos, Pos)> = sheet
+        .checkboxes()
+        .map(|(at, c)| (at, c.link.as_ref().expect("linked").pos))
+        .collect();
+    assert_eq!(
+        boxes,
+        [4, 5, 6, 7, 8, 11].map(|row| (p(row, 1), p(row, 4))),
+        "each in its own row of B, linked to that row of E"
+    );
+    assert_eq!(report.dropped.get(&Dropped::FormControl), None);
+
+    let bytes = grind_sheet::write_bytes(&document, grind_sheet::Form::Flat).expect("writes");
+    let app = grind_sheet::App::new();
+    app.open_bytes("checklist.fods", &bytes).unwrap();
+    let view = app.get_viewport(0, 0..13, 0..5).unwrap();
+    assert_eq!(view.checkbox(4, 1), Some(true), "E5 is TRUE");
+    assert_eq!(view.checkbox(5, 1), Some(false));
+    app.toggle_checkbox(0, p(5, 1)).unwrap();
+    assert_eq!(app.get(0, p(5, 4)).unwrap(), CellValue::Bool(true));
 }
 
 /// The rules that tick a row green, and the two thresholds on the summary: counted, one per

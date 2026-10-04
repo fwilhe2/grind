@@ -644,6 +644,7 @@ fn dropped_by_name(name: &str) -> Option<Dropped> {
         "ThemeColor" => Dropped::ThemeColor,
         "FontFamily" => Dropped::FontFamily,
         "Protection" => Dropped::Protection,
+        "FormControl" => Dropped::FormControl,
         _ => return None,
     })
 }

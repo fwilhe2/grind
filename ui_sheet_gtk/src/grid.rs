@@ -696,6 +696,8 @@ mod imp {
 
     /// Space either side of a cell's text.
     const PAD: f64 = 4.0;
+    /// A checkbox's box, unzoomed — a little under a line of the default font.
+    const CHECKBOX: f64 = 14.0;
     /// The width reserved at a cell's leading edge for `doc/view-modes.md`'s role marker —
     /// §4.6's second channel, so the mode is usable with no colour discrimination at all.
     /// A distance on screen, so it zooms with everything else.
@@ -1527,6 +1529,7 @@ mod imp {
             // table look ruled rather than slightly darker.
             self.draw_borders(&frame);
             self.draw_cells(&frame);
+            self.draw_checkboxes(&frame);
             // The role marks go over the values for the same reason the hints do: both are
             // drawn in the room `draw_cells` left them.
             self.draw_roles(&frame);
@@ -2019,6 +2022,20 @@ mod imp {
                         return glib::Propagation::Stop;
                     }
                     _ => {}
+                }
+            }
+
+            // Space on a checkbox's cell ticks it, as it does in every spreadsheet that has them.
+            if keyval == gtk::gdk::Key::space
+                && !mods.ctrl
+                && !mods.alt
+                && !self.mode.get().is_editing()
+                && self.selection.get().is_single()
+            {
+                let at = self.selection.get().active;
+                if self.checkbox_box(at.row, at.col).is_some() {
+                    self.toggle_checkbox(at);
+                    return glib::Propagation::Stop;
                 }
             }
 
@@ -3342,6 +3359,17 @@ mod imp {
                 self.open_filter_menu(field, button);
                 return;
             }
+            // A click on a checkbox's box ticks it, and selects its cell.
+            if !extend
+                && let Hit::Cell { row, col } = hit
+                && self
+                    .checkbox_box(row, col)
+                    .is_some_and(|b| b.contains(x, y))
+            {
+                self.set_selection(Selection::at(Pos::new(row, col)));
+                self.toggle_checkbox(Pos::new(row, col));
+                return;
+            }
             // The fill handle beats the cell under it, for the same reason a boundary beats
             // its header: a 7px target that loses is unreachable.
             let (_, corner) = self.selection.get().rect();
@@ -4205,6 +4233,66 @@ mod imp {
             // or the headers inherit it.
             layout.set_attributes(None);
             layout.set_width(-1);
+        }
+
+        /// The box of the checkbox drawn in a cell, in widget space — `None` when there is none.
+        fn checkbox_box(&self, row: u32, col: u32) -> Option<Rect> {
+            let app = self.app.borrow().clone()?;
+            app.checkboxes(self.sheet.get())
+                .ok()?
+                .iter()
+                .any(|(pos, _)| *pos == Pos::new(row, col))
+                .then(|| {
+                    let zoom = self.zoom.get();
+                    crate::geom::checkbox_rect(
+                        self.geom().cell_rect(row, col),
+                        CHECKBOX * zoom,
+                        PAD * zoom,
+                    )
+                })
+        }
+
+        /// Tick or untick a checkbox — its linked cell's value, one undo step
+        /// (`App::toggle_checkbox`).
+        fn toggle_checkbox(&self, pos: Pos) {
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
+            let _ = app.toggle_checkbox(self.sheet.get(), pos);
+        }
+
+        /// Every checkbox in view: a box in the theme's ink, filled with the accent and ticked
+        /// when its linked cell says so.
+        fn draw_checkboxes(&self, f: &Frame) {
+            let Some(viewport) = &f.cells else { return };
+            let zoom = self.zoom.get();
+            let layout = self.layout();
+            for &(pos, ticked) in viewport.checkboxes() {
+                let cell = f.geom.cell_rect(pos.row, pos.col);
+                let b = crate::geom::checkbox_rect(cell, CHECKBOX * zoom, PAD * zoom);
+                if b.w < 4.0 {
+                    continue;
+                }
+                let r = rect(b.x, b.y, b.w, b.h);
+                match ticked {
+                    true => {
+                        f.snapshot.append_color(&f.palette.accent, &r);
+                        layout.set_attributes(self.chrome(None, 0.9).as_ref());
+                        layout.set_text("\u{2713}");
+                        let (w, h) = layout.pixel_size();
+                        f.snapshot.save();
+                        f.snapshot.translate(&graphene::Point::new(
+                            (b.x + (b.w - f64::from(w)) / 2.0) as f32,
+                            (b.y + (b.h - f64::from(h)) / 2.0) as f32,
+                        ));
+                        f.snapshot.append_layout(&layout, &f.palette.background);
+                        f.snapshot.restore();
+                    }
+                    false => f.snapshot.append_color(&f.palette.background, &r),
+                }
+                outline(f.snapshot, b, f.palette.foreground, 1.0);
+            }
+            layout.set_attributes(None);
         }
 
         /// Each merge's text, laid out across the whole merge — its top-left cell's text and

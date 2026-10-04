@@ -106,6 +106,7 @@ pub fn project(doc: &Document) -> Projection {
         styles(&mut out, sheet);
         formats(&mut out, sheet);
         merges(&mut out, sheet);
+        checkboxes(&mut out, sheet);
         filter(&mut out, sheet);
         out.close();
     }
@@ -560,6 +561,29 @@ fn merges(out: &mut Emitter, sheet: &Sheet) {
         }
         out.begin("merge");
         out.arg_word(&range(anchor, span.end(anchor)));
+        out.end();
+    }
+}
+
+/// `checkbox` — one per checkbox, at the cell it is drawn in, with the cell it is linked to as
+/// `link=` (spelled with its sheet only when that is another one), or `checked=` for its own
+/// state when it has none.
+fn checkboxes(out: &mut Emitter, sheet: &Sheet) {
+    let mut any = false;
+    for (pos, checkbox) in sheet.checkboxes() {
+        if !any {
+            out.blank();
+            any = true;
+        }
+        out.begin("checkbox");
+        out.arg_word(&a1::format(None, pos));
+        match &checkbox.link {
+            Some(link) => out.prop("link", a1::format(link.sheet.as_deref(), link.pos)),
+            None if checkbox.checked => out.prop("checked", true),
+            None => {}
+        }
+        out.prop_some("name", checkbox.name.as_deref());
+        out.prop_some("label", checkbox.label.as_deref());
         out.end();
     }
 }

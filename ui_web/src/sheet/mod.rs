@@ -458,6 +458,21 @@ impl Ui {
                         }),
                 };
                 cell.set_text_content(Some(&text));
+                // A checkbox: a real `<input type=checkbox>` ahead of the text, so the browser
+                // draws it in the platform's own look and a screen reader announces it as one.
+                // A click on it is handled by `on_click`, which writes the linked cell.
+                if let Some(ticked) = viewport.checkbox(pos.row, pos.col) {
+                    let input = self
+                        .dom
+                        .document
+                        .create_element("input")?
+                        .dyn_into::<web_sys::HtmlInputElement>()?;
+                    input.set_type("checkbox");
+                    input.set_class_name("cell-check");
+                    input.set_checked(ticked);
+                    input.set_tab_index(-1);
+                    cell.prepend_with_node_1(&input)?;
+                }
                 let numeric = match merge {
                     Some(m) => matches!(m.value, CellValue::Number(_)),
                     None => matches!(viewport.get(row, col), Some(CellValue::Number(_))),
@@ -741,6 +756,22 @@ impl Ui {
         }
         if !matches!(key.as_str(), "Shift" | "Control" | "Alt" | "Meta") {
             self.pointing.replace(None);
+        }
+        // Space on a checkbox's cell ticks it, rather than starting an edit with a space.
+        if key == " " && plain && !self.editing.get() {
+            let selection = self.selection.get();
+            let active = selection.active;
+            let boxed = self
+                .app
+                .checkboxes(self.sheet.get())
+                .is_ok_and(|boxes| boxes.iter().any(|(pos, _)| *pos == active));
+            if boxed && selection.anchor == active {
+                event.prevent_default();
+                if let Err(error) = self.app.toggle_checkbox(self.sheet.get(), active) {
+                    self.set_message(error.to_string());
+                }
+                return;
+            }
         }
         let chord = Chord {
             key: &key,
@@ -2568,6 +2599,23 @@ impl Ui {
         let Some(cell) = target.closest("td.cell")? else {
             return Ok(());
         };
+        // A checkbox's own box ticks it: the linked cell's value, one undo step. The page is
+        // redrawn from the document, so the box shows what the cell now says.
+        if target.class_list().contains("cell-check")
+            && let (Some(row), Some(col)) =
+                (attribute(&cell, "data-row"), attribute(&cell, "data-col"))
+        {
+            if self.editing.get() {
+                self.commit(None)?;
+            }
+            event.prevent_default();
+            let pos = Pos::new(row, col);
+            self.set_selection(Selection::at(pos));
+            if let Err(error) = self.app.toggle_checkbox(self.sheet.get(), pos) {
+                self.set_message(error.to_string());
+            }
+            return self.dom.surface.focus();
+        }
         let (Some(row), Some(col)) = (attribute(&cell, "data-row"), attribute(&cell, "data-col"))
         else {
             return Ok(());

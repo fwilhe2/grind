@@ -44,6 +44,9 @@ pub enum Dropped {
     ThemeColor,
     FontFamily,
     Protection,
+    /// A form control that is not a checkbox — a button, a list, a spinner — or a checkbox with
+    /// nowhere to go (`controls.rs`).
+    FormControl,
 }
 
 impl Dropped {
@@ -67,6 +70,7 @@ impl Dropped {
             Dropped::ThemeColor => "theme colour",
             Dropped::FontFamily => "font family",
             Dropped::Protection => "protection",
+            Dropped::FormControl => "form control",
         }
     }
 }

@@ -117,6 +117,34 @@ fn sheet(node: &KdlNode, source: &mut Source) -> Result<Sheet> {
                 }
             }
             "filter" => sheet.set_filter(Some(autofilter(child)?)),
+            "checkbox" => {
+                let cell_at = position(child, 0)?;
+                let link = match string_prop(child, "link") {
+                    Some(address) => {
+                        let one = crate::a1::parse(&address)
+                            .ok()
+                            .filter(|r| r.end.is_none())
+                            .and_then(|r| {
+                                let cell = r.start;
+                                Some(crate::model::Link {
+                                    sheet: cell.sheet.filter(|name| *name != sheet.name),
+                                    pos: Pos::new(cell.row?.index, cell.col?.index),
+                                })
+                            });
+                        Some(one.ok_or_else(|| at(child, format!("{address:?} is not one cell")))?)
+                    }
+                    None => None,
+                };
+                sheet.set_checkbox(
+                    cell_at,
+                    Some(crate::model::Checkbox {
+                        link,
+                        checked: bool_prop(child, "checked").unwrap_or(false),
+                        name: string_prop(child, "name"),
+                        label: string_prop(child, "label"),
+                    }),
+                );
+            }
             "merge" => {
                 let (start, end) = rectangle(child, 0)?;
                 let (anchor, span) = crate::model::Span::between(start, end);

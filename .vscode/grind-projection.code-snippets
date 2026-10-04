@@ -117,6 +117,14 @@
     ],
     "description": "A merged range: its top-left cell's value drawn over all of it. No two may overlap."
   },
+  "node: checkbox": {
+    "scope": "kdl",
+    "prefix": "checkbox",
+    "body": [
+      "checkbox ${1:B5} link=${2:E5}"
+    ],
+    "description": "A checkbox drawn in a cell, showing and setting the value of the cell it is linked to."
+  },
   "node: filter": {
     "scope": "kdl",
     "prefix": "filter",

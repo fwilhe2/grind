@@ -739,6 +739,12 @@ before it can be answered.
   merge with its top-left cell's text and look, so one scrolled half out of view still draws.
   A save that merges or unmerges splices the file's own cell elements: renamed, split and
   given spans (`odf::write`'s `remerge`).
+- **Checkboxes** — `Sheet::checkboxes`, keyed by the cell each is drawn in; a `Checkbox` is
+  linked to a cell (`Link`) whose value **is** its state, so ticking (`App::toggle_checkbox`) is
+  an ordinary cell edit plus a recalculation. The one form control the model carries
+  (`doc/ods-format.md` §3.5): read from `office:forms` + the cell's `draw:control`, and by
+  `xlsx/src/controls.rs` from Excel's VML. A save keeps an unchanged checkbox's own element
+  (`odf::write`'s `patched_forms`).
 - **`sheet/src/grid.rs`** — the column store: a run-length sequence of typed blocks
   (LibreOffice's `mdds` shape). Invariants restored by `normalize()`, asserted by `check()`.
 - **`sheet/src/numfmt/`** — number formats (§5.2). Display only, never touches the value. No

@@ -215,6 +215,29 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
                 w.name, g.name
             ));
         }
+        // Checkboxes, exactly — the cell each is drawn in and the cell it is linked to. A name
+        // is compared where the document gave one: LibreOffice names an unnamed control
+        // `unnamedN` (measured, `doc/ods-format.md` §3.5), which is the oracle filling in a
+        // default rather than the document losing anything.
+        let unnamed = |sheet: &Sheet, other: &Sheet| -> Vec<(Pos, grind_sheet::Checkbox)> {
+            sheet
+                .checkboxes()
+                .map(|(pos, c)| {
+                    let mut c = c.clone();
+                    if other.checkbox(pos).is_some_and(|o| o.name.is_none()) {
+                        c.name = None;
+                    }
+                    (pos, c)
+                })
+                .collect()
+        };
+        if unnamed(w, w) != unnamed(g, w) {
+            out.push(format!(
+                "{label}: sheet {i} checkboxes {:?}, back as {:?}",
+                w.checkboxes().collect::<Vec<_>>(),
+                g.checkboxes().collect::<Vec<_>>()
+            ));
+        }
         // Merged ranges, exactly: a merge LibreOffice drops or moves draws a heading over the
         // wrong cells.
         if w.merges().collect::<Vec<_>>() != g.merges().collect::<Vec<_>>() {
@@ -779,6 +802,52 @@ fn merged() -> (String, Document) {
     ("merged".to_owned(), doc)
 }
 
+/// Checkboxes (`doc/ods-format.md` §3.5): one linked to a cell on its own sheet, one linked to
+/// another sheet, and one holding its own state with a label.
+fn checkboxes() -> (String, Document) {
+    use grind_sheet::{Checkbox, Link};
+    let mut doc = Document {
+        sheets: vec![Sheet::new("List"), Sheet::new("Ticks")],
+        ..Default::default()
+    };
+    let list = doc.sheet_mut(0).unwrap();
+    list.set(Pos::new(0, 2), CellValue::Text("Pay rent".into()));
+    list.set(Pos::new(0, 4), CellValue::Bool(true));
+    list.set_checkbox(
+        Pos::new(0, 1),
+        Some(Checkbox {
+            link: Some(Link {
+                sheet: None,
+                pos: Pos::new(0, 4),
+            }),
+            name: Some("Rent".into()),
+            ..Default::default()
+        }),
+    );
+    list.set_checkbox(
+        Pos::new(1, 1),
+        Some(Checkbox {
+            link: Some(Link {
+                sheet: Some("Ticks".into()),
+                pos: Pos::new(1, 0),
+            }),
+            ..Default::default()
+        }),
+    );
+    list.set_checkbox(
+        Pos::new(2, 1),
+        Some(Checkbox {
+            checked: true,
+            label: Some("Done".into()),
+            ..Default::default()
+        }),
+    );
+    doc.sheet_mut(1)
+        .unwrap()
+        .set(Pos::new(1, 0), CellValue::Bool(false));
+    ("checkboxes".to_owned(), doc)
+}
+
 /// An autofilter (§9.4): the range, the values it keeps, and the rows it therefore hides.
 fn filtered() -> (String, Document) {
     let mut doc = Document {
@@ -956,6 +1025,7 @@ fn cases() -> Vec<(String, Document)> {
         styles(),
         tracks(),
         merged(),
+        checkboxes(),
         filtered(),
         charts(),
         counter_clockwise_pie(),

@@ -561,6 +561,28 @@ a checklist (not vendored; `xlsx/tests/checklist.rs` rebuilds its shape):
   second as `Dropped::MergedCells` rather than guessing which one was meant, which needs no
   answer.
 
+### 4.11 Form-control checkboxes — `MEASURED`
+
+Measured 2026-10-04 with `unzip`, over an Excel-saved checklist with 44 checkboxes (not vendored;
+`xlsx/tests/checklist.rs` rebuilds its shape):
+
+- **Every control is spelled twice.** Once in the worksheet's `<controls>`, inside
+  `<mc:AlternateContent><mc:Choice Requires="x14">` *with no `mc:Fallback`*, each `<control>`
+  naming a `ctrlProp` part (`<formControlPr objectType="CheckBox" fmlaLink="$E5" …/>`) and an
+  anchor. And once in the sheet's legacy VML drawing (`<legacyDrawing r:id>`), as a
+  `<v:shape>` whose `<x:ClientData ObjectType="Checkbox">` holds `<x:Anchor>` (eight numbers:
+  from-column, offset, from-row, offset, to-column, offset, to-row, offset; 0-based),
+  `<x:FmlaLink>$E5</x:FmlaLink>`, and `<x:Checked>1</x:Checked>` only when it is ticked. A
+  `DrawingML` part (`drawing1.xml`) holds a third copy of the shapes, under the same `x14`
+  choice.
+- The import reads the **VML**. It is the only copy outside an `x14` choice this filter does not
+  satisfy (`mce.rs`), and it says everything a cell-linked checkbox is. The cell it sits in is the
+  anchor's *from* corner.
+- The linked cell holds the state as a boolean (`<c r="E5" t="b"><v>0</v></c>`). LibreOffice's
+  conversion links each `form:checkbox` to the same cell (`doc/ods-format.md` §3.5).
+- A VML shape that is not a checkbox, such as a comment's note or a button, is not read; the
+  drawing part is counted as before.
+
 ## 5. Functions whose semantics differ under the same name
 
 `doc/xlsx-import.md` Part II §3 takes the decision: the importer carries the name and Excel's

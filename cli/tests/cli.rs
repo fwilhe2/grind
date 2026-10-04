@@ -864,6 +864,9 @@ fn the_sample_script_still_builds_its_document() {
             "{form}"
         );
     }
+    // Two checkboxes, the second ticked through the CLI — which is its linked cell.
+    assert_eq!(ok(&["get", &book, "I3"]).trim(), "TRUE");
+    assert!(ok(&["checkbox", &book]).contains("Budget.J3\tlinked to I3"));
     // A styled and formatted header, and a currency cell whose value is untouched.
     assert_eq!(ok(&["get", &book, "B2", "--raw"]).trim(), "1800");
     assert!(ok(&["get", &book, "B2"]).contains('\u{20ac}'));

@@ -366,6 +366,16 @@ input[type="text"] {
   text-overflow: ellipsis;
 }
 
+/* A checkbox in a cell: the platform's own control, sized to a line of the grid's text. */
+.cell-check {
+  margin: 0 0.3em 0 0;
+  vertical-align: middle;
+  width: 0.95em;
+  height: 0.95em;
+  cursor: pointer;
+  accent-color: AccentColor;
+}
+
 .filter-btn {
   position: absolute;
   top: 50%;

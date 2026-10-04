@@ -649,6 +649,12 @@ and counted.
   carried nor counted. A `ref` that is not a range, or one overlapping a merge already read,
   is counted as `MergedCells` (`doc/xlsx-format.md` §4.10). `xlsx/tests/checklist.rs` is the
   shape of the file that found it.
+- **Checkboxes.** Excel's form-control checkboxes → the model's `Checkbox`, read from the
+  sheet's legacy VML drawing (the only copy outside an `x14` choice; `doc/xlsx-format.md`
+  §4.11): the cell its middle is over, the cell its `FmlaLink` names, its caption, and its own
+  state when it is linked to nothing. The DrawingML part that holds only the controls' twins is
+  not counted as a lost drawing. Any other form control, or a second checkbox drawn over a cell
+  that already has one, is counted as `FormControl`.
 - **Autofilters.** `<autoFilter ref="A1:C9"/>` → `Filter::new`, carried. A `<filterColumn>`
   holding `<filters>` — the dropdown's checkboxes — is the model's own vocabulary, a set of
   displayed values, and is carried too. Every other criterion (a custom comparison, top ten, a

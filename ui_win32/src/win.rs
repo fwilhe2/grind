@@ -2781,6 +2781,26 @@ fn typed_char(hwnd: HWND, code: u32) -> bool {
     if is_text(hwnd) {
         return text_char(hwnd, c);
     }
+    // Space on a checkbox's cell ticks it, rather than starting an edit with a space.
+    if c == ' ' {
+        // SAFETY: no nested loop inside.
+        let ticked = unsafe {
+            with_sheet(hwnd, |state| {
+                let at = state.selection.active;
+                let boxed = state.mode == state::Mode::Ready
+                    && state.selection.is_single()
+                    && state
+                        .app
+                        .checkboxes(state.sheet)
+                        .is_ok_and(|b| b.iter().any(|(p, _)| *p == at));
+                boxed && state.app.toggle_checkbox(state.sheet, at).is_ok()
+            })
+        };
+        if ticked == Some(true) {
+            refresh(hwnd);
+            return true;
+        }
+    }
     // SAFETY: no nested loop inside.
     let seed = unsafe { with_sheet(hwnd, |state| state::typed(state.mode, c, mods())) };
     match seed.flatten() {
@@ -2911,6 +2931,22 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
                 } else {
                     Strip::Neither
                 });
+            }
+            // A checkbox's box ticks it — the linked cell's value — and selects its cell.
+            if let Hit::Cell { row, col } = hit
+                && !extend
+                && state
+                    .app
+                    .checkboxes(state.sheet)
+                    .is_ok_and(|b| b.iter().any(|(p, _)| *p == Pos::new(row, col)))
+                && state.geom.checkbox(row, col).contains(x, y)
+            {
+                state.selection = Selection::at(Pos::new(row, col));
+                if let Err(error) = state.app.toggle_checkbox(state.sheet, Pos::new(row, col)) {
+                    state.say(Some(error.to_string()));
+                }
+                state.drag = None;
+                return Click::Strip(Strip::Neither);
             }
             // The filter's dropdown button lives inside an ordinary cell of its heading row —
             // caught here, before the click becomes a selection, the same way the strip's own

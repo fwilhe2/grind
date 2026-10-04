@@ -1789,6 +1789,30 @@ enum Command {
         unmerge: bool,
     },
 
+    /// Put a checkbox in a cell, linked to the cell whose TRUE or FALSE it shows and sets —
+    /// or tick it, or take it away
+    ///
+    /// `sheet checkbox book.ods B5 --link E5` draws a checkbox in B5 that is ticked while E5 is
+    /// TRUE; `--toggle` ticks or unticks it, which writes E5. With no cell, prints every
+    /// checkbox, across every sheet.
+    Checkbox {
+        file: PathBuf,
+        /// The cell it is drawn in: B5, or Data.B5
+        cell: Option<String>,
+        /// The cell it is linked to: E5, or Data.E5. Without one, it holds its own state
+        #[arg(long, conflicts_with_all = ["remove", "toggle"])]
+        link: Option<String>,
+        /// The text drawn beside the box
+        #[arg(long, conflicts_with_all = ["remove", "toggle"])]
+        label: Option<String>,
+        /// Tick it if it is not ticked, untick it if it is
+        #[arg(long, conflicts_with = "remove")]
+        toggle: bool,
+        /// Take it away
+        #[arg(long)]
+        remove: bool,
+    },
+
     /// Define, redefine, rename, inline or delete a named range or expression (§5.11)
     ///
     /// With no target, prints what the name stands for. `sheet info` lists them all.
@@ -2990,6 +3014,67 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 false => app.merge(sheet, start, end).say()?,
             };
             finish(&app, cli, file, changed)
+        }
+
+        Command::Checkbox {
+            file,
+            cell,
+            link,
+            label,
+            toggle,
+            remove,
+        } => {
+            let app = load(file, cli)?;
+            let Some(cell) = cell else {
+                let mut boxes = Vec::new();
+                for i in 0..app.sheet_count() {
+                    let name = app.sheet_name(i).unwrap_or_default();
+                    for (pos, checkbox) in app.checkboxes(i).unwrap_or_default() {
+                        let state = match &checkbox.link {
+                            Some(link) => {
+                                format!("linked to {}", a1::format(link.sheet.as_deref(), link.pos))
+                            }
+                            None if checkbox.checked => "ticked".to_owned(),
+                            None => "not ticked".to_owned(),
+                        };
+                        boxes.push((format!("{name}.{}", a1::format(None, pos)), state));
+                    }
+                }
+                return Ok(lines(boxes.into_iter()));
+            };
+            let (sheet, pos, _) = single(&app, cell)?;
+            if *remove {
+                app.set_checkbox(sheet, pos, None).say()?;
+                return finish(&app, cli, file, true);
+            }
+            if *toggle {
+                let ticked = app.toggle_checkbox(sheet, pos).say()?;
+                eprintln!(
+                    "grind: {}",
+                    match ticked {
+                        true => "ticked",
+                        false => "not ticked",
+                    }
+                );
+                return finish(&app, cli, file, true);
+            }
+            let link = match link {
+                Some(address) => {
+                    let (to, at, _) = single(&app, address)?;
+                    Some(grind_sheet::Link {
+                        sheet: (to != sheet).then(|| app.sheet_name(to).unwrap_or_default()),
+                        pos: at,
+                    })
+                }
+                None => None,
+            };
+            let checkbox = grind_sheet::Checkbox {
+                link,
+                label: label.clone(),
+                ..Default::default()
+            };
+            app.set_checkbox(sheet, pos, Some(checkbox)).say()?;
+            finish(&app, cli, file, true)
         }
 
         Command::Name {

@@ -93,6 +93,13 @@ pub enum Action {
         anchor: Pos,
         span: Option<crate::model::Span>,
     },
+    /// A checkbox drawn in `pos` (`doc/ods-format.md` §3.5), `None` taking it away. Ticking a
+    /// *linked* one is not this: it is the linked cell's value, an ordinary [`Action::SetCell`].
+    SetCheckbox {
+        sheet: usize,
+        pos: Pos,
+        checkbox: Option<Box<crate::model::Checkbox>>,
+    },
     /// A named expression (§5.11), `None` deleting it.
     ///
     /// Document-level rather than per-cell, which is the one thing that makes it unlike
@@ -278,6 +285,20 @@ impl Document {
                     span: previous,
                 })
             }
+            Action::SetCheckbox {
+                sheet,
+                pos,
+                checkbox,
+            } => {
+                let s = self.sheet_mut(sheet)?;
+                let previous = s.checkbox(pos).cloned().map(Box::new);
+                s.set_checkbox(pos, checkbox.map(|c| *c));
+                Some(Action::SetCheckbox {
+                    sheet,
+                    pos,
+                    checkbox: previous,
+                })
+            }
             Action::SetFilter { sheet, filter } => {
                 let s = self.sheet_mut(sheet)?;
                 let previous = s.filter().cloned().map(Box::new);
@@ -445,6 +466,11 @@ impl Document {
             // A merge is an attribute on one cell element and the element kind of every other
             // it takes in — the rows it spans are rewritten (`Provenance::merges`).
             Action::SetMerge { .. } => self.edits.only_values = false,
+            // `office:forms` is its own element, and the control is a child of the cell.
+            Action::SetCheckbox { sheet, pos, .. } => {
+                self.edits.cells.insert((*sheet, *pos));
+                self.edits.only_values = false;
+            }
             Action::SetName { .. } => {
                 self.edits.only_values = false;
                 self.edits.names = true;
@@ -509,6 +535,14 @@ impl Document {
                     p.filter = true;
                 }
             }
+            // The cell holds the control, so it is rewritten, and the sheet's forms with it.
+            Action::SetCheckbox { sheet: i, pos, .. } => {
+                if let Some(p) = sheet(self, *i) {
+                    p.cells.insert(*pos);
+                    p.values.insert(*pos);
+                    p.checkboxes = true;
+                }
+            }
             // Both the merge being replaced and the new one: noted before applying, so the
             // old one's rows are read off the sheet as it still is.
             Action::SetMerge {
@@ -537,11 +571,19 @@ impl Document {
                 }
             }
             Action::Batch(actions) => actions.iter().for_each(|a| self.touch(a)),
+            // A checkbox's link is spelled with its own sheet's name, so a rename respells
+            // every one — and another sheet's link to the renamed one is its own action.
+            Action::RenameSheet { .. } => {
+                for s in &mut self.sheets {
+                    if s.checkboxes().next().is_some() {
+                        s.origin.checkboxes = true;
+                    }
+                }
+            }
             Action::SetName { .. }
             | Action::SetLocale { .. }
             | Action::InsertSheet { .. }
-            | Action::RemoveSheet { .. }
-            | Action::RenameSheet { .. } => {}
+            | Action::RemoveSheet { .. } => {}
         }
     }
 
@@ -557,7 +599,8 @@ impl Document {
             | Action::SetColHidden { sheet, .. }
             | Action::SetRowHidden { sheet, .. }
             | Action::SetFilter { sheet, .. }
-            | Action::SetMerge { sheet, .. } => self.sheet(*sheet).is_some(),
+            | Action::SetMerge { sheet, .. }
+            | Action::SetCheckbox { sheet, .. } => self.sheet(*sheet).is_some(),
             // Names and the locale are document-level, so there is no sheet index to be wrong
             // about.
             Action::SetName { .. } | Action::SetLocale { .. } => true,

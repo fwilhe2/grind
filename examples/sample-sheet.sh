@@ -201,6 +201,15 @@ run set "$book" A24 'Budget figures are monthly; actuals are paid to date.'
 run merge "$book" A24:H24
 sheet merge "$book"
 
+# A checkbox's state is the cell it is linked to: ticking writes TRUE there, so a formula can
+# count the ticks.
+say "checkbox: one per category, ticked once it is paid"
+run set "$book" I2 TRUE
+run checkbox "$book" J2 --link I2
+run checkbox "$book" J3 --link I3
+run checkbox "$book" J3 --toggle
+sheet checkbox "$book"
+
 say "recalculate the whole document"
 run recalc "$book"
 

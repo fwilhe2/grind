@@ -912,6 +912,19 @@ define_class!(
                 })
                 .unwrap_or_default();
             crate::drive::hear(format!("insertText:{typed:?}"));
+            // Space on a checkbox's cell ticks it, rather than starting an edit with a space.
+            let pane = self.ivars();
+            let selection = pane.selection.get();
+            if typed == " "
+                && selection.is_single()
+                && pane
+                    .app
+                    .checkboxes(pane.sheet.get())
+                    .is_ok_and(|b| b.iter().any(|(p, _)| *p == selection.active))
+            {
+                let _ = pane.app.toggle_checkbox(pane.sheet.get(), selection.active);
+                return;
+            }
             if let Some(seed) = state::typed(Mode::Ready, &typed) {
                 self.ivars().begin_edit(seed);
             }
@@ -1294,6 +1307,21 @@ impl GridView {
     fn click(&self, event: &NSEvent, extend: bool) {
         let pane = self.ivars();
         let at = located(self, event);
+        // A plain click on a checkbox's box ticks it — the linked cell's value — and selects it.
+        if !extend
+            && !pane.is_editing()
+            && let Some(cell) = select::checkbox_click(
+                &pane.app,
+                pane.sheet.get(),
+                &pane.grid.borrow(),
+                at.x - HEADER_W,
+                at.y - HEADER_H,
+            )
+        {
+            pane.select(Selection::at(cell));
+            let _ = pane.app.toggle_checkbox(pane.sheet.get(), cell);
+            return;
+        }
         let next = select::click(
             &pane.grid.borrow(),
             pane.selection.get(),

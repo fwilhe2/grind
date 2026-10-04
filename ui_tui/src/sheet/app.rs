@@ -303,6 +303,21 @@ impl App {
 
     fn on_normal_key(&mut self, code: KeyCode, mods: KeyModifiers) {
         let visual = matches!(self.mode, Mode::Visual);
+        // Space on a checkbox's cell ticks it — the linked cell's value, one `u` to take back.
+        if code == KeyCode::Char(' ')
+            && !visual
+            && self
+                .core
+                .checkboxes(self.sheet)
+                .is_ok_and(|boxes| boxes.iter().any(|(pos, _)| *pos == self.active))
+        {
+            self.status = match self.core.toggle_checkbox(self.sheet, self.active) {
+                Ok(true) => "ticked".to_owned(),
+                Ok(false) => "not ticked".to_owned(),
+                Err(e) => e.to_string(),
+            };
+            return;
+        }
         let Some(action) = keymap::normal_action(code, mods, visual) else {
             return;
         };
@@ -2385,8 +2400,27 @@ impl App {
                     .then(|| self.core.formula(self.sheet, Pos::new(r, c)).ok().flatten())
                     .flatten()
                     .and_then(|_| self.core.input_text(self.sheet, Pos::new(r, c)).ok());
-                let text = shown_formula
+                // A checkbox is drawn as one, ahead of whatever its cell holds.
+                let boxed = viewport
+                    .as_ref()
+                    .and_then(|v| v.checkbox(r, c))
+                    .map(|ticked| {
+                        let text = shown_formula
+                            .as_deref()
+                            .or_else(|| viewport.as_ref().and_then(|v| v.text(r, c)))
+                            .unwrap_or("");
+                        let mark = match ticked {
+                            true => "[x]",
+                            false => "[ ]",
+                        };
+                        match text.is_empty() {
+                            true => mark.to_owned(),
+                            false => format!("{mark} {text}"),
+                        }
+                    });
+                let text = boxed
                     .as_deref()
+                    .or(shown_formula.as_deref())
                     .or_else(|| viewport.as_ref().and_then(|v| v.text(r, c)))
                     .unwrap_or("");
                 let cell = viewport.as_ref().and_then(|v| v.style(r, c));
@@ -2927,6 +2961,34 @@ mod tests {
         assert_eq!(app.core.merges(0).unwrap(), vec![]);
         let after = super::tests::screen(&mut app, 60, 8).join("\n");
         assert!(after.contains("hidden"), "{after}");
+    }
+
+    /// A checkbox reads `[ ]` or `[x]` by its linked cell, and Space ticks it.
+    #[test]
+    fn a_checkbox_is_drawn_and_space_ticks_it() {
+        let mut app = app();
+        app.core
+            .set_checkbox(
+                0,
+                Pos::new(0, 0),
+                Some(grind_sheet::Checkbox {
+                    link: Some(grind_sheet::Link {
+                        sheet: None,
+                        pos: Pos::new(0, 3),
+                    }),
+                    ..Default::default()
+                }),
+            )
+            .unwrap();
+        let before = super::tests::screen(&mut app, 60, 8).join("\n");
+        assert!(before.contains("[ ]"), "{before}");
+        press(&mut app, KeyCode::Char(' '));
+        assert_eq!(
+            app.core.get(0, Pos::new(0, 3)).unwrap(),
+            CellValue::Bool(true)
+        );
+        let after = super::tests::screen(&mut app, 60, 8).join("\n");
+        assert!(after.contains("[x]"), "{after}");
     }
 
     /// **D9 in this shell.** `:source` shows the projection, the cursor lands on the active

@@ -53,6 +53,7 @@ body — one or more document-level nodes — and it is executable, not illustra
 | `style` | one entry of `Sheet::styles`, over every cell of its range | `sheet S { style B1:C1 bold=#true italic=#true size="12pt" color="#ff4136" background=navy align=center valign=middle wrap=#true border="0.5pt solid #000000" }` |
 | `format` | one entry of `Sheet::formats`, over every cell of its range. Compact when `numfmt::preset` builds it, a block of parts when it does not | `sheet S { format B2:C5 currency decimals=2 grouping=#true symbol="EUR" locale="de-DE"; format D1 datetime }` |
 | `merge` | one entry of `Sheet::merges` — a merged range, written as the range it takes in. Its top-left cell holds the value; no two may overlap | `sheet S { at B2 { row Heading }; merge B2:D2 }` |
+| `checkbox` | one entry of `Sheet::checkboxes` — a checkbox drawn in a cell, `link=` the cell whose value it shows and sets (with its sheet only when that is another), or `checked=` for its own state when it is linked to nothing (`doc/ods-format.md` §3.5) | `sheet S { checkbox B5 link=E5 name="Check Box 1"; checkbox B6 checked=#true label="Done" }` |
 | `filter` | `Sheet::filter` — §9.4's `table:database-range` | `sheet S { filter "__Anonymous_Sheet_DB__0" A1:C4 header=#true buttons=#true }` |
 | `keep` | one field of `Filter::keep`: the values that field keeps | `sheet S { filter "f" A1:C4 { keep 0 North South } }` |
 | `map` | one `numfmt::Map` — a `style:map` branch, its comparison, its operand and its own format | `sheet S { format A1 number { map ">=" "0" number { number decimals=2 } } }` |
@@ -148,6 +149,7 @@ thing that grows.
 | `Sheet::manually_hidden_rows` | `row` |
 | `Sheet::filter` | `filter` |
 | `Sheet::merges` | `merge` |
+| `Sheet::checkboxes` | `checkbox` |
 | `Sheet::origin` | gap: which `table:table` of the file the sheet was read from — R6's bookkeeping for a regenerating save, equal across every sheet and never written. The same argument as `Document::source` |
 | `Sheet::charts` | gap: `doc/dsl.md` §3.8 — expressible, verbose, and nobody hand-writes one, so charts go in for bijectivity rather than for authoring and are not in yet. Loop F excludes them **by name**, and `charts_are_the_one_named_gap` fails the day they stop being a gap |
 

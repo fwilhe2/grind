@@ -256,6 +256,42 @@ An empty cell that only carries a style (formatted but no value) is
 
 ---
 
+### 3.5 A checkbox in a cell — `MEASURED` (2026-10-04, LibreOffice 26.8)
+
+Measured by converting an Excel workbook with 44 form-control checkboxes
+(`soffice --convert-to fods`; the workbook's shape is rebuilt in `xlsx/tests/checklist.rs`) and
+reading the output, then by loop C's `checkboxes` case:
+
+- The control is **two elements**. `office:forms` is the first child of `table:table`
+  (rng:15958, before `table:shapes` and the columns) and holds one `form:form`, which holds one
+  `form:checkbox` per control. Each carries `xml:id` and `form:id` (the same value),
+  `form:name`, and `form:linked-cell="Checkliste.E5"`, a cell address with its sheet. It also
+  carries a `form:properties` block of LibreOffice's own properties (`ControlTypeinMSO`,
+  `ObjIDinMSO`, …) that says nothing a reader needs.
+- The **shape** is a `draw:control` *inside the cell it sits in* (`table:table-cell`'s content
+  admits shapes), naming the checkbox with `draw:control="control1"` (an IDREF to that
+  `xml:id`), with `svg:x="0cm" svg:y="0cm"` relative to the cell, a size, and
+  `table:end-cell-address` equal to the same cell for a control that fits in it.
+- **The state is the linked cell's value.** TRUE in the cell is ticked, FALSE is not, and
+  ticking writes the boolean back. LibreOffice *mirrors* that into `form:current-state` on save:
+  `checked` beside a linked cell holding TRUE, and nothing beside one holding FALSE. The reader
+  ignores `form:current-state` on a linked checkbox for that reason, since it says nothing the
+  cell does not. A checkbox with no linked cell keeps its own `form:current-state`
+  (`checked`/`unchecked`, rng:9736), and that one round-trips.
+- **A control with no `form:name` comes back named** `unnamed0`, `unnamed1`, … in document
+  order. That's the oracle filling in a default, so loop C compares a name only where the
+  document gave one.
+- **What this writer spells** — `office:forms` with one `form:form`, each `form:checkbox` with
+  `xml:id` = `form:id`, and a `draw:control` of 0.5 cm square at `svg:x="0cm" svg:y="0cm"` in
+  its cell with no `table:end-cell-address` — comes back from LibreOffice in the same cell with
+  the same link, in both forms (loop C's `checkboxes` case, which includes a link to another
+  sheet).
+
+The model reads exactly that and nothing else of `office:forms`: a checkbox, the cell it sits
+in, the cell it is linked to, its name and label, and its own state when unlinked. Any other
+form control is not modelled. A save that changes a sheet's checkboxes refuses rather than drop
+one (R6's guard).
+
 ## 4. Formulas **[ODS]**
 
 `table:formula` is a plain string attribute (schema type: unrestricted `string` — the `of:`

@@ -19,7 +19,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 use std::sync::LazyLock;
 
-use super::names::{CALCEXT, CHART, DRAW, FO, NUMBER, OFFICE, STYLE, SVG, TABLE, TEXT, XLINK};
+use super::names::{
+    CALCEXT, CHART, DRAW, FO, FORM, NUMBER, OFFICE, STYLE, SVG, TABLE, TEXT, XLINK,
+};
 // Packaging, the manifest, the ODF version and XML escaping are the same for every document
 // type (§1.1, §1.3), so they live in `grind-core` and are reached here by the names this
 // file always used.
@@ -227,6 +229,19 @@ fn overwritten(doc: &Document, source: &super::source::Source) -> Vec<std::ops::
                 continue;
             };
             out.extend(paragraphs(bytes, cell.range.clone()));
+            // And the checkbox shape the cell held: written again with the cell, or gone with
+            // a checkbox taken away (`patched_forms`).
+            out.extend(children_named(bytes, cell.range.clone(), b":control"));
+        }
+        // The checkboxes a save takes away.
+        if sheet.origin.checkboxes {
+            for (pos, (id, _)) in &t.checkboxes {
+                if sheet.checkbox(*pos).is_none()
+                    && let Some(range) = t.checkbox_elements.get(id)
+                {
+                    out.push(range.clone());
+                }
+            }
         }
     }
     out
@@ -234,6 +249,16 @@ fn overwritten(doc: &Document, source: &super::source::Source) -> Vec<std::ops::
 
 /// The `text:p` children of an element, by their extents.
 fn paragraphs(bytes: &[u8], element: std::ops::Range<usize>) -> Vec<std::ops::Range<usize>> {
+    children_named(bytes, element, b":p")
+}
+
+/// The children of an element whose qualified name ends in `suffix` (`:p`, `:control`), by
+/// their extents.
+fn children_named(
+    bytes: &[u8],
+    element: std::ops::Range<usize>,
+    suffix: &[u8],
+) -> Vec<std::ops::Range<usize>> {
     let mut out = Vec::new();
     let Some(open_end) = bytes[element.clone()].iter().position(|c| *c == b'>') else {
         return out;
@@ -260,7 +285,7 @@ fn paragraphs(bytes: &[u8], element: std::ops::Range<usize>) -> Vec<std::ops::Ra
             .iter()
             .position(|c| c.is_ascii_whitespace() || *c == b'>' || *c == b'/')
             .unwrap_or(tag.len());
-        if tag[..name_end].ends_with(b":p") {
+        if tag[..name_end].ends_with(suffix) {
             out.push(range.clone());
         }
         at = range.end;
@@ -308,6 +333,9 @@ fn verify(doc: &Document, content: &[u8]) -> Result<()> {
                     crate::a1::format(Some(&mine.name), pos)
                 });
             return refuse(format!("a formula at {at}"));
+        }
+        if mine.checkboxes().ne(theirs.checkboxes()) {
+            return refuse(format!("{}'s checkboxes", mine.name));
         }
         // Values on every row either side carries anything on — the sparse way round a sheet
         // whose one far cell would make its rectangle enormous.
@@ -535,7 +563,10 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
     let mut patches = Vec::with_capacity(targets.len());
     for (i, row, at) in targets.into_values() {
         let sheet = doc.sheet(i)?;
-        patches.push((at.range.clone(), rewrite(sheet, row, at, doc.null_date)));
+        patches.push((
+            at.range.clone(),
+            rewrite(sheet, row, at, doc.null_date, source),
+        ));
     }
     if patches.windows(2).any(|w| w[0].0.end > w[1].0.start) {
         return None;
@@ -563,23 +594,33 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
 /// Runs are re-formed by looking at the sheet, so a value written into a repeated run and
 /// then cleared again collapses the run back. A formula never joins a run: it is
 /// position-dependent, and repeating one would move it.
-fn rewrite(sheet: &Sheet, row: u32, at: &super::source::Cell, null_date: i64) -> String {
+fn rewrite(
+    sheet: &Sheet,
+    row: u32,
+    at: &super::source::Cell,
+    null_date: i64,
+    source: &super::source::Source,
+) -> String {
     let mut out = String::new();
     let mut col = at.cols.start;
     while col < at.cols.end {
         let pos = Pos::new(row, col);
         let (value, formula, kind) = (sheet.get(pos), sheet.formula(pos), sheet.kind(pos));
-        let repeat = match formula.is_some() {
+        let repeat = match formula.is_some() || sheet.checkbox(pos).is_some() {
             true => 1,
             false => (col..at.cols.end)
                 .take_while(|c| {
                     let p = Pos::new(row, *c);
-                    sheet.get(p) == value && sheet.formula(p).is_none() && sheet.kind(p) == kind
+                    sheet.get(p) == value
+                        && sheet.formula(p).is_none()
+                        && sheet.kind(p) == kind
+                        && sheet.checkbox(p).is_none()
                 })
                 .count() as u32,
         };
+        let mut one = String::new();
         cell(
-            &mut out,
+            &mut one,
             &value,
             formula,
             kind,
@@ -591,6 +632,10 @@ fn rewrite(sheet: &Sheet, row: u32, at: &super::source::Cell, null_date: i64) ->
             // keeps them.
             &at.keep,
         );
+        out.push_str(&with_control_text(
+            one,
+            file_control(sheet, pos, source, at.range.clone()),
+        ));
         col += repeat.max(1);
     }
     out
@@ -647,11 +692,19 @@ fn content(
     }
     // A chart's own document needs all four — `doc/chart-format.md`'s embedded shape — and
     // only a document that actually has a chart pays for the declarations.
-    if doc.sheets.iter().any(|s| !s.charts().is_empty()) {
+    let charts = doc.sheets.iter().any(|s| !s.charts().is_empty());
+    if charts {
         let _ = write!(
             out,
             " xmlns:draw=\"{DRAW}\" xmlns:chart=\"{CHART}\" xmlns:svg=\"{SVG}\" xmlns:xlink=\"{XLINK}\""
         );
+    }
+    // A checkbox is a form control and a shape (`doc/ods-format.md` §3.5).
+    if doc.sheets.iter().any(|s| s.checkboxes().next().is_some()) {
+        if !charts {
+            let _ = write!(out, " xmlns:draw=\"{DRAW}\" xmlns:svg=\"{SVG}\"");
+        }
+        let _ = write!(out, " xmlns:form=\"{FORM}\"");
     }
     let _ = write!(out, " office:version=\"{VERSION}\"");
     if form == Form::Flat {
@@ -1168,6 +1221,11 @@ fn patched_table(
         }
     }
 
+    // Checkboxes: the file's own `office:forms`, with only what changed in it changed.
+    if sheet.origin.checkboxes {
+        patches.extend(patched_forms(sheet, t, bytes));
+    }
+
     // Columns: the file's own unless a width or a hidden flag changed.
     if sheet.origin.columns {
         let mut ours = String::new();
@@ -1251,6 +1309,102 @@ fn patched_table(
     }
 
     apply(bytes, t.range.clone(), patches)
+}
+
+/// The patches a save makes to a sheet's `office:forms` when its checkboxes changed — R6 for
+/// form controls (`doc/ods-format.md` §3.5).
+///
+/// A checkbox the file has **keeps its own element and identifier**, LibreOffice's properties
+/// and all, with only the attributes the model owns set again where they differ — and its cell
+/// keeps the `draw:control` pointing at it, even when that cell is written again for its value
+/// (`file_control`). A checkbox taken away loses its element; a new one is written fresh, inside
+/// the file's first `form:form`. Every other control in the file is left exactly where it was.
+fn patched_forms(
+    sheet: &Sheet,
+    t: &super::source::Table,
+    bytes: &[u8],
+) -> Vec<(std::ops::Range<usize>, String)> {
+    let fresh: String = sheet
+        .checkboxes()
+        .filter(|(pos, _)| !t.checkboxes.contains_key(pos))
+        .map(|(pos, checkbox)| checkbox_element(sheet, checkbox, &checkbox_id(sheet, pos)))
+        .collect();
+    let mut patches = Vec::new();
+    let Some(forms) = &t.forms else {
+        // No forms in the file: a fresh element, first in the table as the schema has it.
+        let mut ours = String::new();
+        write_forms(&mut ours, sheet);
+        if !ours.is_empty() {
+            let at = t.start.end;
+            let next = t
+                .shapes
+                .as_ref()
+                .map(|r| r.start)
+                .or(t.columns.first().map(|r| r.start))
+                .unwrap_or(at);
+            patches.push((at..at, beside(bytes, next, &ours)));
+        }
+        return patches;
+    };
+    // The file's own: gone with a checkbox taken away, and otherwise its own element with what
+    // the model says set on its start tag — a link respelled after a rename, a new label —
+    // and nothing at all where it already says it.
+    for (pos, (id, _)) in &t.checkboxes {
+        let Some(range) = t.checkbox_elements.get(id) else {
+            continue;
+        };
+        let Some(checkbox) = sheet.checkbox(*pos) else {
+            patches.push((with_leading_space(bytes, range.clone()), String::new()));
+            continue;
+        };
+        let element = String::from_utf8_lossy(&bytes[range.clone()]).into_owned();
+        let tag_end = element.find('>').map_or(element.len(), |at| at + 1);
+        let link = checkbox.link.as_ref().map(|l| l.address(&sheet.name));
+        let state = (checkbox.link.is_none() && checkbox.checked).then_some("checked");
+        let mut changes: Vec<(&str, Option<&str>)> = vec![
+            ("form:linked-cell", link.as_deref()),
+            ("form:label", checkbox.label.as_deref()),
+        ];
+        if checkbox.link.is_none() {
+            changes.push(("form:current-state", state.or(Some("unchecked"))));
+        }
+        if let Some(name) = &checkbox.name {
+            changes.push(("form:name", Some(name)));
+        }
+        let tag = envelope::set_attributes(&element[..tag_end], &changes);
+        if tag != element[..tag_end] {
+            patches.push((range.start..range.start + tag_end, tag));
+        }
+    }
+    if fresh.is_empty() {
+        return patches;
+    }
+    match t.form_end {
+        Some(at) => patches.push((at..at, fresh)),
+        None => {
+            // No `form:form` with room in it: one of our own, before the forms element closes —
+            // or the whole element again when the file wrote it self-closed.
+            let element = &bytes[forms.clone()];
+            match element.ends_with(b"/>") {
+                true => {
+                    let mut ours = String::new();
+                    write_forms(&mut ours, sheet);
+                    patches.push((forms.clone(), ours.trim().to_owned()));
+                }
+                false => {
+                    let close = element
+                        .iter()
+                        .rposition(|c| *c == b'<')
+                        .map_or(forms.end, |p| forms.start + p);
+                    patches.push((
+                        close..close,
+                        format!("<form:form form:name=\"Form\">{fresh}</form:form>"),
+                    ));
+                }
+            }
+        }
+    }
+    patches
 }
 
 /// One row element of the file, split around its changed rows: copies of the element for the
@@ -1395,7 +1549,7 @@ fn patched_row(
         }
         inside.push((
             element.range.clone(),
-            rewrite_cells(sheet, row, element, doc.null_date, pool),
+            rewrite_cells(sheet, row, element, doc.null_date, pool, source),
         ));
     }
     // Columns past the last cell the file's row spells: an empty run up to the first of them,
@@ -1451,6 +1605,7 @@ fn patched_row(
                 1,
                 &attr,
             );
+            let one = with_control(one, sheet, pos);
             match sheet.covered(pos) {
                 true => ours.push_str(&covered_element(&one)),
                 false => ours.push_str(&one),
@@ -1612,6 +1767,11 @@ fn remerge(
                     1,
                     &format!("{keep}{style}{spans}"),
                 );
+                let control = doc
+                    .source
+                    .as_deref()
+                    .and_then(|source| file_control(sheet, pos, source, element.range.clone()));
+                let one = with_control_text(one, control);
                 match m {
                     Merging::Covered => out.push_str(&covered_element(&one)),
                     _ => out.push_str(&one),
@@ -1785,6 +1945,7 @@ fn rewrite_cells(
     at: &super::source::Cell,
     null_date: i64,
     pool: &Pool,
+    source: &super::source::Source,
 ) -> String {
     let looks = &sheet.origin.looks;
     let restyled_keep =
@@ -1796,7 +1957,7 @@ fn rewrite_cells(
         let (value, formula, kind) = (sheet.get(pos), sheet.formula(pos), sheet.kind(pos));
         let restyled = looks.contains(&pos);
         let look = pool.look(sheet, pos);
-        let repeat = match formula.is_some() {
+        let repeat = match formula.is_some() || sheet.checkbox(pos).is_some() {
             true => 1,
             false => (col..at.cols.end)
                 .take_while(|c| {
@@ -1806,6 +1967,7 @@ fn rewrite_cells(
                         && sheet.kind(p) == kind
                         && looks.contains(&p) == restyled
                         && (!restyled || pool.look(sheet, p) == look)
+                        && sheet.checkbox(p).is_none()
                 })
                 .count() as u32,
         };
@@ -1813,9 +1975,14 @@ fn rewrite_cells(
             true => format!("{restyled_keep}{}", pool.attr(look)),
             false => at.keep.clone(),
         };
+        let mut one = String::new();
         cell(
-            &mut out, &value, formula, kind, look, null_date, repeat, &attrs,
+            &mut one, &value, formula, kind, look, null_date, repeat, &attrs,
         );
+        out.push_str(&with_control_text(
+            one,
+            file_control(sheet, pos, source, at.range.clone()),
+        ));
         col += repeat.max(1);
     }
     out
@@ -2893,8 +3060,10 @@ fn table(
     let rows = cols_or_rows_extent(sheet, null_date, locale);
 
     let _ = writeln!(out, "   <table:table table:name=\"{}\">", esc(&sheet.name));
-    // Before the columns, which is where the schema puts it (rng:15961, ahead of
-    // rng:15963-15964's `table-columns-and-groups`/`table-rows-and-groups`).
+    // The form controls first (rng:15958), then the shapes — both before the columns, which is
+    // where the schema puts them (rng:15961, ahead of rng:15963-15964's
+    // `table-columns-and-groups`/`table-rows-and-groups`).
+    write_forms(out, sheet);
     write_shapes(out, sheet, objects);
     write_columns(out, sheet, pool, None);
 
@@ -3094,6 +3263,7 @@ fn carries(sheet: &Sheet, pos: Pos) -> bool {
         || sheet.format(pos).is_some()
         || sheet.style(pos).is_some()
         || sheet.merge_at(pos).is_some()
+        || sheet.checkbox(pos).is_some()
 }
 
 /// `table:visibility="collapse"` for a column hidden by hand — a column has no filter, so
@@ -3173,7 +3343,8 @@ fn write_row(
         // to repeat with it, and a formula is position-dependent — a correctness trap for
         // bytes nobody is short of. A run of blanks sharing one format compresses like any
         // other; one that does not share it stops the run, or the format would spread.
-        let repeat = if value.is_empty() && formula.is_none() && merge.is_none() {
+        let alone = merge.is_some() || sheet.checkbox(pos).is_some();
+        let repeat = if value.is_empty() && formula.is_none() && !alone {
             (col..=last)
                 .take_while(|c| {
                     let p = Pos::new(row, *c);
@@ -3181,13 +3352,15 @@ fn write_row(
                         && sheet.formula(p).is_none()
                         && pool.look(sheet, p) == look
                         && sheet.merge_at(p).is_none()
+                        && sheet.checkbox(p).is_none()
                 })
                 .count() as u32
         } else {
             1
         };
+        let mut one = String::new();
         cell(
-            out,
+            &mut one,
             &value,
             formula,
             sheet.kind(pos),
@@ -3196,6 +3369,7 @@ fn write_row(
             repeat,
             &format!("{}{spanned}", pool.attr(look)),
         );
+        out.push_str(&with_control(one, sheet, pos));
         col += repeat;
     }
     out.push_str("</table:table-row>\n");
@@ -3307,6 +3481,122 @@ fn covered_element(cell: &str) -> String {
         Some(body) => format!("{body}</table:covered-table-cell>"),
         None => open,
     }
+}
+
+/// The identifier this writer gives the checkbox drawn in `pos` of `sheet`: stable, so one
+/// document writes the same bytes twice, and unique across the document's sheets, since an
+/// `xml:id` is document-wide and two sheets have the same addresses. A checkbox a save copies
+/// from the file keeps the file's own identifier (`patched_forms`).
+fn checkbox_id(sheet: &Sheet, pos: Pos) -> String {
+    // FNV-1a over the sheet's name: a name is unique in a document, and a short stable hash of
+    // it is an NCName fragment where the name itself may not be.
+    let hash = sheet.name.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    format!("grind{hash:x}-{}-{}", pos.row, pos.col)
+}
+
+/// One `form:checkbox` (`doc/ods-format.md` §3.5): its identifier twice, as LibreOffice
+/// writes it, its name and label, the cell it is linked to — or its own state when it has none.
+fn checkbox_element(sheet: &Sheet, checkbox: &crate::model::Checkbox, id: &str) -> String {
+    let mut out = format!("<form:checkbox xml:id=\"{id}\" form:id=\"{id}\"");
+    if let Some(name) = &checkbox.name {
+        let _ = write!(out, " form:name=\"{}\"", esc(name));
+    }
+    if let Some(label) = &checkbox.label {
+        let _ = write!(out, " form:label=\"{}\"", esc(label));
+    }
+    match &checkbox.link {
+        Some(link) => {
+            let _ = write!(
+                out,
+                " form:linked-cell=\"{}\"",
+                esc(&link.address(&sheet.name))
+            );
+        }
+        None if checkbox.checked => out.push_str(" form:current-state=\"checked\""),
+        None => {}
+    }
+    out.push_str("/>");
+    out
+}
+
+/// The shape of the checkbox in its cell: a `draw:control` naming it, at the cell's corner.
+/// The size is a box, not the cell — LibreOffice draws a control at the size it is given.
+fn control_element(id: &str) -> String {
+    format!(
+        "<draw:control draw:control=\"{id}\" svg:x=\"0cm\" svg:y=\"0cm\" \
+         svg:width=\"0.5cm\" svg:height=\"0.5cm\"/>"
+    )
+}
+
+/// `office:forms` for a sheet that has checkboxes, and nothing for one that has none (R3).
+fn write_forms(out: &mut String, sheet: &Sheet) {
+    let mut boxes = sheet.checkboxes().peekable();
+    if boxes.peek().is_none() {
+        return;
+    }
+    out.push_str("    <office:forms form:automatic-focus=\"false\" form:apply-design-mode=\"false\"><form:form form:name=\"Form\">");
+    for (pos, checkbox) in boxes {
+        out.push_str(&checkbox_element(sheet, checkbox, &checkbox_id(sheet, pos)));
+    }
+    out.push_str("</form:form></office:forms>\n");
+}
+
+/// A cell element written by [`cell`] with the `draw:control` of the checkbox drawn in it, when
+/// there is one — first among its children, where LibreOffice puts it.
+fn with_control(cell: String, sheet: &Sheet, pos: Pos) -> String {
+    let control = sheet
+        .checkbox(pos)
+        .map(|_| control_element(&checkbox_id(sheet, pos)));
+    with_control_text(cell, control)
+}
+
+/// The `draw:control` a cell **from the file** is written with when a save rewrites it. A
+/// checkbox the file already had keeps the file's own shape, verbatim — the file's
+/// `office:forms` keeps its element and its identifier too (`patched_forms`), and the two have
+/// to name one. Only a new one is this writer's (`checkbox_id`), in both places.
+fn file_control(
+    sheet: &Sheet,
+    pos: Pos,
+    source: &super::source::Source,
+    element: std::ops::Range<usize>,
+) -> Option<String> {
+    sheet.checkbox(pos)?;
+    let in_file = sheet
+        .origin
+        .table
+        .and_then(|ti| source.tables.get(ti))
+        .is_some_and(|t| t.checkboxes.contains_key(&pos));
+    if in_file {
+        let own: String = children_named(&source.bytes, element, b":control")
+            .into_iter()
+            .map(|r| String::from_utf8_lossy(&source.bytes[r]).into_owned())
+            .collect();
+        if !own.is_empty() {
+            return Some(own);
+        }
+    }
+    Some(control_element(&checkbox_id(sheet, pos)))
+}
+
+/// [`with_control`] with the control already decided.
+fn with_control_text(cell: String, control: Option<String>) -> String {
+    let Some(control) = control else {
+        return cell;
+    };
+    let Some(close) = cell.find('>') else {
+        return cell;
+    };
+    if cell[..close].ends_with('/') {
+        let name = cell[1..]
+            .split(|c: char| c.is_whitespace() || c == '/' || c == '>')
+            .next()
+            .unwrap_or("table:table-cell")
+            .to_owned();
+        return format!("{}>{control}</{name}>", &cell[..close - 1]);
+    }
+    format!("{}{control}{}", &cell[..=close], &cell[close + 1..])
 }
 
 /// ` table:number-columns-spanned="c" table:number-rows-spanned="r"` on a merge's top-left

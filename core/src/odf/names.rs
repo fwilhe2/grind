@@ -42,6 +42,12 @@ pub enum Ns {
     /// `chart:` — `chart:chart`, `chart:series`, `chart:axis` and the rest of a chart's own
     /// embedded document (`grind_sheet::chart`, `doc/chart-format.md`).
     Chart,
+    /// `form:` — a form's controls (`office:forms`). The spreadsheet reads one of them, the
+    /// checkbox (`doc/ods-format.md` §3.5).
+    Form,
+    /// `xml:` — the namespace the `xml` prefix is bound to by XML itself, which carries
+    /// `xml:id`, the identifier a `draw:control` points at.
+    Xml,
     Other,
 }
 
@@ -57,6 +63,9 @@ pub const XLINK: &str = "http://www.w3.org/1999/xlink";
 pub const CALCEXT: &str = "urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0";
 pub const DRAW: &str = "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0";
 pub const CHART: &str = "urn:oasis:names:tc:opendocument:xmlns:chart:1.0";
+pub const FORM: &str = "urn:oasis:names:tc:opendocument:xmlns:form:1.0";
+/// Bound to the `xml` prefix by the XML specification itself, never declared in a document.
+pub const XML: &str = "http://www.w3.org/XML/1998/namespace";
 
 impl Ns {
     pub fn from_uri(uri: &str) -> Ns {
@@ -72,6 +81,8 @@ impl Ns {
             CALCEXT => Ns::Calcext,
             DRAW => Ns::Draw,
             CHART => Ns::Chart,
+            FORM => Ns::Form,
+            XML => Ns::Xml,
             _ => Ns::Other,
         }
     }

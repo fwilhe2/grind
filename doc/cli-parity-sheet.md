@@ -59,6 +59,10 @@ stops ratcheting.
 - `set_row_hidden` — `grind sheet hide <rows>` (and `--unhide` to show it again)
 - `set_filter` — `grind sheet filter <range> COLUMN=VALUE…` (and `grind sheet filter --clear`)
 - `filter` — `grind sheet filter` with no range, which prints each sheet's filtered range
+- `set_checkbox` — `grind sheet checkbox <cell> [--link <cell>] [--label <text>]`, and
+  `--remove`
+- `checkboxes` — `grind sheet checkbox` with no cell, which prints every checkbox on every sheet
+- `toggle_checkbox` — `grind sheet checkbox <cell> --toggle`
 - `merge` — `grind sheet merge <range>`
 - `unmerge` — `grind sheet merge <range> --unmerge`
 - `merges` — `grind sheet merge` with no range, which prints every merged range on every sheet

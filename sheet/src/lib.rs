@@ -62,7 +62,7 @@ pub use chart::{
     effective_color, pie_slice_at, pie_slices, series_color,
 };
 pub use filter::Filter;
-pub use model::{CellValue, Document, Pos, Sheet, Span};
+pub use model::{CellValue, Checkbox, Document, Link, Pos, Sheet, Span};
 pub use table_format::{TableOptions, TotalsFunction};
 
 /// What can go wrong with a **spreadsheet**.
@@ -252,6 +252,10 @@ pub struct Viewport {
     /// beside it because a merge scrolled half out of view is still drawn with it, from a
     /// cell this rectangle does not include.
     merges: Vec<Merged>,
+    /// The checkboxes drawn in this rectangle, each with whether it is ticked — resolved here
+    /// because a linked one's state is another cell's value, perhaps off screen or on another
+    /// sheet.
+    checkboxes: Vec<(Pos, bool)>,
 }
 
 /// One merged range as a renderer draws it: the whole area, with what its top-left cell shows.
@@ -341,6 +345,19 @@ impl Viewport {
     /// the top-left cell over the whole area and nothing for the others.
     pub fn merge_at(&self, row: u32, col: u32) -> Option<&Merged> {
         self.merges.iter().find(|m| m.contains(row, col))
+    }
+
+    /// Whether a checkbox is drawn in this cell, and if so whether it is ticked.
+    pub fn checkbox(&self, row: u32, col: u32) -> Option<bool> {
+        self.checkboxes
+            .iter()
+            .find(|(pos, _)| *pos == Pos::new(row, col))
+            .map(|(_, ticked)| *ticked)
+    }
+
+    /// Every checkbox in this rectangle, with whether it is ticked.
+    pub fn checkboxes(&self) -> &[(Pos, bool)] {
+        &self.checkboxes
     }
 
     /// Whether one cell is hidden under a merge — inside one and not its top-left cell.
@@ -1507,6 +1524,11 @@ impl App {
                 })
                 .collect()
         };
+        let checkboxes = s
+            .checkboxes()
+            .filter(|(pos, _)| rows.contains(&pos.row) && cols.contains(&pos.col))
+            .map(|(pos, c)| (pos, checkbox_state(&state.doc, sheet, c)))
+            .collect();
         Ok(Viewport {
             rows,
             cols,
@@ -1516,6 +1538,7 @@ impl App {
             roles,
             names,
             merges,
+            checkboxes,
         })
     }
 
@@ -2078,6 +2101,86 @@ impl App {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
         Ok(s.merge_at(pos).map(|(a, span)| (a, span.end(a))))
+    }
+
+    /// Put a checkbox in `pos` — or with `None`, take it away (`doc/ods-format.md` §3.5). One
+    /// undo step. The linked cell is not touched: a new checkbox shows whatever it already holds.
+    pub fn set_checkbox(&self, sheet: usize, pos: Pos, checkbox: Option<Checkbox>) -> Result<()> {
+        self.mutate(|state| {
+            let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+            if s.checkbox(pos) == checkbox.as_ref() {
+                return Ok(());
+            }
+            self::apply_batch(
+                state,
+                sheet,
+                vec![Action::SetCheckbox {
+                    sheet,
+                    pos,
+                    checkbox: checkbox.map(Box::new),
+                }],
+            )
+            .map(|_| ())
+        })
+    }
+
+    /// Every checkbox on a sheet, by the cell it is drawn in.
+    pub fn checkboxes(&self, sheet: usize) -> Result<Vec<(Pos, Checkbox)>> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(s.checkboxes().map(|(pos, c)| (pos, c.clone())).collect())
+    }
+
+    /// Tick or untick the checkbox in `pos`, returning whether it is ticked now.
+    ///
+    /// A linked checkbox's state **is** its linked cell, so ticking one writes `TRUE` or
+    /// `FALSE` there — `1` or `0` where the cell already holds a number, which is how LibreOffice
+    /// stores one — and recalculates — the formula counting the ticks follows, in the same undo
+    /// step. An unlinked one flips its own state.
+    pub fn toggle_checkbox(&self, sheet: usize, pos: Pos) -> Result<bool> {
+        self.mutate(|state| {
+            let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+            let checkbox = s
+                .checkbox(pos)
+                .cloned()
+                .ok_or_else(|| Error::BadSheet("no checkbox in that cell".to_owned()))?;
+            let now = !checkbox_state(&state.doc, sheet, &checkbox);
+            let edit = match &checkbox.link {
+                Some(link) => {
+                    let target = match &link.sheet {
+                        Some(name) => state
+                            .doc
+                            .sheets
+                            .iter()
+                            .position(|s| &s.name == name)
+                            .ok_or_else(|| Error::BadSheet(format!("no such sheet: {name}")))?,
+                        None => sheet,
+                    };
+                    // In the cell's own spelling: a document that keeps its ticks as `1`/`0`
+                    // with a boolean format — LibreOffice's way of storing TRUE — gets a
+                    // number back, so a formula summing them still does.
+                    let value = match state.doc.sheet(target).map(|s| s.get(link.pos)) {
+                        Some(CellValue::Number(_)) => CellValue::Number(f64::from(u8::from(now))),
+                        _ => CellValue::Bool(now),
+                    };
+                    Action::SetCell {
+                        sheet: target,
+                        pos: link.pos,
+                        value,
+                    }
+                }
+                None => Action::SetCheckbox {
+                    sheet,
+                    pos,
+                    checkbox: Some(Box::new(Checkbox {
+                        checked: now,
+                        ..checkbox
+                    })),
+                },
+            };
+            commit(state, sheet, vec![edit], RecalcMode::Document)?;
+            Ok(now)
+        })
     }
 
     /// A sheet's autofilter, if it has one.
@@ -2771,6 +2874,23 @@ fn apply_batch(state: &mut State, sheet: usize, updates: Vec<Action>) -> Result<
     Ok(changed)
 }
 
+/// Whether a checkbox is ticked: its linked cell's value when it has one — `TRUE`, or a number
+/// that is not zero, as a spreadsheet reads a boolean — and its own state when it has none.
+pub fn checkbox_state(doc: &Document, sheet: usize, checkbox: &Checkbox) -> bool {
+    let Some(link) = &checkbox.link else {
+        return checkbox.checked;
+    };
+    let target = match &link.sheet {
+        Some(name) => doc.sheets.iter().find(|s| &s.name == name),
+        None => doc.sheet(sheet),
+    };
+    match target.map(|s| s.get(link.pos)) {
+        Some(CellValue::Bool(b)) => b,
+        Some(CellValue::Number(n)) => n != 0.0,
+        _ => false,
+    }
+}
+
 /// What one [`App::recalc`] did.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Recalc {
@@ -2927,6 +3047,26 @@ fn references_renamed(doc: &Document, from: &str, to: &str) -> Vec<Action> {
                     // changes what it is *called* and not what it reads, so nothing about the
                     // answer has changed and marking the cell stale would be a lie.
                     value: sheet.get(pos),
+                });
+            }
+        }
+    }
+    // A checkbox linked to a cell on the renamed sheet follows it.
+    for (index, sheet) in doc.sheets.iter().enumerate() {
+        for (pos, checkbox) in sheet.checkboxes() {
+            if checkbox
+                .link
+                .as_ref()
+                .is_some_and(|link| link.sheet.as_deref() == Some(from))
+            {
+                let mut renamed = checkbox.clone();
+                if let Some(link) = renamed.link.as_mut() {
+                    link.sheet = Some(to.to_owned());
+                }
+                actions.push(Action::SetCheckbox {
+                    sheet: index,
+                    pos,
+                    checkbox: Some(Box::new(renamed)),
                 });
             }
         }

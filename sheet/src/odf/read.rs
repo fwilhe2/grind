@@ -112,6 +112,15 @@ pub struct Builder {
     // --- charts (`doc/chart-format.md`) ---
     /// The chart being assembled out of the `draw:frame`/`draw:object` currently open, if any.
     pending_chart: Option<PendingChart>,
+    /// The checkboxes of the table being read, by the identifier its cells' `draw:control`s
+    /// name — `office:forms` comes before the rows (rng:15958), so every one is known by the
+    /// time a cell points at it.
+    controls: HashMap<String, crate::model::Checkbox>,
+    /// Checkboxes drawn in the table being read, placed when it ends: `(cell, how far below
+    /// its top the control's middle is, in mm, the checkbox)`. Placed then rather than at once
+    /// because a control's offset can carry it into the next row, whose height is not known
+    /// yet (`Sheet::row_holding`).
+    placed: Vec<(Pos, f64, String, crate::model::Checkbox)>,
     /// The original bytes, kept only when they are a package — a chart's own document may be
     /// a separate part (`Object 1/content.xml`) an `xlink:href` points at rather than embedded
     /// inline, and resolving one means going back to the archive it came from.
@@ -237,6 +246,8 @@ impl Builder {
             filter: None,
             filter_values: Default::default(),
             pending_chart: None,
+            controls: HashMap::new(),
+            placed: Vec::new(),
             package: None,
             chart_parts: Vec::new(),
         }
@@ -649,6 +660,66 @@ impl Context<Builder> for NamedExpressions {
             b.doc.names.insert(key.to_lowercase(), expression);
         }
         Some(Box::new(super::context::Ignore))
+    }
+}
+
+/// `office:forms` and the `form:form`s in it: every `form:checkbox`, by its identifier, into
+/// [`Builder::controls`] for the cells that draw one (`doc/ods-format.md` §3.5). Every other
+/// control is read past — kept in the file by R6, not in the model.
+struct Forms;
+
+impl Context<Builder> for Forms {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Form, "form") {
+            // R6: where a new checkbox can go — before the first form's end tag.
+            if let Some(range) = b.extent(attrs.span())
+                && let Some(source) = b.doc.source.as_deref_mut()
+                && let Some(table) = source.tables.last_mut()
+                && table.form_end.is_none()
+            {
+                let close = source.bytes[range.clone()]
+                    .iter()
+                    .rposition(|c| *c == b'<')
+                    .map(|at| range.start + at);
+                // A self-closed `<form:form/>` has no end tag to put anything before.
+                table.form_end = close.filter(|at| *at > attrs.span().end - 1);
+            }
+            return Some(Box::new(Forms));
+        }
+        if !name.is(Ns::Form, "checkbox") {
+            return None;
+        }
+        let id = attrs
+            .get(Ns::Xml, "id")
+            .or_else(|| attrs.get(Ns::Form, "id"))?;
+        let own = b
+            .doc
+            .sheets
+            .get(b.sheet)
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+        let link = attrs
+            .get(Ns::Form, "linked-cell")
+            .and_then(|address| crate::model::Link::parse(address, &own));
+        let checkbox = crate::model::Checkbox {
+            // A linked checkbox's state is its cell's; LibreOffice mirrors it into
+            // `form:current-state`, which says nothing the cell does not (§3.5).
+            checked: link.is_none() && attrs.get(Ns::Form, "current-state") == Some("checked"),
+            link,
+            name: attrs.get(Ns::Form, "name").map(str::to_owned),
+            label: attrs.get(Ns::Form, "label").map(str::to_owned),
+        };
+        if let Some(range) = b.extent(attrs.span())
+            && let Some(table) = b
+                .doc
+                .source
+                .as_deref_mut()
+                .and_then(|source| source.tables.last_mut())
+        {
+            table.checkbox_elements.insert(id.to_owned(), range);
+        }
+        b.controls.insert(id.to_owned(), checkbox);
+        None
     }
 }
 
@@ -1296,6 +1367,34 @@ struct Table {
 }
 
 impl Context<Builder> for Table {
+    /// The checkboxes, each in the row its middle falls in, now that every row's height is
+    /// known. Two in one cell is a file that drew them on top of each other: the first stays.
+    fn end(&mut self, b: &mut Builder) {
+        if !self.top {
+            return;
+        }
+        let placed = std::mem::take(&mut b.placed);
+        let Some(sheet) = b.doc.sheets.get_mut(b.sheet) else {
+            return;
+        };
+        let mut read = std::collections::BTreeMap::new();
+        for (pos, middle, id, checkbox) in placed {
+            let at = Pos::new(sheet.row_holding(pos.row, middle), pos.col);
+            if sheet.checkbox(at).is_none() {
+                sheet.set_checkbox(at, Some(checkbox.clone()));
+                read.insert(at, (id, checkbox));
+            }
+        }
+        if let Some(table) = b
+            .doc
+            .source
+            .as_deref_mut()
+            .and_then(|source| source.tables.last_mut())
+        {
+            table.checkboxes = read;
+        }
+    }
+
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         self.record(name, attrs, b);
         match (name.ns, name.local.as_str()) {
@@ -1352,6 +1451,11 @@ impl Context<Builder> for Table {
             })),
             // A sheet's charts (rng:15678) — `doc/chart-format.md`.
             (Ns::Table, "shapes") => Some(Box::new(Shapes)),
+            // The table's form controls, of which a checkbox is read (§3.5).
+            (Ns::Office, "forms") if self.top => {
+                b.controls.clear();
+                Some(Box::new(Forms))
+            }
             _ => None,
         }
     }
@@ -1419,6 +1523,18 @@ impl Table {
     /// (`source::Table`): every row element at any depth, and the table's own columns, charts
     /// and names.
     fn record(&self, name: &Name, attrs: &Attrs, b: &mut Builder) {
+        if self.top && name.is(Ns::Office, "forms") {
+            if let Some(range) = b.extent(attrs.span())
+                && let Some(table) = b
+                    .doc
+                    .source
+                    .as_deref_mut()
+                    .and_then(|source| source.tables.last_mut())
+            {
+                table.forms = Some(range);
+            }
+            return;
+        }
         if name.ns != Ns::Table {
             return;
         }
@@ -1594,7 +1710,28 @@ impl Cell {
 }
 
 impl Context<Builder> for Cell {
-    fn start_child(&mut self, name: &Name, _a: &Attrs, b: &mut Builder) -> Option<Ctx> {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        // A form control drawn in this cell: a checkbox when it names one `office:forms`
+        // declared. Only for a cell standing for itself — a repeated one would be one control
+        // drawn in many cells, which no file means.
+        if name.is(Ns::Draw, "control") {
+            if self.repeat == 1
+                && b.row_repeat == 1
+                && let Some(id) = attrs.get(Ns::Draw, "control")
+                && let Some(checkbox) = b.controls.get(id).cloned()
+            {
+                let mm = |local: &str| {
+                    attrs
+                        .get(Ns::Svg, local)
+                        .and_then(grind_core::style::length_mm)
+                        .unwrap_or(0.0)
+                };
+                let middle = mm("y") + mm("height") / 2.0;
+                b.placed
+                    .push((Pos::new(b.row, self.start), middle, id.to_owned(), checkbox));
+            }
+            return None;
+        }
         if !name.is(Ns::Text, "p") {
             return None;
         }

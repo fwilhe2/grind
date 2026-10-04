@@ -148,6 +148,10 @@ pub struct Provenance {
     /// changes which of their elements are cells and which are covered.
     #[serde(default)]
     pub merges: BTreeSet<u32>,
+    /// Whether a checkbox has been added, changed or taken away — which rewrites the sheet's
+    /// `office:forms`.
+    #[serde(default)]
+    pub checkboxes: bool,
 }
 
 impl PartialEq for Provenance {
@@ -245,6 +249,11 @@ pub struct Sheet {
     /// does not.
     #[serde(default, with = "pairs")]
     merges: BTreeMap<Pos, Span>,
+    /// Checkboxes, keyed by the cell each one is drawn in — `office:forms`' `form:checkbox` and
+    /// the `draw:control` in its cell (`doc/ods-format.md` §3.5). The one form control this
+    /// model carries; see [`Checkbox`].
+    #[serde(default, with = "pairs")]
+    checkboxes: BTreeMap<Pos, Checkbox>,
     /// Which `table:table` of the file this sheet was read from, when it was — a save that
     /// regenerates this sheet writes it *into that element*, keeping every row nobody touched
     /// and every attribute and child the model does not read (`odf::write`). Bookkeeping, not
@@ -270,8 +279,50 @@ impl Sheet {
             filter: None,
             charts: Vec::new(),
             merges: BTreeMap::new(),
+            checkboxes: BTreeMap::new(),
             origin: Provenance::default(),
         }
+    }
+
+    /// The row a point `offset_mm` below the top of `row` falls in — where a control whose
+    /// anchor names one cell but whose offset carries it into the next is actually drawn
+    /// (`doc/ods-format.md` §3.5). A row with no height of its own is [`DEFAULT_ROW_MM`] tall.
+    pub fn row_holding(&self, mut row: u32, mut offset_mm: f64) -> u32 {
+        let height = |row: u32| {
+            self.row_height(row)
+                .and_then(grind_core::style::length_mm)
+                .filter(|mm| *mm > 0.0)
+                .unwrap_or(DEFAULT_ROW_MM)
+        };
+        // Bounded: a control is a few rows tall, and an absurd offset is not a reason to walk a
+        // million rows.
+        for _ in 0..1_000 {
+            let h = height(row);
+            if offset_mm < h || row + 1 >= crate::MAX_ROWS {
+                break;
+            }
+            offset_mm -= h;
+            row += 1;
+        }
+        row
+    }
+
+    /// Every checkbox, by the cell it is drawn in, in address order.
+    pub fn checkboxes(&self) -> impl Iterator<Item = (Pos, &Checkbox)> {
+        self.checkboxes.iter().map(|(pos, c)| (*pos, c))
+    }
+
+    /// The checkbox drawn in `pos`, if there is one.
+    pub fn checkbox(&self, pos: Pos) -> Option<&Checkbox> {
+        self.checkboxes.get(&pos)
+    }
+
+    /// Put a checkbox in `pos`, replacing whatever one was there, or (with `None`) take it away.
+    pub fn set_checkbox(&mut self, pos: Pos, checkbox: Option<Checkbox>) {
+        match checkbox {
+            Some(c) => self.checkboxes.insert(pos, c),
+            None => self.checkboxes.remove(&pos),
+        };
     }
 
     /// Every merged range, in address order of its top-left cell.
@@ -653,6 +704,8 @@ impl Sheet {
                     .chain(self.styles.keys())
                     .map(|pos| pos.row..pos.row + 1),
             )
+            // A checkbox's cell is written to hold its control.
+            .chain(self.checkboxes.keys().map(|pos| pos.row..pos.row + 1))
             // A merge's every row is written, covered cells and all.
             .chain(
                 self.merges()
@@ -681,8 +734,61 @@ impl Sheet {
             self.merges()
                 .map(|(anchor, span)| span.end(anchor))
                 .max_by_key(|pos| pos.row),
+            self.checkboxes.keys().next_back().copied(),
         ]
         .into_iter()
+    }
+}
+
+/// A row's height when it states none, in millimetres: `0.452cm`, the height LibreOffice writes
+/// for an ordinary row of its default 10pt font (measured in every R7 sample it wrote).
+pub const DEFAULT_ROW_MM: f64 = 4.52;
+
+/// A checkbox drawn in a cell: ODF's `form:checkbox`, cut down to what a checklist is
+/// (`doc/ods-format.md` §3.5).
+///
+/// **Its state is a cell's value** when it is linked to one, which is how every spreadsheet
+/// that has them uses them: ticking writes `TRUE` into the linked cell, and a formula counting
+/// the ticks reads that. `checked` is only its own state, for a checkbox linked to nothing.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Checkbox {
+    /// `form:linked-cell` — the cell whose value it shows and sets.
+    pub link: Option<Link>,
+    /// `form:current-state`, for a checkbox with no linked cell.
+    pub checked: bool,
+    /// `form:name`.
+    pub name: Option<String>,
+    /// `form:label` — the text drawn beside the box.
+    pub label: Option<String>,
+}
+
+/// A cell a checkbox is linked to: on its own sheet, or on another one named.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Link {
+    /// The sheet, when it is not the checkbox's own.
+    pub sheet: Option<String>,
+    pub pos: Pos,
+}
+
+impl Link {
+    /// An ODF cell address — `Checkliste.E5` — with the checkbox's own sheet folded away.
+    pub fn parse(address: &str, own_sheet: &str) -> Option<Self> {
+        let reference = crate::a1::parse_bracketed(&format!("[{address}]")).ok()?;
+        if reference.end.is_some() {
+            return None;
+        }
+        let cell = reference.start;
+        let pos = Pos::new(cell.row?.index, cell.col?.index);
+        let sheet = cell.sheet.filter(|name| name != own_sheet);
+        Some(Self { sheet, pos })
+    }
+
+    /// The address as ODF writes it, always with its sheet: `Checkliste.E5`.
+    pub fn address(&self, own_sheet: &str) -> String {
+        let sheet = self.sheet.as_deref().unwrap_or(own_sheet);
+        let mut cell = crate::a1::reference(Some(sheet), self.pos, self.pos).start;
+        cell.sheet_absolute = false;
+        cell.to_string()
     }
 }
 
@@ -848,5 +954,27 @@ impl Document {
 
     pub fn sheet_mut(&mut self, i: usize) -> Option<&mut Sheet> {
         self.sheets.get_mut(i)
+    }
+}
+
+#[cfg(test)]
+mod link_tests {
+    use super::*;
+
+    #[test]
+    fn a_link_reads_and_writes_libreoffices_spelling() {
+        let own = Link::parse("Checkliste.E5", "Checkliste").unwrap();
+        assert_eq!(
+            own,
+            Link {
+                sheet: None,
+                pos: Pos::new(4, 4)
+            }
+        );
+        assert_eq!(own.address("Checkliste"), "Checkliste.E5");
+        let other = Link::parse("'Q3 Actuals'.B2", "Checkliste").unwrap();
+        assert_eq!(other.sheet.as_deref(), Some("Q3 Actuals"));
+        assert_eq!(other.address("Checkliste"), "'Q3 Actuals'.B2");
+        assert_eq!(Link::parse("Checkliste.E5:E6", "x"), None);
     }
 }

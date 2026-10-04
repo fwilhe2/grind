@@ -64,6 +64,19 @@ pub fn click(grid: &Grid, selection: Selection, x: f64, y: f64, extend: bool) ->
     }
 }
 
+/// A plain click at `(x, y)` that lands on a checkbox's box: the cell it is drawn in, which the
+/// view ticks rather than only selecting.
+pub fn checkbox_click(app: &App, sheet: usize, grid: &Grid, x: f64, y: f64) -> Option<Pos> {
+    let (row, col) = grid.hit(x, y);
+    let at = Pos::new(row, col);
+    let boxed = app
+        .checkboxes(sheet)
+        .is_ok_and(|b| b.iter().any(|(pos, _)| *pos == at));
+    let b = super::paint::checkbox_box(grid.cell(row, col));
+    let inside = (b.x..b.x + b.w).contains(&x) && (b.y..b.y + b.h).contains(&y);
+    (boxed && inside).then_some(at)
+}
+
 /// A click on the column header band at `x`: the whole column, or with Shift the columns from the
 /// anchor's to it.
 pub fn column_click(grid: &Grid, selection: Selection, x: f64, extend: bool) -> Selection {
