@@ -203,8 +203,11 @@ fn block_faces<'a>(
                 true => grind_text::look::Role::Body,
                 false => grind_text::look::Role::of(&view.kind, view.style.as_deref()),
             };
-            (resolved.declared || stated != TextStyle::default())
-                .then(|| (view.index, RoleFace::stating(setter, role, stated)))
+            let line = crate::faces::LineRule::parse(props.line_height.as_deref());
+            (resolved.declared || stated != TextStyle::default() || line.is_some()).then(|| {
+                let face = RoleFace::stating(setter, role, stated).with_line(line);
+                (view.index, face)
+            })
         })
         .collect()
 }
@@ -1276,6 +1279,29 @@ mod tests {
         let first = texts.iter().find(|t| t.2.starts_with("fill")).unwrap();
         let below_header = 56.6929 + 13.7988 + 72.0 / 2.54 * 0.5 + 10.6934;
         assert!((first.1 - below_header as f32).abs() < 0.01, "{}", first.1);
+    }
+
+    /// fact 10 on paper: a double-spaced paragraph's lines are 27.6 pt apart and its first line
+    /// sits where a single-spaced one would.
+    #[test]
+    fn a_double_spaced_paragraph_doubles_its_lines() {
+        let words = "word ".repeat(50);
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles><style:style style:name="D" style:family="paragraph"><style:paragraph-properties fo:line-height="200%"/></style:style></office:automatic-styles>
+            <office:body><office:text><text:p text:style-name="D">{words}</text:p></office:text></office:body></office:document>"#
+        );
+        let app = App::new();
+        app.open_bytes("d.fodt", bytes.as_bytes()).unwrap();
+        let page = &typeset(&app, &setter(), &Options::default()).pages[0];
+        let mut ys: Vec<f32> = texts(page).iter().map(|t| t.1).collect();
+        ys.dedup();
+        assert!(
+            (ys[0] - (56.6929 + 10.6934) as f32).abs() < 0.01,
+            "{}",
+            ys[0]
+        );
+        assert!((ys[1] - ys[0] - 27.5977).abs() < 0.01, "{}", ys[1] - ys[0]);
     }
 
     #[test]

@@ -44,9 +44,44 @@ pub struct RoleFace<'a> {
     /// What the block's paragraph style states — family, size, weight, slant — resolved down its
     /// chain (`grind_text::paragraph`). Empty for a role's own face.
     stated: TextStyle,
+    /// The block's own line height, when its paragraph style states one.
+    line: Option<LineRule>,
+}
+
+/// `fo:line-height` (`doc/odt-format.md` §5c, fact 10).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LineRule {
+    /// A share of the face's natural line, the extra below the text.
+    Proportional(f32),
+    /// A line exactly this many points tall.
+    Fixed(f32),
+}
+
+impl LineRule {
+    /// `"150%"` or a length; `normal`, anything unreadable or nothing at all is the natural line.
+    pub fn parse(value: Option<&str>) -> Option<LineRule> {
+        let value = value?.trim();
+        match value.strip_suffix('%') {
+            Some(share) => share
+                .trim()
+                .parse::<f32>()
+                .ok()
+                .filter(|share| *share > 0.0)
+                .map(|share| LineRule::Proportional(share / 100.0)),
+            None => grind_core::style::length_mm(value)
+                .filter(|mm| *mm > 0.0)
+                .map(|mm| LineRule::Fixed((mm * 72.0 / 25.4) as f32)),
+        }
+    }
 }
 
 impl<'a> RoleFace<'a> {
+    /// The same face with its paragraph style's line height.
+    pub fn with_line(mut self, line: Option<LineRule>) -> Self {
+        self.line = line;
+        self
+    }
+
     pub fn new(setter: &'a Typesetter, role: Role) -> Self {
         RoleFace::stating(setter, role, TextStyle::default())
     }
@@ -57,6 +92,7 @@ impl<'a> RoleFace<'a> {
             setter,
             role,
             stated,
+            line: None,
         }
     }
 
@@ -119,11 +155,27 @@ impl Metrics for RoleFace<'_> {
     }
 
     fn line_height(&self, style: &TextStyle) -> f32 {
-        self.setter.line_height(&self.style(style))
+        let natural = self.setter.line_height(&self.style(style));
+        match self.line {
+            None => natural,
+            Some(LineRule::Proportional(share)) => natural * share,
+            Some(LineRule::Fixed(height)) => height,
+        }
     }
 
+    /// A proportional line keeps its text where a natural one has it; a fixed one shares the
+    /// difference above and below the baseline as the face's ascent shares its natural line —
+    /// the approximation `doc/odt-format.md` §5c fact 10 measures, within half a point.
     fn ascent(&self, style: &TextStyle) -> f32 {
-        self.setter.ascent(&self.style(style))
+        let set = self.style(style);
+        let ascent = self.setter.ascent(&set);
+        match self.line {
+            Some(LineRule::Fixed(height)) => {
+                let natural = self.setter.line_height(&set);
+                ascent + (height - natural) * ascent / natural.max(f32::MIN_POSITIVE)
+            }
+            _ => ascent,
+        }
     }
 }
 
@@ -272,6 +324,30 @@ mod tests {
             *out.last().unwrap()
         };
         assert!(width(1) > width(0) * 1.7);
+    }
+
+    /// `doc/odt-format.md` §5c fact 10: a proportional line height scales the line and leaves
+    /// the text where it was, the extra below; a fixed one is the line's whole height.
+    #[test]
+    fn a_line_height_scales_or_fixes_the_line() {
+        let setter = Typesetter::new(Fonts::bundled());
+        let natural = RoleFace::new(&setter, Role::Body);
+        let doubled =
+            RoleFace::new(&setter, Role::Body).with_line(Some(LineRule::Proportional(2.0)));
+        let fixed = RoleFace::new(&setter, Role::Body).with_line(Some(LineRule::Fixed(28.35)));
+        let plain = TextStyle::default();
+        assert!((doubled.line_height(&plain) - 2.0 * natural.line_height(&plain)).abs() < 1e-4);
+        assert_eq!(doubled.ascent(&plain), natural.ascent(&plain));
+        assert!((fixed.line_height(&plain) - 28.35).abs() < 1e-4);
+        let ascent = fixed.ascent(&plain);
+        assert!(ascent > 21.0 && ascent < 23.0, "22.14 measured: {ascent}");
+        assert_eq!(
+            LineRule::parse(Some("200%")),
+            Some(LineRule::Proportional(2.0))
+        );
+        assert_eq!(LineRule::parse(Some("1in")), Some(LineRule::Fixed(72.0)));
+        assert_eq!(LineRule::parse(Some("normal")), None);
+        assert_eq!(LineRule::parse(None), None);
     }
 
     #[test]
