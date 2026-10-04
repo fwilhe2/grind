@@ -19,6 +19,7 @@ use grind_core::style::TextStyle;
 use grind_text::BlockKind;
 use grind_text::flow::{Across, Spacing};
 use grind_text::look::Role;
+use grind_text::table_look::TableLook;
 
 use crate::metrics::Typesetter;
 
@@ -206,6 +207,45 @@ pub fn role_faces(setter: &Typesetter) -> Vec<RoleFace<'_>> {
         .collect()
 }
 
+/// Tables' looks as a [`grind_text::Faces`] for the parts of one that are about tables — what
+/// `grind_text::flow::across_with` lays cells out by before the page's own [`Column`] exists.
+/// Every length in points.
+pub struct TableLooks<'a>(pub &'a HashMap<String, TableLook>);
+
+impl grind_text::Faces for TableLooks<'_> {
+    fn of(&self, _: usize, _: &BlockKind, _: Option<&str>) -> (f32, &dyn Metrics) {
+        (1.0, &grind_text::Fixed)
+    }
+
+    fn columns(&self, table: &str) -> Option<Vec<Option<f64>>> {
+        let look = self.0.get(table)?;
+        let points: Vec<Option<f64>> = look
+            .columns
+            .iter()
+            .map(|w| w.map(|mm| mm * 72.0 / 25.4))
+            .collect();
+        points.iter().any(Option::is_some).then_some(points)
+    }
+
+    fn cell_pad(&self, table: &str, row: u32, column: u32) -> Option<[f64; 4]> {
+        let cell = self.0.get(table)?.cell(row, column)?;
+        Some(cell.padding.map(|mm| mm * 72.0 / 25.4))
+    }
+
+    fn cell_centred(&self, table: &str, row: u32, column: u32) -> bool {
+        self.0
+            .get(table)
+            .and_then(|look| look.cell(row, column))
+            .is_some_and(|cell| cell.vertical_align.as_deref() == Some("middle"))
+    }
+
+    fn header_row(&self, table: &str, row: u32) -> bool {
+        self.0
+            .get(table)
+            .is_some_and(|look| look.header_rows.contains(&row))
+    }
+}
+
 /// The room a declared paragraph style gives its block on paper, in points: the flow's
 /// [`grind_text::flow::Space`], and the right margin, which only narrows the measure.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -229,6 +269,8 @@ pub struct Column<'a> {
     pub breaks: &'a HashMap<usize, grind_text::page::Breaks>,
     /// Each block's first-line indent in points, where its paragraph style states one.
     pub indents: &'a HashMap<usize, f32>,
+    /// Each table's look, by name ([`grind_text::table_look`]).
+    pub looks: &'a HashMap<String, TableLook>,
     /// The text area's width, in points.
     pub width: f64,
     pub across: &'a HashMap<usize, Across>,
@@ -266,6 +308,22 @@ impl grind_text::Faces for Column<'_> {
 
     fn first_indent(&self, index: usize) -> f32 {
         self.indents.get(&index).copied().unwrap_or(0.0)
+    }
+
+    fn columns(&self, table: &str) -> Option<Vec<Option<f64>>> {
+        TableLooks(self.looks).columns(table)
+    }
+
+    fn cell_pad(&self, table: &str, row: u32, column: u32) -> Option<[f64; 4]> {
+        TableLooks(self.looks).cell_pad(table, row, column)
+    }
+
+    fn cell_centred(&self, table: &str, row: u32, column: u32) -> bool {
+        TableLooks(self.looks).cell_centred(table, row, column)
+    }
+
+    fn header_row(&self, table: &str, row: u32) -> bool {
+        TableLooks(self.looks).header_row(table, row)
     }
 }
 
@@ -371,8 +429,10 @@ mod tests {
         let spacing = HashMap::new();
         let breaks = HashMap::new();
         let indents = HashMap::new();
+        let looks = HashMap::new();
         let column = Column {
             indents: &indents,
+            looks: &looks,
             faces: &faces,
             blocks: &blocks,
             spacing: &spacing,

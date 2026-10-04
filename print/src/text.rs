@@ -54,8 +54,15 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     let top = margin_top + room(&header);
     let height = (pt(geometry.text_height()) - room(&header) - room(&footer)).max(1.0);
     let faces = role_faces(setter);
-    let across = flow::across(app, width, &SPACING);
     let viewport = app.get_viewport(0..app.block_count());
+    let looks: std::collections::HashMap<String, grind_text::table_look::TableLook> = viewport
+        .iter()
+        .filter_map(|view| view.cell.as_ref().map(|cell| cell.table.clone()))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|table| Some((table.clone(), app.table_look(&table)?)))
+        .collect();
+    let across = flow::across_with(app, width, &SPACING, &crate::faces::TableLooks(&looks));
     let blocks = block_faces(app, setter, &viewport);
     let spacing = block_spacing(app, &viewport);
     let breaks = block_breaks(app, &viewport);
@@ -70,6 +77,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         .collect();
     let column = Column {
         indents: &indents,
+        looks: &looks,
         faces: &faces,
         blocks: &blocks,
         spacing: &spacing,
@@ -102,7 +110,21 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 });
             };
             for cell in &page.cells {
-                rules(&mut ops, cell, left, top);
+                let look = viewport.get(cell.first).and_then(|view| {
+                    let at = view.cell.as_ref()?;
+                    let table = looks.get(&at.table)?;
+                    Some((table, table.cell(at.row, at.column)))
+                });
+                match look {
+                    // A table whose document styles its cells is drawn as they say — an
+                    // unstyled cell of it with no rules at all, as Writer draws one.
+                    Some((table, own)) if !table.cells.is_empty() => {
+                        if let Some(own) = own {
+                            styled_cell(&mut ops, cell, own, left, top);
+                        }
+                    }
+                    _ => rules(&mut ops, cell, left, top),
+                }
             }
             for piece in &page.pieces {
                 let Some(view) = viewport.get(piece.index) else {
@@ -127,7 +149,8 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 }
                 let face = column.face(view.index, &view.kind, view.style.as_deref());
                 let first = grind_text::Faces::first_indent(&column, view.index);
-                if let Some((from, to)) = lines(&mut ops, app, view, piece, face, first, origin) {
+                let drawn = lines(&mut ops, app, view, piece, face, first, origin);
+                if let (Some((from, to)), false) = (drawn, piece.repeat) {
                     cover(caret(piece.index, from), caret(piece.index, to));
                 }
             }
@@ -287,6 +310,49 @@ fn caret(block: usize, offset: usize) -> Caret {
     Caret { block, offset }
 }
 
+/// A styled cell: its fill under everything, and each of its four borders as its style spells
+/// it (`"0.5pt solid #8da5a5"`; `none` or a width of zero draws nothing).
+fn styled_cell(
+    ops: &mut Vec<Op>,
+    cell: &CellBox,
+    look: &grind_text::table_look::CellLook,
+    left: f64,
+    top: f64,
+) {
+    let (x0, y0) = ((left + cell.left) as f32, (top + cell.top) as f32);
+    let (x1, y1) = (x0 + cell.width as f32, y0 + cell.height as f32);
+    if let Some(fill) = look.background.as_deref().and_then(Rgb::parse) {
+        ops.push(Op::Rect {
+            x: x0,
+            y: y0,
+            width: x1 - x0,
+            height: y1 - y0,
+            color: fill,
+        });
+    }
+    let sides = [
+        ((x0, y0), (x1, y0)),
+        ((x1, y0), (x1, y1)),
+        ((x0, y1), (x1, y1)),
+        ((x0, y0), (x0, y1)),
+    ];
+    for (border, (from, to)) in look.border.iter().zip(sides) {
+        let Some((width, _, colour)) = border.as_deref().and_then(grind_core::style::border_parts)
+        else {
+            continue;
+        };
+        if width <= 0.0 {
+            continue;
+        }
+        ops.push(Op::Line {
+            from,
+            to,
+            width: width as f32,
+            color: Rgb::parse(colour).unwrap_or(Rgb::BLACK),
+        });
+    }
+}
+
 /// The four sides of a table cell.
 fn rules(ops: &mut Vec<Op>, cell: &CellBox, left: f64, top: f64) {
     let (x0, y0) = ((left + cell.left) as f32, (top + cell.top) as f32);
@@ -380,7 +446,10 @@ fn lines(
                 glyphs: setter.shape(mark, &style).glyphs,
                 text: mark.to_owned(),
                 color: Rgb::BLACK,
-                mark: Mark::Label(view.index),
+                mark: match piece.repeat {
+                    true => Mark::Decoration,
+                    false => Mark::Label(view.index),
+                },
             });
         }
         for cut in paint::pieces(&view.runs, line.start, line.end) {
@@ -433,7 +502,11 @@ fn lines(
                     glyphs: shaped.glyphs,
                     text: text.to_owned(),
                     color,
-                    mark: Mark::Content(view.index),
+                    // A heading row repeated on a later page is drawn, not read again.
+                    mark: match piece.repeat {
+                        true => Mark::Decoration,
+                        false => Mark::Content(view.index),
+                    },
                 });
                 // Where an underline and a strike sit, as fractions of the size: close to what
                 // the bundled faces' own `post` and `OS/2` tables say, and the same for any face.
@@ -1397,6 +1470,69 @@ mod tests {
             }
         )));
         assert_eq!(colour("see "), Some(Rgb::BLACK));
+    }
+
+    /// A table drawn as its document says: its own column widths, each cell's fill, borders and
+    /// padding, and its heading row again at the top of every page it continues on.
+    #[test]
+    fn a_table_prints_its_own_look_and_repeats_its_heading() {
+        let rows: String = (1..=80)
+            .map(|i| format!(r#"<table:table-row><table:table-cell table:style-name="Body"><text:p>row {i}</text:p></table:table-cell><table:table-cell><text:p>b</text:p></table:table-cell></table:table-row>"#))
+            .collect();
+        let bytes = format!(
+            r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:styles>
+              <style:style style:name="Head" style:family="table-cell"><style:table-cell-properties fo:border="0.5pt solid #174a5b" fo:padding="0.07in" fo:background-color="#287271"/></style:style>
+              <style:style style:name="Body" style:family="table-cell"><style:table-cell-properties fo:border="0.5pt solid #8da5a5" fo:padding="0.06in"/></style:style>
+            </office:styles>
+            <office:automatic-styles><style:style style:name="W" style:family="table-column"><style:table-column-properties style:column-width="2in"/></style:style></office:automatic-styles>
+            <office:body><office:text><table:table table:name="T"><table:table-column table:style-name="W"/><table:table-column/>
+              <table:table-header-rows><table:table-row><table:table-cell table:style-name="Head"><text:p>Case</text:p></table:table-cell><table:table-cell table:style-name="Head"><text:p>Notes</text:p></table:table-cell></table:table-row></table:table-header-rows>
+              {rows}
+            </table:table></office:text></office:body></office:document>"##
+        );
+        let app = App::new();
+        app.open_bytes("t.fodt", bytes.as_bytes()).unwrap();
+        let doc = typeset(&app, &setter(), &Options::default());
+        assert!(doc.pages.len() >= 2);
+        for page in &doc.pages {
+            let first = texts(page)
+                .into_iter()
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+                .unwrap();
+            assert_eq!(first.2, "Case", "every page starts with the heading");
+        }
+        let page = &doc.pages[0];
+        assert!(
+            page.ops.iter().any(|op| matches!(
+                op,
+                Op::Rect {
+                    color: Rgb(0x28, 0x72, 0x71),
+                    ..
+                }
+            )),
+            "the heading's fill"
+        );
+        assert!(
+            page.ops.iter().any(|op| matches!(
+                op,
+                Op::Line {
+                    color: Rgb(0x8d, 0xa5, 0xa5),
+                    ..
+                }
+            )),
+            "a body cell's border"
+        );
+        // The second column starts where the first's two inches end, plus its own padding.
+        let notes = texts(page).into_iter().find(|t| t.2 == "Notes").unwrap();
+        let expected = 56.6929 + 144.0 + 0.07 * 72.0;
+        assert!((notes.0 - expected as f32).abs() < 0.01, "{}", notes.0);
+        // The repeated heading is decoration, not text read twice.
+        let repeated = doc.pages[1].ops.iter().find_map(|op| match op {
+            Op::Text { text, mark, .. } if text == "Case" => Some(*mark),
+            _ => None,
+        });
+        assert_eq!(repeated, Some(crate::ops::Mark::Decoration));
     }
 
     #[test]
