@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-print"
+version = "0.0.0"
+description = "Pages, PDF and print preview for the word processor (doc/pdf-export.md)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["system-fonts"]
+# Look for fonts installed on the machine as well as the bundled ones. Off in the browser,
+# which has no filesystem to look in, and in any build that wants the same bytes everywhere.
+system-fonts = ["dep:fontdb"]
+
+[dependencies]
+grind-core = { path = "../core" }
+grind-text = { path = "../text" }
+# The font stack lives here and nowhere else, which is the promise doc/text-layout.md decision 2
+# made: `grind-core` stays font-free, and so do the terminal and a `grind` built without `pdf`.
+# All three pinned exactly: they are pre-1.0, and they must agree on one `read-fonts` — harfrust
+# past 0.8 brings a second copy beside krilla's (`cargo tree -d`, measured 2026-10-04).
+skrifa = "=0.42.1"
+harfrust = "=0.8.4"
+fontdb = { version = "0.24", default-features = false, features = ["std", "fs"], optional = true }

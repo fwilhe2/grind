@@ -10,6 +10,7 @@ members = [
     "build",
     "cli",
     "xlsx",
+    "print",
     "ui_sheet_gtk",
     "ui_text_gtk",
     "ui_tui",
@@ -22,7 +23,7 @@ members = [
 # Without this, the default commands try to compile the GTK shells and fail on a machine with
 # no `libgtk-4-dev`, which is why CI has always named crates explicitly. `--workspace` still
 # builds every member on demand.
-default-members = ["core", "sheet", "text", "build", "cli", "xlsx"]
+default-members = ["core", "sheet", "text", "build", "cli", "xlsx", "print"]
 resolver = "3"
 
 [workspace.package]

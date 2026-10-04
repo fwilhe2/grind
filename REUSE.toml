@@ -130,3 +130,10 @@ SPDX-License-Identifier = "CC0-1.0"
 #   doc/OpenDocument-v1.4-os-part4-formula.html -> .html.license
 #
 # Do not run `reuse annotate` against those two paths without --force-dot-license.
+
+# The fonts the PDF falls back on (doc/pdf-export.md, "Fonts"): Liberation 2.1.5, copied as
+# released. A font file cannot carry a header, and it would not be ours to add one to.
+[[annotations]]
+path = "print/fonts/*.ttf"
+SPDX-FileCopyrightText = ["2010 Google Corporation", "2012 Red Hat, Inc."]
+SPDX-License-Identifier = "OFL-1.1"
