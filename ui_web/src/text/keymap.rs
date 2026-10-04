@@ -111,6 +111,10 @@ pub fn action_for<'a>(chord: &Chord<'a>) -> Option<Action<'a>> {
             // Replace's key in every other client. Ctrl+F is not here: it opens the palette
             // (`wire_palette`), where typing a word lists the places that hold it.
             "h" | "H" => Some(Action::Run("edit.replace")),
+            // The browser's own print would print this page — the editor's chrome and all —
+            // rather than the document; ours prints the document's PDF (`doc/pdf-export.md`).
+            "p" | "P" => Some(Action::Run("doc.print-pdf")),
+            "e" | "E" if chord.shift => Some(Action::Run("doc.export-pdf")),
             "b" | "B" => Some(Action::Run("char.bold")),
             "i" | "I" => Some(Action::Run("char.italic")),
             "u" | "U" => Some(Action::Run("char.underline")),
@@ -296,6 +300,20 @@ mod tests {
                 composing: false,
             }),
             Some(Action::Run("doc.redo"))
+        );
+        assert_eq!(
+            ctrl("p"),
+            Some(Action::Run("doc.print-pdf")),
+            "print is ours, not the tab's"
+        );
+        assert_eq!(
+            action_for(&Chord {
+                key: "E",
+                primary: true,
+                shift: true,
+                composing: false,
+            }),
+            Some(Action::Run("doc.export-pdf"))
         );
         assert_eq!(ctrl("t"), None, "and nothing else is claimed");
     }
