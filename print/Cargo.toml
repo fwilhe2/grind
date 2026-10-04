@@ -11,7 +11,11 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-default = ["system-fonts"]
+default = ["system-fonts", "bundled-fonts"]
+# The twelve Liberation faces compiled into the binary (about 4 MB). Off in the browser, which
+# fetches the same files from its own origin the first time something is exported
+# (`fonts::BUNDLED_NAMES`), so opening the page costs none of it.
+bundled-fonts = []
 # Look for fonts installed on the machine as well as the bundled ones. Off in the browser,
 # which has no filesystem to look in, and in any build that wants the same bytes everywhere.
 system-fonts = ["dep:fontdb"]

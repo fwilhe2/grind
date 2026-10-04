@@ -92,7 +92,25 @@ pub struct Fonts {
     faces: Vec<Face>,
 }
 
-/// The bundled faces, compiled in.
+/// The bundled faces' file names, in `print/fonts/`: what a build without them compiled in (the
+/// browser's, `bundled-fonts` off) fetches and hands to [`Fonts::add`].
+pub const BUNDLED_NAMES: [&str; 12] = [
+    "LiberationSerif-Regular.ttf",
+    "LiberationSerif-Bold.ttf",
+    "LiberationSerif-Italic.ttf",
+    "LiberationSerif-BoldItalic.ttf",
+    "LiberationSans-Regular.ttf",
+    "LiberationSans-Bold.ttf",
+    "LiberationSans-Italic.ttf",
+    "LiberationSans-BoldItalic.ttf",
+    "LiberationMono-Regular.ttf",
+    "LiberationMono-Bold.ttf",
+    "LiberationMono-Italic.ttf",
+    "LiberationMono-BoldItalic.ttf",
+];
+
+/// The bundled faces, compiled in, in [`BUNDLED_NAMES`]' order.
+#[cfg(feature = "bundled-fonts")]
 const BUNDLED: [&[u8]; 12] = [
     include_bytes!("../fonts/LiberationSerif-Regular.ttf"),
     include_bytes!("../fonts/LiberationSerif-Bold.ttf"),
@@ -128,11 +146,21 @@ const GENERIC: [(&str, &str); 3] = [
 const DEFAULT: &str = "Liberation Serif";
 
 impl Fonts {
-    /// Only the bundled faces — what a test, a reproducible build and the browser use.
+    /// Only the bundled faces — what a test and a reproducible build use. **Empty** in a build
+    /// without `bundled-fonts`, whose caller fetches [`BUNDLED_NAMES`] and adds them itself.
     pub fn bundled() -> Self {
+        #[allow(unused_mut)]
         let mut fonts = Fonts::default();
+        #[cfg(feature = "bundled-fonts")]
         for bytes in BUNDLED {
             fonts.add_data(Data::Static(bytes));
+        }
+        // The tests are about what is done with the faces, not how they arrived, so without the
+        // feature they read the same files from the tree the way the browser fetches them.
+        #[cfg(all(test, not(feature = "bundled-fonts")))]
+        for name in BUNDLED_NAMES {
+            let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fonts");
+            fonts.add(std::fs::read(dir.join(name)).expect("the bundled fonts are in the tree"));
         }
         fonts
     }
@@ -398,6 +426,27 @@ mod tests {
             named(&fonts, &r),
             ("Liberation Sans".to_owned(), false, false)
         );
+    }
+
+    /// A build without the fonts compiled in (the browser's) fetches them by these names from
+    /// wherever it serves them; the list and the files must not drift apart.
+    #[test]
+    fn every_bundled_name_is_a_font_file_in_the_tree() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fonts");
+        let mut on_disk: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .filter(|name| name.ends_with(".ttf"))
+            .collect();
+        on_disk.sort();
+        let mut named: Vec<String> = BUNDLED_NAMES.iter().map(|n| (*n).to_owned()).collect();
+        named.sort();
+        assert_eq!(named, on_disk);
+        let mut fonts = Fonts::default();
+        for name in BUNDLED_NAMES {
+            fonts.add(std::fs::read(dir.join(name)).unwrap());
+        }
+        assert_eq!(fonts.len(), 12, "the same twelve faces Fonts::bundled has");
     }
 
     #[test]
