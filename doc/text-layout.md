@@ -356,7 +356,10 @@ consequence, and it is the point: S8 was going to discover this.
 
 ### What stays gated, unchanged
 
-Pagination. `doc/not-doing.md` §2, loop D at a stated floor. Path C is line layout and nothing
+Pagination *as an editing view*. `doc/not-doing.md` §2. **Pagination as an output** (PDF and
+its preview) is being built by `doc/pdf-export.md`, which amends this section: pages are derived
+when asked for, never stored, and the differential once called loop D here is loop G there,
+since the xlsx filter has used D since phase 11. Otherwise Path C is line layout and nothing
 more — page boxes, widows, orphans, headers, footers and footnote placement are all still out,
 and the exit criterion for *this* work is agreement between shells, not agreement with
 LibreOffice.
