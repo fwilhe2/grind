@@ -1395,7 +1395,11 @@ impl Context<Builder> for Frame {
         // closing first would otherwise emit a second, empty image from what is left.
         if b.frame_depth == 0
             && let Some(pending) = b.image.take()
-            && let (Some(mime), Some(data)) = (pending.mime, pending.data)
+            && let Some(data) = pending.data
+            // A frame that states no type (odfpy writes none) is typed by its own bytes.
+            && let Some(mime) = pending
+                .mime
+                .or_else(|| crate::picture::mime(&data).map(str::to_owned))
         {
             let image = Run::Image {
                 mime,

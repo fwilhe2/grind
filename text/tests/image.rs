@@ -265,3 +265,47 @@ fn a_package_form_image_is_resolved_against_its_own_part() {
         "the referenced part's own bytes, not empty ones"
     );
 }
+
+/// A picture whose frame states no `draw:mime-type` — odfpy writes none — is typed by its own
+/// bytes (`picture::mime`), PNG and SVG alike, rather than dropped.
+#[test]
+fn a_picture_with_no_mime_type_is_typed_by_its_bytes() {
+    let content = br#"<?xml version="1.0"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"
+  xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"
+  xmlns:xlink="http://www.w3.org/1999/xlink" office:version="1.2">
+  <office:body><office:text>
+    <text:p><draw:frame svg:width="2in" svg:height="1in"><draw:image xlink:href="Pictures/a.png"/></draw:frame></text:p>
+    <text:p><draw:frame svg:width="2in" svg:height="1in"><draw:image xlink:href="Pictures/b.svg"/></draw:frame></text:p>
+  </office:text></office:body>
+</office:document-content>"#;
+    let svg =
+        br#"<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"/>"#;
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    zip.start_file("mimetype", stored).unwrap();
+    std::io::Write::write_all(&mut zip, b"application/vnd.oasis.opendocument.text").unwrap();
+    for (name, bytes) in [
+        ("content.xml", &content[..]),
+        ("Pictures/a.png", b"\x89PNG\r\n\x1a\nrest"),
+        ("Pictures/b.svg", &svg[..]),
+    ] {
+        zip.start_file(name, stored).unwrap();
+        std::io::Write::write_all(&mut zip, bytes).unwrap();
+    }
+    let bytes = zip.finish().unwrap().into_inner();
+    let doc = odf::read(&bytes).expect("parses");
+    let mimes: Vec<String> = doc
+        .blocks
+        .iter()
+        .flat_map(|block| &block.runs)
+        .filter_map(|run| match run {
+            Run::Image { mime, .. } => Some(mime.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(mimes, vec!["image/png", "image/svg+xml"]);
+}
