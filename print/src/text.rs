@@ -18,6 +18,7 @@ use grind_text::flow::{self, CellBox};
 use grind_text::page::{Piece, Rules, paginate};
 use grind_text::{App, BlockKind, BlockView, Caret, paint, picture_of};
 
+use crate::align::{self, Align};
 use crate::faces::{Column, RoleFace, SPACING, role_faces};
 use crate::metrics::Typesetter;
 use crate::ops::{Document, Element, Heading, Mark, Op, Page, Rgb};
@@ -249,10 +250,39 @@ fn lines(
     let span = (first.start, last.end);
     let first_top = first.top;
     let setter = face.setter();
+    let align = Align::parse(
+        app.paragraph(view.index)
+            .and_then(|resolved| resolved.props.text_align)
+            .as_deref(),
+    );
+    let chars: Vec<char> = view.text.chars().collect();
+    let count = layout.lines().len();
     for at in piece.lines.clone() {
         let Some(line) = layout.lines().get(at) else {
             continue;
         };
+        // The line's visible end — trailing spaces are not part of what is aligned — and the
+        // spaces between its first and last visible characters, which justification widens.
+        let visible_end = (line.start..line.end)
+            .rev()
+            .find(|&i| chars.get(i).is_some_and(|c| !c.is_whitespace()))
+            .map_or(line.start, |i| i + 1);
+        let content = match visible_end == line.end {
+            true => line.width,
+            false => layout.x_at(visible_end),
+        };
+        let interior = |upto: usize| {
+            (line.start..upto.min(visible_end))
+                .filter(|&i| chars.get(i) == Some(&' '))
+                .count()
+        };
+        let fit = align::fit(
+            align,
+            piece.width as f32,
+            content,
+            interior(visible_end),
+            at + 1 == count,
+        );
         let line_top = top as f32 + (line.top - first_top);
         let baseline = line_top + layout.baseline();
         if at == 0
@@ -277,8 +307,20 @@ fn lines(
                     continue;
                 }
                 let style = face.style(&cut.props.metrics());
-                let shaped = setter.shape(text, &style);
-                let x = left as f32 + layout.x_at(start);
+                let mut shaped = setter.shape(text, &style);
+                let x = left as f32
+                    + fit.offset
+                    + layout.x_at(start)
+                    + fit.extra * interior(start) as f32;
+                if fit.extra > 0.0 {
+                    // Every interior space this piece holds is drawn `extra` wider.
+                    for glyph in &mut shaped.glyphs {
+                        let here = start + text[..glyph.text.start].chars().count();
+                        if &text[glyph.text.clone()] == " " && here < visible_end {
+                            glyph.x_advance += fit.extra;
+                        }
+                    }
+                }
                 let run: f32 = shaped.glyphs.iter().map(|g| g.x_advance).sum();
                 let color = cut
                     .props
@@ -837,6 +879,63 @@ mod tests {
         assert!(
             (between - (13.7988 + 1.5 * cm) as f32).abs() < 0.01,
             "{between}"
+        );
+    }
+
+    /// `doc/odt-format.md` §5c fact 8, on paper: a justified paragraph's lines reach the right
+    /// margin except its last, and a centred line sits in the middle.
+    #[test]
+    fn justified_and_centred_paragraphs_are_drawn_so() {
+        let words = "word ".repeat(60);
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles>
+              <style:style style:name="J" style:family="paragraph"><style:paragraph-properties fo:text-align="justify"/></style:style>
+              <style:style style:name="C" style:family="paragraph"><style:paragraph-properties fo:text-align="center"/></style:style>
+            </office:automatic-styles>
+            <office:body><office:text><text:p text:style-name="J">{words}</text:p><text:p text:style-name="C">middle</text:p></office:text></office:body></office:document>"#
+        );
+        let app = App::new();
+        app.open_bytes("a.fodt", bytes.as_bytes()).unwrap();
+        let page = &typeset(&app, &setter(), &Options::default()).pages[0];
+        // Every line's right end: the x of its last text op plus that op's advances.
+        let mut ends: Vec<(f32, f32)> = Vec::new();
+        for op in &page.ops {
+            if let Op::Text {
+                x, y, glyphs, text, ..
+            } = op
+            {
+                let end = x + glyphs.iter().map(|g| g.x_advance).sum::<f32>();
+                let visible = text.trim_end().len() == text.len();
+                match ends.last_mut() {
+                    Some((line, right)) if *line == *y => {
+                        *right = right.max(if visible { end } else { *right })
+                    }
+                    _ => ends.push((*y, end)),
+                }
+            }
+        }
+        let right_margin = (595.2756 - 56.6929) as f32;
+        let justified = &ends[..ends.len() - 2];
+        assert!(justified.len() >= 2, "{ends:?}");
+        for (_, right) in justified {
+            // The last word's own trailing space is the one thing past the margin.
+            assert!(
+                (right - right_margin).abs() < 4.0,
+                "{right} against {right_margin}"
+            );
+        }
+        let last = ends[ends.len() - 2].1;
+        assert!(
+            last < right_margin - 100.0,
+            "the paragraph's last line is not stretched"
+        );
+        let middle = texts(page).into_iter().find(|t| t.2 == "middle").unwrap();
+        let centre = (56.6929 + 595.2756 - 56.6929) / 2.0;
+        assert!(
+            middle.0 > 250.0 && (middle.0 as f64) < centre,
+            "{}",
+            middle.0
         );
     }
 

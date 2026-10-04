@@ -7,6 +7,7 @@
 //! The font stack lives in this crate and nowhere else: `grind-core` stays font-free
 //! (`doc/text-layout.md`, decision 2), and so does any build that leaves this crate out.
 
+pub mod align;
 pub mod faces;
 pub mod fonts;
 pub mod metrics;
