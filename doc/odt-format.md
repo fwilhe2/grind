@@ -589,6 +589,39 @@ relabels the host's whole temp directory as a side effect of running a test.
 
 ---
 
+## 5c. Pages — what Writer does — MEASURED (2026-10-04)
+
+`doc/pdf-export.md` P1. Each fact below was measured by converting a document written for the
+purpose to PDF and reading the PDF back (`pdfinfo`, `pdftotext -bbox`), never by reading
+LibreOffice's source. Two builds were used, and which one is named per fact, because the pinned
+oracle turned out to be unable to answer the font questions (fact 4).
+
+1. **A document that states no page gets the locale's paper, with 2 cm margins.** A flat
+   document with no `style:page-layout` and no master page prints on **A4** under the pinned
+   image (26.2.5.2, whose locale is POSIX) and on **US Letter** under a desktop build
+   (26.8.1.1, en-US); both use `0.7874in` margins all round, and both write that page into the
+   document on save (`fo:page-width="8.2681in"` / `"8.5in"`). This build always uses A4
+   (`doc/pdf-export.md`, decision 7), so for a document stating no page **it agrees with the
+   pinned oracle and differs from a US desktop by design**. Every document Writer itself saved
+   states its page, so the difference only reaches documents another producer wrote.
+2. **One line of Liberation Serif at 12 pt is 13.8 pt**, line top to line top, with the first
+   line's top at the page's top margin (26.8.1.1, Liberation 2.1.5, single spacing, no paragraph
+   spacing). That is the face's ascent plus descent plus line gap, scaled: (1825 + 443 + 87) /
+   2048 × 12 = 13.799 — the rule `grind_print::metrics` already uses. A 2 cm-margined A4 page
+   holds 52 such lines and a Letter page 49. Only Liberation Serif was measured; whether Writer
+   takes `hhea` or `OS/2` metrics for a face where they differ is **not** settled here.
+3. **With `fo:widows` and `fo:orphans` stated nowhere, no widow or orphan control is applied.**
+   A 53-line paragraph on a page holding 52 leaves **one** line on the next page (26.8.1.1); with
+   `fo:widows="2" fo:orphans="2"` on its paragraph style it leaves two (51 + 2), and with both
+   `"0"` it behaves as with neither. A document Writer creates states `2` and `2` on its
+   **default paragraph style** (`style:default-style style:family="paragraph"`) —
+   `text/tests/data/edited-default-paragraph-style.fodt` does — which is where a reader that does
+   not yet resolve named paragraph styles finds them.
+4. **The pinned image has no Liberation fonts.** The same document set in Liberation Serif
+   comes out in **DejaVu Serif** from the pin (`pdffonts`), so line breaks and page breaks
+   measured there are DejaVu's. Loop G cannot use the pin as it stands; it needs the bundled
+   faces installed in the image first (`doc/pdf-export.md` P9).
+
 ## 6. What the reader gets for free
 
 Worth stating, because it is the return on the architecture and it means S4 is smaller than it

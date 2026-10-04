@@ -303,7 +303,7 @@ a user-visible capability (CLAUDE.md: a feature without a line there is invisibl
 | | State |
 |---|---|
 | P0 | **Done**: this document; the spike's numbers are in §7 |
-| P1 | Open. Until it is done nothing below claims to match Writer: widows and orphans are two each by our own choice, and line height is the face's ascent + descent + line gap |
+| P1 | **Done**: `doc/odt-format.md` §5c — the default page is the locale's (A4 under the pin), a line is ascent + descent + line gap (13.8 pt for Liberation Serif 12), widows and orphans are none unless stated (Writer states 2 and 2 on the default paragraph style), and the pin has no Liberation fonts, which loop G must fix first |
 | P2 | **Done**: `grind_core::page`, `Document::page`, `grind info`'s `page` line |
 | P3 | **Done, apart from system fonts**: `Fonts` (bundled Liberation, metric-compatible twins, generics, Writer's default), `Typesetter` (harfrust, points), `Metrics::ascent` and `Layout::baseline`. Per-glyph fallback is not built: a character no face has is counted in the report, not drawn from another face |
 | P3 | system fonts **done** too: `fonts_for` reads only the families a document names (and their twins) from the machine, `--bundled-fonts` turns it off |
