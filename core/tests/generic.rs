@@ -34,6 +34,7 @@ const SOURCES: [(&str, &str); 22] = [
     ("lint.rs", include_str!("../src/lint.rs")),
     ("locale.rs", include_str!("../src/locale.rs")),
     ("observer.rs", include_str!("../src/observer.rs")),
+    ("page.rs", include_str!("../src/page.rs")),
     ("search.rs", include_str!("../src/search.rs")),
     ("style.rs", include_str!("../src/style.rs")),
     ("utf16.rs", include_str!("../src/utf16.rs")),

@@ -33,6 +33,7 @@ pub mod lint;
 pub mod locale;
 pub mod observer;
 pub mod odf;
+pub mod page;
 pub mod projection;
 pub mod search;
 pub mod style;
