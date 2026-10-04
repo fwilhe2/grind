@@ -172,6 +172,12 @@ pub enum Command {
     /// The document typeset and written as a PDF (`grind_print::export`, `doc/pdf-export.md`),
     /// the export's report on the notice bar. Nothing is stored.
     ExportPdf,
+    /// Every page as it prints, one at a time, from the display list the PDF is written from —
+    /// `dialog::page_preview` over `grind_print::raster`.
+    PrintPreview,
+    /// The same pages to a printer, through the system's print dialog. Windows has no API that
+    /// prints a PDF, so the pages go as rasters at the printer's resolution (`doc/pdf-export.md`).
+    Print,
     Recalculate,
     /// Every function this build implements, as a list to pick from — `sheet/assist.rs`'s
     /// `function_lines`, which is `grind sheet functions --long`'s four columns in a dialog.
@@ -380,6 +386,8 @@ impl Command {
         Command::ImportMarkdown,
         Command::ExportMarkdown,
         Command::ExportPdf,
+        Command::PrintPreview,
+        Command::Print,
         Command::Recalculate,
         Command::FunctionList,
         Command::ExplainFormula,
@@ -564,7 +572,15 @@ pub const MENUS: &[Menu] = &[
             // The page on paper (`doc/pdf-export.md`), the word processor's alone.
             Item::Verb {
                 command: Command::ExportPdf,
-                label: "Export &PDF…\tCtrl+Shift+E",
+                label: "Export P&DF…\tCtrl+Shift+E",
+            },
+            Item::Verb {
+                command: Command::PrintPreview,
+                label: "Print Pre&view\tCtrl+Shift+P",
+            },
+            Item::Verb {
+                command: Command::Print,
+                label: "&Print…\tCtrl+P",
             },
             Item::Separator,
             Item::Verb {
@@ -1267,7 +1283,9 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         // Markdown is blocks: they land between a document's paragraphs and come out of them.
         | Command::ImportMarkdown
         | Command::ExportMarkdown
-        | Command::ExportPdf => matches!(kind, Text),
+        | Command::ExportPdf
+        | Command::PrintPreview
+        | Command::Print => matches!(kind, Text),
         // The two New verbs and the way back to the welcome screen mean the same thing over either
         // document: they replace what the window is showing, and what it is showing now does not
         // change what they do.
@@ -1555,6 +1573,8 @@ mod tests {
             Command::ImportMarkdown,
             Command::ExportMarkdown,
             Command::ExportPdf,
+            Command::PrintPreview,
+            Command::Print,
         ] {
             assert!(applies_to(command, Text), "{command:?}");
             assert!(!applies_to(command, Spreadsheet), "{command:?}");

@@ -682,3 +682,49 @@ pub fn blit_image(
         ok
     }
 }
+
+/// Put an opaque picture onto a **printer's** `dc`, scaled into `dest` (left, top, width,
+/// height, in device pixels) — the page of a print job (`doc/pdf-export.md`).
+///
+/// `StretchDIBits` rather than [`blit_image`]'s `AlphaBlend`, which a printer driver is not
+/// obliged to support; a page is white paper under everything, so there is no alpha to blend.
+/// `pixels` is `size.0 * size.1 * 4` bytes of BGRA, top-down. No GDI object is created.
+pub fn print_image(dc: HDC, dest: (i32, i32, i32, i32), size: (u32, u32), pixels: &[u8]) -> bool {
+    use windows::Win32::Graphics::Gdi::{SRCCOPY, StretchDIBits};
+    let (Ok(w), Ok(h)) = (i32::try_from(size.0), i32::try_from(size.1)) else {
+        return false;
+    };
+    if w <= 0 || h <= 0 || pixels.len() < (size.0 as usize) * (size.1 as usize) * 4 {
+        return false;
+    }
+    let info = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: u32::try_from(std::mem::size_of::<BITMAPINFOHEADER>()).expect("forty"),
+            biWidth: w,
+            biHeight: -h,
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB.0,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    // SAFETY: `pixels` holds the whole image and `info` describes it, both for the call.
+    unsafe {
+        StretchDIBits(
+            dc,
+            dest.0,
+            dest.1,
+            dest.2,
+            dest.3,
+            0,
+            0,
+            w,
+            h,
+            Some(pixels.as_ptr().cast()),
+            &info,
+            DIB_RGB_COLORS,
+            SRCCOPY,
+        ) != 0
+    }
+}

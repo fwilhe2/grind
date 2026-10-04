@@ -3703,7 +3703,9 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::ParagraphDelete
         | Command::ImportMarkdown
         | Command::ExportMarkdown
-        | Command::ExportPdf => {}
+        | Command::ExportPdf
+        | Command::PrintPreview
+        | Command::Print => {}
         Command::Shortcuts => show_shortcuts(hwnd),
         Command::About => dialog::about(hwnd),
     }
@@ -5798,6 +5800,8 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::ImportMarkdown
         | Command::ExportMarkdown
         | Command::ExportPdf
+        | Command::PrintPreview
+        | Command::Print
         | Command::ShowSource
         | Command::CheckDocument
         | Command::ToggleFormulas
@@ -6837,6 +6841,8 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::ImportMarkdown => text_import_markdown(hwnd),
         Command::ExportMarkdown => text_export_markdown(hwnd),
         Command::ExportPdf => text_export_pdf(hwnd),
+        Command::PrintPreview => text_print_preview(hwnd),
+        Command::Print => text_print(hwnd),
         Command::ShowSource => show_source(hwnd),
         Command::CheckDocument => check_document(hwnd),
         Command::ToggleNames => text_toggle_names(hwnd),
@@ -7671,6 +7677,132 @@ fn text_export_pdf(hwnd: HWND) {
                 path.display(),
                 report.summary()
             )));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// The document typeset once, for the preview and the printer: the pages as display lists, the
+/// typesetter whose faces they name, the paper, and the document's name.
+fn text_typeset(
+    hwnd: HWND,
+) -> Option<(
+    grind_print::ops::Document,
+    grind_print::Typesetter,
+    grind_core::page::PageGeometry,
+    String,
+)> {
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_text(hwnd, |text| {
+            let name = text
+                .path
+                .as_deref()
+                .or(text.imported.as_deref())
+                .and_then(Path::file_stem)
+                .map_or_else(
+                    || "Untitled".to_owned(),
+                    |s| s.to_string_lossy().into_owned(),
+                );
+            let options = grind_print::Options::default();
+            let (doc, setter) =
+                grind_print::typeset(&text.app, grind_print::fonts_for(&text.app), &options);
+            (doc, setter, text.app.page().unwrap_or_default(), name)
+        })
+    }
+}
+
+/// File ▸ Print Preview — every page as it prints (`doc/pdf-export.md` §4); Print… in it prints.
+fn text_print_preview(hwnd: HWND) {
+    let Some((doc, setter, paper, _)) = text_typeset(hwnd) else {
+        return;
+    };
+    let count = doc.pages.len();
+    let size = doc
+        .pages
+        .first()
+        .map_or((595.0, 842.0), |page| (page.width, page.height));
+    let render = Box::new(move |page: usize, scale: f32| {
+        let page = doc.pages.get(page)?;
+        let raster = grind_print::raster::render(page, setter.fonts(), scale);
+        Some((raster.width, raster.height, raster.rgba))
+    });
+    let title = Box::new(move |page: usize| text::paper::title(page, count, &paper));
+    if dialog::page_preview(hwnd, count, size, render, title) {
+        text_print(hwnd);
+    }
+}
+
+/// File ▸ Print… — the system's print dialog, then every page as a raster at the printer's
+/// resolution (at most [`text::paper::PRINT_DPI`]), scaled onto the printable area.
+fn text_print(hwnd: HWND) {
+    use windows::Win32::Graphics::Gdi::{DeleteDC, GetDeviceCaps, HORZRES, LOGPIXELSX, VERTRES};
+    use windows::Win32::Storage::Xps::{DOCINFOW, EndDoc, EndPage, StartDocW, StartPage};
+    use windows::Win32::UI::Controls::Dialogs::{
+        PD_RETURNDC, PD_USEDEVMODECOPIESANDCOLLATE, PRINTDLGW, PrintDlgW,
+    };
+    let Some((doc, setter, _, name)) = text_typeset(hwnd) else {
+        return;
+    };
+    let mut request = PRINTDLGW {
+        lStructSize: u32::try_from(std::mem::size_of::<PRINTDLGW>()).expect("small"),
+        hwndOwner: hwnd,
+        Flags: PD_RETURNDC | PD_USEDEVMODECOPIESANDCOLLATE,
+        nCopies: 1,
+        ..Default::default()
+    };
+    // SAFETY: `request` is initialised and lives across the call. **A nested message loop**; no
+    // borrow is held.
+    if !unsafe { PrintDlgW(&mut request) }.as_bool() || request.hDC.is_invalid() {
+        return;
+    }
+    let dc = request.hDC;
+    let title = gdi::wide(&name);
+    // SAFETY: `dc` is the printer DC the dialog returned, deleted at the end; every buffer lives
+    // across the calls that read it.
+    let printed = unsafe {
+        let dpi = u32::try_from(GetDeviceCaps(Some(dc), LOGPIXELSX)).unwrap_or(0);
+        let area = (
+            GetDeviceCaps(Some(dc), HORZRES),
+            GetDeviceCaps(Some(dc), VERTRES),
+        );
+        let info = DOCINFOW {
+            cbSize: i32::try_from(std::mem::size_of::<DOCINFOW>()).expect("small"),
+            lpszDocName: PCWSTR(title.as_ptr()),
+            ..Default::default()
+        };
+        let mut ok = StartDocW(dc, &info) > 0;
+        for page in &doc.pages {
+            if !ok {
+                break;
+            }
+            let raster =
+                grind_print::raster::render(page, setter.fonts(), text::paper::print_scale(dpi));
+            // The printable area at the page's own proportions, from its top-left corner.
+            let fit = (area.0 as f32 / page.width).min(area.1 as f32 / page.height);
+            let dest = (0, 0, (page.width * fit) as i32, (page.height * fit) as i32);
+            ok = StartPage(dc) > 0
+                && gdi::print_image(
+                    dc,
+                    dest,
+                    (raster.width, raster.height),
+                    &text::paper::bgra(&raster.rgba),
+                )
+                && EndPage(dc) > 0;
+        }
+        if ok {
+            ok = EndDoc(dc) > 0;
+        }
+        let _ = DeleteDC(dc);
+        ok
+    };
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_text(hwnd, |text| {
+            text.say(Some(match printed {
+                true => format!("Sent {} page(s) to the printer.", doc.pages.len()),
+                false => "The printer did not take the document.".to_owned(),
+            }));
         });
     }
     refresh(hwnd);

@@ -1759,3 +1759,298 @@ extern "system" fn preview_proc(
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
     }
 }
+
+// ---------------------------------------------------------------------------
+// The print preview
+// ---------------------------------------------------------------------------
+
+const PAGES_CLASS: &str = "GrindPrintPreviewClass";
+static PAGES_REGISTERED: AtomicBool = AtomicBool::new(false);
+const ID_PAGES_PREVIOUS: i32 = 201;
+const ID_PAGES_NEXT: i32 = 202;
+
+/// One page rasterised at a scale: its width and height in pixels, and premultiplied RGBA.
+pub type Rendered = (u32, u32, Vec<u8>);
+
+/// What the print preview owns while it is up (`doc/pdf-export.md` §4).
+struct Pages {
+    count: usize,
+    page: usize,
+    /// The page's size in points, for fitting it.
+    size: (f32, f32),
+    render: Box<dyn Fn(usize, f32) -> Option<Rendered>>,
+    title: Box<dyn Fn(usize) -> String>,
+    dpi: u32,
+    theme: Theme,
+    strip: i32,
+    /// The page last drawn, at the scale it was drawn at, already in GDI's channel order — so a
+    /// repaint that changed nothing rasterises nothing.
+    cache: Option<(usize, u32, u32, u32, Vec<u8>)>,
+    print: bool,
+    finished: bool,
+    _font: Option<Font>,
+}
+
+/// Every page as it prints, one at a time, with Previous, Next, Print… and Close: `true` when
+/// Print was chosen. `render(page, scale)` is `grind_print::raster` over the display list the PDF
+/// is written from, so the preview is the paper; nothing here knows what a page holds.
+///
+/// A nested message loop like every function in this file: the caller has released its borrow.
+pub fn page_preview(
+    owner: HWND,
+    count: usize,
+    size: (f32, f32),
+    render: Box<dyn Fn(usize, f32) -> Option<Rendered>>,
+    title: Box<dyn Fn(usize) -> String>,
+) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::SetWindowTextW;
+    let class = gdi::wide(PAGES_CLASS);
+    // SAFETY: as `chart_preview`.
+    unsafe {
+        let Ok(instance) = GetModuleHandleW(None) else {
+            return false;
+        };
+        if !PAGES_REGISTERED.swap(true, Ordering::SeqCst) {
+            let wc = WNDCLASSW {
+                lpfnWndProc: Some(pages_proc),
+                hInstance: instance.into(),
+                lpszClassName: PCWSTR(class.as_ptr()),
+                hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
+                ..Default::default()
+            };
+            if RegisterClassW(&wc) == 0 {
+                PAGES_REGISTERED.store(false, Ordering::SeqCst);
+                return false;
+            }
+        }
+        let dpi = GetDpiForWindow(owner).max(96);
+        let px = |value: f64| crate::sheet::geom::scale(value, dpi).round() as i32;
+        let (w, h) = (px(640.0), px(860.0));
+        let mut owner_rect = Default::default();
+        let _ = GetWindowRect(owner, &mut owner_rect);
+        let x = owner_rect.left + ((owner_rect.right - owner_rect.left) - w) / 2;
+        let y = (owner_rect.top + ((owner_rect.bottom - owner_rect.top) - h) / 3).max(0);
+        let strip = px(46.0);
+        let heading = gdi::wide(&title(0));
+        let state = Box::new(Pages {
+            count: count.max(1),
+            page: 0,
+            size,
+            render,
+            title,
+            dpi,
+            theme: theme(),
+            strip,
+            cache: None,
+            print: false,
+            finished: false,
+            _font: None,
+        });
+        let Ok(popup) = CreateWindowExW(
+            Default::default(),
+            PCWSTR(class.as_ptr()),
+            PCWSTR(heading.as_ptr()),
+            WS_POPUP | WS_CAPTION | WS_SYSMENU,
+            x,
+            y,
+            w,
+            h,
+            Some(owner),
+            None::<HMENU>,
+            Some(instance.into()),
+            Some(Box::into_raw(state).cast()),
+        ) else {
+            return false;
+        };
+        let font = Font::new(crate::gdi::ui_face(), px(crate::theme::text::BODY), false);
+        let button = (px(92.0), px(28.0));
+        let pad = px(12.0);
+        let gap = px(8.0);
+        let client = gdi::client_rect(popup);
+        let row = client.bottom - strip + (strip - button.1) / 2;
+        let make = |text: &str, id: i32, left: i32, default: bool| -> HWND {
+            let class = gdi::wide("BUTTON");
+            let text = gdi::wide(text);
+            let style = WS_CHILD
+                | WS_VISIBLE
+                | WS_TABSTOP
+                | match default {
+                    true => windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(
+                        BS_DEFPUSHBUTTON as u32,
+                    ),
+                    false => Default::default(),
+                };
+            let control = CreateWindowExW(
+                Default::default(),
+                PCWSTR(class.as_ptr()),
+                PCWSTR(text.as_ptr()),
+                style,
+                left,
+                row,
+                button.0,
+                button.1,
+                Some(popup),
+                Some(HMENU(id as usize as *mut std::ffi::c_void)),
+                Some(instance.into()),
+                None,
+            )
+            .unwrap_or_default();
+            SendMessageW(
+                control,
+                WM_SETFONT,
+                Some(WPARAM(font.handle().0 as usize)),
+                Some(LPARAM(1)),
+            );
+            control
+        };
+        make("◀ Previous", ID_PAGES_PREVIOUS, pad, false);
+        make("Next ▶", ID_PAGES_NEXT, pad + button.0 + gap, false);
+        let print = make(
+            "Print…",
+            IDOK.0,
+            client.right - pad - button.0 * 2 - gap,
+            true,
+        );
+        make("Close", IDCANCEL.0, client.right - pad - button.0, false);
+        with_pages(popup, |pages| pages._font = Some(font));
+        let _ = SetWindowTextW(popup, PCWSTR(heading.as_ptr()));
+
+        let _ = EnableWindow(owner, false);
+        let _ = ShowWindow(popup, SW_SHOW);
+        let _ = SetFocus(Some(print));
+
+        let mut message = MSG::default();
+        loop {
+            if with_pages(popup, |pages| pages.finished).unwrap_or(true) {
+                break;
+            }
+            if GetMessageW(&mut message, None, 0, 0).0 <= 0 {
+                PostQuitMessage(0);
+                break;
+            }
+            if IsDialogMessageW(popup, &message).as_bool() {
+                continue;
+            }
+            let _ = TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        let chosen = with_pages(popup, |pages| pages.print).unwrap_or(false);
+        let _ = EnableWindow(owner, true);
+        let _ = SetActiveWindow(owner);
+        let _ = DestroyWindow(popup);
+        chosen
+    }
+}
+
+/// Run `f` with the preview's state — `with_prompt`'s arrangement, and its rule.
+unsafe fn with_pages<T>(hwnd: HWND, f: impl FnOnce(&mut Pages) -> T) -> Option<T> {
+    // SAFETY: the slot holds either null or the pointer stored in `WM_NCCREATE`.
+    let raw = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut Pages;
+    if raw.is_null() {
+        return None;
+    }
+    // SAFETY: exclusive for the duration of this call.
+    Some(f(unsafe { &mut *raw }))
+}
+
+extern "system" fn pages_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, InvalidateRect, PAINTSTRUCT};
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowTextW, WM_CLOSE, WM_PAINT};
+    match message {
+        WM_NCCREATE => {
+            // SAFETY: `lparam` is this message's `CREATESTRUCTW`.
+            unsafe {
+                let create = &*(lparam.0 as *const CREATESTRUCTW);
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, create.lpCreateParams as isize);
+                DefWindowProcW(hwnd, message, wparam, lparam)
+            }
+        }
+        WM_ERASEBKGND => LRESULT(1),
+        WM_PAINT => {
+            let mut ps = PAINTSTRUCT::default();
+            // SAFETY: `BeginPaint`/`EndPaint` are paired, and the borrow does not dispatch.
+            unsafe {
+                let dc = BeginPaint(hwnd, &mut ps);
+                let rect = gdi::client_rect(hwnd);
+                let (w, h) = (rect.right - rect.left, rect.bottom - rect.top);
+                with_pages(hwnd, |pages| {
+                    let Some(buffer) = gdi::BackBuffer::new(dc, w, h) else {
+                        return;
+                    };
+                    buffer.clear(pages.theme.backdrop);
+                    let area = (w, (h - pages.strip).max(1));
+                    let (scale, (x, y, pw, ph)) =
+                        crate::text::paper::fit(pages.size, area, pages.dpi);
+                    let key = scale.to_bits();
+                    let fresh = !matches!(&pages.cache, Some((page, at, ..)) if *page == pages.page && *at == key);
+                    if fresh {
+                        pages.cache = (pages.render)(pages.page, scale).map(|(rw, rh, rgba)| {
+                            (pages.page, key, rw, rh, crate::text::paper::bgra(&rgba))
+                        });
+                    }
+                    if let Some((_, _, rw, rh, pixels)) = &pages.cache {
+                        let dest = crate::sheet::geom::Rect {
+                            x: f64::from(x),
+                            y: f64::from(y),
+                            w: f64::from(pw),
+                            h: f64::from(ph),
+                        };
+                        gdi::blit_image(buffer.dc(), dest, (*rw, *rh), pixels);
+                    }
+                    buffer.present(dc);
+                });
+                let _ = EndPaint(hwnd, &ps);
+            }
+            LRESULT(0)
+        }
+        WM_COMMAND => {
+            let id = (wparam.0 & 0xffff) as i32;
+            // SAFETY: one borrow, no dispatch; the title and the repaint come after it.
+            let title = unsafe {
+                with_pages(hwnd, |pages| {
+                    match id {
+                        ID_PAGES_PREVIOUS => pages.page = pages.page.saturating_sub(1),
+                        ID_PAGES_NEXT => pages.page = (pages.page + 1).min(pages.count - 1),
+                        _ if id == IDOK.0 || id == IDCANCEL.0 => {
+                            pages.print = id == IDOK.0;
+                            pages.finished = true;
+                            return None;
+                        }
+                        _ => return None,
+                    }
+                    Some((pages.title)(pages.page))
+                })
+            }
+            .flatten();
+            if let Some(title) = title {
+                let title = gdi::wide(&title);
+                // SAFETY: the window is this one; the title outlives the call.
+                unsafe {
+                    let _ = SetWindowTextW(hwnd, PCWSTR(title.as_ptr()));
+                    let _ = InvalidateRect(Some(hwnd), None, false);
+                }
+            }
+            LRESULT(0)
+        }
+        WM_CLOSE => {
+            // SAFETY: one borrow, no dispatch.
+            unsafe {
+                with_pages(hwnd, |pages| pages.finished = true);
+            }
+            LRESULT(0)
+        }
+        WM_NCDESTROY => {
+            // SAFETY: the pointer came from `Box::into_raw`; reconstituting it once frees it.
+            unsafe {
+                let raw = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Pages;
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+                if !raw.is_null() {
+                    drop(Box::from_raw(raw));
+                }
+                DefWindowProcW(hwnd, message, wparam, lparam)
+            }
+        }
+        // SAFETY: the default handler with the arguments it was given.
+        _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
+    }
+}

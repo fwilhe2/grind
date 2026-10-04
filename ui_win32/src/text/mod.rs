@@ -20,4 +20,5 @@
 pub mod draw;
 pub mod geom;
 pub mod keymap;
+pub mod paper;
 pub mod status;
