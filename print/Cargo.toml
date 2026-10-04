@@ -31,6 +31,14 @@ fontdb = { version = "0.24", default-features = false, features = ["std", "fs"],
 # shaper in the binary — and `raster-images` is what embeds a PNG or a JPEG.
 krilla = { version = "=0.8.2", default-features = false, features = ["raster-images"] }
 
+# The preview (doc/pdf-export.md §4): the same display list the PDF is written from, rasterised.
+# 0.12 shares `tiny-skia-path` with krilla rather than bringing a second copy.
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
+
 [dev-dependencies]
+# A second opinion: our PDF rasterised by a PDF renderer, held against our own raster of the
+# same page. Same authors as krilla; a test dependency only.
+hayro = "0.8"
+
 # Reading a PDF back to check what was written: its pages and their sizes.
 hayro-syntax = "0.8"
