@@ -141,3 +141,50 @@ fn the_default_paragraph_styles_widows_and_orphans_are_read() {
     );
     assert_eq!(opened(&made), (Some(3), None));
 }
+
+const MARGINALS: &str = r#"<office:automatic-styles>
+  <style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm"/>
+    <style:header-style><style:header-footer-properties fo:min-height="0.1cm" fo:margin-bottom="0.5cm"/></style:header-style>
+    <style:footer-style><style:header-footer-properties fo:margin-top="0.4cm"/></style:footer-style>
+  </style:page-layout>
+</office:automatic-styles>
+<office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1">
+  <style:header><text:p text:style-name="Header">The <text:span>head</text:span><text:tab/>line</text:p></style:header>
+  <style:footer><text:p text:style-name="Footer">pg <text:page-number text:select-page="current">7</text:page-number> of <text:page-count>9</text:page-count></text:p></style:footer>
+</style:master-page></office:master-styles>"#;
+
+/// `doc/odt-format.md` §5c fact 9: the master page's header and footer, their paragraphs as text
+/// and fields, and the room the page layout gives them — read, and never written.
+#[test]
+fn the_master_pages_header_and_footer_are_read() {
+    use grind_text::marginal::Part;
+    let doc = read_bytes("x.fodt", &flat(MARGINALS)).unwrap();
+    let header = doc.header.expect("a header");
+    assert_eq!(header.paragraphs.len(), 1);
+    assert_eq!(header.paragraphs[0].style.as_deref(), Some("Header"));
+    assert_eq!(
+        header.paragraphs[0].parts,
+        vec![Part::Text("The head\tline".into())]
+    );
+    assert!((header.min_height - 1.0).abs() < 1e-9 && (header.spacing - 5.0).abs() < 1e-9);
+    let footer = doc.footer.expect("a footer");
+    assert_eq!(
+        footer.paragraphs[0].parts,
+        vec![
+            Part::Text("pg ".into()),
+            Part::PageNumber,
+            Part::Text(" of ".into()),
+            Part::PageCount,
+        ]
+    );
+    assert!((footer.spacing - 4.0).abs() < 1e-9 && footer.min_height == 0.0);
+}
+
+#[test]
+fn a_document_with_no_header_or_footer_has_none_and_saves_unchanged() {
+    let doc = read_bytes("x.fodt", &flat("")).unwrap();
+    assert!(doc.header.is_none() && doc.footer.is_none());
+    let bytes = flat(MARGINALS);
+    let doc = read_bytes("x.fodt", &bytes).unwrap();
+    assert_eq!(odf::write(&doc, Form::Flat).unwrap(), bytes);
+}

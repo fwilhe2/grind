@@ -126,7 +126,8 @@ blocks, runs and bookmarks, which is what the projection is bijective with.
 
 `Document::page` — the page the document's master page names — and `Document::default_paragraph`
 and `Document::paragraph_styles` — the paragraph styles a page is laid out by — and
-`Document::font_generics` — what kind of face each declared family is — have no node either, for the
+`Document::font_generics` — what kind of face each declared family is — and `Document::header`
+and `Document::footer` — the master page's — have no node either, for the
 same reason: it is read and never written. The envelope carries `office:master-styles` and the
 page layouts out of an `.fodt` byte for byte, a `.grind` has no envelope, and a document read
 from one prints on A4 like any document that states no page (`doc/pdf-export.md` P2). Giving a

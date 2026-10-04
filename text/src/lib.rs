@@ -55,6 +55,7 @@ pub mod format;
 pub mod lint;
 pub mod loc;
 pub mod look;
+pub mod marginal;
 pub mod markdown;
 pub mod model;
 pub mod odf;
@@ -769,6 +770,26 @@ impl App {
         ParagraphDefaults {
             widows: count(&state.doc.default_paragraph.widows),
             orphans: count(&state.doc.default_paragraph.orphans),
+        }
+    }
+
+    /// The page's header and footer ([`Document::header`], `crate::marginal`), read for printing.
+    pub fn marginals(&self) -> (Option<marginal::Marginal>, Option<marginal::Marginal>) {
+        let state = self.state.read().unwrap();
+        (state.doc.header.clone(), state.doc.footer.clone())
+    }
+
+    /// A paragraph style resolved by name, as [`App::paragraph`] resolves a block's — what a
+    /// header paragraph, which is no block, is laid out by.
+    pub fn resolve_style(&self, name: Option<&str>) -> paragraph::Resolved {
+        let state = self.state.read().unwrap();
+        paragraph::Resolved {
+            props: paragraph::resolve(
+                &state.doc.paragraph_styles,
+                &state.doc.default_paragraph,
+                name,
+            ),
+            declared: name.is_some_and(|n| state.doc.paragraph_styles.contains_key(n)),
         }
     }
 

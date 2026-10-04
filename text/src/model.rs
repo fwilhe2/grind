@@ -589,6 +589,10 @@ pub struct Document {
     /// `system`) — for a printer to fall back on when the family is not installed. Read and
     /// never written.
     pub font_generics: std::collections::HashMap<String, String>,
+    /// The page's header and footer — the master page [`Document::page`] comes from — read for
+    /// printing and never written (`crate::marginal`).
+    pub header: Option<crate::marginal::Marginal>,
+    pub footer: Option<crate::marginal::Marginal>,
     /// The next id to hand out. Monotonic, never reused, so a stale [`BlockId`] is always
     /// stale rather than silently pointing at something new.
     next_id: u64,
@@ -651,6 +655,8 @@ impl Document {
             default_paragraph: Box::default(),
             paragraph_styles: std::collections::HashMap::new(),
             font_generics: std::collections::HashMap::new(),
+            header: None,
+            footer: None,
             next_id: 0,
             source: None,
             projection_source: None,

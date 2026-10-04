@@ -109,6 +109,23 @@ pub struct Builder {
     /// Every `style:master-page` read so far: its name and the page layout it names, in
     /// document order, so "the first one" means what the file said first.
     master_pages: Vec<(String, String)>,
+    /// Each master page's header and footer paragraphs, by its name.
+    master_marginals: HashMap<String, Marginals>,
+    /// Each page layout's room for a header and a footer, in millimetres: `(min-height, spacing)`.
+    layout_marginals: HashMap<String, (Option<Room>, Option<Room>)>,
+    /// The header or footer paragraph being read, and those of it already read.
+    marginal: Option<crate::marginal::Paragraph>,
+    marginal_done: Vec<crate::marginal::Paragraph>,
+}
+
+/// The room a page layout gives a header or footer, in millimetres: `(min-height, spacing)`.
+type Room = (f64, f64);
+
+/// A master page's header and footer paragraphs, as read.
+#[derive(Default)]
+struct Marginals {
+    header: Option<Vec<crate::marginal::Paragraph>>,
+    footer: Option<Vec<crate::marginal::Paragraph>>,
 }
 
 /// One `table:table` being read: its name, and the row number the next row in it takes.
@@ -178,6 +195,10 @@ impl Builder {
             page_layouts: HashMap::new(),
             paragraph_styles: HashMap::new(),
             master_pages: Vec::new(),
+            master_marginals: HashMap::new(),
+            layout_marginals: HashMap::new(),
+            marginal: None,
+            marginal_done: Vec::new(),
         }
     }
 
@@ -199,6 +220,28 @@ impl Builder {
             .find(|(name, _)| name == "Standard")
             .or_else(|| self.master_pages.first());
         self.doc.page = master.and_then(|(_, layout)| self.page_layouts.get(layout).copied());
+        let Some((master, layout)) = master.cloned() else {
+            return;
+        };
+        let marginals = self.master_marginals.remove(&master).unwrap_or_default();
+        let (header_room, footer_room) = self
+            .layout_marginals
+            .get(&layout)
+            .copied()
+            .unwrap_or_default();
+        let marginal = |paragraphs: Option<Vec<crate::marginal::Paragraph>>,
+                        room: Option<(f64, f64)>| {
+            paragraphs.map(|paragraphs| {
+                let (min_height, spacing) = room.unwrap_or_default();
+                crate::marginal::Marginal {
+                    paragraphs,
+                    min_height,
+                    spacing,
+                }
+            })
+        };
+        self.doc.header = marginal(marginals.header, header_room);
+        self.doc.footer = marginal(marginals.footer, footer_room);
     }
 
     /// Record the package this document is being read from, so a `draw:image`'s `xlink:href`
@@ -493,8 +536,99 @@ impl Context<Builder> for MasterStyles {
             && b.master_pages.len() < MAX_STYLES
         {
             b.master_pages.push((master.to_owned(), layout.to_owned()));
+            return Some(Box::new(MasterPage {
+                name: master.to_owned(),
+            }));
         }
         None
+    }
+}
+
+/// One `style:master-page`: its header and footer (`crate::marginal`). The first-page and
+/// left-page variants are an `Ignore` subtree, named in that module.
+struct MasterPage {
+    name: String,
+}
+
+impl Context<Builder> for MasterPage {
+    fn start_child(&mut self, name: &Name, _attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
+        let header = match (name.ns, name.local.as_str()) {
+            (Ns::Style, "header") => true,
+            (Ns::Style, "footer") => false,
+            _ => return None,
+        };
+        Some(Box::new(MarginalText {
+            master: self.name.clone(),
+            header,
+        }))
+    }
+}
+
+/// A `style:header` or `style:footer`: its paragraphs, as text and page fields.
+struct MarginalText {
+    master: String,
+    header: bool,
+}
+
+impl Context<Builder> for MarginalText {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if !matches!((name.ns, name.local.as_str()), (Ns::Text, "p" | "h")) {
+            return None;
+        }
+        b.marginal = Some(crate::marginal::Paragraph {
+            style: attrs.get(Ns::Text, "style-name").map(str::to_owned),
+            parts: Vec::new(),
+        });
+        Some(Box::new(MarginalInline { closes: true }))
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        let paragraphs = std::mem::take(&mut b.marginal_done);
+        let marginals = b.master_marginals.entry(self.master.clone()).or_default();
+        match self.header {
+            true => marginals.header = Some(paragraphs),
+            false => marginals.footer = Some(paragraphs),
+        }
+    }
+}
+
+/// The inside of a header or footer paragraph, and of every span in it.
+struct MarginalInline {
+    /// Whether this is the paragraph itself rather than a span inside it.
+    closes: bool,
+}
+
+impl Context<Builder> for MarginalInline {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        use crate::marginal::Part;
+        let paragraph = b.marginal.as_mut()?;
+        match (name.ns, name.local.as_str()) {
+            (Ns::Text, "span" | "a") => return Some(Box::new(MarginalInline { closes: false })),
+            (Ns::Text, "page-number") => paragraph.parts.push(Part::PageNumber),
+            (Ns::Text, "page-count") => paragraph.parts.push(Part::PageCount),
+            (Ns::Text, "tab") => paragraph.push_text("\t"),
+            (Ns::Text, "line-break") => paragraph.push_text("\n"),
+            (Ns::Text, "s") => {
+                let count = attrs.count(Ns::Text, "c", 1000) as usize;
+                paragraph.push_text(&" ".repeat(count));
+            }
+            _ => {}
+        }
+        // A field's own text is its cached value, which on paper is the page's: dropped.
+        None
+    }
+
+    fn text(&mut self, text: &str, b: &mut Builder) {
+        if let Some(paragraph) = b.marginal.as_mut() {
+            paragraph.push_text(text);
+        }
+    }
+    fn end(&mut self, b: &mut Builder) {
+        if self.closes
+            && let Some(paragraph) = b.marginal.take()
+        {
+            b.marginal_done.push(paragraph);
+        }
     }
 }
 
@@ -568,6 +702,38 @@ impl Context<Builder> for ParagraphStyleDef {
     }
 }
 
+/// `style:header-style` or `style:footer-style`: the room a page layout gives a header or footer.
+struct MarginalRoom {
+    layout: String,
+    header: bool,
+}
+
+impl Context<Builder> for MarginalRoom {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Style, "header-footer-properties") {
+            let length = |local: &str| {
+                attrs
+                    .get(Ns::Fo, local)
+                    .and_then(grind_core::style::length_mm)
+                    .filter(|mm| *mm >= 0.0)
+                    .unwrap_or(0.0)
+            };
+            let spacing = length(if self.header {
+                "margin-bottom"
+            } else {
+                "margin-top"
+            });
+            let room = (length("min-height"), spacing);
+            let entry = b.layout_marginals.entry(self.layout.clone()).or_default();
+            match self.header {
+                true => entry.0 = Some(room),
+                false => entry.1 = Some(room),
+            }
+        }
+        None
+    }
+}
+
 /// `style:page-layout` (rng:12213): its `style:page-layout-properties` (rng:12248) are the
 /// page's size and margins, read by [`grind_core::page::PageGeometry::from_properties`].
 struct PageLayout {
@@ -576,6 +742,17 @@ struct PageLayout {
 
 impl Context<Builder> for PageLayout {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        let header = match (name.ns, name.local.as_str()) {
+            (Ns::Style, "header-style") => Some(true),
+            (Ns::Style, "footer-style") => Some(false),
+            _ => None,
+        };
+        if let Some(header) = header {
+            return Some(Box::new(MarginalRoom {
+                layout: self.name.clone(),
+                header,
+            }));
+        }
         if name.is(Ns::Style, "page-layout-properties") && b.page_layouts.len() < MAX_STYLES {
             let page =
                 grind_core::page::PageGeometry::from_properties(|local| attrs.get(Ns::Fo, local));
