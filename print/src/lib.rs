@@ -76,6 +76,28 @@ impl Report {
     }
 }
 
+/// Where each page begins and ends: the first character on it and one past the last, `None`
+/// for a page with no text. Typeset exactly as [`export`] typesets, so these are the PDF's own
+/// page breaks — what `grind text pages` prints and loop G will compare with LibreOffice's.
+pub fn pages(
+    app: &App,
+    fonts: Fonts,
+    options: &Options,
+) -> Vec<(Option<grind_text::Caret>, Option<grind_text::Caret>)> {
+    let setter = Typesetter::new(fonts);
+    let doc = text::typeset(
+        app,
+        &setter,
+        &text::Options {
+            paper: options.paper,
+        },
+    );
+    doc.pages
+        .iter()
+        .map(|page| (page.start, page.end))
+        .collect()
+}
+
 /// Typeset `app`'s document and write it as a PDF, in `fonts`.
 pub fn export(app: &App, fonts: Fonts, options: &Options) -> Result<(Vec<u8>, Report), String> {
     let setter = Typesetter::new(fonts);

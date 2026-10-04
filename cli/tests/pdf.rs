@@ -142,3 +142,28 @@ fn export_pdf_in_json_is_the_report() {
     assert!(json.contains("\"missing_glyphs\":0"), "{json}");
     assert!(json.contains("\"summary\":\"1 page, A4.\""), "{json}");
 }
+
+/// Each page as `n<TAB>first<TAB>end`, addresses a person can hand straight back to
+/// `grind text get` — and each page ends where the next begins.
+#[test]
+#[cfg(feature = "pdf")]
+fn pages_lists_where_each_page_begins_and_ends() {
+    let dir = Sandbox::new("pages");
+    let file = dir.path("long.fodt");
+    ok(&["text", "new", &file]);
+    let paragraph = "All work and no play makes a dull document. ".repeat(80);
+    for _ in 0..4 {
+        ok(&["text", "insert", &file, "--text", &paragraph]);
+    }
+    let pages = ok(&["text", "pages", &file]);
+    let rows: Vec<Vec<&str>> = pages.lines().map(|l| l.split('\t').collect()).collect();
+    assert!(rows.len() >= 2, "{pages}");
+    assert_eq!(rows[0][0], "1");
+    assert_eq!(rows[0][1], "p1+0");
+    for pair in rows.windows(2) {
+        assert_eq!(pair[0][2], pair[1][1], "{pages}");
+    }
+    // A smaller page holds less, so the same document takes more of them.
+    let a6 = ok(&["text", "pages", &file, "--paper", "a6"]);
+    assert!(a6.lines().count() > rows.len(), "{a6}");
+}

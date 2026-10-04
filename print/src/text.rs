@@ -16,7 +16,7 @@ use grind_core::page::{PageGeometry, pt};
 use grind_core::style::{TextStyle, length_mm};
 use grind_text::flow::{self, CellBox};
 use grind_text::page::{Piece, Rules, paginate};
-use grind_text::{App, BlockKind, BlockView, paint, picture_of};
+use grind_text::{App, BlockKind, BlockView, Caret, paint, picture_of};
 
 use crate::faces::{Column, RoleFace, SPACING, role_faces};
 use crate::metrics::Typesetter;
@@ -66,6 +66,13 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         .enumerate()
         .map(|(number, page)| {
             let mut ops = Vec::new();
+            let mut span: Option<(Caret, Caret)> = None;
+            let mut cover = |from: Caret, to: Caret| {
+                span = Some(match span {
+                    Some((start, end)) => (start.min(from), end.max(to)),
+                    None => (from, to),
+                });
+            };
             for cell in &page.cells {
                 rules(&mut ops, cell, left, top);
             }
@@ -76,6 +83,8 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 let origin = (left + piece.left, top + piece.top);
                 if let Some(figure) = figure(view, piece.width, body) {
                     figure.draw(&mut ops, origin, setter, body);
+                    let length = view.runs.last().map_or(0, |run| run.end());
+                    cover(caret(piece.index, 0), caret(piece.index, length));
                     continue;
                 }
                 if let BlockKind::Heading { level } = view.kind
@@ -89,16 +98,24 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                     });
                 }
                 let face = column.face(&view.kind, view.style.as_deref());
-                lines(&mut ops, app, view, piece, face, origin);
+                if let Some((from, to)) = lines(&mut ops, app, view, piece, face, origin) {
+                    cover(caret(piece.index, from), caret(piece.index, to));
+                }
             }
             Page {
                 width: pt(geometry.width) as f32,
                 height: pt(geometry.height) as f32,
                 ops,
+                start: span.map(|(start, _)| start),
+                end: span.map(|(_, end)| end),
             }
         })
         .collect();
     Document { pages, outline }
+}
+
+fn caret(block: usize, offset: usize) -> Caret {
+    Caret { block, offset }
 }
 
 /// The four sides of a table cell.
@@ -121,7 +138,7 @@ fn rules(ops: &mut Vec<Op>, cell: &CellBox, left: f64, top: f64) {
 }
 
 /// One piece of a block: its lines, each cut where its formatting changes, and the bullet in
-/// front of a list item's first line.
+/// front of a list item's first line. Answers the character offsets the piece runs between.
 fn lines(
     ops: &mut Vec<Op>,
     app: &App,
@@ -129,13 +146,13 @@ fn lines(
     piece: &Piece,
     face: &RoleFace<'_>,
     (left, top): (f64, f64),
-) {
-    let Ok(layout) = app.layout_block(view.index, piece.width as f32, face) else {
-        return;
-    };
-    let Some(first) = layout.lines().get(piece.lines.start) else {
-        return;
-    };
+) -> Option<(usize, usize)> {
+    let layout = app
+        .layout_block(view.index, piece.width as f32, face)
+        .ok()?;
+    let first = layout.lines().get(piece.lines.start)?;
+    let last = layout.lines().get(piece.lines.end.checked_sub(1)?)?;
+    let span = (first.start, last.end);
     let first_top = first.top;
     let setter = face.setter();
     for at in piece.lines.clone() {
@@ -212,6 +229,7 @@ fn lines(
             }
         }
     }
+    Some(span)
 }
 
 /// A picture block on paper: the picture at the size the document gives it, fitted to the
@@ -545,10 +563,50 @@ mod tests {
     }
 
     #[test]
+    fn each_page_knows_the_first_and_last_character_on_it() {
+        let paragraph = "The quick brown fox jumps over the lazy dog. ".repeat(60);
+        let blocks: Vec<(BlockKind, &str)> = (0..6)
+            .map(|_| (BlockKind::Paragraph, paragraph.as_str()))
+            .collect();
+        let app = doc(&blocks);
+        let typeset = typeset(&app, &setter(), &Options::default());
+        assert!(typeset.pages.len() >= 2);
+        let first = &typeset.pages[0];
+        assert_eq!(
+            first.start,
+            Some(Caret {
+                block: 0,
+                offset: 0
+            })
+        );
+        // Each page starts exactly where the one before it ended.
+        for pair in typeset.pages.windows(2) {
+            assert_eq!(pair[0].end, pair[1].start);
+        }
+        let last = typeset.pages.last().unwrap();
+        let length = paragraph.chars().count();
+        assert_eq!(
+            last.end,
+            Some(Caret {
+                block: 5,
+                offset: length
+            })
+        );
+        // Some page starts inside a paragraph rather than at one.
+        assert!(
+            typeset
+                .pages
+                .iter()
+                .any(|p| p.start.is_some_and(|c| c.offset > 0))
+        );
+    }
+
+    #[test]
     fn an_empty_document_is_one_blank_page() {
         let app = doc(&[]);
         let typeset = typeset(&app, &setter(), &Options::default());
         assert_eq!(typeset.pages.len(), 1);
         assert!(typeset.pages[0].ops.is_empty());
+        assert_eq!((typeset.pages[0].start, typeset.pages[0].end), (None, None));
     }
 }

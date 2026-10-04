@@ -419,6 +419,31 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             Ok(Report::Pdf(report::PdfReport::new(show_path(out), &report)))
         }
 
+        #[cfg(feature = "pdf")]
+        TextCommand::Pages { file, paper } => {
+            let app = open_text(file)?;
+            let options = grind_print::Options {
+                paper: *paper,
+                title: None,
+            };
+            let at = |caret: Option<grind_text::Caret>| {
+                caret.map_or_else(
+                    || "-".to_owned(),
+                    |c| grind_text::loc::format_offset(c.block, c.offset),
+                )
+            };
+            let pages = grind_print::pages(&app, grind_print::Fonts::bundled(), &options);
+            text_lines(
+                pages
+                    .into_iter()
+                    .enumerate()
+                    .map(|(number, (start, end))| {
+                        format!("{}\t{}\t{}", number + 1, at(start), at(end))
+                    })
+                    .collect(),
+            )
+        }
+
         TextCommand::ExportMd { file, range, out } => {
             let app = open_text(file)?;
             let blocks = match range {
@@ -1143,6 +1168,19 @@ enum TextCommand {
         /// The PDF's title — the file name without its extension when not given
         #[arg(long)]
         title: Option<String>,
+    },
+
+    /// List the pages the document prints on: where each begins and ends
+    ///
+    /// One line per page — its number, the first character on it and one past the last, as
+    /// addresses `grind text get` takes. Typeset exactly as `export-pdf` typesets, so these are
+    /// the PDF's own page breaks.
+    #[cfg(feature = "pdf")]
+    Pages {
+        file: PathBuf,
+        /// Lay out on this paper instead of the document's own page, e.g. a4 or a5-landscape
+        #[arg(long, value_parser = paper)]
+        paper: Option<grind_core::page::PageGeometry>,
     },
 
     /// Insert an image at a caret, from a file on disk

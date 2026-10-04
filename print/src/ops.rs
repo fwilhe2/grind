@@ -81,6 +81,10 @@ pub struct Page {
     pub width: f32,
     pub height: f32,
     pub ops: Vec<Op>,
+    /// The first character on the page, and one past the last — `None` on a page with no text
+    /// at all. A page that ends where the next begins is the cut `grind text pages` prints.
+    pub start: Option<grind_text::Caret>,
+    pub end: Option<grind_text::Caret>,
 }
 
 /// A heading, for the PDF's outline (its bookmarks pane).
