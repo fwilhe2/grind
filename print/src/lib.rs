@@ -77,6 +77,45 @@ impl Report {
     }
 }
 
+/// Every font family the document's runs name, once each, in the order they first appear. The
+/// markdown marker for code (`monospace`) is a generic, not a family to look for.
+pub fn families(app: &App) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let viewport = app.get_viewport(0..app.block_count());
+    for run in viewport.iter().flat_map(|block| &block.runs) {
+        let Some(family) = run.props.font_family.as_deref().map(str::trim) else {
+            continue;
+        };
+        if family.is_empty()
+            || family == grind_text::markdown::MONOSPACE
+            || out.iter().any(|seen| seen.eq_ignore_ascii_case(family))
+        {
+            continue;
+        }
+        out.push(family.to_owned());
+    }
+    out
+}
+
+/// The fonts to set this document in: the bundled faces, and — where the build can look —
+/// every installed face of a family the document names or of its metric-compatible twin.
+pub fn fonts_for(app: &App) -> Fonts {
+    let fonts = Fonts::bundled();
+    #[cfg(feature = "system-fonts")]
+    let fonts = {
+        let mut fonts = fonts;
+        let named = families(app);
+        let wanted = fonts::wanted(named.iter().map(String::as_str));
+        if !wanted.is_empty() {
+            fonts.add_families(&Fonts::system_database(), &wanted);
+        }
+        fonts
+    };
+    #[cfg(not(feature = "system-fonts"))]
+    let _ = app;
+    fonts
+}
+
 /// Where each page begins and ends: the first character on it and one past the last, `None`
 /// for a page with no text. Typeset exactly as [`export`] typesets, so these are the PDF's own
 /// page breaks — what `grind text pages` prints and loop G will compare with LibreOffice's.
@@ -214,6 +253,27 @@ mod tests {
             "1 page, A5. \u{201c}Arial\u{201d} set in Liberation Sans (same metrics). \
              2 characters had no glyph in any font."
         );
+    }
+
+    #[test]
+    fn the_families_a_document_names_are_listed_once_in_order() {
+        let app = App::new();
+        app.insert(0, BlockKind::Paragraph, "one two three four")
+            .unwrap();
+        let family = |name: &str| CharStyle {
+            font_family: Some(name.into()),
+            ..CharStyle::default()
+        };
+        let at = |offset| Caret { block: 0, offset };
+        app.set_char_style(at(0), at(3), &family("Georgia"))
+            .unwrap();
+        app.set_char_style(at(4), at(7), &family("monospace"))
+            .unwrap();
+        app.set_char_style(at(8), at(13), &family("Calibri"))
+            .unwrap();
+        app.set_char_style(at(14), at(18), &family("Georgia"))
+            .unwrap();
+        assert_eq!(families(&app), vec!["Georgia", "Calibri"]);
     }
 
     #[test]

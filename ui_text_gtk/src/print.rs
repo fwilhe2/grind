@@ -108,7 +108,7 @@ pub fn export_pdf(ui: &Rc<Ui>) {
                     return;
                 };
                 let written =
-                    grind_print::export(&ui.app, grind_print::Fonts::bundled(), &options(&ui))
+                    grind_print::export(&ui.app, grind_print::fonts_for(&ui.app), &options(&ui))
                         .and_then(|(bytes, report)| {
                             grind_core::atomic::write(&path, bytes)
                                 .map(|()| report)
@@ -130,7 +130,7 @@ pub fn export_pdf(ui: &Rc<Ui>) {
 /// File ▸ Print… — the same PDF, handed to the system's print dialog as a file, so the printer
 /// gets what Export would have written rather than a second drawing of it.
 pub fn print(ui: &Rc<Ui>) {
-    let bytes = match grind_print::export(&ui.app, grind_print::Fonts::bundled(), &options(ui)) {
+    let bytes = match grind_print::export(&ui.app, grind_print::fonts_for(&ui.app), &options(ui)) {
         Ok((bytes, _)) => bytes,
         Err(error) => return ui.toast(&format!("Could not print: {error}")),
     };
@@ -172,7 +172,8 @@ pub fn print(ui: &Rc<Ui>) {
 /// ponytail: every page is rasterised at each zoom, eagerly. Fine for the documents in hand (a
 /// page is a few milliseconds); a hundred-page document wants the visible pages first.
 pub fn preview(ui: &Rc<Ui>) -> adw::Window {
-    let (doc, setter) = grind_print::typeset(&ui.app, grind_print::Fonts::bundled(), &options(ui));
+    let (doc, setter) =
+        grind_print::typeset(&ui.app, grind_print::fonts_for(&ui.app), &options(ui));
     let paper = ui.app.page().unwrap_or_default();
     let window = adw::Window::builder()
         .title("Print Preview")

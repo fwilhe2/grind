@@ -202,3 +202,28 @@ fn preview_draws_one_page_as_a_png() {
         "says how many there are"
     );
 }
+
+/// `--bundled-fonts` sets everything in the faces compiled in, so the same document gives the
+/// same PDF on any machine — and a family only the machine might have is reported as substituted.
+#[test]
+#[cfg(feature = "pdf")]
+fn bundled_fonts_ignore_the_machine() {
+    let dir = Sandbox::new("bundled");
+    let file = dir.path("g.fodt");
+    ok(&["text", "new", &file]);
+    ok(&["text", "insert", &file, "--text", "Set in a face"]);
+    ok(&[
+        "text",
+        "format",
+        &file,
+        "p2",
+        "--font",
+        "Grind Test Face That Nobody Has",
+    ]);
+    let out = dir.path("g.pdf");
+    let said = ok(&["text", "export-pdf", &file, &out, "--bundled-fonts"]);
+    assert!(
+        said.contains("\u{201c}Grind Test Face That Nobody Has\u{201d} set in Liberation Serif."),
+        "{said}"
+    );
+}

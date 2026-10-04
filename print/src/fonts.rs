@@ -233,6 +233,84 @@ impl Fonts {
     }
 }
 
+/// The families worth looking for on the machine to set `named` in: each name itself and, when
+/// there is one, its metric-compatible twin — so a document in Calibri finds an installed
+/// Carlito even where Calibri is not installed.
+pub fn wanted<'a>(named: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |name: &str| {
+        if !out.iter().any(|seen| seen.eq_ignore_ascii_case(name)) {
+            out.push(name.to_owned());
+        }
+    };
+    for name in named {
+        push(name);
+        let lower = name.to_ascii_lowercase();
+        if let Some((_, twin)) = COMPATIBLE.iter().find(|(asked, _)| *asked == lower) {
+            push(twin);
+        }
+    }
+    out
+}
+
+#[cfg(feature = "system-fonts")]
+impl Fonts {
+    /// The fonts installed on this machine, indexed but not read: only their names and where
+    /// they are. Reading a face is [`Fonts::add_families`]'s, and only for the families asked for.
+    pub fn system_database() -> fontdb::Database {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+        db
+    }
+
+    /// Read every face of these families that `db` knows of and add it, unless a face of that
+    /// family is already here (the bundled Liberation is not replaced by an installed copy).
+    /// Answers how many faces were added.
+    pub fn add_families(&mut self, db: &fontdb::Database, families: &[String]) -> usize {
+        let missing: Vec<&String> = families
+            .iter()
+            .filter(|family| {
+                !self
+                    .faces
+                    .iter()
+                    .any(|face| face.family.eq_ignore_ascii_case(family))
+            })
+            .collect();
+        let mut files: Vec<std::path::PathBuf> = Vec::new();
+        for info in db.faces() {
+            let named = info.families.iter().any(|(name, _)| {
+                missing
+                    .iter()
+                    .any(|family| family.eq_ignore_ascii_case(name))
+            });
+            if let (true, fontdb::Source::File(path)) = (named, &info.source)
+                && !files.contains(path)
+            {
+                files.push(path.clone());
+            }
+        }
+        let before = self.faces.len();
+        for path in files {
+            if let Ok(bytes) = std::fs::read(&path) {
+                self.add_data(Data::Shared(Arc::new(bytes)));
+            }
+        }
+        // A collection holds other families as well; keep only what was asked for.
+        let mut at = before;
+        while at < self.faces.len() {
+            if missing
+                .iter()
+                .any(|family| family.eq_ignore_ascii_case(&self.faces[at].family))
+            {
+                at += 1;
+            } else {
+                self.faces.remove(at);
+            }
+        }
+        self.faces.len() - before
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -320,6 +398,45 @@ mod tests {
             named(&fonts, &r),
             ("Liberation Sans".to_owned(), false, false)
         );
+    }
+
+    #[test]
+    fn a_family_is_looked_for_with_its_twin() {
+        assert_eq!(
+            wanted(["Calibri", "Georgia", "arial", "Calibri"]),
+            vec!["Calibri", "Carlito", "Georgia", "arial", "Liberation Sans"]
+        );
+    }
+
+    #[cfg(feature = "system-fonts")]
+    #[test]
+    fn only_the_families_asked_for_are_read_from_the_machine() {
+        let mut db = fontdb::Database::new();
+        db.load_fonts_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/fonts"));
+        assert_eq!(
+            db.faces().count(),
+            12,
+            "a directory standing in for the machine"
+        );
+        let mut fonts = Fonts::default();
+        assert_eq!(fonts.add_families(&db, &["liberation mono".to_owned()]), 4);
+        let r = fonts.resolve(Some("Liberation Mono"), true, true);
+        assert_eq!(
+            (r.how.clone(), named(&fonts, &r)),
+            (Match::Exact, ("Liberation Mono".to_owned(), true, true))
+        );
+        assert!(
+            fonts
+                .faces
+                .iter()
+                .all(|face| face.family == "Liberation Mono")
+        );
+        assert_eq!(
+            fonts.add_families(&db, &["Liberation Mono".to_owned()]),
+            0,
+            "already here"
+        );
+        assert_eq!(fonts.add_families(&db, &["Nowhere Sans".to_owned()]), 0);
     }
 
     #[test]

@@ -44,6 +44,16 @@ fn open_text(file: &Path) -> Result<TextApp, String> {
     Ok(app)
 }
 
+/// The fonts a PDF command sets the document in: the machine's as well as the bundled ones,
+/// unless `--bundled-fonts` asks for output that is the same everywhere.
+#[cfg(feature = "pdf")]
+fn fonts(app: &TextApp, bundled_only: bool) -> grind_print::Fonts {
+    match bundled_only {
+        true => grind_print::Fonts::bundled(),
+        false => grind_print::fonts_for(app),
+    }
+}
+
 /// `--paper`: the ISO 216 A series and nothing else (`doc/pdf-export.md`, decision 7).
 #[cfg(feature = "pdf")]
 fn paper(name: &str) -> Result<grind_core::page::PageGeometry, String> {
@@ -402,6 +412,7 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             out,
             paper,
             title,
+            bundled_fonts,
         } => {
             let app = open_text(file)?;
             let title = title.clone().or_else(|| {
@@ -412,15 +423,18 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
                 paper: *paper,
                 title,
             };
-            let (bytes, report) =
-                grind_print::export(&app, grind_print::Fonts::bundled(), &options)?;
+            let (bytes, report) = grind_print::export(&app, fonts(&app, *bundled_fonts), &options)?;
             grind_core::atomic::write(out, &bytes)
                 .map_err(|e| format!("{}: {e}", out.display()))?;
             Ok(Report::Pdf(report::PdfReport::new(show_path(out), &report)))
         }
 
         #[cfg(feature = "pdf")]
-        TextCommand::Pages { file, paper } => {
+        TextCommand::Pages {
+            file,
+            paper,
+            bundled_fonts,
+        } => {
             let app = open_text(file)?;
             let options = grind_print::Options {
                 paper: *paper,
@@ -432,7 +446,7 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
                     |c| grind_text::loc::format_offset(c.block, c.offset),
                 )
             };
-            let pages = grind_print::pages(&app, grind_print::Fonts::bundled(), &options);
+            let pages = grind_print::pages(&app, fonts(&app, *bundled_fonts), &options);
             text_lines(
                 pages
                     .into_iter()
@@ -451,6 +465,7 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             page,
             dpi,
             paper,
+            bundled_fonts,
         } => {
             let app = open_text(file)?;
             let options = grind_print::Options {
@@ -463,7 +478,7 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             let index = page.checked_sub(1).ok_or("pages are counted from 1")?;
             let raster = grind_print::preview(
                 &app,
-                grind_print::Fonts::bundled(),
+                fonts(&app, *bundled_fonts),
                 &options,
                 index,
                 dpi / 72.0,
@@ -1197,6 +1212,9 @@ enum TextCommand {
         /// The PDF's title — the file name without its extension when not given
         #[arg(long)]
         title: Option<String>,
+        /// Use only the fonts built into grind, never the machine's: the same PDF anywhere
+        #[arg(long)]
+        bundled_fonts: bool,
     },
 
     /// List the pages the document prints on: where each begins and ends
@@ -1210,6 +1228,9 @@ enum TextCommand {
         /// Lay out on this paper instead of the document's own page, e.g. a4 or a5-landscape
         #[arg(long, value_parser = paper)]
         paper: Option<grind_core::page::PageGeometry>,
+        /// Use only the fonts built into grind, never the machine's: the same PDF anywhere
+        #[arg(long)]
+        bundled_fonts: bool,
     },
 
     /// Draw one page as a PNG — the print preview, exactly as the PDF prints it
@@ -1227,6 +1248,9 @@ enum TextCommand {
         /// Lay out on this paper instead of the document's own page, e.g. a4 or a5-landscape
         #[arg(long, value_parser = paper)]
         paper: Option<grind_core::page::PageGeometry>,
+        /// Use only the fonts built into grind, never the machine's: the same PDF anywhere
+        #[arg(long)]
+        bundled_fonts: bool,
     },
 
     /// Insert an image at a caret, from a file on disk
