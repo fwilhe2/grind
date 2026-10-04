@@ -286,6 +286,18 @@ text new "$out/from-md.fodt" --force
 text import-md "$out/from-md.fodt" "$out/sample.md"
 text outline "$out/from-md.fodt"
 
+# --- pdf: the document on paper -------------------------------------------------------------
+# `doc/pdf-export.md`. Typeset on the page the document states — A4 when it states none, since
+# paper here is ISO 216 — in the fonts it names or their bundled twins, and the report says which
+# it had to substitute. The export is a cargo feature, hence the check rather than a bare call:
+# a `grind` built with `--no-default-features` has no PDF writer in it.
+
+if "$GRIND" text export-pdf --help >/dev/null 2>&1; then
+    say "export-pdf: the document on A4, and once more on A5 landscape"
+    text export-pdf "$doc" "$out/sample.pdf"
+    text export-pdf "$doc" "$out/sample-a5.pdf" --paper a5-landscape
+fi
+
 # --- build: a document generated from a script -------------------------------------------------
 # `doc/dsl.md` layer 1, D7. `examples/report.rhai` says a section per region once and lets the
 # loop write them, with the same inline notation this document was typed with. The arrow points

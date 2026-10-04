@@ -46,6 +46,52 @@ pub enum Report {
     /// Boxed for the reason `CellStyle` is: the fidelity report outgrew every other variant.
     #[cfg(feature = "xlsx")]
     Import(Box<ImportReport>),
+    /// What `grind text export-pdf` wrote (`doc/pdf-export.md`).
+    #[cfg(feature = "pdf")]
+    Pdf(PdfReport),
+}
+
+/// A PDF export: where it went, and `grind_print::Report` — including what it had to
+/// substitute, which is part of the output for the reason [`ImportReport`]'s losses are.
+#[cfg(feature = "pdf")]
+#[derive(Debug, Serialize)]
+pub struct PdfReport {
+    pub output: String,
+    pub pages: usize,
+    pub page: PageReport,
+    pub substitutions: Vec<PdfSubstitution>,
+    pub missing_glyphs: usize,
+    pub summary: String,
+}
+
+#[cfg(feature = "pdf")]
+#[derive(Debug, Serialize)]
+pub struct PdfSubstitution {
+    pub asked: String,
+    pub used: String,
+    pub compatible: bool,
+}
+
+#[cfg(feature = "pdf")]
+impl PdfReport {
+    pub fn new(output: String, report: &grind_print::Report) -> Self {
+        PdfReport {
+            output,
+            pages: report.pages,
+            page: PageReport::new(Some(report.page)),
+            substitutions: report
+                .substitutions
+                .iter()
+                .map(|s| PdfSubstitution {
+                    asked: s.asked.clone(),
+                    used: s.used.clone(),
+                    compatible: s.compatible,
+                })
+                .collect(),
+            missing_glyphs: report.missing_glyphs,
+            summary: report.summary(),
+        }
+    }
 }
 
 /// The fidelity report, which is **part of the output rather than an afterthought**: what a
@@ -561,6 +607,11 @@ impl Report {
                 for line in &text.lines {
                     println!("{line}");
                 }
+            }
+            #[cfg(feature = "pdf")]
+            Report::Pdf(pdf) => {
+                println!("{}", pdf.summary);
+                println!("{}", pdf.output);
             }
             // The losses first and the counts last, because what a conversion dropped is the
             // half a person has to decide about.

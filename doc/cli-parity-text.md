@@ -205,3 +205,9 @@ Reachable from the CLI, but not `App` methods, so the test does not track them:
   the file (`grind_core::kind`) rather than trusting its name, and route accordingly
 - `grind_text::loc` — the addressing module, this crate's only 0↔1 conversion. Free functions,
   used by every command that takes an address and by the outline's own `§` spellings
+
+## Beyond `App`
+
+PDF export is not an `App` method: the font stack and the PDF writer live in their own crate
+(`grind-print`, `doc/pdf-export.md`) so that `grind-text` stays font-free. Its one entry point,
+`grind_print::export`, is reached by `grind text export-pdf FILE OUT [--paper a4] [--title …]`.

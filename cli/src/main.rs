@@ -44,6 +44,14 @@ fn open_text(file: &Path) -> Result<TextApp, String> {
     Ok(app)
 }
 
+/// `--paper`: the ISO 216 A series and nothing else (`doc/pdf-export.md`, decision 7).
+#[cfg(feature = "pdf")]
+fn paper(name: &str) -> Result<grind_core::page::PageGeometry, String> {
+    grind_core::page::PageGeometry::paper(name).ok_or_else(|| {
+        format!("{name:?} is not a paper this build prints on: a0 to a10, e.g. a4 or a5-landscape")
+    })
+}
+
 /// Resolve one address against the document.
 fn at(app: &TextApp, address: &str) -> Result<usize, String> {
     let loc = grind_text::loc::parse(address).map_err(|e| e.to_string())?;
@@ -386,6 +394,29 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             app.import_markdown(index, &markdown)
                 .map_err(|e| e.to_string())?;
             finish_text(&app, cli, file, true)
+        }
+
+        #[cfg(feature = "pdf")]
+        TextCommand::ExportPdf {
+            file,
+            out,
+            paper,
+            title,
+        } => {
+            let app = open_text(file)?;
+            let title = title.clone().or_else(|| {
+                file.file_stem()
+                    .map(|stem| stem.to_string_lossy().into_owned())
+            });
+            let options = grind_print::Options {
+                paper: *paper,
+                title,
+            };
+            let (bytes, report) =
+                grind_print::export(&app, grind_print::Fonts::bundled(), &options)?;
+            grind_core::atomic::write(out, &bytes)
+                .map_err(|e| format!("{}: {e}", out.display()))?;
+            Ok(Report::Pdf(report::PdfReport::new(show_path(out), &report)))
         }
 
         TextCommand::ExportMd { file, range, out } => {
@@ -1093,6 +1124,25 @@ enum TextCommand {
         /// Write to this file instead of stdout
         #[arg(long)]
         out: Option<PathBuf>,
+    },
+
+    /// Export the document as a PDF, ready to print
+    ///
+    /// Laid out on the page the document states — or on `--paper` — in the fonts it names, or
+    /// their metric-compatible twins, or the bundled Liberation faces; the report says which.
+    /// Paper is ISO 216 only: `a4`, `a5`, `a3-landscape`, …. The same document always writes
+    /// the same bytes.
+    #[cfg(feature = "pdf")]
+    ExportPdf {
+        file: PathBuf,
+        /// Where to write the PDF
+        out: PathBuf,
+        /// Print on this paper instead of the document's own page, e.g. a4 or a5-landscape
+        #[arg(long, value_parser = paper)]
+        paper: Option<grind_core::page::PageGeometry>,
+        /// The PDF's title — the file name without its extension when not given
+        #[arg(long)]
+        title: Option<String>,
     },
 
     /// Insert an image at a caret, from a file on disk

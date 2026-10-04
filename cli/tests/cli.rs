@@ -1679,6 +1679,12 @@ fn the_text_sample_script_still_builds_its_document() {
     // Both forms exist, and the document reads back as the one the script described.
     assert!(dir.path("out/sample.fodt").exists());
     assert!(dir.path("out/sample.odt").exists());
+    #[cfg(feature = "pdf")]
+    assert!(
+        std::fs::read(dir.path("out/sample.pdf"))
+            .expect("the PDF was written")
+            .starts_with(b"%PDF-")
+    );
     let doc = s(&dir.path("out/sample.fodt"));
 
     // The move happened: the appendix is now the first section.

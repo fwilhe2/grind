@@ -1052,6 +1052,7 @@ dependencies = [
  "clap",
  "grind-build",
  "grind-core",
+ "grind-print",
  "grind-sheet",
  "grind-text",
  "grind-xlsx",

@@ -82,3 +82,63 @@ fn a_document_stating_no_page_reports_the_a4_it_will_print_on() {
         "{info}"
     );
 }
+
+#[test]
+#[cfg(feature = "pdf")]
+fn export_pdf_writes_a_pdf_and_says_what_it_did() {
+    let dir = Sandbox::new("export");
+    let out = dir.path("list.pdf");
+    let said = ok(&["text", "export-pdf", &writer("numbered-list.fodt"), &out]);
+    assert!(said.contains("1 page, A4."), "{said}");
+    let bytes = std::fs::read(&out).expect("the PDF was written");
+    assert!(bytes.starts_with(b"%PDF-"));
+    // Twice is the same bytes, which is what lets a PDF live in a test.
+    let again = dir.path("again.pdf");
+    ok(&["text", "export-pdf", &writer("numbered-list.fodt"), &again]);
+    assert_eq!(bytes, std::fs::read(&again).unwrap());
+}
+
+#[test]
+#[cfg(feature = "pdf")]
+fn export_pdf_prints_on_the_paper_asked_for_and_only_iso_paper() {
+    let dir = Sandbox::new("paper");
+    let out = dir.path("a5.pdf");
+    let said = ok(&[
+        "text",
+        "export-pdf",
+        &writer("picture.fodt"),
+        &out,
+        "--paper",
+        "a5",
+    ]);
+    assert!(said.contains("A5."), "{said}");
+    let refused = grind(&[
+        "text",
+        "export-pdf",
+        &writer("picture.fodt"),
+        &out,
+        "--paper",
+        "letter",
+    ]);
+    assert!(!refused.status.success());
+    let err = String::from_utf8_lossy(&refused.stderr);
+    assert!(err.contains("a4"), "names what it does take: {err}");
+}
+
+#[test]
+#[cfg(feature = "pdf")]
+fn export_pdf_in_json_is_the_report() {
+    let dir = Sandbox::new("json");
+    let out = dir.path("x.pdf");
+    let json = ok(&[
+        "--format",
+        "json",
+        "text",
+        "export-pdf",
+        &writer("numbered-list.fodt"),
+        &out,
+    ]);
+    assert!(json.contains("\"pages\":1"), "{json}");
+    assert!(json.contains("\"missing_glyphs\":0"), "{json}");
+    assert!(json.contains("\"summary\":\"1 page, A4.\""), "{json}");
+}
