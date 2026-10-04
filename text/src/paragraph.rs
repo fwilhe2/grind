@@ -45,6 +45,8 @@ pub struct ParagraphProps {
     pub font_size: Option<String>,
     pub font_weight: Option<String>,
     pub font_style: Option<String>,
+    /// `fo:color`: the ink of the paragraph's text where a run states none.
+    pub color: Option<String>,
 }
 
 impl ParagraphProps {
@@ -58,7 +60,8 @@ impl ParagraphProps {
             (Some(child), _) => Some(child.to_owned()),
             (None, base) => base.map(str::to_owned),
         };
-        let fields: [(&mut Option<String>, &Option<String>); 15] = [
+        let fields: [(&mut Option<String>, &Option<String>); 16] = [
+            (&mut self.color, &over.color),
             (&mut self.margin_top, &over.margin_top),
             (&mut self.margin_bottom, &over.margin_bottom),
             (&mut self.margin_left, &over.margin_left),

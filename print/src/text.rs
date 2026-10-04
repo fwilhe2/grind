@@ -25,6 +25,8 @@ use crate::ops::{Document, Element, Heading, Mark, Op, Page, Rgb};
 
 /// The gap between a picture and its caption, in points.
 const CAPTION_GAP: f64 = 4.0;
+/// The ink of a link that states no colour: Writer's own for an unstyled hyperlink.
+const LINK: Rgb = Rgb(0, 0, 0x80);
 /// A table's rules, in points: a hairline that still prints.
 const RULE: f32 = 0.5;
 
@@ -330,6 +332,13 @@ fn lines(
     );
     let chars: Vec<char> = view.text.chars().collect();
     let count = layout.lines().len();
+    // The paragraph style's ink, under every run that states none.
+    let ink = app
+        .paragraph(view.index)
+        .and_then(|resolved| resolved.props.color)
+        .as_deref()
+        .and_then(Rgb::parse)
+        .unwrap_or(Rgb::BLACK);
     for at in piece.lines.clone() {
         let Some(line) = layout.lines().get(at) else {
             continue;
@@ -395,12 +404,17 @@ fn lines(
                     }
                 }
                 let run: f32 = shaped.glyphs.iter().map(|g| g.x_advance).sum();
-                let color = cut
-                    .props
-                    .color
-                    .as_deref()
-                    .and_then(Rgb::parse)
-                    .unwrap_or(Rgb::BLACK);
+                // A link with no colour of its own is drawn as Writer draws an unstyled one,
+                // navy and underlined (`doc/odt-format.md` §5c, fact 12).
+                let link = view
+                    .runs
+                    .iter()
+                    .any(|run| run.href.is_some() && run.start <= start && start < run.end());
+                let color = match (cut.props.color.as_deref().and_then(Rgb::parse), link) {
+                    (Some(color), _) => color,
+                    (None, true) => LINK,
+                    (None, false) => ink,
+                };
                 if let Some(fill) = cut.props.background.as_deref().and_then(Rgb::parse) {
                     ops.push(Op::Rect {
                         x,
@@ -423,10 +437,11 @@ fn lines(
                 });
                 // Where an underline and a strike sit, as fractions of the size: close to what
                 // the bundled faces' own `post` and `OS/2` tables say, and the same for any face.
-                for (on, drop) in [
-                    (&cut.props.underline, 0.12),
-                    (&cut.props.line_through, -0.3),
-                ] {
+                let underline = match (&cut.props.underline, link) {
+                    (None, true) => Some("solid".to_owned()),
+                    (stated, _) => stated.clone(),
+                };
+                for (on, drop) in [(&underline, 0.12), (&cut.props.line_through, -0.3)] {
                     if on.as_deref().is_some_and(|value| value != "none") {
                         let y = baseline + size * drop;
                         ops.push(Op::Line {
@@ -449,7 +464,7 @@ fn lines(
 /// ponytail: a tab is drawn as a space, where Writer's `Header` and `Footer` styles put tab stops
 /// at the centre and the right edge — tab stops are not read anywhere yet.
 struct Marginal<'a> {
-    paragraphs: Vec<(grind_text::marginal::Paragraph, RoleFace<'a>, Align)>,
+    paragraphs: Vec<(grind_text::marginal::Paragraph, RoleFace<'a>, Align, Rgb)>,
     width: f64,
     /// The header's own height, its content's or its `fo:min-height`, in points.
     height: f64,
@@ -470,6 +485,11 @@ impl<'a> Marginal<'a> {
                 let resolved = app.resolve_style(paragraph.style.as_deref());
                 let props = resolved.props;
                 let align = Align::parse(props.text_align.as_deref());
+                let ink = props
+                    .color
+                    .as_deref()
+                    .and_then(Rgb::parse)
+                    .unwrap_or(Rgb::BLACK);
                 let stated = TextStyle {
                     font_family: props.font_family,
                     font_size: props.font_size,
@@ -477,7 +497,7 @@ impl<'a> Marginal<'a> {
                     font_style: props.font_style,
                 };
                 let face = RoleFace::stating(setter, grind_text::look::Role::Body, stated);
-                (paragraph.clone(), face, align)
+                (paragraph.clone(), face, align, ink)
             })
             .collect();
         let mut out = Marginal {
@@ -490,7 +510,7 @@ impl<'a> Marginal<'a> {
         let content: f64 = out
             .paragraphs
             .iter()
-            .map(|(paragraph, face, _)| f64::from(out.wrap(&paragraph.text(1, 1), face).height()))
+            .map(|(paragraph, face, ..)| f64::from(out.wrap(&paragraph.text(1, 1), face).height()))
             .sum();
         out.height = content.max(pt(marginal.min_height));
         out
@@ -512,7 +532,7 @@ impl<'a> Marginal<'a> {
     /// PDF: a header repeats on every page and is no part of the reading order.
     fn draw(&self, ops: &mut Vec<Op>, (left, top): (f64, f64), page: usize, pages: usize) {
         let mut y = top as f32;
-        for (paragraph, face, align) in &self.paragraphs {
+        for (paragraph, face, align, ink) in &self.paragraphs {
             let text = paragraph.text(page, pages).replace('\t', " ");
             let layout = self.wrap(&text, face);
             let chars: Vec<char> = text.chars().collect();
@@ -534,7 +554,7 @@ impl<'a> Marginal<'a> {
                     size: shaped.size,
                     glyphs: shaped.glyphs,
                     text: piece.to_owned(),
-                    color: Rgb::BLACK,
+                    color: *ink,
                     mark: Mark::Decoration,
                 });
             }
@@ -1346,6 +1366,37 @@ mod tests {
             "{first_x}"
         );
         assert!((second_x - 56.6929).abs() < 0.01, "{second_x}");
+    }
+
+    /// A paragraph style's colour colours its text where the run states none, and a link with no
+    /// colour of its own is drawn as Writer draws an unstyled one: navy and underlined.
+    #[test]
+    fn a_styles_colour_and_a_links_look_are_drawn() {
+        let bytes = r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:styles><style:style style:name="Teal" style:family="paragraph"><style:text-properties fo:color="#174a5b"/></style:style></office:styles>
+            <office:body><office:text>
+              <text:p text:style-name="Teal">teal</text:p>
+              <text:p>see <text:a xlink:href="https://example.invalid/">there</text:a></text:p>
+            </office:text></office:body></office:document>"##;
+        let app = App::new();
+        app.open_bytes("c.fodt", bytes.as_bytes()).unwrap();
+        let page = &typeset(&app, &setter(), &Options::default()).pages[0];
+        let colour = |want: &str| {
+            page.ops.iter().find_map(|op| match op {
+                Op::Text { text, color, .. } if text == want => Some(*color),
+                _ => None,
+            })
+        };
+        assert_eq!(colour("teal"), Some(Rgb(0x17, 0x4a, 0x5b)));
+        assert_eq!(colour("there"), Some(Rgb(0, 0, 0x80)));
+        assert!(page.ops.iter().any(|op| matches!(
+            op,
+            Op::Line {
+                color: Rgb(0, 0, 0x80),
+                ..
+            }
+        )));
+        assert_eq!(colour("see "), Some(Rgb::BLACK));
     }
 
     #[test]

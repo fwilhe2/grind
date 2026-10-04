@@ -648,6 +648,9 @@ oracle turned out to be unable to answer the font questions (fact 4).
    44.84 pt below the line's top for the three lengths.
 11. **A first-line indent** (`fo:text-indent="2cm"`) starts only the paragraph's first line
    56.69 pt in; the line breaks shorter by as much and the rest start at the margin (26.8.1.1).
+12. **An unstyled hyperlink** — a `text:a` naming no character style — is drawn navy and
+   underlined (26.8.1.1, observed in its rendering of a generated sample: the colour of
+   Writer's own *Internet Link* style, which it applies to a link nothing else styles).
 7. **The pinned image has no Liberation fonts.** The same document set in Liberation Serif
    comes out in **DejaVu Serif** from the pin (`pdffonts`), so line breaks and page breaks
    measured there are DejaVu's. Loop G cannot use the pin as it stands; it needs the bundled
