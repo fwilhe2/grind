@@ -412,6 +412,13 @@ pub trait Faces {
     fn spacing(&self, _index: usize) -> Option<flow::Space> {
         None
     }
+
+    /// What the block at `index`'s own style says about page breaks around it
+    /// ([`page::Breaks`]). `None`, the default, leaves the paginator's own rules: a heading keeps
+    /// with what follows it and nothing breaks a page early.
+    fn breaks(&self, _index: usize) -> Option<page::Breaks> {
+        None
+    }
 }
 
 /// Every block set alike: one width, one provider.

@@ -53,6 +53,20 @@ impl Default for Rules {
     }
 }
 
+/// What a document's own paragraph style says about where pages break around a block
+/// (`fo:break-before`, `fo:break-after`, `fo:keep-with-next`; rng:2073, rng:2110) — asked of the
+/// [`Faces`] through [`Faces::breaks`], so a screen, which answers nothing, is unaffected.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Breaks {
+    /// `fo:break-before="page"`: the block starts a page.
+    pub page_before: bool,
+    /// `fo:break-after="page"`: the block ends one.
+    pub page_after: bool,
+    /// `fo:keep-with-next`: `Some` when the style says, overriding the rule that keeps a
+    /// heading, and only a heading, with what follows it.
+    pub keep_with_next: Option<bool>,
+}
+
 /// Some of one block's lines, placed on a page.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Piece {
@@ -104,14 +118,24 @@ pub fn paginate(
         origin: 0.0,
         height,
     };
+    // A page break after the block before: the next unit starts a page wherever it is.
+    let mut break_pending = false;
     for (at, unit) in units.iter().enumerate() {
+        if std::mem::take(&mut break_pending) && !cut.fresh() {
+            cut.turn(unit.top());
+        }
         match unit {
             Unit::Block {
                 slot,
                 lines,
-                heading,
+                keep,
+                breaks,
             } => {
-                if *heading
+                if breaks.page_before && !cut.fresh() {
+                    cut.turn(lines.first().map_or(slot.top, |line| line.top));
+                }
+                break_pending = breaks.page_after;
+                if *keep
                     && !cut.fresh()
                     && let (Some(last), Some(next)) = (lines.last(), units.get(at + 1))
                     && next.lead(rules.orphans).max(last.bottom()) - cut.origin > height + EPS
@@ -172,7 +196,9 @@ enum Unit {
     Block {
         slot: flow::Slot,
         lines: Vec<Line>,
-        heading: bool,
+        /// Whether a page may not end on it: a heading, unless its style says otherwise.
+        keep: bool,
+        breaks: Breaks,
     },
     Row {
         /// Each block in the row and how many lines it has.
@@ -184,6 +210,14 @@ enum Unit {
 }
 
 impl Unit {
+    /// Where the unit starts in the flow: the top of its first line, or of its row.
+    fn top(&self) -> f64 {
+        match self {
+            Unit::Block { slot, lines, .. } => lines.first().map_or(slot.top, |line| line.top),
+            Unit::Row { top, .. } => *top,
+        }
+    }
+
     /// Where the part of this unit a heading above it must stay with ends: its first
     /// `orphans` lines, or the whole row.
     fn lead(&self, orphans: usize) -> f64 {
@@ -241,9 +275,12 @@ fn units(
         match &view.cell {
             None => {
                 row = None;
+                let breaks = faces.breaks(slot.index).unwrap_or_default();
+                let heading = matches!(view.kind, crate::BlockKind::Heading { .. });
                 out.push(Unit::Block {
                     slot: *slot,
-                    heading: matches!(view.kind, crate::BlockKind::Heading { .. }),
+                    keep: breaks.keep_with_next.unwrap_or(heading),
+                    breaks,
                     lines,
                 });
             }
@@ -364,6 +401,7 @@ impl Cut {
 mod tests {
     use super::*;
     use crate::{BlockKind, Caret, Fixed, Uniform};
+    use std::collections::HashMap;
 
     /// Every gap zero, so a line is exactly one unit and every number below is a line count.
     const TIGHT: Spacing = Spacing {
@@ -536,6 +574,81 @@ mod tests {
             "a row carried over starts at the top"
         );
         assert_eq!(pages[1].pieces[0].top, 0.0);
+    }
+
+    /// A face that answers [`Faces::breaks`] for some blocks and leaves the rest to the
+    /// paginator's own rules.
+    struct Breaking(HashMap<usize, Breaks>);
+
+    impl Faces for Breaking {
+        fn of(&self, _: usize, _: &BlockKind, _: Option<&str>) -> (f32, &dyn crate::Metrics) {
+            (10.0, &Fixed)
+        }
+        fn breaks(&self, index: usize) -> Option<Breaks> {
+            self.0.get(&index).copied()
+        }
+    }
+
+    fn broken(app: &App, height: f64, breaks: &[(usize, Breaks)]) -> Vec<Page> {
+        let faces = Breaking(breaks.iter().copied().collect());
+        paginate(
+            app,
+            &faces,
+            10.0,
+            height,
+            &TIGHT,
+            Rules::default(),
+            &|_, _| None,
+        )
+    }
+
+    #[test]
+    fn a_page_break_before_or_after_a_block_starts_a_new_page() {
+        let app = doc(&[para(1), para(1), para(1)]);
+        let before = Breaks {
+            page_before: true,
+            ..Breaks::default()
+        };
+        assert_eq!(
+            shape(&broken(&app, 50.0, &[(1, before)])),
+            vec![vec![(0, 0..1)], vec![(1, 0..1), (2, 0..1)]]
+        );
+        let after = Breaks {
+            page_after: true,
+            ..Breaks::default()
+        };
+        assert_eq!(
+            shape(&broken(&app, 50.0, &[(1, after)])),
+            vec![vec![(0, 0..1), (1, 0..1)], vec![(2, 0..1)]]
+        );
+        // A break before the very first block has nothing to break away from.
+        assert_eq!(shape(&broken(&app, 50.0, &[(0, before)])).len(), 1);
+    }
+
+    #[test]
+    fn a_style_keeping_a_paragraph_with_the_next_is_honoured_and_one_not_keeping_a_heading_is_too()
+    {
+        // A paragraph that keeps with the next behaves as a heading does…
+        let app = doc(&[para(4), para(1), para(3)]);
+        let keep = Breaks {
+            keep_with_next: Some(true),
+            ..Breaks::default()
+        };
+        assert_eq!(
+            shape(&broken(&app, 5.0, &[(1, keep)])),
+            vec![vec![(0, 0..4)], vec![(1, 0..1), (2, 0..3)]]
+        );
+        // …and a heading whose style says it does not, stays on the page it fits on.
+        let heading = (BlockKind::Heading { level: 1 }, "Title".to_owned());
+        let app = doc(&[para(4), heading, para(3)]);
+        let loose = Breaks {
+            keep_with_next: Some(false),
+            ..Breaks::default()
+        };
+        assert_eq!(
+            shape(&broken(&app, 5.0, &[(1, loose)])),
+            vec![vec![(0, 0..4), (1, 0..1)], vec![(2, 0..3)]]
+        );
     }
 
     #[test]
