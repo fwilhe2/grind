@@ -59,6 +59,12 @@ stops ratcheting.
 - `set_row_hidden` — `grind sheet hide <rows>` (and `--unhide` to show it again)
 - `set_filter` — `grind sheet filter <range> COLUMN=VALUE…` (and `grind sheet filter --clear`)
 - `filter` — `grind sheet filter` with no range, which prints each sheet's filtered range
+- `merge` — `grind sheet merge <range>`
+- `unmerge` — `grind sheet merge <range> --unmerge`
+- `merges` — `grind sheet merge` with no range, which prints every merged range on every sheet
+- `merge_at` — `grind sheet merge` with no range: the same list, from which the merge holding any
+  one cell is read off. A shell asks per cell to land the cursor on a merge's top-left cell; a
+  command line has no cursor
 - `hidden_rows` — the same listing's `hides` column, in 1-based row numbers
 - `format_table` — `grind sheet format-table <range> [--no-header] [--totals [FUNC]] [--name NAME]`:
   a filter, alternating row shading, an optional totals row and a named range, one composite

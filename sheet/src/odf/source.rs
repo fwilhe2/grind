@@ -43,9 +43,9 @@
 //!
 //! Every part outside `office:body` is the file's own either way
 //! (`grind_core::odf::envelope::merge`). **Saving never makes an existing file worse**: what a
-//! save still cannot carry — a chart regenerated after a rename, a value typed into the covered
-//! half of a merge — makes it an `Error::WouldLose` rather than a smaller file, and every save
-//! is read back and compared with the document before it replaces anything.
+//! save still cannot carry — a chart regenerated after a rename — makes it an
+//! `Error::WouldLose` rather than a smaller file, and every save is read back and compared with
+//! the document before it replaces anything.
 
 use std::collections::HashMap;
 use std::ops::Range;

@@ -117,6 +117,14 @@ fn sheet(node: &KdlNode, source: &mut Source) -> Result<Sheet> {
                 }
             }
             "filter" => sheet.set_filter(Some(autofilter(child)?)),
+            "merge" => {
+                let (start, end) = rectangle(child, 0)?;
+                let (anchor, span) = crate::model::Span::between(start, end);
+                if !sheet.merges_within(anchor, span.end(anchor)).is_empty() {
+                    return Err(at(child, "a merge may not overlap another".to_owned()));
+                }
+                sheet.set_merge(anchor, Some(span));
+            }
             other => return Err(unknown(child, other, "a sheet")),
         }
     }

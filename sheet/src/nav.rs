@@ -295,6 +295,62 @@ pub fn onto_visible(selection: Selection, motion: Motion, rows: &Sizes, cols: &S
     }
 }
 
+/// The merge holding a cell, as its top-left and bottom-right cells — what [`through_merges`]
+/// and [`onto_merge`] ask, answered by the document. A shell drawing from a viewport may answer
+/// it from `Viewport::merge_at` instead; a test answers it from a list.
+pub fn merges(app: &App, sheet: usize) -> impl Fn(Pos) -> Option<(Pos, Pos)> + '_ {
+    move |pos| app.merge_at(sheet, pos).ok().flatten()
+}
+
+/// Land a plain selection on a merge's top-left cell when it is anywhere inside one — what a
+/// click on the covered part of a merge means. A merge is one cell, and the cell an edit lands
+/// in is its top-left. An extended selection is left alone: its corners are the rectangle the
+/// user dragged out.
+pub fn onto_merge(selection: Selection, merge_at: &dyn Fn(Pos) -> Option<(Pos, Pos)>) -> Selection {
+    match merge_at(selection.active) {
+        Some((anchor, _)) if selection.is_single() => Selection::at(anchor),
+        _ => selection,
+    }
+}
+
+/// [`moved`]'s result with merges taken into account, given the selection it moved from.
+///
+/// One step out of a merge leaves from its far edge rather than into its own covered cells, so
+/// Right from a heading across `B2:D2` lands on `E2` and not on `C2`. Wherever the motion lands
+/// inside a merge, it lands on the merge's top-left cell ([`onto_merge`]). An extended selection
+/// is left alone — growing a rectangle to take in every merge it touches is a gap
+/// (`doc/not-doing.md` §3), and its corners are still exactly where the keys put them.
+pub fn through_merges(
+    before: Selection,
+    after: Selection,
+    motion: Motion,
+    merge_at: &dyn Fn(Pos) -> Option<(Pos, Pos)>,
+) -> Selection {
+    if !after.is_single() {
+        return after;
+    }
+    let mut active = after.active;
+    if let (Motion::By(dir), Some((anchor, end))) = (motion, merge_at(before.active)) {
+        let from = before.active;
+        let inside = (anchor.row..=end.row).contains(&active.row)
+            && (anchor.col..=end.col).contains(&active.col);
+        if inside {
+            let edge = match dir {
+                Dir::Right => Pos::new(from.row, end.col),
+                Dir::Down => Pos::new(end.row, from.col),
+                Dir::Left => Pos::new(from.row, anchor.col),
+                Dir::Up => Pos::new(anchor.row, from.col),
+            };
+            active = step(edge, dir, 1);
+            // At the sheet's edge there is nowhere to go: stay on the merge.
+            if merge_at(active).is_some_and(|(a, _)| a == anchor) {
+                active = anchor;
+            }
+        }
+    }
+    onto_merge(Selection::at(active), merge_at)
+}
+
 /// `by` cells in a direction, stopping at the sheet's edges.
 fn step(from: Pos, dir: Dir, by: u32) -> Pos {
     let (rows, cols) = (MAX_ROWS - 1, MAX_COLS - 1);
@@ -346,6 +402,45 @@ fn data_edge(from: Pos, dir: Dir, extent: Extent, occupied: &dyn Fn(Pos) -> bool
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_merge_is_one_cell_to_the_arrow_keys() {
+        // B2:D2 and a block B4:C5.
+        let merge_at = |pos: Pos| {
+            [
+                (Pos::new(1, 1), Pos::new(1, 3)),
+                (Pos::new(3, 1), Pos::new(4, 2)),
+            ]
+            .into_iter()
+            .find(|(a, e)| (a.row..=e.row).contains(&pos.row) && (a.col..=e.col).contains(&pos.col))
+        };
+        let go = |from: Pos, dir: Dir| {
+            let before = Selection::at(from);
+            let after = Selection::at(step(from, dir, 1));
+            through_merges(before, after, Motion::By(dir), &merge_at).active
+        };
+        // Into a merge from any side lands on its top-left cell…
+        assert_eq!(go(Pos::new(1, 0), Dir::Right), Pos::new(1, 1));
+        assert_eq!(go(Pos::new(0, 3), Dir::Down), Pos::new(1, 1));
+        assert_eq!(go(Pos::new(4, 3), Dir::Left), Pos::new(3, 1));
+        // …and out of one leaves from its far edge.
+        assert_eq!(go(Pos::new(1, 1), Dir::Right), Pos::new(1, 4));
+        assert_eq!(go(Pos::new(3, 1), Dir::Down), Pos::new(5, 1));
+        assert_eq!(go(Pos::new(1, 1), Dir::Left), Pos::new(1, 0));
+        assert_eq!(go(Pos::new(3, 1), Dir::Up), Pos::new(2, 1));
+        // A plain step between plain cells is untouched.
+        assert_eq!(go(Pos::new(7, 7), Dir::Right), Pos::new(7, 8));
+
+        // A click on a covered cell is a click on the merge.
+        let clicked = onto_merge(Selection::at(Pos::new(4, 2)), &merge_at);
+        assert_eq!(clicked, Selection::at(Pos::new(3, 1)));
+        // A drag's corners are where they were put.
+        let dragged = Selection {
+            anchor: Pos::new(0, 0),
+            active: Pos::new(4, 2),
+        };
+        assert_eq!(onto_merge(dragged, &merge_at), dragged);
+    }
+
     #[test]
     fn fill_down_copies_each_columns_top_cell_and_right_each_rows_first() {
         let sel = |a: (u32, u32), b: (u32, u32)| Selection {

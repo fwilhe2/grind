@@ -144,6 +144,10 @@ pub struct Provenance {
     pub charts: bool,
     /// Whether the filter has changed since — which moves `table:visibility` on any row.
     pub filter: bool,
+    /// Rows a merge was added to or taken from since — written again whole, since a merge
+    /// changes which of their elements are cells and which are covered.
+    #[serde(default)]
+    pub merges: BTreeSet<u32>,
 }
 
 impl PartialEq for Provenance {
@@ -231,6 +235,16 @@ pub struct Sheet {
     /// is the model these hold.
     #[serde(default)]
     charts: Vec<crate::chart::Chart>,
+    /// Merged ranges — `table:number-columns-spanned`/`table:number-rows-spanned` on the
+    /// top-left cell (rng:16102), keyed by that cell. See [`Span`].
+    ///
+    /// **The covered cells hold nothing here.** ODF lets a `table:covered-table-cell` carry a
+    /// value, which LibreOffice keeps out of sight; this build reads past it, the way it always
+    /// has, so a merge is its anchor's value drawn over the whole area. No two merges overlap:
+    /// [`Sheet::set_merge`] is the only way one is added and it is told only about one that
+    /// does not.
+    #[serde(default, with = "pairs")]
+    merges: BTreeMap<Pos, Span>,
     /// Which `table:table` of the file this sheet was read from, when it was — a save that
     /// regenerates this sheet writes it *into that element*, keeping every row nobody touched
     /// and every attribute and child the model does not read (`odf::write`). Bookkeeping, not
@@ -255,8 +269,58 @@ impl Sheet {
             manually_hidden_rows: BTreeSet::new(),
             filter: None,
             charts: Vec::new(),
+            merges: BTreeMap::new(),
             origin: Provenance::default(),
         }
+    }
+
+    /// Every merged range, in address order of its top-left cell.
+    pub fn merges(&self) -> impl Iterator<Item = (Pos, Span)> + '_ {
+        self.merges.iter().map(|(pos, span)| (*pos, *span))
+    }
+
+    /// The merge `pos` is part of — as its top-left cell or as one it covers — with that
+    /// merge's top-left cell.
+    ///
+    /// A scan rather than an index: a sheet holds a handful of merges, and a lookup table
+    /// keyed by every covered cell would be the one structure here whose size is the merges'
+    /// *area*. Only anchors at or before `pos` in row-major order can reach it.
+    pub fn merge_at(&self, pos: Pos) -> Option<(Pos, Span)> {
+        self.merges
+            .range(..=pos)
+            .rev()
+            .find(|(anchor, span)| span.contains(**anchor, pos))
+            .map(|(anchor, span)| (*anchor, *span))
+    }
+
+    /// Whether `pos` is hidden under a merge: inside one, and not its top-left cell.
+    pub fn covered(&self, pos: Pos) -> bool {
+        self.merge_at(pos).is_some_and(|(anchor, _)| anchor != pos)
+    }
+
+    /// Merge the range that starts at `anchor`, or (with `None`) take the merge there away.
+    ///
+    /// A span of one cell is no merge and is stored as none, so "unmerged" has one spelling.
+    /// The caller has already taken away every merge the new one overlaps
+    /// ([`Sheet::merges_within`]); one that did not would draw two cells over each other.
+    pub fn set_merge(&mut self, anchor: Pos, span: Option<Span>) {
+        match span.filter(|span| !span.is_single()) {
+            Some(span) => self.merges.insert(anchor, span),
+            None => self.merges.remove(&anchor),
+        };
+    }
+
+    /// Every merge that overlaps the rectangle `start..=end`, by its top-left cell.
+    pub fn merges_within(&self, start: Pos, end: Pos) -> Vec<(Pos, Span)> {
+        self.merges()
+            .filter(|(anchor, span)| {
+                let last = span.end(*anchor);
+                anchor.row <= end.row
+                    && last.row >= start.row
+                    && anchor.col <= end.col
+                    && last.col >= start.col
+            })
+            .collect()
     }
 
     /// Every chart on this sheet, in document order.
@@ -526,6 +590,9 @@ impl Sheet {
             self.kinds.keys().map(|pos| pos.col).max(),
             self.formats.keys().map(|pos| pos.col).max(),
             self.styles.keys().map(|pos| pos.col).max(),
+            self.merges()
+                .map(|(anchor, span)| span.end(anchor).col)
+                .max(),
         ]
         .into_iter()
         .flatten()
@@ -586,6 +653,11 @@ impl Sheet {
                     .chain(self.styles.keys())
                     .map(|pos| pos.row..pos.row + 1),
             )
+            // A merge's every row is written, covered cells and all.
+            .chain(
+                self.merges()
+                    .map(|(anchor, span)| anchor.row..span.end(anchor).row + 1),
+            )
             .collect();
         ranges.sort_unstable_by_key(|range| range.start);
         let mut merged: Vec<std::ops::Range<u32>> = Vec::with_capacity(ranges.len());
@@ -606,8 +678,50 @@ impl Sheet {
             self.kinds.keys().next_back().copied(),
             self.formats.keys().next_back().copied(),
             self.styles.keys().next_back().copied(),
+            self.merges()
+                .map(|(anchor, span)| span.end(anchor))
+                .max_by_key(|pos| pos.row),
         ]
         .into_iter()
+    }
+}
+
+/// How far a merged range reaches from its top-left cell — `table:number-columns-spanned` and
+/// `table:number-rows-spanned` (rng:16102), each at least one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Span {
+    pub cols: u32,
+    pub rows: u32,
+}
+
+impl Span {
+    /// The span from `start` to `end`, both inclusive, in either order.
+    pub fn between(start: Pos, end: Pos) -> (Pos, Self) {
+        let anchor = Pos::new(start.row.min(end.row), start.col.min(end.col));
+        let span = Self {
+            cols: start.col.abs_diff(end.col) + 1,
+            rows: start.row.abs_diff(end.row) + 1,
+        };
+        (anchor, span)
+    }
+
+    /// One cell, which is no merge at all.
+    pub fn is_single(&self) -> bool {
+        self.cols <= 1 && self.rows <= 1
+    }
+
+    /// The bottom-right cell of the merge starting at `anchor`.
+    pub fn end(&self, anchor: Pos) -> Pos {
+        Pos::new(
+            anchor.row.saturating_add(self.rows.max(1) - 1),
+            anchor.col.saturating_add(self.cols.max(1) - 1),
+        )
+    }
+
+    /// Whether the merge starting at `anchor` takes in `pos`.
+    pub fn contains(&self, anchor: Pos, pos: Pos) -> bool {
+        let end = self.end(anchor);
+        (anchor.row..=end.row).contains(&pos.row) && (anchor.col..=end.col).contains(&pos.col)
     }
 }
 

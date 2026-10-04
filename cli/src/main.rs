@@ -1775,6 +1775,20 @@ enum Command {
         unhide: bool,
     },
 
+    /// Merge a range into one cell — or with `--unmerge`, take every merge in it away
+    ///
+    /// `sheet merge book.ods B2:D2` draws B2's value across B2 to D2; whatever C2 and D2 held
+    /// stays, out of sight, and comes back on unmerge. A merge it overlaps is replaced. With no
+    /// range, prints every merged range, across every sheet.
+    Merge {
+        file: PathBuf,
+        /// A range: B2:D2, or Data.A4:A6
+        range: Option<String>,
+        /// Take away every merge the range overlaps instead
+        #[arg(long)]
+        unmerge: bool,
+    },
+
     /// Define, redefine, rename, inline or delete a named range or expression (§5.11)
     ///
     /// With no target, prints what the name stands for. `sheet info` lists them all.
@@ -2949,6 +2963,33 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 false => app.set_row_hidden(sheet, range, !unhide).say()?,
             };
             finish(&app, cli, file, changed > 0)
+        }
+
+        Command::Merge {
+            file,
+            range,
+            unmerge,
+        } => {
+            let app = load(file, cli)?;
+            let Some(range) = range else {
+                let mut merged = Vec::new();
+                for i in 0..app.sheet_count() {
+                    let name = app.sheet_name(i).unwrap_or_default();
+                    for (start, end) in app.merges(i).unwrap_or_default() {
+                        merged.push((
+                            format!("{name}.{}", a1::format(None, start)),
+                            a1::format(None, end),
+                        ));
+                    }
+                }
+                return Ok(lines(merged.into_iter()));
+            };
+            let (sheet, start, end) = a1::resolve(&app, &a1::parse(range).say()?).say()?;
+            let changed = match unmerge {
+                true => app.unmerge(sheet, start, end).say()? > 0,
+                false => app.merge(sheet, start, end).say()?,
+            };
+            finish(&app, cli, file, changed)
         }
 
         Command::Name {

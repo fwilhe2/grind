@@ -83,6 +83,16 @@ pub enum Action {
         sheet: usize,
         filter: Option<Box<crate::filter::Filter>>,
     },
+    /// A merged range starting at `anchor` (rng:16102), `None` taking the merge there away.
+    ///
+    /// The one action here whose precondition is about *other* entries: the merge must not
+    /// overlap another, so `App::merge` takes the overlapping ones away first, in the same
+    /// batch and so the same undo step.
+    SetMerge {
+        sheet: usize,
+        anchor: Pos,
+        span: Option<crate::model::Span>,
+    },
     /// A named expression (§5.11), `None` deleting it.
     ///
     /// Document-level rather than per-cell, which is the one thing that makes it unlike
@@ -251,6 +261,23 @@ impl Document {
                     hidden: previous,
                 })
             }
+            Action::SetMerge {
+                sheet,
+                anchor,
+                span,
+            } => {
+                let s = self.sheet_mut(sheet)?;
+                let previous = s
+                    .merge_at(anchor)
+                    .filter(|(at, _)| *at == anchor)
+                    .map(|(_, span)| span);
+                s.set_merge(anchor, span);
+                Some(Action::SetMerge {
+                    sheet,
+                    anchor,
+                    span: previous,
+                })
+            }
             Action::SetFilter { sheet, filter } => {
                 let s = self.sheet_mut(sheet)?;
                 let previous = s.filter().cloned().map(Box::new);
@@ -415,6 +442,9 @@ impl Document {
             // Not a cell either: `table:database-ranges` is its own element, and the
             // `table:visibility` it implies sits on rows rather than cells.
             Action::SetFilter { .. } => self.edits.only_values = false,
+            // A merge is an attribute on one cell element and the element kind of every other
+            // it takes in — the rows it spans are rewritten (`Provenance::merges`).
+            Action::SetMerge { .. } => self.edits.only_values = false,
             Action::SetName { .. } => {
                 self.edits.only_values = false;
                 self.edits.names = true;
@@ -479,6 +509,25 @@ impl Document {
                     p.filter = true;
                 }
             }
+            // Both the merge being replaced and the new one: noted before applying, so the
+            // old one's rows are read off the sheet as it still is.
+            Action::SetMerge {
+                sheet: i,
+                anchor,
+                span,
+            } => {
+                let old = self
+                    .sheet(*i)
+                    .and_then(|s| s.merge_at(*anchor))
+                    .filter(|(at, _)| at == anchor)
+                    .map(|(_, span)| span);
+                if let Some(p) = sheet(self, *i) {
+                    for span in [old, *span].into_iter().flatten() {
+                        p.merges.extend(anchor.row..=span.end(*anchor).row);
+                    }
+                    p.merges.insert(anchor.row);
+                }
+            }
             Action::InsertChart { sheet: i, .. }
             | Action::RemoveChart { sheet: i, .. }
             | Action::ReshapeChart { sheet: i, .. }
@@ -507,7 +556,8 @@ impl Document {
             | Action::SetRowHeight { sheet, .. }
             | Action::SetColHidden { sheet, .. }
             | Action::SetRowHidden { sheet, .. }
-            | Action::SetFilter { sheet, .. } => self.sheet(*sheet).is_some(),
+            | Action::SetFilter { sheet, .. }
+            | Action::SetMerge { sheet, .. } => self.sheet(*sheet).is_some(),
             // Names and the locale are document-level, so there is no sheet index to be wrong
             // about.
             Action::SetName { .. } | Action::SetLocale { .. } => true,

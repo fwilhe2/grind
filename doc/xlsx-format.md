@@ -544,6 +544,23 @@ the spreadsheet's model rather than about this filter.
 
 ---
 
+### 4.10 Merged cells — `MEASURED`
+
+Measured 2026-10-04 with `unzip -p <file> xl/worksheets/sheet1.xml`, over the corpus's
+`document/merged-cells.xlsx` (written by the Open XML SDK) and an online spreadsheet's export of
+a checklist (not vendored; `xlsx/tests/checklist.rs` rebuilds its shape):
+
+- `<mergeCells>` follows `<sheetData>`, with one `<mergeCell ref="B2:D2"/>` per merged range.
+  The value is in the top-left cell. Every other cell of the range may still be spelled, with
+  a style of its own, and the export spells them. It gives a merged section header's covered
+  cell the border the merged area is drawn with.
+- A one-cell `ref` (`F1:F1`) occurs, and is no merge (`document/merged-cells.xlsx`'s own note).
+  A merge needs no cell under it (`H1:I2` over nothing), and a whole-row merge (`A11:XFD11`)
+  is a range of 16,384 columns. Both are carried as the range they name.
+- Two `ref`s overlapping: `UNVERIFIED` whether Excel opens such a file. The import counts the
+  second as `Dropped::MergedCells` rather than guessing which one was meant, which needs no
+  answer.
+
 ## 5. Functions whose semantics differ under the same name
 
 `doc/xlsx-import.md` Part II §3 takes the decision: the importer carries the name and Excel's

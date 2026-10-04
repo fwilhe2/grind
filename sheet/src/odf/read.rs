@@ -369,6 +369,46 @@ impl Builder {
     /// cell is how a sheet's extent is conventionally bounded (§3.3), and it is in most
     /// real files. With no cells buffered there is nothing to replay, so it costs one
     /// addition rather than a million iterations.
+    /// `table:number-columns-spanned`/`table:number-rows-spanned` on the cell starting at `col`
+    /// of the row being read (rng:16102) — a merge, anchored there.
+    ///
+    /// Tolerant the way the rest of this reader is: a span reaching past the sheet is cut at
+    /// its edge, and one overlapping a merge already read takes that one's place, since two
+    /// cells drawn over each other is not something a model can hold. A row repeated with a
+    /// merge one row tall in it is that merge on every row it stands for, under the same bound
+    /// as a repeated row's height; a taller one cannot repeat without overlapping itself, so
+    /// it is anchored on the first.
+    fn merge(&mut self, col: u32, attrs: &Attrs) {
+        let cols = attrs.count(Ns::Table, "number-columns-spanned", MAX_COLS);
+        let rows = attrs.count(Ns::Table, "number-rows-spanned", MAX_ROWS);
+        if cols <= 1 && rows <= 1 {
+            return;
+        }
+        let first = self.row;
+        let Some(sheet) = self.doc.sheets.get_mut(self.sheet) else {
+            return;
+        };
+        let repeat = match rows {
+            1 if self.row_repeat <= MAX_TRACK_RUN => self.row_repeat,
+            _ => 1,
+        };
+        for r in 0..repeat {
+            let row = first.saturating_add(r);
+            if row >= MAX_ROWS {
+                break;
+            }
+            let span = crate::model::Span {
+                cols: cols.min(MAX_COLS - col),
+                rows: rows.min(MAX_ROWS - row),
+            };
+            let anchor = Pos::new(row, col);
+            for (other, _) in sheet.merges_within(anchor, span.end(anchor)) {
+                sheet.set_merge(other, None);
+            }
+            sheet.set_merge(anchor, Some(span));
+        }
+    }
+
     fn finish_row(&mut self, repeat: u32) {
         // R6: hand this row's cell elements to the source, but only when the row stands for
         // itself. A repeated row's one element covers many addresses, and splitting *that*
@@ -1334,18 +1374,21 @@ impl Context<Builder> for Row {
         b.col = b.col.saturating_add(repeat).min(MAX_COLS);
         b.text.clear();
 
-        // A covered cell is the hidden half of a merge: it holds a grid position but no
-        // value of its own.
-        if covered {
-            return Some(Box::new(super::context::Ignore));
+        // A covered cell is the hidden half of a merge (rng:14298). It has the same content
+        // model as any other cell, and what it holds is read the same way: LibreOffice keeps a
+        // value there out of sight rather than throwing it away, and so does this model — it is
+        // simply not drawn. Only a cell that is not covered can anchor a merge.
+        if !covered {
+            b.merge(start, attrs);
         }
 
         // R6: where this element sits, so a later save can replace it in place. Recorded for
         // a repeated cell too — that element is split rather than skipped — but not inside a
         // repeated row, where one element stands for many rows. `Attrs::span` is the whole
         // element for the `<table:table-cell/>` form and the start tag for the other, which
-        // `Cell::end` finishes.
-        let span = (b.row_repeat == 1 && b.doc.source.is_some()).then(|| attrs.span());
+        // `Cell::end` finishes. Never for a covered cell, which a value splice would turn into
+        // an ordinary one: a value written there rewrites its row from the model instead.
+        let span = (!covered && b.row_repeat == 1 && b.doc.source.is_some()).then(|| attrs.span());
 
         Some(Box::new(Cell {
             start,

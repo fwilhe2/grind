@@ -233,6 +233,20 @@ Consequences for a writer, both worth having:
   ODF 1.2-style array formula, still valid and simpler if you don't need LO's
   spill-recalculation behavior).
 
+  **What LibreOffice does with them — measured** (2026-10-04, LibreOffice 26.8, through loop C's
+  `merged` case and `samples/Quarterly Sales Report.fods`):
+  - it writes both span attributes on the top-left cell, `table:number-rows-spanned="1"`
+    included, and a run of covered cells as one `table:covered-table-cell` with
+    `table:number-columns-repeated`;
+  - a covered cell carries a `table:style-name` of its own when it has one — that is where the
+    border on a merge's right or bottom edge lives;
+  - a **value in a covered cell survives** its round trip: written into one by us, read back
+    from LibreOffice's conversion unchanged. LibreOffice keeps it out of sight rather than
+    dropping it, so this model reads and writes a covered cell's content like any other cell's
+    and only a shell's drawing hides it;
+  - only the spans we wrote come back: a merge one row tall stays one row tall, and a block two
+    rows deep stays anchored where it was.
+
 Cell content: zero or more `text:p` (display paragraphs). **A bare `<table:table-cell/>`
 with no attributes at all is a valid, correctly-typed empty cell** — this is the single most
 common minimal-size element in a sheet.

@@ -109,6 +109,14 @@
     ],
     "description": "A format outside the preset vocabulary, spelled as the ordered sequence of parts ODF actually stores — number, text, currency, year, month, day, hours, minutes, seconds, am-pm, boolean, content — rather than as an Excel format string."
   },
+  "node: merge": {
+    "scope": "kdl",
+    "prefix": "merge",
+    "body": [
+      "merge ${1:B2:D2}"
+    ],
+    "description": "A merged range: its top-left cell's value drawn over all of it. No two may overlap."
+  },
   "node: filter": {
     "scope": "kdl",
     "prefix": "filter",

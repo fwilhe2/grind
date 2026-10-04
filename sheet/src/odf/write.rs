@@ -332,7 +332,7 @@ fn verify(doc: &Document, content: &[u8]) -> Result<()> {
 
 /// Whether a body key ([`envelope::body_vocabulary`]) is this writer's to change: what it
 /// writes from the model when it rewrites a row, the column declarations, a sheet's charts, the
-/// names or the filters. A count of anything else going down — a merge, an annotation, rich
+/// names or the filters. A count of anything else going down — an annotation, rich
 /// text in a cell, a validation, a header-row group — is content the model never saw, and the
 /// save is refused rather than allowed to drop it.
 fn owned(key: &str) -> bool {
@@ -367,6 +367,9 @@ fn owned(key: &str) -> bool {
     }
     let modelled = is(OFFICE, &["spreadsheet"])
         || is(TABLE, &["table", "table-column", "table-row", "table-cell"])
+        // A merge is the model's too: an unmerge takes covered cells away, and `verify` holds
+        // the read-back to the same merges as the document.
+        || is(TABLE, &["covered-table-cell"])
         || is(TEXT, &["p", "s", "tab", "line-break"])
         || is(
             TABLE,
@@ -387,8 +390,10 @@ fn owned(key: &str) -> bool {
         return true;
     }
     match () {
-        _ if is(TABLE, &["table-cell"]) => {
-            attr(OFFICE, "value-type")
+        _ if is(TABLE, &["table-cell", "covered-table-cell"]) => {
+            attr(TABLE, "number-columns-spanned")
+                || attr(TABLE, "number-rows-spanned")
+                || attr(OFFICE, "value-type")
                 || attr(OFFICE, "value")
                 || attr(OFFICE, "date-value")
                 || attr(OFFICE, "time-value")
@@ -766,6 +771,8 @@ struct RowPatch {
     height: bool,
     /// Its `table:visibility` when that moved — `Some(None)` for visible again.
     visibility: Option<Option<&'static str>>,
+    /// Whether a merge was added to it or taken from it.
+    merges: bool,
 }
 
 /// What a save writes of one sheet.
@@ -865,6 +872,20 @@ fn plan(doc: &Document, source: &super::source::Source) -> Vec<Plan> {
                 for row in p.rows.iter().filter(|row| span.contains(row)) {
                     patches.entry(*row).or_default().height = true;
                     scope.heights.insert(*row);
+                }
+                // A merge added or taken away: which of the row's elements are cells and which
+                // are covered changed. A covered cell past what the file's row spells is
+                // written from the model, so the pool needs the look of every merged cell.
+                for row in p.merges.range(span.clone()) {
+                    patches.entry(*row).or_default().merges = true;
+                    for (anchor, merge) in sheet.merges() {
+                        let end = merge.end(anchor);
+                        if (anchor.row..=end.row).contains(row) {
+                            scope
+                                .cells
+                                .extend((anchor.col..=end.col).map(|col| Pos::new(*row, col)));
+                        }
+                    }
                 }
                 // Visibility: whenever the filter or a hand-hidden row may have moved it, every
                 // row whose wanted value is not what this element says.
@@ -1335,9 +1356,19 @@ fn patched_row(
     // The cells: a restyled cell's own element with a new style name, a rewritten cell from the
     // model, everything else the file's bytes.
     let mut inside: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+    if patch.merges {
+        for scanned in cells {
+            let text = remerge(sheet, doc, row, scanned, &patch.cells, bytes, pool, tp);
+            inside.push((scanned.cell.range.clone(), text));
+        }
+    }
     // The touched columns, by the element holding them.
     let mut by_element: BTreeMap<usize, Vec<u32>> = BTreeMap::new();
-    for col in patch.cells.iter().filter(|col| **col < width) {
+    for col in patch
+        .cells
+        .iter()
+        .filter(|col| **col < width && !patch.merges)
+    {
         let index = cells.iter().position(|s| s.cell.cols.contains(col))?;
         by_element.entry(index).or_default().push(*col);
     }
@@ -1373,6 +1404,20 @@ fn patched_row(
         .cells
         .iter()
         .copied()
+        .chain(
+            patch
+                .merges
+                .then(|| {
+                    sheet
+                        .merges()
+                        .filter(|(anchor, span)| {
+                            (anchor.row..=span.end(*anchor).row).contains(&row)
+                        })
+                        .map(|(anchor, span)| span.end(anchor).col)
+                })
+                .into_iter()
+                .flatten(),
+        )
         .filter(|c| *c >= width)
         .collect();
     if let Some(last) = beyond.iter().max() {
@@ -1389,9 +1434,15 @@ fn patched_row(
                 col += run;
                 continue;
             }
-            let attr = pool.attr(look);
+            let mut one = String::new();
+            let attr = match sheet.merge_at(pos) {
+                Some((anchor, span)) if anchor == pos => {
+                    format!("{}{}", pool.attr(look), spanned(span))
+                }
+                _ => pool.attr(look),
+            };
             cell(
-                &mut ours,
+                &mut one,
                 &sheet.get(pos),
                 sheet.formula(pos),
                 sheet.kind(pos),
@@ -1400,6 +1451,10 @@ fn patched_row(
                 1,
                 &attr,
             );
+            match sheet.covered(pos) {
+                true => ours.push_str(&covered_element(&one)),
+                false => ours.push_str(&one),
+            }
             col += 1;
         }
         let close = bytes[e.range.clone()]
@@ -1410,6 +1465,178 @@ fn patched_row(
     }
     let body = apply(bytes, e.start.end..e.range.end, inside);
     Some(format!("{new_tag}{body}"))
+}
+
+/// What one column of a row is to be, as far as merging goes.
+#[derive(Clone, Copy, PartialEq)]
+enum Merging {
+    Plain,
+    Anchor(crate::model::Span),
+    Covered,
+}
+
+/// One cell element of a row a merge was added to or taken from, as the elements it now is:
+/// split into runs of columns that are alike — plain, covered, or one merge's top-left cell —
+/// each a copy of the file's element under the right name, with its repeat count and its spans
+/// set. Content, style and every other attribute stay the file's. A column whose value or look
+/// was written this session is its own run, written the way [`rewrite_cells`] and [`restyle`]
+/// write one.
+#[allow(clippy::too_many_arguments)]
+fn remerge(
+    sheet: &Sheet,
+    doc: &Document,
+    row: u32,
+    scanned: &Scanned,
+    patched: &[u32],
+    bytes: &[u8],
+    pool: &Pool,
+    tp: &str,
+) -> String {
+    let element = &scanned.cell;
+    let wanted = |col: u32| {
+        let pos = Pos::new(row, col);
+        match sheet.merge_at(pos) {
+            Some((anchor, span)) if anchor == pos => Merging::Anchor(span),
+            Some(_) => Merging::Covered,
+            None => Merging::Plain,
+        }
+    };
+    // What the element is in the file.
+    let spanned_as = |suffix: &str| {
+        suffix_attr(&element.keep, suffix)
+            .and_then(|n| n.trim().parse::<u32>().ok())
+            .unwrap_or(1)
+            .max(1)
+    };
+    let span_now = crate::model::Span {
+        cols: spanned_as(":number-columns-spanned"),
+        rows: spanned_as(":number-rows-spanned"),
+    };
+    let now = match (scanned.covered, span_now.is_single()) {
+        (true, _) => Merging::Covered,
+        (false, true) => Merging::Plain,
+        (false, false) => Merging::Anchor(span_now),
+    };
+    let is_now = |m: Merging| m == now;
+    // Nothing about this element changes: its own bytes.
+    if element
+        .cols
+        .clone()
+        .all(|c| is_now(wanted(c)) && !patched.contains(&c))
+    {
+        return String::from_utf8_lossy(&bytes[element.range.clone()]).into_owned();
+    }
+
+    let tag_end = bytes[element.range.clone()]
+        .iter()
+        .position(|c| *c == b'>')
+        .map_or(element.range.end, |p| element.range.start + p + 1);
+    let tag = String::from_utf8_lossy(&bytes[element.range.start..tag_end]).into_owned();
+    let rest = String::from_utf8_lossy(&bytes[tag_end..element.range.end]).into_owned();
+    let qname = tag[1..]
+        .split(|c: char| c.is_whitespace() || c == '>' || c == '/')
+        .next()
+        .unwrap_or("")
+        .to_owned();
+    let (repeated, cols_spanned, rows_spanned, styled) = (
+        format!("{tp}:number-columns-repeated"),
+        format!("{tp}:number-columns-spanned"),
+        format!("{tp}:number-rows-spanned"),
+        format!("{tp}:style-name"),
+    );
+    // The element as `n` columns of kind `m`, its style replaced when `style` says so.
+    let copy = |n: u32, m: Merging, style: Option<Option<String>>| {
+        let name = match m {
+            Merging::Covered => format!("{tp}:covered-table-cell"),
+            _ => format!("{tp}:table-cell"),
+        };
+        let (cols, rows) = match m {
+            Merging::Anchor(span) => (
+                (span.cols > 1).then(|| span.cols.to_string()),
+                (span.rows > 1).then(|| span.rows.to_string()),
+            ),
+            _ => (None, None),
+        };
+        let count = (n > 1).then(|| n.to_string());
+        let mut changes: Vec<(&str, Option<&str>)> = vec![
+            (repeated.as_str(), count.as_deref()),
+            (cols_spanned.as_str(), cols.as_deref()),
+            (rows_spanned.as_str(), rows.as_deref()),
+        ];
+        if let Some(style) = &style {
+            changes.push((styled.as_str(), style.as_deref()));
+        }
+        let renamed = format!("<{name}{}", &tag[1 + qname.len()..]);
+        let body = match rest.strip_suffix(&format!("</{qname}>")) {
+            Some(inner) => format!("{inner}</{name}>"),
+            None => rest.clone(),
+        };
+        format!("{}{body}", envelope::set_attributes(&renamed, &changes))
+    };
+
+    let mut out = String::new();
+    let mut col = element.cols.start;
+    while col < element.cols.end {
+        let m = wanted(col);
+        let pos = Pos::new(row, col);
+        if patched.contains(&col) {
+            if sheet.origin.values.contains(&pos) {
+                // Written from the model, with the element's own attributes but its spans.
+                let keep = super::source::attributes(
+                    format!("<x{}>", element.keep).as_bytes(),
+                    &[
+                        cols_spanned.as_str(),
+                        rows_spanned.as_str(),
+                        styled.as_str(),
+                    ],
+                );
+                let look = pool.look(sheet, pos);
+                let style = match sheet.origin.looks.contains(&pos) {
+                    true => pool.attr(look),
+                    false => tag_attr(&element.keep, &styled)
+                        .map(|s| format!(" table:style-name=\"{s}\""))
+                        .unwrap_or_default(),
+                };
+                let spans = match m {
+                    Merging::Anchor(span) => spanned(span),
+                    _ => String::new(),
+                };
+                let mut one = String::new();
+                cell(
+                    &mut one,
+                    &sheet.get(pos),
+                    sheet.formula(pos),
+                    sheet.kind(pos),
+                    look,
+                    doc.null_date,
+                    1,
+                    &format!("{keep}{style}{spans}"),
+                );
+                match m {
+                    Merging::Covered => out.push_str(&covered_element(&one)),
+                    _ => out.push_str(&one),
+                }
+            } else {
+                let attr = pool.attr(pool.look(sheet, pos));
+                out.push_str(&copy(
+                    1,
+                    m,
+                    Some(tag_attr(&attr, "table:style-name").map(str::to_owned)),
+                ));
+            }
+            col += 1;
+            continue;
+        }
+        let run = match m {
+            Merging::Anchor(_) => 1,
+            _ => (col..element.cols.end)
+                .take_while(|c| wanted(*c) == m && !patched.contains(c))
+                .count() as u32,
+        };
+        out.push_str(&copy(run, m, None));
+        col += run;
+    }
+    out
 }
 
 /// A cell element whose columns `restyled` only had their look changed: copies of the element
@@ -2857,12 +3084,16 @@ fn last_index(indices: impl Iterator<Item = u32>) -> u32 {
 ///
 /// `Sheet::rows_carrying` is the same five questions asked row-wise of the sparse storage, and
 /// `rows_carrying_is_carries_asked_row_by_row` holds the two to one answer.
+///
+/// A sixth since merges: every cell a merge takes in is spelled, the covered ones as
+/// `table:covered-table-cell`, or the merge would reach past what the row says it has.
 fn carries(sheet: &Sheet, pos: Pos) -> bool {
     !sheet.get(pos).is_empty()
         || sheet.formula(pos).is_some()
         || sheet.kind(pos).is_some()
         || sheet.format(pos).is_some()
         || sheet.style(pos).is_some()
+        || sheet.merge_at(pos).is_some()
 }
 
 /// `table:visibility="collapse"` for a column hidden by hand — a column has no filter, so
@@ -2904,17 +3135,52 @@ fn write_row(
         let value = sheet.get(pos);
         let formula = sheet.formula(pos);
         let look = pool.look(sheet, pos);
+        let merge = sheet.merge_at(pos);
+        // A merge's covered cells (`table:covered-table-cell`, rng:14298): the same content
+        // as any cell, never drawn. A run of empty ones sharing a look is one element.
+        if let Some((anchor, span)) = merge.filter(|(anchor, _)| *anchor != pos) {
+            let end = span.end(anchor).col.min(last);
+            let empty = |p: Pos| sheet.get(p).is_empty() && sheet.formula(p).is_none();
+            let repeat = match empty(pos) {
+                true => (col..=end)
+                    .take_while(|c| {
+                        let p = Pos::new(row, *c);
+                        empty(p) && pool.look(sheet, p) == look
+                    })
+                    .count() as u32,
+                false => 1,
+            };
+            let mut one = String::new();
+            cell(
+                &mut one,
+                &value,
+                formula,
+                sheet.kind(pos),
+                look,
+                null_date,
+                repeat,
+                &pool.attr(look),
+            );
+            out.push_str(&covered_element(&one));
+            col += repeat;
+            continue;
+        }
+        let spanned = match merge {
+            Some((_, span)) => spanned(span),
+            None => String::new(),
+        };
         // Only blank runs are compressed. Repeating a *valued* cell would need the formula
         // to repeat with it, and a formula is position-dependent — a correctness trap for
         // bytes nobody is short of. A run of blanks sharing one format compresses like any
         // other; one that does not share it stops the run, or the format would spread.
-        let repeat = if value.is_empty() && formula.is_none() {
+        let repeat = if value.is_empty() && formula.is_none() && merge.is_none() {
             (col..=last)
                 .take_while(|c| {
                     let p = Pos::new(row, *c);
                     sheet.get(p).is_empty()
                         && sheet.formula(p).is_none()
                         && pool.look(sheet, p) == look
+                        && sheet.merge_at(p).is_none()
                 })
                 .count() as u32
         } else {
@@ -2928,7 +3194,7 @@ fn write_row(
             look,
             null_date,
             repeat,
-            &pool.attr(look),
+            &format!("{}{spanned}", pool.attr(look)),
         );
         col += repeat;
     }
@@ -3031,6 +3297,30 @@ fn display(
         "<table:table-cell{attrs} {typed}><text:p>{}</text:p></table:table-cell>",
         paragraph(&format.render(value, null_date))
     );
+}
+
+/// One cell element written by [`cell`], as the covered cell it is — the same attributes and
+/// content under the other element name, which is all the schema distinguishes them by.
+fn covered_element(cell: &str) -> String {
+    let open = cell.replacen("<table:table-cell", "<table:covered-table-cell", 1);
+    match open.strip_suffix("</table:table-cell>") {
+        Some(body) => format!("{body}</table:covered-table-cell>"),
+        None => open,
+    }
+}
+
+/// ` table:number-columns-spanned="c" table:number-rows-spanned="r"` on a merge's top-left
+/// cell, each only when it is more than one — the schema's default for both is one
+/// (`table-table-cell-attlist-extra`, rng:16102).
+fn spanned(span: crate::model::Span) -> String {
+    let mut out = String::new();
+    if span.cols > 1 {
+        let _ = write!(out, " table:number-columns-spanned=\"{}\"", span.cols);
+    }
+    if span.rows > 1 {
+        let _ = write!(out, " table:number-rows-spanned=\"{}\"", span.rows);
+    }
+    out
 }
 
 /// ` table:number-<axis>-repeated="n"`, or nothing at all when `n` is one.

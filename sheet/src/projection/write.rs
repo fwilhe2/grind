@@ -105,6 +105,7 @@ pub fn project(doc: &Document) -> Projection {
         cells(&mut out, sheet);
         styles(&mut out, sheet);
         formats(&mut out, sheet);
+        merges(&mut out, sheet);
         filter(&mut out, sheet);
         out.close();
     }
@@ -546,6 +547,20 @@ fn kind_word(kind: Kind) -> &'static str {
         Kind::Time => "time",
         Kind::Boolean => "boolean",
         Kind::Text => "text",
+    }
+}
+
+/// `merge` — one merged range per line, written as the range it takes in.
+fn merges(out: &mut Emitter, sheet: &Sheet) {
+    let mut any = false;
+    for (anchor, span) in sheet.merges() {
+        if !any {
+            out.blank();
+            any = true;
+        }
+        out.begin("merge");
+        out.arg_word(&range(anchor, span.end(anchor)));
+        out.end();
     }
 }
 

@@ -62,7 +62,7 @@ pub use chart::{
     effective_color, pie_slice_at, pie_slices, series_color,
 };
 pub use filter::Filter;
-pub use model::{CellValue, Document, Pos, Sheet};
+pub use model::{CellValue, Document, Pos, Sheet, Span};
 pub use table_format::{TableOptions, TotalsFunction};
 
 /// What can go wrong with a **spreadsheet**.
@@ -247,6 +247,32 @@ pub struct Viewport {
     /// vector, because a name binds to a **range** as often as to a cell and `sales` over
     /// `A2:A50` is one anchor, not forty-nine.
     names: Vec<view::NameAnchor>,
+    /// The merges *intersecting* this rectangle, each carrying its top-left cell's text and
+    /// look — a list rather than a per-cell vector for `names`' reason, and the anchor's text
+    /// beside it because a merge scrolled half out of view is still drawn with it, from a
+    /// cell this rectangle does not include.
+    merges: Vec<Merged>,
+}
+
+/// One merged range as a renderer draws it: the whole area, with what its top-left cell shows.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Merged {
+    /// The top-left cell, which holds the value.
+    pub anchor: Pos,
+    /// The bottom-right cell, inclusive.
+    pub end: Pos,
+    /// What the top-left cell displays.
+    pub text: String,
+    /// How the top-left cell looks — the look of the whole area.
+    pub style: Option<style::CellStyle>,
+}
+
+impl Merged {
+    /// Whether this merge takes in `(row, col)`.
+    pub fn contains(&self, row: u32, col: u32) -> bool {
+        (self.anchor.row..=self.end.row).contains(&row)
+            && (self.anchor.col..=self.end.col).contains(&col)
+    }
 }
 
 impl Viewport {
@@ -301,6 +327,23 @@ impl Viewport {
             .iter()
             .find(|a| a.rows.contains(&row) && a.cols.contains(&col))
             .map(|a| a.name.as_str())
+    }
+
+    /// Every merge intersecting this rectangle, in address order of its top-left cell.
+    pub fn merges(&self) -> &[Merged] {
+        &self.merges
+    }
+
+    /// The merge one cell is part of — its top-left cell or one it covers. A renderer draws
+    /// the top-left cell over the whole area and nothing for the others.
+    pub fn merge_at(&self, row: u32, col: u32) -> Option<&Merged> {
+        self.merges.iter().find(|m| m.contains(row, col))
+    }
+
+    /// Whether one cell is hidden under a merge — inside one and not its top-left cell.
+    pub fn covered(&self, row: u32, col: u32) -> bool {
+        self.merge_at(row, col)
+            .is_some_and(|m| m.anchor != Pos::new(row, col))
     }
 
     /// One row of the viewport, left to right. `None` if the row is outside it.
@@ -1443,6 +1486,23 @@ impl App {
                 .collect(),
             _ => Vec::new(),
         };
+        let merges = if rows.is_empty() || cols.is_empty() {
+            Vec::new()
+        } else {
+            let (first, last) = (
+                Pos::new(rows.start, cols.start),
+                Pos::new(rows.end - 1, cols.end - 1),
+            );
+            s.merges_within(first, last)
+                .into_iter()
+                .map(|(anchor, span)| Merged {
+                    anchor,
+                    end: span.end(anchor),
+                    text: render_in(s, anchor, state.doc.null_date, state.doc.locale.as_ref()),
+                    style: s.style(anchor).cloned(),
+                })
+                .collect()
+        };
         Ok(Viewport {
             rows,
             cols,
@@ -1451,6 +1511,7 @@ impl App {
             styles,
             roles,
             names,
+            merges,
         })
     }
 
@@ -1933,6 +1994,86 @@ impl App {
             state.redo.clear();
             Ok(())
         })
+    }
+
+    /// Merge the rectangle `start..=end` into one cell, drawn with the top-left cell's value
+    /// and look (`table:number-columns-spanned`/`-rows-spanned`, rng:16102).
+    ///
+    /// Every merge it overlaps is taken away first, in the same undo step — the way selecting
+    /// across two merged headings and merging them again means one heading. What the other
+    /// cells hold **stays**, out of sight: ODF's covered cell has a value like any other, and
+    /// unmerging shows it again, which is LibreOffice's own choice and the one that loses
+    /// nothing. Returns whether anything changed — merging a range that is already exactly
+    /// one merge does not; one cell is no merge and is refused.
+    pub fn merge(&self, sheet: usize, start: Pos, end: Pos) -> Result<bool> {
+        let (anchor, span) = model::Span::between(start, end);
+        if span.is_single() {
+            return Err(Error::BadSheet("one cell is no merge".to_owned()));
+        }
+        let last = span.end(anchor);
+        if last.row >= MAX_ROWS || last.col >= MAX_COLS {
+            return Err(Error::BadSheet(
+                "a merge may not reach past the sheet".to_owned(),
+            ));
+        }
+        self.mutate(|state| {
+            let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+            let replaced = s.merges_within(anchor, last);
+            if replaced == [(anchor, span)] {
+                return Ok(false);
+            }
+            let mut actions: Vec<Action> = replaced
+                .iter()
+                .map(|(other, _)| Action::SetMerge {
+                    sheet,
+                    anchor: *other,
+                    span: None,
+                })
+                .collect();
+            actions.push(Action::SetMerge {
+                sheet,
+                anchor,
+                span: Some(span),
+            });
+            self::apply_batch(state, sheet, actions)?;
+            Ok(true)
+        })
+    }
+
+    /// Take away every merge that overlaps `start..=end`, one undo step for all of them.
+    /// Returns how many there were — zero is not an error, since unmerging a plain cell is
+    /// what the gesture asks for anyway.
+    pub fn unmerge(&self, sheet: usize, start: Pos, end: Pos) -> Result<usize> {
+        let (anchor, span) = model::Span::between(start, end);
+        self.mutate(|state| {
+            let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+            let actions = s
+                .merges_within(anchor, span.end(anchor))
+                .into_iter()
+                .map(|(other, _)| Action::SetMerge {
+                    sheet,
+                    anchor: other,
+                    span: None,
+                })
+                .collect();
+            self::apply_batch(state, sheet, actions)
+        })
+    }
+
+    /// Every merged range on a sheet, as its top-left and bottom-right cells.
+    pub fn merges(&self, sheet: usize) -> Result<Vec<(Pos, Pos)>> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(s.merges().map(|(a, span)| (a, span.end(a))).collect())
+    }
+
+    /// The merged range `pos` is part of, as its top-left and bottom-right cells — what a
+    /// shell asks to move the cursor onto a merge's top-left cell, and to grow a selection
+    /// over the whole of one.
+    pub fn merge_at(&self, sheet: usize, pos: Pos) -> Result<Option<(Pos, Pos)>> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(s.merge_at(pos).map(|(a, span)| (a, span.end(a))))
     }
 
     /// A sheet's autofilter, if it has one.

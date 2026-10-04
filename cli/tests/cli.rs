@@ -856,6 +856,14 @@ fn the_sample_script_still_builds_its_document() {
         ok(&["get", &book, "B8", "--formula"]).trim(),
         "=SUM([.B2:.B7])"
     );
+    // The note across the table is one merge, in both forms.
+    for form in ["out/sample.ods", "out/sample.fods"] {
+        assert_eq!(
+            ok(&["merge", &s(&dir.path(form))]).trim(),
+            "Budget.A24\tH24",
+            "{form}"
+        );
+    }
     // A styled and formatted header, and a currency cell whose value is untouched.
     assert_eq!(ok(&["get", &book, "B2", "--raw"]).trim(), "1800");
     assert!(ok(&["get", &book, "B2"]).contains('\u{20ac}'));
@@ -1849,7 +1857,7 @@ fn an_imported_workbook_arrives_with_its_values() {
 }
 
 /// `--strict` fails a conversion that lost anything, writes nothing, and still says what was
-/// lost (X5). The vendored sample loses nothing; a corpus workbook with a merge does.
+/// lost (X5). The vendored sample loses nothing; a corpus workbook with comments does.
 #[cfg(feature = "xlsx")]
 #[test]
 fn a_strict_import_refuses_a_lossy_conversion() {
@@ -1867,14 +1875,14 @@ fn a_strict_import_refuses_a_lossy_conversion() {
     assert_eq!(field(&json, "lossless"), "true");
     assert!(std::path::Path::new(&clean).exists());
 
-    let lossy = s(&dir.path("merged.fods"));
-    let merged = format!("{data}/corpus/document/merged-cells.xlsx");
+    let lossy = s(&dir.path("commented.fods"));
+    let commented = format!("{data}/corpus/document/comments.xlsx");
     let output = grind(&[
-        "--format", "json", "sheet", "import", &merged, &lossy, "--strict",
+        "--format", "json", "sheet", "import", &commented, &lossy, "--strict",
     ]);
     assert!(!output.status.success(), "a lossy strict import fails");
     let json = String::from_utf8(output.stdout).expect("utf-8");
     assert_eq!(field(&json, "written"), "false");
-    assert!(json.contains("merged range"), "and says why: {json}");
+    assert!(json.contains("comment"), "and says why: {json}");
     assert!(!std::path::Path::new(&lossy).exists(), "and writes nothing");
 }

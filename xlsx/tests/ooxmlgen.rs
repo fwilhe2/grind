@@ -87,6 +87,15 @@ const PENDING: &[(&str, &str, &str)] = &[
 /// bytes, which is the one kind of claim no filter could satisfy.
 const DECIDED_OTHERWISE: &[(&str, &str, &str)] = &[
     (
+        "document/merged-cells.xlsx",
+        "dropped:MergedCells",
+        "The manifest expects all seven dropped, from when the model carried no spans; this \
+         build carries six as merges and counts none — the seventh is `F1:F1`, one cell, which \
+         is no merge and so nothing lost. `the_merges_are_carried_and_no_value_moves` asserts \
+         each range and the note the manifest makes the point of the fixture: no value moved, \
+         and `A5:A7`'s empty top-left stays empty.",
+    ),
+    (
         "styles/colors.xlsx",
         "dropped:ThemeColor",
         "The manifest expects fourteen; this build counts none, because every theme colour in \
@@ -1382,6 +1391,39 @@ fn the_geometry_fixtures_size_and_hide_what_their_notes_say() {
 
 /// The document fixtures, by their notes (X5): what `Document::names` holds, what the
 /// autofilter keeps, which sheets were renamed, and that a merge moves nothing.
+/// `document/merged-cells.xlsx`: every real merge carried as one, anchored where Excel keeps
+/// the value, and — the manifest's own point — no value moved by it.
+#[test]
+fn the_merges_are_carried_and_no_value_moves() {
+    use grind_sheet::{Pos, Span};
+    let (document, report) = import("document/merged-cells.xlsx");
+    let sheet = &document.sheets[0];
+    let merges: Vec<(Pos, Span)> = sheet.merges().collect();
+    let span = |cols, rows| Span { cols, rows };
+    assert_eq!(
+        merges,
+        [
+            (Pos::new(0, 0), span(3, 1)),       // A1:C1
+            (Pos::new(0, 7), span(2, 2)),       // H1:I2, over cells that do not exist
+            (Pos::new(2, 0), span(1, 2)),       // A3:A4
+            (Pos::new(2, 2), span(3, 3)),       // C3:E5
+            (Pos::new(4, 0), span(1, 3)),       // A5:A7
+            (Pos::new(10, 0), span(16_384, 1)), // A11:XFD11, a whole row
+        ]
+    );
+    assert_eq!(sheet.merge_at(Pos::new(0, 5)), None, "F1:F1 is one cell");
+    assert_eq!(report.dropped.get(&grind_xlsx::Dropped::MergedCells), None);
+    assert!(sheet.get(Pos::new(4, 0)).is_empty(), "A5 stays empty");
+    assert!(
+        sheet.get(Pos::new(1, 0)).is_empty(),
+        "nothing filled from A1"
+    );
+    assert_eq!(
+        sheet.get(Pos::new(0, 5)),
+        grind_sheet::CellValue::Number(42.0)
+    );
+}
+
 #[test]
 fn the_document_fixtures_carry_what_their_notes_say() {
     use grind_xlsx::Appearance;

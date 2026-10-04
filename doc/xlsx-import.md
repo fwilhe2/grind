@@ -641,17 +641,23 @@ and counted.
   through the core's `formula::rename`, and listed in `Report::renamed`. Not because this model
   cannot address one (`['Has/Slash'.A1]` evaluates) but because the pinned oracle **drops such
   a sheet, cells and all**, and a document this import writes has to survive that round trip.
-- **Merged cells.** `<mergeCell ref="B2:D4"/>` → counted, one per merge. Nothing moves:
-  Excel keeps the value top-left and leaves the rest empty, which is what an unmerged sheet
-  already looks like.
+- **Merged cells.** `<mergeCell ref="B2:D4"/>` → the model's merge over that range (carried
+  since 2026-10-04; until then they were counted and dropped, and a centred heading over three
+  columns drew centred in one). Nothing moves: Excel keeps the value top-left, and so does the
+  model's merge. The covered cells keep whatever style they were given, since that is where a
+  merged area's right and bottom borders live. A one-cell `ref` is no merge and is neither
+  carried nor counted. A `ref` that is not a range, or one overlapping a merge already read,
+  is counted as `MergedCells` (`doc/xlsx-format.md` §4.10). `xlsx/tests/checklist.rs` is the
+  shape of the file that found it.
 - **Autofilters.** `<autoFilter ref="A1:C9"/>` → `Filter::new`, carried. A `<filterColumn>`
   holding `<filters>` — the dropdown's checkboxes — is the model's own vocabulary, a set of
   displayed values, and is carried too. Every other criterion (a custom comparison, top ten, a
   date band, a colour) is counted as `Appearance::FilterCriterion` and left out. Excel marks
   each filtered row `hidden="1"`; a row the carried filter hides is left to the filter, and a
   row it does not account for stays hidden by hand, so the sheet shows what Excel showed.
-- **Everything else** — charts, drawings, pivot tables, comments, conditional formatting, data
-  validation, protection — is counted by kind and dropped, found by relationship from the
+- **Everything else** — charts, drawings, pivot tables, comments, conditional formatting (its
+  one rule type is planned, `doc/conditional-format.md`), data validation, protection — is
+  counted by kind and dropped, found by relationship from the
   worksheet part (`xlsx/src/parts.rs`) or by element in it: one per drawing part, per chart
   part, per `<comment>`, per `<cfRule>`, per `<dataValidation>`, per pivot table, per sheet or
   workbook that is **actually** locked (an empty `<workbookProtection/>`, which LibreOffice's

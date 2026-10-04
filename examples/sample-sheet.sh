@@ -194,6 +194,13 @@ run hide "$book" D
 sheet hide "$book"
 # Left hidden, so the GTK shell's own marker over D has something to show and unhide.
 
+# A merge draws its top-left cell over the whole range; what the others hold stays, out of
+# sight, and comes back on `--unmerge`.
+say "merge: one note across the width of the table"
+run set "$book" A24 'Budget figures are monthly; actuals are paid to date.'
+run merge "$book" A24:H24
+sheet merge "$book"
+
 say "recalculate the whole document"
 run recalc "$book"
 

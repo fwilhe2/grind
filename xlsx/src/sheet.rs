@@ -142,11 +142,7 @@ pub fn read(
             } else if name.is("sheetViews") {
                 tracks.pane |= panes(reader)?;
             } else if name.is("mergeCells") {
-                // The model carries no spans (`doc/not-doing.md` §3). Excel keeps a merged
-                // range's value in its top-left cell and leaves the rest empty, which is
-                // already what an unmerged sheet looks like: nothing moves, nothing is filled.
-                let merges = count(reader, "mergeCell")?;
-                report.drop_many(Dropped::MergedCells, merges);
+                merges(reader, sheet, report)?;
             } else if name.is("conditionalFormatting") {
                 // A rule, not a style: what the cell looks like depends on its value when it
                 // is drawn, and the model has no rule engine. One per `<cfRule>`.
@@ -198,6 +194,43 @@ fn count(reader: &mut Reader<'_>, local: &str) -> crate::Result<usize> {
         Ok(Handled::No)
     })?;
     Ok(n)
+}
+
+/// `<mergeCells>` (ECMA-376 Part 1, `CT_MergeCells`): each `<mergeCell ref="B2:D2"/>` the model's merge over that
+/// range. Excel keeps the value in the top-left cell, which is where the model's merge reads it
+/// from; whatever the other cells hold — a style for the border round the merge, usually — is
+/// carried with them, out of sight, as ODF's covered cells carry it.
+///
+/// What a merge cannot be is counted rather than guessed at: a reference that is not a range,
+/// or a range overlapping one already read, which Excel refuses to open and the model cannot
+/// draw. A one-cell "merge" — legal, and written by real producers — is no merge at all and
+/// is neither carried nor counted.
+fn merges(reader: &mut Reader<'_>, sheet: &mut Sheet, report: &mut Report) -> crate::Result<()> {
+    reader.children(|_, name, attrs| {
+        if !name.is("mergeCell") {
+            return Ok(Handled::No);
+        }
+        let range = attrs.plain("ref").and_then(|r| {
+            let (a, b) = r.split_once(':')?;
+            Some((address::cell(a)?, address::cell(b)?))
+        });
+        let Some((start, end)) = range else {
+            report.drop_one(Dropped::MergedCells);
+            return Ok(Handled::Yes);
+        };
+        let (anchor, span) = grind_sheet::Span::between(start, end);
+        // One cell is no merge, and so nothing lost.
+        if span.is_single() {
+            return Ok(Handled::Yes);
+        }
+        if !sheet.merges_within(anchor, span.end(anchor)).is_empty() {
+            report.drop_one(Dropped::MergedCells);
+            return Ok(Handled::Yes);
+        }
+        sheet.set_merge(anchor, Some(span));
+        Ok(Handled::Yes)
+    })?;
+    Ok(())
 }
 
 /// `<autoFilter ref="A1:C9">` and its `<filterColumn>`s, as the model's filter.

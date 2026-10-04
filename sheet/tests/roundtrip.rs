@@ -215,6 +215,15 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
                 w.name, g.name
             ));
         }
+        // Merged ranges, exactly: a merge LibreOffice drops or moves draws a heading over the
+        // wrong cells.
+        if w.merges().collect::<Vec<_>>() != g.merges().collect::<Vec<_>>() {
+            out.push(format!(
+                "{label}: sheet {i} merges {:?}, back as {:?}",
+                w.merges().collect::<Vec<_>>(),
+                g.merges().collect::<Vec<_>>()
+            ));
+        }
         // §5.4, compared as the measurement rather than as the string: LibreOffice respells
         // every length in centimetres and quantises it to 1/100 mm, so `2.5cm` comes back
         // `2.499cm`.
@@ -753,6 +762,23 @@ fn tracks() -> (String, Document) {
     ("tracks".to_owned(), doc)
 }
 
+/// Merged ranges: a heading across three columns, a block two rows tall, and a value in a
+/// covered cell, which LibreOffice keeps out of sight rather than throwing away.
+fn merged() -> (String, Document) {
+    let mut doc = Document {
+        sheets: vec![Sheet::new("Data")],
+        ..Default::default()
+    };
+    let sheet = doc.sheet_mut(0).unwrap();
+    sheet.set(Pos::new(1, 1), CellValue::Text("Heading".into()));
+    sheet.set_merge(Pos::new(1, 1), Some(grind_sheet::Span { cols: 3, rows: 1 }));
+    sheet.set(Pos::new(3, 3), CellValue::Text("tall".into()));
+    sheet.set(Pos::new(4, 3), CellValue::Number(7.0));
+    sheet.set_merge(Pos::new(3, 3), Some(grind_sheet::Span { cols: 1, rows: 3 }));
+    sheet.set(Pos::new(6, 0), CellValue::Number(1.0));
+    ("merged".to_owned(), doc)
+}
+
 /// An autofilter (§9.4): the range, the values it keeps, and the rows it therefore hides.
 fn filtered() -> (String, Document) {
     let mut doc = Document {
@@ -929,6 +955,7 @@ fn cases() -> Vec<(String, Document)> {
         formats(),
         styles(),
         tracks(),
+        merged(),
         filtered(),
         charts(),
         counter_clockwise_pie(),
