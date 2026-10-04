@@ -15,6 +15,7 @@ members = [
     "ui_text_gtk",
     "ui_tui",
     "ui_web",
+    "ui_web_print",
     "ui_win32",
     "ui_mac",
     "suite",

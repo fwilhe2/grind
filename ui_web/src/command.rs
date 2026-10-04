@@ -346,6 +346,23 @@ pub const TEXT: &[Command] = &[
         "",
         false,
     ),
+    // The page on paper (`doc/pdf-export.md`): the same typesetting downloaded, previewed, or
+    // opened in the browser's own viewer to print from.
+    cmd(
+        "doc.export-pdf",
+        "Export as PDF",
+        "Document",
+        "Ctrl+Shift+E",
+        false,
+    ),
+    cmd("doc.print-preview", "Print preview", "Document", "", false),
+    cmd(
+        "doc.print-pdf",
+        "Print (opens the PDF)",
+        "Document",
+        "Ctrl+P",
+        false,
+    ),
     cmd("edit.copy", "Copy", "Edit", "Ctrl+C", true),
     cmd("edit.cut", "Cut", "Edit", "Ctrl+X", false),
     cmd("edit.paste", "Paste", "Edit", "Ctrl+V", false),
@@ -568,6 +585,26 @@ mod tests {
             filter(TEXT, "markdown")
                 .iter()
                 .any(|entry| entry.id == "doc.export-markdown")
+        );
+    }
+
+    /// A page is the word processor's, so the PDF verbs are its alone, and each is findable by
+    /// the word somebody would type (`doc/pdf-export.md`).
+    #[test]
+    fn the_pdf_verbs_are_the_pages_alone_and_findable_by_name() {
+        for id in ["doc.export-pdf", "doc.print-preview"] {
+            assert!(TEXT.iter().any(|command| command.id == id), "{id}");
+            assert!(!SHEET.iter().any(|command| command.id == id), "{id}");
+        }
+        assert!(
+            filter(TEXT, "pdf")
+                .iter()
+                .any(|entry| entry.id == "doc.export-pdf")
+        );
+        assert!(
+            filter(TEXT, "print")
+                .iter()
+                .any(|entry| entry.id == "doc.print-preview")
         );
     }
 

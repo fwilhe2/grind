@@ -46,7 +46,7 @@ if [ "$have" != "$wanted" ]; then
     exit 1
 fi
 
-cargo build -p grind-web --target wasm32-unknown-unknown "${cargo_flags[@]}"
+cargo build -p grind-web -p grind-web-print --target wasm32-unknown-unknown "${cargo_flags[@]}"
 
 # Where cargo put it — `CARGO_TARGET_DIR` when it is set, as it is in `scripts/claude-vm.sh`'s VM.
 # Reading `target/` regardless bundled whatever wasm was last built *there*, which in the VM is
@@ -63,8 +63,22 @@ wasm-bindgen \
     --out-name grind_web \
     "$target_dir/wasm32-unknown-unknown/$profile/grind_web.wasm"
 
+# The second module: PDF export and print preview (doc/pdf-export.md), which `index.html` imports
+# the first time anything is put on paper.
+wasm-bindgen \
+    --target web \
+    --no-typescript \
+    --out-dir "$dist" \
+    --out-name grind_web_print \
+    "$target_dir/wasm32-unknown-unknown/$profile/grind_web_print.wasm"
+
 # The page is static; it only ever needed the module next to it.
 cp "$root/ui_web/index.html" "$root/ui_web/style.css" "$dist/"
+
+# The faces a PDF is set in (doc/pdf-export.md), fetched by the page the first time anything is
+# exported or previewed rather than carried in the module — `grind_print::fonts::BUNDLED_NAMES`.
+mkdir -p "$dist/fonts"
+cp "$root"/print/fonts/*.ttf "$dist/fonts/"
 
 echo "ui_web/dist is ready — serve it, do not open index.html from disk:"
 echo "  python3 -m http.server --directory ui_web/dist 8000"

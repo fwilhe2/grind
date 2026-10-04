@@ -1211,3 +1211,42 @@ input[type="text"] {
   color: color-mix(in srgb, CanvasText 45%, Canvas);
   font-size: 13px;
 }
+
+/* The print preview (doc/pdf-export.md §4). The pages are paper, so they are white in either
+   scheme — a dark page would be a preview of something that will not print. */
+.preview {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-bar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  background: Canvas;
+  border-bottom: 1px solid color-mix(in srgb, CanvasText 15%, Canvas);
+}
+
+.preview-title {
+  flex: 1;
+  color: color-mix(in srgb, CanvasText 70%, Canvas);
+}
+
+.preview-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  background: color-mix(in srgb, CanvasText 8%, Canvas);
+}
+
+.preview-page {
+  background: white;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
+}

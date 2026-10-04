@@ -784,6 +784,23 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("the welcome pane is reachable again", byId("welcome").hidden, false);
   check("with the document pane away", byId("page").hidden, true);
 
+  // The print module (doc/pdf-export.md): the page loads it on first use and hands it the
+  // document as flat ODF bytes and the fonts it fetched, so that is exactly what is done here —
+  // a real Writer document in, a PDF and the preview's pages out.
+  const print = require(path.join(here, ".smoke/grind_web_print.js"));
+  const root = path.join(here, "..");
+  const writer = fs.readFileSync(path.join(root, "text/tests/data/numbered-list.fodt"));
+  const fonts = fs
+    .readdirSync(path.join(root, "print/fonts"))
+    .filter((name) => name.endsWith(".ttf"))
+    .map((name) => new Uint8Array(fs.readFileSync(path.join(root, "print/fonts", name))));
+  const printed = print.export_pdf(new Uint8Array(writer), "numbered-list", fonts);
+  check("the print module writes a PDF", String.fromCharCode(...printed.pdf.slice(0, 5)), "%PDF-");
+  check("and says what it did", printed.summary, "1 page, A4.");
+  const sheets = print.preview(new Uint8Array(writer), fonts, 0.25);
+  check("its preview is the pages", sheets.length, 1);
+  check("at the scale asked for", [sheets[0].width, sheets[0].height], [148, 210]);
+
   console.log(failures === 0 ? "\nall checks passed" : `\n${failures} check(s) failed`);
   process.exit(failures === 0 ? 0 : 1);
 })();

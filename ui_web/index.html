@@ -252,6 +252,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <main id="problems" class="problems" tabindex="0" hidden></main>
 
     <!--
+      The print preview (doc/pdf-export.md §4): every page as the PDF prints it, drawn onto a
+      canvas from the same display list the PDF is written from. A sixth surface, shown instead
+      of the document; its three buttons are command ids like every other button here.
+    -->
+    <main id="preview" class="preview" tabindex="0" hidden>
+      <div class="preview-bar">
+        <span id="preview-title" class="preview-title"></span>
+        <button id="preview-export" type="button">Export PDF</button>
+        <button id="preview-print" type="button">Print…</button>
+        <button id="preview-close" type="button">Close</button>
+      </div>
+      <div id="preview-pages" class="preview-pages"></div>
+    </main>
+
+    <!--
       The welcome pane: what the page shows with **no document open**, which is what it shows
       when it is first loaded. The one surface here that is real markup rather than something
       the shell fills in per frame — there is no core behind it to read a viewport from.
@@ -336,6 +351,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <script type="module">
       import init from "./grind_web.js";
+      // The PDF export and print preview are a second module (ui_web_print), fetched the first
+      // time anything is put on paper and kept for the rest of the visit — the font stack and
+      // a PDF writer are megabytes that opening a spreadsheet should not cost.
+      let print;
+      window.grindPrint = () =>
+        (print ??= import("./grind_web_print.js").then(async (module) => {
+          await module.default();
+          return module;
+        }));
       await init();
     </script>
   </body>

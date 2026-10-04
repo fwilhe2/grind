@@ -27,6 +27,9 @@ fi
 
 mkdir -p "$work"
 wasm-bindgen --target nodejs --no-typescript --out-dir "$work" --out-name grind_web "$module"
+# The second module, PDF export and print preview (doc/pdf-export.md), checked on its own below.
+wasm-bindgen --target nodejs --no-typescript --out-dir "$work" --out-name grind_web_print \
+    "$(dirname "$module")/grind_web_print.wasm"
 
 # Pinned, and installed next to the shell rather than in the repo root: this is
 # test scaffolding, not something the app ships.

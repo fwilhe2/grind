@@ -63,6 +63,8 @@ features = [
   "HtmlElement",
   "HtmlInputElement",
   "HtmlSelectElement",
+  # A page of the print preview, put onto its canvas.
+  "ImageData",
   "KeyboardEvent",
   "Location",
   # `prefers-color-scheme`, which a document's own colours are made to read against (`ink.rs`).
@@ -79,3 +81,8 @@ features = [
   "Window",
   "console",
 ]
+
+[dev-dependencies]
+# Only so a test can hold `FONT_FILES` to the list the print module fetches by
+# (`grind_print::fonts::BUNDLED_NAMES`); the bundle itself never links it.
+grind-print = { path = "../print", default-features = false }

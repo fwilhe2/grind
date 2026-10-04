@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-web-print"
+version = "0.0.0"
+description = "The browser shell's PDF export and print preview, as a module loaded on first use"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+# The second module of `ui_web` (doc/pdf-export.md §7): `grind-print` costs the browser bundle
+# about four megabytes, so it is a module of its own, fetched the first time somebody exports or
+# previews. rlib keeps `cargo test` working on the host.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+grind-core = { path = "../core" }
+grind-text = { path = "../text" }
+# Neither font feature: a browser has no installed fonts, and the bundled faces are fetched by
+# the page and handed over as bytes.
+grind-print = { path = "../print", default-features = false }
+wasm-bindgen = "0.2"
+js-sys = "0.3"

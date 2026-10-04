@@ -846,6 +846,13 @@ jobs:
             --file ui_web/dist/grind_web.js --gzip \
             --note 'the wasm-bindgen glue' \
             --out sizes-wasm.jsonl
+          # The second module (doc/pdf-export.md): PDF export and print preview, fetched only the
+          # first time anything is put on paper, so it is measured apart from what every visit costs.
+          $PY .github/scripts/sizes.py record \
+            --artifact grind_web_print_bg.wasm --platform wasm32 \
+            --file ui_web/dist/grind_web_print_bg.wasm --gzip \
+            --note 'the print module, loaded on first export' \
+            --out sizes-wasm.jsonl
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

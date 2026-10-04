@@ -151,6 +151,8 @@ pub fn start() -> Result<(), JsValue> {
         name: RefCell::new(String::new()),
         source: RefCell::new(None),
         problems: RefCell::new(None),
+        previewing: Cell::new(false),
+        fonts: RefCell::new(None),
         pick: Cell::new(Pick::Document),
         csv_words: RefCell::new(String::new()),
     });
@@ -227,6 +229,10 @@ struct Chrome {
     code_pane: HtmlElement,
     /// The problems pane — a fourth, and the same rule (`doc/dsl.md` §4.3, D6).
     problems_pane: HtmlElement,
+    /// The print preview — a sixth, and the same rule again.
+    preview_pane: HtmlElement,
+    preview_title: HtmlElement,
+    preview_pages: HtmlElement,
     /// The welcome pane — a fifth, and the one shown when there is **no** document: three
     /// choices, and the page's whole content until one of them is made.
     welcome_pane: HtmlElement,
@@ -248,6 +254,9 @@ impl Chrome {
             code_pane: element(document, "code")?,
             problems_pane: element(document, "problems")?,
             welcome_pane: element(document, "welcome")?,
+            preview_pane: element(document, "preview")?,
+            preview_title: element(document, "preview-title")?,
+            preview_pages: element(document, "preview-pages")?,
             message: element(document, "message")?,
             summary: element(document, "summary")?,
             formula_bar: element(document, "formula-bar")?,
@@ -294,11 +303,41 @@ struct Shell {
     /// linting costs a recalculation, so re-running it on every repaint would make a document
     /// with the pane open the slowest one in the shell. `Some` *is* "the pane is open".
     problems: RefCell<Option<grind_core::lint::Report>>,
+    /// Whether the print preview is the surface on screen (`doc/pdf-export.md` §4).
+    previewing: Cell<bool>,
+    /// The bundled faces as `Uint8Array`s, fetched from `fonts/` the first time anything is put
+    /// on paper and kept for the rest of the visit — megabytes nobody pays for who never exports.
+    fonts: RefCell<Option<js_sys::Array>>,
     /// What the one file input was raised for, since the page has exactly one and the pick
     /// comes back as a `change` event with no memory of the click that caused it.
     pick: Cell<Pick>,
     /// What a person typed for the next CSV import (`Pick::CsvWith`), taken by it.
     csv_words: RefCell<String>,
+}
+
+/// The bundled fonts' file names under `fonts/`: `grind_print::fonts::BUNDLED_NAMES`, which
+/// this module does not link — the print module does — and a test keeps the two the same.
+const FONT_FILES: [&str; 12] = [
+    "LiberationSerif-Regular.ttf",
+    "LiberationSerif-Bold.ttf",
+    "LiberationSerif-Italic.ttf",
+    "LiberationSerif-BoldItalic.ttf",
+    "LiberationSans-Regular.ttf",
+    "LiberationSans-Bold.ttf",
+    "LiberationSans-Italic.ttf",
+    "LiberationSans-BoldItalic.ttf",
+    "LiberationMono-Regular.ttf",
+    "LiberationMono-Bold.ttf",
+    "LiberationMono-Italic.ttf",
+    "LiberationMono-BoldItalic.ttf",
+];
+
+/// What putting the document on paper is for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Paper {
+    Export,
+    Print,
+    Preview,
 }
 
 /// Which of the two things a picked file is.
@@ -385,7 +424,9 @@ impl Shell {
         // source nor the problems pane can be open over nothing.
         let code = self.source.borrow().is_some();
         let problems = self.problems.borrow().is_some();
-        let document_pane = !code && !problems && !welcome;
+        let preview = self.previewing.get() && mode == Mode::Text;
+        let document_pane = !code && !problems && !preview && !welcome;
+        self.dom.preview_pane.set_hidden(!preview);
         self.dom.sheet_pane.set_hidden(!sheet || !document_pane);
         self.dom.text_pane.set_hidden(sheet || !document_pane);
         self.dom.code_pane.set_hidden(!code || welcome);
@@ -408,6 +449,9 @@ impl Shell {
         self.dom.redo.set_hidden(welcome);
         if welcome {
             self.dom.summary.set_text_content(None);
+        }
+        if preview {
+            return self.dom.preview_pane.focus();
         }
         match (welcome, code, problems, sheet) {
             (true, ..) => self.dom.welcome_pane.focus(),
@@ -513,6 +557,15 @@ impl Shell {
             "block.picture" => self.raise_picker(Pick::Image, IMAGE_TYPES),
             "doc.import-markdown" => self.raise_picker(Pick::Markdown, MARKDOWN_TYPES),
             "doc.export-markdown" => self.export_markdown(),
+            "doc.export-pdf" => spawn_local(self.clone().paper(Paper::Export)),
+            "doc.print-pdf" => spawn_local(self.clone().paper(Paper::Print)),
+            "doc.print-preview" => match self.previewing.get() {
+                true => {
+                    self.previewing.set(false);
+                    let _ = self.show(self.mode.get());
+                }
+                false => spawn_local(self.clone().paper(Paper::Preview)),
+            },
             "doc.export-csv" => self.export_csv("csv"),
             "doc.export-tsv" => self.export_csv("tsv"),
             "doc.undo" => self.undo(),
@@ -865,6 +918,196 @@ impl Shell {
             Ok(()) => self.set_message(format!("Saved {name} to your downloads")),
             Err(_) => self.set_message(format!("The browser refused to download {name}")),
         }
+    }
+
+    /// The bundled faces, fetched once from `fonts/`, where `build.sh` puts `print/fonts/` (the
+    /// names are `grind_print::fonts::BUNDLED_NAMES`, which this bundle does not link: the list is
+    /// held to it by a test). `None`, with the reason on the status line, when any will not load.
+    async fn fonts(&self) -> Option<js_sys::Array> {
+        if let Some(fonts) = self.fonts.borrow().clone() {
+            return Some(fonts);
+        }
+        let window = web_sys::window()?;
+        self.set_message("Fetching fonts…".to_owned());
+        let fonts = js_sys::Array::new();
+        for name in FONT_FILES {
+            let url = format!("fonts/{name}");
+            let fetched = async {
+                let response = web_sys::Response::from(
+                    JsFuture::from(window.fetch_with_str(&url)).await.ok()?,
+                );
+                if !response.ok() {
+                    return None;
+                }
+                let buffer = JsFuture::from(response.array_buffer().ok()?).await.ok()?;
+                Some(js_sys::Uint8Array::new(&buffer))
+            };
+            match fetched.await {
+                Some(bytes) => {
+                    fonts.push(&bytes);
+                }
+                None => {
+                    self.set_message(format!("Could not load {url}"));
+                    return None;
+                }
+            }
+        }
+        *self.fonts.borrow_mut() = Some(fonts.clone());
+        Some(fonts)
+    }
+
+    /// The print module (`ui_web_print`), loaded by `index.html`'s `grindPrint` on first use.
+    async fn print_module(&self) -> Option<JsValue> {
+        let window = web_sys::window()?;
+        let loader: js_sys::Function = js_sys::Reflect::get(&window, &"grindPrint".into())
+            .ok()?
+            .dyn_into()
+            .ok()?;
+        let promise: js_sys::Promise = loader.call0(&window).ok()?.dyn_into().ok()?;
+        match JsFuture::from(promise).await {
+            Ok(module) => Some(module),
+            Err(_) => {
+                self.set_message("Could not load the PDF module".to_owned());
+                None
+            }
+        }
+    }
+
+    /// The document on paper, three ways — one typesetting for all of them, in the print module.
+    async fn paper(self: Rc<Self>, what: Paper) {
+        if self.mode.get() != Mode::Text {
+            return;
+        }
+        let Some(fonts) = self.fonts().await else {
+            return;
+        };
+        let Some(module) = self.print_module().await else {
+            return;
+        };
+        let Ok(document) = self.text.app.save_bytes(grind_text::Form::Flat) else {
+            return self.set_message("Could not put the document on paper".to_owned());
+        };
+        let document = js_sys::Uint8Array::from(document.as_slice());
+        let stem = std::path::Path::new(&self.document_name())
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled".to_owned());
+        let call = |name: &str, args: &js_sys::Array| -> Result<JsValue, JsValue> {
+            let function: js_sys::Function =
+                js_sys::Reflect::get(&module, &name.into())?.dyn_into()?;
+            function.apply(&JsValue::NULL, args)
+        };
+        let get = |value: &JsValue, name: &str| js_sys::Reflect::get(value, &name.into());
+        match what {
+            Paper::Preview => {
+                let ratio = web_sys::window().map_or(1.0, |w| w.device_pixel_ratio());
+                // 96 dpi at 100%, times the screen's density: a page at its printed size, sharp.
+                let scale = 96.0 / 72.0 * ratio;
+                let args = js_sys::Array::of3(&document, &fonts, &scale.into());
+                match call("preview", &args) {
+                    Ok(pages) => self.preview(&js_sys::Array::from(&pages), ratio),
+                    Err(error) => self.set_message(format!("Could not preview: {error:?}")),
+                }
+            }
+            Paper::Export | Paper::Print => {
+                let args = js_sys::Array::of3(&document, &stem.clone().into(), &fonts);
+                let printed = call("export_pdf", &args);
+                let pdf = printed
+                    .as_ref()
+                    .ok()
+                    .and_then(|p| get(p, "pdf").ok())
+                    .map(|bytes| js_sys::Uint8Array::new(&bytes).to_vec());
+                let summary = printed
+                    .as_ref()
+                    .ok()
+                    .and_then(|p| get(p, "summary").ok()?.as_string())
+                    .unwrap_or_default();
+                let Some(pdf) = pdf else {
+                    return self.set_message(format!("Could not export: {:?}", printed.err()));
+                };
+                if what == Paper::Print {
+                    if self.open_pdf(&pdf).is_err() {
+                        self.set_message("The browser would not open the PDF".to_owned());
+                    }
+                    return;
+                }
+                let name = format!("{stem}.pdf");
+                match self.download(&name, &pdf) {
+                    Ok(()) => self.set_message(format!("Saved {name} — {summary}")),
+                    Err(_) => self.set_message(format!("The browser refused to download {name}")),
+                }
+            }
+        }
+    }
+
+    /// Every page the print module rasterised, onto a canvas each.
+    fn preview(&self, pages: &js_sys::Array, ratio: f64) {
+        let paper = self.text.app.page().unwrap_or_default();
+        let count = pages.length();
+        let name = paper.iso_name().unwrap_or_else(|| "custom".to_owned());
+        self.dom.preview_title.set_text_content(Some(&format!(
+            "Print preview · {count} page{} · {name}",
+            if count == 1 { "" } else { "s" }
+        )));
+        self.dom.preview_pages.set_inner_html("");
+        for page in pages.iter() {
+            let number = |name: &str| {
+                js_sys::Reflect::get(&page, &name.into())
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0) as u32
+            };
+            let rgba = js_sys::Reflect::get(&page, &"rgba".into())
+                .map(|bytes| js_sys::Uint8Array::new(&bytes).to_vec())
+                .unwrap_or_default();
+            let _ = self.put_page(number("width"), number("height"), &rgba, ratio);
+        }
+        self.previewing.set(true);
+        self.set_message(String::new());
+        let _ = self.show(self.mode.get());
+    }
+
+    fn put_page(&self, width: u32, height: u32, rgba: &[u8], ratio: f64) -> Result<(), JsValue> {
+        let canvas: web_sys::HtmlCanvasElement = self
+            .dom
+            .document
+            .create_element("canvas")?
+            .dyn_into()
+            .map_err(|_| JsValue::from_str("a canvas is not a canvas"))?;
+        canvas.set_width(width);
+        canvas.set_height(height);
+        canvas.set_class_name("preview-page");
+        let style = canvas.style();
+        style.set_property("width", &format!("{}px", f64::from(width) / ratio))?;
+        style.set_property("height", &format!("{}px", f64::from(height) / ratio))?;
+        let context: web_sys::CanvasRenderingContext2d = canvas
+            .get_context("2d")?
+            .ok_or_else(|| JsValue::from_str("no 2d context"))?
+            .dyn_into()
+            .map_err(|_| JsValue::from_str("not a 2d context"))?;
+        // A page is opaque — white paper under everything — so its premultiplied pixels are the
+        // straight ones a canvas expects.
+        let image = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
+            wasm_bindgen::Clamped(rgba),
+            width,
+            height,
+        )?;
+        context.put_image_data(&image, 0.0, 0.0)?;
+        self.dom.preview_pages.append_child(&canvas)?;
+        Ok(())
+    }
+
+    /// The PDF in a tab of its own, where the browser's viewer prints it.
+    fn open_pdf(&self, bytes: &[u8]) -> Result<(), JsValue> {
+        let parts = js_sys::Array::new();
+        parts.push(&js_sys::Uint8Array::from(bytes));
+        let options = web_sys::BlobPropertyBag::new();
+        options.set_type("application/pdf");
+        let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(&parts, &options)?;
+        let url = web_sys::Url::create_object_url_with_blob(&blob)?;
+        let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
+        window.open_with_url_and_target(&url, "_blank")?;
+        Ok(())
     }
 
     /// The same read, for a picture to go below the caret's paragraph. The type is read from the
@@ -1284,6 +1527,9 @@ fn wire_toolbar(shell: &Rc<Shell>) -> Result<(), JsValue> {
         ("t-underline", "char.underline", false),
         ("t-strike", "char.strike", false),
         ("t-clear", "char.clear", false),
+        ("preview-export", "doc.export-pdf", false),
+        ("preview-print", "doc.print-pdf", false),
+        ("preview-close", "doc.print-preview", false),
     ];
     for (id, command, keeps_focus) in BUTTONS {
         let button: HtmlButtonElement = element(&shell.dom.document, id)?;
@@ -1722,6 +1968,12 @@ where
 
 #[cfg(test)]
 mod tests {
+    /// The fonts this page fetches are the ones the print module sets text in.
+    #[test]
+    fn the_fonts_fetched_are_the_ones_the_print_module_expects() {
+        assert_eq!(super::FONT_FILES, grind_print::fonts::BUNDLED_NAMES);
+    }
+
     use super::*;
 
     #[test]
