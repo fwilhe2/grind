@@ -176,6 +176,18 @@ fn draw(surface: &mut Surface<'_>, op: &Op, fonts: &Fonts, faces: &mut HashMap<F
             data,
             ..
         } => {
+            if mime == "image/svg+xml" {
+                use krilla_svg::{SurfaceExt, SvgSettings};
+                if let (Some(tree), Some(size)) = (
+                    crate::svg::tree(data, fonts),
+                    Size::from_wh(*width, *height),
+                ) {
+                    surface.push_transform(&Transform::from_translate(*x, *y));
+                    surface.draw_svg(&tree, size, SvgSettings::default());
+                    surface.pop();
+                }
+                return;
+            }
             let data: krilla::Data = data.clone().into();
             let image = match mime.as_str() {
                 "image/png" => Image::from_png(data, true),

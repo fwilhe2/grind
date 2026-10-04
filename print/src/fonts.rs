@@ -216,6 +216,11 @@ impl Fonts {
             .map(|(at, _)| FaceId(at))
     }
 
+    /// Every face, in order.
+    pub fn faces(&self) -> &[Face] {
+        &self.faces
+    }
+
     /// The face at `id`.
     pub fn face(&self, id: FaceId) -> &Face {
         &self.faces[id.0]

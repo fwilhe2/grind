@@ -14,6 +14,7 @@ pub mod metrics;
 pub mod ops;
 pub mod pdf;
 pub mod raster;
+pub mod svg;
 pub mod text;
 
 use grind_core::page::PageGeometry;

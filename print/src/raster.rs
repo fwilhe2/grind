@@ -157,6 +157,22 @@ fn draw(pixmap: &mut Pixmap, op: &Op, fonts: &Fonts, scaled: Transform, glyphs: 
             data,
             ..
         } => {
+            if mime == "image/svg+xml"
+                && let Some(tree) = crate::svg::tree(data, fonts)
+            {
+                let size = tree.size();
+                let at = Transform::from_row(
+                    *width / size.width(),
+                    0.0,
+                    0.0,
+                    *height / size.height(),
+                    *x,
+                    *y,
+                )
+                .post_concat(scaled);
+                resvg::render(&tree, at, &mut pixmap.as_mut());
+                return;
+            }
             let decoded = match mime.as_str() {
                 "image/png" => Pixmap::decode_png(data).ok(),
                 _ => None,
@@ -336,6 +352,51 @@ mod tests {
         let a = render(&doc.pages[0], setter.fonts(), 1.0);
         assert_eq!(a, render(&doc.pages[0], setter.fonts(), 1.0));
         assert!(a.png().starts_with(b"\x89PNG"));
+    }
+
+    /// A red square in an SVG, drawn into a box: the box is red in the preview and in the PDF a
+    /// renderer reads back, and outside it the page is white.
+    #[test]
+    fn an_svg_picture_is_drawn_in_its_box_in_the_preview_and_the_pdf() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#ff0000"/></svg>"##;
+        let mut page = blank();
+        page.ops.push(Op::Image {
+            x: 20.0,
+            y: 10.0,
+            width: 30.0,
+            height: 30.0,
+            mime: "image/svg+xml".into(),
+            data: std::sync::Arc::new(svg.to_vec()),
+            mark: crate::ops::Mark::Decoration,
+        });
+        let fonts = Fonts::bundled();
+        let raster = render(&page, &fonts, 1.0);
+        assert_eq!(raster.pixel(35, 25), [255, 0, 0, 255]);
+        assert_eq!(raster.pixel(5, 5), [255, 255, 255, 255]);
+
+        let doc = crate::ops::Document {
+            pages: vec![page],
+            outline: vec![],
+            structure: vec![],
+        };
+        let bytes = crate::pdf::write(&doc, &fonts, &crate::pdf::Metadata::default()).unwrap();
+        let pdf = hayro::hayro_syntax::Pdf::new(bytes).unwrap();
+        let theirs = hayro::render(
+            &pdf.pages()[0],
+            &hayro::RenderCache::new(),
+            &hayro::hayro_interpret::InterpreterSettings::default(),
+            &hayro::RenderSettings::default(),
+            &hayro::PixmapSettings {
+                bg_color: hayro::vello_cpu::color::palette::css::WHITE,
+                ..hayro::PixmapSettings::default()
+            },
+        );
+        let at = |x: usize, y: usize| {
+            let i = (y * theirs.width() as usize + x) * 4;
+            theirs.data_as_u8_slice()[i..i + 3].to_vec()
+        };
+        assert_eq!(at(35, 25), vec![255, 0, 0]);
+        assert_eq!(at(5, 5), vec![255, 255, 255]);
     }
 
     /// The preview is the PDF: our raster of a page against `hayro`'s raster of the PDF we
