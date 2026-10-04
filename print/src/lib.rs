@@ -8,3 +8,4 @@
 //! (`doc/text-layout.md`, decision 2), and so does any build that leaves this crate out.
 
 pub mod fonts;
+pub mod metrics;
