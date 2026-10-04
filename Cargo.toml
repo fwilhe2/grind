@@ -44,3 +44,15 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.memchr]
 opt-level = 3
+# The same argument for the PDF's font stack (doc/pdf-export.md): shaping, outlines, subsetting
+# and the PDF writer. An unoptimised harfrust shapes a page of text slower than a person reads it.
+[profile.dev.package.harfrust]
+opt-level = 3
+[profile.dev.package.read-fonts]
+opt-level = 3
+[profile.dev.package.skrifa]
+opt-level = 3
+[profile.dev.package.subsetter]
+opt-level = 3
+[profile.dev.package.krilla]
+opt-level = 3

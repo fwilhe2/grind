@@ -124,11 +124,8 @@ impl Typesetter {
             starts.dedup();
             for (info, position) in infos.iter().zip(out.glyph_positions()) {
                 let start = info.cluster as usize;
-                let end = starts
-                    .iter()
-                    .copied()
-                    .find(|&next| next > start)
-                    .unwrap_or(text.len());
+                let next = starts.partition_point(|&at| at <= start);
+                let end = starts.get(next).copied().unwrap_or(text.len());
                 glyphs.push(Glyph {
                     id: info.glyph_id,
                     x_advance: position.x_advance as f32 * scale,
