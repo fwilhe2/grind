@@ -18,6 +18,7 @@
 
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
 use grind_sheet::App;
 
 /// What a successful open left the window holding.
@@ -64,19 +65,33 @@ pub fn is_workbook(bytes: &[u8]) -> bool {
 }
 
 /// Open `bytes`, read from `path`, into `app`: as ODF, or as an imported workbook.
+#[cfg(test)]
 pub fn open(app: &App, path: &Path, bytes: &[u8]) -> Result<Opened, String> {
+    let (document, opened) = prepare(path, bytes)?;
+    app.open_document(document).map_err(|e| e.to_string())?;
+    Ok(opened)
+}
+
+/// Everything [`open`] does except hand the document to an `App`: the whole of the slow part —
+/// a large workbook takes a minute — and it touches no window and no `App`, so it is the half a
+/// worker thread runs while the window stays alive.
+pub fn prepare(path: &Path, bytes: &[u8]) -> Result<(grind_sheet::Document, Opened), String> {
     #[cfg(feature = "xlsx")]
     if grind_xlsx::sniff(bytes) {
         let (odf, report) = grind_xlsx::open(bytes).map_err(|e| e.to_string())?;
         let name = grind_xlsx::suggested_name(&document_name(path));
-        app.open_bytes(&name, &odf).map_err(|e| e.to_string())?;
-        return Ok(Opened {
-            path: None,
-            imported: Some(Imported {
-                name,
-                summary: report.summary(),
-            }),
-        });
+        let document = grind_sheet::read_bytes(&name, &odf).map_err(|e| e.to_string())?;
+        drop(odf);
+        return Ok((
+            document,
+            Opened {
+                path: None,
+                imported: Some(Imported {
+                    name,
+                    summary: report.summary(),
+                }),
+            },
+        ));
     }
     // A CSV double-clicked, or picked in Open, is the same shape: a document of its own, named
     // `data.fods`, with no path — where *Import CSV* puts the fields into this one instead.
@@ -84,22 +99,28 @@ pub fn open(app: &App, path: &Path, bytes: &[u8]) -> Result<Opened, String> {
         && let Some(opened) = grind_sheet::csv::open(&document_name(path), bytes)
     {
         let opened = opened?;
-        app.open_bytes(&opened.name, &opened.odf)
-            .map_err(|e| e.to_string())?;
-        return Ok(Opened {
-            path: None,
-            imported: Some(Imported {
-                name: opened.name,
-                summary: opened.summary,
-            }),
-        });
+        let document =
+            grind_sheet::read_bytes(&opened.name, &opened.odf).map_err(|e| e.to_string())?;
+        return Ok((
+            document,
+            Opened {
+                path: None,
+                imported: Some(Imported {
+                    name: opened.name,
+                    summary: opened.summary,
+                }),
+            },
+        ));
     }
-    app.open_bytes(&path.display().to_string(), bytes)
-        .map_err(|e| e.to_string())?;
-    Ok(Opened {
-        path: Some(path.to_owned()),
-        imported: None,
-    })
+    let document =
+        grind_sheet::read_bytes(&path.display().to_string(), bytes).map_err(|e| e.to_string())?;
+    Ok((
+        document,
+        Opened {
+            path: Some(path.to_owned()),
+            imported: None,
+        },
+    ))
 }
 
 fn document_name(path: &Path) -> String {

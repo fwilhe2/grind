@@ -103,44 +103,38 @@ fn main() -> ExitCode {
             _ => {}
         }
     }
-    // A workbook on the command line is imported like one picked in the dialog: it comes up
-    // unsaved, under an ODF name, with no path for Save to write over.
-    let mut imported = None;
-    if let Some(given) = path.take() {
-        let opened = std::fs::read(&given)
-            .map_err(|e| e.to_string())
-            .and_then(|bytes| import::open(&app, &given, &bytes));
-        match opened {
-            Ok(opened) => {
-                path = opened.path;
-                imported = opened.imported;
-            }
-            Err(error) => {
-                eprintln!("grind-sheet-gtk: {}: {error}", given.display());
-                return ExitCode::FAILURE;
-            }
-        }
-    }
+    // A file on the command line is opened by the window once it exists (`Ui::load`): a large
+    // workbook takes a minute to import, and a process that has not shown a window by then is one
+    // the desktop offers to kill.
+    let given = path.take();
     // A window with no file is a new document, and a new document here speaks the desktop's
     // language (`fresh_document`).
-    if path.is_none() && imported.is_none() {
+    if given.is_none() {
         let _ = app.open_bytes("untitled.fods", &fresh_document());
     }
-    let imported = Rc::new(RefCell::new(imported));
 
     let application = adw::Application::builder().application_id(APP_ID).build();
     application.connect_activate(move |application| {
         theme::install();
         let ui = Ui::build(application, &app, path.clone());
-        if let Some(imported) = imported.borrow_mut().take() {
-            ui.adopt_import(imported);
-        }
         if overlays.any() {
             ui.grid.set_overlays(overlays);
         }
         ui.window.present();
-        if let Some(target) = render_to.clone() {
-            render_once(&ui.window, target);
+        match given.clone() {
+            Some(given) => {
+                let render_to = render_to.clone();
+                ui.load_then(&given, move |ui| {
+                    if let Some(target) = render_to {
+                        render_once(&ui.window, target);
+                    }
+                });
+            }
+            None => {
+                if let Some(target) = render_to.clone() {
+                    render_once(&ui.window, target);
+                }
+            }
         }
     });
 
@@ -191,6 +185,8 @@ struct Ui {
     /// Set by a load, and consumed by the change it is about to cause — opening a document
     /// notifies like any other change, and it must not leave the new one marked as modified.
     loading: Cell<bool>,
+    /// A file is being read on a worker thread (`load_then`).
+    opening: Cell<bool>,
     /// `editor`'s latch: a close that is waiting on a save must not ask again.
     closing: Cell<bool>,
 }
@@ -320,6 +316,7 @@ impl Ui {
             path: RefCell::new(path),
             dirty: Cell::new(false),
             loading: Cell::new(false),
+            opening: Cell::new(false),
             imported: RefCell::new(None),
             closing: Cell::new(false),
         });
@@ -731,29 +728,67 @@ impl Ui {
     }
 
     fn load(self: &Rc<Self>, path: &Path) {
-        let bytes = match std::fs::read(path) {
-            Ok(bytes) => bytes,
-            Err(error) => return self.toast(&format!("Could not open: {error}")),
-        };
-        // The open's own notification is swallowed so an ODF document comes up unmodified. An
-        // imported workbook or CSV is *meant* to come up modified — nothing has saved it — so for one
-        // the notification is let through to mark it.
-        self.loading.set(!import::is_import(path, &bytes));
-        match import::open(&self.app, path, &bytes) {
-            Ok(opened) => {
-                *self.path.borrow_mut() = opened.path;
-                *self.imported.borrow_mut() = None;
-                self.grid.set_sheet(0);
-                match opened.imported {
-                    Some(imported) => self.adopt_import(imported),
-                    None => remember_recent(path),
-                }
-            }
-            Err(error) => {
-                self.loading.set(false);
-                self.toast(&format!("Could not open: {error}"));
-            }
+        self.load_then(path, |_| {});
+    }
+
+    /// Open `path`, then call `done`. Everything slow — reading, importing, parsing — runs on a
+    /// worker thread (`import::prepare` touches no `App` and no widget), so the window stays
+    /// drawn and answers the desktop's pings however large the file is; only handing the
+    /// finished document over happens here.
+    fn load_then(self: &Rc<Self>, path: &Path, done: impl FnOnce(&Rc<Self>) + 'static) {
+        if self.opening.replace(true) {
+            return self.toast("Still opening another file");
         }
+        let notice = adw::Toast::builder()
+            .title(format!(
+                "Opening {} — a large file takes a while…",
+                path.file_name().unwrap_or_default().to_string_lossy()
+            ))
+            .timeout(0)
+            .build();
+        self.toasts.add_toast(notice.clone());
+        self.stack.set_sensitive(false);
+        let ui = self.clone();
+        let path = path.to_owned();
+        glib::spawn_future_local(async move {
+            let worker_path = path.clone();
+            let prepared = gio::spawn_blocking(move || {
+                let bytes = std::fs::read(&worker_path).map_err(|e| e.to_string())?;
+                let imports = import::is_import(&worker_path, &bytes);
+                import::prepare(&worker_path, &bytes)
+                    .map(|(document, opened)| (document, opened, imports))
+            })
+            .await;
+            notice.dismiss();
+            ui.stack.set_sensitive(true);
+            ui.opening.set(false);
+            match prepared {
+                Ok(Ok((document, opened, imports))) => {
+                    // The open's own notification is swallowed so an ODF document comes up
+                    // unmodified. An imported workbook or CSV is *meant* to come up modified —
+                    // nothing has saved it — so for one the notification is let through.
+                    ui.loading.set(!imports);
+                    match ui.app.open_document(document) {
+                        Ok(()) => {
+                            *ui.path.borrow_mut() = opened.path;
+                            *ui.imported.borrow_mut() = None;
+                            ui.grid.set_sheet(0);
+                            match opened.imported {
+                                Some(imported) => ui.adopt_import(imported),
+                                None => remember_recent(&path),
+                            }
+                        }
+                        Err(error) => {
+                            ui.loading.set(false);
+                            ui.toast(&format!("Could not open: {error}"));
+                        }
+                    }
+                }
+                Ok(Err(error)) => ui.toast(&format!("Could not open: {error}")),
+                Err(_) => ui.toast("Could not open: the file was too much for the reader"),
+            }
+            done(&ui);
+        });
     }
 
     /// An imported workbook: named after it, unsaved, and the report's sentence where it

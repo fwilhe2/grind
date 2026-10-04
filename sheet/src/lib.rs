@@ -1387,7 +1387,12 @@ impl App {
     /// Replace the document. History is dropped: an undo across a file boundary would
     /// apply an action addressed to a document that no longer exists.
     pub fn open_bytes(&self, name: &str, bytes: &[u8]) -> Result<()> {
-        let doc = read_bytes(name, bytes)?;
+        self.open_document(read_bytes(name, bytes)?)
+    }
+
+    /// Hold a document that has already been read — [`read_bytes`] is the slow half of an open
+    /// and takes no `App`, so a shell can run it on a worker thread and only *this* on its own.
+    pub fn open_document(&self, doc: Document) -> Result<()> {
         self.mutate(|state| {
             state.doc = doc;
             state.undo.clear();

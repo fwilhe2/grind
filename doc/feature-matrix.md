@@ -543,6 +543,22 @@ written and type-checked, not yet run (§1): it sets and draws borders (row 2), 
 defines, redefines, renames, inlines and deletes names — the renaming and inlining first in any
 window (row 7) — inserts and draws charts (row 8), and inserts and draws pictures (row 9).
 
+**TODO (2026-10-04): opening a large file must not block the UI thread — only the GNOME
+spreadsheet window does that right.** `Tool_Entsparphase_Weltportfoliom.xlsx` (a Google Sheets
+export, 5 sheets of ~10,000 styled columns, 1.6 million cells, ~60 s and ~2.5 GB to open in a
+release build) froze `grind-sheet-gtk` until GNOME offered to kill it. Fixed there by
+`Ui::load_then` (`ui_sheet_gtk/src/main.rs`): `import::prepare` does the whole slow half — read,
+import, `grind_sheet::read_bytes` — on a worker thread with no `App` and no widget, and the main
+thread only calls `App::open_document` and shows a toast while it waits. **Not yet checked or
+fixed in** `grind-text-gtk` (same shape for a big `.odt`), `grind-tui`, `grind-win32` (a frozen
+window is "Not Responding" there too), `grind-mac` (the beachball) and `grind-web` (a wasm module
+has no thread to hand it to without a worker, so it needs the page's own Worker). Each shell
+needs the same three things: the work off the UI thread, a visible "opening…" state with the
+window still drawn, and a second open refused while one runs. The shared half already exists —
+`App::open_document` — and the remaining open question is whether `grind_xlsx::open`'s
+write-then-read round trip (about a third of the time) can hand over a `Document` directly. Also
+worth a look: peak memory, since a styled blank costs a cell.
+
 ## 9. Absent from every client
 
 Not a parity problem — a feature line. Each has its row in `doc/not-doing.md` or a gate in a
