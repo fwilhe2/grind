@@ -624,6 +624,10 @@ oracle turned out to be unable to answer the font questions (fact 4).
 6. **The first paragraph's space above is applied at the top of the first page** (its line
    starts 28.35 pt below the top margin for a 1 cm `fo:margin-top`), and **a paragraph that
    starts a later page drops its space above**: its line sits on the top margin (26.8.1.1).
+8. **Alignment** (26.8.1.1): `fo:text-align="justify"` stretches every line of a paragraph from
+   margin to margin **except the paragraph's last**, which stays at the start — and a line that
+   ends in a `text:line-break` **is** stretched (two words on it went one to each margin).
+   `center` centres a line between the margins and `end` puts it against the right one.
 7. **The pinned image has no Liberation fonts.** The same document set in Liberation Serif
    comes out in **DejaVu Serif** from the pin (`pdffonts`), so line breaks and page breaks
    measured there are DejaVu's. Loop G cannot use the pin as it stands; it needs the bundled
