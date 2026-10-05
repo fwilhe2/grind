@@ -55,6 +55,13 @@ pub struct CellStyle {
     pub vertical_align: Option<String>,
     /// `fo:wrap-option` — `wrap` or `no-wrap`.
     pub wrap: Option<String>,
+    /// `style:text-underline-style` — `none`, `solid`, `dotted`, … — the text half of a cell's
+    /// style, spelled as `grind_text::CharStyle` spells it for a run.
+    #[serde(default)]
+    pub underline: Option<String>,
+    /// `style:text-line-through-style` — the same vocabulary, struck through instead.
+    #[serde(default)]
+    pub line_through: Option<String>,
     /// `fo:border-{left,right,top,bottom}`, in [`EDGES`] order. The `fo:border` shorthand is
     /// expanded into all four on the way in and collapsed back when they agree, because
     /// that is what the shorthand *means* — keeping it as a fifth field would make two
@@ -75,6 +82,17 @@ impl CellStyle {
             .iter()
             .all(|edge| edge.as_deref() == Some(first))
             .then_some(first)
+    }
+
+    /// Whether the text is underlined: ODF's `none` is an explicit absence, and every other
+    /// value is some kind of line.
+    pub fn is_underlined(&self) -> bool {
+        !matches!(self.underline.as_deref(), None | Some("none"))
+    }
+
+    /// Whether the text is struck through — [`CellStyle::is_underlined`]'s twin.
+    pub fn is_struck(&self) -> bool {
+        !matches!(self.line_through.as_deref(), None | Some("none"))
     }
 
     pub fn set_border(&mut self, value: Option<String>) {
@@ -99,6 +117,8 @@ impl CellStyle {
             align: pick(&self.align, &under.align),
             vertical_align: pick(&self.vertical_align, &under.vertical_align),
             wrap: pick(&self.wrap, &under.wrap),
+            underline: pick(&self.underline, &under.underline),
+            line_through: pick(&self.line_through, &under.line_through),
             borders: std::array::from_fn(|i| pick(&self.borders[i], &under.borders[i])),
         }
     }

@@ -60,6 +60,8 @@ pub struct Appearance {
     pub align: Align,
     pub bold: bool,
     pub italic: bool,
+    pub underline: bool,
+    pub strike: bool,
     /// `None` means "the theme's ink" — a cell without a colour of its own has to follow the
     /// user's light/dark choice, and baking the theme's value in here would make a document
     /// that was opened in light mode unreadable when the theme changed under it.
@@ -68,6 +70,16 @@ pub struct Appearance {
 }
 
 impl Appearance {
+    /// Which of the sixteen faces a cell's text is drawn in — bold, italic, underlined and
+    /// struck through being four switches of one `LOGFONTW` — as an index into a frame's
+    /// [`Faces`]. Zero is the regular face.
+    pub fn face(&self) -> usize {
+        usize::from(self.bold)
+            | usize::from(self.italic) << 1
+            | usize::from(self.underline) << 2
+            | usize::from(self.strike) << 3
+    }
+
     /// What the document asks for, with the spreadsheet's own defaults underneath.
     ///
     /// Where the text sits and whether it is bold or italic are `grind_sheet::look`'s rules —
@@ -79,6 +91,8 @@ impl Appearance {
             align: look::align(value, style),
             bold: look::is_bold(style),
             italic: look::is_italic(style),
+            underline: style.is_some_and(CellStyle::is_underlined),
+            strike: style.is_some_and(CellStyle::is_struck),
             text: style.and_then(|s| s.color.as_deref()).and_then(Rgb::parse),
             // `transparent` is a real value and it means *no fill*, not black.
             background: match style.and_then(|s| s.background.as_deref()) {
@@ -368,6 +382,25 @@ mod windows_impl {
 
         let regular = Font::new(frame.face, frame.font_px, false);
         let bold = Font::new(frame.face, frame.font_px, true);
+        // Every other combination a cell can ask for, made the first time one does: a frame of
+        // plain cells creates none of them.
+        let faces: [std::cell::OnceCell<Font>; 16] = Default::default();
+        let face = |look: &Appearance| -> Option<&Font> {
+            match look.face() {
+                0 => None,
+                1 => Some(&bold),
+                i => Some(faces[i].get_or_init(|| {
+                    Font::styled(
+                        frame.face,
+                        frame.font_px,
+                        look.bold,
+                        look.italic,
+                        look.underline,
+                        look.strike,
+                    )
+                })),
+            }
+        };
         // The chrome's own two sizes — see `Frame::caption_px`. Built once per frame, like every
         // other font here, because creating one per label would be visible on every keystroke.
         let caption = Font::new(frame.face, frame.caption_px, false);
@@ -479,7 +512,7 @@ mod windows_impl {
                     if text.is_empty() {
                         continue;
                     }
-                    let _bold = look.bold.then(|| Selected::font(dc, &bold));
+                    let _face = face(&look).map(|font| Selected::font(dc, font));
                     // A cell with no colour of its own gets ODF's *automatic* — the theme's ink
                     // where that reads on whatever ground this cell ended up with, and black or
                     // white where it does not. See `theme::automatic_ink`: a document that fills
@@ -566,7 +599,7 @@ mod windows_impl {
                 if text.is_empty() {
                     continue;
                 }
-                let _bold = look.bold.then(|| Selected::font(dc, &bold));
+                let _face = face(&look).map(|font| Selected::font(dc, font));
                 let ink = crate::theme::document_ink(
                     look.text,
                     ground.unwrap_or(theme.background),

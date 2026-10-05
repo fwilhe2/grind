@@ -215,6 +215,7 @@ borders, which that window does not draw either.
 | | CLI | Sheet GTK | TUI | Web | Win32 | Mac |
 |---|---|---|---|---|---|---|
 | Bold, italic | ● | ● | ● | ● | ● | ● |
+| Underline, strikethrough (cells) | ● ᵘˡ | ○ | ○ | ○ | ○ | ○ |
 | Alignment | ● | ● | ● | ● | ● | ● |
 | Wrap text | ● | ● | ● | ● | ● ʷʷ | ● |
 | Borders | ● | ● ᵃ | ● | ● | ● ʷᵇ | ● |
@@ -227,6 +228,7 @@ borders, which that window does not draw either.
 | Set the document's own locale (`doc/ods-format.md` §5.2) | ● | ● ᵍ | ● ˡᵒ | ● ˡᵒ | ● ˡᵒ | ● |
 | **Honours** the document's locale — shown and typed | ● | ● | ● | ● | ● | ● |
 | **Drawn**: bold, italic, alignment | — | ● | ● | ● | ● | ● |
+| **Drawn**: underline, strikethrough | — | ● | ● | ● | ● | ● ᵘˡ |
 | **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● | ● |
 | **Drawn**: borders | — | ◐ ᵉ | ○ | ● | ◐ ʷᵇ | ◐ ³ |
 | **Drawn**: wrapped text | — | ● | ○ | ● | ● ʷʷ | ● ¹ |
@@ -255,6 +257,8 @@ nothing, which is why that row is full: every cell's text comes out of `App::get
 already spelled the document's way, and every typed number goes through the core's typing
 rule. A new document in the GNOME window states the desktop's locale; `grind sheet new` states
 none unless told.
+
+ᵘˡ A cell's `style:text-underline-style` and `style:text-line-through-style` (2026-10-05): read, written, projected (`underline=`/`strike=`) and carried from `.xlsx`, and set by `grind sheet style --underline --strike`. Every window draws them — Pango attributes, terminal modifiers, CSS `text-decoration`, `LOGFONTW`'s own two switches, and on the Mac two fills placed from the portable metrics. A *toggle* for them on each window's format strip is the open half; the Windows grid draws italic now too, which it did not before.
 
 **One rule for a number that does not fit.** Part of a number is a different number —
 `2026-08-16` cut to `2026-08-1` is the first of August, `3,710.00 €` cut to `3,710.0…` has lost a

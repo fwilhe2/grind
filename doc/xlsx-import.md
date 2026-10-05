@@ -858,6 +858,11 @@ a fill on a blank (below) — 2,394 font families, 249 indents, 90 underlines, 4
 pattern fills, ten centred-across-selections, and 18 sheets with frozen panes, three with
 outlines, 33 with a default width this build cannot derive. No theme colour went unresolved.
 
+*Since 2026-10-05* the 90 underlines and every strikethrough are carried — `CellStyle` gained
+`style:text-underline-style` and `style:text-line-through-style`, the spelling the word
+processor already used (`doc/xlsx-format.md` §4.13) — and only a double underline's second line
+is still counted. 52,244 cells now carry a style.
+
 Seven things it found on the way:
 
 1. **The oracle's column widths are a fact about the converting machine.** The plan said the

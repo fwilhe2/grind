@@ -31,6 +31,9 @@ pub struct Active {
 }
 
 /// What a command writes over the selection.
+// One of these lives for the length of one command and is never stored, so boxing the style to
+// even the variants out would cost an allocation per click to save bytes nobody keeps.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Write {
     /// `App::set_style` — `None` is no style at all.

@@ -613,6 +613,21 @@ checklist of §4.11:
   two rules setting different properties). A workbook whose overlapping rules set different
   properties draws differently in Excel than in either ODF application.
 
+### 4.13 Underline and strikethrough — `MEASURED`
+
+Measured 2026-10-05 by converting a workbook with one cell per `<font>` variant to `.fods` with
+LibreOffice 26.8:
+
+- `<u/>` and `<u val="singleAccounting"/>` are both `style:text-underline-style="solid"` (one
+  cell style shared); the oracle does not distinguish the accounting kinds.
+- `<u val="double"/>` is `style:text-underline-style="solid"` **and**
+  `style:text-underline-type="double"`. The model carries the style only, so a double
+  underline is drawn single and counted (`Appearance::Underline`).
+- `<strike/>` is `style:text-line-through-style="solid"` with `style:text-line-through-type="single"`.
+- The oracle also writes `style:text-underline-width="auto"` and
+  `style:text-underline-color="font-color"`, both ODF's defaults, and `none` for both lines on
+  every other cell style — which the ODF reader reads as no line at all.
+
 ## 5. Functions whose semantics differ under the same name
 
 `doc/xlsx-import.md` Part II §3 takes the decision: the importer carries the name and Excel's

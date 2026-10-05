@@ -59,10 +59,10 @@ use crate::xml::{Attrs, Handled, Reader};
 /// theme to resolve it is `Dropped::ThemeColor`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Appearance {
-    /// `<u/>`, any kind. `CellStyle` has no underline.
+    /// `<u val="double"/>` or `doubleAccounting`. The underline is carried, single:
+    /// `CellStyle` spells the line's style and not `style:text-underline-type`, the oracle's
+    /// spelling of a second line (`doc/xlsx-format.md` §4.13).
     Underline,
-    /// `<strike/>`.
-    Strike,
     /// `<vertAlign val="superscript"/>` or `subscript` — a text position, which a cell's
     /// style does not carry.
     Script,
@@ -134,8 +134,7 @@ impl Appearance {
     /// A plain-English name, for a report a person reads.
     pub fn label(self) -> &'static str {
         match self {
-            Appearance::Underline => "underline",
-            Appearance::Strike => "strikethrough",
+            Appearance::Underline => "double underline (drawn single)",
             Appearance::Script => "superscript or subscript",
             Appearance::PatternFill => "pattern fill",
             Appearance::GradientFill => "gradient fill",
@@ -236,6 +235,7 @@ struct Font {
     bold: bool,
     italic: bool,
     underline: bool,
+    double: bool,
     strike: bool,
     script: bool,
     size: Option<f64>,
@@ -287,6 +287,7 @@ struct Dxf {
     bold: Option<bool>,
     italic: Option<bool>,
     underline: bool,
+    double: bool,
     strike: bool,
     script: bool,
     size: Option<f64>,
@@ -484,8 +485,7 @@ fn dxf_look(d: &Dxf, palette: &Palette) -> Look {
     style.font_size = d.size.map(|size| format!("{size}pt"));
     style.color = d.color.as_ref().and_then(|c| resolve(c, &mut lost));
     for (on, class) in [
-        (d.underline, Appearance::Underline),
-        (d.strike, Appearance::Strike),
+        (d.double, Appearance::Underline),
         (d.script, Appearance::Script),
         (d.num_fmt, Appearance::RuleFormat),
     ] {
@@ -546,7 +546,7 @@ fn dxf(reader: &mut Reader<'_>) -> crate::Result<Dxf> {
                     "b" => out.bold = Some(on(attrs)),
                     "i" => out.italic = Some(on(attrs)),
                     "strike" => out.strike = on(attrs),
-                    "u" => out.underline = attrs.plain("val") != Some("none"),
+                    "u" => (out.underline, out.double) = underline(attrs),
                     "vertAlign" => {
                         out.script = matches!(attrs.plain("val"), Some("superscript" | "subscript"))
                     }
@@ -607,6 +607,8 @@ fn without(mut style: CellStyle, base: &CellStyle) -> CellStyle {
         (&mut style.align, &base.align),
         (&mut style.vertical_align, &base.vertical_align),
         (&mut style.wrap, &base.wrap),
+        (&mut style.underline, &base.underline),
+        (&mut style.line_through, &base.line_through),
     ];
     for (field, base) in fields {
         if field.is_some() && field == base {
@@ -660,6 +662,8 @@ fn look(
     // The font.
     style.font_weight = font.bold.then(|| "bold".to_owned());
     style.font_style = font.italic.then(|| "italic".to_owned());
+    style.underline = font.underline.then(|| "solid".to_owned());
+    style.line_through = font.strike.then(|| "solid".to_owned());
     let size = font.size.unwrap_or(base.size);
     if size != base.size {
         style.font_size = Some(format!("{size}pt"));
@@ -672,8 +676,7 @@ fn look(
         style.color = ink.hex().map(str::to_owned);
     }
     for (on, class) in [
-        (font.underline, Appearance::Underline),
-        (font.strike, Appearance::Strike),
+        (font.double, Appearance::Underline),
         (font.script, Appearance::Script),
     ] {
         if on {
@@ -791,6 +794,18 @@ fn line(name: &str) -> Option<(&'static str, &'static str, bool)> {
 
 // ---- the readers, one per table ----
 
+/// `<u>`: whether there is a line, and whether it is double. `single` when `val` is absent;
+/// `none` is the one spelling of no underline, and the accounting kinds are their plain
+/// namesakes set lower, which the oracle does not distinguish either (`doc/xlsx-format.md`
+/// §4.13).
+fn underline(attrs: &Attrs) -> (bool, bool) {
+    match attrs.plain("val") {
+        Some("none") => (false, false),
+        Some("double" | "doubleAccounting") => (true, true),
+        _ => (true, false),
+    }
+}
+
 /// `<b/>`, `<i/>`, `<strike/>`: on unless `val` says otherwise (§18.8.2's `CT_BooleanProperty`,
 /// whose `val` defaults to true).
 fn on(attrs: &Attrs) -> bool {
@@ -807,8 +822,7 @@ fn font(reader: &mut Reader<'_>) -> crate::Result<Font> {
             "b" => font.bold = on(attrs),
             "i" => font.italic = on(attrs),
             "strike" => font.strike = on(attrs),
-            // `single` when `val` is absent; `none` is the one spelling of no underline.
-            "u" => font.underline = attrs.plain("val") != Some("none"),
+            "u" => (font.underline, font.double) = underline(attrs),
             "vertAlign" => {
                 font.script = matches!(attrs.plain("val"), Some("superscript" | "subscript"))
             }
@@ -1026,14 +1040,9 @@ mod tests {
         );
         let look = styles.look(3).unwrap();
         assert!(look.family, "Georgia is not the default Calibri");
-        assert_eq!(
-            look.lost,
-            [
-                Appearance::Underline,
-                Appearance::Strike,
-                Appearance::Script
-            ]
-        );
+        let carried = look.style.as_ref().unwrap();
+        assert!(carried.is_underlined() && carried.is_struck());
+        assert_eq!(look.lost, [Appearance::Script]);
         assert!(
             !styles.look(1).unwrap().family,
             "the default family costs nothing"

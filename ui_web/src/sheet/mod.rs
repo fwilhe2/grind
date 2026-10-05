@@ -2920,6 +2920,16 @@ fn css_of(style: Option<&CellStyle>, numeric: bool, dark: bool) -> String {
     set(&mut css, "font-weight", &style.font_weight);
     set(&mut css, "font-style", &style.font_style);
     set(&mut css, "font-size", &style.font_size);
+    let lines: Vec<&str> = [
+        (style.is_underlined(), "underline"),
+        (style.is_struck(), "line-through"),
+    ]
+    .into_iter()
+    .filter_map(|(on, line)| on.then_some(line))
+    .collect();
+    if !lines.is_empty() {
+        css.push_str(&format!("text-decoration:{};", lines.join(" ")));
+    }
     // The document's colour, made to read on the page it lands on (`crate::ink`).
     let ink = crate::ink::color(style.color.as_deref(), style.background.as_deref(), dark);
     set(&mut css, "color", &ink);

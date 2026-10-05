@@ -421,7 +421,9 @@ pub fn cells(
             if let Op::Text { clip, .. } = &mut op {
                 *clip = reach;
             }
+            let lines = lines(&op, style, metrics);
             ops.push(op);
+            ops.extend(lines);
         }
     }
     // Each merge's text, across the whole merge, whether or not its top-left cell is in view.
@@ -706,6 +708,45 @@ fn cell_text(
         color: ink,
         clip: cell,
     }
+}
+
+/// The underline and the line through a cell's text asks for, as fills under and across the
+/// text op it was drawn as — in its own colour, clipped where it is, one point thick. The page
+/// draws a run's lines from CoreText's own underline metrics (`render.rs`); a cell's are placed
+/// from the portable metrics so that a frame stays a list of `Op`s decided here.
+fn lines(op: &Op, style: Option<&grind_sheet::style::CellStyle>, metrics: &dyn Metrics) -> Vec<Op> {
+    let Op::Text {
+        x,
+        top,
+        text,
+        style: text_style,
+        color,
+        clip,
+    } = op
+    else {
+        return Vec::new();
+    };
+    let (under, through) = style.map_or((false, false), |s| (s.is_underlined(), s.is_struck()));
+    if !under && !through {
+        return Vec::new();
+    }
+    let w = width(metrics, text, text_style);
+    let ascent = f64::from(metrics.ascent(text_style));
+    let thickness = 1.0;
+    let mut out = Vec::new();
+    for (on, y) in [(under, top + ascent + 1.5), (through, top + ascent * 0.65)] {
+        if !on {
+            continue;
+        }
+        let rect = Rect::new(*x, y - thickness / 2.0, w, thickness).intersection(clip);
+        if !rect.is_empty() {
+            out.push(Op::Fill {
+                rect,
+                color: *color,
+            });
+        }
+    }
+    out
 }
 
 /// A wrapping cell's text, broken at its column's width by `grind_core::layout::wrap` — the

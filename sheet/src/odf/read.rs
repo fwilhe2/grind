@@ -2115,6 +2115,11 @@ impl Context<Builder> for CellStyleProps {
                 style.font_style = fo("font-style");
                 style.font_size = fo("font-size");
                 style.color = fo("color");
+                // `none` is the absence of a line, which the model spells as no value — LibreOffice
+                // writes it on every cell style it saves, as it writes `fo:border="none"`.
+                let line = |local: &str| fo(local).filter(|v| v != "none");
+                style.underline = line("text-underline-style");
+                style.line_through = line("text-line-through-style");
             }
             "paragraph-properties" => style.align = fo("text-align"),
             _ => return None,

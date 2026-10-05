@@ -262,7 +262,7 @@ mod tests {
         assert_eq!(
             report.summary(),
             "Imported from Excel: 2 sheets, 120 cells; not carried: merged range ×7, \
-             underline ×2, chart ×1 and 1 more kind."
+             double underline (drawn single) ×2, chart ×1 and 1 more kind."
         );
     }
 

@@ -123,7 +123,7 @@ enum Op {
     },
     Style {
         range: String,
-        style: CellStyle,
+        style: Box<CellStyle>,
     },
     Width {
         range: String,
@@ -730,7 +730,7 @@ impl Sheet {
             if !row.style.is_plain() {
                 spec.ops.push(Op::Style {
                     range: range.clone(),
-                    style: row.style,
+                    style: Box::new(row.style),
                 });
             }
             if let Some(format) = row.format {
@@ -763,7 +763,7 @@ impl Sheet {
     fn style(&mut self, range: &str, style: &Style) {
         self.0.borrow_mut().ops.push(Op::Style {
             range: range.to_owned(),
-            style: style.0.clone(),
+            style: Box::new(style.0.clone()),
         });
     }
 

@@ -2579,6 +2579,14 @@ fn owned_properties(style: Option<&CellStyle>) -> Vec<envelope::PropertyPatch<'s
                 ("fo:font-style".to_owned(), value(s.map(|s| &s.font_style))),
                 ("fo:font-size".to_owned(), value(s.map(|s| &s.font_size))),
                 ("fo:color".to_owned(), value(s.map(|s| &s.color))),
+                (
+                    "style:text-underline-style".to_owned(),
+                    value(s.map(|s| &s.underline)),
+                ),
+                (
+                    "style:text-line-through-style".to_owned(),
+                    value(s.map(|s| &s.line_through)),
+                ),
             ],
         ),
     ]
@@ -2629,6 +2637,12 @@ fn properties(style: &CellStyle) -> String {
     attr(&mut text, "fo:font-style", &style.font_style);
     attr(&mut text, "fo:font-size", &style.font_size);
     attr(&mut text, "fo:color", &style.color);
+    attr(&mut text, "style:text-underline-style", &style.underline);
+    attr(
+        &mut text,
+        "style:text-line-through-style",
+        &style.line_through,
+    );
     if !text.is_empty() {
         let _ = write!(out, "<style:text-properties{text}/>");
     }

@@ -731,6 +731,8 @@ fn styles() -> (String, Document) {
         font_style: Some("italic".into()),
         color: Some("#ff0000".into()),
         font_size: Some("14pt".into()),
+        underline: Some("solid".into()),
+        line_through: Some("solid".into()),
         ..Default::default()
     };
     let mut boxed = CellStyle {

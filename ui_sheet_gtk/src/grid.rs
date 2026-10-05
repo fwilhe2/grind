@@ -4892,6 +4892,14 @@ mod imp {
                 any = true;
             }
         }
+        if style.is_some_and(|s| s.is_underlined()) {
+            attrs.insert(pango::AttrInt::new_underline(pango::Underline::Single));
+            any = true;
+        }
+        if style.is_some_and(|s| s.is_struck()) {
+            attrs.insert(pango::AttrInt::new_strikethrough(true));
+            any = true;
+        }
         let scale = zoom * style.and_then(font_scale).unwrap_or(1.0);
         if scale != 1.0 {
             attrs.insert(pango::AttrFloat::new_scale(scale));

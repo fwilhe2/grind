@@ -1221,6 +1221,8 @@ fn the_style_fixtures_look_as_their_notes_say() {
                 "align" => s.align = value,
                 "valign" => s.vertical_align = value,
                 "wrap" => s.wrap = value,
+                "underline" => s.underline = value,
+                "strike" => s.line_through = value,
                 "border" => s.set_border(value),
                 "left" => s.borders[0] = value,
                 _ => unreachable!("{key}"),
@@ -1238,10 +1240,25 @@ fn the_style_fixtures_look_as_their_notes_say() {
     assert_eq!(style_at(&fonts, "B13"), style(&[("size", "10.5pt")]));
     assert_eq!(
         style_at(&fonts, "B21"),
-        style(&[("weight", "bold"), ("slant", "italic"), ("size", "14pt")])
+        style(&[
+            ("weight", "bold"),
+            ("slant", "italic"),
+            ("size", "14pt"),
+            ("underline", "solid"),
+            ("strike", "solid")
+        ])
     );
-    assert_eq!(report.appearance_lost[&Appearance::Underline], 4);
-    assert_eq!(report.appearance_lost[&Appearance::Strike], 2);
+    // Single, double and accounting are all an underline; strike is a line through.
+    for cell in ["B6", "B7", "B8"] {
+        assert_eq!(
+            style_at(&fonts, cell),
+            style(&[("underline", "solid")]),
+            "{cell}"
+        );
+    }
+    assert_eq!(style_at(&fonts, "B9"), style(&[("strike", "solid")]));
+    // The second line of B7 and B21 is what has no spelling.
+    assert_eq!(report.appearance_lost[&Appearance::Underline], 2);
     assert_eq!(report.appearance_lost[&Appearance::Script], 2);
 
     let (fills, report) = import("styles/fills.xlsx");

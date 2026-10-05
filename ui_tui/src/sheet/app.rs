@@ -2761,6 +2761,12 @@ fn terminal_style(style: Option<&CellStyle>) -> Style {
     if on(&style.font_style, "normal") {
         out = out.add_modifier(Modifier::ITALIC);
     }
+    if style.is_underlined() {
+        out = out.add_modifier(Modifier::UNDERLINED);
+    }
+    if style.is_struck() {
+        out = out.add_modifier(Modifier::CROSSED_OUT);
+    }
     // A cell's colours as `crate::ink` reads them: ones that hold on a light terminal and a dark
     // one, and ODF's automatic ink on a fill the document chose.
     let (ink, fill) = crate::ink::colours(style.color.as_deref(), style.background.as_deref());

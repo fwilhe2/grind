@@ -1873,13 +1873,20 @@ enum Command {
         address: String,
         /// Print the styling of one cell instead of setting any
         #[arg(long, conflicts_with_all = [
-            "bold", "italic", "color", "background", "align", "valign", "wrap", "size", "border",
+            "bold", "italic", "underline", "strike", "color", "background", "align", "valign",
+            "wrap", "size", "border",
         ])]
         show: bool,
         #[arg(long)]
         bold: bool,
         #[arg(long)]
         italic: bool,
+        /// Underline the text
+        #[arg(long)]
+        underline: bool,
+        /// Strike the text through
+        #[arg(long)]
+        strike: bool,
         /// Text colour: a palette name (navy, red, silver, …) or #rrggbb
         #[arg(long, value_parser = style::color)]
         color: Option<String>,
@@ -2009,6 +2016,12 @@ enum Command {
         bold: bool,
         #[arg(long)]
         italic: bool,
+        /// Underline the text
+        #[arg(long)]
+        underline: bool,
+        /// Strike the text through
+        #[arg(long)]
+        strike: bool,
         /// Text colour: a palette name (navy, red, silver, …) or #rrggbb
         #[arg(long, value_parser = style::color)]
         color: Option<String>,
@@ -3100,6 +3113,8 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             show,
             bold,
             italic,
+            underline,
+            strike,
             color,
             background,
             align,
@@ -3138,6 +3153,8 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                     .to_owned()
                 }),
                 wrap: wrap.then(|| "wrap".to_owned()),
+                underline: underline.then(|| "solid".to_owned()),
+                line_through: strike.then(|| "solid".to_owned()),
                 borders: Default::default(),
             };
             want.set_border(border.clone());
@@ -3310,6 +3327,8 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             clear,
             bold,
             italic,
+            underline,
+            strike,
             color,
             background,
             size,
@@ -3380,13 +3399,15 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 font_size: size.clone(),
                 color: color.clone(),
                 background: background.clone(),
+                underline: underline.then(|| "solid".to_owned()),
+                line_through: strike.then(|| "solid".to_owned()),
                 ..CellStyle::default()
             };
             look.set_border(border.clone());
             if look.is_plain() {
                 return Err(
                     "a rule has to draw something: give it --background, --color, \
-                            --bold, --italic, --size or --border"
+                            --bold, --italic, --underline, --strike, --size or --border"
                         .to_owned(),
                 );
             }
@@ -4443,6 +4464,12 @@ fn rule_look(style: &CellStyle) -> String {
         } else {
             format!("slant={s}")
         });
+    }
+    if style.is_underlined() {
+        out.push("--underline".to_owned());
+    }
+    if style.is_struck() {
+        out.push("--strike".to_owned());
     }
     for (flag, value) in [
         ("--size", &style.font_size),
