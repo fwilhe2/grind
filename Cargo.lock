@@ -1211,6 +1211,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "grind-ooxml"
+version = "0.0.0"
+dependencies = [
+ "grind-core",
+ "quick-xml",
+ "zip",
+]
+
+[[package]]
 name = "grind-print"
 version = "0.0.0"
 dependencies = [
@@ -1330,6 +1339,7 @@ dependencies = [
 name = "grind-xlsx"
 version = "0.0.0"
 dependencies = [
+ "grind-ooxml",
  "grind-sheet",
  "quick-xml",
  "serde_json",

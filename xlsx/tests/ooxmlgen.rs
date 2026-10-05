@@ -655,6 +655,8 @@ fn error_name(error: &Error) -> &'static str {
         Error::Encrypted => "Encrypted",
         Error::Xml(_) => "Xml",
         Error::NotSpreadsheet => "NotSpreadsheet",
+        // The shared error type's other filter's variant; never an Excel import's answer.
+        Error::NotWordDocument => "NotWordDocument",
         Error::Io(_) => "Io",
     }
 }

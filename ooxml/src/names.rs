@@ -4,7 +4,7 @@
 
 //! Namespace URIs, relationship types, and the flavour they say the file is.
 //!
-//! The `core/src/odf/names.rs` of this filter, and the same two rules: **dispatch on
+//! The `core/src/odf/names.rs` of the OOXML family, and the same two rules: **dispatch on
 //! `(namespace-uri, local-name)` and never on the prefix written in the document**, and **an
 //! unrecognised URI is a value rather than a failure** — it resolves to [`Ns::Other`], every
 //! lookup against it misses, and the element routes down the ignore path in `xml.rs`.
@@ -12,18 +12,31 @@
 //! What is different here is that every Part 1 namespace comes in **two** spellings.
 //! ISO/IEC 29500 defines Transitional and Strict, real files are overwhelmingly Transitional,
 //! and the entire difference that reaches a reader is this file (`doc/xlsx-import.md`,
-//! "Transitional, and the real world"). Both families resolve to the same [`Ns`], so nothing
+//! "Transitional, and the real world"; `doc/docx-import.md` says the same of Word). Both families resolve to the same [`Ns`], so nothing
 //! downstream branches on the flavour; the reader only *records* which it saw, because that
 //! is a useful sentence in a report and a useless one in a parser.
 //!
-//! Every URI below is `MEASURED` — see `doc/xlsx-format.md` §1.1 and §1.2 for the files and
-//! the commands.
+//! Every URI below is `MEASURED` — see `doc/xlsx-format.md` §1.1 and §1.2, and
+//! `doc/docx-format.md` §1, for the files and the commands.
+//!
+//! **One table for both filters, and that is not R8 bending.** R8 keeps a document type's
+//! vocabulary out of `grind-core`; this crate is not the core, it is the OOXML family's own
+//! container layer, and SpreadsheetML and WordprocessingML share every part of it but their
+//! main namespace — the relationships, the drawing language, OPC and markup compatibility.
 
 /// A namespace this filter recognises. Everything else is [`Ns::Other`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Ns {
     /// SpreadsheetML itself — `worksheet`, `sheetData`, `row`, `c`, `f`, `v`.
     Spreadsheet,
+    /// WordprocessingML — `document`, `body`, `p`, `r`, `t`. The word processor's main
+    /// namespace, and the one `grind-docx` dispatches on.
+    Word,
+    /// DrawingML's WordprocessingML placement vocabulary: `wp:inline`, `wp:anchor`, `wp:extent`
+    /// — where a picture sits in a paragraph and how big it is.
+    WordDrawing,
+    /// DrawingML's picture: `pic:pic`, `pic:blipFill`.
+    Picture,
     /// The `r:` attribute namespace: `r:id` on a `<sheet>` names a relationship.
     Relationships,
     /// The root namespace of a `_rels/*.rels` part. **Part 2 (OPC), so it does not vary
@@ -35,10 +48,9 @@ pub enum Ns {
     /// exists.
     Mce,
     /// DrawingML's main namespace, which is where a theme's colour scheme lives
-    /// (`xl/theme/theme1.xml`, `<a:clrScheme>`). **Transitional only**: the Strict spelling
-    /// has not been measured — no workbook this project holds carries one — so a Strict
-    /// theme resolves to [`Ns::Other`], its colours come back unresolved, and the report
-    /// counts them rather than this table guessing (`doc/xlsx-format.md` §4.2).
+    /// (`xl/theme/theme1.xml`, `<a:clrScheme>`) and where a picture's `a:blip` is. Both
+    /// spellings: the Strict one was first measured on Word's Strict documents
+    /// (`doc/docx-format.md` §1.2), which no workbook this project holds had carried.
     Drawing,
     /// VML, the drawing language of Excel before DrawingML, still where a form control lives
     /// (`doc/xlsx-format.md` §4.11): `v:shape`.
@@ -94,11 +106,22 @@ pub const MAIN_T: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/m
 /// Measured from `styles/colors.xlsx`'s theme part, 2026-09-21.
 pub const DRAWING_T: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
 pub const REL_T: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+/// Measured from LibreOffice's own `.docx` output and Word's, 2026-10-05.
+pub const WORD_T: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+pub const WORD_DRAWING_T: &str =
+    "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+pub const PICTURE_T: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 
 // ---- Part 1, Strict (ISO/IEC 29500 Strict) ----
 
 pub const MAIN_S: &str = "http://purl.oclc.org/ooxml/spreadsheetml/main";
 pub const REL_S: &str = "http://purl.oclc.org/ooxml/officeDocument/relationships";
+/// The four below measured from `sw/qa/extras/ooxmlexport/data/strict.docx` and its
+/// neighbours, 2026-10-05 (`doc/docx-format.md` §1.2).
+pub const WORD_S: &str = "http://purl.oclc.org/ooxml/wordprocessingml/main";
+pub const WORD_DRAWING_S: &str = "http://purl.oclc.org/ooxml/drawingml/wordprocessingDrawing";
+pub const PICTURE_S: &str = "http://purl.oclc.org/ooxml/drawingml/picture";
+pub const DRAWING_S: &str = "http://purl.oclc.org/ooxml/drawingml/main";
 
 // ---- Parts 2 and 3: one spelling each, in both flavours ----
 
@@ -113,11 +136,14 @@ impl Ns {
     pub fn from_uri(uri: &str) -> Ns {
         match uri {
             MAIN_T | MAIN_S => Ns::Spreadsheet,
+            WORD_T | WORD_S => Ns::Word,
+            WORD_DRAWING_T | WORD_DRAWING_S => Ns::WordDrawing,
+            PICTURE_T | PICTURE_S => Ns::Picture,
             REL_T | REL_S => Ns::Relationships,
             PACKAGE_RELS => Ns::PackageRels,
             CONTENT_TYPES => Ns::ContentTypes,
             MCE => Ns::Mce,
-            DRAWING_T => Ns::Drawing,
+            DRAWING_T | DRAWING_S => Ns::Drawing,
             VML => Ns::Vml,
             VML_EXCEL => Ns::VmlExcel,
             "" => Ns::None,
@@ -134,9 +160,9 @@ impl Ns {
 pub fn family(uri: &str) -> Option<Flavour> {
     // `starts_with` rather than equality because a relationship *type* extends the
     // relationships namespace with a segment, and both are evidence of the same family.
-    if uri == MAIN_T || uri.starts_with(REL_T) {
+    if uri == MAIN_T || uri == WORD_T || uri.starts_with(REL_T) {
         Some(Flavour::Transitional)
-    } else if uri == MAIN_S || uri.starts_with(REL_S) {
+    } else if uri == MAIN_S || uri == WORD_S || uri.starts_with(REL_S) {
         Some(Flavour::Strict)
     } else {
         None
@@ -158,7 +184,8 @@ pub enum RelType {
     Drawing,
     /// A drawing's chart part.
     Chart,
-    /// A worksheet's comments part (X5). Its VML anchor (`vmlDrawing`) is not a `Drawing`.
+    /// A worksheet's comments part (X5) — or a Word document's, which shares the type. Its VML
+    /// anchor (`vmlDrawing`) is not a `Drawing`.
     Comments,
     /// A worksheet's legacy VML drawing: a comment's anchor, and every form control's own
     /// spelling (`controls.rs`).
@@ -171,6 +198,20 @@ pub enum RelType {
     /// Recognised so it can be *ignored* cheaply: a calculation chain is Excel's evaluation
     /// order cache and says nothing this filter wants.
     CalcChain,
+    // ---- WordprocessingML's parts (`doc/docx-format.md` §1.3) ----
+    /// `word/numbering.xml` — what makes a paragraph a list item, and which kind.
+    Numbering,
+    /// A header part (`word/header1.xml`), named from a section's `w:headerReference`.
+    Header,
+    Footer,
+    Footnotes,
+    Endnotes,
+    /// A picture's bytes (`word/media/image1.png`), named from an `a:blip`'s `r:embed`.
+    Image,
+    /// A hyperlink's target, always `TargetMode="External"` and **never fetched**.
+    Hyperlink,
+    /// An embedded OLE object — counted.
+    OleObject,
     Other,
 }
 
@@ -199,6 +240,14 @@ impl RelType {
             Some("pivotTable") => RelType::PivotTable,
             Some("table") => RelType::Table,
             Some("calcChain") => RelType::CalcChain,
+            Some("numbering") => RelType::Numbering,
+            Some("header") => RelType::Header,
+            Some("footer") => RelType::Footer,
+            Some("footnotes") => RelType::Footnotes,
+            Some("endnotes") => RelType::Endnotes,
+            Some("image") => RelType::Image,
+            Some("hyperlink") => RelType::Hyperlink,
+            Some("oleObject") => RelType::OleObject,
             _ => RelType::Other,
         }
     }

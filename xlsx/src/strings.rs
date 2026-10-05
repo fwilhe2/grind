@@ -12,7 +12,7 @@
 //! "Transitional, and the real world" §3): the table is exactly as long as the `<si>`
 //! elements it holds, and `realworld/lying-counts.xlsx` gets both numbers wrong at once.
 
-use crate::xml::{Handled, Reader};
+use crate::xml::{Handled, Reader, Spreadsheet as _};
 
 /// One `<si>`.
 #[derive(Clone, Debug, Default, PartialEq)]

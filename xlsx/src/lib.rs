@@ -42,7 +42,6 @@
 //! [`open`], [`suggested_name`] and [`Report::summary`]: a new, unsaved ODF document that nothing
 //! can save back over the workbook.
 
-use std::fmt;
 use std::path::Path;
 
 use grind_sheet::model::Document;
@@ -52,10 +51,7 @@ pub mod color;
 pub mod controls;
 pub mod dates;
 pub mod formula;
-pub mod mce;
-pub mod names;
 pub mod numfmt;
-pub mod package;
 pub mod parts;
 pub mod report;
 pub mod rules;
@@ -67,60 +63,15 @@ pub mod theme;
 pub mod workbook;
 pub mod xml;
 
+// The container layer, hoisted into `grind-ooxml` when the word processor's filter wanted it,
+// and re-exported under the paths this crate always used.
+pub use grind_ooxml::{mce, names, package};
+
 pub use names::Flavour;
 pub use report::{Dropped, Report};
 pub use styles::Appearance;
 
-pub type Result<T> = std::result::Result<T, Error>;
-
-/// A *file* that cannot be read at all.
-///
-/// Everything else is a [`Report`] entry, because a conversion that refuses a whole document
-/// over one unsupported chart is a conversion nobody can use. Same split `odf/read.rs`
-/// already makes between `Error::Xml` and silent tolerance.
-#[derive(Debug)]
-pub enum Error {
-    /// The container would not open: not a zip, or one whose central directory is unusable.
-    Package(String),
-    /// Password-protected. The workbook is fine; we have no key. Distinct from
-    /// [`Error::Package`] because "this is locked" and "this is not a spreadsheet" are
-    /// different sentences to put in front of a person — and because loop A′ must not count
-    /// a locked file as a tolerance failure.
-    Encrypted,
-    /// The XML would not parse at all — the *structural* failure case. Unrecognised content
-    /// never reaches here; it is ignored instead (`xml.rs`).
-    Xml(String),
-    /// A readable package that is not a spreadsheet: no workbook part to be found.
-    NotSpreadsheet,
-    Io(std::io::Error),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Package(e) => write!(f, "package: {e}"),
-            Error::Encrypted => write!(f, "password-protected workbook"),
-            Error::Xml(e) => write!(f, "xml: {e}"),
-            Error::NotSpreadsheet => write!(f, "not an Excel workbook: no workbook part"),
-            Error::Io(e) => write!(f, "io: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        Error::Io(e)
-    }
-}
-
-impl Error {
-    /// The one outcome loop A′ accepts beside success, for the same reason loop A accepts it.
-    pub fn is_encrypted(&self) -> bool {
-        matches!(self, Error::Encrypted)
-    }
-}
+pub use grind_ooxml::{Error, Result};
 
 /// Whether these bytes are an OOXML spreadsheet.
 ///

@@ -29,7 +29,7 @@ use crate::formula::{self, Refusal};
 use crate::names::{RelType, Seen};
 use crate::package::Package;
 use crate::report::{Dropped, Report};
-use crate::xml::{Handled, Reader};
+use crate::xml::{Handled, Reader, Spreadsheet as _};
 use crate::{Error, Result};
 
 /// One `<sheet>` of `<sheets>`, before its part has been read.

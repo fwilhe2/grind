@@ -62,7 +62,7 @@ use crate::formula::{self, Refusal};
 use crate::report::{Dropped, Report};
 use crate::strings::{self, Item};
 use crate::styles::{Appearance, Styles};
-use crate::xml::{Handled, Reader};
+use crate::xml::{Handled, Reader, Spreadsheet as _};
 
 /// Cells one import will materialise, across every sheet — the same number `odf/read.rs`
 /// bounds itself by, for the same reason. An `.xlsx` cannot *amplify* the way a repeated ODF

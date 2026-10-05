@@ -24,7 +24,7 @@
 use crate::names::{RelType, Seen};
 use crate::package::Package;
 use crate::report::{Dropped, Report};
-use crate::xml::{Handled, Reader};
+use crate::xml::{Handled, Reader, Spreadsheet as _};
 
 pub fn count(package: &mut Package, sheet_part: &str, report: &mut Report, seen: &mut Seen) {
     for rel in package.rels(sheet_part, seen) {

@@ -24,7 +24,7 @@
 //! resolved — a theme slot with no theme to look it up in — is [`Resolved::Unknown`], and
 //! the caller counts it.
 
-use crate::xml::{Attrs, Handled, Reader};
+use crate::xml::{Attrs, Handled, Reader, Spreadsheet as _};
 
 /// A colour as the file spelled it, before anything is looked up.
 #[derive(Clone, Debug, Default, PartialEq)]

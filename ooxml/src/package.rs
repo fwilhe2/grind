@@ -4,7 +4,7 @@
 
 //! OPC — the container (ECMA-376 Part 2), and the hardening a converter needs.
 //!
-//! An `.xlsx` is a zip whose `_rels/.rels` points at the workbook and whose
+//! An `.xlsx` or a `.docx` is a zip whose `_rels/.rels` points at the main part and whose
 //! `[Content_Types].xml` types the parts. **Parts are found by relationship, never by path
 //! convention**: `xl/workbook.xml` is where every producer puts it and nowhere in the spec
 //! promises that.
@@ -24,7 +24,7 @@ const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 
 /// The CFB/OLE compound-file signature.
 ///
-/// **A password-protected `.xlsx` is not a zip at all**: ECMA-376 Part 2's agile encryption
+/// **A password-protected `.xlsx` or `.docx` is not a zip at all**: ECMA-376 Part 2's agile encryption
 /// wraps the whole package in one of these. Telling it from "not a spreadsheet" is what keeps
 /// loop A′ from reporting a failure for a file that is merely locked — the same distinction
 /// `grind_core::Error::Encrypted` already draws for loop A.
@@ -188,7 +188,7 @@ impl<'a> Package<'a> {
         // and losing one optional part is not a reason to refuse a workbook. `grind_core`'s
         // package reader learned the same lesson from loop A, where an `io::Error` claimed the
         // filesystem had failed.
-        grind_sheet::odf::package::read_entry(&mut file).ok()
+        grind_core::odf::package::read_entry(&mut file).ok()
     }
 
     /// The relationships declared *by* a part, already resolved to part names.

@@ -34,7 +34,7 @@ use crate::address;
 use crate::formula;
 use crate::report::{Dropped, Report};
 use crate::sheet::Context;
-use crate::xml::{Attrs, Handled, Reader};
+use crate::xml::{Attrs, Handled, Reader, Spreadsheet as _};
 
 /// The rules of one sheet as they are read, each with its `priority`, ordered when the sheet
 /// ends ([`Pending::finish`]).

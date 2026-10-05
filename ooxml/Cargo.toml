@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-ooxml"
+version = "0.0.0"
+description = "The OOXML family's container layer — OPC, markup compatibility and a tolerant walker — shared by the import filters"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Only for `odf::package::read_entry`, the suite's one bounded zip reader. Nothing ODF-shaped
+# is used and nothing OOXML-shaped goes the other way (R8).
+grind-core = { path = "../core" }
+# Both already `grind-core`'s, so the import filters still add no dependency of their own.
+quick-xml = "0.42"
+zip = { version = "8", default-features = false, features = ["deflate"] }

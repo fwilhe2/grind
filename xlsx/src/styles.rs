@@ -44,7 +44,7 @@ use grind_sheet::style::CellStyle;
 use crate::color::{self, Color, Missing, Palette, Resolved};
 use crate::names::Ns;
 use crate::numfmt::{self, Translation, Unspellable};
-use crate::xml::{Attrs, Handled, Reader};
+use crate::xml::{Attrs, Handled, Reader, Spreadsheet as _};
 
 /// A piece of how the workbook **looks** that the model has no slot for.
 ///
