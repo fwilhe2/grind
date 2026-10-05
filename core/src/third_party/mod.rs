@@ -51,6 +51,15 @@ impl Component {
         self.notices.iter().map(|&at| data::NOTICES[at])
     }
 
+    /// Every licence file it carries as one text, then where it comes from — what a shell
+    /// shows for one component.
+    pub fn text(&self) -> String {
+        let mut text = self.notices().collect::<Vec<_>>().join("\n\n");
+        text.push_str("\n\n");
+        text.push_str(self.source);
+        text
+    }
+
     /// `name version`, or just the name.
     pub fn title(&self) -> String {
         match self.version {
