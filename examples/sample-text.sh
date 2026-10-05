@@ -147,8 +147,8 @@ say "table: a grid of cells, each holding one empty paragraph"
 run table "$doc" --rows 2 --columns 3
 
 say "and its cells are ordinary blocks, so set and format reach into them"
-first=$(text view "$doc" --marks | awk -F'\t' '$2 ~ /!r0c0$/ { print $1; exit }')
-second=$(text view "$doc" --marks | awk -F'\t' '$2 ~ /!r0c1$/ { print $1; exit }')
+first=$(text view "$doc" --marks | awk -F'\t' '$2 ~ /!r0c0$/ && !seen++ { print $1 }')
+second=$(text view "$doc" --marks | awk -F'\t' '$2 ~ /!r0c1$/ && !seen++ { print $1 }')
 text set "$doc" "$first" 'Region' >/dev/null
 text set "$doc" "$second" 'Revenue' >/dev/null
 text format "$doc" "$first:$second" --bold >/dev/null
