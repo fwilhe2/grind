@@ -170,8 +170,13 @@ const DESKTOPS: [Desktop; 2] = [
         ],
         // A workbook is a spreadsheet: the word processor's window hands one to Sheet rather
         // than claiming it. Markdown is opened by importing it, as a new document of this kind
-        // (`grind_text::commonmark::open`).
-        imports: &["text/markdown"],
+        // (`grind_text::commonmark::open`),
+        // and a Word document by importing it (`grind_docx::open`, `doc/docx-import.md`).
+        imports: &[
+            "text/markdown",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-word.document.macroEnabled.12",
+        ],
     },
 ];
 

@@ -1288,6 +1288,7 @@ version = "0.0.0"
 dependencies = [
  "async-channel",
  "grind-core",
+ "grind-docx",
  "grind-print",
  "grind-text",
  "grind-xlsx",

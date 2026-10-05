@@ -675,8 +675,7 @@ impl Ui {
     fn load(self: &Rc<Self>, path: &Path) {
         // An ODF document is a load, not an edit. A markdown file is imported as an unsaved
         // document, so it is the one open that *should* leave the window dirty.
-        let imported = std::fs::read(path).is_ok_and(|bytes| kind(&bytes).is_none())
-            && grind_text::commonmark::is_markdown_name(&path.display().to_string());
+        let imported = std::fs::read(path).is_ok_and(|bytes| is_import(path, &bytes));
         self.loading.set(!imported);
         match open_path(&self.app, path) {
             Ok(summary) => {
@@ -1564,6 +1563,16 @@ fn text_filters() -> gio::ListStore {
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     filters.append(&filter);
     filters.append(&markdown);
+    // A Word document opens imported (`open_path`), and only in a build that reads one.
+    #[cfg(feature = "docx")]
+    {
+        let word = gtk::FileFilter::new();
+        word.set_name(Some("Word Document"));
+        for pattern in ["*.docx", "*.docm", "*.dotx"] {
+            word.add_pattern(pattern);
+        }
+        filters.append(&word);
+    }
     filters
 }
 
@@ -1637,6 +1646,16 @@ fn remember_recent(path: &Path) {
 /// an ODF document, which keeps its path.
 fn open_path(app: &App, path: &Path) -> Result<Option<String>, String> {
     let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
+    // A Word document is imported the way a markdown file is: a new, unsaved document under
+    // its ODF name (`doc/docx-import.md`, DX6), so Save cannot write ODF over the `.docx`.
+    #[cfg(feature = "docx")]
+    if grind_docx::sniff(&bytes) {
+        let (odf, report) = grind_docx::open(&bytes).map_err(|error| error.to_string())?;
+        let name = grind_docx::suggested_name(&path.display().to_string());
+        app.open_bytes(&name, &odf)
+            .map_err(|error| error.to_string())?;
+        return Ok(Some(report.summary()));
+    }
     if kind(&bytes).is_none()
         && let Some(opened) = grind_text::commonmark::open(&path.display().to_string(), &bytes)
     {
@@ -1648,6 +1667,16 @@ fn open_path(app: &App, path: &Path) -> Result<Option<String>, String> {
     app.open_bytes(&path.display().to_string(), &bytes)
         .map_err(|error| error.to_string())?;
     Ok(None)
+}
+
+/// Whether opening `path` is an import — a new, unsaved document — rather than a load: a
+/// markdown file, or a Word document.
+fn is_import(path: &Path, bytes: &[u8]) -> bool {
+    #[cfg(feature = "docx")]
+    if grind_docx::sniff(bytes) {
+        return true;
+    }
+    kind(bytes).is_none() && grind_text::commonmark::is_markdown_name(&path.display().to_string())
 }
 
 fn document_name(path: Option<&Path>) -> String {

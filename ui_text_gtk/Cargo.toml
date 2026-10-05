@@ -20,12 +20,16 @@ path = "src/main.rs"
 # (`doc/suite.md`, "One binary per document type — for GTK only").
 # Only for `grind_xlsx::sniff` (X6): a workbook arriving here is a spreadsheet, and is handed
 # to `grind-sheet-gtk`, which imports it. On by default, as everywhere else.
+# The Word import filter (`doc/docx-import.md`, DX6): a `.docx` opens here as a new, unsaved
+# text document.
 [features]
-default = ["xlsx"]
+default = ["xlsx", "docx"]
 xlsx = ["dep:grind-xlsx"]
+docx = ["dep:grind-docx"]
 
 [dependencies]
 grind-xlsx = { path = "../xlsx", optional = true }
+grind-docx = { path = "../docx", optional = true }
 grind-core = { path = "../core" }
 grind-text = { path = "../text" }
 # PDF export, Print and Print Preview (doc/pdf-export.md). Not optional, unlike `xlsx`: a word

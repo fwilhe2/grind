@@ -6,5 +6,5 @@ Icon=io.github.fwilhe2.Text
 Terminal=false
 Type=Application
 Categories=Office;WordProcessor;GTK;
-MimeType=application/vnd.oasis.opendocument.text;application/vnd.oasis.opendocument.text-flat-xml;text/markdown;
+MimeType=application/vnd.oasis.opendocument.text;application/vnd.oasis.opendocument.text-flat-xml;text/markdown;application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/vnd.ms-word.document.macroEnabled.12;
 StartupNotify=true
