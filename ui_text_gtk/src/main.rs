@@ -25,6 +25,7 @@ mod find;
 mod format;
 mod geom;
 mod keymap;
+mod licences;
 mod lint;
 mod metrics;
 mod print;
@@ -1269,22 +1270,7 @@ impl Ui {
                 env!("CARGO_PKG_VERSION"),
             ))
             .build();
-        // Every third-party component on the Legal page (doc/third-party.md). The licence
-        // text is Pango markup there, and an author's `<address>` is not.
-        for component in grind_core::third_party::components() {
-            let mut text = String::new();
-            if !component.copyright.is_empty() {
-                text.push_str(component.copyright);
-                text.push_str("\n\n");
-            }
-            text.push_str(&component.text());
-            about.add_legal_section(
-                &component.title(),
-                None,
-                gtk::License::Custom,
-                Some(&glib::markup_escape_text(&text)),
-            );
-        }
+        licences::add_to(&about);
         about.present(Some(&self.window));
     }
 
