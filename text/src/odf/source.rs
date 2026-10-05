@@ -106,6 +106,35 @@ pub struct Source {
     /// A regenerated paragraph writes the file's own frame for a picture that is still the one
     /// it read, wherever the edit moved it, so none of that goes.
     pub frames: Vec<(u64, Range<usize>)>,
+    /// Every top-level `table:table`, by its name: how the file spelled it, so a regenerated
+    /// body writes an untouched table back as its own bytes and an edited one with its own
+    /// styles — the table's, its columns', its rows' and its cells' — rather than bare.
+    pub tables: HashMap<String, TableSource>,
+}
+
+/// One table as the file spelled it ([`Source::tables`]).
+///
+/// The model's table is its blocks' cell coordinates and nothing else (`crate::model::Cell`);
+/// what makes it *look* like itself — column widths, borders, a heading row, a fill — is in
+/// style names on four kinds of element. Without these, a body regenerated for an edit
+/// anywhere in the document wrote every table bare, and the save's loss check refused it.
+#[derive(Clone, Debug, Default)]
+pub struct TableSource {
+    /// The whole element, for writing an untouched table back as it was.
+    pub range: Option<Range<usize>>,
+    /// The blocks it held when read, in order — what "untouched" is measured against.
+    pub blocks: Vec<BlockId>,
+    /// Its start tag, verbatim.
+    pub start: String,
+    /// Everything between the start tag and the first row: the column declarations and
+    /// whatever else the file put there, verbatim.
+    pub columns: String,
+    /// The rows inside `table:table-header-rows`.
+    pub header_rows: std::collections::BTreeSet<u32>,
+    /// Each row's start tag, by row index (the first row of a repeated one).
+    pub rows: HashMap<u32, String>,
+    /// Each cell's start tag — covered ones too — by position, written in its open form.
+    pub cells: HashMap<(u32, u32), String>,
 }
 
 /// What a picture read as — its type, bytes, size and anchor — as one number, so the writer can
@@ -243,6 +272,7 @@ impl Source {
             siblings: Vec::new(),
             lists: HashMap::new(),
             frames: Vec::new(),
+            tables: HashMap::new(),
         }
     }
 }

@@ -770,7 +770,14 @@ fn body(out: &mut String, doc: &Document, pool: &Pool, origin: Option<&Origin>) 
                 // The maximal run naming this table — the model's own fold, asked of the
                 // model rather than repeated here.
                 let range = doc.table(index).unwrap_or(index..index + 1);
-                table(out, doc, range.clone(), pool, origin);
+                // An untouched table — every block it held, in order, none edited — goes back
+                // as the file's own bytes, so an edit elsewhere is not a rewrite of it.
+                match origin.and_then(|origin| untouched_table(doc, range.clone(), origin)) {
+                    Some(bytes) => {
+                        let _ = writeln!(out, "{}{bytes}", pad(3, origin));
+                    }
+                    None => table(out, doc, range.clone(), pool, origin),
+                }
                 for i in range.clone() {
                     carry(out, Some(i));
                 }
@@ -802,6 +809,28 @@ fn untouched_section<'a>(
         return None;
     }
     std::str::from_utf8(origin.source.bytes.get(info.range.clone()?)?).ok()
+}
+
+/// The file's own bytes for the table occupying `range`, when it holds exactly the blocks it
+/// was read with, in order, none of them edited.
+fn untouched_table<'a>(
+    doc: &Document,
+    range: std::ops::Range<usize>,
+    origin: &Origin<'a>,
+) -> Option<&'a str> {
+    let name = &doc.blocks[range.start].cell.as_ref()?.table;
+    let recorded = origin.source.tables.get(name)?;
+    let held = &doc.blocks[range];
+    let same = !held.is_empty()
+        && held.len() == recorded.blocks.len()
+        && held
+            .iter()
+            .zip(&recorded.blocks)
+            .all(|(block, id)| block.id == *id && !origin.edited.contains(id));
+    if !same {
+        return None;
+    }
+    std::str::from_utf8(origin.source.bytes.get(recorded.range.clone()?)?).ok()
 }
 
 /// The sections a block in `section` is inside, outermost first.
@@ -961,24 +990,80 @@ fn table(
     };
     let (rows, columns) = doc.table_extent(range.clone());
     let blocks_in = &doc.blocks[range];
+    // How the file spelled this table, when it came from one: its start tag, its columns, its
+    // rows and its cells keep their own attributes — the styles that make it look like itself.
+    let recorded = origin.and_then(|origin| origin.source.tables.get(&name));
 
-    let _ = writeln!(
-        out,
-        "{}<table:table table:name=\"{}\">",
-        pad(3, origin),
-        esc(&name)
-    );
-    // At least one `table:table-column` is required — `table-columns-and-groups` is a
-    // `oneOrMore` (rng:14200) — so a table with no columns at all still declares one, and R2
-    // (everything written validates) is why that is not a detail.
-    let repeat = match columns.max(1) {
-        1 => String::new(),
-        n => format!(" table:number-columns-repeated=\"{n}\""),
+    match recorded {
+        Some(recorded) => {
+            let _ = writeln!(out, "{}{}", pad(3, origin), recorded.start);
+        }
+        None => {
+            let _ = writeln!(
+                out,
+                "{}<table:table table:name=\"{}\">",
+                pad(3, origin),
+                esc(&name)
+            );
+        }
+    }
+    match recorded.filter(|r| r.columns.contains("table-column")) {
+        Some(recorded) => {
+            let _ = writeln!(out, "{}{}", pad(4, origin), recorded.columns);
+        }
+        None => {
+            // At least one `table:table-column` is required — `table-columns-and-groups` is
+            // a `oneOrMore` (rng:14200) — so a table with no columns at all still declares
+            // one, and R2 (everything written validates) is why that is not a detail.
+            let repeat = match columns.max(1) {
+                1 => String::new(),
+                n => format!(" table:number-columns-repeated=\"{n}\""),
+            };
+            let _ = writeln!(out, "{}<table:table-column{repeat}/>", pad(4, origin));
+        }
+    }
+    let header = |row: u32| recorded.is_some_and(|r| r.header_rows.contains(&row));
+    // A recorded cell's start tag with the spans the model says now, and no repeat — the model
+    // has expanded every repeat into cells of their own.
+    let cell_tag = |row: u32, column: u32, element: &str, spans: Option<&crate::model::Cell>| {
+        let tag = recorded
+            .and_then(|r| r.cells.get(&(row, column)))
+            .filter(|tag| tag.starts_with(&format!("<{element}")));
+        match tag {
+            Some(tag) => {
+                let columns = spans
+                    .filter(|c| c.columns_spanned > 1)
+                    .map(|c| c.columns_spanned.to_string());
+                let rows = spans
+                    .filter(|c| c.rows_spanned > 1)
+                    .map(|c| c.rows_spanned.to_string());
+                let tag = envelope::set_attributes(
+                    tag,
+                    &[
+                        ("table:number-columns-repeated", None),
+                        ("table:number-columns-spanned", columns.as_deref()),
+                        ("table:number-rows-spanned", rows.as_deref()),
+                    ],
+                );
+                tag.trim_end_matches('>').to_owned()
+            }
+            None => format!(
+                "<{element}{}",
+                spans.map(span_attributes).unwrap_or_default()
+            ),
+        }
     };
-    let _ = writeln!(out, "{}<table:table-column{repeat}/>", pad(4, origin));
 
     for row in 0..rows.max(1) {
-        let _ = writeln!(out, "{}<table:table-row>", pad(4, origin));
+        if header(row) && (row == 0 || !header(row - 1)) {
+            let _ = writeln!(out, "{}<table:table-header-rows>", pad(4, origin));
+        }
+        let row_tag = recorded
+            .and_then(|r| r.rows.get(&row))
+            .filter(|tag| tag.starts_with("<table:table-row"))
+            .map(|tag| envelope::set_attributes(tag, &[("table:number-rows-repeated", None)]))
+            .unwrap_or_else(|| "<table:table-row>".to_owned());
+        let _ = writeln!(out, "{}{row_tag}", pad(4, origin));
         let mut column = 0;
         while column < columns.max(1) {
             let cell = blocks_in.iter().find_map(|b| {
@@ -988,7 +1073,7 @@ fn table(
             });
             match cell {
                 Some(cell) => {
-                    let spans = span_attributes(cell);
+                    let open = cell_tag(row, column, "table:table-cell", Some(cell));
                     let content: Vec<Block> = blocks_in
                         .iter()
                         .filter(|b| b.cell.as_ref().is_some_and(|c| c.is_same(cell)))
@@ -999,9 +1084,9 @@ fn table(
                         // Reading it back makes one empty paragraph again — the normalisation
                         // `TableCell::end` performs, and the same one LibreOffice performs
                         // (`doc/odt-format.md` §5b), so the two agree.
-                        let _ = writeln!(out, "{}<table:table-cell{spans}/>", pad(5, origin));
+                        let _ = writeln!(out, "{}{open}/>", pad(5, origin));
                     } else {
-                        let _ = writeln!(out, "{}<table:table-cell{spans}>", pad(5, origin));
+                        let _ = writeln!(out, "{}{open}>", pad(5, origin));
                         blocks(out, &content, 3, pool, origin);
                         let _ = writeln!(out, "{}</table:table-cell>", pad(5, origin));
                     }
@@ -1015,12 +1100,28 @@ fn table(
                         true => "table:covered-table-cell",
                         false => "table:table-cell",
                     };
-                    let _ = writeln!(out, "{}<{element}/>", pad(5, origin));
+                    // A position no block names is written as the file had it when it had it —
+                    // a covered cell with no span reaching it is still the file's own spelling.
+                    let element = recorded
+                        .and_then(|r| r.cells.get(&(row, column)))
+                        .map(|tag| {
+                            if tag.starts_with("<table:covered-table-cell") {
+                                "table:covered-table-cell"
+                            } else {
+                                "table:table-cell"
+                            }
+                        })
+                        .unwrap_or(element);
+                    let open = cell_tag(row, column, element, None);
+                    let _ = writeln!(out, "{}{open}/>", pad(5, origin));
                     column += 1;
                 }
             }
         }
         let _ = writeln!(out, "{}</table:table-row>", pad(4, origin));
+        if header(row) && !header(row + 1) {
+            let _ = writeln!(out, "{}</table:table-header-rows>", pad(4, origin));
+        }
     }
     let _ = writeln!(out, "{}</table:table>", pad(3, origin));
 }

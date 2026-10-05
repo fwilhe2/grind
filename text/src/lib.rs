@@ -1408,6 +1408,22 @@ impl App {
                 .block(index + 1)
                 .cloned()
                 .ok_or_else(|| Error::Xml(format!("nothing follows {}", loc::format(index))))?;
+            // Never across a table cell's edge, in either direction: the survivor's cell would
+            // swallow the other's text and leave a position in the table that names no block,
+            // which a save writes as an empty cell — one block more than the document has.
+            // Backspace at the front of a cell is a no-op in every word processor for the
+            // same reason.
+            let same_cell = match (&block.cell, &next.cell) {
+                (None, None) => true,
+                (Some(a), Some(b)) => a.is_same(b),
+                _ => false,
+            };
+            if !same_cell {
+                return Err(Error::Xml(format!(
+                    "{} and the block after it are in different table cells",
+                    loc::format(index)
+                )));
+            }
             block.runs.extend(next.runs);
             model::coalesce(&mut block.runs);
             Self::commit(

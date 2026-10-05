@@ -153,6 +153,13 @@ struct Marginals {
 struct OpenTable {
     name: String,
     row: u32,
+    /// Whether this table is recorded in [`super::source::Source::tables`]: a top-level table
+    /// read from a file. A nested one is flattened into its cell (`TableCell`) and is not.
+    recorded: bool,
+    /// Where its start tag ends, until the first row says where the column declarations do.
+    columns_from: Option<usize>,
+    /// How many blocks the document had when it opened.
+    before: usize,
 }
 
 /// One `draw:frame` (rng:5089) being read, gathered from however many of them turn out to be
@@ -475,6 +482,62 @@ impl Builder {
             if !lists.is_empty() {
                 source.lists.insert(id, lists);
             }
+        }
+    }
+
+    /// The column declarations of the table being read end where `at` begins — called by its
+    /// first row, or its first header-row group.
+    fn columns_end(&mut self, at: usize) {
+        let Some(table) = self.tables.last_mut() else {
+            return;
+        };
+        let (Some(from), true) = (table.columns_from.take(), table.recorded) else {
+            return;
+        };
+        let name = table.name.clone();
+        if let Some(source) = self.doc.source.as_deref_mut()
+            && let Some(columns) = source
+                .bytes
+                .get(from..at)
+                .and_then(|b| std::str::from_utf8(b).ok())
+        {
+            let columns = columns.trim().to_owned();
+            if let Some(recorded) = source.tables.get_mut(&name) {
+                recorded.columns = columns;
+            }
+        }
+    }
+
+    /// Hand the start tag at `span`, in its open form, to the table being read — when that
+    /// table is recorded and the tag is spelled with the prefixes a writer can safely change.
+    fn record_table(
+        &mut self,
+        mut with: impl FnMut(&mut super::source::TableSource, &str),
+        span: std::ops::Range<usize>,
+    ) {
+        let Some(table) = self.tables.last().filter(|t| t.recorded) else {
+            return;
+        };
+        let name = table.name.clone();
+        let Some(source) = self.doc.source.as_deref_mut() else {
+            return;
+        };
+        let Some(tag) = source
+            .bytes
+            .get(span)
+            .and_then(|tag| std::str::from_utf8(tag).ok())
+        else {
+            return;
+        };
+        if !tag.starts_with("<table:") {
+            return;
+        }
+        let open = match tag.trim_end().strip_suffix("/>") {
+            Some(body) => format!("{}>", body.trim_end()),
+            None => tag.to_owned(),
+        };
+        if let Some(recorded) = source.tables.get_mut(&name) {
+            with(recorded, &open);
         }
     }
 
@@ -1135,7 +1198,11 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         // `table:table` is one of `text-content`'s own alternatives (rng:16938), which is why
         // it belongs here beside the paragraph and not somewhere special: in a text document a
         // table is a *block*, and its cells hold blocks in turn.
-        (Ns::Table, "table") => Some(Box::new(Table::open(attrs.get(Ns::Table, "name"), b))),
+        (Ns::Table, "table") => Some(Box::new(Table::open(
+            attrs.get(Ns::Table, "name"),
+            attrs.span(),
+            b,
+        ))),
         // A section (rng:16697) holds the document's own text: its blocks are read in place,
         // so they are shown and a splice edits them inside it. What a section *is* — its own
         // columns, a protected range — is not modelled, and a regenerate that would drop the
@@ -1268,7 +1335,7 @@ struct Table {
 }
 
 impl Table {
-    fn open(name: Option<&str>, b: &mut Builder) -> Self {
+    fn open(name: Option<&str>, span: std::ops::Range<usize>, b: &mut Builder) -> Self {
         // A table with no `table:name` is legal — the attribute is optional (rng:15970) — and
         // still has to be told from the table after it, since the model folds a table out of
         // the blocks that name it. So one is generated, from a counter that makes it unique
@@ -1280,7 +1347,34 @@ impl Table {
                 format!("Table{}", b.next_table)
             }
         };
-        b.tables.push(OpenTable { name, row: 0 });
+        let recorded = b.cell.is_none() && b.doc.source.is_some() && !span.is_empty();
+        let mut columns_from = None;
+        if recorded
+            && let Some(source) = b.doc.source.as_deref_mut()
+            && let Some(tag) = source
+                .bytes
+                .get(span.clone())
+                .and_then(|tag| std::str::from_utf8(tag).ok())
+                .filter(|tag| !tag.trim_end().ends_with("/>"))
+        {
+            let range = element_extent(&source.bytes, span.clone());
+            columns_from = Some(span.end);
+            source.tables.insert(
+                name.clone(),
+                super::source::TableSource {
+                    range,
+                    start: tag.to_owned(),
+                    ..Default::default()
+                },
+            );
+        }
+        b.tables.push(OpenTable {
+            name,
+            row: 0,
+            recorded: columns_from.is_some(),
+            columns_from,
+            before: b.doc.blocks.len(),
+        });
         Table {
             owns: true,
             header: false,
@@ -1305,7 +1399,10 @@ impl Context<Builder> for Table {
             // and the two grouping elements. Reading them as row containers is one arm and
             // keeps a header row's cells, which are ordinary cells with a style this model does
             // not carry anyway.
-            (Ns::Table, "table-header-rows") => Some(Box::new(Table::group(true))),
+            (Ns::Table, "table-header-rows") => {
+                b.columns_end(attrs.span().start);
+                Some(Box::new(Table::group(true)))
+            }
             (
                 Ns::Table,
                 "table-row-group"
@@ -1326,8 +1423,19 @@ impl Context<Builder> for Table {
                 None
             }
             (Ns::Table, "table-row") => {
+                b.columns_end(attrs.span().start);
                 let repeated = attrs.count(Ns::Table, "number-rows-repeated", MAX_TABLE_SPAN);
                 let row = Row::open(repeated, b);
+                let header = self.header;
+                b.record_table(
+                    |table, tag| {
+                        table.rows.insert(row.row, tag.to_owned());
+                        if header {
+                            table.header_rows.extend(row.row..row.row + row.repeated);
+                        }
+                    },
+                    attrs.span(),
+                );
                 if self.header {
                     let pending = b.table_pending.entry(row.table.clone()).or_default();
                     pending.header_rows.extend(row.row..row.row + row.repeated);
@@ -1342,8 +1450,20 @@ impl Context<Builder> for Table {
         // One pop per push, and `Table::open` is the only constructor that pushes: a row
         // container's `end` runs while the table around it is still open, so popping there
         // would close a table that has rows left to read.
-        if self.owns {
-            b.tables.pop();
+        if self.owns
+            && let Some(table) = b.tables.pop()
+            && table.recorded
+        {
+            let held: Vec<BlockId> = b.doc.blocks[table.before.min(b.doc.blocks.len())..]
+                .iter()
+                .filter(|block| block.cell.as_ref().is_some_and(|c| c.table == table.name))
+                .map(|block| block.id)
+                .collect();
+            if let Some(source) = b.doc.source.as_deref_mut()
+                && let Some(recorded) = source.tables.get_mut(&table.name)
+            {
+                recorded.blocks = held;
+            }
         }
     }
 }
@@ -1402,6 +1522,15 @@ impl Context<Builder> for Row {
             .max(1);
         let column = self.column;
         self.column += repeated;
+        let row = self.row;
+        b.record_table(
+            |table, tag| {
+                for offset in 0..repeated {
+                    table.cells.insert((row, column + offset), tag.to_owned());
+                }
+            },
+            attrs.span(),
+        );
         if covered {
             return None;
         }

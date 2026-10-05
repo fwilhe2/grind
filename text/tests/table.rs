@@ -367,3 +367,68 @@ fn a_tables_widths_cell_styles_and_header_rows_are_read() {
         "reading the look changes nothing on save"
     );
 }
+
+/// A table's look lives in style names on four kinds of element — the table, its columns, its
+/// rows, its cells — and the model carries none of them. A body regenerated for an edit
+/// *elsewhere* used to write every table bare, and the save's loss check refused it; now an
+/// untouched table goes back as its own bytes, and an edited one keeps every one of those names.
+#[test]
+fn a_tables_styles_survive_an_edit_beside_it_and_inside_it() {
+    let table = r#"<table:table table:name="T" table:style-name="T"><table:table-column table:style-name="T.A" table:number-columns-repeated="2"/><table:table-header-rows><table:table-row table:style-name="R1"><table:table-cell table:style-name="T.A1" office:value-type="string"><text:p>head</text:p></table:table-cell><table:covered-table-cell table:style-name="T.B1"/></table:table-row></table:table-header-rows><table:table-row><table:table-cell table:style-name="T.A2" office:value-type="string"><text:p>a</text:p></table:table-cell><table:table-cell table:style-name="T.B2" office:value-type="string"><text:p>b</text:p></table:table-cell></table:table-row></table:table>"#;
+    let bytes = fodt(&format!(
+        "<text:p>before</text:p>{table}<text:p>after</text:p>"
+    ));
+
+    // Beside it: Enter in the paragraph before the table.
+    let app = App::new();
+    app.open_bytes("t.fodt", &bytes).unwrap();
+    app.split_block(Caret {
+        block: 0,
+        offset: 3,
+    })
+    .unwrap();
+    let saved = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+    assert!(
+        saved.contains(table),
+        "the untouched table is its own bytes:\n{saved}"
+    );
+
+    // Inside it: Enter in a cell, which adds a block to the table.
+    let app = App::new();
+    app.open_bytes("t.fodt", &bytes).unwrap();
+    let a = 2; // before, head, a
+    app.split_block(Caret {
+        block: a,
+        offset: 1,
+    })
+    .unwrap();
+    let saved = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+    for name in [
+        r#"table:style-name="T""#,
+        r#"table:style-name="T.A""#,
+        r#"table:style-name="R1""#,
+        r#"table:style-name="T.A1""#,
+        r#"table:style-name="T.B1""#,
+        r#"table:style-name="T.A2""#,
+        r#"table:style-name="T.B2""#,
+        "<table:table-header-rows>",
+    ] {
+        assert!(saved.contains(name), "{name} kept:\n{saved}");
+    }
+    let back = odf::read(saved.as_bytes()).unwrap();
+    assert_eq!(back.blocks.len(), app.block_count());
+}
+
+/// Backspace at the front of a cell is a no-op in every word processor: joining across a cell's
+/// edge would leave a position in the table naming no block.
+#[test]
+fn a_block_is_never_joined_across_a_cells_edge() {
+    let bytes = fodt(
+        r#"<text:p>before</text:p><table:table table:name="T"><table:table-column table:number-columns-repeated="2"/><table:table-row><table:table-cell><text:p>a</text:p></table:table-cell><table:table-cell><text:p>b</text:p></table:table-cell></table:table-row></table:table>"#,
+    );
+    let app = App::new();
+    app.open_bytes("t.fodt", &bytes).unwrap();
+    assert!(app.join_block(0).is_err(), "out of the body into a cell");
+    assert!(app.join_block(1).is_err(), "from one cell into the next");
+    assert_eq!(app.block_count(), 3);
+}
