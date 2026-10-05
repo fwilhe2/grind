@@ -607,8 +607,12 @@ fn ignore_arguments_as_files() {
 fn about(mtm: MainThreadMarker) {
     let version = env!("CARGO_PKG_VERSION");
     let stamp = grind_core::build_info::describe_version(version);
-    // Everything after the first line: the commit and the date, as the panel's credits.
-    let credits = stamp.lines().skip(1).collect::<Vec<_>>().join("\n");
+    // Everything after the first line: the commit and the date, as the panel's credits — and
+    // then every third-party component and its licence (doc/third-party.md), since the credits
+    // are the panel's one area that scrolls and the place a Mac application acknowledges them.
+    let mut credits = stamp.lines().skip(1).collect::<Vec<_>>().join("\n");
+    credits.push_str("\n\n");
+    credits.push_str(&grind_core::third_party::notices());
     let build = format!(
         "{} {}",
         grind_core::build_info::COMMIT,
