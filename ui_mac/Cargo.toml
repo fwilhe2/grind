@@ -16,12 +16,15 @@ path = "src/main.rs"
 
 # The Excel import filter (`doc/xlsx-import.md`, X6): on by default, as in `grind-cli`.
 [features]
-default = ["xlsx"]
+default = ["xlsx", "docx"]
 xlsx = ["dep:grind-xlsx"]
+# The Word import filter (`doc/docx-import.md`, DX6), likewise.
+docx = ["dep:grind-docx"]
 
 [dependencies]
 grind-core = { path = "../core" }
 grind-xlsx = { path = "../xlsx", optional = true }
+grind-docx = { path = "../docx", optional = true }
 grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
 # File ▸ Export as PDF… and Print… (doc/pdf-export.md): the bundled faces, and the Mac's own for a

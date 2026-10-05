@@ -1209,6 +1209,7 @@ dependencies = [
  "crc32fast",
  "flate2",
  "grind-core",
+ "grind-docx",
  "grind-print",
  "grind-sheet",
  "grind-text",

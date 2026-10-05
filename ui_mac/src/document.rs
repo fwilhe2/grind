@@ -56,7 +56,9 @@ pub fn sniff(name: &str, bytes: &[u8]) -> Result<DocumentKind, String> {
     {
         return Ok(DocumentKind::Spreadsheet);
     }
-    if crate::import::is_markdown(std::path::Path::new(name), bytes) {
+    if crate::import::is_markdown(std::path::Path::new(name), bytes)
+        || crate::import::is_word(bytes)
+    {
         return Ok(DocumentKind::Text);
     }
     match grind_core::kind(bytes) {

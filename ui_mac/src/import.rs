@@ -25,6 +25,17 @@ pub fn is_workbook(bytes: &[u8]) -> bool {
     }
 }
 
+/// Whether these bytes are a Word document this build imports (`doc/docx-import.md`, DX6).
+pub fn is_word(bytes: &[u8]) -> bool {
+    #[cfg(feature = "docx")]
+    return grind_docx::sniff(bytes);
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = bytes;
+        false
+    }
+}
+
 /// Whether `path` is a CSV or TSV this shell opens as a new document: bytes that are neither a
 /// workbook nor ODF, under a delimited name (`grind_sheet::csv::is_delimited_name`). Plain text
 /// has no signature, so its name is all there is — asked last, after the bytes have spoken.
@@ -63,6 +74,16 @@ pub fn open(name: &str, bytes: &[u8]) -> Result<Opened, String> {
         let (odf, report) = grind_xlsx::open(bytes).map_err(|error| format!("{name}: {error}"))?;
         return Ok(Opened {
             name: grind_xlsx::suggested_name(name),
+            bytes: odf,
+            untitled: true,
+            summary: Some(report.summary()),
+        });
+    }
+    #[cfg(feature = "docx")]
+    if grind_docx::sniff(bytes) {
+        let (odf, report) = grind_docx::open(bytes).map_err(|error| format!("{name}: {error}"))?;
+        return Ok(Opened {
+            name: grind_docx::suggested_name(name),
             bytes: odf,
             untitled: true,
             summary: Some(report.summary()),
@@ -119,6 +140,29 @@ mod tests {
             Some(grind_core::DocumentKind::Spreadsheet)
         );
         assert!(opened.summary.is_some());
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn a_word_document_is_recognised_by_its_bytes_and_opens_untitled() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../docx/tests/data/sample.docx"
+        );
+        let bytes = std::fs::read(path).unwrap();
+        assert!(is_word(&bytes));
+        assert!(!is_workbook(&bytes));
+        let opened = open("letter.docx", &bytes).unwrap();
+        assert!(opened.untitled);
+        assert_eq!(opened.name, "letter.fodt");
+        assert_eq!(
+            grind_core::kind(&opened.bytes),
+            Some(grind_core::DocumentKind::Text)
+        );
+        assert_eq!(
+            crate::document::sniff("letter.docx", &bytes),
+            Ok(grind_core::DocumentKind::Text)
+        );
     }
 
     #[test]

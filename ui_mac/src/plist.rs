@@ -5,8 +5,9 @@
 //! `Grind.app`'s Info.plist, generated from one table of types (M10) — portable, and printed by
 //! `grind-mac --info-plist` for the bundle step to write.
 //!
-//! The types are the nine `ui_win32/src/assoc.rs` offers — the three ODF forms of each kind, and
-//! the workbooks and delimited text this build imports — and the stance is that file's in Mac
+//! The types are the ones `ui_win32/src/assoc.rs` offers — the three ODF forms of each kind, and
+//! the workbooks, Word documents and delimited text this build imports (`.docm` is offered there
+//! and not here: its Uniform Type Identifier has not been measured) — and the stance is that file's in Mac
 //! terms: **offered, never taken**. Every type is at `LSHandlerRank` **Alternate**, so Grind is
 //! in Open With and a double-click keeps going wherever the user sent it before — except
 //! `.grind`, which nothing else opens, at **Owner**, and declared to conform to
@@ -132,6 +133,15 @@ pub const TYPES: &[Type] = &[
         rank: Rank::Alternate,
         role: Role::Viewer,
         declared: Declared::Imported(ZIP),
+    },
+    Type {
+        name: "Word Document",
+        identifier: "org.openxmlformats.wordprocessingml.document",
+        extension: "docx",
+        mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        rank: Rank::Alternate,
+        role: Role::Viewer,
+        declared: Declared::System,
     },
     Type {
         name: "Comma-Separated Values",
