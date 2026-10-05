@@ -141,6 +141,10 @@ fn root() -> PathBuf {
 
 const OUT: &str = "core/src/third_party/data.rs";
 
+/// The tag a file states its licence with — spelled in two halves so that REUSE, which reads
+/// this file too, does not take the search for one as this file's own.
+const TAG: &str = concat!("SPDX-", "License-Identifier:");
+
 #[test]
 fn the_third_party_list_is_current() {
     let root = root();
@@ -196,8 +200,8 @@ fn everything_reuse_says_is_not_ours_is_on_the_list_or_never_shipped() {
         };
         let head = String::from_utf8_lossy(&text[..text.len().min(4096)]).into_owned();
         for line in head.lines() {
-            if let Some(at) = line.find("SPDX-License-Identifier:") {
-                let licence = line[at + "SPDX-License-Identifier:".len()..].trim();
+            if let Some(at) = line.find(TAG) {
+                let licence = line[at + TAG.len()..].trim();
                 let licence = licence.trim_end_matches("-->").trim();
                 let path = relative.strip_suffix(".license").unwrap_or(&relative);
                 claims.push((path.to_owned(), licence.to_owned()));
