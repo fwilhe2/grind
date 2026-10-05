@@ -195,6 +195,11 @@ pub struct Format {
     /// `style:map` branches, in document order — the first whose condition holds wins.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub maps: Vec<Map>,
+    /// `fo:color` on the style's own `style:text-properties` — the colour a value shown
+    /// through this format is drawn in, over the cell's own (`doc/ods-format.md` §5.2: the
+    /// red of a red negative is a property of the *branch*, not of the cell). `#rrggbb`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 const MONTHS: [&str; 12] = [
@@ -230,6 +235,22 @@ impl Format {
             parts: Vec::new(),
             locale: None,
             maps: Vec::new(),
+            color: None,
+        }
+    }
+
+    /// The colour `value` is drawn in through this format, when the format says one: the
+    /// branch's own for a number a `style:map` sends elsewhere — one level, as [`Format::render`]
+    /// follows — and this style's otherwise. A text value is drawn in a text format's colour
+    /// only, since a number format's sections are about numbers.
+    pub fn color_of(&self, value: &CellValue) -> Option<&str> {
+        match value {
+            CellValue::Number(n) => match self.branch(*n) {
+                Some(map) if !std::ptr::eq(&map.format, self) => map.format.color.as_deref(),
+                _ => self.color.as_deref(),
+            },
+            CellValue::Text(_) if self.kind == Kind::Text => self.color.as_deref(),
+            _ => None,
         }
     }
 
@@ -663,6 +684,7 @@ pub fn preset(kind: Kind, decimals: u8, grouping: bool, symbol: &str) -> Format 
         parts,
         locale: None,
         maps: Vec::new(),
+        color: None,
     }
 }
 

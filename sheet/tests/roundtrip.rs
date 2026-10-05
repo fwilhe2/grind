@@ -537,7 +537,15 @@ fn same_style(a: Option<&CellStyle>, b: Option<&CellStyle>) -> bool {
 /// value when it has none.
 fn shown(sheet: &Sheet, pos: Pos, doc: &Document) -> String {
     match sheet.format(pos) {
-        Some(format) => format.render(&sheet.get(pos), doc.null_date),
+        // And the colour the format draws it in — a red negative is red in both or neither.
+        Some(format) => {
+            let value = sheet.get(pos);
+            let text = format.render(&value, doc.null_date);
+            match format.color_of(&value) {
+                Some(color) => format!("{text} in {color}"),
+                None => text,
+            }
+        }
         None => grind_sheet::numfmt::general(&sheet.get(pos), sheet.kind(pos), doc.null_date),
     }
 }
@@ -770,6 +778,8 @@ fn styles() -> (String, Document) {
             ],
             locale: None,
             maps: Vec::new(),
+            // A data style's own colour (`doc/ods-format.md` §5.2), beside the cell's bold.
+            color: Some("#0000ff".into()),
         },
     );
     sheet.set_style(
@@ -1455,7 +1465,20 @@ fn kb_documents_render_the_same_in_libreoffice() {
             for row in 0..rows {
                 for col in 0..cols {
                     let pos = Pos::new(row, col);
-                    let want = ours.text(row, col).unwrap_or("");
+                    // The text, and the colour a number format drew it in where LibreOffice's
+                    // file says one — the viewport's style is where a shell reads it.
+                    let want = match got_sheet
+                        .and_then(|s| s.format(pos).and_then(|f| f.color_of(&s.get(pos))))
+                    {
+                        Some(_) => format!(
+                            "{} in {}",
+                            ours.text(row, col).unwrap_or(""),
+                            ours.style(row, col)
+                                .and_then(|s| s.color.as_deref())
+                                .unwrap_or("no colour")
+                        ),
+                        None => ours.text(row, col).unwrap_or("").to_owned(),
+                    };
                     let theirs = match got_sheet {
                         Some(s) => shown(s, pos, &got),
                         None => String::new(),

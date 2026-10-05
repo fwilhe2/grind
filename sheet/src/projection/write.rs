@@ -439,7 +439,12 @@ fn formats(out: &mut Emitter, sheet: &Sheet) {
 /// it. One flag rather than two functions, because everything else about the two is identical.
 fn format_body(out: &mut Emitter, format: &Format, parts_only: bool) {
     let (kind, decimals, grouping, symbol) = format.preset_params();
-    let same = |built: Format| built.in_locale(format.locale.clone()) == *format;
+    let same = |built: Format| {
+        Format {
+            color: format.color.clone(),
+            ..built.in_locale(format.locale.clone())
+        } == *format
+    };
     if !parts_only && same(numfmt::preset(kind, decimals, grouping, &symbol)) {
         out.arg_word(kind_word(kind));
         if decimals != 0 {
@@ -476,10 +481,13 @@ fn format_body(out: &mut Emitter, format: &Format, parts_only: bool) {
     out.close();
 }
 
+/// The two properties a format carries beside its parts: its locale, and its own colour
+/// (`color="#ff0000"`, a red negative's red).
 fn locale_prop(out: &mut Emitter, format: &Format) {
     if let Some(locale) = &format.locale {
         out.prop("locale", locale.tag());
     }
+    out.prop_some("color", format.color.as_deref());
 }
 
 /// One `number:*` element as one node. The names are the ODF element's own, minus the prefix.

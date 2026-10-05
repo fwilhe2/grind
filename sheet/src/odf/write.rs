@@ -2672,6 +2672,11 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
         None => String::new(),
     };
     let mut out = format!("<{element} style:name=\"{}\"{locale}>", pool.n(i));
+    // A red negative's red: first, where the schema puts a data style's text properties, and
+    // where LibreOffice writes it (`doc/ods-format.md` §5.2).
+    if let Some(color) = &format.color {
+        let _ = write!(out, "<style:text-properties fo:color=\"{}\"/>", esc(color));
+    }
     for part in &format.parts {
         // `number:style="long"` is the spec's spelling of "padded"; short is the default and
         // is written by omission, which is what LibreOffice does too.

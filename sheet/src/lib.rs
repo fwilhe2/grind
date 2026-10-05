@@ -1577,10 +1577,16 @@ impl App {
             let applied = engine
                 .as_mut()
                 .and_then(|engine| rule::applied(&state.doc, engine, sheet, pos));
-            match applied {
+            let mut look = match applied {
                 Some(rule) => Some(rule.over(own)),
                 None => own.cloned(),
+            };
+            // A number format's own colour — a red negative's red — is drawn over the cell's
+            // (`doc/ods-format.md` §5.2), so no shell asks which branch a value took.
+            if let Some(color) = s.format(pos).and_then(|f| f.color_of(&s.get(pos))) {
+                look.get_or_insert_with(Default::default).color = Some(color.to_owned());
             }
+            look
         };
         for row in rows.clone() {
             for col in cols.clone() {

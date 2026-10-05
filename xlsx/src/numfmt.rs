@@ -64,7 +64,9 @@ pub enum Unspellable {
     /// A section this build has no branch left for — a condition past the two-plus-default
     /// shape, or a fifth section.
     Section,
-    /// `[Red]` — a colour belongs to a *branch* of the format, and a `Format` carries none.
+    /// `[Color N]` — an entry of the workbook's palette, which the oracle resolves against a
+    /// table of its own rather than the palette (`doc/xlsx-format.md` §3.7). The eight named
+    /// colours are carried, as the branch's `Format::color`.
     Colour,
     /// `*-` — the fill character that repeats to the width of the column.
     FillCharacter,
@@ -111,7 +113,7 @@ impl Unspellable {
             Unspellable::LocaleCurrency => "built-in currency format (a locale's own symbol)",
             Unspellable::UnknownBuiltin => "undocumented built-in format id",
             Unspellable::Section => "number-format section",
-            Unspellable::Colour => "number-format colour",
+            Unspellable::Colour => "number-format palette colour ([Color N])",
             Unspellable::FillCharacter => "fill character",
             Unspellable::BlankWidth => "blank-width padding",
             Unspellable::BlankDigit => "blank-padded digit",
@@ -368,6 +370,8 @@ struct Section {
     percent: bool,
     currency: bool,
     text: bool,
+    /// `[Red]` — the colour this section draws its value in, as `#rrggbb`.
+    color: Option<String>,
     lost: BTreeSet<Unspellable>,
 }
 
@@ -398,6 +402,7 @@ impl Section {
     fn format(&self) -> Format {
         let mut format = Format::new(self.family());
         format.parts = self.parts.clone();
+        format.color = self.color.clone();
         format
     }
 }
@@ -646,8 +651,12 @@ fn bracket(inner: &str, out: &mut Section, literal: &mut String, tokens: &mut Ve
         out.cond = Some((op, value));
         return;
     }
-    if is_colour(&lower) {
-        out.lost.insert(Unspellable::Colour);
+    match colour(&lower) {
+        Some(hex) => out.color = Some(hex.to_owned()),
+        None if lower.starts_with("color") => {
+            out.lost.insert(Unspellable::Colour);
+        }
+        None => {}
     }
 }
 
@@ -661,12 +670,21 @@ fn condition(inner: &str) -> Option<(Op, String)> {
     Some((*op, value.to_owned()))
 }
 
-/// The colour names §18.8.31 allows, plus `color N`'s indexed form.
-fn is_colour(inner: &str) -> bool {
-    const NAMES: [&str; 8] = [
-        "black", "blue", "cyan", "green", "magenta", "red", "white", "yellow",
-    ];
-    NAMES.contains(&inner) || inner.starts_with("color")
+/// The eight colour names §18.8.31 allows, as the colours the oracle draws them in
+/// (`doc/xlsx-format.md` §3.7, measured). `[Color N]` is not one: it names an entry of the
+/// workbook's palette, which the oracle resolves against its own table instead, and is counted.
+fn colour(inner: &str) -> Option<&'static str> {
+    Some(match inner {
+        "black" => "#000000",
+        "blue" => "#0000ff",
+        "cyan" => "#00ffff",
+        "green" => "#00ff00",
+        "magenta" => "#ff00ff",
+        "red" => "#ff0000",
+        "white" => "#ffffff",
+        "yellow" => "#ffff00",
+        _ => return None,
+    })
 }
 
 /// A run of digit placeholders — `#`, `0`, `?`, their grouping commas and their decimal point
@@ -974,7 +992,15 @@ mod tests {
         assert_eq!(shows(three, 1234.5), "1,234.50");
         assert_eq!(shows(three, -1234.5), "(1,234.50)");
         assert_eq!(shows(three, 0.0), "—");
-        assert_eq!(lost(three), [Unspellable::Colour]);
+        assert!(lost(three).is_empty(), "the red is carried");
+        let red = of_code(three).format.expect("a format");
+        assert_eq!(
+            red.color_of(&CellValue::Number(-1.0)),
+            Some("#ff0000"),
+            "on the negative branch only"
+        );
+        assert_eq!(red.color_of(&CellValue::Number(1.0)), None);
+        assert_eq!(lost("[Color10]0"), [Unspellable::Colour]);
 
         let four = r#"#,##0.00;[Red](#,##0.00);"—";[Blue]@"#;
         assert_eq!(shows(four, 0.0), "—");

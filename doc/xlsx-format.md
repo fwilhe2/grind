@@ -343,10 +343,24 @@ decision about the core's format model rather than about an import filter.
 `grind_xlsx::numfmt::Unspellable` is the list, and it is split in two by one question — *would
 losing this piece misstate the number?* A fraction, an exponent, an elapsed hour count, a ×1000
 factor and a `General` section beside others all would, so the cell's **whole** format is
-dropped and it shows its plain value; a fill character, a blank-width pad, a colour, the
+dropped and it shows its plain value; a fill character, a blank-width pad, a `[Color N]` colour (§3.7), the
 one-letter month and meridiem markers and a format's LCID would not, so the format is carried
 without them. Either way the class is counted per cell in the report, and
 `xlsx/tests/ooxmlgen.rs`'s `UNSPELLABLE` table holds each one to a fixture that still fails.
+
+### 3.7 Colours in a format code — `MEASURED`
+
+Measured 2026-10-05 by converting one cell per `[Name]0` code to `.fods` with LibreOffice 26.8.
+A section's colour becomes `<style:text-properties fo:color="…"/>`, the first child of that
+section's own `number:*-style` — on the branch for a `[Red]` negative, not on the style the cell
+names (`doc/ods-format.md` §5.2). The eight names are fixed colours: `[Black]` `#000000`,
+`[Blue]` `#0000ff`, `[Cyan]` `#00ffff`, `[Green]` `#00ff00`, `[Magenta]` `#ff00ff`, `[Red]`
+`#ff0000`, `[White]` `#ffffff`, `[Yellow]` `#ffff00`.
+
+`[Color N]` is ECMA-376's index into the workbook's palette (§18.8.31), and the oracle does not
+read it that way: `[Color3]`, `[Color10]` and `[Color56]` came out `#1c1c1c`, `#dddddd` and
+`#8e86ae`, none of them the default palette's entries. With the source and the oracle
+disagreeing, this filter counts it (`Unspellable::Colour`) rather than pick.
 
 ---
 

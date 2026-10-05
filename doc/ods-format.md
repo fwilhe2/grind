@@ -440,6 +440,12 @@ style* level via `style:map`, not on the cell:
 (`N114P0` is a second, simpler `number:currency-style` used for the non-negative case —
 verified pattern from `sc/qa/unit/data/fods/lookup_source.fods`.)
 
+The **red** of a red negative is the style's own: `<style:text-properties fo:color="#ff0000"/>`
+as the first child of the `number:*-style` it colours — the negative style above, not its
+`N114P0` branch (LibreOffice's own default currency styles, and every `[Red]` code it converts,
+`doc/xlsx-format.md` §3.7). It is drawn over the cell's own text colour; `numfmt::Format::color`
+carries it, and the viewport hands a shell the colour of whichever branch the value took.
+
 Full formatting/conditional-formatting extensions beyond this (icon sets, data bars,
 color scales) are LO/ODF-1.2-`calcext` territory — see §6 pointers if you need them; treat
 as a later increment, not part of the minimal baseline.

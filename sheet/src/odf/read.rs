@@ -2045,6 +2045,7 @@ impl Context<Builder> for Styles {
             name: attrs.get(Ns::Style, "name").unwrap_or_default().to_owned(),
             kind,
             locale,
+            color: None,
         }))
     }
 }
@@ -2170,6 +2171,8 @@ struct NumberStyle {
     name: String,
     kind: Kind,
     locale: Option<Locale>,
+    /// `fo:color` on its `style:text-properties` — a red negative's red (§5.2).
+    color: Option<String>,
 }
 
 impl Context<Builder> for NumberStyle {
@@ -2185,6 +2188,10 @@ impl Context<Builder> for NumberStyle {
                 b.pending_maps
                     .push((self.name.clone(), op, value, target.to_owned()));
             }
+            return Some(Box::new(super::context::Ignore));
+        }
+        if name.is(Ns::Style, "text-properties") {
+            self.color = attrs.get(Ns::Fo, "color").map(str::to_owned);
             return Some(Box::new(super::context::Ignore));
         }
         if name.ns != Ns::Number {
@@ -2230,6 +2237,7 @@ impl Context<Builder> for NumberStyle {
             parts: std::mem::take(&mut b.parts),
             locale: self.locale.take(),
             maps: Vec::new(),
+            color: self.color.take(),
         };
         // The name is *not* taken: a `style:map` collected under this style refers to it by
         // name, and resolution happens after the section ends.

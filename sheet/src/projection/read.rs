@@ -317,6 +317,12 @@ fn colour(value: &str) -> String {
 // --- number formats ---
 
 fn format(node: &KdlNode) -> Result<Format> {
+    let mut format = format_of(node)?;
+    format.color = string_prop(node, "color").map(|c| colour(&c));
+    Ok(format)
+}
+
+fn format_of(node: &KdlNode) -> Result<Format> {
     let word = word_arg(node, 1)?;
     let tag = string_prop(node, "locale");
     let locale = tag.as_deref().and_then(locale::Locale::parse);
@@ -402,6 +408,7 @@ fn branch(node: &KdlNode) -> Result<Map> {
         .as_deref()
         .and_then(locale::Locale::parse);
     let mut inner = Format::new(kind(node, &word_arg(node, 2)?)?).in_locale(locale);
+    inner.color = string_prop(node, "color").map(|c| colour(&c));
     if let Some(block) = node.children() {
         parts(&mut inner, block)?;
     }

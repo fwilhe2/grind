@@ -51,13 +51,13 @@ body — one or more document-level nodes — and it is executable, not illustra
 | `at` | where a grid of plain values starts. Its rows carry `Sheet`'s cell values; `#null` is a hole | `sheet S { at B2 { row 4200 4800 } }` |
 | `cell` | one cell that carries more than a value — `Sheet::formulas`, `Sheet::kinds`, and the value beside them | `sheet S { cell B5 15400 formula="of:=SUM([.B2:.B4])"; cell A7 45123 date=#true; cell A8 0.5 time=#true }` |
 | `style` | one entry of `Sheet::styles`, over every cell of its range | `sheet S { style B1:C1 bold=#true italic=#true size="12pt" color="#ff4136" background=navy align=center valign=middle wrap=#true underline=#true strike=#true border="0.5pt solid #000000" }` |
-| `format` | one entry of `Sheet::formats`, over every cell of its range. Compact when `numfmt::preset` builds it, a block of parts when it does not | `sheet S { format B2:C5 currency decimals=2 grouping=#true symbol="EUR" locale="de-DE"; format D1 datetime }` |
+| `format` | one entry of `Sheet::formats`, over every cell of its range. Compact when `numfmt::preset` builds it, a block of parts when it does not | `sheet S { format B2:C5 currency decimals=2 grouping=#true symbol="EUR" locale="de-DE"; format D1 datetime; format E1 number decimals=1 color="#ff0000" }` |
 | `merge` | one entry of `Sheet::merges` — a merged range, written as the range it takes in. Its top-left cell holds the value; no two may overlap | `sheet S { at B2 { row Heading }; merge B2:D2 }` |
 | `checkbox` | one entry of `Sheet::checkboxes` — a checkbox drawn in a cell, `link=` the cell whose value it shows and sets (with its sheet only when that is another), or `checked=` for its own state when it is linked to nothing (`doc/ods-format.md` §3.5) | `sheet S { checkbox B5 link=E5 name="Check Box 1"; checkbox B6 checked=#true label="Done" }` |
 | `rule` | one entry of `Sheet::rules`, in priority order — a conditional-format rule (`doc/conditional-format.md`): its ranges as words, `when=` the condition in ODF syntax written from the first range's top-left cell (or from `base=` when it is another), and the style it draws in `style`'s own properties | `sheet S { rule B5:D9 B12:D14 when="[.$E5]=TRUE()" background="#97e8ca"; rule A1 when="[.A1]<0" base=A1 color="#ff0000" bold=#true }` |
 | `filter` | `Sheet::filter` — §9.4's `table:database-range` | `sheet S { filter "__Anonymous_Sheet_DB__0" A1:C4 header=#true buttons=#true }` |
 | `keep` | one field of `Filter::keep`: the values that field keeps | `sheet S { filter "f" A1:C4 { keep 0 North South } }` |
-| `map` | one `numfmt::Map` — a `style:map` branch, its comparison, its operand and its own format | `sheet S { format A1 number { map ">=" "0" number { number decimals=2 } } }` |
+| `map` | one `numfmt::Map` — a `style:map` branch, its comparison, its operand and its own format, with `color=` the colour that branch draws in (a red negative's red) | `sheet S { format A1 number { text "-"; number decimals=2; map ">=" "0" number color="#0000ff" { number decimals=2 } } }` |
 
 ### A formula does not need its answer
 

@@ -863,6 +863,10 @@ outlines, 33 with a default width this build cannot derive. No theme colour went
 processor already used (`doc/xlsx-format.md` §4.13) — and only a double underline's second line
 is still counted. 52,244 cells now carry a style.
 
+And a format code's `[Red]` — the 211 cells loop A′ counted as losing a number-format colour — is
+carried as the branch's own `fo:color` (`numfmt::Format::color`, `doc/xlsx-format.md` §3.7);
+only `[Color N]`, which no corpus workbook uses, is still counted.
+
 Seven things it found on the way:
 
 1. **The oracle's column widths are a fact about the converting machine.** The plan said the
