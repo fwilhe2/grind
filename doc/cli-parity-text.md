@@ -213,6 +213,10 @@ Reachable from the CLI, but not `App` methods, so the test does not track them:
   the file (`grind_core::kind`) rather than trusting its name, and route accordingly
 - `grind_text::loc` — the addressing module, this crate's only 0↔1 conversion. Free functions,
   used by every command that takes an address and by the outline's own `§` spellings
+- `grind text import` — `grind_docx::import_file` plus `grind_text::write_file`
+  (`doc/docx-import.md`), the word processor's `grind sheet import`. Deliberately not an `App`
+  method: an import is a file-to-file translation producing a new ODF document, and every shell
+  reaches the same filter through `grind_docx::open` before `App::open_bytes` ever sees a byte
 
 ## Beyond `App`
 

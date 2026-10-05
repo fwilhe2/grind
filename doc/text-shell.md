@@ -126,6 +126,13 @@ the name.
 `grind-sheet-gtk` with the same banner an `.ods` gets, and that window imports it. The only
 Excel code in this binary is `grind_xlsx::sniff`, behind the `xlsx` feature.
 
+**A Word document given to it is a text document** (`doc/docx-import.md`, DX6): Open, the
+command line and a file manager's *Open With* import it through `grind_docx::open` as a new,
+unsaved document under its ODF name, with the report's sentence as a toast — `open_path`'s
+markdown branch, for the same reason. The open dialog has a *Word Document* filter and the
+`.desktop` file offers the window for Word's two media types, never as their default. The
+terminal does the same (`ui_tui/src/import.rs`), and so does the browser page.
+
 ## The gaps, written down
 
 Deferred by decision, not omission. Nothing here is reachable in one shell and missing from

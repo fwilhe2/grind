@@ -179,8 +179,8 @@ than reckless:
 - **An untouched document is never written.** `NSDocument` autosaves only a document with
   changes, and the observer is registered after the load, so opening a file is not an edit.
   M4's exit criterion asserts the bytes *and* the modification time.
-- **An imported workbook or CSV is untitled.** It opens as a new document under
-  `grind_xlsx::suggested_name` with no file URL, so there is nothing to autosave *into*, and an
+- **An imported workbook, Word document or CSV is untitled.** It opens as a new document under
+  `grind_xlsx::suggested_name` (or `grind_docx::suggested_name`) with no file URL, so there is nothing to autosave *into*, and an
   untitled autosave goes to `~/Library/Autosave Information`, never beside the source. One way in,
   never out (`doc/not-doing.md` §1), is kept by construction rather than by care.
 - **Undo is still the core's** (rule 2). `hasUndoManager` is NO, and Edit ▸ Undo and Redo are
@@ -424,7 +424,7 @@ portable and tested here; only turning it into pixels and events needs a Mac:
 | `png.rs` | portable | The frame's PNG, written here over the workspace's own `flate2`, so two renders are the same **bytes** — a system encoder may write a timestamp or a profile of its choosing |
 | `menu.rs` | portable | The menu bar as data, and *Conventions made mechanical* as its tests |
 | `drive.rs` | both | The drive-script parser, portable, and its replay through `NSApp.sendEvent` |
-| `import.rs` | portable | A workbook or a CSV to flat ODF **in bytes**, the shape `NSDocument` hands a document over in |
+| `import.rs` | portable | A workbook, a Word document or a CSV to flat ODF **in bytes**, the shape `NSDocument` hands a document over in |
 | `document.rs` | both | The type names and the byte sniff, portable; the `NSDocument` subclass and the document controller, whose `typeForContentsOfURL:error:` reads the file rather than its name |
 | `render.rs` `grid_view.rs` `app.rs` | Mac | The `Op`s onto a flipped `CGContext`; the grid in its scroll view with the bands floating; the application, its delegate and the menu bar |
 
