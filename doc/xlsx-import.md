@@ -661,11 +661,18 @@ and counted.
   date band, a colour) is counted as `Appearance::FilterCriterion` and left out. Excel marks
   each filtered row `hidden="1"`; a row the carried filter hides is left to the filter, and a
   row it does not account for stays hidden by hand, so the sheet shows what Excel showed.
-- **Everything else** — charts, drawings, pivot tables, comments, conditional formatting (its
-  one rule type is planned, `doc/conditional-format.md`), data validation, protection — is
+- **Conditional formats** are the model's one rule type (`doc/conditional-format.md`, since
+  2026-10-05; `xlsx/src/rules.rs`, `doc/xlsx-format.md` §4.12): every `<cfRule>` that carries a
+  formula — `expression`, `containsText`, `containsBlanks`, `timePeriod` and the rest — is that
+  formula, translated like a cell's, and `cellIs` is written as a comparison of the cell; each
+  draws its `dxf` as a partial style, in `priority` order. A colour scale, a data bar, an icon
+  set, top-N, above-average, duplicate and unique values, and a rule whose formula or `dxf` the
+  model cannot carry, are counted as `Dropped::ConditionalFormat`; a `dxf`'s number format is
+  `Appearance::RuleFormat`.
+- **Everything else** — charts, drawings, pivot tables, comments, data validation, protection — is
   counted by kind and dropped, found by relationship from the
   worksheet part (`xlsx/src/parts.rs`) or by element in it: one per drawing part, per chart
-  part, per `<comment>`, per `<cfRule>`, per `<dataValidation>`, per pivot table, per sheet or
+  part, per `<comment>`, per `<cfRule>` not carried, per `<dataValidation>`, per pivot table, per sheet or
   workbook that is **actually** locked (an empty `<workbookProtection/>`, which LibreOffice's
   own `.xlsx` writes, locks nothing).
 - **`--strict`.** `grind sheet import --strict` fails when `Report::lossless` is false, writes

@@ -58,6 +58,7 @@ pub mod numfmt;
 pub mod package;
 pub mod parts;
 pub mod report;
+pub mod rules;
 pub mod sheet;
 pub mod strings;
 pub mod styles;

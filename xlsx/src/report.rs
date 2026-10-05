@@ -82,6 +82,9 @@ pub struct Report {
     pub sheets: usize,
     pub cells: usize,
     pub formulas: usize,
+    /// Conditional-format rules carried as the model's one rule type (`rules.rs`). One that
+    /// could not be is a `Dropped::ConditionalFormat`.
+    pub rules: usize,
     /// Constructs the model has no home for, by kind and count.
     pub dropped: BTreeMap<Dropped, usize>,
     /// Functions a carried formula names that this build does not implement. The cached value

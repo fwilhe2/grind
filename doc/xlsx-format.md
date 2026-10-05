@@ -583,6 +583,36 @@ Measured 2026-10-04 with `unzip`, over an Excel-saved checklist with 44 checkbox
 - A VML shape that is not a checkbox, such as a comment's note or a button, is not read; the
   drawing part is counted as before.
 
+### 4.12 Conditional formats — `MEASURED`
+
+Measured 2026-10-05 by converting a hand-built workbook (four `dxf`s, five `cfRule`s; rebuilt, with a colour
+scale added, by `xlsx/tests/rules.rs`) to `.fods` with LibreOffice 26.8, and by the
+checklist of §4.11:
+
+- **A rule's relative references are written from the top-left of its whole `sqref`**, not of
+  the first range listed: `sqref="C3:C4 A1:A2"` with `B1>2` came back
+  `is-true-formula([.B1]>2)` with `style:base-cell-address="S.A1"`, over both ranges.
+- **`type="expression"`** is `is-true-formula(…)`; **`type="cellIs"`** is a comparison of the
+  cell itself — `operator="between"` with two `<formula>`s became
+  `cell-content-is-between(3,[.$D$2])`, `notEqual` with `"x"` became `cell-content()!="x"`.
+- **`containsText`** (with its own `<formula>`, `NOT(ISERROR(SEARCH("a",D1)))`) came out as
+  LibreOffice's `calcext:value="contains-text("a")"` and **no** standard `style:map`; **`top10`**
+  as `top-elements(2)`, likewise. Both are `calcext:` only.
+- **A `dxf` is a partial style**: only what it states is set. `<b val="0"/>` is
+  `fo:font-weight="normal"`, an override and not an absence.
+- **A `dxf`'s solid fill is its `bgColor`**, the opposite of a cell format's (§4.8): a
+  `patternFill patternType="solid"` with `fgColor` green and `bgColor` blue drew blue, and a
+  `patternFill` with **no `patternType`** and only a `bgColor` is solid in that colour.
+- **A `dxf` border with one edge** came back as that edge and `none` on the other three — the
+  oracle reads a `dxf`'s `<border>` as all four edges. The model's `CellStyle` has no "no border"
+  distinct from "not set" (`style.rs`), so this build keeps the cell's own other edges: a
+  divergence, named here.
+- **Priority** is `priority`, 1 first, across the sheet. Excel applies *every* true rule, the
+  higher one winning a property both set, and `stopIfTrue` cuts that short; ODF's `style:map`
+  and LibreOffice draw only the first true rule (`doc/ods-format.md` §3.6, Q4, measured with
+  two rules setting different properties). A workbook whose overlapping rules set different
+  properties draws differently in Excel than in either ODF application.
+
 ## 5. Functions whose semantics differ under the same name
 
 `doc/xlsx-import.md` Part II §3 takes the decision: the importer carries the name and Excel's

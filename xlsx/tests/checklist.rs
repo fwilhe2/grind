@@ -22,9 +22,9 @@
 //!   22.5 points tall by hand.
 //!
 //! The merges are carried, and so are the checkboxes — Excel's form controls, spelled in the
-//! sheet's VML drawing, each linked to its tick in column E. The conditional rules are counted
-//! and not carried: that is the next piece of work (`doc/conditional-format.md`), and the count
-//! is what says so.
+//! sheet's VML drawing, each linked to its tick in column E — and so are the conditional rules
+//! (`doc/conditional-format.md`): ticking a box turns its row green, which is the whole point of
+//! the document.
 
 use std::io::{Cursor, Write};
 
@@ -407,12 +407,35 @@ fn the_checkboxes_are_linked_to_the_ticks() {
     assert_eq!(app.get(0, p(5, 4)).unwrap(), CellValue::Bool(true));
 }
 
-/// The rules that tick a row green, and the two thresholds on the summary: counted, one per
-/// `<cfRule>`, until the model has the rule type that carries them.
+/// The rules that tick a row green, and the two thresholds on the summary: carried, in
+/// priority order, and drawn by the viewport once the document is written and read back.
 #[test]
-fn the_conditional_rules_are_counted_not_carried() {
-    let (_, report) = grind_xlsx::import_bytes(&checklist()).expect("it imports");
-    assert_eq!(report.dropped.get(&Dropped::ConditionalFormat), Some(&4));
+fn the_conditional_rules_turn_a_ticked_row_green() {
+    let (document, report) = grind_xlsx::import_bytes(&checklist()).expect("it imports");
+    assert_eq!(report.dropped.get(&Dropped::ConditionalFormat), None);
+    assert_eq!(report.rules, 4);
+    let rules = document.sheets[0].rules();
+    assert_eq!(rules.len(), 4);
+    assert_eq!(rules[0].ranges, [(p(4, 1), p(8, 2)), (p(4, 3), p(5, 3))]);
+    assert_eq!(rules[0].base, p(4, 1));
+    assert_eq!(rules[0].condition, "[.$E5]=TRUE()");
+    assert_eq!(rules[0].style.background.as_deref(), Some("#97e8ca"));
+    assert_eq!(
+        rules[2].condition,
+        "COUNTIF([.E:.E];TRUE())/COUNTA([.E:.E])>=0.75"
+    );
+
+    let bytes = grind_sheet::write_bytes(&document, grind_sheet::Form::Flat).expect("writes");
+    let app = grind_sheet::App::new();
+    app.open_bytes("checklist.fods", &bytes).unwrap();
+    let green = |app: &grind_sheet::App, row: u32, col: u32| {
+        let view = app.get_viewport(0, row..row + 1, col..col + 1).unwrap();
+        view.style(row, col).and_then(|s| s.background.clone()) == Some("#97e8ca".into())
+    };
+    assert!(green(&app, 4, 2), "E5 is TRUE, so C5 is green");
+    assert!(!green(&app, 5, 2), "E6 is FALSE");
+    app.toggle_checkbox(0, p(5, 1)).unwrap();
+    assert!(green(&app, 5, 2), "ticking B6 turns its row green");
 }
 
 /// What a shell does with it: write the flat file and read it back, merges and all.

@@ -149,6 +149,8 @@ pub struct ImportReport {
     /// dropped *construct*, since the model could hold them, but a loss all the same.
     pub over_budget: usize,
     pub formulas: usize,
+    /// Conditional-format rules carried; one that could not be is in `dropped`.
+    pub rules: usize,
     /// Cells carrying a number format of their own.
     pub formatted: usize,
     /// Number formats that could not be spelled in full, by class and by the number of cells
@@ -268,6 +270,7 @@ impl ImportReport {
             cells: report.cells,
             over_budget: report.over_budget,
             formulas: report.formulas,
+            rules: report.rules,
             formatted: report.formatted,
             formats_lost: report
                 .formats_lost

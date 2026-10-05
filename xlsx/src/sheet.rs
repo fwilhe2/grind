@@ -111,6 +111,7 @@ pub fn read(
     let mut shared = Shared::default();
     let mut tracks = Tracks::default();
     let mut filter = None;
+    let mut rules = crate::rules::Pending::default();
     if matches!(reader.root(), Ok(Some((ref root, _))) if root.is("worksheet")) {
         let _ = reader.children(|reader, name, attrs| {
             if name.is("sheetData") {
@@ -144,10 +145,8 @@ pub fn read(
             } else if name.is("mergeCells") {
                 merges(reader, sheet, report)?;
             } else if name.is("conditionalFormatting") {
-                // A rule, not a style: what the cell looks like depends on its value when it
-                // is drawn, and the model has no rule engine. One per `<cfRule>`.
-                let rules = count(reader, "cfRule")?;
-                report.drop_many(Dropped::ConditionalFormat, rules);
+                // The model's one rule type, where a `<cfRule>` is one (`rules.rs`).
+                crate::rules::read(reader, attrs, context, index, &mut rules, report)?;
             } else if name.is("dataValidations") {
                 let rules = count(reader, "dataValidation")?;
                 report.drop_many(Dropped::DataValidation, rules);
@@ -167,6 +166,7 @@ pub fn read(
     }
     shared.resolve(index, context, sheet, report);
     tracks.finish(sheet, report);
+    rules.finish(sheet);
     if let Some(filter) = filter {
         apply_filter(sheet, filter, context.null_date);
     }
@@ -176,7 +176,7 @@ pub fn read(
 }
 
 /// Every name an expression uses, in any position.
-fn names_in(expr: &Expr) -> Box<dyn Iterator<Item = &str> + '_> {
+pub(crate) fn names_in(expr: &Expr) -> Box<dyn Iterator<Item = &str> + '_> {
     match expr {
         Expr::Name(name) => Box::new(std::iter::once(name.as_str())),
         Expr::Call { args, .. } => Box::new(args.iter().flat_map(names_in)),

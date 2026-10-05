@@ -115,6 +115,10 @@ pub enum Appearance {
     /// `<col>` run to the sheet's edge, which is carried only as far as the sheet's content
     /// goes. The model has no sheet default for a column. Per sheet.
     SheetDefaultWidth,
+    /// A number format a conditional-format rule's `dxf` applies while it holds. The rule is
+    /// carried and draws what else it says; its style is a `CellStyle`, which holds no format
+    /// (`doc/conditional-format.md` §1). Per rule.
+    RuleFormat,
 }
 
 impl Appearance {
@@ -150,6 +154,7 @@ impl Appearance {
             Appearance::Pane => "frozen or split panes (per sheet)",
             Appearance::FilterCriterion => "autofilter criterion (per column)",
             Appearance::SheetDefaultWidth => "sheet default column width (per sheet)",
+            Appearance::RuleFormat => "number format applied by a conditional rule (per rule)",
         }
     }
 }
@@ -187,6 +192,8 @@ pub struct Styles {
     xfs: Vec<Translation>,
     /// Per `<cellXfs>` entry, in order: what it looks like.
     looks: Vec<Look>,
+    /// Per `<dxfs>` entry, in order: what a conditional-format rule naming it draws.
+    dxfs: Vec<Look>,
 }
 
 impl Styles {
@@ -211,6 +218,14 @@ impl Styles {
     /// What a cell with `s="index"` looks like. `None` for an index the part does not have.
     pub fn look(&self, index: usize) -> Option<&Look> {
         self.looks.get(index)
+    }
+
+    /// What a conditional-format rule with `dxfId="index"` draws over a cell
+    /// (`doc/xlsx-format.md` §4.12): **only what the `dxf` states**, nothing compared with the
+    /// workbook's default, since a rule's style is drawn over the cell's own rather than
+    /// instead of it.
+    pub fn dxf(&self, index: usize) -> Option<&Look> {
+        self.dxfs.get(index)
     }
 }
 
@@ -266,9 +281,26 @@ struct Xf {
     parent: Option<usize>,
 }
 
+/// One `<dxf>` — a *differential* format: each piece present only when it is stated.
+#[derive(Clone, Debug, Default)]
+struct Dxf {
+    bold: Option<bool>,
+    italic: Option<bool>,
+    underline: bool,
+    strike: bool,
+    script: bool,
+    size: Option<f64>,
+    color: Option<Color>,
+    family: bool,
+    fill: Fill,
+    border: Border,
+    num_fmt: bool,
+}
+
 #[derive(Default)]
 struct Part {
     codes: BTreeMap<u32, String>,
+    dxfs: Vec<Dxf>,
     fonts: Vec<Font>,
     fills: Vec<Fill>,
     borders: Vec<Border>,
@@ -333,6 +365,13 @@ pub fn read(bytes: &[u8], theme: &[[u8; 3]]) -> Styles {
             "cellStyleXfs" => part.style_xfs = xfs(reader)?,
             "cellXfs" => part.cell_xfs = xfs(reader)?,
             "colors" => part.indexed = color::read_indexed(reader)?,
+            "dxfs" => reader.children(|reader, name, _| {
+                if !name.is("dxf") {
+                    return Ok(Handled::No);
+                }
+                part.dxfs.push(dxf(reader)?);
+                Ok(Handled::Yes)
+            })?,
             _ => return Ok(Handled::No),
         }
         Ok(Handled::Yes)
@@ -416,8 +455,145 @@ impl Part {
                 look.style = (!style.is_plain()).then_some(style);
             }
         }
-        Styles { xfs, looks }
+        let dxfs = self.dxfs.iter().map(|d| dxf_look(d, &palette)).collect();
+        Styles { xfs, looks, dxfs }
     }
+}
+
+/// A `dxf` as the partial style a rule draws (`doc/xlsx-format.md` §4.12). Only what it states
+/// is set: `<b val="0"/>` is `normal`, an override, where an absent `<b>` leaves the cell's own.
+fn dxf_look(d: &Dxf, palette: &Palette) -> Look {
+    let mut style = CellStyle::default();
+    let mut lost = Vec::new();
+    let mut unresolved_theme = false;
+    let mut resolve = |color: &Color, lost: &mut Vec<Appearance>| match palette.resolve(color) {
+        Resolved::Unknown(Missing::Theme) => {
+            unresolved_theme = true;
+            None
+        }
+        Resolved::Unknown(Missing::Index) => {
+            lost.push(Appearance::UnknownColour);
+            None
+        }
+        resolved => resolved.hex().map(str::to_owned),
+    };
+    style.font_weight = d.bold.map(|b| if b { "bold" } else { "normal" }.to_owned());
+    style.font_style = d
+        .italic
+        .map(|i| if i { "italic" } else { "normal" }.to_owned());
+    style.font_size = d.size.map(|size| format!("{size}pt"));
+    style.color = d.color.as_ref().and_then(|c| resolve(c, &mut lost));
+    for (on, class) in [
+        (d.underline, Appearance::Underline),
+        (d.strike, Appearance::Strike),
+        (d.script, Appearance::Script),
+        (d.num_fmt, Appearance::RuleFormat),
+    ] {
+        if on {
+            lost.push(class);
+        }
+    }
+    match &d.fill {
+        Fill::None => {}
+        Fill::Solid(color) => {
+            style.background = color.as_ref().and_then(|c| resolve(c, &mut lost));
+        }
+        Fill::Pattern => lost.push(Appearance::PatternFill),
+        Fill::Gradient => lost.push(Appearance::GradientFill),
+    }
+    for (slot, edge) in style.borders.iter_mut().zip(&d.border.edges) {
+        let Some((name, color)) = edge else { continue };
+        let Some((width, line, pattern)) = line(name) else {
+            continue;
+        };
+        if pattern {
+            lost.push(Appearance::BorderPattern);
+        }
+        let color = color
+            .as_ref()
+            .and_then(|c| resolve(c, &mut lost))
+            .unwrap_or_else(|| "#000000".to_owned());
+        *slot = Some(format!("{width} {line} {color}"));
+    }
+    if d.border.diagonal {
+        lost.push(Appearance::Diagonal);
+    }
+    lost.sort();
+    lost.dedup();
+    Look {
+        style: (!style.is_plain()).then_some(style),
+        lost,
+        family: d.family,
+        unresolved_theme,
+    }
+}
+
+/// One `<dxf>`. Its font says only what it changes, its solid fill is its **`bgColor`** and a
+/// `patternFill` with no `patternType` is solid — both the opposite of a cell format's
+/// (`doc/xlsx-format.md` §4.12, measured).
+fn dxf(reader: &mut Reader<'_>) -> crate::Result<Dxf> {
+    let mut out = Dxf::default();
+    reader.children(|reader, name, attrs| {
+        if name.ns != Ns::Spreadsheet {
+            return Ok(Handled::No);
+        }
+        match name.local.as_str() {
+            "font" => reader.children(|_, name, attrs| {
+                if name.ns != Ns::Spreadsheet {
+                    return Ok(Handled::No);
+                }
+                match name.local.as_str() {
+                    "b" => out.bold = Some(on(attrs)),
+                    "i" => out.italic = Some(on(attrs)),
+                    "strike" => out.strike = on(attrs),
+                    "u" => out.underline = attrs.plain("val") != Some("none"),
+                    "vertAlign" => {
+                        out.script = matches!(attrs.plain("val"), Some("superscript" | "subscript"))
+                    }
+                    "sz" => {
+                        out.size = attrs
+                            .plain("val")
+                            .and_then(|v| v.trim().parse::<f64>().ok())
+                            .filter(|v| v.is_finite() && *v > 0.0)
+                    }
+                    "color" => out.color = Some(color::read(attrs)),
+                    "name" => out.family = true,
+                    _ => return Ok(Handled::No),
+                }
+                Ok(Handled::Yes)
+            })?,
+            "fill" => reader.children(|reader, name, attrs| {
+                if name.is("gradientFill") {
+                    out.fill = Fill::Gradient;
+                    return Ok(Handled::No);
+                }
+                if !name.is("patternFill") {
+                    return Ok(Handled::No);
+                }
+                let kind = attrs.plain("patternType").map(str::to_owned);
+                let (mut fg, mut bg) = (None, None);
+                reader.children(|_, name, attrs| {
+                    if name.is("fgColor") {
+                        fg = Some(color::read(attrs));
+                    } else if name.is("bgColor") {
+                        bg = Some(color::read(attrs));
+                    }
+                    Ok(Handled::No)
+                })?;
+                out.fill = match kind.as_deref() {
+                    None | Some("solid") => Fill::Solid(bg.or(fg)),
+                    Some("none") => Fill::None,
+                    Some(_) => Fill::Pattern,
+                };
+                Ok(Handled::Yes)
+            })?,
+            "border" => out.border = border(reader, attrs)?,
+            "numFmt" => out.num_fmt = true,
+            _ => return Ok(Handled::No),
+        }
+        Ok(Handled::Yes)
+    })?;
+    Ok(out)
 }
 
 /// `style` with every property equal to `base`'s taken out.
