@@ -63,12 +63,23 @@ is conditional on passing the notice along.
 
 ### Third-party code
 
-There is none yet, and every addition is a decision (see `doc/plan.md`). When one arrives:
-it must be AGPL-3.0-compatible — permissive (MIT / Apache-2.0 / BSD) and GPL-3.0 are fine
-(GPLv3 §13 explicitly permits combining with AGPLv3), GPL-2.0-**only** is not — it gets its
-own `LICENSES/` entry and correct
-`SPDX-FileCopyrightText` naming the upstream author — not us — and vendored files keep their
-original headers untouched.
+Every addition is a decision (see `doc/plan.md`), and it must be AGPL-3.0-compatible: permissive
+licences (MIT / Apache-2.0 / BSD) and GPL-3.0 are fine, since GPLv3 §13 explicitly permits
+combining with AGPLv3. GPL-2.0-**only** is not.
+
+**Every component the programs are built from is listed, with its licence text, in each
+window's About and in `grind licences`** (`doc/third-party.md`). The list is generated, so
+there is nothing to edit by hand, but it is checked:
+
+- **A crate added, removed or bumped**: `cargo test` fails once and rewrites
+  `core/src/third_party/data.rs` while it does. Review the diff and commit it with your change.
+- **A crate under a licence nobody has checked yet**: the same test refuses it until the
+  licence is added to `ALLOWED` in `core/tests/third_party.rs`, which is the decision above,
+  written down.
+- **A vendored file under someone else's licence** (a font, an icon, a text): it gets its own
+  `LICENSES/` entry and an `SPDX-FileCopyrightText` naming the upstream author, not us.
+  Vendored files keep their original headers untouched. It also needs an `Extra` in that
+  test claiming its path, or the test fails.
 
 Sources of truth, in order:
 
