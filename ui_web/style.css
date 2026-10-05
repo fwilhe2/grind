@@ -1250,3 +1250,43 @@ input[type="text"] {
   background: white;
   box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
 }
+
+/* About (ui_web/src/about.rs): the build, then one collapsed row per third-party component. */
+.about {
+  width: min(44rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  padding: 1rem 1.25rem;
+  border: 1px solid color-mix(in srgb, CanvasText 20%, Canvas);
+  border-radius: 8px;
+  background: Canvas;
+  color: CanvasText;
+  font: 13px/1.5 system-ui, sans-serif;
+}
+
+.about::backdrop {
+  background: color-mix(in srgb, black 30%, transparent);
+}
+
+.about h2,
+.about h3 {
+  margin: 0.25rem 0 0.5rem;
+}
+
+.about pre {
+  white-space: pre-wrap;
+  font: 12px/1.45 ui-monospace, monospace;
+}
+
+.about-list details {
+  border-top: 1px solid color-mix(in srgb, CanvasText 10%, Canvas);
+  padding: 0.25rem 0;
+}
+
+.about-licence {
+  color: color-mix(in srgb, CanvasText 60%, Canvas);
+  margin-left: 0.5rem;
+}
+
+.about-close {
+  margin-top: 0.75rem;
+}

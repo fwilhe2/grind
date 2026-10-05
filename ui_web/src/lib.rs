@@ -32,6 +32,7 @@
 //! including going somewhere. A file dropped on the page opens; the clipboard is the
 //! browser's own, through the events every browser already sends.
 
+pub mod about;
 pub mod code;
 pub mod command;
 pub mod import;
@@ -529,12 +530,11 @@ impl Shell {
                 let _ = self.show(Mode::Welcome);
             }
             "doc.save" => self.save(),
-            // The version, the commit and when it was built — `grind_core::build_info`, the one
-            // place this fact is formatted for every window.
-            "doc.about" => self.set_message(grind_core::build_info::describe(
-                "grind-web",
-                env!("CARGO_PKG_VERSION"),
-            )),
+            "doc.about" => {
+                if let Err(error) = self.about() {
+                    self.set_message(format!("Could not show About: {error:?}"));
+                }
+            }
             // Only in `command::SHEET`, so the text pane never offers them — but the ids are
             // answered here rather than in the pane, because a file and a download are the
             // chrome's and the pane has neither.
@@ -595,6 +595,17 @@ impl Shell {
     /// pays for itself first is the *correspondence*, and one pane at a time carries it — the
     /// line the selection is on is drawn as current, and clicking a line selects what it
     /// projects.
+    /// The version, the commit, and every third-party component's licence (`about.rs`,
+    /// doc/third-party.md) — `grind_core::build_info` and `grind_core::third_party`, the one
+    /// place each is kept for every window. Filled the first time it opens.
+    fn about(&self) -> Result<(), JsValue> {
+        let dialog: web_sys::HtmlDialogElement = element(&self.dom.document, "about")?;
+        if dialog.child_element_count() == 0 {
+            dialog.set_inner_html(&about::html());
+        }
+        dialog.show_modal()
+    }
+
     fn toggle_source(&self) {
         let open = self.source.borrow().is_some();
         *self.source.borrow_mut() = match open {

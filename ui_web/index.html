@@ -252,6 +252,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <main id="problems" class="problems" tabindex="0" hidden></main>
 
     <!--
+      About: which build this is, and every third-party component with its licence
+      (doc/third-party.md), built by ui_web/src/about.rs the first time it opens.
+    -->
+    <dialog id="about" class="about"></dialog>
+
+    <!--
       The print preview (doc/pdf-export.md §4): every page as the PDF prints it, drawn onto a
       canvas from the same display list the PDF is written from. A sixth surface, shown instead
       of the document; its three buttons are command ids like every other button here.

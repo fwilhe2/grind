@@ -60,6 +60,8 @@ features = [
   "HtmlButtonElement",
   "HtmlCanvasElement",
   "HtmlCollection",
+  # The About dialog (`about.rs`): the browser's own modal, with Esc and a backdrop.
+  "HtmlDialogElement",
   "HtmlElement",
   "HtmlInputElement",
   "HtmlSelectElement",
