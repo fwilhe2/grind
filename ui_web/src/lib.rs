@@ -76,12 +76,19 @@ const UNTITLED_TEXT: &str = "untitled.fodt";
 /// writer, and the kind is read from the bytes (`grind_core::kind`) rather than the name.
 /// A CSV or TSV is opened too, as a new spreadsheet (`import.rs`) — where the sheet pane's own
 /// *Import CSV* puts the fields into the sheet already open.
-#[cfg(not(feature = "xlsx"))]
-const DOCUMENT_TYPES: &str = ".fods,.ods,.fodt,.odt,.xml,.grind,.csv,.tsv,.tab,.md,.markdown";
-/// And an Excel workbook, which is imported on arrival (`import.rs`, X6).
-#[cfg(feature = "xlsx")]
-const DOCUMENT_TYPES: &str =
-    ".fods,.ods,.fodt,.odt,.xml,.grind,.xlsx,.xlsm,.csv,.tsv,.tab,.md,.markdown";
+///
+/// And an Excel workbook or a Word document, each imported on arrival (`import.rs`, X6 and
+/// DX6), when this build has the filter.
+fn document_types() -> String {
+    let mut types = ".fods,.ods,.fodt,.odt,.xml,.grind,.csv,.tsv,.tab,.md,.markdown".to_owned();
+    if cfg!(feature = "xlsx") {
+        types.push_str(",.xlsx,.xlsm");
+    }
+    if cfg!(feature = "docx") {
+        types.push_str(",.docx,.docm,.dotx");
+    }
+    types
+}
 /// Delimited text, including `.txt`, which is what a great many exports are called — the
 /// delimiter is sniffed from the content, so the name never has to carry it.
 const IMAGE_TYPES: &str = "image/*";
@@ -853,7 +860,7 @@ impl Shell {
     // --- documents ---
 
     fn open_picker(&self) {
-        self.raise_picker(Pick::Document, DOCUMENT_TYPES);
+        self.raise_picker(Pick::Document, &document_types());
     }
 
     /// The same picker, raised for a delimited file instead.

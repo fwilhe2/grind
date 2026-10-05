@@ -20,7 +20,7 @@ pub struct Imported {
     pub summary: String,
 }
 
-/// `Some` when `bytes` are a workbook, a CSV or a markdown file, imported; `None` for anything else, which goes
+/// `Some` when `bytes` are a workbook, a Word document, a CSV or a markdown file, imported; `None` for anything else, which goes
 /// on to `grind_core::kind` as before.
 pub fn workbook(name: &str, bytes: &[u8]) -> Option<Result<Imported, String>> {
     #[cfg(feature = "xlsx")]
@@ -29,6 +29,19 @@ pub fn workbook(name: &str, bytes: &[u8]) -> Option<Result<Imported, String>> {
             grind_xlsx::open(bytes)
                 .map(|(odf, report)| Imported {
                     name: grind_xlsx::suggested_name(name),
+                    odf,
+                    summary: report.summary(),
+                })
+                .map_err(|e| format!("{name}: {e}")),
+        );
+    }
+    // A Word document, as a text document: flat ODF, renamed `.fodt` (`doc/docx-import.md`).
+    #[cfg(feature = "docx")]
+    if grind_docx::sniff(bytes) {
+        return Some(
+            grind_docx::open(bytes)
+                .map(|(odf, report)| Imported {
+                    name: grind_docx::suggested_name(name),
                     odf,
                     summary: report.summary(),
                 })
@@ -57,6 +70,23 @@ pub fn workbook(name: &str, bytes: &[u8]) -> Option<Result<Imported, String>> {
         }));
     }
     None
+}
+
+#[cfg(all(test, feature = "docx"))]
+mod word_tests {
+    use super::*;
+
+    #[test]
+    fn a_word_document_becomes_flat_odf_under_an_odf_name() {
+        let bytes = include_bytes!("../../docx/tests/data/sample.docx");
+        let imported = workbook("sample.docx", bytes).expect("a document").unwrap();
+        assert_eq!(imported.name, "sample.fodt");
+        assert_eq!(
+            grind_core::kind(&imported.odf),
+            Some(grind_core::DocumentKind::Text)
+        );
+        assert!(imported.summary.starts_with("Imported from Word"));
+    }
 }
 
 #[cfg(all(test, feature = "xlsx"))]

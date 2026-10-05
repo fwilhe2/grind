@@ -19,11 +19,14 @@ crate-type = ["cdylib", "rlib"]
 # The Excel import filter (`doc/xlsx-import.md`, X6): on by default, as in `grind-cli`. It adds
 # no dependency the bundle does not already carry — `zip` and `quick-xml` are the core's.
 [features]
-default = ["xlsx"]
+default = ["xlsx", "docx"]
 xlsx = ["dep:grind-xlsx"]
+# The Word import filter (`doc/docx-import.md`, DX6), likewise.
+docx = ["dep:grind-docx"]
 
 [dependencies]
 grind-xlsx = { path = "../xlsx", optional = true }
+grind-docx = { path = "../docx", optional = true }
 grind-core = { path = "../core" }
 grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
