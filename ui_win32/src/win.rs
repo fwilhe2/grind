@@ -1269,6 +1269,10 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
             // A new, unsaved document with no path for Save to write the markdown back over.
             imported = Some(crate::import::open_markdown(&app, given, &bytes)?);
             path = None;
+        } else if crate::import::is_word(&bytes) {
+            // A Word document likewise: imported, unsaved, and no path to write ODF over.
+            imported = Some(crate::import::open_word(&app, given, &bytes)?);
+            path = None;
         } else {
             app.open_bytes(&given.display().to_string(), &bytes)
                 .map_err(|error| fail(&error))?;

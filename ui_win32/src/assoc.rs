@@ -39,7 +39,7 @@ pub struct FileType {
 /// workbooks the import filter reads (`doc/xlsx-import.md`, X6) — `.xlsm` included, since it is
 /// the same XML with a macro that is counted and never run — and CSV/TSV, which open the same
 /// way (`grind_sheet::csv::open`). `.xls` and `.xlsb` are not here because the filter does not
-/// read them; `.tab` opens but is not offered, since nothing on Windows calls a file that. The Excel rows are compiled out with the `xlsx`
+/// read them; Word's `.docx` and `.docm` likewise (`doc/docx-import.md`), and not `.doc`; `.tab` opens but is not offered, since nothing on Windows calls a file that. The Excel rows are compiled out with the `xlsx`
 /// feature, like the import itself: offering a type the binary then refuses would be worse
 /// than not offering it.
 pub const TYPES: &[FileType] = &[
@@ -80,6 +80,18 @@ pub const TYPES: &[FileType] = &[
         prog_id: "Grind.MacroWorkbook",
         description: "Excel Macro-Enabled Workbook (opened as a new ODF document)",
     },
+    #[cfg(feature = "docx")]
+    FileType {
+        extension: ".docx",
+        prog_id: "Grind.WordDocument",
+        description: "Word Document (opened as a new ODF document)",
+    },
+    #[cfg(feature = "docx")]
+    FileType {
+        extension: ".docm",
+        prog_id: "Grind.MacroWordDocument",
+        description: "Word Macro-Enabled Document (opened as a new ODF document)",
+    },
     FileType {
         extension: ".csv",
         prog_id: "Grind.Csv",
@@ -102,8 +114,8 @@ pub const APPLICATION: &str = "Grind";
 
 /// What Default apps says under the name.
 pub const DESCRIPTION: &str = "An ODF-native office suite. Opens OpenDocument spreadsheets and \
-text documents, and Excel workbooks and CSV files by importing them into a new ODF document — \
-never writing one back.";
+text documents, and Excel workbooks, Word documents and CSV files by importing them into a new \
+ODF document — never writing one back.";
 
 /// Where the capabilities live, relative to `HKEY_CURRENT_USER`.
 const CAPABILITIES: &str = r"Software\Grind\Capabilities";

@@ -24,8 +24,10 @@ embed-resource = "3"
 
 # The Excel import filter (`doc/xlsx-import.md`, X6): on by default, as in `grind-cli`.
 [features]
-default = ["xlsx"]
+default = ["xlsx", "docx"]
 xlsx = ["dep:grind-xlsx"]
+# The Word import filter (`doc/docx-import.md`, DX6), likewise.
+docx = ["dep:grind-docx"]
 
 [dependencies]
 # One binary, both document types, chosen by `grind_core::kind` from the file's bytes (R10) —
@@ -35,6 +37,7 @@ xlsx = ["dep:grind-xlsx"]
 # (`doc/windows-shell.md`, decision 1).
 grind-core = { path = "../core" }
 grind-xlsx = { path = "../xlsx", optional = true }
+grind-docx = { path = "../docx", optional = true }
 grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
 # Export PDF (doc/pdf-export.md): the bundled faces, and the machine's for a family a document

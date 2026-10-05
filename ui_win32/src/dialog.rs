@@ -195,6 +195,13 @@ fn open_filters() -> Vec<(Vec<u16>, Vec<u16>)> {
     if cfg!(feature = "xlsx") {
         filters.push((gdi::wide("Excel Workbook"), gdi::wide("*.xlsx;*.xlsm")));
     }
+    // A Word document, imported the same way as a text document (`doc/docx-import.md`).
+    if cfg!(feature = "docx") {
+        filters.push((
+            gdi::wide("Word Document"),
+            gdi::wide("*.docx;*.docm;*.dotx"),
+        ));
+    }
     // A CSV opened here is a document of its own, like a workbook; *Import CSV* on the Data
     // menu is the one that puts the fields into the sheet already open.
     filters.push((gdi::wide("CSV and TSV"), gdi::wide("*.csv;*.tsv;*.tab")));

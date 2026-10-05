@@ -1343,6 +1343,7 @@ version = "0.0.0"
 dependencies = [
  "embed-resource",
  "grind-core",
+ "grind-docx",
  "grind-print",
  "grind-sheet",
  "grind-text",

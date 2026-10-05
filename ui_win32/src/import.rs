@@ -94,6 +94,62 @@ pub fn open_markdown(app: &grind_text::App, path: &Path, bytes: &[u8]) -> Result
     })
 }
 
+/// Whether these bytes are a Word document this build imports (`doc/docx-import.md`, DX6).
+pub fn is_word(bytes: &[u8]) -> bool {
+    #[cfg(feature = "docx")]
+    return grind_docx::sniff(bytes);
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = bytes;
+        false
+    }
+}
+
+/// Import the Word document at `path` into `app` — a new, unsaved text document whose Save As
+/// starts beside it under its ODF name (`letter.docx` → `letter.fodt`), the shape a workbook has.
+pub fn open_word(app: &grind_text::App, path: &Path, bytes: &[u8]) -> Result<Imported, String> {
+    #[cfg(feature = "docx")]
+    {
+        let fail = |error: &dyn std::fmt::Display| format!("{}: {error}", path.display());
+        let (odf, report) = grind_docx::open(bytes).map_err(|error| fail(&error))?;
+        let suggested = PathBuf::from(grind_docx::suggested_name(&path.display().to_string()));
+        app.open_bytes(&suggested.display().to_string(), &odf)
+            .map_err(|error| fail(&error))?;
+        Ok(Imported {
+            suggested,
+            summary: report.summary(),
+        })
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = (app, bytes);
+        Err(format!(
+            "{}: this build reads no Word documents",
+            path.display()
+        ))
+    }
+}
+
+#[cfg(all(test, feature = "docx"))]
+mod word_tests {
+    use super::*;
+
+    #[test]
+    fn a_word_document_opens_unsaved_with_an_odf_name_beside_it() {
+        let path = Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../docx/tests/data/sample.docx"
+        ));
+        let bytes = std::fs::read(path).unwrap();
+        assert!(is_word(&bytes));
+        assert!(!is_workbook(&bytes));
+        let app = grind_text::App::new();
+        let imported = open_word(&app, path, &bytes).unwrap();
+        assert_eq!(imported.suggested, path.with_extension("fodt"));
+        assert!(imported.summary.starts_with("Imported from Word"));
+    }
+}
+
 #[cfg(all(test, feature = "xlsx"))]
 mod tests {
     use super::*;
