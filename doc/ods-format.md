@@ -320,10 +320,18 @@ over ten ranges, `$E5=TRUE`, with a `dxf` that sets only a fill) to `.fods`, the
   deleted, LibreOffice still opened the file and wrote back 20 `<conditionalFormatting>` ranges
   with `type="expression"` rules — so `style:map` + `is-true-formula` + `style:base-cell-address`
   is enough for the oracle, and R2 (schema-valid output) costs nothing.
-- **Q3 (N base styles → N maps)** is confirmed in the direction LibreOffice *writes*: the same
-  rule appears as a `style:map` in every distinct cell style the range's cells use (`ce4` and
-  `ce6` above, different backgrounds, same map). Whether it merges them again on read, and Q4
-  (which of two true rules wins), are **still unmeasured**.
+- **Q3 (N base styles → N maps)**: the same rule appears as a `style:map` in every distinct
+  cell style the range's cells use (`ce4` and `ce6` above, different backgrounds, same map).
+  **On read it merges them again**: a hand-written file whose `B2:C3` cells use two cell
+  styles (bold and italic), each carrying the same `style:map` with the same
+  `style:base-cell-address`, came back with **one**
+  `calcext:conditional-format calcext:target-range-address="Sheet1.B2:Sheet1.C3"`. So a rule is
+  identified by (condition, applied style, base cell), and the cells carrying it are its range.
+- **Q4 (priority): the first true `style:map` wins.** A cell whose style carries
+  `is-true-formula([.A1]>0)` → `Red` and then `is-true-formula([.A1]>1)` → `Green`, with
+  `A1 = 5`, renders red (PNG through `--convert-to png`), and the calcext copy keeps the two
+  conditions in that order. Row 3 of the same file (`$A3 = 0`) was drawn uncoloured, so
+  `[.$A2]` is shifted per row from the base cell, as the plan assumed.
 - **Not carried by a rule**: a colour scale (`<cfRule type="colorScale">`, `H5` in the sample)
   comes out as a `calcext:color-scale` and no `style:map` at all.
 
