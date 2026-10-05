@@ -40,6 +40,7 @@ pub mod numfmt;
 pub mod odf;
 pub mod place;
 pub mod projection;
+pub mod rule;
 pub mod style;
 pub mod summary;
 pub mod table_format;
@@ -1566,6 +1567,21 @@ impl App {
         let mut styles = Vec::with_capacity(size);
         let analysis = overlays.any().then(|| self.analysis(&state.doc));
         let mut roles = overlays.roles.then(|| Vec::with_capacity(size));
+        // Conditional formats are evaluated here, against what the cells show, and handed over
+        // as the style the cell is drawn in — so no shell evaluates a rule
+        // (`doc/conditional-format.md` §2).
+        let mut engine =
+            (!s.rules().is_empty()).then(|| formula::eval::Engine::over_cached(&state.doc));
+        let mut look = |pos: Pos| -> Option<style::CellStyle> {
+            let own = s.style(pos);
+            let applied = engine
+                .as_mut()
+                .and_then(|engine| rule::applied(&state.doc, engine, sheet, pos));
+            match applied {
+                Some(rule) => Some(rule.over(own)),
+                None => own.cloned(),
+            }
+        };
         for row in rows.clone() {
             for col in cols.clone() {
                 let pos = Pos::new(row, col);
@@ -1576,7 +1592,7 @@ impl App {
                     state.doc.null_date,
                     state.doc.locale.as_ref(),
                 ));
-                styles.push(s.style(pos).cloned());
+                styles.push(look(pos));
                 cells.push(value);
                 if let Some(roles) = roles.as_mut() {
                     let at = formula::eval::Address::new(sheet, pos);
@@ -1605,7 +1621,7 @@ impl App {
                     end: span.end(anchor),
                     value: s.get(anchor),
                     text: render_in(s, anchor, state.doc.null_date, state.doc.locale.as_ref()),
-                    style: s.style(anchor).cloned(),
+                    style: look(anchor),
                 })
                 .collect()
         };
@@ -1952,6 +1968,16 @@ impl App {
                     });
                 }
             }
+            for (index, sheet) in doc.sheets.iter().enumerate() {
+                if let Some(rules) = rules_rewritten(sheet, |condition| {
+                    formula::rename::rename_name_in_formula(condition, from, to)
+                }) {
+                    actions.push(Action::SetRules {
+                        sheet: index,
+                        rules,
+                    });
+                }
+            }
             let rewritten = actions.len() - 2;
             let inverse = state
                 .doc
@@ -2036,6 +2062,22 @@ impl App {
                     actions.push(Action::SetName {
                         name: other.clone(),
                         expression: Some(rewritten),
+                    });
+                }
+            }
+            for (index, sheet) in doc.sheets.iter().enumerate() {
+                if let Some(rule) = sheet.rules().iter().find(|r| unreadable(&r.condition)) {
+                    return Err(Error::Formula(format!(
+                        "a rule at {} may use {name} and does not parse; fix it before inlining",
+                        a1::format(Some(&sheet.name), rule.base)
+                    )));
+                }
+                if let Some(rules) = rules_rewritten(sheet, |condition| {
+                    formula::rename::inline_name_in_formula(condition, name, &definition)
+                }) {
+                    actions.push(Action::SetRules {
+                        sheet: index,
+                        rules,
                     });
                 }
             }
@@ -2207,6 +2249,60 @@ impl App {
             )
             .map(|_| ())
         })
+    }
+
+    /// A sheet's conditional-format rules, first-holding-wins order (`doc/conditional-format.md`).
+    pub fn rules(&self, sheet: usize) -> Result<Vec<rule::Rule>> {
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(s.rules().to_vec())
+    }
+
+    /// Replace a sheet's rules, the whole list — one undo step. A condition that is not
+    /// OpenFormula is refused here rather than stored to draw nothing, as a name is
+    /// ([`App::set_name`]); so is a rule with no range.
+    pub fn set_rules(&self, sheet: usize, rules: Vec<rule::Rule>) -> Result<()> {
+        for r in &rules {
+            if r.ranges.is_empty() {
+                return Err(Error::Formula(
+                    "a rule needs a range to apply to".to_owned(),
+                ));
+            }
+            if let Err(e) = formula::parse::parse(&r.condition) {
+                return Err(Error::Formula(format!(
+                    "{:?} is not a formula: {e}",
+                    r.condition
+                )));
+            }
+        }
+        self.mutate(|state| {
+            let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+            if s.rules() == rules.as_slice() {
+                return Ok(());
+            }
+            self::apply_batch(state, sheet, vec![Action::SetRules { sheet, rules }]).map(|_| ())
+        })
+    }
+
+    /// Add a rule after every rule the sheet has — the lowest priority, so it draws only where
+    /// none of them holds. Returns its index.
+    pub fn add_rule(&self, sheet: usize, rule: rule::Rule) -> Result<usize> {
+        let mut rules = self.rules(sheet)?;
+        rules.push(rule);
+        let index = rules.len() - 1;
+        self.set_rules(sheet, rules)?;
+        Ok(index)
+    }
+
+    /// Take away the rule at `index`.
+    pub fn remove_rule(&self, sheet: usize, index: usize) -> Result<rule::Rule> {
+        let mut rules = self.rules(sheet)?;
+        if index >= rules.len() {
+            return Err(Error::BadSheet(format!("no rule {}", index + 1)));
+        }
+        let removed = rules.remove(index);
+        self.set_rules(sheet, rules)?;
+        Ok(removed)
     }
 
     /// Every checkbox on a sheet, by the cell it is drawn in.
@@ -3154,6 +3250,17 @@ fn references_renamed(doc: &Document, from: &str, to: &str) -> Vec<Action> {
             }
         }
     }
+    // A conditional-format rule's condition is a formula, and follows the same way.
+    for (index, sheet) in doc.sheets.iter().enumerate() {
+        if let Some(rules) = rules_rewritten(sheet, |condition| {
+            formula::rename::rename_in_formula(condition, from, to)
+        }) {
+            actions.push(Action::SetRules {
+                sheet: index,
+                rules,
+            });
+        }
+    }
     // A checkbox linked to a cell on the renamed sheet follows it.
     for (index, sheet) in doc.sheets.iter().enumerate() {
         for (pos, checkbox) in sheet.checkboxes() {
@@ -3211,6 +3318,28 @@ fn references_renamed(doc: &Document, from: &str, to: &str) -> Vec<Action> {
         }
     }
     actions
+}
+
+/// A sheet's rules with every condition `rewrite` changes changed — `None` when it changes none.
+/// How a rename reaches a rule: its condition is a formula, rewritten the way a cell's is.
+fn rules_rewritten(
+    sheet: &Sheet,
+    rewrite: impl Fn(&str) -> Option<String>,
+) -> Option<Vec<rule::Rule>> {
+    let mut changed = false;
+    let rules = sheet
+        .rules()
+        .iter()
+        .map(|r| {
+            let mut r = r.clone();
+            if let Some(condition) = rewrite(&r.condition) {
+                r.condition = condition;
+                changed = true;
+            }
+            r
+        })
+        .collect();
+    changed.then_some(rules)
 }
 
 /// The cells [`lint::STALE_VALUE`] reports: a disagreement this build can actually settle.

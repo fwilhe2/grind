@@ -152,6 +152,10 @@ pub struct Provenance {
     /// `office:forms`.
     #[serde(default)]
     pub checkboxes: bool,
+    /// Whether the conditional-format rules have changed — which makes LibreOffice's own
+    /// `calcext:conditional-formats` copy of them stale.
+    #[serde(default)]
+    pub rules: bool,
 }
 
 impl PartialEq for Provenance {
@@ -254,6 +258,10 @@ pub struct Sheet {
     /// model carries; see [`Checkbox`].
     #[serde(default, with = "pairs")]
     checkboxes: BTreeMap<Pos, Checkbox>,
+    /// Conditional-format rules, in priority order — the first that holds at a cell is the one
+    /// drawn (`doc/conditional-format.md`, [`crate::rule`]). Whether one holds is never stored.
+    #[serde(default)]
+    rules: Vec<crate::rule::Rule>,
     /// Which `table:table` of the file this sheet was read from, when it was — a save that
     /// regenerates this sheet writes it *into that element*, keeping every row nobody touched
     /// and every attribute and child the model does not read (`odf::write`). Bookkeeping, not
@@ -280,6 +288,7 @@ impl Sheet {
             charts: Vec::new(),
             merges: BTreeMap::new(),
             checkboxes: BTreeMap::new(),
+            rules: Vec::new(),
             origin: Provenance::default(),
         }
     }
@@ -305,6 +314,17 @@ impl Sheet {
             row += 1;
         }
         row
+    }
+
+    /// The conditional-format rules, first-holding-wins order.
+    pub fn rules(&self) -> &[crate::rule::Rule] {
+        &self.rules
+    }
+
+    /// Replace the whole list — the one way the rules change, since reordering one changes what
+    /// every other means ([`crate::Action::SetRules`]).
+    pub fn set_rules(&mut self, rules: Vec<crate::rule::Rule>) {
+        self.rules = rules;
     }
 
     /// Every checkbox, by the cell it is drawn in, in address order.
@@ -711,6 +731,9 @@ impl Sheet {
                 self.merges()
                     .map(|(anchor, span)| anchor.row..span.end(anchor).row + 1),
             )
+            // A blank a rule covers is written to carry it — inside the rectangle the rest of
+            // the sheet already spans ([`Sheet::ruled`]).
+            .chain(self.ruled_rows())
             .collect();
         ranges.sort_unstable_by_key(|range| range.start);
         let mut merged: Vec<std::ops::Range<u32>> = Vec::with_capacity(ranges.len());
@@ -721,6 +744,35 @@ impl Sheet {
             }
         }
         merged
+    }
+
+    /// Whether a rule covers `pos` *and* it lies inside the rectangle the sheet's content
+    /// spans — the cells a save spells to carry a rule (`doc/conditional-format.md`).
+    ///
+    /// ponytail: a rule is written on the cells of [`Sheet::used_rows`] × [`Sheet::used_cols`]
+    /// and nowhere past them, so a fill a rule draws on a blank row *below everything else*
+    /// does not survive a save — which is what keeps `A1:A1048576`, Excel's spelling of "this
+    /// column", from becoming a million written rows. Rules do not widen the extent for the
+    /// same reason. The upgrade is a rule on a column's `table:default-cell-style-name`.
+    pub fn ruled(&self, pos: Pos) -> bool {
+        !self.rules.is_empty()
+            && pos.row < self.used_rows()
+            && pos.col < self.used_cols()
+            && self.rules.iter().any(|rule| rule.covers(pos))
+    }
+
+    /// The rows [`Sheet::ruled`] can be true on, as ranges.
+    fn ruled_rows(&self) -> Vec<std::ops::Range<u32>> {
+        if self.rules.is_empty() {
+            return Vec::new();
+        }
+        let (rows, cols) = (self.used_rows(), self.used_cols());
+        self.rules
+            .iter()
+            .flat_map(|rule| &rule.ranges)
+            .filter(|(start, _)| start.col < cols && start.row < rows)
+            .map(|(start, end)| start.row..(end.row + 1).min(rows))
+            .collect()
     }
 
     /// The last `Pos` of each cell-keyed side table, which is its last *row* — a `BTreeMap<Pos,

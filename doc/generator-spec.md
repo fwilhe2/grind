@@ -444,6 +444,7 @@ and a script that needs one writes the document and then runs `grind` on it.
 | A **date or time value** (a number carrying `NumberKind`) | `=DATE(2026;8;16)` under `format("date")` | `App::enter` reads `2026-08-16` as a date only in a cell already known to hold one, which a cell being generated is not. `examples/sample-sheet.sh` writes one the same way |
 | **Charts** | `grind sheet chart-add` | expressible, verbose, and nobody hand-writes one — the projection carries them for bijectivity, which a generator does not need |
 | **Filters**, hidden rows and columns | `grind sheet filter` / `hide` | a view of a document rather than its content |
+| **Conditional-format rules** | `grind sheet rule` | new (2026-10-05); the projection's `rule` node is the spelling a host function would take, and none has been asked for yet |
 | The **null date**, the null year | — | a document-level setting no generated document has yet wanted |
 | **Character formatting** beyond the notation — a font, a size, a colour on a run | `grind text format` | it reaches the model through a *caret*, and a script says blocks |
 | **Images** | `grind text image` | `doc/dsl.md` §3.8's open question, and they have no projection either |

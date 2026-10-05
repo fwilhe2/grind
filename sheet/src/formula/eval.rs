@@ -105,6 +105,10 @@ pub struct Engine<'a> {
     /// `area` is asked once per reference: a Monte-Carlo workbook with 300,000 formulas and
     /// twenty thousand `B45:NTQ45`s spent half its recalculation there.
     extents: std::cell::RefCell<HashMap<usize, (u32, u32)>>,
+    /// Whether a formula cell is worth its *cached* value rather than its formula evaluated
+    /// again — what a cell shows, which is what a conditional-format rule is asked about while
+    /// a sheet is drawn ([`Engine::over_cached`]).
+    cached: bool,
 }
 
 impl<'a> Engine<'a> {
@@ -115,6 +119,19 @@ impl<'a> Engine<'a> {
             visiting: HashSet::new(),
             depth: 0,
             extents: std::cell::RefCell::new(HashMap::new()),
+            cached: false,
+        }
+    }
+
+    /// An engine that reads every formula cell's cached value instead of evaluating it again:
+    /// a question about what the sheet *shows*, asked while it is drawn. A conditional-format
+    /// rule is evaluated through one (`crate::rule`), so drawing a screenful never recalculates
+    /// the workbook behind it — and a rule agrees with the values on screen even when they are
+    /// stale, which is what LibreOffice's rules do too.
+    pub fn over_cached(doc: &'a Document) -> Self {
+        Self {
+            cached: true,
+            ..Self::new(doc)
         }
     }
 
@@ -137,7 +154,7 @@ impl<'a> Engine<'a> {
         let Some(sheet) = self.doc.sheet(at.sheet) else {
             return Value::Error(FormulaError::Ref);
         };
-        let Some(formula) = sheet.formula(at.pos) else {
+        let Some(formula) = sheet.formula(at.pos).filter(|_| !self.cached) else {
             return from_cell(sheet.get(at.pos));
         };
         let formula = formula.to_owned();

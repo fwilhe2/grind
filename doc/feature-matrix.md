@@ -288,6 +288,8 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | **Draws** a merge as one cell | ● ᵐᵈ | ● | ● | ● | ● | ● |
 | Tick a checkbox (click, Space) | ● ᶜᵇ | ● | ● | ● | ● | ● |
 | Add or remove a checkbox | ● ᶜᵇ | ○ | ○ | ○ | ○ | ○ |
+| **Draws** a conditional-format rule | ● ᶜᶠ | ● | ● | ● | ● | ● |
+| Add or remove a conditional-format rule | ● ᶜᶠ | ○ | ○ | ○ | ○ | ○ |
 | Define, redefine or delete a name | ● | ● | ● | ● ᵖᵃ | ● ʷⁿ | ● ³ |
 | Rename a name, carrying every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ● ʷⁿ | ● ³ |
 | Inline a name into every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ● ʷⁿ | ● ³ |
@@ -323,6 +325,8 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 ᵗʷ `grind-tui` with no file and neither `--sheet` nor `--text` opens `welcome.rs` — s, t, o, the arrows and Enter, with a path prompt for Open — and `:welcome` goes back from either pane (refused over unsaved work; `:welcome!` discards) — 2026-10-03.
 ʷᶠ Ctrl+K ▸ *Fit column width to text* — widest text in cells × an estimated 7.4px plus padding (`layout::fit_px`), estimated rather than measured because the grid's size is declared (`CELL`) — 2026-10-03.
 ᵐᵍ Added 2026-10-04 with merges themselves (`App::merge`/`unmerge`, `grind sheet merge [--unmerge]`): the palette and the cell menu's *Merge Cells* / *Unmerge Cells* in the GNOME window, `:merge`/`:unmerge` in the terminal, Ctrl+K's *Merge cells* / *Unmerge cells* in the browser, Sheet ▸ Merge Cells / Unmerge Cells on Windows, Edit ▸ Merge Cells / Unmerge Cells on the Mac. Every one cuts a whole row or column to the part in use first (`nav::target`). One undo step; what the covered cells held stays, out of sight. An arrow key steps over a merge and a click inside one lands on its top-left cell (`nav::through_merges`, `nav::onto_merge`) in all five. A selection *extended* across a merge is not grown to take in the whole of it — a named gap, `doc/not-doing.md` §3.
+ᶜᶠ `grind sheet rule <range> <condition> --background …` adds one, `--remove <n>` and `--clear` take them away, and with no condition it lists them (2026-10-05, `doc/conditional-format.md`). Drawing one needs nothing of a shell: `App::get_viewport` evaluates every rule and hands over the style the cell is drawn in, so every client that draws a cell's style draws the rule — the CLI's ● is `sheet view`'s styles and the list. Editing rules from a window is the palette verb `doc/conditional-format.md` §4 names, not built.
+
 ᶜᵇ `grind sheet checkbox <cell> --link <cell>` adds one, `--toggle` ticks it, `--remove` takes it away, and with no cell it lists them (2026-10-04, `doc/ods-format.md` §3.5). Every shell draws the box — a GTK/GDI/AppKit square, `[x]`/`[ ]` in the terminal, a real `<input type=checkbox>` in the browser — and ticks it on a click inside the box or Space on its cell, writing the linked cell in one undo step. Making one from a window is ○ by decision for now: `doc/not-doing.md` §3.
 ᵐᵈ `grind sheet merge` with no range lists them; `grind sheet view` prints the grid, and a merge's covered cells show nothing there unless they hold a value.
 ᵃ The **widths** are honoured, in whole terminal cells (`ui_tui/src/sheet/geom.rs`); a row is
@@ -583,7 +587,7 @@ Every other shell still recalculates inside the edit and freezes the same way on
 Not a parity problem — a feature line. Each has its row in `doc/not-doing.md` or a gate in a
 shell document, and none of them is reachable from the CLI either.
 
-**Spreadsheet.** Conditional formatting · merged-cell rendering (the model carries no spans) ·
+**Spreadsheet.** Merged-cell rendering (the model carries no spans) ·
 freeze panes · sort · printing · pivot tables · macros
 (`doc/not-doing.md` §1 — the generator is the answer, and `grind build` is a CLI verb by R11).
 **Autosave is no longer in this list**: the macOS shell has it, by platform convention, and no

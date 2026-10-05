@@ -6,11 +6,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Conditional formatting — one rule type
 
-**Status: planned, nothing built.** Decided 2026-10-04, replacing `doc/not-doing.md`'s
-"conditional formatting beyond one rule type" as a reason to have *none*. This document is the
-plan. It is normative for the scope line (§1) and for what has to be measured before any of it
-reaches code (§3). Nothing in §2 or §4 may be implemented until §3's questions are answered and
-written into `doc/ods-format.md`, the way every other LibreOffice fact is.
+**Status: built (2026-10-05).** Decided 2026-10-04, replacing `doc/not-doing.md`'s
+"conditional formatting beyond one rule type" as a reason to have *none*. §3's questions were
+measured and written into `doc/ods-format.md` §3.6 before any code, and §4's steps 1–4 are done:
+the model (`sheet/src/rule.rs`, `Sheet::rules`, `Action::SetRules`), `App::rules`/`set_rules`/
+`add_rule`/`remove_rule` and `grind sheet rule`, the projection's `rule` node, the viewport's
+evaluation, the reference index and `grind lint`, ODF read and write with loop C over two rules on
+one cell, and the import from `.xlsx` (`xlsx/src/rules.rs`, `doc/xlsx-format.md` §4.12). What
+§4's step 5 leaves — a palette verb per shell for *editing* rules — is the open row in
+`doc/feature-matrix.md`.
+
+Three things the build settled that §2 left open, each written down where it lives:
+
+- **A rule has several ranges and one base cell**, not `range: (Pos, Pos)`: both formats give a
+  rule that shape (Excel's `sqref`, ODF's one `style:base-cell-address` however many cells carry
+  the map), and splitting one would respell its condition per piece.
+- **The file states the order only where two rules meet on a cell** (the maps' order on a cell
+  style). A writer and a reader agree on that, and two rules that never share a cell come back in
+  the order their first cell is met (`sheet/tests/rules.rs`).
+- **A rule is written on the cells the rest of the sheet spans**, not past them (`Sheet::ruled`,
+  a ponytail): `A1:A1048576` is how Excel says "this column", and a million written rows is not
+  what anybody meant.
 
 ## Why it is in
 

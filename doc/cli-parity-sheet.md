@@ -63,6 +63,12 @@ stops ratcheting.
   `--remove`
 - `checkboxes` — `grind sheet checkbox` with no cell, which prints every checkbox on every sheet
 - `toggle_checkbox` — `grind sheet checkbox <cell> --toggle`
+- `rules` — `grind sheet rule` with no condition, which prints every conditional-format rule on
+  every sheet, numbered per sheet in priority order
+- `add_rule` — `grind sheet rule <range> <condition> --background … | --color … | --bold …`
+- `remove_rule` — `grind sheet rule <sheet> --remove <n>`
+- `set_rules` — `grind sheet rule <range> --clear`, which sets the sheet's rules to the ones that
+  do not touch the range; every other edit of the list is `add_rule` and `remove_rule` in turn
 - `merge` — `grind sheet merge <range>`
 - `unmerge` — `grind sheet merge <range> --unmerge`
 - `merges` — `grind sheet merge` with no range, which prints every merged range on every sheet

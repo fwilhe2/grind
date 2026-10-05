@@ -238,6 +238,37 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
                 g.checkboxes().collect::<Vec<_>>()
             ));
         }
+        // Conditional-format rules (`doc/conditional-format.md`): the same rules, and on every cell
+        // two of them share, the same one first. The file states no order between rules that
+        // never meet on a cell (`doc/ods-format.md` §3.6), so that order is not compared.
+        let sorted = |sheet: &Sheet| {
+            let mut rules: Vec<String> = sheet.rules().iter().map(|r| format!("{r:?}")).collect();
+            rules.sort();
+            rules
+        };
+        let order = |sheet: &Sheet, pos: Pos| -> Vec<String> {
+            sheet
+                .rules()
+                .iter()
+                .filter(|r| r.covers(pos))
+                .map(|r| format!("{r:?}"))
+                .collect()
+        };
+        let shared = w.rules().iter().flat_map(|r| &r.ranges).flat_map(|(a, b)| {
+            (a.row..=b.row.min(a.row + 50)).flat_map(move |row| {
+                (a.col..=b.col.min(a.col + 50)).map(move |col| Pos::new(row, col))
+            })
+        });
+        let misordered = shared
+            .into_iter()
+            .find(|pos| order(w, *pos) != order(g, *pos));
+        if sorted(w) != sorted(g) || misordered.is_some() {
+            out.push(format!(
+                "{label}: sheet {i} rules {:?}, back as {:?}",
+                w.rules(),
+                g.rules()
+            ));
+        }
         // Merged ranges, exactly: a merge LibreOffice drops or moves draws a heading over the
         // wrong cells.
         if w.merges().collect::<Vec<_>>() != g.merges().collect::<Vec<_>>() {
@@ -848,6 +879,43 @@ fn checkboxes() -> (String, Document) {
     ("checkboxes".to_owned(), doc)
 }
 
+/// Conditional-format rules (`doc/conditional-format.md`): two on one cell, whose order is the
+/// whole question, and one over two ranges with a relative reference written from its base.
+fn rules() -> (String, Document) {
+    use grind_sheet::rule::Rule;
+    use grind_sheet::style::CellStyle;
+    let fill = |colour: &str| CellStyle {
+        background: Some(colour.into()),
+        ..CellStyle::default()
+    };
+    let mut doc = Document {
+        sheets: vec![Sheet::new("Checklist")],
+        ..Default::default()
+    };
+    let sheet = doc.sheet_mut(0).unwrap();
+    for row in 0..6 {
+        sheet.set(Pos::new(row, 0), CellValue::Text(format!("Item {row}")));
+        sheet.set(Pos::new(row, 1), CellValue::Text("note".into()));
+        sheet.set(Pos::new(row, 4), CellValue::Bool(row % 2 == 0));
+    }
+    sheet.set_rules(vec![
+        Rule::over(Pos::new(0, 0), Pos::new(0, 0), "[.$E1]", fill("#ff0000")),
+        Rule {
+            ranges: vec![
+                (Pos::new(0, 0), Pos::new(2, 1)),
+                (Pos::new(4, 0), Pos::new(5, 1)),
+            ],
+            base: Pos::new(0, 0),
+            condition: "[.$E1]=TRUE()".into(),
+            style: CellStyle {
+                font_weight: Some("bold".into()),
+                ..fill("#97e8ca")
+            },
+        },
+    ]);
+    ("rules".to_owned(), doc)
+}
+
 /// An autofilter (§9.4): the range, the values it keeps, and the rows it therefore hides.
 fn filtered() -> (String, Document) {
     let mut doc = Document {
@@ -1026,6 +1094,7 @@ fn cases() -> Vec<(String, Document)> {
         tracks(),
         merged(),
         checkboxes(),
+        rules(),
         filtered(),
         charts(),
         counter_clockwise_pie(),

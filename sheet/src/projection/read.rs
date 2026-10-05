@@ -145,6 +145,47 @@ fn sheet(node: &KdlNode, source: &mut Source) -> Result<Sheet> {
                     }),
                 );
             }
+            "rule" => {
+                let mut ranges = Vec::new();
+                for index in 0..child
+                    .entries()
+                    .iter()
+                    .filter(|e| e.name().is_none())
+                    .count()
+                {
+                    ranges.push(rectangle(child, index)?);
+                }
+                let Some(first) = ranges.first().map(|(start, _)| *start) else {
+                    return Err(at(child, "a rule needs a range".to_owned()));
+                };
+                let condition = string_prop(child, "when")
+                    .ok_or_else(|| at(child, "a rule needs a condition: when=\"…\"".to_owned()))?;
+                let condition = condition
+                    .trim()
+                    .strip_prefix('=')
+                    .unwrap_or(condition.trim());
+                formula::parse::parse(condition)
+                    .map_err(|e| at(child, format!("{condition:?} is not a formula: {e}")))?;
+                let base = match string_prop(child, "base") {
+                    Some(address) => {
+                        let reference = a1::parse(&address)?;
+                        let cell = reference.start;
+                        match (reference.end, cell.row, cell.col) {
+                            (None, Some(row), Some(col)) => Pos::new(row.index, col.index),
+                            _ => return Err(at(child, format!("{address:?} is not one cell"))),
+                        }
+                    }
+                    None => first,
+                };
+                let mut rules = sheet.rules().to_vec();
+                rules.push(crate::rule::Rule {
+                    ranges,
+                    base,
+                    condition: condition.to_owned(),
+                    style: cell_style(child)?,
+                });
+                sheet.set_rules(rules);
+            }
             "merge" => {
                 let (start, end) = rectangle(child, 0)?;
                 let (anchor, span) = crate::model::Span::between(start, end);

@@ -168,7 +168,13 @@ fn shown(value: &crate::CellValue) -> String {
 
 fn missing_sheets(doc: &Document, report: &mut Report) {
     for (index, sheet) in doc.sheets.iter().enumerate() {
-        for (pos, formula) in sheet.formulas() {
+        // A conditional-format rule's condition is a formula too, reported at its base cell —
+        // the cell it is written from (`doc/conditional-format.md`).
+        let conditions = sheet
+            .rules()
+            .iter()
+            .map(|rule| (rule.base, rule.condition.as_str()));
+        for (pos, formula) in sheet.formulas().chain(conditions) {
             let Ok(expr) = parse(formula) else {
                 // A formula that will not parse reads nothing this can name, which is the
                 // same answer `graph::RefIndex::build` gives it and for the same reason.
@@ -266,7 +272,8 @@ fn empty_references(doc: &Document, report: &mut Report) {
 
 fn off_palette(doc: &Document, report: &mut Report) {
     for (index, sheet) in doc.sheets.iter().enumerate() {
-        for (pos, style) in sheet.styles() {
+        let ruled = sheet.rules().iter().map(|rule| (rule.base, &rule.style));
+        for (pos, style) in sheet.styles().chain(ruled) {
             for colour in colours(style) {
                 if !report.push(Diagnostic::new(
                     &OFF_PALETTE,

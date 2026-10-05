@@ -107,6 +107,7 @@ pub fn project(doc: &Document) -> Projection {
         formats(&mut out, sheet);
         merges(&mut out, sheet);
         checkboxes(&mut out, sheet);
+        rules(&mut out, sheet);
         filter(&mut out, sheet);
         out.close();
     }
@@ -584,6 +585,28 @@ fn checkboxes(out: &mut Emitter, sheet: &Sheet) {
         }
         out.prop_some("name", checkbox.name.as_deref());
         out.prop_some("label", checkbox.label.as_deref());
+        out.end();
+    }
+}
+
+/// `rule` — one per conditional-format rule, in priority order (`doc/conditional-format.md`):
+/// its ranges as words, the condition as `when=`, the base cell as `base=` only when it is not
+/// the first range's top-left, and the style it draws in `style`'s own properties.
+fn rules(out: &mut Emitter, sheet: &Sheet) {
+    if sheet.rules().is_empty() {
+        return;
+    }
+    out.blank();
+    for rule in sheet.rules() {
+        out.begin("rule");
+        for (start, end) in &rule.ranges {
+            out.arg_word(&range(*start, *end));
+        }
+        out.prop("when", rule.condition.as_str());
+        if rule.ranges.first().map(|(start, _)| *start) != Some(rule.base) {
+            out.prop("base", a1::format(None, rule.base));
+        }
+        style_props(out, &rule.style);
         out.end();
     }
 }

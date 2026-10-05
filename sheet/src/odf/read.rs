@@ -82,6 +82,15 @@ pub struct Builder {
     /// the map, the condition, and the name it applies. A target may be declared after the
     /// style that points at it, so resolution waits until the section ends.
     pending_maps: Vec<(String, Op, String, String)>,
+    /// Each `table-cell` style's conditional-format `style:map`s, in order — `(condition,
+    /// applied style, base cell address)`, verbatim (`doc/ods-format.md` §3.6).
+    cell_maps: HashMap<String, Vec<(String, String, String)>>,
+    /// The cells of the current sheet whose style carries a map, as rectangles by style name —
+    /// `[first row, end row, first column, end column)` — and the order those styles were
+    /// first met in. A rectangle rather than a cell because a repeated row or cell stands for
+    /// many, and a rule over a whole column is a million of them.
+    rule_rects: HashMap<String, Vec<[u32; 4]>>,
+    rule_styles: Vec<String>,
     /// `table:default-cell-style-name` per column of the current sheet, and for the current
     /// row. A cell's own `table:style-name` wins over the row's, which wins over the
     /// column's — the resolution order §5.1's indirection implies and the reason a
@@ -237,6 +246,9 @@ impl Builder {
             parts: Vec::new(),
             style_text: String::new(),
             pending_maps: Vec::new(),
+            cell_maps: HashMap::new(),
+            rule_rects: HashMap::new(),
+            rule_styles: Vec::new(),
             col_styles: Vec::new(),
             row_style: None,
             col_decl: 0,
@@ -326,6 +338,93 @@ impl Builder {
             }
             owner.maps.push(Map { op, value, format });
         }
+    }
+
+    /// Note the cells `start..start + repeat` of the row being read as carrying their style's
+    /// conditional-format maps, if it has any.
+    fn note_rule_cells(&mut self, own: Option<&str>, start: u32, repeat: u32) {
+        if self.cell_maps.is_empty() {
+            return;
+        }
+        let Some(style) = self.style_name(own, start) else {
+            return;
+        };
+        if !self.cell_maps.contains_key(style) {
+            return;
+        }
+        let style = style.to_owned();
+        let rows = self.row.min(MAX_ROWS)..self.row.saturating_add(self.row_repeat).min(MAX_ROWS);
+        let cols = start.min(MAX_COLS)..start.saturating_add(repeat).min(MAX_COLS);
+        if rows.is_empty() || cols.is_empty() {
+            return;
+        }
+        let rects = self.rule_rects.entry(style.clone()).or_default();
+        if rects.is_empty() {
+            self.rule_styles.push(style);
+        }
+        rects.push([rows.start, rows.end, cols.start, cols.end]);
+    }
+
+    /// The current sheet's rules, out of the cells that carried a map (`doc/ods-format.md`
+    /// §3.6): one rule per distinct (condition, applied style, base cell) — the identity
+    /// LibreOffice reads a rule back by — over every cell whose style named it.
+    ///
+    /// The order is each style's own map order, which is the priority on those cells; rules
+    /// that never share a cell are in the order their first cell was met.
+    fn finish_rules(&mut self) {
+        let rects = std::mem::take(&mut self.rule_rects);
+        let styles = std::mem::take(&mut self.rule_styles);
+        let Some(sheet) = self.doc.sheets.get_mut(self.sheet) else {
+            return;
+        };
+        let own = sheet.name.clone();
+        let mut keys: Vec<(String, String, Pos)> = Vec::new();
+        let mut cells: Vec<Vec<(Pos, Pos)>> = Vec::new();
+        let mut before: Vec<(usize, usize)> = Vec::new();
+        for style in &styles {
+            let mut chain = Vec::new();
+            for (condition, apply, base) in self.cell_maps.get(style).into_iter().flatten() {
+                let Some(base) = crate::model::Link::parse(base, &own)
+                    .filter(|link| link.sheet.is_none())
+                    .map(|link| link.pos)
+                else {
+                    continue;
+                };
+                let Some(condition) = crate::rule::from_odf_condition(condition, base) else {
+                    continue;
+                };
+                let key = (condition, apply.clone(), base);
+                let at = match keys.iter().position(|k| *k == key) {
+                    Some(at) => at,
+                    None => {
+                        keys.push(key);
+                        cells.push(Vec::new());
+                        keys.len() - 1
+                    }
+                };
+                cells[at].extend(
+                    rects[style]
+                        .iter()
+                        .map(|[r0, r1, c0, c1]| (Pos::new(*r0, *c0), Pos::new(*r1 - 1, *c1 - 1))),
+                );
+                chain.push(at);
+            }
+            before.extend(chain.windows(2).map(|w| (w[0], w[1])));
+        }
+        let order = crate::rule::priority(keys.len(), &before);
+        let rules = order
+            .into_iter()
+            .map(|i| {
+                let (condition, apply, base) = &keys[i];
+                crate::rule::Rule {
+                    ranges: crate::rule::rectangles(std::mem::take(&mut cells[i])),
+                    base: *base,
+                    condition: condition.clone(),
+                    style: self.style_props.get(apply).cloned().unwrap_or_default(),
+                }
+            })
+            .collect();
+        sheet.set_rules(rules);
     }
 
     /// Claim `repeat` columns for a `table:table-column` declaration, recording the default
@@ -1373,6 +1472,7 @@ impl Context<Builder> for Table {
         if !self.top {
             return;
         }
+        b.finish_rules();
         let placed = std::mem::take(&mut b.placed);
         let Some(sheet) = b.doc.sheets.get_mut(b.sheet) else {
             return;
@@ -1485,6 +1585,7 @@ impl Context<Builder> for Row {
         if !covered {
             b.merge(start, attrs);
         }
+        b.note_rule_cells(attrs.get(Ns::Table, "style-name"), start, repeat);
 
         // R6: where this element sits, so a later save can replace it in place. Recorded for
         // a repeated cell too — that element is split rather than skipped — but not inside a
@@ -1532,6 +1633,18 @@ impl Table {
                     .and_then(|source| source.tables.last_mut())
             {
                 table.forms = Some(range);
+            }
+            return;
+        }
+        if self.top && name.is(Ns::Calcext, "conditional-formats") {
+            if let Some(range) = b.extent(attrs.span())
+                && let Some(table) = b
+                    .doc
+                    .source
+                    .as_deref_mut()
+                    .and_then(|source| source.tables.last_mut())
+            {
+                table.conditional_formats = Some(range);
             }
             return;
         }
@@ -1949,6 +2062,24 @@ impl Context<Builder> for CellStyleProps {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         if name.ns != Ns::Style {
             return None;
+        }
+        // A conditional format (`doc/ods-format.md` §3.6): kept by name, read into a rule
+        // once the cells carrying this style are known.
+        if name.local == "map" {
+            if let (Some(condition), Some(apply)) = (
+                attrs.get(Ns::Style, "condition"),
+                attrs.get(Ns::Style, "apply-style-name"),
+            ) {
+                let base = attrs
+                    .get(Ns::Style, "base-cell-address")
+                    .unwrap_or_default();
+                b.cell_maps.entry(self.name.clone()).or_default().push((
+                    condition.to_owned(),
+                    apply.to_owned(),
+                    base.to_owned(),
+                ));
+            }
+            return Some(Box::new(super::context::Ignore));
         }
         let style = b.style_props.get_mut(&self.name)?;
         // Most of a style is `fo:`, but a few properties are `style:` — `vertical-align` is

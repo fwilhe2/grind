@@ -408,7 +408,14 @@ fn owned(key: &str) -> bool {
             &["database-ranges", "database-range", "filter", "filter-and"],
         )
         || is(TABLE, &["filter-condition", "filter-set-item"])
-        || is(TABLE, &["calculation-settings", "null-date"]);
+        || is(TABLE, &["calculation-settings", "null-date"])
+        // LibreOffice's copy of the conditional formats the model reads — taken out, where a
+        // save changes the rules, only for the kinds the `style:map`s now spell
+        // (`patched_conditional_formats`).
+        || is(
+            CALCEXT,
+            &["conditional-formats", "conditional-format", "condition"],
+        );
     let Some(attribute) = attribute else {
         return modelled;
     };
@@ -454,6 +461,13 @@ fn owned(key: &str) -> bool {
                 "filter-condition",
                 "filter-set-item",
             ],
+        ) =>
+        {
+            true
+        }
+        _ if is(
+            CALCEXT,
+            &["conditional-formats", "conditional-format", "condition"],
         ) =>
         {
             true
@@ -624,7 +638,7 @@ fn rewrite(
             &value,
             formula,
             kind,
-            (effective(sheet, pos), sheet.style(pos), None),
+            (effective(sheet, pos), sheet.style(pos), None, None),
             null_date,
             repeat,
             // The element's own unmanaged attributes, verbatim — its style name, its merge
@@ -1224,6 +1238,11 @@ fn patched_table(
     // Checkboxes: the file's own `office:forms`, with only what changed in it changed.
     if sheet.origin.checkboxes {
         patches.extend(patched_forms(sheet, t, bytes));
+    }
+
+    // Conditional formats: LibreOffice's own copy, without what the maps now say instead.
+    if sheet.origin.rules {
+        patches.extend(patched_conditional_formats(t, bytes));
     }
 
     // Columns: the file's own unless a width or a hidden flag changed.
@@ -1993,17 +2012,35 @@ fn rewrite_cells(
 /// when the document has one (R3). `None` otherwise, so a document with no locale writes no
 /// element for it at all.
 fn common_styles(doc: &Document) -> Option<String> {
-    let locale = doc.locale.as_ref()?;
-    let country = match locale.country.is_empty() {
-        true => String::new(),
-        false => format!(" fo:country=\"{}\"", esc(&locale.country)),
-    };
-    Some(format!(
-        " <office:styles><style:default-style style:family=\"table-cell\">\
-         <style:text-properties fo:language=\"{}\"{country}/></style:default-style>\
-         </office:styles>\n",
-        esc(&locale.language)
-    ))
+    let mut inner = String::new();
+    if let Some(locale) = doc.locale.as_ref() {
+        let country = match locale.country.is_empty() {
+            true => String::new(),
+            false => format!(" fo:country=\"{}\"", esc(&locale.country)),
+        };
+        let _ = write!(
+            inner,
+            "<style:default-style style:family=\"table-cell\">\
+             <style:text-properties fo:language=\"{}\"{country}/></style:default-style>",
+            esc(&locale.language)
+        );
+    }
+    // Each conditional-format rule's style, once by name (`rule_style_name`).
+    let mut declared = HashSet::new();
+    for rule in doc.sheets.iter().flat_map(|sheet| sheet.rules()) {
+        let name = rule_style_name(&rule.style);
+        if declared.insert(name.clone()) {
+            let _ = write!(
+                inner,
+                "<style:style style:name=\"{name}\" style:family=\"table-cell\">{}</style:style>",
+                properties(&rule.style)
+            );
+        }
+    }
+    if inner.is_empty() {
+        return None;
+    }
+    Some(format!(" <office:styles>{inner}</office:styles>\n"))
 }
 
 /// The package form's `styles.xml`: [`common_styles`] in the part `office:styles` lives in, since
@@ -2115,7 +2152,15 @@ fn effective(sheet: &Sheet, pos: Pos) -> Option<&Format> {
 /// cell had in the file, which its new style is built from so that what the model does not
 /// read on it survives (`envelope::patch_style`). Part of the identity, since two cells that
 /// now look the same but had different styles in the file carry different unread properties.
-type Look<'a> = (Option<&'a Format>, Option<&'a CellStyle>, Option<usize>);
+///
+/// The fourth is the conditional-format maps the cell's style carries, an index into
+/// [`Pool::maps`] — which rules cover the cell, in priority order (`crate::rule`).
+type Look<'a> = (
+    Option<&'a Format>,
+    Option<&'a CellStyle>,
+    Option<usize>,
+    Option<usize>,
+);
 
 /// Every distinct format and every distinct look in the document, in first-seen order.
 ///
@@ -2141,6 +2186,11 @@ struct Pool<'a> {
     /// Each base's element, when it is one of the file's own automatic styles — what a new
     /// style is patched from. `None` for a named style, which a new one takes as its parent.
     base_elements: Vec<Option<String>>,
+    /// Every distinct list of conditional-format `style:map`s a cell style carries, as the XML
+    /// it is written as, and by sheet name and the indices of the rules covering a cell which
+    /// one that cell's style carries.
+    maps: Vec<String>,
+    map_index: HashMap<&'a str, HashMap<Vec<usize>, usize>>,
     /// Where each family's numbering starts — `ce`, `co`, `ro` and `N` — so that a pool written
     /// into a file that already declares `ce1`…`ce9` starts at `ce10` and never takes a name the
     /// file uses (`envelope::merge` keeps the file's own automatic styles beside these).
@@ -2182,6 +2232,8 @@ impl<'a> Pool<'a> {
             bases: Vec::new(),
             based: HashMap::new(),
             base_elements: Vec::new(),
+            maps: Vec::new(),
+            map_index: HashMap::new(),
             offsets: [0; 4],
         };
         for (i, sheet) in doc.sheets.iter().enumerate() {
@@ -2231,10 +2283,23 @@ impl<'a> Pool<'a> {
                         .insert(*pos, at);
                 }
             }
+            // Every cell a rule is written on, with the maps its style will carry.
+            let ruled = ruled_cells(sheet);
+            for pos in &ruled {
+                if !cell_written(*pos) {
+                    continue;
+                }
+                let covering = covering(sheet, *pos);
+                let sets = pool.map_index.entry(sheet.name.as_str()).or_default();
+                if !sets.contains_key(&covering) {
+                    sets.insert(covering.clone(), pool.maps.len());
+                    pool.maps.push(map_elements(sheet, &covering));
+                }
+            }
             let formatted = sheet.formats().map(|(pos, _)| pos);
             let dated = sheet.kinds().map(|(pos, _)| pos);
             let styled = sheet.styles().map(|(pos, _)| pos);
-            for pos in formatted.chain(dated).chain(styled) {
+            for pos in formatted.chain(dated).chain(styled).chain(ruled) {
                 if !cell_written(pos) {
                     continue;
                 }
@@ -2242,7 +2307,7 @@ impl<'a> Pool<'a> {
                 if let Some(format) = look.0 {
                     pool.add(format);
                 }
-                if look.1.is_none() && look.0.is_none() {
+                if look.1.is_none() && look.0.is_none() && look.3.is_none() {
                     continue;
                 }
                 if !pool.look_index.contains_key(&look) {
@@ -2262,7 +2327,15 @@ impl<'a> Pool<'a> {
             .get(sheet.name.as_str())
             .and_then(|cells| cells.get(&pos))
             .copied();
-        (effective(sheet, pos), sheet.style(pos), base)
+        let maps = match sheet.rules().is_empty() {
+            true => None,
+            false => self
+                .map_index
+                .get(sheet.name.as_str())
+                .and_then(|sets| sets.get(&covering(sheet, pos)))
+                .copied(),
+        };
+        (effective(sheet, pos), sheet.style(pos), base, maps)
     }
 
     /// Read each base's element out of the file this document came from.
@@ -2371,8 +2444,11 @@ impl<'a> Pool<'a> {
         for (i, format) in self.formats.iter().enumerate() {
             let _ = writeln!(out, "  {}", data_style(format, i, self));
         }
-        for (i, (format, style, base)) in self.looks.iter().enumerate() {
+        for (i, (format, style, base, maps)) in self.looks.iter().enumerate() {
             let data_name = format.and_then(|f| self.index.get(f)).map(|n| self.n(*n));
+            let maps = maps
+                .and_then(|m| self.maps.get(m))
+                .map_or("", String::as_str);
             // A restyled cell's style is its old one, renamed, with only what the model owns
             // rewritten — so a rotation, a protection flag, a parent style or a conditional
             // `style:map` the model never read is carried rather than dropped.
@@ -2394,7 +2470,7 @@ impl<'a> Pool<'a> {
                         )
                     });
                 if let Some(patched) = patched {
-                    let _ = writeln!(out, "  {patched}");
+                    let _ = writeln!(out, "  {}", with_maps(&patched, maps));
                     continue;
                 }
             }
@@ -2414,11 +2490,12 @@ impl<'a> Pool<'a> {
                 "  <style:style style:name=\"{}\" style:family=\"table-cell\"{parent}{data}",
                 self.ce(i)
             );
-            match style {
-                Some(style) => {
-                    let _ = writeln!(out, ">{}</style:style>", properties(style));
+            match (style, maps) {
+                (None, "") => out.push_str("/>\n"),
+                (style, maps) => {
+                    let props = style.map(properties).unwrap_or_default();
+                    let _ = writeln!(out, ">{props}{maps}</style:style>");
                 }
-                None => out.push_str("/>\n"),
             }
         }
         // §5.4. `style:use-optimal-column-width` is deliberately not written: the size here
@@ -3264,6 +3341,181 @@ fn carries(sheet: &Sheet, pos: Pos) -> bool {
         || sheet.style(pos).is_some()
         || sheet.merge_at(pos).is_some()
         || sheet.checkbox(pos).is_some()
+        || sheet.rules().iter().any(|rule| rule.covers(pos))
+}
+
+/// Every cell a conditional-format rule is written on: its ranges, inside the rectangle the rest
+/// of the sheet spans ([`Sheet::ruled`]). In address order, each once.
+fn ruled_cells(sheet: &Sheet) -> Vec<Pos> {
+    if sheet.rules().is_empty() {
+        return Vec::new();
+    }
+    let (rows, cols) = (sheet.used_rows(), sheet.used_cols());
+    let cells: BTreeSet<Pos> = sheet
+        .rules()
+        .iter()
+        .flat_map(|rule| &rule.ranges)
+        .flat_map(|(start, end)| {
+            (start.row..(end.row + 1).min(rows)).flat_map(move |row| {
+                (start.col..(end.col + 1).min(cols)).map(move |col| Pos::new(row, col))
+            })
+        })
+        .collect();
+    cells.into_iter().collect()
+}
+
+/// The rules covering `pos`, by index, in priority order.
+fn covering(sheet: &Sheet, pos: Pos) -> Vec<usize> {
+    sheet
+        .rules()
+        .iter()
+        .enumerate()
+        .filter(|(_, rule)| rule.covers(pos))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// The `style:map` elements a cell style carries for these rules of `sheet`
+/// (`doc/ods-format.md` §3.6): the condition as `is-true-formula(…)`, the rule's style by the
+/// name [`rule_style_name`] gives it in `office:styles`, and the base cell sheet-qualified, as
+/// LibreOffice writes it.
+fn map_elements(sheet: &Sheet, rules: &[usize]) -> String {
+    let mut out = String::new();
+    for rule in rules.iter().filter_map(|i| sheet.rules().get(*i)) {
+        let mut base = crate::a1::reference(Some(&sheet.name), rule.base, rule.base);
+        base.start.sheet_absolute = false;
+        let base = crate::formula::parse::Expr::Ref(base).to_string();
+        let base = base.trim_start_matches('[').trim_end_matches(']');
+        let _ = write!(
+            out,
+            "<style:map style:condition=\"{}\" style:apply-style-name=\"{}\" \
+             style:base-cell-address=\"{}\"/>",
+            esc(&crate::rule::odf_condition(&rule.condition)),
+            rule_style_name(&rule.style),
+            esc(base)
+        );
+    }
+    out
+}
+
+/// The name a rule's style is declared under in `office:styles`: derived from what it *says*,
+/// so two rules drawing the same thing share one, and a file that already declares the name —
+/// one this writer wrote before — declares the same style under it. That matters because
+/// `envelope::merge` keeps a file's own common style over a generated one of the same name.
+///
+/// A common style rather than an automatic one because LibreOffice draws nothing for a map
+/// naming an automatic style (`doc/ods-format.md` §3.6, measured).
+fn rule_style_name(style: &CellStyle) -> String {
+    // FNV-1a, spelled out here because `std`'s hasher is not promised to be stable across
+    // builds, and this name ends up in files.
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in properties(style).bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("Rule{hash:016x}")
+}
+
+/// A cell style element — one of the file's own, patched — with every conditional-format map
+/// the model reads taken out and `maps` put in their place, at the end, where the schema puts
+/// a `style:map` (rng:12119). A map the model cannot read stays: it is the file's, and nobody
+/// changed it.
+fn with_maps(element: &str, maps: &str) -> String {
+    let mut out = String::with_capacity(element.len() + maps.len());
+    let mut rest = element;
+    while let Some(at) = rest.find("<style:map ") {
+        let Some(len) = rest[at..].find("/>") else {
+            break;
+        };
+        let map = &rest[at..at + len + 2];
+        out.push_str(&rest[..at]);
+        let condition = tag_attr(map, "style:condition").map(unescape);
+        let ours = condition
+            .is_some_and(|c| crate::rule::from_odf_condition(&c, Pos::new(0, 0)).is_some());
+        if !ours {
+            out.push_str(map);
+        }
+        rest = &rest[at + len + 2..];
+    }
+    out.push_str(rest);
+    if maps.is_empty() {
+        return out;
+    }
+    // Trailing whitespace inside the element is the file's indentation before the end tag.
+    match out.rfind("</style:style>") {
+        Some(end) => {
+            let body = out[..end].trim_end().len();
+            format!("{}{maps}{}", &out[..body], &out[body..])
+        }
+        None => match out.strip_suffix("/>") {
+            Some(open) => format!("{}>{maps}</style:style>", open.trim_end()),
+            None => out,
+        },
+    }
+}
+
+/// The patches a save makes to LibreOffice's own copy of a sheet's conditional formats once the
+/// rules have changed: every `calcext:conditional-format` whose conditions are all of the kinds
+/// the model reads from the standard spelling is taken out — the `style:map`s now say what they
+/// said, and a stale copy would be what LibreOffice reads first. One holding anything else (a
+/// colour scale, a data bar, a condition the model cannot read) is left exactly as it was.
+fn patched_conditional_formats(
+    t: &super::source::Table,
+    bytes: &[u8],
+) -> Vec<(std::ops::Range<usize>, String)> {
+    let Some(block) = t.conditional_formats.clone() else {
+        return Vec::new();
+    };
+    let Ok(text) = std::str::from_utf8(&bytes[block.clone()]) else {
+        return Vec::new();
+    };
+    let mut patches = Vec::new();
+    let mut kept = 0;
+    let mut cursor = 0;
+    while let Some(at) = text[cursor..].find("<calcext:conditional-format ") {
+        let start = cursor + at;
+        let Some(len) = text[start..].find("</calcext:conditional-format>") else {
+            break;
+        };
+        let end = start + len + "</calcext:conditional-format>".len();
+        let element = &text[start..end];
+        let children: Vec<&str> = element
+            .match_indices('<')
+            .skip(1)
+            .map(|(i, _)| &element[i..])
+            .filter(|child| !child.starts_with("</"))
+            .collect();
+        let superseded = children.iter().all(|child| {
+            child.starts_with("<calcext:condition ")
+                && tag_attr(child, "calcext:value")
+                    .map(unescape)
+                    .is_some_and(|v| modelled_calcext(&v))
+        });
+        match superseded {
+            true => patches.push((
+                with_leading_space(bytes, block.start + start..block.start + end),
+                String::new(),
+            )),
+            false => kept += 1,
+        }
+        cursor = end;
+    }
+    // Nothing left in it: the container goes too.
+    if kept == 0 && !patches.is_empty() {
+        return vec![(with_leading_space(bytes, block), String::new())];
+    }
+    patches
+}
+
+/// Whether a `calcext:condition`'s value is one the model reads from the `style:map` beside it
+/// — `formula-is(…)`, `between(…)`, `not-between(…)` or a comparison (`>3`), the spellings
+/// LibreOffice gives the standard map's three kinds (`doc/ods-format.md` §3.6, measured).
+fn modelled_calcext(value: &str) -> bool {
+    let v = value.trim();
+    v.starts_with("formula-is(")
+        || v.starts_with("between(")
+        || v.starts_with("not-between(")
+        || v.starts_with(['<', '>', '=', '!'])
 }
 
 /// `table:visibility="collapse"` for a column hidden by hand — a column has no filter, so
@@ -3731,6 +3983,37 @@ mod tests {
             let by_range = ranges.iter().any(|range| range.contains(&row));
             assert_eq!(by_cell, by_range, "row {row}: {ranges:?}");
         }
+    }
+
+    #[test]
+    fn a_rule_carries_its_blank_cells_inside_the_used_rectangle_and_no_further() {
+        let mut doc = Document::default();
+        let sheet = doc.sheet_mut(0).unwrap();
+        sheet.set(Pos::new(0, 0), CellValue::Number(1.0));
+        sheet.set(Pos::new(4, 2), CellValue::Number(2.0));
+        let green = crate::style::CellStyle {
+            background: Some("#00ff00".into()),
+            ..Default::default()
+        };
+        // Excel's spelling of "column B": a million rows, of which five are written.
+        sheet.set_rules(vec![crate::rule::Rule::over(
+            Pos::new(0, 1),
+            Pos::new(MAX_ROWS - 1, 1),
+            "[.A1]>0",
+            green,
+        )]);
+        let ranges = sheet.rows_carrying();
+        let (rows, cols) = (sheet.used_rows(), sheet.used_cols());
+        for row in 0..rows {
+            let by_cell = (0..cols).any(|col| carries(sheet, Pos::new(row, col)));
+            let by_range = ranges.iter().any(|range| range.contains(&row));
+            assert_eq!(by_cell, by_range, "row {row}: {ranges:?}");
+        }
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(ranges[0], 0..5);
+        let xml = flat(&doc);
+        assert_eq!(xml.matches("<style:map ").count(), 1, "{xml}");
+        assert!(xml.matches("<table:table-row").count() <= 6, "{xml}");
     }
 
     #[test]

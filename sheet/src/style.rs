@@ -80,6 +80,28 @@ impl CellStyle {
     pub fn set_border(&mut self, value: Option<String>) {
         self.borders = [value.clone(), value.clone(), value.clone(), value];
     }
+
+    /// This style drawn over `under`, property by property: what this one sets wins, and what
+    /// it leaves unset is `under`'s — how a conditional-format rule's style is applied to a cell
+    /// (`doc/conditional-format.md` §1), so a rule that sets only a background leaves the
+    /// cell's bold alone.
+    pub fn over(&self, under: Option<&CellStyle>) -> CellStyle {
+        let Some(under) = under else {
+            return self.clone();
+        };
+        let pick = |top: &Option<String>, bottom: &Option<String>| top.clone().or(bottom.clone());
+        CellStyle {
+            font_weight: pick(&self.font_weight, &under.font_weight),
+            font_style: pick(&self.font_style, &under.font_style),
+            font_size: pick(&self.font_size, &under.font_size),
+            color: pick(&self.color, &under.color),
+            background: pick(&self.background, &under.background),
+            align: pick(&self.align, &under.align),
+            vertical_align: pick(&self.vertical_align, &under.vertical_align),
+            wrap: pick(&self.wrap, &under.wrap),
+            borders: std::array::from_fn(|i| pick(&self.borders[i], &under.borders[i])),
+        }
+    }
 }
 
 #[cfg(test)]

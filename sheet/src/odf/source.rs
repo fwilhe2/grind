@@ -127,6 +127,10 @@ pub struct Table {
     /// `table:default-cell-style-name` by column run, as declared — kept by a save that
     /// rewrites the column declarations, since the model does not carry it.
     pub column_defaults: Vec<(Range<u32>, Option<String>)>,
+    /// LibreOffice's own copy of the sheet's conditional formats
+    /// (`calcext:conditional-formats`, `doc/ods-format.md` §3.6) — stale once a save changes
+    /// the rules, when the conditions the model reads are taken out of it.
+    pub conditional_formats: Option<Range<usize>>,
     /// The package directories of this table's charts (`Object 1`, …) — dropped from the
     /// package only by a save that writes this table's charts again.
     pub charts: Vec<String>,

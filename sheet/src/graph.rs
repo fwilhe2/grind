@@ -65,6 +65,10 @@ pub struct RefIndex {
     /// [`RefIndex::singled_out_by`], which is the distinction `doc/view-modes.md` §4.2
     /// turns on.
     read_singly: BTreeMap<Address, usize>,
+    /// Every cell a conditional-format rule's condition reads at some cell it covers
+    /// (`doc/conditional-format.md` §2) — kept apart from `read_by`, whose readers are formula
+    /// cells, since a rule is not one.
+    read_by_rules: std::collections::BTreeSet<Address>,
     truncated: bool,
 }
 
@@ -115,6 +119,44 @@ impl RefIndex {
                 }
                 index.reads.insert(at, areas);
             }
+            // What each rule reads, moved to every cell it covers. A relative `[.$E5]` reads
+            // a different row on each, which is the column a checklist hides its ticks in.
+            for rule in cells.rules() {
+                let Ok(expr) = parse(&rule.condition) else {
+                    continue;
+                };
+                for (start, end) in &rule.ranges {
+                    for row in start.row..=end.row {
+                        for col in start.col..=end.col {
+                            if edges >= MAX_EDGES {
+                                index.truncated = true;
+                                return index;
+                            }
+                            let pos = crate::model::Pos::new(row, col);
+                            let moved = crate::formula::shift::shift(
+                                &expr,
+                                i64::from(row) - i64::from(rule.base.row),
+                                i64::from(col) - i64::from(rule.base.col),
+                            );
+                            let mut areas = Vec::new();
+                            collect(
+                                doc,
+                                &engine,
+                                &moved,
+                                Address::new(sheet, pos),
+                                0,
+                                &mut areas,
+                            );
+                            for cell in areas.iter().flat_map(Area::cells) {
+                                if index.read_by_rules.insert(cell) {
+                                    edges += 1;
+                                }
+                            }
+                            edges += 1;
+                        }
+                    }
+                }
+            }
         }
         index
     }
@@ -130,9 +172,15 @@ impl RefIndex {
         self.read_by.get(&at).map_or(&[], Vec::as_slice)
     }
 
-    /// Whether any formula reads this cell, by any reference at all.
+    /// Whether any formula — or any conditional-format rule — reads this cell, by any
+    /// reference at all.
     pub fn is_referenced(&self, at: Address) -> bool {
-        self.read_by.contains_key(&at)
+        self.read_by.contains_key(&at) || self.read_by_rules.contains(&at)
+    }
+
+    /// Whether a conditional-format rule reads this cell at some cell it covers.
+    pub fn read_by_a_rule(&self, at: Address) -> bool {
+        self.read_by_rules.contains(&at)
     }
 
     /// How many distinct formulas single this cell out — read it through a **one-cell**

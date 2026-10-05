@@ -1984,6 +1984,45 @@ enum Command {
         remove: bool,
     },
 
+    /// Draw a range differently while a formula is true — a conditional-format rule — or list
+    /// or take away a sheet's rules
+    ///
+    /// `sheet rule book.ods B5:D9 '[.$E5]=TRUE()' --background green` fills B5:D9's rows green
+    /// wherever column E is TRUE: the condition is ODF syntax, written from the range's top-left
+    /// cell, and moved to every other cell the way a fill moves a formula. A new rule goes
+    /// after every rule the sheet has, and the first that holds at a cell is the one drawn.
+    /// `--remove 2` takes the sheet's second rule away; `--clear` every rule that touches the
+    /// range. With no condition, prints every rule, across every sheet, numbered per sheet.
+    Rule {
+        file: PathBuf,
+        /// A range: B5:D9, or Data.B5:D9 — or with `--remove`, a sheet name
+        range: Option<String>,
+        /// The condition, in ODF syntax: '[.$E5]=TRUE()' (a leading = is allowed)
+        condition: Option<String>,
+        /// Take the rule with this number (as listed) off the range's sheet
+        #[arg(long, conflicts_with_all = ["condition", "clear"])]
+        remove: Option<usize>,
+        /// Take away every rule on the range's sheet that touches the range
+        #[arg(long, conflicts_with = "condition")]
+        clear: bool,
+        #[arg(long)]
+        bold: bool,
+        #[arg(long)]
+        italic: bool,
+        /// Text colour: a palette name (navy, red, silver, …) or #rrggbb
+        #[arg(long, value_parser = style::color)]
+        color: Option<String>,
+        /// Cell background: a palette name, #rrggbb, or "transparent"
+        #[arg(long, value_parser = style::color)]
+        background: Option<String>,
+        /// Font size, e.g. 14pt
+        #[arg(long)]
+        size: Option<String>,
+        /// Border on every edge, as width, line and colour: "0.5pt solid navy"
+        #[arg(long, value_parser = style::border)]
+        border: Option<String>,
+    },
+
     /// Define, redefine, rename, inline or delete a named range or expression (§5.11)
     ///
     /// With no target, prints what the name stands for. `sheet info` lists them all.
@@ -3263,6 +3302,106 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             finish(&app, cli, file, true)
         }
 
+        Command::Rule {
+            file,
+            range,
+            condition,
+            remove,
+            clear,
+            bold,
+            italic,
+            color,
+            background,
+            size,
+            border,
+        } => {
+            let app = load(file, cli)?;
+            if let Some(number) = remove {
+                let sheet = match range {
+                    Some(spec) => a1::sheet(&app, spec)
+                        .or_else(|_| a1::resolve(&app, &a1::parse(spec)?).map(|(s, _, _)| s))
+                        .say()?,
+                    None => 0,
+                };
+                if *number == 0 {
+                    return Err("rules are numbered from 1".to_owned());
+                }
+                app.remove_rule(sheet, number - 1).say()?;
+                return finish(&app, cli, file, true);
+            }
+            let (Some(range), Some(condition)) = (range, condition) else {
+                if *clear && let Some(range) = range {
+                    let (sheet, start, end) = a1::resolve(&app, &a1::parse(range).say()?).say()?;
+                    let rules = app.rules(sheet).say()?;
+                    let touches = |r: &grind_sheet::rule::Rule| {
+                        r.ranges.iter().any(|(a, b)| {
+                            a.row <= end.row
+                                && start.row <= b.row
+                                && a.col <= end.col
+                                && start.col <= b.col
+                        })
+                    };
+                    let kept: Vec<_> = rules.iter().filter(|r| !touches(r)).cloned().collect();
+                    let changed = kept.len() != rules.len();
+                    app.set_rules(sheet, kept).say()?;
+                    return finish(&app, cli, file, changed);
+                }
+                let mut listed = Vec::new();
+                for i in 0..app.sheet_count() {
+                    let name = app.sheet_name(i).unwrap_or_default();
+                    for (n, rule) in app.rules(i).unwrap_or_default().iter().enumerate() {
+                        let ranges: Vec<String> = rule
+                            .ranges
+                            .iter()
+                            .map(|(a, b)| match a == b {
+                                true => a1::format(None, *a),
+                                false => {
+                                    format!("{}:{}", a1::format(None, *a), a1::format(None, *b))
+                                }
+                            })
+                            .collect();
+                        listed.push((
+                            format!("{name} {}", n + 1),
+                            format!(
+                                "{}\t{}\t{}",
+                                ranges.join(" "),
+                                rule.condition,
+                                rule_look(&rule.style)
+                            ),
+                        ));
+                    }
+                }
+                return Ok(lines(listed.into_iter()));
+            };
+            let (sheet, start, end) = a1::resolve(&app, &a1::parse(range).say()?).say()?;
+            let mut look = CellStyle {
+                font_weight: bold.then(|| "bold".to_owned()),
+                font_style: italic.then(|| "italic".to_owned()),
+                font_size: size.clone(),
+                color: color.clone(),
+                background: background.clone(),
+                ..CellStyle::default()
+            };
+            look.set_border(border.clone());
+            if look.is_plain() {
+                return Err(
+                    "a rule has to draw something: give it --background, --color, \
+                            --bold, --italic, --size or --border"
+                        .to_owned(),
+                );
+            }
+            let condition = condition
+                .trim()
+                .strip_prefix('=')
+                .unwrap_or(condition.trim());
+            app.add_rule(
+                sheet,
+                grind_sheet::rule::Rule::over(start, end, condition, look),
+            )
+            .say()?;
+            finish(&app, cli, file, true)
+        }
+
         Command::Name {
             file,
             name,
@@ -4286,6 +4425,38 @@ fn lines(rows: impl Iterator<Item = (String, String)>) -> Report {
     Report::Text(TextReport {
         lines: rows.map(|(key, value)| format!("{key}\t{value}")).collect(),
     })
+}
+
+/// What a rule draws, as the `sheet rule` flags that would draw it.
+fn rule_look(style: &CellStyle) -> String {
+    let mut out = Vec::new();
+    if let Some(w) = &style.font_weight {
+        out.push(if w == "bold" {
+            "--bold".to_owned()
+        } else {
+            format!("weight={w}")
+        });
+    }
+    if let Some(s) = &style.font_style {
+        out.push(if s == "italic" {
+            "--italic".to_owned()
+        } else {
+            format!("slant={s}")
+        });
+    }
+    for (flag, value) in [
+        ("--size", &style.font_size),
+        ("--color", &style.color),
+        ("--background", &style.background),
+    ] {
+        if let Some(value) = value {
+            out.push(format!("{flag} {value}"));
+        }
+    }
+    if let Some(border) = style.uniform_border() {
+        out.push(format!("--border {border:?}"));
+    }
+    out.join(" ")
 }
 
 fn single(app: &App, address: &str) -> Result<(usize, Pos, Pos), String> {

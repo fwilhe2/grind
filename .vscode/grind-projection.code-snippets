@@ -125,6 +125,14 @@
     ],
     "description": "A checkbox drawn in a cell, showing and setting the value of the cell it is linked to."
   },
+  "node: rule": {
+    "scope": "kdl",
+    "prefix": "rule",
+    "body": [
+      "rule ${1:B5:D9} when=\"${2:[.\\$E5]=TRUE()}\" background=\"${3:#97e8ca}\""
+    ],
+    "description": "A conditional-format rule: while the condition holds at a cell of the range, the style is drawn over the cell's own."
+  },
   "node: filter": {
     "scope": "kdl",
     "prefix": "filter",

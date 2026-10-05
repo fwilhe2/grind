@@ -332,6 +332,16 @@ over ten ranges, `$E5=TRUE`, with a `dxf` that sets only a fill) to `.fods`, the
   `A1 = 5`, renders red (PNG through `--convert-to png`), and the calcext copy keeps the two
   conditions in that order. Row 3 of the same file (`$A3 = 0`) was drawn uncoloured, so
   `[.$A2]` is shifted per row from the base cell, as the plan assumed.
+- **The first true rule is drawn whole**: with the first rule setting only a red text colour
+  and the second only a green fill, both true, the cell was drawn with red text and **no**
+  fill — LibreOffice does not merge the properties of every true rule, as Excel does
+  (`doc/xlsx-format.md` §4.12).
+- **An applied style must be a common style.** The same file with `Red` and `Green` moved into
+  `office:automatic-styles` kept its maps but drew nothing at all. A writer declares a rule's
+  style in `office:styles`.
+- **LibreOffice's `calcext:value`** spells the three standard kinds `formula-is(…)`,
+  `between(a,b)`/`not-between(a,b)` and a bare comparison (`>3`, `!="x"`); the kinds with no
+  standard spelling (`contains-text(…)`, `top-elements(n)`, …) appear only there.
 - **Not carried by a rule**: a colour scale (`<cfRule type="colorScale">`, `H5` in the sample)
   comes out as a `calcext:color-scale` and no `style:map` at all.
 

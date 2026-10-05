@@ -8,6 +8,8 @@
 //! is a stack of inverses, redo is the same trick run the other way, and no shell ever
 //! implements history of its own (doc/plan.md, rule 2).
 
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 
 use crate::chart::Chart;
@@ -99,6 +101,13 @@ pub enum Action {
         sheet: usize,
         pos: Pos,
         checkbox: Option<Box<crate::model::Checkbox>>,
+    },
+    /// A sheet's conditional-format rules, the whole list replaced (`doc/conditional-format.md`
+    /// §2): reordering, inserting and editing a rule each change what its neighbours mean, so
+    /// one action carries all of them, as a chart's does.
+    SetRules {
+        sheet: usize,
+        rules: Vec<crate::rule::Rule>,
     },
     /// A named expression (§5.11), `None` deleting it.
     ///
@@ -299,6 +308,15 @@ impl Document {
                     checkbox: previous,
                 })
             }
+            Action::SetRules { sheet, rules } => {
+                let s = self.sheet_mut(sheet)?;
+                let previous = s.rules().to_vec();
+                s.set_rules(rules);
+                Some(Action::SetRules {
+                    sheet,
+                    rules: previous,
+                })
+            }
             Action::SetFilter { sheet, filter } => {
                 let s = self.sheet_mut(sheet)?;
                 let previous = s.filter().cloned().map(Box::new);
@@ -475,6 +493,9 @@ impl Document {
                 self.edits.only_values = false;
                 self.edits.names = true;
             }
+            // Every cell a rule covers carries it on its own style, so restyling them is not a
+            // splice; `touch` names the cells.
+            Action::SetRules { .. } => self.edits.only_values = false,
             // The default cell style is not a splice site: it lives in `office:styles`, which
             // the regenerating writer writes fresh.
             Action::SetLocale { .. } => self.edits.only_values = false,
@@ -534,6 +555,26 @@ impl Document {
                 if let Some(p) = sheet(self, *i) {
                     p.filter = true;
                 }
+            }
+            // Every cell the old rules or the new ones are written on is restyled: its style
+            // carries the rules that cover it (`Sheet::ruled`).
+            Action::SetRules { sheet: i, rules } => {
+                let Some(s) = self.sheets.get_mut(*i) else {
+                    return;
+                };
+                let (rows, cols) = (s.used_rows(), s.used_cols());
+                let mut cells = BTreeSet::new();
+                for (start, end) in s.rules().iter().chain(rules).flat_map(|r| &r.ranges) {
+                    for row in start.row..(end.row + 1).min(rows) {
+                        for col in start.col..(end.col + 1).min(cols) {
+                            cells.insert(Pos::new(row, col));
+                        }
+                    }
+                }
+                let p = &mut s.origin;
+                p.rules = true;
+                p.cells.extend(&cells);
+                p.looks.extend(cells);
             }
             // The cell holds the control, so it is rewritten, and the sheet's forms with it.
             Action::SetCheckbox { sheet: i, pos, .. } => {
@@ -600,7 +641,8 @@ impl Document {
             | Action::SetRowHidden { sheet, .. }
             | Action::SetFilter { sheet, .. }
             | Action::SetMerge { sheet, .. }
-            | Action::SetCheckbox { sheet, .. } => self.sheet(*sheet).is_some(),
+            | Action::SetCheckbox { sheet, .. }
+            | Action::SetRules { sheet, .. } => self.sheet(*sheet).is_some(),
             // Names and the locale are document-level, so there is no sheet index to be wrong
             // about.
             Action::SetName { .. } | Action::SetLocale { .. } => true,

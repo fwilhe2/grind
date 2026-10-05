@@ -210,6 +210,13 @@ run checkbox "$book" J3 --link I3
 run checkbox "$book" J3 --toggle
 sheet checkbox "$book"
 
+# A conditional-format rule: a formula that is true at a cell draws it differently. Written from
+# the range's top-left and moved down it the way a fill moves a formula, so `$I2` reads each
+# row's own tick — and a paid category turns green, which is what the checkbox is *for*.
+say "rule: a ticked category's row turns green"
+run rule "$book" A2:C7 '[.$I2]=TRUE()' --background green
+sheet rule "$book"
+
 say "recalculate the whole document"
 run recalc "$book"
 
