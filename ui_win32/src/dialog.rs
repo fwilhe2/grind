@@ -114,10 +114,27 @@ pub fn error(owner: HWND, text: &str) {
 /// About box reads the same commit/tree/date every other shell's does.
 pub fn about(owner: HWND) {
     let text = format!(
-        "An ODF-native spreadsheet.\n\n{}\n\nhttps://github.com/fwilhe2/grind",
+        "An ODF-native spreadsheet.\n\n{}\n\nhttps://github.com/fwilhe2/grind\n\n\
+         Free software under the GNU Affero General Public License, version 3 or later. \
+         Help ▸ Third-Party Licences lists the components it is built from.",
         grind_core::build_info::describe("grind-win32", env!("CARGO_PKG_VERSION"))
     );
     say(owner, "About Grind", &text, MB_OK | MB_ICONINFORMATION);
+}
+
+/// Help ▸ Third-Party Licences: every component this program is built from and its licence,
+/// the list every window's About shows (`grind_core::third_party`, doc/third-party.md), in a
+/// read-only box that scrolls — `prompt`'s popup with the edit made multi-line and read-only.
+pub fn licences(owner: HWND) {
+    // An `EDIT` breaks lines at CRLF and draws a bare LF as nothing at all.
+    let text = grind_core::third_party::notices().replace('\n', "\r\n");
+    popup(
+        owner,
+        "Third-Party Licences",
+        "Grind is built from these components, each under its own licence:",
+        &text,
+        true,
+    );
 }
 
 /// The three-button close question.
@@ -420,19 +437,19 @@ use windows::Win32::Graphics::Gdi::{
     HBRUSH, HDC, SetBkColor, SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Controls::EM_SETSEL;
+use windows::Win32::UI::Controls::{EM_SETLIMITTEXT, EM_SETSEL};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetActiveWindow, SetFocus};
 use windows::Win32::UI::WindowsAndMessaging::{
     BS_DEFPUSHBUTTON, CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DestroyWindow,
-    DispatchMessageW, ES_AUTOHSCROLL, GWLP_USERDATA, GetMessageW, GetWindowLongPtrW, GetWindowRect,
-    GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IsDialogMessageW, LB_ADDSTRING,
-    LB_GETCOUNT, LB_GETCURSEL, LB_GETSEL, LB_SETCURSEL, LB_SETSEL, LBN_DBLCLK, LBS_MULTIPLESEL,
-    LBS_NOTIFY, LoadCursorW, MSG, PostQuitMessage, RegisterClassW, SW_SHOW, SendMessageW,
-    SetWindowLongPtrW, ShowWindow, TranslateMessage, WM_COMMAND, WM_CTLCOLOREDIT,
-    WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_SETFONT,
-    WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
-    WS_VSCROLL,
+    DispatchMessageW, ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_MULTILINE, ES_READONLY, GWLP_USERDATA,
+    GetMessageW, GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, HMENU,
+    IDC_ARROW, IsDialogMessageW, LB_ADDSTRING, LB_GETCOUNT, LB_GETCURSEL, LB_GETSEL, LB_SETCURSEL,
+    LB_SETSEL, LBN_DBLCLK, LBS_MULTIPLESEL, LBS_NOTIFY, LoadCursorW, MSG, PostQuitMessage,
+    RegisterClassW, SW_HIDE, SW_SHOW, SendMessageW, SetWindowLongPtrW, SetWindowTextW, ShowWindow,
+    TranslateMessage, WM_COMMAND, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC,
+    WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_SETFONT, WNDCLASSW, WS_BORDER, WS_CAPTION,
+    WS_CHILD, WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::gdi::{Brush, Font};
@@ -522,6 +539,12 @@ struct Prompt {
 ///
 /// **A nested message loop**, like everything else in this file.
 pub fn prompt(owner: HWND, title: &str, label: &str, initial: &str) -> Option<String> {
+    popup(owner, title, label, initial, false)
+}
+
+/// The prompt's window. `reading` makes it a reader instead: a tall, multi-line, read-only
+/// box with a scroll bar, and one Close button.
+fn popup(owner: HWND, title: &str, label: &str, initial: &str, reading: bool) -> Option<String> {
     let class = gdi::wide(PROMPT_CLASS);
     // SAFETY: the class name outlives every call below, and the boxed state is handed to the
     // popup and taken back in `WM_NCDESTROY`.
@@ -547,7 +570,10 @@ pub fn prompt(owner: HWND, title: &str, label: &str, initial: &str) -> Option<St
 
         let dpi = GetDpiForWindow(owner).max(96);
         let px = |value: f64| crate::sheet::geom::scale(value, dpi).round() as i32;
-        let (w, h) = (px(360.0), px(150.0));
+        let (w, h) = match reading {
+            true => (px(640.0), px(520.0)),
+            false => (px(360.0), px(150.0)),
+        };
         let mut owner_rect = Default::default();
         let _ = GetWindowRect(owner, &mut owner_rect);
         let x = owner_rect.left + ((owner_rect.right - owner_rect.left) - w) / 2;
@@ -624,30 +650,51 @@ pub fn prompt(owner: HWND, title: &str, label: &str, initial: &str) -> Option<St
             inner,
             line,
         );
+        let row = h - button.1 - px(40.0);
+        let style = match reading {
+            true => ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+            false => ES_AUTOHSCROLL,
+        };
+        let top = pad + line + px(4.0);
         let edit = child(
             "EDIT",
-            initial,
+            if reading { "" } else { initial },
             WS_CHILD
                 | WS_VISIBLE
                 | WS_BORDER
                 | WS_TABSTOP
-                | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_AUTOHSCROLL as u32),
+                | if reading {
+                    WS_VSCROLL
+                } else {
+                    Default::default()
+                }
+                | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(style as u32),
             ID_PROMPT_EDIT,
             pad,
-            pad + line + px(4.0),
+            top,
             inner,
-            px(24.0),
+            if reading {
+                row - px(8.0) - top
+            } else {
+                px(24.0)
+            },
         );
-        let row = h - button.1 - px(40.0);
+        if reading {
+            // A multi-line edit holds 32K characters until told otherwise, and the list is
+            // longer than that; zero is "as much as the control can".
+            SendMessageW(edit, EM_SETLIMITTEXT, Some(WPARAM(0)), Some(LPARAM(0)));
+            let text = gdi::wide(initial);
+            let _ = SetWindowTextW(edit, PCWSTR(text.as_ptr()));
+        }
         let ok = child(
             "BUTTON",
-            "OK",
+            if reading { "Close" } else { "OK" },
             WS_CHILD
                 | WS_VISIBLE
                 | WS_TABSTOP
                 | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
             IDOK.0 as usize,
-            w - pad - button.0 * 2 - px(8.0),
+            w - pad - button.0 * if reading { 1 } else { 2 } - if reading { 0 } else { px(8.0) },
             row,
             button.0,
             button.1,
@@ -665,6 +712,9 @@ pub fn prompt(owner: HWND, title: &str, label: &str, initial: &str) -> Option<St
         for control in [edit, ok, cancel] {
             set_font(control);
         }
+        if reading {
+            let _ = ShowWindow(cancel, SW_HIDE);
+        }
         with_prompt(popup, |prompt| {
             prompt.edit = edit;
             prompt._font = Some(font);
@@ -675,7 +725,9 @@ pub fn prompt(owner: HWND, title: &str, label: &str, initial: &str) -> Option<St
         let _ = EnableWindow(owner, false);
         let _ = ShowWindow(popup, SW_SHOW);
         let _ = SetFocus(Some(edit));
-        SendMessageW(edit, EM_SETSEL, Some(WPARAM(0)), Some(LPARAM(-1)));
+        if !reading {
+            SendMessageW(edit, EM_SETSEL, Some(WPARAM(0)), Some(LPARAM(-1)));
+        }
 
         let mut message = MSG::default();
         loop {

@@ -326,6 +326,9 @@ pub enum Command {
     /// own labels rather than a second table that could drift from them.
     Shortcuts,
     About,
+    /// Every third-party component and its licence (`doc/third-party.md`), in a read-only
+    /// popup over `grind_core::third_party`.
+    Licences,
 }
 
 impl Command {
@@ -445,6 +448,7 @@ impl Command {
         Command::ToggleNames,
         Command::Shortcuts,
         Command::About,
+        Command::Licences,
     ];
 
     /// The `WM_COMMAND` id this verb arrives as.
@@ -1032,6 +1036,10 @@ pub const MENUS: &[Menu] = &[
                 command: Command::About,
                 label: "&About Grind",
             },
+            Item::Verb {
+                command: Command::Licences,
+                label: "Third-Party &Licences",
+            },
         ],
     },
 ];
@@ -1165,6 +1173,7 @@ fn on_welcome(command: Command) -> bool {
             | Command::Exit
             | Command::Shortcuts
             | Command::About
+            | Command::Licences
     )
 }
 
@@ -1310,7 +1319,8 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::CheckDocument
         | Command::ToggleNames
         | Command::Shortcuts
-        | Command::About => !matches!(kind, Presentation),
+        | Command::About
+        | Command::Licences => !matches!(kind, Presentation),
     }
 }
 

@@ -3708,6 +3708,7 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::Print => {}
         Command::Shortcuts => show_shortcuts(hwnd),
         Command::About => dialog::about(hwnd),
+        Command::Licences => dialog::licences(hwnd),
     }
 }
 
@@ -5703,6 +5704,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         }
         Command::Shortcuts => show_shortcuts(hwnd),
         Command::About => dialog::about(hwnd),
+        Command::Licences => dialog::licences(hwnd),
         // Everything else acts on a document, and there is none. `menu::items_for` keeps all of
         // them off this pane's menu bar; these arms are what makes a stale accelerator harmless.
         Command::Welcome
@@ -6848,6 +6850,7 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::ToggleNames => text_toggle_names(hwnd),
         Command::Shortcuts => show_shortcuts(hwnd),
         Command::About => dialog::about(hwnd),
+        Command::Licences => dialog::licences(hwnd),
         // The spreadsheet's, and this pane has no answer to any of them: it has no sheets, no
         // cells for `CellRole` to classify, and no formulas to list, explain or read out.
         Command::Recalculate
