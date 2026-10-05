@@ -976,6 +976,18 @@ enum Top {
         snippets: bool,
     },
 
+    /// Print the third-party components grind is built from, and their licences
+    ///
+    /// Every crate compiled into any of the suite's programs, the fonts it ships and the
+    /// standard library, with each one's licence text as its authors wrote it — the same list
+    /// every window's About shows (doc/third-party.md).
+    #[command(visible_alias = "licenses")]
+    Licences {
+        /// One line per component instead: name, version, licence and where it comes from
+        #[arg(long)]
+        list: bool,
+    },
+
     /// Convert between the three physical forms — .ods, .fods and .grind
     ///
     /// The form comes from the output extension. Never between document *kinds*: a
@@ -2543,6 +2555,20 @@ fn run(cli: &Cli) -> Result<Report, String> {
             .lines()
             .map(str::to_owned)
             .collect(),
+        })),
+
+        // No document: the list is the core's, so every window's About and this agree.
+        Top::Licences { list: true } => Ok(Report::Components(
+            grind_core::third_party::components()
+                .iter()
+                .map(Into::into)
+                .collect(),
+        )),
+        Top::Licences { list: false } => Ok(Report::Text(TextReport {
+            lines: grind_core::third_party::notices()
+                .lines()
+                .map(str::to_owned)
+                .collect(),
         })),
 
         Top::Convert { file, out } => match document_kind(file)? {

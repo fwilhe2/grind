@@ -49,6 +49,38 @@ pub enum Report {
     /// What `grind text export-pdf` wrote (`doc/pdf-export.md`).
     #[cfg(feature = "pdf")]
     Pdf(PdfReport),
+    /// `grind licences --list`: one row per third-party component (`doc/third-party.md`).
+    Components(Vec<ComponentReport>),
+}
+
+/// One third-party component, as `grind licences --list` prints it.
+#[derive(Debug, Serialize)]
+pub struct ComponentReport {
+    pub name: &'static str,
+    pub version: &'static str,
+    pub licence: &'static str,
+    pub copyright: &'static str,
+    pub source: &'static str,
+    pub kind: &'static str,
+}
+
+impl From<&grind_core::third_party::Component> for ComponentReport {
+    fn from(c: &grind_core::third_party::Component) -> Self {
+        use grind_core::third_party::Kind;
+        ComponentReport {
+            name: c.name,
+            version: c.version,
+            licence: c.licence,
+            copyright: c.copyright,
+            source: c.source,
+            kind: match c.kind {
+                Kind::Crate => "crate",
+                Kind::Font => "font",
+                Kind::Text => "text",
+                Kind::Runtime => "runtime",
+            },
+        }
+    }
 }
 
 /// A PDF export: where it went, and `grind_print::Report` — including what it had to
@@ -606,6 +638,11 @@ impl Report {
             Report::Text(text) => {
                 for line in &text.lines {
                     println!("{line}");
+                }
+            }
+            Report::Components(components) => {
+                for c in components {
+                    println!("{}\t{}\t{}\t{}", c.name, c.version, c.licence, c.source);
                 }
             }
             #[cfg(feature = "pdf")]
