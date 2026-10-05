@@ -41,6 +41,9 @@ pub enum Dropped {
     Field,
     /// A form field (a checkbox, a text input, a drop-down). Its text is kept.
     FormField,
+    /// A content control (`w:sdt`) that is a control — a drop-down, a date picker, a checkbox,
+    /// placeholder text. What it shows is kept as text; the control is not.
+    ContentControl,
     /// A section whose page differs from the first section's — size, margins. The text model
     /// has one page.
     Section,
@@ -56,6 +59,9 @@ pub enum Dropped {
     Frame,
     /// A VBA project in a macro-enabled document. **Never executed.**
     Macro,
+    /// The rest of a document whose XML stops being well formed part-way through. What came
+    /// before the damage is kept.
+    Damaged,
 }
 
 impl Dropped {
@@ -72,6 +78,7 @@ impl Dropped {
             Dropped::FloatingPosition => "floating picture's position",
             Dropped::Field => "field (kept as its text)",
             Dropped::FormField => "form field (kept as its text)",
+            Dropped::ContentControl => "content control (kept as its text)",
             Dropped::Section => "section with its own page",
             Dropped::Columns => "multi-column section",
             Dropped::HeaderVariant => "first-page or even-page header or footer",
@@ -79,6 +86,7 @@ impl Dropped {
             Dropped::TableStyleCondition => "table style banding",
             Dropped::Frame => "positioned paragraph",
             Dropped::Macro => "macro",
+            Dropped::Damaged => "damaged remainder of the document",
         }
     }
 }

@@ -123,6 +123,8 @@ pub struct ParaFacts {
     pub section: Option<Box<crate::section::Section>>,
     /// `w:framePr` — a paragraph positioned on the page, which is kept where it stands.
     pub frame: bool,
+    /// `w:framePr/@w:dropCap`: the paragraph is the large first letter of the next one.
+    pub drop_cap: bool,
 }
 
 /// What a `w:rPr` says: its formatting, and the character style it names.
@@ -231,7 +233,9 @@ pub fn border(attrs: &Attrs) -> Option<(String, Option<f64>)> {
         _ => "solid",
     };
     // Eighths of a point, and Word draws nothing thinner than a quarter.
-    let width = attrs.int("sz").map_or(0.5, |sz| (sz as f64 / 8.0).max(0.25));
+    let width = attrs
+        .int("sz")
+        .map_or(0.5, |sz| (sz as f64 / 8.0).max(0.25));
     let color = attrs
         .w("color")
         .and_then(color)
@@ -260,9 +264,15 @@ pub fn run_property(p: &mut Props, local: &str, attrs: &Attrs, fonts: &Fonts) {
     let on = attrs.on();
     match local {
         "b" => p.set("fo:font-weight", if on { "bold" } else { "normal" }),
-        "bCs" => p.set("style:font-weight-complex", if on { "bold" } else { "normal" }),
+        "bCs" => p.set(
+            "style:font-weight-complex",
+            if on { "bold" } else { "normal" },
+        ),
         "i" => p.set("fo:font-style", if on { "italic" } else { "normal" }),
-        "iCs" => p.set("style:font-style-complex", if on { "italic" } else { "normal" }),
+        "iCs" => p.set(
+            "style:font-style-complex",
+            if on { "italic" } else { "normal" },
+        ),
         "u" => underline(p, attrs),
         "strike" | "dstrike" => {
             if on {
@@ -422,7 +432,10 @@ fn underline(p: &mut Props, attrs: &Attrs) {
         _ => ("solid", None, false),
     };
     p.set("style:text-underline-style", style);
-    p.set("style:text-underline-width", if bold { "bold" } else { "auto" });
+    p.set(
+        "style:text-underline-width",
+        if bold { "bold" } else { "auto" },
+    );
     p.set(
         "style:text-underline-color",
         attrs
@@ -482,9 +495,10 @@ pub fn read_ppr(r: &mut Reader) -> grind_ooxml::Result<ParaFacts> {
             }
             "ind" => indent(p, attrs),
             "spacing" => spacing(p, attrs),
-            "contextualSpacing" => {
-                p.set("style:contextual-spacing", if on { "true" } else { "false" })
-            }
+            "contextualSpacing" => p.set(
+                "style:contextual-spacing",
+                if on { "true" } else { "false" },
+            ),
             "shd" => {
                 if let Some(c) = shading(attrs) {
                     p.set("fo:background-color", c);
@@ -550,6 +564,7 @@ pub fn read_ppr(r: &mut Reader) -> grind_ooxml::Result<ParaFacts> {
             "sectPr" => out.section = Some(Box::new(crate::section::read(r)?)),
             "framePr" => {
                 out.frame = true;
+                out.drop_cap = matches!(attrs.w("dropCap"), Some("drop" | "margin"));
                 return Ok(Handled::No);
             }
             // The paragraph *mark*'s run properties: how the pilcrow is formatted, which is
@@ -769,13 +784,19 @@ mod tests {
 
     #[test]
     fn tab_stops_layer_and_clear() {
-        let base = ppr(r#"<w:tabs><w:tab w:val="left" w:pos="720"/><w:tab w:val="right" w:leader="dot" w:pos="9000"/></w:tabs>"#);
-        let over = ppr(r#"<w:tabs><w:tab w:val="clear" w:pos="720"/><w:tab w:val="center" w:pos="4500"/></w:tabs>"#);
+        let base = ppr(
+            r#"<w:tabs><w:tab w:val="left" w:pos="720"/><w:tab w:val="right" w:leader="dot" w:pos="9000"/></w:tabs>"#,
+        );
+        let over = ppr(
+            r#"<w:tabs><w:tab w:val="clear" w:pos="720"/><w:tab w:val="center" w:pos="4500"/></w:tabs>"#,
+        );
         let mut props = base.props.clone();
         props.layer(&over.props);
         let tabs = props.tabs.unwrap();
         assert_eq!(
-            tabs.iter().map(|t| (t.position, t.kind)).collect::<Vec<_>>(),
+            tabs.iter()
+                .map(|t| (t.position, t.kind))
+                .collect::<Vec<_>>(),
             [(4500, "center"), (9000, "right")]
         );
         assert_eq!(tabs[1].leader, Some('.'));

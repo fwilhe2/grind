@@ -301,6 +301,23 @@ if "$GRIND" text export-pdf --help >/dev/null 2>&1; then
     text preview "$doc" "$out/sample-page1.png"
 fi
 
+# --- import: a Word document becomes an ODF document -----------------------------------------
+# `doc/docx-import.md`. One way in and never out, so this is the one step that cannot build its
+# own input: nothing in this suite writes `.docx`, and the document is vendored at
+# `docx/tests/data/sample.docx` — this script's own `sample.fodt`, saved as Word by the oracle.
+# What arrives is the text, the headings, the lists with their numbering, the table, the
+# formatting and the named styles, and a report counting what had nowhere to go — here,
+# nothing, which is what `--strict` asserts. A feature, hence the check.
+
+if "$GRIND" text import --help >/dev/null 2>&1; then
+    say "import: a Word document becomes an ODF document"
+    "$GRIND" text import --strict --force "$here/../docx/tests/data/sample.docx" "$out/imported.fodt"
+    text outline "$out/imported.fodt"
+    "$GRIND" lint "$out/imported.fodt"
+else
+    say "import: not in this build (compiled without the docx feature)"
+fi
+
 # --- build: a document generated from a script -------------------------------------------------
 # `doc/dsl.md` layer 1, D7. `examples/report.rhai` says a section per region once and lets the
 # loop write them, with the same inline notation this document was typed with. The arrow points

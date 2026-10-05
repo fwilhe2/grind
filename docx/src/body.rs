@@ -62,7 +62,14 @@ pub enum Inline {
     PageBreak,
     Bookmark(String),
     /// A footnote or endnote reference, by the note's id in its part.
-    Note { endnote: bool, id: String, run: Run },
+    Note {
+        endnote: bool,
+        id: String,
+        run: Run,
+        /// A mark of the author's own in place of the next number (`w:customMarkFollows`) —
+        /// empty while the text that is the mark has not been read yet.
+        mark: Option<String>,
+    },
     Image(Image),
     PageNumber(Run),
     PageCount(Run),
@@ -189,6 +196,11 @@ impl<'p, 'a> Ctx<'p, 'a> {
         self.href = None;
     }
 
+    /// Whether a field's instruction is being read — any field, however deep.
+    fn in_instruction(&self) -> bool {
+        self.fields.iter().any(|f| !f.in_result)
+    }
+
     /// Whether a run's text is shown here: not inside any field's instruction, and not inside
     /// a result this filter replaces with a field of its own.
     fn showing(&self) -> bool {
@@ -213,7 +225,12 @@ impl<'p, 'a> Ctx<'p, 'a> {
 /// A picture's media type from its part name, for the formats `picture::mime` does not sniff —
 /// Windows' own metafiles, which old Word documents are full of.
 fn by_extension(name: &str) -> &'static str {
-    match name.rsplit('.').next().map(str::to_ascii_lowercase).as_deref() {
+    match name
+        .rsplit('.')
+        .next()
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
         Some("emf") => "image/x-emf",
         Some("wmf") => "image/x-wmf",
         Some("png") => "image/png",
@@ -234,7 +251,9 @@ pub fn read_blocks(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Vec<Blo
     Ok(out)
 }
 
-fn blocks_into(r: &mut Reader, ctx: &mut Ctx, out: &mut Vec<Block>) -> grind_ooxml::Result<()> {
+/// [`read_blocks`] into a list the caller holds — so that what was read before a damaged part
+/// stopped being XML is still there to keep.
+pub fn blocks_into(r: &mut Reader, ctx: &mut Ctx, out: &mut Vec<Block>) -> grind_ooxml::Result<()> {
     // A bookmark between paragraphs belongs to the next one.
     let mut pending: Vec<Inline> = Vec::new();
     r.children(|r, name, attrs| {
@@ -252,10 +271,25 @@ fn blocks_into(r: &mut Reader, ctx: &mut Ctx, out: &mut Vec<Block>) -> grind_oox
                     inlines.append(&mut para.inlines);
                     para.inlines = inlines;
                 }
-                out.push(Block::Para(para));
+                // A paragraph mark inside a field's instruction is part of the instruction:
+                // the paragraph does not end there in what the field shows, so what it showed
+                // joins the next one (`doc/docx-format.md` §2.3).
+                if ctx.in_instruction() {
+                    pending = para.inlines;
+                } else if para.facts.drop_cap {
+                    // Word keeps a drop cap as a framed paragraph of its own; it is the first
+                    // letter of the next paragraph, and is read as that — its size is lost.
+                    pending = para.inlines;
+                } else {
+                    out.push(Block::Para(para));
+                }
             }
             "tbl" => out.push(Block::Table(read_table(r, ctx)?)),
-            "sdt" => content_of_sdt(r, |r| blocks_into(r, ctx, out))?,
+            "sdt" => {
+                if content_of_sdt(r, |r| blocks_into(r, ctx, out))? {
+                    ctx.report.drop_one(Dropped::ContentControl);
+                }
+            }
             "customXml" | "ins" | "moveTo" => {
                 if matches!(name.local.as_str(), "ins" | "moveTo") {
                     ctx.report.drop_one(Dropped::TrackedChange);
@@ -290,19 +324,32 @@ fn blocks_into(r: &mut Reader, ctx: &mut Ctx, out: &mut Vec<Block>) -> grind_oox
     Ok(())
 }
 
-/// `w:sdt` — a content control: its `w:sdtContent` read in place, the rest ignored.
+/// `w:sdt` — a content control: its `w:sdtContent` read in place, the rest ignored. Whether it
+/// was a *control* — a drop-down, a date picker, a checkbox, placeholder text — rather than a
+/// plain wrapper is the answer, since the control is what the text does not keep.
 fn content_of_sdt(
     r: &mut Reader,
     mut inside: impl FnMut(&mut Reader) -> grind_ooxml::Result<()>,
-) -> grind_ooxml::Result<()> {
+) -> grind_ooxml::Result<bool> {
+    let mut control = false;
     r.children(|r, name, _| {
         if name.w("sdtContent") {
             inside(r)?;
             Ok(Handled::Yes)
+        } else if name.w("sdtPr") {
+            r.children(|_, name, _| {
+                control |= matches!(
+                    name.local.as_str(),
+                    "dropDownList" | "comboBox" | "date" | "checkbox" | "showingPlcHdr" | "text"
+                );
+                Ok(Handled::No)
+            })?;
+            Ok(Handled::Yes)
         } else {
             Ok(Handled::No)
         }
-    })
+    })?;
+    Ok(control)
 }
 
 /// OMML: `m:oMath` and `m:oMathPara`, recognised by name since the math namespace is in no
@@ -382,7 +429,11 @@ fn content(
             end_field(ctx, out, &Run::default());
         }
         "smartTag" | "customXml" | "dir" | "bdo" => inline_children(r, ctx, out)?,
-        "sdt" => content_of_sdt(r, |r| inline_children(r, ctx, out))?,
+        "sdt" => {
+            if content_of_sdt(r, |r| inline_children(r, ctx, out))? {
+                ctx.report.drop_one(Dropped::ContentControl);
+            }
+        }
         "ins" | "moveTo" => {
             ctx.report.drop_one(Dropped::TrackedChange);
             inline_children(r, ctx, out)?;
@@ -402,7 +453,11 @@ fn content(
     Ok(Handled::Yes)
 }
 
-fn inline_children(r: &mut Reader, ctx: &mut Ctx, out: &mut Vec<Inline>) -> grind_ooxml::Result<()> {
+fn inline_children(
+    r: &mut Reader,
+    ctx: &mut Ctx,
+    out: &mut Vec<Inline>,
+) -> grind_ooxml::Result<()> {
     r.children(|r, name, attrs| content(r, name, attrs, ctx, out))
 }
 
@@ -455,6 +510,13 @@ fn separate_field(ctx: &mut Ctx, out: &mut Vec<Inline>, run: &Run) {
             }
         }
         "FORMTEXT" | "FORMCHECKBOX" | "FORMDROPDOWN" => ctx.report.drop_one(Dropped::FormField),
+        // `ASK` and `SET` give a bookmark a value and show nothing themselves (§17.16.5.4,
+        // §17.16.5.56) — their cached result is what a later `REF` shows, not what they do
+        // (`doc/docx-format.md` §2.3).
+        "ASK" | "SET" => {
+            field.hide_result = true;
+            ctx.report.drop_one(Dropped::Field);
+        }
         // An empty instruction is a field nobody filled in, and shows its result as text with
         // nothing lost.
         "" => {}
@@ -525,9 +587,10 @@ fn read_run(r: &mut Reader, ctx: &mut Ctx, out: &mut Vec<Inline>) -> grind_ooxml
                 run.style = facts.style;
             }
             "t" => {
-                let text = r.text()?;
+                let preserve = attrs.get(Ns::Other, "space") == Some("preserve");
+                let text = whitespace(&r.text()?, preserve);
                 if ctx.showing() {
-                    push_text(out, &text, &run);
+                    push_shown(out, &text, &run);
                 }
             }
             "instrText" => {
@@ -562,7 +625,7 @@ fn read_run(r: &mut Reader, ctx: &mut Ctx, out: &mut Vec<Inline>) -> grind_ooxml
                     if let Some(font) = attrs.w("font") {
                         symbol.props.set("fo:font-family", props::family(font));
                     }
-                    push_text(out, &c.to_string(), &symbol);
+                    push_shown(out, &c.to_string(), &symbol);
                 }
             }
             "footnoteReference" | "endnoteReference" if ctx.showing() => {
@@ -571,6 +634,11 @@ fn read_run(r: &mut Reader, ctx: &mut Ctx, out: &mut Vec<Inline>) -> grind_ooxml
                         endnote: name.local == "endnoteReference",
                         id: id.to_owned(),
                         run: run.clone(),
+                        // Waiting for the text that follows, which is the mark itself.
+                        mark: attrs
+                            .w("customMarkFollows")
+                            .is_some_and(|v| matches!(v, "1" | "true" | "on"))
+                            .then(String::new),
                     });
                 }
             }
@@ -590,6 +658,45 @@ fn read_run(r: &mut Reader, ctx: &mut Ctx, out: &mut Vec<Inline>) -> grind_ooxml
         }
         Ok(Handled::Yes)
     })
+}
+
+/// A `w:t`'s text as Word shows it. A line break in the character data is a space either way —
+/// a break is `w:br`, never a newline (`doc/docx-format.md` §2.2) — and without
+/// `xml:space="preserve"` every run of whitespace, a tab included, is one space. It is not
+/// trimmed: a run that is a single space between two words is how some producers write one.
+fn whitespace(text: &str, preserve: bool) -> String {
+    if preserve {
+        return text.replace("\r\n", " ").replace(['\r', '\n'], " ");
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut gap = false;
+    for c in text.chars() {
+        if matches!(c, ' ' | '\t' | '\r' | '\n') {
+            gap = true;
+        } else {
+            if gap {
+                out.push(' ');
+                gap = false;
+            }
+            out.push(c);
+        }
+    }
+    if gap {
+        out.push(' ');
+    }
+    out
+}
+
+/// Append text a run shows — unless a note reference just before it is waiting for its own
+/// mark (`w:customMarkFollows`), in which case this text *is* that mark.
+fn push_shown(out: &mut Vec<Inline>, text: &str, run: &Run) {
+    if let Some(Inline::Note { mark, .. }) = out.last_mut()
+        && mark.as_deref() == Some("")
+    {
+        *mark = Some(text.to_owned());
+    } else {
+        push_text(out, text, run);
+    }
 }
 
 /// Append text, joining it to a text run of the same formatting just before.
@@ -967,7 +1074,11 @@ fn read_cell(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Cell> {
                 blocks.push(Block::Para(para));
             }
             (Ns::Word, "tbl") => blocks.push(Block::Table(read_table(r, ctx)?)),
-            (Ns::Word, "sdt") => content_of_sdt(r, |r| blocks_into(r, ctx, &mut blocks))?,
+            (Ns::Word, "sdt") => {
+                if content_of_sdt(r, |r| blocks_into(r, ctx, &mut blocks))? {
+                    ctx.report.drop_one(Dropped::ContentControl);
+                }
+            }
             (Ns::Word, "customXml") => blocks_into(r, ctx, &mut blocks)?,
             (Ns::Word, "bookmarkStart") => {
                 if let Some(mark) = bookmark(attrs) {

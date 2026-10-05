@@ -142,7 +142,10 @@ mod tests {
         reader.root().unwrap();
         let s = read(&mut reader).unwrap();
         assert_eq!((s.width, s.height), (Some(11906), Some(16838)));
-        assert_eq!((s.top, s.left, s.header), (Some(1417), Some(1417), Some(708)));
+        assert_eq!(
+            (s.top, s.left, s.header),
+            (Some(1417), Some(1417), Some(708))
+        );
         assert_eq!(s.headers, vec![(Which::Default, "rId8".to_owned())]);
         assert_eq!(s.footers, vec![(Which::First, "rId9".to_owned())]);
         assert!(s.title_page);

@@ -120,7 +120,9 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
     let default_tab = target(RelType::Settings)
         .and_then(|part| package.part(&part))
         .and_then(|bytes| default_tab(&bytes));
-    if rels.iter().any(|rel| rel.target.ends_with("vbaproject.bin"))
+    if rels
+        .iter()
+        .any(|rel| rel.target.ends_with("vbaproject.bin"))
         || package.part("word/vbaProject.bin").is_some()
     {
         report.drop_one(Dropped::Macro);
@@ -144,17 +146,29 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
     let mut reader = Reader::new(&bytes);
     reader.root()?;
     let mut body = Vec::new();
-    reader.children(|r, name, _| {
+    let read = reader.children(|r, name, _| {
         if name.w("body") {
-            body = body::read_blocks(r, &mut ctx)?;
+            body::blocks_into(r, &mut ctx, &mut body)?;
             Ok(Handled::Yes)
         } else {
             Ok(Handled::No)
         }
-    })?;
+    });
+    // XML that stops being XML part-way through is a damaged document, not a foreign one:
+    // everything before the damage was read and is kept, and the rest is counted. LibreOffice
+    // opens such a file too (`doc/docx-format.md` §1.5); refusing it would make the import less
+    // tolerant than the oracle over a fault in one equation.
+    if let Err(error) = read {
+        match error {
+            Error::Xml(_) => ctx.report.drop_one(Dropped::Damaged),
+            error => return Err(error),
+        }
+    }
     ctx.seen.transitional |= reader.seen.transitional;
     ctx.seen.strict |= reader.seen.strict;
-    ctx.report.must_understand.append(&mut reader.must_understand);
+    ctx.report
+        .must_understand
+        .append(&mut reader.must_understand);
     let body = body::page_breaks(body);
     let sections = std::mem::take(&mut ctx.sections);
 

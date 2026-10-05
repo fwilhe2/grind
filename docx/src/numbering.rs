@@ -277,7 +277,11 @@ mod tests {
         assert!(!one.is_bulleted());
         assert!(n.lists[&2].is_bulleted());
         assert_eq!(bullet(&n.lists[&2].level(0).unwrap().text), '•');
-        assert_eq!(n.lists[&3].level(0).unwrap().start, 5, "the override restarts");
+        assert_eq!(
+            n.lists[&3].level(0).unwrap().start,
+            5,
+            "the override restarts"
+        );
         assert_eq!(n.lists[&1].level(0).unwrap().start, 1, "and only there");
     }
 

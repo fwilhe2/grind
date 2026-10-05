@@ -65,6 +65,7 @@ pub fn write(input: Input, report: &mut Report) -> String {
         lists_seen: HashSet::new(),
         footnotes: 0,
         endnotes: 0,
+        notes_written: 0,
         images: 0,
         in_note: false,
     };
@@ -123,22 +124,41 @@ const PROLOG: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
 "#;
 
-/// Mark every block that begins a section starting on a new page.
+/// Mark every block that begins a section starting on a new page — and drop the empty
+/// paragraph that does nothing but close a section continuing on the same page, as the oracle
+/// does (`doc/docx-format.md` §5.3): in Word it is where the section break is drawn, and in a
+/// document with one page layout it is an empty line that was never text.
 fn section_starts(blocks: &[Block], sections: &[Section]) -> Vec<Block> {
-    let mut out = blocks.to_vec();
+    let mut out: Vec<Block> = Vec::with_capacity(blocks.len());
     let mut ended = 0;
     let mut pending = false;
-    for block in &mut out {
-        match block {
+    let last = blocks.len().saturating_sub(1);
+    // Whether nothing has been read of the current section before this block.
+    let mut fresh = true;
+    for (i, block) in blocks.iter().enumerate() {
+        let mut block = block.clone();
+        let section_is_empty = std::mem::replace(&mut fresh, false);
+        match &mut block {
             Block::Para(p) => {
                 p.page_break_before |= std::mem::take(&mut pending);
                 if p.facts.section.is_some() {
+                    fresh = true;
                     ended += 1;
                     pending = sections.get(ended).is_some_and(Section::starts_a_page);
+                    // Only before a section that continues on the same page: before one that
+                    // starts a new page the oracle keeps the paragraph, on the page it ends.
+                    // And only when it is not the whole of its section, which would leave the
+                    // section with nothing in it — the oracle keeps that one too.
+                    if i < last && p.inlines.is_empty() && !pending && !section_is_empty {
+                        // A page it was itself to start passes on to what follows.
+                        pending |= p.page_break_before;
+                        continue;
+                    }
                 }
             }
             Block::Table(t) => t.page_break_before |= std::mem::take(&mut pending),
         }
+        out.push(block);
     }
     out
 }
@@ -159,6 +179,8 @@ struct Writer<'i, 'r> {
     lists_seen: HashSet<i64>,
     footnotes: usize,
     endnotes: usize,
+    /// Every note written so far, numbered or not — what keeps each one's `text:id` unique.
+    notes_written: usize,
     images: usize,
     in_note: bool,
 }
@@ -472,7 +494,12 @@ impl Writer<'_, '_> {
                 }
                 *space = false;
             }
-            Inline::Note { endnote, id, run } => self.note(out, *endnote, id, run, space),
+            Inline::Note {
+                endnote,
+                id,
+                run,
+                mark,
+            } => self.note(out, *endnote, id, run, mark.as_deref(), space),
             Inline::Image(image) => {
                 self.image(out, image);
                 *space = false;
@@ -480,7 +507,15 @@ impl Writer<'_, '_> {
         }
     }
 
-    fn note(&mut self, out: &mut String, endnote: bool, id: &str, run: &Run, space: &mut bool) {
+    fn note(
+        &mut self,
+        out: &mut String,
+        endnote: bool,
+        id: &str,
+        run: &Run,
+        mark: Option<&str>,
+        space: &mut bool,
+    ) {
         // A note inside a note is not valid ODF (rng:8465 excludes it), and Word does not write
         // one either; a malformed file's is dropped rather than nested.
         if self.in_note {
@@ -496,12 +531,22 @@ impl Writer<'_, '_> {
         };
         let mut blocks = blocks.clone();
         trim_leading_space(&mut blocks);
-        let (class, number, citation) = if endnote {
-            self.endnotes += 1;
-            ("endnote", self.endnotes, roman(self.endnotes))
-        } else {
-            self.footnotes += 1;
-            ("footnote", self.footnotes, self.footnotes.to_string())
+        // A note with a mark of its own takes no number, and the next numbered one carries on
+        // from the last (measured, `doc/docx-format.md` §2.5).
+        let mark = mark.filter(|m| !m.is_empty());
+        self.notes_written += 1;
+        let number = self.notes_written;
+        let class = if endnote { "endnote" } else { "footnote" };
+        let citation = match mark {
+            Some(mark) => mark.to_owned(),
+            None if endnote => {
+                self.endnotes += 1;
+                roman(self.endnotes)
+            }
+            None => {
+                self.footnotes += 1;
+                self.footnotes.to_string()
+            }
         };
         self.report.notes += 1;
         let prefix = if endnote { "edn" } else { "ftn" };
@@ -509,10 +554,15 @@ impl Writer<'_, '_> {
         if let Some(style) = &style {
             let _ = write!(out, "<text:span text:style-name=\"{}\">", esc(style));
         }
+        let label = match mark {
+            Some(mark) => format!(" text:label=\"{}\"", esc(mark)),
+            None => String::new(),
+        };
         let _ = write!(
             out,
             "<text:note text:id=\"{prefix}{number}\" text:note-class=\"{class}\">\
-             <text:note-citation>{citation}</text:note-citation><text:note-body>"
+             <text:note-citation{label}>{}</text:note-citation><text:note-body>",
+            esc(&citation)
         );
         self.in_note = true;
         let mut body = String::new();
@@ -734,7 +784,14 @@ impl Writer<'_, '_> {
                     }
                 }
                 let last_row = r + down >= rows;
-                let cell_props = cell_look(cell, &look, r == 0, last_row, column == 0, column + span >= columns);
+                let cell_props = cell_look(
+                    cell,
+                    &look,
+                    r == 0,
+                    last_row,
+                    column == 0,
+                    column + span >= columns,
+                );
                 let style = self.cell_style(cell_props);
                 let _ = write!(
                     out,
@@ -930,7 +987,10 @@ impl Writer<'_, '_> {
             out.push_str("  </style:style>\n");
         }
         for ((parent, props), name) in by_name(&self.text_styles) {
-            let _ = write!(out, "  <style:style style:name=\"{name}\" style:family=\"text\"");
+            let _ = write!(
+                out,
+                "  <style:style style:name=\"{name}\" style:family=\"text\""
+            );
             if let Some(parent) = parent {
                 let _ = write!(out, " style:parent-style-name=\"{}\"", esc(parent));
             }
@@ -1038,7 +1098,11 @@ fn by_name<K>(pool: &BTreeMap<K, String>) -> Vec<(&K, &String)> {
 /// `style:text-properties`.
 fn write_props(out: &mut String, props: &ParaProps, indent: &str) {
     if !props.para.is_empty() || props.tabs.is_some() {
-        let _ = write!(out, "{indent}<style:paragraph-properties{}", props.para.attributes());
+        let _ = write!(
+            out,
+            "{indent}<style:paragraph-properties{}",
+            props.para.attributes()
+        );
         match &props.tabs {
             Some(tabs) if !tabs.is_empty() => {
                 out.push_str("><style:tab-stops>");
@@ -1067,7 +1131,11 @@ fn write_props(out: &mut String, props: &ParaProps, indent: &str) {
         }
     }
     if !props.text.is_empty() {
-        let _ = writeln!(out, "{indent}<style:text-properties{}/>", props.text.attributes());
+        let _ = writeln!(
+            out,
+            "{indent}<style:text-properties{}/>",
+            props.text.attributes()
+        );
     }
 }
 
@@ -1110,7 +1178,10 @@ fn cell_look(
     };
     for (key, line) in [
         ("fo:border-top", side("top", top, "top", "insideH")),
-        ("fo:border-bottom", side("bottom", bottom, "bottom", "insideH")),
+        (
+            "fo:border-bottom",
+            side("bottom", bottom, "bottom", "insideH"),
+        ),
         ("fo:border-left", side("left", left, "left", "insideV")),
         ("fo:border-right", side("right", right, "right", "insideV")),
     ] {
@@ -1122,13 +1193,14 @@ fn cell_look(
     if let Some(valign) = cell.valign {
         p.set("style:vertical-align", valign);
     }
-    // Word's cell margins: the cell's own, then the table's, then what Word assumes — 0.08 in
-    // left and right, nothing above and below (`doc/docx-format.md` §6.2).
+    // Word's cell margins: the cell's own, then the table's, then what is assumed — 108 twips
+    // left and right, nothing above and below, measured on the oracle (`doc/docx-format.md`
+    // §6.2).
     for (side, key, fallback) in [
         ("top", "fo:padding-top", 0),
         ("bottom", "fo:padding-bottom", 0),
-        ("left", "fo:padding-left", 115),
-        ("right", "fo:padding-right", 115),
+        ("left", "fo:padding-left", 108),
+        ("right", "fo:padding-right", 108),
     ] {
         let twips = cell
             .margins
@@ -1264,6 +1336,9 @@ mod tests {
             clear: false,
         }];
         assert_eq!(shift_tabs(&tabs, 720)[0].position, 2160);
-        assert!(shift_tabs(&tabs, 3000).is_empty(), "a stop behind the indent is gone");
+        assert!(
+            shift_tabs(&tabs, 3000).is_empty(),
+            "a stop behind the indent is gone"
+        );
     }
 }

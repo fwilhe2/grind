@@ -17,3 +17,10 @@ grind-ooxml = { path = "../ooxml" }
 # `office:binary-data`'s encoding — a picture is carried inside the flat document it imports to.
 # Already `grind-core`'s and `grind-text`'s.
 base64 = "0.23"
+
+[dev-dependencies]
+# `Error::WouldLose`, matched by `tests/editing.rs`.
+grind-core = { path = "../core" }
+# Only for loop A″'s check that a file refused as "not a Word document" really holds no Word
+# part — the same zip the filter itself reads through `grind-ooxml`.
+zip = { version = "8", default-features = false, features = ["deflate"] }

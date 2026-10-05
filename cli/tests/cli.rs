@@ -1895,3 +1895,46 @@ fn a_strict_import_refuses_a_lossy_conversion() {
     assert!(json.contains("comment"), "and says why: {json}");
     assert!(!std::path::Path::new(&lossy).exists(), "and writes nothing");
 }
+
+/// `grind text import` (`doc/docx-import.md`): a Word document becomes an ODF text document
+/// that every other verb reads. The vendored sample is the oracle's Word conversion of
+/// `examples/sample-text.sh`'s own document, so what it holds is known without opening it.
+#[cfg(feature = "docx")]
+#[test]
+fn an_imported_word_document_arrives_with_its_structure() {
+    let dir = Sandbox::new("import-docx");
+    let doc = s(&dir.path("imported.fodt"));
+    let sample = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../docx/tests/data/sample.docx"
+    );
+    let json = succeeds(
+        grind(&[
+            "--format", "json", "text", "import", sample, &doc, "--strict",
+        ]),
+        &["text", "import"],
+    );
+    assert_eq!(field(&json, "lossless"), "true");
+    assert_eq!(field(&json, "tables"), "1");
+    let outline = ok_top(&["text", "outline", &doc]);
+    assert!(outline.contains("Field Notes"), "{outline}");
+    // Never over the original: an existing output needs --force, and the input is untouched.
+    let again = grind(&["text", "import", sample, &doc]);
+    assert!(!again.status.success());
+}
+
+/// A spreadsheet is not a Word document, and the import says so rather than writing an empty one.
+#[cfg(all(feature = "docx", feature = "xlsx"))]
+#[test]
+fn a_workbook_is_refused_by_the_word_import() {
+    let dir = Sandbox::new("import-docx-wrong");
+    let out = s(&dir.path("out.fodt"));
+    let book = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../xlsx/tests/data/sample.xlsx"
+    );
+    let refused = grind(&["text", "import", book, &out]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("not a Word document"));
+    assert!(!std::path::Path::new(&out).exists());
+}

@@ -98,27 +98,17 @@ impl Styles {
         out
     }
 
-    /// The outline level a paragraph in this style has, 0-based, if it is a heading.
+    /// The outline level a paragraph in this style has, 0-based, if it is a heading: stated
+    /// (`w:outlineLvl`) somewhere up the chain. Level 9 is "body text" and no heading.
     ///
-    /// Stated (`w:outlineLvl`) somewhere up the chain, or — for Word's nine built-in heading
-    /// styles, whose level Word knows without being told — taken from the name `heading N`
-    /// (`doc/docx-format.md` §3.2). Level 9 is "body text" and no heading.
+    /// A style *named* `heading 1` that states no level is not a heading — measured against the
+    /// oracle (`doc/docx-format.md` §3.2); Word itself writes the level into every heading
+    /// style it saves, so the name is never needed for a document Word wrote.
     pub fn outline(&self, id: &str) -> Option<i64> {
-        for style in self.chain(id) {
-            if let Some(level) = style.outline {
-                return (0..9).contains(&level).then_some(level);
-            }
-            if let Some(level) = style
-                .name
-                .as_deref()
-                .and_then(|n| n.to_ascii_lowercase().strip_prefix("heading ").map(str::to_owned))
-                .and_then(|n| n.trim().parse::<i64>().ok())
-                .filter(|n| (1..=9).contains(n))
-            {
-                return Some(level - 1);
-            }
-        }
-        None
+        self.chain(id)
+            .into_iter()
+            .find_map(|style| style.outline)
+            .filter(|level| (0..9).contains(level))
     }
 
     /// The numbering a paragraph in this style has, `(numId, ilvl)`, if any style up the
@@ -224,7 +214,9 @@ pub fn read(bytes: &[u8], fonts: &Fonts) -> Styles {
         let Some(id) = attrs.w("styleId").map(str::to_owned) else {
             return Ok(Handled::No);
         };
-        let default = attrs.w("default").is_some_and(|d| matches!(d, "1" | "true" | "on"));
+        let default = attrs
+            .w("default")
+            .is_some_and(|d| matches!(d, "1" | "true" | "on"));
         let mut style = Style {
             id: id.clone(),
             kind,
@@ -339,15 +331,16 @@ pub fn table_look_child(
     }
 }
 
-/// What Word assumes when even `w:docDefaults` is silent: 10-point Times New Roman, and no space
-/// around a paragraph (§17.3.2.38, §17.3.2.26 — `doc/docx-format.md` §3.3). ODF's own defaults
-/// are a reader's choice (LibreOffice's is 12 points), so they are stated rather than left to it.
+/// What is assumed when even `w:docDefaults` is silent: 11-point Calibri, the oracle's answer for
+/// a document with no styles part at all (measured, `doc/docx-format.md` §3.3). ODF's own
+/// defaults are a reader's choice (LibreOffice's is 12 points), so they are stated rather than
+/// left to it.
 fn implicit_defaults(mut defaults: ParaProps) -> ParaProps {
     if defaults.text.get("fo:font-size").is_none() {
-        defaults.text.set("fo:font-size", "10pt");
+        defaults.text.set("fo:font-size", "11pt");
     }
     if defaults.text.get("fo:font-family").is_none() {
-        defaults.text.set("fo:font-family", "'Times New Roman'");
+        defaults.text.set("fo:font-family", "Calibri");
     }
     defaults
 }
@@ -457,15 +450,17 @@ mod tests {
         assert_eq!(s.odf_name("Normal"), Some("Normal"));
     }
 
-    /// Word's built-in headings know their level from their name (`doc/docx-format.md` §3.2).
+    /// A style called `heading 2` that says no level is not a heading (`doc/docx-format.md`
+    /// §3.2); a level is inherited, and level 9 is body text.
     #[test]
-    fn a_built_in_heading_is_a_heading_without_saying_so() {
+    fn a_heading_is_a_stated_level_not_a_name() {
         let s = styles(
             r#"<w:style w:type="paragraph" w:styleId="berschrift2"><w:name w:val="heading 2"/></w:style>
-               <w:style w:type="paragraph" w:styleId="Mine"><w:basedOn w:val="berschrift2"/></w:style>
+               <w:style w:type="paragraph" w:styleId="H"><w:pPr><w:outlineLvl w:val="1"/></w:pPr></w:style>
+               <w:style w:type="paragraph" w:styleId="Mine"><w:basedOn w:val="H"/></w:style>
                <w:style w:type="paragraph" w:styleId="Body"><w:pPr><w:outlineLvl w:val="9"/></w:pPr></w:style>"#,
         );
-        assert_eq!(s.outline("berschrift2"), Some(1));
+        assert_eq!(s.outline("berschrift2"), None);
         assert_eq!(s.outline("Mine"), Some(1), "inherited");
         assert_eq!(s.outline("Body"), None, "level 9 is body text");
     }
@@ -487,7 +482,7 @@ mod tests {
                <w:pPrDefault><w:pPr><w:spacing w:after="200"/></w:pPr></w:pPrDefault></w:docDefaults>"#,
         );
         assert_eq!(s.defaults.text.get("fo:font-size"), Some("12pt"));
-        assert_eq!(s.defaults.text.get("fo:font-family"), Some("'Times New Roman'"));
+        assert_eq!(s.defaults.text.get("fo:font-family"), Some("Calibri"));
         assert_eq!(s.defaults.para.get("fo:margin-bottom"), Some("10pt"));
     }
 
@@ -515,7 +510,10 @@ mod tests {
         );
         let look = s.table_look("Grid");
         assert_eq!(look.borders["top"], None, "the nearer style's nil wins");
-        assert_eq!(look.borders["insideH"].as_deref(), Some("0.5pt solid #000000"));
+        assert_eq!(
+            look.borders["insideH"].as_deref(),
+            Some("0.5pt solid #000000")
+        );
         assert_eq!(look.margins["left"], 108);
     }
 
