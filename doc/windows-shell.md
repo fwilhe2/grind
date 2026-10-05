@@ -753,12 +753,15 @@ claim them**. `assoc.rs` is both, as data:
 | `Grind.Projection` | `.grind` | the same | the same |
 | `Grind.Workbook` | `.xlsx` | the same — imported as a new, unsaved ODF document | the same |
 | `Grind.MacroWorkbook` | `.xlsm` | the same — the macro counted, never run | the same |
+| `Grind.WordDocument` | `.docx` | the same — imported as a new, unsaved ODF text document (`doc/docx-import.md`) | the same |
+| `Grind.MacroWordDocument` | `.docm` | the same — the macro counted, never run | the same |
 | `Grind.Csv` | `.csv` | the same — a new, unsaved ODF document, the delimiter read from the file | the same |
 | `Grind.Tsv` | `.tsv` | the same | the same |
 
 The flat and the package form of each ODF type get their own ProgID rather than sharing one,
 which is what lets a future icon tell them apart; `.grind` is one ProgID for both applications,
-because its own first line says which document it is. The two Excel rows are compiled out with
+because its own first line says which document it is. The two Word rows are compiled out with
+the crate's `docx` feature for the same reason as the Excel ones. The two Excel rows are compiled out with
 the crate's `xlsx` feature — offering a type the binary then refuses is worse than not offering
 it — and `.xls`/`.xlsb` are absent because the filter does not read them. A CSV takes the
 workbook's path exactly (`grind_sheet::csv::open`); `.tab` opens but is not offered, since

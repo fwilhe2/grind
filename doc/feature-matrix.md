@@ -444,7 +444,15 @@ it, and dragging one moves it. There is no dialog, and resizing or recolouring o
 | Where each page begins | ● | — | ● | — | — | — |
 | Print preview | ● ᵖᵖ | ● | ○ | ● | ● | ● ᵖᵖ |
 | Print | — | ● | ○ | ● ᵖᵖ | ● ᵖᵖ | ● |
+| **Files** | | | | | | |
+| Open a Word document (`doc/docx-import.md`) | ● ʷᵈ | ● ʷᵈ | ● ʷᵈ | ● ʷᵈ | ● ʷᵈ | ● ʷᵈ |
 
+ʷᵈ `grind text import`, and in every window the ordinary Open (DX6): sniffed from the bytes,
+imported through `grind_docx::open`, and opened as a **new, unsaved ODF document with no path**
+under `grind_docx::suggested_name` (`letter.docx` → `letter.fodt`), with `Report::summary`'s one
+sentence — ᵏ's shape for the word processor. The GTK window's `.desktop` file, the Windows
+associations and the Mac's Info.plist offer the type and never take it. Behind each crate's `docx`
+feature, on by default.
 ᵖᵖ The CLI's preview is one page as a PNG (`grind text preview`). The Mac's is the system print
 panel's own, over the PDF itself; the browser prints by opening the PDF in the browser's viewer,
 and Windows, which has no API that prints a PDF, sends the preview's rasters at the printer's

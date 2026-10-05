@@ -94,6 +94,10 @@ sentence (`Report::summary`) shown. Having no path is the point: one way in and 
 (`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `import.rs` is
 this shell's whole half of it, and is compiled out with the crate's `xlsx` feature.
 
+**A Word document opens** the same way into the text pane (`doc/docx-import.md`, DX6): the
+picker lists `.docx`, `.docm` and `.dotx`, the message line says the report, and the download is
+`letter.fodt` — `import.rs` again, behind the crate's `docx` feature.
+
 ## What it does not do
 
 Deferred by decision, not omission. Everything here is reachable from the CLI (R9).

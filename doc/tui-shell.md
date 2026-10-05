@@ -142,6 +142,10 @@ sentence (`Report::summary`) shown. Having no path is the point: one way in and 
 (`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `import.rs` is
 this shell's whole half of it, and is compiled out with the crate's `xlsx` feature.
 
+**A Word document opens** the same way into the word processor (`doc/docx-import.md`, DX6):
+`grind-tui letter.docx` is a text document titled `letter.fodt`, unsaved and with no path, the
+report's sentence on the status line — `import::open_word`, behind the crate's `docx` feature.
+
 ## What it does not do
 
 Deferred by decision, not omission. Everything here is reachable from the CLI (R9).
