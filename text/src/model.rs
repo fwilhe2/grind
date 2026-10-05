@@ -622,6 +622,8 @@ pub struct Document {
     /// section's blocks in again ([`Block::section`]); the section's own properties are not
     /// otherwise modelled.
     pub sections: Vec<crate::model::Section>,
+    /// Every footnote and endnote, in the order they are cited (`crate::marginal::Note`).
+    pub notes: Vec<crate::marginal::Note>,
     /// The page's header and footer — the master page [`Document::page`] comes from — read for
     /// printing and never written (`crate::marginal`).
     pub header: Option<crate::marginal::Marginal>,
@@ -691,6 +693,7 @@ impl Document {
             char_styles: std::collections::HashMap::new(),
             table_looks: std::collections::HashMap::new(),
             sections: Vec::new(),
+            notes: Vec::new(),
             header: None,
             footer: None,
             next_id: 0,

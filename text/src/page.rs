@@ -120,6 +120,7 @@ pub fn paginate(
         pages: vec![Page::default()],
         origin: 0.0,
         height,
+        reserved: 0.0,
     };
     // A page break after the block before: the next unit starts a page wherever it is.
     let mut break_pending = false;
@@ -135,6 +136,7 @@ pub fn paginate(
                 lines,
                 keep,
                 breaks,
+                notes,
             } => {
                 if breaks.page_before && !cut.fresh() {
                     cut.turn(lines.first().map_or(slot.top, |line| line.top));
@@ -147,7 +149,7 @@ pub fn paginate(
                 {
                     cut.turn(lines[0].top);
                 }
-                cut.block(slot, lines, rules);
+                cut.block(slot, lines, rules, *notes);
             }
             Unit::Row {
                 slots,
@@ -167,7 +169,7 @@ pub fn paginate(
                 } else {
                     heading_closed = !*header;
                 }
-                if *bottom - cut.origin > height + EPS && !cut.fresh() {
+                if *bottom - cut.origin > cut.room() + EPS && !cut.fresh() {
                     cut.turn(*top);
                     if !*header && heading.first().is_some_and(|&(t, _)| t == table.as_str()) {
                         let first = heading.first().map_or(*top, |&(_, i)| units[i].top());
@@ -216,6 +218,8 @@ enum Unit {
     Block {
         slot: flow::Slot,
         lines: Vec<Line>,
+        /// The room its footnotes take at the foot of the page it starts on.
+        notes: f64,
         /// Whether a page may not end on it: a heading, unless its style says otherwise.
         keep: bool,
         breaks: Breaks,
@@ -302,6 +306,7 @@ fn units(
                 let breaks = faces.breaks(slot.index).unwrap_or_default();
                 let heading = matches!(view.kind, crate::BlockKind::Heading { .. });
                 out.push(Unit::Block {
+                    notes: faces.footnote_room(slot.index),
                     slot: *slot,
                     keep: breaks.keep_with_next.unwrap_or(heading),
                     breaks,
@@ -373,6 +378,8 @@ struct Cut {
     /// The flow's y at the top of the current page.
     origin: f64,
     height: f64,
+    /// What the footnotes cited on the current page take from the foot of it.
+    reserved: f64,
 }
 
 impl Cut {
@@ -390,6 +397,12 @@ impl Cut {
     fn turn(&mut self, at: f64) {
         self.pages.push(Page::default());
         self.origin = at;
+        self.reserved = 0.0;
+    }
+
+    /// How tall the body of the current page may be, its footnotes' room taken out.
+    fn room(&self) -> f64 {
+        self.height - self.reserved
     }
 
     /// Place a row's blocks and cells on the current page, its flow coordinates taken from
@@ -421,13 +434,17 @@ impl Cut {
     }
 
     /// Place a block, splitting it between lines as often as it takes.
-    fn block(&mut self, slot: &flow::Slot, lines: &[Line], rules: Rules) {
+    fn block(&mut self, slot: &flow::Slot, lines: &[Line], rules: Rules, notes: f64) {
         let mut start = 0;
         while start < lines.len() {
             let remaining = lines.len() - start;
+            // The block's footnotes go on the page its first line does, so that page is
+            // shorter by their room for the block's own lines too.
+            let extra = if start == 0 { notes } else { 0.0 };
+            let room = self.room() - extra;
             let fits = lines[start..]
                 .iter()
-                .take_while(|line| line.bottom() - self.origin <= self.height + EPS)
+                .take_while(|line| line.bottom() - self.origin <= room + EPS)
                 .count();
             let mut take = fits;
             if take < remaining {
@@ -451,6 +468,9 @@ impl Cut {
                     width: slot.width,
                     repeat: false,
                 });
+                if start == 0 {
+                    self.reserved += extra;
+                }
                 start += take;
             }
             if start < lines.len() {
@@ -766,6 +786,40 @@ mod tests {
         assert_eq!(shaped[2], vec![(0, true), (5, false), (6, false)]);
         assert_eq!(pages[1].pieces[0].top, 0.0, "the heading at the top");
         assert_eq!(pages[1].pieces[1].top, 1.0, "the next row under it");
+    }
+
+    /// A face whose block 1 cites a footnote two units tall.
+    struct Footnoted;
+
+    impl Faces for Footnoted {
+        fn of(&self, _: usize, _: &BlockKind, _: Option<&str>) -> (f32, &dyn crate::Metrics) {
+            (10.0, &Fixed)
+        }
+        fn footnote_room(&self, index: usize) -> f64 {
+            if index == 1 { 2.0 } else { 0.0 }
+        }
+    }
+
+    #[test]
+    fn a_footnote_takes_its_room_from_the_page_its_citation_starts_on() {
+        // Five units a page. Block 0 is two lines; block 1 is one line citing a two-unit note:
+        // it fits (2 + 1 + 2 = 5), and block 2's two lines then do not.
+        let app = doc(&[para(2), para(1), para(2)]);
+        let pages = paginate(
+            &app,
+            &Footnoted,
+            10.0,
+            5.0,
+            &TIGHT,
+            Rules::default(),
+            &|_, _| None,
+        );
+        assert_eq!(
+            shape(&pages),
+            vec![vec![(0, 0..2), (1, 0..1)], vec![(2, 0..2)]]
+        );
+        // Without the note, all five lines share one page.
+        assert_eq!(cut(&app, 5.0, &TIGHT).len(), 1);
     }
 
     #[test]

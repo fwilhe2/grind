@@ -453,6 +453,12 @@ pub trait Faces {
         false
     }
 
+    /// How much room the footnotes cited in the block at `index` take at the foot of the page
+    /// the block starts on, in the face's unit — zero, the default, on every screen.
+    fn footnote_room(&self, _index: usize) -> f64 {
+        0.0
+    }
+
     /// Whether `row` of the table named `table` is one of its heading rows, which a printed page
     /// repeats at the top of every page the table continues on.
     fn header_row(&self, _table: &str, _row: u32) -> bool {
@@ -830,6 +836,18 @@ impl App {
             ),
             declared: name.is_some_and(|n| state.doc.paragraph_styles.contains_key(n)),
         }
+    }
+
+    /// Every footnote and endnote with the index of the block it is cited in
+    /// ([`Document::notes`]), read for printing.
+    pub fn notes(&self) -> Vec<(usize, marginal::Note)> {
+        let state = self.state.read().unwrap();
+        state
+            .doc
+            .notes
+            .iter()
+            .filter_map(|note| Some((state.doc.index_of(note.block)?, note.clone())))
+            .collect()
     }
 
     /// The look of the table named `name` — widths, cell styles, heading rows

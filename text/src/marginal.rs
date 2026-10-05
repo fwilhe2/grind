@@ -64,6 +64,21 @@ pub struct Marginal {
     pub spacing: f64,
 }
 
+/// A footnote or an endnote (`text:note`, rng:8465): where it is cited, its citation's text,
+/// and its paragraphs — read beside the blocks for a printed page to set at its foot, and never
+/// written (the paragraph holding one keeps it, and an edit that would lose it is refused).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Note {
+    /// The block the citation stands in, and the character offset its text starts at.
+    pub block: crate::model::BlockId,
+    pub offset: usize,
+    /// `text:note-citation`'s text — the number or mark shown in the paragraph.
+    pub citation: String,
+    /// `text:note-class="endnote"`: set at the end rather than at the foot of the page.
+    pub endnote: bool,
+    pub paragraphs: Vec<Paragraph>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

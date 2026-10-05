@@ -292,3 +292,27 @@ fn a_sections_paragraphs_are_read() {
         "{saved}"
     );
 }
+
+/// A footnote: its citation shows in the paragraph where it stands, and the note's own
+/// paragraphs are read beside the blocks, with the block and offset they are cited at — for a
+/// printed page to put at its foot. Read and never written: an edit to the paragraph holding one
+/// is refused at save, as before.
+#[test]
+fn a_footnote_is_read_with_where_it_is_cited() {
+    let bytes = String::from_utf8(flat("")).unwrap().replace(
+        "<text:p>Hi</text:p>",
+        r#"<text:p>A statement<text:note text:note-class="footnote" text:id="n1"><text:note-citation>1</text:note-citation><text:note-body><text:p text:style-name="Footnote">The note's own text.</text:p></text:note-body></text:note> continues.</text:p>"#,
+    ).into_bytes();
+    let doc = grind_text::read_bytes("n.fodt", &bytes).unwrap();
+    assert_eq!(doc.blocks[0].text(), "A statement1 continues.");
+    assert_eq!(doc.notes.len(), 1);
+    let note = &doc.notes[0];
+    assert_eq!(
+        (note.block, note.offset, note.citation.as_str()),
+        (doc.blocks[0].id, 11, "1")
+    );
+    assert!(!note.endnote);
+    assert_eq!(note.paragraphs[0].text(1, 1), "The note's own text.");
+    assert_eq!(note.paragraphs[0].style.as_deref(), Some("Footnote"));
+    assert_eq!(grind_text::odf::write(&doc, Form::Flat).unwrap(), bytes);
+}

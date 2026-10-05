@@ -116,6 +116,8 @@ pub struct Builder {
     /// The header or footer paragraph being read, and those of it already read.
     marginal: Option<crate::marginal::Paragraph>,
     marginal_done: Vec<crate::marginal::Paragraph>,
+    /// The citation of the note being read.
+    citation: String,
     /// Whether the blocks being read are an index's generated entries ([`Block::generated`]).
     generating: bool,
     /// The innermost section open around the blocks being read ([`Block::section`]).
@@ -218,6 +220,7 @@ impl Builder {
             layout_marginals: HashMap::new(),
             marginal: None,
             marginal_done: Vec::new(),
+            citation: String::new(),
             generating: false,
             section: None,
             cell_styles: HashMap::new(),
@@ -1635,6 +1638,21 @@ fn inline_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         // itself is not modelled, so an edit that would regenerate the paragraph and flatten
         // the field is refused by the save's loss check rather than written.
         (Ns::Text, local) if FIELDS.contains(&local) => Some(Box::new(FieldText)),
+        // A footnote or endnote: its citation is shown where it stands, and its paragraphs are
+        // read beside the blocks (`crate::marginal::Note`). The element itself is not modelled,
+        // so an edit that would regenerate the paragraph and lose it is refused at save.
+        (Ns::Text, "note") => {
+            let block = b.doc.blocks.last()?;
+            let note = crate::marginal::Note {
+                block: block.id,
+                offset: block.runs.iter().map(Run::len).sum(),
+                citation: String::new(),
+                endnote: attrs.get(Ns::Text, "note-class") == Some("endnote"),
+                paragraphs: Vec::new(),
+            };
+            b.marginal_done.clear();
+            Some(Box::new(NoteText { note: Some(note) }))
+        }
         _ => None,
     }
 }
@@ -1705,6 +1723,55 @@ const FIELDS: &[&str] = &[
     "paragraph-count",
     "page-variable-get",
 ];
+
+/// A `text:note`: its citation into the run, and its body's paragraphs into the note.
+struct NoteText {
+    note: Option<crate::marginal::Note>,
+}
+
+impl Context<Builder> for NoteText {
+    fn start_child(&mut self, name: &Name, _attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
+        match (name.ns, name.local.as_str()) {
+            (Ns::Text, "note-citation") => Some(Box::new(Citation)),
+            (Ns::Text, "note-body") => Some(Box::new(NoteBody)),
+            _ => None,
+        }
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        if let Some(mut note) = self.note.take() {
+            note.citation = std::mem::take(&mut b.citation);
+            note.paragraphs = std::mem::take(&mut b.marginal_done);
+            b.doc.notes.push(note);
+        }
+    }
+}
+
+/// A note's citation: shown in the paragraph, and kept as the note's mark.
+struct Citation;
+
+impl Context<Builder> for Citation {
+    fn text(&mut self, text: &str, b: &mut Builder) {
+        b.citation.push_str(text);
+        b.push_text(text);
+    }
+}
+
+/// A note's body: its paragraphs as text, the way a header's are read.
+struct NoteBody;
+
+impl Context<Builder> for NoteBody {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if !matches!((name.ns, name.local.as_str()), (Ns::Text, "p" | "h")) {
+            return None;
+        }
+        b.marginal = Some(crate::marginal::Paragraph {
+            style: attrs.get(Ns::Text, "style-name").map(str::to_owned),
+            parts: Vec::new(),
+        });
+        Some(Box::new(MarginalInline { closes: true }))
+    }
+}
 
 /// A field: its character content, the cached value, into the run it sits in.
 struct FieldText;
