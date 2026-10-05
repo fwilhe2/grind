@@ -315,6 +315,8 @@ pub struct App {
     outline: crate::pick::Pick,
     /// The key list, when it is showing. Presentation state like everything else here.
     help: crate::help::Help,
+    /// `:licences` — the third-party list, read-only.
+    licences: crate::help::Help,
     /// The code view, when it is showing, and the projection it is showing (`doc/dsl.md` §6).
     ///
     /// Projected once when the pane opens and dropped when it closes, which §6.3's `ponytail`
@@ -363,6 +365,7 @@ impl App {
             find: Find::default(),
             outline: crate::pick::Pick::default(),
             help: crate::help::Help::default(),
+            licences: crate::help::Help::default(),
             code: crate::code::Code::default(),
             source: None,
             problems: crate::problems::Problems::default(),
@@ -396,6 +399,11 @@ impl App {
             let text = crate::text::help();
             self.help
                 .on_key(key.code, text.lines().count(), self.help_height());
+            return;
+        }
+        if self.licences.is_open() {
+            let lines = crate::help::licences().lines().count();
+            self.licences.on_key(key.code, lines, self.help_height());
             return;
         }
         if self.code.is_open() {
@@ -906,6 +914,7 @@ impl App {
         match cmd {
             "help" | "h?" => self.help.open(),
             "about" | "version" => self.status = crate::help::about(),
+            "licences" | "licenses" => self.licences.open(),
             "q" => self.cmd_quit(false),
             "welcome" => self.cmd_welcome(false),
             "welcome!" => self.cmd_welcome(true),
@@ -1943,6 +1952,15 @@ impl App {
             self.help.draw(frame, area, &crate::text::help());
             return;
         }
+        if self.licences.is_open() {
+            self.licences.draw_titled(
+                frame,
+                area,
+                crate::help::licences(),
+                crate::help::LICENCES_TITLE,
+            );
+            return;
+        }
         if self.problems.is_open() {
             let title = self.document_name();
             self.problems.draw(frame, area, &title);
@@ -2424,6 +2442,24 @@ mod tests {
             before[0],
             "closing puts the document back"
         );
+    }
+
+    /// `:licences` is the third-party list every window's About shows, scrolled like `:help`.
+    #[test]
+    fn licences_shows_the_third_party_list_and_any_key_closes_it() {
+        let mut app = app(&["body"]);
+        app.run_command("licences");
+        let shown = render(&mut app, 70, 12).join("\n");
+        assert!(shown.contains("third-party licences"), "{shown}");
+        assert!(shown.contains("GNU Affero"), "{shown}");
+        press(&mut app, KeyCode::Char('j'));
+        assert!(
+            render(&mut app, 70, 12)
+                .join("\n")
+                .contains("third-party licences")
+        );
+        press(&mut app, KeyCode::Esc);
+        assert!(render(&mut app, 70, 12).join("\n").contains("body"));
     }
 
     fn render(app: &mut App, width: u16, height: u16) -> Vec<String> {

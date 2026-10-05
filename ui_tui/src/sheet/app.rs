@@ -148,6 +148,8 @@ pub struct App {
     point: Option<Pointing>,
     /// The key list, when it is showing. Presentation state like everything else here.
     help: crate::help::Help,
+    /// `:licences` — the third-party list, read-only.
+    licences: crate::help::Help,
     /// `:charts` — the same scrolling text pane, holding what [`super::chartview`] drew.
     charts: crate::help::Help,
     charts_text: String,
@@ -201,6 +203,7 @@ impl App {
             calculations: crate::pick::Pick::default(),
             point: None,
             help: crate::help::Help::default(),
+            licences: crate::help::Help::default(),
             charts: crate::help::Help::default(),
             charts_text: String::new(),
             code: crate::code::Code::default(),
@@ -255,6 +258,11 @@ impl App {
             let text = crate::sheet::help();
             self.help
                 .on_key(key.code, text.lines().count(), self.help_height());
+            return;
+        }
+        if self.licences.is_open() {
+            let lines = crate::help::licences().lines().count();
+            self.licences.on_key(key.code, lines, self.help_height());
             return;
         }
         if self.charts.is_open() {
@@ -1069,6 +1077,7 @@ impl App {
         match cmd {
             "help" | "h?" => self.help.open(),
             "about" | "version" => self.status = crate::help::about(),
+            "licences" | "licenses" => self.licences.open(),
             "q" => self.cmd_quit(false),
             "welcome" => self.cmd_welcome(false),
             "welcome!" => self.cmd_welcome(true),
@@ -2208,6 +2217,15 @@ impl App {
         self.help_height = usize::from(area.height);
         if self.help.is_open() {
             self.help.draw(frame, area, &crate::sheet::help());
+            return;
+        }
+        if self.licences.is_open() {
+            self.licences.draw_titled(
+                frame,
+                area,
+                crate::help::licences(),
+                crate::help::LICENCES_TITLE,
+            );
             return;
         }
         // Wherever the cursor landed inside a merge — a jump, a search, a go-to — it is on the

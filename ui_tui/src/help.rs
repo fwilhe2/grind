@@ -35,6 +35,7 @@ Visual mode — one notation for emphasis, whichever document it is:
 
 Saving and leaving, both:
   :w [file]   :q   :q!   :wq or :x       :about  which build this is
+  :licences                              the third-party components and their licences
   :new [sheet|text]   :open <file>       another document in this terminal, of either kind
   :welcome                               back to the pane that offers a new spreadsheet, a new
                                          text document or a file to open
@@ -50,6 +51,15 @@ pub fn about() -> String {
         grind_core::build_info::describe_version(env!("CARGO_PKG_VERSION"))
     )
 }
+
+/// Every third-party component and its licence, for `:licences` — the list every window's
+/// About shows (`doc/third-party.md`), built once since it is long and never changes.
+pub fn licences() -> &'static str {
+    static TEXT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    TEXT.get_or_init(grind_core::third_party::notices)
+}
+
+pub const LICENCES_TITLE: &str = " third-party licences — j/k scroll ";
 
 /// A help pane's scroll position, and whether it is showing at all.
 ///
