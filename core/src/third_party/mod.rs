@@ -9,7 +9,7 @@
 //! The list is **generated, never written by hand**: `core/tests/third_party.rs` walks
 //! `cargo metadata` from every binary in the workspace, reads each crate's own licence files
 //! out of the crate, adds what Cargo does not know about (the bundled fonts, the Rust standard
-//! library), and fails when [`data`] differs from what it would write — rewriting it as it fails,
+//! library), and fails when `data` differs from what it would write — rewriting it as it fails,
 //! so the next `git diff` is the review. Here in the core because every shell already depends on
 //! it, and because one list read by six shells cannot be six lists.
 
