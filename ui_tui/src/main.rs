@@ -198,6 +198,11 @@ fn prepare(kind: DocumentKind, path: Option<PathBuf>) -> io::Result<Pane> {
                     notice =
                         Some(import::open_markdown(&core, &given, &bytes).map_err(|e| fail(&e))?);
                     path = None;
+                } else if import::is_word(&bytes) {
+                    // A Word document is opened the way a workbook is: imported, a new ODF
+                    // document, and no path, so `:w` cannot write ODF over the `.docx`.
+                    notice = Some(import::open_word(&core, &given, &bytes).map_err(|e| fail(&e))?);
+                    path = None;
                 } else {
                     core.open_bytes(&given.display().to_string(), &bytes)
                         .map_err(|e| fail(&e))?;
@@ -255,7 +260,7 @@ fn sniff(path: &Path) -> io::Result<DocumentKind> {
     if import::is_workbook(&bytes) || import::is_delimited(path, &bytes) {
         return Ok(DocumentKind::Spreadsheet);
     }
-    if import::is_markdown(path, &bytes) {
+    if import::is_markdown(path, &bytes) || import::is_word(&bytes) {
         return Ok(DocumentKind::Text);
     }
     grind_core::kind(&bytes).ok_or_else(|| {

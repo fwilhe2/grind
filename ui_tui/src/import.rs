@@ -8,6 +8,9 @@
 //! (`doc/not-doing.md` §1: one way in, never out).
 //!
 //! Compiled out with the `xlsx` feature; a build without it opens ODF only, as before X6.
+//!
+//! A Word document (`doc/docx-import.md`, DX6) is the text pane's twin of a workbook: imported,
+//! opened under an ODF name and no path, behind the `docx` feature.
 
 use std::path::Path;
 
@@ -99,6 +102,60 @@ pub fn open(app: &App, path: &Path, bytes: &[u8]) -> Result<Imported, String> {
             "{}: this build reads no Excel workbooks",
             path.display()
         ))
+    }
+}
+
+/// Whether these bytes are a Word document this build imports.
+pub fn is_word(bytes: &[u8]) -> bool {
+    #[cfg(feature = "docx")]
+    return grind_docx::sniff(bytes);
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = bytes;
+        false
+    }
+}
+
+/// Import the Word document at `path` into `core`. Only called once [`is_word`] said yes.
+pub fn open_word(core: &grind_text::App, path: &Path, bytes: &[u8]) -> Result<Imported, String> {
+    #[cfg(feature = "docx")]
+    {
+        let (odf, report) = grind_docx::open(bytes).map_err(|e| e.to_string())?;
+        let name = grind_docx::suggested_name(&path.display().to_string());
+        core.open_bytes(&name, &odf).map_err(|e| e.to_string())?;
+        Ok(Imported {
+            name,
+            summary: report.summary(),
+        })
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = (core, bytes);
+        Err(format!(
+            "{}: this build reads no Word documents",
+            path.display()
+        ))
+    }
+}
+
+#[cfg(all(test, feature = "docx"))]
+mod word_tests {
+    use super::*;
+
+    #[test]
+    fn a_word_document_imports_under_an_odf_name() {
+        let path = Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../docx/tests/data/sample.docx"
+        ));
+        let bytes = std::fs::read(path).unwrap();
+        assert!(is_word(&bytes));
+        assert!(!is_workbook(&bytes), "a document is not a workbook");
+        let core = grind_text::App::new();
+        let imported = open_word(&core, path, &bytes).unwrap();
+        assert!(imported.name.ends_with("sample.fodt"), "{}", imported.name);
+        assert!(imported.summary.starts_with("Imported from Word"));
+        assert!(core.outline().iter().any(|h| h.text == "Field Notes"));
     }
 }
 
