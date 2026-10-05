@@ -666,6 +666,21 @@ fn an_inline_picture_is_a_picture_at_its_size() {
     assert_eq!(image.4.as_deref(), Some("as-char"));
 }
 
+/// A text box's story follows the paragraph that anchors it — from the VML fallback Word
+/// writes beside the DrawingML choice, read once.
+#[test]
+fn a_text_boxs_text_follows_its_anchor() {
+    let body = r#"<w:p><w:r><w:t>Anchor</w:t></w:r><w:r><mc:AlternateContent>
+        <mc:Choice Requires="wps"><w:drawing><wp:anchor/></w:drawing></mc:Choice>
+        <mc:Fallback><w:pict><v:shape xmlns:v="urn:schemas-microsoft-com:vml" style="position:absolute;width:100pt;height:50pt"><v:textbox><w:txbxContent>
+          <w:p><w:r><w:t>Boxed</w:t></w:r></w:p></w:txbxContent></v:textbox></v:shape></w:pict></mc:Fallback>
+      </mc:AlternateContent></w:r></w:p><w:p><w:r><w:t>After</w:t></w:r></w:p>"#;
+    let (doc, report) = import(&docx(body, &[]));
+    assert_eq!(texts(&doc), ["Anchor", "Boxed", "After"]);
+    assert_eq!(report.dropped.get(&Dropped::TextBox), Some(&1));
+    assert!(!report.dropped.contains_key(&Dropped::Drawing));
+}
+
 #[test]
 fn a_shape_with_no_picture_is_counted_not_invented() {
     let body = r#"<w:p><w:r><w:drawing><wp:anchor><wp:extent cx="1" cy="1"/><a:graphic><a:graphicData uri="x"/></a:graphic></wp:anchor></w:drawing></w:r></w:p>"#;

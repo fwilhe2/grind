@@ -23,7 +23,8 @@ pub enum Dropped {
     /// A tracked change. Insertions are kept as text and deletions are not shown — the document
     /// as it would read with every change accepted — and the history itself is gone.
     TrackedChange,
-    /// Text in a text box or a shape (`w:txbxContent`). The text model has nowhere to float it.
+    /// A text box (`w:txbxContent`): its text is kept, as paragraphs following the one that
+    /// anchors it, and where it floated on the page is not.
     TextBox,
     /// A drawing that is not a picture: a shape, a chart, SmartArt, a canvas.
     Drawing,
@@ -70,7 +71,7 @@ impl Dropped {
         match self {
             Dropped::Comment => "comment",
             Dropped::TrackedChange => "tracked change (accepted)",
-            Dropped::TextBox => "text box",
+            Dropped::TextBox => "text box (its text kept in the flow)",
             Dropped::Drawing => "drawing",
             Dropped::Equation => "equation",
             Dropped::EmbeddedObject => "embedded object",

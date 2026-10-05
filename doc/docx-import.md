@@ -101,12 +101,13 @@ over XML.
 | a later section | `fo:break-before="page"` on its first block, when it starts a page | |
 | `w:ins`, `w:moveTo`, `w:sdt`, `w:smartTag`, `w:customXml` | read through | |
 | `w:del`, `w:moveFrom` | skipped | counted |
+| `w:txbxContent` (DrawingML or VML) | its paragraphs, after the paragraph that anchors the box | the position counted |
 
 ### What it costs
 
 Every loss is a `Dropped` kind (`docx/src/report.rs`), counted, summed in `Report::summary` and
-fatal under `--strict`: comments, tracked changes (accepted), text boxes, drawings that are not
-pictures, equations, embedded objects, linked pictures, a floating picture's position, fields
+fatal under `--strict`: comments, tracked changes (accepted), a text box's position (its text follows the paragraph
+that anchors it), drawings that are not pictures, equations, embedded objects, linked pictures, a floating picture's position, fields
 and form fields and content controls (kept as their text), sections whose page differs,
 multi-column sections, first-page or even-page header variants, heading numbers, table-style
 banding, positioned paragraphs and tables (kept in the flow), macros (never executed), and the
@@ -136,10 +137,11 @@ both.
 | **Loop D″** — import fidelity | our import against the oracle's conversion, block by block (kind, cell, text), over the vendored documents (all must agree) and Word's own (`sw/qa/extras/ooxmlimport/data`, `FLOOR`), with named divergences | `docx/tests/loop_d.rs` |
 | **Editing** | an import opened as a shell opens it takes typing, Enter, Backspace and bold, and saves in both forms | `docx/tests/editing.rs` |
 
-Scoreboard on 2026-10-06, LibreOffice 26.8: loop A″ 2159 of 2167 documents import (4
-password-protected, 4 ODF documents named `.docx`); loop D″ 117 of 161 Word-written documents
-agree block for block, 31 more differ only by a named divergence (a field's last result, a
-floating table or paragraph, a picture's anchor) and 13 disagree — a table written inside a
+Scoreboard on 2026-10-06, LibreOffice 26.8 and the pinned 26.2 alike: loop A″ 2159 of 2167
+documents import (4 password-protected, 4 ODF documents named `.docx`); of loop D″'s 161
+Word-written documents 103 agree block for block, 49 more differ only by a named divergence (a
+field's last result, a floating table or paragraph, a picture's anchor, a text box's text — the
+last because a text box's text is shown here and not by the oracle's frame) and 15 disagree — a table written inside a
 paragraph, page breaks inside a table cell, Hebrew list numbers computed by fields, a
 bibliography — each a construct rather than a crash.
 

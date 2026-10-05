@@ -159,6 +159,8 @@ pub struct Ctx<'p, 'a> {
     pub anchors: HashSet<String>,
     /// Every section, in order, as its `w:sectPr` was met.
     pub sections: Vec<Section>,
+    /// Text boxes read inside the paragraph being read, waiting to follow it ([`text_box`]).
+    pub floating: Vec<Block>,
     /// Pictures already read, by part — one image used twice is read once.
     images: HashMap<String, Option<(Vec<u8>, String)>>,
 }
@@ -181,6 +183,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
             anchors: HashSet::new(),
             sections: Vec::new(),
             images: HashMap::new(),
+            floating: Vec::new(),
         }
     }
 
@@ -274,6 +277,7 @@ pub fn blocks_into(r: &mut Reader, ctx: &mut Ctx, out: &mut Vec<Block>) -> grind
                 // A paragraph mark inside a field's instruction is part of the instruction:
                 // the paragraph does not end there in what the field shows, so what it showed
                 // joins the next one (`doc/docx-format.md` §2.3).
+                let boxes = std::mem::take(&mut ctx.floating);
                 if ctx.in_instruction() {
                     pending = para.inlines;
                 } else if para.facts.drop_cap {
@@ -283,8 +287,13 @@ pub fn blocks_into(r: &mut Reader, ctx: &mut Ctx, out: &mut Vec<Block>) -> grind
                 } else {
                     out.push(Block::Para(para));
                 }
+                out.extend(boxes);
             }
-            "tbl" => out.push(Block::Table(read_table(r, ctx)?)),
+            "tbl" => {
+                let table = read_table(r, ctx)?;
+                out.push(Block::Table(table));
+                out.extend(std::mem::take(&mut ctx.floating));
+            }
             "sdt" => {
                 if content_of_sdt(r, |r| blocks_into(r, ctx, out))? {
                     ctx.report.drop_one(Dropped::ContentControl);
@@ -725,12 +734,27 @@ struct Found {
     picture: bool,
 }
 
+/// `w:txbxContent` — a text box's story, read as blocks of their own and set **after the
+/// paragraph that anchors it** ([`Ctx::floating`]): the text model has nowhere to float a box,
+/// and its text in the flow beats its text gone. Its position is what is counted. The field
+/// and hyperlink state of the paragraph around it is put aside while it is read, since a text
+/// box is a story of its own.
+fn text_box(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<()> {
+    let fields = std::mem::take(&mut ctx.fields);
+    let href = ctx.href.take();
+    let read = read_blocks(r, ctx);
+    ctx.fields = fields;
+    ctx.href = href;
+    ctx.floating.extend(read?);
+    Ok(())
+}
+
 /// `w:drawing` — DrawingML (§20.4). Only a picture is carried: the `a:blip` a `pic:pic` fills
 /// with, at the size `wp:extent` gives. Anything else in a drawing — a shape, a chart, a text
 /// box — is counted.
 fn read_drawing(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Option<Image>> {
     let mut found = Found::default();
-    fn walk(r: &mut Reader, found: &mut Found) -> grind_ooxml::Result<()> {
+    fn walk(r: &mut Reader, found: &mut Found, ctx: &mut Ctx) -> grind_ooxml::Result<()> {
         r.children(|r, name, attrs| {
             match (name.ns, name.local.as_str()) {
                 (Ns::WordDrawing, "inline") => found.inline = true,
@@ -748,15 +772,16 @@ fn read_drawing(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Option<Ima
                 }
                 (Ns::Word, "txbxContent") => {
                     found.text_box = true;
-                    return Ok(Handled::No);
+                    text_box(r, ctx)?;
+                    return Ok(Handled::Yes);
                 }
                 _ => {}
             }
-            walk(r, found)?;
+            walk(r, found, ctx)?;
             Ok(Handled::Yes)
         })
     }
-    walk(r, &mut found)?;
+    walk(r, &mut found, ctx)?;
     if found.text_box {
         ctx.report.drop_one(Dropped::TextBox);
     }
@@ -791,16 +816,22 @@ fn read_drawing(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Option<Ima
 fn read_vml(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Option<Image>> {
     let mut embed = None;
     let mut size = (None, None);
-    let mut text_box = false;
+    let mut boxed_any = false;
     let mut floating = false;
     fn walk(
         r: &mut Reader,
         embed: &mut Option<String>,
         size: &mut (Option<i64>, Option<i64>),
-        text_box: &mut bool,
+        boxed: &mut bool,
         floating: &mut bool,
+        ctx: &mut Ctx,
     ) -> grind_ooxml::Result<()> {
         r.children(|r, name, attrs| {
+            if name.ns == Ns::Word && name.local == "txbxContent" {
+                *boxed = true;
+                text_box(r, ctx)?;
+                return Ok(Handled::Yes);
+            }
             if name.ns == Ns::Vml {
                 match name.local.as_str() {
                     "imagedata" => {
@@ -808,10 +839,7 @@ fn read_vml(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Option<Image>>
                             embed.get_or_insert_with(|| id.to_owned());
                         }
                     }
-                    "textbox" => {
-                        *text_box = true;
-                        return Ok(Handled::No);
-                    }
+                    "textbox" => *boxed = true,
                     "shape" | "rect" | "image" => {
                         if let Some(style) = attrs.plain("style") {
                             let (w, h, absolute) = css_size(style);
@@ -824,19 +852,19 @@ fn read_vml(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Option<Image>>
                     _ => {}
                 }
             }
-            walk(r, embed, size, text_box, floating)?;
+            walk(r, embed, size, boxed, floating, ctx)?;
             Ok(Handled::Yes)
         })
     }
-    walk(r, &mut embed, &mut size, &mut text_box, &mut floating)?;
-    if text_box {
+    walk(r, &mut embed, &mut size, &mut boxed_any, &mut floating, ctx)?;
+    if boxed_any {
         ctx.report.drop_one(Dropped::TextBox);
     }
     let picture = embed
         .and_then(|id| ctx.rels.get(&id).map(|rel| rel.target.clone()))
         .and_then(|target| ctx.picture(&target));
     let Some((data, mime)) = picture else {
-        if !text_box {
+        if !boxed_any {
             ctx.report.drop_one(Dropped::Drawing);
         }
         return Ok(None);
@@ -1072,6 +1100,7 @@ fn read_cell(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Cell> {
                     para.inlines = inlines;
                 }
                 blocks.push(Block::Para(para));
+                blocks.append(&mut ctx.floating);
             }
             (Ns::Word, "tbl") => blocks.push(Block::Table(read_table(r, ctx)?)),
             (Ns::Word, "sdt") => {
