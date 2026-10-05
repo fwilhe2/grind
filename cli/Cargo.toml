@@ -19,8 +19,11 @@ path = "src/main.rs"
 # it. Off is a real configuration all the same: `--no-default-features` builds a `grind` with
 # no Excel code in it at all, and `win32.yml`-style "it still compiles without the feature"
 # claims rot silently unless something builds them.
-default = ["xlsx", "pdf"]
+default = ["xlsx", "docx", "pdf"]
 xlsx = ["dep:grind-xlsx"]
+# The Word import filter (doc/docx-import.md) — the word processor's `xlsx`, optional for the
+# same reason.
+docx = ["dep:grind-docx"]
 # PDF export for text documents (doc/pdf-export.md). Optional for the reason `xlsx` is, and
 # because it is where the font stack lives: off, `grind` carries no font and no PDF writer.
 pdf = ["dep:grind-print"]
@@ -38,6 +41,7 @@ grind-build = { path = "../build" }
 # The Excel import filter (doc/xlsx-import.md), optional by cargo feature rather than by
 # being a separate binary: it belongs *inside* `grind` rather than beside it.
 grind-xlsx = { path = "../xlsx", optional = true }
+grind-docx = { path = "../docx", optional = true }
 grind-print = { path = "../print", optional = true }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

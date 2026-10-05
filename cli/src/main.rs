@@ -208,6 +208,35 @@ fn project_report(
 
 fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
     match command {
+        #[cfg(feature = "docx")]
+        TextCommand::Import {
+            input,
+            output,
+            force,
+            strict,
+        } => {
+            if output.exists() && !force {
+                return Err(format!("{} exists; pass --force", output.display()));
+            }
+            let (document, report) = grind_docx::import_file(input).map_err(|e| e.to_string())?;
+            let refused = *strict && !report.lossless();
+            if !cli.dry_run && !refused {
+                // The import is already an ODF document — `grind_docx::convert` wrote it flat,
+                // and this is that document read back — so writing it in the form the name asks
+                // for is an ordinary save of an untouched document: the flat bytes as they are,
+                // a package moved across by `odf::forms`, or a projection.
+                grind_text::write_file(&document, output).map_err(|e| e.to_string())?;
+            }
+            Ok(Report::TextImport(Box::new(report::TextImportReport::new(
+                &show_path(input),
+                &show_path(output),
+                &document,
+                &report,
+                !cli.dry_run && !refused,
+                *strict,
+            ))))
+        }
+
         TextCommand::New { file, force } => {
             if file.exists() && !force {
                 return Err(format!("{} exists; pass --force", file.display()));
@@ -1043,6 +1072,30 @@ enum VAlign {
 /// here has to earn its place rather than mirror one that exists for cells.
 #[derive(Subcommand)]
 enum TextCommand {
+    /// Convert a Word document into an ODF text document
+    ///
+    /// One way in: reading `.docx` produces an ODF document, and writing Word is
+    /// `doc/not-doing.md` §1 and stays there. Nothing is fetched and no macro runs.
+    ///
+    /// The result is an ordinary document: every other command operates on *that*, which is
+    /// why `grind text view letter.docx` deliberately does not exist. One read path per
+    /// format, chosen explicitly.
+    #[cfg(feature = "docx")]
+    Import {
+        /// The Word document to read
+        input: PathBuf,
+        /// Where to write the ODF document. The form comes from the extension, flat by
+        /// default (`doc/flat-first.md`).
+        output: PathBuf,
+        /// Overwrite the output if it already exists
+        #[arg(long)]
+        force: bool,
+        /// Fail, and write nothing, if the conversion lost anything at all. The report is
+        /// printed either way, so it says what.
+        #[arg(long)]
+        strict: bool,
+    },
+
     // The flat default is `doc/flat-first.md`'s.
     /// Create an empty document
     ///

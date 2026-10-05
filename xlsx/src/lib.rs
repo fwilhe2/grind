@@ -88,7 +88,15 @@ pub fn sniff(bytes: &[u8]) -> bool {
     let Ok(mut package) = package::Package::open(bytes) else {
         return false;
     };
-    workbook::find_part(&mut package, &mut names::Seen::default()).is_ok()
+    let Ok(part) = workbook::find_part(&mut package, &mut names::Seen::default()) else {
+        return false;
+    };
+    // A Word document's main part is found by the same relationship type, so the part has to
+    // be asked what it is: a `<workbook>`, or something this filter does not read.
+    use xml::Spreadsheet as _;
+    package.part(&part).is_some_and(|bytes| {
+        matches!(xml::Reader::new(&bytes).root(), Ok(Some((name, _))) if name.is("workbook"))
+    })
 }
 
 /// Read an Excel workbook.

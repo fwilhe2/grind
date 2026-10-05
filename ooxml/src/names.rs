@@ -212,6 +212,9 @@ pub enum RelType {
     Hyperlink,
     /// An embedded OLE object — counted.
     OleObject,
+    /// `word/settings.xml` — the default tab stop, and whether even pages have headers of
+    /// their own.
+    Settings,
     Other,
 }
 
@@ -248,6 +251,7 @@ impl RelType {
             Some("image") => RelType::Image,
             Some("hyperlink") => RelType::Hyperlink,
             Some("oleObject") => RelType::OleObject,
+            Some("settings") => RelType::Settings,
             _ => RelType::Other,
         }
     }

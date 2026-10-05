@@ -46,6 +46,9 @@ pub enum Report {
     /// Boxed for the reason `CellStyle` is: the fidelity report outgrew every other variant.
     #[cfg(feature = "xlsx")]
     Import(Box<ImportReport>),
+    /// What `grind text import` carried, and what it did not (`doc/docx-import.md`).
+    #[cfg(feature = "docx")]
+    TextImport(Box<TextImportReport>),
     /// What `grind text export-pdf` wrote (`doc/pdf-export.md`).
     #[cfg(feature = "pdf")]
     Pdf(PdfReport),
@@ -183,6 +186,83 @@ pub struct ImportReport {
     /// a refusal — in a spreadsheet such a namespace guards a feature rather than the cell
     /// values, and cell values are what an import is for.
     pub must_understand: Vec<String>,
+}
+
+/// `grind text import`'s report — [`ImportReport`]'s twin for Word, and part of the output for
+/// the same reason.
+#[cfg(feature = "docx")]
+#[derive(Debug, Serialize)]
+pub struct TextImportReport {
+    pub input: String,
+    pub output: String,
+    pub written: bool,
+    /// Whether the conversion lost nothing at all — `grind_docx::Report::lossless`.
+    pub lossless: bool,
+    pub strict: bool,
+    /// `transitional`, `strict` or `mixed`.
+    pub flavour: &'static str,
+    /// The blocks of the document written — paragraphs, headings and list items, the ones in
+    /// table cells included — which is what every other `grind text` command addresses.
+    pub blocks: usize,
+    pub paragraphs: usize,
+    pub headings: usize,
+    pub list_items: usize,
+    pub tables: usize,
+    pub pictures: usize,
+    pub notes: usize,
+    pub styles: usize,
+    /// Every construct that did not come through, by name and count.
+    pub dropped: Vec<TextDropped>,
+    pub must_understand: Vec<String>,
+}
+
+#[cfg(feature = "docx")]
+#[derive(Debug, Serialize)]
+pub struct TextDropped {
+    pub what: String,
+    pub count: usize,
+}
+
+#[cfg(feature = "docx")]
+impl TextImportReport {
+    pub fn new(
+        input: &str,
+        output: &str,
+        document: &grind_text::Document,
+        report: &grind_docx::Report,
+        written: bool,
+        strict: bool,
+    ) -> Self {
+        Self {
+            input: input.to_owned(),
+            output: output.to_owned(),
+            written,
+            lossless: report.lossless(),
+            strict,
+            flavour: match report.flavour {
+                grind_docx::Flavour::Transitional => "transitional",
+                grind_docx::Flavour::Strict => "strict",
+                grind_docx::Flavour::Mixed => "mixed",
+            },
+            blocks: document.blocks.len(),
+            paragraphs: report.paragraphs,
+            headings: report.headings,
+            list_items: report.list_items,
+            tables: report.tables,
+            pictures: report.images,
+            notes: report.notes,
+            styles: report.styles,
+            dropped: report
+                .dropped
+                .iter()
+                .map(|(what, count)| TextDropped {
+                    what: what.label().to_owned(),
+                    count: *count,
+                })
+                .collect(),
+            must_understand: report.must_understand.iter().cloned().collect(),
+        }
+    }
 }
 
 /// What `grind test` ran: every test by name, and each failure with where it failed.
@@ -563,13 +643,15 @@ impl Report {
             || self.import_refused()
     }
 
-    #[cfg(feature = "xlsx")]
     fn import_refused(&self) -> bool {
-        matches!(self, Report::Import(import) if import.strict && !import.lossless)
-    }
-
-    #[cfg(not(feature = "xlsx"))]
-    fn import_refused(&self) -> bool {
+        #[cfg(feature = "xlsx")]
+        if matches!(self, Report::Import(import) if import.strict && !import.lossless) {
+            return true;
+        }
+        #[cfg(feature = "docx")]
+        if matches!(self, Report::TextImport(import) if import.strict && !import.lossless) {
+            return true;
+        }
         false
     }
 
@@ -701,6 +783,37 @@ impl Report {
                     import.formulas,
                     import.formatted,
                     import.styled,
+                    import.flavour
+                );
+            }
+            #[cfg(feature = "docx")]
+            Report::TextImport(import) => {
+                for dropped in &import.dropped {
+                    println!("dropped\t{}\t{}", dropped.count, dropped.what);
+                }
+                for namespace in &import.must_understand {
+                    println!("not understood\t{namespace}");
+                }
+                println!(
+                    "{} -> {}{}",
+                    import.input,
+                    import.output,
+                    match (import.written, import.strict && !import.lossless) {
+                        (true, _) => "",
+                        (false, true) => " (--strict: something was lost, nothing written)",
+                        (false, false) => " (dry run, nothing written)",
+                    }
+                );
+                println!(
+                    "{} blocks\t{} paragraphs\t{} headings\t{} list items\t{} tables\t{} pictures\t{} notes\t{} styles\t{}",
+                    import.blocks,
+                    import.paragraphs,
+                    import.headings,
+                    import.list_items,
+                    import.tables,
+                    import.pictures,
+                    import.notes,
+                    import.styles,
                     import.flavour
                 );
             }

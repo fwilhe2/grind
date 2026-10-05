@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-docx"
+version = "0.0.0"
+description = "Reading Word documents — an import filter that produces an ODF text document"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+grind-text = { path = "../text" }
+grind-core = { path = "../core" }
+grind-ooxml = { path = "../ooxml" }
+# `office:binary-data`'s encoding — a picture is carried inside the flat document it imports to.
+# Already `grind-core`'s and `grind-text`'s.
+base64 = "0.23"
