@@ -37,6 +37,7 @@ pub mod page;
 pub mod projection;
 pub mod search;
 pub mod style;
+pub mod third_party;
 pub mod utf16;
 
 pub use kind::{DocumentKind, kind};

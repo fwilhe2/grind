@@ -1184,6 +1184,8 @@ dependencies = [
  "kdl",
  "quick-xml",
  "serde",
+ "serde_json",
+ "toml",
  "unicode-linebreak",
  "zip",
 ]

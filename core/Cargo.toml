@@ -27,3 +27,8 @@ kdl = "6.7.1"
 # `office:binary-data` (rng:7681): a picture moved out of a package into a flat file
 # (`odf::forms`) is base64 and nothing else.
 base64 = "0.23"
+
+[dev-dependencies]
+# `tests/third_party.rs` reads `cargo metadata` and `REUSE.toml` to write the third-party list.
+serde_json = "1"
+toml = "1"
