@@ -945,6 +945,12 @@ unreadable (mostly `Sheet!#REF!`), four structured references, two inline arrays
 and every construct counted by kind: 741 merges, 152 conditional-format rules, 96 pivot tables,
 72 drawings, 40 validations, 28 comments, 14 protections, ten charts.
 
+**Since conditional formats arrived (2026-10-05)**, 86 of those 152 rules are carried as the
+model's rule type and 66 are still counted — colour scales, data bars, icon sets and the other
+kinds with no formula, and rules whose formula or `dxf` cannot be carried; 12 rules lost the
+number format their `dxf` applied. All 362 workbooks still import and survive the writer and the
+reader.
+
 ### What X6 found
 
 **The exit criterion, in the real window.** `grind-sheet-gtk sample.xlsx` under Xvfb came up
