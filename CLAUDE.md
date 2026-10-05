@@ -574,7 +574,7 @@ than approximations — 2,394 font families, 249 indents, 90 underlines and so o
 cells in all), since the ODF reader keeps an empty cell's own style.
 
 Current scoreboard (see each test's own comments for what each column means and why):
-loop A (sheet) 359 read / 3 password-protected / 0 failed; loop A (text) 1755 read /
+loop A (sheet) 360 read / 3 password-protected / 0 failed; loop A (text) 1755 read /
 4 password-protected / 4 independently confirmed non-documents / 0 failed; loop B parse 75845/77061 (1216 named
 syntactic exclusions); loop B display 75845 round-trip, 271 named ambiguity; loop B evaluate
 13327/52213 matching LO (`FLOOR` in the test is the ratchet — raise it, never lower it; run
@@ -594,8 +594,8 @@ all rather than assuming it; the image has since been rebuilt with Writer, and t
 gating with no file changed. The probe stays for a developer whose own `soffice` has no Writer.
 Loop F is green for **both document types**: R7's fourteen vendored spreadsheets and
 `text/tests/data/`'s vendored Writer documents, neither of which skips, and — as D3 —
-**359/359 of loop A's spreadsheet corpus and 1755/1755 of its text corpus, with nothing
-differing** (`FLOOR = 359` and `FLOOR = 1755`, and they only go up). It costs no corpus of its
+**360/360 of loop A's spreadsheet corpus and 1755/1755 of its text corpus, with nothing
+differing** (`FLOOR = 360` and `FLOOR = 1755`, and they only go up). It costs no corpus of its
 own, which is the point of building it on loop A's. It has exactly one named exclusion per
 application — charts for the sheet, images for text — each with a test that fails the day it is
 projected. The text half compares runs after the normalisation `text/src/odf/write.rs` already

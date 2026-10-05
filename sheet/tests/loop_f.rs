@@ -136,7 +136,7 @@ fn the_corpus_projects() {
     /// It is at the whole corpus, which is a stronger result than the ratchet shape implies:
     /// there is nothing to triage, and the number is here so that the day something *is*
     /// triaged, the loop notices instead of absorbing it.
-    const FLOOR: usize = 359;
+    const FLOOR: usize = 360;
 
     let root = PathBuf::from(
         std::env::var("GRIND_LO_CORPUS").unwrap_or_else(|_| DEFAULT_CHECKOUT.to_owned()),

@@ -200,8 +200,18 @@ fn renaming_a_sheet_or_a_name_carries_every_rule_that_uses_it() {
     app.set_rules(
         0,
         vec![
-            Rule::over(Pos::new(0, 0), Pos::new(3, 0), "[$Ticks.$A1]", fill("#00ff00")),
-            Rule::over(Pos::new(0, 1), Pos::new(3, 1), "[.B1]>limit", fill("#ff0000")),
+            Rule::over(
+                Pos::new(0, 0),
+                Pos::new(3, 0),
+                "[$Ticks.$A1]",
+                fill("#00ff00"),
+            ),
+            Rule::over(
+                Pos::new(0, 1),
+                Pos::new(3, 1),
+                "[.B1]>limit",
+                fill("#ff0000"),
+            ),
         ],
     )
     .unwrap();

@@ -103,8 +103,15 @@ impl Locale {
             None => (tag, ""),
         };
         let ok = |s: &str| s.chars().all(|c| c.is_ascii_alphabetic());
-        (!language.is_empty() && ok(language) && ok(country))
-            .then(|| Locale::new(language.to_lowercase(), country.to_uppercase()))
+        // `none` is ODF's own word for "no country" (`fo:country`, XSL-FO's), and stays as it is
+        // spelled: upper-casing it would make a document read from a file and the same document
+        // read back from its projection two different locales (`tdf160368.ods`, loop F).
+        let country = match country.eq_ignore_ascii_case("none") {
+            true => "none".to_owned(),
+            false => country.to_uppercase(),
+        };
+        (!language.is_empty() && ok(language) && ok(&country))
+            .then(|| Locale::new(language.to_lowercase(), country))
     }
 
     /// [`Locale::parse`]'s inverse — how a shell shows and takes a locale back.
@@ -222,6 +229,8 @@ mod tests {
         }
         // A shell may spell it either way; the tag comes back canonical.
         assert_eq!(Locale::parse("DE_de").unwrap().tag(), "de-DE");
+        // ODF's "no country" keeps its own spelling.
+        assert_eq!(Locale::parse("zxx-none").unwrap().country, "none");
     }
 
     #[test]
