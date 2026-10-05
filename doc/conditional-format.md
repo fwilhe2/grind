@@ -77,6 +77,8 @@ pub struct Rule {
 
 ## 3. What must be measured first (clean room)
 
+**Progress (2026-10-05):** Q1 and Q2 are answered and written up in `doc/ods-format.md` §3.6 — LibreOffice writes *and* reads the standard `style:map`/`is-true-formula`/`style:base-cell-address` spelling, so the reader needs no `calcext` path. Q3 is half answered (write direction). Q4 and the read direction of Q3 are open.
+
 Each of these is answered from LibreOffice's *behaviour* (write a file, convert it, read it
 back) or from the ODF specification. The answers go into `doc/ods-format.md` with a
 `MEASURED`/`SPEC` mark before any code depends on them.

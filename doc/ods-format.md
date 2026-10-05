@@ -292,6 +292,41 @@ in, the cell it is linked to, its name and label, and its own state when unlinke
 form control is not modelled. A save that changes a sheet's checkboxes refuses rather than drop
 one (R6's guard).
 
+### 3.6 A conditional-format rule — `MEASURED` (2026-10-05, LibreOffice 26.8)
+
+Measured by converting `checkliste-finanziell-gut-aufgestellt.xlsx` (one `<cfRule type="expression">`
+over ten ranges, `$E5=TRUE`, with a `dxf` that sets only a fill) to `.fods`, then again with every
+`calcext:conditional-formats` block deleted and converted back to `.xlsx`. These answer
+`doc/conditional-format.md` §3 Q1–Q3.
+
+- **LibreOffice writes the standard spelling as well as its own.** Each rule's `dxf` becomes a
+  cell style named `ConditionalStyle_5f_N` (`style:display-name="ConditionalStyle_N"`,
+  `style:parent-style-name="Default"`) holding *only* the properties the `dxf` set —
+  `<style:table-cell-properties fo:background-color="#97e8ca"/>`. Every cell style of a cell
+  inside the rule's range then carries
+  `<style:map style:condition="is-true-formula([.$E5]=1)" style:apply-style-name="ConditionalStyle_5f_1" style:base-cell-address="Checkliste.B5"/>`
+  (`style:map` is the **last** child of the `style:style`). The condition is OpenFormula in
+  ODF syntax, wrapped in `is-true-formula(…)`; `$E5=TRUE` came back as `[.$E5]=1`.
+- **`style:base-cell-address` is the range's top-left cell**, the same on every cell's style
+  however far from it, and is what makes `$E5` relative: B5 and C7 both name `Checkliste.B5`.
+  The sheet name is prefixed and dotted (`Checkliste.B5`).
+- **LibreOffice's own spelling is a second copy of the same rule**, in the sheet after the last
+  row: `<calcext:conditional-formats><calcext:conditional-format calcext:target-range-address="Checkliste.B5:Checkliste.C7 …">`
+  holding `<calcext:condition calcext:apply-style-name="ConditionalStyle_1" calcext:value="formula-is([.$E5]=1)" calcext:base-cell-address="Checkliste.B5"/>`.
+  The target range is a space-separated list of sheet-qualified ranges, one rule over several
+  ranges. Different rules with the same condition and style but different base cells stay
+  separate (`B54:C55` and `D54:D55` above are two, because Excel's file had two).
+- **Reading needs only the standard one.** With every `calcext:conditional-formats` block
+  deleted, LibreOffice still opened the file and wrote back 20 `<conditionalFormatting>` ranges
+  with `type="expression"` rules — so `style:map` + `is-true-formula` + `style:base-cell-address`
+  is enough for the oracle, and R2 (schema-valid output) costs nothing.
+- **Q3 (N base styles → N maps)** is confirmed in the direction LibreOffice *writes*: the same
+  rule appears as a `style:map` in every distinct cell style the range's cells use (`ce4` and
+  `ce6` above, different backgrounds, same map). Whether it merges them again on read, and Q4
+  (which of two true rules wins), are **still unmeasured**.
+- **Not carried by a rule**: a colour scale (`<cfRule type="colorScale">`, `H5` in the sample)
+  comes out as a `calcext:color-scale` and no `style:map` at all.
+
 ## 4. Formulas **[ODS]**
 
 `table:formula` is a plain string attribute (schema type: unrestricted `string` — the `of:`
