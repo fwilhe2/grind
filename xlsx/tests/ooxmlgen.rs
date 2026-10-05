@@ -1315,8 +1315,23 @@ fn the_style_fixtures_look_as_their_notes_say() {
         assert_eq!(report.appearance_lost[&class], 1, "{class:?}");
     }
     assert_eq!(report.appearance_lost[&Appearance::VerticalJustify], 2);
-    assert_eq!(report.appearance_lost[&Appearance::Indent], 3);
-    assert_eq!(report.appearance_lost[&Appearance::Rotation], 6);
+    // Indents and angles are carried (`doc/xlsx-format.md` §4.14); stacked letters are not.
+    for (at, indent) in [("B17", "0.265cm"), ("B18", "1.323cm")] {
+        assert_eq!(
+            style_at(&alignment, at).and_then(|s| s.indent).as_deref(),
+            Some(indent),
+            "{at}"
+        );
+    }
+    for (at, angle) in [("B19", "45"), ("B20", "90"), ("B21", "315"), ("B22", "270")] {
+        assert_eq!(
+            style_at(&alignment, at).and_then(|s| s.rotation).as_deref(),
+            Some(angle),
+            "{at}"
+        );
+    }
+    assert_eq!(report.appearance_lost.get(&Appearance::Indent), None);
+    assert_eq!(report.appearance_lost[&Appearance::Rotation], 1);
 
     // `applyFont="0"` does not hand A5 its named style's font: the cell format's own ids are
     // the ones in effect, as the oracle reads it (`doc/xlsx-format.md` §4.4).

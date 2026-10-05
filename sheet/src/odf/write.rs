@@ -2548,6 +2548,10 @@ fn owned_properties(style: Option<&CellStyle>) -> Vec<envelope::PropertyPatch<'s
             value(s.map(|s| &s.vertical_align)),
         ),
         ("fo:wrap-option".to_owned(), value(s.map(|s| &s.wrap))),
+        (
+            "style:rotation-angle".to_owned(),
+            value(s.map(|s| &s.rotation)),
+        ),
     ];
     match s.and_then(|s| s.uniform_border()) {
         Some(border) => {
@@ -2567,7 +2571,10 @@ fn owned_properties(style: Option<&CellStyle>) -> Vec<envelope::PropertyPatch<'s
         ("style:table-cell-properties", cell),
         (
             "style:paragraph-properties",
-            vec![("fo:text-align".to_owned(), value(s.map(|s| &s.align)))],
+            vec![
+                ("fo:text-align".to_owned(), value(s.map(|s| &s.align))),
+                ("fo:margin-left".to_owned(), value(s.map(|s| &s.indent))),
+            ],
         ),
         (
             "style:text-properties",
@@ -2608,6 +2615,7 @@ fn properties(style: &CellStyle) -> String {
     attr(&mut cell, "fo:background-color", &style.background);
     attr(&mut cell, "style:vertical-align", &style.vertical_align);
     attr(&mut cell, "fo:wrap-option", &style.wrap);
+    attr(&mut cell, "style:rotation-angle", &style.rotation);
     // The shorthand when every edge agrees, four attributes when they do not — the two
     // spell the same style, and emitting both would be a document contradicting itself.
     match style.uniform_border() {
@@ -2624,12 +2632,11 @@ fn properties(style: &CellStyle) -> String {
         let _ = write!(out, "<style:table-cell-properties{cell}/>");
     }
 
-    if let Some(align) = &style.align {
-        let _ = write!(
-            out,
-            "<style:paragraph-properties fo:text-align=\"{}\"/>",
-            esc(align)
-        );
+    let mut paragraph = String::new();
+    attr(&mut paragraph, "fo:text-align", &style.align);
+    attr(&mut paragraph, "fo:margin-left", &style.indent);
+    if !paragraph.is_empty() {
+        let _ = write!(out, "<style:paragraph-properties{paragraph}/>");
     }
 
     let mut text = String::new();

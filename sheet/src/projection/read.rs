@@ -286,6 +286,13 @@ fn cell_style(node: &KdlNode) -> Result<CellStyle> {
     out.background = string_prop(node, "background").map(|c| colour(&c));
     out.align = string_prop(node, "align");
     out.vertical_align = string_prop(node, "valign");
+    out.indent = string_prop(node, "indent");
+    out.rotation = match node.get("rotate") {
+        Some(KdlValue::Integer(n)) => Some(n.to_string()),
+        Some(KdlValue::Float(f)) => Some(f.to_string()),
+        Some(KdlValue::String(s)) => Some(s.clone()),
+        _ => None,
+    };
     let line = |name: &str| match node.get(name) {
         Some(KdlValue::Bool(true)) => Some("solid".to_owned()),
         Some(KdlValue::String(other)) => Some(other.clone()),

@@ -1874,7 +1874,7 @@ enum Command {
         /// Print the styling of one cell instead of setting any
         #[arg(long, conflicts_with_all = [
             "bold", "italic", "underline", "strike", "color", "background", "align", "valign",
-            "wrap", "size", "border",
+            "wrap", "size", "border", "indent", "rotate",
         ])]
         show: bool,
         #[arg(long)]
@@ -1908,6 +1908,12 @@ enum Command {
         /// Border on every edge, as width, line and colour: "0.5pt solid navy"
         #[arg(long, value_parser = style::border)]
         border: Option<String>,
+        /// Indent the text from the cell's left edge: an ODF length, e.g. 0.5cm
+        #[arg(long)]
+        indent: Option<String>,
+        /// Turn the text anticlockwise by this many degrees, e.g. 45 or 90
+        #[arg(long)]
+        rotate: Option<String>,
     },
 
     /// Set the width of a column or a run of columns (§5.4)
@@ -3122,6 +3128,8 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             wrap,
             size,
             border,
+            indent,
+            rotate,
         } => {
             let app = load(file, cli)?;
             if *show {
@@ -3155,6 +3163,8 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 wrap: wrap.then(|| "wrap".to_owned()),
                 underline: underline.then(|| "solid".to_owned()),
                 line_through: strike.then(|| "solid".to_owned()),
+                indent: indent.clone(),
+                rotation: rotate.clone(),
                 borders: Default::default(),
             };
             want.set_border(border.clone());

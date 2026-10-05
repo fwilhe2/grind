@@ -506,7 +506,8 @@ fn same_length(want: &str, got: Option<&str>) -> bool {
 ///
 /// The one place styles are not compared as written, and for a measured reason
 /// (doc/ods-format.md §5.4): LO converts a border width to its internal unit and back, so
-/// `0.5pt` returns as `0.51pt`. Everything else about a border — the line style, the colour
+/// `0.5pt` returns as `0.51pt`, and an indent comes back in the machine's own unit. Everything
+/// else about a border — the line style, the colour
 /// — and every other property must come back exactly.
 fn same_style(a: Option<&CellStyle>, b: Option<&CellStyle>) -> bool {
     let (Some(a), Some(b)) = (a, b) else {
@@ -523,12 +524,23 @@ fn same_style(a: Option<&CellStyle>, b: Option<&CellStyle>) -> bool {
             _ => a == b,
         }
     });
+    // An indent is a length LibreOffice respells in the converting machine's unit — `0.5cm`
+    // back as `0.1965in` (measured, this loop) — so it is compared as the length it is.
+    // A tenth of a millimetre either way: the same step converted on a cm machine came back
+    // `0.265cm` and on an inch machine `0.1in`, which is 0.11mm apart.
+    let indents = match (a.indent_mm(), b.indent_mm()) {
+        (Some(x), Some(y)) => (x - y).abs() < 0.15,
+        (x, y) => x == y,
+    };
     borders
+        && indents
         && CellStyle {
             borders: Default::default(),
+            indent: None,
             ..a.clone()
         } == CellStyle {
             borders: Default::default(),
+            indent: None,
             ..b.clone()
         }
 }
@@ -746,6 +758,8 @@ fn styles() -> (String, Document) {
     let mut boxed = CellStyle {
         vertical_align: Some("middle".into()),
         wrap: Some("wrap".into()),
+        indent: Some("0.5cm".into()),
+        rotation: Some("45".into()),
         ..Default::default()
     };
     boxed.set_border(Some("0.5pt solid #000000".into()));

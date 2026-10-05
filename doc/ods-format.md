@@ -566,6 +566,8 @@ including `fo:background-color`, `fo:color`, `fo:font-size`, `fo:font-weight`,
 | `fo:border="0.5pt solid #000000"` | `0.51pt solid #000000` | Widths go through LO's internal integer unit and back, so a round trip is **not** exact. `1pt` → `0.99pt`, `0.05pt` → `0.06pt`. Compare widths numerically, never as text. |
 | `fo:font-family="Liberation Sans"` | `style:font-name="Liberation Sans1"` | The family is replaced by a reference into `office:font-face-decls`, a second vocabulary. A reader that only knows `fo:font-family` loses the font. |
 | edges left unset | `fo:border-bottom="none"` etc. | LO writes every edge explicitly. `"none"` is the *absence* of a border, so a model that stores it as a value makes two equal styles unequal. |
+| `fo:margin-left="0.5cm"` (an indent) | `0.1965in` (2026-10-05, LibreOffice 26.8 on a US-locale machine) | A length comes back in the converting machine's unit, rounded. Compare as a length. |
+| — | `fo:margin-left="0cm"`, `style:rotation-angle="0"`, `style:text-underline-style="none"`, `style:text-line-through-style="none"` on every cell style | Each is the absence of the property, which the reader reads as no value — as it reads `"none"` borders. |
 | — | `style:text-align-source`, `style:repeat-content` | Added unasked. Harmless, and a reminder that a style comes back with more than it left with. |
 
 A style applied to every cell of a column also comes back on the **column**

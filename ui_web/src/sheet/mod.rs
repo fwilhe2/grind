@@ -2930,6 +2930,9 @@ fn css_of(style: Option<&CellStyle>, numeric: bool, dark: bool) -> String {
     if !lines.is_empty() {
         css.push_str(&format!("text-decoration:{};", lines.join(" ")));
     }
+    // An indent is ODF's paragraph margin, which in a cell is CSS's first-line indent: the
+    // cell's own padding stays where the grid put it.
+    set(&mut css, "text-indent", &style.indent);
     // The document's colour, made to read on the page it lands on (`crate::ink`).
     let ink = crate::ink::color(style.color.as_deref(), style.background.as_deref(), dark);
     set(&mut css, "color", &ink);

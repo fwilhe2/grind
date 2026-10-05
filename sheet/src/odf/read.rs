@@ -2093,6 +2093,9 @@ impl Context<Builder> for CellStyleProps {
         match name.local.as_str() {
             "table-cell-properties" => {
                 style.background = fo("background-color");
+                // `0` is no rotation, as LibreOffice writes it on every cell style.
+                style.rotation =
+                    fo("rotation-angle").filter(|v| v.trim().parse::<f64>() != Ok(0.0));
                 style.vertical_align = fo("vertical-align");
                 style.wrap = fo("wrap-option");
                 // The shorthand first, then each edge, so a document that writes both — and
@@ -2122,7 +2125,12 @@ impl Context<Builder> for CellStyleProps {
                 style.underline = line("text-underline-style");
                 style.line_through = line("text-line-through-style");
             }
-            "paragraph-properties" => style.align = fo("text-align"),
+            "paragraph-properties" => {
+                style.align = fo("text-align");
+                // A zero margin is no indent, which LibreOffice states on every cell style.
+                style.indent = fo("margin-left")
+                    .filter(|v| crate::style::length_mm(v).is_none_or(|mm| mm != 0.0));
+            }
             _ => return None,
         }
         Some(Box::new(super::context::Ignore))

@@ -62,6 +62,12 @@ pub struct CellStyle {
     /// `style:text-line-through-style` — the same vocabulary, struck through instead.
     #[serde(default)]
     pub line_through: Option<String>,
+    /// `fo:margin-left` on the paragraph properties — an indent, an ODF length (`0.265cm`).
+    #[serde(default)]
+    pub indent: Option<String>,
+    /// `style:rotation-angle` — the text turned anticlockwise by this many degrees (`45`).
+    #[serde(default)]
+    pub rotation: Option<String>,
     /// `fo:border-{left,right,top,bottom}`, in [`EDGES`] order. The `fo:border` shorthand is
     /// expanded into all four on the way in and collapsed back when they agree, because
     /// that is what the shorthand *means* — keeping it as a fifth field would make two
@@ -88,6 +94,31 @@ impl CellStyle {
     /// value is some kind of line.
     pub fn is_underlined(&self) -> bool {
         !matches!(self.underline.as_deref(), None | Some("none"))
+    }
+
+    /// The indent in millimetres, when there is one that is not zero.
+    pub fn indent_mm(&self) -> Option<f64> {
+        self.indent
+            .as_deref()
+            .and_then(length_mm)
+            .filter(|mm| *mm > 0.0)
+    }
+
+    /// The rotation in degrees, anticlockwise, normalised to `0..360` — `None` for none.
+    pub fn rotation_degrees(&self) -> Option<f64> {
+        let degrees = self.rotation.as_deref()?.trim();
+        // ODF's angle may carry a unit (`deg`, `rad`, `grad`); a bare number is degrees.
+        let (number, factor) = if let Some(n) = degrees.strip_suffix("grad") {
+            (n, 0.9)
+        } else if let Some(n) = degrees.strip_suffix("rad") {
+            (n, 180.0 / std::f64::consts::PI)
+        } else if let Some(n) = degrees.strip_suffix("deg") {
+            (n, 1.0)
+        } else {
+            (degrees, 1.0)
+        };
+        let d = (number.trim().parse::<f64>().ok()? * factor).rem_euclid(360.0);
+        (d != 0.0).then_some(d)
     }
 
     /// Whether the text is struck through — [`CellStyle::is_underlined`]'s twin.
@@ -119,6 +150,8 @@ impl CellStyle {
             wrap: pick(&self.wrap, &under.wrap),
             underline: pick(&self.underline, &under.underline),
             line_through: pick(&self.line_through, &under.line_through),
+            indent: pick(&self.indent, &under.indent),
+            rotation: pick(&self.rotation, &under.rotation),
             borders: std::array::from_fn(|i| pick(&self.borders[i], &under.borders[i])),
         }
     }

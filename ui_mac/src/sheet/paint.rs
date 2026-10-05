@@ -690,9 +690,14 @@ fn cell_text(
         text_w = width(metrics, &text, &text_style);
     }
     let line_h = f64::from(metrics.line_height(&text_style));
+    // An indent (`fo:margin-left`), in points, from the leading edge of text not set against
+    // the right one.
+    let indent = style
+        .and_then(|s| s.indent_mm())
+        .map_or(0.0, |mm| mm * 72.0 / 25.4);
     let x = match look::align(value, style) {
-        look::Align::Left => cell.x + PAD_X,
-        look::Align::Center => cell.x + (cell.w - text_w) / 2.0,
+        look::Align::Left => cell.x + PAD_X + indent,
+        look::Align::Center => cell.x + indent + (cell.w - indent - text_w) / 2.0,
         look::Align::Right => cell.right() - PAD_X - text_w,
     };
     let top = match look::valign(style) {

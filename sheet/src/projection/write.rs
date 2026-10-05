@@ -381,6 +381,8 @@ fn style_props(out: &mut Emitter, style: &CellStyle) {
     out.prop_some("background", style.background.as_deref());
     out.prop_some("align", style.align.as_deref());
     out.prop_some("valign", style.vertical_align.as_deref());
+    out.prop_some("indent", style.indent.as_deref());
+    out.prop_some("rotate", style.rotation.as_deref());
     for (name, value) in [
         ("underline", &style.underline),
         ("strike", &style.line_through),

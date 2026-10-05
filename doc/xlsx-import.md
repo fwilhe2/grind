@@ -867,6 +867,10 @@ And a format code's `[Red]` — the 211 cells loop A′ counted as losing a numb
 carried as the branch's own `fo:color` (`numfmt::Format::color`, `doc/xlsx-format.md` §3.7);
 only `[Color N]`, which no corpus workbook uses, is still counted.
 
+So are the 249 indents and 45 rotations: `CellStyle` gained `fo:margin-left` and
+`style:rotation-angle` (§4.14). An indent on right-aligned text and stacked letters are what is
+still counted.
+
 Seven things it found on the way:
 
 1. **The oracle's column widths are a fact about the converting machine.** The plan said the

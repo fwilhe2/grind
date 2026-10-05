@@ -62,6 +62,8 @@ pub struct Appearance {
     pub italic: bool,
     pub underline: bool,
     pub strike: bool,
+    /// `fo:margin-left`, in millimetres — zero for none.
+    pub indent_mm: f64,
     /// `None` means "the theme's ink" — a cell without a colour of its own has to follow the
     /// user's light/dark choice, and baking the theme's value in here would make a document
     /// that was opened in light mode unreadable when the theme changed under it.
@@ -72,7 +74,7 @@ pub struct Appearance {
 impl Appearance {
     /// Which of the sixteen faces a cell's text is drawn in — bold, italic, underlined and
     /// struck through being four switches of one `LOGFONTW` — as an index into a frame's
-    /// [`Faces`]. Zero is the regular face.
+    /// `faces` array in `paint`. Zero is the regular face.
     pub fn face(&self) -> usize {
         usize::from(self.bold)
             | usize::from(self.italic) << 1
@@ -93,6 +95,7 @@ impl Appearance {
             italic: look::is_italic(style),
             underline: style.is_some_and(CellStyle::is_underlined),
             strike: style.is_some_and(CellStyle::is_struck),
+            indent_mm: style.and_then(CellStyle::indent_mm).unwrap_or(0.0),
             text: style.and_then(|s| s.color.as_deref()).and_then(Rgb::parse),
             // `transparent` is a real value and it means *no fill*, not black.
             background: match style.and_then(|s| s.background.as_deref()) {
@@ -563,6 +566,15 @@ mod windows_impl {
                             hashes.as_str()
                         }
                         false => text,
+                    };
+                    // An indent (`fo:margin-left`) moves text in from the leading edge — not text
+                    // set against the right one, which a left margin does not reach.
+                    let text_left = match look.align {
+                        Align::Right => text_left,
+                        _ => {
+                            let px = crate::sheet::geom::scale(look.indent_mm * 96.0 / 25.4, g.dpi);
+                            (text_left + px.round() as i32).min(text_right)
+                        }
                     };
                     draw_text(
                         dc, text, text_left, top, text_right, bottom, look.align, ink, pad,

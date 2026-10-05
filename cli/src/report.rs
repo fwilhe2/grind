@@ -824,6 +824,8 @@ fn describe(cell: &CellStyleReport) -> Vec<(String, String)> {
             ("fo:wrap-option", &style.wrap),
             ("style:text-underline-style", &style.underline),
             ("style:text-line-through-style", &style.line_through),
+            ("fo:margin-left", &style.indent),
+            ("style:rotation-angle", &style.rotation),
         ] {
             if let Some(value) = value {
                 set(key, value);

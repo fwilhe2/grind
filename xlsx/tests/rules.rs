@@ -130,6 +130,7 @@ fn every_rule_with_a_formula_is_carried_in_priority_order() {
                 "NOT(ISERROR(SEARCH(\"a\";[.D1])))",
                 CellStyle {
                     font_weight: Some("normal".into()),
+                    underline: Some("solid".into()),
                     borders: [Some("0.74pt solid #ff0000".into()), None, None, None],
                     ..CellStyle::default()
                 },
@@ -151,7 +152,6 @@ fn every_rule_with_a_formula_is_carried_in_priority_order() {
     assert_eq!(report.dropped.get(&Dropped::ConditionalFormat), Some(&2));
     // What the fourth dxf could not say, once per rule.
     let lost: Vec<&str> = report.appearance_lost.keys().map(|a| a.label()).collect();
-    assert!(lost.contains(&"underline"), "{lost:?}");
     assert!(
         lost.contains(&"number format applied by a conditional rule (per rule)"),
         "{lost:?}"
@@ -185,7 +185,7 @@ fn an_imported_rule_draws_once_the_document_is_written() {
 #[test]
 fn a_rule_with_no_dxf_or_one_the_model_cannot_draw_is_counted() {
     let rules = r#"<conditionalFormatting sqref="A1"><cfRule type="expression" priority="1"><formula>TRUE</formula></cfRule><cfRule type="expression" dxfId="0" priority="2"><formula>TRUE</formula></cfRule></conditionalFormatting>"#;
-    let dxfs = r#"<dxf><font><u/></font></dxf>"#;
+    let dxfs = r#"<dxf><font><vertAlign val="superscript"/></font></dxf>"#;
     let (document, report) = grind_xlsx::import_bytes(&workbook(rules, dxfs)).expect("imports");
     assert!(document.sheets[0].rules().is_empty());
     assert_eq!(report.dropped.get(&Dropped::ConditionalFormat), Some(&2));

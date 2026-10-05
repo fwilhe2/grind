@@ -642,6 +642,25 @@ LibreOffice 26.8:
   `style:text-underline-color="font-color"`, both ODF's defaults, and `none` for both lines on
   every other cell style — which the ODF reader reads as no line at all.
 
+### 4.14 Indent and rotation — `MEASURED`
+
+Measured 2026-10-05 by converting one cell per `<alignment>` variant to `.fods` with LibreOffice
+26.8:
+
+- `indent="n"` is `fo:margin-left` on the paragraph properties, `n` × 0.2646cm written to three
+  decimals: `0.265cm`, `0.529cm`, `0.794cm` — ten pixels at 96 dpi a step. **Not a constant of
+  the oracle's**: the same conversion under loop D's own profile wrote `0.1in` a step (`0.5in`
+  for five), 4% less, and the pinned image `0.1457in` (3.70mm), 40% more — the step follows the
+  font the converting machine has, as a column's width does (§4.5). This filter takes the
+  desktop's; loop D names the rest. The oracle writes the
+  same left margin for right-aligned text, where Excel measures the indent from the **right**
+  edge; a left margin under right-aligned text moves nothing, so this filter does not pretend
+  and counts it (`Appearance::Indent`).
+- `textRotation` 1–90 is `style:rotation-angle` with the same number; 91–180 turns the text
+  *down* by `n - 90`, which the oracle writes as `360 - (n - 90)` (`135` → `315`).
+- `textRotation="255"` is stacked letters: `style:direction="ttb"` and no angle. `CellStyle` has
+  no direction, so it is counted (`Appearance::Rotation`).
+
 ## 5. Functions whose semantics differ under the same name
 
 `doc/xlsx-import.md` Part II §3 takes the decision: the importer carries the name and Excel's

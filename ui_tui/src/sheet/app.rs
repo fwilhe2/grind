@@ -2493,6 +2493,22 @@ impl App {
                     true => usize::from(*width) - 1,
                     false => usize::from(*width),
                 };
+                // An indent (`fo:margin-left`) in whole terminal columns, ahead of text that is
+                // not set against the right edge.
+                let indent = match alignment(cell, numeric) {
+                    Align::Right => 0,
+                    _ => cell
+                        .and_then(|s| s.indent_mm())
+                        .map_or(0, |mm| (mm / geom::MM_PER_CELL).round() as usize),
+                };
+                let indented;
+                let text = match indent {
+                    0 => text,
+                    n => {
+                        indented = format!("{}{text}", " ".repeat(n));
+                        indented.as_str()
+                    }
+                };
                 spans.push(Span::styled(
                     geom::pad(
                         text,

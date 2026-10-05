@@ -263,8 +263,8 @@ const DIVERGENCES: &[Divergence] = &[
         name: "the oracle aligns rotated text",
         why: "`textRotation` with no `horizontal`: the oracle adds `fo:text-align` by the \
               angle — `start` at 45° and 180°, `end` at 90°, 135° and stacked — where the file \
-              says `general`, which this import carries as no alignment and counts the rotation \
-              (`Appearance::Rotation`). `styles/alignment.xlsx` B19–B23.",
+              says `general`, which this import carries as no alignment beside the angle. \
+              `styles/alignment.xlsx` B19–B23.",
         scope: Scope::Style(|ours, theirs| {
             ours.align.is_none()
                 && matches!(theirs.align.as_deref(), Some("start" | "end"))
@@ -344,6 +344,27 @@ const DIVERGENCES: &[Divergence] = &[
             track.axis == Axis::Column
                 && matches!(track.what, TrackDifference::Size { ours, theirs: Some(theirs) }
                     if (theirs / ours - 4.0 / 3.0).abs() < 0.005)
+        }),
+    },
+    Divergence {
+        name: "the oracle's indent step depends on the converting machine",
+        why: "`indent=\"n\"` has no length in ECMA-376 beyond \"n steps\". The oracle converted \
+              one step to 2.65mm on a desktop, to 2.54mm under this loop's profile there, and to \
+              3.70mm on the pinned image (`doc/xlsx-format.md` §4.14) — a step measured, like a \
+              column's width, in whatever font the machine has. This import takes the first, \
+              and the indent is the only property that differs. `styles/alignment.xlsx`.",
+        scope: Scope::Style(|ours, theirs| {
+            let (Some(a), Some(b)) = (ours.indent_mm(), theirs.indent_mm()) else {
+                return false;
+            };
+            (0.9..1.5).contains(&(b / a))
+                && CellStyle {
+                    indent: None,
+                    ..theirs.clone()
+                } == CellStyle {
+                    indent: None,
+                    ..ours.clone()
+                }
         }),
     },
     Divergence {
@@ -504,11 +525,20 @@ fn same_style(a: &Option<CellStyle>, b: &Option<CellStyle>) -> bool {
             _ => a == b,
         }
     });
+    // An indent is a length the oracle spells in the converting machine's unit (`0.1in` for
+    // `0.265cm`), so it is compared as one.
+    // A tenth of a millimetre either way: the same step converted on a cm machine came back
+    // `0.265cm` and on an inch machine `0.1in`, which is 0.11mm apart.
+    let indents = match (a.indent_mm(), b.indent_mm()) {
+        (Some(x), Some(y)) => (x - y).abs() < 0.15,
+        (x, y) => x == y,
+    };
     let bare = |s: &CellStyle| CellStyle {
         borders: Default::default(),
+        indent: None,
         ..s.clone()
     };
-    borders && bare(a) == bare(b)
+    borders && indents && bare(a) == bare(b)
 }
 
 /// Are these the same style except where `colour` excuses a border colour — with the oracle's

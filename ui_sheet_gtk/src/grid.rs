@@ -4142,6 +4142,10 @@ mod imp {
                         .unwrap_or_else(|| look::by_type(value));
                     let valign = look::valign(style);
                     let wrapping = style.is_some_and(|s| s.wrap.as_deref() == Some("wrap"));
+                    // An indent (`fo:margin-left`) moves the text in from the leading edge.
+                    let indent = style
+                        .and_then(|s| s.indent_mm())
+                        .map_or(0.0, |mm| mm * PX_PER_MM * self.zoom.get());
 
                     let mut cell = geom.cell_rect(row, col);
                     let mut capped = false;
@@ -4166,7 +4170,7 @@ mod imp {
                     });
                     layout.set_text(text);
                     let (text_w, text_h) = layout.pixel_size();
-                    let fits = wrapping || f64::from(text_w) <= cell.w - 2.0 * pad;
+                    let fits = wrapping || f64::from(text_w) <= cell.w - 2.0 * pad - indent;
                     // A heading too wide for the room its button leaves keeps its *start*:
                     // centred, it would lose a letter at each end and read as neither word.
                     let align = match capped && !fits {
@@ -4199,6 +4203,13 @@ mod imp {
                         continue;
                     }
 
+                    // Turned text (`style:rotation-angle`) is turned about the cell's middle and
+                    // kept inside it — a rotated heading over a narrow column, the usual case.
+                    if let Some(degrees) = style.and_then(|s| s.rotation_degrees()) {
+                        draw_turned(f.snapshot, &layout, color, &cell, text_w, text_h, degrees);
+                        continue;
+                    }
+
                     // Text keeps going until it meets something, which is the other half
                     // of the convention.
                     let mut paint = cell;
@@ -4223,7 +4234,7 @@ mod imp {
                         (align, valign),
                         match align {
                             Align::Right => pad,
-                            _ => lead,
+                            _ => lead + indent,
                         },
                     );
                 }
@@ -4958,6 +4969,33 @@ mod imp {
         snapshot.push_clip(&rect(paint.x, paint.y, paint.w, paint.h));
         snapshot.save();
         snapshot.translate(&graphene::Point::new(x as f32, y as f32));
+        snapshot.append_layout(layout, &color);
+        snapshot.restore();
+        snapshot.pop();
+    }
+
+    /// Draw `layout` turned `degrees` anticlockwise about the middle of `cell`, clipped to it.
+    fn draw_turned(
+        snapshot: &gtk::Snapshot,
+        layout: &pango::Layout,
+        color: gtk::gdk::RGBA,
+        cell: &Rect,
+        text_w: i32,
+        text_h: i32,
+        degrees: f64,
+    ) {
+        snapshot.push_clip(&rect(cell.x, cell.y, cell.w, cell.h));
+        snapshot.save();
+        snapshot.translate(&graphene::Point::new(
+            (cell.x + cell.w / 2.0) as f32,
+            (cell.y + cell.h / 2.0) as f32,
+        ));
+        // ODF turns anticlockwise; a snapshot's y runs down, so its positive angle is clockwise.
+        snapshot.rotate(-degrees as f32);
+        snapshot.translate(&graphene::Point::new(
+            -(text_w as f32) / 2.0,
+            -(text_h as f32) / 2.0,
+        ));
         snapshot.append_layout(layout, &color);
         snapshot.restore();
         snapshot.pop();

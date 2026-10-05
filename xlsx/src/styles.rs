@@ -90,9 +90,13 @@ pub enum Appearance {
     VerticalJustify,
     /// `shrinkToFit`.
     Shrink,
-    /// `indent`, in character widths. ODF would say it as a paragraph margin.
+    /// `indent` on right-aligned text, which Excel measures from the right edge: ODF's
+    /// paragraph margin is the left one, so it is not carried there (`doc/xlsx-format.md`
+    /// §4.14). An indent anywhere else is `fo:margin-left`.
     Indent,
-    /// `textRotation`, including 255, which is not a rotation but stacked letters.
+    /// `textRotation="255"`, which is not a rotation but stacked letters — ODF's
+    /// `style:direction="ttb"`, which `CellStyle` has no field for. Every other angle is
+    /// `style:rotation-angle`.
     Rotation,
     /// An `indexed` colour past the workbook's palette.
     UnknownColour,
@@ -145,8 +149,8 @@ impl Appearance {
             Appearance::Distributed => "distributed alignment",
             Appearance::VerticalJustify => "justified vertical alignment",
             Appearance::Shrink => "shrink to fit",
-            Appearance::Indent => "indent",
-            Appearance::Rotation => "text rotation",
+            Appearance::Indent => "indent from the right",
+            Appearance::Rotation => "stacked text",
             Appearance::UnknownColour => "colour outside the palette",
             Appearance::ZeroSize => "zero-size row or column (carried hidden)",
             Appearance::Outline => "row or column outline (per sheet)",
@@ -267,8 +271,10 @@ struct Align {
     vertical: Option<String>,
     wrap: bool,
     shrink: bool,
-    indent: bool,
-    rotation: bool,
+    /// `indent`, in Excel's steps.
+    indent: i64,
+    /// `textRotation`: 0–90 up, 91–180 down by `n - 90`, 255 stacked.
+    rotation: i64,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -482,6 +488,8 @@ fn dxf_look(d: &Dxf, palette: &Palette) -> Look {
     style.font_style = d
         .italic
         .map(|i| if i { "italic" } else { "normal" }.to_owned());
+    style.underline = d.underline.then(|| "solid".to_owned());
+    style.line_through = d.strike.then(|| "solid".to_owned());
     style.font_size = d.size.map(|size| format!("{size}pt"));
     style.color = d.color.as_ref().and_then(|c| resolve(c, &mut lost));
     for (on, class) in [
@@ -608,6 +616,8 @@ fn without(mut style: CellStyle, base: &CellStyle) -> CellStyle {
         (&mut style.vertical_align, &base.vertical_align),
         (&mut style.wrap, &base.wrap),
         (&mut style.underline, &base.underline),
+        (&mut style.indent, &base.indent),
+        (&mut style.rotation, &base.rotation),
         (&mut style.line_through, &base.line_through),
     ];
     for (field, base) in fields {
@@ -747,15 +757,28 @@ fn look(
             _ => None,
         };
         style.wrap = align.wrap.then(|| "wrap".to_owned());
-        for (on, class) in [
-            (align.shrink, Appearance::Shrink),
-            (align.indent, Appearance::Indent),
-            (align.rotation, Appearance::Rotation),
-        ] {
-            if on {
-                lost.push(class);
+        if align.shrink {
+            lost.push(Appearance::Shrink);
+        }
+        // One step of Excel's indent is the oracle's 0.265cm — ten pixels at 96 dpi
+        // (`doc/xlsx-format.md` §4.14). Measured from the right edge on right-aligned text,
+        // which a left margin cannot say.
+        if align.indent > 0 {
+            match align.horizontal.as_deref() {
+                Some("right") => lost.push(Appearance::Indent),
+                _ => style.indent = Some(indent_length(align.indent)),
             }
         }
+        style.rotation = match align.rotation {
+            0 => None,
+            255 => {
+                lost.push(Appearance::Rotation);
+                None
+            }
+            up @ 1..=90 => Some(up.to_string()),
+            down @ 91..=180 => Some((360 - (down - 90)).to_string()),
+            _ => None,
+        };
     }
 
     lost.sort();
@@ -766,6 +789,14 @@ fn look(
         family,
         unresolved_theme,
     }
+}
+
+/// `indent="n"` as the length the oracle writes for it: `n` × 0.2646cm, three decimals.
+fn indent_length(steps: i64) -> String {
+    let cm = steps as f64 * 0.264_583;
+    let text = format!("{cm:.3}");
+    let text = text.trim_end_matches('0').trim_end_matches('.');
+    format!("{text}cm")
 }
 
 /// A border style's name as ODF's three parts: width, line, and whether a dash pattern was
@@ -943,8 +974,8 @@ fn xfs(reader: &mut Reader<'_>) -> crate::Result<Vec<Xf>> {
                 vertical: attrs.plain("vertical").map(str::to_owned),
                 wrap: attrs.flag("wrapText"),
                 shrink: attrs.flag("shrinkToFit"),
-                indent: number("indent") > 0,
-                rotation: number("textRotation") != 0,
+                indent: number("indent").max(0),
+                rotation: number("textRotation"),
             });
             Ok(Handled::Yes)
         })?;
@@ -1143,10 +1174,31 @@ mod tests {
             [
                 Appearance::CenterAcross,
                 Appearance::VerticalJustify,
-                Appearance::Indent,
                 Appearance::Rotation
             ]
         );
+        assert_eq!(
+            styles
+                .look(3)
+                .unwrap()
+                .style
+                .as_ref()
+                .unwrap()
+                .indent
+                .as_deref(),
+            Some("0.529cm")
+        );
+        let turned = part(
+            "",
+            r#"<xf/>
+               <xf><alignment textRotation="45"/></xf>
+               <xf><alignment textRotation="135"/></xf>
+               <xf><alignment horizontal="right" indent="1"/></xf>"#,
+        );
+        let rotation = |i| style(&turned, i).and_then(|s| s.rotation);
+        assert_eq!(rotation(1).as_deref(), Some("45"));
+        assert_eq!(rotation(2).as_deref(), Some("315"), "135 is 45 down");
+        assert_eq!(turned.look(3).unwrap().lost, [Appearance::Indent]);
     }
 
     /// Whatever the default cell format says, a cell saying the same carries nothing — the
