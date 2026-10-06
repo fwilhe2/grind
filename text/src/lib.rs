@@ -1171,14 +1171,14 @@ impl App {
     /// terminal, GTK and web shells would otherwise each write their own and disagree
     /// (`doc/suite.md` S7).
     ///
-    /// The inserted text takes the style and hyperlink of **the run at the caret, preferring
-    /// the one to its left** — typing at the end of a bold word continues in bold, which is
-    /// what every editor does and what a person expects. At the front of a block there is
-    /// nothing to the left, so the run to the right decides.
+    /// The inserted text takes the style of **the run at the caret, preferring the one to its
+    /// left** — typing at the end of a bold word continues in bold, which is what every editor
+    /// does and what a person expects. At the front of a block there is nothing to the left,
+    /// so the run to the right decides.
     ///
-    /// ponytail: that rule carries a `text:a` too, so typing at the end of a link extends the
-    /// link. Right often enough to be the default and wrong often enough to want an override;
-    /// the override is a shell-level decision and there is no shell yet to make it.
+    /// A **hyperlink** is the exception, and is carried only *inside* one: text typed at either
+    /// edge of a link is not part of it, which is what every word processor does — a sentence
+    /// typed on after a link is not more link. The same rule [`App::char_style`] reads by.
     pub fn insert_text(&self, at: Caret, text: &str) -> Result<()> {
         if text.is_empty() {
             return Ok(());
@@ -1743,6 +1743,141 @@ impl App {
         })
     }
 
+    /// The hyperlink every character between two carets agrees about — `None` when any of them
+    /// is unlinked or two links disagree. What a link button reads before it writes, the way
+    /// [`App::char_style`] is what a Bold button reads.
+    ///
+    /// An **empty** span asks about the link the caret *touches*: [`App::link_at`]'s, so a
+    /// caret resting at the end of a link reads as on it — which is where it is after a click
+    /// on the link's last letter, and where "edit this link" has to find it.
+    pub fn link(&self, from: Caret, to: Caret) -> Result<Option<String>> {
+        if to < from {
+            return Err(Error::Xml("that range runs backwards".to_owned()));
+        }
+        if from == to {
+            return Ok(self.link_at(from)?.map(|link| link.href));
+        }
+        let state = self.state.read().unwrap();
+        let mut common: Option<Option<String>> = None;
+        for index in from.block..=to.block {
+            let block = state
+                .doc
+                .block(index)
+                .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(index))))?;
+            let start = if index == from.block { from.offset } else { 0 };
+            let end = if index == to.block {
+                to.offset
+            } else {
+                block.len()
+            };
+            let (_, rest) = model::split_runs(&block.runs, start);
+            let (middle, _) = model::split_runs(&rest, end.saturating_sub(start));
+            for run in &middle {
+                if let Run::Text { href, .. } = run {
+                    match &common {
+                        Some(so_far) if so_far != href => return Ok(None),
+                        Some(_) => {}
+                        None => common = Some(href.clone()),
+                    }
+                }
+            }
+        }
+        Ok(common.flatten())
+    }
+
+    /// The whole link at a caret — where it starts and ends, and its target — or `None` when
+    /// the caret touches no link. The character to the caret's **left** decides first and the
+    /// one to its right second, so a caret at the end of a link and one at its start both find
+    /// it. Within one block: a link never spans a paragraph (`text:a` is inline, rng:16453).
+    pub fn link_at(&self, at: Caret) -> Result<Option<Link>> {
+        let state = self.state.read().unwrap();
+        let block = state
+            .doc
+            .block(at.block)
+            .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(at.block))))?;
+        // Each text run's span and target, in caret offsets.
+        let mut spans = Vec::new();
+        let mut pos = 0usize;
+        for run in &block.runs {
+            let len = run.len();
+            spans.push((pos, pos + len, run_href(run)));
+            pos += len;
+        }
+        let offset = at.offset.min(pos);
+        let touching = spans
+            .iter()
+            .position(|(start, end, href)| href.is_some() && *start < offset && offset <= *end)
+            .or_else(|| {
+                spans.iter().position(|(start, end, href)| {
+                    href.is_some() && *start <= offset && offset < *end
+                })
+            });
+        let Some(found) = touching else {
+            return Ok(None);
+        };
+        let href = spans[found].2;
+        // A link is every adjacent run with the same target, whatever formatting it wears —
+        // `[a **bold** word](url)` is three runs and one link.
+        let mut first = found;
+        while first > 0 && spans[first - 1].2 == href {
+            first -= 1;
+        }
+        let mut last = found;
+        while last + 1 < spans.len() && spans[last + 1].2 == href {
+            last += 1;
+        }
+        Ok(Some(Link {
+            from: Caret {
+                block: at.block,
+                offset: spans[first].0,
+            },
+            to: Caret {
+                block: at.block,
+                offset: spans[last].1,
+            },
+            href: href.unwrap_or_default().to_owned(),
+        }))
+    }
+
+    /// Link every character between two carets to `href` — a URL, or `#name` for a bookmark
+    /// in this document — or with `None`, unlink them. Formatting is untouched, so a link can
+    /// be bold and stays bold unlinked. One [`Action::Batch`], one Ctrl+Z; returns how many
+    /// blocks changed. An empty `href` is refused rather than written: ODF's `xlink:href` is
+    /// required on a `text:a` (rng:16453) and an empty one points nowhere.
+    pub fn set_link(&self, from: Caret, to: Caret, href: Option<&str>) -> Result<usize> {
+        if href.is_some_and(|href| href.trim().is_empty()) {
+            return Err(Error::Xml("a link needs somewhere to point".to_owned()));
+        }
+        self.mutate(|state| {
+            if to < from {
+                return Err(Error::Xml("that range runs backwards".to_owned()));
+            }
+            let mut batch = Vec::new();
+            for index in from.block..=to.block {
+                let mut block = block_at(state, index)?;
+                let start = if index == from.block { from.offset } else { 0 };
+                let end = if index == to.block {
+                    to.offset
+                } else {
+                    block.len()
+                };
+                let Some(runs) = relinked(&block, start, end, href) else {
+                    continue;
+                };
+                block.runs = runs;
+                batch.push(Action::SetBlock {
+                    index,
+                    block: Box::new(block),
+                });
+            }
+            let changed = batch.len();
+            if changed > 0 {
+                Self::commit(state, Action::Batch(batch))?;
+            }
+            Ok(changed)
+        })
+    }
+
     /// Set — or with `None`, clear — the named paragraph style of a run of blocks.
     pub fn set_style(&self, blocks: Range<usize>, style: Option<String>) -> Result<usize> {
         self.mutate(|state| {
@@ -1945,6 +2080,22 @@ impl App {
 /// decides; at the front of a block there is nothing before it and the run after decides
 /// instead. A caret next to a tab, a break or a bookmark carries no formatting of its own, so
 /// the search is for the nearest *text* run and stops at the first thing that is not one.
+/// One hyperlink, whole — what [`App::link_at`] finds around a caret.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Link {
+    pub from: Caret,
+    pub to: Caret,
+    /// `xlink:href`, verbatim: a URL, or `#name` for a bookmark in this document.
+    pub href: String,
+}
+
+fn run_href(run: &Run) -> Option<&str> {
+    match run {
+        Run::Text { href, .. } => href.as_deref(),
+        _ => None,
+    }
+}
+
 /// What [`App::type_markdown`] did: where the caret ended up, and what the *next* character
 /// typed there must be set in.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1983,6 +2134,21 @@ fn apply_notation(block: &mut Block, caret: &mut usize) -> Option<CharStyle> {
         return None;
     }
 
+    // `[label](target)` — the markers go and the label is linked, keeping its formatting. The
+    // character after it is typed outside the link by `link_around`'s own rule, so it needs no
+    // `resume`; the label's formatting is handed back regardless, which is what ends a span.
+    if let Some(found) = markdown::linked(&text, *caret) {
+        let before = props_at(block, found.open);
+        block.runs = without(block, found.end, found.close);
+        block.runs = without(block, found.open, found.start);
+        let end = found.open + (found.end - found.start);
+        if let Some(runs) = relinked(block, found.open, end, Some(&found.href)) {
+            block.runs = runs;
+        }
+        *caret = end;
+        return Some(before);
+    }
+
     let found = markdown::emphasised(&text, *caret)?;
     // What the span was set in before it was emphasised — read from the opening marker, which
     // was typed in the formatting around it and is about to be deleted.
@@ -2018,11 +2184,57 @@ fn props_at(block: &Block, offset: usize) -> CharStyle {
 fn caret_formatting(head: &[Run], tail: &[Run]) -> (Option<String>, CharStyle, Option<String>) {
     let neighbour = head.last().or_else(|| tail.first());
     match neighbour {
-        Some(Run::Text {
-            style, props, href, ..
-        }) => (style.clone(), props.clone(), href.clone()),
+        Some(Run::Text { style, props, .. }) => (
+            style.clone(),
+            props.clone(),
+            link_around(head, tail).map(str::to_owned),
+        ),
         _ => (None, CharStyle::default(), None),
     }
+}
+
+/// The link a caret is strictly *inside* — the same target on both sides of it — or `None` at
+/// either edge of one, or outside one. What typed text joins ([`App::insert_text`]).
+fn link_around<'a>(head: &'a [Run], tail: &[Run]) -> Option<&'a str> {
+    let href = |run: Option<&Run>| match run {
+        Some(Run::Text { href, .. }) => href.clone(),
+        _ => None,
+    };
+    let left = match head.last() {
+        Some(Run::Text { href, .. }) => href.as_deref()?,
+        _ => return None,
+    };
+    (href(tail.first()).as_deref() == Some(left)).then_some(left)
+}
+
+/// This block's runs with `start..end` linked to `href` — or with `None`, unlinked — or `None`
+/// when that changes nothing. [`restyled`]'s twin: the same cut at both ends, one field
+/// rewritten in the middle, so a link inside a sentence is exactly the characters asked for.
+fn relinked(block: &Block, start: usize, end: usize, href: Option<&str>) -> Option<Vec<Run>> {
+    let len = block.len();
+    let (start, end) = (start.min(len), end.min(len));
+    if start >= end {
+        return None;
+    }
+    let (head, rest) = model::split_runs(&block.runs, start);
+    let (mut middle, tail) = model::split_runs(&rest, end - start);
+    let mut changed = false;
+    for run in &mut middle {
+        if let Run::Text { href: own, .. } = run
+            && own.as_deref() != href
+        {
+            *own = href.map(str::to_owned);
+            changed = true;
+        }
+    }
+    if !changed {
+        return None;
+    }
+    let mut runs = head;
+    runs.extend(middle);
+    runs.extend(tail);
+    model::coalesce(&mut runs);
+    Some(runs)
 }
 
 /// Break one block into lines **in the face that block is set in** — [`lay_out`] with the

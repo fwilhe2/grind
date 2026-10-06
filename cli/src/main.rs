@@ -684,6 +684,54 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             finish_text(&app, cli, file, changed > 0)
         }
 
+        TextCommand::Link {
+            file,
+            range,
+            target,
+            remove,
+        } => {
+            let app = open_text(file)?;
+            let (from, to) = caret_span(&app, range)?;
+            let link_at = |at| app.link_at(at).map_err(|e| e.to_string());
+            if *remove {
+                let (from, to) = match (from == to, link_at(from)?) {
+                    (true, Some(link)) => (link.from, link.to),
+                    (true, None) => return Err(format!("no link at {range}")),
+                    (false, _) => (from, to),
+                };
+                let changed = app.set_link(from, to, None).map_err(|e| e.to_string())?;
+                return finish_text(&app, cli, file, changed > 0);
+            }
+            let Some(target) = target else {
+                let shown = match from == to {
+                    true => link_at(from)?.map(|link| (link.from, link.to, link.href)),
+                    false => app
+                        .link(from, to)
+                        .map_err(|e| e.to_string())?
+                        .map(|href| (from, to, href)),
+                };
+                return text_lines(
+                    shown
+                        .map(|(from, to, href)| {
+                            format!(
+                                "{}:{}\t{href}",
+                                grind_text::loc::format_offset(from.block, from.offset),
+                                grind_text::loc::format_offset(to.block, to.offset),
+                            )
+                        })
+                        .into_iter()
+                        .collect(),
+                );
+            };
+            if from == to {
+                return Err(format!("{range} is a caret; link a range of characters"));
+            }
+            let changed = app
+                .set_link(from, to, Some(target))
+                .map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, changed > 0)
+        }
+
         TextCommand::Formatting { file } => {
             let app = open_text(file)?;
             text_lines(
@@ -1501,6 +1549,24 @@ enum TextCommand {
         /// Highlight behind the text: a palette name, #rrggbb, or "transparent"
         #[arg(long, value_parser = style::color)]
         background: Option<String>,
+    },
+
+    /// Link text to a URL or a bookmark, unlink it, or show the link that is there
+    ///
+    /// With a target, every character in the range links to it — formatting untouched, one
+    /// undo step. `--remove` unlinks; at a bare caret (`p3+5`) it unlinks the whole link the
+    /// caret touches. With neither, prints the link as `<range>\t<target>` — at a caret the
+    /// whole link around it, over a range the one target every character agrees on.
+    Link {
+        file: PathBuf,
+        /// Characters, e.g. p3+12:p3+20, a bare address for a whole block, or a caret
+        range: String,
+        /// A URL, or #name for a bookmark in this document
+        #[arg(conflicts_with = "remove")]
+        target: Option<String>,
+        /// Unlink the range, or the link at a caret
+        #[arg(long)]
+        remove: bool,
     },
 
     // `doc/dsl.md` §4.3's rules.

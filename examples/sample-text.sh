@@ -140,6 +140,14 @@ text format "$doc" 'p2+0:p2+7' --show
 say "and over a mixed span, only what every character agrees about — here, nothing"
 text format "$doc" 'p2+0:p2+17' --show
 
+# A link is a property of characters, like bold, and wears whatever formatting they have — so
+# the bold span above becomes a bold link. `#name` links to a bookmark instead.
+say "link: a span of characters linked to a URL"
+run link "$doc" 'p2+0:p2+7' https://example.org/grind
+
+say "link at a caret: the whole link around it, which is how a shell finds one to edit"
+text link "$doc" 'p2+3'
+
 # A table is a *block* in a text document (rng:16938) and its cells hold blocks in turn
 # (rng:16126), which is why every verb above reaches inside one with no new vocabulary: the
 # cells are `p12`, `p13`, … exactly as everything else is.

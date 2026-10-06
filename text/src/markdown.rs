@@ -14,6 +14,9 @@
 //! has no formatting toolbar and this is its whole answer to one; a window has both, and both
 //! set the same property on the same run.
 //!
+//! `[label](target)` is the one notation that is not an emphasis: it sets a run's *link*
+//! ([`linked`]), the label keeping whatever formatting it was typed in.
+//!
 //! Nothing here is a *display* convention. A document is drawn with the shell's own bold and
 //! italic, never as source with markers in it — markers on screen would be characters the
 //! layout engine never measured, and every caret after one would sit in the wrong column.
@@ -212,6 +215,72 @@ fn starts_a_word(chars: &[char], at: usize) -> bool {
     }
 }
 
+/// A completed `[label](target)`, in character offsets within the block.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Linked {
+    /// Where the `[` is.
+    pub open: usize,
+    /// Where the label starts and ends — between `[` and `]`.
+    pub start: usize,
+    pub end: usize,
+    /// Where the `)` ends — the caret's own position.
+    pub close: usize,
+    pub href: String,
+}
+
+/// What the `)` just typed at `caret` completed, if it was the end of a markdown **link**.
+///
+/// The same shape as [`emphasised`] and the same kind of rules for keeping prose out of it:
+/// the label is not blank and holds no bracket of its own; the target is not empty and holds
+/// no whitespace and no parenthesis, so `(see [1](2) above)` closes the link at the first `)`
+/// rather than the second; and `![alt](src)` is markdown's *image*, which this notation does
+/// not insert, so it is left as typed.
+pub fn linked(text: &str, caret: usize) -> Option<Linked> {
+    let chars: Vec<char> = text.chars().collect();
+    if caret > chars.len() || caret == 0 || chars[caret - 1] != ')' {
+        return None;
+    }
+    // Back over the target to its `(`, which must sit right after a `]`.
+    let mut paren = caret - 1;
+    loop {
+        paren = paren.checked_sub(1)?;
+        match chars[paren] {
+            '(' => break,
+            ')' => return None,
+            c if c.is_whitespace() => return None,
+            _ => {}
+        }
+    }
+    if paren + 1 == caret - 1 || paren == 0 || chars[paren - 1] != ']' {
+        return None;
+    }
+    let end = paren - 1;
+    // And back over the label to its `[`.
+    let mut open = end;
+    loop {
+        open = open.checked_sub(1)?;
+        match chars[open] {
+            '[' => break,
+            ']' => return None,
+            _ => {}
+        }
+    }
+    let start = open + 1;
+    if chars[start..end].iter().all(|c| c.is_whitespace()) {
+        return None;
+    }
+    if open > 0 && chars[open - 1] == '!' {
+        return None;
+    }
+    Some(Linked {
+        open,
+        start,
+        end,
+        close: caret,
+        href: chars[paren + 1..caret - 1].iter().collect(),
+    })
+}
+
 /// Whether the three backticks just typed are a **fence** — a block whose whole text is
 /// ``` and nothing else.
 ///
@@ -256,6 +325,34 @@ pub fn block_prefix(text: &str, caret: usize) -> Option<(usize, BlockKind)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_closing_parenthesis_completes_a_link() {
+        let text = "see [the spec](https://x.org/a_b) now";
+        let caret = text.find(" now").unwrap();
+        let found = linked(text, caret).expect("a link");
+        assert_eq!((found.open, found.start, found.end), (4, 5, 13));
+        assert_eq!(found.href, "https://x.org/a_b");
+        assert_eq!(found.close, caret);
+    }
+
+    #[test]
+    fn what_is_not_a_link_is_left_as_typed() {
+        for text in [
+            "(an aside)",
+            "[](https://x)",
+            "[ ](https://x)",
+            "[label]()",
+            "[label] (https://x)",
+            "[label](two words)",
+            "![alt](pic.png)",
+            "[a]b](c)",
+        ] {
+            assert_eq!(linked(text, text.chars().count()), None, "{text}");
+        }
+        // Not until the `)` lands.
+        assert_eq!(linked("[a](b", 5), None);
+    }
 
     /// Type `text` one character at a time, reporting what the last one completed.
     fn typing(text: &str) -> Option<Emphasised> {

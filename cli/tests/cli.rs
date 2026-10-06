@@ -1938,3 +1938,55 @@ fn a_workbook_is_refused_by_the_word_import() {
     assert!(String::from_utf8_lossy(&refused.stderr).contains("not a Word document"));
     assert!(!std::path::Path::new(&out).exists());
 }
+
+/// `grind text link` — `App::set_link`, `link` and `link_at` from the outside. The first link
+/// in a document `text new` made used to be refused on save: that file declares no `xlink:`,
+/// and a splice cannot add one to the root.
+#[test]
+fn text_link_sets_shows_and_removes_a_link() {
+    let dir = Sandbox::new("link");
+    let doc = dir.path("note.fodt");
+    let d = s(&doc);
+    let text = |args: &[&str]| {
+        let mut argv = vec!["text"];
+        argv.extend_from_slice(args);
+        succeeds(grind(&argv), &argv)
+    };
+    text(&["new", &d]);
+    text(&["set", &d, "p1", "read the spec today"]);
+    text(&["link", &d, "p1+9:p1+13", "https://x.org"]);
+    assert!(
+        std::fs::read_to_string(&doc)
+            .unwrap()
+            .contains("xmlns:xlink=")
+    );
+    assert_eq!(
+        text(&["link", &d, "p1+11"]).trim(),
+        "p1+9:p1+13\thttps://x.org"
+    );
+    assert_eq!(text(&["link", &d, "p1+0:p1+13"]).trim(), "", "half linked");
+    assert_eq!(
+        text(&["export-md", &d]).trim(),
+        "read the [spec](https://x.org) today"
+    );
+
+    // Typed at the link's end, text is not part of it; typed as markdown, it is a link.
+    text(&["type", &d, "p1+13", "!"]);
+    text(&["type", &d, "p1+20", " [more](#top)", "--markdown"]);
+    assert_eq!(
+        text(&["export-md", &d]).trim(),
+        "read the [spec](https://x.org)! today [more](#top)"
+    );
+
+    // A caret is not a range to link, and removing at one takes the whole link.
+    assert!(
+        !grind(&["text", "link", &d, "p1+3", "https://y"])
+            .status
+            .success()
+    );
+    text(&["link", &d, "p1+10", "--remove"]);
+    assert_eq!(
+        text(&["export-md", &d]).trim(),
+        "read the spec! today [more](#top)"
+    );
+}

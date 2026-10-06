@@ -1300,3 +1300,168 @@ fn a_composition_takes_the_formatting_the_next_character_would() {
         .is_err()
     );
 }
+
+// --- hyperlinks (`App::set_link`, `link`, `link_at`) --------------------------------------
+
+/// The runs of block 0 as `(text, href)` pairs.
+fn links(app: &App) -> Vec<(String, Option<String>)> {
+    app.get_viewport(0..1)
+        .get(0)
+        .expect("the block")
+        .runs
+        .iter()
+        .map(|run| (run.text.clone(), run.href.clone()))
+        .collect()
+}
+
+fn at(offset: usize) -> Caret {
+    Caret { block: 0, offset }
+}
+
+#[test]
+fn a_span_is_linked_and_unlinked_in_one_step_each() {
+    let app = app(&["read the spec today"]);
+    let before = undo_all_depth(&app);
+    assert_eq!(
+        app.set_link(at(9), at(13), Some("https://x.org")).unwrap(),
+        1
+    );
+    assert_eq!(
+        links(&app),
+        [
+            ("read the ".to_owned(), None),
+            ("spec".to_owned(), Some("https://x.org".to_owned())),
+            (" today".to_owned(), None),
+        ]
+    );
+    assert_eq!(
+        app.link(at(9), at(13)).unwrap().as_deref(),
+        Some("https://x.org")
+    );
+    assert_eq!(
+        app.link(at(5), at(13)).unwrap(),
+        None,
+        "half linked is not linked"
+    );
+
+    // A bare caret anywhere on it — its first letter, its last, or just past it — finds the
+    // whole link, which is what "edit this link" needs.
+    for offset in [9, 11, 13] {
+        let link = app.link_at(at(offset)).unwrap().expect("on the link");
+        assert_eq!(
+            (link.from, link.to),
+            (at(9), at(13)),
+            "from offset {offset}"
+        );
+        assert_eq!(link.href, "https://x.org");
+    }
+    assert_eq!(app.link_at(at(4)).unwrap(), None);
+
+    assert_eq!(app.set_link(at(9), at(13), None).unwrap(), 1);
+    assert_eq!(links(&app), [("read the spec today".to_owned(), None)]);
+    assert_eq!(
+        app.set_link(at(9), at(13), None).unwrap(),
+        0,
+        "nothing to unlink"
+    );
+    assert!(app.undo() && app.undo());
+    assert_eq!(undo_all_depth(&app), before, "two edits, two undo steps");
+    assert!(
+        app.set_link(at(0), at(4), Some("  ")).is_err(),
+        "an empty target"
+    );
+}
+
+/// Typing just after a link, or just before it, is not more link — every word processor's
+/// rule. Typing *inside* one still is.
+#[test]
+fn typed_text_joins_a_link_only_from_inside_it() {
+    let app = app(&["a link here"]);
+    app.set_link(at(2), at(6), Some("https://x")).unwrap();
+    app.insert_text(at(6), "!").unwrap();
+    app.insert_text(at(2), "<").unwrap();
+    app.insert_text(at(5), "-").unwrap();
+    assert_eq!(
+        links(&app),
+        [
+            ("a <".to_owned(), None),
+            ("li-nk".to_owned(), Some("https://x".to_owned())),
+            ("! here".to_owned(), None),
+        ]
+    );
+}
+
+/// The formatting a link's label wears is its own: `[a **bold** word](url)` is one link
+/// across three runs, and linking never touches formatting.
+#[test]
+fn a_link_spans_runs_of_different_formatting() {
+    let app = app(&["one two three"]);
+    let mut bold = grind_text::CharStyle::default();
+    bold.set_bold(true);
+    app.set_char_style(at(4), at(7), &bold).unwrap();
+    app.set_link(at(0), at(13), Some("#top")).unwrap();
+    let link = app.link_at(at(5)).unwrap().expect("a link");
+    assert_eq!((link.from, link.to), (at(0), at(13)));
+    let view = app.get_viewport(0..1);
+    let runs = &view.get(0).unwrap().runs;
+    assert_eq!(runs.len(), 3, "the bold run is still its own");
+    assert!(runs[1].props.font_weight.is_some());
+}
+
+#[test]
+fn typing_a_markdown_link_links_the_label_and_ends_there() {
+    let app = App::new();
+    let caret = type_markdown(&app, at(0), "see [the **spec**](https://x.org/a_b) now");
+    assert_eq!(text(&app), "see the spec now");
+    assert_eq!(caret, at(16));
+    let link = app.link_at(at(6)).unwrap().expect("linked");
+    assert_eq!((link.from, link.to), (at(4), at(12)));
+    assert_eq!(link.href, "https://x.org/a_b");
+    assert_eq!(app.link_at(at(14)).unwrap(), None, "what follows is plain");
+
+    // One keystroke, one undo step: past the four of " now", the `)` that completed the link
+    // goes, and every marker it took comes back with it.
+    for _ in 0..4 {
+        assert!(app.undo());
+    }
+    assert_eq!(text(&app), "see the spec");
+    assert!(app.undo());
+    assert_eq!(
+        text(&app),
+        "see [the spec](https://x.org/a_b",
+        "the `)` with it"
+    );
+}
+
+/// The link survives a save in both forms, and the Markdown export spells it.
+#[test]
+fn a_link_is_written_and_read_back() {
+    let app = app(&["read the spec"]);
+    app.set_link(at(9), at(13), Some("https://x.org")).unwrap();
+    for form in [Form::Flat, Form::Package] {
+        let bytes = app.save_bytes(form).unwrap();
+        let back = App::new();
+        back.open_bytes("x", &bytes).unwrap();
+        assert_eq!(
+            back.link_at(at(10)).unwrap().map(|l| l.href).as_deref(),
+            Some("https://x.org"),
+            "{form:?}"
+        );
+    }
+    assert_eq!(
+        app.export_markdown(0..1).unwrap().trim(),
+        "read the [spec](https://x.org)"
+    );
+}
+
+/// How many undo steps a document has, without losing them.
+fn undo_all_depth(app: &App) -> usize {
+    let mut steps = 0;
+    while app.undo() {
+        steps += 1;
+    }
+    for _ in 0..steps {
+        app.redo();
+    }
+    steps
+}

@@ -48,6 +48,13 @@ what a person expects.
   character formatting, which is what a toolbar's B and I write; it **replaces** rather than
   adds, for the reason `grind sheet style` does — a read, one field and a write is a UI that
   cannot drift from a script
+- `set_link` — `grind text link <range> <target>`, where the target is a URL or `#name` for a
+  bookmark; `--remove` unlinks, and at a bare caret unlinks the whole link it touches.
+  Formatting is untouched, and one undo step either way
+- `link` — `grind text link <range>` with no target, over a range: the one target every
+  character agrees on, printed as `<range>\t<target>`. What a link button reads before it writes
+- `link_at` — `grind text link <at>` with no target, at a caret: the whole link the caret
+  touches, its extent and its target — how "edit this link" and `--remove` find one
 - `move_blocks` — `grind text move <range> <to>`, which is the verb `§2.1.3` addressing exists
   for
 - `replace` — `grind text replace <needle> <replacement>`, one undo step for the whole document
@@ -61,13 +68,14 @@ answer "what happens when you press Return at the end of a heading?" separately 
 (`doc/suite.md` S7); they are on the CLI because rule 4 does not make an exception for the
 operations that feel like they belong to a UI.
 
-- `insert_text` — `grind text type <at> <text>`, or `-` for stdin. The text takes the style and
-  hyperlink of the run at the caret, preferring the one to its left. One `SetBlock` underneath,
+- `insert_text` — `grind text type <at> <text>`, or `-` for stdin. The text takes the style of
+  the run at the caret, preferring the one to its left, and its hyperlink only from *inside*
+  one — text typed at either edge of a link is not part of it. One `SetBlock` underneath,
   so a keystroke splices: one character changed is one line of `git diff`
   (`text/tests/diffable.rs`)
 - `type_markdown` — `grind text type <at> <text> --markdown`. The same edit with the
   markdown-shaped notation read as it lands (`grind_text::markdown`): `**bold**`, `*italic*`,
-  `__underline__`, `~~struck~~`, `` `code` ``, `# ` and ```` ``` ````. One action for the whole
+  `__underline__`, `~~struck~~`, `` `code` ``, `[label](target)`, `# ` and ```` ``` ````. One action for the whole
   string, so one undo step
 - `erase` — `grind text erase <range>`, where the range is characters — `p3+12:p3+20`, or a bare
   address for a whole block's text. Crossing a block boundary closes it up and leaves one block
