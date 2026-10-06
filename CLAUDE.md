@@ -44,6 +44,15 @@ phase 8, done); eight named documents that must load, vendored in `sheet/tests/d
 Strictness on the way out, tolerance on the way in — several R7 files are schema-invalid and
 must still load.
 
+## The README is the author's
+
+**Never write `README.md` or `README.fodt`** — no edit, regeneration, export, restore, move or
+delete, however small or obviously right the change. The author writes it by hand in
+`grind-text-gtk` (`README.fodt`, exported to `README.md` with Ctrl+Alt+S). When something in it is
+wrong or out of date — a feature it misstates, a command that changed — **say so in your reply**,
+quoting the line, and leave the fix to the author. `.claude/hooks/protect-readme.sh` and the deny
+rules in `.claude/settings.json` enforce this; do not work around or edit either.
+
 ## The two constraints that govern everything
 
 **1. Clean room.** LibreOffice source may be *read* and *cited by `file:line`*, never
