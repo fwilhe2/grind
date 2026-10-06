@@ -1135,11 +1135,11 @@ mod tests {
     }
 
     #[test]
-    fn text_sits_in_the_middle_of_its_row_unless_the_cell_says() {
+    fn text_sits_at_the_bottom_of_its_row_unless_the_cell_says() {
         let app = sheet();
         let ops = drawn(&app);
         let (_, _, top) = *texts(&ops).iter().find(|(t, ..)| *t == "Rent").unwrap();
-        assert_eq!(top, (geom::ROW_H - 1.0) / 2.0, "Fixed is one unit tall");
+        assert_eq!(top, geom::ROW_H - PAD_Y - 1.0, "Fixed is one unit tall");
         app.set_style(
             0,
             Pos::new(0, 0),
@@ -1220,7 +1220,7 @@ mod tests {
         let (_, _, top) = *texts(&ops).iter().find(|(t, ..)| *t == "TRUE").unwrap();
         assert_eq!(
             top,
-            geom::ROW_H + (geom::ROW_H - 1.0) / 2.0,
+            geom::ROW_H + geom::ROW_H - PAD_Y - 1.0,
             "row 3 moved up"
         );
     }

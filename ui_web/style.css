@@ -641,6 +641,12 @@ input[type="text"] {
   vertical-align: middle;
 }
 
+/* A cell's text sits at its bottom unless the document says otherwise, as LibreOffice puts
+   it (`doc/ods-format.md` §5.1); the headers keep the middle. */
+.grid td.cell {
+  vertical-align: bottom;
+}
+
 .head {
   position: sticky;
   background: var(--head);

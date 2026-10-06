@@ -88,13 +88,14 @@ pub fn align(value: &CellValue, style: Option<&CellStyle>) -> Align {
         .unwrap_or_else(|| by_type(value))
 }
 
-/// Where a cell's text sits down its box: `style:vertical-align`'s `top` and `bottom`, and the
-/// middle for everything else.
+/// Where a cell's text sits down its box: `style:vertical-align`'s `top` and `middle`, and the
+/// bottom for everything else — `automatic`, no value at all, and a value from a newer ODF —
+/// which is where LibreOffice puts it (`doc/ods-format.md` §5.1).
 pub fn valign(style: Option<&CellStyle>) -> VAlign {
     match style.and_then(|style| style.vertical_align.as_deref()) {
         Some("top") => VAlign::Top,
-        Some("bottom") => VAlign::Bottom,
-        _ => VAlign::Middle,
+        Some("middle") => VAlign::Middle,
+        _ => VAlign::Bottom,
     }
 }
 
@@ -277,14 +278,14 @@ mod tests {
     }
 
     #[test]
-    fn vertical_alignment_is_the_middle_unless_the_cell_says() {
-        assert_eq!(valign(None), VAlign::Middle);
+    fn vertical_alignment_is_the_bottom_unless_the_cell_says() {
+        assert_eq!(valign(None), VAlign::Bottom);
         let top = styled(|s| s.vertical_align = Some("top".into()));
         assert_eq!(valign(Some(&top)), VAlign::Top);
-        let bottom = styled(|s| s.vertical_align = Some("bottom".into()));
-        assert_eq!(valign(Some(&bottom)), VAlign::Bottom);
+        let middle = styled(|s| s.vertical_align = Some("middle".into()));
+        assert_eq!(valign(Some(&middle)), VAlign::Middle);
         let automatic = styled(|s| s.vertical_align = Some("automatic".into()));
-        assert_eq!(valign(Some(&automatic)), VAlign::Middle);
+        assert_eq!(valign(Some(&automatic)), VAlign::Bottom);
     }
 
     #[test]

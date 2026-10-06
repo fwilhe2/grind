@@ -420,6 +420,12 @@ Common `style:table-cell-properties` attributes actually present in the schema:
 `"0.05pt solid #000000"`), `fo:padding` / `fo:padding-{left,right,top,bottom}`,
 `style:shrink-to-fit`, `style:rotation-angle`, `style:cell-protect`.
 
+**Where text sits down a cell when nothing says** — `MEASURED` (2026-10-06, LibreOffice
+26.8, a one-inch row converted to PDF): a cell with no `style:vertical-align`, and one with
+`automatic`, put their text's baseline exactly where `bottom` does; `middle` and `top` are the
+only values that move it. The default is the bottom of the cell, as it is in every
+spreadsheet this format's users have seen, not the middle.
+
 Common `style:text-properties` attributes (observed in real LO fixtures, e.g.
 `sc/qa/unit/data/fods/lookup_source.fods`): `fo:font-family`, `fo:font-size`,
 `fo:font-weight` (`normal|bold`), `fo:font-style` (`normal|italic`), `fo:color` (`#rrggbb`),
