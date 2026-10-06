@@ -49,6 +49,8 @@ pub struct Input<'a> {
     pub anchors: HashSet<String>,
     /// `w:defaultTabStop`, in twips.
     pub default_tab: Option<i64>,
+    /// Each font's generic family, from `word/fontTable.xml`.
+    pub fonts: Vec<(String, &'static str)>,
 }
 
 /// Write the document.
@@ -98,6 +100,18 @@ pub fn write(input: Input, report: &mut Report) -> String {
 
     let mut out = String::new();
     out.push_str(PROLOG);
+    if !input.fonts.is_empty() {
+        out.push_str(" <office:font-face-decls>\n");
+        for (name, generic) in &input.fonts {
+            let _ = writeln!(
+                out,
+                "  <style:font-face style:name=\"{}\" svg:font-family=\"{}\" style:font-family-generic=\"{generic}\"/>",
+                esc(name),
+                esc(&props::family(name))
+            );
+        }
+        out.push_str(" </office:font-face-decls>\n");
+    }
     out.push_str(" <office:styles>\n");
     w.default_style(&mut out);
     w.named_styles(&mut out);

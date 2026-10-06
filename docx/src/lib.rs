@@ -117,6 +117,10 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
         .and_then(|part| package.part(&part))
         .map(|bytes| numbering::read(&bytes, &fonts))
         .unwrap_or_default();
+    let fonts_table = target(RelType::FontTable)
+        .and_then(|part| package.part(&part))
+        .map(|bytes| styles::read_font_table(&bytes))
+        .unwrap_or_default();
     let default_tab = target(RelType::Settings)
         .and_then(|part| package.part(&part))
         .and_then(|bytes| default_tab(&bytes));
@@ -233,6 +237,7 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
         endnotes,
         anchors,
         default_tab,
+        fonts: fonts_table,
     };
     let odf = emit::write(input, &mut report);
     Ok((odf.into_bytes(), report))

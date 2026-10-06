@@ -403,6 +403,47 @@ pub fn read_fonts(bytes: &[u8]) -> Fonts {
     fonts
 }
 
+/// `word/fontTable.xml`: each font's name and, where Word says one, its ODF generic family —
+/// `w:family` (§17.8.3.10) is `roman`, `swiss`, `modern`, `script`, `decorative` or `auto`, and
+/// the first five are ODF's own words for the same classes (rng:10418). What a printer falls back
+/// on when the family is not installed (`grind_text::Document::font_generics`).
+pub fn read_font_table(bytes: &[u8]) -> Vec<(String, &'static str)> {
+    let mut out = Vec::new();
+    let mut reader = Reader::new(bytes);
+    if !matches!(reader.root(), Ok(Some(_))) {
+        return out;
+    }
+    let _ = reader.children(|r, name, attrs| {
+        if !name.w("font") {
+            return Ok(Handled::No);
+        }
+        let Some(font) = attrs.w("name").filter(|n| !n.is_empty()).map(str::to_owned) else {
+            return Ok(Handled::No);
+        };
+        let mut generic = None;
+        r.children(|_, name, attrs| {
+            if name.w("family") {
+                generic = match attrs.val() {
+                    Some("roman") => Some("roman"),
+                    Some("swiss") => Some("swiss"),
+                    Some("modern") => Some("modern"),
+                    Some("script") => Some("script"),
+                    Some("decorative") => Some("decorative"),
+                    _ => None,
+                };
+            }
+            Ok(Handled::Yes)
+        })?;
+        if let Some(generic) = generic
+            && out.len() < 1024
+        {
+            out.push((font, generic));
+        }
+        Ok(Handled::Yes)
+    });
+    out
+}
+
 /// Paragraph and text properties a style resolves to through its whole chain — used for a
 /// table style, which ODF cannot name, and for nothing else: every other style stays a name.
 pub fn resolved(styles: &Styles, id: &str) -> ParaProps {

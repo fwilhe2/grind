@@ -215,6 +215,9 @@ pub enum RelType {
     /// `word/settings.xml` — the default tab stop, and whether even pages have headers of
     /// their own.
     Settings,
+    /// `word/fontTable.xml` — each font's family class (`swiss`, `roman`, …), which is what a
+    /// reader without the font falls back on.
+    FontTable,
     Other,
 }
 
@@ -252,6 +255,7 @@ impl RelType {
             Some("hyperlink") => RelType::Hyperlink,
             Some("oleObject") => RelType::OleObject,
             Some("settings") => RelType::Settings,
+            Some("fontTable") => RelType::FontTable,
             _ => RelType::Other,
         }
     }
