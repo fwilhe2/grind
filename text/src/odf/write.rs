@@ -255,6 +255,22 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
     {
         return None;
     }
+    // The same for a link: `xlink:` is declared only by a document that links to something,
+    // so the first link typed into one that never did must regenerate too, or the spliced
+    // `text:a` names a prefix nothing binds — a `grind text new` document refused its first
+    // link for exactly this reason.
+    if doc
+        .blocks
+        .iter()
+        .flat_map(|b| b.runs.iter())
+        .any(|r| matches!(r, Run::Text { href: Some(_), .. }))
+        && !source
+            .bytes
+            .windows(XLINK.len())
+            .any(|w| w == XLINK.as_bytes())
+    {
+        return None;
+    }
 
     // Every character style the *edited* blocks need, under the name this file gives it. A
     // formatting the file has no name for cannot be spliced, because the declaration would have
