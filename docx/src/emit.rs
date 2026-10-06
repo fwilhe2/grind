@@ -831,6 +831,10 @@ impl Writer<'_, '_> {
     // ---- tables ----
 
     fn table(&mut self, out: &mut String, table: &Table, depth: usize) {
+        // A table with no rows has nothing to show, and ODF requires one (rng:13942).
+        if table.rows.is_empty() {
+            return;
+        }
         self.report.tables += 1;
         let n = self.report.tables;
         let name = format!("Table{n}");
@@ -899,11 +903,16 @@ impl Writer<'_, '_> {
             table_props.attributes()
         );
         for (i, w) in table.grid.iter().enumerate() {
+            // A column of no width is a column ODF cannot size (its lengths are positive); it
+            // is declared with no width rather than an invalid one.
+            let width = match *w {
+                0 => String::new(),
+                w => format!(" style:column-width=\"{}\"", props::twips(w)),
+            };
             let _ = writeln!(
                 styles,
-                "  <style:style style:name=\"{name}.C{}\" style:family=\"table-column\"><style:table-column-properties style:column-width=\"{}\"/></style:style>",
-                i + 1,
-                props::twips(*w)
+                "  <style:style style:name=\"{name}.C{}\" style:family=\"table-column\"><style:table-column-properties{width}/></style:style>",
+                i + 1
             );
         }
         self.tables.push(styles);

@@ -168,7 +168,10 @@ pub fn encode(display: &str) -> String {
     for (i, c) in display.chars().enumerate() {
         let ok = c.is_ascii_alphabetic()
             || (i > 0 && (c.is_ascii_digit() || c == '-' || c == '.'))
-            || (c != '_' && !c.is_ascii() && c.is_alphanumeric());
+            // Beyond ASCII, a letter: a vulgar fraction or a superscript digit is
+            // alphanumeric to Rust and not a name character to XML (found by validating the
+            // corpus's imports against the schema).
+            || (!c.is_ascii() && c.is_alphabetic());
         if ok {
             out.push(c);
         } else {

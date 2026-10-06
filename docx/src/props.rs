@@ -616,7 +616,10 @@ fn spacing(p: &mut Props, attrs: &Attrs) {
     if let Some(after) = attrs.int("after") {
         p.set("fo:margin-bottom", twips(after));
     }
-    if let Some(line) = attrs.int("line") {
+    if let Some(line) = attrs.int("line").filter(|l| *l != 0) {
+        // A negative line is read as its size: ODF has no negative line height, and Word
+        // documents carrying one are measuring an exact line upside down.
+        let line = line.abs();
         match attrs.w("lineRule").unwrap_or("auto") {
             // In 240ths of a line.
             "auto" => p.set(
