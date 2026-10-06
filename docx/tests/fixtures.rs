@@ -513,12 +513,14 @@ fn a_table_with_a_horizontal_and_a_vertical_merge() {
       </w:tbl>"#;
     let (doc, report) = import(&docx(body, &[]));
     assert_eq!(report.tables, 1);
+    // The table, and the paragraph every document ends in after one.
+    assert!(doc.blocks.last().is_some_and(|b| b.cell.is_none() && b.is_empty()));
     let cells: Vec<_> = doc
         .blocks
         .iter()
-        .map(|b| {
-            let c = b.cell.as_ref().expect("in the table");
-            (b.text(), c.row, c.column, c.columns_spanned, c.rows_spanned)
+        .filter_map(|b| {
+            let c = b.cell.as_ref()?;
+            Some((b.text(), c.row, c.column, c.columns_spanned, c.rows_spanned))
         })
         .collect();
     assert_eq!(
