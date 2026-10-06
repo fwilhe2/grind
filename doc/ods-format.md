@@ -465,6 +465,16 @@ has `style:name` and is built from an ordered sequence of literal/format pieces:
 
 - `number:number` — `number:decimal-places`, `number:min-decimal-places`,
   `number:min-integer-digits`, `number:grouping` (thousands separator, boolean).
+  **`number:embedded-text`** (rng:7242) — `MEASURED` (2026-10-06, LibreOffice 26.8): text
+  set among a `number:number`'s own digits, the way a telephone or ID format reads. Its
+  `number:position` counts **whole digits to the text's right**: `0` puts it just before the
+  decimal separator, `3` before the last three digits (`1234567C890`), and a position past the
+  number's first digit puts it in front (`F1234567890`); text at a non-negative position drops
+  the number's grouping (`1234567G890` under `number:grouping="true"`). A **negative** position
+  reaches into the decimals — LibreOffice's extension, the schema's type being a plain integer
+  — with `-p` after `p - 1` of them: `-2` shows 1.2345 as `1.2E345`, and LibreOffice's own
+  conversion of `#,##0.000" "###" "###` is decimal-places 9, min 3, texts at `-4` and `-7`,
+  showing 6,543,210.12345678 as `6,543,210.123 456 78`.
   **A number with no format narrows to fit its column** — `MEASURED` (2026-10-06, LibreOffice
   26.8, columns of 0.55 and 0.9 inches converted to PDF): `154.719066107646` shows as `154.719`
   in the narrow one and `154.7190661` in the wide one, rounded to as many decimals as fit;

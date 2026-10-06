@@ -504,6 +504,7 @@ fn part_node(out: &mut Emitter, part: &Part) {
             min_decimals,
             min_int,
             grouping,
+            embedded,
         } => {
             out.begin("number");
             if *decimals != 0 {
@@ -517,6 +518,19 @@ fn part_node(out: &mut Emitter, part: &Part) {
             }
             if *grouping {
                 out.prop("grouping", true);
+            }
+            // Text among the digits is the number's own children, as in ODF:
+            // `number { embedded -4 " " }`.
+            if !embedded.is_empty() {
+                out.open();
+                for e in embedded {
+                    out.begin("embedded");
+                    out.arg(i128::from(e.position));
+                    out.arg(e.text.as_str());
+                    out.end();
+                }
+                out.close();
+                return;
             }
         }
         Part::Currency(symbol) => {

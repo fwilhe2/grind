@@ -362,6 +362,7 @@ fn parts(out: &mut Format, block: &KdlDocument) -> Result<()> {
                 min_decimals: small(node, "min-decimals")?,
                 min_int: small(node, "min-int")?,
                 grouping: bool_prop(node, "grouping").unwrap_or(false),
+                embedded: embedded(node)?,
             },
             "currency" => Part::Currency(text_arg(node, 0)?),
             "year" => Part::Year { long: long(node) },
@@ -447,6 +448,25 @@ fn kind(node: &KdlNode, word: &str) -> Result<Kind> {
 
 fn long(node: &KdlNode) -> bool {
     bool_prop(node, "long").unwrap_or(false)
+}
+
+/// A `number` node's `embedded <position> "<text>"` children — `number:embedded-text`.
+fn embedded(node: &KdlNode) -> Result<Vec<numfmt::Embedded>> {
+    let Some(children) = node.children() else {
+        return Ok(Vec::new());
+    };
+    children
+        .nodes()
+        .iter()
+        .map(|child| match child.name().value() {
+            "embedded" => Ok(numfmt::Embedded {
+                position: i32::try_from(integer(child, 0)?)
+                    .map_err(|_| at(child, "a position too far from the decimal point".into()))?,
+                text: text_arg(child, 1)?,
+            }),
+            other => Err(at(child, format!("`{other}` is not part of a number"))),
+        })
+        .collect()
 }
 
 fn small(node: &KdlNode, name: &str) -> Result<u8> {

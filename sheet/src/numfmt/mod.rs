@@ -48,6 +48,19 @@ pub enum Kind {
     Text,
 }
 
+/// One `number:embedded-text`: text placed among a number's digits (rng:7242).
+///
+/// `position` is ODF's own count, measured (`doc/ods-format.md` §5.2): zero or more is how many
+/// **integer** digits stand to the text's right — `0` puts it just before the decimal separator,
+/// and one past the leading digit puts it in front — and a negative one reaches into the
+/// decimals, `-p` standing after `p - 1` of them (LibreOffice's extension; the schema's type is
+/// a plain integer).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Embedded {
+    pub position: i32,
+    pub text: String,
+}
+
 /// One piece of a format, in document order.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Part {
@@ -63,6 +76,10 @@ pub enum Part {
         min_int: u8,
         /// `number:grouping`: thousands separators.
         grouping: bool,
+        /// `number:embedded-text` — text set among the digits themselves, as a telephone
+        /// number's `(###) ###-####` or `#,##0.000" "###` sets it (`doc/ods-format.md` §5.2).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        embedded: Vec<Embedded>,
     },
     /// `number:currency-symbol` — the symbol is the element's content.
     Currency(String),
@@ -433,13 +450,20 @@ impl Format {
                     min_decimals,
                     min_int,
                     grouping,
-                } => out.push_str(&digits(
-                    scaled.abs(),
-                    *decimals,
-                    *min_decimals,
-                    *min_int,
-                    *grouping,
-                    locale::separators(locale),
+                    embedded,
+                } => out.push_str(&embed(
+                    &digits(
+                        scaled.abs(),
+                        *decimals,
+                        *min_decimals,
+                        *min_int,
+                        // Text among the whole digits takes their grouping's place: LibreOffice
+                        // draws `1234567G890` for a grouped format with text at position 3.
+                        *grouping && embedded.iter().all(|e| e.position < 0),
+                        locale::separators(locale),
+                    ),
+                    embedded,
+                    locale::separators(locale).0,
                 )),
                 Part::Year { long } => out.push_str(&match long {
                     true => format!("{y:04}"),
@@ -541,6 +565,56 @@ fn pad(n: i64, long: bool) -> String {
     }
 }
 
+/// `number`, as [`digits`] spelled it, with each embedded text set among its digits at the
+/// position ODF counts ([`Embedded`]).
+fn embed(number: &str, embedded: &[Embedded], decimal_point: char) -> String {
+    if embedded.is_empty() {
+        return number.to_owned();
+    }
+    let (whole, fraction) = match number.split_once(decimal_point) {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (number, None),
+    };
+    let mut whole: Vec<String> = whole.chars().map(String::from).collect();
+    let digits = whole.len();
+    // Inserted from the right, so an earlier insertion never moves a later one's index; texts at
+    // one position keep their document order.
+    let mut ahead: Vec<(usize, usize, &str)> = embedded
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.position >= 0)
+        .map(|(i, e)| {
+            (
+                digits.saturating_sub(e.position as usize),
+                i,
+                e.text.as_str(),
+            )
+        })
+        .collect();
+    ahead.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
+    for (at, _, text) in ahead {
+        whole.insert(at, text.to_owned());
+    }
+    let mut out = whole.concat();
+    if let Some(fraction) = fraction {
+        let mut fraction: Vec<String> = fraction.chars().map(String::from).collect();
+        let shown = fraction.len();
+        let mut behind: Vec<(usize, usize, &str)> = embedded
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.position < 0)
+            .map(|(i, e)| (((-e.position - 1) as usize).min(shown), i, e.text.as_str()))
+            .collect();
+        behind.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
+        for (at, _, text) in behind {
+            fraction.insert(at, text.to_owned());
+        }
+        out.push(decimal_point);
+        out.push_str(&fraction.concat());
+    }
+    out
+}
+
 /// The `number:number` piece: round to `decimals`, keep at least `min_decimals` of them,
 /// pad the integer part to `min_int`, and group it if asked.
 fn digits(
@@ -640,6 +714,7 @@ pub fn preset(kind: Kind, decimals: u8, grouping: bool, symbol: &str) -> Format 
         min_decimals: decimals,
         min_int: 1,
         grouping,
+        embedded: Vec::new(),
     };
     let date = || {
         vec![
@@ -898,6 +973,7 @@ mod tests {
             min_decimals,
             min_int: 1,
             grouping,
+            embedded: Vec::new(),
         });
         f
     }
@@ -963,6 +1039,7 @@ mod tests {
             min_decimals: 1,
             min_int: 1,
             grouping: false,
+            embedded: Vec::new(),
         });
         f.push(Part::Text("%".into()));
         assert_eq!(render(&f, 0.075), "7.5%");
@@ -1036,6 +1113,7 @@ mod tests {
             min_decimals: 2,
             min_int: 1,
             grouping: false,
+            embedded: Vec::new(),
         });
         negative.maps.push(Map {
             op: Op::Ge,
@@ -1055,6 +1133,7 @@ mod tests {
             min_decimals: 0,
             min_int: 1,
             grouping: false,
+            embedded: Vec::new(),
         });
         assert_eq!(render(&bare, -5.0), "-5");
     }
@@ -1076,6 +1155,7 @@ mod tests {
             min_decimals: 2,
             min_int: 1,
             grouping: true,
+            embedded: Vec::new(),
         });
         bracketed.push(Part::Text(")".into()));
 
@@ -1187,6 +1267,51 @@ mod tests {
     #[test]
     fn a_number_that_does_not_fit_is_hashes_as_wide_as_the_room() {
         assert_eq!(overflow(9.0, 1.0), "#########");
+        // `number:embedded-text`, by LibreOffice's own renderings (`doc/ods-format.md` §5.2).
+        let embedded = |min_int: u8, decimals: u8, grouping: bool, at: &[(i32, &str)]| {
+            let mut f = Format::new(Kind::Number);
+            f.push(Part::Number {
+                decimals,
+                min_decimals: decimals,
+                min_int,
+                grouping,
+                embedded: at
+                    .iter()
+                    .map(|(position, text)| Embedded {
+                        position: *position,
+                        text: (*text).to_owned(),
+                    })
+                    .collect(),
+            });
+            f
+        };
+        let shows = |f: Format, n: f64| f.render(&CellValue::Number(n), EPOCH);
+        let big = 1234567890.0;
+        assert_eq!(
+            shows(embedded(1, 0, false, &[(0, "A")]), big),
+            "1234567890A"
+        );
+        assert_eq!(
+            shows(embedded(1, 0, false, &[(1, "B")]), big),
+            "123456789B0"
+        );
+        assert_eq!(
+            shows(embedded(1, 0, false, &[(3, "C"), (6, "D")]), big),
+            "1234D567C890"
+        );
+        assert_eq!(
+            shows(embedded(10, 0, false, &[(4, "-"), (7, ") ")]), big),
+            "123) 456-7890"
+        );
+        assert_eq!(
+            shows(embedded(1, 4, false, &[(-2, "E")]), 1.2345),
+            "1.2E345"
+        );
+        assert_eq!(
+            shows(embedded(1, 0, false, &[(12, "F")]), big),
+            "F1234567890"
+        );
+        assert_eq!(shows(embedded(1, 0, true, &[(3, "G")]), big), "1234567G890");
         assert_eq!(
             narrower(154.719066107646, None)[..3],
             ["154.71906610765", "154.7190661076", "154.719066108"]

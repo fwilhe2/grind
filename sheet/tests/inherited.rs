@@ -158,3 +158,24 @@ fn decimals_with_no_minimum_are_all_shown() {
     );
     assert_eq!(shown(&body, styles, 2), ["1.00", "1"]);
 }
+
+/// `number:embedded-text` is read onto its number, shown among the digits as LibreOffice shows
+/// it, and written back as it was read (`doc/ods-format.md` §5.2).
+#[test]
+fn embedded_text_is_read_shown_and_written() {
+    let styles = r##"<office:automatic-styles>
+<number:number-style style:name="N1"><number:number number:decimal-places="0" number:min-integer-digits="10"><number:embedded-text number:position="4">-</number:embedded-text><number:embedded-text number:position="7">) </number:embedded-text></number:number></number:number-style>
+<style:style style:name="ce1" style:family="table-cell" style:data-style-name="N1"/>
+</office:automatic-styles>"##;
+    let body = r##"<table:table-cell table:style-name="ce1" office:value-type="float" office:value="5551234567"/>"##;
+    assert_eq!(shown(body, styles, 1), ["555) 123-4567"]);
+    let doc = read(body, styles);
+    let bytes = grind_sheet::write_bytes(&doc, grind_sheet::Form::Flat).expect("writes");
+    let back = grind_sheet::read_bytes("back.fods", &bytes).expect("reads back");
+    let sheet = |d: &Document| d.sheet(0).expect("a sheet").format(Pos::new(0, 0)).cloned();
+    assert_eq!(sheet(&back), sheet(&doc));
+    assert!(
+        String::from_utf8_lossy(&bytes)
+            .contains(r#"<number:embedded-text number:position="7">) </number:embedded-text>"#)
+    );
+}

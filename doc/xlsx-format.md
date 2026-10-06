@@ -362,6 +362,19 @@ read it that way: `[Color3]`, `[Color10]` and `[Color56]` came out `#1c1c1c`, `#
 `#8e86ae`, none of them the default palette's entries. With the source and the oracle
 disagreeing, this filter counts it (`Unspellable::Colour`) rather than pick.
 
+### 3.8 Text between placeholders — `SPEC`, and its conversion `MEASURED`
+
+§18.8.31 gives a section one value, and every `#`, `0` and `?` in it is a digit of that one
+number: `000-00-0000` is nine digits with two hyphens among them, not three numbers.
+LibreOffice 26.8 converts `#,##0.000" "###" "###` (`sc/qa/unit/data/xlsx/
+embedded-text-in-decimal.xlsx`) into one `number:number` with nine decimal places, a minimum of
+three, and two `number:embedded-text` children at positions `-4` and `-7`, and shows
+6543210.12345678 as `6,543,210.123 456 78` (measured 2026-10-06; the position rule is
+`doc/ods-format.md` §5.2). This filter writes the same: a run of placeholders following an
+earlier one with nothing but literal text between them extends that number, and the text
+becomes embedded text — among the whole digits until the decimal point has been seen, among
+the decimals after it.
+
 ---
 
 ## 4. Styles and geometry

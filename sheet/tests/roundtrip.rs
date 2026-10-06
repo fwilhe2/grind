@@ -641,6 +641,7 @@ fn formats() -> (String, Document) {
             min_decimals,
             min_int: 1,
             grouping,
+            embedded: Vec::new(),
         });
         f
     };
@@ -650,6 +651,7 @@ fn formats() -> (String, Document) {
         min_decimals: 1,
         min_int: 1,
         grouping: false,
+        embedded: Vec::new(),
     });
     percent.push(Part::Text("%".into()));
 
@@ -662,6 +664,7 @@ fn formats() -> (String, Document) {
         min_decimals: 2,
         min_int: 1,
         grouping: true,
+        embedded: Vec::new(),
     });
     plain.push(Part::Text("\u{a0}".into()));
     plain.push(Part::Currency("\u{20ac}".into()));
@@ -787,6 +790,7 @@ fn styles() -> (String, Document) {
                     min_decimals: 0,
                     min_int: 1,
                     grouping: false,
+                    embedded: Vec::new(),
                 },
                 Part::Text("%".into()),
             ],

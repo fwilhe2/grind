@@ -193,6 +193,14 @@
     ],
     "description": "number:number — the digits themselves. `decimals` is how many fraction digits are shown at most and `min-decimals` how many at least, so \"88 h\" and \"88.0 h\" differ by one attribute."
   },
+  "format part: embedded": {
+    "scope": "kdl",
+    "prefix": "embedded",
+    "body": [
+      "embedded ${1:4} \"${2:-}\""
+    ],
+    "description": "number:embedded-text, a child of a `number` node — text among the digits, as a telephone number's hyphen: the position is how many whole digits stand to its right, and a negative one reaches into the decimals."
+  },
   "format part: text": {
     "scope": "kdl",
     "prefix": "text",

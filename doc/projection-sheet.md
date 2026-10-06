@@ -105,6 +105,7 @@ doing its job while this table was being written.
 |---|---|---|
 | `text` | `Part::Text` — `number:text`, a literal separator or unit | `sheet S { format A1 number { text " €" } }` |
 | `number` | `Part::Number` — `number:number` and its four attributes | `sheet S { format A1 number { number decimals=2 min-decimals=1 min-int=1 } }` |
+| `embedded` | one of `Part::Number`'s `embedded` — `number:embedded-text`, its position (whole digits to its right; negative reaches into the decimals) and its text | `sheet S { format A1 number { number min-int=10 { embedded 4 "-"; embedded 7 ") " } } }` |
 | `currency` | `Part::Currency` — `number:currency-symbol`, the symbol as its argument | `sheet S { format A1 currency { currency "EUR" } }` |
 | `year` | `Part::Year` — `number:year`, `long` being four digits | `sheet S { format A1 date { year long=#true } }` |
 | `month` | `Part::Month` — `number:month`; `textual` is a name rather than a number | `sheet S { format A1 date { month long=#true textual=#true } }` |

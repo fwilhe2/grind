@@ -2707,17 +2707,33 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
                 min_decimals,
                 min_int,
                 grouping,
+                embedded,
             } => {
                 let _ = write!(
                     out,
                     "<number:number number:decimal-places=\"{decimals}\" \
                      number:min-decimal-places=\"{min_decimals}\" \
-                     number:min-integer-digits=\"{min_int}\"{}/>",
+                     number:min-integer-digits=\"{min_int}\"{}",
                     match grouping {
                         true => " number:grouping=\"true\"",
                         false => "",
                     }
                 );
+                match embedded.is_empty() {
+                    true => out.push_str("/>"),
+                    false => {
+                        out.push('>');
+                        for e in embedded {
+                            let _ = write!(
+                                out,
+                                "<number:embedded-text number:position=\"{}\">{}</number:embedded-text>",
+                                e.position,
+                                esc(&e.text)
+                            );
+                        }
+                        out.push_str("</number:number>");
+                    }
+                }
             }
             Part::Year { long: l } => {
                 let _ = write!(out, "<number:year{}/>", long(l));
@@ -4143,6 +4159,7 @@ mod tests {
             min_decimals: 2,
             min_int: 1,
             grouping: true,
+            embedded: Vec::new(),
         });
         f.push(Part::Currency(" \u{20ac}".into()));
         f
@@ -4160,6 +4177,7 @@ mod tests {
             min_decimals: 1,
             min_int: 1,
             grouping: false,
+            embedded: Vec::new(),
         });
         let sheet = doc.sheet_mut(0).unwrap();
         for row in 0..3 {

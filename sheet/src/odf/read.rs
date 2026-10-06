@@ -2329,6 +2329,7 @@ impl Context<Builder> for NumberStyle {
                 ),
                 min_int: digits(attrs, "min-integer-digits", 1),
                 grouping: attrs.get(Ns::Number, "grouping") == Some("true"),
+                embedded: Vec::new(),
             },
             "year" => Part::Year { long },
             "month" => Part::Month {
@@ -2348,8 +2349,13 @@ impl Context<Builder> for NumberStyle {
             "text-content" => Part::Content,
             _ => return None,
         };
+        let number = matches!(part, Part::Number { .. });
         b.parts.push(part);
-        Some(Box::new(super::context::Ignore))
+        match number {
+            // Its `number:embedded-text` children are read onto it.
+            true => Some(Box::new(NumberPiece)),
+            false => Some(Box::new(super::context::Ignore)),
+        }
     }
 
     fn end(&mut self, b: &mut Builder) {
@@ -2378,6 +2384,44 @@ fn digits(attrs: &Attrs, local: &str, default: u8) -> u8 {
 /// `number:text` and `number:currency-symbol` — the two pieces that *are* their content.
 struct StyleText {
     currency: bool,
+}
+
+/// A `number:number`, for its `number:embedded-text` children (rng:7242): each is added to the
+/// piece just pushed, with its position.
+struct NumberPiece;
+
+impl Context<Builder> for NumberPiece {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if !name.is(Ns::Number, "embedded-text") {
+            return None;
+        }
+        let position = attrs.get(Ns::Number, "position")?.trim().parse().ok()?;
+        b.style_text.clear();
+        Some(Box::new(EmbeddedText { position }))
+    }
+}
+
+/// One `number:embedded-text`: its character data is the text.
+struct EmbeddedText {
+    position: i32,
+}
+
+impl Context<Builder> for EmbeddedText {
+    fn text(&mut self, text: &str, b: &mut Builder) {
+        b.style_text.push_str(text);
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        let text = std::mem::take(&mut b.style_text);
+        if let Some(Part::Number { embedded, .. }) = b.parts.last_mut()
+            && embedded.len() < 64
+        {
+            embedded.push(numfmt::Embedded {
+                position: self.position,
+                text,
+            });
+        }
+    }
 }
 
 impl Context<Builder> for StyleText {

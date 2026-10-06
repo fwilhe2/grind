@@ -373,6 +373,9 @@ struct Section {
     /// `[Red]` — the colour this section draws its value in, as `#rrggbb`.
     color: Option<String>,
     lost: BTreeSet<Unspellable>,
+    /// Whether the section's number has had its decimal point yet — what decides whether text
+    /// after it, before more placeholders, sits among the whole digits or the decimals.
+    point: bool,
 }
 
 impl Section {
@@ -698,6 +701,7 @@ fn number(chars: &[char], from: usize, out: &mut Section) -> usize {
     let mut i = from;
     let (mut min_int, mut decimals, mut min_decimals) = (0u8, 0u8, 0u8);
     let (mut point, mut grouping, mut digits) = (false, false, 0u32);
+    let mut whole = 0u8;
     let mut trailing_commas = 0u32;
     while i < chars.len() {
         match chars[i] {
@@ -719,8 +723,11 @@ fn number(chars: &[char], from: usize, out: &mut Section) -> usize {
                             min_decimals = min_decimals.saturating_add(1);
                         }
                     }
-                    false if c == '0' => min_int = min_int.saturating_add(1),
-                    false => {}
+                    false if c == '0' => {
+                        min_int = min_int.saturating_add(1);
+                        whole = whole.saturating_add(1);
+                    }
+                    false => whole = whole.saturating_add(1),
                 }
                 i += 1;
             }
@@ -747,12 +754,84 @@ fn number(chars: &[char], from: usize, out: &mut Section) -> usize {
     if next == Some('/') {
         out.lost.insert(Unspellable::Fraction);
     }
-    out.parts.push(Part::Number {
-        decimals,
-        min_decimals,
-        min_int,
-        grouping,
-    });
+    // Excel's section has **one** number: a run of placeholders after an earlier one, with only
+    // literal text between them, is more of the same number, and the text is set among its
+    // digits — `#,##0.000" "###" "###` is 6,543,210.123 456 78, `000-00-0000` one nine-digit
+    // number (`doc/xlsx-format.md` §3.8). ODF spells that `number:embedded-text`.
+    let earlier = out
+        .parts
+        .iter()
+        .rposition(|part| matches!(part, Part::Number { .. }))
+        .filter(|at| {
+            !out.date
+                && !out.time
+                && out.parts[at + 1..]
+                    .iter()
+                    .all(|part| matches!(part, Part::Text(_)))
+        });
+    let Some(at) = earlier else {
+        out.point = point;
+        out.parts.push(Part::Number {
+            decimals,
+            min_decimals,
+            min_int,
+            grouping,
+            embedded: Vec::new(),
+        });
+        return i;
+    };
+    let between: String = out
+        .parts
+        .drain(at + 1..)
+        .map(|part| match part {
+            Part::Text(text) => text,
+            _ => String::new(),
+        })
+        .collect();
+    let had_point = out.point;
+    if let Some(Part::Number {
+        decimals: d,
+        min_decimals: md,
+        min_int: mi,
+        grouping: g,
+        embedded,
+    }) = out.parts.get_mut(at)
+    {
+        *g |= grouping;
+        match had_point {
+            // Still among the whole digits: this run's are to the right of everything so far,
+            // so every earlier text has that many more digits on its right.
+            false => {
+                for e in embedded.iter_mut().filter(|e| e.position >= 0) {
+                    e.position += i32::from(whole);
+                }
+                embedded.push(grind_sheet::numfmt::Embedded {
+                    position: i32::from(whole),
+                    text: between,
+                });
+                // A `0` already seen forces every digit to its right as well.
+                *mi = match *mi {
+                    0 => min_int,
+                    zeros => zeros.saturating_add(whole),
+                };
+                (*d, *md) = (decimals, min_decimals);
+                out.point = point;
+            }
+            // Among the decimals: the text follows the ones so far, and every placeholder of
+            // this run is one more decimal.
+            true => {
+                embedded.push(grind_sheet::numfmt::Embedded {
+                    position: -i32::from(*d) - 1,
+                    text: between,
+                });
+                let more = whole.saturating_add(decimals);
+                if min_int + min_decimals > 0 {
+                    *md = d.saturating_add(min_int + min_decimals);
+                }
+                *d = d.saturating_add(more);
+            }
+        }
+    }
     i
 }
 
@@ -843,6 +922,24 @@ mod tests {
 
     fn lost(code: &str) -> Vec<Unspellable> {
         of_code(code).lost
+    }
+
+    /// `doc/xlsx-format.md` §3.8: a section has one number, and a literal between two runs of
+    /// placeholders is set among its digits — what LibreOffice shows for these.
+    #[test]
+    fn text_between_placeholders_is_set_among_one_numbers_digits() {
+        assert_eq!(
+            shows("#,##0.000\" \"###\" \"###", 6543210.12345678),
+            "6,543,210.123 456 78"
+        );
+        assert_eq!(shows("000-00-0000", 123456789.0), "123-45-6789");
+        assert_eq!(shows("000-00-0000", 1234.0), "000-00-1234");
+        assert_eq!(shows("(###) ###-####", 5551234567.0), "(555) 123-4567");
+        assert_eq!(
+            shows("0.00 \"kg\"", 2.5),
+            "2.50 kg",
+            "text after the number stays text"
+        );
     }
 
     #[test]
