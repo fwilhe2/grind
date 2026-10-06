@@ -660,6 +660,18 @@ oracle turned out to be unable to answer the font questions (fact 4).
    `style:type="right"` stop at 17 cm ends the text after the tab at 17 cm. A tab with no stop
    left on its line costs nothing there and the text after it starts the next line. A child
    style's `style:tab-stops` is taken as the whole set (rng:13896's element is one list).
+15. **List labels** — `MEASURED` (2026-10-06, 26.8.1.1, a generated list converted to PDF). An
+   item's label is its level's `style:num-prefix`, then the numbers of the last
+   `text:display-levels` levels — each in **its own** level's `style:num-format`, joined by `.` —
+   then its level's `style:num-suffix`: `1.a)` for a second level of `a` and `)` showing two
+   levels under a first of `1` and `.`. `1`, `a`, `A`, `i`, `I` are arabic, letters and roman. A
+   `text:list-header` neither shows a label nor counts; an item's second paragraph shows none.
+   Every top-level `text:list` numbers from the start again, even with the same style right
+   after the last; `text:continue-numbering="true"` continues it. `text:start-value` on an item
+   sets that item's number (the next counts on from it) and on a level that level's first. An
+   item at level two under a level-one item holding no paragraph still shows `1.a)`. A
+   `text:list-level-style-bullet` shows its `text:bullet-char`. A list naming no style, at any
+   depth, shows **no mark** at all.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

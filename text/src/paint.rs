@@ -137,9 +137,10 @@ pub fn band(layout: &Layout, line: &Line, start: usize, end: usize) -> Option<(f
 /// What marks a list item at `depth`: •, ◦, ▪, and round again — what every word processor
 /// does, and what a document with a six-deep list needs.
 ///
-/// The mark is **drawn and never stored**: a list's numbering lives in a list style this build
-/// does not read (`doc/text-core.md`), so this is the page saying "there is a list item here"
-/// rather than the document being given a character the caret could sit inside.
+/// The mark is **drawn and never stored**, and it is the fallback: an item whose list states a
+/// style wears that style's number or bullet (`crate::numbering`, `BlockView::mark`), and this
+/// is the page saying "there is a list item here" for one whose list states none — which is
+/// every list this build writes.
 pub fn bullet(depth: u32) -> &'static str {
     const MARKS: [&str; 3] = ["\u{2022}", "\u{25e6}", "\u{25aa}"];
     MARKS[(depth.max(1) as usize - 1) % MARKS.len()]

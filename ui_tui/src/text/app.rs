@@ -2054,7 +2054,7 @@ impl App {
                     )];
                     if *indent > 0 {
                         spans.push(Span::styled(
-                            indent_text(&view.kind, *indent, first),
+                            indent_text(view.mark().filter(|_| first), *indent),
                             Style::default().add_modifier(Modifier::DIM),
                         ));
                     }
@@ -2207,22 +2207,22 @@ impl App {
 const RULE: Style = Style::new().fg(Color::DarkGray);
 const MATCH: Style = Style::new().bg(Color::LightYellow).fg(Color::Black);
 
-/// The indent a block's line starts with, with the list bullet in the last two cells of the
-/// first one.
-fn indent_text(kind: &BlockKind, indent: u16, first: bool) -> String {
-    match (first, kind) {
-        (true, BlockKind::ListItem { depth }) => {
-            // One glyph per depth, cycling (`grind_text::paint::bullet`, every page's), and a
-            // space after it, in the last two cells of the indent. *Drawn* rather than inserted:
-            // a marker in the text would be a character the core never measured, which puts
-            // every caret after it in the wrong column (`doc/tui-shell.md`, decision 2).
-            let bullet = format!("{} ", grind_text::paint::bullet(*depth));
+/// The indent a block's line starts with, with a list item's mark — its number or its style's
+/// bullet (`BlockView::mark`) — and a space at the end of the first one.
+fn indent_text(mark: Option<&str>, indent: u16) -> String {
+    match mark {
+        Some(mark) => {
+            // *Drawn* rather than inserted: a marker in the text would be a character the core
+            // never measured, which puts every caret after it in the wrong column
+            // (`doc/tui-shell.md`, decision 2). A label wider than the indent takes the cells
+            // it needs, as a terminal has no smaller type to set it in.
+            let mark = format!("{mark} ");
             format!(
-                "{}{bullet}",
-                " ".repeat(usize::from(indent).saturating_sub(bullet.chars().count()))
+                "{}{mark}",
+                " ".repeat(usize::from(indent).saturating_sub(mark.chars().count()))
             )
         }
-        _ => " ".repeat(usize::from(indent)),
+        None => " ".repeat(usize::from(indent)),
     }
 }
 

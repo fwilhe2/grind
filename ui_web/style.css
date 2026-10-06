@@ -544,10 +544,14 @@ input[type="text"] {
   list-style: none;
 }
 
+/* A list item's mark — its number or its style's bullet, `BlockView::mark` — ending a little
+   before the item's text, however wide it is. */
 .li::before {
-  content: "\2022";
+  content: attr(data-label);
   position: absolute;
-  margin-left: -0.9em;
+  right: 100%;
+  margin-right: 0.35em;
+  white-space: nowrap;
   opacity: 0.55;
 }
 

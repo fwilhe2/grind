@@ -624,6 +624,11 @@ pub struct Document {
     /// and the automatic ones of the body's own part. Read and never written; a block's
     /// `style` names one, and [`crate::paragraph::resolve`] walks its chain.
     pub paragraph_styles: std::collections::HashMap<String, crate::paragraph::ParagraphStyle>,
+    /// Every `text:list-style` the document declares, by name, and which list each list item
+    /// was read in — what an item's label is derived from (`crate::numbering`). Read for showing
+    /// and never written: a save keeps a list's element, and with it its style.
+    pub list_styles: std::collections::HashMap<String, crate::numbering::ListStyle>,
+    pub list_marks: crate::numbering::Marks,
     /// What kind of face each declared font family is — `style:font-family-generic` on its
     /// `style:font-face` (rng:10418: `roman`, `swiss`, `modern`, `decorative`, `script`,
     /// `system`) — for a printer to fall back on when the family is not installed. Read and
@@ -707,6 +712,8 @@ impl Document {
             page: None,
             default_paragraph: Box::default(),
             paragraph_styles: std::collections::HashMap::new(),
+            list_styles: std::collections::HashMap::new(),
+            list_marks: std::collections::HashMap::new(),
             font_generics: std::collections::HashMap::new(),
             char_styles: std::collections::HashMap::new(),
             table_looks: std::collections::HashMap::new(),

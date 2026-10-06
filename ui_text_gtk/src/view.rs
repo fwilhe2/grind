@@ -633,15 +633,18 @@ mod imp {
                     _ => palette.foreground,
                 };
 
-                if let BlockKind::ListItem { depth } = block.kind {
-                    // A bullet is drawn rather than inserted: the character is not in the
+                if let Some(mark) = block.mark() {
+                    // A list's mark is drawn rather than inserted: the character is not in the
                     // document, and putting one there would make it a character the caret
-                    // could sit inside and a `p12+0` that means something else. One mark per
-                    // depth, cycling — `grind_text::paint::bullet`, the same in every window.
+                    // could sit inside and a `p12+0` that means something else. Its number or
+                    // its style's bullet (`BlockView::mark`), the same in every window; a
+                    // label wider than a bullet ends where the bullet's room does.
+                    let layout = face.draw(mark);
+                    let wide = f64::from(layout.pixel_size().0);
                     draw_at(
                         snapshot,
-                        face.draw(grind_text::paint::bullet(depth)),
-                        x - BULLET_GAP,
+                        layout,
+                        x - BULLET_GAP.max(wide + BULLET_GAP / 3.0),
                         y,
                         palette.dim,
                     );

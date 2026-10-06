@@ -444,17 +444,22 @@ fn lines(
         );
         let line_top = top as f32 + (line.top - first_top);
         let baseline = line_top + layout.baseline();
+        // A list item's label — its number, or its style's bullet (`BlockView::mark`) — in
+        // front of its first line, and never into the text: a label wider than the room a
+        // bullet leaves ends a little before it.
         if at == 0
-            && let BlockKind::ListItem { depth } = view.kind
+            && let Some(mark) = view.mark()
         {
             let style = face.style(&TextStyle::default());
-            let mark = paint::bullet(depth);
+            let glyphs = setter.shape(mark, &style).glyphs;
+            let wide: f64 = glyphs.iter().map(|g| f64::from(g.x_advance)).sum();
+            let gap = f64::from(setter.face_of(&style).1) * 0.3;
             ops.push(Op::Text {
-                x: (left - SPACING.indent * 2.0 / 3.0) as f32,
+                x: (left - (SPACING.indent * 2.0 / 3.0).max(wide + gap)) as f32,
                 y: baseline,
                 face: setter.face_of(&style).0,
                 size: setter.face_of(&style).1,
-                glyphs: setter.shape(mark, &style).glyphs,
+                glyphs,
                 text: mark.to_owned(),
                 color: Rgb::BLACK,
                 mark: match piece.repeat {

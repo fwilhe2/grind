@@ -427,6 +427,11 @@ impl Ui {
             element.set_class_name(&class_of(block));
             element.set_attribute("data-block", &block.index.to_string())?;
             element.set_attribute("style", &face.css(indent))?;
+            // A list item's number or its style's bullet (`BlockView::mark`), drawn by the
+            // stylesheet in front of it — never a character of the document.
+            if let Some(mark) = block.mark() {
+                element.set_attribute("data-label", mark)?;
+            }
 
             // A block that is a picture is drawn as one, above whatever text it also holds
             // (a caption reads as the paragraph's own text — `doc/odt-format.md`).
@@ -1952,6 +1957,7 @@ mod tests {
             // This pane draws no tables yet (`doc/web-shell.md`), so a fixture never is in one.
             cell: None,
             generated: false,
+            label: None,
         }
     }
 

@@ -52,7 +52,7 @@ mod windows_impl {
     use crate::theme::Theme;
 
     use super::super::geom::{CellBox, Page, RULE, Slot, StripHit};
-    use grind_text::paint::{band, bullet, covered, drawable, pieces};
+    use grind_text::paint::{band, covered, drawable, pieces};
 
     use super::{CARET_W, WASH};
 
@@ -257,14 +257,14 @@ mod windows_impl {
                 continue;
             }
 
-            // The bullet, drawn outside the text column and outside the model — a list's
-            // numbering lives in a list style this build does not read.
-            if let grind_text::BlockKind::ListItem { depth } = painted.view.kind {
+            // The list's mark — its number or its style's bullet (`BlockView::mark`) — drawn
+            // outside the text column and outside the model.
+            if let Some(mark) = painted.view.mark() {
                 face.draw_run(
                     dc,
                     x - scale(super::super::geom::INDENT, page.dpi) * 0.7,
                     top,
-                    bullet(depth),
+                    mark,
                     &CharStyle::default(),
                     theme.text,
                 );

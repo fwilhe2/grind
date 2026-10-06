@@ -26,9 +26,9 @@
 use grind_core::color::{self, Rgb};
 use grind_text::flow::Flow;
 use grind_text::look::Role;
-use grind_text::paint::{band, bullet, covered, drawable, pieces};
+use grind_text::paint::{band, covered, drawable, pieces};
 use grind_text::style::CharStyle;
-use grind_text::{App, BlockKind, Caret, Faces, RunView};
+use grind_text::{App, Caret, Faces, RunView};
 
 use super::face;
 use super::geom::{CARET_W, RULE, bullet_x};
@@ -323,11 +323,11 @@ pub fn frame(frame: &Frame) -> Vec<Op> {
 
         // The bullet, hung in the indent and drawn in the block's own face — outside the text,
         // and outside the model.
-        if let BlockKind::ListItem { depth } = block.kind {
+        if let Some(mark) = block.mark() {
             ops.push(Op::Run {
                 x: x + bullet_x(),
                 top: slot.top,
-                text: bullet(depth).to_owned(),
+                text: mark.to_owned(),
                 font: face::font(role, &Default::default()),
                 color: palette.ink,
                 underline: false,
@@ -500,7 +500,9 @@ mod tests {
     use super::*;
     use crate::text::face::Column;
     use crate::text::geom::spacing;
+    use grind_text::BlockKind;
     use grind_text::Fixed;
+    use grind_text::paint::bullet;
     use std::collections::HashMap;
 
     struct Setup {

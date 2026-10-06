@@ -58,6 +58,7 @@ pub mod look;
 pub mod marginal;
 pub mod markdown;
 pub mod model;
+pub mod numbering;
 pub mod odf;
 pub mod page;
 pub mod paint;
@@ -221,6 +222,27 @@ pub struct BlockView {
     /// grid needs the block's text and its coordinate at the same moment, and two calls would
     /// be two moments.
     pub cell: Option<model::Cell>,
+    /// What a list item wears in front of it — `1.`, `2.a)`, the style's own bullet — derived
+    /// from its list's style and its place in the list (`numbering::labels`), never stored.
+    /// Empty for a list header or an item's second paragraph, which wear nothing; `None` where
+    /// the list states no style, and a shell draws its own bullet (`paint::bullet`) — see
+    /// [`BlockView::mark`], which is that choice made once.
+    pub label: Option<String>,
+}
+
+impl BlockView {
+    /// What to draw in front of this block: its list label, or a shell's own bullet for a list
+    /// item whose list states no style, or nothing (`None`).
+    pub fn mark(&self) -> Option<&str> {
+        let BlockKind::ListItem { depth } = self.kind else {
+            return None;
+        };
+        match self.label.as_deref() {
+            Some("") => None,
+            Some(label) => Some(label),
+            None => Some(paint::bullet(depth)),
+        }
+    }
 }
 
 /// One run of uniformly formatted characters, as a reader sees it.
@@ -590,10 +612,12 @@ impl App {
         let state = self.state.read().unwrap();
         let end = blocks.end.min(state.doc.blocks.len());
         let start = blocks.start.min(end);
+        let labels = numbering::labels(&state.doc, end);
         let items = state.doc.blocks[start..end]
             .iter()
             .enumerate()
             .map(|(offset, block)| BlockView {
+                label: labels.get(start + offset).cloned().flatten(),
                 index: start + offset,
                 id: block.id,
                 kind: block.kind.clone(),
@@ -2271,6 +2295,7 @@ mod tests {
             marks: Vec::new(),
             cell: None,
             generated: false,
+            label: None,
         }
     }
 

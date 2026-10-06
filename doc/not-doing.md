@@ -166,7 +166,7 @@ the code, and this table is an index rather than a second source of truth.
 |---|---|---|
 | **R6's diffable write** | *Content* edits to blocks the file already spells. Opening a document and saving it returns its bytes exactly; editing one paragraph changes one line; a structural change regenerates and loses what the model does not carry | `text/tests/diffable.rs` |
 | **Nested `text:span`** | Flattened on read, composing the style names into one. Lossy for the *names*, lossless for the rendering — and only reachable at all for a paragraph somebody edited, since R6 never rewrites one nobody touched | `doc/text-core.md` |
-| **Lists** | Flattened into the block sequence with a depth, so the `text:list` element's own style name and `text:continue-numbering` are not carried and are lost if that list is edited | `model::BlockKind` |
+| **Lists** | Flattened into the block sequence with a depth, so the `text:list` element's own style name and `text:continue-numbering` are not carried and are lost if that list is edited. Both are **read for showing** since 2026-10-06 — every item wears its list style's number or bullet (`grind_text::numbering`, derived, never stored) — and a list this build writes names no style, so LibreOffice draws it with no mark | `model::BlockKind` |
 | **Headings** | Read at any level — the schema's `positiveInteger` has no ceiling — and authored at 1–6 | `doc/text-core.md` |
 | **What LibreOffice actually does** | Unmeasured. `doc/odt-format.md` §5 is six named questions, all `UNVERIFIED`, and none of them may be implemented until one carries a citation | `doc/odt-format.md` §5 |
 

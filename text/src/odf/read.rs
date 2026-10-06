@@ -106,6 +106,21 @@ pub struct Builder {
     /// to its part, so `styles.xml`'s are forgotten before `content.xml` is read, as
     /// [`Builder::styles`]' are.
     paragraph_styles: HashMap<String, (bool, crate::paragraph::ParagraphStyle)>,
+    /// Every `text:list-style`, by name, and whether it is an automatic one.
+    list_styles: HashMap<String, (bool, crate::numbering::ListStyle)>,
+    /// The levels of the `text:list-style` being read.
+    list_levels: std::collections::BTreeMap<u32, crate::numbering::Level>,
+    /// The lists open around the block being read, innermost last: the list style in effect and
+    /// the numbering chain the list counts in (`crate::numbering::ListMark`).
+    list_frames: Vec<(Option<String>, usize)>,
+    /// The chains handed out, the last top-level one of each style, and each `xml:id`'s — what
+    /// `text:continue-numbering` and `text:continue-list` continue.
+    chains: usize,
+    chain_of_style: HashMap<Option<String>, usize>,
+    chain_of_id: HashMap<String, usize>,
+    /// The list item being read: its `text:start-value`, whether it is a `text:list-header`,
+    /// and whether its first block is still to come.
+    item: Option<(Option<u32>, bool, bool)>,
     /// The `style:tab-stops` of the paragraph style being read ([`TabStopsDef`]).
     tab_stops: Option<Vec<crate::paragraph::TabStop>>,
     /// Every `style:master-page` read so far: its name and the page layout it names, in
@@ -225,6 +240,13 @@ impl Builder {
             page_layouts: HashMap::new(),
             paragraph_styles: HashMap::new(),
             tab_stops: None,
+            list_styles: HashMap::new(),
+            list_levels: Default::default(),
+            list_frames: Vec::new(),
+            chains: 0,
+            chain_of_style: HashMap::new(),
+            chain_of_id: HashMap::new(),
+            item: None,
             master_pages: Vec::new(),
             master_marginals: HashMap::new(),
             layout_marginals: HashMap::new(),
@@ -269,6 +291,10 @@ impl Builder {
 
     /// Hand the paragraph styles to the document once every part is read.
     pub fn settle_paragraph_styles(&mut self) {
+        self.doc.list_styles = std::mem::take(&mut self.list_styles)
+            .into_iter()
+            .map(|(name, (_, style))| (name, style))
+            .collect();
         self.doc.paragraph_styles = std::mem::take(&mut self.paragraph_styles)
             .into_iter()
             .map(|(name, (_, style))| (name, style))
@@ -387,6 +413,7 @@ impl Builder {
         self.column_styles.retain(|_, (automatic, _)| !*automatic);
         self.paragraph_styles
             .retain(|_, (automatic, _)| !*automatic);
+        self.list_styles.retain(|_, (automatic, _)| !*automatic);
         self.styles.retain(|_, style| !style.automatic);
     }
 
@@ -437,6 +464,28 @@ impl Builder {
         block.cell = self.cell.clone();
         block.generated = self.generating;
         block.section = self.section;
+        // Which list a list item is in, for its label (`crate::numbering`).
+        if let (BlockKind::ListItem { .. }, Some((style, chain))) =
+            (&block.kind, self.list_frames.last())
+        {
+            let (start, header, first) = match self.item.as_mut() {
+                Some((start, header, fresh)) => {
+                    let first = std::mem::replace(fresh, false);
+                    (start.filter(|_| first), *header, first)
+                }
+                None => (None, false, true),
+            };
+            self.doc.list_marks.insert(
+                id,
+                crate::numbering::ListMark {
+                    style: style.clone(),
+                    chain: *chain,
+                    start,
+                    header,
+                    first,
+                },
+            );
+        }
         // Every section the block is inside holds it, the outer ones too.
         let mut at = self.section;
         while let Some(index) = at {
@@ -1103,6 +1152,14 @@ impl Context<Builder> for Styles {
                 props: crate::paragraph::ParagraphProps::default(),
             }));
         }
+        if name.is(Ns::Text, "list-style") {
+            let declared = attrs.get(Ns::Style, "name")?.to_owned();
+            b.list_levels.clear();
+            return Some(Box::new(ListStyleDef {
+                name: declared,
+                automatic: self.automatic,
+            }));
+        }
         if !name.is(Ns::Style, "style") {
             return None;
         }
@@ -1140,6 +1197,60 @@ impl Context<Builder> for Styles {
             props: CharStyle::default(),
             extras: false,
         }))
+    }
+}
+
+/// One `text:list-style` (rng:17558): what each level's items wear (`crate::numbering`).
+struct ListStyleDef {
+    name: String,
+    automatic: bool,
+}
+
+impl Context<Builder> for ListStyleDef {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        use crate::numbering::Level;
+        let level = attrs
+            .get(Ns::Text, "level")
+            .and_then(|v| v.trim().parse::<u32>().ok())
+            .filter(|l| (1..=10).contains(l))?;
+        let style = match (name.ns, name.local.as_str()) {
+            (Ns::Text, "list-level-style-bullet") => Level::Bullet(
+                attrs
+                    .get(Ns::Text, "bullet-char")
+                    .unwrap_or_default()
+                    .to_owned(),
+            ),
+            (Ns::Text, "list-level-style-image") => Level::Bullet(String::new()),
+            (Ns::Text, "list-level-style-number") => {
+                let get = |ns, local| attrs.get(ns, local).unwrap_or_default().to_owned();
+                Level::Number {
+                    format: get(Ns::Style, "num-format"),
+                    prefix: get(Ns::Style, "num-prefix"),
+                    suffix: get(Ns::Style, "num-suffix"),
+                    display: attrs
+                        .get(Ns::Text, "display-levels")
+                        .and_then(|v| v.trim().parse().ok())
+                        .unwrap_or(1),
+                    start: attrs
+                        .get(Ns::Text, "start-value")
+                        .and_then(|v| v.trim().parse().ok())
+                        .unwrap_or(1),
+                }
+            }
+            _ => return None,
+        };
+        b.list_levels.insert(level, style);
+        None
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        let levels = std::mem::take(&mut b.list_levels);
+        if b.list_styles.len() < MAX_STYLES {
+            b.list_styles.insert(
+                self.name.clone(),
+                (self.automatic, crate::numbering::ListStyle { levels }),
+            );
+        }
     }
 }
 
@@ -1289,6 +1400,36 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         }
         (Ns::Text, "list") => {
             let before = b.open_lists.len();
+            // The style in effect is the list's own or its enclosing list's; a top-level list
+            // starts a numbering of its own unless it says it continues one.
+            let frames = b.list_frames.len();
+            let style = attrs
+                .get(Ns::Text, "style-name")
+                .map(str::to_owned)
+                .or_else(|| b.list_frames.last().and_then(|(style, _)| style.clone()));
+            let chain = match b.list_frames.last() {
+                Some((_, chain)) => *chain,
+                None => {
+                    let continued = match (
+                        attrs.get(Ns::Text, "continue-list"),
+                        attrs.get(Ns::Text, "continue-numbering"),
+                    ) {
+                        (Some(id), _) => b.chain_of_id.get(id).copied(),
+                        (None, Some("true")) => b.chain_of_style.get(&style).copied(),
+                        _ => None,
+                    };
+                    let chain = continued.unwrap_or_else(|| {
+                        b.chains += 1;
+                        b.chains
+                    });
+                    b.chain_of_style.insert(style.clone(), chain);
+                    chain
+                }
+            };
+            if let Some(id) = attrs.get(Ns::Xml, "id") {
+                b.chain_of_id.insert(id.to_owned(), chain);
+            }
+            b.list_frames.push((style, chain));
             if let Some(tag) = b
                 .doc
                 .source
@@ -1298,7 +1439,7 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
                 let kept = super::source::attributes(tag, &[]);
                 b.open_lists.push((attrs.span().start, kept));
             }
-            Some(Box::new(List::new(before)))
+            Some(Box::new(List::new(before, frames)))
         }
         // `table:table` is one of `text-content`'s own alternatives (rng:16938), which is why
         // it belongs here beside the paragraph and not somewhere special: in a text document a
@@ -1769,25 +1910,35 @@ struct List {
     /// How many entries [`Builder::open_lists`] had before this one, so its `end` restores
     /// exactly that.
     open: usize,
+    /// And how many [`Builder::list_frames`].
+    frames: usize,
 }
 
 impl List {
-    fn new(open: usize) -> Self {
+    fn new(open: usize, frames: usize) -> Self {
         List {
             counted: false,
             open,
+            frames,
         }
     }
 }
 
 impl Context<Builder> for List {
-    fn start_child(&mut self, name: &Name, _a: &Attrs, b: &mut Builder) -> Option<Ctx> {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         // Depth is incremented when the first item opens rather than when the list does, so
         // that an empty `text:list` costs nothing.
         match (name.ns, name.local.as_str()) {
             // `text:list-header` holds the same content as an item and is not a numbered one;
             // read as an item, because the distinction is numbering, which is out of scope.
-            (Ns::Text, "list-item" | "list-header") => {
+            (Ns::Text, local @ ("list-item" | "list-header")) => {
+                b.item = Some((
+                    attrs
+                        .get(Ns::Text, "start-value")
+                        .and_then(|v| v.trim().parse().ok()),
+                    local == "list-header",
+                    true,
+                ));
                 if !self.counted && b.list_depth < MAX_LIST_DEPTH {
                     b.list_depth += 1;
                     self.counted = true;
@@ -1803,6 +1954,7 @@ impl Context<Builder> for List {
             b.list_depth = b.list_depth.saturating_sub(1);
         }
         b.open_lists.truncate(self.open);
+        b.list_frames.truncate(self.frames);
     }
 }
 
