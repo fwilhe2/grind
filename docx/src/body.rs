@@ -196,7 +196,7 @@ pub struct Ctx<'p, 'a> {
     /// Every comment whose range start has been read — a `w:commentReference` to one of these
     /// is already placed, and one to any other places a comment of its own.
     pub commented: HashSet<String>,
-    /// Text boxes read inside the paragraph being read, waiting to follow it ([`text_box`]).
+    /// Text boxes read inside the paragraph being read, waiting to follow it (`text_box`).
     pub floating: Vec<Block>,
     /// Pictures already read, by part — one image used twice is read once.
     images: HashMap<String, Option<(Vec<u8>, String)>>,
