@@ -45,13 +45,8 @@ pub enum Dropped {
     /// A content control (`w:sdt`) that is a control — a drop-down, a date picker, a checkbox,
     /// placeholder text. What it shows is kept as text; the control is not.
     ContentControl,
-    /// A section whose page differs from the first section's — size, margins. The text model
-    /// has one page.
-    Section,
     /// A section set in more than one column.
     Columns,
-    /// A first-page or even-page header or footer. The default one is carried.
-    HeaderVariant,
     /// Numbering on a heading (`1.2 Methods`): the heading is kept, its number is not.
     HeadingNumber,
     /// A table style's conditional formatting — banded rows, a bold first row.
@@ -80,9 +75,7 @@ impl Dropped {
             Dropped::Field => "field (kept as its text)",
             Dropped::FormField => "form field (kept as its text)",
             Dropped::ContentControl => "content control (kept as its text)",
-            Dropped::Section => "section with its own page",
             Dropped::Columns => "multi-column section",
-            Dropped::HeaderVariant => "first-page or even-page header or footer",
             Dropped::HeadingNumber => "heading number",
             Dropped::TableStyleCondition => "table style banding",
             Dropped::Frame => "positioned paragraph",

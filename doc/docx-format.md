@@ -231,6 +231,21 @@ counter-examples bound the rule: `text-copy.docx` and `tdf103931.docx`, where su
 the *whole* of its section, keep it. This filter drops it only between a section with other
 blocks and one continuing on the same page.
 
+### 5.4 Pages per section, and their marginals — `MEASURED`
+
+`sw/qa/extras/uiwriter/data/tdf168157.docx` has an A4 section and a Letter one. The oracle's PDF
+of the document and its PDF of *this filter's* ODF of it have the same page sizes, page by page:
+each distinct section page is a master page, started by its section's first paragraph.
+
+A hand-made document with a default and an even-page footer and `w:evenAndOddHeaders` (2026-10-06):
+the oracle prints `ODD`, `EVEN`, `ODD` on three pages, from the `.docx` and from our ODF alike —
+the even variant is ODF's `style:footer-left`. Without the setting Word shows no even variant
+(§17.10.1, `SPEC`), and neither does a first-page variant without `w:titlePg`, so neither is a
+loss. A section with no reference of a kind shows the previous section's (§17.10.5, `SPEC`).
+
+The schema allows a left or first-page variant only after the default one (rng:12140); a
+document with only a first-page header gets a default `style:header style:display="false"`.
+
 ---
 
 ## 6. Tables

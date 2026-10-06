@@ -121,9 +121,11 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
         .and_then(|part| package.part(&part))
         .map(|bytes| styles::read_font_table(&bytes))
         .unwrap_or_default();
-    let default_tab = target(RelType::Settings)
+    let settings = target(RelType::Settings)
         .and_then(|part| package.part(&part))
-        .and_then(|bytes| default_tab(&bytes));
+        .map(|bytes| settings(&bytes))
+        .unwrap_or_default();
+    let default_tab = settings.default_tab;
     if rels
         .iter()
         .any(|rel| rel.target.ends_with("vbaproject.bin"))
@@ -177,27 +179,12 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
     let sections = std::mem::take(&mut ctx.sections);
 
     // The page is the first section's; every later one is asked whether it differs.
-    let first = sections.first().cloned().unwrap_or_default();
-    for later in sections.iter().skip(1) {
-        if !later.same_page(&first) {
-            ctx.report.drop_one(Dropped::Section);
-        }
-    }
+    // Every section's page is carried, each distinct one a master page of its own
+    // (`emit::write`); what is counted is what a section says that no page style holds.
     for section in &sections {
         if section.columns.is_some() {
             ctx.report.drop_one(Dropped::Columns);
         }
-        let variants = section
-            .headers
-            .iter()
-            .chain(&section.footers)
-            .filter(|(which, _)| match which {
-                Which::Even => true,
-                Which::First => !section.title_page,
-                Which::Default => false,
-            })
-            .count();
-        ctx.report.drop_many(Dropped::HeaderVariant, variants);
     }
     let rels: HashMap<String, String> = ctx
         .package
@@ -205,21 +192,59 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
         .into_iter()
         .map(|rel| (rel.id, rel.target))
         .collect();
-    let mut marginal = |refs: &[(Which, String)], which: Which| -> Option<Vec<Block>> {
-        let id = emit::pick(refs, which)?;
-        let part = rels.get(id)?.clone();
-        story(&mut ctx, &part)
+    // A section with no reference of a kind shows the section before it's (§17.10.5), so the
+    // references in effect are carried forward section by section. Each part is read once.
+    let mut stories: HashMap<String, Option<Vec<Block>>> = HashMap::new();
+    let mut read = |ctx: &mut Ctx, part: &str| -> Option<(String, Vec<Block>)> {
+        let blocks = stories
+            .entry(part.to_owned())
+            .or_insert_with(|| story(ctx, part))
+            .clone()?;
+        Some((part.to_owned(), blocks))
     };
-    let header = marginal(&first.headers, Which::Default);
-    let footer = marginal(&first.footers, Which::Default);
-    let (header_first, footer_first) = if first.title_page {
-        (
-            marginal(&first.headers, Which::First),
-            marginal(&first.footers, Which::First),
-        )
-    } else {
-        (None, None)
-    };
+    let mut in_effect: [Option<String>; 6] = Default::default();
+    let mut pages = Vec::with_capacity(sections.len());
+    for section in &sections {
+        let pick = |refs: &[(Which, String)], which: Which| {
+            emit::pick(refs, which).and_then(|id| rels.get(id)).cloned()
+        };
+        let own = [
+            pick(&section.headers, Which::Default),
+            pick(&section.footers, Which::Default),
+            pick(&section.headers, Which::First),
+            pick(&section.footers, Which::First),
+            pick(&section.headers, Which::Even),
+            pick(&section.footers, Which::Even),
+        ];
+        for (slot, own) in in_effect.iter_mut().zip(own) {
+            if own.is_some() {
+                *slot = own;
+            }
+        }
+        let mut get = |i: usize| in_effect[i].clone().and_then(|part| read(&mut ctx, &part));
+        let (header, footer) = (get(0), get(1));
+        let (header_first, footer_first) = if section.title_page {
+            (get(2), get(3))
+        } else {
+            (None, None)
+        };
+        // Word shows an even-page variant only when the document says even and odd pages
+        // differ (`w:evenAndOddHeaders`, §17.10.1), and a first-page one only under
+        // `w:titlePg`; a variant it would not show is not carried and not a loss.
+        let (header_even, footer_even) = if settings.even_and_odd {
+            (get(4), get(5))
+        } else {
+            (None, None)
+        };
+        pages.push(emit::Page {
+            header,
+            footer,
+            header_first,
+            footer_first,
+            header_even,
+            footer_even,
+        });
+    }
     let anchors = std::mem::take(&mut ctx.anchors);
     drop(ctx);
 
@@ -229,10 +254,7 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
         numbering: &numbering,
         body,
         sections,
-        header,
-        footer,
-        header_first,
-        footer_first,
+        pages,
         footnotes,
         endnotes,
         anchors,
@@ -321,18 +343,32 @@ fn notes(ctx: &mut Ctx, part: &str) -> HashMap<String, Vec<Block>> {
     out
 }
 
-/// `w:defaultTabStop` from `word/settings.xml`.
-fn default_tab(bytes: &[u8]) -> Option<i64> {
+/// What `word/settings.xml` says that this filter reads.
+#[derive(Default)]
+struct Settings {
+    /// `w:defaultTabStop`, in twips.
+    default_tab: Option<i64>,
+    /// `w:evenAndOddHeaders` — even pages have headers and footers of their own.
+    even_and_odd: bool,
+}
+
+fn settings(bytes: &[u8]) -> Settings {
+    let mut out = Settings::default();
     let mut reader = Reader::new(bytes);
-    reader.root().ok()??;
-    let mut tab = None;
+    if !matches!(reader.root(), Ok(Some(_))) {
+        return out;
+    }
     let _ = reader.children(|_, name, attrs| {
-        if name.ns == Ns::Word && name.local == "defaultTabStop" {
-            tab = attrs.int("val");
+        if name.ns == Ns::Word {
+            match name.local.as_str() {
+                "defaultTabStop" => out.default_tab = attrs.int("val"),
+                "evenAndOddHeaders" => out.even_and_odd = attrs.on(),
+                _ => {}
+            }
         }
         Ok(Handled::No)
     });
-    tab
+    out
 }
 
 #[cfg(test)]

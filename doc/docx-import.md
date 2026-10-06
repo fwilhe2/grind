@@ -98,8 +98,8 @@ over XML.
 | `w:footnoteReference`, `w:endnoteReference` | `text:note`, numbered as Word numbers them, a custom mark as its label (§2.5) | |
 | `w:tbl` | `table:table` with its grid's widths, `gridSpan`/`vMerge` as spans and covered cells, header rows, row heights, cell fill, borders (cell over table over table style), vertical alignment and margins | `emit.rs` |
 | `w:drawing` / `w:pict` holding a picture | `draw:frame`/`draw:image` with the bytes inline, at the extent's size, `as-char` when inline | |
-| the first section's `w:sectPr` | the page layout and the `Standard` master page, with the default header and footer (and the first-page pair under `w:titlePg`) (§5.2) | |
-| a later section | `fo:break-before="page"` on its first block, when it starts a page | |
+| each section's `w:sectPr` | a page layout and a master page per distinct page — size, margins and marginals — the first one `Standard`, which `grind_text` reads as the document's page; the default header and footer, the first-page pair under `w:titlePg` and the even-page pair under `w:evenAndOddHeaders` (ODF's left pages), a section with no reference showing the previous section's (§5.2, §5.4) | |
+| a later section | `fo:break-before="page"` on its first block when it starts a page, and `style:master-page-name` when its page differs | |
 | `w:ins`, `w:moveTo`, `w:sdt`, `w:smartTag`, `w:customXml` | read through | |
 | `w:del`, `w:moveFrom` | skipped | counted |
 | `w:txbxContent` (DrawingML or VML) | its paragraphs, after the paragraph that anchors the box | the position counted |
@@ -110,7 +110,7 @@ Every loss is a `Dropped` kind (`docx/src/report.rs`), counted, summed in `Repor
 fatal under `--strict`: comments, tracked changes (accepted), a text box's position (its text follows the paragraph
 that anchors it), drawings that are not pictures, equations, embedded objects, linked pictures, a floating picture's position, fields
 and form fields and content controls (kept as their text), sections whose page differs,
-multi-column sections, first-page or even-page header variants, heading numbers, table-style
+multi-column sections, heading numbers Word numbers by a list other than the headings' own, table-style
 banding, positioned paragraphs and tables (kept in the flow), macros (never executed), and the
 remainder of a part whose XML is damaged.
 

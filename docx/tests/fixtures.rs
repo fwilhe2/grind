@@ -754,3 +754,71 @@ fn numbered_headings_become_the_outline_numbering() {
         "{odf}"
     );
 }
+
+/// A later section on a page of its own — a landscape table in a portrait report — is a master
+/// page of its own, which its first paragraph starts; the document's page stays the first one.
+#[test]
+fn a_landscape_section_is_a_master_page_of_its_own() {
+    let body = r#"<w:p><w:r><w:t>Portrait</w:t></w:r></w:p>
+        <w:p><w:pPr><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:pPr><w:r><w:t>end of one</w:t></w:r></w:p>
+        <w:p><w:r><w:t>Landscape</w:t></w:r></w:p>
+        <w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>"#;
+    let bytes = docx(body, &[]);
+    let (doc, report) = import(&bytes);
+    assert!(report.lossless(), "{:?}", report.dropped);
+    assert_eq!(texts(&doc), ["Portrait", "end of one", "Landscape"]);
+    let page = doc.page.expect("a page");
+    assert!(
+        page.width < page.height,
+        "the document's page is the first section's"
+    );
+    let (odf, _) = grind_docx::convert(&bytes).unwrap();
+    let odf = String::from_utf8(odf).unwrap();
+    assert!(
+        odf.contains(r#"<style:master-page style:name="Section2" style:page-layout-name="pm2">"#),
+        "{odf}"
+    );
+    assert!(odf.contains(r#"style:print-orientation="landscape""#));
+    assert!(odf.contains(r#"style:master-page-name="Section2""#));
+}
+
+/// Even pages' own footer, under `w:evenAndOddHeaders`, is ODF's left-page footer — and without
+/// the setting Word shows no even variant, so none is written and nothing is lost.
+#[test]
+fn an_even_page_footer_is_a_left_page_footer() {
+    let footer = |name: &'static str, text: &str| {
+        (
+            name,
+            "footer",
+            format!(r#"<w:ftr xmlns:w="{W}"><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:ftr>"#)
+                .into_bytes(),
+        )
+    };
+    let body = r#"<w:p><w:r><w:t>one</w:t></w:r></w:p><w:sectPr><w:footerReference w:type="default" r:id="rId1"/><w:footerReference w:type="even" r:id="rId2"/></w:sectPr>"#;
+    let settings = |even: bool| {
+        (
+            "word/settings.xml",
+            "settings",
+            format!(
+                r#"<w:settings xmlns:w="{W}">{}</w:settings>"#,
+                if even { "<w:evenAndOddHeaders/>" } else { "" }
+            )
+            .into_bytes(),
+        )
+    };
+    for even in [true, false] {
+        let bytes = docx(
+            body,
+            &[
+                footer("word/footer1.xml", "ODD"),
+                footer("word/footer2.xml", "EVEN"),
+                settings(even),
+            ],
+        );
+        let (_, report) = import(&bytes);
+        assert!(report.lossless(), "{:?}", report.dropped);
+        let odf = String::from_utf8(grind_docx::convert(&bytes).unwrap().0).unwrap();
+        assert_eq!(odf.contains("<style:footer-left>"), even, "{odf}");
+        assert!(odf.contains("<style:footer>"));
+    }
+}

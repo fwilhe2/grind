@@ -81,6 +81,8 @@ pub struct Para {
     pub inlines: Vec<Inline>,
     /// Starts a page: a page break before it, or a section starting one.
     pub page_break_before: bool,
+    /// The master page it starts, when its section's page differs from the one before.
+    pub master_page: Option<String>,
 }
 
 /// `w:vMerge` (§17.4.85): the cell that starts a vertical merge, or one it covers.
@@ -124,6 +126,8 @@ pub struct Table {
     pub grid: Vec<i64>,
     pub rows: Vec<Row>,
     pub page_break_before: bool,
+    /// As [`Para::master_page`].
+    pub master_page: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -1192,6 +1196,11 @@ pub fn page_breaks(blocks: Vec<Block>) -> Vec<Block> {
                         facts: para.facts.clone(),
                         inlines,
                         page_break_before: i > 0 || para.page_break_before,
+                        master_page: if i == 0 {
+                            para.master_page.clone()
+                        } else {
+                            None
+                        },
                     });
                 }
                 if emitted.is_empty() {
@@ -1201,6 +1210,7 @@ pub fn page_breaks(blocks: Vec<Block>) -> Vec<Block> {
                         facts: para.facts.clone(),
                         inlines: std::mem::take(&mut leading),
                         page_break_before: para.page_break_before,
+                        master_page: para.master_page.clone(),
                     });
                 }
                 // The section a paragraph closes is closed by its last piece only.

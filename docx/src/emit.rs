@@ -39,10 +39,9 @@ pub struct Input<'a> {
     pub sections: Vec<Section>,
     /// The first section's default header and footer, and its first-page pair when
     /// `w:titlePg` asks for one.
-    pub header: Option<Vec<Block>>,
-    pub footer: Option<Vec<Block>>,
-    pub header_first: Option<Vec<Block>>,
-    pub footer_first: Option<Vec<Block>>,
+    /// Each section's page and the marginals in effect on it — its own references, or the
+    /// section's before it (§17.10.5) — one per entry of `sections`.
+    pub pages: Vec<Page>,
     pub footnotes: HashMap<String, Vec<Block>>,
     pub endnotes: HashMap<String, Vec<Block>>,
     /// Hidden bookmarks some hyperlink points at — kept; the rest of Word's `_`-names are not.
@@ -51,6 +50,34 @@ pub struct Input<'a> {
     pub default_tab: Option<i64>,
     /// Each font's generic family, from `word/fontTable.xml`.
     pub fonts: Vec<(String, &'static str)>,
+}
+
+/// A section's marginals: the default header and footer, and the first-page pair under
+/// `w:titlePg`. Each is the part's name (so two sections showing the same header can share a
+/// master page) and its blocks.
+#[derive(Clone, Debug, Default)]
+pub struct Page {
+    pub header: Option<(String, Vec<Block>)>,
+    pub footer: Option<(String, Vec<Block>)>,
+    pub header_first: Option<(String, Vec<Block>)>,
+    pub footer_first: Option<(String, Vec<Block>)>,
+    /// The even-page pair, under `w:evenAndOddHeaders` — ODF's left pages.
+    pub header_even: Option<(String, Vec<Block>)>,
+    pub footer_even: Option<(String, Vec<Block>)>,
+}
+
+impl Page {
+    fn parts(&self) -> [Option<&str>; 6] {
+        [
+            &self.header,
+            &self.footer,
+            &self.header_first,
+            &self.footer_first,
+            &self.header_even,
+            &self.footer_even,
+        ]
+        .map(|m| m.as_ref().map(|(name, _)| name.as_str()))
+    }
 }
 
 /// Write the document.
@@ -73,7 +100,30 @@ pub fn write(input: Input, report: &mut Report) -> String {
         in_note: false,
     };
     let mut body = String::new();
-    let blocks = section_starts(&input.body, &input.sections);
+    // One master page per distinct page — the size, the margins and the marginals — in section
+    // order; the first is `Standard`, which is the one a reader takes as the document's.
+    let mut masters: Vec<usize> = Vec::new();
+    let mut master_of: Vec<String> = Vec::new();
+    for (k, section) in input.sections.iter().enumerate() {
+        let page = input.pages.get(k).cloned().unwrap_or_default();
+        let found = masters.iter().position(|&m| {
+            input.sections[m].same_page(section)
+                && input.sections[m].landscape == section.landscape
+                && input.pages.get(m).map(Page::parts).unwrap_or_default() == page.parts()
+        });
+        let index = match found {
+            Some(index) => index,
+            None => {
+                masters.push(k);
+                masters.len() - 1
+            }
+        };
+        master_of.push(master_name(index));
+    }
+    if masters.is_empty() {
+        masters.push(0);
+    }
+    let blocks = section_starts(&input.body, &input.sections, &master_of);
     w.outline_list = w.find_outline_list(&blocks);
     w.blocks(&mut body, &blocks, 3);
     w.report.styles = input
@@ -84,20 +134,49 @@ pub fn write(input: Input, report: &mut Report) -> String {
         .count();
 
     // The marginals are written after the body so their styles join the same pools; they go
-    // into the master page, which is written last.
-    let mut master = String::new();
-    let page = input.sections.first().cloned().unwrap_or_default();
-    for (tag, blocks) in [
-        ("header", &input.header),
-        ("header-first", &input.header_first),
-        ("footer", &input.footer),
-        ("footer-first", &input.footer_first),
-    ] {
-        if let Some(blocks) = blocks {
-            let _ = writeln!(master, "   <style:{tag}>");
-            w.blocks(&mut master, blocks, 4);
-            let _ = writeln!(master, "   </style:{tag}>");
+    // into the master pages, which are written last.
+    let mut master_pages = String::new();
+    for (index, &k) in masters.iter().enumerate() {
+        let page = input.pages.get(k).cloned().unwrap_or_default();
+        let _ = writeln!(
+            master_pages,
+            "  <style:master-page style:name=\"{}\" style:page-layout-name=\"pm{}\">",
+            master_name(index),
+            index + 1
+        );
+        // The schema's order, and its rule that a left or first-page variant needs the
+        // default before it (rng:12140): a document with only a first-page header gets a
+        // default one that is not displayed.
+        for (kind, default, left, first) in [
+            (
+                "header",
+                &page.header,
+                &page.header_even,
+                &page.header_first,
+            ),
+            (
+                "footer",
+                &page.footer,
+                &page.footer_even,
+                &page.footer_first,
+            ),
+        ] {
+            if default.is_none() && (left.is_some() || first.is_some()) {
+                let _ = writeln!(master_pages, "   <style:{kind} style:display=\"false\"/>");
+            }
+            for (tag, marginal) in [
+                (kind.to_owned(), default),
+                (format!("{kind}-left"), left),
+                (format!("{kind}-first"), first),
+            ] {
+                if let Some((_, blocks)) = marginal {
+                    let _ = writeln!(master_pages, "   <style:{tag}>");
+                    w.blocks(&mut master_pages, blocks, 4);
+                    let _ = writeln!(master_pages, "   </style:{tag}>");
+                }
+            }
         }
+        master_pages.push_str("  </style:master-page>\n");
     }
 
     let mut out = String::new();
@@ -120,16 +199,15 @@ pub fn write(input: Input, report: &mut Report) -> String {
     w.outline_style(&mut out);
     out.push_str(" </office:styles>\n");
     out.push_str(" <office:automatic-styles>\n");
-    w.page_layout(&mut out, &page);
+    for (index, &k) in masters.iter().enumerate() {
+        let section = input.sections.get(k).cloned().unwrap_or_default();
+        let page = input.pages.get(k).cloned().unwrap_or_default();
+        w.page_layout(&mut out, &section, &page, index + 1);
+    }
     w.automatic_styles(&mut out);
     out.push_str(" </office:automatic-styles>\n");
     out.push_str(" <office:master-styles>\n");
-    let _ = writeln!(
-        out,
-        "  <style:master-page style:name=\"Standard\" style:page-layout-name=\"pm1\">"
-    );
-    out.push_str(&master);
-    out.push_str("  </style:master-page>\n");
+    out.push_str(&master_pages);
     out.push_str(" </office:master-styles>\n");
     out.push_str(" <office:body>\n  <office:text>\n");
     out.push_str(&body);
@@ -141,39 +219,70 @@ const PROLOG: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
 "#;
 
+/// The `n`th master page's name: `Standard` first, as every ODF producer names the default one.
+fn master_name(n: usize) -> String {
+    match n {
+        0 => "Standard".to_owned(),
+        n => format!("Section{}", n + 1),
+    }
+}
+
 /// Mark every block that begins a section starting on a new page — and drop the empty
 /// paragraph that does nothing but close a section continuing on the same page, as the oracle
 /// does (`doc/docx-format.md` §5.3): in Word it is where the section break is drawn, and in a
 /// document with one page layout it is an empty line that was never text.
-fn section_starts(blocks: &[Block], sections: &[Section]) -> Vec<Block> {
+///
+/// And the first block of a section whose master page differs from the one before it names its
+/// own (`Para::master_page`), which is how ODF starts a page on a different page style.
+fn section_starts(blocks: &[Block], sections: &[Section], masters: &[String]) -> Vec<Block> {
     let mut out: Vec<Block> = Vec::with_capacity(blocks.len());
     let mut ended = 0;
     let mut pending = false;
     let last = blocks.len().saturating_sub(1);
     // Whether nothing has been read of the current section before this block.
     let mut fresh = true;
+    // The master page a block starting a section has to name, until one has named it.
+    let mut new_master: Option<String> = None;
     for (i, block) in blocks.iter().enumerate() {
         let mut block = block.clone();
         let section_is_empty = std::mem::replace(&mut fresh, false);
         match &mut block {
             Block::Para(p) => {
                 p.page_break_before |= std::mem::take(&mut pending);
+                if p.master_page.is_none() {
+                    p.master_page = new_master.take();
+                }
                 if p.facts.section.is_some() {
                     fresh = true;
                     ended += 1;
                     pending = sections.get(ended).is_some_and(Section::starts_a_page);
+                    if let (Some(now), Some(next)) = (masters.get(ended - 1), masters.get(ended))
+                        && now != next
+                    {
+                        new_master = Some(next.clone());
+                    }
                     // Only before a section that continues on the same page: before one that
                     // starts a new page the oracle keeps the paragraph, on the page it ends.
                     // And only when it is not the whole of its section, which would leave the
                     // section with nothing in it — the oracle keeps that one too.
-                    if i < last && p.inlines.is_empty() && !pending && !section_is_empty {
+                    if i < last
+                        && p.inlines.is_empty()
+                        && !pending
+                        && !section_is_empty
+                        && new_master.is_none()
+                    {
                         // A page it was itself to start passes on to what follows.
                         pending |= p.page_break_before;
                         continue;
                     }
                 }
             }
-            Block::Table(t) => t.page_break_before |= std::mem::take(&mut pending),
+            Block::Table(t) => {
+                t.page_break_before |= std::mem::take(&mut pending);
+                if t.master_page.is_none() {
+                    t.master_page = new_master.take();
+                }
+            }
         }
         out.push(block);
     }
@@ -184,7 +293,8 @@ struct Writer<'i, 'r> {
     input: &'i Input<'i>,
     report: &'r mut Report,
     /// Automatic paragraph styles: (parent, properties) → name.
-    paragraph_styles: BTreeMap<(Option<String>, ParaProps), String>,
+    /// Automatic paragraph styles: (parent, properties, master page) → name.
+    paragraph_styles: BTreeMap<(Option<String>, ParaProps, Option<String>), String>,
     text_styles: BTreeMap<(Option<String>, Props), String>,
     /// numId → list style name.
     list_styles: BTreeMap<i64, String>,
@@ -438,10 +548,10 @@ impl Writer<'_, '_> {
             let indent = self.left_indent(style_id.as_deref(), &direct);
             direct.tabs = Some(shift_tabs(tabs, indent));
         }
-        let style = if direct.is_empty() {
+        let style = if direct.is_empty() && para.master_page.is_none() {
             named
         } else {
-            Some(self.paragraph_style(named, direct))
+            Some(self.paragraph_style(named, direct, para.master_page.clone()))
         };
         let (tag, level) = match self.outline(para) {
             Some(level) => {
@@ -485,10 +595,15 @@ impl Writer<'_, '_> {
             .map_or(0, |pt| (pt * 20.0).round() as i64)
     }
 
-    fn paragraph_style(&mut self, parent: Option<String>, props: ParaProps) -> String {
+    fn paragraph_style(
+        &mut self,
+        parent: Option<String>,
+        props: ParaProps,
+        master: Option<String>,
+    ) -> String {
         let next = self.paragraph_styles.len() + 1;
         self.paragraph_styles
-            .entry((parent, props))
+            .entry((parent, props, master))
             .or_insert_with(|| format!("P{next}"))
             .clone()
     }
@@ -773,9 +888,14 @@ impl Writer<'_, '_> {
             table_props.set("fo:break-before", "page");
         }
         table_props.set("table:border-model", "collapsing");
+        let master = table
+            .master_page
+            .as_deref()
+            .map(|m| format!(" style:master-page-name=\"{}\"", esc(m)))
+            .unwrap_or_default();
         let _ = writeln!(
             styles,
-            "  <style:style style:name=\"{name}\" style:family=\"table\"><style:table-properties{}/></style:style>",
+            "  <style:style style:name=\"{name}\" style:family=\"table\"{master}><style:table-properties{}/></style:style>",
             table_props.attributes()
         );
         for (i, w) in table.grid.iter().enumerate() {
@@ -1030,7 +1150,7 @@ impl Writer<'_, '_> {
         }
     }
 
-    fn page_layout(&self, out: &mut String, s: &Section) {
+    fn page_layout(&self, out: &mut String, s: &Section, page: &Page, number: usize) {
         // Word's own default page when a document states none: US Letter, one-inch margins
         // (§17.6.13's and §17.6.11's absent-element behaviour is Word's application default —
         // `doc/docx-format.md` §5.1).
@@ -1040,8 +1160,10 @@ impl Writer<'_, '_> {
         let bottom = s.bottom.unwrap_or(1440).abs();
         let left = s.left.unwrap_or(1440) + s.gutter.unwrap_or(0);
         let right = s.right.unwrap_or(1440);
-        let has_header = self.input.header.is_some() || self.input.header_first.is_some();
-        let has_footer = self.input.footer.is_some() || self.input.footer_first.is_some();
+        let has_header =
+            page.header.is_some() || page.header_first.is_some() || page.header_even.is_some();
+        let has_footer =
+            page.footer.is_some() || page.footer_first.is_some() || page.footer_even.is_some();
         // With a header, ODF's page margin runs to the *header*, and the header's own height
         // takes up the rest of the way to the body — Word's `w:header` is that first distance
         // and `w:top` the whole of it (`doc/docx-format.md` §5.2).
@@ -1066,7 +1188,7 @@ impl Writer<'_, '_> {
         p.set("fo:margin-right", props::twips(right));
         let _ = writeln!(
             out,
-            "  <style:page-layout style:name=\"pm1\"><style:page-layout-properties{}/>",
+            "  <style:page-layout style:name=\"pm{number}\"><style:page-layout-properties{}/>",
             p.attributes()
         );
         if has_header {
@@ -1087,13 +1209,16 @@ impl Writer<'_, '_> {
     }
 
     fn automatic_styles(&mut self, out: &mut String) {
-        for ((parent, props), name) in by_name(&self.paragraph_styles) {
+        for ((parent, props, master), name) in by_name(&self.paragraph_styles) {
             let _ = write!(
                 out,
                 "  <style:style style:name=\"{name}\" style:family=\"paragraph\""
             );
             if let Some(parent) = parent {
                 let _ = write!(out, " style:parent-style-name=\"{}\"", esc(parent));
+            }
+            if let Some(master) = master {
+                let _ = write!(out, " style:master-page-name=\"{}\"", esc(master));
             }
             out.push_str(">\n");
             write_props(out, props, "   ");
