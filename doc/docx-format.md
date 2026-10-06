@@ -134,6 +134,13 @@ this filter splits the paragraph at the break.
 the mark itself — a `w:sym` there — and takes **no number**: the next ordinary footnote is 1.
 The custom mark becomes the citation (`text:note-citation text:label`).
 
+### 2.6 A document ends in a paragraph — `MEASURED`
+
+The oracle, reading this filter's ODF of `ooxmlimport/data/table_width.docx` (whose body ends in
+a table) and of `math-malformed_xml.docx` (whose body, after the damage, holds nothing), adds an
+empty paragraph at the end of each; Word, for its part, never ends a document in a table. This
+filter writes that paragraph itself, so the document the oracle reads back is the one written.
+
 ---
 
 ## 3. Paragraphs and styles

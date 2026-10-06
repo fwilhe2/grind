@@ -126,6 +126,13 @@ pub fn write(input: Input, report: &mut Report) -> String {
     let blocks = section_starts(&input.body, &input.sections, &master_of);
     w.outline_list = w.find_outline_list(&blocks);
     w.blocks(&mut body, &blocks, 3);
+    // A document ends in a paragraph: Word always has one after a table, the oracle adds one
+    // to a body that ends in a table or holds nothing (`doc/docx-format.md` §2.6), and a body
+    // with no block at all is a document with nowhere for a caret to be.
+    if matches!(blocks.last(), None | Some(Block::Table(_))) {
+        body.push_str("   <text:p/>\n");
+        w.report.paragraphs += 1;
+    }
     w.report.styles = input
         .styles
         .by_id
