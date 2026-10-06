@@ -269,6 +269,8 @@ pub struct Column<'a> {
     pub breaks: &'a HashMap<usize, grind_text::page::Breaks>,
     /// Each block's first-line indent in points, where its paragraph style states one.
     pub indents: &'a HashMap<usize, f32>,
+    /// Each block's tab stops in points, where its paragraph style places any.
+    pub tabs: &'a HashMap<usize, grind_core::layout::Tabs>,
     /// Each table's look, by name ([`grind_text::table_look`]).
     pub looks: &'a HashMap<String, TableLook>,
     /// The text area's width, in points.
@@ -308,6 +310,10 @@ impl grind_text::Faces for Column<'_> {
 
     fn first_indent(&self, index: usize) -> f32 {
         self.indents.get(&index).copied().unwrap_or(0.0)
+    }
+
+    fn tabs(&self, index: usize) -> grind_core::layout::Tabs {
+        self.tabs.get(&index).cloned().unwrap_or_default()
     }
 
     fn columns(&self, table: &str) -> Option<Vec<Option<f64>>> {
@@ -429,9 +435,11 @@ mod tests {
         let spacing = HashMap::new();
         let breaks = HashMap::new();
         let indents = HashMap::new();
+        let tabs = HashMap::new();
         let looks = HashMap::new();
         let column = Column {
             indents: &indents,
+            tabs: &tabs,
             looks: &looks,
             faces: &faces,
             blocks: &blocks,

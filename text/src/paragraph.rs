@@ -40,6 +40,11 @@ pub struct ParagraphProps {
     pub keep_with_next: Option<String>,
     pub widows: Option<String>,
     pub orphans: Option<String>,
+    /// `style:tab-stop-distance` — the interval between the default tab stops.
+    pub tab_stop_distance: Option<String>,
+    /// `style:tab-stops` — the paragraph's own stops, in order. A style that states its own
+    /// replaces its parent's whole, as a set rather than stop by stop.
+    pub tab_stops: Option<Vec<TabStop>>,
     // `style:text-properties` — the four that change how wide text is
     pub font_family: Option<String>,
     pub font_size: Option<String>,
@@ -83,7 +88,65 @@ impl ParagraphProps {
                 mine.clone_from(theirs);
             }
         }
+        if over.tab_stop_distance.is_some() {
+            self.tab_stop_distance.clone_from(&over.tab_stop_distance);
+        }
+        if over.tab_stops.is_some() {
+            self.tab_stops.clone_from(&over.tab_stops);
+        }
         self.font_size = size;
+    }
+}
+
+/// One `style:tab-stop` (rng:13905), its attributes verbatim.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TabStop {
+    /// `style:position` — a length from the paragraph's left edge.
+    pub position: String,
+    /// `style:type` — `left` (the default), `center`, `right` or `char`.
+    pub kind: Option<String>,
+    /// `style:char` — the character a `char` stop lines up, `.` when unstated.
+    pub char: Option<String>,
+}
+
+impl ParagraphProps {
+    /// Where this paragraph's tabs go, in points (`doc/odt-format.md` §5c fact 13): its own
+    /// stops, then the default interval. A stop or interval this cannot read is left out.
+    pub fn tabs(&self) -> grind_core::layout::Tabs {
+        use grind_core::layout::{TabAlign, Tabs};
+        let points = |length: &str| length_mm(length).map(|mm| (mm * 72.0 / 25.4) as f32);
+        let mut stops: Vec<grind_core::layout::TabStop> = self
+            .tab_stops
+            .iter()
+            .flatten()
+            .filter_map(|stop| {
+                let align = match stop.kind.as_deref() {
+                    Some("right") => TabAlign::Right,
+                    Some("center") => TabAlign::Center,
+                    Some("char") => TabAlign::Decimal(
+                        stop.char
+                            .as_deref()
+                            .and_then(|c| c.chars().next())
+                            .unwrap_or('.'),
+                    ),
+                    _ => TabAlign::Left,
+                };
+                Some(grind_core::layout::TabStop {
+                    position: points(&stop.position)?,
+                    align,
+                })
+            })
+            .collect();
+        stops.sort_by(|a, b| a.position.total_cmp(&b.position));
+        Tabs {
+            stops,
+            interval: self
+                .tab_stop_distance
+                .as_deref()
+                .and_then(points)
+                .filter(|p| *p > 0.0)
+                .unwrap_or(0.0),
+        }
     }
 }
 

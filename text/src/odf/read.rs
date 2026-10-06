@@ -106,6 +106,8 @@ pub struct Builder {
     /// to its part, so `styles.xml`'s are forgotten before `content.xml` is read, as
     /// [`Builder::styles`]' are.
     paragraph_styles: HashMap<String, (bool, crate::paragraph::ParagraphStyle)>,
+    /// The `style:tab-stops` of the paragraph style being read ([`TabStopsDef`]).
+    tab_stops: Option<Vec<crate::paragraph::TabStop>>,
     /// Every `style:master-page` read so far: its name and the page layout it names, in
     /// document order, so "the first one" means what the file said first.
     master_pages: Vec<(String, String)>,
@@ -222,6 +224,7 @@ impl Builder {
             package: None,
             page_layouts: HashMap::new(),
             paragraph_styles: HashMap::new(),
+            tab_stops: None,
             master_pages: Vec::new(),
             master_marginals: HashMap::new(),
             layout_marginals: HashMap::new(),
@@ -947,6 +950,8 @@ impl Context<Builder> for ParagraphStyleDef {
             props.keep_with_next = get("keep-with-next");
             props.widows = get("widows");
             props.orphans = get("orphans");
+            props.tab_stop_distance = attrs.get(Ns::Style, "tab-stop-distance").map(str::to_owned);
+            return Some(Box::new(TabStopsDef));
         } else if name.is(Ns::Style, "text-properties") {
             // The family the way a run's is read: the font-face indirection first, resolved to
             // the family it stands for, and the XSL-FO quoting taken off.
@@ -963,7 +968,8 @@ impl Context<Builder> for ParagraphStyleDef {
     }
 
     fn end(&mut self, b: &mut Builder) {
-        let props = std::mem::take(&mut self.props);
+        let mut props = std::mem::take(&mut self.props);
+        props.tab_stops = b.tab_stops.take();
         match &self.target {
             ParagraphTarget::Default => *b.doc.default_paragraph = props,
             ParagraphTarget::Named {
@@ -980,6 +986,32 @@ impl Context<Builder> for ParagraphStyleDef {
                 }
             }
         }
+    }
+}
+
+/// A paragraph style's `style:paragraph-properties`, for its one child read: `style:tab-stops`,
+/// whose stops are handed to the style through [`Builder::tab_stops`] — a child has no channel
+/// back to its parent.
+struct TabStopsDef;
+
+impl Context<Builder> for TabStopsDef {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Style, "tab-stops") {
+            b.tab_stops = Some(Vec::new());
+            return Some(Box::new(TabStopsDef));
+        }
+        if name.is(Ns::Style, "tab-stop")
+            && let (Some(stops), Some(position)) =
+                (b.tab_stops.as_mut(), attrs.get(Ns::Style, "position"))
+            && stops.len() < MAX_STYLES
+        {
+            stops.push(crate::paragraph::TabStop {
+                position: position.to_owned(),
+                kind: attrs.get(Ns::Style, "type").map(str::to_owned),
+                char: attrs.get(Ns::Style, "char").map(str::to_owned),
+            });
+        }
+        None
     }
 }
 

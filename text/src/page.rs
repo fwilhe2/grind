@@ -277,8 +277,13 @@ fn units(
             return whole;
         }
         let (width, metrics) = faces.of(slot.index, &view.kind, view.style.as_deref());
-        match app.layout_block_indented(slot.index, width, metrics, faces.first_indent(slot.index))
-        {
+        match app.layout_block_tabbed(
+            slot.index,
+            width,
+            metrics,
+            faces.first_indent(slot.index),
+            &faces.tabs(slot.index),
+        ) {
             Ok(layout) if !layout.lines().is_empty() => layout
                 .lines()
                 .iter()

@@ -75,8 +75,18 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
             (first != 0.0).then_some((view.index, first as f32))
         })
         .collect();
+    // Every paragraph's tab stops — its own and the default interval — in points.
+    let tabs: std::collections::HashMap<usize, grind_core::layout::Tabs> = viewport
+        .iter()
+        .filter(|view| view.text.contains('\t'))
+        .filter_map(|view| {
+            let tabs = app.paragraph(view.index)?.props.tabs();
+            (!tabs.is_empty()).then_some((view.index, tabs))
+        })
+        .collect();
     let column = Column {
         indents: &indents,
+        tabs: &tabs,
         looks: &looks,
         faces: &faces,
         blocks: &blocks,
@@ -149,7 +159,8 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 }
                 let face = column.face(view.index, &view.kind, view.style.as_deref());
                 let first = grind_text::Faces::first_indent(&column, view.index);
-                let drawn = lines(&mut ops, app, view, piece, face, first, origin);
+                let tabs = grind_text::Faces::tabs(&column, view.index);
+                let drawn = lines(&mut ops, app, view, piece, face, (first, &tabs), origin);
                 if let (Some((from, to)), false) = (drawn, piece.repeat) {
                     cover(caret(piece.index, from), caret(piece.index, to));
                 }
@@ -380,11 +391,11 @@ fn lines(
     view: &BlockView,
     piece: &Piece,
     face: &RoleFace<'_>,
-    first: f32,
+    (first, tabs): (f32, &grind_core::layout::Tabs),
     (left, top): (f64, f64),
 ) -> Option<(usize, usize)> {
     let layout = app
-        .layout_block_indented(view.index, piece.width as f32, face, first)
+        .layout_block_tabbed(view.index, piece.width as f32, face, first, tabs)
         .ok()?;
     let first = layout.lines().get(piece.lines.start)?;
     let last = layout.lines().get(piece.lines.end.checked_sub(1)?)?;
@@ -533,11 +544,10 @@ fn lines(
 
 /// A header or footer laid out once for every page: each paragraph in the face and alignment its
 /// own paragraph style gives it, the height it takes, and the space between it and the body.
-///
-/// ponytail: a tab is drawn as a space, where Writer's `Header` and `Footer` styles put tab stops
-/// at the centre and the right edge — tab stops are not read anywhere yet.
+/// Its tabs go to the stops its paragraph style sets, which in Writer's own `Header` and `Footer`
+/// styles are the centre and the right edge.
 struct Marginal<'a> {
-    paragraphs: Vec<(grind_text::marginal::Paragraph, RoleFace<'a>, Align, Rgb)>,
+    paragraphs: Vec<MarginalParagraph<'a>>,
     width: f64,
     /// The header's own height, its content's or its `fo:min-height`, in points.
     height: f64,
@@ -563,6 +573,7 @@ impl<'a> Marginal<'a> {
                     .as_deref()
                     .and_then(Rgb::parse)
                     .unwrap_or(Rgb::BLACK);
+                let tabs = props.tabs();
                 let stated = TextStyle {
                     font_family: props.font_family,
                     font_size: props.font_size,
@@ -570,7 +581,7 @@ impl<'a> Marginal<'a> {
                     font_style: props.font_style,
                 };
                 let face = RoleFace::stating(setter, grind_text::look::Role::Body, stated);
-                (paragraph.clone(), face, align, ink)
+                (paragraph.clone(), face, align, ink, tabs)
             })
             .collect();
         let mut out = Marginal {
@@ -583,21 +594,30 @@ impl<'a> Marginal<'a> {
         let content: f64 = out
             .paragraphs
             .iter()
-            .map(|(paragraph, face, ..)| f64::from(out.wrap(&paragraph.text(1, 1), face).height()))
+            .map(|(paragraph, face, _, _, tabs)| {
+                f64::from(out.wrap(&paragraph.text(1, 1), face, tabs).height())
+            })
             .sum();
         out.height = content.max(pt(marginal.min_height));
         out
     }
 
-    fn wrap(&self, text: &str, face: &RoleFace<'_>) -> grind_core::layout::Layout {
+    fn wrap(
+        &self,
+        text: &str,
+        face: &RoleFace<'_>,
+        tabs: &grind_core::layout::Tabs,
+    ) -> grind_core::layout::Layout {
         let style = TextStyle::default();
-        wrap(
+        grind_core::layout::wrap_tabbed(
             &[Fragment {
                 text,
                 style: &style,
             }],
             self.width as f32,
             face,
+            0.0,
+            tabs,
         )
     }
 
@@ -605,36 +625,59 @@ impl<'a> Marginal<'a> {
     /// PDF: a header repeats on every page and is no part of the reading order.
     fn draw(&self, ops: &mut Vec<Op>, (left, top): (f64, f64), page: usize, pages: usize) {
         let mut y = top as f32;
-        for (paragraph, face, align, ink) in &self.paragraphs {
-            let text = paragraph.text(page, pages).replace('\t', " ");
-            let layout = self.wrap(&text, face);
+        for (paragraph, face, align, ink, tabs) in &self.paragraphs {
+            let text = paragraph.text(page, pages);
+            let layout = self.wrap(&text, face, tabs);
             let chars: Vec<char> = text.chars().collect();
             let style = face.style(&TextStyle::default());
             let setter = face.setter();
             for line in layout.lines() {
-                let piece: String = chars[line.start..line.end].iter().collect();
-                let piece = piece.trim_end_matches('\n').trim_end();
-                if piece.is_empty() {
-                    continue;
-                }
-                let shaped = setter.shape(piece, &style);
-                let content: f32 = shaped.glyphs.iter().map(|g| g.x_advance).sum();
+                let visible_end = (line.start..line.end)
+                    .rev()
+                    .find(|&i| !chars[i].is_whitespace())
+                    .map_or(line.start, |i| i + 1);
+                let content = match visible_end == line.end {
+                    true => line.width,
+                    false => layout.x_at(visible_end),
+                };
                 let fit = align::fit(*align, self.width as f32, content, 0, true);
-                ops.push(Op::Text {
-                    x: left as f32 + fit.offset,
-                    y: y + line.top + layout.baseline(),
-                    face: shaped.face,
-                    size: shaped.size,
-                    glyphs: shaped.glyphs,
-                    text: piece.to_owned(),
-                    color: *ink,
-                    mark: Mark::Decoration,
-                });
+                // Each stretch between tabs is drawn where the layout put it: a footer's
+                // `Seite 1 / 2` at the right-hand stop Writer's `Footer` style sets.
+                let mut from = line.start;
+                for at in line.start..=visible_end {
+                    if at < visible_end && chars[at] != '\t' && chars[at] != '\n' {
+                        continue;
+                    }
+                    let piece: String = chars[from..at].iter().collect();
+                    if !piece.trim().is_empty() {
+                        let shaped = setter.shape(&piece, &style);
+                        ops.push(Op::Text {
+                            x: left as f32 + fit.offset + layout.x_at(from),
+                            y: y + line.top + layout.baseline(),
+                            face: shaped.face,
+                            size: shaped.size,
+                            glyphs: shaped.glyphs,
+                            text: piece,
+                            color: *ink,
+                            mark: Mark::Decoration,
+                        });
+                    }
+                    from = at + 1;
+                }
             }
             y += layout.height();
         }
     }
 }
+
+/// One header or footer paragraph, with the face, alignment, ink and tab stops its style gives it.
+type MarginalParagraph<'a> = (
+    grind_text::marginal::Paragraph,
+    RoleFace<'a>,
+    Align,
+    Rgb,
+    grind_core::layout::Tabs,
+);
 
 /// A picture block on paper: the picture at the size the document gives it, fitted to the
 /// measure, and its caption's lines under it.
@@ -1243,6 +1286,56 @@ mod tests {
             right <= (595.2756 - 56.6929 - 3.0 * cm) as f32 + 0.01,
             "{right}"
         );
+    }
+
+    /// `doc/odt-format.md` §5c fact 13, measured against LibreOffice 26.8: a tab goes to the
+    /// paragraph's own stop, else the next whole `style:tab-stop-distance` — from its left
+    /// margin, not the page's — and a right stop ends its text there. A header gets the same.
+    #[test]
+    fn tabs_go_to_the_stops_the_paragraph_style_sets() {
+        let bytes = r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:styles>
+              <style:default-style style:family="paragraph"><style:paragraph-properties style:tab-stop-distance="1.25cm"/></style:default-style>
+              <style:style style:name="Standard" style:family="paragraph"/>
+              <style:style style:name="Stops" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties><style:tab-stops><style:tab-stop style:position="5cm"/><style:tab-stop style:position="17cm" style:type="right"/></style:tab-stops></style:paragraph-properties></style:style>
+              <style:style style:name="Indented" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:margin-left="2cm"/></style:style>
+            </office:styles>
+            <office:automatic-styles><style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/></style:page-layout></office:automatic-styles>
+            <office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1"><style:footer><text:p text:style-name="Stops">left<text:tab/><text:tab/>Page <text:page-number/></text:p></style:footer></style:master-page></office:master-styles>
+            <office:body><office:text>
+              <text:p text:style-name="Standard">Longer label<text:tab/>X</text:p>
+              <text:p text:style-name="Stops">Name:<text:tab/>Value<text:tab/>Right</text:p>
+              <text:p text:style-name="Indented">I<text:tab/>J</text:p>
+            </office:text></office:body></office:document>"#;
+        let app = App::new();
+        app.open_bytes("t.fodt", bytes.as_bytes()).unwrap();
+        let page = &typeset(&app, &setter(), &Options::default()).pages[0];
+        let cm = (72.0 / 2.54) as f32;
+        let margin = 2.0 * cm;
+        let start = |want: &str| {
+            texts(page)
+                .into_iter()
+                .find(|t| t.2 == want)
+                .unwrap_or_else(|| panic!("{want} is drawn"))
+                .0
+        };
+        let end = |want: &str| {
+            page.ops
+                .iter()
+                .find_map(|op| match op {
+                    Op::Text {
+                        x, glyphs, text, ..
+                    } if text == want => Some(x + glyphs.iter().map(|g| g.x_advance).sum::<f32>()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("{want} is drawn"))
+        };
+        let near = |got: f32, want: f32| assert!((got - want).abs() < 0.05, "{got} vs {want}");
+        near(start("X"), margin + 2.0 * 1.25 * cm);
+        near(start("Value"), margin + 5.0 * cm);
+        near(end("Right"), margin + 17.0 * cm);
+        near(start("J"), 2.0 * margin + 1.25 * cm);
+        near(end("Page 1"), margin + 17.0 * cm);
     }
 
     /// A style's `fo:break-before="page"` starts its paragraph on a page of its own.

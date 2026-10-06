@@ -651,6 +651,19 @@ oracle turned out to be unable to answer the font questions (fact 4).
 12. **An unstyled hyperlink** — a `text:a` naming no character style — is drawn navy and
    underlined (26.8.1.1, observed in its rendering of a generated sample: the colour of
    Writer's own *Internet Link* style, which it applies to a link nothing else styles).
+13. **Tabs** — `MEASURED` (2026-10-06, 26.8.1.1, a generated sample converted to PDF and read
+   back with `pdftotext -bbox`). A tab goes to the first of the paragraph's own `style:tab-stop`s
+   past the text before it — `Name:` and its tab reach a 5 cm stop, not the 1.25 cm default
+   before it — and past the last of them to the next whole `style:tab-stop-distance` (on the
+   default paragraph style). Both are measured **from the paragraph's left margin**: with
+   `fo:margin-left="2cm"` the first default stop is at 3.25 cm from the page's text edge. A
+   `style:type="right"` stop at 17 cm ends the text after the tab at 17 cm. A tab with no stop
+   left on its line costs nothing there and the text after it starts the next line. A child
+   style's `style:tab-stops` is taken as the whole set (rng:13896's element is one list).
+14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
+   Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
+   `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on
+   the line, past the margin, rather than taking `bbbbb` down with it.
 7. **The pinned image has no Liberation fonts.** The same document set in Liberation Serif
    comes out in **DejaVu Serif** from the pin (`pdffonts`), so line breaks and page breaks
    measured there are DejaVu's. Loop G cannot use the pin as it stands; it needs the bundled

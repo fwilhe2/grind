@@ -436,6 +436,13 @@ pub trait Faces {
         0.0
     }
 
+    /// Where the block at `index`'s tab characters go, in the face's unit (`style:tab-stops`,
+    /// `doc/odt-format.md` §5c fact 13). No stops, the default, leaves a tab as wide as the
+    /// face's own metrics make it — what every screen draws.
+    fn tabs(&self, _index: usize) -> layout::Tabs {
+        layout::Tabs::default()
+    }
+
     /// The table named `table`'s own column widths, one per column in the face's unit, `None`
     /// for a column that states none. `None` altogether, the default, is equal shares — what
     /// every screen draws, since no screen reads a table's look yet.
@@ -923,6 +930,18 @@ impl App {
         metrics: &dyn Metrics,
         first: f32,
     ) -> Result<Layout> {
+        self.layout_block_tabbed(index, width, metrics, first, &layout::Tabs::default())
+    }
+
+    /// [`App::layout_block_indented`] with every tab advanced to its stop ([`Faces::tabs`]).
+    pub fn layout_block_tabbed(
+        &self,
+        index: usize,
+        width: f32,
+        metrics: &dyn Metrics,
+        first: f32,
+        tabs: &layout::Tabs,
+    ) -> Result<Layout> {
         let state = self.state.read().unwrap();
         let block = state
             .doc
@@ -933,6 +952,7 @@ impl App {
             width,
             metrics,
             first,
+            tabs,
             &state.doc.char_styles,
         ))
     }
@@ -2002,7 +2022,7 @@ fn set_out(block: &Block, index: usize, faces: &dyn Faces, named: &Named) -> Lay
 type Named = std::collections::HashMap<String, paragraph::NamedChar>;
 
 fn lay_out(block: &Block, width: f32, metrics: &dyn Metrics, named: &Named) -> Layout {
-    lay_out_indented(block, width, metrics, 0.0, named)
+    lay_out_indented(block, width, metrics, 0.0, &layout::Tabs::default(), named)
 }
 
 fn lay_out_indented(
@@ -2010,6 +2030,7 @@ fn lay_out_indented(
     width: f32,
     metrics: &dyn Metrics,
     first: f32,
+    tabs: &layout::Tabs,
     named: &Named,
 ) -> Layout {
     let default = grind_core::style::TextStyle::default();
@@ -2045,7 +2066,7 @@ fn lay_out_indented(
             style: &default,
         });
     }
-    layout::wrap_indented(&fragments, width, metrics, first)
+    layout::wrap_tabbed(&fragments, width, metrics, first, tabs)
 }
 
 /// The formatting of every run that `start..end` touches, in order.

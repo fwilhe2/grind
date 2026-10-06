@@ -292,6 +292,74 @@ pub fn wrap_indented(
     metrics: &dyn Metrics,
     first: f32,
 ) -> Layout {
+    wrap_tabbed(fragments, width, metrics, first, &Tabs::default())
+}
+
+/// How a tab character's text lines up against its stop (`style:type`, rng:13921).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TabAlign {
+    /// The text after the tab starts at the stop.
+    Left,
+    /// It ends at the stop.
+    Right,
+    /// It is centred on the stop.
+    Center,
+    /// Its first occurrence of this character sits at the stop — a column of figures.
+    Decimal(char),
+}
+
+/// One tab stop: where, in the caller's unit from the paragraph's left edge, and how text meets it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TabStop {
+    pub position: f32,
+    pub align: TabAlign,
+}
+
+/// Where a paragraph's tabs go (`doc/odt-format.md` §5c, fact 13): its own stops in order, then a
+/// stop every `interval` past the last of them — `style:tab-stop-distance`, measured from the
+/// paragraph's left edge as the explicit stops are. The default, no stops and no interval, leaves
+/// a tab as wide as the provider says it is, which is what every screen draws.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Tabs {
+    pub stops: Vec<TabStop>,
+    pub interval: f32,
+}
+
+impl Tabs {
+    /// Whether this places a tab at all, rather than leaving it the provider's width.
+    pub fn is_empty(&self) -> bool {
+        self.stops.is_empty() && self.interval <= 0.0
+    }
+
+    /// The first stop past `x`: one of the paragraph's own, else the next whole interval past
+    /// both `x` and the last of its own. `None` when there is neither.
+    pub fn next(&self, x: f32) -> Option<TabStop> {
+        const EPS: f32 = 1e-3;
+        if let Some(stop) = self.stops.iter().find(|stop| stop.position > x + EPS) {
+            return Some(*stop);
+        }
+        if self.interval <= 0.0 {
+            return None;
+        }
+        let from = self.stops.last().map_or(x, |stop| stop.position.max(x));
+        let n = ((from + EPS) / self.interval).floor() + 1.0;
+        Some(TabStop {
+            position: n * self.interval,
+            align: TabAlign::Left,
+        })
+    }
+}
+
+/// [`wrap_indented`], with every tab character advanced to the stop `tabs` gives it on its own
+/// line — which depends on where the line starts, so tabs are placed *while* breaking rather than
+/// measured once beforehand.
+pub fn wrap_tabbed(
+    fragments: &[Fragment<'_>],
+    width: f32,
+    metrics: &dyn Metrics,
+    first: f32,
+    tabs: &Tabs,
+) -> Layout {
     // One `advances` call per fragment, concatenated into a single cumulative array over the
     // whole text. `xs[i]` is the x of caret offset `i`, before any line breaking.
     let mut xs = Vec::with_capacity(64);
@@ -344,10 +412,86 @@ pub fn wrap_indented(
         *top += height;
     };
 
-    // The first line has the indent less room; every other line the whole width.
+    // The characters, and each one's own advance, for placing tabs — only when there is a tab
+    // to place, so a paragraph without one is measured exactly as it always was.
+    let chars: Vec<char> = text.chars().collect();
+    let text_chars = &chars;
+    let tabbed = !tabs.is_empty() && chars.contains(&'\t');
+    let advance: Vec<f32> = match tabbed {
+        true => xs.windows(2).map(|pair| pair[1] - pair[0]).collect(),
+        false => Vec::new(),
+    };
+    // The cumulative x of each character from `start` to `end`, on a line that begins `origin`
+    // in from the paragraph's left edge, with every tab on it at its stop.
+    //
+    // A tab whose stop is past the end of the line costs nothing there: the text after it
+    // breaks onto the next line rather than taking the text before the tab with it.
+    let place = |start: usize, end: usize, origin: f32, out: &mut Vec<f32>| {
+        let room = if width > 0.0 {
+            width - origin
+        } else {
+            f32::INFINITY
+        };
+        out.clear();
+        out.push(0.0);
+        let mut x = 0.0_f32;
+        for i in start..end {
+            let step = match chars[i] {
+                '\t' => match tabs.next(origin + x) {
+                    None => advance[i],
+                    Some(stop) if stop.position - origin > room + 1e-3 => 0.0,
+                    Some(stop) => {
+                        // What lines up against the stop: the text after the tab, to the next
+                        // tab or the line's end, trailing spaces aside — or to the decimal sign.
+                        let mut run = 0.0_f32;
+                        let mut visible = 0.0_f32;
+                        for j in i + 1..end {
+                            match (chars[j], stop.align) {
+                                ('\t', _) => break,
+                                (c, TabAlign::Decimal(sign)) if c == sign => break,
+                                _ => {}
+                            }
+                            run += advance[j];
+                            if !chars[j].is_whitespace() {
+                                visible = run;
+                            }
+                        }
+                        let lead = match stop.align {
+                            TabAlign::Left => 0.0,
+                            TabAlign::Center => visible / 2.0,
+                            TabAlign::Right | TabAlign::Decimal(_) => visible,
+                        };
+                        (stop.position - origin - lead - x).max(0.0)
+                    }
+                },
+                _ => advance[i],
+            };
+            x += step;
+            out.push(x);
+        }
+    };
+    let scratch = std::cell::RefCell::new(Vec::new());
+    let span = |from: usize, to: usize, first_line: bool| match tabbed {
+        false => xs[to] - xs[from],
+        true => {
+            let mut out = scratch.borrow_mut();
+            place(from, to, if first_line { first } else { 0.0 }, &mut out);
+            // Text right-aligned at a stop on the margin ends *at* the margin, which the
+            // arithmetic of getting there may overshoot by a rounding error.
+            out.last().copied().unwrap_or(0.0) - 1e-3
+        }
+    };
+
+    // The first line has the indent less room; every other line the whole width. The spaces a
+    // break would end the line with hang past the margin, as they do in every word processor:
+    // they are part of the line and take no room on it.
     let fits = |from: usize, to: usize, first_line: bool| {
         let room = width - if first_line { first } else { 0.0 };
-        width <= 0.0 || xs[to] - xs[from] <= room
+        let visible = (from..to)
+            .rev()
+            .find(|&i| !text_chars[i].is_whitespace())
+            .map_or(from, |i| i + 1);
+        width <= 0.0 || span(from, visible, first_line) <= room
     };
 
     for (byte, opportunity) in linebreaks(&text) {
@@ -387,6 +531,29 @@ pub fn wrap_indented(
     if start < len || lines.is_empty() {
         push(start, len, &mut top, &mut lines);
     }
+
+    // The tabs are placed line by line now the lines are known: every caret x on a line is then
+    // measured past its tabs' stops, which is what a caret, a click and the ink all read.
+    let xs = match tabbed {
+        false => xs,
+        true => {
+            let mut placed = Vec::with_capacity(xs.len());
+            placed.push(0.0);
+            let mut out = Vec::new();
+            for (i, line) in lines.iter_mut().enumerate() {
+                place(
+                    line.start,
+                    line.end,
+                    if i == 0 { first } else { 0.0 },
+                    &mut out,
+                );
+                let base = *placed.last().expect("starts with one element");
+                placed.extend(out[1..].iter().map(|x| base + x));
+                line.width = out.last().copied().unwrap_or(0.0);
+            }
+            placed
+        }
+    };
 
     Layout {
         lines,
@@ -567,10 +734,11 @@ mod tests {
     fn text_breaks_at_the_last_opportunity_that_fits() {
         let text = "the cat sat on the mat";
         let layout = at(text, 10.0);
-        // "the cat " is 8 and fits; "the cat sat" is 11 and does not.
+        // "the cat " is 8 and fits; "the cat sat" is 11 and does not. "sat on the" is 10 and
+        // fits, the space after it hanging past the margin as it does in every word processor.
         assert_eq!(
             rendered(text, &layout),
-            vec!["the cat ", "sat on ", "the mat"]
+            vec!["the cat ", "sat on the ", "mat"]
         );
         // Trailing spaces stay on the line they ended, so End puts the caret after them.
         assert_eq!(layout.lines()[0].end, 8);
@@ -718,6 +886,97 @@ mod tests {
             total,
             text.chars().count(),
             "every character is on some line"
+        );
+    }
+
+    fn tabbed(text: &str, width: f32, first: f32, tabs: &Tabs) -> Layout {
+        let style = TextStyle::default();
+        let fragments = [Fragment {
+            text,
+            style: &style,
+        }];
+        wrap_tabbed(&fragments, width, &Fixed, first, tabs)
+    }
+
+    fn stop(position: f32, align: TabAlign) -> TabStop {
+        TabStop { position, align }
+    }
+
+    /// `doc/odt-format.md` §5c fact 13: with no stops of its own a paragraph's tabs go to the
+    /// next whole interval — `A` and `Longer` reach the same column.
+    #[test]
+    fn a_tab_goes_to_the_next_interval() {
+        let tabs = Tabs {
+            stops: vec![],
+            interval: 4.0,
+        };
+        let short = tabbed("A\tB", 0.0, 0.0, &tabs);
+        assert_eq!(short.x_at(2), 4.0, "B at the first stop");
+        let long = tabbed("Longer\tB", 0.0, 0.0, &tabs);
+        assert_eq!(long.x_at(7), 8.0, "past 6, the next stop is 8");
+        let exact = tabbed("Four\tB", 0.0, 0.0, &tabs);
+        assert_eq!(exact.x_at(5), 8.0, "a stop already reached is no stop");
+    }
+
+    #[test]
+    fn a_paragraphs_own_stops_come_first_and_the_interval_after_them() {
+        let tabs = Tabs {
+            stops: vec![stop(10.0, TabAlign::Left)],
+            interval: 4.0,
+        };
+        let layout = tabbed("a\tb\tc", 0.0, 0.0, &tabs);
+        assert_eq!(layout.x_at(2), 10.0, "its own stop, not the interval's 4");
+        assert_eq!(layout.x_at(4), 12.0, "then the interval past the last stop");
+    }
+
+    #[test]
+    fn right_centre_and_decimal_stops_line_their_text_up_against_the_stop() {
+        let at = |align| Tabs {
+            stops: vec![stop(20.0, align)],
+            interval: 0.0,
+        };
+        let right = tabbed("x\tPage 3", 0.0, 0.0, &at(TabAlign::Right));
+        assert_eq!(right.x_at(2), 14.0, "six characters ending at 20");
+        assert_eq!(right.lines()[0].width, 20.0);
+        let centre = tabbed("x\tmid", 0.0, 0.0, &at(TabAlign::Center));
+        assert_eq!(centre.x_at(2), 18.5);
+        let decimal = tabbed("x\t123.45", 0.0, 0.0, &at(TabAlign::Decimal('.')));
+        assert_eq!(decimal.x_at(5), 20.0, "the point at the stop");
+    }
+
+    /// A stop is measured from the paragraph's left edge, so on a first line set in by its indent
+    /// the tab is that much shorter — and on the next line it starts from the edge again.
+    #[test]
+    fn stops_are_from_the_paragraphs_edge_on_every_line() {
+        let tabs = Tabs {
+            stops: vec![],
+            interval: 4.0,
+        };
+        let layout = tabbed("a\tb c\td", 6.0, 2.0, &tabs);
+        let lines: Vec<_> = layout.lines().iter().map(|l| (l.start, l.end)).collect();
+        assert_eq!(lines, [(0, 4), (4, 7)]);
+        assert_eq!(
+            layout.x_at(2),
+            4.0,
+            "the first line: 2 in, `a`, the tab to 4"
+        );
+        assert_eq!(layout.x_at(6), 4.0, "the second: `c` at 0, the tab to 4");
+    }
+
+    #[test]
+    fn with_no_stops_a_tab_is_as_wide_as_the_provider_says() {
+        let plain = tabbed("a\tb", 0.0, 0.0, &Tabs::default());
+        assert_eq!(plain.x_at(2), 2.0);
+        assert_eq!(
+            plain,
+            wrap(
+                &[Fragment {
+                    text: "a\tb",
+                    style: &TextStyle::default()
+                }],
+                0.0,
+                &Fixed
+            )
         );
     }
 }

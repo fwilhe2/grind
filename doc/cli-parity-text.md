@@ -187,6 +187,7 @@ had no width and therefore no lines.
 - `counts` — `grind text words` — blocks, headings, words, characters
 - `font_generics` — `grind text export-pdf`, `pages` and `preview`, which fall back to a face of the declared kind when a family is not installed; nothing prints the map on its own
 - `layout_block_indented` — `grind text export-pdf`, `pages` and `preview`, for a paragraph with a first-line indent; `grind text view --width` lays out without one, as every screen does
+- `layout_block_tabbed` — the same three, for a paragraph whose tabs go to the stops its style sets (`style:tab-stops`, `style:tab-stop-distance`); `grind text view --width` leaves a tab as wide as its metrics say, as every screen does
 - `table_look` — `grind text export-pdf`, `pages` and `preview`, which draw a table at its own column widths with its cells' fills, borders and padding and repeat its heading rows; `grind text table --show` prints its shape, not its look
 - `notes` — `grind text export-pdf` and `preview`, which set every footnote at the foot of the page its citation is on; `grind text view` shows a citation's mark in its paragraph
 - `marginals` — `grind text export-pdf` and `preview`, which draw the header and footer on every page; nothing prints them on their own

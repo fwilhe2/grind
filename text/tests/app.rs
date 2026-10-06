@@ -604,10 +604,11 @@ fn a_motion_by_line_measures_the_block_it_arrives_in() {
 fn home_and_end_are_the_visual_line_not_the_paragraph() {
     let app = app(&["the cat sat on the mat"]);
     // A caret on the middle line: Home and End must give that line's ends, not the block's.
+    // `sat on the` fills the ten exactly, its trailing space hanging past the margin.
     let at = caret(&app, "p1+11");
     let (home, end) = app.caret_line_bounds(at, &plain(10.0)).expect("bounds");
     assert_eq!(home.offset, 8);
-    assert_eq!(end.offset, 15);
+    assert_eq!(end.offset, 19);
 
     // Unwrapped, the same caret's line is the whole block — which is the same code answering a
     // different question, not a special case.
