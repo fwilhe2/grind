@@ -65,6 +65,7 @@ pub fn write(input: Input, report: &mut Report) -> String {
         cell_styles: BTreeMap::new(),
         row_styles: BTreeMap::new(),
         lists_seen: HashSet::new(),
+        outline_list: None,
         footnotes: 0,
         endnotes: 0,
         notes_written: 0,
@@ -73,6 +74,7 @@ pub fn write(input: Input, report: &mut Report) -> String {
     };
     let mut body = String::new();
     let blocks = section_starts(&input.body, &input.sections);
+    w.outline_list = w.find_outline_list(&blocks);
     w.blocks(&mut body, &blocks, 3);
     w.report.styles = input
         .styles
@@ -115,6 +117,7 @@ pub fn write(input: Input, report: &mut Report) -> String {
     out.push_str(" <office:styles>\n");
     w.default_style(&mut out);
     w.named_styles(&mut out);
+    w.outline_style(&mut out);
     out.push_str(" </office:styles>\n");
     out.push_str(" <office:automatic-styles>\n");
     w.page_layout(&mut out, &page);
@@ -189,6 +192,8 @@ struct Writer<'i, 'r> {
     tables: Vec<String>,
     cell_styles: BTreeMap<Props, String>,
     row_styles: BTreeMap<Props, String>,
+    /// The list that numbers the headings ([`Writer::find_outline_list`]).
+    outline_list: Option<i64>,
     /// The lists already opened once, by numId — a later one continues it.
     lists_seen: HashSet<i64>,
     footnotes: usize,
@@ -265,22 +270,22 @@ impl Writer<'_, '_> {
     /// with a numbering definition to show. A heading is never one: it keeps its level, and its
     /// number is counted.
     fn list_item(&mut self, para: &Para) -> Option<(i64, usize)> {
-        let style = self.style_id(para);
-        let (num, level) = para
-            .facts
-            .numbering
-            .or_else(|| style.as_deref().and_then(|s| self.styles().numbering(s)))?;
+        let (num, level) = self.numbering_of(para)?;
         let num = num?;
         if num == 0 || !self.input.numbering.lists.contains_key(&num) {
             return None;
         }
-        if self.outline(para).is_some() {
-            // A heading keeps its level and loses its number — unless the number shows
-            // nothing, which is how a document with outline numbering switched off says it.
+        if let Some(outline) = self.outline(para) {
+            // A heading keeps its level. Its number is the document's outline numbering when
+            // it is numbered by the list that numbers the headings (`outline_list`), at its own
+            // level; otherwise it is lost — unless it shows nothing anyway, which is how a
+            // document with outline numbering switched off says it.
+            let ilvl = level.unwrap_or(0).clamp(0, 8);
+            let by_outline = self.outline_list == Some(num) && ilvl == outline;
             let shown = self.input.numbering.lists[&num]
-                .level(level.unwrap_or(0).clamp(0, 8) as usize)
+                .level(ilvl as usize)
                 .is_some_and(|l| l.format != "none" && !l.text.is_empty());
-            if shown {
+            if shown && !by_outline {
                 self.report.drop_one(Dropped::HeadingNumber);
             }
             return None;
@@ -307,6 +312,96 @@ impl Writer<'_, '_> {
             .entry(num)
             .or_insert_with(|| format!("L{next}"))
             .clone()
+    }
+
+    /// A paragraph's `(numId, ilvl)`: each half its own if it states it, else its style
+    /// chain's — and a level stated nowhere is the one the list itself ties to the paragraph's
+    /// style (`w:lvl/w:pStyle`), or the first.
+    fn numbering_of(&self, para: &Para) -> Option<(Option<i64>, Option<i64>)> {
+        let style = self.style_id(para);
+        let from_style = style.as_deref().and_then(|s| self.styles().numbering(s));
+        let direct = para.facts.numbering;
+        let num = direct
+            .and_then(|(n, _)| n)
+            .or_else(|| from_style.and_then(|(n, _)| n));
+        let mut level = direct
+            .and_then(|(_, l)| l)
+            .or_else(|| from_style.and_then(|(_, l)| l));
+        if direct.is_none() && from_style.is_none() {
+            return None;
+        }
+        if level.is_none()
+            && let (Some(num), Some(style)) = (num, style.as_deref())
+        {
+            level = self
+                .input
+                .numbering
+                .lists
+                .get(&num)
+                .and_then(|list| {
+                    list.levels
+                        .iter()
+                        .position(|l| l.style.as_deref() == Some(style))
+                })
+                .map(|i| i as i64);
+        }
+        Some((num, level))
+    }
+
+    /// The numbering a heading carries, `(numId, ilvl)`, shown — directly or by its style.
+    fn heading_number(&self, para: &Para) -> Option<(i64, i64)> {
+        self.outline(para)?;
+        let (num, level) = self.numbering_of(para)?;
+        let num = num.filter(|n| *n != 0)?;
+        let ilvl = level.unwrap_or(0).clamp(0, 8);
+        self.input
+            .numbering
+            .lists
+            .get(&num)?
+            .level(ilvl as usize)
+            .filter(|l| l.format != "none" && !l.text.is_empty())?;
+        Some((num, ilvl))
+    }
+
+    /// The list that numbers the document's headings, if one does consistently: the one most
+    /// headings are numbered by, every one of them at the list level of its own outline level.
+    /// It becomes ODF's outline numbering (`text:outline-style`), which numbers headings by
+    /// level — the shape Word's numbered headings have.
+    fn find_outline_list(&self, blocks: &[Block]) -> Option<i64> {
+        let mut counts: BTreeMap<i64, (usize, bool)> = BTreeMap::new();
+        for block in blocks {
+            let Block::Para(para) = block else { continue };
+            let (Some((num, ilvl)), Some(outline)) =
+                (self.heading_number(para), self.outline(para))
+            else {
+                continue;
+            };
+            let entry = counts.entry(num).or_insert((0, true));
+            entry.0 += 1;
+            entry.1 &= ilvl == outline;
+        }
+        counts
+            .into_iter()
+            .filter(|(_, (_, consistent))| *consistent)
+            .max_by_key(|(num, (count, _))| (*count, std::cmp::Reverse(*num)))
+            .map(|(num, _)| num)
+    }
+
+    /// Whether the outline numbering would number a heading at `outline` that Word did not.
+    fn unnumbered_at_numbered_level(&self, para: &Para, outline: i64) -> bool {
+        let Some(list) = self
+            .outline_list
+            .and_then(|n| self.input.numbering.lists.get(&n))
+        else {
+            return false;
+        };
+        let numbered_level = list
+            .level(outline as usize)
+            .is_some_and(|l| l.format != "none" && !l.text.is_empty());
+        numbered_level
+            && self
+                .heading_number(para)
+                .is_none_or(|(num, ilvl)| Some(num) != self.outline_list || ilvl != outline)
     }
 
     /// The paragraph's style id: its own, or the document's default paragraph style.
@@ -362,6 +457,10 @@ impl Writer<'_, '_> {
         }
         if let Some(level) = level {
             let _ = write!(out, " text:outline-level=\"{level}\"");
+            // A heading the outline numbering would number and Word did not stays unnumbered.
+            if self.unnumbered_at_numbered_level(para, i64::from(level) - 1) {
+                out.push_str(" text:is-list-header=\"true\"");
+            }
         }
         let mut content = String::new();
         self.inlines(&mut content, &para.inlines);
@@ -1034,6 +1133,46 @@ impl Writer<'_, '_> {
                 props.attributes()
             );
         }
+    }
+
+    /// `text:outline-style` from the list that numbers the headings — nothing when none does.
+    fn outline_style(&self, out: &mut String) {
+        let Some(list) = self
+            .outline_list
+            .and_then(|n| self.input.numbering.lists.get(&n))
+        else {
+            return;
+        };
+        out.push_str("  <text:outline-style style:name=\"Outline\">\n");
+        for (i, level) in list.levels.iter().enumerate() {
+            let n = i + 1;
+            let (prefix, suffix, shown) = numbering::label_parts(&level.text);
+            let format = if level.format == "bullet" || level.text.is_empty() {
+                ""
+            } else {
+                numbering::num_format(&level.format)
+            };
+            let mut attributes = format!(" style:num-format=\"{format}\"");
+            if !format.is_empty() {
+                if !prefix.is_empty() {
+                    let _ = write!(attributes, " style:num-prefix=\"{}\"", esc(&prefix));
+                }
+                if !suffix.is_empty() {
+                    let _ = write!(attributes, " style:num-suffix=\"{}\"", esc(&suffix));
+                }
+                if shown > 1 {
+                    let _ = write!(attributes, " text:display-levels=\"{}\"", shown.min(n));
+                }
+                if level.start != 1 {
+                    let _ = write!(attributes, " text:start-value=\"{}\"", level.start.max(0));
+                }
+            }
+            let _ = writeln!(
+                out,
+                "   <text:outline-level-style text:level=\"{n}\"{attributes}/>"
+            );
+        }
+        out.push_str("  </text:outline-style>\n");
     }
 
     fn list_style_definition(&self, out: &mut String, num: i64, name: &str) {

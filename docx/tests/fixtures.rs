@@ -716,3 +716,41 @@ fn a_relationship_out_of_the_package_reaches_nothing() {
     assert_eq!(texts(&doc), [""]);
     assert_eq!(report.images, 0);
 }
+
+/// Numbered headings — `1 Introduction`, `1.1 Scope` — are Word's list numbering on a heading
+/// style; they become ODF's outline numbering, which numbers headings by level, and a heading
+/// Word left unnumbered at a numbered level stays so.
+#[test]
+fn numbered_headings_become_the_outline_numbering() {
+    let s = styles(
+        r#"<w:style w:type="paragraph" w:styleId="H1"><w:name w:val="heading 1"/>
+             <w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:outlineLvl w:val="0"/></w:pPr></w:style>
+           <w:style w:type="paragraph" w:styleId="H2"><w:name w:val="heading 2"/>
+             <w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="1"/></w:numPr><w:outlineLvl w:val="1"/></w:pPr></w:style>"#,
+    );
+    let body = r#"<w:p><w:pPr><w:pStyle w:val="H1"/></w:pPr><w:r><w:t>Introduction</w:t></w:r></w:p>
+        <w:p><w:pPr><w:pStyle w:val="H2"/></w:pPr><w:r><w:t>Scope</w:t></w:r></w:p>
+        <w:p><w:pPr><w:pStyle w:val="H1"/><w:numPr><w:numId w:val="0"/></w:numPr></w:pPr><w:r><w:t>Appendix</w:t></w:r></w:p>"#;
+    let bytes = docx(body, &[s, numbering()]);
+    let (doc, report) = import(&bytes);
+    assert_eq!(
+        kinds(&doc),
+        [
+            BlockKind::Heading { level: 1 },
+            BlockKind::Heading { level: 2 },
+            BlockKind::Heading { level: 1 }
+        ]
+    );
+    assert!(
+        !report.dropped.contains_key(&Dropped::HeadingNumber),
+        "{:?}",
+        report.dropped
+    );
+    let (odf, _) = grind_docx::convert(&bytes).unwrap();
+    let odf = String::from_utf8(odf).unwrap();
+    assert!(odf.contains(r#"<text:outline-level-style text:level="1" style:num-format="1" style:num-suffix="."/>"#), "{odf}");
+    assert!(
+        odf.contains(r#"text:outline-level="1" text:is-list-header="true">Appendix"#),
+        "{odf}"
+    );
+}

@@ -87,6 +87,7 @@ over XML.
 | `w:pStyle`, `w:rStyle` | a named `style:style` of family `paragraph` / `text`, `w:basedOn` as its parent, `w:name` capitalised as its display name, encoded `Heading 1` → `Heading_20_1` as LibreOffice spells one | `styles.rs` |
 | `w:docDefaults` | `style:default-style` | §3.3 |
 | `w:pPr`, `w:rPr` (direct) | an automatic style under the named one, pooled | `props.rs` |
+| numbered headings (a heading style's `w:numPr`) | `text:outline-style`, when one list numbers the headings level by level (§4.5) | otherwise counted |
 | `w:numPr` (direct or from the style) | a `text:list` of the right depth, with a `text:list-style` per `numId` — number format, prefix and suffix, levels shown, start value, indent, the bullet mapped out of Symbol/Wingdings (§4.3) — and `text:continue-list` across an interruption | `numbering.rs` |
 | `w:tab`, `w:br`, `w:cr`, spaces | `text:tab`, `text:line-break`, `text:s` | |
 | `w:br w:type="page"` | the paragraph split, the rest `fo:break-before="page"` (§2.4) | |

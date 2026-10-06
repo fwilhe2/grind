@@ -31,6 +31,9 @@ pub struct Level {
     pub hanging: Option<i64>,
     /// The label's own formatting — a bullet's font, most often.
     pub props: Props,
+    /// `w:pStyle` — the paragraph style this level belongs to, which is how a heading style
+    /// that names a list but no level finds its level (§17.9.24).
+    pub style: Option<String>,
 }
 
 /// One `numId`'s list: its nine levels.
@@ -174,6 +177,7 @@ fn read_level(r: &mut Reader, fonts: &Fonts) -> grind_ooxml::Result<Level> {
                 })?;
             }
             "rPr" => level.props = props::read_rpr(r, fonts)?.props,
+            "pStyle" => level.style = attrs.val().map(str::to_owned),
             _ => return Ok(Handled::No),
         }
         Ok(Handled::Yes)

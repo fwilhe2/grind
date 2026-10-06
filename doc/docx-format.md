@@ -192,6 +192,22 @@ often a private-use code point in *Symbol* (`U+F0B7`, the round bullet) or *Wing
 the handful seen (`U+F0B7`, `U+F06C` → •; `o` → ◦; `U+F0A7`, `U+F06E`, `U+F0A8` → ▪; `U+F0D8` →
 ➢; `U+F0FC` → ✓; `U+F076` → ❖; `U+F0A1` → ○) and any other private-use bullet to •.
 
+### 4.4 A style's numbering resolves in halves — `MEASURED`
+
+`sw/qa/extras/uiwriter/data/tdf76817.docx`: the `Heading2` style states `w:numPr` with only
+`w:ilvl="1"`; its `w:numId` comes from `Heading1`, the style it is based on. The oracle numbers
+its paragraphs `1.1` and `2.1`. So `w:numId` and `w:ilvl` are each taken from the nearest style
+that states *it*, not from the nearest that states either. A level stated nowhere is the one
+whose `w:lvl/w:pStyle` names the paragraph's style (§17.9.24, `SPEC`), else the first.
+
+### 4.5 Numbered headings — `MEASURED`
+
+The same file, converted by the oracle to text: `1 Should be 1`, `1.1 Should be 1.1`. This
+filter writes the list that numbers the headings — the one most of them are numbered by, every
+one of them at the list level of its outline level — as ODF's `text:outline-style`, and the
+oracle's text of *our* ODF reads the same. A heading at a numbered level that Word left
+unnumbered is written `text:is-list-header="true"`.
+
 ---
 
 ## 5. Sections and the page

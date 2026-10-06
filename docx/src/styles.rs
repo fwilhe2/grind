@@ -113,8 +113,15 @@ impl Styles {
 
     /// The numbering a paragraph in this style has, `(numId, ilvl)`, if any style up the
     /// chain gives one.
+    ///
+    /// The two halves resolve **separately** up the chain: a `heading 2` style that states only
+    /// `w:ilvl="1"` takes its `w:numId` from the `heading 1` it is based on — how Word's own
+    /// numbered-heading styles are commonly written (`doc/docx-format.md` §4.4).
     pub fn numbering(&self, id: &str) -> Option<(Option<i64>, Option<i64>)> {
-        self.chain(id).into_iter().find_map(|s| s.numbering)
+        let chain = self.chain(id);
+        let num = chain.iter().find_map(|s| s.numbering.and_then(|(n, _)| n));
+        let level = chain.iter().find_map(|s| s.numbering.and_then(|(_, l)| l));
+        (num.is_some() || level.is_some()).then_some((num, level))
     }
 
     /// A table style's look, its own over what it is based on.
