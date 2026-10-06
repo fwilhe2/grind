@@ -618,6 +618,21 @@ breaks ODF validity — LO simply falls back to standard behavior/recomputation.
   rule that recovers it: when `calcext:value-type` is `error`, the display text is the
   value. Loop B depends on this — an error fixture is unverifiable without it.
 
+- `loext:data-type` on a `table:filter-condition` — `MEASURED` (2026-10-06, LibreOffice
+  26.8, `sc/qa/unit/data/ods/autofilter-colors.ods`): an autofilter **by colour** rather than
+  by value. `"background-color"` compares the cell's fill and `"text-color"` its font colour,
+  and `table:value` holds a colour (`#e8f2a1`) or a keyword (`transparent`,
+  `window-font-color`) rather than anything a cell displays:
+
+  ```xml
+  <table:filter-condition loext:data-type="background-color" table:value="#e8f2a1"
+                          table:operator="=" table:field-number="0"/>
+  ```
+
+  A reader that ignores the attribute reads a condition on values no cell holds, and hides
+  every data row — rows the file itself leaves visible. Reading it as a value condition is
+  therefore wrong, not merely incomplete.
+
 Practical rule: **use the OASIS-standard element/attribute for anything ODF already covers
 (values, formulas, borders, number formats, merges) — reach for `loext`/`calcext` only for
 the handful of features ODF genuinely has no vocabulary for.**

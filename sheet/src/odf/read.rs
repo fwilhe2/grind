@@ -1418,6 +1418,15 @@ impl Context<Builder> for FilterAnd {
                 if attrs.get(Ns::Table, "operator") != Some("=") {
                     return None;
                 }
+                // A `data-type` outside ODF's own namespace is LibreOffice's filter by
+                // *colour* (`doc/ods-format.md` §6): its `table:value` is `#e8f2a1`, which no
+                // cell displays, so read as a set of values it would hide every row.
+                if attrs
+                    .names()
+                    .any(|n| n.ns != Ns::Table && n.local == "data-type")
+                {
+                    return None;
+                }
                 let field = attrs.get(Ns::Table, "field-number")?.parse().ok()?;
                 b.filter_values = (
                     field,

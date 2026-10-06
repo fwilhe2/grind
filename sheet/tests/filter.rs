@@ -111,3 +111,38 @@ fn a_dropdown_offers_numbers_by_value_and_text_in_the_models_order() {
         ["", "-3.5"]
     );
 }
+
+/// A filter by **colour** (`loext:data-type`, `doc/ods-format.md` §6) is not a filter on the
+/// colour's spelling as a value. Read as one, it hid every data row of LibreOffice's own
+/// `autofilter-colors.ods` — rows the file leaves visible — since no cell displays `#e8f2a1`.
+#[test]
+fn a_filter_by_colour_hides_nothing_it_cannot_judge() {
+    let fods = r##"<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+ xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+ xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+ xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0"
+ office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+<office:body><office:spreadsheet>
+<table:table table:name="S"><table:table-column/>
+<table:table-row><table:table-cell office:value-type="string"><text:p>Head</text:p></table:table-cell></table:table-row>
+<table:table-row><table:table-cell office:value-type="float" office:value="1"><text:p>1</text:p></table:table-cell></table:table-row>
+<table:table-row><table:table-cell office:value-type="float" office:value="2"><text:p>2</text:p></table:table-cell></table:table-row>
+</table:table>
+<table:database-ranges><table:database-range table:name="__Anonymous_Sheet_DB__0"
+ table:target-range-address="S.A1:S.A3" table:display-filter-buttons="true">
+<table:filter><table:filter-and>
+<table:filter-condition loext:data-type="background-color" table:value="#e8f2a1" table:operator="=" table:field-number="0"/>
+</table:filter-and></table:filter></table:database-range></table:database-ranges>
+</office:spreadsheet></office:body></office:document>"##;
+    let doc = grind_sheet::read_bytes("colours.fods", fods.as_bytes()).expect("loads");
+    let sheet = doc.sheet(0).expect("one sheet");
+    assert!(
+        sheet.filter().is_some(),
+        "the range and its buttons are kept"
+    );
+    assert_eq!(
+        sheet.hidden_rows(doc.null_date, doc.locale.as_ref()),
+        Vec::<u32>::new()
+    );
+}
