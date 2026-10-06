@@ -1398,7 +1398,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2013-2014 RAD Game Tools and Valve Software",
         source: "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide",
         kind: Kind::Crate,
-        notices: &[113, 62, 114, 115],
+        notices: &[114, 62, 115, 116],
     },
     Component {
         name: "mio",
