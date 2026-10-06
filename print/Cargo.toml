@@ -29,7 +29,7 @@ grind-text = { path = "../text" }
 # past 0.8 brings a second copy beside krilla's (`cargo tree -d`, measured 2026-10-04).
 skrifa = "=0.42.1"
 harfrust = "=0.8.4"
-fontdb = { version = "0.23", default-features = false, features = ["std", "fs"], optional = true }
+fontdb = { version = "0.24", default-features = false, features = ["std", "fs"], optional = true }
 # The PDF writer (doc/pdf-export.md §2): glyphs our own layout placed, subset and embedded, with
 # `ToUnicode`, tagging and PDF/A. `simple-text` stays off — harfrust shapes, so there is one
 # shaper in the binary — and `raster-images` is what embeds a PNG or a JPEG.
