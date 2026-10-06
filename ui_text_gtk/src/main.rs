@@ -206,6 +206,8 @@ struct Ui {
     loading: Cell<bool>,
     /// A close waiting on a save must not ask again.
     closing: Cell<bool>,
+    /// Set by Save and Export Markdown: the next successful save also writes its `.md` twin.
+    markdown_twin: Cell<bool>,
 }
 
 impl Ui {
@@ -341,6 +343,7 @@ impl Ui {
             dirty: Cell::new(false),
             loading: Cell::new(false),
             closing: Cell::new(false),
+            markdown_twin: Cell::new(false),
         });
         ui.wire(application);
         ui.refresh();
@@ -620,6 +623,9 @@ impl Ui {
                 // success asking to be noticed is noise. A save that *fails* still says so.
                 self.refresh();
                 remember_recent(path);
+                if self.markdown_twin.take() {
+                    self.write_markdown_twin(path);
+                }
                 if self.closing.get() {
                     self.window.close();
                 }
@@ -627,6 +633,7 @@ impl Ui {
             Err(error) => {
                 // A failed save cancels the close, or the work is gone.
                 self.closing.set(false);
+                self.markdown_twin.set(false);
                 self.toast(&format!("Could not save: {error}"));
             }
         }
@@ -646,10 +653,35 @@ impl Ui {
                 self,
                 move |result| match result.ok().and_then(|file| file.path()) {
                     Some(path) => ui.write(&path),
-                    None => ui.closing.set(false),
+                    None => {
+                        ui.closing.set(false);
+                        ui.markdown_twin.set(false);
+                    }
                 }
             ),
         );
+    }
+
+    /// File ▸ Save and Export Markdown — Save, then the whole document as CommonMark beside
+    /// it under the same stem (`README.fodt` → `README.md`), overwriting what is there. One
+    /// key for somebody who writes in ODF and publishes Markdown; the CLI's twin is `grind
+    /// text export-md`. A document with no path yet asks for one first, as Save does.
+    fn save_and_export_markdown(self: &Rc<Self>) {
+        self.markdown_twin.set(true);
+        self.save();
+    }
+
+    fn write_markdown_twin(&self, path: &Path) {
+        let twin = path.with_extension("md");
+        match self
+            .app
+            .export_markdown(0..self.app.block_count())
+            .map_err(|error| error.to_string())
+            .and_then(|md| grind_core::atomic::write(&twin, md).map_err(|e| e.to_string()))
+        {
+            Ok(()) => self.toast(&format!("Saved, and wrote {}", document_name(Some(&twin)))),
+            Err(error) => self.toast(&format!("Saved, but could not export: {error}")),
+        }
     }
 
     fn open(self: &Rc<Self>) {
@@ -1327,6 +1359,9 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("save-as", &["<Control><Shift>s"][..], |ui| ui.save_as()),
         ("import-markdown", &[][..], |ui| ui.import_markdown()),
         ("export-markdown", &[][..], |ui| ui.export_markdown()),
+        ("save-markdown", &["<Control><Alt>s"][..], |ui| {
+            ui.save_and_export_markdown()
+        }),
         // The page, three ways (`doc/pdf-export.md`): one typesetting for all of them.
         ("export-pdf", &["<Control><Shift>e"][..], print::export_pdf),
         ("print-preview", &["<Control><Shift>p"][..], |ui| {
@@ -1424,6 +1459,7 @@ fn shortcut_rows() -> Vec<ShortcutGroup> {
                 ("Open", "<Control>o"),
                 ("Save", "<Control>s"),
                 ("Save As", "<Control><Shift>s"),
+                ("Save and export Markdown", "<Control><Alt>s"),
                 ("Export PDF", "<Control><Shift>e"),
                 ("Print preview", "<Control><Shift>p"),
                 ("Print", "<Control>p"),
@@ -1494,6 +1530,7 @@ fn primary_menu() -> gio::Menu {
     let markdown = gio::Menu::new();
     markdown.append(Some("Import Markdown…"), Some("win.import-markdown"));
     markdown.append(Some("Export Markdown…"), Some("win.export-markdown"));
+    markdown.append(Some("Save and Export Markdown"), Some("win.save-markdown"));
     menu.append_section(None, &markdown);
 
     let paper = gio::Menu::new();
