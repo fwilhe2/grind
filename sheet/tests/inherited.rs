@@ -88,19 +88,19 @@ fn a_style_inherits_what_its_parents_set() {
     assert_eq!(named.font_weight.as_deref(), Some("bold"));
 }
 
-/// `none` and `0` are how a style takes back what its parent set, though the model stores both
-/// as nothing at all.
+/// `none`, `0` and a stated automatic colour are how a style takes back what its parent set,
+/// though the model stores each as nothing at all.
 #[test]
 fn a_child_can_take_back_a_parents_border() {
     let styles = r##"<office:styles>
 <style:style style:name="Boxed" style:family="table-cell">
  <style:table-cell-properties fo:border="0.06pt solid #000000" style:rotation-angle="90"/>
- <style:text-properties style:text-underline-style="solid"/></style:style>
+ <style:text-properties style:text-underline-style="solid" fo:color="#1f4e79"/></style:style>
 </office:styles>
 <office:automatic-styles>
 <style:style style:name="ce1" style:family="table-cell" style:parent-style-name="Boxed">
  <style:table-cell-properties fo:border="none" fo:border-top="0.06pt solid #000000" style:rotation-angle="0"/>
- <style:text-properties style:text-underline-style="none"/></style:style>
+ <style:text-properties style:text-underline-style="none" style:use-window-font-color="true"/></style:style>
 </office:automatic-styles>"##;
     let doc = read(
         &format!(r##"<table:table-cell table:style-name="ce1" {CELL}/>"##),
@@ -121,6 +121,10 @@ fn a_child_can_take_back_a_parents_border() {
     }
     assert_eq!(look.rotation, None);
     assert_eq!(look.underline, None);
+    assert_eq!(
+        look.color, None,
+        "the automatic colour, stated, hides the parent's navy"
+    );
 }
 
 /// The data style comes from the nearest style in the chain that names one.

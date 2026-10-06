@@ -2122,6 +2122,10 @@ struct Resets {
     underline: bool,
     line_through: bool,
     indent: bool,
+    /// `style:use-window-font-color="true"` with no `fo:color`: ODF's *automatic* text colour,
+    /// stated — LibreOffice writes it on a cell whose font names no colour, under a parent
+    /// style whose colour must not show through.
+    color: bool,
 }
 
 impl Resets {
@@ -2140,6 +2144,7 @@ impl Resets {
         clear(&mut look.underline, self.underline);
         clear(&mut look.line_through, self.line_through);
         clear(&mut look.indent, self.indent);
+        clear(&mut look.color, self.color);
     }
 }
 
@@ -2218,9 +2223,12 @@ impl Context<Builder> for CellStyleProps {
                 let underline = fo("text-underline-style").is_some() && style.underline.is_none();
                 let through =
                     fo("text-line-through-style").is_some() && style.line_through.is_none();
+                let automatic = style.color.is_none()
+                    && attrs.get(Ns::Style, "use-window-font-color") == Some("true");
                 let resets = b.style_resets.entry(self.name.clone()).or_default();
                 resets.underline = underline;
                 resets.line_through = through;
+                resets.color = automatic;
             }
             "paragraph-properties" => {
                 style.align = fo("text-align");
