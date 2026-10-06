@@ -150,6 +150,18 @@ the start and an `office:annotation-end` at the end; the oracle, saving our ODF 
 to Word, writes the same comments with the same paragraphs. An annotation holds only paragraphs
 and lists (rng:7787), so a table in a comment gives up its grid and keeps its text.
 
+### 2.8 Tracked changes — `MEASURED`
+
+`ooxmlexport/data/n830205.docx` (32 insertions, 309 deletions — most of the latter on paragraph
+marks, `w:pPr/w:rPr/w:del`, which this filter does not carry): an insertion inside a paragraph
+becomes ODF's `text:change-start` … `text:change-end` around the text, a deletion a
+`text:change` mark with the deleted text in its `text:changed-region`, all regions in
+`text:tracked-changes` ahead of the body (rng:15730). The oracle, saving our ODF back to Word,
+writes 29 insertions and 77 deletions — tracked changes still, merged where adjacent. In
+`grind_text` the marks are kept runs and the deleted text is not shown: the document reads as
+with every change accepted, and a save keeps the history. `office:change-info` requires a
+`dc:date` (rng:7652); a change Word did not date gets the epoch.
+
 ---
 
 ## 3. Paragraphs and styles

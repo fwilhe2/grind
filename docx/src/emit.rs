@@ -48,6 +48,8 @@ pub struct Input<'a> {
     pub anchors: HashSet<String>,
     /// `w:defaultTabStop`, in twips.
     pub default_tab: Option<i64>,
+    /// Every tracked change, by its index (`crate::body::Change`).
+    pub changes: Vec<crate::body::Change>,
     /// Every comment, by id (`word/comments.xml`).
     pub comments: HashMap<String, Comment>,
     /// Each font's generic family, from `word/fontTable.xml`.
@@ -228,6 +230,50 @@ pub fn write(input: Input, report: &mut Report) -> String {
     out.push_str(&master_pages);
     out.push_str(" </office:master-styles>\n");
     out.push_str(" <office:body>\n  <office:text>\n");
+    // Every tracked change, ahead of the text that marks where each one is (rng:15730).
+    if !input.changes.is_empty() {
+        out.push_str("   <text:tracked-changes>\n");
+        for (n, change) in input.changes.iter().enumerate() {
+            let mut info = String::from("<office:change-info>");
+            info.push_str(&format!(
+                "<dc:creator>{}</dc:creator>",
+                esc(change.author.as_deref().unwrap_or(""))
+            ));
+            // `dc:date` is required in a change's info (rng:7652); a change Word did not date
+            // is given none rather than an invented one — the epoch says "unknown" in a way a
+            // reader can tell.
+            let date = change
+                .date
+                .as_deref()
+                .filter(|d| is_date_time(d))
+                .unwrap_or("1970-01-01T00:00:00");
+            info.push_str(&format!(
+                "<dc:date>{}</dc:date></office:change-info>",
+                esc(date)
+            ));
+            let _ = write!(
+                out,
+                "    <text:changed-region xml:id=\"ct{n}\" text:id=\"ct{n}\">"
+            );
+            match &change.deleted {
+                None => {
+                    let _ = write!(out, "<text:insertion>{info}</text:insertion>");
+                }
+                Some(text) => {
+                    let mut p = String::new();
+                    let mut space = true;
+                    encode(&mut p, text, &mut space);
+                    let _ = write!(
+                        out,
+                        "<text:deletion>{info}<text:p>{p}</text:p></text:deletion>"
+                    );
+                }
+            }
+            out.push_str("</text:changed-region>\n");
+        }
+        out.push_str("   </text:tracked-changes>\n");
+        w.report.changes = input.changes.len();
+    }
     out.push_str(&body);
     out.push_str("  </office:text>\n </office:body>\n</office:document>\n");
     out
@@ -748,6 +794,15 @@ impl Writer<'_, '_> {
                 run,
                 mark,
             } => self.note(out, *endnote, id, run, mark.as_deref(), space),
+            Inline::InsertStart(n) => {
+                let _ = write!(out, "<text:change-start text:change-id=\"ct{n}\"/>");
+            }
+            Inline::InsertEnd(n) => {
+                let _ = write!(out, "<text:change-end text:change-id=\"ct{n}\"/>");
+            }
+            Inline::Deleted(n) => {
+                let _ = write!(out, "<text:change text:change-id=\"ct{n}\"/>");
+            }
             Inline::CommentStart(id) => self.comment(out, id, true),
             Inline::CommentAt(id) => self.comment(out, id, false),
             Inline::CommentEnd(id) => {
@@ -1622,12 +1677,7 @@ fn encode(out: &mut String, text: &str, space: &mut bool) {
 /// apart from the body, and a leading space there would be an indent.
 fn trim_leading_space(blocks: &mut [Block]) {
     if let Some(Block::Para(first)) = blocks.first_mut()
-        && let Some(Inline::Text(text, _)) = first.inlines.iter_mut().find(|i| {
-            !matches!(
-                i,
-                Inline::Bookmark(_) | Inline::CommentStart(_) | Inline::CommentEnd(_)
-            )
-        })
+        && let Some(Inline::Text(text, _)) = first.inlines.iter_mut().find(|i| !i.is_mark())
     {
         *text = text.trim_start().to_owned();
     }

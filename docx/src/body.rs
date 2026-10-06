@@ -79,6 +79,28 @@ pub enum Inline {
     CommentEnd(String),
     /// A comment on no range — a `w:commentReference` whose start was never seen.
     CommentAt(String),
+    /// Where a tracked insertion starts and ends, by its index in [`Ctx::changes`].
+    InsertStart(usize),
+    InsertEnd(usize),
+    /// Where a tracked deletion was, by its index in [`Ctx::changes`] — the deleted text is in
+    /// the change, not in the paragraph.
+    Deleted(usize),
+}
+
+impl Inline {
+    /// Whether it is a position rather than content: a bookmark, a comment's ends, a tracked
+    /// change's marks.
+    pub fn is_mark(&self) -> bool {
+        matches!(
+            self,
+            Inline::Bookmark(_)
+                | Inline::CommentStart(_)
+                | Inline::CommentEnd(_)
+                | Inline::InsertStart(_)
+                | Inline::InsertEnd(_)
+                | Inline::Deleted(_)
+        )
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -169,6 +191,8 @@ pub struct Ctx<'p, 'a> {
     pub anchors: HashSet<String>,
     /// Every section, in order, as its `w:sectPr` was met.
     pub sections: Vec<Section>,
+    /// Every tracked change read, in document order.
+    pub changes: Vec<Change>,
     /// Every comment whose range start has been read — a `w:commentReference` to one of these
     /// is already placed, and one to any other places a comment of its own.
     pub commented: HashSet<String>,
@@ -198,6 +222,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
             images: HashMap::new(),
             floating: Vec::new(),
             commented: HashSet::new(),
+            changes: Vec::new(),
         }
     }
 
@@ -211,6 +236,16 @@ impl<'p, 'a> Ctx<'p, 'a> {
             .collect();
         self.fields.clear();
         self.href = None;
+    }
+
+    /// Record a tracked change and return its index.
+    fn change(&mut self, attrs: &Attrs, deleted: Option<String>) -> usize {
+        self.changes.push(Change {
+            author: attrs.w("author").map(str::to_owned),
+            date: attrs.w("date").map(str::to_owned),
+            deleted,
+        });
+        self.changes.len() - 1
     }
 
     /// Whether a field's instruction is being read — any field, however deep.
@@ -416,6 +451,33 @@ fn read_paragraph(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Para> {
     Ok(para)
 }
 
+/// The text a tracked deletion took out: its `w:delText`, tabs and breaks, in order.
+fn deleted_text(r: &mut Reader, out: &mut String) -> grind_ooxml::Result<()> {
+    r.children(|r, name, _| {
+        if name.ns != Ns::Word {
+            return Ok(Handled::No);
+        }
+        match name.local.as_str() {
+            "delText" | "t" => out.push_str(&r.text()?),
+            "tab" => out.push('\t'),
+            "br" | "cr" => out.push('\n'),
+            "instrText" | "delInstrText" => {}
+            _ => deleted_text(r, out)?,
+        }
+        Ok(Handled::Yes)
+    })
+}
+
+/// A tracked change (`w:ins`, `w:del`, `w:moveTo`, `w:moveFrom`): who, when, and for a
+/// deletion what it took out.
+#[derive(Clone, Debug, Default)]
+pub struct Change {
+    pub author: Option<String>,
+    pub date: Option<String>,
+    /// `None` for an insertion.
+    pub deleted: Option<String>,
+}
+
 /// One child of paragraph content — a `w:p`'s, a `w:hyperlink`'s, an inline `w:sdtContent`'s.
 fn content(
     r: &mut Reader,
@@ -469,13 +531,19 @@ fn content(
                 ctx.report.drop_one(Dropped::ContentControl);
             }
         }
+        // A tracked change, kept as one (`doc/docx-format.md` §2.8): an insertion's text is
+        // the paragraph's, between two marks; a deletion's is the change's, at one.
         "ins" | "moveTo" => {
-            ctx.report.drop_one(Dropped::TrackedChange);
+            let change = ctx.change(attrs, None);
+            out.push(Inline::InsertStart(change));
             inline_children(r, ctx, out)?;
+            out.push(Inline::InsertEnd(change));
         }
         "del" | "moveFrom" => {
-            ctx.report.drop_one(Dropped::TrackedChange);
-            return Ok(Handled::No);
+            let mut deleted = String::new();
+            deleted_text(r, &mut deleted)?;
+            let change = ctx.change(attrs, Some(deleted));
+            out.push(Inline::Deleted(change));
         }
         "bookmarkStart" => {
             if let Some(mark) = bookmark(attrs) {

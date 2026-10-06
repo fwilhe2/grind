@@ -21,8 +21,9 @@ pub enum Dropped {
     /// A comment whose text the document does not have — its id names nothing in
     /// `word/comments.xml`. Every other comment is carried, as an `office:annotation`.
     Comment,
-    /// A tracked change. Insertions are kept as text and deletions are not shown — the document
-    /// as it would read with every change accepted — and the history itself is gone.
+    /// A tracked change around whole paragraphs or table rows. Changes within a paragraph are
+    /// carried as ODF's own; these are applied — the inserted paragraph kept, the deleted one
+    /// gone — and their history is not.
     TrackedChange,
     /// A text box (`w:txbxContent`): its text is kept, as paragraphs following the one that
     /// anchors it, and where it floated on the page is not.
@@ -101,6 +102,8 @@ pub struct Report {
     pub styles: usize,
     /// Comments carried, as `office:annotation`s.
     pub comments: usize,
+    /// Tracked changes carried, as ODF's own tracked changes.
+    pub changes: usize,
     pub dropped: BTreeMap<Dropped, usize>,
     /// Namespaces the file said a consumer must understand and this one does not
     /// (`mc:MustUnderstand`). Recorded, never a refusal.

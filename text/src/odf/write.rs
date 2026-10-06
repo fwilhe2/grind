@@ -169,6 +169,7 @@ fn owned(key: &str) -> bool {
     let kept = is(TEXT, &["note", "note-citation", "note-body"])
         || is(TEXT, super::read::FIELDS)
         || is(OFFICE, &["annotation", "annotation-end"])
+        || is(TEXT, &["change", "change-start", "change-end"])
         || is(DUBLIN_CORE, &["creator", "date"]);
     if kept {
         return true;

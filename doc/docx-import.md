@@ -100,15 +100,17 @@ over XML.
 | `w:drawing` / `w:pict` holding a picture | `draw:frame`/`draw:image` with the bytes inline, at the extent's size, `as-char` when inline | |
 | each section's `w:sectPr` | a page layout and a master page per distinct page — size, margins and marginals — the first one `Standard`, which `grind_text` reads as the document's page; the default header and footer, the first-page pair under `w:titlePg` and the even-page pair under `w:evenAndOddHeaders` (ODF's left pages), a section with no reference showing the previous section's (§5.2, §5.4) | |
 | a later section | `fo:break-before="page"` on its first block when it starts a page, and `style:master-page-name` when its page differs | |
-| `w:ins`, `w:moveTo`, `w:sdt`, `w:smartTag`, `w:customXml` | read through | |
-| `w:del`, `w:moveFrom` | skipped | counted |
+| `w:sdt`, `w:smartTag`, `w:customXml` | read through | |
+| `w:ins`/`w:moveTo` and `w:del`/`w:moveFrom` inside a paragraph | ODF's own tracked changes: the inserted text between `text:change-start` and `text:change-end`, the deleted text in its `text:changed-region`, author and date kept (§2.8) | |
+| `w:ins`, `w:del` around whole paragraphs or rows | applied — the inserted kept, the deleted gone | counted |
 | `w:commentRangeStart` … `w:commentRangeEnd`, `word/comments.xml` | `office:annotation` (author, date, paragraphs) and `office:annotation-end` over the range — kept runs in `grind_text`, so an edit beside one keeps it | |
 | `w:txbxContent` (DrawingML or VML) | its paragraphs, after the paragraph that anchors the box | the position counted |
 
 ### What it costs
 
 Every loss is a `Dropped` kind (`docx/src/report.rs`), counted, summed in `Report::summary` and
-fatal under `--strict`: a comment with no text or on a footnote's, tracked changes (accepted), a text box's position (its text follows the paragraph
+fatal under `--strict`: a comment with no text or on a footnote's, tracked changes around whole
+paragraphs or rows (applied), a text box's position (its text follows the paragraph
 that anchors it), drawings that are not pictures, equations, embedded objects, linked pictures, a floating picture's position, fields
 and form fields and content controls (kept as their text), sections whose page differs,
 multi-column sections, heading numbers Word numbers by a list other than the headings' own, table-style

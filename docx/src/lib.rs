@@ -251,6 +251,7 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
         });
     }
     let anchors = std::mem::take(&mut ctx.anchors);
+    let changes = std::mem::take(&mut ctx.changes);
     drop(ctx);
 
     report.flavour = seen.flavour();
@@ -266,6 +267,7 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
         default_tab,
         fonts: fonts_table,
         comments,
+        changes,
     };
     let odf = emit::write(input, &mut report);
     Ok((odf.into_bytes(), report))

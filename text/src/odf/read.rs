@@ -1793,7 +1793,10 @@ fn inline_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         // the field is refused by the save's loss check rather than written.
         // A comment (`office:annotation`, rng:7787) and the end of the range it covers: kept
         // whole, showing nothing — a margin note is not text of the paragraph.
-        (Ns::Office, "annotation" | "annotation-end") => Some(Box::new(FieldText {
+        // A tracked change's marks (rng:9170): where an insertion starts and ends, and where a
+        // deletion was. The change itself is in `text:tracked-changes`, carried with the body.
+        (Ns::Text, "change" | "change-start" | "change-end")
+        | (Ns::Office, "annotation" | "annotation-end") => Some(Box::new(FieldText {
             start: attrs.span(),
             text: String::new(),
             silent: true,

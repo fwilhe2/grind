@@ -125,7 +125,8 @@ generated, and Writer's *Update Index* writes them again.
 ## Footnotes, fields and comments: the third named gap
 
 A footnote or endnote (`text:note`), a field (`text:date`, `text:page-number`, …) and a comment
-(`office:annotation`, and the `office:annotation-end` closing its range, which show nothing) are read as
+(`office:annotation`, and the `office:annotation-end` closing its range) and a tracked change's
+marks (`text:change`, `text:change-start`, `text:change-end`) — the last four show nothing — are read as
 **kept runs** (`Run::Kept`): the element, verbatim, shown as the text it shows — the citation's
 mark, the field's cached value — so an edit beside one writes it back rather than refusing the
 save. A projection has no notation for an element it does not model, so it spells a kept run as

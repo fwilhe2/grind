@@ -392,14 +392,28 @@ fn a_field_instruction_spanning_paragraphs_does_not_leave_them_behind() {
 }
 
 #[test]
-fn a_tracked_insertion_is_kept_and_a_deletion_is_not() {
+fn a_tracked_change_stays_a_tracked_change() {
     let body = r#"<w:p><w:r><w:t xml:space="preserve">keep </w:t></w:r>
         <w:ins w:id="1" w:author="a"><w:r><w:t xml:space="preserve">added </w:t></w:r></w:ins>
         <w:del w:id="2" w:author="a"><w:r><w:delText>gone </w:delText></w:r></w:del>
         <w:r><w:t>end</w:t></w:r></w:p>"#;
-    let (doc, report) = import(&docx(body, &[]));
+    let bytes = docx(body, &[]);
+    let (doc, report) = import(&bytes);
     assert_eq!(texts(&doc), ["keep added end"]);
-    assert_eq!(report.dropped.get(&Dropped::TrackedChange), Some(&2));
+    assert!(report.lossless(), "{:?}", report.dropped);
+    assert_eq!(report.changes, 2);
+    // And they are still tracked changes, ODF's own: the insertion between two marks, the
+    // deletion's text in its change.
+    let odf = String::from_utf8(grind_docx::convert(&bytes).unwrap().0).unwrap();
+    assert!(odf.contains(r#"<text:change-start text:change-id="ct0"/>added <text:change-end text:change-id="ct0"/>"#), "{odf}");
+    assert!(
+        odf.contains("<text:deletion><office:change-info><dc:creator>a</dc:creator>"),
+        "{odf}"
+    );
+    assert!(
+        odf.contains("<text:p>gone <text:s/></text:p>") || odf.contains("<text:p>gone </text:p>"),
+        "{odf}"
+    );
 }
 
 #[test]
