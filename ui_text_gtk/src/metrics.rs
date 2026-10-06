@@ -242,6 +242,8 @@ pub fn size_units(font_size: Option<&str>, base: i32) -> Option<i32> {
 pub struct Paper {
     pub ink: grind_core::color::Rgb,
     pub page: grind_core::color::Rgb,
+    /// What a link is drawn in when it has no colour of its own — the theme's accent.
+    pub link: grind_core::color::Rgb,
 }
 
 impl Paper {
@@ -249,6 +251,7 @@ impl Paper {
     pub const LIGHT: Paper = Paper {
         ink: (0, 0, 0),
         page: (255, 255, 255),
+        link: (0x1c, 0x71, 0xd8),
     };
 
     fn dark(self) -> bool {
@@ -472,9 +475,20 @@ pub fn run_attributes(
         // twin. The ink is [`Paper::ink`]'s — the spreadsheet window's rule, so a navy word
         // chosen on white paper is still readable on a dark page, and a yellow highlight does
         // not carry the dark theme's white text across it.
-        if let Some((r, g, b)) =
-            paper.ink(run.shown.color.as_deref(), run.shown.background.as_deref())
-        {
+        let own = paper.ink(run.shown.color.as_deref(), run.shown.background.as_deref());
+        // A link looks like one: underlined, and in the accent unless it chose a colour of its
+        // own. Drawing only — `href` changes nothing about how wide a run is, so nothing here
+        // needs a measuring twin. Underline is the one cue that survives a colour-blind reader
+        // and a document whose links are all coloured already.
+        let link = match (&run.href, own) {
+            (Some(_), None) => {
+                let wide = |c: u8| u16::from(c) * 257;
+                let (r, g, b) = paper.link;
+                Some((wide(r), wide(g), wide(b)))
+            }
+            _ => None,
+        };
+        if let Some((r, g, b)) = own.or(link) {
             mark(pango::AttrColor::new_foreground(r, g, b).into());
         }
         if let Some((r, g, b)) = channels(run.shown.background.as_deref()) {
@@ -486,7 +500,7 @@ pub fn run_attributes(
         if run.shown.is_italic() {
             mark(pango::AttrInt::new_style(pango::Style::Italic).into());
         }
-        if run.shown.is_underlined() {
+        if run.shown.is_underlined() || run.href.is_some() {
             mark(pango::AttrInt::new_underline(pango::Underline::Single).into());
         }
         if run.shown.is_struck() {
@@ -523,6 +537,7 @@ mod tests {
         let dark = Paper {
             ink: (255, 255, 255),
             page: (30, 30, 30),
+            link: (120, 174, 237),
         };
         let navy = Some("#001f3f");
         let (r, g, b) = dark.ink(navy, None).expect("a colour of its own is drawn");

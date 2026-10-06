@@ -26,6 +26,7 @@ mod format;
 mod geom;
 mod keymap;
 mod licences;
+mod link;
 mod lint;
 mod metrics;
 mod print;
@@ -182,6 +183,8 @@ struct Ui {
     format: Rc<format::Bar>,
     /// Ctrl+F (`find.rs`).
     find: Rc<find::Find>,
+    /// Ctrl+K (`link.rs`).
+    link: Rc<link::Editor>,
     /// Guards the code view's own writes from being read back as a cursor move — without it,
     /// painting the projection would immediately move the caret it is reporting on. The
     /// formatting bar keeps its own latch for the same reason, in `format.rs`.
@@ -288,6 +291,7 @@ impl Ui {
         // in `wire`, because the `Ui` it writes through does not exist yet.
         let format = format::Bar::new(&doc.pango_context());
         let find = find::Find::new(app, &doc);
+        let link = link::Editor::new(app, &doc);
 
         let banner = adw::Banner::new("");
         let status = gtk::Label::builder()
@@ -337,6 +341,7 @@ impl Ui {
             redo,
             format,
             find,
+            link,
             updating: Cell::new(false),
             path: RefCell::new(path),
             handoff: RefCell::new(None),
@@ -375,6 +380,11 @@ impl Ui {
             #[strong(rename_to = ui)]
             self,
             move |message| ui.toast(&message)
+        ));
+        self.doc.connect_link(glib::clone!(
+            #[strong(rename_to = ui)]
+            self,
+            move |href| ui.follow(&href)
         ));
         self.doc.connect_moved(glib::clone!(
             #[strong(rename_to = ui)]
@@ -813,6 +823,31 @@ impl Ui {
                         }) {
                         Ok(()) => ui.toast(&format!("Wrote {}", path.display())),
                         Err(error) => ui.toast(&format!("Could not export: {error}")),
+                    }
+                }
+            ),
+        );
+    }
+
+    /// Follow a link: `#name` is a bookmark in this document and a jump, anything else is
+    /// handed to the desktop, which knows what opens a URL.
+    fn follow(self: &Rc<Self>, href: &str) {
+        if href.starts_with('#') {
+            match view::caret_of(&self.app, href) {
+                Ok(caret) => self.doc.go_to(caret),
+                Err(error) => self.toast(&error),
+            }
+            return;
+        }
+        gtk::UriLauncher::new(href).launch(
+            Some(&self.window),
+            gio::Cancellable::NONE,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |result| {
+                    if let Err(error) = result {
+                        ui.toast(&format!("Could not open the link: {error}"));
                     }
                 }
             ),
@@ -1408,6 +1443,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         }),
         ("image", &["<Control><Shift>i"][..], |ui| ui.insert_image()),
         ("table", &["<Control><Shift>t"][..], |ui| ui.insert_table()),
+        ("link", &["<Control>k"][..], |ui| ui.link.open()),
         ("paragraph", &["<Control>0"][..], |ui| {
             ui.set_kind(BlockKind::Paragraph, None)
         }),
@@ -1473,6 +1509,7 @@ fn shortcut_rows() -> Vec<ShortcutGroup> {
                 ("Show the source", "<Control><Shift>u"),
                 ("Insert a picture", "<Control><Shift>i"),
                 ("Insert a table", "<Control><Shift>t"),
+                ("Insert or edit a link", "<Control>k"),
                 ("Keyboard shortcuts", "<Control>question"),
             ],
         ),
@@ -1546,6 +1583,7 @@ fn primary_menu() -> gio::Menu {
     let insert = gio::Menu::new();
     insert.append(Some("Insert Picture…"), Some("win.image"));
     insert.append(Some("Insert Table…"), Some("win.table"));
+    insert.append(Some("Insert Link…"), Some("win.link"));
     menu.append_section(None, &insert);
 
     let structure = gio::Menu::new();

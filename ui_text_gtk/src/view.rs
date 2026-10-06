@@ -165,6 +165,18 @@ impl Doc {
         self.imp().on_notice.borrow_mut().push(Box::new(f));
     }
 
+    /// Told a link's target when somebody follows it — Ctrl+click. Where it goes is the
+    /// window's business: a URL opens outside, a `#name` is a jump inside.
+    pub fn connect_link(&self, f: impl Fn(String) + 'static) {
+        self.imp().on_link.borrow_mut().push(Box::new(f));
+    }
+
+    /// The caret's rectangle in this widget's coordinates — what a popover about the caret
+    /// points at. `None` before the first allocation.
+    pub fn caret_rect(&self) -> Option<gtk::gdk::Rectangle> {
+        self.imp().caret_rect()
+    }
+
     /// Set the caret from an address the user typed — `p12`, `#intro`, `§2.1.3`. A jump
     /// replaces the caret rather than extending anything, so any selection goes with it.
     pub fn go_to(&self, caret: Caret) {
@@ -237,6 +249,9 @@ pub fn context_menu_model() -> gtk::gio::Menu {
     selection.append(Some("Select All"), Some("win.select-all"));
     model.append_section(None, &selection);
     let paragraph = gtk::gio::Menu::new();
+    let link = gtk::gio::Menu::new();
+    link.append(Some("Link…"), Some("win.link"));
+    model.append_section(None, &link);
     paragraph.append(Some("Move Paragraph Up"), Some("win.paragraph-up"));
     paragraph.append(Some("Move Paragraph Down"), Some("win.paragraph-down"));
     paragraph.append(Some("Delete Paragraph"), Some("win.paragraph-delete"));
@@ -304,6 +319,8 @@ mod imp {
         pub vscroll_policy: Cell<gtk::ScrollablePolicy>,
         pub im: gtk::IMMulticontext,
         pub on_notice: RefCell<Vec<NoticeHook>>,
+        /// Told a link's target when it is followed — Ctrl+click on one.
+        pub on_link: RefCell<Vec<NoticeHook>>,
         pub on_moved: RefCell<Vec<MovedHook>>,
         /// The last press — its time, where it was, and how many presses in a row it made — so
         /// a second press on the same spot is a double-click. Counted here rather than by a
@@ -339,6 +356,7 @@ mod imp {
                 vscroll_policy: Cell::new(gtk::ScrollablePolicy::Minimum),
                 im: gtk::IMMulticontext::new(),
                 on_notice: RefCell::new(Vec::new()),
+                on_link: RefCell::new(Vec::new()),
                 on_moved: RefCell::new(Vec::new()),
                 presses: Cell::new(None),
                 menu: std::cell::OnceCell::new(),
@@ -474,6 +492,15 @@ mod imp {
                         .current_event_state()
                         .contains(gtk::gdk::ModifierType::SHIFT_MASK);
                     let count = doc.imp().count_press(gesture.current_event_time(), x, y);
+                    let ctrl = gesture
+                        .current_event_state()
+                        .contains(gtk::gdk::ModifierType::CONTROL_MASK);
+                    // Ctrl+click on a link follows it rather than putting the caret in it — a
+                    // plain click has to stay a click, or a linked word could not be edited.
+                    if count == 1 && ctrl && !shift && doc.imp().follow(x, y) {
+                        gesture.set_state(gtk::EventSequenceState::Claimed);
+                        return;
+                    }
                     match count {
                         1 => doc.imp().click(x, y, shift),
                         // A double-click is the word, a triple-click the paragraph — what every
@@ -498,6 +525,17 @@ mod imp {
                 }
             ));
             widget.add_controller(drag);
+
+            // A link says where it goes when the pointer rests on it, and how to get there —
+            // the target is otherwise invisible, since the text is what is drawn.
+            widget.set_has_tooltip(true);
+            widget.connect_query_tooltip(|doc, x, y, _, tooltip| {
+                let Some(link) = doc.imp().link_under(f64::from(x), f64::from(y)) else {
+                    return false;
+                };
+                tooltip.set_text(Some(&format!("{}\nCtrl+click to open", link.href)));
+                true
+            });
 
             // The right-click menu. A secondary press outside the selection moves the caret
             // there first, the way `ui_sheet_gtk`'s cell menu moves the selection: the menu
@@ -1122,6 +1160,46 @@ mod imp {
             menu.popup();
         }
 
+        /// The link under a point, if the point is on one — its characters, not merely next to
+        /// them, so a click just past a link's end is a click in the plain text after it.
+        pub fn link_under(&self, x: f64, y: f64) -> Option<grind_text::Link> {
+            let caret = self.caret_at(x, y)?;
+            let link = self.app()?.link_at(caret).ok()??;
+            (link.from <= caret && caret <= link.to).then_some(link)
+        }
+
+        /// Follow the link under a point, if there is one: tell the listeners its target.
+        pub fn follow(&self, x: f64, y: f64) -> bool {
+            let Some(link) = self.link_under(x, y) else {
+                return false;
+            };
+            for hook in self.on_link.borrow().iter() {
+                hook(link.href.clone());
+            }
+            true
+        }
+
+        pub fn caret_rect(&self) -> Option<gtk::gdk::Rectangle> {
+            let widget = self.obj();
+            if widget.width() == 0 {
+                return None;
+            }
+            let flow = self.flow(f64::from(widget.width()));
+            let caret = self.caret.get();
+            let slot = flow.slot(caret.block)?;
+            let (layout, _, _) = self.measured(caret.block)?;
+            let line = layout.lines()[layout.line_at(caret.offset)];
+            let (left, _) = geom::column(f64::from(widget.width()));
+            let x = left + slot.indent + f64::from(layout.x_at(caret.offset));
+            let y = slot.top - self.scroll() + f64::from(line.top);
+            Some(gtk::gdk::Rectangle::new(
+                x as i32,
+                y as i32,
+                1,
+                f64::from(line.height) as i32,
+            ))
+        }
+
         /// Dragging with the button down: the anchor [`Doc::click`] planted stays put and
         /// only the caret follows the pointer, which is what grows the highlighted band.
         pub fn drag_to(&self, x: f64, y: f64) {
@@ -1737,6 +1815,10 @@ mod tests {
             enter_on_the_last_line_scrolls_the_new_one_into_view,
         ),
         (
+            "a link is drawn as one, followed, and edited from Ctrl+K",
+            a_link_is_drawn_followed_and_edited,
+        ),
+        (
             "the problems dialog builds from a document's findings",
             the_problems_dialog_builds,
         ),
@@ -1894,6 +1976,101 @@ mod tests {
             assert!(app.undo());
         }
         assert_eq!(text(&app), "hello world");
+    }
+
+    /// Links, all four halves: drawn underlined in the accent, a Ctrl+click on one hands its
+    /// target over (and a click beside it does not), and Ctrl+K links a selection, edits the
+    /// link at a bare caret, inserts a target as its own text when there is neither, and
+    /// removes one.
+    fn a_link_is_drawn_followed_and_edited() {
+        use crate::metrics::run_attributes;
+        use gtk::pango;
+
+        let (doc, app) = shell(&["read the spec today"]);
+        let imp = doc.imp();
+        let at = |offset| Caret { block: 0, offset };
+        app.set_link(at(9), at(13), Some("https://x.org")).unwrap();
+
+        let view = app.get_viewport(0..1);
+        let block = view.get(0).unwrap();
+        let (layout, faces, _) = imp.measured(0).unwrap();
+        let face = faces.of(&BlockKind::Paragraph, None);
+        let drawn = |from: usize, to: usize| {
+            let attrs = run_attributes(
+                &block.runs,
+                from,
+                to,
+                &block
+                    .text
+                    .chars()
+                    .skip(from)
+                    .take(to - from)
+                    .collect::<String>(),
+                face.size(),
+                crate::metrics::Paper::LIGHT,
+            );
+            attrs
+                .attributes()
+                .iter()
+                .map(|attr| attr.type_())
+                .collect::<Vec<_>>()
+        };
+        let link = drawn(9, 13);
+        assert!(link.contains(&pango::AttrType::Underline), "{link:?}");
+        assert!(link.contains(&pango::AttrType::Foreground), "{link:?}");
+        assert!(drawn(0, 9).is_empty(), "plain text is not");
+
+        // A point on "spec" is on the link; one on "read" is not.
+        let flow = imp.flow(600.0);
+        let slot = flow.slot(0).unwrap();
+        let (left, _) = crate::geom::column(600.0);
+        let point = |offset: usize| {
+            (
+                left + slot.indent + f64::from(layout.x_at(offset)) + 2.0,
+                slot.top + 2.0,
+            )
+        };
+        let followed = Rc::new(RefCell::new(Vec::new()));
+        doc.connect_link(glib::clone!(
+            #[strong]
+            followed,
+            move |href| followed.borrow_mut().push(href)
+        ));
+        let (x, y) = point(10);
+        assert!(imp.follow(x, y));
+        let (x, y) = point(1);
+        assert!(!imp.follow(x, y));
+        assert_eq!(*followed.borrow(), ["https://x.org"]);
+
+        let editor = crate::link::Editor::new(&app, &doc);
+        // A selection is what gets linked.
+        doc.select(at(0), at(4));
+        editor.prepare();
+        editor.link_to("#top").unwrap();
+        assert_eq!(app.link(at(0), at(4)).unwrap().as_deref(), Some("#top"));
+        // A bare caret inside a link edits the whole of it.
+        doc.go_to(at(11));
+        editor.prepare();
+        editor.link_to("https://y.org").unwrap();
+        let edited = app.link_at(at(11)).unwrap().unwrap();
+        assert_eq!((edited.from, edited.to), (at(9), at(13)));
+        assert_eq!(edited.href, "https://y.org");
+        // With neither, the target is inserted as its own linked text.
+        doc.go_to(at(19));
+        editor.prepare();
+        editor.link_to("https://z").unwrap();
+        assert_eq!(text(&app), "read the spec todayhttps://z");
+        assert_eq!(
+            app.link_at(at(25)).unwrap().map(|l| l.href).as_deref(),
+            Some("https://z")
+        );
+        assert!(editor.link_to("").is_err(), "an empty target is refused");
+        // And Remove takes the link at the caret away, leaving the text.
+        doc.go_to(at(10));
+        editor.prepare();
+        editor.unlink();
+        assert_eq!(app.link_at(at(10)).unwrap(), None);
+        assert_eq!(text(&app), "read the spec todayhttps://z");
     }
 
     /// Enter at the bottom of the window keeps the caret on screen, as every word processor

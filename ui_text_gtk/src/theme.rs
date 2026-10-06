@@ -53,6 +53,7 @@ impl Palette {
         crate::metrics::Paper {
             ink: rgb(self.foreground),
             page: rgb(self.background),
+            link: rgb(self.accent),
         }
     }
 
