@@ -7,8 +7,7 @@
   </style:style>
  </office:automatic-styles><office:body>
   <office:text>
-    <text:p/>
-    <text:p text:style-name="Title">grind</text:p>
+    <text:h text:outline-level="1">grind</text:h>
     <text:h text:outline-level="1">What is this?</text:h>
     <text:p>grind is an office suite written from scratch. It is 100% written using AI agents. Uses OpenDocument (odf) as its native format.</text:p>
     <text:h text:outline-level="1">Why this project exists?</text:h>
