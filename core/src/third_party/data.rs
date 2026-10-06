@@ -744,6 +744,15 @@ pub(super) const COMPONENTS: &[Component] = &[
         notices: &[75],
     },
     Component {
+        name: "fontdb",
+        version: "0.24.0",
+        licence: "MIT",
+        copyright: "Copyright (c) 2020 Yevhenii Reizner",
+        source: "https://github.com/RazrFalcon/fontdb",
+        kind: Kind::Crate,
+        notices: &[75],
+    },
+    Component {
         name: "futures-channel",
         version: "0.3.34",
         licence: "MIT OR Apache-2.0",

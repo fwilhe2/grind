@@ -36,8 +36,10 @@ fontdb = { version = "0.24", default-features = false, features = ["std", "fs"],
 krilla = { version = "=0.8.2", default-features = false, features = ["raster-images"] }
 
 # SVG pictures (charts, diagrams): usvg parses one, krilla-svg writes it into the PDF as vectors,
-# resvg draws it into the preview. 0.47 is what krilla-svg 0.8.1 is built against, and fontdb is
-# held at 0.23 above so the two share one. usvg's `text` feature brings its own shaper for an
+# resvg draws it into the preview. 0.47 is what krilla-svg 0.8.1 is built against. Its fontdb
+# (0.23) is not the one above (0.24), and nothing crosses between them: `svg.rs` loads an SVG's
+# fonts into usvg's own database by bytes, so the second copy costs size and nothing else —
+# accepted 2026-10-06; one again when krilla-svg moves. usvg's `text` feature brings its own shaper for an
 # SVG's labels — a second shaper in the binary, named and accepted, since a chart without its
 # labels is not the chart.
 krilla-svg = "=0.8.1"
