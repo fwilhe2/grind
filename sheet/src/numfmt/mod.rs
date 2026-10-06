@@ -778,6 +778,85 @@ fn clock(serial: f64) -> String {
     )
 }
 
+/// The shorter spellings of a number shown in the **General format** — a plain number with no
+/// format of its own — that a shell tries, in order, when [`spell_number`]'s does not fit its
+/// column (`doc/ods-format.md` §5.2, measured): one decimal fewer each time, rounded, and then
+/// scientific notation with five decimals down to none, which is what a whole part too wide for
+/// the column comes to. The first that fits is drawn; when none does, [`overflow`]'s hashes are.
+///
+/// Only the General format narrows. A number whose format states its decimals means them, and
+/// LibreOffice draws `###` rather than fewer of them — so this is asked only of a plain number
+/// ([`crate::Viewport::narrower`] knows which those are).
+pub fn narrower(n: f64, locale: Option<&Locale>) -> Vec<String> {
+    let decimal = locale::separators(locale).0;
+    let spell = |text: String| match decimal {
+        '.' => text,
+        decimal => text.replace('.', &decimal.to_string()),
+    };
+    let mut out: Vec<String> = Vec::new();
+    if !n.is_finite() || n == 0.0 {
+        return out;
+    }
+    let mut push = |text: String| {
+        if !out.contains(&text) {
+            out.push(text);
+        }
+    };
+    let full = crate::formula::value::format_number(n);
+    if !full.contains('E') {
+        let decimals = full
+            .split_once('.')
+            .map_or(0, |(_, fraction)| fraction.len());
+        for keep in (0..decimals).rev() {
+            let rounded = format!("{:.keep$}", round_away(n, keep));
+            // A small number rounded away to nothing is not a shorter spelling of it.
+            if rounded
+                .trim_start_matches('-')
+                .bytes()
+                .all(|b| b == b'0' || b == b'.')
+            {
+                break;
+            }
+            push(spell(trim_fraction(&rounded).to_owned()));
+        }
+    }
+    for keep in (0..=5).rev() {
+        let mut exponent = n.abs().log10().floor() as i32;
+        let mut mantissa = round_away(n / 10f64.powi(exponent), keep);
+        // `9.999996` at five decimals is `10.00000`, which is `1E+01` and not `10E+00`.
+        if mantissa.abs() >= 10.0 {
+            exponent += 1;
+            mantissa = round_away(n / 10f64.powi(exponent), keep);
+        }
+        let mantissa = format!("{mantissa:.keep$}");
+        let sign = if exponent < 0 { '-' } else { '+' };
+        push(spell(format!(
+            "{}E{sign}{:02}",
+            trim_fraction(&mantissa),
+            exponent.abs()
+        )));
+    }
+    out
+}
+
+/// `n` rounded to `keep` decimals, half away from zero — a spreadsheet's rounding, where Rust's
+/// own formatter rounds half to even (`digits` has the same note).
+fn round_away(n: f64, keep: usize) -> f64 {
+    let scale = 10f64.powi(keep as i32);
+    match scale.is_finite() {
+        true => (n * scale).round() / scale,
+        false => n,
+    }
+}
+
+/// A decimal's trailing zeros taken off, and its point with them when nothing is left after it.
+fn trim_fraction(text: &str) -> &str {
+    match text.contains('.') {
+        true => text.trim_end_matches('0').trim_end_matches('.'),
+        false => text,
+    }
+}
+
 /// What a **number that does not fit its column** is drawn as — every shell's answer, in one
 /// place: as many `#` as the room holds, and never part of the number.
 ///
@@ -1108,6 +1187,37 @@ mod tests {
     #[test]
     fn a_number_that_does_not_fit_is_hashes_as_wide_as_the_room() {
         assert_eq!(overflow(9.0, 1.0), "#########");
+        assert_eq!(
+            narrower(154.719066107646, None)[..3],
+            ["154.71906610765", "154.7190661076", "154.719066108"]
+        );
+        let all = narrower(154.719066107646, None);
+        assert!(all.contains(&"154.719".to_owned()) && all.contains(&"155".to_owned()));
+        assert_eq!(all.last().map(String::as_str), Some("2E+02"));
+        assert_eq!(
+            narrower(123456789012.0, None),
+            [
+                "1.23457E+11",
+                "1.2346E+11",
+                "1.235E+11",
+                "1.23E+11",
+                "1.2E+11",
+                "1E+11"
+            ]
+        );
+        let small = narrower(0.000123456, None);
+        assert_eq!(
+            small[..5],
+            ["0.00012346", "0.0001235", "0.000123", "0.00012", "0.0001"]
+        );
+        assert!(
+            !small.contains(&"0".to_owned()),
+            "never rounded away to nothing"
+        );
+        assert_eq!(narrower(-4.56789123, None)[3], "-4.5679");
+        let de = crate::locale::Locale::new("de", "DE");
+        assert_eq!(narrower(1.25, Some(&de))[0], "1,3");
+        assert!(narrower(0.0, None).is_empty() && narrower(5.0, None)[0] == "5E+00");
         assert_eq!(overflow(50.0, 7.0), "#######", "whole hashes only");
         assert_eq!(overflow(3.0, 7.0), "#", "never nothing");
         assert_eq!(overflow(1e9, 1.0).len(), 256, "never unbounded");

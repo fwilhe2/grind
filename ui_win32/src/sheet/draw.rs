@@ -561,8 +561,19 @@ mod windows_impl {
                         && f64::from(gdi::text_width(dc, text)) > room
                     {
                         true => {
-                            let hash = f64::from(gdi::text_width(dc, "#"));
-                            hashes = grind_sheet::numfmt::overflow(room, hash);
+                            // A plain number narrows first — fewer decimals, then scientific —
+                            // as LibreOffice's General format does (`Viewport::narrower`).
+                            let narrower = match frame.formula_text.contains_key(&(row, col)) {
+                                true => Vec::new(),
+                                false => frame.viewport.narrower(row, col),
+                            };
+                            hashes = narrower
+                                .into_iter()
+                                .find(|shorter| f64::from(gdi::text_width(dc, shorter)) <= room)
+                                .unwrap_or_else(|| {
+                                    let hash = f64::from(gdi::text_width(dc, "#"));
+                                    grind_sheet::numfmt::overflow(room, hash)
+                                });
                             hashes.as_str()
                         }
                         false => text,

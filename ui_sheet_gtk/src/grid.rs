@@ -4189,6 +4189,32 @@ mod imp {
                     // As many whole hashes as the cell holds, `numfmt::overflow` — the rule
                     // every shell in the suite draws.
                     if !fits && !wrapping && grind_sheet::numfmt::is_number(value) {
+                        // A plain number first narrows to what fits — fewer decimals, then
+                        // scientific — as LibreOffice's General format does
+                        // (`Viewport::narrower`); only then is it hashes.
+                        let room = cell.w - 2.0 * pad - indent;
+                        let narrower = match formula {
+                            None => viewport.narrower(row, col),
+                            Some(_) => Vec::new(),
+                        };
+                        if narrower.iter().any(|shorter| {
+                            layout.set_text(shorter);
+                            f64::from(layout.pixel_size().0) <= room
+                        }) {
+                            let (w, h) = layout.pixel_size();
+                            draw_text(
+                                f.snapshot,
+                                &layout,
+                                color,
+                                &cell,
+                                cell,
+                                w,
+                                h,
+                                (align, valign),
+                                pad,
+                            );
+                            continue;
+                        }
                         layout.set_text("#");
                         let hash = f64::from(layout.pixel_size().0).max(1.0);
                         layout.set_text(&grind_sheet::numfmt::overflow(cell.w - 2.0 * pad, hash));

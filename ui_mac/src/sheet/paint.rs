@@ -417,7 +417,8 @@ pub fn cells(
                     }
                 }
             }
-            let mut op = cell_text(text, &value, style, cell, ink, metrics);
+            let narrower = viewport.narrower(row, col);
+            let mut op = cell_text(text, &narrower, &value, style, cell, ink, metrics);
             if let Op::Text { clip, .. } = &mut op {
                 *clip = reach;
             }
@@ -459,7 +460,15 @@ pub fn cells(
             ops.extend(wrapped_text(text, &value, style, area, ink, metrics));
             continue;
         }
-        ops.push(cell_text(one_line(text), &value, style, area, ink, metrics));
+        ops.push(cell_text(
+            one_line(text),
+            &[],
+            &value,
+            style,
+            area,
+            ink,
+            metrics,
+        ));
     }
     // Each checkbox: a box in the ink, filled with the accent and ticked when its linked cell
     // says so.
@@ -672,9 +681,11 @@ fn name_outlines(grid: &Grid, view: &Rect, names: &[NameAnchor], palette: &Palet
 }
 
 /// One cell's text, placed: aligned by `grind_sheet::look`, and a number too wide for its column
-/// drawn as `numfmt::overflow`'s hashes rather than as part of itself.
+/// narrowed to the first of `narrower` that fits (`Viewport::narrower`, the General format's
+/// fewer decimals) or else drawn as `numfmt::overflow`'s hashes rather than as part of itself.
 fn cell_text(
     text: String,
+    narrower: &[String],
     value: &grind_sheet::model::CellValue,
     style: Option<&grind_sheet::style::CellStyle>,
     cell: Rect,
@@ -686,7 +697,11 @@ fn cell_text(
     let mut text = text;
     let mut text_w = width(metrics, &text, &text_style);
     if numfmt::is_number(value) && text_w > room {
-        text = numfmt::overflow(room, width(metrics, "#", &text_style));
+        text = narrower
+            .iter()
+            .find(|shorter| width(metrics, shorter, &text_style) <= room)
+            .cloned()
+            .unwrap_or_else(|| numfmt::overflow(room, width(metrics, "#", &text_style)));
         text_w = width(metrics, &text, &text_style);
     }
     let line_h = f64::from(metrics.line_height(&text_style));

@@ -2607,6 +2607,19 @@ impl App {
                     true => usize::from(*width) - 1,
                     false => usize::from(*width),
                 };
+                // A plain number too wide for its column narrows first — fewer decimals, then
+                // scientific — as LibreOffice's General format does (`Viewport::narrower`); only
+                // what still does not fit becomes `###` in `geom::pad`. Every spelling it offers
+                // is ASCII, one cell a character.
+                let room = width.saturating_sub(1);
+                let narrowed = match (boxed.is_none() && shown_formula.is_none(), &viewport) {
+                    (true, Some(v)) if text.chars().count() > room => v
+                        .narrower(r, c)
+                        .into_iter()
+                        .find(|shorter| shorter.len() <= room),
+                    _ => None,
+                };
+                let text = narrowed.as_deref().unwrap_or(text);
                 // An indent (`fo:margin-left`) in whole terminal columns, ahead of text that is
                 // not set against the right edge.
                 let indent = match alignment(cell, numeric) {
@@ -3551,6 +3564,38 @@ mod tests {
         );
         let plain = buffer[(ROW_HEADER_WIDTH, 3)].style();
         assert!(!plain.add_modifier.contains(Modifier::BOLD), "{plain:?}");
+    }
+
+    /// A plain number too wide for its column narrows as LibreOffice's General format narrows
+    /// it — fewer decimals — and a formatted one is still `###` (`Viewport::narrower`).
+    #[test]
+    fn a_plain_number_narrows_to_its_column_and_a_formatted_one_is_hashes() {
+        let core = Arc::new(CoreApp::new());
+        core.set_cell(0, Pos::new(0, 0), CellValue::Number(154.719066107646))
+            .unwrap();
+        core.set_cell(0, Pos::new(1, 0), CellValue::Number(154.719066107646))
+            .unwrap();
+        core.set_format(
+            0,
+            Pos::new(1, 0),
+            Pos::new(1, 0),
+            Some(grind_sheet::numfmt::preset(
+                grind_sheet::numfmt::Kind::Number,
+                9,
+                false,
+                "",
+            )),
+        )
+        .unwrap();
+        let mut app = App::new(core, Arc::new(RedrawFlag::default()), None);
+        let lines = screen(&mut app, 40, 8);
+        let a1 = lines[2].trim_end();
+        assert!(a1.contains("154.71"), "{a1:?}");
+        assert!(
+            !a1.contains('#') && !a1.contains("154.719066107646"),
+            "{a1:?}"
+        );
+        assert!(lines[3].contains("###"), "{:?}", lines[3]);
     }
 
     /// Which side of its column a cell's text sits on. The padding itself is

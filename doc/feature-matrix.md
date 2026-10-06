@@ -236,6 +236,7 @@ borders, which that window does not draw either.
 | **Drawn**: borders | — | ◐ ᵉ | ○ | ● | ◐ ʷᵇ | ◐ ³ |
 | **Drawn**: wrapped text | — | ● | ○ | ● | ● ʷʷ | ● ¹ |
 | **Drawn**: a number too wide for its column is `###`, never cut (`numfmt::overflow`) | — | ● | ● | ● | ● | ● |
+| **Drawn**: a plain number (the General format) narrows to its column first — fewer decimals, then scientific (`Viewport::narrower`) | — | ● | ● | ● | ● | ● |
 
 ᵃ **Closed 2026-10-02.** A *Borders* toggle in the format bar writes `format::bordered` — a hairline on every edge, or none — over the selection, the same call the terminal, the browser and the Mac make; a per-edge width or colour is still `grind sheet style --border`'s.
 ᵇ `:format number [n]` takes a decimal count and `:format currency [eur|usd|gbp]` one of the three
@@ -270,7 +271,11 @@ none unless told.
 digit and its currency — so a number, date or time too wide for its column is drawn as `###`, as
 many whole hashes as the column holds, in every client: `grind_sheet::numfmt::overflow`, measured
 in each shell's own unit and decided by the **value** being a number, never by where it is
-aligned. Text that does not fit ends in `…`. Before 2026-09-27 the four clients had three answers:
+aligned. Text that does not fit ends in `…`. **A plain number narrows before it hashes**
+(2026-10-06): one in the General format — no format of its own — is first drawn with fewer
+decimals and then in scientific notation, the first of `Viewport::narrower`'s spellings that
+fits, which is what LibreOffice shows (`154.719066107646` in a narrow column is `154.719`, not
+`###`; `doc/ods-format.md` §5.2). A number whose format states its decimals still hashes. Before 2026-09-27 the four clients had three answers:
 the GNOME window hashed a number only when it was right-aligned, the Windows window ellipsized
 every cell, and the browser clipped without a mark — and did not honour a column's width at all
 once its content was wider, since a `max-content` table sizes its columns from what is in them.

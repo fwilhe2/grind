@@ -389,7 +389,7 @@ impl Ui {
         self.dom.body.set_text_content(None);
         // Every number drawn, to be checked once the rows are in the page — only then has the
         // browser laid them out and can say whether one overflows (`hash_overflowing`).
-        let mut numbers: Vec<web_sys::Element> = Vec::new();
+        let mut numbers: Vec<(web_sys::Element, Vec<String>)> = Vec::new();
         for row in rows.clone() {
             let line = self.dom.document.create_element("tr")?;
             if hidden.contains(&row) {
@@ -478,7 +478,14 @@ impl Ui {
                     None => matches!(viewport.get(row, col), Some(CellValue::Number(_))),
                 };
                 if numeric && !(active && editing) {
-                    numbers.push(cell.clone());
+                    // A plain number's shorter spellings, when the cell shows its value rather
+                    // than its formula (`Viewport::narrower`).
+                    let shown = cell.text_content();
+                    let narrower = match (merge, shown.as_deref() == viewport.text(row, col)) {
+                        (None, true) => viewport.narrower(row, col),
+                        _ => Vec::new(),
+                    };
+                    numbers.push((cell.clone(), narrower));
                 }
                 // `doc/view-modes.md`, both overlays, in two attributes and no extra
                 // elements: the stylesheet draws the marker and the hint with
@@ -3234,6 +3241,9 @@ fn wire_filter_menu(ui: &Rc<Ui>) -> Result<(), JsValue> {
     })
 }
 
+/// A plain number that does not fit narrows first, to the first of its shorter spellings that
+/// does — fewer decimals, as LibreOffice's General format shows it (`Viewport::narrower`).
+///
 /// A number that does not fit its cell is **`###`**, never part of itself — `numfmt::overflow`,
 /// the rule every shell in the suite draws. The stylesheet clips a cell's content, so without this
 /// `3,710.00 €` in a narrow column read `3,710.0` with nothing to say a digit and the currency
@@ -3244,12 +3254,18 @@ fn wire_filter_menu(ui: &Rc<Ui>) -> Result<(), JsValue> {
 /// with ten hashes in its own font, and given as many as its room holds. The box's horizontal
 /// padding is taken off both, since both widths include it. Nothing happens where nothing is laid
 /// out — jsdom reports every width as zero, so the smoke test sees the numbers unchanged.
-fn hash_overflowing(cells: &[web_sys::Element]) -> Result<(), JsValue> {
+fn hash_overflowing(cells: &[(web_sys::Element, Vec<String>)]) -> Result<(), JsValue> {
     /// `.grid td`'s `padding: 0 4px`, both sides.
     const PADDING: f64 = 8.0;
-    for cell in cells {
+    for (cell, narrower) in cells {
         let (scroll, client) = (cell.scroll_width(), cell.client_width());
         if client <= 0 || scroll <= client {
+            continue;
+        }
+        if narrower.iter().any(|shorter| {
+            cell.set_text_content(Some(shorter));
+            cell.scroll_width() <= client
+        }) {
             continue;
         }
         cell.set_text_content(Some("##########"));

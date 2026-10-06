@@ -257,6 +257,10 @@ pub struct Viewport {
     /// because a linked one's state is another cell's value, perhaps off screen or on another
     /// sheet.
     checkboxes: Vec<(Pos, bool)>,
+    /// Which cells hold a plain number in the General format — the only ones whose spelling
+    /// narrows to fit a column ([`Viewport::narrower`]) — and the locale they are spelled in.
+    general: Vec<bool>,
+    locale: Option<locale::Locale>,
 }
 
 /// One merged range as a renderer draws it: the whole area, with what its top-left cell shows.
@@ -302,6 +306,20 @@ impl Viewport {
     /// The display text of one cell — what a renderer draws.
     pub fn text(&self, row: u32, col: u32) -> Option<&str> {
         self.texts.get(self.at(row, col)?).map(String::as_str)
+    }
+
+    /// The shorter spellings to try, in order, when a cell's [`Viewport::text`] does not fit its
+    /// column — fewer decimals, then scientific notation ([`numfmt::narrower`]). Empty for every
+    /// cell but a plain number in the General format: a format that states its decimals means
+    /// them, and such a number that does not fit is `###` (`doc/ods-format.md` §5.2).
+    pub fn narrower(&self, row: u32, col: u32) -> Vec<String> {
+        let Some(at) = self.at(row, col) else {
+            return Vec::new();
+        };
+        match (self.general.get(at), self.cells.get(at)) {
+            (Some(true), Some(CellValue::Number(n))) => numfmt::narrower(*n, self.locale.as_ref()),
+            _ => Vec::new(),
+        }
     }
 
     /// How one cell looks, or `None` for a plain cell — and for one outside the viewport.
@@ -1565,6 +1583,7 @@ impl App {
         let mut cells = Vec::with_capacity(size);
         let mut texts = Vec::with_capacity(size);
         let mut styles = Vec::with_capacity(size);
+        let mut general = Vec::with_capacity(size);
         let analysis = overlays.any().then(|| self.analysis(&state.doc));
         let mut roles = overlays.roles.then(|| Vec::with_capacity(size));
         // Conditional formats are evaluated here, against what the cells show, and handed over
@@ -1599,6 +1618,11 @@ impl App {
                     state.doc.locale.as_ref(),
                 ));
                 styles.push(look(pos));
+                general.push(
+                    matches!(value, CellValue::Number(_))
+                        && s.format(pos).is_none()
+                        && s.kind(pos).is_none(),
+                );
                 cells.push(value);
                 if let Some(roles) = roles.as_mut() {
                     let at = formula::eval::Address::new(sheet, pos);
@@ -1646,6 +1670,8 @@ impl App {
             names,
             merges,
             checkboxes,
+            general,
+            locale: state.doc.locale.clone(),
         })
     }
 
