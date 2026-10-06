@@ -73,6 +73,14 @@ pub struct Builder {
     cell_styles: HashMap<String, String>,
     /// The same styles' own properties: fonts, colours, borders, alignment.
     style_props: HashMap<String, CellStyle>,
+    /// Each `table-cell` style's `style:parent-style-name`. A style's look is its parent's
+    /// with its own properties laid over it (§5.1) — LibreOffice's own *Heading 1* is
+    /// *Heading*'s bold and centring at another size — so every lookup walks this chain.
+    style_parents: HashMap<String, String>,
+    /// The properties a style sets to their *nothing* spelling — `fo:border="none"`, a zero
+    /// rotation — which the model stores as an absent value and which must still override a
+    /// parent that sets one.
+    style_resets: HashMap<String, Resets>,
     /// The parts of the `number:*-style` currently being read, and the text its literal
     /// pieces are collecting. Both live here rather than in the context, because a child
     /// element has no channel back to its parent — the parent takes these at its `end`.
@@ -243,6 +251,8 @@ impl Builder {
             number_styles: HashMap::new(),
             cell_styles: HashMap::new(),
             style_props: HashMap::new(),
+            style_parents: HashMap::new(),
+            style_resets: HashMap::new(),
             parts: Vec::new(),
             style_text: String::new(),
             pending_maps: Vec::new(),
@@ -297,7 +307,11 @@ impl Builder {
     /// tolerance again (§9), and the reason this returns an `Option` rather than a result.
     fn resolve_format(&self, cell_style: Option<&str>, col: u32) -> Option<Format> {
         let style = self.style_name(cell_style, col)?;
-        let data_style = self.cell_styles.get(style)?;
+        // The nearest style in the parent chain that names a data style decides it.
+        let data_style = self
+            .lineage(style)
+            .into_iter()
+            .find_map(|name| self.cell_styles.get(name))?;
         self.number_styles.get(data_style).cloned()
     }
 
@@ -305,7 +319,37 @@ impl Builder {
     /// `style:style` carries both.
     fn resolve_style(&self, cell_style: Option<&str>, col: u32) -> Option<CellStyle> {
         let style = self.style_name(cell_style, col)?;
-        self.style_props.get(style).cloned()
+        self.inherited(style)
+    }
+
+    /// A style and its ancestors, nearest first. A chain that loops or runs deeper than any
+    /// real document's is cut short rather than followed (§9).
+    fn lineage<'a>(&'a self, name: &'a str) -> Vec<&'a str> {
+        let mut chain = Vec::new();
+        let mut at = Some(name);
+        while let Some(name) = at {
+            if chain.len() == 32 || chain.contains(&name) {
+                break;
+            }
+            chain.push(name);
+            at = self.style_parents.get(name).map(String::as_str);
+        }
+        chain
+    }
+
+    /// What a cell styled `name` looks like: the farthest ancestor first, each nearer style
+    /// laid over it. `None` when nothing in the chain sets anything.
+    fn inherited(&self, name: &str) -> Option<CellStyle> {
+        let mut look = CellStyle::default();
+        for name in self.lineage(name).into_iter().rev() {
+            if let Some(own) = self.style_props.get(name) {
+                look = own.over(Some(&look));
+            }
+            if let Some(resets) = self.style_resets.get(name) {
+                resets.apply(&mut look);
+            }
+        }
+        (!look.is_plain()).then_some(look)
     }
 
     /// Which `style:style` applies: the cell's own, else the row's default, else the
@@ -374,10 +418,9 @@ impl Builder {
     fn finish_rules(&mut self) {
         let rects = std::mem::take(&mut self.rule_rects);
         let styles = std::mem::take(&mut self.rule_styles);
-        let Some(sheet) = self.doc.sheets.get_mut(self.sheet) else {
+        let Some(own) = self.doc.sheets.get(self.sheet).map(|s| s.name.clone()) else {
             return;
         };
-        let own = sheet.name.clone();
         let mut keys: Vec<(String, String, Pos)> = Vec::new();
         let mut cells: Vec<Vec<(Pos, Pos)>> = Vec::new();
         let mut before: Vec<(usize, usize)> = Vec::new();
@@ -420,11 +463,13 @@ impl Builder {
                     ranges: crate::rule::rectangles(std::mem::take(&mut cells[i])),
                     base: *base,
                     condition: condition.clone(),
-                    style: self.style_props.get(apply).cloned().unwrap_or_default(),
+                    style: self.inherited(apply).unwrap_or_default(),
                 }
             })
             .collect();
-        sheet.set_rules(rules);
+        if let Some(sheet) = self.doc.sheets.get_mut(self.sheet) {
+            sheet.set_rules(rules);
+        }
     }
 
     /// Claim `repeat` columns for a `table:table-column` declaration, recording the default
@@ -2018,10 +2063,9 @@ impl Context<Builder> for Styles {
             if family != "table-cell" {
                 return Some(Box::new(super::context::Ignore));
             }
-            // ponytail: `style:parent-style-name` is not followed, so a cell style that
-            // inherits its data style from a parent rather than naming one loses its format.
-            // LibreOffice's own automatic styles always name it directly, which is why this
-            // has not bitten; walk the parent chain when a file shows up that needs it.
+            if let Some(parent) = attrs.get(Ns::Style, "parent-style-name") {
+                b.style_parents.insert(name.clone(), parent.to_owned());
+            }
             if let Some(data) = attrs.get(Ns::Style, "data-style-name") {
                 b.cell_styles.insert(name.clone(), data.to_owned());
             }
@@ -2066,6 +2110,37 @@ impl Context<Builder> for Styles {
 /// [`Builder`] is the channel.
 struct CellStyleProps {
     name: String,
+}
+
+/// The properties one `table-cell` style sets to the spelling of *nothing* — `none`, `0` —
+/// which [`CellStyle`] stores as absent, and which still override what a parent style sets
+/// (`Builder::inherited`).
+#[derive(Clone, Copy, Debug, Default)]
+struct Resets {
+    borders: [bool; 4],
+    rotation: bool,
+    underline: bool,
+    line_through: bool,
+    indent: bool,
+}
+
+impl Resets {
+    fn apply(&self, look: &mut CellStyle) {
+        for (edge, cleared) in look.borders.iter_mut().zip(self.borders) {
+            if cleared {
+                *edge = None;
+            }
+        }
+        let clear = |field: &mut Option<String>, cleared: bool| {
+            if cleared {
+                *field = None;
+            }
+        };
+        clear(&mut look.rotation, self.rotation);
+        clear(&mut look.underline, self.underline);
+        clear(&mut look.line_through, self.line_through);
+        clear(&mut look.indent, self.indent);
+    }
 }
 
 impl Context<Builder> for CellStyleProps {
@@ -2117,11 +2192,18 @@ impl Context<Builder> for CellStyleProps {
                 }
                 // ODF spells "explicitly no border" as `none`; the model spells it as an
                 // absent attribute, and keeping both would make two equal styles unequal.
-                for edge in &mut style.borders {
+                // The `none` is remembered beside it, since it still hides a parent's line.
+                let mut cleared = [false; 4];
+                for (edge, cleared) in style.borders.iter_mut().zip(&mut cleared) {
                     if edge.as_deref() == Some("none") {
                         *edge = None;
+                        *cleared = true;
                     }
                 }
+                let rotation = fo("rotation-angle").is_some() && style.rotation.is_none();
+                let resets = b.style_resets.entry(self.name.clone()).or_default();
+                resets.borders = cleared;
+                resets.rotation = rotation;
             }
             "text-properties" => {
                 style.font_weight = fo("font-weight");
@@ -2133,12 +2215,20 @@ impl Context<Builder> for CellStyleProps {
                 let line = |local: &str| fo(local).filter(|v| v != "none");
                 style.underline = line("text-underline-style");
                 style.line_through = line("text-line-through-style");
+                let underline = fo("text-underline-style").is_some() && style.underline.is_none();
+                let through =
+                    fo("text-line-through-style").is_some() && style.line_through.is_none();
+                let resets = b.style_resets.entry(self.name.clone()).or_default();
+                resets.underline = underline;
+                resets.line_through = through;
             }
             "paragraph-properties" => {
                 style.align = fo("text-align");
                 // A zero margin is no indent, which LibreOffice states on every cell style.
                 style.indent = fo("margin-left")
                     .filter(|v| crate::style::length_mm(v).is_none_or(|mm| mm != 0.0));
+                let indent = fo("margin-left").is_some() && style.indent.is_none();
+                b.style_resets.entry(self.name.clone()).or_default().indent = indent;
             }
             _ => return None,
         }
@@ -2220,9 +2310,15 @@ impl Context<Builder> for NumberStyle {
         let part = match name.local.as_str() {
             "text" => return Some(Box::new(StyleText { currency: false })),
             "currency-symbol" => return Some(Box::new(StyleText { currency: true })),
+            // An absent minimum is the decimals themselves (`doc/ods-format.md` §5.2): the
+            // attribute is ODF 1.3's, and a 1.2 file's `decimal-places="2"` means `1.00`.
             "number" => Part::Number {
                 decimals: digits(attrs, "decimal-places", 2),
-                min_decimals: digits(attrs, "min-decimal-places", 0),
+                min_decimals: digits(
+                    attrs,
+                    "min-decimal-places",
+                    digits(attrs, "decimal-places", 2),
+                ),
                 min_int: digits(attrs, "min-integer-digits", 1),
                 grouping: attrs.get(Ns::Number, "grouping") == Some("true"),
             },

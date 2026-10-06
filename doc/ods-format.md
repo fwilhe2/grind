@@ -459,6 +459,16 @@ has `style:name` and is built from an ordered sequence of literal/format pieces:
 
 - `number:number` — `number:decimal-places`, `number:min-decimal-places`,
   `number:min-integer-digits`, `number:grouping` (thousands separator, boolean).
+  **A number with no format narrows to fit its column** — `MEASURED` (2026-10-06, LibreOffice
+  26.8, columns of 0.55 and 0.9 inches converted to PDF): `154.719066107646` shows as `154.719`
+  in the narrow one and `154.7190661` in the wide one, rounded to as many decimals as fit;
+  `123456789012` as `1E+11` and `1.23457E+11`, scientific once the whole part does not fit;
+  `0.000123456` as `0.00012`. The same values under a format stating four decimals show `###`
+  where they do not fit: only the General format narrows.
+  **An absent `number:min-decimal-places` is `number:decimal-places`**, not zero —
+  `MEASURED` (2026-10-06, LibreOffice 26.8): `decimal-places="2"` alone shows `1` as `1.00`,
+  and only `min-decimal-places="0"` beside it shows `1`. The attribute is ODF 1.3's
+  (OFFICE-3860), so every ODF 1.2 file states decimals without it and means them all.
 - `number:text` — literal text/separator between pieces (also used as a leading `-` for
   negative-value sub-styles).
 - `number:currency-symbol` — element content is the symbol, `number:language` /
