@@ -313,6 +313,9 @@ pub enum TabAlign {
 pub struct TabStop {
     pub position: f32,
     pub align: TabAlign,
+    /// What fills the gap the tab leaves — `style:leader-text`, the dots of a table of
+    /// contents. Drawing it is the caller's; it changes nothing about where text goes.
+    pub leader: Option<char>,
 }
 
 /// Where a paragraph's tabs go (`doc/odt-format.md` §5c, fact 13): its own stops in order, then a
@@ -346,6 +349,7 @@ impl Tabs {
         Some(TabStop {
             position: n * self.interval,
             align: TabAlign::Left,
+            leader: None,
         })
     }
 }
@@ -899,7 +903,11 @@ mod tests {
     }
 
     fn stop(position: f32, align: TabAlign) -> TabStop {
-        TabStop { position, align }
+        TabStop {
+            position,
+            align,
+            leader: None,
+        }
     }
 
     /// `doc/odt-format.md` §5c fact 13: with no stops of its own a paragraph's tabs go to the

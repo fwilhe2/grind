@@ -1054,10 +1054,23 @@ impl Context<Builder> for TabStopsDef {
                 (b.tab_stops.as_mut(), attrs.get(Ns::Style, "position"))
             && stops.len() < MAX_STYLES
         {
+            // The leader's character, where its text states one, else the one its style draws;
+            // a space or `none` is no leader.
+            let leader = attrs
+                .get(Ns::Style, "leader-text")
+                .filter(|t| !t.trim().is_empty())
+                .map(str::to_owned)
+                .or_else(|| match attrs.get(Ns::Style, "leader-style") {
+                    Some("dotted") => Some(".".to_owned()),
+                    Some("dash" | "long-dash") => Some("-".to_owned()),
+                    Some("solid") => Some("_".to_owned()),
+                    _ => None,
+                });
             stops.push(crate::paragraph::TabStop {
                 position: position.to_owned(),
                 kind: attrs.get(Ns::Style, "type").map(str::to_owned),
                 char: attrs.get(Ns::Style, "char").map(str::to_owned),
+                leader,
             });
         }
         None

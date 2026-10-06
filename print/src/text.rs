@@ -397,6 +397,7 @@ fn lines(
     let layout = app
         .layout_block_tabbed(view.index, piece.width as f32, face, first, tabs)
         .ok()?;
+    let first_indent = first;
     let first = layout.lines().get(piece.lines.start)?;
     let last = layout.lines().get(piece.lines.end.checked_sub(1)?)?;
     let span = (first.start, last.end);
@@ -468,6 +469,36 @@ fn lines(
                 },
             });
         }
+        // Each tab's gap filled with its stop's leader — a table of contents' dots — from just
+        // after the text before it to just before the text after it (fact 16).
+        for i in (line.start..line.end).filter(|&i| chars.get(i) == Some(&'\t')) {
+            let origin = if at == 0 { first_indent } else { 0.0 };
+            let (from, to) = (layout.x_at(i), layout.x_at(i + 1));
+            let to = if i + 1 == line.end { line.width } else { to };
+            let Some(leader) = tabs.next(origin + from).and_then(|stop| stop.leader) else {
+                continue;
+            };
+            let style = face.style(&TextStyle::default());
+            let mark = leader.to_string();
+            let one = setter.shape(&mark, &style);
+            let step: f32 = one.glyphs.iter().map(|g| g.x_advance).sum();
+            let room = to - from - step;
+            if step <= 0.0 || room < step {
+                continue;
+            }
+            let count = (room / step).floor() as usize;
+            let dots = mark.repeat(count);
+            ops.push(Op::Text {
+                x: left as f32 + fit.offset + to - step * (count as f32 + 0.5),
+                y: baseline,
+                face: one.face,
+                size: one.size,
+                glyphs: setter.shape(&dots, &style).glyphs,
+                text: dots,
+                color: ink,
+                mark: Mark::Decoration,
+            });
+        }
         for cut in paint::pieces(&view.runs, line.start, line.end) {
             for (start, text) in paint::drawable(cut.start, cut.text) {
                 if text.is_empty() {
@@ -490,11 +521,13 @@ fn lines(
                 }
                 let run: f32 = shaped.glyphs.iter().map(|g| g.x_advance).sum();
                 // A link with no colour of its own is drawn as Writer draws an unstyled one,
-                // navy and underlined (`doc/odt-format.md` §5c, fact 12).
-                let link = view
-                    .runs
-                    .iter()
-                    .any(|run| run.href.is_some() && run.start <= start && start < run.end());
+                // navy and underlined (`doc/odt-format.md` §5c, fact 12) — but not an index's
+                // entry, whose link Writer styles `Index Link`, plain (fact 16).
+                let link = !view.generated
+                    && view
+                        .runs
+                        .iter()
+                        .any(|run| run.href.is_some() && run.start <= start && start < run.end());
                 let color = match (cut.props.color.as_deref().and_then(Rgb::parse), link) {
                     (Some(color), _) => color,
                     (None, true) => LINK,
@@ -1343,7 +1376,34 @@ mod tests {
         near(end("Page 1"), margin + 17.0 * cm);
     }
 
-    /// A style's `fo:break-before="page"` starts its paragraph on a page of its own.
+    /// `doc/odt-format.md` §5c fact 16: a stop's leader fills its tab's gap — a table of
+    /// contents' dots — and an index's link is drawn plain.
+    #[test]
+    fn a_leader_fills_the_gap_and_an_index_entry_is_not_a_navy_link() {
+        let bytes = r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:styles><style:style style:name="Contents_20_1" style:family="paragraph"><style:paragraph-properties><style:tab-stops><style:tab-stop style:position="17cm" style:type="right" style:leader-style="dotted" style:leader-text="."/></style:tab-stops></style:paragraph-properties></style:style></office:styles>
+            <office:body><office:text><text:table-of-content text:name="T"><text:index-body>
+              <text:p text:style-name="Contents_20_1"><text:a xlink:href="#h" text:style-name="Index_20_Link">First<text:tab/>1</text:a></text:p>
+            </text:index-body></text:table-of-content><text:h text:outline-level="1">First</text:h></office:text></office:body></office:document>"##;
+        let app = App::new();
+        app.open_bytes("toc.fodt", bytes.as_bytes()).unwrap();
+        let page = &typeset(&app, &setter(), &Options::default()).pages[0];
+        let dots = page.ops.iter().find_map(|op| match op {
+            Op::Text { text, .. } if text.starts_with("...") => Some(text.len()),
+            _ => None,
+        });
+        assert!(dots.is_some_and(|n| n > 50), "{dots:?}");
+        let first = page.ops.iter().find_map(|op| match op {
+            Op::Text { text, color, .. } if text == "First" => Some(*color),
+            _ => None,
+        });
+        assert_eq!(first, Some(Rgb::BLACK));
+        assert!(
+            !page.ops.iter().any(|op| matches!(op, Op::Line { .. })),
+            "no underline"
+        );
+    }
+
     #[test]
     fn a_styles_page_break_starts_a_new_page() {
         let bytes = r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">

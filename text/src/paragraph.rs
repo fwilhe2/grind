@@ -107,6 +107,8 @@ pub struct TabStop {
     pub kind: Option<String>,
     /// `style:char` — the character a `char` stop lines up, `.` when unstated.
     pub char: Option<String>,
+    /// `style:leader-text`, else what `style:leader-style` draws — the gap's filling.
+    pub leader: Option<String>,
 }
 
 impl ParagraphProps {
@@ -134,6 +136,7 @@ impl ParagraphProps {
                 Some(grind_core::layout::TabStop {
                     position: points(&stop.position)?,
                     align,
+                    leader: stop.leader.as_deref().and_then(|l| l.chars().next()),
                 })
             })
             .collect();

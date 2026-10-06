@@ -672,6 +672,12 @@ oracle turned out to be unable to answer the font questions (fact 4).
    item at level two under a level-one item holding no paragraph still shows `1.a)`. A
    `text:list-level-style-bullet` shows its `text:bullet-char`. A list naming no style, at any
    depth, shows **no mark** at all.
+16. **A table of contents** — `MEASURED` (2026-10-06, 26.8.1.1, `sw/qa/extras/uiwriter/data/
+   DUMMY1.odt` converted to PDF). Its entries' right-aligned stop (`Contents 1`'s
+   `style:tab-stop` with `style:leader-style="dotted" style:leader-text="."`) fills the gap
+   between the heading's text and its page number with dots. Each entry is a `text:a` styled
+   `Index Link`, a character style declaring nothing, and is drawn in the paragraph's own black
+   with no underline — not fact 12's navy.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on
