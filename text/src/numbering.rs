@@ -129,7 +129,8 @@ fn drawable(bullet: &str) -> String {
 /// Every list item's label among the first `upto` blocks, by index. An **empty** label is a
 /// header or an item's second paragraph, which wear nothing; `None` is a block that is not a
 /// list item, or one whose list states no style to say what it wears — a shell then draws its
-/// own bullet (`crate::paint::bullet`), which is what a list this build wrote looks like.
+/// own bullet (`crate::paint::bullet`), which is what a list made before this build wrote one
+/// with a style of its own (`Lgrind1`, `odf::write`) looks like.
 ///
 /// An item added by editing has no [`ListMark`] of its own; it takes the one of the item before
 /// it at its depth, so pressing Enter in a numbered list numbers the new item.

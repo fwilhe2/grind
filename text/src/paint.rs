@@ -139,8 +139,9 @@ pub fn band(layout: &Layout, line: &Line, start: usize, end: usize) -> Option<(f
 ///
 /// The mark is **drawn and never stored**, and it is the fallback: an item whose list states a
 /// style wears that style's number or bullet (`crate::numbering`, `BlockView::mark`), and this
-/// is the page saying "there is a list item here" for one whose list states none — which is
-/// every list this build writes.
+/// is the page saying "there is a list item here" for one whose list states none. A list this
+/// build opens is written with a list style drawing these same marks (`Lgrind1`, `odf::write`),
+/// so LibreOffice shows it as every window here does.
 pub fn bullet(depth: u32) -> &'static str {
     const MARKS: [&str; 3] = ["\u{2022}", "\u{25e6}", "\u{25aa}"];
     MARKS[(depth.max(1) as usize - 1) % MARKS.len()]

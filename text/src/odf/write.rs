@@ -275,7 +275,12 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
     // styles — the one splice site outside the body, found by structure rather than kept as
     // an offset — so a click on Bold stays a splice rather than a regenerate of everything.
     let mut patches: Vec<(std::ops::Range<usize>, String)> = Vec::new();
-    let declarations = pool.declarations();
+    let mut declarations = pool.declarations();
+    if opens_lists(doc, Some(source))
+        && !envelope::automatic_style_names(&source.bytes).contains(BULLETS)
+    {
+        declarations.push_str(&bullets_declaration());
+    }
     if !declarations.is_empty() {
         let at = envelope::automatic_styles_end(&source.bytes)?;
         patches.push((at..at, declarations));
@@ -647,7 +652,9 @@ fn content(
         false => doc,
     };
     let pool = Pool::of(doc, source, reserved);
-    let used = Used::of(doc, &pool);
+    let mut used = Used::of(doc, &pool);
+    let bullets = opens_lists(doc, source) && !reserved.contains(BULLETS);
+    used.styles |= bullets;
 
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     let _ = write!(
@@ -675,28 +682,70 @@ fn content(
         let _ = write!(out, " office:mimetype=\"{MIMETYPE}\"");
     }
     out.push_str(">\n");
-    automatic_styles(&mut out, &pool);
+    automatic_styles(&mut out, &pool, bullets);
     out.push_str(" <office:body>\n  <office:text>\n");
-    let origin = source.map(|source| Origin::new(source, &doc.edits.blocks));
+    let origin = source.map(|source| Origin::new(source, &doc.edits.blocks, &doc.list_marks));
     body(&mut out, doc, &pool, origin.as_ref());
     out.push_str("  </office:text>\n </office:body>\n");
     let _ = writeln!(out, "</{root}>");
     out
 }
 
+/// The list style a list this writer opens is given — a list the file already had keeps its own
+/// attributes (`Origin::list`). Without one, LibreOffice draws a list with no mark at all
+/// (`doc/odt-format.md` §5c fact 15), which is how every list made here used to look there.
+const BULLETS: &str = "Lgrind1";
+
+/// [`BULLETS`]'s declaration: the marks every window here draws (`grind_text::paint::bullet`),
+/// level by level, a quarter inch further in each time, in LibreOffice's label-alignment form.
+fn bullets_declaration() -> String {
+    let mut out = format!("<text:list-style style:name=\"{BULLETS}\">");
+    for level in 1..=10u32 {
+        let margin = 0.635 * f64::from(level + 1);
+        let _ = write!(
+            out,
+            "<text:list-level-style-bullet text:level=\"{level}\" text:bullet-char=\"{}\">\
+             <style:list-level-properties text:list-level-position-and-space-mode=\"label-alignment\">\
+             <style:list-level-label-alignment text:label-followed-by=\"listtab\" \
+             text:list-tab-stop-position=\"{margin:.3}cm\" fo:text-indent=\"-0.635cm\" \
+             fo:margin-left=\"{margin:.3}cm\"/></style:list-level-properties>\
+             </text:list-level-style-bullet>",
+            crate::paint::bullet(level)
+        );
+    }
+    out.push_str("</text:list-style>");
+    out
+}
+
+/// Whether a list in `doc` is one this writer opens — none of the file's — and so needs
+/// [`BULLETS`].
+fn opens_lists(doc: &Document, source: Option<&super::source::Source>) -> bool {
+    doc.blocks.iter().any(|block| {
+        matches!(block.kind, BlockKind::ListItem { .. })
+            && source
+                .and_then(|source| source.lists.get(&block.id))
+                .and_then(|lists| lists.first())
+                .is_none()
+    })
+}
+
 /// The `office:automatic-styles` block — one `style:style` per distinct run formatting.
 ///
 /// Ahead of `office:body`, which the schema requires and a single-pass reader depends on: a
 /// span refers to a name, and the name has to be declared by the time it does.
-fn automatic_styles(out: &mut String, pool: &Pool) {
-    if pool
-        .entries
-        .iter()
-        .all(|(_, name)| pool.declared.contains(name))
+fn automatic_styles(out: &mut String, pool: &Pool, bullets: bool) {
+    if !bullets
+        && pool
+            .entries
+            .iter()
+            .all(|(_, name)| pool.declared.contains(name))
     {
         return;
     }
     out.push_str(" <office:automatic-styles>\n");
+    if bullets {
+        let _ = writeln!(out, "  {}", bullets_declaration());
+    }
     for (props, name) in &pool.entries {
         if pool.declared.contains(name) {
             continue;
@@ -870,6 +919,10 @@ fn section_path(doc: &Document, section: Option<usize>) -> Vec<usize> {
 struct Origin<'a> {
     source: &'a super::source::Source,
     edited: &'a std::collections::BTreeSet<crate::model::BlockId>,
+    /// Which list item each list block was read in (`crate::numbering::ListMark`): whether it
+    /// was a header, an item's later paragraph, or an item with a start value of its own — what
+    /// the fold writes back rather than an item per block.
+    marks: &'a crate::numbering::Marks,
     /// The original lists already opened once, by where they start — a second opening (the
     /// same list, split by an edit) must not repeat its `xml:id`.
     opened: std::cell::RefCell<std::collections::HashSet<usize>>,
@@ -882,6 +935,7 @@ impl<'a> Origin<'a> {
     fn new(
         source: &'a super::source::Source,
         edited: &'a std::collections::BTreeSet<crate::model::BlockId>,
+        marks: &'a crate::numbering::Marks,
     ) -> Self {
         // The whitespace in front of the first element of the body, back to its line's start.
         let first = source
@@ -905,6 +959,7 @@ impl<'a> Origin<'a> {
         Origin {
             source,
             edited,
+            marks,
             opened: Default::default(),
             shift,
         }
@@ -925,6 +980,25 @@ impl<'a> Origin<'a> {
             .blocks
             .get(&block.id)
             .map_or("", |at| at.keep.as_str())
+    }
+
+    /// How many levels of list `a` and `b` share in the file — `u32::MAX` when either was not in
+    /// it, since a block an edit made continues the list it was made in.
+    fn shared_lists(&self, a: &Block, b: &Block) -> u32 {
+        match (self.source.lists.get(&a.id), self.source.lists.get(&b.id)) {
+            (Some(a), Some(b)) => a.iter().zip(b).take_while(|(x, y)| x.0 == y.0).count() as u32,
+            _ => u32::MAX,
+        }
+    }
+
+    /// Whether `block`'s outermost list is none of the file's — one this writer opens, and
+    /// gives [`BULLETS`].
+    fn new_list(&self, block: &Block) -> bool {
+        self.source
+            .lists
+            .get(&block.id)
+            .and_then(|lists| lists.first())
+            .is_none()
     }
 
     /// The attributes for the `text:list` opened at `level` (0 outermost) around `block`.
@@ -1182,11 +1256,44 @@ fn blocks(out: &mut String, list: &[Block], extra: u32, pool: &Pool, origin: Opt
     // Where a block outside any list sits: three levels into the body, `extra` more in a cell.
     let base = 3 + extra;
 
+    let mut previous: Option<&Block> = None;
+    // The item element open at each list level, and whether the last thing written opened one,
+    // so the block that follows belongs inside it.
+    let mut items: Vec<&'static str> = Vec::new();
+    let mut fresh = false;
+    // The item a block opens: a header as a header, a start value kept, as the file had them.
+    let item = |block: &Block| -> (&'static str, String) {
+        match origin.and_then(|origin| origin.marks.get(&block.id)) {
+            Some(mark) if mark.header => ("text:list-header", String::new()),
+            Some(mark) => (
+                "text:list-item",
+                mark.start
+                    .map(|n| format!(" text:start-value=\"{n}\""))
+                    .unwrap_or_default(),
+            ),
+            None => ("text:list-item", String::new()),
+        }
+    };
     for block in list {
         let depth = match block.kind {
             BlockKind::ListItem { depth } => depth,
             _ => 0,
         };
+        // Two items the file held in different lists stay in different lists: lists that
+        // follow one another with nothing between them are still several elements, each with
+        // its own style and numbering, and folding by depth alone merged them into the first.
+        let shared = match (origin, previous) {
+            (Some(origin), Some(previous)) => origin.shared_lists(previous, block),
+            _ => u32::MAX,
+        };
+        previous = Some(block);
+        while open > depth.min(shared) {
+            open -= 1;
+            let name = items.pop().unwrap_or("text:list-item");
+            let _ = writeln!(out, "{}</{name}>", pad(base + 2 * open + 1, origin));
+            let _ = writeln!(out, "{}</text:list>", pad(base + 2 * open, origin));
+            fresh = false;
+        }
 
         // Close deeper lists, then open shallower ones, so a jump of two levels is two
         // elements rather than a malformed one.
@@ -1195,25 +1302,51 @@ fn blocks(out: &mut String, list: &[Block], extra: u32, pool: &Pool, origin: Opt
         // its file lines up with the one it replaced.
         while open > depth {
             open -= 1;
-            let _ = writeln!(out, "{}</text:list-item>", pad(base + 2 * open + 1, origin));
+            let name = items.pop().unwrap_or("text:list-item");
+            let _ = writeln!(out, "{}</{name}>", pad(base + 2 * open + 1, origin));
             let _ = writeln!(out, "{}</text:list>", pad(base + 2 * open, origin));
+            fresh = false;
         }
         while open < depth {
-            let attributes = origin.map_or(String::new(), |origin| origin.list(block, open));
+            // A list the file had opens with its own attributes; one this writer opens, with
+            // the list style that gives it its marks.
+            let attributes = match origin {
+                Some(origin) if !(open == 0 && origin.new_list(block)) => origin.list(block, open),
+                _ if open == 0 => format!(" text:style-name=\"{BULLETS}\""),
+                _ => String::new(),
+            };
             let _ = writeln!(
                 out,
                 "{}<text:list{attributes}>",
                 pad(base + 2 * open, origin)
             );
-            let _ = writeln!(out, "{}<text:list-item>", pad(base + 2 * open + 1, origin));
+            let (name, attributes) = match open + 1 == depth {
+                true => item(block),
+                false => ("text:list-item", String::new()),
+            };
+            let _ = writeln!(
+                out,
+                "{}<{name}{attributes}>",
+                pad(base + 2 * open + 1, origin)
+            );
+            items.push(name);
+            fresh = true;
             open += 1;
         }
-        // A sibling item at the same depth closes the previous item and opens a new one.
-        if depth > 0 && !just_opened(out) {
-            let item = pad(base + 2 * (open - 1) + 1, origin);
-            let _ = writeln!(out, "{item}</text:list-item>");
-            let _ = writeln!(out, "{item}<text:list-item>");
+        // A sibling item at the same depth closes the previous item and opens a new one —
+        // unless this block is that item's later paragraph, which stays inside it.
+        let later = origin
+            .and_then(|origin| origin.marks.get(&block.id))
+            .is_some_and(|mark| !mark.first);
+        if depth > 0 && !fresh && !later {
+            let at = pad(base + 2 * (open - 1) + 1, origin);
+            let closed = items.pop().unwrap_or("text:list-item");
+            let (name, attributes) = item(block);
+            let _ = writeln!(out, "{at}</{closed}>");
+            let _ = writeln!(out, "{at}<{name}{attributes}>");
+            items.push(name);
         }
+        fresh = false;
 
         let at = pad(base + 2 * open, origin);
         match origin.and_then(|origin| origin.verbatim(block)) {
@@ -1232,15 +1365,10 @@ fn blocks(out: &mut String, list: &[Block], extra: u32, pool: &Pool, origin: Opt
 
     while open > 0 {
         open -= 1;
-        let _ = writeln!(out, "{}</text:list-item>", pad(base + 2 * open + 1, origin));
+        let name = items.pop().unwrap_or("text:list-item");
+        let _ = writeln!(out, "{}</{name}>", pad(base + 2 * open + 1, origin));
         let _ = writeln!(out, "{}</text:list>", pad(base + 2 * open, origin));
     }
-}
-
-/// Whether the last thing written opened a list item, so the next block belongs *inside* it
-/// rather than after it.
-fn just_opened(out: &str) -> bool {
-    out.trim_end().ends_with("<text:list-item>")
 }
 
 /// `depth + 1` spaces — moved to wherever the file being regenerated indents its body, so a new
