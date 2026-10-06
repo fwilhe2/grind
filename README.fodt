@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0">
+ 
+ <office:automatic-styles>
+  <style:style style:name="T1" style:family="text">
+   <style:text-properties fo:font-family="monospace"/>
+  </style:style>
+ </office:automatic-styles><office:body>
+  <office:text>
+    <text:p/>
+    <text:p text:style-name="Title">grind</text:p>
+    <text:h text:outline-level="1">What is this?</text:h>
+    <text:p>grind is an office suite written from scratch. It is 100% written using AI agents. Uses OpenDocument (odf) as its native format.</text:p>
+    <text:h text:outline-level="1">Why this project exists?</text:h>
+    <text:p>I&apos;m a software developer and a long-time Linux user. I love and appreciate the free and open source software ecosystem, and I&apos;ve made an effort not to be trapped in non-free file formats for a long time.</text:p>
+    <text:p>But I&apos;ve also gotten frustrated with the LibreOffice user exprience. Don&apos;t get me wrong, the project has done so much for the free desktop, and it is great software that solves real problems. But the UX shows its age, and the community overall seems not to welcome change. I can never remember how to make Excel-like tables in Calc, and that is not my fault, this is a common operationn that should be simple, but Calc makes it hard for some reason.</text:p>
+    <text:p>I know, many people will close this repo once they discover it is &apos;slop&apos;. I don&apos;t want to argue if AI agents can possible be used in ethical ways, but this human written readme should tell you something: This is a passion project. I would not have the time and energy to do this in any different way, an office suite is just way too complex for that.</text:p>
+    <text:h text:outline-level="1">Project Status</text:h>
+    <text:p>No release exists yet. A spredsheet and a word processor are included, the spradsheet is more complete, both are servicable for my own personal use.</text:p>
+    <text:h text:outline-level="1">Approach</text:h>
+    <text:p>This project has clients for Linux, Windows, Mac, the Browser (using WebAssembly), a TUI and a CLI. It does purposefully not use any cross-platform toolkit, it exists as a proof of an idea: AI Agents enable a new way of building software, native for each platform. This was possible before but almost no one did it for economical reasons. Not enough benefit for the cost. With AI Agents, this calcualation changes.</text:p>
+    <text:h text:outline-level="2">Human and AI Authorship</text:h>
+    <text:p>This readme is fully human written. Source code, docs in the <text:span text:style-name="T1">docs</text:span><text:s/>directory and all other content are AI authored.</text:p>
+    <text:h text:outline-level="1">Novel Features</text:h>
+    <text:p>1. View source</text:p>
+    <text:p>In spreadsheets, it is often not obvious which cells contain data and which contain code (formulas). Authors may decide to use styles to signal this, but that is not more than a convention. Grind has a plain-text projection of its OpenDocument format which make it simple to review and audit spreadsheets.</text:p>
+    <text:p>2. Formulas in plain English</text:p>
+    <text:p>Grind can show spreadsheet formulas in a way that is more self documenting compared to other spreadsheet software.</text:p>
+    <text:p>3. A domain specific language to generate documents</text:p>
+    <text:p>Based on <text:a xlink:href="https://rhai.rs/">rhai</text:a>, an embeddable scripting language you can generate spreadsheets based on dynamic data without the need for a turing complete language. Grind does not have any macro support and never will, but many macro use-cases might be replaced with rhai scripts.</text:p>
+    <text:p>4. A CLI that can do everything</text:p>
+    <text:p>The cli is a first class citizen, no matter if it is used by a human, in shell scripts or by AI Agents.</text:p>
+    <text:h text:outline-level="1">License</text:h>
+    <text:p>Licensed under GNU Affero General Public License v3 or later. Full text in <text:a xlink:href="./LICENSE">LICENSE</text:a>.</text:p>
+    <text:h text:outline-level="1">Trademarks</text:h>
+    <text:p>Product names and trademarks mentioned in this README belong to their respective owners. This project is not affiliated with or endorsed by them.</text:p>
+  </office:text>
+ </office:body>
+</office:document>
