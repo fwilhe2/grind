@@ -682,7 +682,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "flate2",
-        version: "1.1.9",
+        version: "1.1.10",
         licence: "MIT OR Apache-2.0",
         copyright: "Copyright (c) 2014-2026 Alex Crichton",
         source: "https://github.com/rust-lang/flate2-rs",
@@ -1381,6 +1381,15 @@ pub(super) const COMPONENTS: &[Component] = &[
         source: "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide",
         kind: Kind::Crate,
         notices: &[114, 62, 115, 116],
+    },
+    Component {
+        name: "miniz_oxide",
+        version: "0.9.1",
+        licence: "MIT OR Zlib OR Apache-2.0",
+        copyright: "Copyright 2013-2014 RAD Game Tools and Valve Software",
+        source: "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide",
+        kind: Kind::Crate,
+        notices: &[113, 62, 114, 115],
     },
     Component {
         name: "mio",
