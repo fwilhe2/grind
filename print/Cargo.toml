@@ -42,7 +42,7 @@ krilla = { version = "=0.8.2", default-features = false, features = ["raster-ima
 # labels is not the chart.
 krilla-svg = "=0.8.1"
 resvg = { version = "=0.47.0", default-features = false, features = ["text"] }
-usvg = { version = "=0.47.0", default-features = false, features = ["text"] }
+usvg = { version = "=0.48.1", default-features = false, features = ["text"] }
 
 # The preview (doc/pdf-export.md §4): the same display list the PDF is written from, rasterised.
 # 0.12 shares `tiny-skia-path` with krilla rather than bringing a second copy.
