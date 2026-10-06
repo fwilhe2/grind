@@ -40,6 +40,9 @@ pub struct ParagraphProps {
     pub keep_with_next: Option<String>,
     pub widows: Option<String>,
     pub orphans: Option<String>,
+    /// `style:master-page-name` on the style itself: the master page a paragraph in this style
+    /// starts. Empty in the file is none.
+    pub master_page: Option<String>,
     /// `style:tab-stop-distance` — the interval between the default tab stops.
     pub tab_stop_distance: Option<String>,
     /// `style:tab-stops` — the paragraph's own stops, in order. A style that states its own
@@ -87,6 +90,9 @@ impl ParagraphProps {
             if theirs.is_some() {
                 mine.clone_from(theirs);
             }
+        }
+        if over.master_page.is_some() {
+            self.master_page.clone_from(&over.master_page);
         }
         if over.tab_stop_distance.is_some() {
             self.tab_stop_distance.clone_from(&over.tab_stop_distance);

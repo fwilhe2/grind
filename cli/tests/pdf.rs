@@ -59,9 +59,11 @@ impl Drop for Sandbox {
 
 #[test]
 fn info_names_the_page_a_text_document_states() {
+    // Its first paragraph's style names the `HTML` master page, with no next one, so every page
+    // is set on that one's 1 cm margins — what LibreOffice prints (`doc/odt-format.md` §5c, 17).
     let info = ok(&["info", &writer("numbered-list.fodt")]);
     assert!(
-        info.contains("page\tA4\t210.01 × 297 mm\tmargins 20 20 20 20 mm"),
+        info.contains("page\tA4\t210.01 × 297 mm\tmargins 10 10 20 10 mm"),
         "{info}"
     );
 

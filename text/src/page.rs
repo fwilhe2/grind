@@ -107,6 +107,29 @@ pub fn paginate(
     rules: Rules,
     picture: &dyn Fn(&BlockView, f64) -> Option<f64>,
 ) -> Vec<Page> {
+    paginate_first(
+        app,
+        faces,
+        column,
+        (height, height),
+        spacing,
+        rules,
+        picture,
+    )
+}
+
+/// [`paginate`], with the first page's text area `heights.0` tall and every other page's
+/// `heights.1` — a first page set on a master page of its own, whose header or footer takes a
+/// different share of it (`Document::first_page`).
+pub fn paginate_first(
+    app: &App,
+    faces: &dyn Faces,
+    column: f64,
+    (first, height): (f64, f64),
+    spacing: &Spacing,
+    rules: Rules,
+    picture: &dyn Fn(&BlockView, f64) -> Option<f64>,
+) -> Vec<Page> {
     // The flow's own idea of where everything sits, from a top of zero: a page has its own top
     // margin, which is the page's business rather than the flow's.
     let spacing = Spacing {
@@ -119,6 +142,7 @@ pub fn paginate(
     let mut cut = Cut {
         pages: vec![Page::default()],
         origin: 0.0,
+        first,
         height,
         reserved: 0.0,
     };
@@ -145,7 +169,8 @@ pub fn paginate(
                 if *keep
                     && !cut.fresh()
                     && let (Some(last), Some(next)) = (lines.last(), units.get(at + 1))
-                    && next.lead(rules.orphans).max(last.bottom()) - cut.origin > height + EPS
+                    && next.lead(rules.orphans).max(last.bottom()) - cut.origin
+                        > cut.page_height() + EPS
                 {
                     cut.turn(lines[0].top);
                 }
@@ -382,6 +407,8 @@ struct Cut {
     pages: Vec<Page>,
     /// The flow's y at the top of the current page.
     origin: f64,
+    /// The first page's text area, and every other page's.
+    first: f64,
     height: f64,
     /// What the footnotes cited on the current page take from the foot of it.
     reserved: f64,
@@ -405,9 +432,17 @@ impl Cut {
         self.reserved = 0.0;
     }
 
+    /// How tall the current page's text area is.
+    fn page_height(&self) -> f64 {
+        match self.pages.len() {
+            1 => self.first,
+            _ => self.height,
+        }
+    }
+
     /// How tall the body of the current page may be, its footnotes' room taken out.
     fn room(&self) -> f64 {
-        self.height - self.reserved
+        self.page_height() - self.reserved
     }
 
     /// Place a row's blocks and cells on the current page, its flow coordinates taken from

@@ -15,7 +15,7 @@ use grind_core::layout::{Fragment, wrap};
 use grind_core::page::{PageGeometry, pt};
 use grind_core::style::{TextStyle, length_mm};
 use grind_text::flow::{self, CellBox};
-use grind_text::page::{Piece, Rules, paginate};
+use grind_text::page::{Piece, Rules, paginate_first};
 use grind_text::{App, BlockKind, BlockView, Caret, paint, picture_of};
 
 use crate::align::{self, Align};
@@ -50,9 +50,26 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     let (header, footer) = app.marginals();
     let header = header.map(|m| Marginal::lay_out(app, setter, &m, width));
     let footer = footer.map(|m| Marginal::lay_out(app, setter, &m, width));
+    // A first page on a master page of its own wears that one's header and footer, and its
+    // body has what they leave (`Document::first_page`).
+    let (first_header, first_footer) = match app.first_page_marginals() {
+        Some((h, f)) => (
+            h.map(|m| Marginal::lay_out(app, setter, &m, width)),
+            f.map(|m| Marginal::lay_out(app, setter, &m, width)),
+        ),
+        None => (None, None),
+    };
+    let first_own = app.first_page_marginals().is_some();
     let room = |m: &Option<Marginal<'_>>| m.as_ref().map_or(0.0, |m| m.height + m.spacing);
     let top = margin_top + room(&header);
     let height = (pt(geometry.text_height()) - room(&header) - room(&footer)).max(1.0);
+    let (first_top, first_height) = match first_own {
+        true => (
+            margin_top + room(&first_header),
+            (pt(geometry.text_height()) - room(&first_header) - room(&first_footer)).max(1.0),
+        ),
+        false => (top, height),
+    };
     let faces = role_faces(setter);
     let viewport = app.get_viewport(0..app.block_count());
     let looks: std::collections::HashMap<String, grind_text::table_look::TableLook> = viewport
@@ -104,13 +121,25 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         orphans: stated.orphans.unwrap_or(0) as usize,
         widows: stated.widows.unwrap_or(0) as usize,
     };
-    let pages = paginate(app, &column, width, height, &SPACING, breaking, &picture);
+    let pages = paginate_first(
+        app,
+        &column,
+        width,
+        (first_height, height),
+        &SPACING,
+        breaking,
+        &picture,
+    );
 
     let mut outline = Vec::new();
     let pages = pages
         .iter()
         .enumerate()
         .map(|(number, page)| {
+            let (top, header, footer) = match number == 0 && first_own {
+                true => (first_top, &first_header, &first_footer),
+                false => (top, &header, &footer),
+            };
             let mut ops = Vec::new();
             let mut span: Option<(Caret, Caret)> = None;
             let mut cover = |from: Caret, to: Caret| {
@@ -166,10 +195,10 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 }
             }
             let count = pages.len();
-            if let Some(header) = &header {
+            if let Some(header) = header {
                 header.draw(&mut ops, (left, margin_top), number + 1, count);
             }
-            if let Some(footer) = &footer {
+            if let Some(footer) = footer {
                 let bottom = pt(geometry.height) - pt(geometry.bottom);
                 footer.draw(&mut ops, (left, bottom - footer.height), number + 1, count);
             }
@@ -1404,6 +1433,40 @@ mod tests {
         );
     }
 
+    /// `doc/odt-format.md` §5c fact 17: a first paragraph naming a master page of its own sets
+    /// page 1 on it — no header here — and the pages after it on its `next-style-name`'s.
+    #[test]
+    fn the_first_page_wears_its_own_master_and_the_rest_the_next() {
+        let fill: String = (0..70)
+            .map(|i| format!("<text:p>Line {i} of filler text.</text:p>"))
+            .collect();
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles>
+              <style:style style:name="P1" style:family="paragraph" style:master-page-name="First_20_Page"/>
+              <style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/><style:header-style><style:header-footer-properties fo:margin-bottom="0.5cm"/></style:header-style></style:page-layout>
+            </office:automatic-styles>
+            <office:master-styles>
+              <style:master-page style:name="Standard" style:page-layout-name="pm1"><style:header><text:p>RUNNINGHEAD</text:p></style:header></style:master-page>
+              <style:master-page style:name="First_20_Page" style:page-layout-name="pm1" style:next-style-name="Standard"/>
+            </office:master-styles>
+            <office:body><office:text><text:p text:style-name="P1">FIRSTLINE</text:p>{fill}</office:text></office:body></office:document>"#
+        );
+        let app = App::new();
+        app.open_bytes("first.fodt", bytes.as_bytes()).unwrap();
+        let typeset = typeset(&app, &setter(), &Options::default());
+        assert!(typeset.pages.len() >= 2);
+        let has = |page: &crate::ops::Page, want: &str| texts(page).iter().any(|t| t.2 == want);
+        assert!(!has(&typeset.pages[0], "RUNNINGHEAD"));
+        assert!(has(&typeset.pages[1], "RUNNINGHEAD"));
+        let top = |page: &crate::ops::Page| texts(page)[0].1;
+        assert!(
+            top(&typeset.pages[0]) < top(&typeset.pages[1]),
+            "page 1's text starts at the margin, page 2's under the header"
+        );
+    }
+
+    /// A style's `fo:break-before="page"` starts its paragraph on a page of its own.
     #[test]
     fn a_styles_page_break_starts_a_new_page() {
         let bytes = r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">

@@ -855,6 +855,15 @@ impl App {
         (state.doc.header.clone(), state.doc.footer.clone())
     }
 
+    /// The first page's own header and footer, when it is set on a master page of its own
+    /// ([`model::Document::first_page`]); `None` when it wears [`App::marginals`] like the rest.
+    #[allow(clippy::type_complexity)]
+    pub fn first_page_marginals(
+        &self,
+    ) -> Option<(Option<marginal::Marginal>, Option<marginal::Marginal>)> {
+        self.state.read().unwrap().doc.first_page.clone()
+    }
+
     /// A paragraph style resolved by name, as [`App::paragraph`] resolves a block's — what a
     /// header paragraph, which is no block, is laid out by.
     pub fn resolve_style(&self, name: Option<&str>) -> paragraph::Resolved {

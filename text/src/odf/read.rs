@@ -126,6 +126,9 @@ pub struct Builder {
     /// Every `style:master-page` read so far: its name and the page layout it names, in
     /// document order, so "the first one" means what the file said first.
     master_pages: Vec<(String, String)>,
+    /// Each master page's `style:next-style-name`: the master the page after one of its own is
+    /// set on.
+    master_next: HashMap<String, String>,
     /// Each master page's header and footer paragraphs, by its name.
     master_marginals: HashMap<String, Marginals>,
     /// Each page layout's room for a header and a footer, in millimetres: `(min-height, spacing)`.
@@ -160,7 +163,7 @@ struct PendingLook {
 type Room = (f64, f64);
 
 /// A master page's header and footer paragraphs, as read.
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Marginals {
     header: Option<Vec<crate::marginal::Paragraph>>,
     footer: Option<Vec<crate::marginal::Paragraph>>,
@@ -248,6 +251,7 @@ impl Builder {
             chain_of_id: HashMap::new(),
             item: None,
             master_pages: Vec::new(),
+            master_next: HashMap::new(),
             master_marginals: HashMap::new(),
             layout_marginals: HashMap::new(),
             marginal: None,
@@ -301,35 +305,71 @@ impl Builder {
             .collect();
     }
 
+    /// Called once the paragraph styles are settled, since the first paragraph's style decides
+    /// which master page starts the document.
     pub fn settle_page(&mut self) {
-        let master = self
-            .master_pages
-            .iter()
-            .find(|(name, _)| name == "Standard")
-            .or_else(|| self.master_pages.first());
-        self.doc.page = master.and_then(|(_, layout)| self.page_layouts.get(layout).copied());
-        let Some((master, layout)) = master.cloned() else {
-            return;
-        };
-        let marginals = self.master_marginals.remove(&master).unwrap_or_default();
-        let (header_room, footer_room) = self
-            .layout_marginals
-            .get(&layout)
-            .copied()
-            .unwrap_or_default();
-        let marginal = |paragraphs: Option<Vec<crate::marginal::Paragraph>>,
-                        room: Option<(f64, f64)>| {
-            paragraphs.map(|paragraphs| {
-                let (min_height, spacing) = room.unwrap_or_default();
-                crate::marginal::Marginal {
-                    paragraphs,
-                    min_height,
-                    spacing,
-                }
+        let named = |name: &str| self.master_pages.iter().find(|(m, _)| m == name);
+        // The master the first paragraph's style names, if any — Writer's *First Page* — and the
+        // one the pages after it are set on: its `next-style-name`, else itself.
+        let first = self
+            .doc
+            .blocks
+            .first()
+            .and_then(|block| {
+                crate::paragraph::resolve(
+                    &self.doc.paragraph_styles,
+                    &self.doc.default_paragraph,
+                    block.style.as_deref(),
+                )
+                .master_page
             })
+            .and_then(|name| named(&name).cloned());
+        let rest = match &first {
+            Some((name, _)) => self
+                .master_next
+                .get(name)
+                .and_then(|next| named(next).cloned())
+                .or_else(|| first.clone()),
+            None => named("Standard")
+                .or_else(|| self.master_pages.first())
+                .cloned(),
         };
-        self.doc.header = marginal(marginals.header, header_room);
-        self.doc.footer = marginal(marginals.footer, footer_room);
+        self.doc.page = rest
+            .as_ref()
+            .and_then(|(_, layout)| self.page_layouts.get(layout).copied());
+        let marginals_of = |master: &(String, String)| {
+            let marginals = self
+                .master_marginals
+                .get(&master.0)
+                .cloned()
+                .unwrap_or_default();
+            let (header_room, footer_room) = self
+                .layout_marginals
+                .get(&master.1)
+                .copied()
+                .unwrap_or_default();
+            let marginal = |paragraphs: Option<Vec<crate::marginal::Paragraph>>,
+                            room: Option<(f64, f64)>| {
+                paragraphs.map(|paragraphs| {
+                    let (min_height, spacing) = room.unwrap_or_default();
+                    crate::marginal::Marginal {
+                        paragraphs,
+                        min_height,
+                        spacing,
+                    }
+                })
+            };
+            (
+                marginal(marginals.header, header_room),
+                marginal(marginals.footer, footer_room),
+            )
+        };
+        if let Some(rest) = &rest {
+            (self.doc.header, self.doc.footer) = marginals_of(rest);
+        }
+        self.doc.first_page = first
+            .filter(|first| rest.as_ref().is_some_and(|rest| rest.0 != first.0))
+            .map(|first| marginals_of(&first));
     }
 
     /// Record the package this document is being read from, so a `draw:image`'s `xlink:href`
@@ -786,6 +826,9 @@ impl Context<Builder> for MasterStyles {
             && b.master_pages.len() < MAX_STYLES
         {
             b.master_pages.push((master.to_owned(), layout.to_owned()));
+            if let Some(next) = attrs.get(Ns::Style, "next-style-name") {
+                b.master_next.insert(master.to_owned(), next.to_owned());
+            }
             return Some(Box::new(MasterPage {
                 name: master.to_owned(),
             }));
@@ -1197,7 +1240,13 @@ impl Context<Builder> for Styles {
                     parent: attrs.get(Ns::Style, "parent-style-name").map(str::to_owned),
                     automatic: self.automatic,
                 },
-                props: crate::paragraph::ParagraphProps::default(),
+                props: crate::paragraph::ParagraphProps {
+                    master_page: attrs
+                        .get(Ns::Style, "master-page-name")
+                        .filter(|m| !m.is_empty())
+                        .map(str::to_owned),
+                    ..Default::default()
+                },
             }));
         }
         if attrs.get(Ns::Style, "family") != Some("text") {

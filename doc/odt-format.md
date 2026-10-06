@@ -678,6 +678,11 @@ oracle turned out to be unable to answer the font questions (fact 4).
    between the heading's text and its page number with dots. Each entry is a `text:a` styled
    `Index Link`, a character style declaring nothing, and is drawn in the paragraph's own black
    with no underline — not fact 12's navy.
+17. **A first page of its own** — `MEASURED` (2026-10-06, 26.8.1.1). A document whose first
+   paragraph's style names `style:master-page-name="First_20_Page"`, a master page with no
+   header whose `style:next-style-name` is `Standard`, prints page 1 with no header and its text
+   from the top margin, and every later page with `Standard`'s header. (`fdo114306_2.odt` is the
+   same shape with a Russian first-page master.)
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

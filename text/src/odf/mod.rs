@@ -61,8 +61,8 @@ pub fn read(bytes: &[u8]) -> Result<Document> {
         &mut builder,
     )?;
     builder.publish_styles();
-    builder.settle_page();
     builder.settle_paragraph_styles();
+    builder.settle_page();
     builder.settle_table_looks();
     builder.doc.reindex_bookmarks();
     // Reading is not editing: a document just opened has no changes to splice.

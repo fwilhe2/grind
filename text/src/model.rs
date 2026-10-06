@@ -651,6 +651,14 @@ pub struct Document {
     /// printing and never written (`crate::marginal`).
     pub header: Option<crate::marginal::Marginal>,
     pub footer: Option<crate::marginal::Marginal>,
+    /// The first page's own header and footer, when the document's first paragraph names a
+    /// master page of its own (`style:master-page-name`) and the pages after it are set on
+    /// another — Writer's *First Page*, whose `style:next-style-name` is the body's. Read for
+    /// printing and never written; `None` when every page wears the same ones.
+    pub first_page: Option<(
+        Option<crate::marginal::Marginal>,
+        Option<crate::marginal::Marginal>,
+    )>,
     /// The next id to hand out. Monotonic, never reused, so a stale [`BlockId`] is always
     /// stale rather than silently pointing at something new.
     next_id: u64,
@@ -720,6 +728,7 @@ impl Document {
             sections: Vec::new(),
             notes: Vec::new(),
             header: None,
+            first_page: None,
             footer: None,
             next_id: 0,
             source: None,
