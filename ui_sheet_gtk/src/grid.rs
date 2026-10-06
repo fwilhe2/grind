@@ -659,6 +659,10 @@ pub fn cell_menu_model() -> gio::Menu {
     range.append(Some("Name This Range…"), Some("win.names"));
     range.append(Some("Filter Rows"), Some("win.filter"));
     range.append(Some("Format as Table…"), Some("win.format-table"));
+    range.append(
+        Some("Conditional Formatting…"),
+        Some("win.conditional-formats"),
+    );
     range.append(Some("Insert Chart…"), Some("win.chart-insert"));
     model.append_section(None, &range);
     model

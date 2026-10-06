@@ -204,6 +204,13 @@ pub enum Command {
     /// first, so the plain one stays zero-prompt, which is the shape the web shell's palette
     /// gives the pair too.
     FormatTableTotals,
+    /// A conditional-format rule over the selection: the condition in a prompt, written for its
+    /// first cell, then the look from `dialog::choose` over `grind_sheet::rule::Look::ALL` —
+    /// `grind_sheet::rule::add_from_input`, the call every shell's rule editor makes
+    /// (`doc/conditional-format.md` §4).
+    AddRule,
+    /// The sheet's rules in `dialog::choose`, one of them taken away — `App::remove_rule`.
+    RemoveRule,
     /// Format the selection as one of `numfmt::CURRENCIES` — the euro, the dollar, the pound,
     /// in that order ([`Command::currency`]), one click each, as the GTK picker's buttons are.
     /// The grid's alone; `sheet/currency.rs` is what each one writes, and the item whose
@@ -398,6 +405,8 @@ impl Command {
         Command::ToggleFilter,
         Command::FormatTable,
         Command::FormatTableTotals,
+        Command::AddRule,
+        Command::RemoveRule,
         Command::CurrencyEuro,
         Command::CurrencyDollar,
         Command::CurrencyPound,
@@ -791,6 +800,15 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::FormatTableTotals,
                 label: "Format as Table with &Totals…",
+            },
+            Item::Separator,
+            Item::Verb {
+                command: Command::AddRule,
+                label: "Add Con&ditional Format…",
+            },
+            Item::Verb {
+                command: Command::RemoveRule,
+                label: "Remove Cond&itional Format…",
             },
         ],
     },
@@ -1233,6 +1251,8 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::ToggleFilter
         | Command::FormatTable
         | Command::FormatTableTotals
+        | Command::AddRule
+        | Command::RemoveRule
         | Command::CurrencyEuro
         | Command::CurrencyDollar
         | Command::CurrencyPound

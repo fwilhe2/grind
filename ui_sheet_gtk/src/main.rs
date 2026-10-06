@@ -37,6 +37,7 @@ mod keymap;
 mod licences;
 mod lint;
 mod palette;
+mod rules;
 mod settings;
 mod state;
 mod theme;
@@ -2255,6 +2256,22 @@ fn actions() -> Vec<Verb> {
             |ui| ui.explore_calculations(),
         ),
         verb("names", &[], "Names…", "Document", |ui| ui.manage_names()),
+        // A palette verb rather than a format-bar control: a rule is something the sheet has,
+        // not a property of the selection (`doc/conditional-format.md` §4).
+        verb(
+            "conditional-formats",
+            &[],
+            "Conditional Formatting…",
+            "Document",
+            |ui| {
+                rules::present(
+                    &ui.window,
+                    &ui.app,
+                    ui.grid.sheet(),
+                    ui.grid.selection().rect(),
+                )
+            },
+        ),
         // Each formula in the selection dropped, the cell keeping the value it last computed —
         // `verbs::formulas_to_values`, one undo step per formula (the core has no range form).
         verb(

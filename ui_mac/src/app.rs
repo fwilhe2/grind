@@ -257,6 +257,8 @@ impl Delegate {
             | Command::Merge(_)
             | Command::Calculations
             | Command::DocumentLocale
+            | Command::AddRule
+            | Command::RemoveRule
             | Command::ExportCsv
             | Command::ImportCsvWith
             | Command::ImportCsv => {

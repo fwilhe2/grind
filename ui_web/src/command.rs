@@ -309,6 +309,30 @@ pub const SHEET: &[Command] = &[
     // undo step — `App::format_table`. No dialog: like `sheet.filter`, the selection *is*
     // the range, its first row is the heading, and the name auto-generates.
     cmd("sheet.format-table", "Format as table", "Sheets", "", false),
+    // Conditional formatting (`doc/conditional-format.md` §4): a rule over the selection, asked
+    // for in two prompts — the condition, then the look — and taken away by number or by the
+    // range it touches. What a look writes is `grind_sheet::rule::Look`'s, as in every shell.
+    cmd(
+        "rule.add",
+        "Conditional format for the selection…",
+        "Rules",
+        "",
+        false,
+    ),
+    cmd(
+        "rule.remove",
+        "Remove a conditional format…",
+        "Rules",
+        "",
+        false,
+    ),
+    cmd(
+        "rule.clear",
+        "Remove conditional formats from the selection",
+        "Rules",
+        "",
+        false,
+    ),
     // The same composite with a totals row, whose aggregate it asks for — a second row rather
     // than a prompt on the first, so the plain one stays zero-prompt (`Ui::format_table`).
     cmd(

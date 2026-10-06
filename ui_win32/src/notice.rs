@@ -205,6 +205,24 @@ pub fn name_defined(name: &str, target: &str) -> String {
     format!("“{name}” now means {target}. Use it in a formula instead of the address.")
 }
 
+/// A conditional-format rule added; `index` is where it sits in the order rules are tried.
+pub fn rule_added(index: usize, look: &str) -> String {
+    format!(
+        "Rule {} added: {look} where the condition holds. Ctrl+Z takes it back.",
+        index + 1
+    )
+}
+
+/// A conditional-format rule taken away.
+pub fn rule_removed(index: usize) -> String {
+    format!("Rule {} removed. Ctrl+Z brings it back.", index + 1)
+}
+
+/// Remove Conditional Format… on a sheet with none.
+pub fn no_rules() -> String {
+    "This sheet has no conditional formats. Data ▸ Add Conditional Format… makes one.".to_owned()
+}
+
 /// What an evaluated formula came to — said, never stored.
 pub fn evaluated(formula: &str, value: &str) -> String {
     format!("{formula} = {value}  (nothing was stored)")

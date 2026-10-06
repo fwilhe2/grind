@@ -44,6 +44,11 @@ Spreadsheet:
   :filter                 — an autofilter over the selection (or the table around one cell); again to drop
   :eval <formula>         — what it would come to, storing nothing
   :charts   — the sheet's charts, drawn in characters
+  :rule <look> <condition> — draw the selection differently while a formula is true:
+                            :rule red =B2>100; looks are red, yellow, green, blue,
+                            red-text, green-text, bold and strike
+  :rules  :rule! [n]      — the sheet's rules (Enter jumps), or drop rule n / every
+                            rule touching the selection
   :width [n|auto]  :fit  :height [n]   :hide  :show   — the columns the selection covers
   :merge  :unmerge        — the selection into one cell, or every merge in it undone
   :name <name>  :name!    — define a name over the selection, or drop the one on it

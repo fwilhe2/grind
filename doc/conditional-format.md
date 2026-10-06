@@ -12,9 +12,9 @@ measured and written into `doc/ods-format.md` §3.6 before any code, and §4's s
 the model (`sheet/src/rule.rs`, `Sheet::rules`, `Action::SetRules`), `App::rules`/`set_rules`/
 `add_rule`/`remove_rule` and `grind sheet rule`, the projection's `rule` node, the viewport's
 evaluation, the reference index and `grind lint`, ODF read and write with loop C over two rules on
-one cell, and the import from `.xlsx` (`xlsx/src/rules.rs`, `doc/xlsx-format.md` §4.12). What
-§4's step 5 leaves — a palette verb per shell for *editing* rules — is the open row in
-`doc/feature-matrix.md`.
+one cell, and the import from `.xlsx` (`xlsx/src/rules.rs`, `doc/xlsx-format.md` §4.12). §4's step
+5 is done too: every shell edits rules, through `grind_sheet::rule`'s editing half (`Look`,
+`add_from_input`, `summary`) so that none of them has a vocabulary of its own.
 
 Three things the build settled that §2 left open, each written down where it lives:
 
@@ -133,5 +133,9 @@ back) or from the ODF specification. The answers go into `doc/ods-format.md` wit
 4. Import: `expression` rules from `.xlsx`, held by `xlsx/tests/checklist.rs`. Its
    `the_conditional_rules_are_counted_not_carried` flips, and the ooxmlgen manifest's
    `ConditionalFormat` counts are recorded in `DECIDED_OTHERWISE` where they now differ.
-5. Shells: nothing to build. They draw the style the viewport hands them, and the
-   *rule-editing* UI is a palette verb per shell, `doc/feature-matrix.md`'s next row.
+5. Shells: nothing to build for *drawing* — they draw the style the viewport hands them. The
+   *rule-editing* UI is one verb per shell over `grind_sheet::rule`'s editing half: a choice of
+   eight `Look`s rather than a dialog of every `CellStyle` property (the CLI's flags keep the
+   rest), a condition typed in display syntax and converted by `condition_from_display` — the
+   cell's own conversion — and `add_from_input`, which parses the range, refuses in a sentence
+   and adds the rule as one undo step. Built in all five windows.

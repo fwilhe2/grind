@@ -144,6 +144,8 @@ pub struct App {
     functions: crate::pick::Pick,
     /// `:calc`, when it is showing — every formula in the document, each row a jump.
     calculations: crate::pick::Pick,
+    /// `:rules`, when it is showing — the sheet's conditional-format rules, each row a jump.
+    rules: crate::pick::Pick,
     /// The reference being pointed at while a formula is typed (point mode), if one is.
     point: Option<Pointing>,
     /// The key list, when it is showing. Presentation state like everything else here.
@@ -201,6 +203,7 @@ impl App {
             assist: Assist::default(),
             functions: crate::pick::Pick::default(),
             calculations: crate::pick::Pick::default(),
+            rules: crate::pick::Pick::default(),
             point: None,
             help: crate::help::Help::default(),
             licences: crate::help::Help::default(),
@@ -284,6 +287,13 @@ impl App {
         if self.calculations.is_open() {
             let height = self.help_height();
             if let crate::pick::Nav::Chose(address) = self.calculations.on_key(key.code, height) {
+                self.cmd_jump(&address);
+            }
+            return;
+        }
+        if self.rules.is_open() {
+            let height = self.help_height();
+            if let crate::pick::Nav::Chose(address) = self.rules.on_key(key.code, height) {
                 self.cmd_jump(&address);
             }
             return;
@@ -1136,6 +1146,13 @@ impl App {
             _ if cmd.starts_with("calc ") => self.cmd_calc(cmd[5..].trim()),
             _ if cmd.starts_with("functions ") => self.cmd_functions(cmd[10..].trim()),
             "filter" => self.cmd_filter(),
+            // Conditional formatting (`doc/conditional-format.md` §4): what each look writes and
+            // how the condition becomes ODF are `grind_sheet::rule`'s, shared with every shell.
+            "rules" => self.cmd_rules(),
+            "rule" => self.cmd_rule(""),
+            "rule!" => self.cmd_unrule(""),
+            _ if cmd.starts_with("rule ") => self.cmd_rule(cmd[5..].trim()),
+            _ if cmd.starts_with("rule! ") => self.cmd_unrule(cmd[6..].trim()),
             "locale" => self.cmd_locale(None),
             _ if cmd.starts_with("locale ") => self.cmd_locale(Some(cmd[7..].trim())),
             "chart" => self.cmd_chart(),
@@ -1360,6 +1377,99 @@ impl App {
             })
             .collect();
         self.calculations.open("Calculations", rows, None);
+    }
+
+    /// `:rule <look> <condition>` — a conditional-format rule over the selection, written from
+    /// its top-left cell: `:rule red =B2>100`. Added after every rule the sheet has.
+    fn cmd_rule(&mut self, args: &str) {
+        use grind_sheet::rule::{self, Look};
+        let (word, condition) = args.split_once(char::is_whitespace).unwrap_or((args, ""));
+        let Some(look) = Look::from_word(word) else {
+            let words: Vec<&str> = Look::ALL.iter().map(|look| look.word()).collect();
+            self.status = format!("usage: :rule <{}> <condition>", words.join("|"));
+            return;
+        };
+        let (start, end) = self.rect();
+        self.status = match rule::add_from_input(
+            &self.core,
+            self.sheet,
+            &rule::range_hint(start, end),
+            condition,
+            look,
+        ) {
+            Ok((_, index)) => {
+                self.leave_visual();
+                format!(
+                    "rule {} added \u{2014} :rules lists them, u takes it back",
+                    index + 1
+                )
+            }
+            Err(e) => e,
+        };
+    }
+
+    /// `:rule! [n]` — the sheet's rule `n` removed, or with no number every rule touching the
+    /// selection.
+    fn cmd_unrule(&mut self, number: &str) {
+        let rules = self.core.rules(self.sheet).unwrap_or_default();
+        if number.is_empty() {
+            let (start, end) = self.rect();
+            let kept: Vec<_> = rules
+                .iter()
+                .filter(|r| !r.touches(start, end))
+                .cloned()
+                .collect();
+            let dropped = rules.len() - kept.len();
+            self.status = match dropped {
+                0 => "no rule touches the selection".to_owned(),
+                n => match self.core.set_rules(self.sheet, kept) {
+                    Ok(()) => format!("dropped {n} rule(s) \u{2014} u brings them back"),
+                    Err(e) => e.to_string(),
+                },
+            };
+            self.leave_visual();
+            return;
+        }
+        self.status = match number.parse::<usize>() {
+            Ok(n) if (1..=rules.len()).contains(&n) => {
+                match self.core.remove_rule(self.sheet, n - 1) {
+                    Ok(_) => format!("dropped rule {n} \u{2014} u brings it back"),
+                    Err(e) => e.to_string(),
+                }
+            }
+            _ => format!("no rule {number} \u{2014} :rules lists them"),
+        };
+    }
+
+    /// `:rules` — the sheet's conditional-format rules, numbered in the order they are tried,
+    /// each row a jump to the range it covers.
+    fn cmd_rules(&mut self) {
+        use grind_sheet::rule;
+        let rules = self.core.rules(self.sheet).unwrap_or_default();
+        if rules.is_empty() {
+            self.status = "no rule on this sheet \u{2014} :rule red =B2>100 makes one".to_owned();
+            return;
+        }
+        let rows = rules
+            .iter()
+            .enumerate()
+            .map(|(index, r)| crate::pick::Row {
+                address: r
+                    .ranges
+                    .first()
+                    .map(|&(a, b)| rule::range_hint(a, b))
+                    .unwrap_or_default(),
+                label: format!(
+                    "{}  {}  {}  {}",
+                    index + 1,
+                    rule::ranges_text(r),
+                    rule::condition_to_display(r),
+                    rule::look_text(&r.style)
+                ),
+                depth: 0,
+            })
+            .collect();
+        self.rules.open("Rules", rows, None);
     }
 
     /// `:functions [text]` — the functions this build implements, each with its plain-English name
@@ -2252,6 +2362,10 @@ impl App {
         }
         if self.calculations.is_open() {
             self.calculations.draw(frame, area, "calculations");
+            return;
+        }
+        if self.rules.is_open() {
+            self.rules.draw(frame, area, "rules");
             return;
         }
         if let Some(projection) = self.source.take() {
@@ -3685,6 +3799,27 @@ mod tests {
         assert!(app.status.contains("unsaved"), "{}", app.status);
         app.run_command("new!");
         assert!(app.take_switch().is_some());
+    }
+
+    /// `:rule` adds a rule over the selection, `:rules` lists it, `:rule!` takes it away.
+    #[test]
+    fn a_rule_is_added_listed_and_dropped() {
+        let mut app = app();
+        app.run_command("rule red =A1>0");
+        assert_eq!(app.core.rules(0).unwrap().len(), 1, "{}", app.status);
+        assert_eq!(app.core.rules(0).unwrap()[0].condition, "[.A1]>0");
+        app.run_command("rule purple =A1>0");
+        assert!(app.status.starts_with("usage"), "{}", app.status);
+        app.run_command("rule bold =A1>");
+        assert_eq!(app.core.rules(0).unwrap().len(), 1);
+        app.run_command("rules");
+        assert!(app.rules.is_open());
+        press(&mut app, KeyCode::Enter);
+        assert!(!app.rules.is_open());
+        app.run_command("rule! 2");
+        assert_eq!(app.core.rules(0).unwrap().len(), 1);
+        app.run_command("rule!");
+        assert!(app.core.rules(0).unwrap().is_empty(), "{}", app.status);
     }
 
     /// `:functions` is a pane of the catalog, and Enter starts an edit with the chosen function.

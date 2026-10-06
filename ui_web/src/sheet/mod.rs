@@ -890,6 +890,9 @@ impl Ui {
             "sheet.filter" => self.toggle_filter(),
             "sheet.format-table" => self.format_table(None),
             "sheet.format-table-totals" => self.format_table_with_totals(),
+            "rule.add" => self.add_rule(),
+            "rule.remove" => self.remove_rule(),
+            "rule.clear" => self.clear_rules(),
 
             "style.bold" => style(|s| Toggle::Bold.flipped(s)),
             "style.italic" => style(|s| Toggle::Italic.flipped(s)),
@@ -1738,6 +1741,98 @@ impl Ui {
         self.set_message(match self.app.clear_name(name.trim()) {
             true => format!("“{}” deleted", name.trim()),
             false => format!("There is no name “{}”", name.trim()),
+        });
+    }
+
+    /// *Conditional format for the selection…* — the condition, written for the selection's
+    /// first cell, then the look, by its word (`grind_sheet::rule::add_from_input`).
+    fn add_rule(&self) {
+        use grind_sheet::rule::{self, Look};
+        let (start, end) = self.rect();
+        let range = rule::range_hint(start, end);
+        let Some(condition) = self.ask(
+            &format!("Draw {range} differently where this is true (written for its first cell)"),
+            &rule::condition_hint(start),
+        ) else {
+            return;
+        };
+        let words: Vec<&str> = Look::ALL.iter().map(|look| look.word()).collect();
+        let Some(word) = self.ask(
+            &format!("Draw it how? {}", words.join(", ")),
+            Look::RedFill.word(),
+        ) else {
+            return;
+        };
+        let Some(look) = Look::from_word(&word) else {
+            return self.set_message(format!(
+                "“{}” is not a look — one of {}",
+                word.trim(),
+                words.join(", ")
+            ));
+        };
+        self.set_message(
+            match rule::add_from_input(&self.app, self.sheet.get(), &range, &condition, look) {
+                Ok((_, index)) => format!(
+                    "Rule {} added: {} — Ctrl+Z takes it back",
+                    index + 1,
+                    look.label()
+                ),
+                Err(error) => error,
+            },
+        );
+    }
+
+    /// *Remove a conditional format…* — the sheet's rules listed in the prompt, one taken away by
+    /// its number. The first touching the selection is offered.
+    fn remove_rule(&self) {
+        use grind_sheet::rule;
+        let sheet = self.sheet.get();
+        let rules = self.app.rules(sheet).unwrap_or_default();
+        if rules.is_empty() {
+            return self.set_message("This sheet has no conditional formats".to_owned());
+        }
+        let (start, end) = self.rect();
+        let listed: Vec<String> = rules
+            .iter()
+            .enumerate()
+            .map(|(index, r)| format!("{}. {}", index + 1, rule::summary(r).replace('\t', "  ")))
+            .collect();
+        let offered = rules
+            .iter()
+            .position(|r| r.touches(start, end))
+            .map_or(String::new(), |index| (index + 1).to_string());
+        let Some(answer) = self.ask(
+            &format!("Remove which rule?\n{}", listed.join("\n")),
+            &offered,
+        ) else {
+            return;
+        };
+        self.set_message(match answer.trim().parse::<usize>() {
+            Ok(n) if (1..=rules.len()).contains(&n) => match self.app.remove_rule(sheet, n - 1) {
+                Ok(_) => format!("Rule {n} removed — Ctrl+Z brings it back"),
+                Err(error) => error.to_string(),
+            },
+            _ => format!("There is no rule “{}”", answer.trim()),
+        });
+    }
+
+    /// *Remove conditional formats from the selection* — every rule touching it, one undo step.
+    fn clear_rules(&self) {
+        let sheet = self.sheet.get();
+        let rules = self.app.rules(sheet).unwrap_or_default();
+        let (start, end) = self.rect();
+        let kept: Vec<_> = rules
+            .iter()
+            .filter(|r| !r.touches(start, end))
+            .cloned()
+            .collect();
+        let dropped = rules.len() - kept.len();
+        self.set_message(match dropped {
+            0 => "No conditional format touches the selection".to_owned(),
+            n => match self.app.set_rules(sheet, kept) {
+                Ok(()) => format!("{n} rule(s) removed — Ctrl+Z brings them back"),
+                Err(error) => error.to_string(),
+            },
         });
     }
 

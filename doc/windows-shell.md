@@ -910,8 +910,9 @@ out of `win.rs`. Named gaps: no match-case or whole-cell control (the CLI has bo
 of every hit. **The text pane has the same three verbs since 2026-10-02**: Find…, F3/Shift+F3 and
 Replace… over `grind_text::find` (case-blind hits, selected so typing replaces one) and
 `App::replace` (exact, one undo step), the sentences in `notice.rs`.
-No **conditional formatting UI**, which exists in no shell — the banding *Format as Table*
-paints is static cell styling, applied once, not a live rule. No **command palette**, by
+**Conditional formatting** is Data ▸ Add Conditional Format… (`dialog::prompt` for the
+condition, `dialog::choose` for the look) and Remove Conditional Format… (`dialog::choose` over
+the sheet's rules) — the banding *Format as Table* paints is static cell styling, not a rule. No **command palette**, by
 decision 4.
 
 W3 adds three of its own, each smaller than it sounds. There is no **recent-files list**, where

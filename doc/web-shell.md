@@ -124,8 +124,9 @@ here. **The autofilter is built** — a dropdown per field of the range's own he
 popover over its distinct values, the same shape `ui_sheet_gtk`'s own dropdown has — one of
 the two gaps this line used to name.
 *Format as table* is built too, and is static styling applied once rather than a live rule, so
-it is not the conditional-formatting gap the next sentence names. No conditional formatting
-UI. **CSV is built both ways** and carries the same named gap every other window does: no
+it is not a rule. Conditional formatting is three palette rows — a rule over the selection
+asked for in two prompts (the condition, then the look by its word), one removed by number from
+a numbered list, and every rule touching the selection removed. **CSV is built both ways** and carries the same named gap every other window does: no
 dialog for an import's seven options, so a file that needs `--text`, a locale or a delimiter
 the sniffer got wrong is `grind sheet import-csv`'s (R9). Find and replace carry the options
 the CLI names but no control for them — match case, whole cell, one sheet, a range — so those

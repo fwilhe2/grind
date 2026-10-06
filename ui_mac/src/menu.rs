@@ -127,6 +127,13 @@ pub enum Command {
     Evaluate,
     /// The locale the document speaks in, asked for — Format ▸ Document Locale….
     DocumentLocale,
+    /// A conditional-format rule over the selection — Format ▸ Conditional Formatting ▸ Add
+    /// Rule…: the condition asked for, then the look, and `grind_sheet::rule::add_from_input`,
+    /// the call every shell's rule editor makes (`doc/conditional-format.md` §4).
+    AddRule,
+    /// One of the sheet's rules chosen and taken away — Format ▸ Conditional Formatting ▸
+    /// Remove Rule….
+    RemoveRule,
     /// The active cell copied into every selected cell, references shifted — Edit ▸ Fill ▸
     /// Across Selection.
     FillAcross,
@@ -277,6 +284,8 @@ impl Command {
             Command::FormulaToValue,
             Command::Evaluate,
             Command::DocumentLocale,
+            Command::AddRule,
+            Command::RemoveRule,
             Command::ShowFormulas,
             Command::FillAcross,
             Command::Merge(true),
@@ -321,6 +330,8 @@ impl Command {
                 | Command::PreviewChart
                 | Command::Evaluate
                 | Command::DocumentLocale
+                | Command::AddRule
+                | Command::RemoveRule
                 | Command::Calculations
                 | Command::ParagraphStyle
         )
@@ -392,6 +403,8 @@ impl Command {
             | Command::FormulaToValue
             | Command::Evaluate
             | Command::DocumentLocale
+            | Command::AddRule
+            | Command::RemoveRule
             | Command::ShowFormulas
             | Command::FillAcross
             | Command::Merge(_)
@@ -714,6 +727,15 @@ static NUMBER: Menu = Menu {
     ],
 };
 
+static CONDITIONAL: Menu = Menu {
+    title: "Conditional Formatting",
+    role: Role::Plain,
+    items: &[
+        command("Add Rule…", None, Command::AddRule),
+        command("Remove Rule…", None, Command::RemoveRule),
+    ],
+};
+
 static FILL: Menu = Menu {
     title: "Fill",
     role: Role::Plain,
@@ -920,6 +942,10 @@ pub static MENUS: &[Menu] = &[
             Item::Submenu {
                 title: "Number",
                 menu: &NUMBER,
+            },
+            Item::Submenu {
+                title: "Conditional Formatting",
+                menu: &CONDITIONAL,
             },
             Item::Submenu {
                 title: "Paragraph",

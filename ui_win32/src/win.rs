@@ -3647,6 +3647,8 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::ToggleFilter => toggle_filter(hwnd),
         Command::FormatTable => format_table(hwnd, None),
         Command::FormatTableTotals => format_table_totals(hwnd),
+        Command::AddRule => add_rule(hwnd),
+        Command::RemoveRule => remove_rule(hwnd),
         Command::CurrencyEuro | Command::CurrencyDollar | Command::CurrencyPound => {
             if let Some(index) = command.currency() {
                 set_currency(hwnd, index);
@@ -5150,6 +5152,107 @@ fn format_table_totals(hwnd: HWND) {
     format_table(hwnd, Some(function));
 }
 
+// --- conditional formatting (`doc/conditional-format.md` §4) ---
+
+/// Data ▸ Add Conditional Format… — the condition in a prompt, then the look in a chooser, and
+/// `grind_sheet::rule::add_from_input` with the selection as the range. Both dialogs run nested
+/// message loops, so the selection is read in one borrow and the rule written in another
+/// (decision 7).
+fn add_rule(hwnd: HWND) {
+    use grind_sheet::rule::{self, Look};
+    // SAFETY: one borrow, released before the prompt.
+    let Some((sheet, start, end)) = (unsafe {
+        with_sheet(hwnd, |state| {
+            let (start, end) = state.selection.rect();
+            (state.sheet, start, end)
+        })
+    }) else {
+        return;
+    };
+    let range = rule::range_hint(start, end);
+    let Some(condition) = dialog::prompt(
+        hwnd,
+        "Add Conditional Format",
+        &format!(
+            "Draw {range} differently where this formula is true, written for its first cell:"
+        ),
+        &rule::condition_hint(start),
+    ) else {
+        return;
+    };
+    let looks: Vec<String> = Look::ALL
+        .iter()
+        .map(|look| look.label().to_owned())
+        .collect();
+    let Some(look) = dialog::choose(hwnd, "Draw It With", &looks, 0)
+        .and_then(|picked| Look::ALL.get(picked).copied())
+    else {
+        return;
+    };
+    // SAFETY: a fresh borrow, after both dialogs.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            state.say(Some(
+                match rule::add_from_input(&state.app, sheet, &range, &condition, look) {
+                    Ok((_, index)) => notice::rule_added(index, look.label()),
+                    Err(error) => error,
+                },
+            ));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Data ▸ Remove Conditional Format… — the sheet's rules in a chooser, in the order they are
+/// tried, the first touching the selection picked; the one chosen is taken away.
+fn remove_rule(hwnd: HWND) {
+    // SAFETY: one borrow, released before the chooser.
+    let Some((sheet, rows, initial)) = (unsafe {
+        with_sheet(hwnd, |state| {
+            let (start, end) = state.selection.rect();
+            let rules = state.app.rules(state.sheet).unwrap_or_default();
+            let rows: Vec<String> = rules
+                .iter()
+                .enumerate()
+                .map(|(index, r)| {
+                    format!(
+                        "{}.  {}",
+                        index + 1,
+                        grind_sheet::rule::summary(r).replace('\t', "    ")
+                    )
+                })
+                .collect();
+            let initial = rules
+                .iter()
+                .position(|r| r.touches(start, end))
+                .unwrap_or(0);
+            (state.sheet, rows, initial)
+        })
+    }) else {
+        return;
+    };
+    if rows.is_empty() {
+        // SAFETY: a fresh borrow.
+        unsafe {
+            with_sheet(hwnd, |state| state.say(Some(notice::no_rules())));
+        }
+        return refresh(hwnd);
+    }
+    let Some(picked) = dialog::choose(hwnd, "Remove Conditional Format", &rows, initial) else {
+        return;
+    };
+    // SAFETY: a fresh borrow, after the chooser.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            state.say(Some(match state.app.remove_rule(sheet, picked) {
+                Ok(_) => notice::rule_removed(picked),
+                Err(error) => error.to_string(),
+            }));
+        });
+    }
+    refresh(hwnd);
+}
+
 // --- CSV, the one non-ODF format (`doc/not-doing.md` §2) ---
 
 /// File ▸ Import CSV… — a delimited file read in **at the cursor**, in one undo step.
@@ -5763,6 +5866,8 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::ToggleFilter
         | Command::FormatTable
         | Command::FormatTableTotals
+        | Command::AddRule
+        | Command::RemoveRule
         | Command::CurrencyEuro
         | Command::CurrencyDollar
         | Command::CurrencyPound
@@ -6897,6 +7002,8 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::ToggleFilter
         | Command::FormatTable
         | Command::FormatTableTotals
+        | Command::AddRule
+        | Command::RemoveRule
         | Command::CurrencyEuro
         | Command::CurrencyDollar
         | Command::CurrencyPound

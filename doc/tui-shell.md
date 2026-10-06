@@ -186,9 +186,10 @@ the same limit seen from the other side, and it is why `:wrap` is stored and not
 not, because that is a third editing mode rather than a read-out. No *standalone* filter UI: a
 filter in the file folds its rows away, and nothing creates one on its own — `:format-table`
 does create one, as one facet of the composite it applies (`App::format_table`,
-`sheet/src/table_format.rs`), the same way the GTK shell's dialog does. No conditional
-formatting UI: the banding `:format-table` paints is static cell styling, applied once, not a
-live rule. No charts, no autofit — a column's ideal width is
+`sheet/src/table_format.rs`), the same way the GTK shell's dialog does. Conditional
+formatting is `:rule <look> <condition>` over the selection (`:rule red =B2>100`), `:rules` — a
+list pane, Enter jumping to a rule's range — and `:rule! [n]`; the banding `:format-table`
+paints is static cell styling, applied once, not one of those. No charts, no autofit — a column's ideal width is
 `ui_sheet_gtk`'s measurement of the text in it, and this shell would need the same pass.
 
 **The document.** No pages, no print, no zoom, no RTL (`doc/text-layout.md`). No footnotes or

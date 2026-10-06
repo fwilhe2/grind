@@ -3415,15 +3415,11 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 if *clear && let Some(range) = range {
                     let (sheet, start, end) = a1::resolve(&app, &a1::parse(range).say()?).say()?;
                     let rules = app.rules(sheet).say()?;
-                    let touches = |r: &grind_sheet::rule::Rule| {
-                        r.ranges.iter().any(|(a, b)| {
-                            a.row <= end.row
-                                && start.row <= b.row
-                                && a.col <= end.col
-                                && start.col <= b.col
-                        })
-                    };
-                    let kept: Vec<_> = rules.iter().filter(|r| !touches(r)).cloned().collect();
+                    let kept: Vec<_> = rules
+                        .iter()
+                        .filter(|r| !r.touches(start, end))
+                        .cloned()
+                        .collect();
                     let changed = kept.len() != rules.len();
                     app.set_rules(sheet, kept).say()?;
                     return finish(&app, cli, file, changed);

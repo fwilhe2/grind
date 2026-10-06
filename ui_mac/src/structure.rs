@@ -106,6 +106,81 @@ impl Pane {
                 grind_sheet::a1::definition(&self.app, &target)
                     .and_then(|expression| self.app.set_name(&name, &expression))
             }
+            Command::AddRule => {
+                use grind_sheet::rule::{self, Look};
+                let (start, end) = selection.rect();
+                let range = rule::range_hint(start, end);
+                let Some(condition) = prompt::ask(
+                    mtm,
+                    "Add Conditional Format",
+                    &format!(
+                        "Draw {range} differently where this formula is true, written for its \
+                         first cell."
+                    ),
+                    "Next",
+                    &rule::condition_hint(start),
+                ) else {
+                    return;
+                };
+                let looks: Vec<String> = Look::ALL
+                    .iter()
+                    .map(|look| look.label().to_owned())
+                    .collect();
+                let Some(look) = prompt::pick(
+                    mtm,
+                    "Draw It With",
+                    "Drawn over the cell's own formatting while the condition holds.",
+                    "Add",
+                    &looks,
+                    0,
+                )
+                .and_then(|picked| Look::ALL.get(picked).copied()) else {
+                    return;
+                };
+                if let Err(why) = rule::add_from_input(&self.app, sheet, &range, &condition, look) {
+                    prompt::tell(mtm, "That rule cannot be added.", &why);
+                    return;
+                }
+                Ok(())
+            }
+            Command::RemoveRule => {
+                let rules = self.app.rules(sheet).unwrap_or_default();
+                if rules.is_empty() {
+                    prompt::tell(
+                        mtm,
+                        "This sheet has no conditional formats.",
+                        "Format ▸ Conditional Formatting ▸ Add Rule… makes one.",
+                    );
+                    return;
+                }
+                let (start, end) = selection.rect();
+                let rows: Vec<String> = rules
+                    .iter()
+                    .enumerate()
+                    .map(|(index, r)| {
+                        format!(
+                            "{}. {}",
+                            index + 1,
+                            grind_sheet::rule::summary(r).replace('\t', "  ")
+                        )
+                    })
+                    .collect();
+                let initial = rules
+                    .iter()
+                    .position(|r| r.touches(start, end))
+                    .unwrap_or(0);
+                let Some(picked) = prompt::pick(
+                    mtm,
+                    "Remove Conditional Format",
+                    "Rules are tried in this order; the first that holds at a cell is drawn.",
+                    "Remove",
+                    &rows,
+                    initial,
+                ) else {
+                    return;
+                };
+                self.app.remove_rule(sheet, picked).map(|_| ())
+            }
             Command::ExportCsv => {
                 self.export_csv(mtm);
                 return;
