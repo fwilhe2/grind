@@ -30,7 +30,7 @@
     <text:p>4. A CLI that can do everything</text:p>
     <text:p>The cli is a first class citizen, no matter if it is used by a human, in shell scripts or by AI Agents.</text:p>
     <text:h text:outline-level="1">License</text:h>
-    <text:p>Licensed under GNU Affero General Public License v3 or later. Full text in <text:a xlink:href="./LICENSE">LICENSE</text:a>.</text:p>
+    <text:p>Licensed under GNU Affero General Public License v3 or later. Full text in <text:a xlink:href="./LICENSES">LICENSES</text:a>.</text:p>
     <text:h text:outline-level="1">Trademarks</text:h>
     <text:p>Product names and trademarks mentioned in this README belong to their respective owners. This project is not affiliated with or endorsed by them.</text:p>
   </office:text>

@@ -44,7 +44,7 @@ The cli is a first class citizen, no matter if it is used by a human, in shell s
 
 # License
 
-Licensed under GNU Affero General Public License v3 or later. Full text in [LICENSE](./LICENSE).
+Licensed under GNU Affero General Public License v3 or later. Full text in [LICENSES](./LICENSES).
 
 # Trademarks
 
