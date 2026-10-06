@@ -17,3 +17,7 @@
 # scripts/mac-remote.sh downloads
 /mac-frames/
 /mac-drive/
+
+# Claude Code's agent worktrees: a full checkout each, with its own `target/`. Local scratch,
+# never part of the repository — and REUSE would otherwise lint every build artefact in them.
+/.claude/worktrees/
