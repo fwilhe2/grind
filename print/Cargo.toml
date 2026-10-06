@@ -25,8 +25,11 @@ grind-core = { path = "../core" }
 grind-text = { path = "../text" }
 # The font stack lives here and nowhere else, which is the promise doc/text-layout.md decision 2
 # made: `grind-core` stays font-free, and so do the terminal and a `grind` built without `pdf`.
-# All three pinned exactly: they are pre-1.0, and they must agree on one `read-fonts` — harfrust
-# past 0.8 brings a second copy beside krilla's (`cargo tree -d`, measured 2026-10-04).
+# Pinned exactly: they are pre-1.0. harfrust is ahead of skrifa and krilla, so the binary carries
+# two `read-fonts` (0.39 under skrifa/krilla, 0.43 under harfrust) — accepted 2026-10-06 rather
+# than holding the shaper back until krilla moves. Only bytes cross between them: harfrust shapes
+# and skrifa measures the same font data, so the two copies cannot disagree about a glyph id.
+# When krilla takes a newer skrifa, line all three up again and the duplicate goes.
 skrifa = "=0.42.1"
 harfrust = "=0.13.3"
 fontdb = { version = "0.24", default-features = false, features = ["std", "fs"], optional = true }
