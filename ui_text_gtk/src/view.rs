@@ -59,6 +59,10 @@ impl Doc {
     pub fn invalidate(&self) {
         self.imp().flow.replace(None);
         self.imp().clamp_caret();
+        // The observer runs *after* the edit's own caret move, which followed the caret
+        // through the layout as it was before the edit — so Enter on the last line left the
+        // new one below the fold. Follow it again through the layout as it is now.
+        self.imp().scroll_into_view();
         // The document's height changed, so the scrollbar has to be sized again — which is
         // what allocation does, and it has the width and height to do it with.
         self.queue_allocate();
@@ -527,13 +531,7 @@ mod imp {
         fn size_allocate(&self, width: i32, height: i32, _baseline: i32) {
             // A resize re-wraps every paragraph, so the height the scrollbar is sized against
             // is only knowable here.
-            let flow = self.flow(f64::from(width));
-            configure(
-                self.vadjustment.borrow().as_ref(),
-                f64::from(height).max(1.0),
-                flow.height() + geom::MARGIN,
-                self.faces().body().height(),
-            );
+            self.size_scrollbar(width, height);
         }
 
         fn realize(&self) {
@@ -1388,7 +1386,7 @@ mod imp {
             self.caret.set(caret);
         }
 
-        fn scroll_into_view(&self) {
+        pub(super) fn scroll_into_view(&self) {
             let widget = self.obj();
             // Before the first allocation there is no view to scroll into.
             if widget.width() == 0 || widget.height() == 0 {
@@ -1404,11 +1402,26 @@ mod imp {
             };
             let line = layout.lines()[layout.line_at(caret.offset)];
             let target = (slot.top + f64::from(line.top), f64::from(line.height));
+            // An edit that grew the document (Enter on the last line) is followed before the
+            // next allocation sizes the scrollbar for it, and an adjustment clamps a value past
+            // its old end — so the caret stopped a line short of the view. Size it now.
+            self.size_scrollbar(widget.width(), widget.height());
             let Some(adjustment) = self.vadjustment.borrow().clone() else {
                 return;
             };
             let page = f64::from(widget.height());
             adjustment.set_value(flow.follow(adjustment.value(), page, target));
+        }
+
+        /// Size the scrollbar to the document as it is now laid out at `width`.
+        fn size_scrollbar(&self, width: i32, height: i32) {
+            let flow = self.flow(f64::from(width));
+            configure(
+                self.vadjustment.borrow().as_ref(),
+                f64::from(height).max(1.0),
+                flow.height() + geom::MARGIN,
+                self.faces().body().height(),
+            );
         }
 
         /// The a11y floor (`doc/sheet-shell.md`, M9): a custom-drawn document has no other way
@@ -1720,6 +1733,10 @@ mod tests {
             the_code_view_shows_the_projection,
         ),
         (
+            "Enter on the last line scrolls the new one into view",
+            enter_on_the_last_line_scrolls_the_new_one_into_view,
+        ),
+        (
             "the problems dialog builds from a document's findings",
             the_problems_dialog_builds,
         ),
@@ -1877,6 +1894,42 @@ mod tests {
             assert!(app.undo());
         }
         assert_eq!(text(&app), "hello world");
+    }
+
+    /// Enter at the bottom of the window keeps the caret on screen, as every word processor
+    /// does. Reported from writing a README: the view stayed put and the caret went under the
+    /// fold, because the edit's caret move followed a layout without the new line in it, and
+    /// the scrollbar's range was still the shorter document's.
+    fn enter_on_the_last_line_scrolls_the_new_one_into_view() {
+        let (doc, app) = shell(&["first"]);
+        let adjustment = gtk::Adjustment::default();
+        doc.set_vadjustment(Some(&adjustment));
+        doc.allocate(600, 400, -1, None);
+        let imp = doc.imp();
+        for _ in 0..60 {
+            let last = app.block_count() - 1;
+            imp.move_caret(
+                Caret {
+                    block: last,
+                    offset: 0,
+                },
+                true,
+            );
+            imp.split();
+            // What the window's observer does once the edit has released the lock.
+            doc.invalidate();
+        }
+        assert_eq!(app.block_count(), 61);
+        assert!(adjustment.value() > 0.0, "the view scrolled at all");
+        let bottom = adjustment.value() + adjustment.page_size();
+        let flow = imp.flow(600.0);
+        let slot = flow.slot(60).expect("the last block is laid out");
+        assert!(
+            slot.top + slot.height <= bottom + 0.5,
+            "the caret's line ({}..{}) is inside the view (..{bottom})",
+            slot.top,
+            slot.top + slot.height,
+        );
     }
 
     /// Shift+arrow grows a selection from wherever the caret started, and typing over one
