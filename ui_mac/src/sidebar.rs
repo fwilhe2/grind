@@ -318,6 +318,9 @@ impl Places for Pane {
 
 impl Places for TextPane {
     fn rows(&self) -> Vec<Row> {
+        // Spelling as well, in the document's own language (`doc/spelling.md`): the page draws
+        // no underlines yet, and Problems is where the words show up instead.
+        grind_spell::ensure(&self.app);
         places::text(&self.app, &self.app.lint(&Options::default()))
     }
 

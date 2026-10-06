@@ -189,9 +189,16 @@ had no width and therefore no lines.
   the GNOME window's find bar asks
 - `lint` — `grind text lint`, and `grind lint` at the suite level. `doc/dsl.md` §4.3's rules
   over one document: a heading level skipped, a link to a bookmark nothing declares, a style name
-  the document never declares, an off-palette colour (`--hints`) and anything a `.grind` of it
-  would not carry. `--rules` lists them, `--off <rule>` silences one, and an *error*-severity
+  the document never declares, an off-palette colour (`--hints`), anything a `.grind` of it
+  would not carry, and a misspelt word. `--rules` lists them, `--off <rule>` silences one, and an *error*-severity
   finding exits non-zero. Nothing is written
+- `set_lexicon` — `grind text spell` and `grind text lint`, which attach `grind_spell`'s dictionary for the document's language (`doc/spelling.md`); `--language` names one
+- `spelling_language` — `grind text spell`, which prints the language it checks in, and why, on stderr
+- `language` — `grind text spell` without `--language`: the language the document states is the second thing asked
+- `misspellings` — `grind text spell [range]`, one `p12+40<TAB>word` line per misspelt word, and `grind text lint`'s `misspelt` rule
+- `suggest` — `grind text spell --suggest`, a third column with what each word might have been
+- `guess_language` — `grind text spell` on a document that states no language: the dictionary that knows most of its words is the one it checks in
+- `correct` — `grind text correct <at> <word> <with>`, one undo step, the word's formatting kept
 - `counts` — `grind text words` — blocks, headings, words, characters
 - `font_generics` — `grind text export-pdf`, `pages` and `preview`, which fall back to a face of the declared kind when a family is not installed; nothing prints the map on its own
 - `layout_block_indented` — `grind text export-pdf`, `pages` and `preview`, for a paragraph with a first-line indent; `grind text view --width` lays out without one, as every screen does

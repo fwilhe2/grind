@@ -81,6 +81,7 @@ impl From<&grind_core::third_party::Component> for ComponentReport {
                 Kind::Font => "font",
                 Kind::Text => "text",
                 Kind::Runtime => "runtime",
+                Kind::Dictionary => "dictionary",
             },
         }
     }

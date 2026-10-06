@@ -163,3 +163,21 @@ SPDX-License-Identifier = "AGPL-3.0-or-later"
 path = "docx/tests/data/**"
 SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 SPDX-License-Identifier = "CC0-1.0"
+
+# The spelling dictionaries (doc/spelling.md): Hunspell's own, as normalised and packaged by
+# https://github.com/wooorm/dictionaries (dictionary-en 4.0.0, dictionary-de 3.0.0), copied as
+# released at 8cfea40 (2024-09-09) and renamed by tag. A word list cannot carry a header.
+#
+# English is SCOWL's `en_US` (2020.12.07) with Ispell's affix file, under the permissive notice
+# kept whole in `LICENSES/LicenseRef-SCOWL.txt`. German is igerman98 (20161207), offered under
+# GPL version 2 *or* 3; this suite takes it under GPL-3.0, which AGPL-3.0 §13 allows to be
+# combined with it, and does not modify it.
+[[annotations]]
+path = ["spell/dictionaries/en-US.aff", "spell/dictionaries/en-US.dic"]
+SPDX-FileCopyrightText = ["2000-2018 Kevin Atkinson", "1993 Geoff Kuenning"]
+SPDX-License-Identifier = "LicenseRef-SCOWL"
+
+[[annotations]]
+path = ["spell/dictionaries/de-DE.aff", "spell/dictionaries/de-DE.dic"]
+SPDX-FileCopyrightText = "1998-2016 Björn Jacke <bjoern@j3e.de>"
+SPDX-License-Identifier = "GPL-2.0-only OR GPL-3.0-only"

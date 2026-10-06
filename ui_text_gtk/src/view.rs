@@ -52,6 +52,13 @@ impl Doc {
         doc
     }
 
+    /// Draw underlines under the words `speller` does not know — the same speller the window
+    /// attached to the `App` — or with `None` none at all.
+    pub fn set_speller(&self, speller: Option<Arc<grind_spell::Speller>>) {
+        self.imp().speller.replace(speller);
+        self.queue_draw();
+    }
+
     /// The document changed: forget everything measured from it and repaint.
     ///
     /// Called from the observer, so it covers this widget's own edits too — they reach the
@@ -233,6 +240,34 @@ impl Doc {
     }
 }
 
+/// How many suggestions the right-click menu offers for a misspelt word. Hunspell ranks them,
+/// and past the first few they are rarely the word that was meant.
+pub const SUGGESTIONS: usize = 6;
+
+/// The spelling section that leads the right-click menu over a misspelt word
+/// (`doc/spelling.md`): what it might have been — each one `spell.correct` with the word as its
+/// target — then Ignore All and Add to Dictionary. A free function for the reason
+/// [`context_menu_model`] is.
+pub fn spelling_menu_model(suggestions: &[String]) -> gtk::gio::Menu {
+    let model = gtk::gio::Menu::new();
+    let offered = gtk::gio::Menu::new();
+    for word in suggestions.iter().take(SUGGESTIONS) {
+        let item = gtk::gio::MenuItem::new(Some(word), None);
+        item.set_action_and_target_value(Some("spell.correct"), Some(&word.to_variant()));
+        offered.append_item(&item);
+    }
+    if suggestions.is_empty() {
+        let none = gtk::gio::MenuItem::new(Some("No Suggestions"), Some("spell.none"));
+        offered.append_item(&none);
+    }
+    model.append_section(None, &offered);
+    let keep = gtk::gio::Menu::new();
+    keep.append(Some("Ignore All"), Some("spell.ignore"));
+    keep.append(Some("Add to Dictionary"), Some("spell.add"));
+    model.append_section(None, &keep);
+    model
+}
+
 /// The right-click menu on the page: what to do with the text under the pointer.
 ///
 /// The clipboard, and nothing about the document as a whole — that is the primary menu's, the
@@ -330,6 +365,12 @@ mod imp {
         /// The right-click menu, built once, parented on this widget and unparented in
         /// `dispose` — `ui_sheet_gtk`'s cell menu, for the same reason.
         pub menu: std::cell::OnceCell<gtk::PopoverMenu>,
+        /// The dictionary the window attached to the `App`, kept here too so Ignore All and Add
+        /// to Dictionary can teach it a word (`doc/spelling.md`). `None` draws no underlines.
+        pub speller: RefCell<Option<Arc<grind_spell::Speller>>>,
+        /// The misspelt word the right-click menu was opened on — what `spell.correct`,
+        /// `spell.ignore` and `spell.add` act on.
+        pub spot: RefCell<Option<grind_text::Misspelling>>,
     }
 
     // Spelled out rather than derived: neither `Caret` nor `ScrollablePolicy` has a
@@ -360,6 +401,8 @@ mod imp {
                 on_moved: RefCell::new(Vec::new()),
                 presses: Cell::new(None),
                 menu: std::cell::OnceCell::new(),
+                speller: RefCell::new(None),
+                spot: RefCell::new(None),
             }
         }
     }
@@ -557,6 +600,34 @@ mod imp {
                 }
             ));
             widget.add_controller(secondary);
+
+            // The spelling half of that menu: its own action group on this widget, because
+            // the word it acts on is this widget's state (`spot`) rather than the window's.
+            let spell = gtk::gio::SimpleActionGroup::new();
+            let correct = gtk::gio::SimpleAction::new("correct", Some(glib::VariantTy::STRING));
+            correct.connect_activate(glib::clone!(
+                #[weak(rename_to = doc)]
+                widget,
+                move |_, with| {
+                    if let Some(with) = with.and_then(|v| v.get::<String>()) {
+                        doc.imp().correct(&with);
+                    }
+                }
+            ));
+            spell.add_action(&correct);
+            for (name, add) in [("ignore", false), ("add", true)] {
+                let action = gtk::gio::SimpleAction::new(name, None);
+                action.connect_activate(glib::clone!(
+                    #[weak(rename_to = doc)]
+                    widget,
+                    move |_, _| doc.imp().keep(add)
+                ));
+                spell.add_action(&action);
+            }
+            let none = gtk::gio::SimpleAction::new("none", None);
+            none.set_enabled(false);
+            spell.add_action(&none);
+            widget.insert_action_group("spell", Some(&spell));
         }
     }
 
@@ -624,6 +695,20 @@ mod imp {
             let viewport = app.get_viewport(first.index..last.index + 1);
             let caret = self.caret.get();
             let selection = self.selection();
+            // The word still being typed is not underlined: the caret at its end with nothing
+            // selected is somebody halfway through it, and every word processor waits.
+            let misspelt: Vec<grind_text::Misspelling> = match self.speller.borrow().is_some() {
+                true => app
+                    .misspellings(first.index..last.index + 1)
+                    .into_iter()
+                    .filter(|m| {
+                        selection.is_some()
+                            || !(m.block == caret.block && m.offset + m.len == caret.offset)
+                    })
+                    .collect(),
+                false => Vec::new(),
+            };
+            let misspelt_ink = palette.misspelt;
 
             for slot in slots {
                 let Some(block) = viewport.get(slot.index) else {
@@ -730,6 +815,28 @@ mod imp {
                         y + f64::from(line.top),
                         ink,
                     );
+                }
+
+                // A misspelt word's wavy underline, under each line it crosses — `paint::band` is
+                // the selection's own arithmetic, so a word that wraps is underlined on both
+                // lines exactly where its characters are.
+                for wrong in misspelt.iter().filter(|m| m.block == slot.index) {
+                    for line in layout.lines() {
+                        if let Some((left, right)) = grind_text::paint::band(
+                            &layout,
+                            line,
+                            wrong.offset,
+                            wrong.offset + wrong.len,
+                        ) {
+                            squiggle(
+                                snapshot,
+                                x + f64::from(left),
+                                x + f64::from(right),
+                                y + f64::from(line.top + line.height) - 2.0,
+                                misspelt_ink,
+                            );
+                        }
+                    }
                 }
 
                 // `doc/view-modes.md` §3.6: a bookmark is the named-range analogue and it
@@ -1147,6 +1254,16 @@ mod imp {
         /// is inside the selection — a right-click on selected text is about that text.
         fn open_menu(&self, x: f64, y: f64) {
             let Some(menu) = self.menu.get() else { return };
+            // Over a misspelt word the menu leads with what it might have been. Asked for here,
+            // one word at a time, because a suggestion costs tens of milliseconds.
+            let spot = self.misspelling_at(x, y);
+            let model = super::context_menu_model();
+            if let (Some(wrong), Some(app)) = (&spot, self.app()) {
+                let spelling = super::spelling_menu_model(&app.suggest(&wrong.word));
+                model.insert_section(0, None, &spelling);
+            }
+            menu.set_menu_model(Some(&model));
+            self.spot.replace(spot);
             if let Some(caret) = self.caret_at(x, y) {
                 let inside = self
                     .selection()
@@ -1158,6 +1275,60 @@ mod imp {
             }
             menu.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
             menu.popup();
+        }
+
+        /// The misspelt word under a point, if there is one.
+        fn misspelling_at(&self, x: f64, y: f64) -> Option<grind_text::Misspelling> {
+            self.speller.borrow().as_ref()?;
+            let caret = self.caret_at(x, y)?;
+            self.app()?
+                .misspellings(caret.block..caret.block + 1)
+                .into_iter()
+                .find(|m| m.offset <= caret.offset && caret.offset <= m.offset + m.len)
+        }
+
+        /// Replace the word the menu was opened on with `with` — one undo step, in the core.
+        fn correct(&self, with: &str) {
+            let Some(wrong) = self.spot.take() else {
+                return;
+            };
+            let Some(app) = self.app() else { return };
+            let at = Caret {
+                block: wrong.block,
+                offset: wrong.offset,
+            };
+            match app.correct(at, &wrong.word, with) {
+                Ok(()) => {
+                    self.anchor.set(None);
+                    self.move_caret(
+                        Caret {
+                            offset: wrong.offset + with.chars().count(),
+                            ..at
+                        },
+                        true,
+                    );
+                }
+                Err(error) => self.notice(error.to_string()),
+            }
+        }
+
+        /// Accept the word the menu was opened on: for this session (Ignore All), or in the
+        /// person's own word list as well (Add to Dictionary).
+        fn keep(&self, add: bool) {
+            let Some(wrong) = self.spot.take() else {
+                return;
+            };
+            let Some(speller) = self.speller.borrow().clone() else {
+                return;
+            };
+            speller.accept(&wrong.word);
+            if add && let Err(error) = grind_spell::personal::add(&wrong.word) {
+                self.notice(format!(
+                    "Could not add {:?} to your word list: {error}",
+                    wrong.word
+                ));
+            }
+            self.obj().queue_draw();
         }
 
         /// The link under a point, if the point is on one — its characters, not merely next to
@@ -1627,6 +1798,26 @@ mod imp {
             Some(caption) => picture + CAPTION_GAP + caption_height(faces.body(), caption, width),
             None => picture,
         })
+    }
+
+    /// A wavy underline from `left` to `right` with its troughs on `y` — a misspelt word's mark,
+    /// which every word processor draws this way so that it cannot be mistaken for underlined text.
+    fn squiggle(snapshot: &gtk::Snapshot, left: f64, right: f64, y: f64, ink: gtk::gdk::RGBA) {
+        const STEP: f32 = 2.0;
+        if right - left < 1.0 {
+            return;
+        }
+        let path = gtk::gsk::PathBuilder::new();
+        let (left, right, y) = (left as f32, right as f32, y as f32);
+        path.move_to(left, y);
+        let mut at = left;
+        let mut up = true;
+        while at < right {
+            at = (at + STEP).min(right);
+            path.line_to(at, if up { y - STEP } else { y });
+            up = !up;
+        }
+        snapshot.append_stroke(&path.to_path(), &gtk::gsk::Stroke::new(1.0), &ink);
     }
 
     fn draw_at(

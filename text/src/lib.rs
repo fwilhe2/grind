@@ -65,6 +65,7 @@ pub mod paint;
 pub mod paragraph;
 pub mod picture;
 pub mod projection;
+pub mod spell;
 pub mod style;
 pub mod table;
 pub mod table_look;
@@ -78,6 +79,7 @@ pub use model::{
     Block, BlockId, BlockKind, Cell, Document, MAX_LIST_DEPTH, NAMED_STYLES, ParagraphDefaults,
     Run, indent_kind, named_style_for,
 };
+pub use spell::{Lexicon, Misspelling};
 pub use style::CharStyle;
 
 use std::ops::Range;
@@ -534,6 +536,10 @@ struct State {
 pub struct App {
     state: RwLock<State>,
     observer: RwLock<Option<Arc<dyn Observer>>>,
+    /// The dictionary spelling is checked against, when a shell or the CLI has handed one in
+    /// ([`App::set_lexicon`]). Beside the document rather than in it: which language a person
+    /// checks in is a choice about the session, and nothing here is ever written.
+    lexicon: RwLock<Option<Arc<dyn spell::Lexicon>>>,
 }
 
 impl App {
@@ -817,8 +823,134 @@ impl App {
     /// exactly as they were. `grind text lint` is the CLI twin, and a shell that wants
     /// squiggles turns each address into a byte range through the projection's span map (§6.2)
     /// rather than by inventing a second addressing.
+    ///
+    /// With a [`spell::Lexicon`] attached ([`App::set_lexicon`]) the `misspelt` rule runs too, so
+    /// every problems pane lists the words the dictionary does not know with no code of its own.
     pub fn lint(&self, options: &grind_core::lint::Options) -> grind_core::lint::Report {
-        lint::lint(&self.state.read().unwrap().doc, options)
+        let lexicon = self.lexicon.read().unwrap().clone();
+        lint::lint_with(&self.state.read().unwrap().doc, options, lexicon.as_deref())
+    }
+
+    // --- spelling (`doc/spelling.md`) ---
+
+    /// Check spelling against `lexicon` from now on, or with `None` stop checking.
+    ///
+    /// Observers are **not** told: the document has not changed, and an observer's one signal
+    /// means it has — a shell that marks itself modified on every notification would call a
+    /// freshly opened file unsaved. The caller that attaches a lexicon redraws its own
+    /// underlines.
+    pub fn set_lexicon(&self, lexicon: Option<Arc<dyn spell::Lexicon>>) {
+        *self.lexicon.write().unwrap() = lexicon;
+    }
+
+    /// The language spelling is being checked in — the attached lexicon's BCP 47 tag — or `None`
+    /// when nothing is checked.
+    pub fn spelling_language(&self) -> Option<String> {
+        let lexicon = self.lexicon.read().unwrap();
+        lexicon.as_ref().map(|l| l.language().to_owned())
+    }
+
+    /// The language the document **states**: `fo:language` and `fo:country` of its `Standard`
+    /// paragraph style, which inherits the default paragraph style's — where LibreOffice keeps
+    /// the language a document was written in. `de-DE`, `en`, or `None` when it states none, as
+    /// nothing this build writes does. `zxx` is ODF's "no language" and comes back as itself.
+    pub fn language(&self) -> Option<String> {
+        let state = self.state.read().unwrap();
+        let props = paragraph::resolve(
+            &state.doc.paragraph_styles,
+            &state.doc.default_paragraph,
+            Some("Standard"),
+        );
+        let language = props.language.filter(|l| !l.is_empty() && l != "none")?;
+        Some(
+            match props.country.filter(|c| !c.is_empty() && c != "none") {
+                Some(country) => format!("{language}-{country}"),
+                None => language,
+            },
+        )
+    }
+
+    /// Every misspelt word in `blocks`, in document order — empty when no lexicon is attached.
+    /// What a shell underlines: it asks for the blocks it is about to draw.
+    pub fn misspellings(&self, blocks: Range<usize>) -> Vec<spell::Misspelling> {
+        let Some(lexicon) = self.lexicon.read().unwrap().clone() else {
+            return Vec::new();
+        };
+        let state = self.state.read().unwrap();
+        let end = blocks.end.min(state.doc.blocks.len());
+        let start = blocks.start.min(end);
+        state.doc.blocks[start..end]
+            .iter()
+            .enumerate()
+            .flat_map(|(i, block)| spell::check_block(block, start + i, lexicon.as_ref()))
+            .collect()
+    }
+
+    /// What `word` might have been, best first — empty when no lexicon is attached. Slow next to
+    /// [`App::misspellings`] (tens of milliseconds), so it is asked one word at a time.
+    pub fn suggest(&self, word: &str) -> Vec<String> {
+        let lexicon = self.lexicon.read().unwrap().clone();
+        lexicon.map_or_else(Vec::new, |l| l.suggest(&spell::normalise(word)))
+    }
+
+    /// Which of `lexicons` knows the most of this document's words ([`spell::guess`]) — how a
+    /// language is picked for a document that does not state one.
+    pub fn guess_language(&self, lexicons: &[&dyn spell::Lexicon]) -> Option<usize> {
+        spell::guess(&self.state.read().unwrap().doc.blocks, lexicons)
+    }
+
+    /// Replace the `word` at `at` with `with` — what picking a suggestion does — in one undo
+    /// step, keeping the formatting the word's first character had.
+    ///
+    /// The word is named rather than only measured so that a correction aimed at a document
+    /// that has changed since the misspelling was found is refused instead of overwriting
+    /// whatever now sits there.
+    pub fn correct(&self, at: Caret, word: &str, with: &str) -> Result<()> {
+        self.mutate(|state| {
+            let mut block = block_at(state, at.block)?;
+            let len = word.chars().count();
+            let (mut runs, rest) = model::split_runs(&block.runs, at.offset.min(block.len()));
+            let (cut, tail) = model::split_runs(&rest, len);
+            let found: String = cut.iter().map(Run::text).collect();
+            if found != word {
+                return Err(Error::Xml(format!(
+                    "{}+{} reads {found:?}, not {word:?}",
+                    loc::format(at.block),
+                    at.offset
+                )));
+            }
+            let (style, props, href) = cut
+                .iter()
+                .find_map(|run| match run {
+                    Run::Text {
+                        style, props, href, ..
+                    } => Some((style.clone(), props.clone(), href.clone())),
+                    _ => None,
+                })
+                .unwrap_or_default();
+            if !with.is_empty() {
+                runs.push(Run::Text {
+                    text: with.to_owned(),
+                    style,
+                    props,
+                    href,
+                });
+            }
+            runs.extend(
+                cut.into_iter()
+                    .filter(|r| matches!(r, Run::Bookmark { .. })),
+            );
+            runs.extend(tail);
+            model::coalesce(&mut runs);
+            block.runs = runs;
+            Self::commit(
+                state,
+                Action::SetBlock {
+                    index: at.block,
+                    block: Box::new(block),
+                },
+            )
+        })
     }
 
     /// Every bookmark, name and the block it sits in.

@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-spell"
+version = "0.0.0"
+description = "Spelling dictionaries for the word processor (doc/spelling.md)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+grind-core = { path = "../core" }
+# The `Lexicon` trait this crate implements, and the rules for what a word is: those are the
+# word processor's, and the dictionaries are the only thing that lives here.
+grind-text = { path = "../text" }
+# A Hunspell-compatible checker in pure Rust (doc/spelling.md, "Why spellbook"): no system
+# library, so the same answers on every platform this suite builds for. Pre-1.0, so pinned.
+spellbook = "=0.4.2"

@@ -1055,6 +1055,8 @@ impl Context<Builder> for ParagraphStyleDef {
             props.font_weight = get("font-weight");
             props.font_style = get("font-style");
             props.color = get("color");
+            props.language = get("language");
+            props.country = get("country");
         }
         None
     }

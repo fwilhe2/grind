@@ -1562,6 +1562,9 @@ impl App {
 
     /// `:lint` — check the document and show what it says about itself (`doc/dsl.md` §4.3).
     fn cmd_lint(&mut self, hints: bool) {
+        // Spelling as well, in the document's own language (`doc/spelling.md`): this shell
+        // draws no underlines yet, and its problems pane is where the words show up instead.
+        grind_spell::ensure(&self.core);
         let report = self.core.lint(&grind_text::lint::Options {
             hints,
             off: Vec::new(),

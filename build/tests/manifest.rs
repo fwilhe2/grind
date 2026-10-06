@@ -25,7 +25,7 @@
 const WORKSPACE: &str = include_str!("../../Cargo.toml");
 
 /// Every crate that must **not** name the generator, with its manifest.
-const READERS: [(&str, &str); 15] = [
+const READERS: [(&str, &str); 16] = [
     ("core", include_str!("../../core/Cargo.toml")),
     ("sheet", include_str!("../../sheet/Cargo.toml")),
     ("text", include_str!("../../text/Cargo.toml")),
@@ -40,6 +40,8 @@ const READERS: [(&str, &str); 15] = [
     // PDF export reads a document to typeset it (doc/pdf-export.md), and the browser's print
     // module is handed one as bytes; neither evaluates anything.
     ("print", include_str!("../../print/Cargo.toml")),
+    // Spelling attaches a dictionary to an open document (doc/spelling.md); it evaluates nothing.
+    ("spell", include_str!("../../spell/Cargo.toml")),
     (
         "ui_web_print",
         include_str!("../../ui_web_print/Cargo.toml"),

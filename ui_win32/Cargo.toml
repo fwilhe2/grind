@@ -40,6 +40,8 @@ grind-xlsx = { path = "../xlsx", optional = true }
 grind-docx = { path = "../docx", optional = true }
 grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
+# Spelling (doc/spelling.md): the dictionaries, attached before Check Document runs.
+grind-spell = { path = "../spell" }
 # Export PDF (doc/pdf-export.md): the bundled faces, and the machine's for a family a document
 # names, which fontdb finds in Windows' own font directory.
 grind-print = { path = "../print" }

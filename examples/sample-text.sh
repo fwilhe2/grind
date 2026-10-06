@@ -326,6 +326,29 @@ else
     say "import: not in this build (compiled without the docx feature)"
 fi
 
+# --- spelling ----------------------------------------------------------------------------------
+# `doc/spelling.md`. One language per document — the one named, else the one it states, else the
+# one whose dictionary knows most of its words — and every misspelt word comes with an address,
+# so the correction is a second command fed by the first. `lint` lists them too, as warnings.
+# A document of its own, so the sample above keeps exactly the text it was typed with.
+
+if "$GRIND" text spell --help >/dev/null 2>&1; then
+    say "spell: every misspelt word, with an address and what it might have been"
+    spelling="$out/spelling.fodt"
+    text new "$spelling" --force >/dev/null
+    text set "$spelling" p1 'We recieve letters in English, and see https://exmaple.org.' >/dev/null
+    text insert "$spelling" --text 'Die Rechtschreibprüfung kennt auch Zusammensetzungen.' >/dev/null
+    text spell "$spelling" --suggest
+    say "spell --language de: the second paragraph is German, and says so in no style"
+    text spell "$spelling" p2 --language de
+    say "correct: the address spell printed, the word, and its replacement — one undo step"
+    text correct "$spelling" "$(text spell "$spelling" | grep recieve | cut -f1)" recieve receive >/dev/null
+    text spell "$spelling" p1
+    "$GRIND" lint "$spelling"
+else
+    say "spell: not in this build (compiled without the spell feature)"
+fi
+
 # --- build: a document generated from a script -------------------------------------------------
 # `doc/dsl.md` layer 1, D7. `examples/report.rhai` says a section per region once and lets the
 # loop write them, with the same inline notation this document was typed with. The arrow points

@@ -211,6 +211,37 @@ struct Ui {
     closing: Cell<bool>,
     /// Set by Save and Export Markdown: the next successful save also writes its `.md` twin.
     markdown_twin: Cell<bool>,
+    /// Which language spelling is checked in — the person's choice in the menu — and what that
+    /// came to for this document (`doc/spelling.md`).
+    spelling: Cell<Spelling>,
+    checked: Cell<Option<grind_spell::Choice>>,
+}
+
+/// The Spelling menu's four choices. `Automatic` is `grind_spell::choose`'s order: the
+/// language the document states, else the one whose dictionary knows most of its words.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Spelling {
+    Automatic,
+    In(grind_spell::Language),
+    Off,
+}
+
+impl Spelling {
+    /// The action's state: `auto`, `off`, or a dictionary's tag.
+    fn target(self) -> &'static str {
+        match self {
+            Spelling::Automatic => "auto",
+            Spelling::In(language) => language.tag(),
+            Spelling::Off => "off",
+        }
+    }
+
+    fn from_target(target: &str) -> Self {
+        match target {
+            "off" => Spelling::Off,
+            tag => grind_spell::Language::from_tag(tag).map_or(Spelling::Automatic, Spelling::In),
+        }
+    }
 }
 
 impl Ui {
@@ -349,8 +380,11 @@ impl Ui {
             loading: Cell::new(false),
             closing: Cell::new(false),
             markdown_twin: Cell::new(false),
+            spelling: Cell::new(Spelling::Automatic),
+            checked: Cell::new(None),
         });
         ui.wire(application);
+        ui.check_spelling();
         ui.refresh();
         ui
     }
@@ -490,6 +524,28 @@ impl Ui {
         self.window.add_action(&source);
         application.set_accels_for_action("win.show-source", &["<Control><Shift>u"]);
 
+        // The Spelling submenu's radio items: one string-valued action whose state is the
+        // choice, so the menu ticks the one in effect with no bookkeeping of its own.
+        let spelling = gio::SimpleAction::new_stateful(
+            "spell-language",
+            Some(glib::VariantTy::STRING),
+            &Spelling::Automatic.target().to_variant(),
+        );
+        spelling.connect_activate(glib::clone!(
+            #[strong(rename_to = ui)]
+            self,
+            move |action, target| {
+                let Some(target) = target.and_then(|t| t.get::<String>()) else {
+                    return;
+                };
+                action.set_state(&target.to_variant());
+                ui.spelling.set(Spelling::from_target(&target));
+                ui.check_spelling();
+                ui.refresh();
+            }
+        ));
+        self.window.add_action(&spelling);
+
         // Moving the cursor in the source selects the block that line projects — §6.2's map in
         // the direction that has to be built rather than assumed. `notify::cursor-position`
         // rather than a key handler, so a click, a drag and an arrow all reach it.
@@ -599,6 +655,11 @@ impl Ui {
             1 => "1 word".to_owned(),
             n => format!("{n} words"),
         };
+        self.reconsider_spelling(counts.words);
+        let words = match self.checked.get() {
+            Some(choice) => format!("{words}  ·  {}", choice.language.name()),
+            None => words,
+        };
         self.status.set_text(&match here.is_empty() {
             true => words,
             false => format!("{here}  ·  {words}"),
@@ -608,6 +669,59 @@ impl Ui {
             grind_text::loc::format_offset(caret.block, caret.offset),
             counts.blocks
         )));
+    }
+
+    /// Attach a dictionary for the language the Spelling menu says — on every open, and when
+    /// the menu changes (`doc/spelling.md`). A document in a language there is no dictionary for
+    /// is not checked, and says so once rather than underlining every word.
+    fn check_spelling(self: &Rc<Self>) {
+        let named = match self.spelling.get() {
+            Spelling::Off => {
+                self.app.set_lexicon(None);
+                self.doc.set_speller(None);
+                self.checked.set(None);
+                return;
+            }
+            Spelling::In(language) => Some(language),
+            Spelling::Automatic => None,
+        };
+        match grind_spell::attach(&self.app, named) {
+            Ok((choice, speller)) => {
+                self.checked.set(Some(choice));
+                self.doc.set_speller(Some(speller));
+            }
+            Err(why) => {
+                self.checked.set(None);
+                self.doc.set_speller(None);
+                self.toast(&format!("Spelling is not checked: {why}"));
+            }
+        }
+    }
+
+    /// While the language is only a guess — a new document, or one stating none — guess again
+    /// as it grows, so the first sentences typed into an empty window decide it rather than
+    /// the desktop's language. A guess reads at most `GUESS_SAMPLE` words, so past that the
+    /// answer cannot change and nothing is asked.
+    fn reconsider_spelling(self: &Rc<Self>, words: usize) {
+        let Some(choice) = self.checked.get() else {
+            return;
+        };
+        let guessing = matches!(
+            choice.source,
+            grind_spell::Source::Guessed | grind_spell::Source::Default
+        );
+        if self.spelling.get() != Spelling::Automatic
+            || !guessing
+            || words > grind_text::spell::GUESS_SAMPLE
+        {
+            return;
+        }
+        if let Ok(now) = grind_spell::choose(&self.app, None)
+            && now.language != choice.language
+            && now.source == grind_spell::Source::Guessed
+        {
+            self.check_spelling();
+        }
     }
 
     fn toast(&self, text: &str) {
@@ -727,6 +841,7 @@ impl Ui {
                 };
                 self.banner.set_revealed(false);
                 self.doc.reset();
+                self.check_spelling();
                 match summary {
                     Some(summary) => self.toast(&summary),
                     None => remember_recent(path),
@@ -888,6 +1003,7 @@ impl Ui {
             *self.path.borrow_mut() = None;
             let _ = self.app.insert(0, BlockKind::Paragraph, "");
             self.doc.reset();
+            self.check_spelling();
         }
     }
 
@@ -1592,6 +1708,7 @@ fn primary_menu() -> gio::Menu {
     structure.append(Some("Go to Address…"), Some("win.goto"));
     structure.append(Some("Word Count"), Some("win.words"));
     structure.append(Some("Check Document"), Some("win.lint"));
+    structure.append_submenu(Some("Spelling"), &spelling_menu());
     menu.append_section(None, &structure);
 
     let view = gio::Menu::new();
@@ -1603,6 +1720,28 @@ fn primary_menu() -> gio::Menu {
     rest.append(Some("Keyboard Shortcuts"), Some("win.shortcuts"));
     rest.append(Some("About Text"), Some("win.about"));
     menu.append_section(None, &rest);
+    menu
+}
+
+/// The Spelling submenu: Automatic, each dictionary by its own name, and Off — radio items over
+/// the one `spell-language` action.
+fn spelling_menu() -> gio::Menu {
+    let menu = gio::Menu::new();
+    let choices = std::iter::once(("Automatic", Spelling::Automatic))
+        .chain(
+            grind_spell::Language::ALL
+                .iter()
+                .map(|l| (l.name(), Spelling::In(*l))),
+        )
+        .chain(std::iter::once(("Off", Spelling::Off)));
+    for (label, choice) in choices {
+        let item = gio::MenuItem::new(Some(label), None);
+        item.set_action_and_target_value(
+            Some("win.spell-language"),
+            Some(&choice.target().to_variant()),
+        );
+        menu.append_item(&item);
+    }
     menu
 }
 
@@ -1941,8 +2080,11 @@ mod tests {
             ("the page's menu", view::context_menu_model()),
         ] {
             for action in menu_actions(model.upcast_ref()) {
-                // The two stateful readings are added beside the table, not in it.
-                if matches!(action.as_str(), "win.show-names" | "win.show-source") {
+                // The three stateful readings are added beside the table, not in it.
+                if matches!(
+                    action.as_str(),
+                    "win.show-names" | "win.show-source" | "win.spell-language"
+                ) {
                     continue;
                 }
                 assert!(
@@ -1951,6 +2093,27 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_spelling_menu_offers_every_dictionary_and_reads_back_its_own_targets() {
+        let menu = spelling_menu();
+        assert_eq!(
+            menu.n_items() as usize,
+            grind_spell::Language::ALL.len() + 2
+        );
+        for choice in [
+            Spelling::Automatic,
+            Spelling::Off,
+            Spelling::In(grind_spell::Language::German),
+        ] {
+            assert_eq!(Spelling::from_target(choice.target()), choice);
+        }
+        let spelling = view::spelling_menu_model(&["receive".to_owned()]);
+        assert_eq!(
+            menu_actions(spelling.upcast_ref()),
+            ["spell.correct", "spell.ignore", "spell.add"]
+        );
     }
 
     fn menu_actions(model: &gio::MenuModel) -> Vec<String> {

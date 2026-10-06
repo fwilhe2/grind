@@ -42,6 +42,9 @@ pub struct Palette {
     /// theme's own ink like everything else here, because a literal is what makes a page stay
     /// white in a dark theme.
     pub rule: gdk::RGBA,
+    /// A misspelt word's wavy underline — the theme's own error colour, the red libadwaita
+    /// uses for a field that will not take what was typed.
+    pub misspelt: gdk::RGBA,
 }
 
 impl Palette {
@@ -75,6 +78,7 @@ impl Palette {
             accent,
             selection: with_alpha(accent, 0.35),
             rule: with_alpha(foreground, 0.28),
+            misspelt: named(widget, "error_color").unwrap_or(gdk::RGBA::new(0.88, 0.11, 0.14, 1.0)),
         }
     }
 }

@@ -32,6 +32,8 @@ grind-print = { path = "../print", optional = true }
 grind-core = { path = "../core" }
 grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
+# Spelling (doc/spelling.md): the dictionaries, attached before Check Document runs.
+grind-spell = { path = "../spell" }
 # crossterm is used through `ratatui::crossterm`, so the two can never drift apart.
 ratatui = "0.30"
 unicode-width = "0.2.2"

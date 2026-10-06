@@ -25,6 +25,7 @@ use grind_core::style::PALETTE;
 
 use crate::loc;
 use crate::model::{Block, Document, Run};
+use crate::spell::{self, Lexicon};
 use crate::style::CharStyle;
 
 /// A heading whose level is more than one past the heading before it — 1 → 3.
@@ -82,17 +83,36 @@ pub const UNSPELLABLE: Rule = Rule {
     what: "a construct the projection cannot spell",
 };
 
+/// A word the spelling dictionary does not know (`doc/spelling.md`).
+///
+/// Runs only when there *is* a dictionary — [`lint_with`] with a lexicon, which is what
+/// [`crate::App::lint`] does once a shell or the CLI has attached one — so a build with no
+/// dictionaries in it has this rule and never fires it. A warning: a misspelling is worth
+/// seeing and never a reason for `grind lint` to fail a build.
+pub const MISSPELT: Rule = Rule {
+    id: "misspelt",
+    severity: Severity::Warning,
+    what: "a word the spelling dictionary does not know",
+};
+
 /// Every rule this application has. The order is the order `grind text lint --rules` prints.
-pub const RULES: [Rule; 5] = [
+pub const RULES: [Rule; 6] = [
     HEADING_SKIP,
     UNKNOWN_BOOKMARK,
     UNDECLARED_STYLE,
     OFF_PALETTE,
     UNSPELLABLE,
+    MISSPELT,
 ];
 
-/// Check a document against every rule `options` wants.
+/// Check a document against every rule `options` wants — every rule but [`MISSPELT`], which
+/// needs a dictionary ([`lint_with`]).
 pub fn lint(doc: &Document, options: &Options) -> Report {
+    lint_with(doc, options, None)
+}
+
+/// [`lint`], and spelling as well when there is a `lexicon` to check it against.
+pub fn lint_with(doc: &Document, options: &Options, lexicon: Option<&dyn Lexicon>) -> Report {
     let mut report = Report::default();
     if options.wants(&HEADING_SKIP) {
         heading_skips(doc, &mut report);
@@ -108,6 +128,11 @@ pub fn lint(doc: &Document, options: &Options) -> Report {
     }
     if options.wants(&UNSPELLABLE) {
         unspellable(doc, &mut report);
+    }
+    if let Some(lexicon) = lexicon
+        && options.wants(&MISSPELT)
+    {
+        misspelt(doc, lexicon, &mut report);
     }
     report.sort();
     report
@@ -286,6 +311,24 @@ fn unspellable(doc: &Document, report: &mut Report) {
     }
 }
 
+fn misspelt(doc: &Document, lexicon: &dyn Lexicon, report: &mut Report) {
+    for (index, block) in doc.blocks.iter().enumerate() {
+        for wrong in spell::check_block(block, index, lexicon) {
+            if !report.push(Diagnostic::new(
+                &MISSPELT,
+                wrong.address(),
+                format!(
+                    "{:?} is not in the {} dictionary",
+                    wrong.word,
+                    lexicon.language()
+                ),
+            )) {
+                return;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -449,6 +492,31 @@ mod tests {
         let report = lint(&doc, &Options::default());
         assert_eq!(ids(&report), ["unspellable"]);
         assert!(report.diagnostics[0].message.contains("image/png"));
+    }
+
+    #[test]
+    fn a_misspelling_is_reported_only_when_there_is_a_dictionary_to_ask() {
+        let mut doc = empty();
+        push(
+            &mut doc,
+            BlockKind::Paragraph,
+            vec![Run::Text {
+                text: "I recieve it".to_owned(),
+                style: None,
+                props: CharStyle::default(),
+                href: None,
+            }],
+        );
+        assert!(lint(&doc, &Options::default()).is_empty(), "no dictionary");
+        let list = crate::spell::tests::List(&["i", "it", "receive"]);
+        let report = lint_with(&doc, &Options::default(), Some(&list));
+        assert_eq!(ids(&report), ["misspelt"]);
+        assert_eq!(report.diagnostics[0].at, "p1+2");
+        let off = Options {
+            hints: false,
+            off: vec!["misspelt".to_owned()],
+        };
+        assert!(lint_with(&doc, &off, Some(&list)).is_empty());
     }
 
     #[test]

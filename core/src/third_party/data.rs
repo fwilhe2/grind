@@ -1059,6 +1059,15 @@ pub(super) const COMPONENTS: &[Component] = &[
         notices: &[86],
     },
     Component {
+        name: "igerman98 German dictionary (de_DE)",
+        version: "20161207",
+        licence: "GPL-2.0-only OR GPL-3.0-only",
+        copyright: "",
+        source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/de",
+        kind: Kind::Dictionary,
+        notices: &[87],
+    },
+    Component {
         name: "image-webp",
         version: "0.2.4",
         licence: "MIT OR Apache-2.0",
@@ -1074,7 +1083,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 Maiddog",
         source: "https://github.com/Roughsketch/imagesize",
         kind: Kind::Crate,
-        notices: &[87],
+        notices: &[88],
     },
     Component {
         name: "indexmap",
@@ -1083,7 +1092,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016--2017",
         source: "https://github.com/indexmap-rs/indexmap",
         kind: Kind::Crate,
-        notices: &[3, 88],
+        notices: &[3, 89],
     },
     Component {
         name: "indoc",
@@ -1101,7 +1110,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2020 Stephen M.",
         source: "https://github.com/ratatui/instability",
         kind: Kind::Crate,
-        notices: &[89],
+        notices: &[90],
     },
     Component {
         name: "is_terminal_polyfill",
@@ -1146,7 +1155,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Dylan Ede",
         source: "https://github.com/ratatui/kasuari",
         kind: Kind::Crate,
-        notices: &[90, 91],
+        notices: &[91, 92],
     },
     Component {
         name: "kdl",
@@ -1155,7 +1164,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2020 Kat Marchán",
         source: "https://github.com/kdl-org/kdl-rs",
         kind: Kind::Crate,
-        notices: &[11, 92],
+        notices: &[11, 93],
     },
     Component {
         name: "krilla",
@@ -1164,7 +1173,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Laurenz Stampfl <laurenz.stampfl@gmail.com>",
         source: "https://github.com/LaurenzV/krilla",
         kind: Kind::Crate,
-        notices: &[93],
+        notices: &[94],
     },
     Component {
         name: "krilla-svg",
@@ -1173,7 +1182,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Laurenz Stampfl <laurenz.stampfl@gmail.com>",
         source: "https://github.com/LaurenzV/krilla",
         kind: Kind::Crate,
-        notices: &[94],
+        notices: &[95],
     },
     Component {
         name: "kurbo",
@@ -1182,7 +1191,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Raph Levien",
         source: "https://github.com/linebender/kurbo",
         kind: Kind::Crate,
-        notices: &[11, 95],
+        notices: &[11, 96],
     },
     Component {
         name: "lab",
@@ -1191,7 +1200,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2020 🐝🐝🐝",
         source: "https://github.com/TooManyBees/lab",
         kind: Kind::Crate,
-        notices: &[96],
+        notices: &[97],
     },
     Component {
         name: "lazy_static",
@@ -1200,7 +1209,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2010 The Rust Project Developers",
         source: "https://github.com/rust-lang-nursery/lazy-static.rs",
         kind: Kind::Crate,
-        notices: &[3, 97],
+        notices: &[3, 98],
     },
     Component {
         name: "libadwaita",
@@ -1227,7 +1236,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) The Rust Project Developers",
         source: "https://github.com/rust-lang/libc",
         kind: Kind::Crate,
-        notices: &[8, 98],
+        notices: &[8, 99],
     },
     Component {
         name: "Liberation Fonts",
@@ -1236,7 +1245,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2012 Red Hat, Inc.",
         source: "https://github.com/liberationfonts/liberation-fonts",
         kind: Kind::Font,
-        notices: &[99],
+        notices: &[100],
     },
     Component {
         name: "libm",
@@ -1245,7 +1254,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Jorge Aparicio",
         source: "https://github.com/rust-lang/compiler-builtins",
         kind: Kind::Crate,
-        notices: &[100],
+        notices: &[101],
     },
     Component {
         name: "line-clipping",
@@ -1254,7 +1263,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2024 Josh McKinney",
         source: "https://github.com/ratatui/line-clipping",
         kind: Kind::Crate,
-        notices: &[101, 102],
+        notices: &[102, 103],
     },
     Component {
         name: "linux-raw-sys",
@@ -1263,7 +1272,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyrights in the `linux-raw-sys` project are retained by their contributors.",
         source: "https://github.com/sunfishcode/linux-raw-sys",
         kind: Kind::Crate,
-        notices: &[103, 3, 104, 2],
+        notices: &[104, 3, 105, 2],
     },
     Component {
         name: "litrs",
@@ -1272,7 +1281,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2020 Project Developers",
         source: "https://github.com/LukasKalbertodt/litrs",
         kind: Kind::Crate,
-        notices: &[8, 105],
+        notices: &[8, 106],
     },
     Component {
         name: "lock_api",
@@ -1299,7 +1308,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Jerome Froelich",
         source: "https://github.com/jeromefroe/lru-rs.git",
         kind: Kind::Crate,
-        notices: &[106],
+        notices: &[107],
     },
     Component {
         name: "mac_address",
@@ -1308,7 +1317,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2018 Wesley Norris",
         source: "https://github.com/rep-nop/mac_address",
         kind: Kind::Crate,
-        notices: &[107, 108],
+        notices: &[108, 109],
     },
     Component {
         name: "memchr",
@@ -1326,7 +1335,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2020 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/memmap2-rs",
         kind: Kind::Crate,
-        notices: &[109, 110],
+        notices: &[110, 111],
     },
     Component {
         name: "memmem",
@@ -1344,7 +1353,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 Gilad Naaman",
         source: "https://github.com/Gilnaa/memoffset",
         kind: Kind::Crate,
-        notices: &[111],
+        notices: &[112],
     },
     Component {
         name: "miette",
@@ -1362,7 +1371,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2009 The Go Authors.",
         source: "https://github.com/Alexhuszagh/minimal-lexical",
         kind: Kind::Crate,
-        notices: &[17, 2, 112],
+        notices: &[17, 2, 113],
     },
     Component {
         name: "miniz_oxide",
@@ -1371,7 +1380,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2013-2014 RAD Game Tools and Valve Software",
         source: "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide",
         kind: Kind::Crate,
-        notices: &[113, 62, 114, 115],
+        notices: &[114, 62, 115, 116],
     },
     Component {
         name: "mio",
@@ -1380,7 +1389,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014 Carl Lerche and other MIO contributors",
         source: "https://github.com/tokio-rs/mio",
         kind: Kind::Crate,
-        notices: &[116],
+        notices: &[117],
     },
     Component {
         name: "nix",
@@ -1389,7 +1398,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Carl Lerche + nix-rust Authors",
         source: "https://github.com/nix-rust/nix",
         kind: Kind::Crate,
-        notices: &[117],
+        notices: &[118],
     },
     Component {
         name: "nom",
@@ -1398,7 +1407,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2019 Geoffroy Couprie",
         source: "https://github.com/Geal/nom",
         kind: Kind::Crate,
-        notices: &[118],
+        notices: &[119],
     },
     Component {
         name: "num-conv",
@@ -1407,7 +1416,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Jacob Pratt",
         source: "https://github.com/jhpratt/num-conv",
         kind: Kind::Crate,
-        notices: &[62, 119],
+        notices: &[62, 120],
     },
     Component {
         name: "num-derive",
@@ -1434,7 +1443,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2021 Jacob Pratt",
         source: "https://github.com/jhpratt/num_threads",
         kind: Kind::Crate,
-        notices: &[120, 121],
+        notices: &[121, 122],
     },
     Component {
         name: "objc2",
@@ -1443,7 +1452,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Mads Marquart <mads@marquart.dk>",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[122],
+        notices: &[123],
     },
     Component {
         name: "objc2-app-kit",
@@ -1452,7 +1461,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-app-kit authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[123],
+        notices: &[124],
     },
     Component {
         name: "objc2-core-foundation",
@@ -1461,7 +1470,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-core-foundation authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[124],
+        notices: &[125],
     },
     Component {
         name: "objc2-core-graphics",
@@ -1470,7 +1479,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-core-graphics authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[125],
+        notices: &[126],
     },
     Component {
         name: "objc2-core-text",
@@ -1479,7 +1488,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-core-text authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[126],
+        notices: &[127],
     },
     Component {
         name: "objc2-encode",
@@ -1488,7 +1497,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Mads Marquart <mads@marquart.dk>",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[127],
+        notices: &[128],
     },
     Component {
         name: "objc2-foundation",
@@ -1497,7 +1506,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-foundation authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[128],
+        notices: &[129],
     },
     Component {
         name: "objc2-io-surface",
@@ -1506,7 +1515,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-io-surface authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[129],
+        notices: &[130],
     },
     Component {
         name: "objc2-pdf-kit",
@@ -1515,7 +1524,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-pdf-kit authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[130],
+        notices: &[131],
     },
     Component {
         name: "once_cell",
@@ -1542,7 +1551,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © OASIS Open 2025 .",
         source: "https://docs.oasis-open.org/office/OpenDocument/v1.4/",
         kind: Kind::Text,
-        notices: &[131],
+        notices: &[132],
     },
     Component {
         name: "ordered-float",
@@ -1551,7 +1560,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Jonathan Reem",
         source: "https://github.com/reem/rust-ordered-float",
         kind: Kind::Crate,
-        notices: &[132],
+        notices: &[133],
     },
     Component {
         name: "palette",
@@ -1560,7 +1569,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Erik Hedvall",
         source: "https://github.com/Ogeon/palette",
         kind: Kind::Crate,
-        notices: &[3, 133],
+        notices: &[3, 134],
     },
     Component {
         name: "palette_derive",
@@ -1569,7 +1578,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Erik Hedvall",
         source: "https://github.com/Ogeon/palette",
         kind: Kind::Crate,
-        notices: &[3, 133],
+        notices: &[3, 134],
     },
     Component {
         name: "palette_math",
@@ -1578,7 +1587,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Erik Hedvall",
         source: "https://github.com/Ogeon/palette",
         kind: Kind::Crate,
-        notices: &[3, 133],
+        notices: &[3, 134],
     },
     Component {
         name: "pango",
@@ -1605,7 +1614,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2014-2020 The Rust Project Developers",
         source: "https://github.com/smol-rs/parking",
         kind: Kind::Crate,
-        notices: &[3, 2, 134],
+        notices: &[3, 2, 135],
     },
     Component {
         name: "parking_lot",
@@ -1677,7 +1686,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi",
         source: "https://github.com/rust-phf/rust-phf",
         kind: Kind::Crate,
-        notices: &[135],
+        notices: &[136],
     },
     Component {
         name: "phf_generator",
@@ -1686,7 +1695,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi",
         source: "https://github.com/rust-phf/rust-phf",
         kind: Kind::Crate,
-        notices: &[135],
+        notices: &[136],
     },
     Component {
         name: "phf_macros",
@@ -1695,7 +1704,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi",
         source: "https://github.com/rust-phf/rust-phf",
         kind: Kind::Crate,
-        notices: &[135],
+        notices: &[136],
     },
     Component {
         name: "phf_shared",
@@ -1704,7 +1713,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi",
         source: "https://github.com/rust-phf/rust-phf",
         kind: Kind::Crate,
-        notices: &[135],
+        notices: &[136],
     },
     Component {
         name: "pico-args",
@@ -1713,7 +1722,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/pico-args",
         kind: Kind::Crate,
-        notices: &[136],
+        notices: &[137],
     },
     Component {
         name: "pin-project-lite",
@@ -1731,7 +1740,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 nwin",
         source: "https://github.com/image-rs/image-png",
         kind: Kind::Crate,
-        notices: &[3, 137],
+        notices: &[3, 138],
     },
     Component {
         name: "polycool",
@@ -1740,7 +1749,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Raph Levien",
         source: "https://github.com/linebender/kurbo",
         kind: Kind::Crate,
-        notices: &[11, 95],
+        notices: &[11, 96],
     },
     Component {
         name: "portable-atomic",
@@ -1758,7 +1767,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2023 Jacob Pratt et al.",
         source: "https://github.com/jhpratt/powerfmt",
         kind: Kind::Crate,
-        notices: &[138, 139],
+        notices: &[139, 140],
     },
     Component {
         name: "proc-macro-crate",
@@ -1785,7 +1794,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2015 Google Inc.",
         source: "https://github.com/raphlinus/pulldown-cmark",
         kind: Kind::Crate,
-        notices: &[140],
+        notices: &[141],
     },
     Component {
         name: "quick-error",
@@ -1794,7 +1803,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The quick-error Developers",
         source: "http://github.com/tailhook/quick-error",
         kind: Kind::Crate,
-        notices: &[9, 141],
+        notices: &[9, 142],
     },
     Component {
         name: "quick-xml",
@@ -1803,7 +1812,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Johann Tuffe",
         source: "https://github.com/tafia/quick-xml",
         kind: Kind::Crate,
-        notices: &[142],
+        notices: &[143],
     },
     Component {
         name: "quote",
@@ -1821,7 +1830,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the r-efi authors",
         source: "https://github.com/r-efi/r-efi",
         kind: Kind::Crate,
-        notices: &[143],
+        notices: &[144],
     },
     Component {
         name: "r-efi",
@@ -1830,7 +1839,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the r-efi authors",
         source: "https://github.com/r-efi/r-efi",
         kind: Kind::Crate,
-        notices: &[143],
+        notices: &[144],
     },
     Component {
         name: "rand",
@@ -1839,7 +1848,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyrights in the Rand project are retained by their contributors.",
         source: "https://github.com/rust-random/rand",
         kind: Kind::Crate,
-        notices: &[144, 145, 146],
+        notices: &[145, 146, 147],
     },
     Component {
         name: "rand_core",
@@ -1848,7 +1857,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyrights in the Rand project are retained by their contributors.",
         source: "https://github.com/rust-random/rand",
         kind: Kind::Crate,
-        notices: &[144, 147, 146],
+        notices: &[145, 148, 147],
     },
     Component {
         name: "ratatui",
@@ -1857,7 +1866,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2022 Florian Dehau",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[148],
+        notices: &[149],
     },
     Component {
         name: "ratatui-core",
@@ -1866,7 +1875,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2022 Florian Dehau",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[148],
+        notices: &[149],
     },
     Component {
         name: "ratatui-crossterm",
@@ -1875,7 +1884,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2022 Florian Dehau",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[148],
+        notices: &[149],
     },
     Component {
         name: "ratatui-macros",
@@ -1884,7 +1893,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2024 Dheepak Krishnamurthy",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[149],
+        notices: &[150],
     },
     Component {
         name: "ratatui-termina",
@@ -1893,7 +1902,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Florian Dehau <work@fdehau.com>, The Ratatui Developers",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[150],
+        notices: &[151],
     },
     Component {
         name: "ratatui-termwiz",
@@ -1902,7 +1911,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2022 Florian Dehau",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[148],
+        notices: &[149],
     },
     Component {
         name: "ratatui-widgets",
@@ -1911,7 +1920,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2022 Florian Dehau",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[148],
+        notices: &[149],
     },
     Component {
         name: "read-fonts",
@@ -1929,7 +1938,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 Redox OS Developers",
         source: "https://gitlab.redox-os.org/redox-os/syscall",
         kind: Kind::Crate,
-        notices: &[151],
+        notices: &[152],
     },
     Component {
         name: "regex",
@@ -1965,7 +1974,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2017 the Resvg Authors",
         source: "https://github.com/linebender/resvg",
         kind: Kind::Crate,
-        notices: &[62, 152],
+        notices: &[62, 153],
     },
     Component {
         name: "rgb",
@@ -1974,7 +1983,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Kornel",
         source: "https://github.com/kornelski/rust-rgb",
         kind: Kind::Crate,
-        notices: &[153],
+        notices: &[154],
     },
     Component {
         name: "rhai",
@@ -1992,7 +2001,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) jhwgh1968, Stephen Chung",
         source: "https://github.com/rhaiscript/rhai",
         kind: Kind::Crate,
-        notices: &[154],
+        notices: &[155],
     },
     Component {
         name: "roxmltree",
@@ -2001,7 +2010,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/roxmltree",
         kind: Kind::Crate,
-        notices: &[3, 155],
+        notices: &[3, 156],
     },
     Component {
         name: "roxmltree",
@@ -2010,7 +2019,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/roxmltree",
         kind: Kind::Crate,
-        notices: &[3, 155],
+        notices: &[3, 156],
     },
     Component {
         name: "Rust standard library",
@@ -2019,7 +2028,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) The Rust Project contributors",
         source: "https://github.com/rust-lang/rust",
         kind: Kind::Runtime,
-        notices: &[156],
+        notices: &[157],
     },
     Component {
         name: "rustc-hash",
@@ -2037,7 +2046,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyrights in the `rustix` project are retained by their contributors.",
         source: "https://github.com/bytecodealliance/rustix",
         kind: Kind::Crate,
-        notices: &[157, 3, 104, 2],
+        notices: &[158, 3, 105, 2],
     },
     Component {
         name: "rustversion",
@@ -2064,7 +2073,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By David Tolnay <dtolnay@gmail.com>",
         source: "https://github.com/dtolnay/ryu",
         kind: Kind::Crate,
-        notices: &[8, 158],
+        notices: &[8, 159],
     },
     Component {
         name: "scopeguard",
@@ -2073,7 +2082,16 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2019 Ulrik Sverdrup \"bluss\" and scopeguard developers",
         source: "https://github.com/bluss/scopeguard",
         kind: Kind::Crate,
-        notices: &[3, 159],
+        notices: &[3, 160],
+    },
+    Component {
+        name: "SCOWL English dictionary (en_US)",
+        version: "2020.12.07",
+        licence: "LicenseRef-SCOWL",
+        copyright: "COPYRIGHT, SOURCES, and CREDITS:",
+        source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/en",
+        kind: Kind::Dictionary,
+        notices: &[161],
     },
     Component {
         name: "serde",
@@ -2118,7 +2136,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2006-2009 Graydon Hoare",
         source: "https://github.com/RustCrypto/hashes",
         kind: Kind::Crate,
-        notices: &[20, 160],
+        notices: &[20, 162],
     },
     Component {
         name: "signal-hook",
@@ -2127,7 +2145,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 tokio-jsonrpc developers",
         source: "https://github.com/vorner/signal-hook",
         kind: Kind::Crate,
-        notices: &[3, 161],
+        notices: &[3, 163],
     },
     Component {
         name: "signal-hook-mio",
@@ -2136,7 +2154,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 tokio-jsonrpc developers",
         source: "https://github.com/vorner/signal-hook",
         kind: Kind::Crate,
-        notices: &[3, 161],
+        notices: &[3, 163],
     },
     Component {
         name: "signal-hook-registry",
@@ -2145,7 +2163,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 tokio-jsonrpc developers",
         source: "https://github.com/vorner/signal-hook",
         kind: Kind::Crate,
-        notices: &[3, 161],
+        notices: &[3, 163],
     },
     Component {
         name: "simd-adler32",
@@ -2154,7 +2172,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Marvin Countryman <me@maar.vin>",
         source: "https://github.com/mcountryman/simd-adler32",
         kind: Kind::Crate,
-        notices: &[162],
+        notices: &[164],
     },
     Component {
         name: "simplecss",
@@ -2163,7 +2181,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Reizner Evgeniy",
         source: "https://github.com/linebender/simplecss",
         kind: Kind::Crate,
-        notices: &[3, 163],
+        notices: &[3, 165],
     },
     Component {
         name: "siphasher",
@@ -2172,7 +2190,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2012-2016 The Rust Project Developers.",
         source: "https://github.com/jedisct1/rust-siphash",
         kind: Kind::Crate,
-        notices: &[164],
+        notices: &[166],
     },
     Component {
         name: "skrifa",
@@ -2190,7 +2208,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Carl Lerche",
         source: "https://github.com/tokio-rs/slab",
         kind: Kind::Crate,
-        notices: &[165],
+        notices: &[167],
     },
     Component {
         name: "slotmap",
@@ -2199,7 +2217,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Orson Peters <orsonpeters@gmail.com>",
         source: "https://github.com/orlp/slotmap",
         kind: Kind::Crate,
-        notices: &[166],
+        notices: &[168],
     },
     Component {
         name: "smallvec",
@@ -2208,7 +2226,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 The Servo Project Developers",
         source: "https://github.com/servo/rust-smallvec",
         kind: Kind::Crate,
-        notices: &[3, 167],
+        notices: &[3, 169],
     },
     Component {
         name: "smartstring",
@@ -2217,7 +2235,16 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Bodil Stokke <bodil@bodil.org>",
         source: "https://github.com/bodil/smartstring",
         kind: Kind::Crate,
-        notices: &[168],
+        notices: &[170],
+    },
+    Component {
+        name: "spellbook",
+        version: "0.4.2",
+        licence: "MPL-2.0",
+        copyright: "By Michael Davis <mcarsondavis@gmail.com>",
+        source: "https://github.com/helix-editor/spellbook",
+        kind: Kind::Crate,
+        notices: &[171],
     },
     Component {
         name: "stable_deref_trait",
@@ -2226,7 +2253,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 Robert Grosse",
         source: "https://github.com/storyyeller/stable_deref_trait",
         kind: Kind::Crate,
-        notices: &[3, 169],
+        notices: &[3, 172],
     },
     Component {
         name: "static_assertions",
@@ -2235,7 +2262,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 Nikolai Vazquez",
         source: "https://github.com/nvzqz/static-assertions-rs",
         kind: Kind::Crate,
-        notices: &[11, 170],
+        notices: &[11, 173],
     },
     Component {
         name: "strict-num",
@@ -2244,7 +2271,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2022 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/strict-num",
         kind: Kind::Crate,
-        notices: &[171],
+        notices: &[174],
     },
     Component {
         name: "strsim",
@@ -2253,7 +2280,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Danny Guo",
         source: "https://github.com/rapidfuzz/strsim-rs",
         kind: Kind::Crate,
-        notices: &[172],
+        notices: &[175],
     },
     Component {
         name: "strum",
@@ -2262,7 +2289,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Peter Glotfelty",
         source: "https://github.com/Peternator7/strum",
         kind: Kind::Crate,
-        notices: &[173],
+        notices: &[176],
     },
     Component {
         name: "strum_macros",
@@ -2271,7 +2298,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Peter Glotfelty",
         source: "https://github.com/Peternator7/strum",
         kind: Kind::Crate,
-        notices: &[173],
+        notices: &[176],
     },
     Component {
         name: "subsetter",
@@ -2280,7 +2307,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Yevhenii Reizner",
         source: "https://github.com/typst/subsetter",
         kind: Kind::Crate,
-        notices: &[8, 86, 174],
+        notices: &[8, 86, 177],
     },
     Component {
         name: "svgtypes",
@@ -2289,7 +2316,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Yevhenii Reizner",
         source: "https://github.com/linebender/svgtypes",
         kind: Kind::Crate,
-        notices: &[3, 175],
+        notices: &[3, 178],
     },
     Component {
         name: "syn",
@@ -2325,7 +2352,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2016 Nika Layzell",
         source: "https://github.com/mystor/synstructure",
         kind: Kind::Crate,
-        notices: &[176],
+        notices: &[179],
     },
     Component {
         name: "termina",
@@ -2334,7 +2361,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2025 Michael Davis",
         source: "https://github.com/helix-editor/termina",
         kind: Kind::Crate,
-        notices: &[177, 178],
+        notices: &[180, 171],
     },
     Component {
         name: "terminfo",
@@ -2343,7 +2370,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By meh. <meh@schizofreni.co>",
         source: "https://github.com/meh/rust-terminfo",
         kind: Kind::Crate,
-        notices: &[179],
+        notices: &[181],
     },
     Component {
         name: "termios",
@@ -2352,7 +2379,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 David Cuddeback",
         source: "https://github.com/dcuddeback/termios-rs",
         kind: Kind::Crate,
-        notices: &[180],
+        notices: &[182],
     },
     Component {
         name: "termwiz",
@@ -2415,7 +2442,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Jacob Pratt et al.",
         source: "https://github.com/time-rs/time",
         kind: Kind::Crate,
-        notices: &[62, 181],
+        notices: &[62, 183],
     },
     Component {
         name: "time-core",
@@ -2424,7 +2451,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Jacob Pratt et al.",
         source: "https://github.com/time-rs/time",
         kind: Kind::Crate,
-        notices: &[62, 181],
+        notices: &[62, 183],
     },
     Component {
         name: "tiny-keccak",
@@ -2433,7 +2460,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By debris <marek.kotewicz@gmail.com>",
         source: "https://github.com/debris/tiny-keccak",
         kind: Kind::Crate,
-        notices: &[182],
+        notices: &[184],
     },
     Component {
         name: "tiny-skia",
@@ -2442,7 +2469,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2011 Google Inc.",
         source: "https://github.com/linebender/tiny-skia",
         kind: Kind::Crate,
-        notices: &[183],
+        notices: &[185],
     },
     Component {
         name: "tiny-skia-path",
@@ -2451,7 +2478,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2011 Google Inc.",
         source: "https://github.com/linebender/tiny-skia/tree/master/path",
         kind: Kind::Crate,
-        notices: &[183],
+        notices: &[185],
     },
     Component {
         name: "tinyvec",
@@ -2460,7 +2487,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Daniel \"Lokathor\" Gee.",
         source: "https://github.com/Lokathor/tinyvec",
         kind: Kind::Crate,
-        notices: &[11, 184, 26],
+        notices: &[11, 186, 26],
     },
     Component {
         name: "toml_datetime",
@@ -2496,7 +2523,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Yevhenii Reizner",
         source: "https://github.com/harfbuzz/ttf-parser",
         kind: Kind::Crate,
-        notices: &[3, 175],
+        notices: &[3, 178],
     },
     Component {
         name: "typed-path",
@@ -2514,7 +2541,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2014 Paho Lurie-Gregg",
         source: "https://github.com/paholg/typenum",
         kind: Kind::Crate,
-        notices: &[185, 186, 187],
+        notices: &[187, 188, 189],
     },
     Component {
         name: "ucd-trie",
@@ -2532,7 +2559,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2026 Sean McArthur",
         source: "https://github.com/seanmonstar/unicase",
         kind: Kind::Crate,
-        notices: &[3, 188],
+        notices: &[3, 190],
     },
     Component {
         name: "unicode-bidi",
@@ -2541,7 +2568,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/servo/unicode-bidi",
         kind: Kind::Crate,
-        notices: &[189, 3, 18],
+        notices: &[191, 3, 18],
     },
     Component {
         name: "unicode-bidi-mirroring",
@@ -2586,7 +2613,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/unicode-rs/unicode-properties",
         kind: Kind::Crate,
-        notices: &[190, 3, 18],
+        notices: &[192, 3, 18],
     },
     Component {
         name: "unicode-script",
@@ -2595,7 +2622,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2021 The Unicode-rs Developers",
         source: "https://github.com/unicode-rs/unicode-script",
         kind: Kind::Crate,
-        notices: &[191, 192],
+        notices: &[193, 194],
     },
     Component {
         name: "unicode-segmentation",
@@ -2604,7 +2631,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/unicode-rs/unicode-segmentation",
         kind: Kind::Crate,
-        notices: &[190, 3, 18],
+        notices: &[192, 3, 18],
     },
     Component {
         name: "unicode-truncate",
@@ -2613,7 +2640,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Aetf <aetf@unlimitedcodeworks.xyz>",
         source: "https://github.com/Aetf/unicode-truncate",
         kind: Kind::Crate,
-        notices: &[190, 3, 193],
+        notices: &[192, 3, 195],
     },
     Component {
         name: "unicode-vo",
@@ -2622,7 +2649,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Reizner Evgeniy",
         source: "https://github.com/RazrFalcon/unicode-vo",
         kind: Kind::Crate,
-        notices: &[3, 163],
+        notices: &[3, 165],
     },
     Component {
         name: "unicode-width",
@@ -2631,7 +2658,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/unicode-rs/unicode-width",
         kind: Kind::Crate,
-        notices: &[190, 3, 18],
+        notices: &[192, 3, 18],
     },
     Component {
         name: "unicode-width",
@@ -2640,7 +2667,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/unicode-rs/unicode-width",
         kind: Kind::Crate,
-        notices: &[190, 3, 18],
+        notices: &[192, 3, 18],
     },
     Component {
         name: "usvg",
@@ -2649,7 +2676,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2017 the Resvg Authors",
         source: "https://github.com/linebender/resvg",
         kind: Kind::Crate,
-        notices: &[62, 152],
+        notices: &[62, 153],
     },
     Component {
         name: "utf8parse",
@@ -2658,7 +2685,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Joe Wilm",
         source: "https://github.com/alacritty/vte",
         kind: Kind::Crate,
-        notices: &[8, 194],
+        notices: &[8, 196],
     },
     Component {
         name: "uuid",
@@ -2667,7 +2694,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014 The Rust Project Developers",
         source: "https://github.com/uuid-rs/uuid",
         kind: Kind::Crate,
-        notices: &[3, 195],
+        notices: &[3, 197],
     },
     Component {
         name: "vtparse",
@@ -2676,7 +2703,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Wez Furlong <wez@wezfurlong.org>",
         source: "https://github.com/wez/wezterm",
         kind: Kind::Crate,
-        notices: &[196],
+        notices: &[198],
     },
     Component {
         name: "wasi",
@@ -2685,7 +2712,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By The Cranelift Project Developers",
         source: "https://github.com/bytecodealliance/wasi",
         kind: Kind::Crate,
-        notices: &[3, 104, 2],
+        notices: &[3, 105, 2],
     },
     Component {
         name: "wasip2",
@@ -2694,7 +2721,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/bytecodealliance/wasi-rs",
         kind: Kind::Crate,
-        notices: &[3, 104, 2],
+        notices: &[3, 105, 2],
     },
     Component {
         name: "wasm-bindgen",
@@ -2757,7 +2784,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2023 dAxpeDDa",
         source: "https://github.com/daxpedda/web-time",
         kind: Kind::Crate,
-        notices: &[197, 198],
+        notices: &[199, 200],
     },
     Component {
         name: "weezl",
@@ -2766,7 +2793,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) HeroicKatora 2020",
         source: "https://github.com/image-rs/weezl",
         kind: Kind::Crate,
-        notices: &[3, 199],
+        notices: &[3, 201],
     },
     Component {
         name: "wezterm-bidi",
@@ -2775,7 +2802,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2022-Present Wez Furlong",
         source: "https://github.com/wez/wezterm",
         kind: Kind::Crate,
-        notices: &[200],
+        notices: &[202],
     },
     Component {
         name: "wezterm-blob-leases",
@@ -2784,7 +2811,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2023-Present Wez Furlong",
         source: "https://github.com/wezterm/wezterm",
         kind: Kind::Crate,
-        notices: &[201],
+        notices: &[203],
     },
     Component {
         name: "wezterm-color-types",
@@ -2793,7 +2820,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018-Present Wez Furlong",
         source: "https://github.com/wez/wezterm",
         kind: Kind::Crate,
-        notices: &[202],
+        notices: &[204],
     },
     Component {
         name: "wezterm-dynamic",
@@ -2802,7 +2829,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018-Present Wez Furlong",
         source: "https://github.com/wezterm/wezterm",
         kind: Kind::Crate,
-        notices: &[203],
+        notices: &[205],
     },
     Component {
         name: "wezterm-dynamic-derive",
@@ -2820,7 +2847,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Wez Furlong <wez@wezfurlong.org>",
         source: "https://github.com/wez/wezterm",
         kind: Kind::Crate,
-        notices: &[204],
+        notices: &[206],
     },
     Component {
         name: "winapi",
@@ -2829,7 +2856,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015-2018 The winapi-rs Developers",
         source: "https://github.com/retep998/winapi-rs",
         kind: Kind::Crate,
-        notices: &[9, 205],
+        notices: &[9, 207],
     },
     Component {
         name: "winapi-i686-pc-windows-gnu",
@@ -2838,7 +2865,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Peter Atashian <retep998@gmail.com>",
         source: "https://github.com/retep998/winapi-rs",
         kind: Kind::Crate,
-        notices: &[206],
+        notices: &[208],
     },
     Component {
         name: "winapi-x86_64-pc-windows-gnu",
@@ -2847,7 +2874,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Peter Atashian <retep998@gmail.com>",
         source: "https://github.com/retep998/winapi-rs",
         kind: Kind::Crate,
-        notices: &[207],
+        notices: &[209],
     },
     Component {
         name: "windows",
@@ -2856,7 +2883,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows-collections",
@@ -2865,7 +2892,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows-core",
@@ -2874,7 +2901,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows-future",
@@ -2883,7 +2910,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows-implement",
@@ -2892,7 +2919,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows-interface",
@@ -2901,7 +2928,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows-link",
@@ -2910,7 +2937,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows-numerics",
@@ -2919,7 +2946,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows-result",
@@ -2928,7 +2955,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows-strings",
@@ -2937,7 +2964,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows-sys",
@@ -2946,7 +2973,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows-sys",
@@ -2955,7 +2982,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows-targets",
@@ -2964,7 +2991,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows-threading",
@@ -2973,7 +3000,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows_aarch64_gnullvm",
@@ -2982,7 +3009,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows_aarch64_msvc",
@@ -2991,7 +3018,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows_i686_gnu",
@@ -3000,7 +3027,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows_i686_gnullvm",
@@ -3009,7 +3036,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows_i686_msvc",
@@ -3018,7 +3045,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows_x86_64_gnu",
@@ -3027,7 +3054,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows_x86_64_gnullvm",
@@ -3036,7 +3063,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "windows_x86_64_msvc",
@@ -3045,7 +3072,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[208, 209],
+        notices: &[210, 211],
     },
     Component {
         name: "winnow",
@@ -3054,7 +3081,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/winnow-rs/winnow",
         kind: Kind::Crate,
-        notices: &[210],
+        notices: &[212],
     },
     Component {
         name: "winnow",
@@ -3063,7 +3090,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/winnow-rs/winnow",
         kind: Kind::Crate,
-        notices: &[210],
+        notices: &[212],
     },
     Component {
         name: "wit-bindgen",
@@ -3072,7 +3099,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Alex Crichton <alex@alexcrichton.com>",
         source: "https://github.com/bytecodealliance/wit-bindgen",
         kind: Kind::Crate,
-        notices: &[3, 104, 2],
+        notices: &[3, 105, 2],
     },
     Component {
         name: "write-fonts",
@@ -3090,7 +3117,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Reizner Evgeniy",
         source: "https://github.com/RazrFalcon/xmlwriter",
         kind: Kind::Crate,
-        notices: &[211],
+        notices: &[213],
     },
     Component {
         name: "xmp-writer",
@@ -3108,7 +3135,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © 2020-2024 Unicode, Inc.",
         source: "https://github.com/unicode-org/icu4x",
         kind: Kind::Crate,
-        notices: &[212],
+        notices: &[214],
     },
     Component {
         name: "yoke-derive",
@@ -3117,7 +3144,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © 2020-2024 Unicode, Inc.",
         source: "https://github.com/unicode-org/icu4x",
         kind: Kind::Crate,
-        notices: &[212],
+        notices: &[214],
     },
     Component {
         name: "zerocopy",
@@ -3126,7 +3153,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2023 The Fuchsia Authors",
         source: "https://github.com/google/zerocopy",
         kind: Kind::Crate,
-        notices: &[213, 214, 215],
+        notices: &[215, 216, 217],
     },
     Component {
         name: "zerocopy-derive",
@@ -3135,7 +3162,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2023 The Fuchsia Authors",
         source: "https://github.com/google/zerocopy",
         kind: Kind::Crate,
-        notices: &[213, 214, 215],
+        notices: &[215, 216, 217],
     },
     Component {
         name: "zerofrom",
@@ -3144,7 +3171,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © 2020-2024 Unicode, Inc.",
         source: "https://github.com/unicode-org/icu4x",
         kind: Kind::Crate,
-        notices: &[212],
+        notices: &[214],
     },
     Component {
         name: "zerofrom-derive",
@@ -3153,7 +3180,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © 2020-2024 Unicode, Inc.",
         source: "https://github.com/unicode-org/icu4x",
         kind: Kind::Crate,
-        notices: &[212],
+        notices: &[214],
     },
     Component {
         name: "zip",
@@ -3162,7 +3189,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014 Mathijs van de Nes",
         source: "https://github.com/zip-rs/zip2",
         kind: Kind::Crate,
-        notices: &[216],
+        notices: &[218],
     },
     Component {
         name: "zlib-rs",
@@ -3171,7 +3198,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/trifectatechfoundation/zlib-rs",
         kind: Kind::Crate,
-        notices: &[217],
+        notices: &[219],
     },
     Component {
         name: "zmij",
@@ -3189,7 +3216,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2011 Google Inc.",
         source: "https://github.com/zopfli-rs/zopfli",
         kind: Kind::Crate,
-        notices: &[218],
+        notices: &[220],
     },
     Component {
         name: "zune-core",
@@ -3198,7 +3225,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) zune-image developers",
         source: "https://github.com/etemesi254/zune-image",
         kind: Kind::Crate,
-        notices: &[11, 219, 220],
+        notices: &[11, 221, 222],
     },
     Component {
         name: "zune-jpeg",
@@ -3207,7 +3234,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) zune-image developers",
         source: "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpeg",
         kind: Kind::Crate,
-        notices: &[11, 219, 220],
+        notices: &[11, 221, 222],
     },
 ];
 
@@ -7529,6 +7556,243 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."#,
+    r#"igerman98 - dictionaries for German language
+Copyright (C) 1999-2016 Björn Jacke <bjoern@j3e.de>.
+
+Offered under the GNU General Public License version 2 or 3; used here under version 3, unmodified.
+
+GNU GENERAL PUBLIC LICENSE
+Version 3, 29 June 2007
+
+Copyright © 2007 Free Software Foundation, Inc. <https://fsf.org/>
+
+Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
+
+Preamble
+
+The GNU General Public License is a free, copyleft license for software and other kinds of works.
+
+The licenses for most software and other practical works are designed to take away your freedom to share and change the works. By contrast, the GNU General Public License is intended to guarantee your freedom to share and change all versions of a program--to make sure it remains free software for all its users. We, the Free Software Foundation, use the GNU General Public License for most of our software; it applies also to any other work released this way by its authors. You can apply it to your programs, too.
+
+When we speak of free software, we are referring to freedom, not price. Our General Public Licenses are designed to make sure that you have the freedom to distribute copies of free software (and charge for them if you wish), that you receive source code or can get it if you want it, that you can change the software or use pieces of it in new free programs, and that you know you can do these things.
+
+To protect your rights, we need to prevent others from denying you these rights or asking you to surrender the rights. Therefore, you have certain responsibilities if you distribute copies of the software, or if you modify it: responsibilities to respect the freedom of others.
+
+For example, if you distribute copies of such a program, whether gratis or for a fee, you must pass on to the recipients the same freedoms that you received. You must make sure that they, too, receive or can get the source code. And you must show them these terms so they know their rights.
+
+Developers that use the GNU GPL protect your rights with two steps: (1) assert copyright on the software, and (2) offer you this License giving you legal permission to copy, distribute and/or modify it.
+
+For the developers' and authors' protection, the GPL clearly explains that there is no warranty for this free software. For both users' and authors' sake, the GPL requires that modified versions be marked as changed, so that their problems will not be attributed erroneously to authors of previous versions.
+
+Some devices are designed to deny users access to install or run modified versions of the software inside them, although the manufacturer can do so. This is fundamentally incompatible with the aim of protecting users' freedom to change the software. The systematic pattern of such abuse occurs in the area of products for individuals to use, which is precisely where it is most unacceptable. Therefore, we have designed this version of the GPL to prohibit the practice for those products. If such problems arise substantially in other domains, we stand ready to extend this provision to those domains in future versions of the GPL, as needed to protect the freedom of users.
+
+Finally, every program is threatened constantly by software patents. States should not allow patents to restrict development and use of software on general-purpose computers, but in those that do, we wish to avoid the special danger that patents applied to a free program could make it effectively proprietary. To prevent this, the GPL assures that patents cannot be used to render the program non-free.
+
+The precise terms and conditions for copying, distribution and modification follow.
+
+TERMS AND CONDITIONS
+
+0. Definitions.
+
+“This License” refers to version 3 of the GNU General Public License.
+
+“Copyright” also means copyright-like laws that apply to other kinds of works, such as semiconductor masks.
+
+“The Program” refers to any copyrightable work licensed under this License. Each licensee is addressed as “you”. “Licensees” and “recipients” may be individuals or organizations.
+
+To “modify” a work means to copy from or adapt all or part of the work in a fashion requiring copyright permission, other than the making of an exact copy. The resulting work is called a “modified version” of the earlier work or a work “based on” the earlier work.
+
+A “covered work” means either the unmodified Program or a work based on the Program.
+
+To “propagate” a work means to do anything with it that, without permission, would make you directly or secondarily liable for infringement under applicable copyright law, except executing it on a computer or modifying a private copy. Propagation includes copying, distribution (with or without modification), making available to the public, and in some countries other activities as well.
+
+To “convey” a work means any kind of propagation that enables other parties to make or receive copies. Mere interaction with a user through a computer network, with no transfer of a copy, is not conveying.
+
+An interactive user interface displays “Appropriate Legal Notices” to the extent that it includes a convenient and prominently visible feature that (1) displays an appropriate copyright notice, and (2) tells the user that there is no warranty for the work (except to the extent that warranties are provided), that licensees may convey the work under this License, and how to view a copy of this License. If the interface presents a list of user commands or options, such as a menu, a prominent item in the list meets this criterion.
+
+1. Source Code.
+The “source code” for a work means the preferred form of the work for making modifications to it. “Object code” means any non-source form of a work.
+
+A “Standard Interface” means an interface that either is an official standard defined by a recognized standards body, or, in the case of interfaces specified for a particular programming language, one that is widely used among developers working in that language.
+
+The “System Libraries” of an executable work include anything, other than the work as a whole, that (a) is included in the normal form of packaging a Major Component, but which is not part of that Major Component, and (b) serves only to enable use of the work with that Major Component, or to implement a Standard Interface for which an implementation is available to the public in source code form. A “Major Component”, in this context, means a major essential component (kernel, window system, and so on) of the specific operating system (if any) on which the executable work runs, or a compiler used to produce the work, or an object code interpreter used to run it.
+
+The “Corresponding Source” for a work in object code form means all the source code needed to generate, install, and (for an executable work) run the object code and to modify the work, including scripts to control those activities. However, it does not include the work's System Libraries, or general-purpose tools or generally available free programs which are used unmodified in performing those activities but which are not part of the work. For example, Corresponding Source includes interface definition files associated with source files for the work, and the source code for shared libraries and dynamically linked subprograms that the work is specifically designed to require, such as by intimate data communication or control flow between those subprograms and other parts of the work.
+
+The Corresponding Source need not include anything that users can regenerate automatically from other parts of the Corresponding Source.
+
+The Corresponding Source for a work in source code form is that same work.
+
+2. Basic Permissions.
+All rights granted under this License are granted for the term of copyright on the Program, and are irrevocable provided the stated conditions are met. This License explicitly affirms your unlimited permission to run the unmodified Program. The output from running a covered work is covered by this License only if the output, given its content, constitutes a covered work. This License acknowledges your rights of fair use or other equivalent, as provided by copyright law.
+
+You may make, run and propagate covered works that you do not convey, without conditions so long as your license otherwise remains in force. You may convey covered works to others for the sole purpose of having them make modifications exclusively for you, or provide you with facilities for running those works, provided that you comply with the terms of this License in conveying all material for which you do not control copyright. Those thus making or running the covered works for you must do so exclusively on your behalf, under your direction and control, on terms that prohibit them from making any copies of your copyrighted material outside their relationship with you.
+
+Conveying under any other circumstances is permitted solely under the conditions stated below. Sublicensing is not allowed; section 10 makes it unnecessary.
+
+3. Protecting Users' Legal Rights From Anti-Circumvention Law.
+No covered work shall be deemed part of an effective technological measure under any applicable law fulfilling obligations under article 11 of the WIPO copyright treaty adopted on 20 December 1996, or similar laws prohibiting or restricting circumvention of such measures.
+
+When you convey a covered work, you waive any legal power to forbid circumvention of technological measures to the extent such circumvention is effected by exercising rights under this License with respect to the covered work, and you disclaim any intention to limit operation or modification of the work as a means of enforcing, against the work's users, your or third parties' legal rights to forbid circumvention of technological measures.
+
+4. Conveying Verbatim Copies.
+You may convey verbatim copies of the Program's source code as you receive it, in any medium, provided that you conspicuously and appropriately publish on each copy an appropriate copyright notice; keep intact all notices stating that this License and any non-permissive terms added in accord with section 7 apply to the code; keep intact all notices of the absence of any warranty; and give all recipients a copy of this License along with the Program.
+
+You may charge any price or no price for each copy that you convey, and you may offer support or warranty protection for a fee.
+
+5. Conveying Modified Source Versions.
+You may convey a work based on the Program, or the modifications to produce it from the Program, in the form of source code under the terms of section 4, provided that you also meet all of these conditions:
+
+     a) The work must carry prominent notices stating that you modified it, and giving a relevant date.
+
+     b) The work must carry prominent notices stating that it is released under this License and any conditions added under section 7. This requirement modifies the requirement in section 4 to “keep intact all notices”.
+
+     c) You must license the entire work, as a whole, under this License to anyone who comes into possession of a copy. This License will therefore apply, along with any applicable section 7 additional terms, to the whole of the work, and all its parts, regardless of how they are packaged. This License gives no permission to license the work in any other way, but it does not invalidate such permission if you have separately received it.
+
+     d) If the work has interactive user interfaces, each must display Appropriate Legal Notices; however, if the Program has interactive interfaces that do not display Appropriate Legal Notices, your work need not make them do so.
+
+A compilation of a covered work with other separate and independent works, which are not by their nature extensions of the covered work, and which are not combined with it such as to form a larger program, in or on a volume of a storage or distribution medium, is called an “aggregate” if the compilation and its resulting copyright are not used to limit the access or legal rights of the compilation's users beyond what the individual works permit. Inclusion of a covered work in an aggregate does not cause this License to apply to the other parts of the aggregate.
+
+6. Conveying Non-Source Forms.
+You may convey a covered work in object code form under the terms of sections 4 and 5, provided that you also convey the machine-readable Corresponding Source under the terms of this License, in one of these ways:
+
+     a) Convey the object code in, or embodied in, a physical product (including a physical distribution medium), accompanied by the Corresponding Source fixed on a durable physical medium customarily used for software interchange.
+
+     b) Convey the object code in, or embodied in, a physical product (including a physical distribution medium), accompanied by a written offer, valid for at least three years and valid for as long as you offer spare parts or customer support for that product model, to give anyone who possesses the object code either (1) a copy of the Corresponding Source for all the software in the product that is covered by this License, on a durable physical medium customarily used for software interchange, for a price no more than your reasonable cost of physically performing this conveying of source, or (2) access to copy the Corresponding Source from a network server at no charge.
+
+     c) Convey individual copies of the object code with a copy of the written offer to provide the Corresponding Source. This alternative is allowed only occasionally and noncommercially, and only if you received the object code with such an offer, in accord with subsection 6b.
+
+     d) Convey the object code by offering access from a designated place (gratis or for a charge), and offer equivalent access to the Corresponding Source in the same way through the same place at no further charge. You need not require recipients to copy the Corresponding Source along with the object code. If the place to copy the object code is a network server, the Corresponding Source may be on a different server (operated by you or a third party) that supports equivalent copying facilities, provided you maintain clear directions next to the object code saying where to find the Corresponding Source. Regardless of what server hosts the Corresponding Source, you remain obligated to ensure that it is available for as long as needed to satisfy these requirements.
+
+     e) Convey the object code using peer-to-peer transmission, provided you inform other peers where the object code and Corresponding Source of the work are being offered to the general public at no charge under subsection 6d.
+
+A separable portion of the object code, whose source code is excluded from the Corresponding Source as a System Library, need not be included in conveying the object code work.
+
+A “User Product” is either (1) a “consumer product”, which means any tangible personal property which is normally used for personal, family, or household purposes, or (2) anything designed or sold for incorporation into a dwelling. In determining whether a product is a consumer product, doubtful cases shall be resolved in favor of coverage. For a particular product received by a particular user, “normally used” refers to a typical or common use of that class of product, regardless of the status of the particular user or of the way in which the particular user actually uses, or expects or is expected to use, the product. A product is a consumer product regardless of whether the product has substantial commercial, industrial or non-consumer uses, unless such uses represent the only significant mode of use of the product.
+
+“Installation Information” for a User Product means any methods, procedures, authorization keys, or other information required to install and execute modified versions of a covered work in that User Product from a modified version of its Corresponding Source. The information must suffice to ensure that the continued functioning of the modified object code is in no case prevented or interfered with solely because modification has been made.
+
+If you convey an object code work under this section in, or with, or specifically for use in, a User Product, and the conveying occurs as part of a transaction in which the right of possession and use of the User Product is transferred to the recipient in perpetuity or for a fixed term (regardless of how the transaction is characterized), the Corresponding Source conveyed under this section must be accompanied by the Installation Information. But this requirement does not apply if neither you nor any third party retains the ability to install modified object code on the User Product (for example, the work has been installed in ROM).
+
+The requirement to provide Installation Information does not include a requirement to continue to provide support service, warranty, or updates for a work that has been modified or installed by the recipient, or for the User Product in which it has been modified or installed. Access to a network may be denied when the modification itself materially and adversely affects the operation of the network or violates the rules and protocols for communication across the network.
+
+Corresponding Source conveyed, and Installation Information provided, in accord with this section must be in a format that is publicly documented (and with an implementation available to the public in source code form), and must require no special password or key for unpacking, reading or copying.
+
+7. Additional Terms.
+“Additional permissions” are terms that supplement the terms of this License by making exceptions from one or more of its conditions. Additional permissions that are applicable to the entire Program shall be treated as though they were included in this License, to the extent that they are valid under applicable law. If additional permissions apply only to part of the Program, that part may be used separately under those permissions, but the entire Program remains governed by this License without regard to the additional permissions.
+
+When you convey a copy of a covered work, you may at your option remove any additional permissions from that copy, or from any part of it. (Additional permissions may be written to require their own removal in certain cases when you modify the work.) You may place additional permissions on material, added by you to a covered work, for which you have or can give appropriate copyright permission.
+
+Notwithstanding any other provision of this License, for material you add to a covered work, you may (if authorized by the copyright holders of that material) supplement the terms of this License with terms:
+
+     a) Disclaiming warranty or limiting liability differently from the terms of sections 15 and 16 of this License; or
+
+     b) Requiring preservation of specified reasonable legal notices or author attributions in that material or in the Appropriate Legal Notices displayed by works containing it; or
+
+     c) Prohibiting misrepresentation of the origin of that material, or requiring that modified versions of such material be marked in reasonable ways as different from the original version; or
+
+     d) Limiting the use for publicity purposes of names of licensors or authors of the material; or
+
+     e) Declining to grant rights under trademark law for use of some trade names, trademarks, or service marks; or
+
+     f) Requiring indemnification of licensors and authors of that material by anyone who conveys the material (or modified versions of it) with contractual assumptions of liability to the recipient, for any liability that these contractual assumptions directly impose on those licensors and authors.
+
+All other non-permissive additional terms are considered “further restrictions” within the meaning of section 10. If the Program as you received it, or any part of it, contains a notice stating that it is governed by this License along with a term that is a further restriction, you may remove that term. If a license document contains a further restriction but permits relicensing or conveying under this License, you may add to a covered work material governed by the terms of that license document, provided that the further restriction does not survive such relicensing or conveying.
+
+If you add terms to a covered work in accord with this section, you must place, in the relevant source files, a statement of the additional terms that apply to those files, or a notice indicating where to find the applicable terms.
+
+Additional terms, permissive or non-permissive, may be stated in the form of a separately written license, or stated as exceptions; the above requirements apply either way.
+
+8. Termination.
+You may not propagate or modify a covered work except as expressly provided under this License. Any attempt otherwise to propagate or modify it is void, and will automatically terminate your rights under this License (including any patent licenses granted under the third paragraph of section 11).
+
+However, if you cease all violation of this License, then your license from a particular copyright holder is reinstated (a) provisionally, unless and until the copyright holder explicitly and finally terminates your license, and (b) permanently, if the copyright holder fails to notify you of the violation by some reasonable means prior to 60 days after the cessation.
+
+Moreover, your license from a particular copyright holder is reinstated permanently if the copyright holder notifies you of the violation by some reasonable means, this is the first time you have received notice of violation of this License (for any work) from that copyright holder, and you cure the violation prior to 30 days after your receipt of the notice.
+
+Termination of your rights under this section does not terminate the licenses of parties who have received copies or rights from you under this License. If your rights have been terminated and not permanently reinstated, you do not qualify to receive new licenses for the same material under section 10.
+
+9. Acceptance Not Required for Having Copies.
+You are not required to accept this License in order to receive or run a copy of the Program. Ancillary propagation of a covered work occurring solely as a consequence of using peer-to-peer transmission to receive a copy likewise does not require acceptance. However, nothing other than this License grants you permission to propagate or modify any covered work. These actions infringe copyright if you do not accept this License. Therefore, by modifying or propagating a covered work, you indicate your acceptance of this License to do so.
+
+10. Automatic Licensing of Downstream Recipients.
+Each time you convey a covered work, the recipient automatically receives a license from the original licensors, to run, modify and propagate that work, subject to this License. You are not responsible for enforcing compliance by third parties with this License.
+
+An “entity transaction” is a transaction transferring control of an organization, or substantially all assets of one, or subdividing an organization, or merging organizations. If propagation of a covered work results from an entity transaction, each party to that transaction who receives a copy of the work also receives whatever licenses to the work the party's predecessor in interest had or could give under the previous paragraph, plus a right to possession of the Corresponding Source of the work from the predecessor in interest, if the predecessor has it or can get it with reasonable efforts.
+
+You may not impose any further restrictions on the exercise of the rights granted or affirmed under this License. For example, you may not impose a license fee, royalty, or other charge for exercise of rights granted under this License, and you may not initiate litigation (including a cross-claim or counterclaim in a lawsuit) alleging that any patent claim is infringed by making, using, selling, offering for sale, or importing the Program or any portion of it.
+
+11. Patents.
+A “contributor” is a copyright holder who authorizes use under this License of the Program or a work on which the Program is based. The work thus licensed is called the contributor's “contributor version”.
+
+A contributor's “essential patent claims” are all patent claims owned or controlled by the contributor, whether already acquired or hereafter acquired, that would be infringed by some manner, permitted by this License, of making, using, or selling its contributor version, but do not include claims that would be infringed only as a consequence of further modification of the contributor version. For purposes of this definition, “control” includes the right to grant patent sublicenses in a manner consistent with the requirements of this License.
+
+Each contributor grants you a non-exclusive, worldwide, royalty-free patent license under the contributor's essential patent claims, to make, use, sell, offer for sale, import and otherwise run, modify and propagate the contents of its contributor version.
+
+In the following three paragraphs, a “patent license” is any express agreement or commitment, however denominated, not to enforce a patent (such as an express permission to practice a patent or covenant not to sue for patent infringement). To “grant” such a patent license to a party means to make such an agreement or commitment not to enforce a patent against the party.
+
+If you convey a covered work, knowingly relying on a patent license, and the Corresponding Source of the work is not available for anyone to copy, free of charge and under the terms of this License, through a publicly available network server or other readily accessible means, then you must either (1) cause the Corresponding Source to be so available, or (2) arrange to deprive yourself of the benefit of the patent license for this particular work, or (3) arrange, in a manner consistent with the requirements of this License, to extend the patent license to downstream recipients. “Knowingly relying” means you have actual knowledge that, but for the patent license, your conveying the covered work in a country, or your recipient's use of the covered work in a country, would infringe one or more identifiable patents in that country that you have reason to believe are valid.
+
+If, pursuant to or in connection with a single transaction or arrangement, you convey, or propagate by procuring conveyance of, a covered work, and grant a patent license to some of the parties receiving the covered work authorizing them to use, propagate, modify or convey a specific copy of the covered work, then the patent license you grant is automatically extended to all recipients of the covered work and works based on it.
+
+A patent license is “discriminatory” if it does not include within the scope of its coverage, prohibits the exercise of, or is conditioned on the non-exercise of one or more of the rights that are specifically granted under this License. You may not convey a covered work if you are a party to an arrangement with a third party that is in the business of distributing software, under which you make payment to the third party based on the extent of your activity of conveying the work, and under which the third party grants, to any of the parties who would receive the covered work from you, a discriminatory patent license (a) in connection with copies of the covered work conveyed by you (or copies made from those copies), or (b) primarily for and in connection with specific products or compilations that contain the covered work, unless you entered into that arrangement, or that patent license was granted, prior to 28 March 2007.
+
+Nothing in this License shall be construed as excluding or limiting any implied license or other defenses to infringement that may otherwise be available to you under applicable patent law.
+
+12. No Surrender of Others' Freedom.
+If conditions are imposed on you (whether by court order, agreement or otherwise) that contradict the conditions of this License, they do not excuse you from the conditions of this License. If you cannot convey a covered work so as to satisfy simultaneously your obligations under this License and any other pertinent obligations, then as a consequence you may not convey it at all. For example, if you agree to terms that obligate you to collect a royalty for further conveying from those to whom you convey the Program, the only way you could satisfy both those terms and this License would be to refrain entirely from conveying the Program.
+
+13. Use with the GNU Affero General Public License.
+Notwithstanding any other provision of this License, you have permission to link or combine any covered work with a work licensed under version 3 of the GNU Affero General Public License into a single combined work, and to convey the resulting work. The terms of this License will continue to apply to the part which is the covered work, but the special requirements of the GNU Affero General Public License, section 13, concerning interaction through a network will apply to the combination as such.
+
+14. Revised Versions of this License.
+The Free Software Foundation may publish revised and/or new versions of the GNU General Public License from time to time. Such new versions will be similar in spirit to the present version, but may differ in detail to address new problems or concerns.
+
+Each version is given a distinguishing version number. If the Program specifies that a certain numbered version of the GNU General Public License “or any later version” applies to it, you have the option of following the terms and conditions either of that numbered version or of any later version published by the Free Software Foundation. If the Program does not specify a version number of the GNU General Public License, you may choose any version ever published by the Free Software Foundation.
+
+If the Program specifies that a proxy can decide which future versions of the GNU General Public License can be used, that proxy's public statement of acceptance of a version permanently authorizes you to choose that version for the Program.
+
+Later license versions may give you additional or different permissions. However, no additional obligations are imposed on any author or copyright holder as a result of your choosing to follow a later version.
+
+15. Disclaimer of Warranty.
+THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY APPLICABLE LAW. EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM “AS IS” WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU. SHOULD THE PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
+
+16. Limitation of Liability.
+IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR CONVEYS THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT LIMITED TO LOSS OF DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER PROGRAMS), EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+17. Interpretation of Sections 15 and 16.
+If the disclaimer of warranty and limitation of liability provided above cannot be given local legal effect according to their terms, reviewing courts shall apply local law that most closely approximates an absolute waiver of all civil liability in connection with the Program, unless a warranty or assumption of liability accompanies a copy of the Program in return for a fee.
+
+END OF TERMS AND CONDITIONS
+
+How to Apply These Terms to Your New Programs
+
+If you develop a new program, and you want it to be of the greatest possible use to the public, the best way to achieve this is to make it free software which everyone can redistribute and change under these terms.
+
+To do so, attach the following notices to the program. It is safest to attach them to the start of each source file to most effectively state the exclusion of warranty; and each file should have at least the “copyright” line and a pointer to where the full notice is found.
+
+     <one line to give the program's name and a brief idea of what it does.>
+     Copyright (C) <year>  <name of author>
+
+     This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+     This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+     You should have received a copy of the GNU General Public License along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+Also add information on how to contact you by electronic and paper mail.
+
+If the program does terminal interaction, make it output a short notice like this when it starts in an interactive mode:
+
+     <program>  Copyright (C) <year>  <name of author>
+     This program comes with ABSOLUTELY NO WARRANTY; for details type `show w'.
+     This is free software, and you are welcome to redistribute it under certain conditions; type `show c' for details.
+
+The hypothetical commands `show w' and `show c' should show the appropriate parts of the General Public License. Of course, your program's commands might be different; for a GUI interface, you would use an “about box”.
+
+You should also get your employer (if you work as a programmer) or school, if any, to sign a “copyright disclaimer” for the program, if necessary. For more information on this, and how to apply and follow the GNU GPL, see <https://www.gnu.org/licenses/>.
+
+The GNU General Public License does not permit incorporating your program into proprietary programs. If your program is a subroutine library, you may consider it more useful to permit linking proprietary applications with the library. If this is what you want to do, use the GNU Lesser General Public License instead of this License. But first, please read <https://www.gnu.org/philosophy/why-not-lgpl.html>."#,
     r#"MIT License
 
 Copyright (c) 2017 Maiddog
@@ -11015,6 +11279,266 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE."#,
+    r#"COPYRIGHT, SOURCES, and CREDITS:
+
+The English dictionaries come directly from SCOWL
+and is thus under the same copyright of SCOWL.  The affix file is
+a heavily modified version of the original english.aff file which was
+released as part of Geoff Kuenning's Ispell and as such is covered by
+his BSD license.  Part of SCOWL is also based on Ispell thus the
+Ispell copyright is included with the SCOWL copyright.
+
+The collective work is Copyright 2000-2018 by Kevin Atkinson as well
+as any of the copyrights mentioned below:
+
+  Copyright 2000-2018 by Kevin Atkinson
+
+  Permission to use, copy, modify, distribute and sell these word
+  lists, the associated scripts, the output created from the scripts,
+  and its documentation for any purpose is hereby granted without fee,
+  provided that the above copyright notice appears in all copies and
+  that both that copyright notice and this permission notice appear in
+  supporting documentation. Kevin Atkinson makes no representations
+  about the suitability of this array for any purpose. It is provided
+  "as is" without express or implied warranty.
+
+Alan Beale <biljir@pobox.com> also deserves special credit as he has,
+in addition to providing the 12Dicts package and being a major
+contributor to the ENABLE word list, given me an incredible amount of
+feedback and created a number of special lists (those found in the
+Supplement) in order to help improve the overall quality of SCOWL.
+
+The 10 level includes the 1000 most common English words (according to
+the Moby (TM) Words II [MWords] package), a subset of the 1000 most
+common words on the Internet (again, according to Moby Words II), and
+frequently class 16 from Brian Kelk's "UK English Wordlist
+with Frequency Classification".
+
+The MWords package was explicitly placed in the public domain:
+
+    The Moby lexicon project is complete and has
+    been place into the public domain. Use, sell,
+    rework, excerpt and use in any way on any platform.
+
+    Placing this material on internal or public servers is
+    also encouraged. The compiler is not aware of any
+    export restrictions so freely distribute world-wide.
+
+    You can verify the public domain status by contacting
+
+    Grady Ward
+    3449 Martha Ct.
+    Arcata, CA  95521-4884
+
+    grady@netcom.com
+    grady@northcoast.com
+
+The "UK English Wordlist With Frequency Classification" is also in the
+Public Domain:
+
+  Date: Sat, 08 Jul 2000 20:27:21 +0100
+  From: Brian Kelk <Brian.Kelk@cl.cam.ac.uk>
+
+  > I was wondering what the copyright status of your "UK English
+  > Wordlist With Frequency Classification" word list as it seems to
+  > be lacking any copyright notice.
+
+  There were many many sources in total, but any text marked
+  "copyright" was avoided. Locally-written documentation was one
+  source. An earlier version of the list resided in a filespace called
+  PUBLIC on the University mainframe, because it was considered public
+  domain.
+
+  Date: Tue, 11 Jul 2000 19:31:34 +0100
+
+  > So are you saying your word list is also in the public domain?
+
+  That is the intention.
+
+The 20 level includes frequency classes 7-15 from Brian's word list.
+
+The 35 level includes frequency classes 2-6 and words appearing in at
+least 11 of 12 dictionaries as indicated in the 12Dicts package.  All
+words from the 12Dicts package have had likely inflections added via
+my inflection database.
+
+The 12Dicts package and Supplement is in the Public Domain.
+
+The WordNet database, which was used in the creation of the
+Inflections database, is under the following copyright:
+
+  This software and database is being provided to you, the LICENSEE,
+  by Princeton University under the following license.  By obtaining,
+  using and/or copying this software and database, you agree that you
+  have read, understood, and will comply with these terms and
+  conditions.:
+
+  Permission to use, copy, modify and distribute this software and
+  database and its documentation for any purpose and without fee or
+  royalty is hereby granted, provided that you agree to comply with
+  the following copyright notice and statements, including the
+  disclaimer, and that the same appear on ALL copies of the software,
+  database and documentation, including modifications that you make
+  for internal use or for distribution.
+
+  WordNet 1.6 Copyright 1997 by Princeton University.  All rights
+  reserved.
+
+  THIS SOFTWARE AND DATABASE IS PROVIDED "AS IS" AND PRINCETON
+  UNIVERSITY MAKES NO REPRESENTATIONS OR WARRANTIES, EXPRESS OR
+  IMPLIED.  BY WAY OF EXAMPLE, BUT NOT LIMITATION, PRINCETON
+  UNIVERSITY MAKES NO REPRESENTATIONS OR WARRANTIES OF MERCHANT-
+  ABILITY OR FITNESS FOR ANY PARTICULAR PURPOSE OR THAT THE USE OF THE
+  LICENSED SOFTWARE, DATABASE OR DOCUMENTATION WILL NOT INFRINGE ANY
+  THIRD PARTY PATENTS, COPYRIGHTS, TRADEMARKS OR OTHER RIGHTS.
+
+  The name of Princeton University or Princeton may not be used in
+  advertising or publicity pertaining to distribution of the software
+  and/or database.  Title to copyright in this software, database and
+  any associated documentation shall at all times remain with
+  Princeton University and LICENSEE agrees to preserve same.
+
+The 40 level includes words from Alan's 3esl list found in version 4.0
+of his 12dicts package.  Like his other stuff the 3esl list is also in the
+public domain.
+
+The 50 level includes Brian's frequency class 1, words appearing
+in at least 5 of 12 of the dictionaries as indicated in the 12Dicts
+package, and uppercase words in at least 4 of the previous 12
+dictionaries.  A decent number of proper names is also included: The
+top 1000 male, female, and Last names from the 1990 Census report; a
+list of names sent to me by Alan Beale; and a few names that I added
+myself.  Finally a small list of abbreviations not commonly found in
+other word lists is included.
+
+The name files form the Census report is a government document which I
+don't think can be copyrighted.
+
+The file special-jargon.50 uses common.lst and word.lst from the
+"Unofficial Jargon File Word Lists" which is derived from "The Jargon
+File".  All of which is in the Public Domain.  This file also contain
+a few extra UNIX terms which are found in the file "unix-terms" in the
+special/ directory.
+
+The 55 level includes words from Alan's 2of4brif list found in version
+4.0 of his 12dicts package.  Like his other stuff the 2of4brif is also
+in the public domain.
+
+The 60 level includes all words appearing in at least 2 of the 12
+dictionaries as indicated by the 12Dicts package.
+
+The 70 level includes Brian's frequency class 0 and the 74,550 common
+dictionary words from the MWords package.  The common dictionary words,
+like those from the 12Dicts package, have had all likely inflections
+added.  The 70 level also included the 5desk list from version 4.0 of
+the 12Dics package which is in the public domain.
+
+The 80 level includes the ENABLE word list, all the lists in the
+ENABLE supplement package (except for ABLE), the "UK Advanced Cryptics
+Dictionary" (UKACD), the list of signature words from the YAWL package,
+and the 10,196 places list from the MWords package.
+
+The ENABLE package, mainted by M\Cooper <thegrendel@theriver.com>,
+is in the Public Domain:
+
+  The ENABLE master word list, WORD.LST, is herewith formally released
+  into the Public Domain. Anyone is free to use it or distribute it in
+  any manner they see fit. No fee or registration is required for its
+  use nor are "contributions" solicited (if you feel you absolutely
+  must contribute something for your own peace of mind, the authors of
+  the ENABLE list ask that you make a donation on their behalf to your
+  favorite charity). This word list is our gift to the Scrabble
+  community, as an alternate to "official" word lists. Game designers
+  may feel free to incorporate the WORD.LST into their games. Please
+  mention the source and credit us as originators of the list. Note
+  that if you, as a game designer, use the WORD.LST in your product,
+  you may still copyright and protect your product, but you may *not*
+  legally copyright or in any way restrict redistribution of the
+  WORD.LST portion of your product. This *may* under law restrict your
+  rights to restrict your users' rights, but that is only fair.
+
+UKACD, by J Ross Beresford <ross@bryson.demon.co.uk>, is under the
+following copyright:
+
+  Copyright (c) J Ross Beresford 1993-1999. All Rights Reserved.
+
+  The following restriction is placed on the use of this publication:
+  if The UK Advanced Cryptics Dictionary is used in a software package
+  or redistributed in any form, the copyright notice must be
+  prominently displayed and the text of this document must be included
+  verbatim.
+
+  There are no other restrictions: I would like to see the list
+  distributed as widely as possible.
+
+The 95 level includes the 354,984 single words, 256,772 compound
+words, 4,946 female names and the 3,897 male names, and 21,986 names
+from the MWords package, ABLE.LST from the ENABLE Supplement, and some
+additional words found in my part-of-speech database that were not
+found anywhere else.
+
+Accent information was taken from UKACD.
+
+The VarCon package was used to create the American, British, Canadian,
+and Australian word list.  It is under the following copyright:
+
+  Copyright 2000-2016 by Kevin Atkinson
+
+  Permission to use, copy, modify, distribute and sell this array, the
+  associated software, and its documentation for any purpose is hereby
+  granted without fee, provided that the above copyright notice appears
+  in all copies and that both that copyright notice and this permission
+  notice appear in supporting documentation. Kevin Atkinson makes no
+  representations about the suitability of this array for any
+  purpose. It is provided "as is" without express or implied warranty.
+
+  Copyright 2016 by Benjamin Titze
+
+  Permission to use, copy, modify, distribute and sell this array, the
+  associated software, and its documentation for any purpose is hereby
+  granted without fee, provided that the above copyright notice appears
+  in all copies and that both that copyright notice and this permission
+  notice appear in supporting documentation. Benjamin Titze makes no
+  representations about the suitability of this array for any
+  purpose. It is provided "as is" without express or implied warranty.
+
+  Since the original words lists come from the Ispell distribution:
+
+  Copyright 1993, Geoff Kuenning, Granada Hills, CA
+  All rights reserved.
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions
+  are met:
+
+  1. Redistributions of source code must retain the above copyright
+     notice, this list of conditions and the following disclaimer.
+  2. Redistributions in binary form must reproduce the above copyright
+     notice, this list of conditions and the following disclaimer in the
+     documentation and/or other materials provided with the distribution.
+  3. All modifications to the source code must be clearly marked as
+     such.  Binary redistributions based on modified source code
+     must be clearly marked as modified versions in the documentation
+     and/or other materials provided with the distribution.
+  (clause 4 removed with permission from Geoff Kuenning)
+  5. The name of Geoff Kuenning may not be used to endorse or promote
+     products derived from this software without specific prior
+     written permission.
+
+  THIS SOFTWARE IS PROVIDED BY GEOFF KUENNING AND CONTRIBUTORS ``AS IS'' AND
+  ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  ARE DISCLAIMED.  IN NO EVENT SHALL GEOFF KUENNING OR CONTRIBUTORS BE LIABLE
+  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+  OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+  HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+  LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+  OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+  SUCH DAMAGE.
+
+Build Date: Mon Dec  7 20:19:27 EST 2020
+Wordlist Command: mk-list --accents=strip en_US 60"#,
     r#"Copyright (c) 2006-2009 Graydon Hoare
 Copyright (c) 2009-2013 Mozilla Foundation
 Copyright (c) 2016 Artyom Pavlov
@@ -11540,6 +12064,379 @@ You may add additional accurate notices of copyright ownership.
 
     This Source Code Form is "Incompatible With Secondary Licenses", as
     defined by the Mozilla Public License, v. 2.0."#,
+    r#"Mozilla Public License Version 2.0
+==================================
+
+1. Definitions
+--------------
+
+1.1. "Contributor"
+    means each individual or legal entity that creates, contributes to
+    the creation of, or owns Covered Software.
+
+1.2. "Contributor Version"
+    means the combination of the Contributions of others (if any) used
+    by a Contributor and that particular Contributor's Contribution.
+
+1.3. "Contribution"
+    means Covered Software of a particular Contributor.
+
+1.4. "Covered Software"
+    means Source Code Form to which the initial Contributor has attached
+    the notice in Exhibit A, the Executable Form of such Source Code
+    Form, and Modifications of such Source Code Form, in each case
+    including portions thereof.
+
+1.5. "Incompatible With Secondary Licenses"
+    means
+
+    (a) that the initial Contributor has attached the notice described
+        in Exhibit B to the Covered Software; or
+
+    (b) that the Covered Software was made available under the terms of
+        version 1.1 or earlier of the License, but not also under the
+        terms of a Secondary License.
+
+1.6. "Executable Form"
+    means any form of the work other than Source Code Form.
+
+1.7. "Larger Work"
+    means a work that combines Covered Software with other material, in
+    a separate file or files, that is not Covered Software.
+
+1.8. "License"
+    means this document.
+
+1.9. "Licensable"
+    means having the right to grant, to the maximum extent possible,
+    whether at the time of the initial grant or subsequently, any and
+    all of the rights conveyed by this License.
+
+1.10. "Modifications"
+    means any of the following:
+
+    (a) any file in Source Code Form that results from an addition to,
+        deletion from, or modification of the contents of Covered
+        Software; or
+
+    (b) any new file in Source Code Form that contains any Covered
+        Software.
+
+1.11. "Patent Claims" of a Contributor
+    means any patent claim(s), including without limitation, method,
+    process, and apparatus claims, in any patent Licensable by such
+    Contributor that would be infringed, but for the grant of the
+    License, by the making, using, selling, offering for sale, having
+    made, import, or transfer of either its Contributions or its
+    Contributor Version.
+
+1.12. "Secondary License"
+    means either the GNU General Public License, Version 2.0, the GNU
+    Lesser General Public License, Version 2.1, the GNU Affero General
+    Public License, Version 3.0, or any later versions of those
+    licenses.
+
+1.13. "Source Code Form"
+    means the form of the work preferred for making modifications.
+
+1.14. "You" (or "Your")
+    means an individual or a legal entity exercising rights under this
+    License. For legal entities, "You" includes any entity that
+    controls, is controlled by, or is under common control with You. For
+    purposes of this definition, "control" means (a) the power, direct
+    or indirect, to cause the direction or management of such entity,
+    whether by contract or otherwise, or (b) ownership of more than
+    fifty percent (50%) of the outstanding shares or beneficial
+    ownership of such entity.
+
+2. License Grants and Conditions
+--------------------------------
+
+2.1. Grants
+
+Each Contributor hereby grants You a world-wide, royalty-free,
+non-exclusive license:
+
+(a) under intellectual property rights (other than patent or trademark)
+    Licensable by such Contributor to use, reproduce, make available,
+    modify, display, perform, distribute, and otherwise exploit its
+    Contributions, either on an unmodified basis, with Modifications, or
+    as part of a Larger Work; and
+
+(b) under Patent Claims of such Contributor to make, use, sell, offer
+    for sale, have made, import, and otherwise transfer either its
+    Contributions or its Contributor Version.
+
+2.2. Effective Date
+
+The licenses granted in Section 2.1 with respect to any Contribution
+become effective for each Contribution on the date the Contributor first
+distributes such Contribution.
+
+2.3. Limitations on Grant Scope
+
+The licenses granted in this Section 2 are the only rights granted under
+this License. No additional rights or licenses will be implied from the
+distribution or licensing of Covered Software under this License.
+Notwithstanding Section 2.1(b) above, no patent license is granted by a
+Contributor:
+
+(a) for any code that a Contributor has removed from Covered Software;
+    or
+
+(b) for infringements caused by: (i) Your and any other third party's
+    modifications of Covered Software, or (ii) the combination of its
+    Contributions with other software (except as part of its Contributor
+    Version); or
+
+(c) under Patent Claims infringed by Covered Software in the absence of
+    its Contributions.
+
+This License does not grant any rights in the trademarks, service marks,
+or logos of any Contributor (except as may be necessary to comply with
+the notice requirements in Section 3.4).
+
+2.4. Subsequent Licenses
+
+No Contributor makes additional grants as a result of Your choice to
+distribute the Covered Software under a subsequent version of this
+License (see Section 10.2) or under the terms of a Secondary License (if
+permitted under the terms of Section 3.3).
+
+2.5. Representation
+
+Each Contributor represents that the Contributor believes its
+Contributions are its original creation(s) or it has sufficient rights
+to grant the rights to its Contributions conveyed by this License.
+
+2.6. Fair Use
+
+This License is not intended to limit any rights You have under
+applicable copyright doctrines of fair use, fair dealing, or other
+equivalents.
+
+2.7. Conditions
+
+Sections 3.1, 3.2, 3.3, and 3.4 are conditions of the licenses granted
+in Section 2.1.
+
+3. Responsibilities
+-------------------
+
+3.1. Distribution of Source Form
+
+All distribution of Covered Software in Source Code Form, including any
+Modifications that You create or to which You contribute, must be under
+the terms of this License. You must inform recipients that the Source
+Code Form of the Covered Software is governed by the terms of this
+License, and how they can obtain a copy of this License. You may not
+attempt to alter or restrict the recipients' rights in the Source Code
+Form.
+
+3.2. Distribution of Executable Form
+
+If You distribute Covered Software in Executable Form then:
+
+(a) such Covered Software must also be made available in Source Code
+    Form, as described in Section 3.1, and You must inform recipients of
+    the Executable Form how they can obtain a copy of such Source Code
+    Form by reasonable means in a timely manner, at a charge no more
+    than the cost of distribution to the recipient; and
+
+(b) You may distribute such Executable Form under the terms of this
+    License, or sublicense it under different terms, provided that the
+    license for the Executable Form does not attempt to limit or alter
+    the recipients' rights in the Source Code Form under this License.
+
+3.3. Distribution of a Larger Work
+
+You may create and distribute a Larger Work under terms of Your choice,
+provided that You also comply with the requirements of this License for
+the Covered Software. If the Larger Work is a combination of Covered
+Software with a work governed by one or more Secondary Licenses, and the
+Covered Software is not Incompatible With Secondary Licenses, this
+License permits You to additionally distribute such Covered Software
+under the terms of such Secondary License(s), so that the recipient of
+the Larger Work may, at their option, further distribute the Covered
+Software under the terms of either this License or such Secondary
+License(s).
+
+3.4. Notices
+
+You may not remove or alter the substance of any license notices
+(including copyright notices, patent notices, disclaimers of warranty,
+or limitations of liability) contained within the Source Code Form of
+the Covered Software, except that You may alter any license notices to
+the extent required to remedy known factual inaccuracies.
+
+3.5. Application of Additional Terms
+
+You may choose to offer, and to charge a fee for, warranty, support,
+indemnity or liability obligations to one or more recipients of Covered
+Software. However, You may do so only on Your own behalf, and not on
+behalf of any Contributor. You must make it absolutely clear that any
+such warranty, support, indemnity, or liability obligation is offered by
+You alone, and You hereby agree to indemnify every Contributor for any
+liability incurred by such Contributor as a result of warranty, support,
+indemnity or liability terms You offer. You may include additional
+disclaimers of warranty and limitations of liability specific to any
+jurisdiction.
+
+4. Inability to Comply Due to Statute or Regulation
+---------------------------------------------------
+
+If it is impossible for You to comply with any of the terms of this
+License with respect to some or all of the Covered Software due to
+statute, judicial order, or regulation then You must: (a) comply with
+the terms of this License to the maximum extent possible; and (b)
+describe the limitations and the code they affect. Such description must
+be placed in a text file included with all distributions of the Covered
+Software under this License. Except to the extent prohibited by statute
+or regulation, such description must be sufficiently detailed for a
+recipient of ordinary skill to be able to understand it.
+
+5. Termination
+--------------
+
+5.1. The rights granted under this License will terminate automatically
+if You fail to comply with any of its terms. However, if You become
+compliant, then the rights granted under this License from a particular
+Contributor are reinstated (a) provisionally, unless and until such
+Contributor explicitly and finally terminates Your grants, and (b) on an
+ongoing basis, if such Contributor fails to notify You of the
+non-compliance by some reasonable means prior to 60 days after You have
+come back into compliance. Moreover, Your grants from a particular
+Contributor are reinstated on an ongoing basis if such Contributor
+notifies You of the non-compliance by some reasonable means, this is the
+first time You have received notice of non-compliance with this License
+from such Contributor, and You become compliant prior to 30 days after
+Your receipt of the notice.
+
+5.2. If You initiate litigation against any entity by asserting a patent
+infringement claim (excluding declaratory judgment actions,
+counter-claims, and cross-claims) alleging that a Contributor Version
+directly or indirectly infringes any patent, then the rights granted to
+You by any and all Contributors for the Covered Software under Section
+2.1 of this License shall terminate.
+
+5.3. In the event of termination under Sections 5.1 or 5.2 above, all
+end user license agreements (excluding distributors and resellers) which
+have been validly granted by You or Your distributors under this License
+prior to termination shall survive termination.
+
+************************************************************************
+*                                                                      *
+*  6. Disclaimer of Warranty                                           *
+*  -------------------------                                           *
+*                                                                      *
+*  Covered Software is provided under this License on an "as is"       *
+*  basis, without warranty of any kind, either expressed, implied, or  *
+*  statutory, including, without limitation, warranties that the       *
+*  Covered Software is free of defects, merchantable, fit for a        *
+*  particular purpose or non-infringing. The entire risk as to the     *
+*  quality and performance of the Covered Software is with You.        *
+*  Should any Covered Software prove defective in any respect, You     *
+*  (not any Contributor) assume the cost of any necessary servicing,   *
+*  repair, or correction. This disclaimer of warranty constitutes an   *
+*  essential part of this License. No use of any Covered Software is   *
+*  authorized under this License except under this disclaimer.         *
+*                                                                      *
+************************************************************************
+
+************************************************************************
+*                                                                      *
+*  7. Limitation of Liability                                          *
+*  --------------------------                                          *
+*                                                                      *
+*  Under no circumstances and under no legal theory, whether tort      *
+*  (including negligence), contract, or otherwise, shall any           *
+*  Contributor, or anyone who distributes Covered Software as          *
+*  permitted above, be liable to You for any direct, indirect,         *
+*  special, incidental, or consequential damages of any character      *
+*  including, without limitation, damages for lost profits, loss of    *
+*  goodwill, work stoppage, computer failure or malfunction, or any    *
+*  and all other commercial damages or losses, even if such party      *
+*  shall have been informed of the possibility of such damages. This   *
+*  limitation of liability shall not apply to liability for death or   *
+*  personal injury resulting from such party's negligence to the       *
+*  extent applicable law prohibits such limitation. Some               *
+*  jurisdictions do not allow the exclusion or limitation of           *
+*  incidental or consequential damages, so this exclusion and          *
+*  limitation may not apply to You.                                    *
+*                                                                      *
+************************************************************************
+
+8. Litigation
+-------------
+
+Any litigation relating to this License may be brought only in the
+courts of a jurisdiction where the defendant maintains its principal
+place of business and such litigation shall be governed by laws of that
+jurisdiction, without reference to its conflict-of-law provisions.
+Nothing in this Section shall prevent a party's ability to bring
+cross-claims or counter-claims.
+
+9. Miscellaneous
+----------------
+
+This License represents the complete agreement concerning the subject
+matter hereof. If any provision of this License is held to be
+unenforceable, such provision shall be reformed only to the extent
+necessary to make it enforceable. Any law or regulation which provides
+that the language of a contract shall be construed against the drafter
+shall not be used to construe this License against a Contributor.
+
+10. Versions of the License
+---------------------------
+
+10.1. New Versions
+
+Mozilla Foundation is the license steward. Except as provided in Section
+10.3, no one other than the license steward has the right to modify or
+publish new versions of this License. Each version will be given a
+distinguishing version number.
+
+10.2. Effect of New Versions
+
+You may distribute the Covered Software under the terms of the version
+of the License under which You originally received the Covered Software,
+or under the terms of any subsequent version published by the license
+steward.
+
+10.3. Modified Versions
+
+If you create software not governed by this License, and you want to
+create a new license for such software, you may create and use a
+modified version of this License if you rename the license and remove
+any references to the name of the license steward (except to note that
+such modified license differs from this License).
+
+10.4. Distributing Source Code Form that is Incompatible With Secondary
+Licenses
+
+If You choose to distribute Source Code Form that is Incompatible With
+Secondary Licenses under the terms of this version of the License, the
+notice described in Exhibit B of this License must be attached.
+
+Exhibit A - Source Code Form License Notice
+-------------------------------------------
+
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+If it is not possible or desirable to put the notice in a particular
+file, then You may include the notice in a location (such as a LICENSE
+file in a relevant directory) where a recipient would be likely to look
+for such a notice.
+
+You may add additional accurate notices of copyright ownership.
+
+Exhibit B - "Incompatible With Secondary Licenses" Notice
+---------------------------------------------------------
+
+  This Source Code Form is "Incompatible With Secondary Licenses", as
+  defined by the Mozilla Public License, v. 2.0."#,
     r#"Copyright (c) 2017 Robert Grosse
 
 Permission is hereby granted, free of charge, to any
@@ -12226,379 +13123,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE."#,
-    r#"Mozilla Public License Version 2.0
-==================================
-
-1. Definitions
---------------
-
-1.1. "Contributor"
-    means each individual or legal entity that creates, contributes to
-    the creation of, or owns Covered Software.
-
-1.2. "Contributor Version"
-    means the combination of the Contributions of others (if any) used
-    by a Contributor and that particular Contributor's Contribution.
-
-1.3. "Contribution"
-    means Covered Software of a particular Contributor.
-
-1.4. "Covered Software"
-    means Source Code Form to which the initial Contributor has attached
-    the notice in Exhibit A, the Executable Form of such Source Code
-    Form, and Modifications of such Source Code Form, in each case
-    including portions thereof.
-
-1.5. "Incompatible With Secondary Licenses"
-    means
-
-    (a) that the initial Contributor has attached the notice described
-        in Exhibit B to the Covered Software; or
-
-    (b) that the Covered Software was made available under the terms of
-        version 1.1 or earlier of the License, but not also under the
-        terms of a Secondary License.
-
-1.6. "Executable Form"
-    means any form of the work other than Source Code Form.
-
-1.7. "Larger Work"
-    means a work that combines Covered Software with other material, in
-    a separate file or files, that is not Covered Software.
-
-1.8. "License"
-    means this document.
-
-1.9. "Licensable"
-    means having the right to grant, to the maximum extent possible,
-    whether at the time of the initial grant or subsequently, any and
-    all of the rights conveyed by this License.
-
-1.10. "Modifications"
-    means any of the following:
-
-    (a) any file in Source Code Form that results from an addition to,
-        deletion from, or modification of the contents of Covered
-        Software; or
-
-    (b) any new file in Source Code Form that contains any Covered
-        Software.
-
-1.11. "Patent Claims" of a Contributor
-    means any patent claim(s), including without limitation, method,
-    process, and apparatus claims, in any patent Licensable by such
-    Contributor that would be infringed, but for the grant of the
-    License, by the making, using, selling, offering for sale, having
-    made, import, or transfer of either its Contributions or its
-    Contributor Version.
-
-1.12. "Secondary License"
-    means either the GNU General Public License, Version 2.0, the GNU
-    Lesser General Public License, Version 2.1, the GNU Affero General
-    Public License, Version 3.0, or any later versions of those
-    licenses.
-
-1.13. "Source Code Form"
-    means the form of the work preferred for making modifications.
-
-1.14. "You" (or "Your")
-    means an individual or a legal entity exercising rights under this
-    License. For legal entities, "You" includes any entity that
-    controls, is controlled by, or is under common control with You. For
-    purposes of this definition, "control" means (a) the power, direct
-    or indirect, to cause the direction or management of such entity,
-    whether by contract or otherwise, or (b) ownership of more than
-    fifty percent (50%) of the outstanding shares or beneficial
-    ownership of such entity.
-
-2. License Grants and Conditions
---------------------------------
-
-2.1. Grants
-
-Each Contributor hereby grants You a world-wide, royalty-free,
-non-exclusive license:
-
-(a) under intellectual property rights (other than patent or trademark)
-    Licensable by such Contributor to use, reproduce, make available,
-    modify, display, perform, distribute, and otherwise exploit its
-    Contributions, either on an unmodified basis, with Modifications, or
-    as part of a Larger Work; and
-
-(b) under Patent Claims of such Contributor to make, use, sell, offer
-    for sale, have made, import, and otherwise transfer either its
-    Contributions or its Contributor Version.
-
-2.2. Effective Date
-
-The licenses granted in Section 2.1 with respect to any Contribution
-become effective for each Contribution on the date the Contributor first
-distributes such Contribution.
-
-2.3. Limitations on Grant Scope
-
-The licenses granted in this Section 2 are the only rights granted under
-this License. No additional rights or licenses will be implied from the
-distribution or licensing of Covered Software under this License.
-Notwithstanding Section 2.1(b) above, no patent license is granted by a
-Contributor:
-
-(a) for any code that a Contributor has removed from Covered Software;
-    or
-
-(b) for infringements caused by: (i) Your and any other third party's
-    modifications of Covered Software, or (ii) the combination of its
-    Contributions with other software (except as part of its Contributor
-    Version); or
-
-(c) under Patent Claims infringed by Covered Software in the absence of
-    its Contributions.
-
-This License does not grant any rights in the trademarks, service marks,
-or logos of any Contributor (except as may be necessary to comply with
-the notice requirements in Section 3.4).
-
-2.4. Subsequent Licenses
-
-No Contributor makes additional grants as a result of Your choice to
-distribute the Covered Software under a subsequent version of this
-License (see Section 10.2) or under the terms of a Secondary License (if
-permitted under the terms of Section 3.3).
-
-2.5. Representation
-
-Each Contributor represents that the Contributor believes its
-Contributions are its original creation(s) or it has sufficient rights
-to grant the rights to its Contributions conveyed by this License.
-
-2.6. Fair Use
-
-This License is not intended to limit any rights You have under
-applicable copyright doctrines of fair use, fair dealing, or other
-equivalents.
-
-2.7. Conditions
-
-Sections 3.1, 3.2, 3.3, and 3.4 are conditions of the licenses granted
-in Section 2.1.
-
-3. Responsibilities
--------------------
-
-3.1. Distribution of Source Form
-
-All distribution of Covered Software in Source Code Form, including any
-Modifications that You create or to which You contribute, must be under
-the terms of this License. You must inform recipients that the Source
-Code Form of the Covered Software is governed by the terms of this
-License, and how they can obtain a copy of this License. You may not
-attempt to alter or restrict the recipients' rights in the Source Code
-Form.
-
-3.2. Distribution of Executable Form
-
-If You distribute Covered Software in Executable Form then:
-
-(a) such Covered Software must also be made available in Source Code
-    Form, as described in Section 3.1, and You must inform recipients of
-    the Executable Form how they can obtain a copy of such Source Code
-    Form by reasonable means in a timely manner, at a charge no more
-    than the cost of distribution to the recipient; and
-
-(b) You may distribute such Executable Form under the terms of this
-    License, or sublicense it under different terms, provided that the
-    license for the Executable Form does not attempt to limit or alter
-    the recipients' rights in the Source Code Form under this License.
-
-3.3. Distribution of a Larger Work
-
-You may create and distribute a Larger Work under terms of Your choice,
-provided that You also comply with the requirements of this License for
-the Covered Software. If the Larger Work is a combination of Covered
-Software with a work governed by one or more Secondary Licenses, and the
-Covered Software is not Incompatible With Secondary Licenses, this
-License permits You to additionally distribute such Covered Software
-under the terms of such Secondary License(s), so that the recipient of
-the Larger Work may, at their option, further distribute the Covered
-Software under the terms of either this License or such Secondary
-License(s).
-
-3.4. Notices
-
-You may not remove or alter the substance of any license notices
-(including copyright notices, patent notices, disclaimers of warranty,
-or limitations of liability) contained within the Source Code Form of
-the Covered Software, except that You may alter any license notices to
-the extent required to remedy known factual inaccuracies.
-
-3.5. Application of Additional Terms
-
-You may choose to offer, and to charge a fee for, warranty, support,
-indemnity or liability obligations to one or more recipients of Covered
-Software. However, You may do so only on Your own behalf, and not on
-behalf of any Contributor. You must make it absolutely clear that any
-such warranty, support, indemnity, or liability obligation is offered by
-You alone, and You hereby agree to indemnify every Contributor for any
-liability incurred by such Contributor as a result of warranty, support,
-indemnity or liability terms You offer. You may include additional
-disclaimers of warranty and limitations of liability specific to any
-jurisdiction.
-
-4. Inability to Comply Due to Statute or Regulation
----------------------------------------------------
-
-If it is impossible for You to comply with any of the terms of this
-License with respect to some or all of the Covered Software due to
-statute, judicial order, or regulation then You must: (a) comply with
-the terms of this License to the maximum extent possible; and (b)
-describe the limitations and the code they affect. Such description must
-be placed in a text file included with all distributions of the Covered
-Software under this License. Except to the extent prohibited by statute
-or regulation, such description must be sufficiently detailed for a
-recipient of ordinary skill to be able to understand it.
-
-5. Termination
---------------
-
-5.1. The rights granted under this License will terminate automatically
-if You fail to comply with any of its terms. However, if You become
-compliant, then the rights granted under this License from a particular
-Contributor are reinstated (a) provisionally, unless and until such
-Contributor explicitly and finally terminates Your grants, and (b) on an
-ongoing basis, if such Contributor fails to notify You of the
-non-compliance by some reasonable means prior to 60 days after You have
-come back into compliance. Moreover, Your grants from a particular
-Contributor are reinstated on an ongoing basis if such Contributor
-notifies You of the non-compliance by some reasonable means, this is the
-first time You have received notice of non-compliance with this License
-from such Contributor, and You become compliant prior to 30 days after
-Your receipt of the notice.
-
-5.2. If You initiate litigation against any entity by asserting a patent
-infringement claim (excluding declaratory judgment actions,
-counter-claims, and cross-claims) alleging that a Contributor Version
-directly or indirectly infringes any patent, then the rights granted to
-You by any and all Contributors for the Covered Software under Section
-2.1 of this License shall terminate.
-
-5.3. In the event of termination under Sections 5.1 or 5.2 above, all
-end user license agreements (excluding distributors and resellers) which
-have been validly granted by You or Your distributors under this License
-prior to termination shall survive termination.
-
-************************************************************************
-*                                                                      *
-*  6. Disclaimer of Warranty                                           *
-*  -------------------------                                           *
-*                                                                      *
-*  Covered Software is provided under this License on an "as is"       *
-*  basis, without warranty of any kind, either expressed, implied, or  *
-*  statutory, including, without limitation, warranties that the       *
-*  Covered Software is free of defects, merchantable, fit for a        *
-*  particular purpose or non-infringing. The entire risk as to the     *
-*  quality and performance of the Covered Software is with You.        *
-*  Should any Covered Software prove defective in any respect, You     *
-*  (not any Contributor) assume the cost of any necessary servicing,   *
-*  repair, or correction. This disclaimer of warranty constitutes an   *
-*  essential part of this License. No use of any Covered Software is   *
-*  authorized under this License except under this disclaimer.         *
-*                                                                      *
-************************************************************************
-
-************************************************************************
-*                                                                      *
-*  7. Limitation of Liability                                          *
-*  --------------------------                                          *
-*                                                                      *
-*  Under no circumstances and under no legal theory, whether tort      *
-*  (including negligence), contract, or otherwise, shall any           *
-*  Contributor, or anyone who distributes Covered Software as          *
-*  permitted above, be liable to You for any direct, indirect,         *
-*  special, incidental, or consequential damages of any character      *
-*  including, without limitation, damages for lost profits, loss of    *
-*  goodwill, work stoppage, computer failure or malfunction, or any    *
-*  and all other commercial damages or losses, even if such party      *
-*  shall have been informed of the possibility of such damages. This   *
-*  limitation of liability shall not apply to liability for death or   *
-*  personal injury resulting from such party's negligence to the       *
-*  extent applicable law prohibits such limitation. Some               *
-*  jurisdictions do not allow the exclusion or limitation of           *
-*  incidental or consequential damages, so this exclusion and          *
-*  limitation may not apply to You.                                    *
-*                                                                      *
-************************************************************************
-
-8. Litigation
--------------
-
-Any litigation relating to this License may be brought only in the
-courts of a jurisdiction where the defendant maintains its principal
-place of business and such litigation shall be governed by laws of that
-jurisdiction, without reference to its conflict-of-law provisions.
-Nothing in this Section shall prevent a party's ability to bring
-cross-claims or counter-claims.
-
-9. Miscellaneous
-----------------
-
-This License represents the complete agreement concerning the subject
-matter hereof. If any provision of this License is held to be
-unenforceable, such provision shall be reformed only to the extent
-necessary to make it enforceable. Any law or regulation which provides
-that the language of a contract shall be construed against the drafter
-shall not be used to construe this License against a Contributor.
-
-10. Versions of the License
----------------------------
-
-10.1. New Versions
-
-Mozilla Foundation is the license steward. Except as provided in Section
-10.3, no one other than the license steward has the right to modify or
-publish new versions of this License. Each version will be given a
-distinguishing version number.
-
-10.2. Effect of New Versions
-
-You may distribute the Covered Software under the terms of the version
-of the License under which You originally received the Covered Software,
-or under the terms of any subsequent version published by the license
-steward.
-
-10.3. Modified Versions
-
-If you create software not governed by this License, and you want to
-create a new license for such software, you may create and use a
-modified version of this License if you rename the license and remove
-any references to the name of the license steward (except to note that
-such modified license differs from this License).
-
-10.4. Distributing Source Code Form that is Incompatible With Secondary
-Licenses
-
-If You choose to distribute Source Code Form that is Incompatible With
-Secondary Licenses under the terms of this version of the License, the
-notice described in Exhibit B of this License must be attached.
-
-Exhibit A - Source Code Form License Notice
--------------------------------------------
-
-  This Source Code Form is subject to the terms of the Mozilla Public
-  License, v. 2.0. If a copy of the MPL was not distributed with this
-  file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
-If it is not possible or desirable to put the notice in a particular
-file, then You may include the notice in a location (such as a LICENSE
-file in a relevant directory) where a recipient would be likely to look
-for such a notice.
-
-You may add additional accurate notices of copyright ownership.
-
-Exhibit B - "Incompatible With Secondary Licenses" Notice
----------------------------------------------------------
-
-  This Source Code Form is "Incompatible With Secondary Licenses", as
-  defined by the Mozilla Public License, v. 2.0."#,
     r#"        DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
                     Version 2, December 2004
 

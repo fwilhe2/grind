@@ -55,6 +55,10 @@ pub struct ParagraphProps {
     pub font_style: Option<String>,
     /// `fo:color`: the ink of the paragraph's text where a run states none.
     pub color: Option<String>,
+    /// `fo:language` and `fo:country` — the language the text is written in, which is what
+    /// spelling is checked against (`doc/spelling.md`). Read, never written.
+    pub language: Option<String>,
+    pub country: Option<String>,
 }
 
 impl ParagraphProps {
@@ -68,8 +72,10 @@ impl ParagraphProps {
             (Some(child), _) => Some(child.to_owned()),
             (None, base) => base.map(str::to_owned),
         };
-        let fields: [(&mut Option<String>, &Option<String>); 16] = [
+        let fields: [(&mut Option<String>, &Option<String>); 18] = [
             (&mut self.color, &over.color),
+            (&mut self.language, &over.language),
+            (&mut self.country, &over.country),
             (&mut self.margin_top, &over.margin_top),
             (&mut self.margin_bottom, &over.margin_bottom),
             (&mut self.margin_left, &over.margin_left),

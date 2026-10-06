@@ -35,6 +35,8 @@ grind-text = { path = "../text" }
 # PDF export, Print and Print Preview (doc/pdf-export.md). Not optional, unlike `xlsx`: a word
 # processor that cannot print is not one.
 grind-print = { path = "../print" }
+# Spelling (doc/spelling.md): the dictionaries, attached to the `App` on every open.
+grind-spell = { path = "../spell" }
 # The same two toolkit versions `ui_sheet_gtk` pins, for the same reasons — see its `Cargo.toml`.
 # Nothing here may drift from that shell: cargo unifies them into one crate either way.
 libadwaita = { version = "0.7", features = ["v1_5"] }

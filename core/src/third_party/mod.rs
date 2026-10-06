@@ -26,6 +26,8 @@ pub enum Kind {
     Text,
     /// Part of the toolchain that ends up in every binary: the Rust standard library.
     Runtime,
+    /// A spelling dictionary compiled into a binary (`doc/spelling.md`).
+    Dictionary,
 }
 
 /// One third-party component.
@@ -133,6 +135,7 @@ mod tests {
         let kinds: Vec<Kind> = components().iter().map(|c| c.kind).collect();
         assert!(kinds.contains(&Kind::Font));
         assert!(kinds.contains(&Kind::Runtime));
+        assert!(kinds.contains(&Kind::Dictionary));
         assert!(kinds.contains(&Kind::Crate));
     }
 

@@ -19,7 +19,7 @@ path = "src/main.rs"
 # it. Off is a real configuration all the same: `--no-default-features` builds a `grind` with
 # no Excel code in it at all, and `win32.yml`-style "it still compiles without the feature"
 # claims rot silently unless something builds them.
-default = ["xlsx", "docx", "pdf"]
+default = ["xlsx", "docx", "pdf", "spell"]
 xlsx = ["dep:grind-xlsx"]
 # The Word import filter (doc/docx-import.md) — the word processor's `xlsx`, optional for the
 # same reason.
@@ -27,6 +27,9 @@ docx = ["dep:grind-docx"]
 # PDF export for text documents (doc/pdf-export.md). Optional for the reason `xlsx` is, and
 # because it is where the font stack lives: off, `grind` carries no font and no PDF writer.
 pdf = ["dep:grind-print"]
+# Spelling (doc/spelling.md): `grind text spell` and lint's `misspelt` rule. Optional because it
+# is where the dictionaries live — off, `grind` carries no word list.
+spell = ["dep:grind-spell"]
 
 [dependencies]
 # The suite-level half: `kind`, `Form`, and what a lint diagnostic is — the vocabulary a
@@ -43,6 +46,7 @@ grind-build = { path = "../build" }
 grind-xlsx = { path = "../xlsx", optional = true }
 grind-docx = { path = "../docx", optional = true }
 grind-print = { path = "../print", optional = true }
+grind-spell = { path = "../spell", optional = true }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

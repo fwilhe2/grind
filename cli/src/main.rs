@@ -44,6 +44,29 @@ fn open_text(file: &Path) -> Result<TextApp, String> {
     Ok(app)
 }
 
+/// [`open_text`], with spelling checked in the document's own language when this build has the
+/// dictionaries — what `lint` opens with, so its `misspelt` rule has something to ask. A
+/// document in a language there is no dictionary for is linted without spelling, silently:
+/// `grind text spell` is where that is worth saying.
+fn open_text_checked(file: &Path) -> Result<TextApp, String> {
+    let app = open_text(file)?;
+    #[cfg(feature = "spell")]
+    let _ = grind_spell::attach(&app, None);
+    Ok(app)
+}
+
+/// `--language`: a tag naming one of the dictionaries this build carries.
+#[cfg(feature = "spell")]
+fn spell_language(tag: &str) -> Result<grind_spell::Language, String> {
+    grind_spell::Language::from_tag(tag).ok_or_else(|| {
+        let have: Vec<&str> = grind_spell::Language::ALL.iter().map(|l| l.tag()).collect();
+        format!(
+            "no dictionary for {tag:?}; this build has {}",
+            have.join(", ")
+        )
+    })
+}
+
 /// The fonts a PDF command sets the document in: the machine's as well as the bundled ones,
 /// unless `--bundled-fonts` asks for output that is the same everywhere.
 #[cfg(feature = "pdf")]
@@ -589,7 +612,7 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             true => Ok(rule_list(&grind_text::lint::RULES)),
             false => Ok(lint_report(
                 file,
-                open_text(file)?.lint(&lint_options(*hints, off)),
+                open_text_checked(file)?.lint(&lint_options(*hints, off)),
             )),
         },
 
@@ -776,6 +799,59 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
                 .replace(needle, replacement)
                 .map_err(|e| e.to_string())?;
             finish_text(&app, cli, file, changed > 0)
+        }
+
+        #[cfg(feature = "spell")]
+        TextCommand::Spell {
+            file,
+            range,
+            language,
+            suggest,
+            add,
+        } => {
+            if let Some(word) = add {
+                let path = grind_spell::personal::add(word).map_err(|e| e.to_string())?;
+                return text_lines(vec![format!("{word}\t{}", path.display())]);
+            }
+            let file = file.as_deref().expect("clap requires a file without --add");
+            let app = open_text(file)?;
+            let named = language.as_deref().map(spell_language).transpose()?;
+            let (choice, _) = grind_spell::attach(&app, named).map_err(|e| e.to_string())?;
+            eprintln!(
+                "grind: checking in {} ({})",
+                choice.language.tag(),
+                choice.source.label()
+            );
+            let blocks = match range {
+                Some(range) => span(&app, range)?,
+                None => 0..app.block_count(),
+            };
+            text_lines(
+                app.misspellings(blocks)
+                    .into_iter()
+                    .map(|wrong| match suggest {
+                        true => format!(
+                            "{}\t{}\t{}",
+                            wrong.address(),
+                            wrong.word,
+                            app.suggest(&wrong.word).join(", ")
+                        ),
+                        false => format!("{}\t{}", wrong.address(), wrong.word),
+                    })
+                    .collect(),
+            )
+        }
+
+        TextCommand::Correct {
+            file,
+            at: address,
+            word,
+            with,
+        } => {
+            let app = open_text(file)?;
+            let caret = caret_at(&app, address)?;
+            app.correct(caret, word, with).map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, word != with)
         }
 
         TextCommand::Name {
@@ -1613,6 +1689,44 @@ enum TextCommand {
         needle: String,
         #[arg(allow_hyphen_values = true)]
         replacement: String,
+    },
+
+    /// Print every misspelt word, with its address
+    ///
+    /// Checked in one language per document (doc/spelling.md): the one --language names, else
+    /// the one the document states, else the one whose dictionary knows most of its words.
+    /// Which it was goes to stderr. Words in your own list ($XDG_CONFIG_HOME/grind/words, one
+    /// per line) are accepted; --add puts one there. Nothing is written to the document.
+    #[cfg(feature = "spell")]
+    Spell {
+        #[arg(required_unless_present = "add")]
+        file: Option<PathBuf>,
+        /// Blocks to check, e.g. p3 or p3:p9 — the whole document when left out
+        range: Option<String>,
+        /// The language to check in: en or de, or any tag of either (de-AT, en_GB.UTF-8)
+        #[arg(long, value_name = "LANG")]
+        language: Option<String>,
+        /// Print what each word might have been, best first
+        #[arg(long)]
+        suggest: bool,
+        /// Add a word to your own list instead of checking anything
+        #[arg(long, value_name = "WORD", conflicts_with_all = ["range", "language", "suggest"])]
+        add: Option<String>,
+    },
+
+    /// Replace one misspelt word — what picking a suggestion does
+    ///
+    /// The word is named as well as placed, so a correction aimed at text that has since
+    /// changed is refused rather than overwriting whatever is there now. Keeps the word's
+    /// formatting; one undo step.
+    Correct {
+        file: PathBuf,
+        /// Where the word starts, e.g. p3+12 — as `grind text spell` prints it
+        at: String,
+        /// The word that is there now
+        word: String,
+        /// What it should be
+        with: String,
     },
 
     /// Put a bookmark on a block, list them, or delete one
@@ -2653,7 +2767,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 DocumentKind::Spreadsheet => {
                     open_as(file, DocumentKind::Spreadsheet, cli)?.lint(&options)
                 }
-                DocumentKind::Text => open_text(file)?.lint(&options),
+                DocumentKind::Text => open_text_checked(file)?.lint(&options),
                 kind => return Err(unsupported(file, Some(kind))),
             };
             Ok(lint_report(file, findings))

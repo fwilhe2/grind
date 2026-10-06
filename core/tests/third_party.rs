@@ -105,6 +105,41 @@ const EXTRAS: &[Extra] = &[
             text
         },
     },
+    // The spelling dictionaries (doc/spelling.md). Not crates, so not held to ALLOWED by the
+    // walk above; checked against AGPL-3.0-or-later by hand instead, which is what the comment
+    // on each annotation in REUSE.toml records.
+    Extra {
+        name: "SCOWL English dictionary (en_US)",
+        version: "2020.12.07",
+        licence: "LicenseRef-SCOWL",
+        source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/en",
+        kind: "Dictionary",
+        paths: &[
+            "spell/dictionaries/en-US.aff",
+            "spell/dictionaries/en-US.dic",
+        ],
+        notice: |root| licence_text(root, "LicenseRef-SCOWL"),
+    },
+    Extra {
+        name: "igerman98 German dictionary (de_DE)",
+        version: "20161207",
+        licence: "GPL-2.0-only OR GPL-3.0-only",
+        source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/de",
+        kind: "Dictionary",
+        paths: &[
+            "spell/dictionaries/de-DE.aff",
+            "spell/dictionaries/de-DE.dic",
+        ],
+        notice: |root| {
+            format!(
+                "igerman98 - dictionaries for German language\n\
+                 Copyright (C) 1999-2016 Björn Jacke <bjoern@j3e.de>.\n\n\
+                 Offered under the GNU General Public License version 2 or 3; used here under \
+                 version 3, unmodified.\n\n{}",
+                licence_text(root, "GPL-3.0-only")
+            )
+        },
+    },
     // `catalog.rs` holds each function's `Syntax:` and `Summary:` lines verbatim from the
     // specification, and OASIS's terms ask for their notice on every derivative work.
     Extra {

@@ -414,6 +414,8 @@ it, and dragging one moves it. There is no dialog, and resizing or recolouring o
 | Find | ● | ● | ● ᶠ | ● ˣ | ● ʷ | ● |
 | Replace | ● | ● ʸ | ● | ● ˣ | ● ʷ | ● |
 | Word count | ● | ● | ● | ● | ● | ● |
+| Misspelt words listed, with addresses (`doc/spelling.md`) | ● | ● | ● | — | ● | ● |
+| Misspelt words underlined, suggestions, Add to Dictionary | ◐ ˢᵖ | ● | — | — | — | — |
 | **Character formatting** | | | | | | |
 | Bold, italic, underline | ● | ● | ● | ● | ● | ● |
 | Strikethrough | ● | ● | ● | ● | ● | ● |
@@ -463,6 +465,8 @@ panel's own, over the PDF itself; the browser prints by opening the PDF in the b
 and Windows, which has no API that prints a PDF, sends the preview's rasters at the printer's
 resolution. Every preview anywhere is `grind_print::raster` of the display list the PDF is
 written from, except the Mac's, which is the PDF. The terminal cannot show a page at all.
+
+ˢᵖ `grind text spell --suggest` prints what each word might have been and `--add` keeps one; there is nothing to underline on a terminal's standard output. The three native shells without underlines list every word in their problems pane (`:lint`, F8, the sidebar) — `doc/spelling.md`'s gap list.
 
 ᵃ Visual mode (`v`), which is the same anchor-plus-caret model under vi's spelling.
 ᵇ `o` opens a paragraph below, `X` deletes the block, `:move <address>` puts it elsewhere.

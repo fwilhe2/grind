@@ -4633,7 +4633,12 @@ fn lint(pane: &mut Pane) -> Option<grind_core::lint::Report> {
     let options = grind_core::lint::Options::default();
     match pane {
         Pane::Sheet(sheet) => Some(sheet.app.lint(&options)),
-        Pane::Text(text) => Some(text.app.lint(&options)),
+        // Spelling as well, in the document's own language (`doc/spelling.md`): this pane
+        // draws no underlines yet, and Check Document is where the words show up instead.
+        Pane::Text(text) => {
+            grind_spell::ensure(&text.app);
+            Some(text.app.lint(&options))
+        }
         Pane::Welcome(_) => None,
     }
 }
