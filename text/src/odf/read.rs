@@ -358,6 +358,28 @@ impl Builder {
     /// Drop every automatic style read so far — called after `styles.xml`, whose automatic
     /// styles only that part can refer to.
     pub fn forget_automatic_styles(&mut self) {
+        // A header's or footer's paragraphs are the one thing that names `styles.xml`'s own
+        // automatic styles (`MP1`, centred and set in the letterhead's face), and `content.xml`
+        // may reuse those names for something else: each is kept under a name no file spells.
+        for paragraphs in self
+            .master_marginals
+            .values_mut()
+            .flat_map(|m| [m.header.as_mut(), m.footer.as_mut()])
+            .flatten()
+        {
+            for paragraph in paragraphs {
+                let Some(name) = paragraph.style.as_deref() else {
+                    continue;
+                };
+                let Some((true, style)) = self.paragraph_styles.get(name) else {
+                    continue;
+                };
+                let kept = format!("{MARGINAL_STYLE}{name}");
+                let style = style.clone();
+                self.paragraph_styles.insert(kept.clone(), (false, style));
+                paragraph.style = Some(kept);
+            }
+        }
         self.cell_styles.retain(|_, (automatic, _)| !*automatic);
         self.column_styles.retain(|_, (automatic, _)| !*automatic);
         self.paragraph_styles
@@ -693,6 +715,11 @@ impl Context<Builder> for FontFaces {
     }
 }
 
+/// The prefix a header's or footer's own automatic paragraph style is kept under once
+/// `styles.xml` is read ([`Builder::forget_automatic_styles`]). A style name is an `NCName`, so no
+/// file can spell one starting with a space.
+const MARGINAL_STYLE: &str = " styles.xml ";
+
 /// `office:master-styles` — only each `style:master-page`'s name and the page layout it names.
 /// Its headers and footers are content this build does not model yet (`doc/pdf-export.md` P8).
 struct MasterStyles;
@@ -731,6 +758,7 @@ impl Context<Builder> for MasterPage {
         Some(Box::new(MarginalText {
             master: self.name.clone(),
             header,
+            top: true,
         }))
     }
 }
@@ -739,10 +767,21 @@ impl Context<Builder> for MasterPage {
 struct MarginalText {
     master: String,
     header: bool,
+    /// Whether this is the header or footer itself rather than a `text:section` inside one —
+    /// LibreOffice wraps a header in a section whenever someone put one there, and its
+    /// paragraphs are the header's all the same (`tdf116848.odt`).
+    top: bool,
 }
 
 impl Context<Builder> for MarginalText {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Text, "section") {
+            return Some(Box::new(MarginalText {
+                master: self.master.clone(),
+                header: self.header,
+                top: false,
+            }));
+        }
         if !matches!((name.ns, name.local.as_str()), (Ns::Text, "p" | "h")) {
             return None;
         }
@@ -754,6 +793,9 @@ impl Context<Builder> for MarginalText {
     }
 
     fn end(&mut self, b: &mut Builder) {
+        if !self.top {
+            return;
+        }
         let paragraphs = std::mem::take(&mut b.marginal_done);
         let marginals = b.master_marginals.entry(self.master.clone()).or_default();
         match self.header {
@@ -783,9 +825,15 @@ impl Context<Builder> for MarginalInline {
                 let count = attrs.count(Ns::Text, "c", 1000) as usize;
                 paragraph.push_text(&" ".repeat(count));
             }
+            // Any other field — the file's name, a date, the chapter — shows its cached text,
+            // on paper as in the body. A note's body is not the header's text, and nothing
+            // outside `text:` is text at all.
+            (Ns::Text, local) if !matches!(local, "note" | "ruby-text") => {
+                return Some(Box::new(MarginalInline { closes: false }));
+            }
             _ => {}
         }
-        // A field's own text is its cached value, which on paper is the page's: dropped.
+        // The page's number and count are the page's own, so their cached text is dropped.
         None
     }
 

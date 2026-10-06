@@ -180,6 +180,36 @@ fn the_master_pages_header_and_footer_are_read() {
     assert!((footer.spacing - 4.0).abs() < 1e-9 && footer.min_height == 0.0);
 }
 
+/// LibreOffice wraps a header's paragraphs in a `text:section` when someone put one there
+/// (`sw/qa/extras/layout/data/tdf116848.odt`), and a field other than the page's number and count
+/// shows its cached text on paper as it does in the body: both are the header's own text.
+#[test]
+fn a_headers_section_and_its_other_fields_are_read() {
+    use grind_text::marginal::Part;
+    let bytes = flat(
+        r#"<office:automatic-styles><style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm"/></style:page-layout></office:automatic-styles>
+<office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1">
+  <style:header><text:section text:name="Head"><text:p>Cairn-Terrier</text:p><text:p>A street, 9404 Rorschacherberg</text:p></text:section></style:header>
+  <style:footer><text:section text:name="Foot"><text:p><text:file-name text:display="full">/x/test.fodt</text:file-name><text:tab/>Seite <text:page-number>2</text:page-number><text:note text:id="n1"><text:note-citation>1</text:note-citation><text:note-body><text:p>never</text:p></text:note-body></text:note></text:p></text:section></style:footer>
+</style:master-page></office:master-styles>"#,
+    );
+    let doc = read_bytes("x.fodt", &bytes).unwrap();
+    let header = doc.header.expect("a header");
+    let texts: Vec<_> = header.paragraphs.iter().map(|p| p.parts.clone()).collect();
+    assert_eq!(
+        texts,
+        [
+            vec![Part::Text("Cairn-Terrier".into())],
+            vec![Part::Text("A street, 9404 Rorschacherberg".into())],
+        ]
+    );
+    let footer = doc.footer.expect("a footer");
+    assert_eq!(
+        footer.paragraphs[0].parts,
+        vec![Part::Text("/x/test.fodt\tSeite ".into()), Part::PageNumber]
+    );
+}
+
 #[test]
 fn a_document_with_no_header_or_footer_has_none_and_saves_unchanged() {
     let doc = read_bytes("x.fodt", &flat("")).unwrap();
@@ -315,4 +345,52 @@ fn a_footnote_is_read_with_where_it_is_cited() {
     assert_eq!(note.paragraphs[0].text(1, 1), "The note's own text.");
     assert_eq!(note.paragraphs[0].style.as_deref(), Some("Footnote"));
     assert_eq!(grind_text::odf::write(&doc, Form::Flat).unwrap(), bytes);
+}
+
+/// In a package a header's paragraphs name `styles.xml`'s *own* automatic styles (`MP1`), which
+/// `content.xml` may declare again under the same name for something else — so the header keeps
+/// the one from its own part, centred, and the body's `MP1` stays the body's.
+#[test]
+fn a_headers_automatic_style_is_the_one_from_its_own_part() {
+    let styles = format!(
+        r#"<office:document-styles {NS}><office:styles>
+  <style:style style:name="Header" style:family="paragraph"><style:text-properties fo:font-size="9pt"/></style:style>
+</office:styles><office:automatic-styles>
+  <style:style style:name="MP1" style:family="paragraph" style:parent-style-name="Header"><style:paragraph-properties fo:text-align="center"/></style:style>
+  <style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm"/></style:page-layout>
+</office:automatic-styles><office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1">
+  <style:header><text:p text:style-name="MP1">Letterhead</text:p></style:header>
+</style:master-page></office:master-styles></office:document-styles>"#
+    );
+    let content = format!(
+        r#"<office:document-content {NS}><office:automatic-styles>
+  <style:style style:name="MP1" style:family="paragraph"><style:paragraph-properties fo:text-align="end"/></style:style>
+</office:automatic-styles><office:body><office:text><text:p text:style-name="MP1">Body</text:p></office:text></office:body></office:document-content>"#
+    );
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    zip.start_file("mimetype", stored).unwrap();
+    std::io::Write::write_all(&mut zip, b"application/vnd.oasis.opendocument.text").unwrap();
+    for (name, bytes) in [("styles.xml", &styles), ("content.xml", &content)] {
+        zip.start_file(name, stored).unwrap();
+        std::io::Write::write_all(&mut zip, bytes.as_bytes()).unwrap();
+    }
+    let bytes = zip.finish().unwrap().into_inner();
+
+    let app = grind_text::App::new();
+    app.open_bytes("x.odt", &bytes).expect("opens");
+    let (header, _) = app.marginals();
+    let header = header.expect("a header");
+    let props = app
+        .resolve_style(header.paragraphs[0].style.as_deref())
+        .props;
+    assert_eq!(props.text_align.as_deref(), Some("center"));
+    assert_eq!(
+        props.font_size.as_deref(),
+        Some("9pt"),
+        "and its parent's size"
+    );
+    let body = app.paragraph(0).expect("a block").props;
+    assert_eq!(body.text_align.as_deref(), Some("end"));
 }
