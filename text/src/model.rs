@@ -266,6 +266,23 @@ pub enum Run {
         /// say, and then neither does the writer.
         anchor: Option<String>,
     },
+    /// An inline element this model does not read — a footnote (`text:note`, rng:8465) or a
+    /// field (`text:date`, `text:page-number`, …, rng:8549 onwards) — **kept as the file spelled
+    /// it**, and shown as the text it shows: the citation's mark, the field's cached value.
+    ///
+    /// Atomic, like an image: it moves with the text around it, can be erased as a whole and is
+    /// written back as its own bytes, but is never edited a character at a time. Before it
+    /// existed, typing in a paragraph that held a footnote regenerated the paragraph without the
+    /// note, and the save was refused; now the note goes back where the edit left it.
+    ///
+    /// Only a document read from a file holds one, and only one of the same file's: `xml` is
+    /// spelled with that file's namespace prefixes, which its own root declares.
+    Kept {
+        /// The element, verbatim.
+        xml: String,
+        /// What it shows where it stands.
+        text: String,
+    },
 }
 
 impl Run {
@@ -302,6 +319,7 @@ impl Run {
             // so a caret has one position to sit at and `Block::text()` has one character to
             // count, the same trade `Run::Tab` makes.
             Run::Image { .. } => "\u{fffc}",
+            Run::Kept { text, .. } => text,
         }
     }
 

@@ -164,6 +164,12 @@ fn owned(key: &str) -> bool {
         || is(OFFICE, &["binary-data", "text"])
         || is(TABLE, &["table", "table-column", "table-row", "table-cell"])
         || is(TABLE, &["covered-table-cell"]);
+    // A footnote or a field is a run the model keeps whole (`Run::Kept`) and writes back as the
+    // file's own bytes, so one that is gone is gone by an edit — the person erased it.
+    let kept = is(TEXT, &["note", "note-citation", "note-body"]) || is(TEXT, super::read::FIELDS);
+    if kept {
+        return true;
+    }
     let Some(attribute) = attribute else {
         return modelled;
     };
@@ -1307,6 +1313,8 @@ fn run(out: &mut String, run: &Run, pool: &Pool) {
         Run::Bookmark { name } => {
             let _ = write!(out, "<text:bookmark text:name=\"{}\"/>", esc(name));
         }
+        // An element the model keeps rather than reads goes back as the file spelled it.
+        Run::Kept { xml, .. } => out.push_str(xml),
         Run::Image { .. } if let Some(frame) = pool.frame(run) => out.push_str(frame),
         Run::Image {
             mime,

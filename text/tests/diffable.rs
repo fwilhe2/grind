@@ -312,15 +312,17 @@ fn two_edits_are_two_lines_and_stay_in_file_order() {
     );
 }
 
-/// **The guard.** Typing into a paragraph rewrites it from the model, and the model has no
-/// footnote — so the save is refused, naming what it would have dropped, and the file on disk
-/// is never touched. The same edit to a paragraph with nothing unmodelled in it saves.
+/// **A footnote is a run the model keeps** (`Run::Kept`): typing beside one rewrites the
+/// paragraph from the model, and the note goes back with it as the file's own bytes, where the
+/// edit left it. It used to be refused instead, since the model had no footnote to write. Erasing
+/// it — replacing the whole paragraph's text — is an edit like any other, and saves.
 #[test]
-fn a_save_that_would_drop_a_footnote_is_refused() {
+fn typing_beside_a_footnote_keeps_it() {
+    let note = "<text:note text:note-class=\"footnote\"><text:note-citation>1</text:note-citation>\
+                <text:note-body><text:p>The note.</text:p></text:note-body></text:note>";
     let with_note = RICH.replace(
         "Second paragraph.</text:p>",
-        "Second<text:note text:note-class=\"footnote\"><text:note-citation>1</text:note-citation>\
-         <text:note-body><text:p>The note.</text:p></text:note-body></text:note> paragraph.</text:p>",
+        &format!("Second{note} paragraph.</text:p>"),
     );
     let app = open(with_note.as_bytes());
     let view = app.get_viewport(0..app.block_count());
@@ -328,13 +330,29 @@ fn a_save_that_would_drop_a_footnote_is_refused() {
         .iter()
         .position(|b| b.text.starts_with("Second"))
         .expect("there");
+    assert_eq!(
+        view.get(second).unwrap().text,
+        "Second1 paragraph.",
+        "the mark is shown"
+    );
+    app.insert_text(
+        grind_text::Caret {
+            block: second,
+            offset: 0,
+        },
+        "The ",
+    )
+    .expect("types");
+    let out = String::from_utf8(app.save_bytes(Form::Flat).expect("saves")).expect("utf-8");
+    assert!(out.contains(&format!("The Second{note}")), "{out}");
+
+    let app = open(with_note.as_bytes());
     app.set_text(second, "Second, edited.").expect("edits");
-    match app.save_bytes(Form::Flat) {
-        Err(grind_text::Error::WouldLose(lost)) => {
-            assert!(lost.iter().any(|l| l.contains("text:note")), "{lost:?}");
-        }
-        other => panic!("expected a refusal, got {:?}", other.map(|b| b.len())),
-    }
+    let out = String::from_utf8(app.save_bytes(Form::Flat).expect("saves")).expect("utf-8");
+    assert!(
+        !out.contains("text:note "),
+        "erased with the text it stood in"
+    );
 
     // A structural edit elsewhere leaves that paragraph's bytes alone, footnote and all.
     let app = open(with_note.as_bytes());

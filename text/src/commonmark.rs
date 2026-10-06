@@ -466,6 +466,9 @@ fn inline(runs: &[Run]) -> String {
             Run::Tab => out.push('\t'),
             Run::Break => out.push_str("\\\n"),
             Run::Bookmark { .. } | Run::Image { .. } => {}
+            // A footnote's mark or a field's value is what the reader sees, so it is what
+            // markdown says.
+            Run::Kept { text, .. } => out.push_str(&span(text, &CharStyle::default(), None)),
         }
     }
     out

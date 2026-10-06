@@ -486,6 +486,9 @@ fn spellable(block: &Block) -> Vec<Run> {
     for run in &block.runs {
         match run {
             Run::Image { .. } => {}
+            // The second named gap: a kept element — a footnote, a field — is projected as the
+            // text it shows (`projection::inline::write`), so that text is what is compared.
+            Run::Kept { text, .. } => runs.push(Run::plain(text.clone())),
             Run::Text {
                 text,
                 style,

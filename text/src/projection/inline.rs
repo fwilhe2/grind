@@ -87,6 +87,22 @@ pub struct Inline {
 /// projection's one named gap (`doc/projection-text.md`). Returning an `Option` rather than
 /// dropping it silently is what lets the writer say so.
 pub fn write(runs: &[Run]) -> Option<Inline> {
+    // A kept element — a footnote, a field — is spelled as the text it shows, which is what
+    // this notation has always said of one; the element itself is the projection's second named
+    // gap (`doc/projection-text.md`), and loop F compares it as that text.
+    let shown: Vec<Run>;
+    let runs = if runs.iter().any(|r| matches!(r, Run::Kept { .. })) {
+        shown = runs
+            .iter()
+            .map(|r| match r {
+                Run::Kept { text, .. } => Run::plain(text.clone()),
+                other => other.clone(),
+            })
+            .collect();
+        &shown[..]
+    } else {
+        runs
+    };
     let mut text = String::new();
     // A raw string is only on offer while every run is unformatted prose; one `**bold**`
     // anywhere in the block and the whole string needs the notation switched on.
@@ -102,6 +118,7 @@ pub fn write(runs: &[Run]) -> Option<Inline> {
                 text.push('}');
             }
             Run::Image { .. } => return None,
+            Run::Kept { .. } => {}
             Run::Text {
                 text: body,
                 style,

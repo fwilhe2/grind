@@ -17,10 +17,6 @@ use std::path::{Path, PathBuf};
 
 use grind_text::{App, Caret, CharStyle, Form};
 
-/// The inline elements the text model has no run for — what an edited paragraph holding one
-/// is refused a save over.
-const INLINE_GAP: [&str; 3] = ["text:note", "text:page-number", "text:page-count"];
-
 /// Each edit, on a fresh copy of the document.
 /// One edit, named.
 type Edit = (&'static str, Box<dyn Fn(&App) -> grind_text::Result<()>>);
@@ -118,16 +114,7 @@ fn try_edits(name: &str, bytes: &[u8]) -> Vec<String> {
                     )),
                     Err(e) => failures.push(format!("{name}: {what}, {form:?}: unreadable: {e}")),
                 },
-                // The one refusal this accepts, and it is the text model's rather than this
-                // filter's: a paragraph holding a footnote or a page field is refused an edit
-                // that would regenerate it, in every ODF document, because the model has no run
-                // for either (`doc/text-core.md`'s named gap, `doc/docx-import.md` §"What it
-                // costs"). Everything else is a bug.
-                Err(grind_core::Error::WouldLose(lost))
-                    if lost
-                        .iter()
-                        .all(|l| INLINE_GAP.iter().any(|g| l.contains(g))) => {}
-                // The model's other named gap: a table inside a table cell is read as the outer
+                // The text model's one named gap here: a table inside a table cell is read as the outer
                 // cell's paragraphs (`crate::model::Cell`), so an edit that regenerates the
                 // outer table is refused rather than allowed to flatten the inner one.
                 Err(grind_core::Error::WouldLose(_)) if nested => {}

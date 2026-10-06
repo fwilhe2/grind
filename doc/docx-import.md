@@ -114,18 +114,17 @@ multi-column sections, heading numbers Word numbers by a list other than the hea
 banding, positioned paragraphs and tables (kept in the flow), macros (never executed), and the
 remainder of a part whose XML is damaged.
 
-Two costs are the **text model's**, not this filter's, and are named rather than worked around:
+One cost is the **text model's**, not this filter's, and is named rather than worked around:
 
-- **An edit inside a paragraph holding a footnote or a page field is refused a save**
-  (`Error::WouldLose`). The model has no run for either, so a regenerated paragraph would drop
-  it; this is true of every ODF document, not just an imported one.
 - **A table inside a table cell** is read as the outer cell's paragraphs, so an edit that
   regenerates the outer table is refused rather than allowed to flatten the inner one.
 
-Building this filter found and fixed two bugs in the text model's saves that every ODF
+Building this filter found and fixed three things in the text model's saves that every ODF
 document had: a structural edit anywhere wrote every table without its styles (and was then
-refused), and Backspace at a table cell's edge corrupted the table. `text/tests/table.rs` holds
-both.
+refused), Backspace at a table cell's edge corrupted the table (`text/tests/table.rs` holds
+both), and an edit in a paragraph holding a footnote or a field was refused, since the model had
+no run for either — it has one now, `Run::Kept`, which writes the element back as the file
+spelled it (`text/tests/diffable.rs`).
 
 ---
 

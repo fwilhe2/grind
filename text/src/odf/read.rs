@@ -600,6 +600,30 @@ impl Builder {
         });
     }
 
+    /// The element whose start tag is at `start`, as a [`Run::Kept`] showing `text` — or, where
+    /// there are no bytes to keep it from, just the text, which is what was read before kept
+    /// runs existed.
+    fn keep(&mut self, start: std::ops::Range<usize>, text: &str) {
+        let xml = self
+            .doc
+            .source
+            .as_deref()
+            .filter(|_| !start.is_empty())
+            .and_then(|source| {
+                let range = grind_core::odf::xml::element_extent(&source.bytes, start)?;
+                std::str::from_utf8(source.bytes.get(range)?)
+                    .ok()
+                    .map(str::to_owned)
+            });
+        match xml {
+            Some(xml) => self.push_run(Run::Kept {
+                xml,
+                text: text.to_owned(),
+            }),
+            None => self.push_text(text),
+        }
+    }
+
     fn push_run(&mut self, run: Run) {
         if let Some(block) = self.doc.blocks.last_mut() {
             block.runs.push(run);
@@ -1766,7 +1790,10 @@ fn inline_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         // what a reader of the page sees. Read as text so "Figure 1." shows its 1; the element
         // itself is not modelled, so an edit that would regenerate the paragraph and flatten
         // the field is refused by the save's loss check rather than written.
-        (Ns::Text, local) if FIELDS.contains(&local) => Some(Box::new(FieldText)),
+        (Ns::Text, local) if FIELDS.contains(&local) => Some(Box::new(FieldText {
+            start: attrs.span(),
+            text: String::new(),
+        })),
         // A footnote or endnote: its citation is shown where it stands, and its paragraphs are
         // read beside the blocks (`crate::marginal::Note`). The element itself is not modelled,
         // so an edit that would regenerate the paragraph and lose it is refused at save.
@@ -1780,7 +1807,10 @@ fn inline_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
                 paragraphs: Vec::new(),
             };
             b.marginal_done.clear();
-            Some(Box::new(NoteText { note: Some(note) }))
+            Some(Box::new(NoteText {
+                note: Some(note),
+                start: attrs.span(),
+            }))
         }
         _ => None,
     }
@@ -1789,7 +1819,7 @@ fn inline_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
 /// The text fields whose cached value is shown (rng:8549–9116): every field that carries one as
 /// character content. `text:page-number` and `text:page-count` included — in the body they are
 /// rare, and their cached value is all a continuous view has.
-const FIELDS: &[&str] = &[
+pub(crate) const FIELDS: &[&str] = &[
     "sequence",
     "sequence-ref",
     "date",
@@ -1856,6 +1886,8 @@ const FIELDS: &[&str] = &[
 /// A `text:note`: its citation into the run, and its body's paragraphs into the note.
 struct NoteText {
     note: Option<crate::marginal::Note>,
+    /// Where its start tag is, so the whole element can be kept ([`Run::Kept`]).
+    start: std::ops::Range<usize>,
 }
 
 impl Context<Builder> for NoteText {
@@ -1871,6 +1903,7 @@ impl Context<Builder> for NoteText {
         if let Some(mut note) = self.note.take() {
             note.citation = std::mem::take(&mut b.citation);
             note.paragraphs = std::mem::take(&mut b.marginal_done);
+            b.keep(self.start.clone(), &note.citation);
             b.doc.notes.push(note);
         }
     }
@@ -1882,7 +1915,6 @@ struct Citation;
 impl Context<Builder> for Citation {
     fn text(&mut self, text: &str, b: &mut Builder) {
         b.citation.push_str(text);
-        b.push_text(text);
     }
 }
 
@@ -1902,12 +1934,20 @@ impl Context<Builder> for NoteBody {
     }
 }
 
-/// A field: its character content, the cached value, into the run it sits in.
-struct FieldText;
+/// A field: its character content, the cached value, shown where it stands — and the element
+/// kept whole ([`Run::Kept`]), so an edit beside it writes the field back rather than its text.
+struct FieldText {
+    start: std::ops::Range<usize>,
+    text: String,
+}
 
 impl Context<Builder> for FieldText {
-    fn text(&mut self, text: &str, b: &mut Builder) {
-        b.push_text(text);
+    fn text(&mut self, text: &str, _b: &mut Builder) {
+        self.text.push_str(text);
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        b.keep(self.start.clone(), &self.text);
     }
 }
 
