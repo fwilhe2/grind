@@ -28,7 +28,7 @@ grind-text = { path = "../text" }
 # All three pinned exactly: they are pre-1.0, and they must agree on one `read-fonts` — harfrust
 # past 0.8 brings a second copy beside krilla's (`cargo tree -d`, measured 2026-10-04).
 skrifa = "=0.42.1"
-harfrust = "=0.8.4"
+harfrust = "=0.13.3"
 fontdb = { version = "0.24", default-features = false, features = ["std", "fs"], optional = true }
 # The PDF writer (doc/pdf-export.md §2): glyphs our own layout placed, subset and embedded, with
 # `ToUnicode`, tagging and PDF/A. `simple-text` stays off — harfrust shapes, so there is one
