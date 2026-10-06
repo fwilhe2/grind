@@ -568,7 +568,7 @@ impl Writer<'_, '_> {
         if let Some(level) = level {
             let _ = write!(out, " text:outline-level=\"{level}\"");
             // A heading the outline numbering would number and Word did not stays unnumbered.
-            if self.unnumbered_at_numbered_level(para, i64::from(level) - 1) {
+            if self.unnumbered_at_numbered_level(para, level - 1) {
                 out.push_str(" text:is-list-header=\"true\"");
             }
         }
