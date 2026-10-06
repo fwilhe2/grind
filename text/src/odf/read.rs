@@ -602,7 +602,8 @@ impl Builder {
 
     /// The element whose start tag is at `start`, as a [`Run::Kept`] showing `text` — or, where
     /// there are no bytes to keep it from, just the text, which is what was read before kept
-    /// runs existed.
+    /// runs existed. A kept element showing nothing is a zero-width run, a position like a
+    /// bookmark.
     fn keep(&mut self, start: std::ops::Range<usize>, text: &str) {
         let xml = self
             .doc
@@ -1790,9 +1791,17 @@ fn inline_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         // what a reader of the page sees. Read as text so "Figure 1." shows its 1; the element
         // itself is not modelled, so an edit that would regenerate the paragraph and flatten
         // the field is refused by the save's loss check rather than written.
+        // A comment (`office:annotation`, rng:7787) and the end of the range it covers: kept
+        // whole, showing nothing — a margin note is not text of the paragraph.
+        (Ns::Office, "annotation" | "annotation-end") => Some(Box::new(FieldText {
+            start: attrs.span(),
+            text: String::new(),
+            silent: true,
+        })),
         (Ns::Text, local) if FIELDS.contains(&local) => Some(Box::new(FieldText {
             start: attrs.span(),
             text: String::new(),
+            silent: false,
         })),
         // A footnote or endnote: its citation is shown where it stands, and its paragraphs are
         // read beside the blocks (`crate::marginal::Note`). The element itself is not modelled,
@@ -1939,11 +1948,15 @@ impl Context<Builder> for NoteBody {
 struct FieldText {
     start: std::ops::Range<usize>,
     text: String,
+    /// Shows nothing — a comment, whose paragraphs are its own and not the field's value.
+    silent: bool,
 }
 
 impl Context<Builder> for FieldText {
     fn text(&mut self, text: &str, _b: &mut Builder) {
-        self.text.push_str(text);
+        if !self.silent {
+            self.text.push_str(text);
+        }
     }
 
     fn end(&mut self, b: &mut Builder) {

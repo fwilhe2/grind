@@ -18,7 +18,8 @@ pub use grind_ooxml::Flavour;
 /// milestone table.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Dropped {
-    /// A comment on a range (`w:commentReference`). The commented text is kept.
+    /// A comment whose text the document does not have — its id names nothing in
+    /// `word/comments.xml`. Every other comment is carried, as an `office:annotation`.
     Comment,
     /// A tracked change. Insertions are kept as text and deletions are not shown — the document
     /// as it would read with every change accepted — and the history itself is gone.
@@ -98,6 +99,8 @@ pub struct Report {
     pub notes: usize,
     /// Named paragraph and character styles carried.
     pub styles: usize,
+    /// Comments carried, as `office:annotation`s.
+    pub comments: usize,
     pub dropped: BTreeMap<Dropped, usize>,
     /// Namespaces the file said a consumer must understand and this one does not
     /// (`mc:MustUnderstand`). Recorded, never a refusal.

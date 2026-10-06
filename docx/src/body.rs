@@ -73,6 +73,12 @@ pub enum Inline {
     Image(Image),
     PageNumber(Run),
     PageCount(Run),
+    /// Where a comment's range starts (`w:commentRangeStart`), by the comment's id.
+    CommentStart(String),
+    /// Where it ends.
+    CommentEnd(String),
+    /// A comment on no range — a `w:commentReference` whose start was never seen.
+    CommentAt(String),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -163,6 +169,9 @@ pub struct Ctx<'p, 'a> {
     pub anchors: HashSet<String>,
     /// Every section, in order, as its `w:sectPr` was met.
     pub sections: Vec<Section>,
+    /// Every comment whose range start has been read — a `w:commentReference` to one of these
+    /// is already placed, and one to any other places a comment of its own.
+    pub commented: HashSet<String>,
     /// Text boxes read inside the paragraph being read, waiting to follow it ([`text_box`]).
     pub floating: Vec<Block>,
     /// Pictures already read, by part — one image used twice is read once.
@@ -188,6 +197,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
             sections: Vec::new(),
             images: HashMap::new(),
             floating: Vec::new(),
+            commented: HashSet::new(),
         }
     }
 
@@ -316,6 +326,18 @@ pub fn blocks_into(r: &mut Reader, ctx: &mut Ctx, out: &mut Vec<Block>) -> grind
             "bookmarkStart" => {
                 if let Some(mark) = bookmark(attrs) {
                     pending.push(mark);
+                }
+            }
+            // A comment's range may start or end between paragraphs; the mark joins the next
+            // paragraph, as a bookmark there does.
+            "commentRangeStart" | "commentRangeEnd" => {
+                if let Some(id) = attrs.w("id") {
+                    pending.push(if name.local == "commentRangeStart" {
+                        ctx.commented.insert(id.to_owned());
+                        Inline::CommentStart(id.to_owned())
+                    } else {
+                        Inline::CommentEnd(id.to_owned())
+                    });
                 }
             }
             "sectPr" => {
@@ -460,7 +482,17 @@ fn content(
                 out.push(mark);
             }
         }
-        "commentRangeStart" => ctx.report.drop_one(Dropped::Comment),
+        "commentRangeStart" => {
+            if let Some(id) = attrs.w("id") {
+                ctx.commented.insert(id.to_owned());
+                out.push(Inline::CommentStart(id.to_owned()));
+            }
+        }
+        "commentRangeEnd" => {
+            if let Some(id) = attrs.w("id") {
+                out.push(Inline::CommentEnd(id.to_owned()));
+            }
+        }
         _ => return Ok(Handled::No),
     }
     Ok(Handled::Yes)
@@ -666,7 +698,14 @@ fn read_run(r: &mut Reader, ctx: &mut Ctx, out: &mut Vec<Inline>) -> grind_ooxml
                 }
             }
             "object" => ctx.report.drop_one(Dropped::EmbeddedObject),
-            "commentReference" => {}
+            "commentReference" => {
+                if let Some(id) = attrs.w("id")
+                    && !ctx.commented.contains(id)
+                {
+                    ctx.commented.insert(id.to_owned());
+                    out.push(Inline::CommentAt(id.to_owned()));
+                }
+            }
             _ => return Ok(Handled::No),
         }
         Ok(Handled::Yes)
@@ -1168,8 +1207,14 @@ pub fn page_breaks(blocks: Vec<Block>) -> Vec<Block> {
                         pieces.last_mut().expect("never empty").push(inline);
                     }
                 }
-                let visible =
-                    |piece: &[Inline]| piece.iter().any(|i| !matches!(i, Inline::Bookmark(_)));
+                let visible = |piece: &[Inline]| {
+                    piece.iter().any(|i| {
+                        !matches!(
+                            i,
+                            Inline::Bookmark(_) | Inline::CommentStart(_) | Inline::CommentEnd(_)
+                        )
+                    })
+                };
                 let last = pieces.len() - 1;
                 let mut emitted: Vec<Para> = Vec::new();
                 // Bookmarks with no text of their own beside them, waiting for some.

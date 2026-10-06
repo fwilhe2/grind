@@ -146,6 +146,11 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
         None => HashMap::new(),
     };
 
+    let comments = match target(RelType::Comments) {
+        Some(part) => comments(&mut ctx, &part),
+        None => HashMap::new(),
+    };
+
     // The body.
     ctx.enter(&main);
     let bytes = ctx.package.part(&main).ok_or(Error::NotWordDocument)?;
@@ -260,6 +265,7 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
         anchors,
         default_tab,
         fonts: fonts_table,
+        comments,
     };
     let odf = emit::write(input, &mut report);
     Ok((odf.into_bytes(), report))
@@ -338,6 +344,40 @@ fn notes(ctx: &mut Ctx, part: &str) -> HashMap<String, Vec<Block>> {
         };
         let blocks = body::read_blocks(r, ctx)?;
         out.insert(id, body::page_breaks(blocks));
+        Ok(Handled::Yes)
+    });
+    out
+}
+
+/// Read the comments part: every comment by id, with its author, date and paragraphs.
+fn comments(ctx: &mut Ctx, part: &str) -> HashMap<String, emit::Comment> {
+    let mut out = HashMap::new();
+    let Some(bytes) = ctx.package.part(part) else {
+        return out;
+    };
+    ctx.enter(part);
+    let mut reader = Reader::new(&bytes);
+    if !matches!(reader.root(), Ok(Some(_))) {
+        return out;
+    }
+    let _ = reader.children(|r, name, attrs| {
+        if !name.w("comment") {
+            return Ok(Handled::No);
+        }
+        let Some(id) = attrs.w("id").map(str::to_owned) else {
+            return Ok(Handled::No);
+        };
+        let author = attrs.w("author").map(str::to_owned);
+        let date = attrs.w("date").map(str::to_owned);
+        let blocks = body::read_blocks(r, ctx)?;
+        out.insert(
+            id,
+            emit::Comment {
+                author,
+                date,
+                blocks: body::page_breaks(blocks),
+            },
+        );
         Ok(Handled::Yes)
     });
     out

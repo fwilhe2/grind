@@ -514,7 +514,11 @@ fn a_table_with_a_horizontal_and_a_vertical_merge() {
     let (doc, report) = import(&docx(body, &[]));
     assert_eq!(report.tables, 1);
     // The table, and the paragraph every document ends in after one.
-    assert!(doc.blocks.last().is_some_and(|b| b.cell.is_none() && b.is_empty()));
+    assert!(
+        doc.blocks
+            .last()
+            .is_some_and(|b| b.cell.is_none() && b.is_empty())
+    );
     let cells: Vec<_> = doc
         .blocks
         .iter()
@@ -823,4 +827,32 @@ fn an_even_page_footer_is_a_left_page_footer() {
         assert_eq!(odf.contains("<style:footer-left>"), even, "{odf}");
         assert!(odf.contains("<style:footer>"));
     }
+}
+
+/// A comment is an `office:annotation` — its author, its date, its paragraphs — over the range
+/// it covers, and the commented text is text like any other.
+#[test]
+fn a_comment_is_an_annotation_over_its_range() {
+    let comments = (
+        "word/comments.xml",
+        "comments",
+        format!(
+            r#"<w:comments xmlns:w="{W}"><w:comment w:id="7" w:author="Ada" w:date="2026-10-06T09:30:00Z">
+                 <w:p><w:r><w:t>Check this figure.</w:t></w:r></w:p></w:comment></w:comments>"#
+        )
+        .into_bytes(),
+    );
+    let body = r#"<w:p><w:r><w:t xml:space="preserve">Revenue was </w:t></w:r><w:commentRangeStart w:id="7"/>
+        <w:r><w:t>40%</w:t></w:r><w:commentRangeEnd w:id="7"/><w:r><w:commentReference w:id="7"/></w:r>
+        <w:r><w:t xml:space="preserve"> higher.</w:t></w:r></w:p>"#;
+    let bytes = docx(body, &[comments]);
+    let (doc, report) = import(&bytes);
+    assert!(report.lossless(), "{:?}", report.dropped);
+    assert_eq!(report.comments, 1);
+    assert_eq!(texts(&doc), ["Revenue was 40% higher."]);
+    let odf = String::from_utf8(grind_docx::convert(&bytes).unwrap().0).unwrap();
+    assert!(
+        odf.contains(r#"<office:annotation office:name="comment7"><dc:creator>Ada</dc:creator><dc:date>2026-10-06T09:30:00Z</dc:date><text:p>Check this figure.</text:p></office:annotation>40%<office:annotation-end office:name="comment7"/>"#),
+        "{odf}"
+    );
 }

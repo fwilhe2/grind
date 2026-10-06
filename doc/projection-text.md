@@ -122,9 +122,10 @@ them back in, so it leaves them out, and loop F compares both sides without them
 such a document to `.grind` drops its indexes' last generated entries — which is what they are:
 generated, and Writer's *Update Index* writes them again.
 
-## Footnotes and fields: the third named gap
+## Footnotes, fields and comments: the third named gap
 
-A footnote or endnote (`text:note`) and a field (`text:date`, `text:page-number`, …) are read as
+A footnote or endnote (`text:note`), a field (`text:date`, `text:page-number`, …) and a comment
+(`office:annotation`, and the `office:annotation-end` closing its range, which show nothing) are read as
 **kept runs** (`Run::Kept`): the element, verbatim, shown as the text it shows — the citation's
 mark, the field's cached value — so an edit beside one writes it back rather than refusing the
 save. A projection has no notation for an element it does not model, so it spells a kept run as

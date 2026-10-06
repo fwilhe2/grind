@@ -166,7 +166,10 @@ fn owned(key: &str) -> bool {
         || is(TABLE, &["covered-table-cell"]);
     // A footnote or a field is a run the model keeps whole (`Run::Kept`) and writes back as the
     // file's own bytes, so one that is gone is gone by an edit — the person erased it.
-    let kept = is(TEXT, &["note", "note-citation", "note-body"]) || is(TEXT, super::read::FIELDS);
+    let kept = is(TEXT, &["note", "note-citation", "note-body"])
+        || is(TEXT, super::read::FIELDS)
+        || is(OFFICE, &["annotation", "annotation-end"])
+        || is(DUBLIN_CORE, &["creator", "date"]);
     if kept {
         return true;
     }
@@ -210,6 +213,10 @@ fn owned(key: &str) -> bool {
         _ => false,
     }
 }
+
+/// Dublin Core — a comment's author and date (`dc:creator`, `dc:date` inside an
+/// `office:annotation`).
+const DUBLIN_CORE: &str = "http://purl.org/dc/elements/1.1/";
 
 /// LibreOffice's own namespace for editing-session bookkeeping (`officeooo:rsid`).
 const OFFICEOOO: &str = "http://openoffice.org/2009/office";

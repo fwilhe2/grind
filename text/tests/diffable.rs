@@ -361,3 +361,40 @@ fn typing_beside_a_footnote_keeps_it() {
     let out = String::from_utf8(app.save_bytes(Form::Flat).expect("saves")).expect("utf-8");
     assert!(out.contains("<text:note-body><text:p>The note.</text:p></text:note-body>"));
 }
+
+/// A comment and the end of the range it covers are kept runs too, showing nothing — typing in
+/// the paragraph that holds one writes both back.
+#[test]
+fn typing_beside_a_comment_keeps_it() {
+    let comment =
+        "<office:annotation office:name=\"c1\"><text:p>Check this.</text:p></office:annotation>";
+    let with_comment = RICH.replace(
+        "Second paragraph.</text:p>",
+        &format!("Second {comment}para<office:annotation-end office:name=\"c1\"/>graph.</text:p>"),
+    );
+    let app = open(with_comment.as_bytes());
+    let view = app.get_viewport(0..app.block_count());
+    let second = view
+        .iter()
+        .position(|b| b.text.starts_with("Second"))
+        .expect("there");
+    assert_eq!(
+        view.get(second).unwrap().text,
+        "Second paragraph.",
+        "a comment shows nothing"
+    );
+    app.insert_text(
+        grind_text::Caret {
+            block: second,
+            offset: 0,
+        },
+        "The ",
+    )
+    .expect("types");
+    let out = String::from_utf8(app.save_bytes(Form::Flat).expect("saves")).expect("utf-8");
+    assert!(out.contains(comment), "{out}");
+    assert!(
+        out.contains("<office:annotation-end office:name=\"c1\"/>"),
+        "{out}"
+    );
+}

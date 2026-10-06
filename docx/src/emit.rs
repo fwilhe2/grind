@@ -48,8 +48,18 @@ pub struct Input<'a> {
     pub anchors: HashSet<String>,
     /// `w:defaultTabStop`, in twips.
     pub default_tab: Option<i64>,
+    /// Every comment, by id (`word/comments.xml`).
+    pub comments: HashMap<String, Comment>,
     /// Each font's generic family, from `word/fontTable.xml`.
     pub fonts: Vec<(String, &'static str)>,
+}
+
+/// One comment: who, when, and what it says.
+#[derive(Clone, Debug, Default)]
+pub struct Comment {
+    pub author: Option<String>,
+    pub date: Option<String>,
+    pub blocks: Vec<Block>,
 }
 
 /// A section's marginals: the default header and footer, and the first-page pair under
@@ -96,6 +106,7 @@ pub fn write(input: Input, report: &mut Report) -> String {
         footnotes: 0,
         endnotes: 0,
         notes_written: 0,
+        comments_open: HashSet::new(),
         images: 0,
         in_note: false,
     };
@@ -223,7 +234,7 @@ pub fn write(input: Input, report: &mut Report) -> String {
 }
 
 const PROLOG: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
 "#;
 
 /// The `n`th master page's name: `Standard` first, as every ODF producer names the default one.
@@ -317,6 +328,8 @@ struct Writer<'i, 'r> {
     endnotes: usize,
     /// Every note written so far, numbered or not — what keeps each one's `text:id` unique.
     notes_written: usize,
+    /// Comments whose range has been opened, so their end is written and no other.
+    comments_open: HashSet<String>,
     images: usize,
     in_note: bool,
 }
@@ -735,6 +748,17 @@ impl Writer<'_, '_> {
                 run,
                 mark,
             } => self.note(out, *endnote, id, run, mark.as_deref(), space),
+            Inline::CommentStart(id) => self.comment(out, id, true),
+            Inline::CommentAt(id) => self.comment(out, id, false),
+            Inline::CommentEnd(id) => {
+                if self.comments_open.remove(id) {
+                    let _ = write!(
+                        out,
+                        "<office:annotation-end office:name=\"{}\"/>",
+                        comment_name(id)
+                    );
+                }
+            }
             Inline::Image(image) => {
                 self.image(out, image);
                 *space = false;
@@ -813,6 +837,49 @@ impl Writer<'_, '_> {
             out.push_str("</text:span>");
         }
         *space = false;
+    }
+
+    /// `office:annotation` (rng:7787) — named, when an end will follow, so the two bound a range.
+    fn comment(&mut self, out: &mut String, id: &str, ranged: bool) {
+        // A comment on a footnote's text, or on another comment's: ODF has room for one, and
+        // the text model's notes and comments are read as text, so it is counted rather than
+        // nested where nothing would show it.
+        if self.in_note {
+            self.report.drop_one(Dropped::Comment);
+            return;
+        }
+        let Some(comment) = self.input.comments.get(id) else {
+            self.report.drop_one(Dropped::Comment);
+            return;
+        };
+        self.report.comments += 1;
+        out.push_str("<office:annotation");
+        if ranged {
+            let _ = write!(out, " office:name=\"{}\"", comment_name(id));
+            self.comments_open.insert(id.to_owned());
+        }
+        out.push('>');
+        if let Some(author) = &comment.author {
+            let _ = write!(out, "<dc:creator>{}</dc:creator>", esc(author));
+        }
+        if let Some(date) = comment.date.as_deref().filter(|d| is_date_time(d)) {
+            let _ = write!(out, "<dc:date>{}</dc:date>", esc(date));
+        }
+        // Its paragraphs on one line, as a note body's are: whitespace between them would be
+        // text of the paragraph holding the comment.
+        // An annotation holds paragraphs and lists only (rng:7787), so a table in a comment
+        // gives up its grid and keeps its text, cell by cell.
+        self.in_note = true;
+        let mut body = String::new();
+        self.blocks(&mut body, &flatten_tables(&comment.blocks), 0);
+        self.in_note = false;
+        if body.trim().is_empty() {
+            body.push_str("<text:p/>");
+        }
+        for line in body.lines() {
+            out.push_str(line.trim_start());
+        }
+        out.push_str("</office:annotation>");
     }
 
     fn image(&mut self, out: &mut String, image: &Image) {
@@ -1555,13 +1622,58 @@ fn encode(out: &mut String, text: &str, space: &mut bool) {
 /// apart from the body, and a leading space there would be an indent.
 fn trim_leading_space(blocks: &mut [Block]) {
     if let Some(Block::Para(first)) = blocks.first_mut()
-        && let Some(Inline::Text(text, _)) = first
-            .inlines
-            .iter_mut()
-            .find(|i| !matches!(i, Inline::Bookmark(_)))
+        && let Some(Inline::Text(text, _)) = first.inlines.iter_mut().find(|i| {
+            !matches!(
+                i,
+                Inline::Bookmark(_) | Inline::CommentStart(_) | Inline::CommentEnd(_)
+            )
+        })
     {
         *text = text.trim_start().to_owned();
     }
+}
+
+/// Blocks with every table replaced by its cells' blocks, in reading order.
+fn flatten_tables(blocks: &[Block]) -> Vec<Block> {
+    let mut out = Vec::new();
+    for block in blocks {
+        match block {
+            Block::Para(_) => out.push(block.clone()),
+            Block::Table(table) => {
+                for row in &table.rows {
+                    for cell in &row.cells {
+                        out.extend(flatten_tables(&cell.blocks));
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// A comment's range name: the id, made an NCName.
+fn comment_name(id: &str) -> String {
+    format!(
+        "comment{}",
+        id.chars()
+            .filter(char::is_ascii_alphanumeric)
+            .collect::<String>()
+    )
+}
+
+/// Whether `date` is an `xsd:dateTime` as Word writes one — `2013-11-05T12:43:00Z` — which is
+/// what `dc:date` must be; anything else is left out rather than written invalid.
+fn is_date_time(date: &str) -> bool {
+    let b = date.as_bytes();
+    b.len() >= 19
+        && b[4] == b'-'
+        && b[7] == b'-'
+        && b[10] == b'T'
+        && b[13] == b':'
+        && b[16] == b':'
+        && [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18]
+            .iter()
+            .all(|&i| b[i].is_ascii_digit())
 }
 
 /// Lower-case roman numerals — Word's default endnote numbering.

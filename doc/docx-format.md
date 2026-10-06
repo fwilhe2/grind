@@ -141,6 +141,15 @@ a table) and of `math-malformed_xml.docx` (whose body, after the damage, holds n
 empty paragraph at the end of each; Word, for its part, never ends a document in a table. This
 filter writes that paragraph itself, so the document the oracle reads back is the one written.
 
+### 2.7 Comments — `MEASURED`
+
+`ooxmlexport/data/CommentDone.docx`: a comment is `w:commentRangeStart`/`w:commentRangeEnd` around
+the text and a `w:commentReference` after it, with the comment itself — author, date, paragraphs
+— in `word/comments.xml`. This filter writes an `office:annotation` named after the comment at
+the start and an `office:annotation-end` at the end; the oracle, saving our ODF of the file back
+to Word, writes the same comments with the same paragraphs. An annotation holds only paragraphs
+and lists (rng:7787), so a table in a comment gives up its grid and keeps its text.
+
 ---
 
 ## 3. Paragraphs and styles
