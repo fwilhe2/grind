@@ -298,7 +298,7 @@ The first PDF should arrive early, and fidelity should then go up one ratchet at
 Each milestone ends green on its own and adds a line to `examples/sample-text.sh` where it adds
 a user-visible capability (CLAUDE.md: a feature without a line there is invisible).
 
-### Where it stands (2026-10-04)
+### Where it stands (2026-10-06)
 
 | | State |
 |---|---|
@@ -308,10 +308,11 @@ a user-visible capability (CLAUDE.md: a feature without a line there is invisibl
 | P3 | **Done, apart from system fonts**: `Fonts` (bundled Liberation, metric-compatible twins, generics, Writer's default), `Typesetter` (harfrust, points), `Metrics::ascent` and `Layout::baseline`. Per-glyph fallback is not built: a character no face has is counted in the report, not drawn from another face |
 | P3 | system fonts **done** too: `fonts_for` reads only the families a document names (and their twins) from the machine, `--bundled-fonts` turns it off |
 | P4 | **Done**: `grind_text::page::paginate`, `grind-print`'s `faces`, `ops`, `text` (typeset) and `pdf` (krilla); outline, title, **tagged** (H1–H6, P, L/LI/Lbl/LBody, Table/TR/TD, Figure); `grind text export-pdf` and `grind text pages`. PDF/A is still to come |
-| P5 | **Mostly done**: paragraph styles resolved down their `style:parent-style-name` chain to the default style (`grind_text::paragraph`, read and never written); a block whose style is declared prints in that style's face, spacing (added, measured), side margins, alignment (justify widening interior spaces, measured) and page breaks / keep-with-next; one whose style is undeclared keeps the screen's role face; a family nobody has falls back to the bundled face of its declared generic kind. **Not yet**: `fo:text-indent` (needs a first-line offset in the core breaker), `fo:line-height`, and the screens, which still draw `look.rs`'s faces |
+| P5 | **Mostly done**: paragraph styles resolved down their `style:parent-style-name` chain to the default style (`grind_text::paragraph`, read and never written); a block whose style is declared prints in that style's face, spacing (added, measured), side margins, alignment (justify widening interior spaces, measured) and page breaks / keep-with-next; one whose style is undeclared keeps the screen's role face; a family nobody has falls back to the bundled face of its declared generic kind; `fo:text-indent`, `fo:line-height`, and **tab stops** (`style:tab-stops` and `style:tab-stop-distance`, placed line by line in the core breaker, `grind_core::layout::Tabs`; `doc/odt-format.md` §5c fact 13). **Not yet**: the screens, which still draw `look.rs`'s faces and a tab as wide as their metrics make it |
 | P6 | **Done**: `raster.rs`, its `hayro` cross-check, `grind text preview`, and the GNOME window's Print Preview, Export and Print (`gtk::PrintDialog` over the PDF) |
 | P7 | **Done**: the terminal (`:pdf`, `:pages`), the browser (a second wasm module loaded on first use; export, a canvas preview, print through the browser's viewer), Windows (export, a page preview, print as rasters through `StartDocW`) and the Mac (export, print through PDFKit, whose panel is the preview). The Windows and Mac halves are type-checked and linted from Linux and not yet run; Windows links and starts under Wine |
-| P8–P9 | Open |
+| P8 | **Mostly done**: the master page's header and footer, their paragraphs in their own styles — `styles.xml`'s automatic ones included — and their tab stops, `text:page-number` and `text:page-count` per page, any other field as its cached text, a header held in a `text:section`. **Not yet**: first-page and left-page variants, a header's tables and frames |
+| P9 | Open |
 
 | | What | Size | Exit criterion |
 |---|---|---|---|
