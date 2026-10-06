@@ -759,7 +759,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2020 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/fontdb",
         kind: Kind::Crate,
-        notices: &[75],
+        notices: &[77],
     },
     Component {
         name: "futures-channel",
@@ -1407,7 +1407,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2013-2014 RAD Game Tools and Valve Software",
         source: "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide",
         kind: Kind::Crate,
-        notices: &[114, 62, 115, 116],
+        notices: &[116, 62, 117, 118],
     },
     Component {
         name: "mio",
