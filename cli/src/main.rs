@@ -11,6 +11,7 @@
 //! Diagnostics go to stderr, results to stdout, and an error never appears on stdout in
 //! either format.
 
+mod fit;
 mod report;
 
 use std::io::Read;
@@ -2179,6 +2180,20 @@ enum Command {
         clear: bool,
     },
 
+    /// Fit columns to their widest text and give rows back to their content
+    ///
+    /// `sheet fit book.ods B:D` makes each column as wide as the widest thing it shows, measured
+    /// in the cell's own face; `sheet fit book.ods 3:7` takes those rows' own heights away, so
+    /// each grows to hold what is in it. With no tracks, every sheet is fitted whole — every
+    /// column in use and every row — which is the windows' *Fit Content to Cells*. One undo step
+    /// per sheet. Measured with the bundled Liberation faces, the metric twins of the fonts a
+    /// spreadsheet is normally set in.
+    Fit {
+        file: PathBuf,
+        /// A column or a run of them (B, B:D, Data.B:D), or a row or a run (3, 3:7, Data.3:7)
+        tracks: Option<String>,
+    },
+
     /// Hide — or with `--unhide`, show — a column or a row, or a run of them (§5.4)
     ///
     /// `sheet hide book.ods B:D` hides columns B through D; `sheet hide book.ods 3:7` hides
@@ -3445,6 +3460,33 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             let changed = app
                 .set_row_height(sheet, range, (!length.is_empty()).then_some(length))
                 .say()?;
+            finish(&app, cli, file, changed > 0)
+        }
+
+        Command::Fit { file, tracks } => {
+            let app = load(file, cli)?;
+            let metrics = fit::measure();
+            let mut changed = 0;
+            match tracks {
+                Some(spec) => {
+                    let (sheet, range, is_cols) = hide_tracks(&app, spec)?;
+                    changed += match is_cols {
+                        true => {
+                            let cols = grind_sheet::fit::columns_in_use(&app, sheet, range);
+                            let widths = fit::widths(&app, sheet, cols, &metrics);
+                            app.fit(sheet, widths, 0..0).say()?
+                        }
+                        false => app.fit(sheet, Vec::new(), range).say()?,
+                    };
+                }
+                None => {
+                    for sheet in 0..app.sheet_count() {
+                        let cols = grind_sheet::fit::all_columns(&app, sheet);
+                        let widths = fit::widths(&app, sheet, cols, &metrics);
+                        changed += app.fit(sheet, widths, 0..u32::MAX).say()?;
+                    }
+                }
+            }
             finish(&app, cli, file, changed > 0)
         }
 

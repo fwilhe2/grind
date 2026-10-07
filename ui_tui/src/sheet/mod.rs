@@ -50,6 +50,7 @@ Spreadsheet:
   :rules  :rule! [n]      — the sheet's rules (Enter jumps), or drop rule n / every
                             rule touching the selection
   :width [n|auto]  :fit  :height [n]   :hide  :show   — the columns the selection covers
+  :fit rows  :fit all     — the selected rows back to their content, or every column and row
   :merge  :unmerge        — the selection into one cell, or every merge in it undone
   :name <name>  :name!    — define a name over the selection, or drop the one on it
   :rename <old> <new>     — rename a name, every formula that uses it following

@@ -3143,7 +3143,7 @@ fn double_click(hwnd: HWND, lparam: LPARAM) {
         Some(Edge::Col(col)) => {
             // SAFETY: one borrow; the press that began this pair started a resize.
             unsafe { with_sheet(hwnd, |state| state.resize = None) };
-            fit_columns_in(hwnd, Some(col..col + 1));
+            fit_tracks(hwnd, Fit::Columns(Some(col..col + 1)));
             return;
         }
         Some(Edge::Row(row)) => {
@@ -3704,6 +3704,8 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::ShowColumns => hide_tracks(hwnd, false, false),
         Command::RowHeight => track_size(hwnd, true),
         Command::FitColumns => fit_columns(hwnd),
+        Command::FitRows => fit_tracks(hwnd, Fit::Rows),
+        Command::FitSheet => fit_tracks(hwnd, Fit::Sheet),
         Command::ColumnWidth => track_size(hwnd, false),
         Command::DefineName => define_name(hwnd),
         Command::RenameName => rename_name(hwnd),
@@ -4233,15 +4235,41 @@ fn track_size(hwnd: HWND, rows: bool) {
 /// cell's padding either side. A column holding nothing goes back to the default. The same
 /// answer the GNOME window's double-click on a column edge gives, from the menu.
 fn fit_columns(hwnd: HWND) {
-    fit_columns_in(hwnd, None);
+    fit_tracks(hwnd, Fit::Columns(None));
 }
 
-/// [`fit_columns`] for these columns, or the selected ones when none are named — a double-click on
-/// a column's edge names its own.
-fn fit_columns_in(hwnd: HWND, columns: Option<std::ops::Range<u32>>) {
+/// What a fit covers: some columns (the selected ones when none are named — a double-click on a
+/// column's edge names its own), the selected rows, or the whole sheet.
+enum Fit {
+    Columns(Option<std::ops::Range<u32>>),
+    Rows,
+    Sheet,
+}
+
+/// Columns fitted to their widest text and rows given back to their content, as one undo step
+/// (`App::fit`): Sheet ▸ Fit Column Width, Fit Row Height and Fit Content to Cells.
+fn fit_tracks(hwnd: HWND, fit: Fit) {
     // SAFETY: one borrow, no dialog.
     unsafe {
         with_sheet(hwnd, |state| {
+            let sheet = state.sheet;
+            let (start, end) = state.selection.rect();
+            let rows_only = matches!(fit, Fit::Rows);
+            let (cols, rows) = match fit {
+                Fit::Columns(cols) => (
+                    grind_sheet::fit::columns_in_use(
+                        &state.app,
+                        sheet,
+                        cols.unwrap_or(start.col..end.col + 1),
+                    ),
+                    0..0,
+                ),
+                Fit::Rows => (0..0, start.row..end.row + 1),
+                Fit::Sheet => (
+                    grind_sheet::fit::all_columns(&state.app, sheet),
+                    0..u32::MAX,
+                ),
+            };
             let Some(dib) = gdi::Dib::new(1, 1) else {
                 return;
             };
@@ -4252,42 +4280,36 @@ fn fit_columns_in(hwnd: HWND, columns: Option<std::ops::Range<u32>>) {
                 gdi::Font::new(face(), px, false),
                 gdi::Font::new(face(), px, true),
             );
-            let used = state
-                .app
-                .used_extent(state.sheet)
-                .unwrap_or((0, 0))
-                .0
-                .min(5000);
-            let (start, end) = state.selection.rect();
-            let range = columns.clone().unwrap_or(start.col..end.col + 1);
+            let used = state.app.used_extent(sheet).unwrap_or((0, 0)).0.min(5000);
             let pad = 2.0 * scale(4.0, dpi) + 6.0;
             let to_mm = 1.0 / crate::sheet::geom::mm_to_px(dpi)(1.0);
-            let mut changed = 0;
-            for col in range {
-                let widest = state
-                    .app
-                    .get_viewport(state.sheet, 0..used, col..col + 1)
-                    .map(|view| {
-                        (0..used)
-                            .filter_map(|row| {
-                                let text = view.text(row, col).filter(|text| !text.is_empty())?;
-                                let heavy = view.style(row, col).is_some_and(|style| {
-                                    grind_sheet::format::Toggle::Bold.is_on(style)
-                                });
-                                let _font =
-                                    gdi::Selected::font(dc, if heavy { &bold } else { &regular });
-                                Some(f64::from(gdi::text_width(dc, text)))
-                            })
-                            .fold(0.0, f64::max)
-                    })
-                    .unwrap_or(0.0);
-                let width =
-                    (widest > 0.0).then(|| grind_sheet::style::mm_length((widest + pad) * to_mm));
-                if let Ok(n) = state.app.set_col_width(state.sheet, col..col + 1, width) {
-                    changed += n;
-                }
-            }
-            state.say(Some(notice::track_sized(changed, false)));
+            let widths = cols
+                .map(|col| {
+                    let widest = state
+                        .app
+                        .get_viewport(sheet, 0..used, col..col + 1)
+                        .map(|view| {
+                            (0..used)
+                                .filter_map(|row| {
+                                    let text =
+                                        view.text(row, col).filter(|text| !text.is_empty())?;
+                                    let heavy = view.style(row, col).is_some_and(|style| {
+                                        grind_sheet::format::Toggle::Bold.is_on(style)
+                                    });
+                                    let _font = gdi::Selected::font(
+                                        dc,
+                                        if heavy { &bold } else { &regular },
+                                    );
+                                    Some(f64::from(gdi::text_width(dc, text)))
+                                })
+                                .fold(0.0, f64::max)
+                        })
+                        .unwrap_or(0.0);
+                    (col, grind_sheet::fit::width(widest, pad, to_mm))
+                })
+                .collect();
+            let changed = state.app.fit(sheet, widths, rows).unwrap_or(0);
+            state.say(Some(notice::track_sized(changed, rows_only)));
         });
     }
     refresh(hwnd);
@@ -6114,6 +6136,8 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::ShowColumns
         | Command::RowHeight
         | Command::FitColumns
+        | Command::FitRows
+        | Command::FitSheet
         | Command::ColumnWidth
         | Command::DefineName
         | Command::RenameName
@@ -7259,6 +7283,8 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::ShowColumns
         | Command::RowHeight
         | Command::FitColumns
+        | Command::FitRows
+        | Command::FitSheet
         | Command::ColumnWidth
         | Command::DefineName
         | Command::RenameName

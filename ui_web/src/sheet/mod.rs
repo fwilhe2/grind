@@ -880,7 +880,9 @@ impl Ui {
             "sheet.unhide-cols" => self.hide_cols(false),
             "sheet.row-height" => self.track_size(true),
             "sheet.col-width" => self.track_size(false),
-            "sheet.fit-cols" => self.fit_cols(),
+            "sheet.fit-cols" => self.fit(true, false, false),
+            "sheet.fit-rows" => self.fit(false, true, false),
+            "sheet.fit-all" => self.fit(true, true, true),
             "name.define" => self.define_name(),
             "name.rename" => self.rename_name(),
             "name.inline" => self.inline_name(),
@@ -1663,34 +1665,37 @@ impl Ui {
         });
     }
 
-    /// *Fit column width to text* — each selected column as wide as its widest text, estimated in
-    /// CSS pixels (`layout::fit_px`), one `set_col_width` per column so an empty one goes back to
-    /// the default.
-    fn fit_cols(&self) {
+    /// *Fit column width to text*, *Fit row height to content* and *Fit content to cells* — the
+    /// selected columns each as wide as its widest text, estimated in CSS pixels
+    /// (`layout::fit_width`), the selected rows given back to their content, or both over the
+    /// whole sheet; one `App::fit`, so one undo step, and an empty column back to the default.
+    fn fit(&self, cols: bool, rows: bool, whole: bool) {
         let sheet = self.sheet.get();
-        let rows = self.app.used_extent(sheet).map_or(0, |(rows, _)| rows);
-        let mut changed = 0;
-        for col in grind_sheet::verbs::cols(self.nav_selection()) {
-            let widest = self
-                .app
-                .get_viewport(sheet, 0..rows, col..col + 1)
-                .map(|view| {
-                    (0..rows)
-                        .filter_map(|row| view.text(row, col).map(layout::text_cells))
-                        .max()
-                        .unwrap_or(0)
-                })
-                .unwrap_or(0);
-            let length = layout::fit_px(widest)
-                .map(|px| grind_sheet::style::mm_length(px / layout::PX_PER_MM));
-            match self.app.set_col_width(sheet, col..col + 1, length) {
-                Ok(n) => changed += n,
-                Err(error) => return self.set_message(error.to_string()),
+        let selection = self.nav_selection();
+        let cols = match (cols, whole) {
+            (_, true) => grind_sheet::fit::all_columns(&self.app, sheet),
+            (true, false) => grind_sheet::fit::columns_in_use(
+                &self.app,
+                sheet,
+                grind_sheet::verbs::cols(selection),
+            ),
+            (false, false) => 0..0,
+        };
+        let rows = match (rows, whole) {
+            (_, true) => 0..u32::MAX,
+            (true, false) => grind_sheet::verbs::rows(selection),
+            (false, false) => 0..0,
+        };
+        let widths = cols
+            .map(|col| (col, layout::fit_width(&self.app, sheet, col)))
+            .collect();
+        self.set_message(match self.app.fit(sheet, widths, rows) {
+            Ok(0) => "Already fitted".to_owned(),
+            Ok(n) => {
+                format!("Fitted {n} row(s) and column(s) to their content — Ctrl+Z takes it back")
             }
-        }
-        self.set_message(format!(
-            "Fitted {changed} column(s) to their text — Ctrl+Z takes it back"
-        ));
+            Err(error) => error.to_string(),
+        });
     }
 
     /// *Define a name for the selection…* — sheet-qualified so it means the same place from every

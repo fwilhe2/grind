@@ -391,7 +391,7 @@ impl Pane {
         let sheet = self.sheet.get();
         let tracks = resize::tracks(self.selection.get(), axis, track);
         let done = match axis {
-            Axis::Columns => self.fit_columns(tracks),
+            Axis::Columns => self.fit(tracks, 0..0),
             Axis::Rows => self.app.set_row_height(sheet, tracks, None).map(|_| ()),
         };
         if let Err(error) = done {
@@ -399,17 +399,19 @@ impl Pane {
         }
     }
 
-    /// Each of `cols` as wide as its widest text — a double-click on an edge, and Format ▸
-    /// Column ▸ Fit Width to Content. Each column its own width, so as many undo steps as
-    /// columns fitted.
-    pub fn fit_columns(&self, cols: std::ops::Range<u32>) -> Result<(), grind_sheet::Error> {
+    /// Each of `cols` as wide as its widest text and every row of `rows` given back to its
+    /// content, as one undo step — a double-click on an edge, Format ▸ Column ▸ Fit Width to
+    /// Content and Format ▸ Fit Content to Cells (`App::fit`).
+    pub fn fit(
+        &self,
+        cols: std::ops::Range<u32>,
+        rows: std::ops::Range<u32>,
+    ) -> Result<(), grind_sheet::Error> {
         let sheet = self.sheet.get();
-        cols.into_iter().try_for_each(|col| {
-            let width = resize::fit_width(&self.app, sheet, col, &self.text);
-            self.app
-                .set_col_width(sheet, col..col + 1, Some(resize::length(width)))
-                .map(|_| ())
-        })
+        let widths = cols
+            .map(|col| (col, resize::fit_width(&self.app, sheet, col, &self.text)))
+            .collect();
+        self.app.fit(sheet, widths, rows).map(|_| ())
     }
 
     /// Where the bands' resize cursors go: a strip [`resize::GRAB`] either side of every shown

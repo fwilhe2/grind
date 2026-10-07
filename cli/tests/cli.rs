@@ -2015,3 +2015,43 @@ fn text_link_sets_shows_and_removes_a_link() {
         "read the spec! today [more](#top)"
     );
 }
+
+/// `sheet fit`: a column as wide as its widest text — wider text, wider column — an empty one
+/// left at the default, and a row given back to its content; with no tracks, the whole sheet.
+#[test]
+fn fit_sizes_columns_to_their_text_and_rows_to_their_content() {
+    let dir = Sandbox::new("fit");
+    let file = dir.path("book.fods");
+    let f = s(&file);
+    ok(&["new", &f]);
+    ok(&["set", &f, "A1", "short"]);
+    ok(&["set", &f, "C1", "a label a good deal longer than that"]);
+    ok(&["height", &f, "1:2", "2cm"]);
+
+    ok(&["fit", &f, "A:C"]);
+    let widths = ok(&["width", &f, "A:C"]);
+    let mm = |col: &str| -> f64 {
+        widths
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("{col}\t")))
+            .and_then(|w| w.strip_suffix("mm"))
+            .unwrap_or_else(|| panic!("no width for {col} in {widths}"))
+            .parse()
+            .unwrap()
+    };
+    assert!(mm("C") > 2.0 * mm("A"), "{widths}");
+    assert!(
+        !widths.contains("B\t"),
+        "an empty column keeps the default: {widths}"
+    );
+    assert_eq!(
+        ok(&["height", &f, "1:2"]).lines().count(),
+        2,
+        "columns only"
+    );
+
+    ok(&["fit", &f, "2"]);
+    assert_eq!(ok(&["height", &f, "1:2"]).lines().count(), 1);
+    ok(&["fit", &f]);
+    assert_eq!(ok(&["height", &f, "1:2"]), "", "the whole sheet");
+}

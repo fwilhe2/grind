@@ -159,6 +159,9 @@ say "column widths and row heights"
 run width "$book" A:A 4cm
 run width "$book" H:H 3.5cm
 run height "$book" 1:1 8mm
+# The rest fitted to what they show, measured in the bundled Liberation faces — the window's
+# double-click on a header edge, from the command line.
+run fit "$book" B:G
 
 # A chart tracks ranges, not values, the way a formula does — moving the data it points at
 # moves the chart with no separate step. `--from` reads a table the way the window's Insert

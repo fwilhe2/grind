@@ -2393,6 +2393,12 @@ fn actions() -> Vec<Verb> {
         verb("autofit-all", &[], "Fit Content to Cells", "View", |ui| {
             ui.grid.autofit_all()
         }),
+        verb("fit-cols", &[], "Fit Column Width", "View", |ui| {
+            ui.grid.fit_selection(false)
+        }),
+        verb("fit-rows", &[], "Fit Row Height", "View", |ui| {
+            ui.grid.fit_selection(true)
+        }),
         // --- the window ---
         //
         // The palette cannot list itself: a row that opens the box it is being read in is a

@@ -100,6 +100,9 @@ pub enum Command {
     Rows(Track),
     /// Something done to the selection's columns.
     Columns(Track),
+    /// Every column in use fitted to its text and every row given back to its content, as one
+    /// undo step — Format ▸ Fit Content to Cells, the GNOME window's verb of the same name.
+    FitAll,
     /// A name for the selection — Insert ▸ Name….
     DefineName,
     /// The standard About panel, told the build's stamp (`grind_core::build_info`) — Grind ▸
@@ -271,6 +274,7 @@ impl Command {
             all.extend([Command::Rows(track), Command::Columns(track)]);
         }
         all.extend([
+            Command::FitAll,
             Command::DefineName,
             Command::ExportCsv,
             Command::ImportCsv,
@@ -398,6 +402,7 @@ impl Command {
             | Command::Fill(_)
             | Command::Rows(_)
             | Command::Columns(_)
+            | Command::FitAll
             | Command::DefineName
             | Command::InsertChart
             | Command::PreviewChart
@@ -964,6 +969,7 @@ pub static MENUS: &[Menu] = &[
                 title: "Column",
                 menu: &COLUMN,
             },
+            command("Fit Content to Cells", None, Command::FitAll),
             Item::Separator,
             command("Clear Formatting", None, Command::ClearFormatting),
             Item::Separator,

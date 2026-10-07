@@ -170,6 +170,25 @@ impl Grid {
         self.imp().autofit_all();
     }
 
+    /// The selected columns fitted to their text (`rows: false`), or the selected rows given
+    /// back to their content — the palette's two verbs, the double-click on an edge without
+    /// the mouse.
+    pub fn fit_selection(&self, rows: bool) {
+        let imp = self.imp();
+        let (start, end) = imp.selection.get().rect();
+        match rows {
+            true => imp.fit(0..0, start.row..end.row + 1),
+            false => {
+                let Some(app) = imp.app.borrow().clone() else {
+                    return;
+                };
+                let cols =
+                    grind_sheet::fit::columns_in_use(&app, imp.sheet.get(), start.col..end.col + 1);
+                imp.fit(cols, 0..0);
+            }
+        }
+    }
+
     /// The selection's calculated values on the clipboard, rather than its formulas.
     pub fn copy_value(&self) {
         self.imp().copy_value();
@@ -2999,26 +3018,26 @@ mod imp {
         /// Double-clicking a column boundary: wide enough for the widest thing in the
         /// column, which is what every spreadsheet does with that gesture.
         ///
-        /// The shell measures and the core stores — text width is a font question and the
-        /// core has no font. Only the used extent is measured, because a column of a million
-        /// empty cells has no widest thing in it.
-        ///
         /// A row needs no equivalent: a row without a height of its own is *already* fitted
         /// to what is in it ([`Grid::measure_rows`]), so double-clicking a row boundary
         /// clears the explicit height and the fit is what is left.
         fn autofit(&self, col: u32) {
-            let Some(app) = self.app.borrow().clone() else {
-                return;
-            };
-            let sheet = self.sheet.get();
-            let Ok((rows, _)) = app.used_extent(sheet) else {
-                return;
-            };
+            self.fit(col..col + 1, 0..0);
+        }
+
+        /// The length `col` fits to — its widest text in Pango, in the face each cell is
+        /// drawn in, with the cell's padding — or `None`, the default, for an empty column
+        /// (`grind_sheet::fit::width`).
+        ///
+        /// The shell measures and the core stores — text width is a font question and the
+        /// core has no font. Only the used extent is measured, because a column of a million
+        /// empty cells has no widest thing in it. Measured unzoomed, because what is stored is
+        /// a length in the document rather than a number of pixels on this screen at this
+        /// scale.
+        fn fitted_width(&self, app: &App, sheet: usize, col: u32) -> Option<String> {
+            let rows = app.used_extent(sheet).map_or(0, |(rows, _)| rows);
             let layout = self.layout();
             layout.set_width(-1);
-
-            // Measured unzoomed, because what is stored is a length in the document rather
-            // than a number of pixels on this screen at this scale.
             let mut width: f64 = 0.0;
             if let Ok(viewport) = app.get_viewport(sheet, 0..rows, col..col + 1) {
                 for row in 0..rows {
@@ -3031,35 +3050,34 @@ mod imp {
                 }
             }
             layout.set_attributes(None);
-            let width = (width + 2.0 * PAD + FIT_SLACK).max(MIN_TRACK);
-            let length = Some(style::mm_length(width / PX_PER_MM));
-            if let Err(error) = app.set_col_width(sheet, col..col + 1, length) {
+            grind_sheet::fit::width(width, 2.0 * PAD + FIT_SLACK, 1.0 / PX_PER_MM)
+        }
+
+        /// Each of `cols` fitted to its widest text and every row of `rows` given back to
+        /// its content, as one undo step (`App::fit`) — a double-click on an edge, the
+        /// palette's *Fit Column Width* and *Fit Row Height*, and *Fit Content to Cells*.
+        pub fn fit(&self, cols: std::ops::Range<u32>, rows: std::ops::Range<u32>) {
+            let Some(app) = self.app.borrow().clone() else {
+                return;
+            };
+            let sheet = self.sheet.get();
+            let widths = cols
+                .map(|col| (col, self.fitted_width(&app, sheet, col)))
+                .collect();
+            if let Err(error) = app.fit(sheet, widths, rows) {
                 self.notice(Notice::Refused(error.to_string()));
             }
             self.obj().queue_draw();
         }
 
-        /// Every used column autofit and every explicit row height cleared, in one gesture:
-        /// the bulk form of `autofit`/`clear_height` done one boundary at a time. Each
-        /// column still gets its own [`App::set_col_width`] call, because the widest text
-        /// differs per column, so this is several undo steps rather than one — a coarser
-        /// grain than a single drag, but this is not a single drag.
+        /// Every used column autofit and every explicit row height cleared, in one gesture
+        /// and one undo step.
         pub fn autofit_all(&self) {
             let Some(app) = self.app.borrow().clone() else {
                 return;
             };
-            let sheet = self.sheet.get();
-            let Ok((_, cols)) = app.used_extent(sheet) else {
-                return;
-            };
-            for col in 0..cols {
-                self.autofit(col);
-            }
-            if let Ok(heights) = app.row_heights(sheet) {
-                for (row, _) in heights {
-                    self.clear_height(row);
-                }
-            }
+            let cols = grind_sheet::fit::all_columns(&app, self.sheet.get());
+            self.fit(cols, 0..u32::MAX);
         }
 
         // --- the autofilter (§9.4) ---

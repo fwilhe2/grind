@@ -55,6 +55,9 @@ stops ratcheting.
 - `set_format` — `grind sheet format` (and `grind sheet format <range> general` to clear one)
 - `set_col_width` — `grind sheet width <columns> <length>` (and `--clear` to drop one)
 - `set_row_height` — `grind sheet height <rows> <length>` (and `--clear` to drop one)
+- `fit` — `grind sheet fit [tracks]`: columns to their widest text, measured in the bundled
+  Liberation faces (an estimate in a build without `pdf`), rows given back to their content;
+  with no tracks, every sheet whole. One undo step per sheet
 - `set_col_hidden` — `grind sheet hide <columns>` (and `--unhide` to show it again)
 - `set_row_hidden` — `grind sheet hide <rows>` (and `--unhide` to show it again)
 - `set_filter` — `grind sheet filter <range> COLUMN=VALUE…` (and `grind sheet filter --clear`)

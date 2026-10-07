@@ -225,6 +225,15 @@ pub const SHEET: &[Command] = &[
         "",
         false,
     ),
+    cmd(
+        "sheet.fit-rows",
+        "Fit row height to content",
+        "Sheets",
+        "",
+        false,
+    ),
+    // The GNOME window's verb of the same name: every column in use and every row, one undo step.
+    cmd("sheet.fit-all", "Fit content to cells", "Sheets", "", false),
     // §6.5: a name for the selection, and the three things done to one that carries every use.
     cmd(
         "name.define",

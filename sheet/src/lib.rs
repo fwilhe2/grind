@@ -28,6 +28,7 @@ pub mod clip;
 pub mod csv;
 pub mod filter;
 pub mod find;
+pub mod fit;
 pub mod format;
 pub mod formula;
 pub mod graph;
@@ -1212,6 +1213,49 @@ impl App {
                     height: height.clone(),
                 })
                 .collect::<Vec<_>>();
+            self::apply_batch(state, sheet, updates)
+        })
+    }
+
+    /// Fit tracks to their content, as one undo step: each column of `widths` set to its
+    /// width (`None` back to the default — an empty column), and every row in `rows` that has a
+    /// height of its own given it back, since a row without one already grows to hold what is in
+    /// it. *Fit Content to Cells* is every column in use and every row; the widths are measured
+    /// by the caller, in its own font, with [`fit::widest`].
+    ///
+    /// Only rows that carry a height are touched, so `rows` may be the whole sheet.
+    pub fn fit(
+        &self,
+        sheet: usize,
+        widths: Vec<(u32, Option<String>)>,
+        rows: Range<u32>,
+    ) -> Result<usize> {
+        if widths.len() as u64 > u64::from(MAX_TRACK_RUN) {
+            return Err(Error::TooLarge(widths.len() as u64));
+        }
+        let widths = widths
+            .into_iter()
+            .map(|(col, width)| Ok((col, self.track_size(1, width)?)))
+            .collect::<Result<Vec<_>>>()?;
+        self.mutate(|state| {
+            let Some(s) = state.doc.sheet(sheet) else {
+                return Err(Error::NoSuchSheet(sheet));
+            };
+            let mut updates = widths
+                .into_iter()
+                .filter(|(col, width)| s.col_width(*col) != width.as_deref())
+                .map(|(col, width)| Action::SetColWidth { sheet, col, width })
+                .collect::<Vec<_>>();
+            updates.extend(
+                s.row_heights()
+                    .map(|(row, _)| row)
+                    .filter(|row| rows.contains(row))
+                    .map(|row| Action::SetRowHeight {
+                        sheet,
+                        row,
+                        height: None,
+                    }),
+            );
             self::apply_batch(state, sheet, updates)
         })
     }

@@ -1169,7 +1169,9 @@ impl App {
             "show" => self.cmd_hide(false, false),
             "show rows" => self.cmd_hide(false, true),
             "width" | "width auto" => self.cmd_width(None),
-            "fit" => self.cmd_fit(),
+            "fit" => self.cmd_fit(""),
+            "fit rows" => self.cmd_fit("rows"),
+            "fit all" => self.cmd_fit("all"),
             "height" | "height auto" => self.cmd_height(None),
             "name!" => self.cmd_unname(),
             "format-table" => self.cmd_table(""),
@@ -1657,42 +1659,48 @@ impl App {
     }
 
     /// `:fit` — each selected column becomes as wide as its widest text, measured in terminal
-    /// cells (`unicode-width`, so a CJK column fits too), plus the one blank the grid leaves
-    /// between columns. The twin of the GNOME window's double-click on a column edge; an empty
-    /// column goes back to the default width.
-    fn cmd_fit(&mut self) {
-        use unicode_width::UnicodeWidthStr;
+    /// cells (`text::Cells`, `unicode-width`, so a CJK column fits too), plus the one blank the
+    /// grid leaves between columns. The twin of the GNOME window's double-click on a column
+    /// edge; an empty column goes back to the default width. `:fit rows` gives the selected
+    /// rows back to their content, and `:fit all` is *Fit Content to Cells* — every column in
+    /// use and every row. Each is one `App::fit`, so one `u`.
+    fn cmd_fit(&mut self, what: &str) {
         let (start, end) = self.rect();
-        let rows = self
-            .core
-            .used_extent(self.sheet)
-            .map_or(0, |(rows, _)| rows);
-        let mut fitted = 0;
-        for col in start.col..=end.col {
-            let widest = self
-                .core
-                .get_viewport(self.sheet, 0..rows, col..col + 1)
-                .map(|view| {
-                    (0..rows)
-                        .filter_map(|row| view.text(row, col).map(|text| text.width()))
-                        .max()
-                        .unwrap_or(0)
-                })
-                .unwrap_or(0);
-            let width = match widest {
-                0 => None,
-                n => Some(geom::length(u16::try_from(n + 1).unwrap_or(u16::MAX))),
-            };
-            match self.core.set_col_width(self.sheet, col..col + 1, width) {
-                Ok(n) => fitted += n,
-                Err(e) => {
-                    self.status = e.to_string();
-                    return;
-                }
+        let (cols, rows) = match what {
+            "" => (
+                grind_sheet::fit::columns_in_use(&self.core, self.sheet, start.col..end.col + 1),
+                0..0,
+            ),
+            "rows" => (0..0, start.row..end.row + 1),
+            "all" => (
+                grind_sheet::fit::all_columns(&self.core, self.sheet),
+                0..u32::MAX,
+            ),
+            _ => {
+                self.status = format!(":fit takes rows or all, not “{what}”");
+                return;
             }
+        };
+        let widths = cols
+            .map(|col| {
+                let widest = grind_sheet::fit::widest_drawn(
+                    &self.core,
+                    self.sheet,
+                    col,
+                    &crate::text::Cells,
+                );
+                let width = (widest > 0.0)
+                    .then(|| geom::length(u16::try_from(widest as usize + 1).unwrap_or(u16::MAX)));
+                (col, width)
+            })
+            .collect();
+        match self.core.fit(self.sheet, widths, rows) {
+            Ok(n) => {
+                self.leave_visual();
+                self.status = format!("{n} track(s) fitted to their content");
+            }
+            Err(e) => self.status = e.to_string(),
         }
-        self.leave_visual();
-        self.status = format!("{fitted} column(s) fitted to their text");
     }
 
     /// `:height [n]` — the row twin of [`App::cmd_width`], in ODF's own unit.
@@ -3657,6 +3665,30 @@ mod tests {
         // "Party" is five cells, and one blank follows it.
         assert_eq!(widths, vec![(0, geom::length(6))]);
         assert!(app.status.contains("fitted"), "{}", app.status);
+    }
+
+    /// `:fit rows` takes the selected rows' own heights away, and `:fit all` fits every column in
+    /// use and every row as one undo step.
+    #[test]
+    fn fit_rows_and_fit_all() {
+        let mut app = filled();
+        app.core
+            .set_row_height(app.sheet, 0..3, Some("1cm".into()))
+            .unwrap();
+        app.run_command("fit rows");
+        assert_eq!(
+            app.core.row_heights(app.sheet).unwrap().len(),
+            2,
+            "row 1 only"
+        );
+        app.run_command("fit all");
+        assert!(app.core.row_heights(app.sheet).unwrap().is_empty());
+        assert!(!app.core.col_widths(app.sheet).unwrap().is_empty());
+        assert!(app.core.undo());
+        assert!(
+            app.core.col_widths(app.sheet).unwrap().is_empty(),
+            "one undo step"
+        );
     }
 
     /// A hidden column is *absent*, exactly as a filtered row already was — the other axis of

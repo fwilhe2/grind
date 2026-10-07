@@ -18,10 +18,10 @@ use std::ops::Range;
 use grind_core::layout::Metrics;
 use grind_sheet::nav::Selection;
 use grind_sheet::tracks::Sizes;
-use grind_sheet::{App, MAX_COLS, MAX_ROWS, look};
+use grind_sheet::{App, MAX_COLS, MAX_ROWS};
 
 use super::geom::PT_PER_MM;
-use super::paint::{PAD_X, width};
+use super::paint::PAD_X;
 
 /// How near an edge, in points, the pointer picks it up — either side of it.
 pub const GRAB: f64 = 3.0;
@@ -100,31 +100,17 @@ pub fn length(points: f64) -> String {
     grind_sheet::style::mm_length(points / PT_PER_MM)
 }
 
-/// How wide `col` must be to show everything in it on one line — its widest text in that
-/// text's own face, the cell's padding either side and a little slack — and never narrower
-/// than [`MIN_TRACK`]. An empty column fits to the narrowest.
-pub fn fit_width(app: &App, sheet: usize, col: u32, metrics: &dyn Metrics) -> f64 {
-    let rows = app.used_extent(sheet).map_or(0, |(rows, _)| rows);
-    let widest = app
-        .get_viewport(sheet, 0..rows, col..col + 1)
-        .map(|viewport| {
-            (0..rows)
-                .filter_map(|row| {
-                    let text = viewport.text(row, col).filter(|text| !text.is_empty())?;
-                    let style = look::text_style(viewport.style(row, col));
-                    Some(width(metrics, text, &style))
-                })
-                .fold(0.0, f64::max)
-        })
-        .unwrap_or(0.0);
-    match widest > 0.0 {
-        true => (widest + 2.0 * PAD_X + FIT_SLACK).max(MIN_TRACK),
-        false => MIN_TRACK.max(super::geom::COL_W / 4.0),
-    }
+/// The length `col` fits to: its widest text in that text's own face (`grind_sheet::fit`), the
+/// cell's padding either side and a little slack — and `None`, the default width, for a column
+/// with nothing to show.
+pub fn fit_width(app: &App, sheet: usize, col: u32, metrics: &dyn Metrics) -> Option<String> {
+    let widest = grind_sheet::fit::widest_drawn(app, sheet, col, metrics);
+    grind_sheet::fit::width(widest, 2.0 * PAD_X + FIT_SLACK, 1.0 / PT_PER_MM)
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::paint::width;
     use super::*;
     use grind_core::layout::Fixed;
     use grind_sheet::{Pos, RecalcMode};
@@ -178,13 +164,11 @@ mod tests {
             app.enter(0, Pos::new(row as u32, 0), text, RecalcMode::Document)
                 .unwrap();
         }
-        let fitted = fit_width(&app, 0, 0, &Fixed);
+        let fitted = fit_width(&app, 0, 0, &Fixed).unwrap();
         let widest = width(&Fixed, "a much longer label", &Default::default());
-        assert_eq!(fitted, widest + 2.0 * PAD_X + FIT_SLACK);
-        assert!(
-            fit_width(&app, 0, 5, &Fixed) >= MIN_TRACK,
-            "an empty column"
-        );
+        let mm = grind_sheet::style::length_mm(&fitted).unwrap();
+        assert!((mm * PT_PER_MM - (widest + 2.0 * PAD_X + FIT_SLACK)).abs() < 0.01);
+        assert_eq!(fit_width(&app, 0, 5, &Fixed), None, "an empty column");
     }
 
     #[test]

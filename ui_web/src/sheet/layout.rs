@@ -59,13 +59,31 @@ pub const CELL: Metrics = Metrics {
 /// the loop `CELL`'s own comment rules out.
 const FIT_CHAR_W: f64 = 7.4;
 const FIT_PAD: f64 = 14.0;
-/// No fitted column is narrower than this.
-const FIT_MIN: f64 = 24.0;
 
-/// How wide a column must be to hold `widest` characters of text on one line, in CSS pixels.
-/// `None` for an empty column, which goes back to the default width.
-pub fn fit_px(widest: usize) -> Option<f64> {
-    (widest > 0).then(|| (widest as f64 * FIT_CHAR_W + FIT_PAD).max(FIT_MIN))
+/// The grid's estimate as a `Metrics`, so `grind_sheet::fit` can measure with it: every
+/// character [`text_cells`] wide at [`FIT_CHAR_W`] a cell, scaled by the cell's own font size.
+pub struct Estimate;
+
+impl grind_core::layout::Metrics for Estimate {
+    fn advances(&self, text: &str, style: &grind_core::style::TextStyle, out: &mut Vec<f32>) {
+        let scale = grind_sheet::look::font_scale(style.font_size.as_deref()).unwrap_or(1.0);
+        let mut x = 0.0;
+        for c in text.chars() {
+            x += text_cells(c.encode_utf8(&mut [0; 4])) as f64 * FIT_CHAR_W * scale;
+            out.push(x as f32);
+        }
+    }
+
+    fn line_height(&self, _: &grind_core::style::TextStyle) -> f32 {
+        CELL.cell_h as f32
+    }
+}
+
+/// The length column `col` fits to, from [`Estimate`] — `None` for an empty column, which
+/// goes back to the default width (`grind_sheet::fit::width`).
+pub fn fit_width(app: &grind_sheet::App, sheet: usize, col: u32) -> Option<String> {
+    let widest = grind_sheet::fit::widest_drawn(app, sheet, col, &Estimate);
+    grind_sheet::fit::width(widest, FIT_PAD, 1.0 / PX_PER_MM)
 }
 
 /// The columns of a text, counted in cells: an East Asian ideograph or full-width form takes two.
@@ -201,9 +219,20 @@ pub fn scrolled_by(scroll: Pos, rows: i64, cols: i64) -> Pos {
 mod tests {
     #[test]
     fn a_fitted_column_grows_with_its_widest_text_and_an_empty_one_has_no_width() {
-        assert_eq!(super::fit_px(0), None);
-        assert_eq!(fit_px(1), Some(FIT_MIN));
-        assert!(fit_px(20) > fit_px(10));
+        use grind_sheet::{App, RecalcMode};
+        let app = App::new();
+        app.enter(0, Pos::new(0, 0), "short", RecalcMode::Document)
+            .unwrap();
+        app.enter(
+            0,
+            Pos::new(0, 1),
+            "a good deal longer",
+            RecalcMode::Document,
+        )
+        .unwrap();
+        let mm = |col| length_mm(&fit_width(&app, 0, col).unwrap()).unwrap();
+        assert!(mm(1) > mm(0));
+        assert_eq!(fit_width(&app, 0, 2), None);
         assert_eq!(text_cells("日本"), 4);
         assert_eq!(text_cells("abc"), 3);
     }

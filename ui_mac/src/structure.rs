@@ -77,11 +77,14 @@ impl Pane {
                 .set_row_height(sheet, verbs::rows(selection), None)
                 .map(|_| ()),
             // Only the columns in use: a whole row selected is sixteen thousand of them, and
-            // past the used extent there is no text to fit to.
+            // past the used extent there is no text to fit to (`fit::columns_in_use`).
             Command::Columns(Track::Fit) => {
-                let used = self.app.used_extent(sheet).map_or(0, |(_, cols)| cols);
-                let cols = verbs::cols(selection);
-                self.fit_columns(cols.start..cols.end.min(used.max(cols.start + 1)))
+                let cols =
+                    grind_sheet::fit::columns_in_use(&self.app, sheet, verbs::cols(selection));
+                self.fit(cols, 0..0)
+            }
+            Command::FitAll => {
+                self.fit(grind_sheet::fit::all_columns(&self.app, sheet), 0..u32::MAX)
             }
             Command::Rows(Track::Size) | Command::Columns(Track::Size) => {
                 let rows = matches!(command, Command::Rows(_));

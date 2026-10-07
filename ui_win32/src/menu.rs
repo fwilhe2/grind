@@ -119,6 +119,11 @@ pub enum Command {
     RowHeight,
     /// Each selected column set to its widest text — measured in the font it is drawn in.
     FitColumns,
+    /// Each selected row given back to its content — its own height taken away.
+    FitRows,
+    /// Every column in use fitted and every row given back to its content, one undo step — the
+    /// GNOME window's Fit Content to Cells.
+    FitSheet,
     ColumnWidth,
     /// A name for the selection, to use in formulas instead of its address (`App::set_name`
     /// through `grind_sheet::a1::definition`, as `grind sheet name` reads one).
@@ -381,6 +386,8 @@ impl Command {
         Command::ShowColumns,
         Command::RowHeight,
         Command::FitColumns,
+        Command::FitRows,
+        Command::FitSheet,
         Command::ColumnWidth,
         Command::DefineName,
         Command::RenameName,
@@ -745,6 +752,14 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::FitColumns,
                 label: "&Fit Column Width",
+            },
+            Item::Verb {
+                command: Command::FitRows,
+                label: "Fit Row Heigh&t",
+            },
+            Item::Verb {
+                command: Command::FitSheet,
+                label: "Fit Content to Ce&lls",
             },
             Item::Separator,
             Item::Verb {
@@ -1252,6 +1267,8 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::ShowColumns
         | Command::RowHeight
         | Command::FitColumns
+        | Command::FitRows
+        | Command::FitSheet
         | Command::ColumnWidth
         | Command::DefineName
         | Command::RenameName
@@ -1682,6 +1699,10 @@ mod tests {
             Command::ShowColumns,
             Command::RowHeight,
             Command::FitColumns,
+            Command::FitRows,
+            Command::FitSheet,
+            Command::FitRows,
+            Command::FitSheet,
             Command::ColumnWidth,
             Command::DefineName,
             Command::RenameName,

@@ -246,6 +246,7 @@ impl Delegate {
             Command::Fill(_)
             | Command::Rows(_)
             | Command::Columns(_)
+            | Command::FitAll
             | Command::DefineName
             | Command::InsertChart
             | Command::PreviewChart
