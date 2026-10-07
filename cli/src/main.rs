@@ -963,6 +963,7 @@ fn text_document(app: &TextApp, file: &Path, changed: bool, written: bool) -> Te
         words: counts.words,
         characters: counts.characters,
         headings: counts.headings,
+        reading_minutes: counts.reading_minutes(),
         bookmarks: app.bookmarks().into_iter().map(|(name, _)| name).collect(),
         page: None,
         can_undo: app.can_undo(),

@@ -7,7 +7,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use grind_text::{App, BlockKind, Caret, Form, Observer, loc};
+use grind_text::{App, BlockKind, Caret, Counts, Form, Observer, loc};
 
 /// Build a document *through the App*, which means the setup is itself undoable — every
 /// helper below accounts for that rather than pretending history starts empty.
@@ -757,6 +757,21 @@ fn counts_are_what_a_status_bar_shows() {
     assert_eq!(counts.blocks, 2);
     assert_eq!(counts.headings, 1);
     assert_eq!(counts.characters, "one two three".len() + "four".len());
+    assert_eq!(
+        counts.reading_minutes(),
+        1,
+        "a few words still take a minute"
+    );
+    assert_eq!(
+        Counts::default().reading_minutes(),
+        0,
+        "nothing takes no time"
+    );
+    let essay = Counts {
+        words: 231,
+        ..Counts::default()
+    };
+    assert_eq!(essay.reading_minutes(), 2, "rounded up, never down");
 }
 
 #[test]

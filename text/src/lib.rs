@@ -411,6 +411,16 @@ pub struct Counts {
     pub headings: usize,
 }
 
+impl Counts {
+    /// How many minutes the document takes to read, rounded up — what a blog's "3 min read"
+    /// says. At 230 words a minute, a common figure for silent reading of prose in English; an
+    /// estimate rather than a measurement, so it is one number for every shell rather than a
+    /// constant each picks for itself. An empty document takes no time at all.
+    pub fn reading_minutes(&self) -> usize {
+        self.words.div_ceil(230)
+    }
+}
+
 /// Which measure and which [`Metrics`] each block is set in — **the lookup a motion that
 /// crosses a block boundary needs.**
 ///

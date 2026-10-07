@@ -567,6 +567,8 @@ pub struct TextDocumentReport {
     pub words: usize,
     pub characters: usize,
     pub headings: usize,
+    /// [`grind_text::Counts::reading_minutes`].
+    pub reading_minutes: usize,
     pub bookmarks: Vec<String>,
     /// The page it prints on. Only `grind info` fills it in, for the reason [`Self::kind`] gives.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -861,8 +863,8 @@ impl Report {
                     println!("{kind}");
                 }
                 println!(
-                    "{} blocks\t{} headings\t{} words\t{} characters",
-                    doc.blocks, doc.headings, doc.words, doc.characters
+                    "{} blocks\t{} headings\t{} words\t{} characters\t{} min read",
+                    doc.blocks, doc.headings, doc.words, doc.characters, doc.reading_minutes
                 );
                 for name in &doc.bookmarks {
                     println!("#{name}");
