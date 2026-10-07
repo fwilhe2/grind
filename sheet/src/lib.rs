@@ -23,6 +23,7 @@ pub mod a1;
 pub mod action;
 pub mod autoheight;
 pub mod chart;
+pub mod chart_frame;
 pub mod chart_paint;
 pub mod clip;
 pub mod csv;

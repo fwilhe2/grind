@@ -38,7 +38,7 @@ use grind_sheet::{App, Pos, a1};
 use gtk::{gio, glib};
 use libadwaita::subclass::prelude::ObjectSubclassIsExt;
 
-use crate::geom::{GridGeom, HANDLE, MAX_COLS, MAX_ROWS, Sizes};
+use crate::geom::{GridGeom, MAX_COLS, MAX_ROWS, Sizes};
 use crate::keymap::{Dir, Selection};
 
 /// Pixels to an ODF millimetre.
@@ -57,16 +57,7 @@ const CHART_MARGIN_MM: f64 = 6.0;
 /// a feature with its own UI rather than something to arrive at by dragging past the edge.
 const MIN_TRACK: f64 = 6.0;
 
-/// The smallest a chart may be resized to, in widget pixels — small enough not to fight a
-/// deliberate shrink, large enough that the resize handle sitting on its own corner is never
-/// bigger than the chart itself.
-const MIN_CHART: f64 = 24.0;
-
-/// Below this many pixels of total offset, a press-and-release on a chart's body is a click
-/// rather than a move — the colour popover's own gesture, distinguished from a drag the same
-/// way [`gtk::GestureClick`] distinguishes a click from the start of a drag elsewhere in this
-/// widget.
-const CHART_CLICK_THRESHOLD: f64 = 4.0;
+use grind_sheet::chart_frame::{self, Grip};
 
 /// What a filter button is marked with. A glyph rather than a drawn triangle: the layout is
 /// already here for every other piece of text in the grid, and a path builder for one arrow
@@ -101,6 +92,7 @@ impl Grid {
     /// arrive.
     pub fn set_sheet(&self, sheet: usize) {
         self.imp().sheet.set(sheet);
+        self.imp().selected_chart.set(None);
         self.set_selection(Selection::default());
         self.invalidate();
     }
@@ -840,10 +832,17 @@ mod imp {
         pub resize: Cell<Option<Resize>>,
         /// A chart being moved or resized, and which chart it is.
         pub chart_drag: Cell<Option<ChartDrag>>,
-        /// The chart under the pointer, if any — the one that shows its resize handle. A handle
-        /// on every chart all the time is a sheet of blue squares; one on the chart a person is
-        /// pointing at is an affordance.
+        /// The chart under the pointer, if any — outlined faintly, so a person can see it is a
+        /// thing that can be picked up before they press.
         pub hovered_chart: Cell<Option<usize>>,
+        /// The **selected** chart (`grind_sheet::chart_frame`): a click selects one, and while it
+        /// is selected it wears an accent outline and its eight handles, the arrow keys nudge
+        /// it, Delete and Backspace delete it and Escape lets go of it. `None` while the cells
+        /// have the keyboard.
+        pub selected_chart: Cell<Option<usize>>,
+        /// Whether Shift is held during the chart drag in progress — a corner keeps the
+        /// chart's proportions then.
+        pub chart_shift: Cell<bool>,
         /// Where that drag currently puts the chart, in widget space — painted in its place
         /// until the pointer is released and it becomes `App::reshape_chart`.
         pub chart_drag_rect: Cell<Option<Rect>>,
@@ -928,29 +927,22 @@ mod imp {
     /// what makes the drag itself smooth rather than one written cell per pixel of motion —
     /// this shell's whole answer to "I hate how dragging a chart feels in LibreOffice."
     #[derive(Clone, Copy, Debug)]
-    pub enum ChartDrag {
-        /// Moving: the offset from the chart's own top-left corner to the point the pointer
-        /// grabbed it at, so the chart does not jump to be centred under the pointer the
-        /// moment the drag starts.
-        Move {
-            index: usize,
-            grab_dx: f64,
-            grab_dy: f64,
-        },
-        /// Resizing from the bottom-right handle: the chart's own top-left corner, fixed for
-        /// the whole drag since only the far corner is moving.
-        Resize {
-            index: usize,
-            origin_x: f64,
-            origin_y: f64,
-        },
+    pub struct ChartDrag {
+        pub index: usize,
+        /// The body moves it; a handle resizes it from that edge or corner.
+        pub grip: Grip,
+        /// Where the chart was when the press picked it up, and where the press was.
+        pub start: Rect,
+        pub from_x: f64,
+        pub from_y: f64,
+        /// Whether it was already selected — a click on a selected chart's body is the colour
+        /// popover's gesture; the first click only selects.
+        pub was_selected: bool,
     }
 
     impl ChartDrag {
         fn index(self) -> usize {
-            match self {
-                ChartDrag::Move { index, .. } | ChartDrag::Resize { index, .. } => index,
-            }
+            self.index
         }
     }
 
@@ -985,6 +977,8 @@ mod imp {
                 resize: Cell::new(None),
                 chart_drag: Cell::new(None),
                 hovered_chart: Cell::new(None),
+                selected_chart: Cell::new(None),
+                chart_shift: Cell::new(false),
                 chart_drag_rect: Cell::new(None),
                 filling: Cell::new(false),
                 fill_to: Cell::new(None),
@@ -1162,12 +1156,36 @@ mod imp {
             // than doing the work here: a dialog and an undo toast are the window's, and the
             // grid's job is to say which chart was asked about.
             let chart_items = gtk::Box::new(gtk::Orientation::Vertical, 0);
-            for (label, notice) in [
-                ("Edit Chart…", Notice::EditChart as fn(usize) -> Notice),
-                ("Delete Chart", Notice::DeleteChart as fn(usize) -> Notice),
+            // Each row says its key beside it, so the menu teaches the keyboard: a selected
+            // chart answers Return and Delete without the menu at all.
+            for (label, key, notice) in [
+                (
+                    "Edit Chart…",
+                    "Return",
+                    Notice::EditChart as fn(usize) -> Notice,
+                ),
+                (
+                    "Delete Chart",
+                    "Delete",
+                    Notice::DeleteChart as fn(usize) -> Notice,
+                ),
             ] {
-                let button = gtk::Button::with_label(label);
+                let row = gtk::Box::new(gtk::Orientation::Horizontal, 24);
+                row.append(
+                    &gtk::Label::builder()
+                        .label(label)
+                        .hexpand(true)
+                        .xalign(0.0)
+                        .build(),
+                );
+                let shortcut = gtk::Label::new(Some(key));
+                shortcut.add_css_class("dim-label");
+                row.append(&shortcut);
+                let button = gtk::Button::builder().child(&row).build();
                 button.add_css_class("flat");
+                if label == "Delete Chart" {
+                    button.add_css_class("destructive-action");
+                }
                 button.connect_clicked(glib::clone!(
                     #[weak(rename_to = grid)]
                     widget,
@@ -1284,6 +1302,11 @@ mod imp {
                 #[weak(rename_to = grid)]
                 widget,
                 move |gesture, dx, dy| {
+                    grid.imp().chart_shift.set(
+                        gesture
+                            .current_event_state()
+                            .contains(gtk::gdk::ModifierType::SHIFT_MASK),
+                    );
                     if let Some((x, y)) = gesture.start_point() {
                         grid.imp().extend_to(x + dx, y + dy);
                     }
@@ -1312,6 +1335,9 @@ mod imp {
                 move |_, _, x, y| {
                     let imp = grid.imp();
                     if let Some((index, _, _)) = imp.chart_hit(x, y) {
+                        // The menu acts on the chart it was opened over, and says so by
+                        // selecting it first.
+                        imp.select_chart(Some(index));
                         imp.open_chart_menu(index, x, y);
                         return;
                     }
@@ -1348,8 +1374,7 @@ mod imp {
                     let cursor = match hit {
                         // A chart is over the cells, so it answers first: its corner resizes
                         // it and the rest of it moves it.
-                        _ if matches!(chart, Some((_, true, _))) => Some("nwse-resize"),
-                        _ if chart.is_some() => Some("move"),
+                        _ if chart.is_some() => chart.map(|(_, grip, _)| grip.cursor()),
                         Hit::ColEdge(_) => Some("col-resize"),
                         Hit::RowEdge(_) => Some("row-resize"),
                         Hit::HiddenCols(_, _) | Hit::HiddenRows(_, _) => Some("pointer"),
@@ -2022,6 +2047,12 @@ mod imp {
                 shift: state.contains(gtk::gdk::ModifierType::SHIFT_MASK),
                 alt: state.contains(gtk::gdk::ModifierType::ALT_MASK),
             };
+            // A selected chart has the keyboard: Delete deletes it, the arrows nudge it.
+            if !self.mode.get().is_editing()
+                && let Some(handled) = self.chart_key(keyval, mods)
+            {
+                return handled;
+            }
             // While the list is up it owns the keys that pick from it, and nothing else —
             // typing keeps narrowing it, and every other key means what it always means.
             if let Some(completion) = self.completion.get().filter(|c| c.is_visible()) {
@@ -2757,33 +2788,97 @@ mod imp {
             ))
         }
 
-        /// What a point hits among this sheet's charts: the resize handle at a chart's own
-        /// bottom-right corner beats its body, the same precedence the fill handle gets over
-        /// the cell under it — and the *last* chart in `table:shapes`' own order wins a point
-        /// two charts both cover, since that is the one drawn on top.
-        fn chart_hit(&self, x: f64, y: f64) -> Option<(usize, bool, Rect)> {
+        /// What a point hits among this sheet's charts (`chart_frame::hit`): a handle of the
+        /// selected chart — they reach a little outside its frame — before any chart's body,
+        /// and the *last* chart in `table:shapes`' own order before an earlier one a point both
+        /// cover, since that is the one drawn on top.
+        fn chart_hit(&self, x: f64, y: f64) -> Option<(usize, Grip, Rect)> {
             let app = self.app.borrow().clone()?;
-            let sheet = self.sheet.get();
-            let charts = app.charts(sheet).ok()?;
+            let charts = app.charts(self.sheet.get()).ok()?;
             let geom = self.geom();
-            for (index, chart) in charts.iter().enumerate().rev() {
-                let Some(rect) = self.chart_widget_rect(&geom, chart) else {
-                    continue;
-                };
-                let handle = Rect {
-                    x: rect.x + rect.w - HANDLE,
-                    y: rect.y + rect.h - HANDLE,
-                    w: HANDLE * 2.0,
-                    h: HANDLE * 2.0,
-                };
-                if handle.contains(x, y) {
-                    return Some((index, true, rect));
+            let rects: Vec<Option<Rect>> = charts
+                .iter()
+                .map(|chart| self.chart_widget_rect(&geom, chart))
+                .collect();
+            let frames: Vec<Option<chart_frame::Frame>> =
+                rects.iter().map(|r| r.map(frame_of)).collect();
+            let (index, grip) = chart_frame::hit(
+                &frames,
+                self.selected_chart.get(),
+                x,
+                y,
+                chart_frame::HANDLE,
+                chart_frame::HANDLE_SLOP,
+            )?;
+            Some((index, grip, rects[index]?))
+        }
+
+        /// The selected chart, if it still exists — an index left over from a chart deleted or
+        /// undone away is let go of rather than pointing at the next one.
+        pub fn selected_chart_now(&self) -> Option<usize> {
+            let index = self.selected_chart.get()?;
+            let count = self
+                .app
+                .borrow()
+                .as_ref()
+                .and_then(|app| app.charts(self.sheet.get()).ok())
+                .map_or(0, |charts| charts.len());
+            if index >= count {
+                self.selected_chart.set(None);
+                return None;
+            }
+            Some(index)
+        }
+
+        /// Select a chart, or (with `None`) give the keyboard back to the cells.
+        pub fn select_chart(&self, index: Option<usize>) {
+            if self.selected_chart.replace(index) != index {
+                self.obj().queue_draw();
+            }
+        }
+
+        /// A key while a chart is selected (`chart_frame::Key`): Delete and Backspace delete
+        /// it, Escape lets go of it, the arrows nudge it (Shift for a large step), Return edits
+        /// it. Any other key lets go of it and means what it always means.
+        fn chart_key(&self, keyval: gtk::gdk::Key, mods: Mods) -> Option<glib::Propagation> {
+            let index = self.selected_chart_now()?;
+            use gtk::gdk::Key as K;
+            let key = match keyval {
+                K::Delete | K::KP_Delete | K::BackSpace => chart_frame::Key::Delete,
+                K::Escape => chart_frame::Key::Deselect,
+                K::Left => chart_frame::nudge(-1, 0, mods.shift),
+                K::Right => chart_frame::nudge(1, 0, mods.shift),
+                K::Up => chart_frame::nudge(0, -1, mods.shift),
+                K::Down => chart_frame::nudge(0, 1, mods.shift),
+                K::Return | K::KP_Enter => {
+                    self.notice(Notice::EditChart(index));
+                    return Some(glib::Propagation::Stop);
                 }
-                if rect.contains(x, y) {
-                    return Some((index, false, rect));
+                _ => {
+                    self.select_chart(None);
+                    return None;
+                }
+            };
+            match key {
+                chart_frame::Key::Delete => {
+                    self.select_chart(None);
+                    self.notice(Notice::DeleteChart(index));
+                }
+                chart_frame::Key::Deselect => self.select_chart(None),
+                chart_frame::Key::Nudge(dx, dy) => {
+                    let app = self.app.borrow().clone()?;
+                    let chart = app.charts(self.sheet.get()).ok()?.get(index)?.clone();
+                    let rect = self.chart_widget_rect(&self.geom(), &chart)?;
+                    let zoom = self.zoom.get();
+                    let moved = Rect {
+                        x: rect.x + dx * zoom,
+                        y: rect.y + dy * zoom,
+                        ..rect
+                    };
+                    self.write_chart_rect(index, moved);
                 }
             }
-            None
+            Some(glib::Propagation::Stop)
         }
 
         /// Every chart on this sheet, read fresh and thrown away again like everything else
@@ -2798,6 +2893,7 @@ mod imp {
                 return;
             };
             let dragging = self.chart_drag.get().map(ChartDrag::index);
+            let selected = self.selected_chart_now();
             for (index, chart) in charts.iter().enumerate() {
                 let at = match (dragging, self.chart_drag_rect.get()) {
                     (Some(i), Some(at)) if i == index => at,
@@ -2838,24 +2934,31 @@ mod imp {
                         color: &color,
                     },
                 );
-                // The resize handle, the same square the fill handle is, on the chart under the
-                // pointer or being dragged — a chart being dragged also gets an accent outline,
-                // so the whole shape being moved reads as one thing rather than the drag being
-                // invisible until it lands.
-                if dragging == Some(index) {
+                // Selected (or being dragged): an accent outline and all eight handles, drawn
+                // for as long as it is selected — the one state nobody should have to guess at.
+                // Under the pointer and not selected: a faint outline, so it reads as a thing
+                // that can be picked up.
+                if dragging == Some(index) || selected == Some(index) {
                     outline(f.snapshot, at, f.palette.accent, 2.0);
-                }
-                if dragging == Some(index) || self.hovered_chart.get() == Some(index) {
-                    f.snapshot.append_color(
-                        &f.palette.accent,
-                        &rect(at.x + at.w - HANDLE, at.y + at.h - HANDLE, HANDLE, HANDLE),
-                    );
+                    for (_, square) in chart_frame::handles(&frame_of(at), chart_frame::HANDLE) {
+                        let square = rect(square.x, square.y, square.w, square.h);
+                        f.snapshot.append_color(&f.palette.background, &square);
+                        f.snapshot.append_border(
+                            &gsk::RoundedRect::from_rect(square, 1.5),
+                            &[1.5; 4],
+                            &[f.palette.accent; 4],
+                        );
+                    }
+                } else if self.hovered_chart.get() == Some(index) {
+                    outline(f.snapshot, at, f.palette.accent, 1.0);
                 }
             }
         }
 
         /// The end of a chart drag: the widget-space rect becomes ODF lengths and one undo
-        /// entry — moving and resizing are otherwise the same call, `App::reshape_chart`.
+        /// entry — moving and resizing are otherwise the same call, `App::reshape_chart`. A press
+        /// that never moved selected the chart; a second such click on a selected chart's body
+        /// opens the colour popover for the mark under it.
         fn commit_chart_drag(&self, offset_x: f64, offset_y: f64) {
             let Some(drag) = self.chart_drag.take() else {
                 return;
@@ -2863,33 +2966,37 @@ mod imp {
             let Some(rect) = self.chart_drag_rect.take() else {
                 return;
             };
+            if chart_frame::is_click(offset_x, offset_y, chart_frame::CLICK_SLOP) {
+                self.obj().queue_draw();
+                if drag.was_selected && drag.grip == Grip::Body {
+                    self.open_chart_color_popover(drag.index, drag.from_x, drag.from_y);
+                }
+                return;
+            }
+            self.write_chart_rect(drag.index, rect);
+        }
+
+        /// A chart's frame in widget space written back as ODF lengths, kept on the sheet —
+        /// one `App::reshape_chart`, one undo step.
+        fn write_chart_rect(&self, index: usize, rect: Rect) {
             let Some(app) = self.app.borrow().clone() else {
                 return;
             };
-            // A press that never moved is a click rather than a move — the resize handle has
-            // no such thing, since a resize starting and ending on the same pixel is a
-            // no-op reshape either way.
-            if let ChartDrag::Move {
-                index,
-                grab_dx,
-                grab_dy,
-            } = drag
-                && offset_x.abs() < CHART_CLICK_THRESHOLD
-                && offset_y.abs() < CHART_CLICK_THRESHOLD
-            {
-                self.obj().queue_draw();
-                self.open_chart_color_popover(index, rect.x + grab_dx, rect.y + grab_dy);
-                return;
-            }
             let geom = self.geom();
             let zoom = self.zoom.get();
             let to_mm = |px: f64| px / zoom / PX_PER_MM;
-            let x = style::mm_length(to_mm(rect.x - geom.header_w + geom.scroll_x).max(0.0));
-            let y = style::mm_length(to_mm(rect.y - geom.header_h + geom.scroll_y).max(0.0));
-            let width = style::mm_length(to_mm(rect.w).max(0.1));
-            let height = style::mm_length(to_mm(rect.h).max(0.1));
+            let on_sheet = chart_frame::kept_on_sheet(chart_frame::Frame::new(
+                to_mm(rect.x - geom.header_w + geom.scroll_x),
+                to_mm(rect.y - geom.header_h + geom.scroll_y),
+                to_mm(rect.w),
+                to_mm(rect.h),
+            ));
+            let x = style::mm_length(on_sheet.x);
+            let y = style::mm_length(on_sheet.y);
+            let width = style::mm_length(on_sheet.w.max(0.1));
+            let height = style::mm_length(on_sheet.h.max(0.1));
             let sheet = self.sheet.get();
-            if let Err(error) = app.reshape_chart(sheet, drag.index(), &x, &y, &width, &height) {
+            if let Err(error) = app.reshape_chart(sheet, index, &x, &y, &width, &height) {
                 self.notice(Notice::Refused(error.to_string()));
             }
             self.obj().queue_draw();
@@ -3356,24 +3463,24 @@ mod imp {
             // rather than starting (or extending) a cell selection underneath it — the same
             // precedence the fill handle gets below, but earlier, since a chart is drawn over
             // everything a filter button or the fill handle could otherwise claim first.
-            if let Some((index, resize, rect)) = self.chart_hit(x, y) {
-                self.chart_drag.set(Some(match resize {
-                    true => ChartDrag::Resize {
-                        index,
-                        origin_x: rect.x,
-                        origin_y: rect.y,
-                    },
-                    false => ChartDrag::Move {
-                        index,
-                        grab_dx: x - rect.x,
-                        grab_dy: y - rect.y,
-                    },
+            if let Some((index, grip, rect)) = self.chart_hit(x, y) {
+                let was_selected = self.selected_chart_now() == Some(index);
+                self.selected_chart.set(Some(index));
+                self.chart_drag.set(Some(ChartDrag {
+                    index,
+                    grip,
+                    start: rect,
+                    from_x: x,
+                    from_y: y,
+                    was_selected,
                 }));
                 self.chart_drag_rect.set(Some(rect));
                 self.obj().grab_focus();
                 self.obj().queue_draw();
                 return;
             }
+            // Anything else pressed lets go of a selected chart: the cells have the keyboard.
+            self.select_chart(None);
             // A filter button beats the cell under it, for the same reason the fill handle
             // below does — and before the handle, because the two can overlap on a
             // one-cell selection sitting in the heading row.
@@ -3428,29 +3535,19 @@ mod imp {
             // document until the pointer is released (`commit_chart_drag`), which is the
             // whole reason dragging a chart here does not feel like LibreOffice's own.
             if let Some(drag) = self.chart_drag.get() {
-                let rect = match drag {
-                    ChartDrag::Move {
-                        grab_dx, grab_dy, ..
-                    } => {
-                        let (w, h) = self
-                            .chart_drag_rect
-                            .get()
-                            .map_or((0.0, 0.0), |r| (r.w, r.h));
-                        Rect {
-                            x: x - grab_dx,
-                            y: y - grab_dy,
-                            w,
-                            h,
-                        }
-                    }
-                    ChartDrag::Resize {
-                        origin_x, origin_y, ..
-                    } => Rect {
-                        x: origin_x,
-                        y: origin_y,
-                        w: (x - origin_x).max(MIN_CHART),
-                        h: (y - origin_y).max(MIN_CHART),
-                    },
+                let moved = chart_frame::dragged(
+                    &frame_of(drag.start),
+                    drag.grip,
+                    x - drag.from_x,
+                    y - drag.from_y,
+                    chart_frame::MIN_SIZE * self.zoom.get(),
+                    self.chart_shift.get(),
+                );
+                let rect = Rect {
+                    x: moved.x,
+                    y: moved.y,
+                    w: moved.w,
+                    h: moved.h,
                 };
                 self.chart_drag_rect.set(Some(rect));
                 self.obj().queue_draw();
@@ -5099,6 +5196,11 @@ mod imp {
         let bounds =
             gsk::RoundedRect::from_rect(rect(r.x - 1.0, r.y - 1.0, r.w + 2.0, r.h + 2.0), 3.0);
         snapshot.append_border(&bounds, &[t as f32; 4], &[color; 4]);
+    }
+
+    /// A widget-space rect as `chart_frame`'s frame.
+    fn frame_of(r: Rect) -> chart_frame::Frame {
+        chart_frame::Frame::new(r.x, r.y, r.w, r.h)
     }
 
     fn rect(x: f64, y: f64, w: f64, h: f64) -> graphene::Rect {
