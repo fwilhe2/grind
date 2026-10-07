@@ -701,10 +701,7 @@ mod imp {
                 true => app
                     .misspellings(first.index..last.index + 1)
                     .into_iter()
-                    .filter(|m| {
-                        selection.is_some()
-                            || !(m.block == caret.block && m.offset + m.len == caret.offset)
-                    })
+                    .filter(|m| selection.is_some() || !m.being_typed(caret))
                     .collect(),
                 false => Vec::new(),
             };

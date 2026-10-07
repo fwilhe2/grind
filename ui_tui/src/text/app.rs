@@ -332,6 +332,15 @@ pub struct App {
     quit: bool,
     /// Set by `:new` and `:open`; the event loop takes it and swaps the pane.
     switch: Option<crate::app::Switch>,
+    /// Spelling (`doc/spelling.md`): what `:spell` last said, what that came to for this
+    /// document, and the dictionary `:spell ignore` adds to. `None` checks nothing — which is
+    /// where a pane starts until [`App::spelling`] attaches one, so a test's frame is the
+    /// document's alone.
+    spelling: grind_spell::Setting,
+    checked: Option<grind_spell::Choice>,
+    speller: Option<Arc<grind_spell::Speller>>,
+    /// [`RedrawFlag::edits`] as of the last time the language was reconsidered.
+    spelling_seen: u64,
 }
 
 impl App {
@@ -372,7 +381,18 @@ impl App {
             help_height: 20,
             quit: false,
             switch: None,
+            spelling: grind_spell::Setting::Automatic,
+            checked: None,
+            speller: None,
+            spelling_seen: 0,
         }
+    }
+
+    /// Start checking spelling, in the document's own language — what a pane opened on a file
+    /// does, and the GTK window too.
+    pub fn spelling(mut self) -> Self {
+        self.check_spelling();
+        self
     }
 
     pub fn should_quit(&self) -> bool {
@@ -461,6 +481,7 @@ impl App {
             Action::Emphasise(emphasis) => self.emphasise_selection(emphasis),
             Action::Plain => self.set_selection_style(&CharStyle::default(), "plain"),
             Action::Next(forward) => self.step_match(forward),
+            Action::Misspelt(forward) => self.step_misspelt(forward),
             Action::Escape => {
                 self.anchor = None;
                 // Escape puts the search away as well as the selection: a document still marked
@@ -948,6 +969,9 @@ impl App {
                 };
             }
             "words" => self.cmd_words(),
+            "spell" => self.cmd_spell(""),
+            _ if cmd.starts_with("spell ") => self.cmd_spell(cmd[6..].trim()),
+            _ if cmd.starts_with("fix ") => self.cmd_fix(cmd[4..].trim()),
             "plain" => self.set_selection_style(&CharStyle::default(), "plain"),
             "find" => self.cmd_find(""),
             "mark!" => self.cmd_unmark(),
@@ -1429,6 +1453,180 @@ impl App {
         }
     }
 
+    // --- spelling (`doc/spelling.md`) ---
+
+    /// Attach what [`App::spelling`] says to the core. A document in a language there is no
+    /// dictionary for is not checked, and says so rather than underlining every word.
+    fn check_spelling(&mut self) {
+        self.spelling_seen = self.redraw.edits();
+        match self.spelling.apply(&self.core) {
+            Ok(Some((choice, speller))) => {
+                self.checked = Some(choice);
+                self.speller = Some(speller);
+            }
+            Ok(None) => {
+                self.checked = None;
+                self.speller = None;
+            }
+            Err(why) => {
+                self.checked = None;
+                self.speller = None;
+                self.status = format!("spelling is not checked: {why}");
+            }
+        }
+    }
+
+    /// While the language is only a guess, guess again once the document has changed — the
+    /// first sentences typed into a new document deciding it (`grind_spell::reguess`).
+    fn reconsider_spelling(&mut self) {
+        let edits = self.redraw.edits();
+        if edits == self.spelling_seen {
+            return;
+        }
+        self.spelling_seen = edits;
+        if let Some(choice) = self.checked
+            && matches!(
+                choice.source,
+                grind_spell::Source::Guessed | grind_spell::Source::Default
+            )
+            && grind_spell::reguess(&self.core, self.spelling, choice, self.core.counts().words)
+        {
+            self.check_spelling();
+        }
+    }
+
+    /// `:spell` — which language, and why; `:spell auto|en|de|off` chooses; `:spell ignore` and
+    /// `:spell add` accept the misspelt word at the caret, for this session or for good.
+    fn cmd_spell(&mut self, arg: &str) {
+        match arg {
+            "" => {
+                self.status = match self.checked {
+                    Some(choice) => {
+                        let wrong = self.core.misspellings(0..usize::MAX).len();
+                        format!(
+                            "spelling in {} ({}) \u{2014} {wrong} misspelt, ] goes to the next",
+                            choice.language.name(),
+                            choice.source.label()
+                        )
+                    }
+                    None => "spelling is off \u{2014} :spell auto turns it on".to_string(),
+                }
+            }
+            "ignore" | "add" => self.accept_misspelt(arg == "add"),
+            _ => match grind_spell::Setting::from_tag(arg) {
+                Some(setting) => {
+                    self.spelling = setting;
+                    self.status.clear();
+                    self.check_spelling();
+                    if self.status.is_empty() {
+                        self.cmd_spell("");
+                    }
+                }
+                None => {
+                    self.status = format!("no dictionary for {arg} \u{2014} :spell auto|en|de|off")
+                }
+            },
+        }
+    }
+
+    /// The misspelt word the caret is in or at the end of, if any.
+    fn misspelt_here(&self) -> Option<grind_text::Misspelling> {
+        let at = self.caret;
+        self.core
+            .misspellings(at.block..at.block + 1)
+            .into_iter()
+            .find(|m| m.offset <= at.offset && at.offset <= m.offset + m.len)
+    }
+
+    /// `]` / `[` — put the caret on the next or previous misspelt word, wrapping as `n` does
+    /// (`grind_text::find::step`), and say what it might have been.
+    fn step_misspelt(&mut self, forward: bool) {
+        if self.checked.is_none() {
+            self.status = "spelling is off \u{2014} :spell auto turns it on".to_string();
+            return;
+        }
+        let all = self.core.misspellings(0..usize::MAX);
+        let carets: Vec<Caret> = all.iter().map(|m| m.caret()).collect();
+        let towards = match forward {
+            true => grind_text::find::Towards::Next,
+            false => grind_text::find::Towards::Previous,
+        };
+        let Some(at) = grind_text::find::step(&carets, self.caret, towards) else {
+            self.status = "no misspelt words".to_string();
+            return;
+        };
+        self.caret = carets[at];
+        self.anchor = None;
+        self.goal_x = None;
+        let wrong = &all[at];
+        let offers: Vec<String> = self
+            .core
+            .suggest(&wrong.word)
+            .into_iter()
+            .take(5)
+            .enumerate()
+            .map(|(i, word)| format!("{} {word}", i + 1))
+            .collect();
+        self.status = format!(
+            "{} of {}: \u{201c}{}\u{201d} \u{2014} {}  (:fix N, :spell ignore, :spell add)",
+            at + 1,
+            all.len(),
+            wrong.word,
+            match offers.is_empty() {
+                true => "no suggestions".to_string(),
+                false => offers.join("  "),
+            }
+        );
+    }
+
+    /// `:fix N` or `:fix word` — the misspelt word at the caret replaced by the Nth suggestion
+    /// `]` offered, or by the word given, one undo step (`App::correct`).
+    fn cmd_fix(&mut self, with: &str) {
+        let Some(wrong) = self.misspelt_here() else {
+            self.status = "no misspelt word here \u{2014} ] goes to the next".to_string();
+            return;
+        };
+        let with = match with.parse::<usize>() {
+            Ok(n) => match self.core.suggest(&wrong.word).get(n.wrapping_sub(1)) {
+                Some(word) => word.clone(),
+                None => {
+                    self.status = format!("no suggestion {n} for {}", wrong.word);
+                    return;
+                }
+            },
+            Err(_) => with.to_string(),
+        };
+        match self.core.correct(wrong.caret(), &wrong.word, &with) {
+            Ok(()) => {
+                self.caret = Caret {
+                    block: wrong.block,
+                    offset: wrong.offset + with.chars().count(),
+                };
+                self.anchor = None;
+                self.goal_x = None;
+                self.status = format!("{} \u{2192} {with}", wrong.word);
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// Accept the misspelt word at the caret: for this session, and with `forever` in the
+    /// person's own word list too (`grind_spell::personal`), which no document carries.
+    fn accept_misspelt(&mut self, forever: bool) {
+        let (Some(wrong), Some(speller)) = (self.misspelt_here(), self.speller.clone()) else {
+            self.status = "no misspelt word here \u{2014} ] goes to the next".to_string();
+            return;
+        };
+        speller.accept(&wrong.word);
+        self.status = match forever {
+            false => format!("{} is ignored for this session", wrong.word),
+            true => match grind_spell::personal::add(&wrong.word) {
+                Ok(path) => format!("{} added to {}", wrong.word, path.display()),
+                Err(e) => format!("{} is ignored, but not saved: {e}", wrong.word),
+            },
+        };
+    }
+
     /// `:s/old/new/` — every occurrence, one undo step, because that is what `App::replace` is.
     fn cmd_substitute(&mut self, rest: &str) {
         let mut parts = rest.splitn(2, '/');
@@ -1566,9 +1764,7 @@ impl App {
 
     /// `:lint` — check the document and show what it says about itself (`doc/dsl.md` §4.3).
     fn cmd_lint(&mut self, hints: bool) {
-        // Spelling as well, in the document's own language (`doc/spelling.md`): this shell
-        // draws no underlines yet, and its problems pane is where the words show up instead.
-        grind_spell::ensure(&self.core);
+        // Spelling is in it whenever a dictionary is attached (`:spell`), as `misspelt`.
         let report = self.core.lint(&grind_text::lint::Options {
             hints,
             off: Vec::new(),
@@ -1843,8 +2039,14 @@ impl App {
         line: Range<usize>,
         selection: &Option<(Caret, Caret)>,
         caret: Option<usize>,
+        misspelt: &[grind_text::Misspelling],
     ) -> Vec<Span<'static>> {
         let marks = self.find.spans(view.index);
+        let misspelt: Vec<Range<usize>> = misspelt
+            .iter()
+            .filter(|m| m.block == view.index)
+            .map(|m| m.offset..m.offset + m.len)
+            .collect();
         let chars: Vec<char> = view.text.chars().collect();
         // The selection, clipped to this block — it may start pages above and end below.
         let within = selection.as_ref().and_then(|(from, to)| {
@@ -1879,7 +2081,7 @@ impl App {
             mark(caret);
             mark(caret + 1);
         }
-        for span in &marks {
+        for span in marks.iter().chain(&misspelt) {
             mark(span.start);
             mark(span.end);
         }
@@ -1930,6 +2132,18 @@ impl App {
                 .any(|span| span.start <= start && end <= span.end)
             {
                 style = MATCH;
+            }
+            // A misspelt word is underlined in red — the one decoration a terminal has that
+            // reads as a squiggle's cousin. A terminal that cannot colour an underline draws it
+            // in the text's own ink, which reads like the document's underline; `]` is what
+            // says which words they are.
+            if misspelt
+                .iter()
+                .any(|span| span.start <= start && end <= span.end)
+            {
+                style = style
+                    .add_modifier(Modifier::UNDERLINED)
+                    .underline_color(Color::Red);
             }
             if selected || under_caret {
                 style = style.add_modifier(Modifier::REVERSED);
@@ -2022,6 +2236,7 @@ impl App {
             title_area,
         );
 
+        self.reconsider_spelling();
         let rows = self.visible(self.height);
         let selection = self.selection();
         // **One viewport read for the whole window**, rather than one per block: every row says
@@ -2032,6 +2247,19 @@ impl App {
             (Some(lo), Some(hi)) => self.core.get_viewport(*lo..hi + 1),
             _ => self.core.get_viewport(0..0),
         };
+        // The word still being typed is not underlined: the caret at its end in Insert mode is
+        // somebody halfway through it, and every word processor waits.
+        let typing = matches!(self.mode, Mode::Insert);
+        let misspelt: Vec<grind_text::Misspelling> =
+            match (touched.iter().min(), touched.iter().max()) {
+                (Some(lo), Some(hi)) => self
+                    .core
+                    .misspellings(*lo..hi + 1)
+                    .into_iter()
+                    .filter(|m| !(typing && m.being_typed(self.caret)))
+                    .collect(),
+                _ => Vec::new(),
+            };
 
         let mut lines = Vec::with_capacity(self.height);
         for row in &rows {
@@ -2067,7 +2295,13 @@ impl App {
                     }
                     let caret = ((*block, *line) == (self.caret.block, caret_line))
                         .then_some(self.caret.offset);
-                    spans.extend(self.line_spans(view, range.clone(), &selection, caret));
+                    spans.extend(self.line_spans(
+                        view,
+                        range.clone(),
+                        &selection,
+                        caret,
+                        &misspelt,
+                    ));
                     // `doc/view-modes.md` §3.6: a bookmark is the named-range analogue and it is
                     // the one part of a text document a reader cannot see at all — it contributes
                     // no characters. With `:names` on, the block that holds one says so, after
@@ -2095,7 +2329,13 @@ impl App {
                                 Some(view) => {
                                     let caret = ((*block, *line) == (self.caret.block, caret_line))
                                         .then_some(self.caret.offset);
-                                    self.line_spans(view, range.clone(), &selection, caret)
+                                    self.line_spans(
+                                        view,
+                                        range.clone(),
+                                        &selection,
+                                        caret,
+                                        &misspelt,
+                                    )
                                 }
                                 None => Vec::new(),
                             },
@@ -2162,6 +2402,10 @@ impl App {
         let at = match self.selection() {
             Some((from, to)) => format!("{} selected \u{00b7} {where_}", span_len(from, to)),
             None => where_,
+        };
+        let at = match self.checked {
+            Some(choice) => format!("{} \u{00b7} {at}", choice.language.tag()),
+            None => at,
         };
         frame.render_widget(
             Paragraph::new(chrome::bar(
@@ -3363,6 +3607,75 @@ mod tests {
         );
         let plain = buffer[(GUTTER + 7, 1)].style();
         assert!(!plain.add_modifier.contains(Modifier::BOLD), "{plain:?}");
+    }
+
+    /// Spelling (`doc/spelling.md`): a misspelt word is underlined in red, `]` goes to it with
+    /// suggestions on the status line, `:fix 1` takes the first, and `:spell off` stops it all.
+    #[test]
+    fn a_misspelt_word_is_underlined_stepped_to_and_fixed() {
+        let mut app = app(&["We recieve the letter.", "All good here."]).spelling();
+        app.run_command("spell en");
+        let underlined = |app: &mut App, col: u16| {
+            let mut terminal = Terminal::new(TestBackend::new(50, 6)).unwrap();
+            terminal.draw(|frame| app.draw(frame)).unwrap();
+            let cell = terminal.backend().buffer()[(GUTTER + col, 1)].clone();
+            cell.style().add_modifier.contains(Modifier::UNDERLINED)
+        };
+        assert!(underlined(&mut app, 4), "the e of recieve");
+        assert!(!underlined(&mut app, 0), "We is spelled right");
+
+        press(&mut app, KeyCode::Char(']'));
+        assert_eq!(
+            app.caret,
+            Caret {
+                block: 0,
+                offset: 3
+            }
+        );
+        assert!(app.status.contains("1 receive"), "{}", app.status);
+        press(&mut app, KeyCode::Char(']'));
+        assert_eq!(
+            app.caret.offset, 3,
+            "one misspelling, so ] wraps onto itself"
+        );
+
+        app.run_command("fix 1");
+        assert_eq!(
+            app.core.get_viewport(0..1).get(0).unwrap().text,
+            "We receive the letter."
+        );
+        assert!(!underlined(&mut app, 4));
+        press(&mut app, KeyCode::Char('u'));
+        assert!(underlined(&mut app, 4), "one undo step");
+
+        app.run_command("spell off");
+        assert!(!underlined(&mut app, 4));
+        press(&mut app, KeyCode::Char(']'));
+        assert!(app.status.contains("spelling is off"), "{}", app.status);
+    }
+
+    #[test]
+    fn the_word_being_typed_is_not_underlined_and_ignore_accepts_one() {
+        let mut app = app(&[""]).spelling();
+        app.run_command("spell en");
+        press(&mut app, KeyCode::Char('i'));
+        type_str(&mut app, "Ths");
+        let underlined = |app: &mut App| {
+            let mut terminal = Terminal::new(TestBackend::new(50, 6)).unwrap();
+            terminal.draw(|frame| app.draw(frame)).unwrap();
+            let cell = terminal.backend().buffer()[(GUTTER, 1)].clone();
+            cell.style().add_modifier.contains(Modifier::UNDERLINED)
+        };
+        assert!(!underlined(&mut app), "still being typed");
+        type_str(&mut app, " ");
+        assert!(underlined(&mut app), "finished");
+        press(&mut app, KeyCode::Esc);
+        app.caret = Caret {
+            block: 0,
+            offset: 1,
+        };
+        app.run_command("spell ignore");
+        assert!(!underlined(&mut app), "{}", app.status);
     }
 
     #[test]

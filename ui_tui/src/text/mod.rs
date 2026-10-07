@@ -33,6 +33,9 @@ Word processor:
   :font <family>  :size <length>    over the selection (14pt); none to put the document's own back
   :h <level>     :li [depth]        :style [name]
   :find <text>   :s/old/new/        :words
+  ]  [           — the next or previous misspelt word, underlined in red, with suggestions
+  :fix N         :fix <word>       — replace the misspelt word here with suggestion N, or that
+  :spell [auto|en|de|off]          — which language; :spell ignore, :spell add accept a word
   :outline       — every heading, indented; Enter goes to one
   :table [rows cols]                — a table before this block, drawn as a grid
   :md-in <file>  :md-out <file>     — markdown read in before this block, or the selection

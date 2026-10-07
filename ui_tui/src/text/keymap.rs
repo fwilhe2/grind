@@ -71,6 +71,10 @@ pub enum Action {
     /// spreadsheet's map binds** (`crate::sheet::keymap`), because one suite should not have two
     /// ways to say "the next one".
     Next(bool),
+    /// `]` / `[` — the next or previous misspelt word, with what it might have been on the
+    /// status line (`doc/spelling.md`). vi's own `]s`/`[s` without the `s`: this map has no
+    /// second key to wait for, and nothing else here claims a bracket.
+    Misspelt(bool),
     /// `Esc` — leave Visual mode without doing anything to what was selected.
     Escape,
 }
@@ -117,6 +121,8 @@ pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<
         KeyCode::Char('J') => Some(Action::Join),
         KeyCode::Char('n') => Some(Action::Next(true)),
         KeyCode::Char('N') => Some(Action::Next(false)),
+        KeyCode::Char(']') => Some(Action::Misspelt(true)),
+        KeyCode::Char('[') => Some(Action::Misspelt(false)),
         KeyCode::Char('u') => Some(Action::Undo),
         KeyCode::Char('r') if ctrl => Some(Action::Redo),
         KeyCode::Char(':') => Some(Action::Command),

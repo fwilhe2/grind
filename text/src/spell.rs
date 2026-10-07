@@ -58,6 +58,21 @@ impl Misspelling {
     pub fn address(&self) -> String {
         format!("{}+{}", crate::loc::format(self.block), self.offset)
     }
+
+    /// Where the word starts — what [`crate::find::step`] steps between, so "the next
+    /// misspelling" wraps the way "the next match" does.
+    pub fn caret(&self) -> crate::Caret {
+        crate::Caret {
+            block: self.block,
+            offset: self.offset,
+        }
+    }
+
+    /// Whether this is the word somebody is still typing: the caret at its end. Every shell
+    /// leaves that one alone while nothing is selected, as every word processor waits.
+    pub fn being_typed(&self, caret: crate::Caret) -> bool {
+        caret.block == self.block && caret.offset == self.offset + self.len
+    }
 }
 
 /// The apostrophes a word may contain: the typewriter one and the typographer's `’`, which is

@@ -249,6 +249,85 @@ pub fn attach(app: &App, named: Option<Language>) -> Result<(Choice, Arc<Speller
     }
 }
 
+/// What somebody has said about spelling for one window — a shell's Spelling menu, `:spell`.
+/// The session's rather than the document's: the document's own language is read and never
+/// written (`doc/spelling.md`, "Setting the document's language").
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Setting {
+    /// [`choose`]'s order: the language the document states, else the one whose dictionary
+    /// knows most of its words.
+    #[default]
+    Automatic,
+    In(Language),
+    Off,
+}
+
+impl Setting {
+    /// Every choice, in the order a menu lists them.
+    pub const ALL: [Setting; 4] = [
+        Setting::Automatic,
+        Setting::In(Language::English),
+        Setting::In(Language::German),
+        Setting::Off,
+    ];
+
+    /// `auto`, `off`, or a dictionary's tag — what a menu's state and a typed command carry.
+    pub fn tag(self) -> &'static str {
+        match self {
+            Setting::Automatic => "auto",
+            Setting::In(language) => language.tag(),
+            Setting::Off => "off",
+        }
+    }
+
+    /// The other way round, taking any tag [`Language::from_tag`] does — `de` as well as
+    /// `de-DE`. `None` for a word that is none of them.
+    pub fn from_tag(tag: &str) -> Option<Setting> {
+        match tag.trim() {
+            "auto" | "automatic" => Some(Setting::Automatic),
+            "off" | "none" => Some(Setting::Off),
+            tag => Language::from_tag(tag).map(Setting::In),
+        }
+    }
+
+    /// What a menu calls it.
+    pub fn label(self) -> &'static str {
+        match self {
+            Setting::Automatic => "Automatic",
+            Setting::In(language) => language.name(),
+            Setting::Off => "Off",
+        }
+    }
+
+    /// Attach what this setting means to `app`: `Ok(None)` when it is [`Setting::Off`] and
+    /// nothing is checked, otherwise [`attach`]'s answer.
+    pub fn apply(self, app: &App) -> Result<Option<(Choice, Arc<Speller>)>, Unchecked> {
+        match self {
+            Setting::Off => {
+                app.set_lexicon(None);
+                Ok(None)
+            }
+            Setting::Automatic => attach(app, None).map(Some),
+            Setting::In(language) => attach(app, Some(language)).map(Some),
+        }
+    }
+}
+
+/// Whether a window checking in `current` should [`Setting::apply`] again because the document
+/// has grown into another language — the first sentences typed into an empty window deciding
+/// it rather than the desktop's language. Only while the setting is automatic and the language
+/// only a guess, and only below [`grind_text::spell::GUESS_SAMPLE`] words, past which a guess
+/// cannot change; `words` is the document's count, which every shell already has for its
+/// status bar.
+pub fn reguess(app: &App, setting: Setting, current: Choice, words: usize) -> bool {
+    let guessing = matches!(current.source, Source::Guessed | Source::Default);
+    if setting != Setting::Automatic || !guessing || words > grind_text::spell::GUESS_SAMPLE {
+        return false;
+    }
+    choose(app, None)
+        .is_ok_and(|now| now.language != current.language && now.source == Source::Guessed)
+}
+
 /// [`attach`] in the document's own language, unless a dictionary is attached already — what a
 /// shell with no spelling interface of its own calls before it lints, so its problems pane lists
 /// misspellings too. Quietly does nothing when there is nothing to check in.
@@ -398,6 +477,52 @@ mod tests {
         let wrong = app.misspellings(0..2);
         assert_eq!(wrong.len(), 1);
         assert_eq!(wrong[0].word, "Fehller");
+    }
+
+    #[test]
+    fn a_setting_round_trips_through_its_tag_and_off_detaches() {
+        for setting in Setting::ALL {
+            assert_eq!(Setting::from_tag(setting.tag()), Some(setting));
+        }
+        for language in Language::ALL {
+            assert!(
+                Setting::ALL.contains(&Setting::In(language)),
+                "{language:?}"
+            );
+        }
+        assert_eq!(Setting::from_tag("de"), Some(Setting::In(Language::German)));
+        assert_eq!(Setting::from_tag("klingon"), None);
+        let app = App::new();
+        assert!(Setting::Automatic.apply(&app).unwrap().is_some());
+        assert!(app.spelling_language().is_some());
+        assert!(Setting::Off.apply(&app).unwrap().is_none());
+        assert_eq!(app.spelling_language(), None);
+    }
+
+    #[test]
+    fn a_guess_is_reconsidered_as_the_document_grows_and_a_choice_never_is() {
+        let app = App::new();
+        let (first, _) = attach(&app, Some(Language::English)).unwrap();
+        let guessed = Choice {
+            source: Source::Default,
+            ..first
+        };
+        app.insert(
+            0,
+            BlockKind::Paragraph,
+            "Das ist ein Haus mit einem roten Dach.",
+        )
+        .unwrap();
+        assert!(reguess(&app, Setting::Automatic, guessed, 8));
+        assert!(
+            !reguess(&app, Setting::Automatic, first, 8),
+            "a named language stays"
+        );
+        assert!(!reguess(&app, Setting::In(Language::English), guessed, 8));
+        assert!(
+            !reguess(&app, Setting::Automatic, guessed, 10_000),
+            "past the sample"
+        );
     }
 
     #[test]
