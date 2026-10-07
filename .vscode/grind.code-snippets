@@ -111,6 +111,14 @@
     "prefix": "border",
     "scope": "rhai"
   },
+  "categories(chart: Chart, range: string) -> Chart": {
+    "body": [
+      "categories(${1:range})"
+    ],
+    "description": "The labels along the category axis, or a pie's slice names — `\"A2:A9\"`.",
+    "prefix": "categories",
+    "scope": "rhai"
+  },
   "cell(document: Built, address: string) -> Cell": {
     "body": [
       "cell(${1:address})"
@@ -119,12 +127,36 @@
     "prefix": "cell",
     "scope": "rhai"
   },
+  "chart(kind: string) -> Chart": {
+    "body": [
+      "chart(${1:kind})"
+    ],
+    "description": "A chart — `\"bar\"`, `\"line\"` or `\"pie\"` — not yet on any sheet.\n\nGive it `.series(…)` and put it on a sheet with `s.chart(…)`. Ranges are\naddresses, `\"B2:B9\"` on the sheet it is put on or `\"Data.B2:B9\"` on another.",
+    "prefix": "chart",
+    "scope": "rhai"
+  },
+  "chart(sheet: Sheet, chart: Chart) -> Sheet": {
+    "body": [
+      "chart(${1:chart})"
+    ],
+    "description": "Put a chart on this sheet.\n\nPlaced after every sheet of the document has been filled, so it may chart\ncells on any of them.",
+    "prefix": "chart",
+    "scope": "rhai"
+  },
   "color(style: Style, color: string) -> Style": {
     "body": [
       "color(${1:color})"
     ],
     "description": "`fo:color` — a palette name (`navy`, `red`, `silver`, …), `#rrggbb`, or\n`transparent`.",
     "prefix": "color",
+    "scope": "rhai"
+  },
+  "colors(chart: Chart, colors: array) -> Chart": {
+    "body": [
+      "colors(${1:colors})"
+    ],
+    "description": "Colours in the order of the series — or of the slices, for a pie. Palette names\n(`navy`, `teal`, …) or `#rrggbb`. Fewer than there are series is fine: the rest\ntake the default cycle.",
+    "prefix": "colors",
     "scope": "rhai"
   },
   "decimals(format: Format, decimals: int) -> Format": {
@@ -223,6 +255,14 @@
     "prefix": "value",
     "scope": "rhai"
   },
+  "gridlines(chart: Chart) -> Chart": {
+    "body": [
+      "gridlines()"
+    ],
+    "description": "Rule gridlines across the plot from the value axis.",
+    "prefix": "gridlines",
+    "scope": "rhai"
+  },
   "grouping(format: Format) -> Format": {
     "body": [
       "grouping()"
@@ -287,6 +327,14 @@
     "prefix": "json",
     "scope": "rhai"
   },
+  "legend(chart: Chart, where: string) -> Chart": {
+    "body": [
+      "legend(${1:where})"
+    ],
+    "description": "Where the legend goes: `end`, `bottom`, `top`, `start`, or `none`.\n\nLeft unsaid, a chart with more than one thing to tell apart gets one at the end.",
+    "prefix": "legend",
+    "scope": "rhai"
+  },
   "lint(document: Built) -> array": {
     "body": [
       "lint()"
@@ -317,6 +365,14 @@
     ],
     "description": "A paragraph.\n\nThe text is read in the notation the whole suite types in: `**bold**`,\n`_italic_`, `` `code` ``.",
     "prefix": "para",
+    "scope": "rhai"
+  },
+  "position(chart: Chart, x: string, y: string) -> Chart": {
+    "body": [
+      "position(${1:x}, ${2:y})"
+    ],
+    "description": "Where the chart's top-left corner sits on the sheet, as two ODF lengths from\nthe sheet's own corner — `.position(\"0cm\", \"6cm\")`.",
+    "prefix": "position",
     "scope": "rhai"
   },
   "push(document: Spreadsheet, sheet: Sheet) -> Spreadsheet": {
@@ -359,6 +415,22 @@
     "prefix": "rows",
     "scope": "rhai"
   },
+  "series(chart: Chart, values: string) -> Chart": {
+    "body": [
+      "series(${1:values})"
+    ],
+    "description": "One series of numbers to draw — `\"B2:B9\"`. Say it again for another.",
+    "prefix": "series",
+    "scope": "rhai"
+  },
+  "series(chart: Chart, values: string, name: string) -> Chart": {
+    "body": [
+      "series(${1:values}, ${2:name})"
+    ],
+    "description": "One series, with the cell that names it — `.series(\"B2:B9\", \"B1\")`.\n\nThe name is an *address*, as in a spreadsheet, so the legend follows the cell.",
+    "prefix": "series",
+    "scope": "rhai"
+  },
   "set(sheet: Sheet, at: string, value: ?) -> Sheet": {
     "body": [
       "set(${1:at}, ${2:value})"
@@ -373,6 +445,14 @@
     ],
     "description": "A sheet, not yet in any document.\n\nReturning one *is* a one-sheet spreadsheet, so a script that builds one sheet\nmay end with it rather than with a `spreadsheet()` around it.",
     "prefix": "sheet",
+    "scope": "rhai"
+  },
+  "size(chart: Chart, width: string, height: string) -> Chart": {
+    "body": [
+      "size(${1:width}, ${2:height})"
+    ],
+    "description": "How big the chart is, as two ODF lengths — `.size(\"16cm\", \"9cm\")`.",
+    "prefix": "size",
     "scope": "rhai"
   },
   "size(style: Style, size: string) -> Style": {
@@ -439,6 +519,14 @@
     "prefix": "text",
     "scope": "rhai"
   },
+  "title(chart: Chart, text: string) -> Chart": {
+    "body": [
+      "title(${1:text})"
+    ],
+    "description": "The chart's own title, drawn above it.",
+    "prefix": "title",
+    "scope": "rhai"
+  },
   "valign(style: Style, align: string) -> Style": {
     "body": [
       "valign(${1:align})"
@@ -461,6 +549,22 @@
     ],
     "description": "`fo:wrap-option` — wrap the text inside the cell.",
     "prefix": "wrap",
+    "scope": "rhai"
+  },
+  "x_label(chart: Chart, text: string) -> Chart": {
+    "body": [
+      "x_label(${1:text})"
+    ],
+    "description": "A title for the category axis.",
+    "prefix": "x_label",
+    "scope": "rhai"
+  },
+  "y_label(chart: Chart, text: string) -> Chart": {
+    "body": [
+      "y_label(${1:text})"
+    ],
+    "description": "A title for the value axis.",
+    "prefix": "y_label",
     "scope": "rhai"
   }
 }

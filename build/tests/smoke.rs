@@ -346,3 +346,76 @@ fn a_runaway_script_stops() {
     assert!(message.starts_with("model.rhai:2:"), "{message}");
     assert!(message.contains("operations"), "{message}");
 }
+
+/// A chart is `chart-add`'s vocabulary, placed after every sheet exists — so the first sheet may
+/// chart the second, and an unqualified range means the sheet the chart is on.
+#[test]
+fn a_chart_reads_its_own_sheet_or_another() {
+    let app = spreadsheet(
+        r##"
+        let summary = sheet("Summary");
+        summary.push(["Month", "Sales"]);
+        summary.push(["Jan", 10]);
+        summary.push(["Feb", 12]);
+        summary.chart(chart("line")
+            .title("Sales")
+            .categories("A2:A3")
+            .series("B2:B3", "B1")
+            .series("Data.A1:A2")
+            .legend("bottom")
+            .y_label("EUR")
+            .gridlines()
+            .colors(["navy", "#ff8800"])
+            .position("1cm", "2cm")
+            .size("12cm", "6cm"));
+        let data = sheet("Data");
+        data.push([3]);
+        data.push([4]);
+        data.chart(chart("pie").series("A1:A2").colors(["teal"]));
+        let book = spreadsheet();
+        book.push(summary);
+        book.push(data);
+        book
+        "##,
+    );
+    let charts = app.charts(0).unwrap();
+    assert_eq!(charts.len(), 1);
+    let line = &charts[0];
+    assert_eq!(line.kind, grind_sheet::ChartKind::Line);
+    assert_eq!(line.title.as_deref(), Some("Sales"));
+    assert_eq!(line.categories.as_deref(), Some("Summary.A2:Summary.A3"));
+    assert_eq!(line.series[0].values, "Summary.B2:Summary.B3");
+    assert_eq!(
+        line.series[0].label.as_deref(),
+        Some("Summary.B1:Summary.B1")
+    );
+    assert_eq!(line.series[1].values, "Data.A1:Data.A2");
+    assert_eq!(line.legend, Some(grind_sheet::ChartLegend::Bottom));
+    assert_eq!(line.y_axis.label.as_deref(), Some("EUR"));
+    assert!(line.y_axis.gridlines);
+    assert_eq!(
+        (
+            line.x.as_str(),
+            line.y.as_str(),
+            line.width.as_str(),
+            line.height.as_str()
+        ),
+        ("1cm", "2cm", "12cm", "6cm")
+    );
+    assert_eq!(line.series[0].color.as_deref(), Some("#001f3f"));
+    assert_eq!(line.series[1].color.as_deref(), Some("#ff8800"));
+
+    let pie = &app.charts(1).unwrap()[0];
+    assert_eq!(pie.series[0].values, "Data.A1:Data.A2");
+    assert_eq!(pie.series[0].point_colors, vec![Some("#39cccc".to_owned())]);
+    // Unsaid, a pie gets a legend: it has slices to tell apart.
+    assert_eq!(pie.legend, Some(grind_sheet::ChartLegend::End));
+}
+
+#[test]
+fn a_chart_with_nothing_to_draw_says_so() {
+    let message = error(r#"let s = sheet("S"); s.push([1]); s.chart(chart("bar")); s"#);
+    assert!(message.contains("at least one .series"), "{message}");
+    let message = error(r#"chart("donut")"#);
+    assert!(message.contains("bar, a line or a pie"), "{message}");
+}

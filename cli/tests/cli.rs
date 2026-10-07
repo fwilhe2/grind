@@ -716,6 +716,31 @@ fn building_the_same_script_twice_produces_the_same_bytes() {
     );
 }
 
+/// `examples/loc/` is the generator's showcase: a spreadsheet kept in git as a **build
+/// product**, rebuilt from `history.json` at every release by `update.sh`. Two promises, both
+/// checked here: the script's own tests pass, and the committed `loc.fods` is exactly what the
+/// script builds today — so a change to the writer, or to the script, cannot leave the demo
+/// showing something the code no longer produces.
+#[test]
+fn the_lines_of_code_spreadsheet_is_current() {
+    let script = s(&example("loc/loc.rhai"));
+    let json = succeeds(grind(&["--format", "json", "test", &script]), &[]);
+    assert_eq!(field(&json, "failed"), "0");
+
+    let dir = Sandbox::new("loc");
+    let out = dir.path("loc.fods");
+    ok_top(&["build", &script, "-o", &s(&out)]);
+    // Three charts, each on the sheet it reads: LibreOffice draws one reading a *later* sheet
+    // as empty (`examples/loc/loc.rhai`'s header says why).
+    assert!(ok(&["chart-list", &s(&out), "Growth"]).lines().count() == 2);
+    assert!(ok(&["chart-list", &s(&out), "Crates"]).lines().count() == 1);
+    assert!(
+        std::fs::read(&out).unwrap() == std::fs::read(example("loc/loc.fods")).unwrap(),
+        "examples/loc/loc.fods is not what examples/loc/loc.rhai builds — run \
+         `GRIND=target/debug/grind examples/loc/update.sh --rebuild` and commit the result"
+    );
+}
+
 /// The kind comes from what the script *returned*, never from the output's name — the same
 /// rule `grind_core::kind` follows on the way in.
 #[test]

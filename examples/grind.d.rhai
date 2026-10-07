@@ -51,13 +51,33 @@ fn bookmark(document: Text, name: string) -> Text;
 /// All four edges — a width, a line and a colour: `"0.5pt solid navy"`.
 fn border(style: Style, border: string) -> Style;
 
+/// The labels along the category axis, or a pie's slice names — `"A2:A9"`.
+fn categories(chart: Chart, range: string) -> Chart;
+
 /// One cell of the built spreadsheet, by address — `"B6"` on the first sheet, or
 /// `"Summary.B6"`. Read after the document was recalculated.
 fn cell(document: Built, address: string) -> Cell;
 
+/// A chart — `"bar"`, `"line"` or `"pie"` — not yet on any sheet.
+///
+/// Give it `.series(…)` and put it on a sheet with `s.chart(…)`. Ranges are
+/// addresses, `"B2:B9"` on the sheet it is put on or `"Data.B2:B9"` on another.
+fn chart(kind: string) -> Chart;
+
+/// Put a chart on this sheet.
+///
+/// Placed after every sheet of the document has been filled, so it may chart
+/// cells on any of them.
+fn chart(sheet: Sheet, chart: Chart) -> Sheet;
+
 /// `fo:color` — a palette name (`navy`, `red`, `silver`, …), `#rrggbb`, or
 /// `transparent`.
 fn color(style: Style, color: string) -> Style;
+
+/// Colours in the order of the series — or of the slices, for a pie. Palette names
+/// (`navy`, `teal`, …) or `#rrggbb`. Fewer than there are series is fine: the rest
+/// take the default cycle.
+fn colors(chart: Chart, colors: array) -> Chart;
 
 /// Fraction digits, 0 to 255. Exactly this many, never "up to".
 fn decimals(format: Format, decimals: int) -> Format;
@@ -102,6 +122,9 @@ fn get rows(_: Sheet) -> int;
 /// What the cell holds: a number, a string, a bool, or `()` when it is empty.
 fn get value(_: Cell) -> ?;
 
+/// Rule gridlines across the plot from the value axis.
+fn gridlines(chart: Chart) -> Chart;
+
 /// Thousands separators.
 fn grouping(format: Format) -> Format;
 
@@ -134,6 +157,11 @@ fn item(document: Text, depth: int, text: string) -> Text;
 /// are all refused. Reading the same file twice is free.
 fn json(name: string) -> ?;
 
+/// Where the legend goes: `end`, `bottom`, `top`, `start`, or `none`.
+///
+/// Left unsaid, a chart with more than one thing to tell apart gets one at the end.
+fn legend(chart: Chart, where: string) -> Chart;
+
 /// Every error and warning `grind lint` would report, one string each —
 /// `assert(d.lint().is_empty())` is a document that contradicts itself nowhere.
 fn lint(document: Built) -> array;
@@ -152,6 +180,10 @@ fn name(sheet: Sheet, name: string, target: string) -> Sheet;
 /// The text is read in the notation the whole suite types in: `**bold**`,
 /// `_italic_`, `` `code` ``.
 fn para(document: Text, text: string) -> Text;
+
+/// Where the chart's top-left corner sits on the sheet, as two ODF lengths from
+/// the sheet's own corner — `.position("0cm", "6cm")`.
+fn position(chart: Chart, x: string, y: string) -> Chart;
 
 /// Append a sheet. Sheets appear in the document in the order pushed.
 fn push(document: Spreadsheet, sheet: Sheet) -> Spreadsheet;
@@ -174,6 +206,14 @@ fn row(cells: array) -> Row;
 /// How many rows have been written — where the next `push` will land.
 fn rows(sheet: Sheet) -> int;
 
+/// One series of numbers to draw — `"B2:B9"`. Say it again for another.
+fn series(chart: Chart, values: string) -> Chart;
+
+/// One series, with the cell that names it — `.series("B2:B9", "B1")`.
+///
+/// The name is an *address*, as in a spreadsheet, so the legend follows the cell.
+fn series(chart: Chart, values: string, name: string) -> Chart;
+
 /// One cell at one address — `s.set("B7", 1800)`. A range is an error.
 ///
 /// A `set` below the rows pushed so far moves the next `push` under it, so mixing
@@ -188,6 +228,9 @@ fn sheet(name: string) -> Sheet;
 
 /// `fo:font-size` — an ODF length, `"9pt"`.
 fn size(style: Style, size: string) -> Style;
+
+/// How big the chart is, as two ODF lengths — `.size("16cm", "9cm")`.
+fn size(chart: Chart, width: string, height: string) -> Chart;
 
 /// An empty document. Push a sheet into it, and return it at the end of the script.
 fn spreadsheet() -> Spreadsheet;
@@ -218,6 +261,9 @@ fn symbol(format: Format, symbol: string) -> Format;
 /// return it at the end of the script.
 fn text() -> Text;
 
+/// The chart's own title, drawn above it.
+fn title(chart: Chart, text: string) -> Chart;
+
 /// `style:vertical-align` — `top`, `middle` or `bottom`.
 fn valign(style: Style, align: string) -> Style;
 
@@ -228,5 +274,11 @@ fn width(sheet: Sheet, columns: string, length: string) -> Sheet;
 
 /// `fo:wrap-option` — wrap the text inside the cell.
 fn wrap(style: Style) -> Style;
+
+/// A title for the category axis.
+fn x_label(chart: Chart, text: string) -> Chart;
+
+/// A title for the value axis.
+fn y_label(chart: Chart, text: string) -> Chart;
 
 

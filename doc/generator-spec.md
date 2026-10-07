@@ -274,6 +274,7 @@ not a copy.
 | `format(kind)` | `Format` | §3.4's vocabulary. Errors on an unknown kind |
 | `formula(source)` | `Cell` | display syntax, validated (§3.2) |
 | `sum_above()` | `Cell` | resolved where it lands (§6.3) |
+| `chart(kind)` | `Chart` | `bar`, `line` or `pie`, not yet on any sheet (§4.7) |
 
 ### 4.2 `Spreadsheet`
 
@@ -294,6 +295,7 @@ not a copy.
 | `s.width(cols, length)` | `Sheet` | column widths. `"A"` and `"A:A"` mean the same run of one |
 | `s.height(rows, length)` | `Sheet` | row heights, the same way |
 | `s.name(name, target)` | `Sheet` | a named range (`"B2:B7"`) or a named expression (`"=MAX(budgeted)"`). Document-level in ODF, said on the sheet whose cells it names, and written out qualified with that sheet (§6.6) |
+| `s.chart(chart)` | `Sheet` | put a `Chart` on this sheet. Placed after **every** sheet is filled (§6.8), so it may read any of them |
 | `s.rows()`, `s.rows` | an integer | how many rows have been written — where the next `push` will land |
 | `s.at(row, col)` | an address | §3.3. Errors on a negative index |
 
@@ -342,6 +344,31 @@ here; the projection spells one part by part and this deliberately does not (`do
 
 `format("general")` is the *absence* of a format. Using it where a format is required is an
 error rather than a silent no-op: a script asking for no format should leave the cells alone.
+
+### 4.7 `Chart`
+
+`grind sheet chart-add`'s vocabulary, one method per flag, each returning a changed copy so they
+chain. What a chart *is* goes through `App::add_chart` exactly as the CLI's and the chart
+dialog's do; its colours go through `App::set_chart_style`, the call behind `chart-style`. A
+range is an address (§3.3) — unqualified, the sheet the chart is put on; `Data.B2:B9`, another.
+
+| Call | Meaning |
+|---|---|
+| `c.title(text)` | the chart's own title |
+| `c.categories(range)` | the labels along the category axis, or a pie's slice names |
+| `c.series(values)` | one series of numbers. Say it again for another; a chart with none is an error when it is placed |
+| `c.series(values, name)` | the same, with the **cell** that names it — an address, so the legend follows the cell |
+| `c.legend(where)` | `end`, `bottom`, `top`, `start` or `none`. Unsaid, a chart with more than one thing to tell apart gets one at the end — `ChartSpec::default_legend`'s rule |
+| `c.x_label(text)` | a title for the category axis |
+| `c.y_label(text)` | a title for the value axis |
+| `c.gridlines()` | gridlines across the plot from the value axis |
+| `c.position(x, y)` | the frame's top-left corner, two ODF lengths from the sheet's own; `0cm 0cm` unsaid |
+| `c.size(width, height)` | the frame, two ODF lengths; `10cm × 8cm` unsaid |
+| `c.colors(colours)` | an array of §3.4 colours, one per series — or one per slice, for a pie. Fewer is fine: the rest take the default cycle |
+
+A chart is placed **in lengths, not cells**, because that is what ODF's `draw:frame` stores. A
+script that puts one under a table sets the table's row heights and adds them up;
+`examples/loc/loc.rhai` does.
 
 ---
 
@@ -433,6 +460,18 @@ build does not implement is left as the script wrote it, with a warning on stder
 Then the document is written in the form the output's extension names — including `.grind`,
 because the projection is a form and not an export.
 
+### 6.8 Charts
+
+Charts are placed **last of all**, after every sheet has been filled and decorated, because a
+chart may read any sheet and the sheets are created in order. Within that pass the order is the
+document's sheets and then the script's.
+
+One thing this does not fix, because it is not the generator's: LibreOffice draws a chart whose
+ranges are on a *later* sheet as empty — it resolves them while loading, before that sheet
+exists, and this build writes no cached copy of the data for it to fall back on
+(`doc/chart-format.md`). A script that wants its charts drawn everywhere puts each one on the
+sheet it reads, or after it.
+
 ---
 
 ## 7. What has no spelling here
@@ -444,7 +483,7 @@ and a script that needs one writes the document and then runs `grind` on it.
 | Not sayable | Instead | Why |
 |---|---|---|
 | A **date or time value** (a number carrying `NumberKind`) | `=DATE(2026;8;16)` under `format("date")` | `App::enter` reads `2026-08-16` as a date only in a cell already known to hold one, which a cell being generated is not. `examples/sample-sheet.sh` writes one the same way |
-| **Charts** | `grind sheet chart-add` | expressible, verbose, and nobody hand-writes one — the projection carries them for bijectivity, which a generator does not need |
+| A chart's **per-bar colours**, its axes' tick labels, a pie's direction | `grind sheet chart-style` / `chart-edit` | §4.7 says what a chart *is* and a colour per series; the rest of a chart's style has not been asked for. (Charts themselves were here until `examples/loc/` wanted a generated spreadsheet with a graph in it) |
 | **Filters**, hidden rows and columns | `grind sheet filter` / `hide` | a view of a document rather than its content |
 | **Conditional-format rules** | `grind sheet rule` | new (2026-10-05); the projection's `rule` node is the spelling a host function would take, and none has been asked for yet |
 | The **null date**, the null year | — | a document-level setting no generated document has yet wanted |
