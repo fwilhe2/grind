@@ -64,6 +64,9 @@ pub enum Key {
     F3,
     /// Go to an address — the name box's key, and Excel's.
     F5,
+    /// The next misspelt word — Word's spelling key since the first Windows version, and the
+    /// text pane's (`doc/spelling.md`).
+    F7,
     /// Check the document — the "next problem" key every IDE has, and the one every shell in
     /// this suite binds "Check Document" to (`doc/sheet-shell.md`'s palette, `ui_text_gtk`'s own
     /// accelerator).
@@ -119,6 +122,7 @@ const VK_DELETE: u32 = 0x2e;
 const VK_F2: u32 = 0x71;
 const VK_F3: u32 = 0x72;
 const VK_F5: u32 = 0x74;
+const VK_F7: u32 = 0x76;
 const VK_F8: u32 = 0x77;
 const VK_F9: u32 = 0x78;
 
@@ -145,6 +149,7 @@ pub fn key_for(vk: u32) -> Key {
         VK_F2 => Key::F2,
         VK_F3 => Key::F3,
         VK_F5 => Key::F5,
+        VK_F7 => Key::F7,
         VK_F8 => Key::F8,
         VK_F9 => Key::F9,
         0x30..=0x39 | 0x41..=0x5a => Key::Char(char::from(vk as u8)),
@@ -254,6 +259,7 @@ mod tests {
             (VK_F2, vk::VK_F2, "VK_F2"),
             (VK_F3, vk::VK_F3, "VK_F3"),
             (VK_F5, vk::VK_F5, "VK_F5"),
+            (VK_F7, vk::VK_F7, "VK_F7"),
             (VK_F8, vk::VK_F8, "VK_F8"),
             (VK_F9, vk::VK_F9, "VK_F9"),
         ] {

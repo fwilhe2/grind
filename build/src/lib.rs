@@ -55,6 +55,7 @@
 //! [`test`](mod@test) is the other verb, D8: the same script built the same way, recalculated, and its
 //! `test_` functions called with the result.
 
+pub mod chart;
 pub mod data;
 pub mod engine;
 pub mod hint;

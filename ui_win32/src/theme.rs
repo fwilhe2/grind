@@ -301,6 +301,11 @@ pub struct Theme {
     /// knowing which it is drawn on.
     pub focus: Rgb,
     pub focus_inner: Rgb,
+
+    /// A misspelt word's squiggle in the text pane (`doc/spelling.md`) — Fluent's
+    /// *SystemFillColorCritical*, the one place this shell paints an error red, since a word
+    /// marked wrong is exactly the error that colour says.
+    pub misspelt: Rgb,
 }
 
 /// The light palette — Fluent 2's light neutrals, composited (see the module comment).
@@ -331,6 +336,7 @@ const LIGHT: Theme = Theme {
     hint_text: Rgb(0x1a, 0x1a, 0x1a),
     focus: Rgb(0x1a, 0x1a, 0x1a),
     focus_inner: Rgb(0xff, 0xff, 0xff),
+    misspelt: Rgb(0xc4, 0x2b, 0x1c),
 };
 
 /// The dark palette. Not an inversion of the light one: the grid lines are *lighter* than the
@@ -367,6 +373,7 @@ const DARK: Theme = Theme {
     hint_text: Rgb(0xf2, 0xf2, 0xf2),
     focus: Rgb(0xff, 0xff, 0xff),
     focus_inner: Rgb(0x00, 0x00, 0x00),
+    misspelt: Rgb(0xff, 0x99, 0xa4),
 };
 
 /// What colour `doc/view-modes.md`'s role overlay draws each [`grind_sheet::view::CellRole`] in

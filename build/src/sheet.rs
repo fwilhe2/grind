@@ -66,6 +66,7 @@ use grind_sheet::style::CellStyle;
 use grind_sheet::{App, CellValue, Pos, a1, numfmt, style};
 use rhai::{Array, Dynamic, Engine, EvalAltResult};
 
+use crate::chart::Chart;
 use crate::hint::{hint, hint_get};
 
 /// What a host function hands back — a value, or a message with the script's position on it.
@@ -137,6 +138,9 @@ enum Op {
         name: String,
         target: String,
     },
+    /// Placed after *every* sheet is filled, not in this sheet's own decoration pass: a chart
+    /// may read another sheet, which may come later in the document.
+    Chart(Chart),
 }
 
 /// What one cell of a pushed row is. Everything but the last is decided when the script says
@@ -781,6 +785,10 @@ impl Sheet {
         });
     }
 
+    pub(crate) fn chart(&mut self, chart: Chart) {
+        self.0.borrow_mut().ops.push(Op::Chart(chart));
+    }
+
     fn name(&mut self, name: &str, target: &str) {
         self.0.borrow_mut().ops.push(Op::Name {
             name: name.to_owned(),
@@ -980,6 +988,14 @@ pub fn materialise(book: &Book) -> Result<App, String> {
         }
         styles.apply(&app, index)?;
     }
+    // Charts last, once every sheet they might read exists (`crate::chart`).
+    for (index, sheet) in sheets.iter().enumerate() {
+        for op in &sheet.0.borrow().ops {
+            if let Op::Chart(chart) = op {
+                chart.place(&app, index)?;
+            }
+        }
+    }
     Ok(app)
 }
 
@@ -1131,7 +1147,7 @@ fn decoration(app: &App, sheet: usize, op: &Op, styles: &mut Layered) -> Result<
         }
     };
     match op {
-        Op::Cell { .. } => Ok(()),
+        Op::Cell { .. } | Op::Chart(_) => Ok(()),
         Op::Format { range, format } => {
             let (sheet, start, end) = place(range)?;
             app.set_format(sheet, start, end, Some(format.clone()))

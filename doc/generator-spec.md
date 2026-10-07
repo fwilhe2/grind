@@ -100,11 +100,13 @@ kill.
 |---|---|---|---|
 | `MAX_OPERATIONS` | `10_000_000` | a script runs too long — a loop that never ends, or a real script far larger than any document needs | *Too many operations* |
 | `MAX_CALL_DEPTH` | `64` | a function recurses without bottoming out | *Stack overflow* |
+| `MAX_EXPR_DEPTH` | `64` | one expression at a script's top level nests deeper than this | *Expression exceeds maximum complexity* |
+| `MAX_FUNCTION_EXPR_DEPTH` | `32` | the same, inside a `fn`. Both are Rhai's release-build defaults, stated because its debug build halves them — and a script must not build with one `grind` and fail with another | *Expression exceeds maximum complexity* |
 | `MAX_STRING` | `1_000_000` | a string grows past a megabyte; `s += s` doubles, so this is what the operation limit alone would not catch | *String too large* |
 | `MAX_ARRAY` | `1_000_000` | an array or an object map grows past a million entries | *Array too large* / *Map too large* |
 
 Two more bounds belong to the *document* rather than to the language and are §6.5's, and two
-belong to the data a script reads and are §3.5's. All eight are read out of the source by
+belong to the data a script reads and are §3.5's. All ten are read out of the source by
 `build/tests/spec.rs`, so a number here is the number the build uses.
 
 `examples/budget.rhai` uses on the order of four thousand operations, which is the scale these

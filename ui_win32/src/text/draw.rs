@@ -130,6 +130,29 @@ mod windows_impl {
         /// is where the reader lives, the same list `grind text view --names` prints, and this is
         /// that list drawn beside the text it anchors rather than spliced into it.
         pub names: bool,
+        /// The misspelt words in the blocks on screen (`App::misspellings`), less the one still
+        /// being typed — drawn as a squiggle under each. Empty with spelling off.
+        pub misspelt: &'a [grind_text::Misspelling],
+    }
+
+    /// A wavy line from `left` to `right` with its crests at `top`: steps of `step` pixels,
+    /// alternately up and down, each a filled square — `FillRect` is the one primitive this
+    /// painter trusts to land on the same pixels at every DPI, and a pen's diagonal does not.
+    fn squiggle(dc: HDC, left: f64, right: f64, top: f64, step: f64, ink: crate::theme::Rgb) {
+        let step = step.max(1.0).round() as i32;
+        let (left, right, top) = (
+            left.round() as i32,
+            right.round() as i32,
+            top.round() as i32,
+        );
+        let mut x = left;
+        let mut down = false;
+        while x < right {
+            let y = top + if down { step } else { 0 };
+            gdi::fill(dc, x, y, (x + step).min(right), y + step, ink);
+            x += step;
+            down = !down;
+        }
     }
 
     /// Draw one frame of the document onto `dc`.
@@ -331,6 +354,31 @@ mod windows_impl {
                             segment,
                             piece.props,
                             ink,
+                        );
+                    }
+                }
+
+                // A misspelt word's squiggle, under each line it crosses — `band` is the
+                // selection's own arithmetic, so a word that wraps is marked on both lines
+                // exactly where its characters are.
+                for wrong in frame
+                    .misspelt
+                    .iter()
+                    .filter(|m| m.block == painted.slot.index)
+                {
+                    if let Some((left, right)) = band(
+                        &painted.layout,
+                        line,
+                        wrong.offset,
+                        wrong.offset + wrong.len,
+                    ) {
+                        squiggle(
+                            dc,
+                            x + f64::from(left),
+                            x + f64::from(right),
+                            line_top + f64::from(line.height) - scale(3.0, page.dpi),
+                            scale(2.0, page.dpi),
+                            theme.misspelt,
                         );
                     }
                 }

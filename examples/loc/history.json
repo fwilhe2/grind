@@ -1,0 +1,196 @@
+{
+  "snapshots": [
+    {
+      "commit": "bb34e3c",
+      "date": "2026-08-16",
+      "time": "2026-08-16T22:57:39+02:00",
+      "tag": "",
+      "files": 49,
+      "tests": 3342,
+      "crates": {
+        "cli": 1890,
+        "core": 13413,
+        "ui_gtk": 989
+      },
+      "docs": 1909
+    },
+    {
+      "commit": "2cef6f9",
+      "date": "2026-08-23",
+      "time": "2026-08-23T20:40:58+02:00",
+      "tag": "",
+      "files": 90,
+      "tests": 6066,
+      "crates": {
+        "cli": 3153,
+        "core": 1591,
+        "sheet": 18435,
+        "text": 3276,
+        "ui_gtk": 8814,
+        "ui_tui": 921,
+        "ui_web": 1531
+      },
+      "docs": 3766
+    },
+    {
+      "commit": "8bf5d29",
+      "date": "2026-08-30",
+      "time": "2026-08-30T21:45:57+02:00",
+      "tag": "",
+      "files": 152,
+      "tests": 11840,
+      "crates": {
+        "cli": 4843,
+        "core": 3799,
+        "sheet": 25632,
+        "text": 10748,
+        "ui_sheet_gtk": 11693,
+        "ui_text_gtk": 3880,
+        "ui_tui": 4925,
+        "ui_web": 6529
+      },
+      "docs": 6622
+    },
+    {
+      "commit": "85e3f0e",
+      "date": "2026-09-05",
+      "time": "2026-09-05T21:03:11+02:00",
+      "tag": "",
+      "files": 168,
+      "tests": 13824,
+      "crates": {
+        "build": 2981,
+        "cli": 5906,
+        "core": 3944,
+        "sheet": 26832,
+        "text": 10908,
+        "ui_sheet_gtk": 12518,
+        "ui_text_gtk": 4049,
+        "ui_tui": 4956,
+        "ui_web": 6600
+      },
+      "docs": 8426
+    },
+    {
+      "commit": "307b278",
+      "date": "2026-09-13",
+      "time": "2026-09-13T18:59:58+02:00",
+      "tag": "",
+      "files": 210,
+      "tests": 14817,
+      "crates": {
+        "build": 2982,
+        "cli": 6325,
+        "core": 3944,
+        "sheet": 28102,
+        "text": 12602,
+        "ui_sheet_gtk": 12786,
+        "ui_text_gtk": 5451,
+        "ui_tui": 8716,
+        "ui_web": 8078,
+        "ui_win32": 18764
+      },
+      "docs": 11125
+    },
+    {
+      "commit": "4499e25",
+      "date": "2026-09-20",
+      "time": "2026-09-20T13:31:49+02:00",
+      "tag": "",
+      "files": 228,
+      "tests": 17190,
+      "crates": {
+        "build": 2986,
+        "cli": 6537,
+        "core": 3944,
+        "sheet": 28281,
+        "text": 12602,
+        "ui_sheet_gtk": 12786,
+        "ui_text_gtk": 5451,
+        "ui_tui": 8716,
+        "ui_web": 8078,
+        "ui_win32": 18764,
+        "xlsx": 7356
+      },
+      "docs": 11961
+    },
+    {
+      "commit": "85d19c0",
+      "date": "2026-09-27",
+      "time": "2026-09-27T18:17:40Z",
+      "tag": "",
+      "files": 252,
+      "tests": 19515,
+      "crates": {
+        "build": 3522,
+        "cli": 7131,
+        "core": 4335,
+        "sheet": 31400,
+        "suite": 6,
+        "text": 12862,
+        "ui_sheet_gtk": 15035,
+        "ui_text_gtk": 6561,
+        "ui_tui": 9495,
+        "ui_web": 8837,
+        "ui_win32": 22083,
+        "xlsx": 10566
+      },
+      "docs": 13008
+    },
+    {
+      "commit": "0231f52",
+      "date": "2026-10-04",
+      "time": "2026-10-04T23:09:47+02:00",
+      "tag": "",
+      "files": 370,
+      "tests": 22891,
+      "crates": {
+        "build": 3532,
+        "cli": 7954,
+        "core": 7746,
+        "print": 4292,
+        "sheet": 40641,
+        "suite": 6,
+        "text": 19932,
+        "ui_mac": 20497,
+        "ui_sheet_gtk": 15589,
+        "ui_text_gtk": 6546,
+        "ui_tui": 11379,
+        "ui_web": 10858,
+        "ui_web_print": 175,
+        "ui_win32": 22891,
+        "xlsx": 11950
+      },
+      "docs": 14629
+    },
+    {
+      "commit": "6e245dc",
+      "date": "2026-10-07",
+      "time": "2026-10-07T20:41:44+02:00",
+      "tag": "",
+      "files": 404,
+      "tests": 26788,
+      "crates": {
+        "build": 3538,
+        "cli": 8715,
+        "core": 8819,
+        "docx": 7236,
+        "ooxml": 1443,
+        "print": 4516,
+        "sheet": 43151,
+        "spell": 505,
+        "suite": 6,
+        "text": 22788,
+        "ui_mac": 20765,
+        "ui_sheet_gtk": 15988,
+        "ui_text_gtk": 7450,
+        "ui_tui": 12017,
+        "ui_web": 11136,
+        "ui_web_print": 175,
+        "ui_win32": 23237,
+        "xlsx": 11459
+      },
+      "docs": 15464
+    }
+  ]
+}

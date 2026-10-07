@@ -242,6 +242,38 @@ pub fn text_not_found(needle: &str) -> String {
     format!("“{needle}” is not in the document. Ctrl+F asks for another word.")
 }
 
+/// Where F7 landed: which misspelt word of how many, and what to do about it.
+pub fn misspelt(index: usize, count: usize, word: &str) -> String {
+    format!(
+        "{} of {}: “{word}” is not in the dictionary. Pick a spelling, or F7 for the next.",
+        index + 1,
+        count
+    )
+}
+
+/// F7 over a document with nothing misspelt in it.
+pub fn none_misspelt(language: &str) -> String {
+    format!("No misspelt words — checked in {language}.")
+}
+
+/// F7, or a right click, with spelling turned off.
+pub fn spelling_off() -> String {
+    "Spelling is off. View ▸ Spelling Language… turns it on.".to_owned()
+}
+
+/// Why a document is not being checked at all (`grind_spell::Unchecked`).
+pub fn spelling_unchecked(why: &str) -> String {
+    format!("Spelling is not checked: {why}.")
+}
+
+/// A word accepted from the spelling popup.
+pub fn accepted(word: &str, saved: Option<&str>) -> String {
+    match saved {
+        Some(path) => format!("“{word}” is in your dictionary now ({path})."),
+        None => format!("“{word}” is ignored until the window closes."),
+    }
+}
+
 /// What a replace did over the page: how many paragraphs changed.
 pub fn text_replaced(blocks: usize, needle: &str) -> String {
     match blocks {

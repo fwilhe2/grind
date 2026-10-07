@@ -64,10 +64,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow, DispatchMessageW,
     EN_CHANGE, EN_KILLFOCUS, ES_AUTOHSCROLL, GWLP_USERDATA, GetCursorPos, GetMessageW, GetParent,
     GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IDC_SIZENS,
-    IDC_SIZEWE, LoadCursorW, MF_BYCOMMAND, MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING,
-    MF_UNCHECKED, MSG, MoveWindow, PostMessageW, PostQuitMessage, RegisterClassW, SB_BOTTOM,
-    SB_HORZ, SB_LINEDOWN, SB_LINEUP, SB_PAGEDOWN, SB_PAGEUP, SB_THUMBPOSITION, SB_THUMBTRACK,
-    SB_TOP, SB_VERT, SCROLLINFO, SCROLLINFO_MASK, SIF_PAGE, SIF_POS, SIF_RANGE,
+    IDC_SIZEWE, LoadCursorW, MF_BYCOMMAND, MF_CHECKED, MF_GRAYED, MF_POPUP, MF_SEPARATOR,
+    MF_STRING, MF_UNCHECKED, MSG, MoveWindow, PostMessageW, PostQuitMessage, RegisterClassW,
+    SB_BOTTOM, SB_HORZ, SB_LINEDOWN, SB_LINEUP, SB_PAGEDOWN, SB_PAGEUP, SB_THUMBPOSITION,
+    SB_THUMBTRACK, SB_TOP, SB_VERT, SCROLLINFO, SCROLLINFO_MASK, SIF_PAGE, SIF_POS, SIF_RANGE,
     SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER,
     SendMessageW, SetCursor, SetMenu, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
     SystemParametersInfoW, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenuEx, TranslateMessage,
@@ -859,9 +859,58 @@ struct Text {
     /// gives a custom-painted window away. Repainting is guarded on the value actually changing,
     /// so an ordinary mouse move across the document costs one comparison.
     hover: Option<text::geom::StripHit>,
+    /// Spelling (`doc/spelling.md`): the session's choice in View ▸ Spelling Language…, what it
+    /// came to for this document, and the dictionary Ignore All adds to. `checked` is `None`
+    /// when nothing is checked, which is also when nothing is underlined.
+    spelling: grind_spell::Setting,
+    checked: Option<grind_spell::Choice>,
+    speller: Option<std::sync::Arc<grind_spell::Speller>>,
 }
 
 impl Text {
+    /// Attach what [`Text::spelling`] says to the document — on open and whenever the choice
+    /// changes. A document in a language with no dictionary says so on the notice bar rather
+    /// than having every word underlined.
+    fn check_spelling(&mut self) {
+        match self.spelling.apply(&self.app) {
+            Ok(Some((choice, speller))) => {
+                self.checked = Some(choice);
+                self.speller = Some(speller);
+            }
+            Ok(None) => {
+                self.checked = None;
+                self.speller = None;
+            }
+            Err(why) => {
+                self.checked = None;
+                self.speller = None;
+                self.say(Some(notice::spelling_unchecked(&why.to_string())));
+            }
+        }
+    }
+
+    /// While the language is only a guess, guess again as the document grows
+    /// (`grind_spell::reguess`) — the first sentences typed into a new document deciding it.
+    fn reconsider_spelling(&mut self) {
+        if let Some(choice) = self.checked
+            && matches!(
+                choice.source,
+                grind_spell::Source::Guessed | grind_spell::Source::Default
+            )
+            && grind_spell::reguess(&self.app, self.spelling, choice, self.app.counts().words)
+        {
+            self.check_spelling();
+        }
+    }
+
+    /// The misspelt word at `at` — `at` anywhere from its first character to just past its last.
+    fn misspelt_at(&self, at: Caret) -> Option<grind_text::Misspelling> {
+        self.app
+            .misspellings(at.block..at.block + 1)
+            .into_iter()
+            .find(|m| m.offset <= at.offset && at.offset <= m.offset + m.len)
+    }
+
     /// Rebuild the bands, the fonts if the monitor changed, and the flow.
     ///
     /// Everything measured is rebuilt from the document rather than scaled from the last answer,
@@ -1307,7 +1356,11 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
         needle: String::new(),
         hover: None,
         pressed: None,
+        spelling: grind_spell::Setting::Automatic,
+        checked: None,
+        speller: None,
     };
+    text.check_spelling();
     // The report's sentence on the notice bar, where a state the document is in belongs.
     if let Some(imported) = imported {
         text.imported = Some(imported.suggested);
@@ -2105,6 +2158,30 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
             y: y.round() as i32,
         },
     };
+    // Over a misspelt word the text pane's menu leads with what it might have been — the word
+    // under the pointer, or for the keyboard the one the caret is in.
+    if is_text(hwnd) && !is_welcome(hwnd) {
+        let keyboard = (x, y) == (-1.0, -1.0);
+        let mut client = at;
+        // SAFETY: `hwnd` is this window's and `client` is a live local.
+        unsafe {
+            let _ = ScreenToClient(hwnd, &mut client);
+        }
+        // SAFETY: one borrow, released before the popup.
+        let wrong = unsafe {
+            with_text(hwnd, |text| {
+                text.checked?;
+                let caret = match keyboard {
+                    true => text.caret,
+                    false => text.caret_at(f64::from(client.x), f64::from(client.y))?,
+                };
+                text.misspelt_at(caret)
+            })
+        }
+        .flatten();
+        spelling_popup(hwnd, at, wrong, commands);
+        return;
+    }
     // SAFETY: the popup is built and destroyed within this call, and `TrackPopupMenuEx` is the
     // one nested message loop in it — decision 7's rule, and nothing is borrowed across it.
     let picked = unsafe {
@@ -3711,6 +3788,8 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::ExportMarkdown
         | Command::ExportPdf
         | Command::PrintPreview
+        | Command::NextMisspelling
+        | Command::SpellingLanguage
         | Command::Print => {}
         Command::Shortcuts => show_shortcuts(hwnd),
         Command::About => dialog::about(hwnd),
@@ -4633,12 +4712,8 @@ fn lint(pane: &mut Pane) -> Option<grind_core::lint::Report> {
     let options = grind_core::lint::Options::default();
     match pane {
         Pane::Sheet(sheet) => Some(sheet.app.lint(&options)),
-        // Spelling as well, in the document's own language (`doc/spelling.md`): this pane
-        // draws no underlines yet, and Check Document is where the words show up instead.
-        Pane::Text(text) => {
-            grind_spell::ensure(&text.app);
-            Some(text.app.lint(&options))
-        }
+        // Spelling is in it, as `misspelt`, whenever a dictionary is attached.
+        Pane::Text(text) => Some(text.app.lint(&options)),
         Pane::Welcome(_) => None,
     }
 }
@@ -5327,6 +5402,197 @@ fn find_step(hwnd: HWND, towards: find::Towards) {
     }
 }
 
+/// F7 — select the next misspelt word after the caret, wrapping as F3 does
+/// (`grind_text::find::step`), and open the spelling popup on it.
+fn text_next_misspelling(hwnd: HWND) {
+    // SAFETY: one borrow, released before the popup's nested message loop.
+    let found = unsafe {
+        with_text(hwnd, |text| {
+            let Some(choice) = text.checked else {
+                text.say(Some(notice::spelling_off()));
+                return None;
+            };
+            let all = text.app.misspellings(0..usize::MAX);
+            let carets: Vec<Caret> = all.iter().map(|m| m.caret()).collect();
+            let (_, at) = text::keymap::ordered(text.anchor, text.caret);
+            let Some(index) = grind_text::find::step(&carets, at, grind_text::find::Towards::Next)
+            else {
+                text.say(Some(notice::none_misspelt(choice.language.name())));
+                return None;
+            };
+            let wrong = all[index].clone();
+            text.place(wrong.caret(), false);
+            text.place(
+                Caret {
+                    block: wrong.block,
+                    offset: wrong.offset + wrong.len,
+                },
+                true,
+            );
+            text.caret_on = true;
+            text.say(Some(notice::misspelt(index, all.len(), &wrong.word)));
+            Some(wrong)
+        })
+    }
+    .flatten();
+    text_refresh(hwnd);
+    let Some(wrong) = found else {
+        return;
+    };
+    // Under the word, where a right click on it would have opened the same popup.
+    let geometry = unsafe { with_text(hwnd, |text| text.caret_geometry()) }.flatten();
+    let mut at = match geometry {
+        Some((x, y, _, height)) => POINT { x, y: y + height },
+        None => POINT { x: 0, y: 0 },
+    };
+    // SAFETY: `hwnd` is this window's and `at` is a live local.
+    unsafe {
+        let _ = ClientToScreen(hwnd, &mut at);
+    }
+    spelling_popup(hwnd, at, Some(wrong), &[]);
+}
+
+/// View ▸ Spelling Language… — Automatic, a dictionary by name, or Off, in the listbox every
+/// other chooser here uses. The session's choice: the document's own language is read and never
+/// written (`doc/spelling.md`).
+fn text_spelling_language(hwnd: HWND) {
+    // SAFETY: one borrow, released before the dialog.
+    let Some(current) = (unsafe { with_text(hwnd, |text| text.spelling) }) else {
+        return;
+    };
+    let settings = grind_spell::Setting::ALL;
+    let items: Vec<String> = settings.iter().map(|s| s.label().to_owned()).collect();
+    let selected = settings.iter().position(|s| *s == current).unwrap_or(0);
+    let Some(choice) = dialog::choose(hwnd, "Spelling Language", &items, selected) else {
+        return;
+    };
+    // SAFETY: a fresh borrow, taken after the dialog has closed.
+    unsafe {
+        with_text(hwnd, |text| {
+            text.spelling = settings[choice];
+            text.say(None);
+            text.check_spelling();
+        });
+    }
+    text_refresh(hwnd);
+}
+
+/// A popup with a misspelt word's suggestions, Ignore All and Add to Dictionary on top, and
+/// `commands` under them — the text pane's context menu and F7's popup are this one function.
+/// `wrong` is `None` over a word spelled right, which leaves only the commands.
+fn spelling_popup(
+    hwnd: HWND,
+    at: POINT,
+    wrong: Option<grind_text::Misspelling>,
+    commands: &[Command],
+) {
+    // Asked before the popup opens: tens of milliseconds, and the core is not to be borrowed
+    // across a nested message loop (decision 7).
+    let offers: Vec<String> = match &wrong {
+        // SAFETY: one borrow; `suggest` dispatches nothing.
+        Some(wrong) => unsafe { with_text(hwnd, |text| text.app.suggest(&wrong.word)) }
+            .unwrap_or_default()
+            .into_iter()
+            .take(usize::from(menu::SPELLING_IDS - 2))
+            .collect(),
+        None => Vec::new(),
+    };
+    let ignore = menu::SPELLING_FIRST_ID + menu::SPELLING_IDS - 2;
+    let add = ignore + 1;
+    // SAFETY: the popup is built and destroyed within this call, and `TrackPopupMenuEx` is the
+    // one nested message loop in it — nothing is borrowed across it.
+    let picked = unsafe {
+        let Ok(popup) = CreatePopupMenu() else {
+            return;
+        };
+        let append = |flags, id: u16, label: &str| {
+            let label = gdi::wide(label);
+            let _ = AppendMenuW(popup, flags, usize::from(id), PCWSTR(label.as_ptr()));
+        };
+        if wrong.is_some() {
+            for (i, word) in offers.iter().enumerate() {
+                append(MF_STRING, menu::SPELLING_FIRST_ID + i as u16, word);
+            }
+            if offers.is_empty() {
+                append(MF_STRING | MF_GRAYED, 0, "No Suggestions");
+            }
+            let _ = AppendMenuW(popup, MF_SEPARATOR, 0, PCWSTR::null());
+            append(MF_STRING, ignore, "&Ignore All");
+            append(MF_STRING, add, "&Add to Dictionary");
+            if !commands.is_empty() {
+                let _ = AppendMenuW(popup, MF_SEPARATOR, 0, PCWSTR::null());
+            }
+        }
+        for command in commands {
+            if let Some(label) = menu::label_for(*command) {
+                append(MF_STRING, command.id(), label);
+            }
+        }
+        let result = TrackPopupMenuEx(
+            popup,
+            (TPM_RETURNCMD | TPM_RIGHTBUTTON).0,
+            at.x,
+            at.y,
+            hwnd,
+            None,
+        );
+        let _ = DestroyMenu(popup);
+        result.0 as u16
+    };
+    match (picked, wrong) {
+        (0, _) => {}
+        (id, Some(wrong)) if id == ignore || id == add => {
+            // SAFETY: a fresh borrow, taken after the popup has closed.
+            unsafe {
+                with_text(hwnd, |text| {
+                    let Some(speller) = text.speller.clone() else {
+                        return;
+                    };
+                    speller.accept(&wrong.word);
+                    let said = match id == add {
+                        false => notice::accepted(&wrong.word, None),
+                        true => match grind_spell::personal::add(&wrong.word) {
+                            Ok(path) => {
+                                notice::accepted(&wrong.word, Some(&path.display().to_string()))
+                            }
+                            Err(error) => error.to_string(),
+                        },
+                    };
+                    text.say(Some(said));
+                });
+            }
+            text_refresh(hwnd);
+        }
+        (id, Some(wrong)) if (menu::SPELLING_FIRST_ID..ignore).contains(&id) => {
+            let Some(with) = offers.get(usize::from(id - menu::SPELLING_FIRST_ID)) else {
+                return;
+            };
+            // SAFETY: a fresh borrow, taken after the popup has closed.
+            unsafe {
+                with_text(hwnd, |text| {
+                    match text.app.correct(wrong.caret(), &wrong.word, with) {
+                        Ok(()) => {
+                            let end = Caret {
+                                block: wrong.block,
+                                offset: wrong.offset + with.chars().count(),
+                            };
+                            text.place(end, false);
+                            text.say(None);
+                        }
+                        Err(error) => text.say(Some(error.to_string())),
+                    }
+                });
+            }
+            text_refresh(hwnd);
+        }
+        (id, _) => {
+            if let Some(command) = menu::command_for(id) {
+                do_command(hwnd, command);
+            }
+        }
+    }
+}
+
 /// Edit ▸ Replace… — what, then with what, then `App::replace` over every sheet in one undo
 /// step. Two prompts rather than a dialog of its own, since `dialog::prompt` is the one text
 /// question this shell has and a replace is two words; neither is asked with anything borrowed.
@@ -5917,6 +6183,8 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::ExportMarkdown
         | Command::ExportPdf
         | Command::PrintPreview
+        | Command::NextMisspelling
+        | Command::SpellingLanguage
         | Command::Print
         | Command::ShowSource
         | Command::CheckDocument
@@ -6396,6 +6664,7 @@ fn text_refresh(hwnd: HWND) {
     // SAFETY: one borrow; `relayout` measures text and dispatches nothing.
     unsafe {
         with_text(hwnd, |text| {
+            text.reconsider_spelling();
             text.relayout(
                 f64::from(rect.right - rect.left),
                 f64::from(rect.bottom - rect.top),
@@ -6958,6 +7227,8 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::ExportMarkdown => text_export_markdown(hwnd),
         Command::ExportPdf => text_export_pdf(hwnd),
         Command::PrintPreview => text_print_preview(hwnd),
+        Command::NextMisspelling => text_next_misspelling(hwnd),
+        Command::SpellingLanguage => text_spelling_language(hwnd),
         Command::Print => text_print(hwnd),
         Command::ShowSource => show_source(hwnd),
         Command::CheckDocument => check_document(hwnd),
@@ -8089,6 +8360,22 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
         .map(|block| text::status::describe(&block.kind, block.style.as_deref()))
         .unwrap_or_default();
     let status = text::status::status_line(&here, selected_chars(state), state.app.counts());
+    let status = match state.checked {
+        Some(choice) => format!("{status}  \u{00b7}  {}", choice.language.name()),
+        None => status,
+    };
+    // The word still being typed is not underlined: the caret at its end with nothing selected
+    // is somebody halfway through it, and every word processor waits.
+    let (from, to) = state.range();
+    let misspelt: Vec<grind_text::Misspelling> = match (blocks.first(), blocks.last()) {
+        (Some(first), Some(last)) => state
+            .app
+            .misspellings(first.slot.index..last.slot.index + 1)
+            .into_iter()
+            .filter(|m| from != to || !m.being_typed(state.caret))
+            .collect(),
+        _ => Vec::new(),
+    };
     let style = text_style_here(state);
     text::draw::paint(
         dc,
@@ -8115,6 +8402,7 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
             color: style.color.as_deref(),
             highlight: style.background.as_deref(),
             names: state.show_names,
+            misspelt: &misspelt,
         },
     );
 }

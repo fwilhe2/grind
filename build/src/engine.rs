@@ -38,6 +38,13 @@ const MAX_OPERATIONS: u64 = 10_000_000;
 /// script fails to terminate, and this is the one that catches it.
 const MAX_CALL_DEPTH: usize = 64;
 
+/// How deeply one expression may nest — at a script's top level, and inside a `fn`. These are
+/// Rhai's own defaults *for a release build*; a debug build of Rhai halves both, so a script
+/// that `grind` built fine failed under `cargo run` with *Expression exceeds maximum
+/// complexity*. Stated here so that every build of `grind` accepts the same scripts.
+const MAX_EXPR_DEPTH: usize = 64;
+const MAX_FUNCTION_EXPR_DEPTH: usize = 32;
+
 /// How long a string may get. The string builder is how a bounded loop still exhausts memory:
 /// `s += s` doubles, so thirty iterations is a gigabyte and the operation limit never notices.
 const MAX_STRING: usize = 1_000_000;
@@ -63,6 +70,7 @@ pub fn engine(data: Rc<dyn Data>) -> Engine {
 
     engine.set_max_operations(MAX_OPERATIONS);
     engine.set_max_call_levels(MAX_CALL_DEPTH);
+    engine.set_max_expr_depths(MAX_EXPR_DEPTH, MAX_FUNCTION_EXPR_DEPTH);
     engine.set_max_string_size(MAX_STRING);
     engine.set_max_array_size(MAX_ARRAY);
     engine.set_max_map_size(MAX_ARRAY);
@@ -77,6 +85,7 @@ pub fn engine(data: Rc<dyn Data>) -> Engine {
     });
 
     crate::sheet::register(&mut engine);
+    crate::chart::register(&mut engine);
     crate::text::register(&mut engine);
     // The one door outward, and `data.rs` is the whole of what it opens onto.
     crate::data::register(&mut engine, data);

@@ -315,6 +315,10 @@ pub enum Command {
     /// "Check Document" (D6) — every `App::lint` finding, worst first, each row a jump. Applies
     /// to both document types, the same as `App::lint` reaching both.
     CheckDocument,
+    /// F7: select the next misspelt word and offer what it might have been (`doc/spelling.md`).
+    NextMisspelling,
+    /// Automatic, a dictionary by name, or Off — `grind_spell::Setting`, the session's choice.
+    SpellingLanguage,
     /// `doc/view-modes.md`'s role overlay, on or off. The grid's alone: the text pane has no
     /// `CellRole`.
     ToggleRoles,
@@ -449,6 +453,8 @@ impl Command {
         Command::ParagraphDelete,
         Command::ShowSource,
         Command::CheckDocument,
+        Command::NextMisspelling,
+        Command::SpellingLanguage,
         Command::ToggleRoles,
         Command::ToggleFormulas,
         Command::ZoomIn,
@@ -489,6 +495,13 @@ impl Command {
 
 /// The first id a menu command may take. Below it are the child controls' ids.
 pub const FIRST_ID: u16 = 100;
+
+/// The first id of a spelling popup's own rows — a misspelt word's suggestions, then Ignore All
+/// and Add to Dictionary ([`SPELLING_IDS`] in all). Not commands: what they do depends on the
+/// word under the pointer, so they are numbered per popup, well clear of every [`Command::id`]
+/// and returned by `TrackPopupMenuEx` rather than posted as a `WM_COMMAND`.
+pub const SPELLING_FIRST_ID: u16 = 0x7000;
+pub const SPELLING_IDS: u16 = 10;
 
 /// Which command a `WM_COMMAND` id names, or `None` for one that is not a menu command.
 pub fn command_for(id: u16) -> Option<Command> {
@@ -1011,6 +1024,14 @@ pub const MENUS: &[Menu] = &[
                 command: Command::CheckDocument,
                 label: "&Check Document\tF8",
             },
+            Item::Verb {
+                command: Command::NextMisspelling,
+                label: "Next &Misspelling\tF7",
+            },
+            Item::Verb {
+                command: Command::SpellingLanguage,
+                label: "Spelling &Language…",
+            },
             Item::Separator,
             Item::Verb {
                 command: Command::ToggleRoles,
@@ -1146,6 +1167,7 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::Char('E'), true, true) => Some(Command::ExplainFormula),
         (Key::Char('L'), true, true) => Some(Command::ToggleFilter),
         (Key::F8, false, false) => Some(Command::CheckDocument),
+        (Key::F7, false, false) => Some(Command::NextMisspelling),
         (Key::Char('F'), true, false) => Some(Command::Find),
         (Key::Char('H'), true, false) => Some(Command::Replace),
         (Key::F3, false, false) => Some(Command::FindNext),
@@ -1314,7 +1336,10 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::ExportMarkdown
         | Command::ExportPdf
         | Command::PrintPreview
-        | Command::Print => matches!(kind, Text),
+        | Command::Print
+        // Spelling is the word processor's: a cell holds a value rather than prose.
+        | Command::NextMisspelling
+        | Command::SpellingLanguage => matches!(kind, Text),
         // The two New verbs and the way back to the welcome screen mean the same thing over either
         // document: they replace what the window is showing, and what it is showing now does not
         // change what they do.
@@ -1441,6 +1466,25 @@ mod tests {
     /// pane's *Font* are never on one menu, and a whole-table check would force one of them onto
     /// a letter its own words do not have. Every item still needs a mnemonic on every surface it
     /// appears on.
+    /// A spelling popup's rows are numbered by hand rather than from [`Command::ALL`], so they
+    /// must stay clear of every command — `TrackPopupMenuEx` hands back one number for both.
+    #[test]
+    fn the_spelling_rows_never_collide_with_a_command() {
+        let last = Command::ALL.iter().map(|c| c.id()).max().unwrap();
+        assert!(last < SPELLING_FIRST_ID);
+        for id in SPELLING_FIRST_ID..SPELLING_FIRST_ID + SPELLING_IDS {
+            assert_eq!(command_for(id), None);
+        }
+        assert!(applies_to(
+            Command::NextMisspelling,
+            grind_core::DocumentKind::Text
+        ));
+        assert!(!applies_to(
+            Command::SpellingLanguage,
+            grind_core::DocumentKind::Spreadsheet
+        ));
+    }
+
     #[test]
     fn every_menu_has_distinct_mnemonics() {
         let mnemonic = |label: &str| {
@@ -1517,6 +1561,7 @@ mod tests {
             (Key::Char('E'), ctrl_shift, Command::ExplainFormula),
             (Key::Char('L'), ctrl_shift, Command::ToggleFilter),
             (Key::F8, Mods::default(), Command::CheckDocument),
+            (Key::F7, Mods::default(), Command::NextMisspelling),
         ] {
             assert_eq!(accelerator(key, mods), Some(want), "{key:?}");
             assert!(verbs.contains(&want), "{want:?} is in no menu");
