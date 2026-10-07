@@ -391,18 +391,25 @@ impl Pane {
         let sheet = self.sheet.get();
         let tracks = resize::tracks(self.selection.get(), axis, track);
         let done = match axis {
-            // Each column its own width, so as many undo steps as columns fitted.
-            Axis::Columns => tracks.into_iter().try_for_each(|col| {
-                let width = resize::fit_width(&self.app, sheet, col, &self.text);
-                self.app
-                    .set_col_width(sheet, col..col + 1, Some(resize::length(width)))
-                    .map(|_| ())
-            }),
+            Axis::Columns => self.fit_columns(tracks),
             Axis::Rows => self.app.set_row_height(sheet, tracks, None).map(|_| ()),
         };
         if let Err(error) = done {
             self.say(Some((&error.to_string(), None)));
         }
+    }
+
+    /// Each of `cols` as wide as its widest text — a double-click on an edge, and Format ▸
+    /// Column ▸ Fit Width to Content. Each column its own width, so as many undo steps as
+    /// columns fitted.
+    pub fn fit_columns(&self, cols: std::ops::Range<u32>) -> Result<(), grind_sheet::Error> {
+        let sheet = self.sheet.get();
+        cols.into_iter().try_for_each(|col| {
+            let width = resize::fit_width(&self.app, sheet, col, &self.text);
+            self.app
+                .set_col_width(sheet, col..col + 1, Some(resize::length(width)))
+                .map(|_| ())
+        })
     }
 
     /// Where the bands' resize cursors go: a strip [`resize::GRAB`] either side of every shown

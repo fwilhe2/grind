@@ -291,7 +291,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Rename carries every reference with it (D10) | ● | ● | ● | ● | ● | ● |
 | Set a column width or row height | ● | ● | ● | ● ᵖᵃ | ● | ● |
 | Drag a track edge to resize | — | ● | ○ | ● ʷʰ | ● ʷᵈ | ● |
-| Autofit a column | ● | ● | ● ᶠⁱ | ● ʷᶠ | ● ᶠᶜ | ● |
+| Autofit a column | ● | ● | ● ᶠⁱ | ● ʷᶠ | ● ᶠᶜ | ● ᵐᶠ |
 | Row auto-height from content (L3) | — | ● | ○ | ◐ ʷᵗ | ● ʷʷ | ● |
 | **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |
 | Hide / unhide a row or column | ● | ● | ● | ● | ● | ● |
@@ -330,6 +330,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 ʷᵈ Drag a column's or row's header boundary: the size follows the pointer, the two-headed cursor shows over the boundary, and release writes one `set_col_width`/`set_row_height` (2026-10-02). The geometry (`GridGeom::edge_at`) is unit-tested; the mouse path is build-checked only — no Windows pointer was available to drive it.
 ᶠᶜ Sheet ▸ Fit Column Width, measured in the cell font by GDI; from the menu, and by double-clicking the column's edge (a row's edge goes back to its content's height) — 2026-10-02.
 ᶠⁱ `:fit` — the selection's columns, each as wide as its widest text in terminal cells (`unicode-width`) plus the blank between columns — 2026-10-03.
+ᵐᶠ Format ▸ Column ▸ Fit Width to Content (the selection's columns in use, each its widest text in CoreText) and Format ▸ Row ▸ Fit Height to Content (the row's own height taken away), beside the double-click on a header edge that already did both — the menu rows added 2026-10-07, since a double-click is a gesture nobody finds.
 ᵗᶜ `:charts` — every chart of the sheet drawn **in characters** (`sheet/chartview.rs`): the title, the legend where it asked for one, then a block bar per value, a sparkline per series or each slice's share. A picture of what the chart says, not of its page geometry, so ◐ — 2026-10-03.
 ᵗᵖ `:chart preview` draws the chart `:chart` would insert for the selection into the same pane (`verbs::preview_insert_chart`, which `insert_chart` shares its spec with) and writes nothing — 2026-10-03.
 ʷᵖ Ctrl+K ▸ *Preview the chart for the selection…* — a dialog drawing it with the sheet's own `chart::svg`, **Insert** and **Cancel** (Esc); checked in `smoke.js` — 2026-10-03.

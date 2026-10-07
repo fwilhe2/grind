@@ -71,6 +71,18 @@ impl Pane {
                 .app
                 .set_col_hidden(sheet, verbs::cols(selection), false)
                 .map(|_| ()),
+            // A row given back to its content is a row without a height of its own.
+            Command::Rows(Track::Fit) => self
+                .app
+                .set_row_height(sheet, verbs::rows(selection), None)
+                .map(|_| ()),
+            // Only the columns in use: a whole row selected is sixteen thousand of them, and
+            // past the used extent there is no text to fit to.
+            Command::Columns(Track::Fit) => {
+                let used = self.app.used_extent(sheet).map_or(0, |(_, cols)| cols);
+                let cols = verbs::cols(selection);
+                self.fit_columns(cols.start..cols.end.min(used.max(cols.start + 1)))
+            }
             Command::Rows(Track::Size) | Command::Columns(Track::Size) => {
                 let rows = matches!(command, Command::Rows(_));
                 let Some(size) = prompt::ask(

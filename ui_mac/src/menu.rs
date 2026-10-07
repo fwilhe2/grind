@@ -192,6 +192,9 @@ pub enum Track {
     Size,
     Hide,
     Show,
+    /// A column as wide as its widest text, a row given back to its content — what a
+    /// double-click on a header edge does, from the menu.
+    Fit,
 }
 
 /// A block kind Format ▸ Paragraph offers.
@@ -264,7 +267,7 @@ impl Command {
             Command::Fill(true),
             Command::Fill(false),
         ]);
-        for track in [Track::Size, Track::Hide, Track::Show] {
+        for track in [Track::Size, Track::Hide, Track::Show, Track::Fit] {
             all.extend([Command::Rows(track), Command::Columns(track)]);
         }
         all.extend([
@@ -751,6 +754,7 @@ static ROW: Menu = Menu {
     role: Role::Plain,
     items: &[
         command("Height…", None, Command::Rows(Track::Size)),
+        command("Fit Height to Content", None, Command::Rows(Track::Fit)),
         command("Hide", None, Command::Rows(Track::Hide)),
         command("Show", None, Command::Rows(Track::Show)),
     ],
@@ -761,6 +765,7 @@ static COLUMN: Menu = Menu {
     role: Role::Plain,
     items: &[
         command("Width…", None, Command::Columns(Track::Size)),
+        command("Fit Width to Content", None, Command::Columns(Track::Fit)),
         command("Hide", None, Command::Columns(Track::Hide)),
         command("Show", None, Command::Columns(Track::Show)),
     ],
