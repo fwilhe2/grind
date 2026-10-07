@@ -830,6 +830,24 @@ impl App {
         }
     }
 
+    /// `:group` — the thousands separator on over the selection, or off when the cursor's cell
+    /// has it (`format::grouped`), starting from what the cell shows when it has no format.
+    fn cmd_group(&mut self) {
+        let current = self.core.format_at(self.sheet, self.active).ok().flatten();
+        let shown = self
+            .core
+            .value_text(self.sheet, self.active)
+            .unwrap_or_default();
+        let shown = grind_sheet::format::decimals_shown(&shown, self.core.locale().as_ref());
+        match grind_sheet::format::grouped(current.as_ref(), shown, None) {
+            Some(format) => self.write_format(Some(format), "thousands grouping"),
+            None => {
+                self.status =
+                    "only a number, a percentage or a currency has thousands to group".to_owned()
+            }
+        }
+    }
+
     fn write_format(&mut self, format: Option<numfmt::Format>, what: &str) {
         let (start, end) = self.rect();
         match self.core.set_format(self.sheet, start, end, format) {
@@ -1168,6 +1186,7 @@ impl App {
             }),
             "plain" => self.write_style(None, "plain"),
             "general" => self.write_format(None, "general"),
+            "group" => self.cmd_group(),
             "sheet-new" | "sheet-add" => self.cmd_sheet_add(),
             "sheet-delete" => self.cmd_sheet_delete(),
             // A fill in the two directions anybody means one in. `App::fill` replicates *one*
@@ -3740,6 +3759,17 @@ mod tests {
         // "Party" is five cells, and one blank follows it.
         assert_eq!(widths, vec![(0, geom::length(6))]);
         assert!(app.status.contains("fitted"), "{}", app.status);
+    }
+
+    /// `:group` puts the thousands separator in, and takes it out again.
+    #[test]
+    fn group_toggles_the_thousands_separator() {
+        let mut app = filled();
+        app.run_command("B2");
+        app.run_command("group");
+        assert_eq!(app.core.value_text(0, Pos::new(1, 1)).unwrap(), "1,200");
+        app.run_command("group");
+        assert_eq!(app.core.value_text(0, Pos::new(1, 1)).unwrap(), "1200");
     }
 
     /// A formula reads in plain words on the formula line at rest, `:friendly` shows it as

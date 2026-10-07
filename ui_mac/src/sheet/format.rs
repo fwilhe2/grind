@@ -14,7 +14,7 @@
 use grind_core::style::PALETTE;
 use grind_sheet::format::{self, Preset, Toggle};
 use grind_sheet::locale::Locale;
-use grind_sheet::numfmt::Format;
+use grind_sheet::numfmt::{self, Format};
 use grind_sheet::style::CellStyle;
 use grind_text::markdown::Emphasis;
 
@@ -92,6 +92,16 @@ pub fn write(command: Command, active: &Active, locale: Option<Locale>) -> Optio
                 .map(|format| Write::Format(Some(format)))
         }
         Command::Borders(on) => Some(Write::Style(format::bordered(&active.style, on))),
+        Command::Currency(index) => {
+            let (symbol, _) = numfmt::CURRENCIES.get(usize::from(index))?;
+            Some(Write::Format(Some(format::currency(
+                active.format.as_ref(),
+                symbol,
+                locale,
+            ))))
+        }
+        Command::Group => format::grouped(active.format.as_ref(), active.shown, locale)
+            .map(|format| Write::Format(Some(format))),
         Command::Indent(step) => Some(Write::Style(format::indented(&active.style, step))),
         Command::ClearFormatting => Some(Write::Clear),
         _ => None,
@@ -109,6 +119,10 @@ pub fn checked(command: Command, active: &Active) -> bool {
         Command::TextColor(index) => active.style.color == color(index),
         Command::Background(index) => active.style.background == color(index),
         Command::Borders(true) => active.style.uniform_border().is_some(),
+        Command::Currency(index) => {
+            format::currency_chosen(active.format.as_ref()) == Some(usize::from(index))
+        }
+        Command::Group => format::is_grouped(active.format.as_ref()),
         _ => false,
     }
 }
@@ -150,6 +164,27 @@ mod tests {
             },
             ..Active::default()
         }
+    }
+
+    /// A currency writes its symbol and is ticked by it; grouping flips and is ticked by the cell.
+    #[test]
+    fn currencies_and_grouping_write_formats_and_tick_the_cell() {
+        let plain = Active::default();
+        let Some(Write::Format(Some(dollars))) = write(Command::Currency(1), &plain, None) else {
+            panic!("a currency is a format");
+        };
+        let dollars = Active {
+            format: Some(dollars),
+            ..Active::default()
+        };
+        assert!(checked(Command::Currency(1), &dollars));
+        assert!(!checked(Command::Currency(0), &dollars));
+        assert!(checked(Command::Group, &dollars), "a new currency groups");
+        let Some(Write::Format(Some(ungrouped))) = write(Command::Group, &dollars, None) else {
+            panic!("grouping is a format");
+        };
+        assert!(!format::is_grouped(Some(&ungrouped)));
+        assert_eq!(write(Command::Currency(9), &plain, None), None);
     }
 
     #[test]

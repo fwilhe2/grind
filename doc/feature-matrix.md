@@ -241,13 +241,14 @@ borders, which that window does not draw either.
 | **Drawn**: a plain number (the General format) narrows to its column first — fewer decimals, then scientific (`Viewport::narrower`) | — | ● | ● | ● | ● | ● |
 
 ᵃ **Closed 2026-10-02.** A *Borders* toggle in the format bar writes `format::bordered` — a hairline on every edge, or none — over the selection, the same call the terminal, the browser and the Mac make; a per-edge width or colour is still `grind sheet style --border`'s.
-ᵇ `:format number [n]` takes a decimal count and `:format currency [eur|usd|gbp]` one of the three
-currencies `numfmt::CURRENCIES` offers; any other symbol and the locale are `grind sheet format`'s.
-ᶜ More / fewer decimals, and the three currencies of `numfmt::CURRENCIES` as three menu entries.
+ᵇ `:format number [n]` takes a decimal count, `:format currency [eur|usd|gbp]` one of the three
+currencies `numfmt::CURRENCIES` offers and `:group` the thousands separator (2026-10-07); any other symbol and the locale are `grind sheet format`'s.
+ᶜ More / fewer decimals, the three currencies of `numfmt::CURRENCIES` as three menu entries, and *Group thousands* (2026-10-07). No other symbol.
 ʷ One decimal more or fewer at a time (the strip's `-.0`/`+.0`, and Format ▸ Increase/Decrease
 Decimals), and the three currencies of `numfmt::CURRENCIES` — Format ▸ Currency and the cells'
-context menu, a currency cell keeping its own decimals and grouping (`ui_win32/src/sheet/currency.rs`).
-No grouping toggle and no other symbol.
+context menu, a currency cell keeping its own decimals and grouping (`grind_sheet::format::currency`,
+hoisted from `ui_win32/src/sheet/currency.rs`), and Format ▸ Use 1000 Separator, checked by the cell
+(`format::grouped`, 2026-10-07). No other symbol.
 ʷᵗ The table grows a wrapped or oversized-font row itself (see the 2026-10-03 note at the end); the shell's row count does not know. Not seen drawn.
 ʷʷ Closed 2026-10-02: Format ▸ Wrap Text; the grid breaks a wrapped cell with `grind_core::layout::wrap` over GDI measurements (`sheet/measure.rs`) and grows rows through `grind_sheet::autoheight` (hoisted from the Mac) — checked by a Wine render.
 ʷᵇ Closed 2026-10-02: Format ▸ All Borders / Remove Borders (`format::bordered`), and the grid draws every edge through `look::border_strokes` — the Mac's geometry, hoisted — checked by a Wine render. `dashed` and `dotted` draw solid.
@@ -284,7 +285,7 @@ every cell, and the browser clipped without a mark — and did not honour a colu
 once its content was wider, since a `max-content` table sizes its columns from what is in them.
 
 **Mac.** ¹ Broken at the column's width and drawn as lines, and a row with no height of its own
-grown to hold them, as the GNOME window grows one. ² The toolbar's two steps and Format ▸ Number's; no grouping or currency-symbol control. ³ Each edge its own width and colour, and `double` as two lines; `dashed` and `dotted` drawn solid. Format ▸ Borders sets a hairline round every selected cell or takes them all away.
+grown to hold them, as the GNOME window grows one. ² The toolbar's two steps and Format ▸ Number's, and since 2026-10-07 Format ▸ Number ▸ Group Thousands and the three currencies of `numfmt::CURRENCIES`, each ticked by the cell (`format::grouped`, `format::currency`). No other symbol. ³ Each edge its own width and colour, and `double` as two lines; `dashed` and `dotted` drawn solid. Format ▸ Borders sets a hairline round every selected cell or takes them all away.
 
 ## 6. Spreadsheet — structure, charts and interchange
 

@@ -68,6 +68,11 @@ pub enum Command {
     Number(Preset),
     /// One decimal fewer or more (`grind_sheet::format::stepped`).
     Decimals(i8),
+    /// One of `numfmt::CURRENCIES`, by index — the symbol changed and a currency's own decimals
+    /// and grouping kept (`grind_sheet::format::currency`).
+    Currency(u8),
+    /// The thousands separator on, or off where the cell has it (`grind_sheet::format::grouped`).
+    Group,
     /// The text's own colour — a [`PALETTE`] entry by index, or `None` for *Automatic*.
     TextColor(Option<u8>),
     /// A cell's fill, or a run's highlight — a [`PALETTE`] entry, or `None` for none.
@@ -257,6 +262,12 @@ impl Command {
         all.extend([Command::Borders(true), Command::Borders(false)]);
         all.extend(Preset::ALL.map(Command::Number));
         all.extend([Command::Decimals(-1), Command::Decimals(1)]);
+        all.extend([
+            Command::Currency(0),
+            Command::Currency(1),
+            Command::Currency(2),
+            Command::Group,
+        ]);
         let palette = || std::iter::once(None).chain((0..PALETTE.len() as u8).map(Some));
         all.extend(palette().map(Command::TextColor));
         all.extend(palette().map(Command::Background));
@@ -401,6 +412,8 @@ impl Command {
             | Command::Borders(_)
             | Command::Number(_)
             | Command::Decimals(_)
+            | Command::Currency(_)
+            | Command::Group
             | Command::FriendlyFormulas
             | Command::ExplainFormula
             | Command::InsertFunction
@@ -740,6 +753,11 @@ static NUMBER: Menu = Menu {
         Item::Separator,
         command("Increase Decimals", None, Command::Decimals(1)),
         command("Decrease Decimals", None, Command::Decimals(-1)),
+        command("Group Thousands", None, Command::Group),
+        Item::Separator,
+        command("Euro (€)", None, Command::Currency(0)),
+        command("US Dollar ($)", None, Command::Currency(1)),
+        command("Pound Sterling (£)", None, Command::Currency(2)),
         Item::Separator,
         command("Document Locale…", None, Command::DocumentLocale),
     ],

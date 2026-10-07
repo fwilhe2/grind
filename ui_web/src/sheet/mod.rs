@@ -951,6 +951,7 @@ impl Ui {
             }
             "format.more" => self.step_decimals(1),
             "format.fewer" => self.step_decimals(-1),
+            "format.grouping" => self.group_thousands(),
 
             "edit.find-next" => self.find_step(Towards::Next),
             "edit.find-previous" => self.find_step(Towards::Previous),
@@ -1354,6 +1355,21 @@ impl Ui {
         let shown = format::decimals_shown(&shown, self.app.locale().as_ref());
         if let Some(stepped) = format::stepped(current.as_ref(), by, shown, None) {
             self.set_format_of_selection(Some(stepped));
+        }
+    }
+
+    /// *Group thousands* — the separator on, or off when the active cell has it
+    /// (`format::grouped`), from what the cell shows when it has no format.
+    fn group_thousands(&self) {
+        let (sheet, at) = (self.sheet.get(), self.selection.get().active);
+        let current = self.app.format_at(sheet, at).ok().flatten();
+        let shown = self.app.value_text(sheet, at).unwrap_or_default();
+        let shown = format::decimals_shown(&shown, self.app.locale().as_ref());
+        match format::grouped(current.as_ref(), shown, None) {
+            Some(grouped) => self.set_format_of_selection(Some(grouped)),
+            None => self.set_message(
+                "Only a number, a percentage or a currency has thousands to group".to_owned(),
+            ),
         }
     }
 

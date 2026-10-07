@@ -590,6 +590,18 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   await press_button("s-outdent");
   check("and Decrease indent takes it back to none", (document.querySelector("td.active").getAttribute("style") || "").includes("text-indent"), false);
 
+  await enter("12345");
+  press("ArrowUp");
+  await frame();
+  await command("Group thousands");
+  await frame();
+  check("Group thousands puts the separator in", shown(), "12,345");
+  await command("Group thousands");
+  await frame();
+  check("and takes it out again", shown(), "12345");
+  await enter("7");
+  press("ArrowUp");
+  await frame();
   await command("Number: per cent");
   await frame();
   check("a number format changes what is shown", shown(), "700%");

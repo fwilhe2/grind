@@ -30,6 +30,7 @@ Spreadsheet:
   :align l|c|r            :color <name|#rrggbb>   :fill <name|#rrggbb>
   :format general|int|number [n]|percent|currency|date|time|datetime
   :general                :recalc
+  :group                  — thousands grouped, or not, over the selection
   :find <text>            — every cell whose text or formula holds it; n / N step
   :s/old/new/             — replace it in every cell, one undo step
   :down  :right           — fill the selection from its first cell (references shift)

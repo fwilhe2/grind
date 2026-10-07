@@ -3728,6 +3728,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::FormatTableTotals => format_table_totals(hwnd),
         Command::AddRule => add_rule(hwnd),
         Command::RemoveRule => remove_rule(hwnd),
+        Command::GroupThousands => format_group_thousands(hwnd),
         Command::CurrencyEuro | Command::CurrencyDollar | Command::CurrencyPound => {
             if let Some(index) = command.currency() {
                 set_currency(hwnd, index);
@@ -5163,6 +5164,35 @@ fn format_pick_number(hwnd: HWND) {
 
 /// One decimal more or fewer — `format::stepped`, starting a plain cell from the decimals it
 /// *shows*, read off the viewport the way a renderer reads it.
+/// Format ▸ Use 1000 Separator — [`format_step_decimals`]'s shape, over `format::grouped`.
+fn format_group_thousands(hwnd: HWND) {
+    format_write(hwnd, |state, start, end| {
+        let active = state.selection.active;
+        let current = state.app.format_at(state.sheet, active).ok().flatten();
+        let shown = state
+            .app
+            .get_viewport(
+                state.sheet,
+                active.row..active.row + 1,
+                active.col..active.col + 1,
+            )
+            .ok()
+            .and_then(|view| {
+                view.text(active.row, active.col)
+                    .map(|text| format::decimals_shown(text, state.app.locale().as_ref()))
+            })
+            .unwrap_or(0);
+        match grind_sheet::format::grouped(
+            current.as_ref(),
+            shown,
+            grind_sheet::locale::from_environment(),
+        ) {
+            Some(written) => state.app.set_format(state.sheet, start, end, Some(written)),
+            None => Ok(0),
+        }
+    });
+}
+
 fn format_step_decimals(hwnd: HWND, step: i8) {
     format_write(hwnd, |state, start, end| {
         let active = state.selection.active;
@@ -5199,14 +5229,17 @@ fn format_step_decimals(hwnd: HWND, step: i8) {
 fn check_format(hwnd: HWND, popup: HMENU) {
     // SAFETY: one borrow; nothing inside dispatches. `None` off the grid, where no currency item
     // is ever shown.
-    let Some(chosen) = (unsafe {
+    let Some((chosen, grouped)) = (unsafe {
         with_sheet(hwnd, |state| {
             let current = state
                 .app
                 .format_at(state.sheet, state.selection.active)
                 .ok()
                 .flatten();
-            currency::chosen(current.as_ref())
+            (
+                currency::chosen(current.as_ref()),
+                grind_sheet::format::is_grouped(current.as_ref()),
+            )
         })
     }) else {
         return;
@@ -5224,6 +5257,7 @@ fn check_format(hwnd: HWND, popup: HMENU) {
     for (index, command) in Command::CURRENCIES.iter().enumerate() {
         check(*command, chosen == Some(index));
     }
+    check(Command::GroupThousands, grouped);
     // The strip's five toggles, checked as the strip draws them pressed — so the menu and the
     // strip cannot disagree about whether the active cell is bold.
     // SAFETY: one borrow; nothing inside dispatches.
@@ -6178,6 +6212,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::CurrencyEuro
         | Command::CurrencyDollar
         | Command::CurrencyPound
+        | Command::GroupThousands
         | Command::AlignLeft
         | Command::AlignCenter
         | Command::AlignRight
@@ -7323,6 +7358,7 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::CurrencyEuro
         | Command::CurrencyDollar
         | Command::CurrencyPound
+        | Command::GroupThousands
         // A cell's alignment, fill and number format: a run of text has none of the three.
         | Command::AlignLeft
         | Command::AlignCenter

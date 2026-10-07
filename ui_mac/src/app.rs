@@ -175,6 +175,8 @@ impl Delegate {
             | Command::Borders(_)
             | Command::Number(_)
             | Command::Decimals(_)
+            | Command::Currency(_)
+            | Command::Group
             | Command::TextColor(_)
             | Command::Background(_)
             | Command::Block(_)

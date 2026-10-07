@@ -223,6 +223,9 @@ pub enum Command {
     CurrencyEuro,
     CurrencyDollar,
     CurrencyPound,
+    /// The thousands separator turned on over the selection, or off when the active cell has it
+    /// (`grind_sheet::format::grouped`) — checked by the cell.
+    GroupThousands,
     /// Align the selection's text to one side of its cells, or centre it — `fo:text-align`,
     /// written `start`/`center`/`end` (§16.5, relative to the writing direction). The grid's
     /// alone, and the format strip's three alignment toggles (`sheet/format.rs`): pressing the
@@ -425,6 +428,7 @@ impl Command {
         Command::CurrencyEuro,
         Command::CurrencyDollar,
         Command::CurrencyPound,
+        Command::GroupThousands,
         Command::AlignLeft,
         Command::AlignCenter,
         Command::AlignRight,
@@ -975,6 +979,10 @@ pub const MENUS: &[Menu] = &[
                 command: Command::CurrencyPound,
                 label: "Currency: &Pound Sterling (£)",
             },
+            Item::Verb {
+                command: Command::GroupThousands,
+                label: "Use &1000 Separator",
+            },
             Item::Separator,
             Item::Verb {
                 command: Command::ClearFormatting,
@@ -1309,6 +1317,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::CurrencyEuro
         | Command::CurrencyDollar
         | Command::CurrencyPound
+        | Command::GroupThousands
         // A cell's alignment, fill and number format are `CellStyle` and `numfmt::Format` — the
         // grid's format strip (`sheet/format.rs`); a run of text has none of the three.
         | Command::AlignLeft
@@ -1878,6 +1887,7 @@ mod tests {
                 Command::CurrencyEuro,
                 Command::CurrencyDollar,
                 Command::CurrencyPound,
+                Command::GroupThousands,
                 Command::ClearFormatting,
             ]
         );

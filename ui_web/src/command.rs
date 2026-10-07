@@ -186,6 +186,13 @@ pub const SHEET: &[Command] = &[
     cmd("format.time", "Number: time", "Number", "", false),
     cmd("format.more", "More decimal places", "Number", "", false),
     cmd("format.fewer", "Fewer decimal places", "Number", "", false),
+    cmd(
+        "format.grouping",
+        "Group thousands (on or off)",
+        "Number",
+        "",
+        false,
+    ),
     // --- what it is, rather than what it says ---
     //
     // `doc/view-modes.md`. Neither writes anything: they are readings of the document, and

@@ -204,6 +204,60 @@ pub fn stepped(
     Some(numfmt::preset(kind, next, grouping, &symbol).in_locale(own_locale(current, locale)))
 }
 
+/// *Group Thousands* over a cell formatted `current` — the thousands separator turned on, or
+/// off when it is on, everything else a person chose kept. A cell with **no format** starts
+/// from what it shows, as [`stepped`] does (`shown` decimals, grouped), so a press over a plain
+/// `12345.5` is `12,345.5`. Anything that is not a number, a percentage or a currency answers
+/// `None`: nothing to group.
+pub fn grouped(current: Option<&Format>, shown: u8, locale: Option<Locale>) -> Option<Format> {
+    let (kind, decimals, grouping, symbol) = match current {
+        None => (Kind::Number, shown, false, String::new()),
+        Some(format) if format.is_preset() => format.preset_params(),
+        Some(_) => return None,
+    };
+    if !matches!(kind, Kind::Number | Kind::Percentage | Kind::Currency) {
+        return None;
+    }
+    Some(numfmt::preset(kind, decimals, !grouping, &symbol).in_locale(own_locale(current, locale)))
+}
+
+/// Whether a cell formatted `current` groups its thousands — what *Group Thousands* is ticked by.
+pub fn is_grouped(current: Option<&Format>) -> bool {
+    current
+        .filter(|format| format.is_preset())
+        .is_some_and(|format| format.preset_params().2)
+}
+
+/// The format a currency choice writes over a cell whose format is `current` — one of
+/// [`numfmt::CURRENCIES`] in every window, one click being the whole request.
+///
+/// A cell that is *already* a currency keeps its own decimals, grouping and locale and only
+/// changes its symbol; anything else gets two decimals, grouped thousands and `locale` — what
+/// the GNOME window's picker writes with its fields untouched. Hoisted out of the Windows grid
+/// (`ui_win32/src/sheet/currency.rs`) when the Mac wanted the same answer.
+pub fn currency(current: Option<&Format>, symbol: &str, locale: Option<Locale>) -> Format {
+    match current.filter(|f| f.is_preset()) {
+        Some(format) if format.preset_params().0 == Kind::Currency => {
+            let (_, decimals, grouping, _) = format.preset_params();
+            numfmt::preset(Kind::Currency, decimals, grouping, symbol)
+                .in_locale(format.locale.clone())
+        }
+        _ => numfmt::preset(Kind::Currency, 2, true, symbol).in_locale(locale),
+    }
+}
+
+/// Which of [`numfmt::CURRENCIES`] a cell is formatted as, by index — the one menu item that
+/// carries a check. `None` for a cell with no currency, and for one whose currency is none of
+/// the three (a document's own `CHF`), which no item may claim.
+pub fn currency_chosen(current: Option<&Format>) -> Option<usize> {
+    let format = current.filter(|f| f.is_preset())?;
+    let (kind, _, _, symbol) = format.preset_params();
+    if kind != Kind::Currency {
+        return None;
+    }
+    numfmt::CURRENCIES.iter().position(|(s, _)| *s == symbol)
+}
+
 /// How many decimals `text` shows, read the way `locale` spells a number — the digits after its
 /// decimal character, up to the first that is not a digit. What [`stepped`] starts a plain cell
 /// from. Zero for text with no decimal character, which is also the answer for a cell that is not
@@ -445,6 +499,72 @@ mod tests {
         assert!(!Toggle::Strike.is_on(&none));
         let struck = Toggle::Strike.flipped(&none).unwrap();
         assert_eq!(struck.line_through.as_deref(), Some("solid"));
+    }
+
+    /// Grouping flips the thousands separator and keeps the rest; a plain cell starts from what
+    /// it shows; a date has nothing to group.
+    #[test]
+    fn grouping_flips_the_separator_and_keeps_the_rest() {
+        let two = numfmt::preset(Kind::Number, 2, false, "");
+        let on = grouped(Some(&two), 0, None).unwrap();
+        assert_eq!(on, numfmt::preset(Kind::Number, 2, true, ""));
+        assert!(is_grouped(Some(&on)));
+        assert_eq!(grouped(Some(&on), 0, None).unwrap(), two);
+        assert_eq!(
+            grouped(None, 1, None).unwrap(),
+            numfmt::preset(Kind::Number, 1, true, "")
+        );
+        let date = numfmt::preset(Kind::Date, 0, false, "");
+        assert_eq!(grouped(Some(&date), 0, None), None);
+        assert!(!is_grouped(None));
+    }
+
+    fn currency_of(symbol: &str, decimals: u8, grouping: bool) -> Format {
+        numfmt::preset(Kind::Currency, decimals, grouping, symbol)
+    }
+
+    #[test]
+    fn a_plain_cell_gets_two_decimals_grouped() {
+        assert_eq!(currency(None, "$", None), currency_of("$", 2, true));
+        let percent = numfmt::preset(Kind::Percentage, 1, false, "");
+        assert_eq!(
+            currency(Some(&percent), "£", None),
+            currency_of("£", 2, true)
+        );
+        let de = Locale::parse("de-DE");
+        assert_eq!(
+            currency(None, "€", de.clone()),
+            currency_of("€", 2, true).in_locale(de)
+        );
+    }
+
+    /// Changing the symbol changes the symbol and nothing else a person chose.
+    #[test]
+    fn a_currency_keeps_its_own_digits_and_locale() {
+        let de = Locale::parse("de-DE");
+        let own = currency_of("€", 0, false).in_locale(de.clone());
+        let other = Locale::parse("en-GB");
+        assert_eq!(
+            currency(Some(&own), "$", other),
+            currency_of("$", 0, false).in_locale(de)
+        );
+    }
+
+    #[test]
+    fn the_currency_check_follows_the_cell() {
+        assert_eq!(currency_chosen(None), None);
+        assert_eq!(currency_chosen(Some(&currency_of("€", 2, true))), Some(0));
+        assert_eq!(currency_chosen(Some(&currency_of("$", 0, false))), Some(1));
+        assert_eq!(currency_chosen(Some(&currency_of("£", 2, true))), Some(2));
+        assert_eq!(currency_chosen(Some(&currency_of("CHF", 2, true))), None);
+        let number = numfmt::preset(Kind::Number, 2, true, "");
+        assert_eq!(currency_chosen(Some(&number)), None);
+        for (index, (symbol, _)) in numfmt::CURRENCIES.iter().enumerate() {
+            assert_eq!(
+                currency_chosen(Some(&currency(None, symbol, None))),
+                Some(index)
+            );
+        }
     }
 
     /// An indent steps by whole levels, in the oracle's spelling, from wherever the cell's own
