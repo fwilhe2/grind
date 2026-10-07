@@ -1223,6 +1223,24 @@ impl Ui {
         self.app.lint(&grind_core::lint::Options::default())
     }
 
+    /// The calculations *Find a calculation…* lists: a word asked for (empty for every one),
+    /// and every formula `Calculation::matches` finds with it. `None` when the question was
+    /// dismissed.
+    pub fn find_calculations(&self) -> Option<Vec<grind_sheet::Calculation>> {
+        let needle = self.ask(
+            "Find a calculation — a word in its formula, its address or a function it calls \
+             (empty lists every one)",
+            "",
+        )?;
+        Some(
+            self.app
+                .calculations()
+                .into_iter()
+                .filter(|calc| calc.matches(&needle))
+                .collect(),
+        )
+    }
+
     pub fn select_projected(&self, address: &str) {
         match a1::sheet(&self.app, address) {
             Ok(_) => self.go_to(&format!("{address}.")),

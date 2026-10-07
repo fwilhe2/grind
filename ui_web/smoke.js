@@ -355,6 +355,15 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("and the reading can be turned off", byId("summary").textContent.includes("Sum(Number"), false);
   await command("Read formulas in plain words");
   await frame();
+  const ownPrompt = dom.window.prompt;
+  dom.window.prompt = () => "sum";
+  await command("Find a calculation");
+  await frame();
+  dom.window.prompt = ownPrompt;
+  check("Find a calculation lists the formulas that match", byId("problems").textContent.includes("=SUM(A1:A2)"), true);
+  byId("problems").querySelector(".problem").click();
+  await frame();
+  check("and a row is a jump back to its cell", byId("address").value, "B1");
 
   type("=SUM(");
   press("Enter");

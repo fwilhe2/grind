@@ -219,6 +219,14 @@ pub const SHEET: &[Command] = &[
     // `doc/dsl.md` §4.3, D6 — what the document says about itself. A verb rather than a key,
     // and the same word closes it, like the readings above.
     cmd("view.problems", "Check the document", "View", "", false),
+    // Every formula in the document, filtered by a word, in the problems pane's shape.
+    cmd(
+        "sheet.calculations",
+        "Find a calculation…",
+        "View",
+        "",
+        false,
+    ),
     // --- the workbook ---
     cmd("sheet.add", "Add a sheet", "Sheets", "", true),
     cmd("sheet.rename", "Rename this sheet…", "Sheets", "", false),

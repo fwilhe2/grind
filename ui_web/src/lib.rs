@@ -310,7 +310,7 @@ struct Shell {
     /// A snapshot taken when the pane opens, for the projection's reason above and one more:
     /// linting costs a recalculation, so re-running it on every repaint would make a document
     /// with the pane open the slowest one in the shell. `Some` *is* "the pane is open".
-    problems: RefCell<Option<grind_core::lint::Report>>,
+    problems: RefCell<Option<problems::Listing>>,
     /// Whether the print preview is the surface on screen (`doc/pdf-export.md` §4).
     previewing: Cell<bool>,
     /// The bundled faces as `Uint8Array`s, fetched from `fonts/` the first time anything is put
@@ -583,6 +583,7 @@ impl Shell {
             "edit.paste" => self.paste_in(),
             "view.source" => self.toggle_source(),
             "view.problems" => self.toggle_problems(),
+            "sheet.calculations" => self.find_calculations(),
             _ => match self.mode.get() {
                 Mode::Sheet => self.sheet.run(id),
                 Mode::Text => self.text.run(id),
@@ -658,8 +659,8 @@ impl Shell {
         *self.problems.borrow_mut() = match open {
             true => None,
             false => match self.mode.get() {
-                Mode::Sheet => Some(self.sheet.lint()),
-                Mode::Text => Some(self.text.lint()),
+                Mode::Sheet => Some(problems::Listing::Lint(self.sheet.lint())),
+                Mode::Text => Some(problems::Listing::Lint(self.text.lint())),
                 Mode::Welcome => None,
             },
         };
@@ -669,14 +670,27 @@ impl Shell {
         let _ = self.show(self.mode.get());
     }
 
-    fn render_problems(&self) {
-        let borrowed = self.problems.borrow();
-        let Some(report) = borrowed.as_ref() else {
+    /// *Find a calculation…* — a word (empty for every one), then every formula whose sheet,
+    /// address, formula or function has it (`Calculation::matches`), in the problems pane's
+    /// shape: each row a jump, and the pane closed by the jump or by asking again.
+    fn find_calculations(&self) {
+        if self.mode.get() != Mode::Sheet {
+            return;
+        }
+        let Some(found) = self.sheet.find_calculations() else {
             return;
         };
-        self.dom
-            .problems_pane
-            .set_inner_html(&problems::html(report));
+        *self.problems.borrow_mut() = Some(problems::Listing::Calculations(found));
+        self.render_problems();
+        let _ = self.show(self.mode.get());
+    }
+
+    fn render_problems(&self) {
+        let borrowed = self.problems.borrow();
+        let Some(listing) = borrowed.as_ref() else {
+            return;
+        };
+        self.dom.problems_pane.set_inner_html(&listing.html());
     }
 
     /// A click on a finding: select what it is about, and put the document back — the pane is

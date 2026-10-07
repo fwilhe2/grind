@@ -164,14 +164,14 @@ than as a cursor on a hidden row.
 | Explain a nested formula, unfolded | ● | ● | ● ᵉˣ | ● ᵉˣ | ● | ● |
 | The 110 functions as a browsable list | ● | ● ᶠᵍ | ● ᶠᵍ | ● ᶠⁿ | ● | ● |
 | Read a formula through the document's names | ● | ● | ● | ● | ● | ● |
-| Every calculated cell, searchable | ● | ● | ● ᶜᵃ | ◐ ᶜᵃ | ● ᶜᵃ | ● |
+| Every calculated cell, searchable | ● | ● | ● ᶜᵃ | ● ᶜᵃ | ● ᶜᵃ | ● |
 | Find over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ | ● |
 | Replace over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ | ● |
 
 ᵖᵐ Where `ref_eligible` says a reference could go, the four arrows point (one cell, no range extension) and write the address into the edit line; the pointed cell is drawn in magenta. Closed 2026-10-02; the browser does the same in the formula bar (UTF-16 offsets through `grind_core::utf16`), writing the address without highlighting the cell — compile- and lint-checked only. Win32 does it in the in-cell `EDIT` through `EM_REPLACESEL` (Enter mode starts one; Edit mode keeps the caret) — also checked only by build.
 ᶠⁿ Type two letters of a function's name or plain-English name in the palette: up to five rows follow the verbs, and picking one starts an edit seeded `=NAME(`. A search, not a scrolling list — 2026-10-02.
 ᶠᵍ *Functions…* in the GNOME palette (a searchable dialog) and `:functions [text]` in the terminal (a list pane): name, plain-English name, brief and category from `funcs::catalog`; picking one starts an edit seeded `=NAME(`. 2026-10-02.
-ᶜᵃ `:calc [text]` (a list pane) and Data ▸ Find a Calculation… (a prompt, then a list) over `App::calculations`; each row a jump. The browser's palette find already matches a cell's formula text, which is the half of it. 2026-10-02.
+ᶜᵃ `:calc [text]` (a list pane) and Data ▸ Find a Calculation… (a prompt, then a list) over `App::calculations`; each row a jump — 2026-10-02. The browser's Ctrl+K ▸ *Find a calculation…* (2026-10-07) asks a word and lists the matches in the problems pane's shape (`problems::Listing`), the function tally in its header, each row a jump; smoke-checked.
 ᶠᵒ `:formulas` in the terminal, a palette verb in the browser, View ▸ Show Formulas in Windows and GNOME (the GNOME one draws the cell text only, and is lint-checked rather than seen): each formula cell shows its formula text (display syntax) instead of its result — a reading, nothing is written (2026-10-02).
 ˡᵒ `:locale [tag|none]`, a palette verb and Data ▸ Document Locale…: a tag such as `de-DE` through `verbs::locale`, then `App::set_locale` — one undo step (2026-10-02).
 ʲʷ In words rather than checkboxes, through `csv::Import::amended` (`delimiter=semicolon locale=de-DE text formulas trim no-dates`): `:csv-in <file> with …` in the terminal, *Import CSV with Options…* in GNOME's palette (an alert, then the picker), *Import CSV with Options…* in the Mac's File menu (type-checked only), *Import CSV with options…* in the browser's palette and File ▸ Import CSV with Options… in Windows — the options asked first (the browser) or after the file (Windows) — 2026-10-02.

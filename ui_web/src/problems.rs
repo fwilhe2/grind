@@ -16,6 +16,58 @@
 //! and one escaping function every path goes through.
 
 use grind_core::lint::{Report, Severity};
+use grind_sheet::Calculation;
+
+/// What the pane is listing. The findings were its first and only use; a spreadsheet's
+/// calculations are the second (*Find a calculation…*, the GNOME window's explorer and the
+/// Windows grid's list), and the same shape — a header, then one row per address, each a jump.
+pub enum Listing {
+    Lint(Report),
+    Calculations(Vec<Calculation>),
+}
+
+impl Listing {
+    pub fn html(&self) -> String {
+        match self {
+            Listing::Lint(report) => html(report),
+            Listing::Calculations(found) => calculations_html(found),
+        }
+    }
+}
+
+/// Every calculation found, as rows of the same pane: the address, the formula as a formula bar
+/// shows it, and what it comes to. The header says how many and which functions they use most
+/// (`grind_sheet::function_tally`), which is what the GNOME window's explorer says too.
+pub fn calculations_html(found: &[Calculation]) -> String {
+    let tally = grind_sheet::function_tally(found)
+        .into_iter()
+        .take(5)
+        .map(|(name, n)| format!("{name} ×{n}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let header = match (found.len(), tally.is_empty()) {
+        (0, _) => "No calculation matches".to_owned(),
+        (1, true) => "1 calculation".to_owned(),
+        (n, true) => format!("{n} calculations"),
+        (1, false) => format!("1 calculation — {tally}"),
+        (n, false) => format!("{n} calculations — {tally}"),
+    };
+    let mut out = format!("<div class=\"problems-summary\">{}</div>", escape(&header));
+    for calc in found {
+        let address = calc.address();
+        out.push_str(&format!(
+            "<div class=\"problem problem-hint\" data-address=\"{at}\" role=\"button\" tabindex=\"0\">\
+             <span class=\"problem-mark\" aria-hidden=\"true\">=</span>\
+             <span class=\"problem-at\">{at}</span>\
+             <span class=\"problem-message\">{formula}</span>\
+             <span class=\"problem-rule\">{value}</span></div>",
+            at = escape(&address),
+            formula = escape(&calc.formula),
+            value = escape(&calc.value),
+        ));
+    }
+    out
+}
 
 /// The findings as markup: a header with the tally, then one row per finding.
 ///
