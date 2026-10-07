@@ -312,6 +312,13 @@ pub const SHEET: &[Command] = &[
         "",
         false,
     ),
+    cmd(
+        "chart.move",
+        "Move the last chart here",
+        "Charts",
+        "",
+        false,
+    ),
     cmd("chart.delete", "Delete the last chart", "Charts", "", false),
     cmd("doc.locale", "Document locale…", "Document", "", false),
     cmd(

@@ -663,6 +663,15 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("Insert closes it", document.querySelector(".chart-preview"), null);
   check("and inserts the chart", document.querySelectorAll("#charts .chart").length, 2);
 
+  // No chart is hit-tested here, so the last one is moved to the active cell, and resized in words.
+  const lastChart = () => [...document.querySelectorAll("#charts .chart")].pop();
+  const before = lastChart().getAttribute("style");
+  await goTo("D10");
+  await command("Move the last chart here");
+  await frame();
+  check("Move the last chart here moves it", lastChart().getAttribute("style") !== before, true);
+  check("and says where", byId("message").textContent.includes("D10"), true);
+
   await openFile("filter.fods", FILTER);
   check("a fresh table has no filter button", document.querySelectorAll("button.filter-btn").length, 0);
 

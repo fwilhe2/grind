@@ -916,6 +916,7 @@ impl Ui {
             "chart.preview" => self.preview_chart(),
             "chart.delete" => self.delete_chart(),
             "chart.restyle" => self.restyle_chart(),
+            "chart.move" => self.move_chart(),
             "edit.fill-across" => self.fill_across(),
             "edit.formula-to-value" => self.formula_to_value(),
             "sheet.filter" => self.toggle_filter(),
@@ -2013,13 +2014,39 @@ impl Ui {
             return self.set_message("This sheet has no chart".to_owned());
         }
         let Some(words) = self.ask(
-            "Change the last chart — line, bar or pie; title=…; no-title; legend=top|bottom|start|end|none",
+            &format!(
+                "Change the last chart — {}",
+                grind_sheet::verbs::CHART_WORDS
+            ),
             "",
         ) else {
             return;
         };
         self.set_message(
             match grind_sheet::verbs::restyle_chart(&self.app, sheet, count - 1, &words) {
+                Ok(said) => format!("{said} Ctrl+Z takes it back"),
+                Err(why) => why,
+            },
+        );
+    }
+
+    /// *Move the last chart here* — its corner to the active cell's, its size kept
+    /// (`verbs::move_chart`), the column and row offsets this shell draws by.
+    fn move_chart(&self) {
+        let sheet = self.sheet.get();
+        let count = self.app.charts(sheet).map_or(0, |charts| charts.len());
+        if count == 0 {
+            return self.set_message("This sheet has no chart".to_owned());
+        }
+        let (widths, heights) = (self.widths(), self.heights());
+        let at = self.selection.get().active;
+        self.set_message(
+            match grind_sheet::verbs::move_chart(&self.app, sheet, count - 1, at, |col, row| {
+                (
+                    widths.span(0, col) / PX_PER_MM,
+                    heights.span(0, row) / PX_PER_MM,
+                )
+            }) {
                 Ok(said) => format!("{said} Ctrl+Z takes it back"),
                 Err(why) => why,
             },

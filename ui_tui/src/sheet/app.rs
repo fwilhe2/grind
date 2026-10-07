@@ -1215,6 +1215,7 @@ impl App {
             "charts" => self.cmd_charts(),
             "chart preview" => self.cmd_chart_preview(),
             "chart!" => self.cmd_unchart(),
+            "chart here" => self.cmd_move_chart(),
             _ if cmd.starts_with("chart ") => self.cmd_restyle_chart(cmd[6..].trim()),
             "yank-values" => self.cmd_yank_values(),
             "find" => self.cmd_find(""),
@@ -1398,6 +1399,29 @@ impl App {
         self.status = match count {
             0 => "no chart on this sheet \u{2014} :chart makes one".to_owned(),
             n => match grind_sheet::verbs::restyle_chart(&self.core, self.sheet, n - 1, words) {
+                Ok(said) => format!("{said} u takes it back"),
+                Err(why) => why,
+            },
+        };
+    }
+
+    /// `:chart here` — the sheet's last chart moved so its corner is the cursor's cell, its size
+    /// kept (`verbs::move_chart`), over the same rough geometry `:chart` places one with.
+    fn cmd_move_chart(&mut self) {
+        let count = self
+            .core
+            .charts(self.sheet)
+            .map_or(0, |charts| charts.len());
+        let (col_mm, row_mm) = (25.0, 5.0);
+        self.status = match count {
+            0 => "no chart on this sheet \u{2014} :chart makes one".to_owned(),
+            n => match grind_sheet::verbs::move_chart(
+                &self.core,
+                self.sheet,
+                n - 1,
+                self.active,
+                |col, row| (f64::from(col) * col_mm, f64::from(row) * row_mm),
+            ) {
                 Ok(said) => format!("{said} u takes it back"),
                 Err(why) => why,
             },
@@ -4160,6 +4184,12 @@ mod tests {
         app.active = Pos::new(0, 0);
         app.run_command("chart");
         assert_eq!(app.core.charts(0).unwrap().len(), 1, "{}", app.status);
+        app.run_command("chart width=9cm");
+        assert_eq!(app.core.charts(0).unwrap()[0].width, "9cm", "{}", app.status);
+        app.active = Pos::new(10, 3);
+        app.run_command("chart here");
+        assert!(app.status.contains("D11"), "{}", app.status);
+        assert_eq!(app.core.charts(0).unwrap()[0].x, "75.000mm");
         app.run_command("chart!");
         assert!(app.core.charts(0).unwrap().is_empty());
     }

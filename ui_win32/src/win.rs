@@ -3693,6 +3693,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::PreviewChart => preview_chart(hwnd),
         Command::DeleteChart => delete_chart(hwnd),
         Command::RestyleChart => restyle_chart(hwnd),
+        Command::MoveChart => move_chart(hwnd),
         Command::WrapText => wrap_text(hwnd),
         Command::BordersAll => borders(hwnd, true),
         Command::BordersNone => borders(hwnd, false),
@@ -4018,7 +4019,7 @@ fn restyle_chart(hwnd: HWND) {
     let Some(words) = dialog::prompt(
         hwnd,
         "Change Chart",
-        "line, bar or pie; title=…; no-title; legend=top|bottom|start|end|none:",
+        &format!("{}:", grind_sheet::verbs::CHART_WORDS),
         "",
     ) else {
         return;
@@ -4039,6 +4040,40 @@ fn restyle_chart(hwnd: HWND) {
                         Err(why) => why,
                     }
                 }
+            }));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Data ▸ Move Last Chart Here — its corner to the active cell's, its size kept
+/// (`verbs::move_chart`), over the offsets this window draws the grid at.
+fn move_chart(hwnd: HWND) {
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let count = state
+                .app
+                .charts(state.sheet)
+                .map_or(0, |charts| charts.len());
+            let px = 1.0 / (crate::sheet::geom::mm_to_px(state.geom.dpi)(1.0) * state.geom.zoom);
+            state.say(Some(match count {
+                0 => "This sheet has no chart.".to_owned(),
+                n => match grind_sheet::verbs::move_chart(
+                    &state.app,
+                    state.sheet,
+                    n - 1,
+                    state.selection.active,
+                    |col, row| {
+                        (
+                            state.geom.cols.offset_of(col) * px,
+                            state.geom.rows.offset_of(row) * px,
+                        )
+                    },
+                ) {
+                    Ok(said) => format!("{said} Ctrl+Z takes it back."),
+                    Err(why) => why,
+                },
             }));
         });
     }
@@ -6173,6 +6208,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::PreviewChart
         | Command::DeleteChart
         | Command::RestyleChart
+        | Command::MoveChart
         | Command::WrapText
         | Command::BordersAll
         | Command::BordersNone
@@ -7323,6 +7359,7 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::PreviewChart
         | Command::DeleteChart
         | Command::RestyleChart
+        | Command::MoveChart
         | Command::WrapText
         | Command::BordersAll
         | Command::BordersNone

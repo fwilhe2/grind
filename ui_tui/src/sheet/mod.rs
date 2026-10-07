@@ -39,6 +39,8 @@ Spreadsheet:
   :yank-values            — the selection as shown (results, not formulas) into the register
   :chart  :chart!         — a chart of the table here (drawn by the other windows); drop the last
   :chart <words>          — change the last chart: line|bar|pie  title=…|no-title  legend=top|…|none
+                            width=12cm  height=8cm
+  :chart here             — move the last chart so it starts at the cursor's cell
   :calc [text]            — every formula in the document, searchable; Enter jumps to its cell
   :functions [text]       — the functions, with plain names; Enter starts a formula with one
   :locale [tag|none]      — the document's own locale (de-DE): how it spells numbers

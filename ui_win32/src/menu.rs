@@ -91,8 +91,10 @@ pub enum Command {
     /// (`verbs::preview_insert_chart`); nothing is written unless Insert is pressed.
     PreviewChart,
     DeleteChart,
-    /// The last chart's kind, title and legend, asked for in words (`verbs::restyle_chart`).
+    /// The last chart's kind, title, legend and size, asked for in words (`verbs::restyle_chart`).
     RestyleChart,
+    /// The last chart's corner moved to the active cell, its size kept (`verbs::move_chart`).
+    MoveChart,
     /// A hairline round every selected cell, or every edge taken away — `grind_sheet::format::
     /// bordered`, the call every other shell's Borders control makes. The grid draws them
     /// (`look::border_strokes`).
@@ -382,6 +384,7 @@ impl Command {
         Command::PreviewChart,
         Command::DeleteChart,
         Command::RestyleChart,
+        Command::MoveChart,
         Command::WrapText,
         Command::BordersAll,
         Command::BordersNone,
@@ -809,6 +812,10 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::RestyleChart,
                 label: "Change Last C&hart…",
+            },
+            Item::Verb {
+                command: Command::MoveChart,
+                label: "Move La&st Chart Here",
             },
             Item::Verb {
                 command: Command::DeleteChart,
@@ -1280,6 +1287,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::PreviewChart
         | Command::DeleteChart
         | Command::RestyleChart
+        | Command::MoveChart
         | Command::WrapText
         | Command::BordersAll
         | Command::BordersNone
@@ -1715,6 +1723,7 @@ mod tests {
             Command::PreviewChart,
             Command::DeleteChart,
             Command::RestyleChart,
+            Command::MoveChart,
             Command::BordersAll,
             Command::BordersNone,
             Command::HideRows,

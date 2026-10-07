@@ -119,9 +119,13 @@ pub fn insert_chart(
 
 /// Restyle the chart at `index` on `sheet` from a person's words — `line`, `bar` or `pie`;
 /// `title=Quarterly sales` (to the end of the line) or `no-title`; `legend=top|bottom|start|end`
-/// or `legend=none` — everything else about it kept (`ChartSpec::of`, then `App::edit_chart`: one
-/// undo step). What a window with no chart dialog asks in place of one. Answers the sentence to
-/// say, or why it could not.
+/// or `legend=none`; `width=12cm` and `height=8cm` — everything else about it kept
+/// (`ChartSpec::of`, then `App::edit_chart`, then `App::reshape_chart` for a size). What a window
+/// with no chart dialog asks in place of one. Answers the sentence to say, or why it could not.
+///
+/// ponytail: words for the look *and* a size are two undo steps, since `edit_chart` and
+/// `reshape_chart` are two actions; the trigger is somebody minding the second ⌘Z, and the
+/// upgrade is one `Action::Batch` of both.
 pub fn restyle_chart(
     app: &App,
     sheet: usize,
@@ -136,6 +140,7 @@ pub fn restyle_chart(
         .ok_or("there is no such chart")?;
     let mut spec = crate::ChartSpec::of(&chart);
     let mut said = Vec::new();
+    let (mut width, mut height) = (None, None);
     let mut rest = words.trim();
     while !rest.is_empty() {
         let (word, after) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
@@ -150,6 +155,16 @@ pub fn restyle_chart(
             "legend=bottom" => spec.legend = Some(crate::ChartLegend::Bottom),
             "legend=start" => spec.legend = Some(crate::ChartLegend::Start),
             "legend=end" => spec.legend = Some(crate::ChartLegend::End),
+            _ if word.starts_with("width=") || word.starts_with("height=") => {
+                let (which, length) = word.split_once('=').unwrap_or((word, ""));
+                if !crate::style::length_mm(length).is_some_and(|mm| mm > 0.0) {
+                    return Err(format!("“{length}” is not a length — 12cm, 4in or 300pt"));
+                }
+                match which {
+                    "width" => width = Some(length.to_owned()),
+                    _ => height = Some(length.to_owned()),
+                }
+            }
             _ if word.starts_with("title=") => {
                 // The title is the rest of the line: it has spaces in it.
                 let title = format!("{} {}", &word["title=".len()..], rest);
@@ -157,22 +172,67 @@ pub fn restyle_chart(
                 rest = "";
             }
             other => {
-                return Err(format!(
-                    "“{other}” is not a chart word — bar, line, pie, title=…, no-title, legend=top|bottom|start|end|none"
-                ));
+                return Err(format!("“{other}” is not a chart word — {CHART_WORDS}"));
             }
         }
         said.push(word);
     }
     if said.is_empty() {
-        return Err(
-            "say what to change — bar, line, pie, title=…, no-title, legend=top|bottom|start|end|none"
-                .to_owned(),
-        );
+        return Err(format!("say what to change — {CHART_WORDS}"));
     }
-    app.edit_chart(sheet, index, &spec)
+    if spec != crate::ChartSpec::of(&chart) {
+        app.edit_chart(sheet, index, &spec)
+            .map_err(|e| e.to_string())?;
+    }
+    if width.is_some() || height.is_some() {
+        app.reshape_chart(
+            sheet,
+            index,
+            &chart.x,
+            &chart.y,
+            width.as_deref().unwrap_or(&chart.width),
+            height.as_deref().unwrap_or(&chart.height),
+        )
         .map_err(|e| e.to_string())?;
+    }
     Ok("The chart is changed.".to_owned())
+}
+
+/// Every word [`restyle_chart`] takes, for a prompt to say.
+pub const CHART_WORDS: &str =
+    "bar, line, pie, title=…, no-title, legend=top|bottom|start|end|none, width=12cm, height=8cm";
+
+/// *Move the last chart here* — the chart at `index` with its top-left corner at the active
+/// cell's, its size kept, one undo step (`App::reshape_chart`). `place` is [`insert_chart`]'s:
+/// the shell's own answer to where a column and a row begin, in millimetres. What a window that
+/// does not hit-test a chart offers in place of dragging one.
+pub fn move_chart(
+    app: &App,
+    sheet: usize,
+    index: usize,
+    at: Pos,
+    place: impl Fn(u32, u32) -> (f64, f64),
+) -> std::result::Result<String, String> {
+    let chart = app
+        .charts(sheet)
+        .map_err(|e| e.to_string())?
+        .get(index)
+        .cloned()
+        .ok_or("there is no such chart")?;
+    let (x, y) = place(at.col, at.row);
+    app.reshape_chart(
+        sheet,
+        index,
+        &crate::style::mm_length(x),
+        &crate::style::mm_length(y),
+        &chart.width,
+        &chart.height,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(format!(
+        "The chart now starts at {}.",
+        crate::a1::format(None, at)
+    ))
 }
 
 /// What a formula typed in display syntax — with or without its `=` — comes to at `at`, spelled
@@ -319,6 +379,35 @@ mod tests {
         assert!(restyle_chart(&app, 0, 0, "shout").is_err());
         assert!(restyle_chart(&app, 0, 0, "").is_err());
         assert!(restyle_chart(&app, 0, 5, "pie").is_err());
+
+        // A size is words too, the look untouched by it.
+        restyle_chart(&app, 0, 0, "width=12cm height=8cm").unwrap();
+        let sized = app.charts(0).unwrap()[0].clone();
+        assert_eq!(
+            (sized.width.as_str(), sized.height.as_str()),
+            ("12cm", "8cm")
+        );
+        assert_eq!(sized.kind, crate::ChartKind::Line);
+        assert!(restyle_chart(&app, 0, 0, "width=wide").is_err());
+
+        // Moved: the corner at the cell, the size kept, one undo step.
+        let said = move_chart(&app, 0, 0, Pos::new(4, 2), |col, row| {
+            (f64::from(col) * 20.0, f64::from(row) * 5.0)
+        })
+        .unwrap();
+        assert!(said.contains("C5"), "{said}");
+        let moved = app.charts(0).unwrap()[0].clone();
+        assert_eq!(
+            (
+                grind_core::style::length_mm(&moved.x),
+                grind_core::style::length_mm(&moved.y)
+            ),
+            (Some(40.0), Some(20.0))
+        );
+        assert_eq!(moved.width, "12cm");
+        assert!(app.undo());
+        assert_eq!(app.charts(0).unwrap()[0].x, sized.x);
+        assert!(move_chart(&app, 0, 3, Pos::new(0, 0), |_, _| (0.0, 0.0)).is_err());
     }
 
     #[test]
