@@ -8,7 +8,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 **Normative for `text/src/spell.rs`, `spell/` and every shell's underline.** Built 2026-10-06:
 English and German, one language per document, in the core, the CLI, `grind lint` and the GNOME
-window, with every other shell's problems pane listing the words.
+window, with every other shell's problems pane listing the words. Since 2026-10-07 the terminal
+and Windows shells underline and correct as well, and the Mac underlines; the browser is the one
+client with nothing (*Where it reaches*).
 
 ## The decisions
 
@@ -68,7 +70,9 @@ window, with every other shell's problems pane listing the words.
 |---|---|
 | `grind` | `grind text spell [range] [--language] [--suggest]`, `--add`, `grind text correct`; `misspelt` in `grind text lint` and `grind lint` |
 | `grind-text-gtk` | Wavy underlines (not under the word still being typed), suggestions, Ignore All and Add to Dictionary on right-click, a Spelling submenu (Automatic, English (US), Deutsch, Off), the language in the status bar, and Check Document |
-| `grind-tui`, `grind-win32`, `grind-mac` | The `misspelt` findings in their problems panes (`:lint`, F8, the sidebar), nothing drawn |
+| `grind-tui` | Words underlined in red (not the one being typed), `]`/`[` to the next or previous with suggestions on the status line, `:fix N` or `:fix <word>`, `:spell ignore` and `:spell add`, `:spell auto\|en\|de\|off`, the language on the status bar, and `:lint` |
+| `grind-win32` | A squiggle in Fluent's critical red, suggestions with Ignore All and Add to Dictionary at the head of the context menu (right click, or Shift+F10 with the caret in the word), F7 for the next word with the same popup, View ▸ Spelling Language…, the language on the status bar, and Check Document |
+| `grind-mac` | The dotted red underline, drawn by the portable `text/paint.rs`; the misspelt words in the sidebar's Problems |
 | `grind-web` | Nothing yet |
 
 ## The gaps, named
@@ -82,8 +86,10 @@ window, with every other shell's problems pane listing the words.
 - **Regional spellings.** One dictionary per language: `en-GB` is checked as American English,
   and `de-AT`/`de-CH` as German German (so Swiss `ss` for `ß` is underlined). Each is one more
   pair of files and one more `Language`.
-- **Underlines in the terminal, Windows and macOS shells**, and suggestions there. Their problems
-  panes already list every word; drawing is each shell's own `paint::band` call.
+- **Suggestions and a Spelling menu on the Mac.** It underlines; Edit ▸ Spelling and Grammar
+  (⌘; for the next word) and suggestions on the page's context menu are the AppKit half still
+  owed. Every shell's choice of language is `grind_spell::Setting` and its guess-again rule
+  `grind_spell::reguess`, so the Mac's menu is a view over those rather than a fourth copy.
 - **The browser.** Two megabytes the page should fetch on first use rather than carry, the way
   `grind-print`'s fonts are fetched.
 - **A personal list in the projection or the document.** Deliberately not (decision 5).
