@@ -286,6 +286,12 @@ impl Delegate {
                 }
                 return;
             }
+            Command::Spell(spell) => {
+                if let Some(page) = self.front_document().and_then(|document| document.page()) {
+                    page.spell(spell, self.mtm());
+                }
+                return;
+            }
             Command::ShowFormulas => {
                 if let Some(pane) = self.front_pane() {
                     pane.toggle_formulas();
@@ -487,7 +493,7 @@ fn ask_function(mtm: MainThreadMarker) -> Option<usize> {
         .flatten()
 }
 /// A selector by name, as `menu.rs` spells it.
-fn selector(name: &str) -> Sel {
+pub(crate) fn selector(name: &str) -> Sel {
     let name = CString::new(name).expect("a selector has no NUL in it");
     Sel::register(&name)
 }

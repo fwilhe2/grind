@@ -73,6 +73,9 @@ pub enum Command {
     Currency(u8),
     /// The thousands separator on, or off where the cell has it (`grind_sheet::format::grouped`).
     Group,
+    /// Spelling on a page (`doc/spelling.md`): the next misspelt word, the language, and the
+    /// context menu's rows over a misspelt word.
+    Spell(Spell),
     /// The text's own colour — a [`PALETTE`] entry by index, or `None` for *Automatic*.
     TextColor(Option<u8>),
     /// A cell's fill, or a run's highlight — a [`PALETTE`] entry, or `None` for none.
@@ -208,6 +211,25 @@ pub enum Track {
     Fit,
 }
 
+/// What a spelling command does — Edit ▸ Spelling's two items and the page's context-menu rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Spell {
+    /// Select the next misspelt word after the caret, wrapping — *Check Document Now*, ⌘;.
+    Next,
+    /// Automatic, a dictionary by name, or Off — `grind_spell::Setting`, the session's choice.
+    Language,
+    /// The word under the pointer accepted for this session — *Ignore Spelling*.
+    Ignore,
+    /// The word under the pointer added to the person's own list — *Learn Spelling*.
+    Learn,
+    /// The word under the pointer replaced by the suggestion at this index.
+    Correct(u8),
+}
+
+/// How many suggestions the context menu offers — and so how many `Spell::Correct` commands
+/// there are.
+pub const SUGGESTIONS: u8 = 6;
+
 /// A block kind Format ▸ Paragraph offers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Block {
@@ -262,6 +284,13 @@ impl Command {
         all.extend([Command::Borders(true), Command::Borders(false)]);
         all.extend(Preset::ALL.map(Command::Number));
         all.extend([Command::Decimals(-1), Command::Decimals(1)]);
+        all.extend([
+            Command::Spell(Spell::Next),
+            Command::Spell(Spell::Language),
+            Command::Spell(Spell::Ignore),
+            Command::Spell(Spell::Learn),
+        ]);
+        all.extend((0..SUGGESTIONS).map(|i| Command::Spell(Spell::Correct(i))));
         all.extend([
             Command::Currency(0),
             Command::Currency(1),
@@ -356,6 +385,7 @@ impl Command {
                 | Command::RemoveRule
                 | Command::Calculations
                 | Command::ParagraphStyle
+                | Command::Spell(Spell::Language)
         )
     }
 
@@ -365,6 +395,17 @@ impl Command {
             .iter()
             .position(|command| *command == self)
             .expect("every command is in all()") as isize
+    }
+
+    /// Whether the command's item is made at the moment a menu opens rather than read from a
+    /// table — the rows over a misspelt word (`spelling.rs`), whose titles are the word's own
+    /// suggestions. In no table, and so in no menu bar: the test holds them to that.
+    #[cfg(test)]
+    pub fn is_made_on_opening(self) -> bool {
+        matches!(
+            self,
+            Command::Spell(Spell::Ignore | Spell::Learn | Spell::Correct(_))
+        )
     }
 
     /// The command an item's tag names.
@@ -402,7 +443,8 @@ impl Command {
             | Command::Print
             | Command::MoveParagraph(_)
             | Command::DeleteParagraph
-            | Command::ParagraphStyle => text,
+            | Command::ParagraphStyle
+            | Command::Spell(_) => text,
             Command::AddSheet
             | Command::RenameSheet
             | Command::DeleteSheet
@@ -772,6 +814,19 @@ static CONDITIONAL: Menu = Menu {
     ],
 };
 
+static SPELLING: Menu = Menu {
+    title: "Spelling",
+    role: Role::Plain,
+    items: &[
+        command(
+            "Check Document Now",
+            key(";", CMD),
+            Command::Spell(Spell::Next),
+        ),
+        command("Spelling Language…", None, Command::Spell(Spell::Language)),
+    ],
+};
+
 static FILL: Menu = Menu {
     title: "Fill",
     role: Role::Plain,
@@ -936,6 +991,11 @@ pub static MENUS: &[Menu] = &[
             command("Unmerge Cells", None, Command::Merge(false)),
             Item::Separator,
             command("Delete Sheet", None, Command::DeleteSheet),
+            Item::Separator,
+            Item::Submenu {
+                title: "Spelling",
+                menu: &SPELLING,
+            },
         ],
     },
     Menu {
@@ -1209,7 +1269,8 @@ mod tests {
                 .iter()
                 .filter(|(_, _, action)| *action == Action::Command(command))
                 .count();
-            assert_eq!(count, 1, "{command:?}");
+            let tables = usize::from(!command.is_made_on_opening());
+            assert_eq!(count, tables, "{command:?}");
             assert_eq!(Command::from_tag(command.tag()), Some(command));
         }
         assert_eq!(Command::from_tag(-1), None);

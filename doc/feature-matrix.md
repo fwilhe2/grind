@@ -423,7 +423,7 @@ it, and dragging one moves it. There is no dialog, and resizing or recolouring o
 | Replace | ● | ● ʸ | ● | ● ˣ | ● ʷ | ● |
 | Word count | ● | ● | ● | ● | ● | ● |
 | Misspelt words listed, with addresses (`doc/spelling.md`) | ● | ● | ● | — | ● | ● |
-| Misspelt words underlined, suggestions, Add to Dictionary | ◐ ˢᵖ | ● | ● ˢᵖ | — | ● ˢᵖ | ◐ ˢᵖ |
+| Misspelt words underlined, suggestions, Add to Dictionary | ◐ ˢᵖ | ● | ● ˢᵖ | — | ● ˢᵖ | ● ˢᵖ |
 | **Character formatting** | | | | | | |
 | Bold, italic, underline | ● | ● | ● | ● | ● | ● |
 | Strikethrough | ● | ● | ● | ● | ● | ● |
@@ -474,7 +474,7 @@ and Windows, which has no API that prints a PDF, sends the preview's rasters at 
 resolution. Every preview anywhere is `grind_print::raster` of the display list the PDF is
 written from, except the Mac's, which is the PDF. The terminal cannot show a page at all.
 
-ˢᵖ `grind text spell --suggest` prints what each word might have been and `--add` keeps one; there is nothing to underline on a terminal's standard output. **Amended 2026-10-07:** `grind-tui` underlines in red, `]`/`[` step between the words with suggestions on the status line, `:fix N` takes one and `:spell ignore|add|auto|en|de|off` does the rest; `grind-win32` draws a Fluent-red squiggle, leads its context menu with suggestions, Ignore All and Add to Dictionary, binds F7 to the next word and has View ▸ Spelling Language…; `grind-mac` draws the dotted red underline and nothing more — its suggestions and its Spelling menu are the gap (`doc/spelling.md`). The two shells share the GTK window's choice and guess-again rule through `grind_spell::{Setting, reguess}`.
+ˢᵖ `grind text spell --suggest` prints what each word might have been and `--add` keeps one; there is nothing to underline on a terminal's standard output. **Amended 2026-10-07:** `grind-tui` underlines in red, `]`/`[` step between the words with suggestions on the status line, `:fix N` takes one and `:spell ignore|add|auto|en|de|off` does the rest; `grind-win32` draws a Fluent-red squiggle, leads its context menu with suggestions, Ignore All and Add to Dictionary, binds F7 to the next word and has View ▸ Spelling Language…; `grind-mac` draws the dotted red underline, leads the page's context menu with suggestions, Ignore Spelling and Learn Spelling, and has Edit ▸ Spelling ▸ Check Document Now (⌘;) and Spelling Language… (2026-10-07, type-checked only; not guessing again as a document grows is its gap, `doc/spelling.md`). The two shells share the GTK window's choice and guess-again rule through `grind_spell::{Setting, reguess}`.
 
 ᵃ Visual mode (`v`), which is the same anchor-plus-caret model under vi's spelling.
 ᵇ `o` opens a paragraph below, `X` deletes the block, `:move <address>` puts it elsewhere.

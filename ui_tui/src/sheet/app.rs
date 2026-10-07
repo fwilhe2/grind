@@ -4185,7 +4185,12 @@ mod tests {
         app.run_command("chart");
         assert_eq!(app.core.charts(0).unwrap().len(), 1, "{}", app.status);
         app.run_command("chart width=9cm");
-        assert_eq!(app.core.charts(0).unwrap()[0].width, "9cm", "{}", app.status);
+        assert_eq!(
+            app.core.charts(0).unwrap()[0].width,
+            "9cm",
+            "{}",
+            app.status
+        );
         app.active = Pos::new(10, 3);
         app.run_command("chart here");
         assert!(app.status.contains("D11"), "{}", app.status);

@@ -93,6 +93,12 @@ pub struct TextPane {
     /// has the keyboard.
     blink: Cell<Blink>,
     blinker: RefCell<Option<Retained<NSTimer>>>,
+    /// Spelling (`doc/spelling.md`, `spelling.rs`): the session's choice in Edit ▸ Spelling, the
+    /// dictionary *Ignore Spelling* adds to, and the misspelt word the context menu was opened
+    /// over with what it might have been — what a `Spell::Correct(n)` row means.
+    pub(crate) spelling: Cell<grind_spell::Setting>,
+    pub(crate) speller: RefCell<Option<Arc<grind_spell::Speller>>>,
+    pub(crate) offers: RefCell<Option<(grind_text::Misspelling, Vec<String>)>>,
 }
 
 /// Set for a drive, whose snapshots must not depend on when they were taken: the caret stays lit
@@ -124,6 +130,9 @@ impl TextPane {
             find_bar: RefCell::new(None),
             blink: Cell::new(Blink::default()),
             blinker: RefCell::new(None),
+            spelling: Cell::new(grind_spell::Setting::Automatic),
+            speller: RefCell::new(None),
+            offers: RefCell::new(None),
         })
     }
 
@@ -705,7 +714,12 @@ define_class!(
                     pane.go_to(caret);
                 }
             }
-            Some(crate::app::context_menu(&crate::menu::PAGE_CONTEXT, self.mtm()))
+            let menu = crate::app::context_menu(&crate::menu::PAGE_CONTEXT, self.mtm());
+            // Over a misspelt word, what it might have been leads the menu, as in every Mac
+            // text view (`spelling.rs`).
+            let caret = pane.state.borrow().caret;
+            crate::spelling::lead_menu(pane, &menu, caret, self.mtm());
+            Some(menu)
         }
 
         #[unsafe(method(mouseDragged:))]

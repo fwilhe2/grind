@@ -81,6 +81,8 @@ mod sidebar;
 #[cfg(target_os = "macos")]
 mod source_pane;
 #[cfg(target_os = "macos")]
+mod spelling;
+#[cfg(target_os = "macos")]
 mod structure;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod text;
