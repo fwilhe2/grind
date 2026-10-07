@@ -480,6 +480,7 @@ impl TextPane {
             ink: rgb(&NSColor::textColor()),
             accent: rgb(&NSColor::controlAccentColor()),
             dark: color::luminance(page) < 0.5,
+            misspelt: rgb(&NSColor::systemRedColor()),
         }
     }
 

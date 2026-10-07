@@ -124,6 +124,8 @@ mod mac {
                 Some(DocumentKind::Text) => {
                     let app = grind_text::App::new();
                     app.open_bytes(name, bytes).map_err(|e| fail(&e))?;
+                    // Spelling, in the document's own language (`doc/spelling.md`).
+                    grind_spell::ensure(&app);
                     Ok(Content::Text(Arc::new(app)))
                 }
                 _ => Err(format!("{name} is not a document this build opens")),
@@ -628,7 +630,11 @@ mod mac {
         /// one empty sheet or one empty paragraph.
         pub fn start(&self, kind: DocumentKind) {
             let content = match kind {
-                DocumentKind::Text => Content::Text(Arc::new(grind_text::App::new())),
+                DocumentKind::Text => {
+                    let app = grind_text::App::new();
+                    grind_spell::ensure(&app);
+                    Content::Text(Arc::new(app))
+                }
                 _ => Content::Sheet(Arc::new(grind_sheet::App::new())),
             };
             *self.ivars().content.borrow_mut() = Some(content);

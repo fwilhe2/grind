@@ -46,6 +46,10 @@ pub const RULE_INK: f64 = 0.28;
 pub const NAME_ROOM: f64 = 120.0;
 pub const NAME_GAP: f64 = 6.0;
 
+/// A misspelt word's mark: a row of dots this wide, one dot's width apart, along the bottom of
+/// its line — the dotted red underline every Mac text view draws under one (`doc/spelling.md`).
+pub const SPELL_DOT: f64 = 2.0;
+
 /// How thick a composition's underline is, and its selected clause's.
 pub const MARKED: f64 = 1.0;
 pub const MARKED_CLAUSE: f64 = 2.0;
@@ -62,6 +66,8 @@ pub struct Palette {
     pub accent: Rgb,
     /// Whether the page is dark, which lifts a document's own colours along their hue.
     pub dark: bool,
+    /// A misspelt word's dots — `systemRedColor`.
+    pub misspelt: Rgb,
 }
 
 impl Palette {
@@ -70,12 +76,14 @@ impl Palette {
         ink: (0x1d, 0x1d, 0x1f),
         accent: (0x00, 0x7a, 0xff),
         dark: false,
+        misspelt: (0xff, 0x3b, 0x30),
     };
     pub const DARK: Palette = Palette {
         page: (0x1e, 0x1e, 0x1e),
         ink: (0xf5, 0xf5, 0xf7),
         accent: (0x0a, 0x84, 0xff),
         dark: true,
+        misspelt: (0xff, 0x45, 0x3a),
     };
 
     /// The ink most of the way to the page — a label that is present and not read.
@@ -230,6 +238,13 @@ pub fn frame(frame: &Frame) -> Vec<Op> {
     let viewport = app.get_viewport(first.index..last.index + 1);
     let selection = state.selection();
     let shown = state.shown_caret();
+    // Every misspelt word in view, empty when no dictionary is attached — less the one still
+    // being typed: the caret at its end with nothing selected is somebody halfway through it.
+    let misspelt: Vec<grind_text::Misspelling> = app
+        .misspellings(first.index..last.index + 1)
+        .into_iter()
+        .filter(|m| selection.is_some() || !m.being_typed(state.caret))
+        .collect();
     for slot in visible {
         let Some(block) = viewport.get(slot.index) else {
             continue;
@@ -405,6 +420,23 @@ pub fn frame(frame: &Frame) -> Vec<Op> {
                             color: palette.ink,
                         });
                     }
+                }
+            }
+            // A misspelt word's dots, under each line it crosses — `band` is the selection's own
+            // arithmetic, so a word that wraps is marked on both lines where its characters are.
+            for wrong in misspelt.iter().filter(|m| m.block == slot.index) {
+                let Some((left, right)) =
+                    band(&layout, line, wrong.offset, wrong.offset + wrong.len)
+                else {
+                    continue;
+                };
+                let mut dot = x + f64::from(left);
+                while dot < x + f64::from(right) {
+                    ops.push(Op::Fill {
+                        rect: Rect::new(dot, top + height - SPELL_DOT, SPELL_DOT, SPELL_DOT),
+                        color: palette.misspelt,
+                    });
+                    dot += 2.0 * SPELL_DOT;
                 }
             }
             // `doc/view-modes.md`'s name overlay: every bookmark anchored on this line, named in
@@ -594,6 +626,25 @@ mod tests {
             fills(&ops, Palette::LIGHT.accent),
             [Rect::new(100.0, top, CARET_W, 1.0)]
         );
+    }
+
+    /// `doc/spelling.md`: a misspelt word is dotted along the bottom of its line, across exactly
+    /// its own characters, and nothing is dotted with no dictionary attached.
+    #[test]
+    fn a_misspelt_word_is_dotted_under_its_own_characters() {
+        let setup = setup(&["we recieve it"]);
+        let red = Palette::LIGHT.misspelt;
+        assert!(fills(&draw(&setup, &Page::default()), red).is_empty());
+
+        grind_spell::attach(&setup.app, Some(grind_spell::Language::English)).unwrap();
+        let dots = fills(&draw(&setup, &Page::default()), red);
+        let top = spacing().top;
+        assert!(!dots.is_empty());
+        for dot in &dots {
+            // `recieve` is characters 3 to 10 of a column at 100, one unit each.
+            assert!((103.0..110.0).contains(&dot.x), "{dot:?}");
+            assert_eq!(dot.y, top + 1.0 - SPELL_DOT);
+        }
     }
 
     #[test]

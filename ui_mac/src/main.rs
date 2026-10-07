@@ -247,6 +247,7 @@ fn render_to(opening: &Opening) -> Result<(), String> {
                 app.open_bytes(&opened.name, &opened.bytes)
                     .map_err(|error| format!("{}: {error}", path.display()))?;
             }
+            grind_spell::ensure(&app);
             let fonts = metrics::CoreText::new(metrics::BASE_PT);
             let faces: Vec<metrics::Face> = Role::ALL
                 .iter()
