@@ -69,7 +69,7 @@ numbered, under each table, so they cannot collide with the lettered ones.
 | Key list / help | ● | ● | ● | ● | ◐ ᵈ | ● | ● ⁵ |
 | About / build stamp | ● | ● | ● | ● ʰ | ● ʷᵃ | ● | ● ⁶ |
 | Recent files | — | ● | ● | ○ | ○ | ● ʷʳ | ● |
-| Opening the *other* document kind | ● ᵉ | ○ ᶠ | ● ᵉ | ● | ● | ● | ● |
+| Opening the *other* document kind | ● ᵉ | ● ᶠ | ● ᵉ | ● | ● | ● | ● |
 | Assertable headless output | stdout | `--render-to` PNG | `--render-to` PNG | `TestBackend` | `smoke.js` (jsdom) | `--render-to` BMP | `--render-to` PNG, `--drive` |
 | `.deb` + `.rpm` | ● | ● | ● | ● | — | — | — ⁷ |
 | Accessibility floor | — ᵍ | announce | announce | terminal | ARIA labels | system caret | text area, announce |
@@ -88,11 +88,12 @@ type each (`doc/suite.md`), so the row means nothing there; `grind-tui` has no "
 `grind_core::kind` at the suite level (`info`, `lint`, `convert`); `grind-text-gtk` cannot open
 one and says so, raising a banner — *"This is a spreadsheet"* + **Open in Sheet**, which launches
 the other binary.
-ᶠ **A real asymmetry, and the one direction of the handoff that is missing.**
-`grind-sheet-gtk` opening a `.fodt` raises nothing: the ODS reader is tolerant by construction,
-so it returns a document with no sheets in it and the window reports whatever the first read of
-sheet 0 says (`grind sheet view report.fodt` prints `no such sheet: 0`). `grind_core::kind` is
-the check it lacks, and its twin's banner is the shape of the answer.
+ᶠ **Closed 2026-10-07** — it was the one direction of the handoff that was missing.
+`grind-sheet-gtk` used to open a `.fodt` into a document with no sheets in it, since the ODS reader
+is tolerant by construction. It now asks `grind_core::kind` on the worker thread before reading,
+and a text document — or a `.docx` or `.md`, which say nothing in their bytes — raises its twin's
+banner the other way round: *"report.fodt is a text document."* + **Open in Text**, which
+launches `grind-text-gtk` (`is_text`, unit-tested; the banner itself not yet seen on a display).
 ʰ `:about`, on the status line — there is no dialog to put it in.
 ᵍ A pipe is the accessible surface, which is `doc/view-modes.md` §4.6's argument for why the
 CLI matters most exactly where a GUI's whole output is colour.
@@ -582,7 +583,7 @@ of a client's own job is missing.
     terminal, and find alone in `grind-text-gtk`.
 12. **Text undo is not on the CLI** (§2 ᶜ) — the one row where a shell is ahead of the CLI, and
     it is a decision about `grind_text::Action` rather than about the CLI.
-13. **`grind-sheet-gtk` has no cross-app handoff** (§2 ᶠ), where its twin does.
+13. ~~**`grind-sheet-gtk` has no cross-app handoff** (§2 ᶠ), where its twin does.~~ **Closed** (2026-10-07): *Open in Text*, the banner its twin raises the other way round.
 
 **Amended on 2026-10-02 for the Mac**, which is now on the authoring side of five of these rows —
 written and type-checked, not yet run (§1): it sets and draws borders (row 2), has point mode

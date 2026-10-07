@@ -63,6 +63,10 @@ const APP_ID: &str = "io.github.fwilhe2.Sheet";
 /// What this shell edits. The one input `save_name` needs beyond the form.
 const KIND: DocumentKind = DocumentKind::Spreadsheet;
 
+/// The word processor's window — what a text document opened here is handed to, the way
+/// `grind-text-gtk` hands a spreadsheet to this one (`doc/suite.md`'s cross-app handoff).
+const TEXT_APP: &str = "grind-text-gtk";
+
 fn main() -> ExitCode {
     let app = Arc::new(App::new());
 
@@ -195,6 +199,9 @@ struct Ui {
     parked: RefCell<Vec<gio::SimpleAction>>,
     /// `editor`'s latch: a close that is waiting on a save must not ask again.
     closing: Cell<bool>,
+    /// A text document somebody tried to open here, waiting on the banner's *Open in Text* —
+    /// and while it is set, the banner's button means that rather than *Recalculate Anyway*.
+    handoff: RefCell<Option<PathBuf>>,
 }
 
 impl Ui {
@@ -327,6 +334,7 @@ impl Ui {
             parked: RefCell::new(Vec::new()),
             imported: RefCell::new(None),
             closing: Cell::new(false),
+            handoff: RefCell::new(None),
         });
         ui.wire(application);
         ui.refresh();
@@ -382,7 +390,10 @@ impl Ui {
         self.banner.connect_button_clicked(glib::clone!(
             #[strong(rename_to = ui)]
             self,
-            move |_| ui.recalculate()
+            move |_| match ui.handoff.borrow().is_some() {
+                true => ui.hand_over(),
+                false => ui.recalculate(),
+            }
         ));
 
         for verb in actions() {
@@ -622,6 +633,7 @@ impl Ui {
             // A banner rather than a toast: this is a *state* the document is in, not an
             // event that happened, and it stays true until something recalculates.
             Notice::RecalcSkipped(spoiled) => {
+                self.handoff.borrow_mut().take();
                 self.banner.set_title(&match spoiled {
                     1 => "1 formula uses a function this build does not have — \
                           recalculating would replace its saved value"
@@ -877,16 +889,22 @@ impl Ui {
             let worker_path = path.clone();
             let prepared = gio::spawn_blocking(move || {
                 let bytes = std::fs::read(&worker_path).map_err(|e| e.to_string())?;
+                // Cross-app handoff: the ODS reader is tolerant by construction and would hand
+                // back a document with no sheets in it, so the kind is asked first.
+                if is_text(&worker_path, &bytes) {
+                    return Ok(None);
+                }
                 let imports = import::is_import(&worker_path, &bytes);
                 import::prepare(&worker_path, &bytes)
-                    .map(|(document, opened)| (document, opened, imports))
+                    .map(|(document, opened)| Some((document, opened, imports)))
             })
             .await;
             notice.dismiss();
             ui.set_busy(false);
             ui.opening.set(false);
             match prepared {
-                Ok(Ok((document, opened, imports))) => {
+                Ok(Ok(None)) => ui.offer_handoff(&path),
+                Ok(Ok(Some((document, opened, imports)))) => {
                     // The open's own notification is swallowed so an ODF document comes up
                     // unmodified. An imported workbook or CSV is *meant* to come up modified —
                     // nothing has saved it — so for one the notification is let through.
@@ -912,6 +930,33 @@ impl Ui {
             }
             done(&ui);
         });
+    }
+
+    /// The banner that says "this is a text document", with the button that opens it in the
+    /// word processor — `grind-text-gtk`'s own banner, the other way round.
+    fn offer_handoff(self: &Rc<Self>, path: &Path) {
+        *self.handoff.borrow_mut() = Some(path.to_owned());
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        self.banner
+            .set_title(&format!("{name} is a text document."));
+        self.banner.set_button_label(Some("Open in Text"));
+        self.banner.set_revealed(true);
+    }
+
+    fn hand_over(self: &Rc<Self>) {
+        let Some(path) = self.handoff.borrow_mut().take() else {
+            return;
+        };
+        self.banner.set_revealed(false);
+        if std::process::Command::new(TEXT_APP)
+            .arg(&path)
+            .spawn()
+            .is_err()
+        {
+            // Saying plainly that the sibling is not installed — a button that silently does
+            // nothing is the alternative.
+            self.toast(&format!("{TEXT_APP} is not installed"));
+        }
     }
 
     /// An imported workbook: named after it, unsaved, and the report's sentence where it
@@ -2812,6 +2857,24 @@ mod chrome_tests {
 mod tests {
     use grind_sheet::{Calculation, Pos};
 
+    /// The handoff is decided from the bytes: a Writer document is the word processor's, a
+    /// spreadsheet stays, and a Word document or Markdown — which say nothing in their bytes — go
+    /// by name.
+    #[test]
+    fn a_text_document_is_known_by_its_bytes() {
+        let data = |path: &str| {
+            std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path)).unwrap()
+        };
+        let path = std::path::Path::new;
+        let text = data("../text/tests/data/numbered-list.fodt");
+        assert!(super::is_text(path("renamed.fods"), &text), "bytes, not the name");
+        let sheet = data("../sheet/tests/data/kb/fizzbuzz.fods");
+        assert!(!super::is_text(path("fizzbuzz.fods"), &sheet));
+        assert!(super::is_text(path("letter.DOCX"), b"PK\x03\x04"));
+        assert!(super::is_text(path("notes.md"), b"# Notes"));
+        assert!(!super::is_text(path("data.csv"), b"a,b"));
+    }
+
     fn calc(formula: &str, functions: &[&str]) -> Calculation {
         Calculation {
             sheet: 0,
@@ -2861,5 +2924,22 @@ mod tests {
             super::save_name(Some(Path::new("/tmp/book.fods"))),
             "book.fods"
         );
+    }
+}
+
+/// Whether a file is the word processor's, decided from its bytes where they can say —
+/// `grind_core::kind`, before any parsing — and from its name where they cannot: a Word document
+/// (a zip that is not ODF) and Markdown (plain text, with no signature), both of which
+/// `grind-text-gtk` opens as a new document. The twin of that window's `is_spreadsheet`.
+fn is_text(path: &Path, bytes: &[u8]) -> bool {
+    match grind_core::kind::kind(bytes) {
+        Some(found) => found == DocumentKind::Text,
+        None => path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| {
+                ["docx", "docm", "dotx", "md", "markdown"]
+                    .contains(&ext.to_ascii_lowercase().as_str())
+            }),
     }
 }
