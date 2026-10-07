@@ -58,15 +58,19 @@ fn write_then_rename(
     bytes: &[u8],
     existing: Option<&fs::Metadata>,
 ) -> io::Result<()> {
-    let mut file: File = OpenOptions::new().write(true).create_new(true).open(temp)?;
-    file.write_all(bytes)?;
-    if let Some(meta) = existing {
-        file.set_permissions(meta.permissions())?;
+    // The file is closed at the end of this block, before the rename — Windows will not rename
+    // a file that is still open. A block rather than `drop`, which on wasm (where `File` holds
+    // nothing to close) is a lint.
+    {
+        let mut file: File = OpenOptions::new().write(true).create_new(true).open(temp)?;
+        file.write_all(bytes)?;
+        if let Some(meta) = existing {
+            file.set_permissions(meta.permissions())?;
+        }
+        // Data must be on disk *before* the rename, or a crash can leave the new name on an
+        // empty file — the failure this whole module exists to rule out.
+        file.sync_all()?;
     }
-    // Data must be on disk *before* the rename, or a crash can leave the new name on an empty
-    // file — the failure this whole module exists to rule out.
-    file.sync_all()?;
-    drop(file);
     fs::rename(temp, target)?;
     sync_directory(target);
     Ok(())
