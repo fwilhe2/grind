@@ -49,6 +49,8 @@ fn toggle(command: Command) -> Option<Toggle> {
     match command {
         Command::Mark(Emphasis::Bold) => Some(Toggle::Bold),
         Command::Mark(Emphasis::Italic) => Some(Toggle::Italic),
+        Command::Mark(Emphasis::Underline) => Some(Toggle::Underline),
+        Command::Mark(Emphasis::Strike) => Some(Toggle::Strike),
         Command::Align(Align::Left) => Some(Toggle::AlignStart),
         Command::Align(Align::Center) => Some(Toggle::AlignCenter),
         Command::Align(Align::Right) => Some(Toggle::AlignEnd),
@@ -163,10 +165,16 @@ mod tests {
             Some(Write::Style(None)),
             "off leaves no style"
         );
+        let Some(Write::Style(Some(underlined))) =
+            write(Command::Mark(Emphasis::Underline), &plain, None)
+        else {
+            panic!("an underline is a cell style");
+        };
+        assert!(underlined.is_underlined());
         assert_eq!(
-            write(Command::Mark(Emphasis::Underline), &plain, None),
+            write(Command::Mark(Emphasis::Code), &plain, None),
             None,
-            "a cell has no underline"
+            "a cell has no family to make monospace"
         );
     }
 

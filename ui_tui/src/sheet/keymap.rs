@@ -93,6 +93,9 @@ pub enum Action {
     /// have two vocabularies for emphasis.
     Bold,
     Italic,
+    /// `_` underline and `~` strikethrough — the word processor's two keys again.
+    Underline,
+    Strike,
     /// `-` — back to no styling at all.
     Plain,
     /// `w` `b` `}` `{` (and Ctrl+arrow) — to the next edge of the data in that direction, the rule
@@ -136,6 +139,8 @@ pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<
         // available to whatever wants them next.
         KeyCode::Char('*') if visual => Some(Action::Bold),
         KeyCode::Char('/') if visual => Some(Action::Italic),
+        KeyCode::Char('_') if visual => Some(Action::Underline),
+        KeyCode::Char('~') if visual => Some(Action::Strike),
         KeyCode::Char('-') if visual => Some(Action::Plain),
         KeyCode::Char('h') | KeyCode::Left => by(Dir::Left),
         KeyCode::Char('l') | KeyCode::Right => by(Dir::Right),
@@ -524,6 +529,8 @@ mod tests {
         for (ch, action) in [
             ('*', Action::Bold),
             ('/', Action::Italic),
+            ('_', Action::Underline),
+            ('~', Action::Strike),
             ('-', Action::Plain),
         ] {
             assert_eq!(

@@ -905,6 +905,8 @@ impl Ui {
 
             "style.bold" => style(|s| Toggle::Bold.flipped(s)),
             "style.italic" => style(|s| Toggle::Italic.flipped(s)),
+            "style.underline" => style(|s| Toggle::Underline.flipped(s)),
+            "style.strike" => style(|s| Toggle::Strike.flipped(s)),
             // The alignments *set* rather than flip here, with a command of their own to clear
             // them, because a palette row has no pressed state to flip from.
             "style.align-left" => style(|s| Toggle::AlignStart.set(s, true)),
@@ -1335,6 +1337,8 @@ impl Ui {
         for (id, toggle) in [
             ("s-bold", Toggle::Bold),
             ("s-italic", Toggle::Italic),
+            ("s-underline", Toggle::Underline),
+            ("s-strike", Toggle::Strike),
             ("s-wrap", Toggle::Wrap),
             ("s-align-left", Toggle::AlignStart),
             ("s-align-center", Toggle::AlignCenter),

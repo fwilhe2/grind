@@ -107,6 +107,7 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
             "s" | "S" => Some(Action::Run("doc.save")),
             "b" | "B" => Some(Action::Run("style.bold")),
             "i" | "I" => Some(Action::Run("style.italic")),
+            "u" | "U" => Some(Action::Run("style.underline")),
             "a" | "A" => Some(Action::Run("edit.select-all")),
             "d" | "D" => Some(Action::Run("edit.fill-down")),
             "r" | "R" => Some(Action::Run("edit.fill-right")),

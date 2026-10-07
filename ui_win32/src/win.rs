@@ -3755,6 +3755,8 @@ fn do_command(hwnd: HWND, command: Command) {
         // the strip reaches, so the two cannot mean different things.
         Command::Bold => format_control(hwnd, format::Control::Bold),
         Command::Italic => format_control(hwnd, format::Control::Italic),
+        Command::Underline => format_control(hwnd, format::Control::Underline),
+        Command::Strike => format_control(hwnd, format::Control::Strike),
         Command::AlignLeft => format_control(hwnd, format::Control::AlignLeft),
         Command::AlignCenter => format_control(hwnd, format::Control::AlignCenter),
         Command::AlignRight => format_control(hwnd, format::Control::AlignRight),
@@ -3765,9 +3767,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::MoreDecimals => format_control(hwnd, format::Control::MoreDecimals),
         Command::ClearFormatting => format_control(hwnd, format::Control::Clear),
         // The text pane's, and this one has no run, block or outline to work with.
-        Command::Underline
-        | Command::Strike
-        | Command::Code
+        Command::Code
         | Command::PickFamily
         | Command::PickSize
         | Command::PickHighlight
@@ -5223,6 +5223,8 @@ fn check_format(hwnd: HWND, popup: HMENU) {
     for (command, control) in [
         (Command::Bold, format::Control::Bold),
         (Command::Italic, format::Control::Italic),
+        (Command::Underline, format::Control::Underline),
+        (Command::Strike, format::Control::Strike),
         (Command::AlignLeft, format::Control::AlignLeft),
         (Command::AlignCenter, format::Control::AlignCenter),
         (Command::AlignRight, format::Control::AlignRight),

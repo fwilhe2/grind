@@ -247,9 +247,9 @@ pub enum Command {
     SheetDelete,
     SheetNext,
     SheetPrevious,
-    /// Toggle bold or italic across the selection — **both panes'**: a run's `CharStyle` in the
-    /// text pane, a cell's `CellStyle` on the grid, and Ctrl+B means bold in either. Underline and
-    /// the two after it are the text pane's alone, since a cell style has no underline to toggle.
+    /// Toggle bold, italic, underline or strikethrough across the selection — **both panes'**: a
+    /// run's `CharStyle` in the text pane, a cell's `CellStyle` on the grid, and Ctrl+B means bold
+    /// in either. Code is the text pane's alone, since a cell has no family to toggle.
     Bold,
     Italic,
     Underline,
@@ -899,7 +899,7 @@ pub const MENUS: &[Menu] = &[
             },
             Item::Verb {
                 command: Command::AlignRight,
-                label: "Align Righ&t",
+                label: "Align Rig&ht",
             },
             Item::Separator,
             Item::Verb {
@@ -1319,17 +1319,18 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         // Bold, italic, a text colour and Clear mean the same thing to a run and to a cell, and each
         // pane answers them over its own style — `CharStyle` there, `CellStyle` here — so they are
         // both panes' verbs, and Ctrl+B is bold wherever the window is.
-        Command::Bold | Command::Italic | Command::PickColor | Command::ClearFormatting => {
-            matches!(kind, Spreadsheet | Text)
-        }
+        Command::Bold
+        | Command::Italic
+        | Command::Underline
+        | Command::Strike
+        | Command::PickColor
+        | Command::ClearFormatting => matches!(kind, Spreadsheet | Text),
         // Find and replace reach both: `App::find` over cells on the grid, `grind_text::find`
         // over the document's text on the page.
         Command::Find | Command::FindNext | Command::FindPrevious | Command::Replace => {
             matches!(kind, Spreadsheet | Text)
         }
-        Command::Underline
-        | Command::Strike
-        | Command::Code
+        Command::Code
         | Command::PickFamily
         | Command::PickSize
         | Command::PickHighlight
@@ -1641,8 +1642,6 @@ mod tests {
     fn formatting_and_the_outline_are_the_text_panes_alone() {
         use grind_core::DocumentKind::{Spreadsheet, Text};
         for command in [
-            Command::Underline,
-            Command::Strike,
             Command::Code,
             Command::PickFamily,
             Command::PickSize,
@@ -1845,6 +1844,8 @@ mod tests {
             [
                 Command::Bold,
                 Command::Italic,
+                Command::Underline,
+                Command::Strike,
                 Command::AlignLeft,
                 Command::AlignCenter,
                 Command::AlignRight,
@@ -1896,6 +1897,8 @@ mod tests {
         for command in [
             Command::Bold,
             Command::Italic,
+            Command::Underline,
+            Command::Strike,
             Command::PickColor,
             Command::ClearFormatting,
         ] {

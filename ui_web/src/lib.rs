@@ -1533,6 +1533,8 @@ fn wire_toolbar(shell: &Rc<Shell>) -> Result<(), JsValue> {
         ("sheet-add", "sheet.add", false),
         ("s-bold", "style.bold", false),
         ("s-italic", "style.italic", false),
+        ("s-underline", "style.underline", false),
+        ("s-strike", "style.strike", false),
         ("s-align-left", "style.align-left", false),
         ("s-align-center", "style.align-center", false),
         ("s-align-right", "style.align-right", false),

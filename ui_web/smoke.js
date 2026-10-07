@@ -561,6 +561,11 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("and the toggle shows it", byId("s-bold").getAttribute("aria-pressed"), "true");
   await press_button("s-bold");
   check("pressing it again turns it off", byId("s-bold").getAttribute("aria-pressed"), "false");
+  await press_button("s-underline");
+  check("the toolbar underlines a cell", document.querySelector("td.active").getAttribute("style").includes("underline"), true);
+  check("and that toggle shows it", byId("s-underline").getAttribute("aria-pressed"), "true");
+  await press_button("s-underline");
+  check("and takes it off again", byId("s-underline").getAttribute("aria-pressed"), "false");
 
   await command("Number: per cent");
   await frame();

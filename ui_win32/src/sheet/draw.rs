@@ -1364,7 +1364,8 @@ mod windows_impl {
     /// functions the text pane's strip uses — so a toggle, a swatch, a picker and a button are one
     /// kind of thing in both panes.
     ///
-    /// Bold's label is bold and Italic's italic, as on the text strip: the control shows what it
+    /// Bold's label is bold, Italic's italic, Underline's underlined and Strikethrough's struck,
+    /// as on the text strip: the control shows what it
     /// does. The three alignments are **drawn** — four lines, ragged on the side they are not
     /// aligned to, the icon every word processor and spreadsheet uses — rather than lettered,
     /// since `L`, `C` and `R` name a direction without showing one.
@@ -1407,16 +1408,21 @@ mod windows_impl {
                         false => theme.text,
                     };
                     match control {
-                        Control::Bold | Control::Italic => {
+                        Control::Bold | Control::Italic | Control::Underline | Control::Strike => {
                             let font = Font::styled(
                                 frame.face,
                                 frame.body_px,
                                 control == Control::Bold,
                                 control == Control::Italic,
-                                false,
-                                false,
+                                control == Control::Underline,
+                                control == Control::Strike,
                             );
-                            let text = if control == Control::Bold { "B" } else { "I" };
+                            let text = match control {
+                                Control::Bold => "B",
+                                Control::Italic => "I",
+                                Control::Underline => "U",
+                                _ => "S",
+                            };
                             strip::label(dc, rect, text, &font, ink);
                         }
                         _ => align_icon(dc, rect, control, ink, g.dpi),

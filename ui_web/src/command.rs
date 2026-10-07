@@ -130,6 +130,8 @@ pub const SHEET: &[Command] = &[
     // --- how it looks ---
     cmd("style.bold", "Bold", "Format", "Ctrl+B", true),
     cmd("style.italic", "Italic", "Format", "Ctrl+I", true),
+    cmd("style.underline", "Underline", "Format", "Ctrl+U", true),
+    cmd("style.strike", "Strikethrough", "Format", "", false),
     cmd("style.align-left", "Align left", "Format", "", false),
     cmd("style.align-center", "Align centre", "Format", "", false),
     cmd("style.align-right", "Align right", "Format", "", false),

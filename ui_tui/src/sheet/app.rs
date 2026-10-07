@@ -30,6 +30,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use grind_sheet::find::Search;
+use grind_sheet::format::Toggle;
 use grind_sheet::formula::{display, lex};
 use grind_sheet::numfmt::{self, Kind};
 use grind_sheet::style::CellStyle;
@@ -356,6 +357,8 @@ impl App {
             Action::Put => self.put(),
             Action::Bold => self.toggle_style(|style| toggle(&mut style.font_weight, "bold")),
             Action::Italic => self.toggle_style(|style| toggle(&mut style.font_style, "italic")),
+            Action::Underline => self.flip(Toggle::Underline),
+            Action::Strike => self.flip(Toggle::Strike),
             Action::Plain => self.write_style(None, "plain"),
             Action::Next(forward) => self.step_match(forward),
             Action::Escape => {
@@ -787,6 +790,12 @@ impl App {
         self.write_style(Some(style), "styled");
     }
 
+    /// One of `grind_sheet::format`'s toggles pressed over the selection, read off the active cell
+    /// — any underline already there, `dotted` included, reads as on and is taken off.
+    fn flip(&mut self, toggle: Toggle) {
+        self.toggle_style(|style| *style = toggle.flipped(style).unwrap_or_default());
+    }
+
     fn write_style(&mut self, style: Option<CellStyle>, what: &str) {
         let (start, end) = self.rect();
         match self.core.set_style(self.sheet, start, end, style) {
@@ -1126,6 +1135,8 @@ impl App {
             }
             "bold" => self.toggle_style(|style| toggle(&mut style.font_weight, "bold")),
             "italic" => self.toggle_style(|style| toggle(&mut style.font_style, "italic")),
+            "underline" => self.flip(Toggle::Underline),
+            "strike" => self.flip(Toggle::Strike),
             "wrap" => self.toggle_style(|style| toggle(&mut style.wrap, "wrap")),
             "border" => self.toggle_style(|style| {
                 style.set_border(Some(grind_sheet::format::BORDER.to_owned()));
@@ -3479,6 +3490,8 @@ mod tests {
         for (command, check) in [
             ("bold", "bold"),
             ("italic", "italic"),
+            ("underline", "underline"),
+            ("strike", "strike"),
             ("color red", "color"),
             ("fill yellow", "fill"),
             ("align center", "align"),
@@ -3494,6 +3507,8 @@ mod tests {
             let set = match check {
                 "bold" => style.font_weight.is_some(),
                 "italic" => style.font_style.is_some(),
+                "underline" => style.is_underlined(),
+                "strike" => style.is_struck(),
                 "color" => style.color.as_deref() == grind_sheet::style::palette("red"),
                 "fill" => style.background.as_deref() == grind_sheet::style::palette("yellow"),
                 _ => style.align.as_deref() == Some("center"),

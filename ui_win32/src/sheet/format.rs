@@ -39,6 +39,10 @@ pub use grind_sheet::format::{coloured, decimals_shown, stepped};
 pub enum Control {
     Bold,
     Italic,
+    /// `style:text-underline-style` and `style:text-line-through-style`, which the grid has
+    /// drawn since the cell style carried them.
+    Underline,
+    Strike,
     AlignLeft,
     AlignCenter,
     AlignRight,
@@ -69,9 +73,11 @@ pub enum Shape {
 /// Five groups, and the grouping is the point (W10's rule for the text strip): the *weight* of
 /// the text, its *alignment*, its *colours*, the *number* it shows, and Clear on its own because
 /// it undoes all four. A separator is drawn wherever a group starts.
-pub const CONTROLS: [(Control, Shape, bool); 11] = [
+pub const CONTROLS: [(Control, Shape, bool); 13] = [
     (Control::Bold, Shape::Toggle, false),
     (Control::Italic, Shape::Toggle, false),
+    (Control::Underline, Shape::Toggle, false),
+    (Control::Strike, Shape::Toggle, false),
     (Control::AlignLeft, Shape::Toggle, true),
     (Control::AlignCenter, Shape::Toggle, false),
     (Control::AlignRight, Shape::Toggle, false),
@@ -90,6 +96,8 @@ impl Control {
         match self {
             Control::Bold => "Bold",
             Control::Italic => "Italic",
+            Control::Underline => "Underline",
+            Control::Strike => "Strikethrough",
             Control::AlignLeft => "Align Left",
             Control::AlignCenter => "Center",
             Control::AlignRight => "Align Right",
@@ -123,6 +131,8 @@ impl Control {
         match self {
             Control::Bold => Some(Toggle::Bold),
             Control::Italic => Some(Toggle::Italic),
+            Control::Underline => Some(Toggle::Underline),
+            Control::Strike => Some(Toggle::Strike),
             Control::AlignLeft => Some(Toggle::AlignStart),
             Control::AlignCenter => Some(Toggle::AlignCenter),
             Control::AlignRight => Some(Toggle::AlignEnd),

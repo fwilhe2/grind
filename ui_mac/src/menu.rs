@@ -361,7 +361,7 @@ impl Command {
 
     /// Whether the command means anything in a document of `kind` — what greys it otherwise.
     /// The two News mean something everywhere, and every other verb belongs to one pane or,
-    /// for Bold, Italic, the colours and Clear, to both.
+    /// for Bold, Italic, Underline, Strikethrough, the colours and Clear, to both.
     pub fn applies(self, kind: DocumentKind) -> bool {
         let sheet = kind == DocumentKind::Spreadsheet;
         let text = kind == DocumentKind::Text;
@@ -370,7 +370,9 @@ impl Command {
             Command::Names | Command::ShowSource | Command::GoTo | Command::Zoom(_) => {
                 sheet || text
             }
-            Command::Mark(Emphasis::Bold | Emphasis::Italic)
+            Command::Mark(
+                Emphasis::Bold | Emphasis::Italic | Emphasis::Underline | Emphasis::Strike,
+            )
             | Command::TextColor(_)
             | Command::Background(_)
             | Command::ClearFormatting => sheet || text,
@@ -1380,7 +1382,8 @@ mod tests {
             );
         }
         assert!(Command::Mark(Emphasis::Bold).applies(sheet));
-        assert!(!Command::Mark(Emphasis::Underline).applies(sheet));
+        assert!(Command::Mark(Emphasis::Underline).applies(sheet));
+        assert!(!Command::Mark(Emphasis::Code).applies(sheet));
         assert!(!Command::Number(Preset::Currency).applies(text));
         assert!(Command::Block(Block::Heading(2)).applies(text));
         for paper in [Command::ExportPdf, Command::Print] {

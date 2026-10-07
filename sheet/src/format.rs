@@ -40,6 +40,10 @@ use crate::style::CellStyle;
 pub enum Toggle {
     Bold,
     Italic,
+    /// `style:text-underline-style` — written `solid`; any style but `none` reads as on.
+    Underline,
+    /// `style:text-line-through-style`, the same way.
+    Strike,
     /// `fo:wrap-option` — lines broken at the column's width.
     Wrap,
     AlignStart,
@@ -48,9 +52,11 @@ pub enum Toggle {
 }
 
 impl Toggle {
-    pub const ALL: [Toggle; 6] = [
+    pub const ALL: [Toggle; 8] = [
         Toggle::Bold,
         Toggle::Italic,
+        Toggle::Underline,
+        Toggle::Strike,
         Toggle::Wrap,
         Toggle::AlignStart,
         Toggle::AlignCenter,
@@ -67,6 +73,8 @@ impl Toggle {
         match self {
             Toggle::Bold => style.font_weight.as_deref() == Some("bold"),
             Toggle::Italic => matches!(style.font_style.as_deref(), Some("italic" | "oblique")),
+            Toggle::Underline => style.is_underlined(),
+            Toggle::Strike => style.is_struck(),
             Toggle::Wrap => style.wrap.as_deref() == Some("wrap"),
             Toggle::AlignStart => matches!(align, Some("start" | "left")),
             Toggle::AlignCenter => align == Some("center"),
@@ -84,6 +92,8 @@ impl Toggle {
         restyled(style, |style| match self {
             Toggle::Bold => style.font_weight = value("bold"),
             Toggle::Italic => style.font_style = value("italic"),
+            Toggle::Underline => style.underline = value("solid"),
+            Toggle::Strike => style.line_through = value("solid"),
             Toggle::Wrap => style.wrap = value("wrap"),
             Toggle::AlignStart => style.align = value("start"),
             Toggle::AlignCenter => style.align = value("center"),
@@ -385,6 +395,25 @@ mod tests {
         assert_eq!(right.align.as_deref(), Some("end"));
         assert!(!Toggle::AlignCenter.is_on(&right));
         assert_eq!(Toggle::AlignEnd.flipped(&right), None);
+    }
+
+    /// Any underline but `none` is underlined — another producer's `dotted` included — and a
+    /// press takes it off rather than respelling it `solid`.
+    #[test]
+    fn any_underline_reads_as_on() {
+        let dotted = CellStyle {
+            underline: Some("dotted".into()),
+            ..Default::default()
+        };
+        assert!(Toggle::Underline.is_on(&dotted));
+        assert_eq!(Toggle::Underline.flipped(&dotted), None);
+        let none = CellStyle {
+            line_through: Some("none".into()),
+            ..Default::default()
+        };
+        assert!(!Toggle::Strike.is_on(&none));
+        let struck = Toggle::Strike.flipped(&none).unwrap();
+        assert_eq!(struck.line_through.as_deref(), Some("solid"));
     }
 
     /// Every toggle turned on is on, and turned off again is no style at all.

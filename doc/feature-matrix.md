@@ -215,7 +215,7 @@ borders, which that window does not draw either.
 | | CLI | Sheet GTK | TUI | Web | Win32 | Mac |
 |---|---|---|---|---|---|---|
 | Bold, italic | ● | ● | ● | ● | ● | ● |
-| Underline, strikethrough (cells) | ● ᵘˡ | ○ | ○ | ○ | ○ | ○ |
+| Underline, strikethrough (cells) | ● ᵘˡ | ● ᵘˡ | ● ᵘˡ | ● ᵘˡ | ● ᵘˡ | ● ᵘˡ |
 | Indent, rotation (cells) | ● ⁱʳ | ○ | ○ | ○ | ○ | ○ |
 | Alignment | ● | ● | ● | ● | ● | ● |
 | Wrap text | ● | ● | ● | ● | ● ʷʷ | ● |
@@ -262,7 +262,7 @@ already spelled the document's way, and every typed number goes through the core
 rule. A new document in the GNOME window states the desktop's locale; `grind sheet new` states
 none unless told.
 
-ᵘˡ A cell's `style:text-underline-style` and `style:text-line-through-style` (2026-10-05): read, written, projected (`underline=`/`strike=`) and carried from `.xlsx`, and set by `grind sheet style --underline --strike`. Every window draws them — Pango attributes, terminal modifiers, CSS `text-decoration`, `LOGFONTW`'s own two switches, and on the Mac two fills placed from the portable metrics. A *toggle* for them on each window's format strip is the open half; the Windows grid draws italic now too, which it did not before.
+ᵘˡ A cell's `style:text-underline-style` and `style:text-line-through-style` (2026-10-05): read, written, projected (`underline=`/`strike=`) and carried from `.xlsx`, and set by `grind sheet style --underline --strike`. Every window draws them — Pango attributes, terminal modifiers, CSS `text-decoration`, `LOGFONTW`'s own two switches, and on the Mac two fills placed from the portable metrics. Every window sets them too since 2026-10-07, as `grind_sheet::format::Toggle::Underline`/`Strike` — any style but `none` reads as on, a press writes `solid` or takes it off: two toggles beside Bold and Italic on the GNOME format bar, the browser's tool row (Ctrl+U) and the Windows strip (Ctrl+U, Ctrl+Shift+X, and the Format menu), `_`/`~` in Visual mode and `:underline`/`:strike` in the terminal, and the Mac's toolbar and Format ▸ Font menu, ungreyed on the grid. The Windows grid draws italic now too, which it did not before.
 
 ⁱʳ `fo:margin-left` and `style:rotation-angle` (2026-10-05): read, written, projected (`indent=`/`rotate=`), carried from `.xlsx` (`doc/xlsx-format.md` §4.14) and set by `grind sheet style --indent --rotate`. The terminal indents in whole columns. Rotated text is drawn turned about the cell's middle in the GNOME window only; the other windows draw it level, which is a gap of drawing and not of the document — the angle is kept and saved.
 

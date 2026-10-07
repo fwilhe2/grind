@@ -86,6 +86,12 @@ const WEIGHT: Tool = Tool::Segments {
     segments: &[
         segment("bold", "Bold", Command::Mark(Emphasis::Bold)),
         segment("italic", "Italic", Command::Mark(Emphasis::Italic)),
+        segment("underline", "Underline", Command::Mark(Emphasis::Underline)),
+        segment(
+            "strikethrough",
+            "Strikethrough",
+            Command::Mark(Emphasis::Strike),
+        ),
     ],
     toggles: true,
 };

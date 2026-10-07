@@ -108,7 +108,9 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
 
     let bold = toggle("format-text-bold-symbolic", "Bold");
     let italic = toggle("format-text-italic-symbolic", "Italic");
-    let emphasis = linked(&[&bold, &italic]);
+    let underline = toggle("format-text-underline-symbolic", "Underline");
+    let strike = toggle("format-text-strikethrough-symbolic", "Strikethrough");
+    let emphasis = linked(&[&bold, &italic, &underline, &strike]);
 
     let left = toggle("format-justify-left-symbolic", "Align Left");
     let center = toggle("format-justify-center-symbolic", "Align Center");
@@ -172,6 +174,8 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
     let toggles = [
         (bold.clone(), Toggle::Bold),
         (italic.clone(), Toggle::Italic),
+        (underline.clone(), Toggle::Underline),
+        (strike.clone(), Toggle::Strike),
         (wrap.clone(), Toggle::Wrap),
         (left.clone(), Toggle::AlignStart),
         (center.clone(), Toggle::AlignCenter),

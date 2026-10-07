@@ -30,7 +30,7 @@ Normal mode, both document types (vi-style):
   :                  command line          :help  this page
 
 Visual mode — one notation for emphasis, whichever document it is:
-  *  bold       /  italic       -  no formatting
+  *  bold       /  italic       _  underline     ~  strikethrough     -  no formatting
   d / x  delete or clear what is selected   Esc  stop selecting
 
 Saving and leaving, both:
