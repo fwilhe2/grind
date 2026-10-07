@@ -160,8 +160,8 @@ than as a cursor on a hidden row.
 | Autocomplete while typing a formula | ● ᶜ | ● | ● | ● | ● | ● |
 | Signature hint for the call the caret is in | ● ᶜ | ● | ● | ● | ● | ● |
 | Point mode — arrow keys build a reference | — | ● | ● ᵖᵐ | ● ᵖᵐ | ● ᵖᵐ | ● |
-| Friendly formulas — `Sum(Number: B2:B7)` | ● | ● | ◐ ᵉˣ | ◐ ᵉˣ | ● | ● |
-| Explain a nested formula, unfolded | ● | ● | ◐ ᵉˣ | ◐ ᵉˣ | ● | ● |
+| Friendly formulas — `Sum(Number: B2:B7)` | ● | ● | ● ᵉˣ | ● ᵉˣ | ● | ● |
+| Explain a nested formula, unfolded | ● | ● | ● ᵉˣ | ● ᵉˣ | ● | ● |
 | The 110 functions as a browsable list | ● | ● ᶠᵍ | ● ᶠᵍ | ● ᶠⁿ | ● | ● |
 | Read a formula through the document's names | ● | ● | ● | ● | ● | ● |
 | Every calculated cell, searchable | ● | ● | ● ᶜᵃ | ◐ ᶜᵃ | ● ᶜᵃ | ● |
@@ -330,7 +330,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 ᵖᵃ Palette verbs, each a `prompt()` over the core's own call — *Row height…*, *Column width…*, *Define a name for the selection…*, *Rename a name…*, *Inline a name into its uses…*, *Delete a name…*, *Evaluate a formula…* — closed 2026-10-02; a typed name, not a picker.
 ᵖᵇ Two more buttons on each row of the *Names…* dialog — rename (an alert with an entry) and inline — over `App::rename_name` / `inline_name`, each saying how many uses it rewrote; closed 2026-10-02, compile- and lint-checked only.
 ᵗᵘ Terminal verbs, closed 2026-10-02: `:filter` (no dropdowns drawn), `:rename`, `:inline`, `:value`, `:yank-values`, `:across`.
-ᵉˣ `:explain` and the palette's *Explain this formula in words* say the active cell's formula on one line (`friendly::explain_inline`) — not unfolded, and the formula bar does not read friendly at rest. Closed in part 2026-10-02.
+ᵉˣ Closed 2026-10-07. The terminal's formula line reads a formula at rest in plain words (`assist::friendly_line`, the GNOME and Windows bars' own reading; `:friendly` shows it as stored) and `:explain` unfolds it in a list pane, one call a row (`friendly::explain`). The browser reads it beside the bar — the bar is an `<input>` somebody may type in, so it keeps the stored text — with Ctrl+K ▸ *Read formulas in plain words* to turn that off, and *Explain this formula in words* unfolds it in a `<dialog>`. Both smoke- or `TestBackend`-checked.
 ʷᵈ Drag a column's or row's header boundary: the size follows the pointer, the two-headed cursor shows over the boundary, and release writes one `set_col_width`/`set_row_height` (2026-10-02). The geometry (`GridGeom::edge_at`) is unit-tested; the mouse path is build-checked only — no Windows pointer was available to drive it.
 ᶠᶜ Sheet ▸ Fit Column Width, measured in the cell font by GDI; from the menu, and by double-clicking the column's edge (a row's edge goes back to its content's height) — 2026-10-02. Sheet ▸ Fit Row Height and Fit Content to Cells beside it since 2026-10-07.
 ᶠⁱ `:fit` — the selection's columns, each as wide as its widest text in terminal cells (`unicode-width`) plus the blank between columns — 2026-10-03; `:fit rows` and `:fit all` since 2026-10-07.

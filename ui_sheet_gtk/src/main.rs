@@ -2867,7 +2867,10 @@ mod tests {
         };
         let path = std::path::Path::new;
         let text = data("../text/tests/data/numbered-list.fodt");
-        assert!(super::is_text(path("renamed.fods"), &text), "bytes, not the name");
+        assert!(
+            super::is_text(path("renamed.fods"), &text),
+            "bytes, not the name"
+        );
         let sheet = data("../sheet/tests/data/kb/fizzbuzz.fods");
         assert!(!super::is_text(path("fizzbuzz.fods"), &sheet));
         assert!(super::is_text(path("letter.DOCX"), b"PK\x03\x04"));

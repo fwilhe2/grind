@@ -147,6 +147,11 @@ pub struct App {
     calculations: crate::pick::Pick,
     /// `:rules`, when it is showing — the sheet's conditional-format rules, each row a jump.
     rules: crate::pick::Pick,
+    /// `:explain`, when it is showing — the active cell's formula unfolded, one call a row.
+    explained: crate::pick::Pick,
+    /// Whether the formula line reads a formula at rest in plain words (`:friendly`) — on by
+    /// default, as in the GNOME and Windows windows. Never while the cell is being typed into.
+    friendly: bool,
     /// The reference being pointed at while a formula is typed (point mode), if one is.
     point: Option<Pointing>,
     /// The key list, when it is showing. Presentation state like everything else here.
@@ -205,6 +210,8 @@ impl App {
             functions: crate::pick::Pick::default(),
             calculations: crate::pick::Pick::default(),
             rules: crate::pick::Pick::default(),
+            explained: crate::pick::Pick::default(),
+            friendly: true,
             point: None,
             help: crate::help::Help::default(),
             licences: crate::help::Help::default(),
@@ -296,6 +303,13 @@ impl App {
             let height = self.help_height();
             if let crate::pick::Nav::Chose(address) = self.rules.on_key(key.code, height) {
                 self.cmd_jump(&address);
+            }
+            return;
+        }
+        if self.explained.is_open() {
+            let height = self.help_height();
+            if let crate::pick::Nav::Chose(_) = self.explained.on_key(key.code, height) {
+                self.explained.close();
             }
             return;
         }
@@ -1163,6 +1177,7 @@ impl App {
             "across" => self.cmd_across(),
             "value" => self.cmd_value(),
             "explain" => self.cmd_explain(),
+            "friendly" => self.cmd_friendly(),
             "functions" => self.cmd_functions(""),
             "calc" => self.cmd_calc(""),
             _ if cmd.starts_with("calc ") => self.cmd_calc(cmd[5..].trim()),
@@ -1547,18 +1562,40 @@ impl App {
         }
     }
 
-    /// `:explain` — the active cell's formula in plain words, one line on the status bar
-    /// (`friendly::explain_inline`); presentation only, nothing parses back.
+    /// `:explain` — the active cell's formula unfolded in plain words, one call a row, in a
+    /// pane (`friendly::explain`, the Windows window's *Explain Formula* and the GNOME one's);
+    /// presentation only, nothing parses back. Enter or Esc closes it.
     fn cmd_explain(&mut self) {
         let text = self
             .core
             .input_text(self.sheet, self.active)
             .unwrap_or_default();
         let address = grind_sheet::a1::format(None, self.active);
-        self.status = match grind_sheet::formula::friendly::explain_inline(&text) {
-            Ok(words) if text.starts_with('=') => format!("{address}: {words}"),
-            _ => format!("{address} holds no formula to explain"),
-        };
+        match grind_sheet::formula::friendly::explain(&text) {
+            Ok(words) if text.starts_with('=') => {
+                let rows = words
+                    .lines()
+                    .map(|line| crate::pick::Row {
+                        address: address.clone(),
+                        label: line.to_owned(),
+                        depth: 0,
+                    })
+                    .collect();
+                self.explained
+                    .open(&format!("{address} explained"), rows, None);
+            }
+            _ => self.status = format!("{address} holds no formula to explain"),
+        }
+    }
+
+    /// `:friendly` — the formula line's plain-words reading turned off, or back on.
+    fn cmd_friendly(&mut self) {
+        self.friendly = !self.friendly;
+        self.status = match self.friendly {
+            true => "formulas read in plain words at rest — :friendly again shows them as stored",
+            false => "formulas shown as stored — :friendly again reads them in plain words",
+        }
+        .to_owned();
     }
 
     /// `:filter` — an autofilter over the selection (or, from one cell, the table around it), or
@@ -2398,6 +2435,10 @@ impl App {
             self.rules.draw(frame, area, "rules");
             return;
         }
+        if self.explained.is_open() {
+            self.explained.draw(frame, area, "explained");
+            return;
+        }
         if let Some(projection) = self.source.take() {
             let title = self.document_name();
             self.code.draw(frame, area, &projection, &title);
@@ -2728,7 +2769,13 @@ impl App {
         } else {
             formula_line.push(Span::raw(" "));
         }
-        formula_line.push(Span::raw(content));
+        // At rest, a formula reads in plain words (`assist::friendly_line`, the GNOME and Windows
+        // bars' own reading) — never while it is typed into, where the stored text is the answer.
+        let shown = match (&self.mode, self.friendly) {
+            (Mode::Insert { .. }, _) | (_, false) => None,
+            _ => grind_sheet::formula::assist::friendly_line(&content),
+        };
+        formula_line.push(Span::raw(shown.unwrap_or(content)));
         formula_line.push(Span::styled(
             reading,
             Style::default().add_modifier(Modifier::DIM),
@@ -3693,6 +3740,46 @@ mod tests {
         // "Party" is five cells, and one blank follows it.
         assert_eq!(widths, vec![(0, geom::length(6))]);
         assert!(app.status.contains("fitted"), "{}", app.status);
+    }
+
+    /// A formula reads in plain words on the formula line at rest, `:friendly` shows it as
+    /// stored, and `:explain` unfolds it in a pane, one call a row.
+    #[test]
+    fn a_formula_reads_friendly_and_explains_unfolded() {
+        let mut app = filled();
+        app.core
+            .enter(
+                0,
+                Pos::new(2, 1),
+                "=ROUND(SUM(B2:B2);2)",
+                RecalcMode::Document,
+            )
+            .unwrap();
+        app.run_command("B3");
+        let line = |app: &mut App| {
+            screen(app, 100, 10)
+                .into_iter()
+                .find(|line| line.contains(" B3 "))
+                .unwrap_or_default()
+        };
+        assert!(
+            line(&mut app).contains("Round(Value: Sum(Number: B2:B2)"),
+            "{:?}",
+            line(&mut app)
+        );
+        app.run_command("friendly");
+        assert!(
+            line(&mut app).contains("=ROUND(SUM("),
+            "{:?}",
+            line(&mut app)
+        );
+
+        app.run_command("explain");
+        assert!(app.explained.is_open());
+        let pane = screen(&mut app, 100, 12).join("\n");
+        assert!(pane.contains("Round") && pane.contains("Sum"), "{pane}");
+        press(&mut app, KeyCode::Esc);
+        assert!(!app.explained.is_open());
     }
 
     /// `:fit rows` takes the selected rows' own heights away, and `:fit all` fits every column in

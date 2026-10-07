@@ -41,7 +41,8 @@ Spreadsheet:
   :calc [text]            — every formula in the document, searchable; Enter jumps to its cell
   :functions [text]       — the functions, with plain names; Enter starts a formula with one
   :locale [tag|none]      — the document's own locale (de-DE): how it spells numbers
-  :explain                — the active cell's formula in plain words
+  :explain                — the active cell's formula unfolded in plain words, in a pane
+  :friendly               — the formula line in plain words at rest, or as stored
   :filter                 — an autofilter over the selection (or the table around one cell); again to drop
   :eval <formula>         — what it would come to, storing nothing
   :charts   — the sheet's charts, drawn in characters

@@ -200,6 +200,16 @@ pub const SHEET: &[Command] = &[
         "",
         false,
     ),
+    // The plain-words reading beside the formula bar at rest (`assist::friendly_line`), on by
+    // default as in the GNOME and Windows windows; the bar itself keeps the stored text, since
+    // it is an input somebody may type in.
+    cmd(
+        "view.friendly",
+        "Read formulas in plain words",
+        "View",
+        "",
+        false,
+    ),
     cmd("view.zoom-in", "Zoom in", "View", "", false),
     cmd("view.zoom-out", "Zoom out", "View", "", false),
     cmd("view.zoom-reset", "Zoom to 100%", "View", "", false),

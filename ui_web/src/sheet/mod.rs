@@ -213,6 +213,8 @@ pub struct Ui {
     /// Whether a formula cell shows its formula instead of its result (`grind sheet view
     /// --formulas`). A reading, like the overlays: nothing is written.
     formulas: Cell<bool>,
+    /// Whether a formula at rest is also read in plain words beside the bar (`view.friendly`).
+    friendly: Cell<bool>,
     /// The zoom, as a factor on how big the grid is drawn — a reading, never stored (nothing
     /// measured is stored zoomed). The browser scales the table and the charts over it with CSS
     /// `zoom`; hit-testing is the DOM's, so only how many cells fit needs to know.
@@ -252,6 +254,7 @@ impl Ui {
             assist: RefCell::new(assist::Assist::default()),
             overlays: Cell::new(grind_sheet::view::Overlays::NONE),
             formulas: Cell::new(false),
+            friendly: Cell::new(true),
             zoom: Cell::new(1.0),
             message: RefCell::new(String::new()),
             needle: RefCell::new(String::new()),
@@ -669,6 +672,14 @@ impl Ui {
         // With the Names overlay on, a formula that uses a defined name is also *read* through
         // it, beside the arithmetic — the bar itself keeps the text that would be stored, since
         // it is an input a person may type in (`grind_sheet::place::named_reading`).
+        // A formula at rest, in plain words (`assist::friendly_line`) — beside the arithmetic
+        // rather than in the bar, which is an input and must keep the text that would be stored.
+        if self.friendly.get() && !self.editing.get() {
+            let shown = self.app.input_text(sheet, active).unwrap_or_default();
+            if let Some(reading) = grind_sheet::formula::assist::friendly_line(&shown) {
+                summary = format!("{reading}  \u{b7}  {summary}");
+            }
+        }
         if self.overlays.get().names {
             let shown = self.app.input_text(sheet, active).unwrap_or_default();
             if let Some(reading) =
@@ -860,6 +871,17 @@ impl Ui {
             "view.zoom-in" => self.zoom_by(1.25),
             "view.zoom-out" => self.zoom_by(0.8),
             "view.zoom-reset" => self.zoom_to(1.0),
+            "view.friendly" => {
+                self.friendly.set(!self.friendly.get());
+                self.request_repaint();
+                self.set_message(
+                    match self.friendly.get() {
+                        true => "Formulas are read in plain words beside the bar",
+                        false => "Formulas are shown as stored only",
+                    }
+                    .to_owned(),
+                );
+            }
             "view.formulas" => {
                 self.formulas.set(!self.formulas.get());
                 self.request_repaint();
@@ -2002,9 +2024,10 @@ impl Ui {
         }
     }
 
-    /// *Explain this formula in words* — the active cell's formula with its functions by their
-    /// plain names and its arguments labelled (`friendly::explain_inline`). Presentation only: it
-    /// never parses back and nothing is written.
+    /// *Explain this formula in words* — the active cell's formula unfolded, one call a line,
+    /// with its functions by their plain names and its arguments labelled (`friendly::explain`),
+    /// in a dialog read and dismissed like About. Presentation only: it never parses back and
+    /// nothing is written.
     fn explain(&self) {
         let at = self.selection.get().active;
         let text = self
@@ -2012,12 +2035,26 @@ impl Ui {
             .input_text(self.sheet.get(), at)
             .unwrap_or_default();
         let address = grind_sheet::a1::format(None, at);
-        self.set_message(
-            match grind_sheet::formula::friendly::explain_inline(&text) {
-                Ok(words) if text.starts_with('=') => format!("{address}: {words}"),
-                _ => format!("{address} holds no formula to explain"),
-            },
-        );
+        let words = match grind_sheet::formula::friendly::explain(&text) {
+            Ok(words) if text.starts_with('=') => words,
+            _ => return self.set_message(format!("{address} holds no formula to explain")),
+        };
+        let Some(dialog) = self
+            .dom
+            .document
+            .get_element_by_id("explain")
+            .and_then(|e| e.dyn_into::<web_sys::HtmlDialogElement>().ok())
+        else {
+            return;
+        };
+        let escape = crate::about::escape;
+        dialog.set_inner_html(&format!(
+            "<h2>{} explained</h2><pre class=\"explain\">{}</pre>\
+             <form method=\"dialog\"><button class=\"about-close\" type=\"submit\">Close</button></form>",
+            escape(&address),
+            escape(&words)
+        ));
+        let _ = dialog.show_modal();
     }
 
     /// *Evaluate a formula…* — worked out at the active cell and said, never stored

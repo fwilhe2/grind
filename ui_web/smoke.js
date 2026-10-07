@@ -345,6 +345,16 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   await frame();
   check("a formula is evaluated", shown(), "42");
   check("and shown back in A1 form", byId("formula").value, "=SUM(A1:A2)");
+  check("and read in plain words beside the bar", byId("summary").textContent.includes("Sum(Number: A1:A2)"), true);
+  await command("Explain this formula in words");
+  await frame();
+  // jsdom has no `showModal`, so what is checked is what the dialog was filled with.
+  check("Explain unfolds it in a dialog", byId("explain").textContent.includes("B1 explained") && byId("explain").textContent.includes("Sum"), true);
+  await command("Read formulas in plain words");
+  await frame();
+  check("and the reading can be turned off", byId("summary").textContent.includes("Sum(Number"), false);
+  await command("Read formulas in plain words");
+  await frame();
 
   type("=SUM(");
   press("Enter");
