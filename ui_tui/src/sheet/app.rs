@@ -359,6 +359,7 @@ impl App {
             Action::Italic => self.toggle_style(|style| toggle(&mut style.font_style, "italic")),
             Action::Underline => self.flip(Toggle::Underline),
             Action::Strike => self.flip(Toggle::Strike),
+            Action::Indent(step) => self.indent(step),
             Action::Plain => self.write_style(None, "plain"),
             Action::Next(forward) => self.step_match(forward),
             Action::Escape => {
@@ -796,6 +797,14 @@ impl App {
         self.toggle_style(|style| *style = toggle.flipped(style).unwrap_or_default());
     }
 
+    /// One indent level in or out over the selection (`format::indented`), read off the active
+    /// cell — the terminal draws it in whole columns.
+    fn indent(&mut self, step: i8) {
+        self.toggle_style(|style| {
+            *style = grind_sheet::format::indented(style, step).unwrap_or_default()
+        });
+    }
+
     fn write_style(&mut self, style: Option<CellStyle>, what: &str) {
         let (start, end) = self.rect();
         match self.core.set_style(self.sheet, start, end, style) {
@@ -1137,6 +1146,8 @@ impl App {
             "italic" => self.toggle_style(|style| toggle(&mut style.font_style, "italic")),
             "underline" => self.flip(Toggle::Underline),
             "strike" => self.flip(Toggle::Strike),
+            "indent" => self.indent(1),
+            "outdent" => self.indent(-1),
             "wrap" => self.toggle_style(|style| toggle(&mut style.wrap, "wrap")),
             "border" => self.toggle_style(|style| {
                 style.set_border(Some(grind_sheet::format::BORDER.to_owned()));
@@ -3492,6 +3503,7 @@ mod tests {
             ("italic", "italic"),
             ("underline", "underline"),
             ("strike", "strike"),
+            ("indent", "indent"),
             ("color red", "color"),
             ("fill yellow", "fill"),
             ("align center", "align"),
@@ -3509,6 +3521,7 @@ mod tests {
                 "italic" => style.font_style.is_some(),
                 "underline" => style.is_underlined(),
                 "strike" => style.is_struck(),
+                "indent" => style.indent_mm().is_some(),
                 "color" => style.color.as_deref() == grind_sheet::style::palette("red"),
                 "fill" => style.background.as_deref() == grind_sheet::style::palette("yellow"),
                 _ => style.align.as_deref() == Some("center"),

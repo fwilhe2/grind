@@ -128,6 +128,37 @@ pub fn bordered(style: &CellStyle, on: bool) -> Option<CellStyle> {
     })
 }
 
+/// One indent level, in millimetres: ten pixels at 96 dpi, the step the oracle writes on the
+/// desktop for Excel's `indent="1"` (`doc/xlsx-format.md` §4.14) — so an indent set from any
+/// window lands on the same levels an imported workbook already uses.
+pub const INDENT_STEP_MM: f64 = 2.645_83;
+
+/// `steps` indent levels as the length a document stores — `0.265cm`, `0.529cm`, …, three
+/// decimals, the spelling the oracle writes.
+pub fn indent_length(steps: i64) -> String {
+    let cm = steps as f64 * INDENT_STEP_MM / 10.0;
+    let text = format!("{cm:.3}");
+    let text = text.trim_end_matches('0').trim_end_matches('.');
+    format!("{text}cm")
+}
+
+/// How many indent levels a cell styled `style` is in — its `fo:margin-left` to the nearest
+/// level, so an indent written in some other unit still steps from where it is.
+pub fn indent_level(style: &CellStyle) -> i64 {
+    style
+        .indent_mm()
+        .map_or(0, |mm| (mm / INDENT_STEP_MM).round() as i64)
+}
+
+/// *Increase Indent* (`step` 1) or *Decrease Indent* (-1): the cell's indent moved by whole
+/// levels, never below none — and at none the attribute is gone, not written as zero.
+pub fn indented(style: &CellStyle, step: i8) -> Option<CellStyle> {
+    let level = (indent_level(style) + i64::from(step)).max(0);
+    restyled(style, |style| {
+        style.indent = (level > 0).then(|| indent_length(level));
+    })
+}
+
 /// Read, change, and hand back what to write — `None` meaning no style at all.
 ///
 /// The read-merge-write [`crate::App::set_style`]'s own documentation promises its callers in
@@ -414,6 +445,33 @@ mod tests {
         assert!(!Toggle::Strike.is_on(&none));
         let struck = Toggle::Strike.flipped(&none).unwrap();
         assert_eq!(struck.line_through.as_deref(), Some("solid"));
+    }
+
+    /// An indent steps by whole levels, in the oracle's spelling, from wherever the cell's own
+    /// indent is, and never below none.
+    #[test]
+    fn an_indent_steps_by_levels() {
+        let once = indented(&CellStyle::default(), 1).unwrap();
+        assert_eq!(once.indent.as_deref(), Some("0.265cm"));
+        let twice = indented(&once, 1).unwrap();
+        assert_eq!(twice.indent.as_deref(), Some("0.529cm"));
+        assert_eq!(indent_level(&twice), 2);
+        assert_eq!(indented(&once, -1), None, "back to no style");
+        assert_eq!(
+            indented(&CellStyle::default(), -1),
+            None,
+            "never below none"
+        );
+        let inch = CellStyle {
+            indent: Some("0.1in".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            indent_level(&inch),
+            1,
+            "another spelling of about one level"
+        );
+        assert_eq!(indent_length(3), "0.794cm");
     }
 
     /// Every toggle turned on is on, and turned off again is no style at all.

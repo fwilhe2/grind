@@ -1454,6 +1454,10 @@ mod windows_impl {
                         strip_view.number_set,
                     );
                 }
+                Shape::Icon => {
+                    strip::button_ground(dc, rect, look(control), false, false);
+                    indent_icon(dc, rect, control == Control::Indent, theme.text, g.dpi);
+                }
                 Shape::Button => {
                     strip::button_ground(dc, rect, look(control), false, true);
                     let font = Font::new(frame.face, frame.body_px, false);
@@ -1483,6 +1487,37 @@ mod windows_impl {
             };
             let y = y0 + line * step;
             gdi::fill(dc, x, y, x + w, y + thick, ink);
+        }
+    }
+
+    /// The indent icon: three short lines pushed right, and beside them a small triangle pointing
+    /// the way the text will move — right for *Increase*, left for *Decrease*.
+    fn indent_icon(dc: HDC, rect: crate::sheet::geom::Rect, more: bool, ink: Rgb, dpi: u32) {
+        let unit = |v: f64| crate::sheet::geom::scale(v, dpi).round() as i32;
+        let (long, short, thick, step) = (unit(14.0), unit(8.0), unit(1.5).max(1), unit(4.0));
+        let height = step * 3 + thick;
+        let (left, top, right, bottom) = rect.edges();
+        let (cx, y0) = ((left + right) / 2, (top + bottom - height) / 2);
+        let x0 = cx - long / 2;
+        for line in 0..4 {
+            let (x, w) = match line {
+                0 | 3 => (x0, long),
+                _ => (x0 + long - short, short),
+            };
+            let y = y0 + line * step;
+            gdi::fill(dc, x, y, x + w, y + thick, ink);
+        }
+        // The arrow, one column of fills a pixel narrower each step from its base.
+        let (mid, half) = (y0 + step + (step + thick) / 2, step);
+        let base = x0;
+        let depth = long - short - unit(2.0);
+        for i in 0..depth.max(1) {
+            let reach = half - half * i / depth.max(1);
+            let x = match more {
+                true => base + i,
+                false => base + depth - 1 - i,
+            };
+            gdi::fill(dc, x, mid - reach, x + 1, mid + reach, ink);
         }
     }
 

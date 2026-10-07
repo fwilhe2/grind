@@ -230,6 +230,10 @@ pub enum Command {
     AlignLeft,
     AlignCenter,
     AlignRight,
+    /// One indent level out or in over the selection (`format::indented`) — the grid's alone,
+    /// and the two buttons after the strip's alignments.
+    IndentLess,
+    IndentMore,
     /// *Cell Background* — the grid's fill, `fo:background-color` on a cell, over the same palette
     /// as *Text Colour*. A verb of its own rather than [`Command::PickHighlight`] under another
     /// label, because a run's highlight and a cell's fill are two properties that merely share an
@@ -424,6 +428,8 @@ impl Command {
         Command::AlignLeft,
         Command::AlignCenter,
         Command::AlignRight,
+        Command::IndentLess,
+        Command::IndentMore,
         Command::PickBackground,
         Command::NumberFormat,
         Command::FewerDecimals,
@@ -891,7 +897,7 @@ pub const MENUS: &[Menu] = &[
             Item::Separator,
             Item::Verb {
                 command: Command::AlignLeft,
-                label: "&Align Left",
+                label: "Ali&gn Left",
             },
             Item::Verb {
                 command: Command::AlignCenter,
@@ -900,6 +906,14 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::AlignRight,
                 label: "Align Rig&ht",
+            },
+            Item::Verb {
+                command: Command::IndentLess,
+                label: "&Decrease Indent",
+            },
+            Item::Verb {
+                command: Command::IndentMore,
+                label: "Incre&ase Indent",
             },
             Item::Separator,
             Item::Verb {
@@ -955,11 +969,11 @@ pub const MENUS: &[Menu] = &[
             },
             Item::Verb {
                 command: Command::CurrencyDollar,
-                label: "Currency: US &Dollar ($)",
+                label: "Currenc&y: US Dollar ($)",
             },
             Item::Verb {
                 command: Command::CurrencyPound,
-                label: "Currency: Pound Sterlin&g (£)",
+                label: "Currency: &Pound Sterling (£)",
             },
             Item::Separator,
             Item::Verb {
@@ -1300,6 +1314,8 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::AlignLeft
         | Command::AlignCenter
         | Command::AlignRight
+        | Command::IndentLess
+        | Command::IndentMore
         | Command::PickBackground
         | Command::NumberFormat
         | Command::FewerDecimals
@@ -1849,6 +1865,8 @@ mod tests {
                 Command::AlignLeft,
                 Command::AlignCenter,
                 Command::AlignRight,
+                Command::IndentLess,
+                Command::IndentMore,
                 Command::PickColor,
                 Command::WrapText,
                 Command::BordersAll,

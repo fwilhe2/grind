@@ -566,6 +566,10 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("and that toggle shows it", byId("s-underline").getAttribute("aria-pressed"), "true");
   await press_button("s-underline");
   check("and takes it off again", byId("s-underline").getAttribute("aria-pressed"), "false");
+  await press_button("s-indent");
+  check("Increase indent indents a cell by one level", document.querySelector("td.active").getAttribute("style").includes("text-indent:0.265cm"), true);
+  await press_button("s-outdent");
+  check("and Decrease indent takes it back to none", (document.querySelector("td.active").getAttribute("style") || "").includes("text-indent"), false);
 
   await command("Number: per cent");
   await frame();

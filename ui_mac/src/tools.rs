@@ -111,6 +111,16 @@ const ALIGN: Tool = Tool::Segments {
     toggles: true,
 };
 
+const INDENT: Tool = Tool::Segments {
+    id: "indent",
+    label: "Indent",
+    segments: &[
+        segment("decrease.indent", "Decrease Indent", Command::Indent(-1)),
+        segment("increase.indent", "Increase Indent", Command::Indent(1)),
+    ],
+    toggles: false,
+};
+
 const NUMBER: Tool = Tool::PopUp {
     id: "number",
     label: "Number",
@@ -177,10 +187,10 @@ const CLEAR: Tool = Tool::Segments {
     toggles: false,
 };
 
-/// The spreadsheet's toolbar, left to right: the weight of the text, its alignment, its
+/// The spreadsheet's toolbar, left to right: the weight of the text, its alignment and indent, its
 /// colours, the number it shows, and Clear — `ui_win32`'s strip's five groups.
 const SHEET: &[Tool] = &[
-    WEIGHT, ALIGN, TEXT_COLOR, BACKGROUND, NUMBER, DECIMALS, CLEAR,
+    WEIGHT, ALIGN, INDENT, TEXT_COLOR, BACKGROUND, NUMBER, DECIMALS, CLEAR,
 ];
 
 /// The page's: what a paragraph is, the five emphases, the two colours, and Clear.
@@ -300,7 +310,7 @@ mod tests {
             }
         }
         assert_eq!(TEXT_COLOR, TEXT[2]);
-        assert_eq!(TEXT_COLOR, SHEET[2]);
+        assert_eq!(TEXT_COLOR, SHEET[3]);
     }
 
     /// Only properties of the selection: every toolbar command is a formatting one.

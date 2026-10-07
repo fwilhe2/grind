@@ -914,6 +914,8 @@ impl Ui {
             "style.align-right" => style(|s| Toggle::AlignEnd.set(s, true)),
             "style.align-clear" => style(|s| format::restyled(s, |s| s.align = None)),
             "style.wrap" => style(|s| Toggle::Wrap.flipped(s)),
+            "style.indent-less" => style(|s| format::indented(s, -1)),
+            "style.indent-more" => style(|s| format::indented(s, 1)),
             "style.border" => style(|s| {
                 format::restyled(s, |s| {
                     s.set_border(Some(grind_sheet::format::BORDER.to_owned()))

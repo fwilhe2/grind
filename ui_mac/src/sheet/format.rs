@@ -92,6 +92,7 @@ pub fn write(command: Command, active: &Active, locale: Option<Locale>) -> Optio
                 .map(|format| Write::Format(Some(format)))
         }
         Command::Borders(on) => Some(Write::Style(format::bordered(&active.style, on))),
+        Command::Indent(step) => Some(Write::Style(format::indented(&active.style, step))),
         Command::ClearFormatting => Some(Write::Clear),
         _ => None,
     }

@@ -135,6 +135,9 @@ pub const SHEET: &[Command] = &[
     cmd("style.align-left", "Align left", "Format", "", false),
     cmd("style.align-center", "Align centre", "Format", "", false),
     cmd("style.align-right", "Align right", "Format", "", false),
+    // Whole indent levels, `format::indented`'s — the step an imported workbook's indents use.
+    cmd("style.indent-less", "Decrease indent", "Format", "", false),
+    cmd("style.indent-more", "Increase indent", "Format", "", false),
     cmd(
         "style.align-clear",
         "Align automatically",

@@ -26,6 +26,7 @@ Spreadsheet:
   After `=`, an operator or `(` the arrows point at a cell and write its address (point mode);
   they keep moving it until you type something else
   :bold  :italic  :underline  :strike  :wrap  :border  :plain
+  :indent  :outdent       — one indent level in or out (> and < in Visual mode)
   :align l|c|r            :color <name|#rrggbb>   :fill <name|#rrggbb>
   :format general|int|number [n]|percent|currency|date|time|datetime
   :general                :recalc

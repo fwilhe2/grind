@@ -57,6 +57,9 @@ pub enum Command {
     Mark(Emphasis),
     /// A cell's alignment — one field with three answers (`grind_sheet::format::Toggle`).
     Align(Align),
+    /// One indent level out (-1, ⌘[) or in (1, ⌘]) over the selected cells — whole levels, the
+    /// step an imported workbook already uses (`grind_sheet::format::indented`).
+    Indent(i8),
     /// `fo:wrap-option` on the selected cells.
     Wrap,
     /// A hairline round every selected cell (`true`), or no border at all (`false`).
@@ -249,6 +252,7 @@ impl Command {
         ];
         all.extend(EMPHASES.map(Command::Mark));
         all.extend([Align::Left, Align::Center, Align::Right].map(Command::Align));
+        all.extend([Command::Indent(-1), Command::Indent(1)]);
         all.push(Command::Wrap);
         all.extend([Command::Borders(true), Command::Borders(false)]);
         all.extend(Preset::ALL.map(Command::Number));
@@ -392,6 +396,7 @@ impl Command {
             | Command::RenameSheet
             | Command::DeleteSheet
             | Command::Align(_)
+            | Command::Indent(_)
             | Command::Wrap
             | Command::Borders(_)
             | Command::Number(_)
@@ -650,6 +655,9 @@ static TEXT: Menu = Menu {
         command("Align Left", key("{", CMD), Command::Align(Align::Left)),
         command("Center", key("|", CMD), Command::Align(Align::Center)),
         command("Align Right", key("}", CMD), Command::Align(Align::Right)),
+        Item::Separator,
+        command("Decrease Indent", key("[", CMD), Command::Indent(-1)),
+        command("Increase Indent", key("]", CMD), Command::Indent(1)),
         Item::Separator,
         command("Wrap Text", None, Command::Wrap),
     ],

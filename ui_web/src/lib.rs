@@ -1538,6 +1538,8 @@ fn wire_toolbar(shell: &Rc<Shell>) -> Result<(), JsValue> {
         ("s-align-left", "style.align-left", false),
         ("s-align-center", "style.align-center", false),
         ("s-align-right", "style.align-right", false),
+        ("s-outdent", "style.indent-less", false),
+        ("s-indent", "style.indent-more", false),
         ("s-wrap", "style.wrap", false),
         ("s-border", "style.border", false),
         ("s-fewer", "format.fewer", false),

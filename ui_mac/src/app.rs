@@ -170,6 +170,7 @@ impl Delegate {
             // Formatting acts on whichever pane the front document has (M7).
             Command::Mark(_)
             | Command::Align(_)
+            | Command::Indent(_)
             | Command::Wrap
             | Command::Borders(_)
             | Command::Number(_)

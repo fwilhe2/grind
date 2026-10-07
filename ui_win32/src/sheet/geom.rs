@@ -220,7 +220,9 @@ impl GridGeom {
             .iter()
             .map(|&(control, shape, group)| {
                 let width = match (shape, control) {
-                    (Shape::Toggle | Shape::Swatch, _) => crate::theme::space::CONTROL_H,
+                    (Shape::Toggle | Shape::Icon | Shape::Swatch, _) => {
+                        crate::theme::space::CONTROL_H
+                    }
                     (Shape::Picker, _) => NUMBER_W,
                     // The text strip's own, so the one verb both strips carry is one size.
                     (Shape::Button, Control::Clear) => crate::text::geom::CLEAR_W,

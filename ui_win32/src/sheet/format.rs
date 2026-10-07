@@ -46,6 +46,10 @@ pub enum Control {
     AlignLeft,
     AlignCenter,
     AlignRight,
+    /// One indent level out or in (`grind_sheet::format::indented`): square, drawn as an icon
+    /// like the alignments, and never pressed.
+    Outdent,
+    Indent,
     /// `fo:color` — the text's own colour.
     Color,
     /// `fo:background-color` — the cell's fill.
@@ -63,6 +67,8 @@ pub enum Control {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Shape {
     Toggle,
+    /// Square like a toggle and drawn as an icon, but a one-shot press that is never held in.
+    Icon,
     Swatch,
     Picker,
     Button,
@@ -73,7 +79,7 @@ pub enum Shape {
 /// Five groups, and the grouping is the point (W10's rule for the text strip): the *weight* of
 /// the text, its *alignment*, its *colours*, the *number* it shows, and Clear on its own because
 /// it undoes all four. A separator is drawn wherever a group starts.
-pub const CONTROLS: [(Control, Shape, bool); 13] = [
+pub const CONTROLS: [(Control, Shape, bool); 15] = [
     (Control::Bold, Shape::Toggle, false),
     (Control::Italic, Shape::Toggle, false),
     (Control::Underline, Shape::Toggle, false),
@@ -81,6 +87,8 @@ pub const CONTROLS: [(Control, Shape, bool); 13] = [
     (Control::AlignLeft, Shape::Toggle, true),
     (Control::AlignCenter, Shape::Toggle, false),
     (Control::AlignRight, Shape::Toggle, false),
+    (Control::Outdent, Shape::Icon, false),
+    (Control::Indent, Shape::Icon, false),
     (Control::Color, Shape::Swatch, true),
     (Control::Background, Shape::Swatch, false),
     (Control::Number, Shape::Picker, true),
@@ -101,6 +109,8 @@ impl Control {
             Control::AlignLeft => "Align Left",
             Control::AlignCenter => "Center",
             Control::AlignRight => "Align Right",
+            Control::Outdent => "Decrease Indent",
+            Control::Indent => "Increase Indent",
             Control::Color => "Text Colour",
             Control::Background => "Cell Background",
             Control::Number => "Number Format",

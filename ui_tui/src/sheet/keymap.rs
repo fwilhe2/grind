@@ -96,6 +96,8 @@ pub enum Action {
     /// `_` underline and `~` strikethrough — the word processor's two keys again.
     Underline,
     Strike,
+    /// `>` and `<` — one indent level in or out, vi's own shift keys (`format::indented`).
+    Indent(i8),
     /// `-` — back to no styling at all.
     Plain,
     /// `w` `b` `}` `{` (and Ctrl+arrow) — to the next edge of the data in that direction, the rule
@@ -141,6 +143,8 @@ pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<
         KeyCode::Char('/') if visual => Some(Action::Italic),
         KeyCode::Char('_') if visual => Some(Action::Underline),
         KeyCode::Char('~') if visual => Some(Action::Strike),
+        KeyCode::Char('>') if visual => Some(Action::Indent(1)),
+        KeyCode::Char('<') if visual => Some(Action::Indent(-1)),
         KeyCode::Char('-') if visual => Some(Action::Plain),
         KeyCode::Char('h') | KeyCode::Left => by(Dir::Left),
         KeyCode::Char('l') | KeyCode::Right => by(Dir::Right),
@@ -531,6 +535,8 @@ mod tests {
             ('/', Action::Italic),
             ('_', Action::Underline),
             ('~', Action::Strike),
+            ('>', Action::Indent(1)),
+            ('<', Action::Indent(-1)),
             ('-', Action::Plain),
         ] {
             assert_eq!(

@@ -3760,6 +3760,8 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::AlignLeft => format_control(hwnd, format::Control::AlignLeft),
         Command::AlignCenter => format_control(hwnd, format::Control::AlignCenter),
         Command::AlignRight => format_control(hwnd, format::Control::AlignRight),
+        Command::IndentLess => format_control(hwnd, format::Control::Outdent),
+        Command::IndentMore => format_control(hwnd, format::Control::Indent),
         Command::PickColor => format_control(hwnd, format::Control::Color),
         Command::PickBackground => format_control(hwnd, format::Control::Background),
         Command::NumberFormat => format_control(hwnd, format::Control::Number),
@@ -5032,6 +5034,14 @@ fn format_control(hwnd: HWND, control: format::Control) {
         Control::Color => format_pick_color(hwnd, false),
         Control::Background => format_pick_color(hwnd, true),
         Control::Number => format_pick_number(hwnd),
+        Control::Outdent => format_write(hwnd, |state, start, end| {
+            let style = grind_sheet::format::indented(&active_style(state), -1);
+            state.app.set_style(state.sheet, start, end, style)
+        }),
+        Control::Indent => format_write(hwnd, |state, start, end| {
+            let style = grind_sheet::format::indented(&active_style(state), 1);
+            state.app.set_style(state.sheet, start, end, style)
+        }),
         Control::FewerDecimals => format_step_decimals(hwnd, -1),
         Control::MoreDecimals => format_step_decimals(hwnd, 1),
         Control::Clear => format_write(hwnd, |state, start, end| {
@@ -6171,6 +6181,8 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::AlignLeft
         | Command::AlignCenter
         | Command::AlignRight
+        | Command::IndentLess
+        | Command::IndentMore
         | Command::PickBackground
         | Command::NumberFormat
         | Command::FewerDecimals
@@ -7315,6 +7327,8 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::AlignLeft
         | Command::AlignCenter
         | Command::AlignRight
+        | Command::IndentLess
+        | Command::IndentMore
         | Command::PickBackground
         | Command::NumberFormat
         | Command::FewerDecimals

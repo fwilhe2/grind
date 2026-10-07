@@ -791,12 +791,10 @@ fn look(
     }
 }
 
-/// `indent="n"` as the length the oracle writes for it: `n` × 0.2646cm, three decimals.
+/// `indent="n"` as the length the oracle writes for it: `n` × 0.2646cm, three decimals — the core's
+/// own indent level, which every window's Increase Indent steps by.
 fn indent_length(steps: i64) -> String {
-    let cm = steps as f64 * 0.264_583;
-    let text = format!("{cm:.3}");
-    let text = text.trim_end_matches('0').trim_end_matches('.');
-    format!("{text}cm")
+    grind_sheet::format::indent_length(steps)
 }
 
 /// A border style's name as ODF's three parts: width, line, and whether a dash pattern was

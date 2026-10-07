@@ -115,7 +115,17 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
     let left = toggle("format-justify-left-symbolic", "Align Left");
     let center = toggle("format-justify-center-symbolic", "Align Center");
     let right = toggle("format-justify-right-symbolic", "Align Right");
+    // Indent by whole levels (`format::indented`) — the oracle's own step, so an indent set here
+    // lands where an imported workbook's already are.
+    let outdent = gtk::Button::from_icon_name("format-indent-less-symbolic");
+    outdent.set_tooltip_text(Some("Decrease Indent"));
+    let indent = gtk::Button::from_icon_name("format-indent-more-symbolic");
+    indent.set_tooltip_text(Some("Increase Indent"));
     let align = linked(&[&left, &center, &right]);
+    let indents = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    indents.add_css_class("linked");
+    indents.append(&outdent);
+    indents.append(&indent);
 
     let wrap = toggle("format-justify-fill-symbolic", "Wrap Text");
     // A hairline round every selected cell, or none: `format::bordered`, which the terminal, the
@@ -155,6 +165,7 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
     for widget in [
         emphasis.upcast_ref::<gtk::Widget>(),
         align.upcast_ref(),
+        indents.upcast_ref(),
         wrap.upcast_ref(),
         borders.upcast_ref(),
         color.button.upcast_ref(),
@@ -187,6 +198,11 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
             let on = button.is_active();
             apply(&|style| toggle.set(style, on));
         });
+    }
+
+    for (button, step) in [(&outdent, -1), (&indent, 1)] {
+        let apply = field(grid, app, &updating);
+        button.connect_clicked(move |_| apply(&|style| format::indented(style, step)));
     }
 
     {

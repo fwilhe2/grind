@@ -31,6 +31,7 @@ Normal mode, both document types (vi-style):
 
 Visual mode — one notation for emphasis, whichever document it is:
   *  bold       /  italic       _  underline     ~  strikethrough     -  no formatting
+  >  <  one indent level in or out (a spreadsheet's cells)
   d / x  delete or clear what is selected   Esc  stop selecting
 
 Saving and leaving, both:
