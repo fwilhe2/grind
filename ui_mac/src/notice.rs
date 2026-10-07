@@ -134,13 +134,18 @@ pub fn replaced(cells: usize, refused: Option<(&str, usize)>) -> String {
     }
 }
 
-/// A page's counts, for its window's subtitle — what every word processor keeps in sight.
-pub fn counted_words(words: usize, characters: usize) -> String {
-    format!(
+/// A page's counts, for its window's subtitle — what every word processor keeps in sight — and,
+/// once there is something to read, how long it takes to.
+pub fn counted_words(counts: &grind_text::Counts) -> String {
+    let counted = format!(
         "{}, {}",
-        counted(words, "word", "words"),
-        counted(characters, "character", "characters")
-    )
+        counted(counts.words, "word", "words"),
+        counted(counts.characters, "character", "characters")
+    );
+    match counts.reading_minutes() {
+        0 => counted,
+        minutes => format!("{counted} · {minutes} min read"),
+    }
 }
 
 /// A find on a page that landed: which of how many, and how to go on.
@@ -210,7 +215,16 @@ mod tests {
             "2 of 3 occurrences of “rent”. ⌘G finds the next, ⇧⌘G the previous."
         );
         assert_eq!(replaced_text(1), "Replaced 1 occurrence. ⌘Z takes it back.");
-        assert_eq!(counted_words(1, 5), "1 word, 5 characters");
+        let note = grind_text::Counts {
+            words: 1,
+            characters: 5,
+            ..Default::default()
+        };
+        assert_eq!(counted_words(&note), "1 word, 5 characters · 1 min read");
+        assert_eq!(
+            counted_words(&grind_text::Counts::default()),
+            "0 words, 0 characters"
+        );
     }
 
     /// A Mac spells its keys with its own symbols.

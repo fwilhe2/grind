@@ -13,7 +13,8 @@
 use grind_text::Counts;
 
 /// The text pane's status bar, in words: what the caret is in and how long the document is —
-/// `Heading 1  ·  90 words`, `Paragraph — Text body  ·  90 words  ·  12 characters selected`.
+/// `Heading 1  ·  90 words  ·  1 min read`, `Paragraph — Text body  ·  90 words  ·  1 min read  ·
+/// 12 characters selected`.
 ///
 /// It used to lead with the caret's address and count blocks (`p1+0   90 words   22 blocks`):
 /// the address is Go To's (F5 opens holding it) and a block is the model's word, not a reader's.
@@ -29,6 +30,9 @@ pub fn status_line(here: &str, selected: usize, counts: Counts) -> String {
         counts.words,
         plural(counts.words, "word", "words")
     ));
+    if counts.reading_minutes() > 0 {
+        parts.push(format!("{} min read", counts.reading_minutes()));
+    }
     if selected > 0 {
         parts.push(format!(
             "{selected} {} selected",
@@ -80,11 +84,17 @@ mod tests {
     #[test]
     fn the_bar_says_what_the_caret_is_in_and_how_long_the_document_is() {
         let line = status_line("Heading 1", 0, counts(120, 9));
-        assert_eq!(line, "Heading 1  \u{00b7}  120 words");
+        assert_eq!(line, "Heading 1  \u{00b7}  120 words  \u{00b7}  1 min read");
         assert!(
             !line.contains("block"),
             "a block is the model's word: {line}"
         );
+    }
+
+    #[test]
+    fn reading_time_is_said_only_when_there_is_something_to_read() {
+        assert_eq!(status_line("", 0, counts(0, 1)), "0 words");
+        assert!(status_line("", 0, counts(460, 9)).ends_with("2 min read"));
     }
 
     #[test]

@@ -612,9 +612,10 @@ impl Ui {
     }
 
     /// The status line, in words: what the caret is in and how long the document is —
-    /// `Heading 1 · 90 words`, `Body text · 90 words · 12 characters selected`. It used to lead
-    /// with the caret's address (`p1+0 · 90 words · 22 blocks`), which is the palette's to take
-    /// and now its tooltip; `ui_text_gtk`'s status bar made the same change.
+    /// `Heading 1 · 90 words · 1 min read`, `Body text · 90 words · 1 min read · 12 characters
+    /// selected`. It used to lead with the caret's address (`p1+0 · 90 words · 22 blocks`), which
+    /// is the palette's to take and now its tooltip; `ui_text_gtk`'s status bar made the same
+    /// change.
     fn render_chrome(&self) {
         let caret = self.caret.get();
         let counts = self.app.counts();
@@ -630,9 +631,10 @@ impl Ui {
             .block_at(caret.block)
             .map(|block| describe(&block.kind, block.style.as_deref()))
             .unwrap_or_default();
-        let words = match counts.words {
-            1 => "1 word".to_owned(),
-            n => format!("{n} words"),
+        let words = match (counts.words, counts.reading_minutes()) {
+            (_, 0) => "0 words".to_owned(),
+            (1, minutes) => format!("1 word · {minutes} min read"),
+            (n, minutes) => format!("{n} words · {minutes} min read"),
         };
         let line = match here.is_empty() {
             true => format!("{words}{selected}"),

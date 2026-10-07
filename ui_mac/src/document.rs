@@ -328,10 +328,7 @@ mod mac {
                                 let counts = app.counts();
                                 if let Some(window) = window.load() {
                                     window.setSubtitle(&NSString::from_str(
-                                        &crate::notice::counted_words(
-                                            counts.words,
-                                            counts.characters,
-                                        ),
+                                        &crate::notice::counted_words(&counts),
                                     ));
                                 }
                             }

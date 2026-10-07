@@ -651,9 +651,10 @@ impl Ui {
         // In words, for a reader: what kind of paragraph this is and how long the document
         // is. The caret's address (`p14+11`) used to lead the line; it is the go-to box's
         // now, shown there when the box opens, which is where an address is for typing.
-        let words = match counts.words {
-            1 => "1 word".to_owned(),
-            n => format!("{n} words"),
+        let words = match (counts.words, counts.reading_minutes()) {
+            (_, 0) => "0 words".to_owned(),
+            (1, minutes) => format!("1 word  ·  {minutes} min read"),
+            (n, minutes) => format!("{n} words  ·  {minutes} min read"),
         };
         self.reconsider_spelling(counts.words);
         let words = match self.checked.get() {
@@ -1093,8 +1094,12 @@ impl Ui {
     fn word_count(self: &Rc<Self>) {
         let counts = self.app.counts();
         self.toast(&format!(
-            "{} words · {} characters · {} blocks · {} headings",
-            counts.words, counts.characters, counts.blocks, counts.headings
+            "{} words · {} characters · {} blocks · {} headings · {} min read",
+            counts.words,
+            counts.characters,
+            counts.blocks,
+            counts.headings,
+            counts.reading_minutes()
         ));
     }
 

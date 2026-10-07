@@ -1333,8 +1333,12 @@ impl App {
     fn cmd_words(&mut self) {
         let c = self.core.counts();
         self.status = format!(
-            "{} blocks  {} headings  {} words  {} characters",
-            c.blocks, c.headings, c.words, c.characters
+            "{} blocks  {} headings  {} words  {} characters  {} min read",
+            c.blocks,
+            c.headings,
+            c.words,
+            c.characters,
+            c.reading_minutes()
         );
     }
 
