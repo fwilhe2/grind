@@ -41,6 +41,8 @@ Word processor:
   :md-in <file>  :md-out <file>     — markdown read in before this block, or the selection
                                       (else the whole document) written out as CommonMark
   :image <file>                     — a picture below this block (drawn by the other windows)
+  :alt [text]    :desc [text]       — the picture here: what a screen reader says, and its long
+                                      description; bare, edit what it says now; :alt! removes both
   :pdf <file>    :pages             — the document as a PDF, ready to print; where each of its
                                       pages begins, Enter goes to one
   :move <address>                   — this block, put before that one

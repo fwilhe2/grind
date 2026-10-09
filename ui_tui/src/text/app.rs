@@ -959,6 +959,11 @@ impl App {
             "lint hints" | "lint!" => self.cmd_lint(true),
             "outline" => self.cmd_outline(),
             _ if cmd.starts_with("image ") => self.cmd_image(cmd[6..].trim()),
+            "alt" => self.cmd_alt_edit(false),
+            "desc" => self.cmd_alt_edit(true),
+            "alt!" => self.cmd_alt(Some(""), Some("")),
+            _ if cmd.starts_with("alt ") => self.cmd_alt(Some(cmd[4..].trim()), None),
+            _ if cmd.starts_with("desc ") => self.cmd_alt(None, Some(cmd[5..].trim())),
             // The word processor's half of inline names (§3.6). A verb rather than a key,
             // and the same word turns it off: nothing is written either way.
             "names" => {
@@ -1218,11 +1223,60 @@ impl App {
                 self.caret = Caret { block, offset: 1 };
                 self.anchor = None;
                 self.goal_x = None;
-                self.status =
-                    "a picture \u{2014} drawn by the other windows; u takes it back".to_string();
+                self.status = "a picture \u{2014} :alt says what it shows to someone who cannot \
+                               see it; u takes it back"
+                    .to_string();
             }
             Err(error) => self.status = error.to_string(),
         }
+    }
+
+    /// The picture beside the caret and where it sits (`grind_text::picture::at`).
+    fn picture_here(&self) -> Option<(Caret, grind_text::ImageView)> {
+        let block = self.caret.block;
+        let viewport = self.core.get_viewport(block..block + 1);
+        let (offset, image) = grind_text::picture::at(viewport.get(block)?, self.caret.offset)?;
+        Some((Caret { block, offset }, image.clone()))
+    }
+
+    /// `:alt` and `:desc` with nothing after them — the command line again, holding what the
+    /// picture already says, so it is edited in place the way vi's own history is rather than
+    /// typed again from nothing.
+    fn cmd_alt_edit(&mut self, long: bool) {
+        let Some((_, image)) = self.picture_here() else {
+            self.status = "no picture beside the caret".to_string();
+            return;
+        };
+        let (verb, now) = match long {
+            false => ("alt", image.title),
+            true => ("desc", image.description),
+        };
+        let now = now.unwrap_or_default();
+        self.mode = Mode::Command {
+            buf: format!("{verb} {now}"),
+        };
+    }
+
+    /// `:alt <text>`, `:desc <text>`, `:alt!` — the picture beside the caret's alternative text,
+    /// short or long, each half given or kept (`grind_text::picture::set_alt`).
+    fn cmd_alt(&mut self, title: Option<&str>, description: Option<&str>) {
+        let Some((at, image)) = self.picture_here() else {
+            self.status = "no picture beside the caret".to_string();
+            return;
+        };
+        let title = title.map_or_else(|| image.title.unwrap_or_default(), str::to_owned);
+        let description =
+            description.map_or_else(|| image.description.unwrap_or_default(), str::to_owned);
+        self.status = match grind_text::picture::set_alt(&self.core, at, &title, &description) {
+            Ok(()) if title.trim().is_empty() => {
+                "the picture has no alt text \u{2014} :alt <text> gives it some".to_string()
+            }
+            Ok(()) => match grind_text::picture::advice(&title) {
+                Some(advice) => format!("alt text set \u{2014} {advice}"),
+                None => "alt text set \u{2014} u takes it back".to_string(),
+            },
+            Err(e) => e.to_string(),
+        };
     }
 
     /// `:outline` — every heading, indented by its level, each row a jump.
@@ -2979,6 +3033,40 @@ mod tests {
 
         app.run_command("mark!");
         assert!(app.core.bookmarks().is_empty(), "{}", app.status);
+    }
+
+    /// `:alt` — a picture's alternative text from the command line: set, edited in place,
+    /// given a long description, and taken away.
+    #[test]
+    fn the_command_line_gives_a_picture_alt_text() {
+        let mut app = app(&["words"]);
+        app.run_command("alt A heron");
+        assert_eq!(app.status, "no picture beside the caret");
+        let at = grind_text::picture::insert_below(&app.core, 0, "image/png", b"\x89PNG".to_vec())
+            .unwrap();
+        app.caret = Caret {
+            block: at,
+            offset: 1,
+        };
+        let said = |app: &App| app.picture_here().map(|(_, i)| (i.title, i.description));
+
+        app.run_command("alt Image of a heron");
+        assert!(app.status.contains("screen reader"), "{}", app.status);
+        app.run_command("alt A grey heron");
+        app.run_command("desc Standing on one leg.");
+        assert_eq!(
+            said(&app),
+            Some((
+                Some("A grey heron".into()),
+                Some("Standing on one leg.".into())
+            ))
+        );
+        // Bare, it is the command line again with the text in it, ready to edit.
+        app.run_command("alt");
+        assert!(matches!(&app.mode, Mode::Command { buf } if buf == "alt A grey heron"));
+        app.mode = Mode::Normal;
+        app.run_command("alt!");
+        assert_eq!(said(&app), Some((None, None)));
     }
 
     /// `:move` — a block put somewhere else, in one action and so one press of `u`.
