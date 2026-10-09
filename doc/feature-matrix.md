@@ -317,6 +317,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | **Take hold of** a chart — select it (accent outline, eight handles), drag to move, a handle to resize, Delete, a menu on it (`doc/chart-handling.md`) | ● ᵍʳ | ● | ◐ ᵍʳ | ● ᵍʳ | ● ᵍʳ | ● ᵍʳ |
 | A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ● ᶜʰ | ● ᶜʰ | ● ᶜʰ | ● ⁵ |
 | A chart's own title and legend | ● | ● | ● ᵗᶜ | ● ᶜʰ | ● ᶜʰ | ● ⁵ |
+| A chart's **kind chosen** — inserted as bar, line or pie rather than the one the cells want, and a chart turned into another | ● ⁿ | ● | ● ᵏᵈ | ● ᵏᵈ | ● ᵏᵈ | ● ᵏᵈ |
 | A **preview** of a chart before it is inserted | — | ● ᵒ | ● ᵗᵖ | ● ʷᵖ | ● ʷᵛ | ● ᵐᵖ |
 | **Draws** a chart | — | ● | ◐ ᵗᶜ | ● | ● ᶜʰ | ● |
 | **Draws** its title and legend | — | ● | ◐ ᵗᶜ | ● | ● ᶜʰ | ● |
@@ -404,7 +405,7 @@ sheet at the active cell, sniffed.
 menu that renames it with every use following, redefines it, inlines it everywhere or deletes it.
 ⁴ File ▸ Export as CSV…, the sheet's used rectangle with shown values, its delimiter picked by
 the name — `.tsv` is tabs. ⁵ Insert ▸ Chart charts the table the selection is in, beside it,
-as the core reads it; a right-click on a chart sets its title, its kind and its legend or removes
+as the core reads it, and Insert ▸ Bar/Line/Pie Chart as that kind (ᵏᵈ); a right-click on a chart sets its title, its kind and its legend or removes
 it, and dragging one moves it. There is no dialog, and resizing or recolouring one is the CLI's.
 
 ## 7. Word processor
@@ -519,7 +520,9 @@ either side of it, which is the `ponytail` `doc/tui-shell.md` records.
 ʸ A second row in the find bar — *Replace with* and **Replace All** (`App::replace`: every occurrence, exact, one undo step); closed 2026-10-02. Its widget test skips without a display.
 ᶻ Closed 2026-10-02, each a prompt over the core's own verb: the browser's palette verbs *Insert a table…*, *Bookmark this paragraph…* and *Name this paragraph's style…*, and the Windows Format menu's *Insert Table…* (Ctrl+Shift+T), *Bookmark Here…* (Ctrl+Shift+B) and *Paragraph Style Name…*. A table's size and place are `grind_text::table`'s — below the caret's block or table, never last — which the GNOME window asks too.
 ᵍᵖ Move paragraph up/down and delete paragraph (`grind_text::blocks`, by caret and selection, not by address), 2026-10-02: the GNOME page's context menu, the browser's palette, the Windows Format menu. The GNOME context menu also has *Bookmark Here…* and *Paragraph Style Name…* (an alert with an entry). Insert-by-address is still the CLI's and the terminal's.
-ᶜʰ Palette verbs *Insert a chart from the selection* (`verbs::insert_chart`, placed beside the table) and *Delete the last chart* — 2026-10-02. The terminal has `:chart` and `:chart!` (it writes the chart and draws none). *Change the last chart…* (and `:chart <words>`, Data ▸ Change Chart…) restyles its kind, title and legend in words (`verbs::restyle_chart`), and since 2026-10-07 its size too (`width=12cm height=8cm`); *Move the last chart here* (`:chart here`, Data ▸ Move Chart Here) puts its corner at the active cell over each shell's own column and row offsets (`verbs::move_chart`). Since 2026-10-09 every verb means the *selected* chart, else the last — a click selects one in the browser and on Windows, `:charts` in the terminal (ᵍʳ). Win32 has the same three as Data-menu items and **draws** charts (`sheet/chart.rs` over `grind_sheet::chart_paint`, the Mac's marks hoisted; a Wine render checks it).
+ᶜʰ Palette verbs *Insert a chart from the selection* (`verbs::insert_chart`, placed beside the table) and *Delete the last chart* — 2026-10-02. The terminal has `:chart` and `:chart!` (it writes the chart and draws none). *Change the last chart…* (and `:chart <words>`, Data ▸ Change Chart…) restyles its kind, title and legend in words (`verbs::restyle_chart`), and since 2026-10-07 its size too (`width=12cm height=8cm`); *Move the last chart here* (`:chart here`, Data ▸ Move Chart Here) puts its corner at the active cell over each shell's own column and row offsets (`verbs::move_chart`). Since 2026-10-09 every verb means the *selected* chart, else the last — a click selects one in the browser and on Windows, `:charts` in the terminal (ᵍʳ). Win32 has the same three as Chart-menu items (Data's, until 2026-10-09) and **draws** charts (`sheet/chart.rs` over `grind_sheet::chart_paint`, the Mac's marks hoisted; a Wine render checks it).
+
+ᵏᵈ The GNOME dialog's three kind buttons, in every other window — `verbs::insert_chart`'s `kind`, `verbs::set_chart_kind` and `ChartKind::ALL`/`name`, so the six spell them the same way. **Browser**: palette verbs *Insert a bar/line/pie chart from the selection* and *Make the chart a bar/line/pie chart*, the three as ticked rows on a chart's own menu, and Bar/Line/Pie buttons over the preview that redraw it, Insert inserting the one pressed (`smoke.js` drives all three). **Windows**: a **Chart** menu of its own — Insert Bar/Line/Pie Chart and Change to Bar/Line/Pie Chart, ticked by the kind the chart is, beside the five chart verbs that moved there from Data — the three again on a chart's context menu, and push-like Bar/Line/Pie radio buttons along the preview's strip; type-checked and unit-tested from Linux, not seen running. **Mac**: Insert ▸ Bar/Line/Pie Chart, and a segmented control over the preview's picture that swaps it; a chart's own menu already had the three. Type-checked, not run. **Terminal**: `:chart new bar|line|pie`, `:chart preview bar|line|pie`, and `b`/`l`/`p` in `:charts` — 2026-10-09.
 ᵖⁱ *Insert a picture…* from the palette raises the file picker; the type is read from the bytes (`grind_text::picture::mime`) and `insert_below` places it — the same call GNOME, Windows and the Mac make. Closed 2026-10-02.
 ᶠˢ The browser's palette has *Font family…*, *Font size…* (a prompt each) and *Monospace*; the terminal has `:font <family>` and `:size <length>` over a selection. Both write `Change::Family`/`Size`; the terminal draws neither, being one font at one size — so its drawn-family row stays ○ (2026-10-02).
 ᵗⁱ `:image <file>` puts the picture in below the caret's paragraph (`grind_text::picture`); the terminal still draws it as the placeholder character — the drawing row stays ○ (2026-10-02).
@@ -690,8 +693,8 @@ the cores so shells cannot diverge: `grind_text::{find, table, blocks, picture}`
 `grind_sheet::{verbs, autoheight, chart_paint, nav::fills, Filter::over_selection,
 look::border_strokes, format::bordered}`.
 
-**Still open**, as the ○ cells above say: charts — a preview, editing and restyling outside GNOME and
-the Mac, and none drawn by the terminal; the terminal's zoom and drag (a terminal has neither) and
+**Still open**, as the ○ cells above say: charts — editing and restyling outside GNOME and
+the Mac beyond the kind (which every window chooses since 2026-10-09), and none drawn by the terminal; the terminal's zoom and drag (a terminal has neither) and
 its borders and pictures (it has no way to draw them); wrapped text and row heights in the terminal; the seven CSV import options in any window; a welcome screen and a
 second document kind in the two GNOME shells (by decision); recent files in the terminal and the
 browser; and the number-format sample in the terminal.

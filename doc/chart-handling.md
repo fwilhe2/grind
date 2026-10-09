@@ -52,7 +52,10 @@ function rather than six answers that drift.
    outlined.
 10. **The chart verbs mean the selected chart, else the sheet's last.** A palette entry, a menu
     item or a command typed with nothing selected still does something sensible, and with a chart
-    selected it does it to that one.
+    selected it does it to that one. That includes the three kinds: every window offers Bar, Line
+    and Pie as a choice rather than only as a word typed into *Change* — the edit dialog's buttons
+    in GNOME, the chart's own menu in the other windows, a key in the terminal's pane
+    (`verbs::set_chart_kind`).
 11. **Selection is presentation**, like the cell selection: never written, let go of when the
     sheet changes or the chart is deleted or undone away (each shell asks "is the index still on
     this sheet and still in range" before trusting it).
@@ -66,10 +69,10 @@ minimum, a nudge) but not where it is chrome (a handle).
 | Client | Where | Notes |
 |---|---|---|
 | GNOME | `ui_sheet_gtk/src/grid.rs` (`chart_hit`, `chart_key`, `draw_charts`) | The first. A second click on a selected chart's body opens the colour popover for the mark under it. Not yet seen on a display from this machine (no Xvfb) |
-| Browser | `ui_web/src/sheet/grab.rs` | The DOM hit-tests: a handle is its own element (`.chart-handle`), its reach widened by a `::before` of the slop. `#chart-menu` is the right-click menu; a double click changes the chart. The `#charts` layer is CSS-zoomed, so a pointer's movement is divided by the zoom. `smoke.js` drives select, resize, Ctrl+Z, Escape, Delete and the menu in jsdom |
-| Windows | `ui_win32/src/sheet/chart.rs` (portable: `frames`, `hit`, `Grab`, `lengths`, `nudged`; GDI: `paint_held`), `win.rs` (`chart_press`, `chart_key`, `context_on_chart`) | Capture on press; `WM_SETCURSOR` maps a grip to `IDC_SIZEALL`/`IDC_SIZENS`/`IDC_SIZEWE`/`IDC_SIZENESW`/`IDC_SIZENWSE`; the Data menu's three chart verbs and a chart's own context menu. The handles are drawn over the cell selection and clipped to the cells. Seen in a Wine `--render-to` frame; the drag itself is unit-tested, not driven |
+| Browser | `ui_web/src/sheet/grab.rs` | The DOM hit-tests: a handle is its own element (`.chart-handle`), its reach widened by a `::before` of the slop. `#chart-menu` is the right-click menu, its Bar/Line/Pie rows ticked by the chart's kind; a double click changes the chart. The `#charts` layer is CSS-zoomed, so a pointer's movement is divided by the zoom. `smoke.js` drives select, resize, Ctrl+Z, Escape, Delete and the menu in jsdom |
+| Windows | `ui_win32/src/sheet/chart.rs` (portable: `frames`, `hit`, `Grab`, `lengths`, `nudged`; GDI: `paint_held`), `win.rs` (`chart_press`, `chart_key`, `context_on_chart`) | Capture on press; `WM_SETCURSOR` maps a grip to `IDC_SIZEALL`/`IDC_SIZENS`/`IDC_SIZEWE`/`IDC_SIZENESW`/`IDC_SIZENWSE`; the Chart menu's verbs (Change to Bar/Line/Pie ticked by the chart's kind) and a chart's own context menu, which leads with the three kinds. The handles are drawn over the cell selection and clipped to the cells. Seen in a Wine `--render-to` frame; the drag itself is unit-tested, not driven |
 | Mac | `ui_mac/src/sheet/chart.rs` (portable: `Held`, `hit`, `Grab`, `lengths`, `key`, `held_ops`), `grid_view.rs` (`grab_chart`, `chart_key`, `change_chart`) | Keys arrive as selectors (`deleteBackward:`, `cancelOperation:`, `moveLeftAndModifySelection:`, `insertNewline:`); cursors are cursor rects — the open hand on a body, `frameResizeCursorFromPosition:inDirections:` on each handle (macOS 15, the floor). Return or a double click pops the chart's menu under its corner; ⌫ is shown beside Delete Chart. Type-checked for both Apple targets, not yet run |
-| Terminal | `ui_tui/src/sheet/chartpane.rs` | No pointer and no chart on the grid, so the gesture is a **list**: `:charts` shows every chart as a row, the selected one reversed and drawn in characters below. `d`/`x`/Delete deletes it, `HJKL` nudge it a cell, `+`/`-` scale it 1.2×, `m` moves it to the cursor, Enter opens `:chart ` for it, Esc lets go. It stays selected when the pane closes, so `:chart <words>`, `:chart here` and `:chart!` mean it |
+| Terminal | `ui_tui/src/sheet/chartpane.rs` | No pointer and no chart on the grid, so the gesture is a **list**: `:charts` shows every chart as a row, the selected one reversed and drawn in characters below. `d`/`x`/Delete deletes it, `HJKL` nudge it a cell, `+`/`-` scale it 1.2×, `m` moves it to the cursor, `b`/`l`/`p` make it a bar, line or pie chart, Enter opens `:chart ` for it, Esc lets go. It stays selected when the pane closes, so `:chart <words>`, `:chart here` and `:chart!` mean it |
 | CLI | `grind sheet chart-list`, `chart-reshape`, `chart-remove` | By index, which is what every shell's selection is underneath |
 
 ## Named gaps
