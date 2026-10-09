@@ -373,6 +373,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
     </div>
 
+    <!-- A chart's own menu, opened by a right click on it (ui_web/src/sheet/grab.rs). Each row
+         is a command id and says the key that does the same to a selected chart. -->
+    <div id="chart-menu" class="chart-menu" role="menu" hidden>
+      <button type="button" role="menuitem" data-command="chart.restyle">
+        <span>Change chart…</span><kbd>Enter</kbd>
+      </button>
+      <button type="button" role="menuitem" data-command="chart.move">
+        <span>Move to the active cell</span>
+      </button>
+      <hr />
+      <button type="button" role="menuitem" data-command="chart.delete">
+        <span>Delete chart</span><kbd>Delete</kbd>
+      </button>
+    </div>
+
     <!-- Shown while a file is being dragged over the page. -->
     <div id="drop" class="drop" hidden><span>Drop to open</span></div>
 

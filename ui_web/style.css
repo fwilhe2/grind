@@ -715,6 +715,81 @@ input[type="text"] {
   border: 1px solid var(--line);
   border-radius: 4px;
   overflow: hidden;
+  /* A chart is a thing that can be picked up, and says so before it is pressed. */
+  cursor: move;
+}
+
+.chart:hover {
+  outline: 1px solid color-mix(in srgb, AccentColor 60%, Canvas);
+}
+
+/* Selected: unmistakable for as long as it is selected (doc/chart-handling.md). */
+.chart.selected {
+  outline: 2px solid AccentColor;
+  outline-offset: 0;
+}
+
+/* The eight handles of the selected chart, beside it in the layer — `.chart` clips. */
+.chart-handle {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: auto;
+  background: Canvas;
+  border: 1.5px solid AccentColor;
+  border-radius: 1.5px;
+}
+
+/* A handle answers a little beyond the square it draws (chart_frame::HANDLE_SLOP): easier to
+   grab than to see, never harder. */
+.chart-handle::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+}
+
+.chart-menu {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 13rem;
+  padding: 0.3rem;
+  background: Canvas;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px var(--shadow);
+  font-size: 0.9em;
+}
+
+.chart-menu button {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.35rem 0.6rem;
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: CanvasText;
+  font: inherit;
+  text-align: left;
+}
+
+.chart-menu button:hover,
+.chart-menu button:focus-visible {
+  background: var(--pick);
+  outline: none;
+}
+
+.chart-menu kbd {
+  font: inherit;
+  opacity: 0.6;
+}
+
+.chart-menu hr {
+  width: 100%;
+  margin: 0.25rem 0;
+  border: 0;
+  border-top: 1px solid var(--line);
 }
 
 .chart svg {

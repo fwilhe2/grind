@@ -663,14 +663,74 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("Insert closes it", document.querySelector(".chart-preview"), null);
   check("and inserts the chart", document.querySelectorAll("#charts .chart").length, 2);
 
-  // No chart is hit-tested here, so the last one is moved to the active cell, and resized in words.
+  // With nothing selected the chart verbs mean the last chart: moved to the active cell.
   const lastChart = () => [...document.querySelectorAll("#charts .chart")].pop();
   const before = lastChart().getAttribute("style");
   await goTo("D10");
-  await command("Move the last chart here");
+  await command("Move the chart here");
   await frame();
-  check("Move the last chart here moves it", lastChart().getAttribute("style") !== before, true);
+  check("Move the chart here moves the last", lastChart().getAttribute("style") !== before, true);
   check("and says where", byId("message").textContent.includes("D10"), true);
+
+  // Taking hold of a chart (ui_web/src/sheet/grab.rs, doc/chart-handling.md).
+  const charts = () => document.querySelectorAll("#charts .chart");
+  const handles = () => document.querySelectorAll("#charts .chart-handle");
+  const mouse = (target, type, x = 0, y = 0, extra = {}) =>
+    target.dispatchEvent(
+      new dom.window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, ...extra })
+    );
+  const first = () => charts()[0];
+  check("an unselected chart shows no handles", handles().length, 0);
+  mouse(first().querySelector("svg") || first(), "mousedown", 100, 100);
+  mouse(dom.window, "mouseup", 100, 100);
+  await frame();
+  check("a click selects it", first().classList.contains("selected"), true);
+  check("and it wears eight handles", handles().length, 8);
+  check("the keys are said", byId("message").textContent.includes("Delete"), true);
+
+  // The south-east handle resizes it; nothing is written until the button comes up.
+  const widthOf = () => parseFloat(first().style.width);
+  const was = widthOf();
+  const se = [...handles()].find((h) => h.getAttribute("data-grip") === "4");
+  check("the corner handle shows a resize pointer", se.style.cursor, "nwse-resize");
+  mouse(se, "mousedown", 200, 200);
+  mouse(dom.window, "mousemove", 260, 230);
+  check("the drag draws the new size", Math.round(widthOf() - was), 60);
+  mouse(dom.window, "mouseup", 260, 230);
+  await frame();
+  check("the release writes it", Math.round(widthOf() - was), 60);
+  check("and it is still selected", handles().length, 8);
+  press("z", { ctrlKey: true });
+  await frame();
+  check("one Ctrl+Z undoes the resize", Math.round(widthOf() - was), 0);
+
+  // Escape lets go; Delete on a selected chart deletes it, and Ctrl+Z brings it back.
+  mouse(first(), "mousedown", 100, 100);
+  mouse(dom.window, "mouseup", 100, 100);
+  await frame();
+  press("Escape");
+  await frame();
+  check("Escape lets go of it", handles().length, 0);
+  mouse(first(), "mousedown", 100, 100);
+  mouse(dom.window, "mouseup", 100, 100);
+  await frame();
+  press("Delete");
+  await frame();
+  check("Delete deletes the selected chart", charts().length, 1);
+  check("and says how to get it back", byId("message").textContent.includes("Ctrl+Z"), true);
+  press("z", { ctrlKey: true });
+  await frame();
+  check("Ctrl+Z brings it back", charts().length, 2);
+
+  // A right click selects it and opens its own menu; Delete chart there deletes it.
+  mouse(first(), "contextmenu", 120, 120);
+  await frame();
+  check("a right click opens the chart's menu", byId("chart-menu").hidden, false);
+  check("selecting the chart", first().classList.contains("selected"), true);
+  mouse(byId("chart-menu").querySelector('[data-command="chart.delete"] span'), "click");
+  await frame();
+  check("Delete chart closes the menu", byId("chart-menu").hidden, true);
+  check("and deletes that chart", charts().length, 1);
 
   await openFile("filter.fods", FILTER);
   check("a fresh table has no filter button", document.querySelectorAll("button.filter-btn").length, 0);

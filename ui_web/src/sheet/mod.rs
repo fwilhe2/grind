@@ -18,6 +18,7 @@
 mod assist;
 mod chart;
 mod filter_ui;
+mod grab;
 pub mod keymap;
 mod layout;
 
@@ -148,6 +149,8 @@ struct Dom {
     tabs: HtmlElement,
     /// The layer charts float in, over the cells they sit above.
     charts: HtmlElement,
+    /// A chart's own menu, opened by a right click on it (`grab.rs`).
+    chart_menu: HtmlElement,
     message: HtmlElement,
     summary: HtmlElement,
     /// The autofilter's dropdown (§9.4, `filter_ui.rs`): one popover, reused for every field
@@ -172,6 +175,7 @@ impl Dom {
             assist: element(document, "assist")?,
             tabs: element(document, "tabs")?,
             charts: element(document, "charts")?,
+            chart_menu: element(document, "chart-menu")?,
             message: element(document, "message")?,
             summary: element(document, "summary")?,
             filter_menu: element(document, "filter-menu")?,
@@ -229,6 +233,11 @@ pub struct Ui {
     /// The checkbox behind each value the popover currently lists, so `Ui::filter_ticked` can
     /// read them back without a DOM query — the same cache `ui_sheet_gtk`'s `FilterMenu` keeps.
     filter_checks: RefCell<Vec<(String, HtmlInputElement)>>,
+    /// The chart that is selected — outlined and handled, and what the keys and the chart verbs
+    /// mean (`grab.rs`). Presentation, like the cell selection.
+    chart_selected: Cell<Option<usize>>,
+    /// A chart held by the pointer; the document is written once, when the button comes up.
+    chart_grab: Cell<Option<grab::Grab>>,
 }
 
 impl Ui {
@@ -260,6 +269,8 @@ impl Ui {
             needle: RefCell::new(String::new()),
             filter_field: Cell::new(None),
             filter_checks: RefCell::new(Vec::new()),
+            chart_selected: Cell::new(None),
+            chart_grab: Cell::new(None),
         });
         wire_grid(&ui)?;
         wire_editor(&ui)?;
@@ -283,6 +294,9 @@ impl Ui {
         self.editing.set(false);
         self.assist.borrow_mut().clear();
         self.close_filter_menu();
+        self.chart_selected.set(None);
+        self.chart_grab.set(None);
+        self.close_chart_menu();
         Ok(())
     }
 
@@ -576,44 +590,42 @@ impl Ui {
         let Ok(charts) = self.app.charts(sheet) else {
             return Ok(());
         };
-        if charts.is_empty() {
-            return Ok(());
-        }
-        let scroll = self.scroll.get();
-        // The distance the corner has been scrolled past, and the headers' own band.
-        let past_x = widths.span(0, scroll.col);
-        let past_y = heights.span(0, scroll.row);
-        let header_w = 3.5 * 16.0;
-        let header_h = layout::CELL.cell_h;
-
+        let (frames, _) = self.chart_frames(widths, heights);
+        let selected = self.selected_chart_now();
+        let mut handled = None;
         for (index, chart) in charts.iter().enumerate() {
-            let px = |length: &str| grind_sheet::style::length_mm(length).map(|mm| mm * PX_PER_MM);
-            let (Some(x), Some(y), Some(w), Some(h)) = (
-                px(&chart.x),
-                px(&chart.y),
-                px(&chart.width),
-                px(&chart.height),
-            ) else {
-                // A length this build cannot parse is a chart it does not draw, which is §9's
-                // own tolerance applied to a picture.
+            // A length this build cannot parse is a chart it does not draw, which is §9's own
+            // tolerance applied to a picture.
+            let Some(Some(frame)) = frames.get(index) else {
                 continue;
             };
+            let at = self.chart_drawn_at(index, *frame);
             let Ok(data) = self.app.chart_data(sheet, index) else {
                 continue;
             };
-            let frame = self.dom.document.create_element("div")?;
-            frame.set_class_name("chart");
-            frame.set_attribute("data-chart", &index.to_string())?;
-            frame.set_attribute(
+            let element = self.dom.document.create_element("div")?;
+            element.set_class_name(match selected == Some(index) {
+                true => "chart selected",
+                false => "chart",
+            });
+            element.set_attribute("data-chart", &index.to_string())?;
+            element.set_attribute(
                 "style",
                 &format!(
-                    "left:{:.1}px;top:{:.1}px;width:{w:.1}px;height:{h:.1}px",
-                    header_w + x - past_x,
-                    header_h + y - past_y
+                    "left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px",
+                    at.x, at.y, at.w, at.h
                 ),
             )?;
-            frame.set_inner_html(&chart::svg(chart, &data, w, h));
-            self.dom.charts.append_child(&frame)?;
+            element.set_inner_html(&chart::svg(chart, &data, at.w, at.h));
+            self.dom.charts.append_child(&element)?;
+            if selected == Some(index) {
+                handled = Some((index, at));
+            }
+        }
+        // The selected chart's handles last, so they are over every chart rather than under a
+        // later one that overlaps it.
+        if let Some((index, at)) = handled {
+            self.draw_handles(index, &at)?;
         }
         Ok(())
     }
@@ -729,6 +741,10 @@ impl Ui {
     // --- input ---
 
     fn on_key(&self, event: &KeyboardEvent) {
+        // A selected chart has the keys it uses before the grid does (`grab.rs`).
+        if self.chart_key(event) {
+            return;
+        }
         let key = event.key();
         // The assist band gets first refusal on Tab, the arrows and Escape while it is
         // offering — the same three keys `ui_win32`'s band claims, and for the same reason:
@@ -2006,42 +2022,38 @@ impl Ui {
         Ok(())
     }
 
-    /// *Change the last chart…* — its kind, title and legend, in words (`verbs::restyle_chart`).
+    /// *Change the chart…* — the selected one, else the last: its kind, title and legend, in
+    /// words (`verbs::restyle_chart`).
     fn restyle_chart(&self) {
         let sheet = self.sheet.get();
-        let count = self.app.charts(sheet).map_or(0, |charts| charts.len());
-        if count == 0 {
+        let Some(index) = self.chart_target() else {
             return self.set_message("This sheet has no chart".to_owned());
-        }
+        };
         let Some(words) = self.ask(
-            &format!(
-                "Change the last chart — {}",
-                grind_sheet::verbs::CHART_WORDS
-            ),
+            &format!("Change the chart — {}", grind_sheet::verbs::CHART_WORDS),
             "",
         ) else {
             return;
         };
         self.set_message(
-            match grind_sheet::verbs::restyle_chart(&self.app, sheet, count - 1, &words) {
+            match grind_sheet::verbs::restyle_chart(&self.app, sheet, index, &words) {
                 Ok(said) => format!("{said} Ctrl+Z takes it back"),
                 Err(why) => why,
             },
         );
     }
 
-    /// *Move the last chart here* — its corner to the active cell's, its size kept
-    /// (`verbs::move_chart`), the column and row offsets this shell draws by.
+    /// *Move the chart here* — the selected one, else the last: its corner to the active
+    /// cell's, its size kept (`verbs::move_chart`), the column and row offsets this shell draws by.
     fn move_chart(&self) {
         let sheet = self.sheet.get();
-        let count = self.app.charts(sheet).map_or(0, |charts| charts.len());
-        if count == 0 {
+        let Some(index) = self.chart_target() else {
             return self.set_message("This sheet has no chart".to_owned());
-        }
+        };
         let (widths, heights) = (self.widths(), self.heights());
         let at = self.selection.get().active;
         self.set_message(
-            match grind_sheet::verbs::move_chart(&self.app, sheet, count - 1, at, |col, row| {
+            match grind_sheet::verbs::move_chart(&self.app, sheet, index, at, |col, row| {
                 (
                     widths.span(0, col) / PX_PER_MM,
                     heights.span(0, row) / PX_PER_MM,
@@ -2053,17 +2065,14 @@ impl Ui {
         );
     }
 
-    /// *Delete the last chart* — a chart is picked by clicking it in the GNOME window; here there is no pick.
+    /// *Delete the chart* — the selected one (Delete, or its menu), else the last.
     fn delete_chart(&self) {
-        let sheet = self.sheet.get();
-        let Ok(count) = self.app.charts(sheet).map(|charts| charts.len()) else {
-            return;
-        };
-        if count == 0 {
+        let Some(index) = self.chart_target() else {
             return self.set_message("This sheet has no chart".to_owned());
-        }
-        match self.app.remove_chart(sheet, count - 1) {
-            Ok(()) => self.set_message("Deleted the last chart — Ctrl+Z brings it back".to_owned()),
+        };
+        self.chart_selected.set(None);
+        match self.app.remove_chart(self.sheet.get(), index) {
+            Ok(()) => self.set_message(grind_sheet::chart_frame::deleted_sentence("Ctrl+Z")),
             Err(error) => self.set_message(error.to_string()),
         }
     }
@@ -2734,6 +2743,10 @@ impl Ui {
         let Some(target) = event.target().and_then(|t| t.dyn_into::<Element>().ok()) else {
             return Ok(());
         };
+        // A chart floats over the cells, so it answers before any of them (`grab.rs`).
+        if self.chart_press(event, &target)? {
+            return Ok(());
+        }
         if let Some(sheet) = closest_number(&target, "button.tab", "data-sheet") {
             return self.switch_to(sheet as usize);
         }
@@ -2867,6 +2880,8 @@ impl Ui {
         }
         self.sheet.set(sheet);
         self.scroll.set(Pos::new(0, 0));
+        self.chart_selected.set(None);
+        self.close_chart_menu();
         self.set_selection(Selection::default());
         Ok(())
     }
@@ -3199,6 +3214,11 @@ fn wire_grid(ui: &Rc<Ui>) -> Result<(), JsValue> {
     // selection, which is the gesture every grid has and this one did not.
     let drag = ui.clone();
     listen(&ui.dom.surface, "mousemove", move |event: MouseEvent| {
+        // A held chart follows the window's own listener below, which a drag off the grid
+        // still reaches.
+        if drag.chart_grab.get().is_some() {
+            return;
+        }
         // A column being sized follows the pointer by its `<col>` element, which is what a fixed
         // table lays its columns out from; the document waits for the button to come up.
         if let Some(mut sizing) = drag.sizing.get() {
@@ -3224,14 +3244,71 @@ fn wire_grid(ui: &Rc<Ui>) -> Result<(), JsValue> {
 
     // On the *window*, not the surface: a drag that ends outside it still ends.
     if let Some(window) = web_sys::window() {
+        let held = ui.clone();
+        listen(&window, "mousemove", move |event: MouseEvent| {
+            held.chart_drag(&event);
+        })?;
+        // A press anywhere but the chart's menu closes it; on the grid, `chart_press` already has.
+        let outside = ui.clone();
+        listen(&window, "mousedown", move |event: MouseEvent| {
+            let inside = event
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Node>().ok())
+                .is_some_and(|node| outside.dom.chart_menu.contains(Some(&node)));
+            if !inside {
+                outside.close_chart_menu();
+            }
+        })?;
         let release = ui.clone();
         listen(&window, "mouseup", move |_: MouseEvent| {
             release.dragging.set(false);
+            release.chart_release();
             if let Some(sizing) = release.sizing.take() {
                 release.size_column(sizing);
             }
         })?;
     }
+
+    // A right click on a chart opens the chart's own menu; anywhere else the browser's.
+    let context = ui.clone();
+    listen(&ui.dom.surface, "contextmenu", move |event: MouseEvent| {
+        if let Err(error) = context.chart_context_menu(&event) {
+            web_sys::console::error_1(&error);
+        }
+    })?;
+    // Double-clicking a chart changes it — the same as Return on a selected one.
+    let change = ui.clone();
+    listen(&ui.dom.charts, "dblclick", move |event: MouseEvent| {
+        event.prevent_default();
+        change.run("chart.restyle");
+    })?;
+    // A row of the chart's menu is a command id, like every other button on the page.
+    let rows = ui.clone();
+    listen(&ui.dom.chart_menu, "click", move |event: MouseEvent| {
+        let Some(id) = event
+            .target()
+            .and_then(|t| t.dyn_into::<Element>().ok())
+            .and_then(|t| t.closest("button[data-command]").ok().flatten())
+            .and_then(|button| button.get_attribute("data-command"))
+        else {
+            return;
+        };
+        rows.close_chart_menu();
+        rows.run(&id);
+        let _ = rows.dom.surface.focus();
+    })?;
+    let leave = ui.clone();
+    listen(
+        &ui.dom.chart_menu,
+        "keydown",
+        move |event: KeyboardEvent| {
+            if event.key() == "Escape" {
+                event.prevent_default();
+                leave.close_chart_menu();
+                let _ = leave.dom.surface.focus();
+            }
+        },
+    )?;
 
     let tabs = ui.clone();
     listen(&ui.dom.tabs, "click", move |event: MouseEvent| {

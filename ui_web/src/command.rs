@@ -290,7 +290,8 @@ pub const SHEET: &[Command] = &[
         false,
     ),
     // Charts: authored beside the table the selection means (`verbs::insert_chart`) and changed in
-    // words (`verbs::restyle_chart`); drawn already.
+    // words (`verbs::restyle_chart`). The last three mean the selected chart — a click on one
+    // selects it (`sheet/grab.rs`) — else the sheet's last.
     cmd(
         "chart.preview",
         "Preview the chart for the selection…",
@@ -305,21 +306,9 @@ pub const SHEET: &[Command] = &[
         "",
         false,
     ),
-    cmd(
-        "chart.restyle",
-        "Change the last chart…",
-        "Charts",
-        "",
-        false,
-    ),
-    cmd(
-        "chart.move",
-        "Move the last chart here",
-        "Charts",
-        "",
-        false,
-    ),
-    cmd("chart.delete", "Delete the last chart", "Charts", "", false),
+    cmd("chart.restyle", "Change the chart…", "Charts", "", false),
+    cmd("chart.move", "Move the chart here", "Charts", "", false),
+    cmd("chart.delete", "Delete the chart", "Charts", "", false),
     cmd("doc.locale", "Document locale…", "Document", "", false),
     cmd(
         "edit.fill-across",
