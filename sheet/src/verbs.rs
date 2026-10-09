@@ -68,43 +68,51 @@ pub const CHART_WIDTH: &str = "12cm";
 pub const CHART_HEIGHT: &str = "7.5cm";
 pub const CHART_MARGIN_MM: f64 = 6.0;
 
-/// What *Insert Chart* would make of a guess: the guessed spec with the legend a new chart of that
-/// kind gets. One place, so [`insert_chart`] and [`preview_insert_chart`] cannot disagree.
-fn insert_spec(guessed: &crate::chart::Guess) -> crate::ChartSpec {
-    crate::ChartSpec {
-        legend: guessed.spec.default_legend(),
+/// What *Insert Chart* would make of a guess: the guessed spec — of `kind` when somebody chose one,
+/// else of the kind the cells want — with the legend a new chart of that kind gets. One place, so
+/// [`insert_chart`] and [`preview_insert_chart`] cannot disagree.
+fn insert_spec(guessed: &crate::chart::Guess, kind: Option<crate::ChartKind>) -> crate::ChartSpec {
+    let spec = crate::ChartSpec {
+        kind: kind.unwrap_or(guessed.spec.kind),
         ..guessed.spec.clone()
+    };
+    crate::ChartSpec {
+        legend: spec.default_legend(),
+        ..spec
     }
 }
 
 /// *Insert Chart*, **without inserting** — the chart [`insert_chart`] would make of this selection
 /// and the data it would draw (`App::preview_chart`), so a shell with no dialog can show the
-/// picture before it is committed to. Nothing is written.
+/// picture before it is committed to. `kind` is [`insert_chart`]'s. Nothing is written.
 pub fn preview_insert_chart(
     app: &App,
     sheet: usize,
     start: Pos,
     end: Pos,
+    kind: Option<crate::ChartKind>,
 ) -> crate::Result<(crate::Chart, crate::ChartData)> {
     let guessed = app.suggest_chart(sheet, start, end, None)?;
-    app.preview_chart(sheet, &insert_spec(&guessed), None)
+    app.preview_chart(sheet, &insert_spec(&guessed, kind), None)
 }
 
 /// *Insert Chart*: a chart of the table the selection means (`App::suggest_chart` — which way the
 /// series run, what names them, what kind the cells want), placed beside it at the GNOME
-/// window's size. One undo step. `place` is the shell's own geometry: given the column just right
-/// of the table and its first row, it answers that corner's `(x, y)` in millimetres from the
-/// sheet's origin — the one thing a shell knows and the core does not. Answers the new chart's
-/// index.
+/// window's size. One undo step. `kind` is the kind somebody chose — the GNOME dialog's three
+/// buttons, every other window's *Insert ▸ Bar/Line/Pie Chart* — and `None` the one the cells
+/// want. `place` is the shell's own geometry: given the column just right of the table and its
+/// first row, it answers that corner's `(x, y)` in millimetres from the sheet's origin — the one
+/// thing a shell knows and the core does not. Answers the new chart's index.
 pub fn insert_chart(
     app: &App,
     sheet: usize,
     start: Pos,
     end: Pos,
+    kind: Option<crate::ChartKind>,
     place: impl Fn(u32, u32) -> (f64, f64),
 ) -> crate::Result<usize> {
     let guessed = app.suggest_chart(sheet, start, end, None)?;
-    let spec = insert_spec(&guessed);
+    let spec = insert_spec(&guessed, kind);
     let (x, y) = place(guessed.end.col + 1, guessed.start.row);
     app.add_chart(
         sheet,
@@ -196,6 +204,35 @@ pub fn restyle_chart(
         .map_err(|e| e.to_string())?;
     }
     Ok("The chart is changed.".to_owned())
+}
+
+/// The chart at `index` on `sheet` turned into a `kind` — everything else about it kept, one undo
+/// step (`ChartSpec::of`, then `App::edit_chart`). What a chart's own menu offers as three items,
+/// where the GNOME dialog has three buttons. Answers the sentence to say, or why it could not;
+/// a chart already of that kind is left alone and says so.
+pub fn set_chart_kind(
+    app: &App,
+    sheet: usize,
+    index: usize,
+    kind: crate::ChartKind,
+) -> std::result::Result<String, String> {
+    let chart = app
+        .charts(sheet)
+        .map_err(|e| e.to_string())?
+        .get(index)
+        .cloned()
+        .ok_or("there is no such chart")?;
+    let name = kind.name().to_lowercase();
+    if chart.kind == kind {
+        return Ok(format!("The chart is already a {name} chart."));
+    }
+    let spec = crate::ChartSpec {
+        kind,
+        ..crate::ChartSpec::of(&chart)
+    };
+    app.edit_chart(sheet, index, &spec)
+        .map_err(|e| e.to_string())?;
+    Ok(format!("The chart is a {name} chart now."))
 }
 
 /// Every word [`restyle_chart`] takes, for a prompt to say.
@@ -337,14 +374,68 @@ mod tests {
                 .unwrap();
             }
         }
-        let index = insert_chart(&app, 0, Pos::new(0, 0), Pos::new(2, 1), |col, row| {
+        let index = insert_chart(&app, 0, Pos::new(0, 0), Pos::new(2, 1), None, |col, row| {
             (f64::from(col) * 20.0, f64::from(row) * 5.0)
         })
         .unwrap();
         assert_eq!(index, 0);
         assert_eq!(app.charts(0).unwrap().len(), 1);
-        assert!(insert_chart(&app, 0, Pos::new(0, 0), Pos::new(2, 1), |_, _| (0.0, 0.0)).is_ok());
+        assert!(
+            insert_chart(&app, 0, Pos::new(0, 0), Pos::new(2, 1), None, |_, _| (
+                0.0, 0.0
+            ))
+            .is_ok()
+        );
         assert_eq!(app.charts(0).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_chart_goes_in_as_the_kind_asked_for_and_changes_kind() {
+        let app = App::new();
+        for (r, row) in [["Month", "Sales"], ["Jan", "5"], ["Feb", "7"]]
+            .iter()
+            .enumerate()
+        {
+            for (c, text) in row.iter().enumerate() {
+                app.enter(
+                    0,
+                    Pos::new(r as u32, c as u32),
+                    text,
+                    crate::RecalcMode::Document,
+                )
+                .unwrap();
+            }
+        }
+        let (start, end) = (Pos::new(0, 0), Pos::new(2, 1));
+        let guessed = app.suggest_chart(0, start, end, None).unwrap().spec.kind;
+        for kind in crate::ChartKind::ALL {
+            let (shown, _) = preview_insert_chart(&app, 0, start, end, Some(kind)).unwrap();
+            assert_eq!(shown.kind, kind, "the preview is of the kind asked for");
+            // A pie names its slices; one bar or line series needs no legend.
+            assert_eq!(shown.legend.is_some(), kind == crate::ChartKind::Pie);
+        }
+        let (shown, _) = preview_insert_chart(&app, 0, start, end, None).unwrap();
+        assert_eq!(
+            shown.kind, guessed,
+            "no kind asked for is the one the cells want"
+        );
+
+        let index = insert_chart(&app, 0, start, end, Some(crate::ChartKind::Pie), |_, _| {
+            (0.0, 0.0)
+        })
+        .unwrap();
+        assert_eq!(app.charts(0).unwrap()[index].kind, crate::ChartKind::Pie);
+        let said = set_chart_kind(&app, 0, index, crate::ChartKind::Line).unwrap();
+        assert!(said.contains("line"), "{said}");
+        assert_eq!(app.charts(0).unwrap()[index].kind, crate::ChartKind::Line);
+        assert!(
+            set_chart_kind(&app, 0, index, crate::ChartKind::Line)
+                .unwrap()
+                .contains("already")
+        );
+        assert!(app.undo());
+        assert_eq!(app.charts(0).unwrap()[index].kind, crate::ChartKind::Pie);
+        assert!(set_chart_kind(&app, 0, 9, crate::ChartKind::Bar).is_err());
     }
 
     #[test]
@@ -364,7 +455,10 @@ mod tests {
                 .unwrap();
             }
         }
-        insert_chart(&app, 0, Pos::new(0, 0), Pos::new(2, 1), |_, _| (0.0, 0.0)).unwrap();
+        insert_chart(&app, 0, Pos::new(0, 0), Pos::new(2, 1), None, |_, _| {
+            (0.0, 0.0)
+        })
+        .unwrap();
         restyle_chart(&app, 0, 0, "pie legend=top title=Quarterly sales").unwrap();
         let chart = app.charts(0).unwrap()[0].clone();
         assert_eq!(chart.kind, crate::ChartKind::Pie);

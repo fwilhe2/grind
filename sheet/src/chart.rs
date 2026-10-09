@@ -27,6 +27,20 @@ pub enum ChartKind {
 }
 
 impl ChartKind {
+    /// Every kind, in the order a picker offers them — the GNOME dialog's buttons and every other
+    /// window's menu items alike.
+    pub const ALL: [ChartKind; 3] = [ChartKind::Bar, ChartKind::Line, ChartKind::Pie];
+
+    /// The kind's name as a control shows it — `Bar`, `Line`, `Pie` — one spelling for every
+    /// window.
+    pub fn name(self) -> &'static str {
+        match self {
+            ChartKind::Bar => "Bar",
+            ChartKind::Line => "Line",
+            ChartKind::Pie => "Pie",
+        }
+    }
+
     /// The `chart:class` this kind is spelled as.
     pub fn class(self) -> &'static str {
         match self {
