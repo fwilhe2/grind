@@ -9,10 +9,11 @@ SPDX-PackageDownloadLocation = "https://github.com/fwilhe2/grind"
 
 # The README is written by hand in grind-text: README.fodt is the source and README.md its
 # Markdown export (File ▸ Save and Export Markdown). Neither can keep a header — the export
-# rewrites the whole file, and in the flat ODF one would be document text. `.claude/settings.json`
-# is agent configuration, and JSON has no comments.
+# rewrites the whole file, and in the flat ODF one would be document text. `README.images/` is
+# the same export's pictures, named for their bytes, and a PNG has no comments either.
+# `.claude/settings.json` is agent configuration, and JSON has no comments.
 [[annotations]]
-path = ["README.md", "README.fodt", ".claude/settings.json"]
+path = ["README.md", "README.fodt", "README.images/**", ".claude/settings.json"]
 SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
