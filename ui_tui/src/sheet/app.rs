@@ -1222,9 +1222,11 @@ impl App {
             _ if cmd.starts_with("rule! ") => self.cmd_unrule(cmd[6..].trim()),
             "locale" => self.cmd_locale(None),
             _ if cmd.starts_with("locale ") => self.cmd_locale(Some(cmd[7..].trim())),
-            "chart" => self.cmd_chart(),
+            "chart" | "chart new" => self.cmd_chart(""),
             "charts" => self.cmd_charts(),
-            "chart preview" => self.cmd_chart_preview(),
+            "chart preview" => self.cmd_chart_preview(""),
+            _ if cmd.starts_with("chart new ") => self.cmd_chart(cmd[10..].trim()),
+            _ if cmd.starts_with("chart preview ") => self.cmd_chart_preview(cmd[14..].trim()),
             "chart!" => self.cmd_unchart(),
             "chart here" => self.cmd_move_chart(),
             _ if cmd.starts_with("chart ") => self.cmd_restyle_chart(cmd[6..].trim()),
@@ -1336,9 +1338,15 @@ impl App {
     }
 
     /// `:chart` — a chart of the table the selection means (`grind_sheet::verbs::insert_chart`),
-    /// written into the document beside it. A terminal draws no chart, so where it sits is a
-    /// default column width and row height: the other shells will draw it where the table is.
-    fn cmd_chart(&mut self) {
+    /// written into the document beside it; `:chart new bar|line|pie` makes it that kind rather
+    /// than the one the cells want, as the GNOME dialog's three buttons do. A terminal draws no
+    /// chart on the grid, so where it sits is a default column width and row height: the other
+    /// shells will draw it where the table is.
+    fn cmd_chart(&mut self, kind: &str) {
+        let Some(kind) = chart_kind(kind) else {
+            self.status = not_a_kind(kind);
+            return;
+        };
         let (start, end) = self.rect();
         let (col_mm, row_mm) = (25.0, 5.0);
         self.status = match grind_sheet::verbs::insert_chart(
@@ -1346,6 +1354,7 @@ impl App {
             self.sheet,
             start,
             end,
+            kind,
             |col, row| (f64::from(col) * col_mm, f64::from(row) * row_mm),
         ) {
             Ok(_) => {
@@ -1358,12 +1367,24 @@ impl App {
     }
 
     /// `:chart preview` — the chart `:chart` would insert for this selection, drawn in the same
-    /// pane as `:charts` and not written (`verbs::preview_insert_chart`).
-    fn cmd_chart_preview(&mut self) {
+    /// pane as `:charts` and not written (`verbs::preview_insert_chart`); `:chart preview pie`
+    /// draws it as that kind, and says the command that inserts what was drawn.
+    fn cmd_chart_preview(&mut self, kind: &str) {
+        let Some(kind) = chart_kind(kind) else {
+            self.status = not_a_kind(kind);
+            return;
+        };
         let (start, end) = self.rect();
-        match grind_sheet::verbs::preview_insert_chart(&self.core, self.sheet, start, end) {
+        match grind_sheet::verbs::preview_insert_chart(&self.core, self.sheet, start, end, kind) {
             Ok((chart, data)) => {
-                let mut text = String::from("Preview — not inserted yet; :chart inserts it\n\n");
+                let insert = match kind {
+                    Some(kind) => format!(":chart new {}", kind.name().to_lowercase()),
+                    None => ":chart".to_owned(),
+                };
+                let mut text = format!(
+                    "Preview — not inserted yet; {insert} inserts it, \
+                     :chart preview bar|line|pie draws another kind\n\n"
+                );
                 for line in super::chartview::lines(&chart, &data, 72) {
                     text.push_str(&line);
                     text.push('\n');
@@ -1488,6 +1509,14 @@ impl App {
             Reply::Move(index) => {
                 self.chart_selected = Some((self.sheet, index));
                 self.cmd_move_chart();
+            }
+            Reply::Kind(index, kind) => {
+                self.chart_selected = Some((self.sheet, index));
+                self.status =
+                    match grind_sheet::verbs::set_chart_kind(&self.core, self.sheet, index, kind) {
+                        Ok(said) => format!("{said} u takes it back"),
+                        Err(why) => why,
+                    };
             }
             Reply::Change(index) => {
                 self.chart_selected = Some((self.sheet, index));
@@ -3196,6 +3225,22 @@ fn alignment(style: Option<&CellStyle>, numeric: bool) -> Align {
     }
 }
 
+/// A kind of chart as `:chart new` and `:chart preview` take one — `bar`, `line` or `pie`, and
+/// nothing for the kind the cells want (`Some(None)`) — `None` for a word that is none of them.
+fn chart_kind(word: &str) -> Option<Option<grind_sheet::ChartKind>> {
+    if word.is_empty() {
+        return Some(None);
+    }
+    grind_sheet::ChartKind::ALL
+        .into_iter()
+        .find(|kind| kind.name().eq_ignore_ascii_case(word))
+        .map(Some)
+}
+
+fn not_a_kind(word: &str) -> String {
+    format!("\u{201c}{word}\u{201d} is not a kind of chart \u{2014} bar, line or pie")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3846,6 +3891,59 @@ mod tests {
         app.run_command("charts");
         press(&mut app, KeyCode::Esc);
         assert_eq!(app.chart_now(), None);
+    }
+
+    /// The GNOME dialog's three kinds, here: `:chart new pie` inserts one, `:chart preview line`
+    /// draws one without writing, and `b`/`l`/`p` in `:charts` turn the selected chart into one.
+    #[test]
+    fn a_chart_goes_in_as_a_chosen_kind_and_changes_kind_from_the_pane() {
+        use grind_sheet::ChartKind;
+        let mut app = filled();
+        press(&mut app, KeyCode::Char('v'));
+        press(&mut app, KeyCode::Char('l'));
+        press(&mut app, KeyCode::Char('j'));
+        app.run_command("chart preview line");
+        assert!(
+            app.core.charts(0).unwrap().is_empty(),
+            "a preview writes nothing"
+        );
+        assert!(
+            app.charts_text.contains(":chart new line"),
+            "{}",
+            app.charts_text
+        );
+        press(&mut app, KeyCode::Esc); // the preview pane put away
+        app.run_command("chart new pie");
+        assert_eq!(
+            app.core.charts(0).unwrap()[0].kind,
+            ChartKind::Pie,
+            "{}",
+            app.status
+        );
+        app.run_command("chart new donut");
+        assert!(app.status.contains("not a kind"), "{}", app.status);
+        assert_eq!(app.core.charts(0).unwrap().len(), 1);
+
+        app.run_command("charts");
+        let text = screen(&mut app, 140, 20).join("\n");
+        assert!(text.contains("b/l/p"), "the keys are said: {text}");
+        press(&mut app, KeyCode::Char('l'));
+        assert_eq!(
+            app.core.charts(0).unwrap()[0].kind,
+            ChartKind::Line,
+            "{}",
+            app.status
+        );
+        assert!(app.chart_pane.is_open(), "the pane stays on it");
+        press(&mut app, KeyCode::Char('b'));
+        assert_eq!(app.core.charts(0).unwrap()[0].kind, ChartKind::Bar);
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Char('u'));
+        assert_eq!(
+            app.core.charts(0).unwrap()[0].kind,
+            ChartKind::Line,
+            "one u, one change"
+        );
     }
 
     /// While `:format percent` is still being typed the status bar says what it would make of the

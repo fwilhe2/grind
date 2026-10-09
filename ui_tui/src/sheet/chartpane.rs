@@ -13,8 +13,8 @@
 //!
 //! The keys are the same verbs every window gives a selected chart, in this shell's vocabulary:
 //! `d`/`x`/Delete deletes it (and `u` brings it back), `H`/`J`/`K`/`L` nudge it a cell, `+`/`-`
-//! make it bigger or smaller, `m` moves it to the cursor's cell, Enter changes it in words, Esc
-//! lets go. Pure state and a reply; `app.rs` does what a reply asks.
+//! make it bigger or smaller, `m` moves it to the cursor's cell, `b`/`l`/`p` make it a bar, line
+//! or pie chart (the GNOME dialog's three kinds), Enter changes it in words, Esc lets go. Pure state and a reply; `app.rs` does what a reply asks.
 
 use ratatui::Frame;
 use ratatui::crossterm::event::KeyCode;
@@ -44,6 +44,8 @@ pub enum Reply {
     Move(usize),
     /// Enter: the command line, ready for `:chart <words>` on this chart.
     Change(usize),
+    /// `b`, `l` or `p`: turned into a bar, line or pie chart.
+    Kind(usize, grind_sheet::ChartKind),
     /// A cell's step, columns and rows.
     Nudge(usize, i8, i8),
     /// Bigger or smaller by this factor, its corner held.
@@ -53,8 +55,7 @@ pub enum Reply {
 /// How much `+` and `-` change a chart's size.
 pub const STEP: f64 = 1.2;
 
-pub const KEYS: &str =
-    " j/k choose · Enter change · m move here · HJKL nudge · +/- size · d delete · Esc let go ";
+pub const KEYS: &str = " j/k choose · b/l/p bar/line/pie · Enter change · m move here · HJKL nudge · +/- size · d delete · Esc let go ";
 
 impl Charts {
     pub fn is_open(self) -> bool {
@@ -96,6 +97,9 @@ impl Charts {
                 Reply::Delete(at)
             }
             KeyCode::Char('m') => Reply::Move(at),
+            KeyCode::Char('b') => Reply::Kind(at, grind_sheet::ChartKind::Bar),
+            KeyCode::Char('l') => Reply::Kind(at, grind_sheet::ChartKind::Line),
+            KeyCode::Char('p') => Reply::Kind(at, grind_sheet::ChartKind::Pie),
             KeyCode::Char('H') => Reply::Nudge(at, -1, 0),
             KeyCode::Char('L') => Reply::Nudge(at, 1, 0),
             KeyCode::Char('K') => Reply::Nudge(at, 0, -1),
