@@ -161,6 +161,24 @@ const DIVERGENCES: &[Divergence] = &[
         },
     },
     Divergence {
+        name: "a table formula's result",
+        why: "a `= …` field in a table cell is kept here as the number Word last showed for it; \
+              the oracle re-evaluates Word's expression as a `text:table-formula`, which this \
+              suite's reader shows, and fails — so theirs has LibreOffice's error text where ours \
+              has Word's result, block for block",
+        is: |report, ours, theirs| {
+            const FAULTY: &str = "** Expression is faulty **";
+            report.dropped.contains_key(&grind_docx::Dropped::Field)
+                && theirs.iter().any(|b| b.text.contains(FAULTY))
+                && ours.len() == theirs.len()
+                && ours.iter().zip(theirs).all(|(a, b)| {
+                    a.kind == b.kind
+                        && a.cell == b.cell
+                        && subsequence(&b.text.replace(FAULTY, ""), &a.text)
+                })
+        },
+    },
+    Divergence {
         name: "a floating table or paragraph",
         why: "a table or paragraph positioned on the page (`w:tblpPr`, `w:framePr`) stays in \
               the flow here; the oracle puts it in a frame, which this suite's reader shows as \

@@ -143,7 +143,9 @@ spelled it (`text/tests/diffable.rs`).
 Scoreboard on 2026-10-06, LibreOffice 26.8 and the pinned 26.2 alike: loop A″ 2159 of 2167
 documents import (4 password-protected, 4 ODF documents named `.docx`); of loop D″'s 161
 Word-written documents 103 agree block for block, 49 more differ only by a named divergence (a
-field's last result, a floating table or paragraph, a picture's anchor, a text box's text — the
+field's last result, a table formula's result — since 2026-10-09, when the reader began showing a
+`text:table-formula`'s text and the oracle's turned out to be its own failed re-evaluation of
+Word's expression — a floating table or paragraph, a picture's anchor, a text box's text — the
 last because a text box's text is shown here and not by the oracle's frame) and 15 disagree — a table written inside a
 paragraph, page breaks inside a table cell, Hebrew list numbers computed by fields, a
 bibliography — each a construct rather than a crash.
