@@ -274,6 +274,7 @@ impl Delegate {
             Command::InsertTable
             | Command::InsertBookmark
             | Command::InsertPicture
+            | Command::ImageDescription
             | Command::ImportMarkdown
             | Command::ExportMarkdown
             | Command::ExportPdf

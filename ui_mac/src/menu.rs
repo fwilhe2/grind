@@ -186,6 +186,9 @@ pub enum Command {
     InsertBookmark,
     /// A picture from a file, at the caret — Insert ▸ Picture….
     InsertPicture,
+    /// The picture beside the caret's alternative text — Format ▸ Image Description…, Pages'
+    /// own words for it (`describe.rs`).
+    ImageDescription,
     /// Zoom In (1), Zoom Out (-1) or Actual Size (0) — `zoom.rs`.
     Zoom(i8),
     /// The welcome window back (decision 6, M9) — Window ▸ Welcome to Grind, ⇧⌘1, where Xcode
@@ -350,6 +353,7 @@ impl Command {
             Command::InsertTable,
             Command::InsertBookmark,
             Command::InsertPicture,
+            Command::ImageDescription,
             Command::MoveParagraph(true),
             Command::MoveParagraph(false),
             Command::DeleteParagraph,
@@ -383,6 +387,7 @@ impl Command {
                 | Command::InsertTable
                 | Command::InsertBookmark
                 | Command::InsertPicture
+                | Command::ImageDescription
                 | Command::PreviewChart
                 | Command::Evaluate
                 | Command::DocumentLocale
@@ -442,6 +447,7 @@ impl Command {
             | Command::InsertTable
             | Command::InsertBookmark
             | Command::InsertPicture
+            | Command::ImageDescription
             | Command::ImportMarkdown
             | Command::ExportMarkdown
             | Command::ExportPdf
@@ -1069,6 +1075,7 @@ pub static MENUS: &[Menu] = &[
                 title: "Paragraph",
                 menu: &PARAGRAPH,
             },
+            command("Image Description…", None, Command::ImageDescription),
             Item::Submenu {
                 title: "Row",
                 menu: &ROW,
@@ -1172,6 +1179,7 @@ pub static PAGE_CONTEXT: Menu = Menu {
             title: "Paragraph",
             menu: &PARAGRAPH,
         },
+        command("Image Description…", None, Command::ImageDescription),
         command("Clear Formatting", None, Command::ClearFormatting),
     ],
 };

@@ -493,6 +493,7 @@ impl TextPane {
                 self.app.set_bookmark(&name, Some(block)).map(|_| ())
             }
             Command::InsertPicture => return self.insert_picture(mtm),
+            Command::ImageDescription => return self.describe_picture(mtm),
             Command::ImportMarkdown => return self.import_markdown(mtm),
             Command::ExportMarkdown => return self.export_markdown(mtm),
             Command::ExportPdf => return self.export_pdf(mtm),
@@ -704,6 +705,40 @@ impl TextPane {
                 offset: 1,
             }),
             Err(error) => prompt::tell(mtm, "That could not be done.", &error.to_string()),
+        }
+    }
+}
+
+impl TextPane {
+    /// Format ▸ Image Description…: the picture beside the caret (`grind_text::picture::at`),
+    /// asked about in `describe.rs`, written by `picture::set_alt` — one undo step.
+    fn describe_picture(&self, mtm: MainThreadMarker) {
+        let caret = self.state.borrow().caret;
+        let viewport = self.app.get_viewport(caret.block..caret.block + 1);
+        let Some((offset, image)) = viewport
+            .get(caret.block)
+            .and_then(|block| grind_text::picture::at(block, caret.offset))
+        else {
+            return prompt::tell(
+                mtm,
+                "There is no picture here.",
+                "Put the insertion point beside a picture, or Control-click one.",
+            );
+        };
+        let Some((title, description)) = crate::describe::ask(
+            mtm,
+            &image.data,
+            image.title.as_deref().unwrap_or(""),
+            image.description.as_deref().unwrap_or(""),
+        ) else {
+            return;
+        };
+        let at = grind_text::Caret {
+            block: caret.block,
+            offset,
+        };
+        if let Err(error) = grind_text::picture::set_alt(&self.app, at, &title, &description) {
+            prompt::tell(mtm, "That could not be done.", &error.to_string());
         }
     }
 }
