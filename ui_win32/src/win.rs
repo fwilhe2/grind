@@ -63,20 +63,20 @@ use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CREATESTRUCTW, CS_DBLCLKS, CW_USEDEFAULT, CheckMenuItem, CreateMenu,
     CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow, DispatchMessageW,
     EN_CHANGE, EN_KILLFOCUS, ES_AUTOHSCROLL, GWLP_USERDATA, GetCursorPos, GetMessageW, GetParent,
-    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IDC_SIZENS,
-    IDC_SIZEWE, LoadCursorW, MF_BYCOMMAND, MF_CHECKED, MF_GRAYED, MF_POPUP, MF_SEPARATOR,
-    MF_STRING, MF_UNCHECKED, MSG, MoveWindow, PostMessageW, PostQuitMessage, RegisterClassW,
-    SB_BOTTOM, SB_HORZ, SB_LINEDOWN, SB_LINEUP, SB_PAGEDOWN, SB_PAGEUP, SB_THUMBPOSITION,
-    SB_THUMBTRACK, SB_TOP, SB_VERT, SCROLLINFO, SCROLLINFO_MASK, SIF_PAGE, SIF_POS, SIF_RANGE,
-    SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER,
-    SendMessageW, SetCursor, SetMenu, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
-    SystemParametersInfoW, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenuEx, TranslateMessage,
-    WHEEL_DELTA, WM_APP, WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLOREDIT,
-    WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION,
-    WM_INITMENUPOPUP, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WM_SETFOCUS,
-    WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_VSCROLL, WNDCLASSW, WS_CHILD, WS_HSCROLL,
-    WS_OVERLAPPEDWINDOW, WS_VSCROLL,
+    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IDC_SIZEALL,
+    IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, LoadCursorW, MF_BYCOMMAND, MF_CHECKED,
+    MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MoveWindow, PostMessageW,
+    PostQuitMessage, RegisterClassW, SB_BOTTOM, SB_HORZ, SB_LINEDOWN, SB_LINEUP, SB_PAGEDOWN,
+    SB_PAGEUP, SB_THUMBPOSITION, SB_THUMBTRACK, SB_TOP, SB_VERT, SCROLLINFO, SCROLLINFO_MASK,
+    SIF_PAGE, SIF_POS, SIF_RANGE, SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetCursor, SetMenu, SetWindowLongPtrW,
+    SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW, TPM_RETURNCMD,
+    TPM_RIGHTBUTTON, TrackPopupMenuEx, TranslateMessage, WHEEL_DELTA, WM_APP, WM_CHAR, WM_CLOSE,
+    WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED,
+    WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_INITMENUPOPUP, WM_KEYDOWN, WM_KILLFOCUS,
+    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
+    WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE,
+    WM_VSCROLL, WNDCLASSW, WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
 };
 // Focus and mouse capture are Windows' input API rather than its window-management one, which
 // is where its own metadata puts them.
@@ -507,6 +507,13 @@ struct Sheet {
     /// be taken back by moving off the control, and a control responds to the pointer at all.
     format_hover: Option<format::Control>,
     format_pressed: Option<format::Control>,
+    /// The selected chart (`doc/chart-handling.md`) as the sheet it is on and its index there:
+    /// outlined and handled, and what the arrows, Delete and the Data menu's chart verbs mean.
+    /// Presentation state, like `selection`; read through [`Sheet::chart_now`], which lets go of
+    /// one on another sheet or one deleted away.
+    chart_selected: Option<(usize, usize)>,
+    /// A chart held by the pointer; the document is written once, on release.
+    chart_grab: Option<crate::sheet::chart::Grab>,
 }
 
 /// What a click on the strip landed on. The two fields there are *drawn* until somebody clicks
@@ -738,6 +745,23 @@ impl Sheet {
     /// One function because the sentence and the *height* have to change together: a banner
     /// with a sentence and no height draws nothing at all, and one with a height and no
     /// sentence is a bar of colour nobody can dismiss.
+    /// The selected chart's index, if it is on the sheet showing and still exists.
+    fn chart_now(&self) -> Option<usize> {
+        let (sheet, index) = self.chart_selected?;
+        let count = self.app.charts(self.sheet).map_or(0, |charts| charts.len());
+        (sheet == self.sheet && index < count).then_some(index)
+    }
+
+    /// The chart a chart verb means: the selected one, else the sheet's last.
+    fn chart_target(&self) -> Option<usize> {
+        self.chart_now().or_else(|| {
+            self.app
+                .charts(self.sheet)
+                .ok()
+                .and_then(|charts| charts.len().checked_sub(1))
+        })
+    }
+
     fn say(&mut self, notice: Option<String>) {
         self.geom.banner_h = banner_h(notice.as_deref(), self.geom.dpi);
         self.banner = notice;
@@ -1440,6 +1464,8 @@ fn opened_sheet_on(app: grind_sheet::App, path: Option<PathBuf>, theme: Theme) -
         overlays: grind_sheet::view::Overlays::NONE,
         format_hover: None,
         format_pressed: None,
+        chart_selected: None,
+        chart_grab: None,
     }
 }
 
@@ -2106,12 +2132,63 @@ fn build_menu(hwnd: HWND) {
 /// state-aware one — the same simplification W7 already names for the menu bar's own greying —
 /// and every entry is a real [`Command`] reused from [`menu::MENUS`] rather than a second
 /// vocabulary, so a click here reaches exactly the handler a click on the bar would.
+/// Whether a `WM_CONTEXTMENU` is about a chart — under the pointer (which it then selects, as a
+/// right click on a cell moves the selection) or, from the keyboard, the one already selected.
+fn context_on_chart(hwnd: HWND, lparam: LPARAM) -> bool {
+    let (x, y) = point(lparam);
+    let mut at = POINT {
+        x: x.round() as i32,
+        y: y.round() as i32,
+    };
+    let keyboard = (x, y) == (-1.0, -1.0);
+    if !keyboard {
+        // SAFETY: `hwnd` is this window's and `at` is a live local.
+        unsafe {
+            let _ = ScreenToClient(hwnd, &mut at);
+        }
+    }
+    // SAFETY: one borrow; arithmetic.
+    let on = unsafe {
+        with_sheet(hwnd, |state| {
+            if keyboard {
+                return state.chart_now().is_some();
+            }
+            let charts = state.app.charts(state.sheet).unwrap_or_default();
+            let (x, y) = (f64::from(at.x), f64::from(at.y));
+            match crate::sheet::chart::hit(&charts, &state.geom, state.chart_now(), x, y) {
+                Some((index, _)) => {
+                    state.chart_selected = Some((state.sheet, index));
+                    true
+                }
+                None => false,
+            }
+        })
+    } == Some(true);
+    if on {
+        // SAFETY: no borrow held.
+        unsafe {
+            let _ = InvalidateRect(Some(hwnd), None, false);
+            let _ = UpdateWindow(hwnd);
+        }
+    }
+    on
+}
+
 fn context_menu(hwnd: HWND, lparam: LPARAM) {
     // The welcome screen's own: the three cards, which is what a right click on a screen made of
     // three choices can usefully offer. Clipboard verbs would be items over nothing.
     let on_tab = context_on_tab(hwnd, lparam);
+    let on_chart = !on_tab && !is_welcome(hwnd) && !is_text(hwnd) && context_on_chart(hwnd, lparam);
     let commands: &[Command] = if is_welcome(hwnd) {
         &[Command::NewSheet, Command::NewText, Command::Open]
+    } else if on_chart {
+        // A chart's own menu, over the chart `context_on_chart` has just selected — the three
+        // verbs every window offers there, each of which has its key on a selected chart too.
+        &[
+            Command::RestyleChart,
+            Command::MoveChart,
+            Command::DeleteChart,
+        ]
     } else if on_tab {
         // A tab's own menu: the three verbs the Sheet menu already has, over the tab under the
         // pointer — which `context_on_tab` has just brought to the front, so "this sheet" is
@@ -2446,6 +2523,11 @@ fn mouse_move(hwnd: HWND, lparam: LPARAM) {
     // SAFETY: no nested loop inside.
     let moved = unsafe {
         with_sheet(hwnd, |state| {
+            // A held chart follows the pointer; nothing is written until the button comes up.
+            if let Some(grab) = state.chart_grab.as_mut() {
+                grab.follow(x, y, mods().shift, &state.geom);
+                return true;
+            }
             // The format strip's hover, asked on every move and repainted only when the answer
             // *changes* — the text pane's rule, which keeps a move across the grid to one
             // comparison. `WM_MOUSELEAVE` is not tracked: the strip is inside the client area, and
@@ -2520,7 +2602,30 @@ fn set_resize_cursor(hwnd: HWND) -> bool {
     let cursor = match edge {
         Some(Edge::Col(_)) => IDC_SIZEWE,
         Some(Edge::Row(_)) => IDC_SIZENS,
-        None => return false,
+        // Over a chart, or holding one: the pointer says what a drag there would do.
+        None => {
+            // SAFETY: one borrow; arithmetic.
+            let grip = unsafe {
+                with_sheet(hwnd, |state| match state.chart_grab {
+                    Some(grab) => Some(grab.grip),
+                    None => {
+                        let charts = state.app.charts(state.sheet).unwrap_or_default();
+                        let (x, y) = (f64::from(at.x), f64::from(at.y));
+                        crate::sheet::chart::hit(&charts, &state.geom, state.chart_now(), x, y)
+                            .map(|(_, grip)| grip)
+                    }
+                })
+            }
+            .flatten();
+            match grip.map(|grip| grip.cursor()) {
+                Some("move") => IDC_SIZEALL,
+                Some("ns-resize") => IDC_SIZENS,
+                Some("ew-resize") => IDC_SIZEWE,
+                Some("nesw-resize") => IDC_SIZENESW,
+                Some(_) => IDC_SIZENWSE,
+                None => return false,
+            }
+        }
     };
     // SAFETY: a system cursor, which is never freed.
     unsafe {
@@ -2570,7 +2675,101 @@ fn key_down(hwnd: HWND, vk: u32) -> bool {
     }
     // SAFETY: no nested loop inside.
     let mode = unsafe { with_sheet(hwnd, |state| state.mode) }.unwrap_or_default();
+    if !mode.is_editing() && chart_key(hwnd, vk) {
+        return true;
+    }
     on_key(hwnd, mode, vk)
+}
+
+/// A press at `(x, y)` on the grid, asked of the charts first: on one it is selected and held —
+/// `Some` — and anywhere else a selected chart is let go of.
+fn chart_press(state: &mut Sheet, x: f64, y: f64) -> Option<()> {
+    let charts = state.app.charts(state.sheet).unwrap_or_default();
+    let selected = state.chart_now();
+    let Some((index, grip)) = crate::sheet::chart::hit(&charts, &state.geom, selected, x, y) else {
+        state.chart_selected = None;
+        return None;
+    };
+    let start = crate::sheet::chart::frames(&charts, &state.geom)
+        .get(index)
+        .copied()
+        .flatten()?;
+    state.chart_selected = Some((state.sheet, index));
+    state.chart_grab = Some(crate::sheet::chart::Grab {
+        index,
+        grip,
+        start,
+        from: (x, y),
+        now: start,
+        was_selected: selected == Some(index),
+    });
+    state.drag = None;
+    Some(())
+}
+
+/// A key while a chart is selected (`grind_sheet::chart_frame::Key`): Delete and Backspace delete
+/// it, Escape lets go, the arrows nudge it (Shift for a large step), Return changes it. Any other
+/// key lets go of it and means what it always means — `false`.
+fn chart_key(hwnd: HWND, vk: u32) -> bool {
+    use grind_sheet::chart_frame::{self, Key};
+    // SAFETY: one borrow, for one index.
+    let Some(index) = (unsafe { with_sheet(hwnd, |state| state.chart_now()) }).flatten() else {
+        return false;
+    };
+    let held = mods();
+    let key = match keymap::key_for(vk) {
+        keymap::Key::Delete | keymap::Key::Backspace => Key::Delete,
+        keymap::Key::Escape => Key::Deselect,
+        keymap::Key::Left => chart_frame::nudge(-1, 0, held.shift),
+        keymap::Key::Right => chart_frame::nudge(1, 0, held.shift),
+        keymap::Key::Up => chart_frame::nudge(0, -1, held.shift),
+        keymap::Key::Down => chart_frame::nudge(0, 1, held.shift),
+        keymap::Key::Return => {
+            restyle_chart(hwnd);
+            return true;
+        }
+        // A modifier on its own is the start of a chord, not a reason to let go.
+        _ if matches!(vk, 0x10..=0x12) => return false,
+        _ => {
+            // SAFETY: one borrow, one field.
+            unsafe { with_sheet(hwnd, |state| state.chart_selected = None) };
+            // SAFETY: no borrow held.
+            unsafe {
+                let _ = InvalidateRect(Some(hwnd), None, false);
+            }
+            return false;
+        }
+    };
+    match key {
+        Key::Delete => delete_chart(hwnd),
+        Key::Deselect => {
+            // SAFETY: one borrow, one field.
+            unsafe { with_sheet(hwnd, |state| state.chart_selected = None) };
+            refresh(hwnd);
+        }
+        nudge @ Key::Nudge(..) => {
+            // SAFETY: one borrow; the write notifies and the observer posts rather than sends.
+            unsafe {
+                with_sheet(hwnd, |state| {
+                    let charts = state.app.charts(state.sheet).unwrap_or_default();
+                    let Some(Some(frame)) = crate::sheet::chart::frames(&charts, &state.geom)
+                        .get(index)
+                        .copied()
+                    else {
+                        return;
+                    };
+                    let moved = crate::sheet::chart::nudged(frame, nudge, &state.geom);
+                    let [x, y, w, h] = crate::sheet::chart::lengths(moved, &state.geom);
+                    if let Err(error) = state.app.reshape_chart(state.sheet, index, &x, &y, &w, &h)
+                    {
+                        state.say(Some(error.to_string()));
+                    }
+                })
+            };
+            refresh(hwnd);
+        }
+    }
+    true
 }
 
 /// One keystroke that went to a child control instead, relayed by the pump. `true` means the
@@ -2972,6 +3171,20 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
         }
         None => {}
     }
+    // A chart floats over the cells, so it answers before any of them (`doc/chart-handling.md`):
+    // a press on one selects it and takes hold of it — its body to move it, a handle of the
+    // selected one to resize it. A press anywhere else lets go of a selected chart.
+    // SAFETY: one borrow; arithmetic. `SetCapture` sends messages, so it comes after the borrow.
+    let took = unsafe { with_sheet(hwnd, |state| chart_press(state, x, y)) }.flatten();
+    if took.is_some() {
+        // SAFETY: no borrow held.
+        unsafe {
+            let _ = SetCapture(hwnd);
+            let _ = SetFocus(Some(hwnd));
+            let _ = InvalidateRect(Some(hwnd), None, false);
+        }
+        return;
+    }
     // A header boundary: taken to size the track it ends. The size is previewed in `geom` while the
     // pointer moves and written once on release (`button_up`).
     // SAFETY: one borrow; arithmetic. `SetCapture` sends messages, so it comes after the borrow.
@@ -3133,6 +3346,19 @@ fn double_click(hwnd: HWND, lparam: LPARAM) {
         button_down(hwnd, lparam);
         return;
     }
+    // A double-click on a chart changes it — Return on a selected one, with the mouse. The first
+    // click has selected it, so the verb means this one.
+    // SAFETY: one borrow; arithmetic.
+    let on_chart = unsafe {
+        with_sheet(hwnd, |state| {
+            let charts = state.app.charts(state.sheet).unwrap_or_default();
+            crate::sheet::chart::hit(&charts, &state.geom, state.chart_now(), x, y).is_some()
+        })
+    };
+    if on_chart == Some(true) {
+        restyle_chart(hwnd);
+        return;
+    }
     // A double-click on a tab renames the sheet, as it does in every spreadsheet — the first
     // click has already brought it to the front.
     // A double-click on a header boundary: the column fits its widest text, the row goes back to
@@ -3216,6 +3442,36 @@ fn button_up(hwnd: HWND) {
         unsafe {
             let _ = InvalidateRect(Some(hwnd), None, false);
         }
+        return;
+    }
+    // A chart let go: a press that barely moved only selected it; any other is one
+    // `App::reshape_chart`, one undo step.
+    // SAFETY: one borrow; the write notifies and the observer posts rather than sends.
+    let released = unsafe {
+        with_sheet(hwnd, |state| {
+            let grab = state.chart_grab.take()?;
+            if grab.is_click(state.geom.dpi) {
+                return Some(Ok(()));
+            }
+            let [x, y, w, h] = crate::sheet::chart::lengths(grab.now, &state.geom);
+            Some(
+                state
+                    .app
+                    .reshape_chart(state.sheet, grab.index, &x, &y, &w, &h),
+            )
+        })
+    }
+    .flatten();
+    if let Some(result) = released {
+        // SAFETY: no borrow held.
+        unsafe {
+            let _ = ReleaseCapture();
+        }
+        if let Err(error) = result {
+            // SAFETY: one borrow, no dialog.
+            unsafe { with_sheet(hwnd, |state| state.say(Some(error.to_string()))) };
+        }
+        refresh(hwnd);
         return;
     }
     // A track let go: its new size is written once, in the document's own unit, as one undo step.
@@ -4014,7 +4270,8 @@ fn preview_chart(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// Data ▸ Change Last Chart… — its kind, title and legend in words (`verbs::restyle_chart`).
+/// Data ▸ Change Chart… — the selected chart, else the last: its kind, title and legend in words
+/// (`verbs::restyle_chart`). Return on a selected chart, a double click on one, and its menu.
 fn restyle_chart(hwnd: HWND) {
     let Some(words) = dialog::prompt(
         hwnd,
@@ -4027,14 +4284,10 @@ fn restyle_chart(hwnd: HWND) {
     // SAFETY: one borrow, after the dialog.
     unsafe {
         with_sheet(hwnd, |state| {
-            let count = state
-                .app
-                .charts(state.sheet)
-                .map_or(0, |charts| charts.len());
-            state.say(Some(match count {
-                0 => "This sheet has no chart.".to_owned(),
-                n => {
-                    match grind_sheet::verbs::restyle_chart(&state.app, state.sheet, n - 1, &words)
+            state.say(Some(match state.chart_target() {
+                None => "This sheet has no chart.".to_owned(),
+                Some(index) => {
+                    match grind_sheet::verbs::restyle_chart(&state.app, state.sheet, index, &words)
                     {
                         Ok(said) => format!("{said} Ctrl+Z takes it back."),
                         Err(why) => why,
@@ -4046,23 +4299,19 @@ fn restyle_chart(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// Data ▸ Move Last Chart Here — its corner to the active cell's, its size kept
-/// (`verbs::move_chart`), over the offsets this window draws the grid at.
+/// Data ▸ Move Chart Here — the selected chart, else the last: its corner to the active cell's,
+/// its size kept (`verbs::move_chart`), over the offsets this window draws the grid at.
 fn move_chart(hwnd: HWND) {
     // SAFETY: one borrow, no dialog.
     unsafe {
         with_sheet(hwnd, |state| {
-            let count = state
-                .app
-                .charts(state.sheet)
-                .map_or(0, |charts| charts.len());
             let px = 1.0 / (crate::sheet::geom::mm_to_px(state.geom.dpi)(1.0) * state.geom.zoom);
-            state.say(Some(match count {
-                0 => "This sheet has no chart.".to_owned(),
-                n => match grind_sheet::verbs::move_chart(
+            state.say(Some(match state.chart_target() {
+                None => "This sheet has no chart.".to_owned(),
+                Some(index) => match grind_sheet::verbs::move_chart(
                     &state.app,
                     state.sheet,
-                    n - 1,
+                    index,
                     state.selection.active,
                     |col, row| {
                         (
@@ -4080,20 +4329,17 @@ fn move_chart(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// Data ▸ Delete Last Chart — a chart is not hit-tested in this window, so the last one is the
-/// one that goes.
+/// Data ▸ Delete Chart — the selected chart (Delete, Backspace, its menu), else the last.
 fn delete_chart(hwnd: HWND) {
     // SAFETY: one borrow, no dialog.
     unsafe {
         with_sheet(hwnd, |state| {
-            let count = state
-                .app
-                .charts(state.sheet)
-                .map_or(0, |charts| charts.len());
-            state.say(Some(match count {
-                0 => "This sheet has no chart.".to_owned(),
-                n => match state.app.remove_chart(state.sheet, n - 1) {
-                    Ok(()) => "Deleted the last chart. Ctrl+Z brings it back.".to_owned(),
+            let target = state.chart_target();
+            state.chart_selected = None;
+            state.say(Some(match target {
+                None => "This sheet has no chart.".to_owned(),
+                Some(index) => match state.app.remove_chart(state.sheet, index) {
+                    Ok(()) => grind_sheet::chart_frame::deleted_sentence("Ctrl+Z"),
                     Err(error) => error.to_string(),
                 },
             }));
@@ -6468,6 +6714,8 @@ fn draw_frame(dc: HDC, state: &Sheet) {
         &Frame {
             charts: &charts,
             chart_data: &chart_data,
+            chart_selected: state.chart_now(),
+            chart_grab: state.chart_grab,
             formula_text: &formula_text,
             geom: &state.geom,
             theme: state.theme,

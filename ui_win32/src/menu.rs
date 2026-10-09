@@ -811,15 +811,15 @@ pub const MENUS: &[Menu] = &[
             },
             Item::Verb {
                 command: Command::RestyleChart,
-                label: "Change Last C&hart…",
+                label: "Chan&ge Chart…",
             },
             Item::Verb {
                 command: Command::MoveChart,
-                label: "Move La&st Chart Here",
+                label: "Move Chart &Here",
             },
             Item::Verb {
                 command: Command::DeleteChart,
-                label: "Delete &Last Chart",
+                label: "De&lete Chart",
             },
             Item::Verb {
                 command: Command::Evaluate,

@@ -336,6 +336,10 @@ mod windows_impl {
         /// in place of the result.
         pub formula_text: &'a std::collections::HashMap<(u32, u32), String>,
         pub chart_data: &'a [Option<grind_sheet::ChartData>],
+        /// The selected chart, which wears the accent and its eight handles, and the chart the
+        /// pointer is holding, drawn where the drag has put it (`sheet/chart.rs`).
+        pub chart_selected: Option<usize>,
+        pub chart_grab: Option<crate::sheet::chart::Grab>,
         /// How far the document's own content reaches — `App::used_extent`, the same answer the
         /// status bar reports. Past it the hairlines are drawn quieter (`Theme::grid_line_soft`).
         pub used: (u32, u32),
@@ -742,7 +746,15 @@ mod windows_impl {
         }
 
         // The charts float over the cells and their borders, under the overlays and the selection.
-        crate::sheet::chart::paint(dc, g, theme, frame.face, frame.charts, frame.chart_data);
+        crate::sheet::chart::paint(
+            dc,
+            g,
+            theme,
+            frame.face,
+            frame.charts,
+            frame.chart_data,
+            frame.chart_grab.as_ref(),
+        );
 
         // `doc/view-modes.md`'s name overlay: where a defined name anchors, outlined if it
         // covers more than one cell. Drawn after every cell so the outline sits on the grid
@@ -753,6 +765,21 @@ mod windows_impl {
         // their hairlines, and before the headers so those still cover it where it runs under
         // the band.
         outline(dc, frame);
+
+        // The selected chart's outline and handles over everything in the cells, the cell
+        // selection's outline included — a chart that is selected is the thing that is selected.
+        let held = match frame.chart_grab {
+            Some(grab) => Some(grab.now),
+            None => frame.chart_selected.and_then(|index| {
+                crate::sheet::chart::frames(frame.charts, g)
+                    .get(index)
+                    .copied()
+                    .flatten()
+            }),
+        };
+        if let Some(at) = held {
+            crate::sheet::chart::paint_held(dc, g, theme, at);
+        }
 
         // The headers, over the cells — a cell scrolled under the header band must not show
         // through it, and drawing them second is cheaper than clipping the loop above.
