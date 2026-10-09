@@ -303,9 +303,122 @@ pub fn list_body(rows: usize, widest: f64, chrome: f64, dpi: u32) -> (f64, f64) 
     (w, s(size::ROW_H) * shown + s(2.0))
 }
 
+/// The alt text modal's body, top to bottom: the picture it is about, the short field with its
+/// header, the advice line under it, and the long description with its header — the same order
+/// as every other client's dialog (`grind_text::picture`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AltBody {
+    pub picture: Rect,
+    pub title_label: Rect,
+    pub title: Rect,
+    pub advice: Rect,
+    pub description_label: Rect,
+    pub description: Rect,
+}
+
+/// How tall the picture is shown, the advice line, and the long description's field, at 100%.
+pub mod alt {
+    pub const PICTURE_H: f64 = 160.0;
+    pub const ADVICE_H: f64 = 20.0;
+    pub const DESCRIPTION_H: f64 = 88.0;
+    pub const WIDTH: f64 = 520.0;
+    /// Under the picture, under the advice.
+    pub const GAP: f64 = 16.0;
+}
+
+/// The body the alt text modal asks for — the inverse of [`alt_body`].
+pub fn alt_wanted(dpi: u32) -> (f64, f64) {
+    let s = |v: f64| scale(v, dpi);
+    let label = s(20.0) + s(size::LABEL_GAP);
+    let h = s(alt::PICTURE_H)
+        + s(alt::GAP)
+        + label
+        + s(size::CONTROL_H)
+        + s(4.0)
+        + s(alt::ADVICE_H)
+        + s(alt::GAP)
+        + label
+        + s(alt::DESCRIPTION_H);
+    (s(alt::WIDTH), h)
+}
+
+/// Where each piece of the alt text modal's body goes inside `body`. When the work area is too
+/// short for all of it the picture gives up the height first, since it is there to look at and
+/// the fields are there to type in.
+pub fn alt_body(body: Rect, dpi: u32) -> AltBody {
+    let s = |v: f64| scale(v, dpi);
+    let label = s(20.0);
+    let gap = s(size::LABEL_GAP);
+    let rest = alt_wanted(dpi).1 - s(alt::PICTURE_H);
+    let picture_h = (body.h - rest).clamp(0.0, s(alt::PICTURE_H));
+    let row = |y: f64, h: f64| Rect {
+        x: body.x,
+        y,
+        w: body.w,
+        h,
+    };
+    let picture = row(body.y, picture_h);
+    let title_label = row(picture.y + picture.h + s(alt::GAP), label);
+    let title = row(title_label.y + label + gap, s(size::CONTROL_H));
+    let advice = row(title.y + title.h + s(4.0), s(alt::ADVICE_H));
+    let description_label = row(advice.y + advice.h + s(alt::GAP), label);
+    let description_y = description_label.y + label + gap;
+    let description = row(
+        description_y,
+        (body.y + body.h - description_y).max(s(size::CONTROL_H)),
+    );
+    AltBody {
+        picture,
+        title_label,
+        title,
+        advice,
+        description_label,
+        description,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The alt text body fills what it asked for exactly, in order, at every scaling; and a short
+    /// screen takes the height out of the picture rather than out of a field.
+    #[test]
+    fn the_alt_text_body_stacks_and_gives_up_the_picture_first() {
+        for dpi in [96, 120, 144, 192] {
+            let (w, h) = alt_wanted(dpi);
+            let body = Rect {
+                x: 10.0,
+                y: 20.0,
+                w,
+                h,
+            };
+            let laid = alt_body(body, dpi);
+            let order = [
+                laid.picture,
+                laid.title_label,
+                laid.title,
+                laid.advice,
+                laid.description_label,
+                laid.description,
+            ];
+            for pair in order.windows(2) {
+                assert!(pair[0].y + pair[0].h <= pair[1].y + 0.5, "{dpi}: {pair:?}");
+            }
+            let end = laid.description.y + laid.description.h;
+            assert!((end - (body.y + body.h)).abs() < 0.5, "{dpi}: {end}");
+            assert!((laid.description.h - scale(alt::DESCRIPTION_H, dpi)).abs() < 0.5);
+
+            let short = Rect {
+                h: h - scale(100.0, dpi),
+                ..body
+            };
+            let squeezed = alt_body(short, dpi);
+            assert!((squeezed.picture.h - scale(alt::PICTURE_H - 100.0, dpi)).abs() < 0.5);
+            assert_eq!(squeezed.title.h, laid.title.h);
+            assert!((squeezed.description.h - laid.description.h).abs() < 0.5);
+        }
+    }
 
     const WORK: Edges = Edges {
         left: 0,

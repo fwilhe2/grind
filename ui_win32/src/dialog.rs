@@ -380,20 +380,21 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{
     BS_OWNERDRAW, CREATESTRUCTW, CS_DROPSHADOW, CallWindowProcW, CreateWindowExW, DLGC_BUTTON,
     DLGC_DEFPUSHBUTTON, DLGC_UNDEFPUSHBUTTON, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    EN_KILLFOCUS, EN_SETFOCUS, ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_MULTILINE, ES_READONLY,
-    GWLP_USERDATA, GWLP_WNDPROC, GetClientRect, GetMessageW, GetPropW, GetWindowLongPtrW,
-    GetWindowRect, GetWindowTextLengthW, GetWindowTextW, HMENU, HTCLIENT, IDC_ARROW, IDCANCEL,
-    IDNO, IDOK, IDYES, IsDialogMessageW, LAYERED_WINDOW_ATTRIBUTES_FLAGS, LB_ADDSTRING,
-    LB_GETCOUNT, LB_GETCURSEL, LB_GETITEMRECT, LB_GETSEL, LB_ITEMFROMPOINT, LB_SETCURSEL,
-    LB_SETSEL, LBN_DBLCLK, LBS_HASSTRINGS, LBS_MULTIPLESEL, LBS_NOINTEGRALHEIGHT, LBS_NOTIFY,
-    LBS_OWNERDRAWFIXED, LWA_ALPHA, LoadCursorW, MSG, PostQuitMessage, RegisterClassW, RemovePropW,
-    SM_CXVSCROLL, SW_SHOW, SW_SHOWNOACTIVATE, SendMessageW, SetLayeredWindowAttributes, SetPropW,
-    SetWindowLongPtrW, SetWindowTextW, ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_CLOSE, WM_COMMAND, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DRAWITEM,
-    WM_ERASEBKGND, WM_GETDLGCODE, WM_KEYDOWN, WM_MEASUREITEM, WM_MOUSEMOVE, WM_NCACTIVATE,
-    WM_NCCALCSIZE, WM_NCCREATE, WM_NCDESTROY, WM_NCHITTEST, WM_PAINT, WM_SETFONT, WM_USER,
-    WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_DISABLED, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_POPUP, WS_TABSTOP, WS_THICKFRAME, WS_VISIBLE, WS_VSCROLL,
+    EN_CHANGE, EN_KILLFOCUS, EN_SETFOCUS, ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_MULTILINE,
+    ES_READONLY, GWLP_USERDATA, GWLP_WNDPROC, GetClientRect, GetMessageW, GetPropW,
+    GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, HMENU, HTCLIENT,
+    IDC_ARROW, IDCANCEL, IDNO, IDOK, IDYES, IsDialogMessageW, LAYERED_WINDOW_ATTRIBUTES_FLAGS,
+    LB_ADDSTRING, LB_GETCOUNT, LB_GETCURSEL, LB_GETITEMRECT, LB_GETSEL, LB_ITEMFROMPOINT,
+    LB_SETCURSEL, LB_SETSEL, LBN_DBLCLK, LBS_HASSTRINGS, LBS_MULTIPLESEL, LBS_NOINTEGRALHEIGHT,
+    LBS_NOTIFY, LBS_OWNERDRAWFIXED, LWA_ALPHA, LoadCursorW, MSG, PostQuitMessage, RegisterClassW,
+    RemovePropW, SM_CXVSCROLL, SW_SHOW, SW_SHOWNOACTIVATE, SendMessageW,
+    SetLayeredWindowAttributes, SetPropW, SetWindowLongPtrW, SetWindowTextW, ShowWindow,
+    TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLOREDIT,
+    WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DRAWITEM, WM_ERASEBKGND, WM_GETDLGCODE, WM_KEYDOWN,
+    WM_MEASUREITEM, WM_MOUSEMOVE, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCCREATE, WM_NCDESTROY,
+    WM_NCHITTEST, WM_PAINT, WM_SETFONT, WM_USER, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN,
+    WS_DISABLED, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_TABSTOP,
+    WS_THICKFRAME, WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::gdi::{Across, Brush, Font, Measure, Selected};
@@ -443,6 +444,8 @@ const ID_NEXT: i32 = 202;
 const ID_KIND: i32 = 300;
 
 const ID_EDIT: usize = 10;
+/// The second field, where a body has two — the alt text modal's long description.
+const ID_EDIT2: usize = 11;
 const ID_LIST: usize = 12;
 
 /// What a button in the footer is.
@@ -507,6 +510,26 @@ enum Body {
     },
     /// A document's pages as they print.
     Pages(Pages),
+    /// A picture's alternative text: the picture, the short field and its advice, and the long
+    /// description (`grind_text::picture`).
+    Alt(Alt),
+}
+
+/// The alt text modal's own state.
+struct Alt {
+    picture: Option<crate::image::Decoded>,
+    title: String,
+    description: String,
+    /// `grind_text::picture::advice` for what the short field holds now, and its length.
+    advice: String,
+    count: usize,
+}
+
+impl Alt {
+    fn advise(&mut self, title: &str) {
+        self.advice = grind_text::picture::advice(title).unwrap_or("").to_owned();
+        self.count = title.trim().chars().count();
+    }
 }
 
 /// The print preview's own state (`doc/pdf-export.md` §4).
@@ -538,6 +561,10 @@ struct Modal {
     well: RECT,
     /// Whether the field has the keyboard — its frame wears the accent when it does.
     focused: bool,
+    /// A second field, where the body has one, framed in its own well, with its own focus.
+    second: HWND,
+    second_well: RECT,
+    second_focused: bool,
     /// The two grounds a control in the body can stand on, kept alive for `WM_CTLCOLOR…`: a
     /// brush handed to Windows has to outlive the repaint it is handed for.
     rest: Brush,
@@ -811,6 +838,7 @@ fn run<T>(spec: Spec<'_>, read: impl FnOnce(&mut Modal) -> T) -> Option<T> {
                 modal::list_body(rows.len(), widest, chrome, dpi)
             }
             Body::Chart { .. } => (s(520.0), s(320.0)),
+            Body::Alt(_) => modal::alt_wanted(dpi),
             Body::Pages(pages) => {
                 // As tall as the screen allows, and as wide as the page is at that height.
                 let chrome = f64::from(modal::wanted((0.0, 0.0), dpi, titled).1);
@@ -887,6 +915,9 @@ fn run<T>(spec: Spec<'_>, read: impl FnOnce(&mut Modal) -> T) -> Option<T> {
         control: HWND::default(),
         well: RECT::default(),
         focused: false,
+        second: HWND::default(),
+        second_well: RECT::default(),
+        second_focused: false,
         rest: Brush::solid(theme.card),
         active: Brush::solid(theme.background),
         answer: None,
@@ -1022,6 +1053,7 @@ fn create_children(popup: HWND, natural: &[f64], titled: bool) {
                 Body::Field { .. } => 1,
                 Body::Reader { .. } => 2,
                 Body::List { is_multi, .. } => 3 + u8::from(*is_multi),
+                Body::Alt(_) => 5,
                 _ => 0,
             };
             (modal.dpi, specs, kind)
@@ -1069,7 +1101,59 @@ fn create_children(popup: HWND, natural: &[f64], titled: bool) {
         // The body's control first, so Tab reaches it before the buttons.
         let body = frame.body;
         let label_h = f64::from(px(20.0) + px(modal::size::LABEL_GAP));
+        let mut second = (HWND::default(), RECT::default());
         let (control, well) = match body_kind {
+            5 => {
+                let laid = modal::alt_body(body, dpi);
+                let (title, description) = with_modal(popup, |modal| match &modal.body {
+                    Body::Alt(alt) => (alt.title.clone(), alt.description.clone()),
+                    _ => Default::default(),
+                })
+                .unwrap_or_default();
+                // The short field as `Field`'s, centred on its frame; the long one as the
+                // reader's, filling its frame less a margin, and wrapping.
+                let line = px(crate::theme::text::BODY * 1.4);
+                let well = laid.title;
+                let top = well.y as i32 + (well.h as i32 - line) / 2;
+                let one = make(
+                    "EDIT",
+                    "",
+                    WINDOW_STYLE(ES_AUTOHSCROLL as u32) | WS_TABSTOP,
+                    ID_EDIT,
+                    RECT {
+                        left: well.x as i32 + px(11.0),
+                        top,
+                        right: (well.x + well.w) as i32 - px(11.0),
+                        bottom: top + line,
+                    },
+                );
+                let long = laid.description;
+                let many = make(
+                    "EDIT",
+                    "",
+                    // No scroll bar: a description longer than the frame scrolls with the caret,
+                    // and a bar drawn round an empty field says there is more when there is not.
+                    WINDOW_STYLE((ES_MULTILINE | ES_AUTOVSCROLL) as u32) | WS_TABSTOP,
+                    ID_EDIT2,
+                    RECT {
+                        left: long.x as i32 + px(11.0),
+                        top: long.y as i32 + px(6.0),
+                        right: (long.x + long.w) as i32 - px(4.0),
+                        bottom: (long.y + long.h) as i32 - px(6.0),
+                    },
+                );
+                for (edit, text) in [(one, &title), (many, &description)] {
+                    set_font(edit);
+                    if dark {
+                        let _ = SetWindowTheme(edit, w!("DarkMode_Explorer"), PCWSTR::null());
+                    }
+                    let wide = gdi::wide(text);
+                    let _ = SetWindowTextW(edit, PCWSTR(wide.as_ptr()));
+                }
+                SendMessageW(one, EM_SETSEL, Some(WPARAM(0)), Some(LPARAM(-1)));
+                second = (many, rect_of(long));
+                (one, rect_of(well))
+            }
             1 | 2 => {
                 let reading = body_kind == 2;
                 let well = Rect {
@@ -1231,6 +1315,7 @@ fn create_children(popup: HWND, natural: &[f64], titled: bool) {
         with_modal(popup, |modal| {
             modal.control = control;
             modal.well = well;
+            (modal.second, modal.second_well) = second;
             for (button, hwnd) in modal.buttons.iter_mut().zip(&handles) {
                 button.hwnd = *hwnd;
             }
@@ -1368,7 +1453,12 @@ extern "system" fn modal_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: 
             let answered = unsafe {
                 with_modal(hwnd, |modal| {
                     let dc = HDC(wparam.0 as *mut std::ffi::c_void);
-                    let (ground, brush) = match (message, modal.focused) {
+                    // Which field is asking: each has its own focus, where a body has two.
+                    let focused = match HWND(lparam.0 as *mut std::ffi::c_void) == modal.second {
+                        true => modal.second_focused,
+                        false => modal.focused,
+                    };
+                    let (ground, brush) = match (message, focused) {
                         (WM_CTLCOLORLISTBOX, _) => (modal.theme.background, &modal.active),
                         (WM_CTLCOLOREDIT, true) => (modal.theme.background, &modal.active),
                         _ => (modal.theme.card, &modal.rest),
@@ -1419,6 +1509,48 @@ extern "system" fn modal_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: 
 fn command(hwnd: HWND, id: i32, code: u32) {
     // SAFETY: one borrow per step, with repaints queued after it is released.
     unsafe {
+        if id as usize == ID_EDIT && code == EN_CHANGE {
+            // The alt text modal's advice, as the short field is typed in.
+            // `SetWindowTextW` fills the field before the modal knows which control it is, and
+            // that first change is not the user's — the advice was computed from the same text.
+            let Some(edit) = with_modal(hwnd, |modal| modal.control).filter(|e| !e.is_invalid())
+            else {
+                return;
+            };
+            let typed = window_text(edit);
+            let dirty = with_modal(hwnd, |modal| {
+                let Body::Alt(alt) = &mut modal.body else {
+                    return None;
+                };
+                alt.advise(&typed);
+                Some(modal.dpi)
+            });
+            if let Some(Some(dpi)) = dirty {
+                let mut client = RECT::default();
+                let _ = GetClientRect(hwnd, &mut client);
+                let titled = with_modal(hwnd, |modal| !modal.title.is_empty()).unwrap_or(true);
+                let frame = modal::frame(
+                    f64::from(client.right),
+                    f64::from(client.bottom),
+                    dpi,
+                    titled,
+                );
+                let advice = rect_of(modal::alt_body(frame.body, dpi).advice);
+                let _ = InvalidateRect(Some(hwnd), Some(&advice), false);
+            }
+            return;
+        }
+        if id as usize == ID_EDIT2 && (code == EN_SETFOCUS || code == EN_KILLFOCUS) {
+            let Some((well, edit)) = with_modal(hwnd, |modal| {
+                modal.second_focused = code == EN_SETFOCUS;
+                (modal.second_well, modal.second)
+            }) else {
+                return;
+            };
+            let _ = InvalidateRect(Some(hwnd), Some(&well), false);
+            let _ = InvalidateRect(Some(edit), None, true);
+            return;
+        }
         if id as usize == ID_EDIT && (code == EN_SETFOCUS || code == EN_KILLFOCUS) {
             let Some((well, edit)) = with_modal(hwnd, |modal| {
                 modal.focused = code == EN_SETFOCUS;
@@ -1616,19 +1748,91 @@ fn paint_body(modal: &mut Modal, out: HDC, body: Rect) {
             label(modal, &text);
             // Fluent's TextBox: a control's ground and stroke, a stronger line along the bottom,
             // and that line in the accent, two pixels thick, while it has the keyboard.
-            let well = modal.well;
-            let (ground, line, thick) = match modal.focused {
-                true => (theme.background, theme.accent, modal.px(2.0).max(2)),
-                false => (theme.card, theme.text_tertiary, 1),
-            };
-            gdi::round_rect(out, well, radius, ground, theme.stroke);
+            text_box(modal, out, modal.well, modal.focused);
+        }
+        Body::Alt(alt) => {
+            let laid = modal::alt_body(body, modal.dpi);
+            // The picture on the window's own ground, fitted and never enlarged.
+            gdi::round_rect(
+                out,
+                rect_of(laid.picture),
+                radius,
+                theme.backdrop,
+                theme.backdrop,
+            );
+            if let Some(picture) = &alt.picture {
+                let inset = scale(8.0, modal.dpi);
+                let (aw, ah) = (
+                    (laid.picture.w - inset * 2.0).max(1.0),
+                    (laid.picture.h - inset * 2.0).max(1.0),
+                );
+                let (pw, ph) = (
+                    f64::from(picture.width.max(1)),
+                    f64::from(picture.height.max(1)),
+                );
+                let fit = (aw / pw).min(ah / ph).min(1.0);
+                let (w, h) = (pw * fit, ph * fit);
+                let dest = Rect {
+                    x: (laid.picture.x + (laid.picture.w - w) / 2.0).round(),
+                    y: (laid.picture.y + (laid.picture.h - h) / 2.0).round(),
+                    w: w.round(),
+                    h: h.round(),
+                };
+                crate::image::draw(out, dest, picture);
+            }
+            let (advice, count) = (alt.advice.clone(), alt.count);
+            let _font = Selected::font(out, &modal.body_font);
+            gdi::line(
+                out,
+                "Alt text",
+                rect_of(laid.title_label),
+                Across::Left,
+                theme.text,
+            );
+            gdi::line(
+                out,
+                "Long description (optional)",
+                rect_of(laid.description_label),
+                Across::Left,
+                theme.text,
+            );
+            text_box(modal, out, modal.well, modal.focused);
+            text_box(modal, out, modal.second_well, modal.second_focused);
+            // The advice under the field, and how long it is at the far end — in the caution
+            // colour past the length a screen reader's user hears comfortably.
+            let tally = format!("{count} / {}", grind_text::picture::SHORT);
+            let room = rect_of(laid.advice);
             gdi::fill(
                 out,
-                well.left + radius / 2,
-                well.bottom - thick,
-                well.right - radius / 2,
-                well.bottom,
-                line,
+                room.left,
+                room.top,
+                room.right,
+                room.bottom,
+                theme.background,
+            );
+            let tally_w = gdi::text_width(out, &tally);
+            gdi::line(
+                out,
+                &tally,
+                RECT {
+                    left: room.right - tally_w,
+                    ..room
+                },
+                Across::Left,
+                match count > grind_text::picture::SHORT {
+                    true => theme.banner_edge,
+                    false => theme.text_secondary,
+                },
+            );
+            gdi::line(
+                out,
+                &advice,
+                RECT {
+                    right: room.right - tally_w - modal.px(12.0),
+                    ..room
+                },
+                Across::Left,
+                theme.text_secondary,
             );
         }
         Body::Reader { label: text, .. } => {
@@ -1701,6 +1905,26 @@ fn paint_body(modal: &mut Modal, out: HDC, body: Rect) {
             }
         }
     }
+}
+
+/// Fluent's TextBox round a field: a control's ground and stroke, a stronger line along the
+/// bottom, and that line in the accent, two pixels thick, while it has the keyboard.
+fn text_box(modal: &Modal, out: HDC, well: RECT, focused: bool) {
+    let theme = modal.theme;
+    let radius = modal.px(crate::theme::space::RADIUS);
+    let (ground, line, thick) = match focused {
+        true => (theme.background, theme.accent, modal.px(2.0).max(2)),
+        false => (theme.card, theme.text_tertiary, 1),
+    };
+    gdi::round_rect(out, well, radius, ground, theme.stroke);
+    gdi::fill(
+        out,
+        well.left + radius / 2,
+        well.bottom - thick,
+        well.right - radius / 2,
+        well.bottom,
+        line,
+    );
 }
 
 fn modal_surface_radius(dpi: u32) -> i32 {
@@ -2228,6 +2452,42 @@ pub fn prompt(owner: HWND, title: &str, label: &str, initial: &str) -> Option<St
     )
     .flatten()
     .filter(|text| !text.trim().is_empty())
+}
+
+/// A picture's alternative text, short and long: `Some((title, description))` on Save, `None` on
+/// Cancel. The picture is shown at the top, decoded by WIC, since alt text is written looking at
+/// what it describes; the advice under the short field is `grind_text::picture::advice`, the same
+/// sentence every client shows, kept up to date as it is typed.
+pub fn alt_text(
+    owner: HWND,
+    picture: &[u8],
+    title: &str,
+    description: &str,
+) -> Option<(String, String)> {
+    let mut alt = Alt {
+        picture: crate::image::decode(picture),
+        title: title.to_owned(),
+        description: description.to_owned(),
+        advice: String::new(),
+        count: 0,
+    };
+    alt.advise(title);
+    run(
+        Spec {
+            owner,
+            title: "Alt Text",
+            body: Body::Alt(alt),
+            buttons: vec![
+                (IDOK.0, "Save", Role::Default),
+                (IDCANCEL.0, "Cancel", Role::Answer),
+            ],
+        },
+        |modal| {
+            (modal.answer == Some(IDOK.0))
+                .then(|| (window_text(modal.control), window_text(modal.second)))
+        },
+    )
+    .flatten()
 }
 
 /// Ask the user to pick one of a list of lines. `None` means cancelled, or nothing to pick from.

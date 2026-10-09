@@ -2322,7 +2322,34 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
             })
         }
         .flatten();
-        spelling_popup(hwnd, at, wrong, commands);
+        // Over a picture the menu offers its alt text, with the caret put beside it first so the
+        // verb means *this* picture — the way a right click elsewhere moves the selection.
+        // SAFETY: one borrow, released before the popup.
+        let picture = unsafe {
+            with_text(hwnd, |text| {
+                let caret = match keyboard {
+                    true => text.caret,
+                    false => text.caret_at(f64::from(client.x), f64::from(client.y))?,
+                };
+                let viewport = text.app.get_viewport(caret.block..caret.block + 1);
+                let (offset, _) =
+                    grind_text::picture::at(viewport.get(caret.block)?, caret.offset)?;
+                let at = Caret {
+                    block: caret.block,
+                    offset,
+                };
+                text.place(at, false);
+                Some(at)
+            })
+        }
+        .flatten();
+        let with_alt: Vec<Command> = match picture {
+            Some(_) => std::iter::once(Command::AltText)
+                .chain(commands.iter().copied())
+                .collect(),
+            None => commands.to_vec(),
+        };
+        spelling_popup(hwnd, at, wrong, &with_alt);
         return;
     }
     // SAFETY: the popup is built and destroyed within this call, and `TrackPopupMenuEx` is the
@@ -4114,6 +4141,7 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::Outline
         | Command::BlockKindDialog
         | Command::InsertPicture
+        | Command::AltText
         | Command::InsertTable
         | Command::Bookmark
         | Command::ParagraphStyle
@@ -6681,6 +6709,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::Outline
         | Command::BlockKindDialog
         | Command::InsertPicture
+        | Command::AltText
         | Command::InsertTable
         | Command::Bookmark
         | Command::ParagraphStyle
@@ -7727,6 +7756,7 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::Outline => text_outline(hwnd),
         Command::BlockKindDialog => text_block_kind_dialog(hwnd),
         Command::InsertPicture => text_insert_picture(hwnd),
+        Command::AltText => text_alt_text(hwnd),
         Command::InsertTable => text_insert_table(hwnd),
         Command::Bookmark => text_bookmark(hwnd),
         Command::ParagraphStyle => text_paragraph_style(hwnd),
@@ -8289,6 +8319,58 @@ fn text_insert_picture(hwnd: HWND) {
             refresh(hwnd);
         }
         Some(Err(message)) => dialog::error(hwnd, &message),
+        None => {}
+    }
+}
+
+/// Format ▸ Picture Alt Text… — the picture beside the caret (`grind_text::picture::at`), its
+/// alternative text asked for in `dialog::alt_text`, written by `picture::set_alt`. Read first,
+/// dialog second, write third: the dialog runs a nested message loop (decision 7).
+fn text_alt_text(hwnd: HWND) {
+    // SAFETY: one borrow, released before the dialog.
+    let here = unsafe {
+        with_text(hwnd, |text| {
+            let block = text.caret.block;
+            let viewport = text.app.get_viewport(block..block + 1);
+            let (offset, image) = grind_text::picture::at(viewport.get(block)?, text.caret.offset)?;
+            Some((Caret { block, offset }, image.clone()))
+        })
+    }
+    .flatten();
+    let Some((at, image)) = here else {
+        // SAFETY: one borrow.
+        unsafe {
+            with_text(hwnd, |text| {
+                text.say(Some("Put the caret beside a picture first.".to_owned()))
+            });
+        }
+        refresh(hwnd);
+        return;
+    };
+    let Some((title, description)) = dialog::alt_text(
+        hwnd,
+        &image.data,
+        image.title.as_deref().unwrap_or(""),
+        image.description.as_deref().unwrap_or(""),
+    ) else {
+        return;
+    };
+    // SAFETY: a fresh borrow, after the dialog.
+    let outcome = unsafe {
+        with_text(hwnd, |text| {
+            let done = grind_text::picture::set_alt(&text.app, at, &title, &description);
+            if done.is_ok() {
+                text.say(Some(match title.trim().is_empty() {
+                    true => "The picture has no alt text.".to_owned(),
+                    false => "Alt text saved.".to_owned(),
+                }));
+            }
+            done
+        })
+    };
+    match outcome {
+        Some(Err(error)) => dialog::error(hwnd, &error.to_string()),
+        Some(Ok(())) => refresh(hwnd),
         None => {}
     }
 }

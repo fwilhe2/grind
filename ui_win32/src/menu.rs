@@ -316,6 +316,10 @@ pub enum Command {
     /// of its own below the caret's block (an empty block is used as it stands). Decoded and
     /// drawn for real (`image.rs`, WIC), matching `ui_text_gtk`'s own Ctrl+Shift+I.
     InsertPicture,
+    /// The picture beside the caret's alternative text — `dialog::alt_text`, then
+    /// `grind_text::picture::set_alt`. On the text pane's context menu when the pointer is on a
+    /// picture, as well as in Format.
+    AltText,
     /// Insert a table below the caret's block — a size asked for in one prompt (`3x4`), then
     /// `grind_text::table::insert_below`, which also decides where it goes and that a document
     /// never ends with one. Matches `ui_text_gtk`'s Ctrl+Shift+T.
@@ -481,6 +485,7 @@ impl Command {
         Command::Outline,
         Command::BlockKindDialog,
         Command::InsertPicture,
+        Command::AltText,
         Command::InsertTable,
         Command::Bookmark,
         Command::ParagraphStyle,
@@ -1110,6 +1115,10 @@ pub const MENUS: &[Menu] = &[
                 label: "I&nsert Picture…\tCtrl+Shift+I",
             },
             Item::Verb {
+                command: Command::AltText,
+                label: "Picture Alt Te&xt…",
+            },
+            Item::Verb {
                 command: Command::InsertTable,
                 label: "Insert T&able…\tCtrl+Shift+T",
             },
@@ -1461,6 +1470,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::Outline
         | Command::BlockKindDialog
         | Command::InsertPicture
+        | Command::AltText
         | Command::InsertTable
         | Command::Bookmark
         | Command::ParagraphStyle
@@ -1793,6 +1803,7 @@ mod tests {
             Command::Outline,
             Command::BlockKindDialog,
             Command::InsertPicture,
+            Command::AltText,
             Command::InsertTable,
             Command::Bookmark,
             Command::ParagraphStyle,
