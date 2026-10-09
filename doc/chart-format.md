@@ -349,14 +349,14 @@ always its own.
 
 **Hovering a mark names it**: a tooltip reads `Sales · Feb: 20` over a bar or a line and
 `Feb: 20 (33%)` over a slice (`chart::describe`, the same hit-test again), which is how a figure
-comes off a chart without a label on every bar. A chart's resize handle shows on the chart under
-the pointer, with a move or resize cursor to say what a press would do, rather than on every
-chart all the time.
+comes off a chart without a label on every bar. A chart under the pointer wears a faint outline
+and a move cursor; a *selected* one wears the accent and all eight handles for as long as it is
+selected (`doc/chart-handling.md`, which every shell now follows).
 
 **Repositioning is a drag, not a dialog** — the feature this shell exists to get right where
 LibreOffice's own frame-handle-and-recompute feel does not. Pressing on a chart's body starts a
-move; pressing within its bottom-right handle (the same square the fill handle is) starts a
-resize; both are pure presentation state (`Grid::chart_drag`/`chart_drag_rect`) painted in place
+move; pressing on any of the selected chart's eight handles starts a resize from that edge or
+corner, the opposite one held (`grind_sheet::chart_frame`, shared with every other shell); both are pure presentation state (`Grid::chart_drag`/`chart_drag_rect`) painted in place
 of the document's own geometry until the pointer is released, at which point the widget-space
 rect becomes ODF lengths and one call to `App::reshape_chart` — one undo entry however long the
 drag took, the same principle `Grid::commit_resize` already applies to a column or row. Nothing
