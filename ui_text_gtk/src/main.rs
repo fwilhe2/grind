@@ -20,6 +20,7 @@
 //! `grind-ui` crate yet, since `doc/suite.md` puts that extraction *on evidence* and one
 //! minimal shell is not yet evidence of which seam to cut.
 
+mod alt;
 mod code;
 mod find;
 mod format;
@@ -610,6 +611,13 @@ impl Ui {
         self.undo.set_sensitive(self.app.can_undo());
         self.redo.set_sensitive(self.app.can_redo());
         self.refresh_formatting();
+        if let Some(action) = self
+            .window
+            .lookup_action("alt-text")
+            .and_downcast::<gio::SimpleAction>()
+        {
+            action.set_enabled(self.picture_here().is_some());
+        }
 
         let caret = self.doc.caret();
         let counts = self.app.counts();
@@ -1313,6 +1321,45 @@ impl Ui {
         );
     }
 
+    /// The picture beside the caret, and where it is — what *Alt Text…* edits
+    /// (`grind_text::picture::at`).
+    fn picture_here(&self) -> Option<(grind_text::Caret, grind_text::ImageView)> {
+        let caret = self.doc.caret();
+        let viewport = self.app.get_viewport(caret.block..caret.block + 1);
+        let block = viewport.get(caret.block)?;
+        let (offset, image) = grind_text::picture::at(block, caret.offset)?;
+        Some((
+            grind_text::Caret {
+                block: caret.block,
+                offset,
+            },
+            image.clone(),
+        ))
+    }
+
+    /// *Alt Text…* — the window's `grind text alt`, in `alt.rs`'s dialog.
+    fn edit_alt(self: &Rc<Self>) {
+        let Some((at, image)) = self.picture_here() else {
+            return self.toast("Put the caret beside a picture first");
+        };
+        alt::present(
+            &self.window,
+            &self.app,
+            at,
+            &image,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |error| match error {
+                    Some(error) => ui.toast(&error),
+                    None => {
+                        ui.doc.grab_focus();
+                    }
+                }
+            ),
+        );
+    }
+
     fn embed_image(self: &Rc<Self>, path: &Path) {
         let data = match std::fs::read(path) {
             Ok(data) => data,
@@ -1324,10 +1371,19 @@ impl Ui {
         match grind_text::picture::insert_below(&self.app, self.doc.caret().block, &mime, data) {
             // Past the picture, which is one caret position — so the next thing typed is a
             // caption rather than text wrapped around a frame nothing lays out yet.
-            Ok(at) => self.doc.go_to(grind_text::Caret {
-                block: at,
-                offset: 1,
-            }),
+            Ok(at) => {
+                self.doc.go_to(grind_text::Caret {
+                    block: at,
+                    offset: 1,
+                });
+                // The moment alt text is cheapest to write is the moment the picture went in.
+                let toast = adw::Toast::builder()
+                    .title("Picture inserted")
+                    .button_label("Add Alt Text")
+                    .action_name("win.alt-text")
+                    .build();
+                self.toasts.add_toast(toast);
+            }
             Err(error) => self.toast(&error.to_string()),
         }
     }
@@ -1521,6 +1577,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
             ui.apply_char_style(format::Change::Underline(on));
         }),
         ("image", &["<Control><Shift>i"][..], |ui| ui.insert_image()),
+        ("alt-text", &["<Control><Alt>a"][..], |ui| ui.edit_alt()),
         ("table", &["<Control><Shift>t"][..], |ui| ui.insert_table()),
         ("link", &["<Control>k"][..], |ui| ui.link.open()),
         ("paragraph", &["<Control>0"][..], |ui| {
@@ -1587,6 +1644,7 @@ fn shortcut_rows() -> Vec<ShortcutGroup> {
                 ("Show bookmarks", "<Control><Shift>n"),
                 ("Show the source", "<Control><Shift>u"),
                 ("Insert a picture", "<Control><Shift>i"),
+                ("Alt text for the picture", "<Control><Alt>a"),
                 ("Insert a table", "<Control><Shift>t"),
                 ("Insert or edit a link", "<Control>k"),
                 ("Keyboard shortcuts", "<Control>question"),
@@ -1661,6 +1719,7 @@ fn primary_menu() -> gio::Menu {
     // to the format bar's first control, where each shows what the caret is in.
     let insert = gio::Menu::new();
     insert.append(Some("Insert Picture…"), Some("win.image"));
+    insert.append(Some("Picture Alt Text…"), Some("win.alt-text"));
     insert.append(Some("Insert Table…"), Some("win.table"));
     insert.append(Some("Insert Link…"), Some("win.link"));
     menu.append_section(None, &insert);

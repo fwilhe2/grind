@@ -36,8 +36,9 @@ use grind_text::style::CharStyle;
 use grind_text::{App, BlockKind, BlockView, Caret, Form, Metrics, loc};
 use wasm_bindgen::prelude::*;
 use web_sys::{
-    CanvasRenderingContext2d, CompositionEvent, Document, Element, HtmlCanvasElement, HtmlElement,
-    KeyboardEvent, MouseEvent,
+    CanvasRenderingContext2d, CompositionEvent, Document, Element, Event, HtmlCanvasElement,
+    HtmlDialogElement, HtmlElement, HtmlInputElement, HtmlTextAreaElement, KeyboardEvent,
+    MouseEvent,
 };
 
 use crate::command::Entry;
@@ -299,6 +300,9 @@ pub struct Ui {
     /// frame of the wrong picture in a document with two images in it.
     images: RefCell<HashMap<usize, String>>,
     message: RefCell<String>,
+    /// The picture the alt text dialog is open on — where `picture::set_alt` writes when it
+    /// closes on Save. Kept rather than re-asked, since the caret is not the dialog's to move.
+    alt_at: Cell<Option<Caret>>,
     /// The word the palette last found, which F3 and Shift+F3 step through and Replace offers
     /// back — `sheet::Ui::needle`'s twin.
     needle: RefCell<String>,
@@ -339,6 +343,7 @@ impl Ui {
             dragging: Cell::new(false),
             names: Cell::new(false),
             images: RefCell::new(HashMap::new()),
+            alt_at: Cell::new(None),
             message: RefCell::new(String::new()),
             needle: RefCell::new(String::new()),
         });
@@ -435,12 +440,32 @@ impl Ui {
 
             // A block that is a picture is drawn as one, above whatever text it also holds
             // (a caption reads as the paragraph's own text — `doc/odt-format.md`).
-            if let Some(image) = block.runs.iter().find_map(|run| run.image.as_ref()) {
+            if let Some((at, image)) = block
+                .runs
+                .iter()
+                .find_map(|run| Some((run.start, run.image.as_ref()?)))
+            {
+                let figure = self.dom.document.create_element("div")?;
+                figure.set_class_name("figure");
                 let picture = self.dom.document.create_element("img")?;
                 picture.set_class_name("picture");
-                picture.set_attribute("alt", "")?;
+                // The document's own alternative text is the page's, too.
+                picture.set_attribute("alt", image.title.as_deref().unwrap_or(""))?;
                 picture.set_attribute("src", &self.image_url(block.index, image))?;
-                element.append_child(&picture)?;
+                figure.append_child(&picture)?;
+                let badge = self.dom.document.create_element("button")?;
+                badge.set_attribute("type", "button")?;
+                badge.set_attribute("data-alt", &format!("{}:{at}", block.index))?;
+                let (class, label, says) = match image.title {
+                    Some(_) => ("alt-badge", "ALT", "Edit the alt text"),
+                    None => ("alt-badge missing", "+ Alt text", "Add alt text"),
+                };
+                badge.set_class_name(class);
+                badge.set_text_content(Some(label));
+                badge.set_attribute("aria-label", says)?;
+                badge.set_attribute("title", says)?;
+                figure.append_child(&badge)?;
+                element.append_child(&figure)?;
             }
 
             for (number, line) in layout.lines().iter().enumerate() {
@@ -757,6 +782,7 @@ impl Ui {
             "block.down" => self.move_blocks(false),
             "block.delete" => self.delete_blocks(),
             "block.table" => self.insert_table(),
+            "block.alt" => self.open_alt(),
             "block.bookmark" => self.bookmark(),
             "block.style" => self.name_style(),
             "block.indent" => self.renest(1),
@@ -903,9 +929,104 @@ impl Ui {
             Ok(block) => {
                 self.anchor.set(None);
                 self.set_caret(Caret { block, offset: 1 });
+                self.set_message(
+                    "Picture inserted — its “+ Alt text” chip says what a screen reader will"
+                        .to_owned(),
+                );
             }
             Err(error) => self.set_message(error.to_string()),
         }
+    }
+
+    // --- alt text ---
+
+    /// *Alt text for the picture…* — `index.html`'s `#alt` dialog, opened on the picture beside
+    /// the caret (`grind_text::picture::at`) with what it already says filled in.
+    fn open_alt(&self) {
+        let caret = self.caret.get();
+        let Some(block) = self.block_at(caret.block) else {
+            return;
+        };
+        let Some((offset, image)) = grind_text::picture::at(&block, caret.offset) else {
+            return self.set_message("Put the caret beside a picture first".to_owned());
+        };
+        let Ok(parts) = self.alt_parts() else {
+            return;
+        };
+        let (dialog, title, description) = parts;
+        title.set_value(image.title.as_deref().unwrap_or(""));
+        description.set_value(image.description.as_deref().unwrap_or(""));
+        if let Some(more) = self.dom.document.get_element_by_id("alt-more") {
+            match image.description.is_some() {
+                true => more.set_attribute("open", ""),
+                false => more.remove_attribute("open"),
+            }
+            .ok();
+        }
+        if let Some(shown) = self.dom.document.get_element_by_id("alt-picture") {
+            let _ = shown.set_attribute("src", &self.image_url(caret.block, image));
+        }
+        self.alt_at.set(Some(Caret {
+            block: caret.block,
+            offset,
+        }));
+        self.advise_alt();
+        dialog.set_return_value("");
+        let _ = dialog.show_modal();
+        let _ = title.focus();
+        title.select();
+    }
+
+    /// The dialog and its two fields.
+    fn alt_parts(
+        &self,
+    ) -> Result<(HtmlDialogElement, HtmlInputElement, HtmlTextAreaElement), JsValue> {
+        let document = &self.dom.document;
+        Ok((
+            element(document, "alt")?,
+            element(document, "alt-title")?,
+            element(document, "alt-description")?,
+        ))
+    }
+
+    /// The advice line and the count under the short field, as it is typed.
+    fn advise_alt(&self) {
+        let Ok((_, title, _)) = self.alt_parts() else {
+            return;
+        };
+        let text = title.value();
+        let document = &self.dom.document;
+        if let Some(advice) = document.get_element_by_id("alt-advice") {
+            advice.set_text_content(Some(grind_text::picture::advice(&text).unwrap_or("")));
+        }
+        if let Some(count) = document.get_element_by_id("alt-count") {
+            let n = text.trim().chars().count();
+            count.set_text_content(Some(&format!("{n} / {}", grind_text::picture::SHORT)));
+            let _ = count
+                .class_list()
+                .toggle_with_force("over", n > grind_text::picture::SHORT);
+        }
+    }
+
+    /// The dialog closed: written when it closed on Save, and nothing otherwise.
+    fn close_alt(&self) {
+        let Some(at) = self.alt_at.take() else {
+            return;
+        };
+        let Ok((dialog, title, description)) = self.alt_parts() else {
+            return;
+        };
+        if dialog.return_value() == "save" {
+            match grind_text::picture::set_alt(&self.app, at, &title.value(), &description.value())
+            {
+                Ok(()) => self.set_message(match title.value().trim().is_empty() {
+                    true => "The picture has no alt text".to_owned(),
+                    false => "Alt text saved".to_owned(),
+                }),
+                Err(error) => self.set_message(error.to_string()),
+            }
+        }
+        let _ = self.focus();
     }
 
     // --- markdown ---
@@ -1838,9 +1959,29 @@ fn attribute(element: &Element, name: &str) -> Option<usize> {
     element.get_attribute(name)?.parse().ok()
 }
 
+/// Where a picture's alt chip puts the caret: `data-alt` is `block:offset`, the picture's own.
+fn chip_caret(at: &str) -> Option<Caret> {
+    let (block, offset) = at.split_once(':')?;
+    Some(Caret {
+        block: block.parse().ok()?,
+        offset: offset.parse().ok()?,
+    })
+}
+
 fn wire(ui: &Rc<Ui>) -> Result<(), JsValue> {
     let keys = ui.clone();
     listen(&ui.dom.pane, "keydown", move |event: KeyboardEvent| {
+        // Enter or Space on a picture's alt chip is the chip's, not a new paragraph.
+        let chip = event
+            .target()
+            .and_then(|t| t.dyn_into::<Element>().ok())
+            .and_then(|t| t.get_attribute("data-alt"))
+            .and_then(|at| chip_caret(&at));
+        if let (Some(at), "Enter" | " ") = (chip, event.key().as_str()) {
+            event.prevent_default();
+            keys.set_caret(at);
+            return keys.open_alt();
+        }
         keys.on_key(&event);
     })?;
 
@@ -1864,6 +2005,19 @@ fn wire(ui: &Rc<Ui>) -> Result<(), JsValue> {
         // The browser's own text selection would otherwise start alongside this one, and the
         // two would disagree about where it is.
         event.prevent_default();
+        // A picture's alt chip: the caret goes beside that picture and the dialog opens on it.
+        if let Some(at) = event
+            .target()
+            .and_then(|t| t.dyn_into::<Element>().ok())
+            .and_then(|t| t.closest("[data-alt]").ok().flatten())
+            .and_then(|chip| chip.get_attribute("data-alt"))
+            .and_then(|at| chip_caret(&at))
+        {
+            click.anchor.set(None);
+            click.set_caret(at);
+            click.open_alt();
+            return;
+        }
         click.dragging.set(true);
         if let Err(error) = click.on_click(&event, event.shift_key()) {
             web_sys::console::error_1(&error);
@@ -1887,6 +2041,18 @@ fn wire(ui: &Rc<Ui>) -> Result<(), JsValue> {
         if let Err(error) = drag.on_click(&event, true) {
             web_sys::console::error_1(&error);
         }
+    })?;
+
+    // The alt text dialog: advice as it is typed, Enter on a focused chip, Cancel, and the
+    // write when it closes — on Save, which is the form's one submit button, or not at all.
+    let (dialog, title, _) = ui.alt_parts()?;
+    let typed = ui.clone();
+    listen(&title, "input", move |_: Event| typed.advise_alt())?;
+    let closed = ui.clone();
+    listen(&dialog, "close", move |_: Event| closed.close_alt())?;
+    let cancel: HtmlElement = element(&ui.dom.document, "alt-cancel")?;
+    listen(&cancel, "click", move |_: Event| {
+        dialog.close_with_return_value("cancel")
     })?;
 
     // On the *window*, not the pane: a drag that ends outside it still ends.

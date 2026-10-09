@@ -68,6 +68,8 @@ features = [
   "HtmlElement",
   "HtmlInputElement",
   "HtmlSelectElement",
+  # The alt text dialog's long description.
+  "HtmlTextAreaElement",
   # A page of the print preview, put onto its canvas.
   "ImageData",
   "KeyboardEvent",

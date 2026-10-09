@@ -279,6 +279,35 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <dialog id="explain" class="about"></dialog>
 
     <!--
+      Alt text: a picture's alternative text, short and long (`svg:title`, `svg:desc`), written
+      looking at the picture. ui_web/src/text/mod.rs opens it on the picture beside the caret
+      (`grind_text::picture::at`) and writes through `picture::set_alt` when it closes on Save;
+      the advice line is `picture::advice`, the same sentence every client shows.
+    -->
+    <dialog id="alt" class="alt" aria-labelledby="alt-heading">
+      <form id="alt-form" method="dialog">
+        <h2 id="alt-heading">Alt text</h2>
+        <img id="alt-picture" class="alt-picture" alt="">
+        <label class="alt-label" for="alt-title">Alt text
+          <span class="alt-hint">What a screen reader says in the picture's place</span></label>
+        <input id="alt-title" type="text" autocomplete="off" spellcheck="true">
+        <div class="alt-note">
+          <span id="alt-advice" aria-live="polite"></span>
+          <span id="alt-count" class="alt-count"></span>
+        </div>
+        <details id="alt-more" class="alt-more">
+          <summary>Long description</summary>
+          <p class="alt-hint">Optional — for a chart or a diagram whose detail a sentence cannot hold.</p>
+          <textarea id="alt-description" rows="4" aria-label="Long description"></textarea>
+        </details>
+        <div class="alt-actions">
+          <button id="alt-cancel" type="button">Cancel</button>
+          <button id="alt-save" class="alt-save" type="submit" value="save">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!--
       The print preview (doc/pdf-export.md §4): every page as the PDF prints it, drawn onto a
       canvas from the same display list the PDF is written from. A sixth surface, shown instead
       of the document; its three buttons are command ids like every other button here.

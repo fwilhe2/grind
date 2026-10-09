@@ -894,6 +894,45 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   await frame();
   check("a resize repaints and keeps the message", byId("message").textContent, message);
 
+  // Alt text (grind_text::picture): a picture with none wears a chip asking for it, the chip
+  // opens the dialog on that picture, and Save writes `svg:title` — which the page then uses
+  // as the picture's own `alt`. jsdom has no modal dialogs, so `showModal` and `close` are the
+  // two halves of one stand-in, `close` firing the event the page listens for.
+  dom.window.HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  dom.window.HTMLDialogElement.prototype.close = function (value) {
+    if (value !== undefined) this.returnValue = value;
+    this.open = false;
+    this.dispatchEvent(new dom.window.Event("close"));
+  };
+  await openFile("picture.fodt", fs.readFileSync(path.join(here, "../text/tests/data/picture.fodt")));
+  const chip = () => document.querySelector("#flow .alt-badge");
+  check("a picture with no alt text asks for it", chip()?.textContent, "+ Alt text");
+  chip().dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  check("its chip opens the alt text dialog", byId("alt").open, true);
+  check("advising before a word is typed", byId("alt-advice").textContent.length > 0, true);
+  byId("alt-title").value = "Image of a heron";
+  byId("alt-title").dispatchEvent(new dom.window.Event("input"));
+  check("and advising as it is typed", byId("alt-advice").textContent.includes("screen reader"), true);
+  byId("alt-cancel").click();
+  await frame();
+  check("Cancel closes it", byId("alt").open, false);
+  check("and writes nothing", document.querySelector("#flow img.picture").getAttribute("alt"), "");
+  chip().dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  byId("alt-title").value = "  A grey heron in the reeds ";
+  byId("alt-description").value = "Standing on one leg.";
+  byId("alt").close("save");
+  await frame();
+  check("Save gives the picture its alt text", document.querySelector("#flow img.picture").getAttribute("alt"), "A grey heron in the reeds");
+  check("and the chip goes quiet", chip().textContent, "ALT");
+  chip().dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  check("reopening shows what it says", [byId("alt-title").value, byId("alt-description").value], ["A grey heron in the reeds", "Standing on one leg."]);
+  byId("alt").close("cancel");
+  await command("Alt text for the picture");
+  check("the palette reaches it from beside the picture too", byId("alt").open, true);
+  byId("alt").close("cancel");
+
   // Starting a new document from a pane that already has one, and going back to the
   // welcome pane — the two halves of "the choice is reachable, not only initial".
   await command("New spreadsheet");

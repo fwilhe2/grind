@@ -532,6 +532,13 @@ pub const TEXT: &[Command] = &[
     cmd("block.table", "Insert a table…", "Structure", "", false),
     cmd("block.picture", "Insert a picture…", "Structure", "", false),
     cmd(
+        "block.alt",
+        "Alt text for the picture…",
+        "Structure",
+        "",
+        false,
+    ),
+    cmd(
         "block.bookmark",
         "Bookmark this paragraph…",
         "Structure",

@@ -539,6 +539,171 @@ input[type="text"] {
   border-radius: 3px;
 }
 
+/* The picture's own way to its alt text: a chip over its corner, quiet when the text is there
+   and asking when it is not. A button, so it is reachable without a pointer as well. */
+/* One grid cell holding both, so a picture smaller than its chip grows to hold it rather
+   than the chip wrapping over the text around it. */
+.figure {
+  display: grid;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.figure > * {
+  grid-area: 1 / 1;
+}
+
+.alt-badge {
+  align-self: end;
+  justify-self: start;
+  margin: 0 0 1rem 0.5rem;
+  white-space: nowrap;
+  padding: 0.15rem 0.5rem;
+  border: none;
+  border-radius: 999px;
+  font: 600 11px/1.4 system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  color: white;
+  background: rgb(0 0 0 / 55%);
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.figure:hover .alt-badge,
+.alt-badge:focus-visible,
+.alt-badge.missing {
+  opacity: 1;
+}
+
+.alt-badge.missing {
+  background: color-mix(in srgb, AccentColor 85%, black);
+}
+
+/* The alt text dialog: the picture it is about, then the two fields. */
+.alt {
+  width: min(30rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: Canvas;
+  color: CanvasText;
+  box-shadow: 0 16px 48px var(--shadow);
+  font: 14px/1.45 system-ui, sans-serif;
+}
+
+.alt::backdrop {
+  background: color-mix(in srgb, black 30%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.alt form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.1rem 1.25rem 1rem;
+}
+
+.alt h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.1rem;
+}
+
+.alt-picture {
+  align-self: center;
+  max-width: 100%;
+  max-height: 11rem;
+  object-fit: contain;
+  border-radius: var(--radius);
+  background: var(--head);
+  margin-bottom: 0.5rem;
+}
+
+.alt-label {
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+}
+
+.alt-hint {
+  font-weight: 400;
+  font-size: 12px;
+  color: color-mix(in srgb, CanvasText 62%, Canvas);
+  margin: 0;
+}
+
+.alt input,
+.alt textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: Canvas;
+  color: CanvasText;
+  font: inherit;
+  resize: vertical;
+}
+
+.alt input:focus-visible,
+.alt textarea:focus-visible {
+  outline: 2px solid AccentColor;
+  outline-offset: -1px;
+}
+
+.alt-note {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  min-height: 1.2em;
+  font-size: 12px;
+  color: color-mix(in srgb, CanvasText 62%, Canvas);
+}
+
+.alt-count {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.alt-count.over {
+  color: #b45309;
+}
+
+.alt-more summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.25rem 0;
+}
+
+.alt-more[open] summary {
+  margin-bottom: 0.25rem;
+}
+
+.alt-more textarea {
+  margin-top: 0.4rem;
+}
+
+.alt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.alt-actions button {
+  padding: 0.4rem 1rem;
+  border-radius: var(--radius);
+}
+
+.alt-save {
+  background: AccentColor;
+  color: AccentColorText;
+  border: 1px solid AccentColor;
+  font-weight: 600;
+}
+
 .li {
   position: relative;
   list-style: none;

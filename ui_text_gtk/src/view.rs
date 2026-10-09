@@ -273,6 +273,12 @@ pub fn spelling_menu_model(suggestions: &[String]) -> gtk::gio::Menu {
 /// The clipboard, and nothing about the document as a whole — that is the primary menu's, the
 /// same split `doc/sheet-shell.md`'s "Four surfaces" draws for the spreadsheet. A free function
 /// returning the model so a test can walk it without a display.
+/// A picture's bytes decoded for painting — what the page draws, and what the Alt Text dialog
+/// shows at its top.
+pub fn texture(image: &grind_text::ImageView) -> Option<gtk::gdk::Texture> {
+    imp::texture_of(image)
+}
+
 pub fn context_menu_model() -> gtk::gio::Menu {
     let model = gtk::gio::Menu::new();
     let clipboard = gtk::gio::Menu::new();
@@ -286,6 +292,8 @@ pub fn context_menu_model() -> gtk::gio::Menu {
     let paragraph = gtk::gio::Menu::new();
     let link = gtk::gio::Menu::new();
     link.append(Some("Link…"), Some("win.link"));
+    // Greyed unless the caret is beside a picture, which a right-click on one makes it.
+    link.append(Some("Alt Text…"), Some("win.alt-text"));
     model.append_section(None, &link);
     paragraph.append(Some("Move Paragraph Up"), Some("win.paragraph-up"));
     paragraph.append(Some("Move Paragraph Down"), Some("win.paragraph-down"));
