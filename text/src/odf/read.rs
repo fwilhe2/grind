@@ -157,6 +157,7 @@ struct PendingLook {
     columns: Vec<Option<String>>,
     header_rows: std::collections::BTreeSet<u32>,
     cells: Vec<((u32, u32), String)>,
+    rows: u32,
 }
 
 /// The room a page layout gives a header or footer, in millimetres: `(min-height, spacing)`.
@@ -288,6 +289,7 @@ impl Builder {
                 columns,
                 header_rows: pending.header_rows,
                 cells,
+                rows: pending.rows,
             };
             self.doc.table_looks.insert(name, look);
         }
@@ -979,6 +981,15 @@ impl Context<Builder> for TableStyleDef {
             };
             let pad = mm("padding").unwrap_or(0.0);
             let padding = |local: &str| mm(local).unwrap_or(pad);
+            // `"0.002cm 0.088cm 0.002cm"`: the inner line, the gap, the outer line.
+            let widths = |local: &str| {
+                let spelled = attrs
+                    .get(Ns::Style, local)
+                    .or_else(|| attrs.get(Ns::Style, "border-line-width"))?;
+                let mut parts = spelled.split_whitespace().map(grind_core::style::length_mm);
+                let three = [parts.next()??, parts.next()??, parts.next()??];
+                parts.next().is_none().then_some(three)
+            };
             let look = crate::table_look::CellLook {
                 background: attrs
                     .get(Ns::Fo, "background-color")
@@ -989,6 +1000,12 @@ impl Context<Builder> for TableStyleDef {
                     side("border-right"),
                     side("border-bottom"),
                     side("border-left"),
+                ],
+                line_widths: [
+                    widths("border-line-width-top"),
+                    widths("border-line-width-right"),
+                    widths("border-line-width-bottom"),
+                    widths("border-line-width-left"),
                 ],
                 padding: [
                     padding("padding-top"),
@@ -1746,8 +1763,9 @@ impl Context<Builder> for Table {
                     },
                     attrs.span(),
                 );
+                let pending = b.table_pending.entry(row.table.clone()).or_default();
+                pending.rows = pending.rows.max(row.row + row.repeated);
                 if self.header {
-                    let pending = b.table_pending.entry(row.table.clone()).or_default();
                     pending.header_rows.extend(row.row..row.row + row.repeated);
                 }
                 Some(Box::new(row))

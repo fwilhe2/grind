@@ -159,7 +159,11 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                     // unstyled cell of it with no rules at all, as Writer draws one.
                     Some((table, own)) if !table.cells.is_empty() => {
                         if let Some(own) = own {
-                            styled_cell(&mut ops, cell, own, left, top);
+                            let last = viewport
+                                .get(cell.first)
+                                .and_then(|view| view.cell.as_ref())
+                                .is_some_and(|at| at.row + at.rows_spanned.max(1) >= table.rows);
+                            styled_cell(&mut ops, cell, own, last, left, top);
                         }
                     }
                     _ => rules(&mut ops, cell, left, top),
@@ -300,8 +304,9 @@ fn block_spacing(
         .iter()
         .filter_map(|view| {
             let resolved = app.paragraph(view.index)?;
-            // A block in a table is spaced by its cell, which the flow places itself.
-            (resolved.declared && view.cell.is_none()).then(|| {
+            // A block in a table too: Writer spaces a cell's paragraphs by their own margins,
+            // inside the cell's padding (`doc/odt-format.md` §5c fact 18).
+            resolved.declared.then(|| {
                 let props = &resolved.props;
                 let room = crate::faces::Room {
                     space: grind_text::flow::Space {
@@ -350,46 +355,109 @@ fn caret(block: usize, offset: usize) -> Caret {
     Caret { block, offset }
 }
 
-/// A styled cell: its fill under everything, and each of its four borders as its style spells
-/// it (`"0.5pt solid #8da5a5"`; `none` or a width of zero draws nothing).
+/// A styled cell: its fill under everything, and each of its four borders where Writer puts
+/// it (`doc/odt-format.md` §5c fact 18): down a column's edge, centred on it; across a row's
+/// top, in the band the cell's padding left room for above its content; under the table's last
+/// row, in the band at the bottom of the cell; and under any other row, in the band at the top
+/// of the next. A `double` border is its two lines ([`grind_text::table_look::Edge`]).
 fn styled_cell(
     ops: &mut Vec<Op>,
     cell: &CellBox,
     look: &grind_text::table_look::CellLook,
+    last_row: bool,
     left: f64,
     top: f64,
 ) {
-    let (x0, y0) = ((left + cell.left) as f32, (top + cell.top) as f32);
-    let (x1, y1) = (x0 + cell.width as f32, y0 + cell.height as f32);
+    use grind_text::table_look::{BOTTOM, LEFT, RIGHT, TOP};
+    let (x0, y0) = (left + cell.left, top + cell.top);
+    let (x1, y1) = (x0 + cell.width, y0 + cell.height);
     if let Some(fill) = look.background.as_deref().and_then(Rgb::parse) {
         ops.push(Op::Rect {
-            x: x0,
-            y: y0,
-            width: x1 - x0,
-            height: y1 - y0,
+            x: x0 as f32,
+            y: y0 as f32,
+            width: (x1 - x0) as f32,
+            height: (y1 - y0) as f32,
             color: fill,
         });
     }
-    let sides = [
-        ((x0, y0), (x1, y0)),
-        ((x1, y0), (x1, y1)),
-        ((x0, y1), (x1, y1)),
-        ((x0, y0), (x0, y1)),
-    ];
-    for (border, (from, to)) in look.border.iter().zip(sides) {
-        let Some((width, _, colour)) = border.as_deref().and_then(grind_core::style::border_parts)
-        else {
+    let edges = [TOP, RIGHT, BOTTOM, LEFT].map(|side| look.edge(side));
+    let thickness = |side: usize| edges[side].as_ref().map_or(0.0, |edge| edge.thickness);
+    // Where the second line of a double starts, from its band's outside edge: an inner line
+    // meets the inner lines across it, an outer one runs out to the outer ones, so a double
+    // border is two closed frames as Writer draws it rather than lines crossing at a corner.
+    let inner_from = |side: usize| match &edges[side] {
+        Some(edge) if edge.lines.len() > 1 => edge.lines[1].0,
+        _ => 0.0,
+    };
+    // The bottom band is inside the cell on the table's last row and the next row's otherwise.
+    let bottom = match last_row {
+        true => y1,
+        false => y1 + thickness(BOTTOM),
+    };
+    for (side, edge) in [TOP, RIGHT, BOTTOM, LEFT].into_iter().zip(&edges) {
+        let Some(edge) = edge else {
             continue;
         };
-        if width <= 0.0 {
-            continue;
+        let color = Rgb::parse(&edge.color).unwrap_or(Rgb::BLACK);
+        // The band's outside edge, and which way is inward from it.
+        let (outside, inward) = match side {
+            TOP => (y0, 1.0),
+            BOTTOM => (bottom, -1.0),
+            LEFT => (x0 - edge.thickness / 2.0, 1.0),
+            _ => (x1 + edge.thickness / 2.0, -1.0),
+        };
+        for (k, &(offset, width)) in edge.lines.iter().enumerate() {
+            let at = outside + inward * (offset + width / 2.0);
+            let line = match side {
+                TOP | BOTTOM => {
+                    let (left, right) = (x0 - thickness(LEFT) / 2.0, x1 + thickness(RIGHT) / 2.0);
+                    match k {
+                        0 => ((left, at), (right, at)),
+                        _ => (
+                            (left + inner_from(LEFT), at),
+                            (right - inner_from(RIGHT), at),
+                        ),
+                    }
+                }
+                _ => match k {
+                    0 => ((at, y0), (at, bottom)),
+                    _ => (
+                        (at, y0 + inner_from(TOP)),
+                        (at, bottom - inner_from(BOTTOM)),
+                    ),
+                },
+            };
+            ops.push(Op::Line {
+                from: (line.0.0 as f32, line.0.1 as f32),
+                to: (line.1.0 as f32, line.1.1 as f32),
+                width: width as f32,
+                color,
+            });
         }
-        ops.push(Op::Line {
-            from,
-            to,
-            width: width as f32,
-            color: Rgb::parse(colour).unwrap_or(Rgb::BLACK),
-        });
+    }
+}
+
+/// How wide a line is for aligning it: up to its last visible character — a space a line was
+/// broken at hangs past the measure and is not aligned — except on a paragraph's **last** line,
+/// whose trailing spaces Writer counts: a centred `X ` sits half a space left of a centred `X`,
+/// and a right-aligned one a whole space (`doc/odt-format.md` §5c fact 19).
+fn aligned_width(
+    layout: &grind_core::layout::Layout,
+    line: &grind_core::layout::Line,
+    chars: &[char],
+    visible_end: usize,
+    last: bool,
+) -> f32 {
+    let end = match last {
+        true => (visible_end..line.end)
+            .take_while(|&i| chars.get(i) == Some(&' '))
+            .last()
+            .map_or(visible_end, |i| i + 1),
+        false => visible_end,
+    };
+    match end == line.end {
+        true => line.width,
+        false => layout.x_at(end),
     }
 }
 
@@ -456,10 +524,8 @@ fn lines(
             .rev()
             .find(|&i| chars.get(i).is_some_and(|c| !c.is_whitespace()))
             .map_or(line.start, |i| i + 1);
-        let content = match visible_end == line.end {
-            true => line.width,
-            false => layout.x_at(visible_end),
-        };
+        let content = aligned_width(&layout, line, &chars, visible_end, at + 1 == count)
+            .min(piece.width as f32);
         let interior = |upto: usize| {
             (line.start..upto.min(visible_end))
                 .filter(|&i| chars.get(i) == Some(&' '))
@@ -703,10 +769,9 @@ impl<'a> Marginal<'a> {
                     .rev()
                     .find(|&i| !chars[i].is_whitespace())
                     .map_or(line.start, |i| i + 1);
-                let content = match visible_end == line.end {
-                    true => line.width,
-                    false => layout.x_at(visible_end),
-                };
+                let last = std::ptr::eq(line, layout.lines().last().unwrap_or(line));
+                let content =
+                    aligned_width(&layout, line, &chars, visible_end, last).min(self.width as f32);
                 let fit = align::fit(*align, self.width as f32, content, 0, true);
                 // Each stretch between tabs is drawn where the layout put it: a footer's
                 // `Seite 1 / 2` at the right-hand stop Writer's `Footer` style sets.
@@ -1754,6 +1819,117 @@ mod tests {
             _ => None,
         });
         assert_eq!(repeated, Some(crate::ops::Mark::Decoration));
+    }
+
+    /// The flat document every test below builds on: `styles` in `office:styles`, `body` in
+    /// `office:text`, Liberation Serif 12 pt throughout.
+    fn styled(styles: &str, body: &str) -> App {
+        let bytes = format!(
+            r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:styles>
+              <style:default-style style:family="paragraph"><style:text-properties fo:font-family="'Liberation Serif'" fo:font-size="12pt"/></style:default-style>
+              <style:style style:name="Standard" style:family="paragraph"/>
+              {styles}
+            </office:styles>
+            <office:body><office:text>{body}</office:text></office:body></office:document>"##
+        );
+        let app = App::new();
+        app.open_bytes("t.fodt", bytes.as_bytes()).unwrap();
+        app
+    }
+
+    /// Where each text op starts down the page, by its text, in document order.
+    fn baselines(app: &App) -> Vec<(String, f32)> {
+        let doc = typeset(app, &setter(), &Options::default());
+        let mut out: Vec<(String, f32)> = texts(&doc.pages[0])
+            .into_iter()
+            .map(|t| (t.2, t.1))
+            .collect();
+        out.sort_by(|a, b| a.1.total_cmp(&b.1));
+        out
+    }
+
+    /// `doc/odt-format.md` §5c fact 18: a row is its top border, padding, content and padding;
+    /// the last row adds its bottom border; nothing is added after the table; and a cell's
+    /// paragraphs keep their own margins. One line of Liberation Serif 12 pt is 13.8 pt.
+    #[test]
+    fn a_tables_borders_take_room_down_the_page_as_writer_gives_them() {
+        let app = styled(
+            r#"<style:style style:name="C" style:family="table-cell"><style:table-cell-properties fo:padding="0.1cm" fo:border="6pt solid #000000"/></style:style>
+               <style:style style:name="M" style:family="paragraph"><style:paragraph-properties fo:margin-top="0.5cm" fo:margin-bottom="0.3cm"/></style:style>"#,
+            r#"<text:p text:style-name="Standard">a</text:p>
+               <table:table table:name="T"><table:table-column/>
+                 <table:table-row><table:table-cell table:style-name="C"><text:p text:style-name="Standard">b</text:p></table:table-cell></table:table-row>
+                 <table:table-row><table:table-cell table:style-name="C"><text:p text:style-name="M">c</text:p></table:table-cell></table:table-row>
+               </table:table>
+               <text:p text:style-name="Standard">d</text:p>"#,
+        );
+        let at = baselines(&app);
+        let names: Vec<&str> = at.iter().map(|(t, _)| t.as_str()).collect();
+        assert_eq!(names, ["a", "b", "c", "d"]);
+        let (line, pad, border) = (13.8, 72.0 / 25.4, 6.0);
+        let (cm5, cm3) = (5.0 * 72.0 / 25.4, 3.0 * 72.0 / 25.4);
+        let gaps = [
+            line + border + pad,
+            line + pad + border + pad + cm5,
+            line + cm3 + pad + border,
+        ];
+        for (pair, expected) in at.windows(2).zip(gaps) {
+            let got = pair[1].1 - pair[0].1;
+            assert!(
+                (got - expected as f32).abs() < 0.05,
+                "{} to {}: {got} for {expected}",
+                pair[0].0,
+                pair[1].0
+            );
+        }
+    }
+
+    /// A `double` border is two lines, its three `border-line-width`s together as thick as it
+    /// is, the outer width outermost across the top.
+    #[test]
+    fn a_double_border_is_two_lines() {
+        let app = styled(
+            r#"<style:style style:name="C" style:family="table-cell"><style:table-cell-properties fo:border-top="6pt double #ff0000" style:border-line-width-top="0.05cm 0.05cm 0.1cm"/></style:style>"#,
+            r#"<table:table table:name="T"><table:table-column/><table:table-row><table:table-cell table:style-name="C"><text:p>x</text:p></table:table-cell></table:table-row></table:table>"#,
+        );
+        let doc = typeset(&app, &setter(), &Options::default());
+        let mut lines: Vec<(f32, f32)> = doc.pages[0]
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                Op::Line {
+                    from,
+                    width,
+                    color: Rgb(0xff, 0, 0),
+                    ..
+                } => Some((from.1, *width)),
+                _ => None,
+            })
+            .collect();
+        lines.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let pt = |cm: f32| cm * 72.0 / 2.54;
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!((lines[0].1 - pt(0.1)).abs() < 1e-3, "the outer line on top");
+        assert!((lines[1].1 - pt(0.05)).abs() < 1e-3);
+        assert!(((lines[1].0 - lines[0].0) - pt(0.05 + 0.05 + 0.025)).abs() < 1e-3);
+    }
+
+    /// `doc/odt-format.md` §5c fact 19: a paragraph's trailing spaces count when it is aligned.
+    #[test]
+    fn a_paragraphs_trailing_spaces_count_when_it_is_aligned() {
+        let app = styled(
+            r#"<style:style style:name="C" style:family="paragraph"><style:paragraph-properties fo:text-align="center"/></style:style>
+               <style:style style:name="E" style:family="paragraph"><style:paragraph-properties fo:text-align="end"/></style:style>"#,
+            r#"<text:p text:style-name="C">X</text:p><text:p text:style-name="C">X </text:p>
+               <text:p text:style-name="E">X</text:p><text:p text:style-name="E">X </text:p>"#,
+        );
+        let doc = typeset(&app, &setter(), &Options::default());
+        let mut at = texts(&doc.pages[0]);
+        at.sort_by(|a, b| a.1.total_cmp(&b.1));
+        // A Liberation Serif space at 12 pt is 3 pt.
+        assert!((at[0].0 - at[1].0 - 1.5).abs() < 0.01, "{at:?}");
+        assert!((at[2].0 - at[3].0 - 3.0).abs() < 0.01, "{at:?}");
     }
 
     #[test]

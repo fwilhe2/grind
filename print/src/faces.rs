@@ -227,9 +227,20 @@ impl grind_text::Faces for TableLooks<'_> {
         points.iter().any(Option::is_some).then_some(points)
     }
 
+    /// A cell's padding, and above and below it the room its borders take: Writer stacks a
+    /// row's top border, padding, content and padding, and the table's bottom border under its
+    /// last row, but sets text in from a column's edge by the padding alone, whatever the border
+    /// (`doc/odt-format.md` §5c fact 18).
     fn cell_pad(&self, table: &str, row: u32, column: u32) -> Option<[f64; 4]> {
-        let cell = self.0.get(table)?.cell(row, column)?;
-        Some(cell.padding.map(|mm| mm * 72.0 / 25.4))
+        let look = self.0.get(table)?;
+        let cell = look.cell(row, column)?;
+        let [top, right, bottom, left] = cell.padding.map(|mm| mm * 72.0 / 25.4);
+        Some([
+            top + look.band_above(row, column),
+            right,
+            bottom + look.band_below(row, column),
+            left,
+        ])
     }
 
     fn cell_centred(&self, table: &str, row: u32, column: u32) -> bool {
@@ -293,7 +304,9 @@ impl Column<'_> {
 impl grind_text::Faces for Column<'_> {
     fn of(&self, index: usize, kind: &BlockKind, style: Option<&str>) -> (f32, &dyn Metrics) {
         let width = match (self.across.get(&index), self.spacing.get(&index)) {
-            (Some(cell), _) => cell.width,
+            (Some(cell), room) => {
+                cell.width - room.map_or(0.0, |room| room.space.left + room.right)
+            }
             (None, Some(room)) => SPACING.measure(kind, self.width) - room.space.left - room.right,
             (None, None) => SPACING.measure(kind, self.width),
         };

@@ -683,6 +683,27 @@ oracle turned out to be unable to answer the font questions (fact 4).
    header whose `style:next-style-name` is `Standard`, prints page 1 with no header and its text
    from the top margin, and every later page with `Standard`'s header. (`fdo114306_2.odt` is the
    same shape with a Russian first-page master.)
+18. **A table's borders and the room they take** — `MEASURED` (2026-10-09, 26.8.1.1, generated
+   two-column tables with 0.1 cm padding and 0.5, 6 and 12 pt borders, converted to PDF and read
+   back with `pdftotext -bbox` and a 720 dpi raster). **Down the page a border takes room**: a
+   row is its top border, its padding, its content and its padding, and the table's last row
+   adds its bottom border — a one-line row under 6 pt borders is 13.8 + 6 + 2 × 2.835 pt. Between
+   two rows there is **one** band, as thick as the thicker of the upper row's bottom border and
+   the lower row's top (6 pt over 1 pt gives 6). **Across the page it takes none**: text starts a
+   column's edge plus its padding, the same under a 0.5 pt border as under a 12 pt one, and a
+   vertical border is centred on the column's edge. The next paragraph starts at the table's
+   bottom edge, with nothing added. A cell's paragraphs keep their own margins, inside its
+   padding: `fo:margin-top` above the first, both between two, `fo:margin-bottom` below the
+   last. A **`double`** border is as thick as its three `style:border-line-width`s together (a
+   `2.6pt double` with `0.002cm 0.088cm 0.002cm` takes 0.092 cm), and its lines lie in that band
+   in an order that depends on the side: with `0.05cm 0.05cm 0.1cm`, the 0.1 cm line is
+   outermost across the top and the bottom, and the 0.05 cm one down the left and the right.
+19. **A paragraph's trailing spaces count when it is aligned** — `MEASURED` (2026-10-09,
+   26.8.1.1, Liberation Serif 12 pt, whose space is 3 pt). A centred `X ` starts 1.5 pt left of a
+   centred `X`, and with three spaces 4.5 pt; a right-aligned `X ` ends 3 pt short of the margin,
+   and with three spaces 9 pt. `rhbz739252-3.odt`'s table headings (`Directory or File `) are
+   that case. Only a paragraph's last line was measured; a space a line *breaks* at still hangs
+   (fact 14).
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

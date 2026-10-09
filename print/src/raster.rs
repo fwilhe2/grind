@@ -141,8 +141,15 @@ fn draw(pixmap: &mut Pixmap, op: &Op, fonts: &Fonts, scaled: Transform, glyphs: 
             path.move_to(from.0, from.1);
             path.line_to(to.0, to.1);
             if let Some(path) = path.finish() {
+                // A line thinner than a pixel is drawn one pixel wide — tiny-skia's hairline,
+                // width zero — as PDF viewers draw one, rather than as a faint grey: a Writer
+                // `double` border's lines are 0.06 pt each.
                 let stroke = Stroke {
-                    width: *width,
+                    width: if *width * scaled.sx < 1.0 {
+                        0.0
+                    } else {
+                        *width
+                    },
                     ..Stroke::default()
                 };
                 pixmap.stroke_path(&path, &paint(*color), &stroke, scaled, None);

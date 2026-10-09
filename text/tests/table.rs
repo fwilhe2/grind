@@ -325,6 +325,7 @@ fn a_tables_widths_cell_styles_and_header_rows_are_read() {
 <office:styles>
   <style:style style:name="Head" style:family="table-cell"><style:table-cell-properties fo:border="0.5pt solid #174a5b" fo:padding="0.07in" fo:background-color="#287271" style:vertical-align="middle"/></style:style>
   <style:style style:name="Body" style:family="table-cell"><style:table-cell-properties fo:border-bottom="1pt solid #000000" fo:padding-left="0.1in"/></style:style>
+  <style:style style:name="Double" style:family="table-cell"><style:table-cell-properties fo:border="6pt double #000000" style:border-line-width="0.05cm 0.05cm 0.1cm" style:border-line-width-top="0.1cm 0.05cm 0.05cm"/></style:style>
 </office:styles>
 <office:automatic-styles>
   <style:style style:name="W1" style:family="table-column"><style:table-column-properties style:column-width="1.5in"/></style:style>
@@ -336,7 +337,7 @@ fn a_tables_widths_cell_styles_and_header_rows_are_read() {
     <table:table-cell table:style-name="Head"><text:p>a</text:p></table:table-cell><table:table-cell table:style-name="Head"><text:p>b</text:p></table:table-cell><table:table-cell><text:p>c</text:p></table:table-cell>
   </table:table-row></table:table-header-rows>
   <table:table-row>
-    <table:table-cell table:style-name="Body"><text:p>1</text:p></table:table-cell><table:table-cell><text:p>2</text:p></table:table-cell><table:table-cell><text:p>3</text:p></table:table-cell>
+    <table:table-cell table:style-name="Body"><text:p>1</text:p></table:table-cell><table:table-cell table:style-name="Double"><text:p>2</text:p></table:table-cell><table:table-cell><text:p>3</text:p></table:table-cell>
   </table:table-row>
 </table:table></office:text></office:body></office:document>"##;
     let doc = grind_text::read_bytes("t.fodt", bytes).unwrap();
@@ -360,7 +361,24 @@ fn a_tables_widths_cell_styles_and_header_rows_are_read() {
         (None, Some("1pt solid #000000"))
     );
     assert!((body.padding[3] - 2.54).abs() < 1e-9 && body.padding[0] == 0.0);
-    assert!(look.cell(1, 1).is_none(), "an unstyled cell has no look");
+    assert!(look.cell(1, 2).is_none(), "an unstyled cell has no look");
+    assert_eq!(look.rows, 2, "the header row counts");
+    // `style:border-line-width` is every side, and a side's own spelling outranks it.
+    let double = look.cell(1, 1).unwrap();
+    assert_eq!(double.line_widths[2], Some([0.5, 0.5, 1.0]));
+    assert_eq!(double.line_widths[0], Some([1.0, 0.5, 0.5]));
+    assert_eq!(body.line_widths, [None; 4]);
+    // As thick as its three widths, not its stated six points; the band between two rows is
+    // the thicker of the two borders meeting there.
+    let edge = double.edge(grind_text::table_look::BOTTOM).unwrap();
+    assert!((edge.thickness - 2.0 * 72.0 / 25.4).abs() < 1e-9);
+    assert_eq!(
+        look.band_above(1, 0),
+        0.5,
+        "the heading's 0.5pt over the body's none"
+    );
+    assert_eq!(look.band_below(0, 0), 0.0, "not the last row");
+    assert_eq!(look.band_below(1, 0), 1.0, "the body's own 1pt bottom");
     assert_eq!(
         grind_text::odf::write(&doc, grind_text::Form::Flat).unwrap(),
         bytes.to_vec(),

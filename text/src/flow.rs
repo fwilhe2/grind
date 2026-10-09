@@ -646,14 +646,29 @@ fn lay_out_table(
         .flat_map(|run| run.blocks.iter().copied())
         .filter_map(|index| Some((index, height_of(index, viewport.get(index)?))))
         .collect();
+    // What goes above and below a block in a cell: its face's own spacing where it states one,
+    // added as Writer adds it — above the first block and below the last as well
+    // (`doc/odt-format.md` §5c fact 18) — and the shell's gap between blocks otherwise.
+    let room = |index: usize| -> (f64, f64) {
+        faces
+            .spacing(index)
+            .map_or((0.0, gap), |space| (space.above, space.below))
+    };
     // The text's own height in a cell, and the cell's with its padding.
     let text = |run: &CellRun| -> f64 {
         let stacked: f64 = run
             .blocks
             .iter()
-            .map(|index| measured.get(index).map_or(0.0, |m| m.0) + gap)
+            .map(|&index| {
+                let (above, below) = room(index);
+                above + measured.get(&index).map_or(0.0, |m| m.0) + below
+            })
             .sum();
-        (stacked - gap).max(0.0)
+        let trailing = match run.blocks.last() {
+            Some(&last) if faces.spacing(last).is_none() => gap,
+            _ => 0.0,
+        };
+        (stacked - trailing).max(0.0)
     };
     let content = |run: &CellRun| -> f64 {
         let pad = padding(faces, run.cell, spacing);
@@ -715,11 +730,24 @@ fn lay_out_table(
             // as `place.width` in any shell whose `Faces` reads [`across`].
             let (block_height, measure) =
                 measured.get(&index).copied().unwrap_or((0.0, place.width));
-            flow.place(index, at, block_height, place.left, measure);
-            at += block_height + gap;
+            let (above, below) = room(index);
+            let shift = faces.spacing(index).map_or(0.0, |space| space.left);
+            flow.place(index, at + above, block_height, place.left + shift, measure);
+            at += above + block_height + below;
         }
     }
-    flow.advance(top + heights.iter().sum::<f64>() + gap, gap);
+    // A screen leaves its gap under a table; a face that spaces blocks the way a document does
+    // leaves none, since Writer puts the next paragraph straight under the table's bottom edge.
+    let after = match table
+        .blocks
+        .clone()
+        .next()
+        .map(|first| faces.spacing(first))
+    {
+        Some(Some(_)) => 0.0,
+        _ => gap,
+    };
+    flow.advance(top + heights.iter().sum::<f64>() + after, after);
 }
 
 #[cfg(test)]
