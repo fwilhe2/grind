@@ -1063,7 +1063,9 @@ impl App {
     /// Where the block at `index`'s label and text go, as its list level states it
     /// ([`numbering::LevelIndent`]): a heading's outline level ([`Document::outline_style`]), a
     /// list item's level of its own list's style. `None` for any other block, or where the
-    /// style places nothing.
+    /// style places nothing. The level's left margin and first-line indent give way to the
+    /// paragraph's **direct** ones — those its own automatic style states — and to nothing a
+    /// named style says (`doc/odt-format.md` §5c facts 20 and 22).
     pub fn level_indent(&self, index: usize) -> Option<numbering::LevelIndent> {
         let state = self.state.read().unwrap();
         let doc = &state.doc;
@@ -1076,7 +1078,21 @@ impl App {
             }
             _ => return None,
         };
-        style.indents.get(&level.max(1)).cloned()
+        let mut indent = style.indents.get(&level.max(1)).cloned()?;
+        if let Some(direct) = block
+            .style
+            .as_deref()
+            .and_then(|name| doc.paragraph_styles.get(name))
+            .filter(|style| style.automatic)
+        {
+            if let Some(margin) = &direct.props.margin_left {
+                indent.margin_left = Some(margin.clone());
+            }
+            if let Some(first) = &direct.props.text_indent {
+                indent.text_indent = Some(first.clone());
+            }
+        }
+        Some(indent)
     }
 
     /// What kind of face each declared font family is ([`Document::font_generics`]).

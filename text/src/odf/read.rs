@@ -1095,6 +1095,7 @@ impl Context<Builder> for ParagraphStyleDef {
                     let style = crate::paragraph::ParagraphStyle {
                         parent: parent.clone(),
                         props,
+                        automatic: *automatic,
                     };
                     b.paragraph_styles.insert(name.clone(), (*automatic, style));
                 }

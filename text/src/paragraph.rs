@@ -194,6 +194,9 @@ pub struct Resolved {
 pub struct ParagraphStyle {
     pub parent: Option<String>,
     pub props: ParagraphProps,
+    /// Declared in `office:automatic-styles` — a paragraph's direct formatting, whose indents
+    /// outrank its list level's where a named style's do not (`doc/odt-format.md` §5c fact 22).
+    pub automatic: bool,
 }
 
 /// One named character style (`style:style style:family="text"` in `office:styles`): what it

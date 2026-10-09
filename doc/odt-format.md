@@ -733,6 +733,15 @@ oracle turned out to be unable to answer the font questions (fact 4).
    `%5%/%7%` → `1/i`. A `text:list-style` level's template is honoured the same way (`%1%)` →
    `a)`, `%1%-%2%` → `a-1`). `sw/qa/extras/odfexport/data/tdf144578.odt`'s headings
    (`II.A.`, `III.A.1.`) are the case in the corpus.
+22. **A list item's place** — `MEASURED` (2026-10-09, 26.8.1.1). A list level's
+   `style:list-level-label-alignment` places its items exactly as fact 20 places a heading: a
+   level with `fo:margin-left="1.27cm" fo:text-indent="-0.635cm"` and its tab at 1.27 cm puts
+   the label at 0.635 cm, the text at 1.27 cm and every wrapped line at 1.27 cm; the level
+   below, a bullet, at 1.27 cm and 1.905 cm. An item's second paragraph shows no label and
+   starts at the level's `fo:margin-left`. A **named** paragraph style's `fo:margin-left`
+   (4 cm) is ignored, as for a heading — but an **automatic** paragraph style's own
+   `fo:margin-left="3cm" fo:text-indent="-1cm"` wins: label at 2 cm, and, the level's tab stop
+   being behind the label, the text at the next stop, which here is the margin itself (3 cm).
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

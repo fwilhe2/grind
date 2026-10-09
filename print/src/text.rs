@@ -102,7 +102,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
             (!tabs.is_empty()).then_some((view.index, tabs))
         })
         .collect();
-    let labels = heading_labels(
+    let labels = level_labels(
         app,
         &viewport,
         (&faces, &blocks),
@@ -339,45 +339,50 @@ fn block_spacing(
         .collect()
 }
 
-/// Where each numbered heading's number goes, by block index — across from the block's own left
-/// edge, in points — after setting its left margin and first-line indent as its outline level
-/// places them (`doc/odt-format.md` §5c fact 20). The level's indents win over the paragraph
-/// style's; the number sits at the margin plus the first-line indent; the text follows at the
-/// level's tab stop — or, past it, at the next default stop counted from the margin — or after a
-/// space, or straight after, as `text:label-followed-by` says. A heading the outline leaves
-/// unnumbered starts at the margin. A heading whose style is not declared keeps the page's own
-/// margin, and its number moves with it.
-fn heading_labels(
+/// Where each numbered heading's number and each list item's label go, by block index — across
+/// from the block's own left edge, in points — after setting the block's left margin and
+/// first-line indent as its level places them (`doc/odt-format.md` §5c facts 20 and 22,
+/// [`App::level_indent`]). The label sits at the margin plus the first-line indent; the text
+/// follows at the level's tab stop — or, past it, at the next default stop counted from the
+/// margin — or after a space, or straight after, as `text:label-followed-by` says. A block the
+/// level gives no label — an unnumbered heading, a list header, an item's second paragraph —
+/// starts at the margin. A block whose style is not declared keeps the page's own margin, and
+/// its label moves with it; a list naming no style keeps the shell's bullet where it was.
+fn level_labels(
     app: &App,
     viewport: &grind_text::Viewport,
-    (faces, blocks): (
-        &[crate::faces::RoleFace<'_>],
-        &HashMap<usize, crate::faces::RoleFace<'_>>,
-    ),
+    (faces, blocks): (&[RoleFace<'_>], &HashMap<usize, RoleFace<'_>>),
     spacing: &mut HashMap<usize, crate::faces::Room>,
     indents: &mut HashMap<usize, f32>,
 ) -> HashMap<usize, f64> {
     let mut labels = HashMap::new();
     for view in viewport.iter().filter(|view| view.cell.is_none()) {
-        if view.number().is_none() && !view.unnumbered() {
-            continue;
-        }
+        let label = match view.kind {
+            BlockKind::Heading { .. } if view.number().is_some() || view.unnumbered() => {
+                view.number()
+            }
+            BlockKind::ListItem { .. } if view.label.is_some() => view.mark(),
+            _ => continue,
+        };
         let Some(level) = app.level_indent(view.index) else {
             continue;
         };
         let length = |value: &Option<String>| value.as_deref().and_then(length_mm).map(pt);
         let margin = length(&level.margin_left).unwrap_or(0.0);
         let indent = length(&level.text_indent).unwrap_or(0.0);
+        // The flow sets a list item in by its depth before a style's own margin; the level's
+        // margin replaces both.
+        let role = SPACING.indent_of(&view.kind);
         let applied = match spacing.get_mut(&view.index) {
             Some(room) => {
-                room.space.left = margin;
+                room.space.left = margin - role;
                 margin
             }
-            None => 0.0,
+            None => role,
         };
-        let first = match view.number() {
-            None => 0.0,
-            Some(number) => {
+        let first = match label {
+            None => margin - applied,
+            Some(label) => {
                 let face = crate::faces::face_for(
                     faces,
                     blocks,
@@ -395,7 +400,7 @@ fn heading_labels(
                         .map(|glyph| f64::from(glyph.x_advance))
                         .sum()
                 };
-                let end = margin + indent + wide(number);
+                let end = margin + indent + wide(label);
                 let text = match level.followed_by.as_deref() {
                     Some("space") => end + wide(" "),
                     Some("nothing") => end,
@@ -407,7 +412,8 @@ fn heading_labels(
                                 .map(|resolved| f64::from(resolved.props.tabs().interval))
                                 .filter(|interval| *interval > 0.0)
                                 .unwrap_or(pt(12.5));
-                            margin + interval * (((end - margin) / interval).floor() + 1.0)
+                            let past = ((end - margin) / interval).floor() + 1.0;
+                            margin + interval * past.max(0.0)
                         }
                     },
                 };
@@ -641,9 +647,10 @@ fn lines(
         );
         let line_top = top as f32 + (line.top - first_top);
         let baseline = line_top + layout.baseline();
-        // A numbered heading's number, where its outline level puts it ([`heading_labels`]).
+        // A numbered heading's number or a list item's label, where its level puts it
+        // ([`level_labels`]).
         if at == 0
-            && let (Some(number), Some(dx)) = (view.number(), label)
+            && let (Some(number), Some(dx)) = (view.number().or(view.mark()), label)
         {
             let style = face.style(&TextStyle::default());
             let (id, size) = setter.face_of(&style);
@@ -655,10 +662,12 @@ fn lines(
                 glyphs: setter.shape(number, &style).glyphs,
                 text: number.to_owned(),
                 color: ink,
-                // Part of the heading as a reader hears it, which a list label is not.
-                mark: match piece.repeat {
-                    true => Mark::Decoration,
-                    false => Mark::Content(view.index),
+                // A heading's number is part of the heading as a reader hears it; a list
+                // item's label is the item's label.
+                mark: match (piece.repeat, &view.kind) {
+                    (true, _) => Mark::Decoration,
+                    (false, BlockKind::ListItem { .. }) => Mark::Label(view.index),
+                    (false, _) => Mark::Content(view.index),
                 },
             });
         }
@@ -666,6 +675,7 @@ fn lines(
         // front of its first line, and never into the text: a label wider than the room a
         // bullet leaves ends a little before it.
         if at == 0
+            && label.is_none()
             && let Some(mark) = view.mark()
         {
             let style = face.style(&TextStyle::default());
@@ -1946,6 +1956,11 @@ mod tests {
     /// The flat document every test below builds on: `styles` in `office:styles`, `body` in
     /// `office:text`, Liberation Serif 12 pt throughout.
     fn styled(styles: &str, body: &str) -> App {
+        styled_with(styles, "", body)
+    }
+
+    /// [`styled`], with `automatic` in `office:automatic-styles`.
+    fn styled_with(styles: &str, automatic: &str, body: &str) -> App {
         let bytes = format!(
             r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
             <office:styles>
@@ -1953,6 +1968,7 @@ mod tests {
               <style:style style:name="Standard" style:family="paragraph"/>
               {styles}
             </office:styles>
+            <office:automatic-styles>{automatic}</office:automatic-styles>
             <office:body><office:text>{body}</office:text></office:body></office:document>"##
         );
         let app = App::new();
@@ -2099,6 +2115,51 @@ mod tests {
             ("Hh", 28.35),
             ("2", 0.0),
             ("Ii", 28.35),
+        ];
+        assert_eq!(at.len(), expected.len(), "{at:?}");
+        for ((text, x), (want, wx)) in at.iter().zip(expected) {
+            assert_eq!(text, want);
+            assert!((x - wx).abs() < 0.05, "{text} at {x}, Writer's at {wx}");
+        }
+    }
+
+    /// `doc/odt-format.md` §5c fact 22: a list item's label and text where its level puts
+    /// them, an automatic style's own indents winning and a named style's not.
+    #[test]
+    fn a_list_item_sits_where_its_level_puts_it() {
+        let app = styled_with(
+            r#"<style:style style:name="Named" style:family="paragraph"><style:paragraph-properties fo:margin-left="4cm" fo:text-indent="0cm"/></style:style>
+               <text:list-style style:name="L">
+                 <text:list-level-style-number text:level="1" style:num-suffix="." style:num-format="1"><style:list-level-properties text:list-level-position-and-space-mode="label-alignment"><style:list-level-label-alignment text:label-followed-by="listtab" text:list-tab-stop-position="1.27cm" fo:text-indent="-0.635cm" fo:margin-left="1.27cm"/></style:list-level-properties></text:list-level-style-number>
+                 <text:list-level-style-bullet text:level="2" text:bullet-char="•"><style:list-level-properties text:list-level-position-and-space-mode="label-alignment"><style:list-level-label-alignment text:label-followed-by="listtab" text:list-tab-stop-position="1.905cm" fo:text-indent="-0.635cm" fo:margin-left="1.905cm"/></style:list-level-properties></text:list-level-style-bullet>
+               </text:list-style>"#,
+            r#"<style:style style:name="P1" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:margin-left="3cm" fo:text-indent="-1cm"/></style:style>"#,
+            r#"<text:list text:style-name="L">
+                 <text:list-item><text:p text:style-name="Standard">Aa</text:p><text:list><text:list-item><text:p text:style-name="Standard">Bb</text:p></text:list-item></text:list></text:list-item>
+                 <text:list-item><text:p text:style-name="P1">Cc</text:p></text:list-item>
+                 <text:list-item><text:p text:style-name="Named">Dd</text:p></text:list-item>
+                 <text:list-item><text:p text:style-name="Standard">Ee</text:p><text:p text:style-name="Standard">Ff</text:p></text:list-item>
+               </text:list>"#,
+        );
+        let doc = typeset(&app, &setter(), &Options::default());
+        let margin = 72.0 * 2.0 / 2.54;
+        let at: Vec<(String, f32)> = texts(&doc.pages[0])
+            .into_iter()
+            .map(|t| (t.2, t.0 - margin))
+            .collect();
+        let cm = |cm: f32| cm * 72.0 / 2.54;
+        let expected = [
+            ("1.", cm(0.635)),
+            ("Aa", cm(1.27)),
+            ("•", cm(1.27)),
+            ("Bb", cm(1.905)),
+            ("2.", cm(2.0)),
+            ("Cc", cm(3.0)),
+            ("3.", cm(0.635)),
+            ("Dd", cm(1.27)),
+            ("4.", cm(0.635)),
+            ("Ee", cm(1.27)),
+            ("Ff", cm(1.27)),
         ];
         assert_eq!(at.len(), expected.len(), "{at:?}");
         for ((text, x), (want, wx)) in at.iter().zip(expected) {
