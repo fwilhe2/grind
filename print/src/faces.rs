@@ -265,6 +265,23 @@ pub struct Room {
     pub right: f64,
 }
 
+/// The face the block at `index`, of `kind` and `style`, is set in: its own where its paragraph
+/// style states one, its role's otherwise.
+pub fn face_for<'a>(
+    faces: &'a [RoleFace<'a>],
+    blocks: &'a HashMap<usize, RoleFace<'a>>,
+    index: usize,
+    kind: &BlockKind,
+    style: Option<&str>,
+) -> &'a RoleFace<'a> {
+    if let Some(face) = blocks.get(&index) {
+        return face;
+    }
+    let role = Role::of(kind, style);
+    let slot = Role::ALL.iter().position(|each| *each == role).unwrap_or(0);
+    &faces[slot]
+}
+
 /// The page's [`grind_text::Faces`]. The cell map is built before this is, because
 /// `Faces::of` is called while `App` holds its read lock ([`grind_text::flow::across`]).
 pub struct Column<'a> {
@@ -292,12 +309,7 @@ pub struct Column<'a> {
 impl Column<'_> {
     /// The face the block at `index`, of `kind` and `style`, is set in.
     pub fn face(&self, index: usize, kind: &BlockKind, style: Option<&str>) -> &RoleFace<'_> {
-        if let Some(face) = self.blocks.get(&index) {
-            return face;
-        }
-        let role = Role::of(kind, style);
-        let slot = Role::ALL.iter().position(|each| *each == role).unwrap_or(0);
-        &self.faces[slot]
+        face_for(self.faces, self.blocks, index, kind, style)
     }
 }
 

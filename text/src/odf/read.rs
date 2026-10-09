@@ -148,6 +148,8 @@ pub struct Builder {
     column_styles: HashMap<String, (bool, Option<f64>)>,
     /// Each table's look as read, by name: its column styles in order, its heading rows and the
     /// style each cell names — resolved once every style is known.
+    /// The level indents of the list or outline style being read.
+    list_indents: std::collections::BTreeMap<u32, crate::numbering::LevelIndent>,
     table_pending: HashMap<String, PendingLook>,
 }
 
@@ -263,6 +265,7 @@ impl Builder {
             cell_styles: HashMap::new(),
             column_styles: HashMap::new(),
             table_pending: HashMap::new(),
+            list_indents: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1230,9 +1233,20 @@ impl Context<Builder> for Styles {
         if name.is(Ns::Text, "list-style") {
             let declared = attrs.get(Ns::Style, "name")?.to_owned();
             b.list_levels.clear();
+            b.list_indents.clear();
             return Some(Box::new(ListStyleDef {
                 name: declared,
                 automatic: self.automatic,
+                outline: false,
+            }));
+        }
+        if name.is(Ns::Text, "outline-style") {
+            b.list_levels.clear();
+            b.list_indents.clear();
+            return Some(Box::new(ListStyleDef {
+                name: String::new(),
+                automatic: false,
+                outline: true,
             }));
         }
         if !name.is(Ns::Style, "style") {
@@ -1281,10 +1295,12 @@ impl Context<Builder> for Styles {
     }
 }
 
-/// One `text:list-style` (rng:17558): what each level's items wear (`crate::numbering`).
+/// One `text:list-style` (rng:17558): what each level's items wear (`crate::numbering`) — or,
+/// with `outline`, the document's `text:outline-style` (rng:17530), whose levels are numbers.
 struct ListStyleDef {
     name: String,
     automatic: bool,
+    outline: bool,
 }
 
 impl Context<Builder> for ListStyleDef {
@@ -1302,7 +1318,7 @@ impl Context<Builder> for ListStyleDef {
                     .to_owned(),
             ),
             (Ns::Text, "list-level-style-image") => Level::Bullet(String::new()),
-            (Ns::Text, "list-level-style-number") => {
+            (Ns::Text, "list-level-style-number" | "outline-level-style") => {
                 let get = |ns, local| attrs.get(ns, local).unwrap_or_default().to_owned();
                 Level::Number {
                     format: get(Ns::Style, "num-format"),
@@ -1316,22 +1332,53 @@ impl Context<Builder> for ListStyleDef {
                         .get(Ns::Text, "start-value")
                         .and_then(|v| v.trim().parse().ok())
                         .unwrap_or(1),
+                    template: attrs.get(Ns::Loext, "num-list-format").map(str::to_owned),
                 }
             }
             _ => return None,
         };
         b.list_levels.insert(level, style);
-        None
+        Some(Box::new(LevelProps { level }))
     }
 
     fn end(&mut self, b: &mut Builder) {
-        let levels = std::mem::take(&mut b.list_levels);
-        if b.list_styles.len() < MAX_STYLES {
-            b.list_styles.insert(
-                self.name.clone(),
-                (self.automatic, crate::numbering::ListStyle { levels }),
+        let style = crate::numbering::ListStyle {
+            levels: std::mem::take(&mut b.list_levels),
+            indents: std::mem::take(&mut b.list_indents),
+        };
+        if self.outline {
+            b.doc.outline_style = Some(style);
+        } else if b.list_styles.len() < MAX_STYLES {
+            b.list_styles
+                .insert(self.name.clone(), (self.automatic, style));
+        }
+    }
+}
+
+/// Inside one list level: `style:list-level-properties` and, in it, the
+/// `style:list-level-label-alignment` that places the label and the text (rng:13281).
+struct LevelProps {
+    level: u32,
+}
+
+impl Context<Builder> for LevelProps {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Style, "list-level-properties") {
+            return Some(Box::new(LevelProps { level: self.level }));
+        }
+        if name.is(Ns::Style, "list-level-label-alignment") {
+            let get = |ns, local| attrs.get(ns, local).map(str::to_owned);
+            b.list_indents.insert(
+                self.level,
+                crate::numbering::LevelIndent {
+                    margin_left: get(Ns::Fo, "margin-left"),
+                    text_indent: get(Ns::Fo, "text-indent"),
+                    tab: get(Ns::Text, "list-tab-stop-position"),
+                    followed_by: get(Ns::Text, "label-followed-by"),
+                },
             );
         }
+        None
     }
 }
 
@@ -1472,6 +1519,24 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
                 .filter(|n| *n > 0)
                 .unwrap_or(1);
             let id = b.open(BlockKind::Heading { level }, style);
+            // What the outline's numbering needs of a heading beyond its level: whether it is
+            // left out of it, and a number of its own (`crate::numbering`).
+            let header = attrs.get(Ns::Text, "is-list-header") == Some("true");
+            let start = attrs
+                .get(Ns::Text, "start-value")
+                .and_then(|v| v.trim().parse().ok());
+            if header || start.is_some() {
+                b.doc.list_marks.insert(
+                    id,
+                    crate::numbering::ListMark {
+                        style: None,
+                        chain: usize::MAX,
+                        start,
+                        header,
+                        first: true,
+                    },
+                );
+            }
             // An index's entry has no place in the file a splice could write it back to: the
             // index element is kept whole instead (`Builder::generating`).
             if !b.generating {
@@ -2207,6 +2272,14 @@ pub(crate) const FIELDS: &[&str] = &[
     "character-count",
     "paragraph-count",
     "page-variable-get",
+    "database-display",
+    "database-name",
+    "database-row-number",
+    "dde-connection",
+    "execute-macro",
+    "measure",
+    "table-formula",
+    "bibliography-mark",
 ];
 
 /// A `text:note`: its citation into the run, and its body's paragraphs into the note.

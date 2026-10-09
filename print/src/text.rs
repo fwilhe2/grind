@@ -9,6 +9,7 @@
 //! each placed line cut into pieces of one formatting ([`grind_text::paint::pieces`], the cut
 //! every shell's painter uses) and shaped by the same [`Typesetter`] that measured it.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use grind_core::layout::{Fragment, wrap};
@@ -81,9 +82,9 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         .collect();
     let across = flow::across_with(app, width, &SPACING, &crate::faces::TableLooks(&looks));
     let blocks = block_faces(app, setter, &viewport);
-    let spacing = block_spacing(app, &viewport);
+    let mut spacing = block_spacing(app, &viewport);
     let breaks = block_breaks(app, &viewport);
-    let indents: std::collections::HashMap<usize, f32> = viewport
+    let mut indents: std::collections::HashMap<usize, f32> = viewport
         .iter()
         .filter(|view| view.cell.is_none())
         .filter_map(|view| {
@@ -101,6 +102,13 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
             (!tabs.is_empty()).then_some((view.index, tabs))
         })
         .collect();
+    let labels = heading_labels(
+        app,
+        &viewport,
+        (&faces, &blocks),
+        &mut spacing,
+        &mut indents,
+    );
     let column = Column {
         indents: &indents,
         tabs: &tabs,
@@ -193,7 +201,16 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 let face = column.face(view.index, &view.kind, view.style.as_deref());
                 let first = grind_text::Faces::first_indent(&column, view.index);
                 let tabs = grind_text::Faces::tabs(&column, view.index);
-                let drawn = lines(&mut ops, app, view, piece, face, (first, &tabs), origin);
+                let label = labels.get(&view.index).copied();
+                let drawn = lines(
+                    &mut ops,
+                    app,
+                    view,
+                    piece,
+                    face,
+                    (first, &tabs, label),
+                    origin,
+                );
                 if let (Some((from, to)), false) = (drawn, piece.repeat) {
                     cover(caret(piece.index, from), caret(piece.index, to));
                 }
@@ -320,6 +337,90 @@ fn block_spacing(
             })
         })
         .collect()
+}
+
+/// Where each numbered heading's number goes, by block index — across from the block's own left
+/// edge, in points — after setting its left margin and first-line indent as its outline level
+/// places them (`doc/odt-format.md` §5c fact 20). The level's indents win over the paragraph
+/// style's; the number sits at the margin plus the first-line indent; the text follows at the
+/// level's tab stop — or, past it, at the next default stop counted from the margin — or after a
+/// space, or straight after, as `text:label-followed-by` says. A heading the outline leaves
+/// unnumbered starts at the margin. A heading whose style is not declared keeps the page's own
+/// margin, and its number moves with it.
+fn heading_labels(
+    app: &App,
+    viewport: &grind_text::Viewport,
+    (faces, blocks): (
+        &[crate::faces::RoleFace<'_>],
+        &HashMap<usize, crate::faces::RoleFace<'_>>,
+    ),
+    spacing: &mut HashMap<usize, crate::faces::Room>,
+    indents: &mut HashMap<usize, f32>,
+) -> HashMap<usize, f64> {
+    let mut labels = HashMap::new();
+    for view in viewport.iter().filter(|view| view.cell.is_none()) {
+        if view.number().is_none() && !view.unnumbered() {
+            continue;
+        }
+        let Some(level) = app.level_indent(view.index) else {
+            continue;
+        };
+        let length = |value: &Option<String>| value.as_deref().and_then(length_mm).map(pt);
+        let margin = length(&level.margin_left).unwrap_or(0.0);
+        let indent = length(&level.text_indent).unwrap_or(0.0);
+        let applied = match spacing.get_mut(&view.index) {
+            Some(room) => {
+                room.space.left = margin;
+                margin
+            }
+            None => 0.0,
+        };
+        let first = match view.number() {
+            None => 0.0,
+            Some(number) => {
+                let face = crate::faces::face_for(
+                    faces,
+                    blocks,
+                    view.index,
+                    &view.kind,
+                    view.style.as_deref(),
+                );
+                let style = face.style(&TextStyle::default());
+                let setter = face.setter();
+                let wide = |text: &str| -> f64 {
+                    setter
+                        .shape(text, &style)
+                        .glyphs
+                        .iter()
+                        .map(|glyph| f64::from(glyph.x_advance))
+                        .sum()
+                };
+                let end = margin + indent + wide(number);
+                let text = match level.followed_by.as_deref() {
+                    Some("space") => end + wide(" "),
+                    Some("nothing") => end,
+                    _ => match length(&level.tab) {
+                        Some(tab) if tab > end => tab,
+                        _ => {
+                            let interval = app
+                                .paragraph(view.index)
+                                .map(|resolved| f64::from(resolved.props.tabs().interval))
+                                .filter(|interval| *interval > 0.0)
+                                .unwrap_or(pt(12.5));
+                            margin + interval * (((end - margin) / interval).floor() + 1.0)
+                        }
+                    },
+                };
+                labels.insert(view.index, margin + indent - applied);
+                text - applied
+            }
+        };
+        match first == 0.0 {
+            true => indents.remove(&view.index),
+            false => indents.insert(view.index, first as f32),
+        };
+    }
+    labels
 }
 
 /// Every block whose paragraph style says something about page breaks around it: a page break
@@ -488,7 +589,7 @@ fn lines(
     view: &BlockView,
     piece: &Piece,
     face: &RoleFace<'_>,
-    (first, tabs): (f32, &grind_core::layout::Tabs),
+    (first, tabs, label): (f32, &grind_core::layout::Tabs, Option<f64>),
     (left, top): (f64, f64),
 ) -> Option<(usize, usize)> {
     let layout = app
@@ -540,6 +641,27 @@ fn lines(
         );
         let line_top = top as f32 + (line.top - first_top);
         let baseline = line_top + layout.baseline();
+        // A numbered heading's number, where its outline level puts it ([`heading_labels`]).
+        if at == 0
+            && let (Some(number), Some(dx)) = (view.number(), label)
+        {
+            let style = face.style(&TextStyle::default());
+            let (id, size) = setter.face_of(&style);
+            ops.push(Op::Text {
+                x: (left + dx) as f32,
+                y: baseline,
+                face: id,
+                size,
+                glyphs: setter.shape(number, &style).glyphs,
+                text: number.to_owned(),
+                color: ink,
+                // Part of the heading as a reader hears it, which a list label is not.
+                mark: match piece.repeat {
+                    true => Mark::Decoration,
+                    false => Mark::Content(view.index),
+                },
+            });
+        }
         // A list item's label — its number, or its style's bullet (`BlockView::mark`) — in
         // front of its first line, and never into the text: a label wider than the room a
         // bullet leaves ends a little before it.
@@ -1930,6 +2052,59 @@ mod tests {
         // A Liberation Serif space at 12 pt is 3 pt.
         assert!((at[0].0 - at[1].0 - 1.5).abs() < 0.01, "{at:?}");
         assert!((at[2].0 - at[3].0 - 3.0).abs() < 0.01, "{at:?}");
+    }
+
+    /// `doc/odt-format.md` §5c facts 20 and 21: a heading's number and its text, where its
+    /// outline level puts them — the positions are the ones Writer printed, from the page's
+    /// text edge.
+    #[test]
+    fn a_heading_wears_its_outline_number_where_its_level_puts_it() {
+        let level = |n: u32, attrs: &str, align: &str| {
+            format!(
+                r#"<text:outline-level-style text:level="{n}" {attrs}><style:list-level-properties text:list-level-position-and-space-mode="label-alignment"><style:list-level-label-alignment {align}/></style:list-level-properties></text:outline-level-style>"#
+            )
+        };
+        let outline = [
+            level(1, r#"style:num-format="1""#, r#"text:label-followed-by="listtab" text:list-tab-stop-position="1cm" fo:text-indent="-1cm" fo:margin-left="1cm""#),
+            level(2, r#"style:num-format="1" text:display-levels="2" style:num-suffix="....""#, r#"text:label-followed-by="listtab" text:list-tab-stop-position="0.3cm" fo:text-indent="-0.3cm" fo:margin-left="0.3cm""#),
+            level(3, r#"style:num-format="A" xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0" loext:num-list-format="(%1%.%2%.%3%)""#, r#"text:label-followed-by="space" fo:text-indent="0cm" fo:margin-left="2cm""#),
+            level(5, r#"style:num-format="""#, r#"text:label-followed-by="listtab" text:list-tab-stop-position="1cm" fo:text-indent="-1cm" fo:margin-left="1cm""#),
+        ]
+        .concat();
+        let app = styled(
+            &format!(
+                r#"<style:style style:name="H" style:family="paragraph"/><text:outline-style style:name="Outline">{outline}</text:outline-style>"#
+            ),
+            r#"<text:h text:style-name="H" text:outline-level="1">Aa</text:h>
+               <text:h text:style-name="H" text:outline-level="2">Bb</text:h>
+               <text:h text:style-name="H" text:outline-level="3">Cc</text:h>
+               <text:h text:style-name="H" text:outline-level="5">Ee</text:h>
+               <text:h text:style-name="H" text:outline-level="1" text:is-list-header="true">Hh</text:h>
+               <text:h text:style-name="H" text:outline-level="1">Ii</text:h>"#,
+        );
+        let doc = typeset(&app, &setter(), &Options::default());
+        let margin = 72.0 * 2.0 / 2.54;
+        let at: Vec<(String, f32)> = texts(&doc.pages[0])
+            .into_iter()
+            .map(|t| (t.2, ((t.0 - margin) * 100.0).round() / 100.0))
+            .collect();
+        let expected = [
+            ("1", 0.0),
+            ("Aa", 28.35),
+            ("1.1....", 0.0),
+            ("Bb", 43.94),
+            ("(1.1.A)", 56.69),
+            ("Cc", 94.35),
+            ("Ee", 0.0),
+            ("Hh", 28.35),
+            ("2", 0.0),
+            ("Ii", 28.35),
+        ];
+        assert_eq!(at.len(), expected.len(), "{at:?}");
+        for ((text, x), (want, wx)) in at.iter().zip(expected) {
+            assert_eq!(text, want);
+            assert!((x - wx).abs() < 0.05, "{text} at {x}, Writer's at {wx}");
+        }
     }
 
     #[test]

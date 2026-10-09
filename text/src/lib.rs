@@ -225,7 +225,8 @@ pub struct BlockView {
     /// be two moments.
     pub cell: Option<model::Cell>,
     /// What a list item wears in front of it — `1.`, `2.a)`, the style's own bullet — derived
-    /// from its list's style and its place in the list (`numbering::labels`), never stored.
+    /// from its list's style and its place in the list (`numbering::labels`), never stored; and
+    /// a heading's number from the outline style ([`BlockView::number`]).
     /// Empty for a list header or an item's second paragraph, which wear nothing; `None` where
     /// the list states no style, and a shell draws its own bullet (`paint::bullet`) — see
     /// [`BlockView::mark`], which is that choice made once.
@@ -244,6 +245,21 @@ impl BlockView {
             Some(label) => Some(label),
             None => Some(paint::bullet(depth)),
         }
+    }
+
+    /// A heading's number from the document's outline style — `1`, `2.1.3` — or `None` for a
+    /// heading it numbers nothing for and for every other block.
+    pub fn number(&self) -> Option<&str> {
+        match self.kind {
+            BlockKind::Heading { .. } => self.label.as_deref().filter(|label| !label.is_empty()),
+            _ => None,
+        }
+    }
+
+    /// A heading the outline leaves out of its numbering (`text:is-list-header`), which sits at
+    /// its level's left margin with no label.
+    pub fn unnumbered(&self) -> bool {
+        matches!(self.kind, BlockKind::Heading { .. }) && self.label.as_deref() == Some("")
     }
 }
 
@@ -1042,6 +1058,25 @@ impl App {
             .table_looks
             .get(name)
             .cloned()
+    }
+
+    /// Where the block at `index`'s label and text go, as its list level states it
+    /// ([`numbering::LevelIndent`]): a heading's outline level ([`Document::outline_style`]), a
+    /// list item's level of its own list's style. `None` for any other block, or where the
+    /// style places nothing.
+    pub fn level_indent(&self, index: usize) -> Option<numbering::LevelIndent> {
+        let state = self.state.read().unwrap();
+        let doc = &state.doc;
+        let block = doc.blocks.get(index)?;
+        let (style, level) = match block.kind {
+            BlockKind::Heading { level } => (doc.outline_style.as_ref()?, level),
+            BlockKind::ListItem { depth } => {
+                let name = doc.list_marks.get(&block.id)?.style.as_deref()?;
+                (doc.list_styles.get(name)?, depth)
+            }
+            _ => return None,
+        };
+        style.indents.get(&level.max(1)).cloned()
     }
 
     /// What kind of face each declared font family is ([`Document::font_generics`]).

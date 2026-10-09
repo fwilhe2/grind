@@ -228,7 +228,7 @@ Additions to `doc/not-doing.md` §1, and each one is a boundary rather than a ba
 | **Mail merge, forms and controls** | Each is a second product with its own data model |
 | **Master documents** | A document made of other documents is a build system |
 | **`.docx` writing** | The `doc/xlsx-import.md` asymmetry, for the same reason: one way in, never out |
-| **`text:numbered-paragraph`** | A second numbering mechanism beside `text:list`, for the same result. One is enough. (`text:list`'s own numbering is *shown* — `text:list-style` read for display and never authored, `grind_text::numbering` — which is the paragraph styles' rule, `doc/pdf-export.md` P5, applied to lists) |
+| **`text:numbered-paragraph`** | A second numbering mechanism beside `text:list`, for the same result. One is enough. (`text:list`'s own numbering is *shown* — `text:list-style` read for display and never authored, `grind_text::numbering` — which is the paragraph styles' rule, `doc/pdf-export.md` P5, applied to lists; and so are a heading's numbers, from `text:outline-style`, on paper, `doc/odt-format.md` §5c facts 20 and 21) |
 
 ---
 

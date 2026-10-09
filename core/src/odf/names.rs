@@ -35,6 +35,10 @@ pub enum Ns {
     /// LibreOffice's calc extension namespace. Recognised because it carries a legitimate
     /// alias for `office:value-type` (§9).
     Calcext,
+    /// LibreOffice's office-wide extension namespace. Recognised because a list level's
+    /// `loext:num-list-format` is the label Writer actually shows, where ODF's own attributes
+    /// cannot spell it (`doc/odt-format.md` §5c fact 21).
+    Loext,
     /// `draw:` — `draw:frame`, `draw:image`, and everything else a drawing shape is made of.
     /// Only the two above are resolved by anything today; the rest route to `Ignore` like any
     /// other unrecognised content.
@@ -61,6 +65,7 @@ pub const SVG: &str = "urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"
 /// W3C, not OASIS — the one namespace here that ODF borrows rather than defines.
 pub const XLINK: &str = "http://www.w3.org/1999/xlink";
 pub const CALCEXT: &str = "urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0";
+pub const LOEXT: &str = "urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0";
 pub const DRAW: &str = "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0";
 pub const CHART: &str = "urn:oasis:names:tc:opendocument:xmlns:chart:1.0";
 pub const FORM: &str = "urn:oasis:names:tc:opendocument:xmlns:form:1.0";
@@ -79,6 +84,7 @@ impl Ns {
             SVG => Ns::Svg,
             XLINK => Ns::Xlink,
             CALCEXT => Ns::Calcext,
+            LOEXT => Ns::Loext,
             DRAW => Ns::Draw,
             CHART => Ns::Chart,
             FORM => Ns::Form,

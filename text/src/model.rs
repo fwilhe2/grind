@@ -629,6 +629,9 @@ pub struct Document {
     /// and never written: a save keeps a list's element, and with it its style.
     pub list_styles: std::collections::HashMap<String, crate::numbering::ListStyle>,
     pub list_marks: crate::numbering::Marks,
+    /// The document's `text:outline-style` (rng:17530): how its headings are numbered, read for
+    /// showing and never written, as `list_styles` are. `None` numbers no heading.
+    pub outline_style: Option<crate::numbering::ListStyle>,
     /// What kind of face each declared font family is — `style:font-family-generic` on its
     /// `style:font-face` (rng:10418: `roman`, `swiss`, `modern`, `decorative`, `script`,
     /// `system`) — for a printer to fall back on when the family is not installed. Read and
@@ -722,6 +725,7 @@ impl Document {
             paragraph_styles: std::collections::HashMap::new(),
             list_styles: std::collections::HashMap::new(),
             list_marks: std::collections::HashMap::new(),
+            outline_style: None,
             font_generics: std::collections::HashMap::new(),
             char_styles: std::collections::HashMap::new(),
             table_looks: std::collections::HashMap::new(),

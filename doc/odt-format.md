@@ -704,6 +704,35 @@ oracle turned out to be unable to answer the font questions (fact 4).
    and with three spaces 9 pt. `rhbz739252-3.odt`'s table headings (`Directory or File `) are
    that case. Only a paragraph's last line was measured; a space a line *breaks* at still hangs
    (fact 14).
+20. **Numbered headings** — `MEASURED` (2026-10-09, 26.8.1.1, a generated document whose
+   `text:outline-style` numbers five levels, read back with `pdftotext -bbox`). Every `text:h`
+   is numbered by the document's outline style at its `text:outline-level`, counted through
+   the whole document as fact 15 counts a list: `2` after `1`, `2.1` after it, and a level a
+   heading skips counts as `1` (`(3.1.A)` for a level-3 heading straight under `3`). A level
+   whose `style:num-format` is empty shows nothing, and then no tab or space follows either —
+   its text starts where the label would have. `text:is-list-header="true"` on a heading
+   neither shows a number nor counts one, and its text starts at its level's `fo:margin-left`.
+   Where the label and text go is the level's `style:list-level-label-alignment`, **not** the
+   heading's paragraph style: a style stating `fo:margin-left="2cm" fo:text-indent="0cm"` was
+   set exactly as the level said. The label starts at `fo:margin-left` plus `fo:text-indent`
+   (1 cm and −1 cm put it on the page margin), wrapped lines start at `fo:margin-left`, and the
+   first line's text starts — for `text:label-followed-by="listtab"` — at
+   `text:list-tab-stop-position`, measured from the page's text edge; a label that runs past
+   that stop sends the text to the next `style:tab-stop-distance` stop counted from
+   `fo:margin-left` (a 27 pt label with the stop at 0.3 cm and the margin at 0.3 cm put the
+   text at 1.55 cm). `space` puts one space of the heading's face after the label and
+   `nothing` none. The label is set in the heading's own face.
+21. **`loext:num-list-format`** — `MEASURED` (2026-10-09, 26.8.1.1). LibreOffice writes this
+   attribute beside ODF's on every numbered list level and outline level — `%1%.%2%.` on a
+   level whose ODF spelling is `style:num-suffix="."` with no `text:display-levels`, which
+   alone would show `A.` — and Writer shows **the template**: each `%N%` replaced by level N's
+   number in level N's own `style:num-format`, every other character kept, and the level's
+   prefix, suffix and `text:display-levels` ignored. Measured: `%1%.%2%.` → `I.A.`;
+   `[%1%-%3%] x` (prefix `Q`, suffix `Z`, display 3) → `[I-1] x`; `%4%%4%` → `aa`; a template
+   with no `%N%` (`no number`) → itself; `%6%.` on a level with an empty format → `.`;
+   `%5%/%7%` → `1/i`. A `text:list-style` level's template is honoured the same way (`%1%)` →
+   `a)`, `%1%-%2%` → `a-1`). `sw/qa/extras/odfexport/data/tdf144578.odt`'s headings
+   (`II.A.`, `III.A.1.`) are the case in the corpus.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

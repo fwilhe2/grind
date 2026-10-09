@@ -18,15 +18,33 @@
 //! counts nor shows one; every top-level `text:list` starts again unless it says
 //! `text:continue-numbering` or `text:continue-list`; `text:start-value` on an item sets its
 //! number and on a level its first; and a list naming no style shows no mark at all.
+//!
+//! **Headings are numbered the same way**, by the document's one `text:outline-style`
+//! (rng:17530, [`crate::Document::outline_style`]) — `1`, `1.1`, `2.1.1` — counted across the
+//! whole document level by level, a `text:is-list-header` heading neither counting nor showing
+//! one, and a level whose format is empty showing nothing (§5c fact 20).
 
 use std::collections::{BTreeMap, HashMap};
 
 use crate::model::{BlockId, BlockKind, Document};
 
-/// One `text:list-style`: what each level's items wear, by level from 1.
+/// One `text:list-style`: what each level's items wear, by level from 1, and where its label
+/// and text go.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ListStyle {
     pub levels: BTreeMap<u32, Level>,
+    pub indents: BTreeMap<u32, LevelIndent>,
+}
+
+/// One level's `style:list-level-label-alignment` (rng:13281), ODF's values verbatim: the
+/// paragraph's left margin and first-line indent while it is at this level, the tab stop its
+/// label is followed by, and what follows the label — `listtab`, `space` or `nothing`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LevelIndent {
+    pub margin_left: Option<String>,
+    pub text_indent: Option<String>,
+    pub tab: Option<String>,
+    pub followed_by: Option<String>,
 }
 
 /// One `text:list-level-style-*`.
@@ -44,6 +62,10 @@ pub enum Level {
         display: u32,
         /// `text:start-value`: the level's first number.
         start: u32,
+        /// `loext:num-list-format`, LibreOffice's template for the whole label — `%1%.%2%.` —
+        /// which, where a level has one, Writer shows instead of the prefix, the numbers
+        /// `display` asks for and the suffix (`doc/odt-format.md` §5c fact 21).
+        template: Option<String>,
     },
 }
 
@@ -139,7 +161,22 @@ pub fn labels(doc: &Document, upto: usize) -> Vec<Option<String>> {
     // Per chain, the current number of each level from 1 (`None` where none has been seen).
     let mut counters: HashMap<usize, Vec<Option<u32>>> = HashMap::new();
     let mut previous: Vec<Option<ListMark>> = Vec::new();
+    // The outline's own counters, one per heading level from 1.
+    let mut outline: Vec<Option<u32>> = Vec::new();
     for block in doc.blocks.iter().take(upto) {
+        if let BlockKind::Heading { level } = block.kind {
+            previous.clear();
+            let mark = doc.list_marks.get(&block.id);
+            out.push(match &doc.outline_style {
+                Some(_) if mark.is_some_and(|mark| mark.header) => Some(String::new()),
+                Some(style) => {
+                    let label = count(style, &mut outline, level.max(1) as usize, mark);
+                    Some(label).filter(|label| !label.is_empty())
+                }
+                None => None,
+            });
+            continue;
+        }
         let BlockKind::ListItem { depth } = block.kind else {
             previous.clear();
             out.push(None);
@@ -171,47 +208,103 @@ pub fn labels(doc: &Document, upto: usize) -> Vec<Option<String>> {
             out.push(None);
             continue;
         };
-        let start_of = |level: usize| match style.levels.get(&(level as u32)) {
-            Some(Level::Number { start, .. }) => *start,
-            _ => 1,
-        };
         let chain = counters.entry(mark.chain).or_default();
-        chain.resize(level, None);
-        chain[level - 1] = Some(match (mark.start, chain[level - 1]) {
-            (Some(start), _) => start,
-            (None, Some(n)) => n + 1,
-            (None, None) => start_of(level),
-        });
-        // A level shown above this one that no item opened counts as its first number.
-        for (i, slot) in chain.iter_mut().enumerate().take(level - 1) {
-            slot.get_or_insert(start_of(i + 1));
-        }
-        let label = match style.levels.get(&(level as u32)) {
-            Some(Level::Bullet(bullet)) => drawable(bullet),
-            Some(Level::Number {
-                prefix,
-                suffix,
-                display,
-                ..
-            }) => {
-                let first = level.saturating_sub((*display).max(1) as usize - 1).max(1);
-                let numbers: Vec<String> = (first..=level)
-                    .map(|l| {
-                        let format = match style.levels.get(&(l as u32)) {
-                            Some(Level::Number { format, .. }) => format.as_str(),
-                            _ => "1",
-                        };
-                        number(chain[l - 1].unwrap_or(1), format)
-                    })
-                    .filter(|n| !n.is_empty())
-                    .collect();
-                format!("{prefix}{}{suffix}", numbers.join("."))
-            }
-            None => drawable(""),
-        };
-        chain.truncate(level);
-        out.push(Some(label));
+        out.push(Some(count(style, chain, level, Some(&mark))));
     }
+    out
+}
+
+/// Count one item at `level` in `chain` — its own `start`, else one past the last at its level,
+/// else its level's first — and answer its label. Every level below it starts again.
+fn count(
+    style: &ListStyle,
+    chain: &mut Vec<Option<u32>>,
+    level: usize,
+    mark: Option<&ListMark>,
+) -> String {
+    let start_of = |level: usize| match style.levels.get(&(level as u32)) {
+        Some(Level::Number { start, .. }) => *start,
+        _ => 1,
+    };
+    chain.resize(level, None);
+    chain[level - 1] = Some(match (mark.and_then(|mark| mark.start), chain[level - 1]) {
+        (Some(start), _) => start,
+        (None, Some(n)) => n + 1,
+        (None, None) => start_of(level),
+    });
+    // A level shown above this one that no item opened counts as its first number.
+    for (i, slot) in chain.iter_mut().enumerate().take(level - 1) {
+        slot.get_or_insert(start_of(i + 1));
+    }
+    let label = compose(style, chain, level);
+    chain.truncate(level);
+    label
+}
+
+/// The label of an item at `level`, its own and the levels above it counted in `chain`.
+fn compose(style: &ListStyle, chain: &[Option<u32>], level: usize) -> String {
+    match style.levels.get(&(level as u32)) {
+        Some(Level::Bullet(bullet)) => drawable(bullet),
+        Some(Level::Number {
+            template: Some(template),
+            ..
+        }) => fill(template, |l| {
+            let format = match style.levels.get(&(l as u32)) {
+                Some(Level::Number { format, .. }) => format.as_str(),
+                _ => "1",
+            };
+            match chain.get(l - 1).copied().flatten() {
+                Some(n) => number(n, format),
+                None => String::new(),
+            }
+        }),
+        Some(Level::Number {
+            prefix,
+            suffix,
+            display,
+            ..
+        }) => {
+            let first = level.saturating_sub((*display).max(1) as usize - 1).max(1);
+            let numbers: Vec<String> = (first..=level)
+                .map(|l| {
+                    let format = match style.levels.get(&(l as u32)) {
+                        Some(Level::Number { format, .. }) => format.as_str(),
+                        _ => "1",
+                    };
+                    number(chain[l - 1].unwrap_or(1), format)
+                })
+                .filter(|n| !n.is_empty())
+                .collect();
+            format!("{prefix}{}{suffix}", numbers.join("."))
+        }
+        None => drawable(""),
+    }
+}
+
+/// `loext:num-list-format`'s template with every `%N%` replaced by `level(N)`, and everything
+/// else — a `%` that opens no level number included — kept as it is.
+fn fill(template: &str, level: impl Fn(usize) -> String) -> String {
+    let mut out = String::new();
+    let mut rest = template;
+    while let Some(at) = rest.find('%') {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + 1..];
+        let digits = after.len() - after.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        match (
+            after[..digits].parse::<usize>(),
+            after[digits..].starts_with('%'),
+        ) {
+            (Ok(n), true) if (1..=10).contains(&n) => {
+                out.push_str(&level(n));
+                rest = &after[digits + 1..];
+            }
+            _ => {
+                out.push('%');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
     out
 }
 
@@ -232,6 +325,19 @@ mod tests {
         assert_eq!(number(1994, "i"), "mcmxciv");
         assert_eq!(number(3, ""), "");
         assert_eq!(number(3, "1st"), "3", "an unknown format is arabic");
+    }
+
+    /// `doc/odt-format.md` §5c fact 21, each case as Writer showed it.
+    #[test]
+    fn a_label_template_fills_every_level_it_names() {
+        let level = |n: usize| ["I", "A", "1", "a", "1", "", "i"][n - 1].to_owned();
+        assert_eq!(fill("%1%.%2%.", level), "I.A.");
+        assert_eq!(fill("[%1%-%3%] x", level), "[I-1] x");
+        assert_eq!(fill("%4%%4%", level), "aa");
+        assert_eq!(fill("no number", level), "no number");
+        assert_eq!(fill("%6%.", level), ".");
+        assert_eq!(fill("%5%/%7%", level), "1/i");
+        assert_eq!(fill("100% %x% %1", level), "100% %x% %1");
     }
 
     #[test]
