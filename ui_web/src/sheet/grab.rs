@@ -316,6 +316,21 @@ impl Ui {
         self.chart_grab.set(None);
         self.select_chart(Some(index));
         let menu: &HtmlElement = &self.dom.chart_menu;
+        // The kind rows say which one the chart already is.
+        let kind = self
+            .app
+            .charts(self.sheet.get())
+            .ok()
+            .and_then(|charts| charts.get(index).map(|chart| chart.kind));
+        for kind_ in grind_sheet::ChartKind::ALL {
+            let id = format!("chart.kind-{}", kind_.name().to_lowercase());
+            if let Some(row) = menu.query_selector(&format!("[data-command=\"{id}\"]"))? {
+                row.set_attribute(
+                    "aria-checked",
+                    if kind == Some(kind_) { "true" } else { "false" },
+                )?;
+            }
+        }
         menu.style()
             .set_property("left", &format!("{}px", event.client_x()))?;
         menu.style()

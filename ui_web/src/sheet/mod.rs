@@ -34,7 +34,7 @@ use grind_sheet::format::{self, Toggle};
 use grind_sheet::formula::{display, lex};
 use grind_sheet::numfmt::{self, Kind};
 use grind_sheet::style::{CellStyle, EDGES};
-use grind_sheet::{App, CellValue, Filter, Form, Pos, RecalcMode, a1, csv};
+use grind_sheet::{App, CellValue, ChartKind, Filter, Form, Pos, RecalcMode, a1, csv};
 use wasm_bindgen::prelude::*;
 use web_sys::{
     Document, Element, Event, HtmlButtonElement, HtmlElement, HtmlInputElement, KeyboardEvent,
@@ -928,7 +928,13 @@ impl Ui {
             "edit.evaluate" => self.evaluate(),
             "edit.explain" => self.explain(),
             "doc.locale" => self.document_locale(),
-            "chart.insert" => self.insert_chart(),
+            "chart.insert" => self.insert_chart(None),
+            "chart.insert-bar" => self.insert_chart(Some(ChartKind::Bar)),
+            "chart.insert-line" => self.insert_chart(Some(ChartKind::Line)),
+            "chart.insert-pie" => self.insert_chart(Some(ChartKind::Pie)),
+            "chart.kind-bar" => self.set_chart_kind(ChartKind::Bar),
+            "chart.kind-line" => self.set_chart_kind(ChartKind::Line),
+            "chart.kind-pie" => self.set_chart_kind(ChartKind::Pie),
             "chart.preview" => self.preview_chart(),
             "chart.delete" => self.delete_chart(),
             "chart.restyle" => self.restyle_chart(),
@@ -1929,8 +1935,8 @@ impl Ui {
 
     /// *Insert a chart from the selection* — `grind_sheet::verbs::insert_chart`, which reads the
     /// table the way the CLI and the GNOME window do; this shell says only where a column and a
-    /// row sit.
-    fn insert_chart(&self) {
+    /// row sit. `kind` is the one asked for, `None` the one the cells want.
+    fn insert_chart(&self, kind: Option<ChartKind>) {
         let (start, end) = self.rect();
         let (widths, heights) = (self.widths(), self.heights());
         match grind_sheet::verbs::insert_chart(
@@ -1938,6 +1944,7 @@ impl Ui {
             self.sheet.get(),
             start,
             end,
+            kind,
             |col, row| {
                 (
                     widths.span(0, col) / PX_PER_MM,
@@ -1951,22 +1958,38 @@ impl Ui {
     }
 
     /// *Preview the chart for the selection…* — the chart *Insert* would make, drawn by the same
-    /// `chart::svg` the sheet uses, in a dialog with **Insert** and **Cancel**. Nothing is written
-    /// until Insert (`verbs::preview_insert_chart`).
+    /// `chart::svg` the sheet uses, in a dialog with **Insert** and **Cancel** and the GNOME
+    /// dialog's three kind buttons above it. Nothing is written until Insert
+    /// (`verbs::preview_insert_chart`), which inserts the kind that is pressed.
     fn preview_chart(&self) {
         let (start, end) = self.rect();
-        let (chart_, data) =
-            match grind_sheet::verbs::preview_insert_chart(&self.app, self.sheet.get(), start, end)
-            {
-                Ok(shown) => shown,
+        let sheet = self.sheet.get();
+        let guessed =
+            match grind_sheet::verbs::preview_insert_chart(&self.app, sheet, start, end, None) {
+                Ok((chart_, _)) => chart_.kind,
                 Err(error) => return self.set_message(error.to_string()),
             };
-        if let Err(error) = self.show_chart_preview(&chart::svg(&chart_, &data, 420.0, 260.0)) {
+        // One picture per kind, drawn now: a button only swaps which is shown.
+        let mut pictures = Vec::new();
+        for kind in ChartKind::ALL {
+            match grind_sheet::verbs::preview_insert_chart(&self.app, sheet, start, end, Some(kind))
+            {
+                Ok((chart_, data)) => {
+                    pictures.push((kind, chart::svg(&chart_, &data, 420.0, 260.0)))
+                }
+                Err(error) => return self.set_message(error.to_string()),
+            }
+        }
+        if let Err(error) = self.show_chart_preview(pictures, guessed) {
             self.set_message(format!("The preview would not open: {error:?}"));
         }
     }
 
-    fn show_chart_preview(&self, svg: &str) -> Result<(), JsValue> {
+    fn show_chart_preview(
+        &self,
+        pictures: Vec<(ChartKind, String)>,
+        guessed: ChartKind,
+    ) -> Result<(), JsValue> {
         let document = &self.dom.document;
         let overlay = document.create_element("div")?;
         overlay.set_class_name("palette chart-preview");
@@ -1981,7 +2004,48 @@ impl Ui {
             "style",
             "position:static;width:420px;max-width:100%;height:260px;margin:1rem auto",
         )?;
-        picture.set_inner_html(svg);
+        let shown = pictures
+            .iter()
+            .find(|(kind, _)| *kind == guessed)
+            .map_or("", |(_, svg)| svg.as_str());
+        picture.set_inner_html(shown);
+        // The kinds, as GNOME's dialog stands them: one pressed, the picture following it.
+        let kinds = document.create_element("div")?;
+        kinds.set_attribute("role", "group")?;
+        kinds.set_attribute("aria-label", "Kind of chart")?;
+        kinds.set_attribute(
+            "style",
+            "display:flex;gap:.25rem;justify-content:center;padding:1rem 1rem 0",
+        )?;
+        let chosen = Rc::new(Cell::new(guessed));
+        let mut buttons = Vec::new();
+        for (kind, _) in &pictures {
+            let button = document.create_element("button")?;
+            button.set_class_name("toggle");
+            button.set_attribute("type", "button")?;
+            button.set_attribute("data-kind", &kind.name().to_lowercase())?;
+            button.set_attribute(
+                "aria-pressed",
+                if *kind == guessed { "true" } else { "false" },
+            )?;
+            button.set_text_content(Some(kind.name()));
+            kinds.append_child(&button)?;
+            buttons.push(button);
+        }
+        for (button, (kind, svg)) in buttons.iter().zip(&pictures) {
+            let (kind, svg) = (*kind, svg.clone());
+            let (picture, buttons, chosen) = (picture.clone(), buttons.clone(), chosen.clone());
+            listen(button, "click", move |_: MouseEvent| {
+                chosen.set(kind);
+                picture.set_inner_html(&svg);
+                for other in &buttons {
+                    let pressed = other.get_attribute("data-kind").as_deref()
+                        == Some(kind.name().to_lowercase().as_str());
+                    let _ =
+                        other.set_attribute("aria-pressed", if pressed { "true" } else { "false" });
+                }
+            })?;
+        }
         let row = document.create_element("div")?;
         row.set_attribute(
             "style",
@@ -1995,6 +2059,7 @@ impl Ui {
         insert.set_attribute("type", "button")?;
         row.append_child(&cancel)?;
         row.append_child(&insert)?;
+        sheet.append_child(&kinds)?;
         sheet.append_child(&picture)?;
         sheet.append_child(&row)?;
         overlay.append_child(&sheet)?;
@@ -2011,7 +2076,10 @@ impl Ui {
         let on_insert = close.clone();
         listen(&insert, "click", move |_: MouseEvent| {
             on_insert();
-            crate::run_command("chart.insert");
+            crate::run_command(&format!(
+                "chart.insert-{}",
+                chosen.get().name().to_lowercase()
+            ));
         })?;
         listen(&overlay, "keydown", move |event: KeyboardEvent| {
             if event.key() == "Escape" {
@@ -2020,6 +2088,21 @@ impl Ui {
         })?;
         insert.unchecked_into::<web_sys::HtmlElement>().focus()?;
         Ok(())
+    }
+
+    /// *Make the chart a bar/line/pie chart* — the selected one, else the last
+    /// (`verbs::set_chart_kind`); the chart's own menu has the three as rows.
+    fn set_chart_kind(&self, kind: ChartKind) {
+        let sheet = self.sheet.get();
+        let Some(index) = self.chart_target() else {
+            return self.set_message("This sheet has no chart".to_owned());
+        };
+        self.set_message(
+            match grind_sheet::verbs::set_chart_kind(&self.app, sheet, index, kind) {
+                Ok(said) => format!("{said} Ctrl+Z takes it back"),
+                Err(why) => why,
+            },
+        );
     }
 
     /// *Change the chart…* — the selected one, else the last: its kind, title and legend, in

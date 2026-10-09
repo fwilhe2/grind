@@ -780,6 +780,15 @@ input[type="text"] {
   outline: none;
 }
 
+.chart-menu button[aria-checked="true"] > span::before {
+  content: "✓ ";
+}
+
+.chart-menu button[aria-checked="false"] > span::before {
+  content: "✓ ";
+  visibility: hidden;
+}
+
 .chart-menu kbd {
   font: inherit;
   opacity: 0.6;

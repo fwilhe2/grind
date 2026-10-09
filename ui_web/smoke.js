@@ -656,12 +656,27 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("the preview dialog opens", preview !== null, true);
   check("it draws the chart", preview && preview.querySelectorAll("svg").length, 1);
   check("and writes nothing", document.querySelectorAll("#charts .chart").length, 1);
+  // The kinds GNOME's dialog offers: pressing Pie redraws the picture as one, and Insert
+  // inserts that kind.
+  const pieButton = preview.querySelector('button[data-kind="pie"]');
+  check("the preview offers the three kinds", preview.querySelectorAll("button[data-kind]").length, 3);
+  pieButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  check("Pie is pressed", pieButton.getAttribute("aria-pressed"), "true");
+  check("and the picture is a pie", preview.querySelectorAll("svg path").length > 0, true);
   [...preview.querySelectorAll("button")]
     .find((b) => b.textContent === "Insert")
     .dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
   await frame();
   check("Insert closes it", document.querySelector(".chart-preview"), null);
   check("and inserts the chart", document.querySelectorAll("#charts .chart").length, 2);
+  check(
+    "as a pie",
+    [...document.querySelectorAll("#charts .chart")].pop().querySelectorAll("svg path").length > 0,
+    true
+  );
+  await command("Make the chart a bar chart");
+  await frame();
+  check("the palette turns it into bars", byId("message").textContent.includes("bar chart"), true);
 
   // With nothing selected the chart verbs mean the last chart: moved to the active cell.
   const lastChart = () => [...document.querySelectorAll("#charts .chart")].pop();
@@ -727,6 +742,17 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   await frame();
   check("a right click opens the chart's menu", byId("chart-menu").hidden, false);
   check("selecting the chart", first().classList.contains("selected"), true);
+  const kindRow = (kind) => byId("chart-menu").querySelector(`[data-command="chart.kind-${kind}"]`);
+  check("the menu ticks the kind it is", kindRow("bar").getAttribute("aria-checked"), "true");
+  check("and no other", kindRow("line").getAttribute("aria-checked"), "false");
+  mouse(kindRow("line").querySelector("span"), "click");
+  await frame();
+  check("Line chart there turns it into a line", first().querySelectorAll("svg polyline").length > 0, true);
+  check("and says so", byId("message").textContent.includes("line chart"), true);
+  press("z", { ctrlKey: true });
+  await frame();
+  mouse(first(), "contextmenu", 120, 120);
+  await frame();
   mouse(byId("chart-menu").querySelector('[data-command="chart.delete"] span'), "click");
   await frame();
   check("Delete chart closes the menu", byId("chart-menu").hidden, true);

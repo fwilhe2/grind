@@ -306,6 +306,50 @@ pub const SHEET: &[Command] = &[
         "",
         false,
     ),
+    // The three kinds, as GNOME's dialog offers them: inserted as one (`verbs::insert_chart`'s
+    // `kind`) or the chart turned into one (`verbs::set_chart_kind`).
+    cmd(
+        "chart.insert-bar",
+        "Insert a bar chart from the selection",
+        "Charts",
+        "",
+        false,
+    ),
+    cmd(
+        "chart.insert-line",
+        "Insert a line chart from the selection",
+        "Charts",
+        "",
+        false,
+    ),
+    cmd(
+        "chart.insert-pie",
+        "Insert a pie chart from the selection",
+        "Charts",
+        "",
+        false,
+    ),
+    cmd(
+        "chart.kind-bar",
+        "Make the chart a bar chart",
+        "Charts",
+        "",
+        false,
+    ),
+    cmd(
+        "chart.kind-line",
+        "Make the chart a line chart",
+        "Charts",
+        "",
+        false,
+    ),
+    cmd(
+        "chart.kind-pie",
+        "Make the chart a pie chart",
+        "Charts",
+        "",
+        false,
+    ),
     cmd("chart.restyle", "Change the chart…", "Charts", "", false),
     cmd("chart.move", "Move the chart here", "Charts", "", false),
     cmd("chart.delete", "Delete the chart", "Charts", "", false),
@@ -626,6 +670,23 @@ mod tests {
         assert_eq!(filter(SHEET, "bold")[0].id, "style.bold");
         assert_eq!(filter(SHEET, "paste")[0].id, "edit.paste");
         assert_eq!(filter(TEXT, "heading 2")[0].id, "block.h2");
+    }
+
+    /// Every kind GNOME's chart dialog offers is a verb here too, to insert and to change to.
+    #[test]
+    fn every_chart_kind_is_a_verb_to_insert_and_to_change_to() {
+        for kind in grind_sheet::ChartKind::ALL {
+            let name = kind.name().to_lowercase();
+            for id in [format!("chart.insert-{name}"), format!("chart.kind-{name}")] {
+                assert!(SHEET.iter().any(|command| command.id == id), "{id}");
+            }
+            assert!(
+                filter(SHEET, &format!("{name} chart"))
+                    .iter()
+                    .any(|e| e.id == format!("chart.insert-{name}")),
+                "{name}"
+            );
+        }
     }
 
     #[test]
