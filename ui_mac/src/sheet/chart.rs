@@ -10,10 +10,14 @@
 //! the sheet, which one a point is in, what a context menu changes — and [`draw`], which turns the
 //! shared marks into this shell's [`Op`]s.
 //!
-//! **Read-only.** A chart is a picture on this grid: nothing here is hit-tested, and adding or
-//! editing one is the CLI's and the GNOME window's (`doc/feature-matrix.md`).
+//! Taking hold of one is `grind_sheet::chart_frame`'s behaviour, every window's
+//! (`doc/chart-handling.md`): a click selects it and it wears the accent and eight handles
+//! ([`held_ops`]), its body moves it, a handle resizes it, the keys a selected chart answers are
+//! [`key`]'s, and a release is one `App::reshape_chart`. Frames are in the sheet's points, which
+//! at 1× are the suite's CSS pixels near enough that its sizes are used as they are.
 
 use grind_core::layout::Metrics;
+use grind_sheet::chart_frame::{self, Frame, Grip};
 use grind_sheet::{App, Chart, ChartData, ChartKind, ChartLegend};
 
 use super::geom::{PT_PER_MM, Rect};
@@ -34,27 +38,36 @@ pub fn frame_of(chart: &Chart) -> Option<Rect> {
     (rect.w > 0.0 && rect.h > 0.0).then_some(rect)
 }
 
-/// A chart being dragged: which, and how far it has moved, in points.
-pub type Moving = Option<(usize, f64, f64)>;
+/// What the grid knows about the charts this frame: the one selected, and the one the pointer
+/// is holding, which is drawn where the drag has it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Held {
+    pub selected: Option<usize>,
+    pub grab: Option<Grab>,
+}
 
 /// Every chart on `sheet` that meets `view`, drawn in the sheet's own coordinates — the space
-/// [`super::paint::cells`] draws in, so a chart floats over the cells under it. The one being
-/// dragged, if one is, is drawn where the drag has it.
+/// [`super::paint::cells`] draws in, so a chart floats over the cells under it — and then the
+/// selected one's outline and handles over all of them.
 pub fn charts(
     app: &App,
     sheet: usize,
     view: &Rect,
     palette: &Palette,
     metrics: &dyn Metrics,
-    moving: Moving,
+    held: Held,
 ) -> Vec<Op> {
     let mut ops = Vec::new();
+    let mut handled = None;
     for (index, chart) in app.charts(sheet).unwrap_or_default().iter().enumerate() {
         let Some(mut frame) = frame_of(chart) else {
             continue;
         };
-        if let Some((_, dx, dy)) = moving.filter(|(at, ..)| *at == index) {
-            frame = frame.offset(dx, dy);
+        if let Some(grab) = held.grab.filter(|grab| grab.index == index) {
+            frame = rect(grab.now);
+        }
+        if held.selected == Some(index) || held.grab.is_some_and(|grab| grab.index == index) {
+            handled = Some(frame);
         }
         if frame.intersection(view).is_empty() {
             continue;
@@ -64,24 +77,152 @@ pub fn charts(
         };
         ops.extend(draw(chart, &data, frame, palette, metrics));
     }
+    if let Some(frame) = handled {
+        ops.extend(held_ops(frame, palette));
+    }
     ops
 }
 
-/// The topmost chart on `sheet` whose frame holds `(x, y)` — the last drawn, since a later chart
-/// covers an earlier one — by its index, for a context menu to act on.
-pub fn chart_at(app: &App, sheet: usize, x: f64, y: f64) -> Option<usize> {
-    let charts = app.charts(sheet).ok()?;
-    charts.iter().enumerate().rev().find_map(|(index, chart)| {
-        let frame = frame_of(chart)?;
-        (x >= frame.x && x < frame.right() && y >= frame.y && y < frame.bottom()).then_some(index)
-    })
+/// A selected chart, unmistakable: a two-point outline in the accent and eight handles — the
+/// page's colour inside an accent border — half outside the frame, where they read as handles.
+pub fn held_ops(frame: Rect, palette: &Palette) -> Vec<Op> {
+    let mut ops = ring(frame, 2.0, palette.accent);
+    for (_, square) in chart_frame::handles(&self::frame(frame), chart_frame::HANDLE) {
+        let square = rect(square);
+        ops.push(Op::Fill {
+            rect: square,
+            color: palette.page,
+        });
+        ops.extend(ring(square, 1.5, palette.accent));
+    }
+    ops
 }
 
-/// Where a chart dragged by `(dx, dy)` lands, as the two ODF lengths `App::reshape_chart` takes
-/// for its corner — never above or left of A1, where nothing can show it.
-pub fn moved_to(frame: Rect, dx: f64, dy: f64) -> (String, String) {
-    let length = |pt: f64| grind_sheet::style::mm_length(pt.max(0.0) / PT_PER_MM);
-    (length(frame.x + dx), length(frame.y + dy))
+/// A rectangle's edge `width` thick, inside it.
+fn ring(r: Rect, width: f64, color: grind_core::color::Rgb) -> Vec<Op> {
+    [
+        Rect::new(r.x, r.y, r.w, width),
+        Rect::new(r.x, r.bottom() - width, r.w, width),
+        Rect::new(r.x, r.y, width, r.h),
+        Rect::new(r.right() - width, r.y, width, r.h),
+    ]
+    .map(|rect| Op::Fill { rect, color })
+    .into()
+}
+
+fn frame(r: Rect) -> Frame {
+    Frame::new(r.x, r.y, r.w, r.h)
+}
+
+fn rect(f: Frame) -> Rect {
+    Rect::new(f.x, f.y, f.w, f.h)
+}
+
+/// Every chart's frame on `sheet`, in the sheet's points.
+pub fn frames(app: &App, sheet: usize) -> Vec<Option<Frame>> {
+    app.charts(sheet)
+        .unwrap_or_default()
+        .iter()
+        .map(|chart| frame_of(chart).map(frame))
+        .collect()
+}
+
+/// What `(x, y)` has of the charts on `sheet` (`chart_frame::hit`): a handle of the selected one,
+/// which reach a little outside it, before the topmost chart's body.
+pub fn hit(
+    app: &App,
+    sheet: usize,
+    selected: Option<usize>,
+    x: f64,
+    y: f64,
+) -> Option<(usize, Grip)> {
+    chart_frame::hit(
+        &frames(app, sheet),
+        selected,
+        x,
+        y,
+        chart_frame::HANDLE,
+        chart_frame::HANDLE_SLOP,
+    )
+}
+
+/// A chart held by the pointer: which, by what, where it was, where the pointer pressed, and the
+/// frame the drag has reached — drawn in place of the chart's own until the release writes it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Grab {
+    pub index: usize,
+    pub grip: Grip,
+    pub start: Frame,
+    pub from: (f64, f64),
+    pub now: Frame,
+}
+
+impl Grab {
+    /// Take hold of chart `index` by `grip` at `(x, y)`.
+    pub fn new(app: &App, sheet: usize, index: usize, grip: Grip, x: f64, y: f64) -> Option<Grab> {
+        let start = frames(app, sheet).get(index).copied().flatten()?;
+        Some(Grab {
+            index,
+            grip,
+            start,
+            from: (x, y),
+            now: start,
+        })
+    }
+
+    /// The pointer at `(x, y)`, ⇧ held or not: where the chart is now.
+    pub fn follow(&mut self, x: f64, y: f64, keep_ratio: bool) {
+        let keep = keep_ratio && self.grip.is_corner();
+        self.now = chart_frame::dragged(
+            &self.start,
+            self.grip,
+            x - self.from.0,
+            y - self.from.1,
+            chart_frame::MIN_SIZE,
+            keep,
+        );
+    }
+
+    /// Whether the press never moved far enough to be a move — a click, which only selects.
+    pub fn is_click(&self) -> bool {
+        let slop = chart_frame::CLICK_SLOP;
+        chart_frame::is_click(self.now.x - self.start.x, self.now.y - self.start.y, slop)
+            && chart_frame::is_click(self.now.w - self.start.w, self.now.h - self.start.h, slop)
+    }
+}
+
+/// A frame in the sheet's points as the four ODF lengths `App::reshape_chart` takes, kept on the
+/// sheet — never above or left of A1, where nothing can show it.
+pub fn lengths(frame: Frame) -> [String; 4] {
+    let mm = chart_frame::kept_on_sheet(frame);
+    [mm.x, mm.y, mm.w, mm.h].map(|pt| grind_sheet::style::mm_length(pt / PT_PER_MM))
+}
+
+/// What a selector does to a selected chart — the keys every window gives one. `None` is a key
+/// that means nothing to a chart, which lets go of it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum KeyAction {
+    Key(chart_frame::Key),
+    /// Return: change it — its title, kind and legend, the context menu's own items.
+    Change,
+}
+
+pub fn key(selector: &str) -> Option<KeyAction> {
+    use KeyAction::{Change, Key as K};
+    Some(match selector {
+        "deleteBackward:" | "deleteForward:" | "deleteWordBackward:" => K(chart_frame::Key::Delete),
+        "cancelOperation:" => K(chart_frame::Key::Deselect),
+        "moveLeft:" => K(chart_frame::nudge(-1, 0, false)),
+        "moveRight:" => K(chart_frame::nudge(1, 0, false)),
+        "moveUp:" => K(chart_frame::nudge(0, -1, false)),
+        "moveDown:" => K(chart_frame::nudge(0, 1, false)),
+        "moveLeftAndModifySelection:" => K(chart_frame::nudge(-1, 0, true)),
+        "moveRightAndModifySelection:" => K(chart_frame::nudge(1, 0, true)),
+        "moveUpAndModifySelection:" => K(chart_frame::nudge(0, -1, true)),
+        "moveDownAndModifySelection:" => K(chart_frame::nudge(0, 1, true)),
+        "insertNewline:" => Change,
+        _ => return None,
+    })
 }
 
 /// One change a chart's context menu makes.
@@ -286,18 +427,21 @@ mod tests {
     fn charts_off_the_view_are_not_drawn() {
         let app = sheet_with("bar");
         let frame = frame_of(&app.charts(0).unwrap()[0]).unwrap();
-        let near = charts(&app, 0, &frame, &Palette::LIGHT, &Fixed, None);
+        let near = charts(&app, 0, &frame, &Palette::LIGHT, &Fixed, Held::default());
         assert!(!near.is_empty());
         let far = Rect::new(frame.right() + 1000.0, 0.0, 100.0, 100.0);
-        assert!(charts(&app, 0, &far, &Palette::LIGHT, &Fixed, None).is_empty());
+        assert!(charts(&app, 0, &far, &Palette::LIGHT, &Fixed, Held::default()).is_empty());
     }
 
     #[test]
     fn the_topmost_chart_under_a_point_is_found_and_changed() {
         let app = sheet_with("bar");
         let frame = frame_of(&app.charts(0).unwrap()[0]).unwrap();
-        assert_eq!(chart_at(&app, 0, frame.x + 5.0, frame.y + 5.0), Some(0));
-        assert_eq!(chart_at(&app, 0, frame.x - 5.0, frame.y + 5.0), None);
+        assert_eq!(
+            hit(&app, 0, None, frame.x + 5.0, frame.y + 5.0),
+            Some((0, Grip::Body))
+        );
+        assert_eq!(hit(&app, 0, None, frame.x - 5.0, frame.y + 5.0), None);
         let chart = &app.charts(0).unwrap()[0];
         let pie = changed(chart, Change::Kind(ChartKind::Pie));
         assert_eq!(pie.kind, ChartKind::Pie);
@@ -321,8 +465,8 @@ mod tests {
         let app = sheet_with("bar");
         let frame = frame_of(&app.charts(0).unwrap()[0]).unwrap();
         let view = Rect::new(0.0, 0.0, 2000.0, 2000.0);
-        let ground = |moving| {
-            charts(&app, 0, &view, &Palette::LIGHT, &Fixed, moving)
+        let ground = |held| {
+            charts(&app, 0, &view, &Palette::LIGHT, &Fixed, held)
                 .into_iter()
                 .find_map(|op| match op {
                     Op::Fill { rect, .. } => Some(rect),
@@ -330,14 +474,79 @@ mod tests {
                 })
                 .unwrap()
         };
-        assert_eq!(ground(None), frame);
-        assert_eq!(ground(Some((0, 30.0, 40.0))), frame.offset(30.0, 40.0));
-        let (x, y) = moved_to(frame, 72.0 - frame.x, -1000.0);
+        assert_eq!(ground(Held::default()), frame);
+        let mut grab = Grab::new(&app, 0, 0, Grip::Body, 50.0, 50.0).unwrap();
+        grab.follow(52.0, 49.0, false);
+        assert!(grab.is_click(), "a few points is a click");
+        grab.follow(80.0, 90.0, false);
+        assert!(!grab.is_click());
+        let held = Held {
+            selected: Some(0),
+            grab: Some(grab),
+        };
+        assert_eq!(ground(held), frame.offset(30.0, 40.0));
+        let mut far = grab.now;
+        far.x = 72.0;
+        far.y = -1000.0;
+        let [x, y, ..] = lengths(far);
         assert!((grind_sheet::style::length_mm(&x).unwrap() - 25.4).abs() < 0.01);
         assert_eq!(
             grind_sheet::style::length_mm(&y),
             Some(0.0),
             "never above row 1"
         );
+    }
+
+    #[test]
+    fn a_selected_chart_wears_its_handles_and_they_resize_it() {
+        let app = sheet_with("bar");
+        let frame = frame_of(&app.charts(0).unwrap()[0]).unwrap();
+        let view = Rect::new(0.0, 0.0, 2000.0, 2000.0);
+        let accent = |held| {
+            charts(&app, 0, &view, &Palette::LIGHT, &Fixed, held)
+                .iter()
+                .filter(
+                    |op| matches!(op, Op::Fill { color, .. } if *color == Palette::LIGHT.accent),
+                )
+                .count()
+        };
+        assert_eq!(accent(Held::default()), 0, "unselected: no handles");
+        let selected = Held {
+            selected: Some(0),
+            grab: None,
+        };
+        assert_eq!(
+            accent(selected),
+            4 + 8 * 4,
+            "the outline and eight ringed squares"
+        );
+        // The bottom-right handle, just outside the corner, only once it is selected.
+        let (x, y) = (frame.right() + 2.0, frame.bottom() + 2.0);
+        assert_eq!(hit(&app, 0, None, x, y), None);
+        assert_eq!(hit(&app, 0, Some(0), x, y), Some((0, Grip::SouthEast)));
+        let mut grab = Grab::new(&app, 0, 0, Grip::SouthEast, x, y).unwrap();
+        grab.follow(x + 36.0, y, false);
+        let [.., w, h] = lengths(grab.now);
+        let pt = |length: &str| grind_sheet::style::length_mm(length).unwrap() * PT_PER_MM;
+        assert!((pt(&w) - (frame.w + 36.0)).abs() < 0.01);
+        assert!((pt(&h) - frame.h).abs() < 0.01);
+    }
+
+    #[test]
+    fn the_keys_a_selected_chart_answers() {
+        assert_eq!(
+            key("deleteBackward:"),
+            Some(KeyAction::Key(chart_frame::Key::Delete))
+        );
+        assert_eq!(
+            key("cancelOperation:"),
+            Some(KeyAction::Key(chart_frame::Key::Deselect))
+        );
+        assert_eq!(
+            key("moveRightAndModifySelection:"),
+            Some(KeyAction::Key(chart_frame::nudge(1, 0, true)))
+        );
+        assert_eq!(key("insertNewline:"), Some(KeyAction::Change));
+        assert_eq!(key("insertTab:"), None);
     }
 }

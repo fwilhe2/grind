@@ -34,9 +34,10 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_se
 use objc2_app_kit::{
     NSAccessibilityAnnouncementKey, NSAccessibilityAnnouncementRequestedNotification,
     NSAccessibilityPostNotificationWithUserInfo, NSAutoresizingMaskOptions, NSBeep, NSColor,
-    NSColorPanel, NSColorSpace, NSControlStateValueOff, NSControlStateValueOn, NSCursor, NSEvent,
-    NSEventGestureAxis, NSEventModifierFlags, NSFontManager, NSGraphicsContext, NSMenu, NSMenuItem,
-    NSScrollView, NSTextField, NSView,
+    NSColorPanel, NSColorSpace, NSControlStateValueOff, NSControlStateValueOn, NSCursor,
+    NSCursorFrameResizeDirections, NSCursorFrameResizePosition, NSEvent, NSEventGestureAxis,
+    NSEventModifierFlags, NSFontManager, NSGraphicsContext, NSMenu, NSMenuItem, NSScrollView,
+    NSTextField, NSView,
 };
 use objc2_core_graphics::CGContext;
 use objc2_foundation::{
@@ -115,10 +116,13 @@ pub struct Pane {
     /// View ▸ Calculations…: what the sidebar's Calculations section is narrowed to, while it
     /// is shown.
     pub calculations: RefCell<Option<String>>,
-    /// A chart picked up by a press — its index and where the pointer was — and how far the drag
-    /// has taken it, which is what is drawn until the button comes up.
-    chart_drag: Cell<Option<(usize, f64, f64)>>,
-    moving: Cell<crate::sheet::chart::Moving>,
+    /// The selected chart, as the sheet it is on and its index there (`doc/chart-handling.md`):
+    /// outlined and handled, and what ⌫, the arrows and Return mean. Read through
+    /// [`Pane::chart_now`], which lets go of one on another sheet or one deleted away.
+    chart_selected: Cell<Option<(usize, usize)>>,
+    /// A chart held by the pointer — drawn where the drag has it until the button comes up, which
+    /// is one `App::reshape_chart`.
+    chart_grab: Cell<Option<crate::sheet::chart::Grab>>,
 }
 
 impl Pane {
@@ -151,9 +155,24 @@ impl Pane {
             resizing: Cell::new(None),
             formulas: Cell::new(false),
             calculations: RefCell::new(None),
-            chart_drag: Cell::new(None),
-            moving: Cell::new(None),
+            chart_selected: Cell::new(None),
+            chart_grab: Cell::new(None),
         })
+    }
+
+    /// The selected chart's index, if it is on the sheet showing and still exists.
+    fn chart_now(&self) -> Option<usize> {
+        let (sheet, index) = self.chart_selected.get()?;
+        let count = self
+            .app
+            .charts(self.sheet.get())
+            .map_or(0, |charts| charts.len());
+        (sheet == self.sheet.get() && index < count).then_some(index)
+    }
+
+    fn select_chart(&self, index: Option<usize>) {
+        self.chart_selected
+            .set(index.map(|index| (self.sheet.get(), index)));
     }
 
     /// The window's find bar.
@@ -723,6 +742,26 @@ impl ChartChoice {
     }
 }
 
+/// The cursor a selected chart's handle shows: AppKit's own for resizing a rectangular frame from
+/// that edge or corner, both ways — the view is flipped, so north is the top.
+fn frame_cursor(grip: grind_sheet::chart_frame::Grip) -> Retained<NSCursor> {
+    use grind_sheet::chart_frame::Grip;
+    let position = match grip {
+        Grip::North | Grip::Body => NSCursorFrameResizePosition::Top,
+        Grip::NorthEast => NSCursorFrameResizePosition::TopRight,
+        Grip::East => NSCursorFrameResizePosition::Right,
+        Grip::SouthEast => NSCursorFrameResizePosition::BottomRight,
+        Grip::South => NSCursorFrameResizePosition::Bottom,
+        Grip::SouthWest => NSCursorFrameResizePosition::BottomLeft,
+        Grip::West => NSCursorFrameResizePosition::Left,
+        Grip::NorthWest => NSCursorFrameResizePosition::TopLeft,
+    };
+    NSCursor::frameResizeCursorFromPosition_inDirections(
+        position,
+        NSCursorFrameResizeDirections::All,
+    )
+}
+
 /// Have the core tell `pane` about every change to its document from now on.
 pub fn watch(pane: &Rc<Pane>) {
     pane.app.set_observer(crate::watch::observer(pane));
@@ -852,7 +891,10 @@ define_class!(
                 &view,
                 &palette,
                 &pane.text,
-                pane.moving.get(),
+                crate::sheet::chart::Held {
+                    selected: pane.chart_now(),
+                    grab: pane.chart_grab.get(),
+                },
             );
             let ops: Vec<Op> = paint::cells(
                 &pane.app,
@@ -901,6 +943,10 @@ define_class!(
         fn do_command_by_selector(&self, selector: Sel) {
             let name = selector.name().to_str().unwrap_or_default();
             crate::drive::hear(name);
+            // A selected chart has the keys it uses before the grid does.
+            if self.chart_key(name) {
+                return;
+            }
             match keys::grid_action(name) {
                 Some(action) => self.act(action),
                 // A key with no meaning here is the platform's beep, as in every other view.
@@ -921,6 +967,11 @@ define_class!(
                 })
                 .unwrap_or_default();
             crate::drive::hear(format!("insertText:{typed:?}"));
+            // Typing lets go of a selected chart and means what it always means.
+            if self.ivars().chart_now().is_some() {
+                self.ivars().select_chart(None);
+                self.chart_changed();
+            }
             // Space on a checkbox's cell ticks it, rather than starting an edit with a space.
             let pane = self.ivars();
             let selection = pane.selection.get();
@@ -1053,8 +1104,31 @@ define_class!(
         }
 
         #[unsafe(method(mouseUp:))]
-        fn mouse_up(&self, event: &NSEvent) {
-            self.drop_chart(event);
+        fn mouse_up(&self, _event: &NSEvent) {
+            self.drop_chart();
+        }
+
+        /// Over a chart the pointer says what a drag there does: the open hand on its body, a
+        /// resize cursor on each of the selected one's handles.
+        #[unsafe(method(resetCursorRects))]
+        fn reset_cursor_rects(&self) {
+            let pane = self.ivars();
+            let sheet = pane.sheet.get();
+            let frames = crate::sheet::chart::frames(&pane.app, sheet);
+            let at = |r: grind_sheet::chart_frame::Frame| {
+                ns_rect(Rect::new(r.x + HEADER_W, r.y + HEADER_H, r.w, r.h))
+            };
+            let hand = NSCursor::openHandCursor();
+            for frame in frames.iter().flatten() {
+                self.addCursorRect_cursor(at(*frame), &hand);
+            }
+            if let Some(Some(frame)) = pane.chart_now().map(|index| frames.get(index).copied().flatten())
+            {
+                let reach = grind_sheet::chart_frame::HANDLE + 2.0 * grind_sheet::chart_frame::HANDLE_SLOP;
+                for (grip, square) in grind_sheet::chart_frame::handles(&frame, reach) {
+                    self.addCursorRect_cursor(at(square), &frame_cursor(grip));
+                }
+            }
         }
 
         /// A right-click, or a Control-click: the cells' context menu, from `menu.rs`'s table.
@@ -1147,12 +1221,26 @@ impl GridView {
 
     /// A right-click on a chart: its own menu — its title, its kind, its legend, and taking it
     /// away — each one `App::edit_chart` or `App::remove_chart`, one undo step.
+    /// It selects the chart first, so what the menu acts on is the chart that is outlined.
     fn chart_menu(&self, event: &NSEvent) -> Option<Retained<NSMenu>> {
         let pane = self.ivars();
         let sheet = pane.sheet.get();
         let at = located(self, event);
-        let index =
-            crate::sheet::chart::chart_at(&pane.app, sheet, at.x - HEADER_W, at.y - HEADER_H)?;
+        let (index, _) = crate::sheet::chart::hit(
+            &pane.app,
+            sheet,
+            pane.chart_now(),
+            at.x - HEADER_W,
+            at.y - HEADER_H,
+        )?;
+        pane.select_chart(Some(index));
+        self.chart_changed();
+        self.chart_menu_for(index)
+    }
+
+    fn chart_menu_for(&self, index: usize) -> Option<Retained<NSMenu>> {
+        let pane = self.ivars();
+        let sheet = pane.sheet.get();
         let chart = pane.app.charts(sheet).ok()?.get(index)?.clone();
         let mtm = self.mtm();
         let target: Retained<ChartChoice> = {
@@ -1199,69 +1287,158 @@ impl GridView {
         }
         menu.addItem(&NSMenuItem::separatorItem(mtm));
         item("Delete Chart", CHART_DELETE, false);
+        // The key that does the same to a selected chart, shown beside it as every Mac menu
+        // shows one: ⌫, with no modifier.
+        if let Some(delete) = menu.itemWithTag(CHART_DELETE) {
+            delete.setKeyEquivalent(&NSString::from_str("\u{8}"));
+            delete.setKeyEquivalentModifierMask(NSEventModifierFlags::empty());
+        }
         Some(menu)
     }
 
-    /// A press on a chart: picked up, by its index and where the pointer was. Answers whether
-    /// there was a chart there.
+    /// A press on a chart (`doc/chart-handling.md`): it is selected and picked up — its body to
+    /// move it, a handle of the selected one to resize it. A double click on one changes it.
+    /// Answers whether there was a chart there; a press anywhere else lets go of one.
     fn grab_chart(&self, event: &NSEvent) -> bool {
         let pane = self.ivars();
+        let sheet = pane.sheet.get();
         let at = located(self, event);
-        let Some(index) = crate::sheet::chart::chart_at(
-            &pane.app,
-            pane.sheet.get(),
-            at.x - HEADER_W,
-            at.y - HEADER_H,
-        ) else {
+        let (x, y) = (at.x - HEADER_W, at.y - HEADER_H);
+        let Some((index, grip)) =
+            crate::sheet::chart::hit(&pane.app, sheet, pane.chart_now(), x, y)
+        else {
+            if pane.chart_now().is_some() {
+                pane.select_chart(None);
+                self.chart_changed();
+            }
             return false;
         };
-        pane.chart_drag.set(Some((index, at.x, at.y)));
+        pane.select_chart(Some(index));
+        if event.clickCount() == 2 {
+            self.change_chart(index);
+            return true;
+        }
+        pane.chart_grab.set(crate::sheet::chart::Grab::new(
+            &pane.app, sheet, index, grip, x, y,
+        ));
+        self.chart_changed();
         true
     }
 
-    /// The chart being dragged drawn where the pointer has it; nothing written yet.
+    /// The chart being dragged drawn where the pointer has it; nothing written yet. ⇧ on a
+    /// corner keeps its proportions.
     fn drag_chart(&self, event: &NSEvent) -> bool {
         let pane = self.ivars();
-        let Some((index, x, y)) = pane.chart_drag.get() else {
+        let Some(mut grab) = pane.chart_grab.get() else {
             return false;
         };
         let at = located(self, event);
-        pane.moving.set(Some((index, at.x - x, at.y - y)));
+        let keep = event.modifierFlags().contains(NSEventModifierFlags::Shift);
+        grab.follow(at.x - HEADER_W, at.y - HEADER_H, keep);
+        pane.chart_grab.set(Some(grab));
         self.setNeedsDisplay(true);
         true
     }
 
-    /// The button up over a dragged chart: its new corner written once, one undo step.
-    fn drop_chart(&self, event: &NSEvent) {
+    /// The button up over a held chart: a press that barely moved only selected it; any other
+    /// writes its new frame once, one undo step.
+    fn drop_chart(&self) {
         let pane = self.ivars();
-        let Some((index, x, y)) = pane.chart_drag.take() else {
+        let Some(grab) = pane.chart_grab.take() else {
             return;
         };
-        pane.moving.set(None);
-        let at = located(self, event);
-        let (dx, dy) = (at.x - x, at.y - y);
-        let sheet = pane.sheet.get();
-        let chart = pane
-            .app
-            .charts(sheet)
-            .ok()
-            .and_then(|charts| charts.get(index).cloned());
-        let Some((chart, frame)) =
-            chart.and_then(|chart| crate::sheet::chart::frame_of(&chart).map(|f| (chart, f)))
-        else {
-            return;
-        };
-        if dx == 0.0 && dy == 0.0 {
-            return;
+        if !grab.is_click() {
+            self.write_chart(grab.index, grab.now);
         }
-        let (to_x, to_y) = crate::sheet::chart::moved_to(frame, dx, dy);
-        if let Err(error) =
-            pane.app
-                .reshape_chart(sheet, index, &to_x, &to_y, &chart.width, &chart.height)
+        self.chart_changed();
+    }
+
+    /// A chart's frame, in the sheet's points, written back — one `App::reshape_chart`.
+    fn write_chart(&self, index: usize, frame: grind_sheet::chart_frame::Frame) {
+        let pane = self.ivars();
+        let [x, y, w, h] = crate::sheet::chart::lengths(frame);
+        if let Err(error) = pane
+            .app
+            .reshape_chart(pane.sheet.get(), index, &x, &y, &w, &h)
         {
             pane.say(Some((&error.to_string(), None)));
         }
+    }
+
+    /// The selection of a chart changed: drawn again, and the cursor rects placed again, since
+    /// a selected chart's handles have cursors of their own.
+    fn chart_changed(&self) {
         self.setNeedsDisplay(true);
+        if let Some(window) = self.window() {
+            window.invalidateCursorRectsForView(self);
+        }
+    }
+
+    /// A selector while a chart is selected (`sheet::chart::key`): ⌫ deletes it, Escape lets go,
+    /// the arrows nudge it (⇧ for a large step), Return opens its menu. Any other lets go of it and
+    /// means what it always means — `false`.
+    fn chart_key(&self, selector: &str) -> bool {
+        use crate::sheet::chart::KeyAction;
+        use grind_sheet::chart_frame::Key;
+        let pane = self.ivars();
+        let Some(index) = pane.chart_now() else {
+            return false;
+        };
+        match crate::sheet::chart::key(selector) {
+            None => {
+                pane.select_chart(None);
+                self.chart_changed();
+                false
+            }
+            Some(KeyAction::Change) => {
+                self.change_chart(index);
+                true
+            }
+            Some(KeyAction::Key(Key::Delete)) => {
+                pane.select_chart(None);
+                match pane.app.remove_chart(pane.sheet.get(), index) {
+                    Ok(()) => {
+                        let said = grind_sheet::chart_frame::deleted_sentence("⌘Z");
+                        pane.say(Some((&said, None)));
+                    }
+                    Err(error) => pane.say(Some((&error.to_string(), None))),
+                }
+                self.chart_changed();
+                true
+            }
+            Some(KeyAction::Key(Key::Deselect)) => {
+                pane.select_chart(None);
+                self.chart_changed();
+                true
+            }
+            Some(KeyAction::Key(Key::Nudge(dx, dy))) => {
+                let frames = crate::sheet::chart::frames(&pane.app, pane.sheet.get());
+                if let Some(Some(mut frame)) = frames.get(index).copied() {
+                    frame.x += dx;
+                    frame.y += dy;
+                    self.write_chart(index, frame);
+                }
+                self.chart_changed();
+                true
+            }
+        }
+    }
+
+    /// Return on a selected chart, or a double click on one: its own menu, under its top-left
+    /// corner — the title, the kinds, the legends and Delete.
+    fn change_chart(&self, index: usize) {
+        let pane = self.ivars();
+        let Some(Some(frame)) = crate::sheet::chart::frames(&pane.app, pane.sheet.get())
+            .get(index)
+            .copied()
+        else {
+            return;
+        };
+        let Some(menu) = self.chart_menu_for(index) else {
+            return;
+        };
+        let at = NSPoint::new(frame.x + HEADER_W, frame.y + HEADER_H);
+        menu.popUpMenuPositioningItem_atLocation_inView(None, at, Some(self));
     }
 
     /// A chart's own menu over a chart, and the cells' otherwise.
