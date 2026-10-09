@@ -61,7 +61,8 @@ pub fn workbook(name: &str, bytes: &[u8]) -> Option<Result<Imported, String>> {
     }
     // Markdown arrives the same way, as a text document: flat ODF, renamed `.fodt`.
     if grind_core::kind(bytes).is_none()
-        && let Some(opened) = grind_text::commonmark::open(name, bytes)
+        && let Some(opened) =
+            grind_text::commonmark::open(name, bytes, &grind_text::commonmark::nowhere)
     {
         return Some(opened.map(|opened| Imported {
             name: opened.name,

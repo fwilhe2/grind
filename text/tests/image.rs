@@ -75,6 +75,7 @@ fn a_nested_frame_reads_as_one_image_sized_from_both_frames() {
         width,
         height,
         anchor,
+        ..
     } = image_run(&doc)
     else {
         unreachable!()
@@ -121,6 +122,8 @@ fn a_regenerated_document_writes_the_flat_shape_and_reads_it_back() {
         width: Some("5cm".to_owned()),
         height: Some("5cm".to_owned()),
         anchor: None,
+        title: Some("A <square>".to_owned()),
+        description: Some("Black & white".to_owned()),
     });
     doc.blocks.push(block);
 
@@ -133,6 +136,8 @@ fn a_regenerated_document_writes_the_flat_shape_and_reads_it_back() {
             width,
             height,
             anchor,
+            title,
+            description,
         } = image_run(&reread)
         else {
             unreachable!()
@@ -144,6 +149,9 @@ fn a_regenerated_document_writes_the_flat_shape_and_reads_it_back() {
         assert_eq!(data, PIXELS);
         assert_eq!(width.as_deref(), Some("5cm"));
         assert_eq!(height.as_deref(), Some("5cm"));
+        // The alternative text, escaped on the way out and back as it was.
+        assert_eq!(title.as_deref(), Some("A <square>"));
+        assert_eq!(description.as_deref(), Some("Black & white"));
     }
 }
 
@@ -308,4 +316,58 @@ fn a_picture_with_no_mime_type_is_typed_by_its_bytes() {
         })
         .collect();
     assert_eq!(mimes, vec!["image/png", "image/svg+xml"]);
+}
+
+/// Alternative text on a picture that was inserted with no size: the file declared `draw:` for
+/// the frame and never needed `svg:`, so a splice of the frame's first `svg:title` would name a
+/// prefix nothing binds — and the writer refuses to write that rather than writing it.
+#[test]
+fn alt_text_on_a_sizeless_picture_survives_a_save() {
+    use grind_text::{App, Caret};
+    let png = b"\x89PNG\r\n\x1a\n-pixels-".to_vec();
+    let app = App::new();
+    let at = Caret {
+        block: 0,
+        offset: 0,
+    };
+    app.insert_image(at, "image/png".to_owned(), png, None, None)
+        .unwrap();
+    for form in [Form::Flat, Form::Package] {
+        let saved = app.save_bytes(form).unwrap();
+        let reopened = App::new();
+        reopened.open_bytes("x", &saved).unwrap();
+        reopened
+            .set_image_alt(at, Some("Logo".to_owned()), Some("A square".to_owned()))
+            .unwrap();
+        let again = reopened.save_bytes(form).expect("writes");
+        let doc = odf::read(&again).expect("reads it back");
+        let Run::Image {
+            title, description, ..
+        } = image_run(&doc)
+        else {
+            unreachable!()
+        };
+        assert_eq!(title.as_deref(), Some("Logo"), "{form:?}");
+        assert_eq!(description.as_deref(), Some("A square"), "{form:?}");
+    }
+}
+
+/// Alternative text goes on a picture and nowhere else.
+#[test]
+fn alt_text_wants_a_picture_at_the_caret() {
+    use grind_text::{App, Caret};
+    let app = App::new();
+    app.insert_text(
+        Caret {
+            block: 0,
+            offset: 0,
+        },
+        "words",
+    )
+    .unwrap();
+    let at = Caret {
+        block: 0,
+        offset: 1,
+    };
+    assert!(app.set_image_alt(at, Some("x".to_owned()), None).is_err());
 }

@@ -243,15 +243,19 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
     // regenerate, the same way a style name the file has no room for does, just below. A
     // document read *with* an image already has the declaration on its own root, so this only
     // ever fires for one a person just added.
-    if doc
-        .blocks
-        .iter()
-        .flat_map(|b| b.runs.iter())
-        .any(|r| matches!(r, Run::Image { .. }))
-        && !source
-            .bytes
-            .windows(DRAW.len())
-            .any(|w| w == DRAW.as_bytes())
+    //
+    // `svg:` is the same question asked separately: a picture inserted with no size needed no
+    // `svg:` attribute, so a file can declare `draw:` and not `svg:`, and its first size or
+    // alternative text would then name a prefix nothing binds.
+    let declares = |uri: &str| source.bytes.windows(uri.len()).any(|w| w == uri.as_bytes());
+    let images = || doc.blocks.iter().flat_map(|b| b.runs.iter());
+    if images().any(|r| matches!(r, Run::Image { .. })) && !declares(DRAW) {
+        return None;
+    }
+    if images().any(|r| {
+        matches!(r, Run::Image { width, height, title, description, .. }
+            if width.is_some() || height.is_some() || title.is_some() || description.is_some())
+    }) && !declares(SVG)
     {
         return None;
     }
@@ -1474,13 +1478,15 @@ fn run(out: &mut String, run: &Run, pool: &Pool) {
             width,
             height,
             anchor,
+            title,
+            description,
         } => image(
             out,
             mime,
             data,
-            width.as_deref(),
-            height.as_deref(),
+            [width.as_deref(), height.as_deref()],
             anchor.as_deref(),
+            [title.as_deref(), description.as_deref()],
         ),
     }
 }
@@ -1500,9 +1506,9 @@ fn image(
     out: &mut String,
     mime: &str,
     data: &[u8],
-    width: Option<&str>,
-    height: Option<&str>,
+    [width, height]: [Option<&str>; 2],
     anchor: Option<&str>,
+    [title, description]: [Option<&str>; 2],
 ) {
     use base64::Engine as _;
     let _ = write!(
@@ -1519,7 +1525,15 @@ fn image(
     let _ = write!(out, "><draw:image draw:mime-type=\"{}\">", esc(mime));
     out.push_str("<office:binary-data>");
     out.push_str(&base64::engine::general_purpose::STANDARD.encode(data));
-    out.push_str("</office:binary-data></draw:image></draw:frame>");
+    out.push_str("</office:binary-data></draw:image>");
+    // After the image and in this order — `common-draw-shape-accessibility`, rng:1756.
+    if let Some(title) = title {
+        let _ = write!(out, "<svg:title>{}</svg:title>", esc(title));
+    }
+    if let Some(description) = description {
+        let _ = write!(out, "<svg:desc>{}</svg:desc>", esc(description));
+    }
+    out.push_str("</draw:frame>");
 }
 
 /// Character data, with every piece of significant whitespace written as the element ODF has

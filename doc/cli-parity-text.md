@@ -88,14 +88,19 @@ operations that feel like they belong to a UI.
 - `insert_image` — `grind text image <at> --from <path>`. One caret position, like a tab — the
   MIME type is guessed from the file's extension unless `--mime` overrides it, and
   `--width`/`--height` are ODF lengths, both optional
+- `set_image_alt` — `grind text alt <at> <title> [--description <text>]`. A picture's
+  alternative text (`svg:title`, `svg:desc`), which is also what Markdown's `![alt]` carries
 - `import_markdown` — `grind text import-md <source> [<at>]`, or `-` for stdin: CommonMark read
   by `pulldown-cmark` (`text/src/commonmark.rs`) and inserted as blocks, in one undo step.
-  Headings, nested lists, bold/italic/strike, `code`, links, fenced code and pipe tables map
-  onto the model; rules, raw HTML and images are dropped (alt text kept) and an ordered list
-  becomes a bulleted one — named losses, never approximations
-- `export_markdown` — `grind text export-md [range] [--out <path>]`: the writer for the same
-  format, which is ours since the model is the source. Underline, colour, size, bookmarks and
-  pictures have no CommonMark spelling and are not written
+  Headings, nested lists, bold/italic/strike, `code`, links, fenced code, pipe tables and
+  pictures map onto the model — a picture from a `data:` URI or a relative path beside the
+  markdown file, and its alt text when it cannot be found; rules and raw HTML are dropped and an
+  ordered list becomes a bulleted one — named losses, never approximations
+- `export_markdown` — `grind text export-md [range] [--out <path>] [--images-dir <dir> |
+  --inline-images]`: the writer for the same format, which is ours since the model is the
+  source. Pictures are files beside the markdown (`README.images/img-<hash>.png`, named for
+  their bytes) or `data:` URIs; underline, colour, size, bookmarks and a picture's size have no
+  CommonMark spelling and are not written
 - `insert_table` — `grind text table <at> --rows <n> --columns <n>`. A grid of cells, each
   holding one empty paragraph, in **one** undo step. A cell holds *blocks* — the body's own
   production (rng:16126) — so every other verb here reaches inside one unchanged: `p12` is the

@@ -205,6 +205,8 @@ fn images_are_the_one_named_gap() {
             width: Some("8cm".to_owned()),
             height: Some("5cm".to_owned()),
             anchor: None,
+            title: None,
+            description: None,
         },
         Run::plain("after"),
     ];

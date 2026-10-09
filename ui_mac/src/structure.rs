@@ -554,10 +554,11 @@ impl TextPane {
             .map_err(|error| error.to_string())
             .and_then(|bytes| String::from_utf8(bytes).map_err(|_| "not UTF-8".to_owned()));
         let block = self.state.borrow().caret.block;
+        let resolve = grind_text::commonmark::beside(&path);
         let done = text
             .and_then(|text| {
                 self.app
-                    .import_markdown(block, &text)
+                    .import_markdown(block, &text, &resolve)
                     .map_err(|error| error.to_string())
             })
             .map_err(|why| format!("{}: {why}", path.display()));
@@ -588,14 +589,13 @@ impl TextPane {
                 false => 0..self.app.block_count(),
             }
         };
+        // The pictures go in a directory beside it (`notes.images/`), named for their bytes.
+        let pictures = grind_text::commonmark::Pictures::beside(&path.display().to_string());
         let done = self
             .app
-            .export_markdown(blocks)
+            .export_markdown(blocks, &pictures)
             .map_err(|error| error.to_string())
-            .and_then(|text| {
-                grind_core::atomic::write(&path, text)
-                    .map_err(|error| format!("{}: {error}", path.display()))
-            });
+            .and_then(|exported| exported.save(&path));
         if let Err(why) = done {
             prompt::tell(mtm, "That could not be exported.", &why);
         }

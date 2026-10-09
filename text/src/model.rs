@@ -265,6 +265,12 @@ pub enum Run {
         /// attribute takes ODF's own default of `paragraph`. `None` means the document did not
         /// say, and then neither does the writer.
         anchor: Option<String>,
+        /// `svg:title` and `svg:desc` on the frame (`common-draw-shape-accessibility`,
+        /// rng:1756) — the picture's short and long alternative text, which is what a screen
+        /// reader says and what Markdown's `![alt]` carries. Written back after the
+        /// `draw:image`, where the schema puts them.
+        title: Option<String>,
+        description: Option<String>,
     },
     /// An inline element this model does not read — a footnote (`text:note`, rng:8465) or a
     /// field (`text:date`, `text:page-number`, …, rng:8549 onwards) — **kept as the file spelled

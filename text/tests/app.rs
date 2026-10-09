@@ -1464,7 +1464,10 @@ fn a_link_is_written_and_read_back() {
         );
     }
     assert_eq!(
-        app.export_markdown(0..1).unwrap().trim(),
+        app.export_markdown(0..1, &grind_text::commonmark::Pictures::Inline)
+            .unwrap()
+            .markdown
+            .trim(),
         "read the [spec](https://x.org)"
     );
 }

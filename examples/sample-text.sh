@@ -284,8 +284,8 @@ text lint "$doc" || true
 
 # --- markdown: CommonMark in and out, the way the spreadsheet does CSV --------------------------
 # Read by pulldown-cmark, written by `text/src/commonmark.rs`. What CommonMark cannot say
-# (underline, colour, a picture) is not written; what the model cannot hold (a rule, raw HTML)
-# is not read.
+# (underline, colour, a picture's size) is not written; what the model cannot hold (a rule, raw
+# HTML) is not read.
 
 say "export-md / import-md: CommonMark both ways"
 text export-md "$doc" > "$out/sample.md"
@@ -293,6 +293,25 @@ sed -n '1,12p' "$out/sample.md"
 text new "$out/from-md.fodt" --force
 text import-md "$out/from-md.fodt" "$out/sample.md"
 text outline "$out/from-md.fodt"
+
+# A picture is a file of its own beside the markdown — `picture.md`'s in `picture.images/`, named
+# for its bytes so an unchanged document exports to unchanged files — and its alternative text is
+# the `![alt]`. `--inline-images` would put it in the markdown as a `data:` URI instead.
+say "image, alt and export-md: a picture out to markdown as a file beside it, and back"
+pic="$out/picture.fodt"
+# Eight pixels square, in one colour: the smallest PNG worth looking at, without a file for it.
+printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGNQcGjAihiGlgQAygM4AbBvOSMAAAAASUVORK5CYII=' |
+    base64 -d >"$out/dot.png"
+rm -rf "$out/picture.images"
+run new "$pic" --force
+run set "$pic" p1 'A picture follows.'
+run insert "$pic"
+run image "$pic" p2 --from "$out/dot.png"
+run alt "$pic" p2+0 'A dot' --description 'Eight pixels square, in one colour'
+text export-md "$pic" --out "$out/picture.md"
+cat "$out/picture.md"
+run new "$out/picture-back.fodt" --force
+run import-md "$out/picture-back.fodt" "$out/picture.md"
 
 # --- pdf: the document on paper -------------------------------------------------------------
 # `doc/pdf-export.md`. Typeset on the page the document states — A4 when it states none, since

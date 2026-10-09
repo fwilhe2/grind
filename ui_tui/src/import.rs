@@ -62,7 +62,8 @@ pub fn open_markdown(
     path: &Path,
     bytes: &[u8],
 ) -> Result<Imported, String> {
-    let opened = grind_text::commonmark::open(&path.display().to_string(), bytes)
+    let resolve = grind_text::commonmark::beside(path);
+    let opened = grind_text::commonmark::open(&path.display().to_string(), bytes, &resolve)
         .ok_or("not a markdown file")??;
     core.open_bytes(&opened.name, &opened.odf)
         .map_err(|e| e.to_string())?;

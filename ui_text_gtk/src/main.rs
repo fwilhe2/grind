@@ -751,13 +751,16 @@ impl Ui {
 
     fn write_markdown_twin(&self, path: &Path) {
         let twin = path.with_extension("md");
+        let pictures = grind_text::commonmark::Pictures::beside(&document_name(Some(&twin)));
         match self
             .app
-            .export_markdown(0..self.app.block_count())
+            .export_markdown(0..self.app.block_count(), &pictures)
             .map_err(|error| error.to_string())
-            .and_then(|md| grind_core::atomic::write(&twin, md).map_err(|e| e.to_string()))
-        {
-            Ok(()) => self.toast(&format!("Saved, and wrote {}", document_name(Some(&twin)))),
+            .and_then(|exported| {
+                exported.save(&twin)?;
+                Ok(exported.summary(&document_name(Some(&twin))))
+            }) {
+            Ok(said) => self.toast(&format!("Saved. {said}")),
             Err(error) => self.toast(&format!("Saved, but could not export: {error}")),
         }
     }
@@ -836,9 +839,10 @@ impl Ui {
                         Err(error) => Err(format!("{}: {error}", path.display())),
                     };
                     let block = ui.doc.caret().block;
+                    let resolve = grind_text::commonmark::beside(&path);
                     match text.and_then(|text| {
                         ui.app
-                            .import_markdown(block, &text)
+                            .import_markdown(block, &text, &resolve)
                             .map_err(|error| error.to_string())
                     }) {
                         Ok(count) => {
@@ -883,14 +887,15 @@ impl Ui {
                         Some((from, to)) => from.block..to.block + 1,
                         None => 0..ui.app.block_count(),
                     };
+                    let pictures =
+                        grind_text::commonmark::Pictures::beside(&path.display().to_string());
                     match ui
                         .app
-                        .export_markdown(blocks)
+                        .export_markdown(blocks, &pictures)
                         .map_err(|error| error.to_string())
-                        .and_then(|md| {
-                            grind_core::atomic::write(&path, md).map_err(|e| e.to_string())
-                        }) {
-                        Ok(()) => ui.toast(&format!("Wrote {}", path.display())),
+                        .and_then(|exported| exported.save(&path))
+                    {
+                        Ok(said) => ui.toast(&said),
                         Err(error) => ui.toast(&format!("Could not export: {error}")),
                     }
                 }
@@ -1823,7 +1828,11 @@ fn open_path(app: &App, path: &Path) -> Result<Option<String>, String> {
         return Ok(Some(report.summary()));
     }
     if kind(&bytes).is_none()
-        && let Some(opened) = grind_text::commonmark::open(&path.display().to_string(), &bytes)
+        && let Some(opened) = grind_text::commonmark::open(
+            &path.display().to_string(),
+            &bytes,
+            &grind_text::commonmark::beside(path),
+        )
     {
         let opened = opened?;
         app.open_bytes(&opened.name, &opened.odf)

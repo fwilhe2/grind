@@ -1032,7 +1032,8 @@ impl App {
                 return;
             }
         };
-        match self.core.import_markdown(self.caret.block, &text) {
+        let resolve = grind_text::commonmark::beside(std::path::Path::new(path));
+        match self.core.import_markdown(self.caret.block, &text, &resolve) {
             Ok(n) => {
                 self.caret.offset = 0;
                 self.goal_x = None;
@@ -1104,13 +1105,15 @@ impl App {
             }
             None => 0..self.core.block_count(),
         };
+        // The pictures go in a directory beside it (`notes.images/`), named for their bytes.
+        let pictures = grind_text::commonmark::Pictures::beside(path);
         let result = self
             .core
-            .export_markdown(blocks)
+            .export_markdown(blocks, &pictures)
             .map_err(|e| e.to_string())
-            .and_then(|md| grind_core::atomic::write(path, md).map_err(|e| format!("{path}: {e}")));
+            .and_then(|exported| exported.save(std::path::Path::new(path)));
         self.status = match result {
-            Ok(()) => format!("wrote {path}"),
+            Ok(said) => said,
             Err(e) => e,
         };
     }

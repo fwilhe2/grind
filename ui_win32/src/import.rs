@@ -85,7 +85,9 @@ pub fn is_markdown(path: &Path, bytes: &[u8]) -> bool {
 /// Read the markdown at `path` into `app` — a new, unsaved document, the shape a CSV has.
 pub fn open_markdown(app: &grind_text::App, path: &Path, bytes: &[u8]) -> Result<Imported, String> {
     let name = path.display().to_string();
-    let opened = grind_text::commonmark::open(&name, bytes).ok_or("not a markdown file")??;
+    let resolve = grind_text::commonmark::beside(path);
+    let opened =
+        grind_text::commonmark::open(&name, bytes, &resolve).ok_or("not a markdown file")??;
     app.open_bytes(&opened.name, &opened.odf)
         .map_err(|error| format!("{name}: {error}"))?;
     Ok(Imported {

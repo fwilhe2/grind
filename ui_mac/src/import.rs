@@ -101,7 +101,12 @@ pub fn open(name: &str, bytes: &[u8]) -> Result<Opened, String> {
         });
     }
     if is_markdown(Path::new(name), bytes)
-        && let Some(opened) = grind_text::commonmark::open(name, bytes)
+        && let Some(opened) = grind_text::commonmark::open(
+            name,
+            bytes,
+            // `name` is the file's path, so a picture beside it comes in too.
+            &grind_text::commonmark::beside(Path::new(name)),
+        )
     {
         let opened = opened?;
         return Ok(Opened {

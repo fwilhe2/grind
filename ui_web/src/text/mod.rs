@@ -913,7 +913,11 @@ impl Ui {
     /// Markdown read in before the caret's block (`App::import_markdown`), one undo step.
     pub fn import_markdown(&self, markdown: &str) {
         let at = self.caret.get().block;
-        match self.app.import_markdown(at, markdown) {
+        // A page has no directory to read a picture from: only a `data:` URI comes in.
+        match self
+            .app
+            .import_markdown(at, markdown, &grind_text::commonmark::nowhere)
+        {
             Ok(n) => {
                 self.anchor.set(None);
                 self.set_caret(Caret {
@@ -926,14 +930,18 @@ impl Ui {
         }
     }
 
-    /// The selection's blocks, or the whole document, as CommonMark.
+    /// The selection's blocks, or the whole document, as CommonMark — its pictures inside it as
+    /// `data:` URIs, since a download is one file and there is nowhere to put a second.
     pub fn export_markdown(&self) -> Option<String> {
         let blocks = match self.selection() {
             Some((from, to)) => from.block..to.block + 1,
             None => 0..self.app.block_count(),
         };
-        match self.app.export_markdown(blocks) {
-            Ok(text) => Some(text),
+        match self
+            .app
+            .export_markdown(blocks, &grind_text::commonmark::Pictures::Inline)
+        {
+            Ok(exported) => Some(exported.markdown),
             Err(error) => {
                 self.set_message(error.to_string());
                 None

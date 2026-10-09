@@ -669,6 +669,7 @@ fn an_inline_picture_is_a_picture_at_its_size() {
                 width,
                 height,
                 anchor,
+                ..
             } => Some((
                 mime.clone(),
                 data.clone(),

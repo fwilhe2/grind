@@ -311,6 +311,9 @@ pub struct ImageView {
     /// as a document's own frequently are.
     pub width: Option<String>,
     pub height: Option<String>,
+    /// Its alternative text, short and long (`svg:title`, `svg:desc`) — [`App::set_image_alt`].
+    pub title: Option<String>,
+    pub description: Option<String>,
 }
 
 /// Whether a block is a picture, optionally followed by its caption's plain text — the shape
@@ -1504,10 +1507,55 @@ impl App {
                 // picture on a line of its own is. A document's own anchor is kept verbatim
                 // instead (`Run::Image::anchor`).
                 anchor: None,
+                title: None,
+                description: None,
             });
             runs.extend(tail);
             model::coalesce(&mut runs);
             block.runs = runs;
+            Self::commit(
+                state,
+                Action::SetBlock {
+                    index: at.block,
+                    block: Box::new(block),
+                },
+            )
+        })
+    }
+
+    /// Give the picture just after `at` its alternative text — `title` the short one a screen
+    /// reader says and Markdown writes as `![title]`, `description` the long one (`svg:title`,
+    /// `svg:desc`). `None` removes either. An error when the character after the caret is not a
+    /// picture, rather than a search for the nearest one.
+    pub fn set_image_alt(
+        &self,
+        at: Caret,
+        title: Option<String>,
+        description: Option<String>,
+    ) -> Result<()> {
+        self.mutate(|state| {
+            let mut block = block_at(state, at.block)?;
+            let mut start = 0;
+            let run = block.runs.iter_mut().find(|run| {
+                let here = start;
+                start += run.len();
+                here == at.offset && matches!(run, Run::Image { .. })
+            });
+            let Some(Run::Image {
+                title: old_title,
+                description: old_description,
+                ..
+            }) = run
+            else {
+                return Err(Error::Xml(format!(
+                    "{}+{} is not in front of a picture",
+                    loc::format(at.block),
+                    at.offset
+                )));
+            };
+            let empty = |s: Option<String>| s.filter(|s| !s.is_empty());
+            *old_title = empty(title);
+            *old_description = empty(description);
             Self::commit(
                 state,
                 Action::SetBlock {
@@ -1739,8 +1787,14 @@ impl App {
     }
 
     /// Insert markdown's blocks before block `index` ([`commonmark`]) — the word processor's
-    /// `import_csv`. One undo step; answers how many blocks it added.
-    pub fn import_markdown(&self, index: usize, markdown: &str) -> Result<usize> {
+    /// `import_csv`, its pictures found through `resolve` ([`commonmark::beside`],
+    /// [`commonmark::nowhere`]). One undo step; answers how many blocks it added.
+    pub fn import_markdown(
+        &self,
+        index: usize,
+        markdown: &str,
+        resolve: &commonmark::Resolve<'_>,
+    ) -> Result<usize> {
         self.mutate(|state| {
             if index > state.doc.blocks.len() {
                 return Err(Error::Xml(format!(
@@ -1748,7 +1802,7 @@ impl App {
                     loc::format(index)
                 )));
             }
-            let blocks = commonmark::parse(markdown, &mut state.doc);
+            let blocks = commonmark::parse(markdown, &mut state.doc, resolve);
             let count = blocks.len();
             if count == 0 {
                 return Ok(0);
@@ -1766,15 +1820,20 @@ impl App {
         })
     }
 
-    /// The blocks in `range` as CommonMark ([`commonmark::write`]) — `export_csv`'s twin.
-    pub fn export_markdown(&self, range: Range<usize>) -> Result<String> {
+    /// The blocks in `range` as CommonMark ([`commonmark::export`]) — `export_csv`'s twin —
+    /// and the pictures it names, which the caller writes where `pictures` said they would be.
+    pub fn export_markdown(
+        &self,
+        range: Range<usize>,
+        pictures: &commonmark::Pictures,
+    ) -> Result<commonmark::Exported> {
         let state = self.state.read().unwrap();
         let blocks = state
             .doc
             .blocks
             .get(range)
             .ok_or_else(|| Error::Xml("that range runs past the end".to_owned()))?;
-        Ok(commonmark::write(blocks))
+        Ok(commonmark::export(blocks, pictures))
     }
 
     /// The table the block at `index` is in: where it starts and ends, how big it is, and what
@@ -2611,12 +2670,16 @@ fn run_views(
                 data,
                 width,
                 height,
+                title,
+                description,
                 ..
             } => Some(ImageView {
                 mime: mime.clone(),
                 data: data.clone(),
                 width: width.clone(),
                 height: height.clone(),
+                title: title.clone(),
+                description: description.clone(),
             }),
             _ => None,
         };
@@ -2681,6 +2744,8 @@ mod tests {
                 data: Vec::new(),
                 width: None,
                 height: None,
+                title: None,
+                description: None,
             }),
         }
     }

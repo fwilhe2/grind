@@ -487,6 +487,8 @@ mod tests {
                 width: None,
                 height: None,
                 anchor: None,
+                title: None,
+                description: None,
             }],
         );
         let report = lint(&doc, &Options::default());

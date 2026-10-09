@@ -201,6 +201,10 @@ struct PendingImage {
     /// `text:anchor-type` off the outermost frame — where the picture is anchored, which is
     /// what decides whether it sits in the sentence or at the top of the paragraph.
     anchor: Option<String>,
+    /// `svg:title` / `svg:desc` off whichever frame had them first — LibreOffice puts them on
+    /// the frame holding the picture, which is the inner one when it wrapped a caption.
+    title: Option<String>,
+    description: Option<String>,
     /// The plain text of the frame's own caption paragraph (`text:p text:style-name="Figure"`
     /// or whatever a document called it) — everything [`TextBoxSearch`] sees that is not the
     /// nested resizing frame itself. Not a separate run until the outermost frame closes, so
@@ -2411,6 +2415,11 @@ impl Context<Builder> for Frame {
             // and its sequence field's structure are out of scope, exactly like everywhere
             // else a run only keeps text (`doc/text-core.md`).
             (Ns::Draw, "text-box") => Some(Box::new(TextBoxSearch)),
+            (Ns::Svg, "title") => Some(Box::new(AltText::default())),
+            (Ns::Svg, "desc") => Some(Box::new(AltText {
+                long: true,
+                ..AltText::default()
+            })),
             _ => None,
         }
     }
@@ -2433,6 +2442,8 @@ impl Context<Builder> for Frame {
                 width: pending.width,
                 height: pending.height,
                 anchor: pending.anchor,
+                title: pending.title,
+                description: pending.description,
             };
             b.record_frame(&image, pending.start);
             b.push_run(image);
@@ -2440,6 +2451,32 @@ impl Context<Builder> for Frame {
             // sequence field arrived in while the text-box was still open.
             if !pending.caption.is_empty() {
                 b.push_run(Run::plain(pending.caption));
+            }
+        }
+    }
+}
+
+/// `svg:title` or `svg:desc` on a frame (rng:1756) — plain text, kept by the first frame that
+/// says it.
+#[derive(Default)]
+struct AltText {
+    long: bool,
+    text: String,
+}
+
+impl Context<Builder> for AltText {
+    fn text(&mut self, text: &str, _: &mut Builder) {
+        self.text.push_str(text);
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        if let Some(pending) = &mut b.image {
+            let slot = match self.long {
+                true => &mut pending.description,
+                false => &mut pending.title,
+            };
+            if slot.is_none() && !self.text.is_empty() {
+                *slot = Some(std::mem::take(&mut self.text));
             }
         }
     }

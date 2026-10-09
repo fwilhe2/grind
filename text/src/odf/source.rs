@@ -137,7 +137,7 @@ pub struct TableSource {
     pub cells: HashMap<(u32, u32), String>,
 }
 
-/// What a picture read as — its type, bytes, size and anchor — as one number, so the writer can
+/// What a picture read as — its type, bytes, size, anchor and alternative text — as one number, so the writer can
 /// tell whether an image run is still a frame the file spelled ([`Source::frames`]). `None` for
 /// any other run.
 pub fn image_key(run: &crate::model::Run) -> Option<u64> {
@@ -148,12 +148,14 @@ pub fn image_key(run: &crate::model::Run) -> Option<u64> {
         width,
         height,
         anchor,
+        title,
+        description,
     } = run
     else {
         return None;
     };
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    (mime, data, width, height, anchor).hash(&mut hasher);
+    (mime, data, width, height, anchor, title, description).hash(&mut hasher);
     Some(hasher.finish())
 }
 

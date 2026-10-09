@@ -824,6 +824,8 @@ mod tests {
                 width: None,
                 height: None,
                 anchor: None,
+                title: None,
+                description: None,
             },
         ];
         assert!(write(&runs).is_none());

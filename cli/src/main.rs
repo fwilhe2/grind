@@ -442,6 +442,19 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             finish_text(&app, cli, file, true)
         }
 
+        TextCommand::Alt {
+            file,
+            at: address,
+            title,
+            description,
+        } => {
+            let app = open_text(file)?;
+            let caret = caret_at(&app, address)?;
+            app.set_image_alt(caret, Some(title.clone()), description.clone())
+                .map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, true)
+        }
+
         TextCommand::ImportMd {
             file,
             source,
@@ -454,7 +467,12 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
                 None => app.block_count(),
             };
             let markdown = read_text_file_or_stdin(source)?;
-            app.import_markdown(index, &markdown)
+            let resolve = grind_text::commonmark::beside(Path::new(source));
+            let resolve: &grind_text::commonmark::Resolve = match source.as_str() {
+                "-" => &grind_text::commonmark::nowhere,
+                _ => &resolve,
+            };
+            app.import_markdown(index, &markdown, resolve)
                 .map_err(|e| e.to_string())?;
             finish_text(&app, cli, file, true)
         }
@@ -541,27 +559,62 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             text_lines(vec![show_path(out)])
         }
 
-        TextCommand::ExportMd { file, range, out } => {
+        TextCommand::ExportMd {
+            file,
+            range,
+            out,
+            images_dir,
+            inline_images,
+        } => {
+            use grind_text::commonmark::Pictures;
             let app = open_text(file)?;
             let blocks = match range {
                 Some(range) => span(&app, range)?,
                 None => 0..app.block_count(),
             };
-            let markdown = app.export_markdown(blocks).map_err(|e| e.to_string())?;
+            let pictures = match (images_dir, out) {
+                _ if *inline_images => Pictures::Inline,
+                (Some(dir), _) => Pictures::Files { dir: dir.clone() },
+                (None, Some(path)) => Pictures::beside(&path.display().to_string()),
+                (None, None) => Pictures::Inline,
+            };
+            let exported = app
+                .export_markdown(blocks, &pictures)
+                .map_err(|e| e.to_string())?;
             match out {
                 Some(path) => {
-                    grind_core::atomic::write(path, &markdown)
-                        .map_err(|e| format!("{}: {e}", path.display()))?;
-                    text_lines(vec![show_path(path)])
+                    exported.save(path)?;
+                    let mut written = vec![show_path(path)];
+                    let base = path.parent().unwrap_or(Path::new(""));
+                    written.extend(
+                        exported
+                            .pictures
+                            .iter()
+                            .map(|p| show_path(&base.join(&p.path))),
+                    );
+                    text_lines(written)
                 }
-                None => text_lines(
-                    markdown
-                        .strip_suffix('\n')
-                        .unwrap_or(&markdown)
-                        .split('\n')
-                        .map(str::to_owned)
-                        .collect(),
-                ),
+                None => {
+                    // To stdout, its pictures — when it has any — relative to here.
+                    for picture in &exported.pictures {
+                        let path = Path::new(&picture.path);
+                        if let Some(dir) = path.parent() {
+                            std::fs::create_dir_all(dir)
+                                .map_err(|e| format!("{}: {e}", dir.display()))?;
+                        }
+                        grind_core::atomic::write(path, &picture.data)
+                            .map_err(|e| format!("{}: {e}", path.display()))?;
+                    }
+                    let markdown = exported.markdown;
+                    text_lines(
+                        markdown
+                            .strip_suffix('\n')
+                            .unwrap_or(&markdown)
+                            .split('\n')
+                            .map(str::to_owned)
+                            .collect(),
+                    )
+                }
             }
         }
 
@@ -1357,10 +1410,12 @@ enum TextCommand {
     /// Import CommonMark into the document — the word processor's `import-csv`
     ///
     /// Read by `pulldown-cmark`: headings, paragraphs, lists (nested), bold, italic,
-    /// strikethrough, `code`, links, fenced code and pipe tables become what they are in the
-    /// document. What it has no place for is dropped rather than approximated — rules, raw
-    /// HTML, images (their alt text is kept) — and an ordered list becomes a bulleted one.
-    /// One undo entry. `-` reads standard input.
+    /// strikethrough, `code`, links, fenced code, pipe tables and pictures become what they are
+    /// in the document. A picture is embedded from a `data:` URI or from a relative path beside
+    /// the markdown file — never an absolute path or a URL — and is its alt text when it cannot
+    /// be found. What it has no place for is dropped rather than approximated — rules, raw
+    /// HTML — and an ordered list becomes a bulleted one. One undo entry. `-` reads standard
+    /// input, whose pictures can only be `data:` URIs.
     ImportMd {
         file: PathBuf,
         /// The markdown file, or - for stdin
@@ -1374,9 +1429,14 @@ enum TextCommand {
 
     /// Export the document, or a range of it, as CommonMark
     ///
-    /// Underline, colour, size, bookmarks and pictures have no CommonMark spelling and are not
-    /// written. A table's first row becomes its header. Prints to stdout unless `--out` names
-    /// a file.
+    /// Underline, colour, size, bookmarks and a picture's size have no CommonMark spelling and
+    /// are not written. A table's first row becomes its header. Prints to stdout unless `--out`
+    /// names a file.
+    ///
+    /// Each picture is written as a file beside the markdown — `README.md`'s in
+    /// `README.images/`, or `--images-dir` — named for its content, so an unchanged document
+    /// exports to unchanged files. `--inline-images` puts them in the markdown as `data:` URIs
+    /// instead, and is what stdout gets unless `--images-dir` is named.
     ExportMd {
         file: PathBuf,
         /// A block range, e.g. p3:p9 or §2 for a whole section — omit for everything
@@ -1384,6 +1444,28 @@ enum TextCommand {
         /// Write to this file instead of stdout
         #[arg(long)]
         out: Option<PathBuf>,
+        /// Where the pictures go, relative to the markdown file, e.g. doc/img
+        #[arg(long, value_name = "DIR", conflicts_with = "inline_images")]
+        images_dir: Option<String>,
+        /// Put the pictures in the markdown as data: URIs rather than files beside it
+        #[arg(long)]
+        inline_images: bool,
+    },
+
+    /// Give a picture its alternative text — what a screen reader says and markdown's `![alt]`
+    ///
+    /// The address is the picture's own position, e.g. p4+0 for a picture at the front of p4.
+    /// `--description` is the longer text (`svg:desc`); both are replaced, so a picture given
+    /// no `--description` has none, and an empty title removes the short one.
+    Alt {
+        file: PathBuf,
+        /// The picture's position, e.g. p4+0
+        at: String,
+        /// The short text (`svg:title`)
+        title: String,
+        /// The long text (`svg:desc`)
+        #[arg(long)]
+        description: Option<String>,
     },
 
     /// Export the document as a PDF, ready to print

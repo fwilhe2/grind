@@ -8474,7 +8474,8 @@ fn text_import_markdown(hwnd: HWND) {
     unsafe {
         with_text(hwnd, |text| {
             let block = text.caret.block;
-            match text.app.import_markdown(block, &markdown) {
+            let resolve = grind_text::commonmark::beside(&path);
+            match text.app.import_markdown(block, &markdown, &resolve) {
                 Ok(count) => {
                     text.place(Caret { block, offset: 0 }, false);
                     text.caret_on = true;
@@ -8517,26 +8518,26 @@ fn text_export_markdown(hwnd: HWND) {
                     *blocks.start()..*blocks.end() + 1
                 }
             };
+            // The pictures go in a directory beside it (`notes.images\`), named for their bytes.
+            let pictures = grind_text::commonmark::Pictures::beside(&path.display().to_string());
             text.app
-                .export_markdown(blocks)
+                .export_markdown(blocks, &pictures)
                 .map_err(|error| error.to_string())
         })
     };
-    let markdown = match written {
-        Some(Ok(markdown)) => markdown,
+    let exported = match written {
+        Some(Ok(exported)) => exported,
         Some(Err(why)) => return dialog::error(hwnd, &why),
         None => return,
     };
-    if let Err(error) = grind_core::atomic::write(&path, markdown) {
-        return dialog::error(
-            hwnd,
-            &format!("Could not write {}:\n\n{error}", path.display()),
-        );
-    }
+    let said = match exported.save(&path) {
+        Ok(said) => said,
+        Err(error) => return dialog::error(hwnd, &format!("Could not write it:\n\n{error}")),
+    };
     // SAFETY: one borrow, no dialog.
     unsafe {
         with_text(hwnd, |text| {
-            text.say(Some(format!("Wrote {}.", path.display())));
+            text.say(Some(said));
         });
     }
     refresh(hwnd);
