@@ -91,6 +91,16 @@ pub enum Command {
     /// (`verbs::preview_insert_chart`); nothing is written unless Insert is pressed.
     PreviewChart,
     DeleteChart,
+    /// A chart of the table the selection means as one kind — GNOME's dialog's three buttons,
+    /// as menu items (`verbs::insert_chart`'s `kind`).
+    InsertBarChart,
+    InsertLineChart,
+    InsertPieChart,
+    /// The selected chart, else the last, turned into one kind (`verbs::set_chart_kind`) —
+    /// checked by the kind it already is.
+    ChartToBar,
+    ChartToLine,
+    ChartToPie,
     /// The last chart's kind, title, legend and size, asked for in words (`verbs::restyle_chart`).
     RestyleChart,
     /// The last chart's corner moved to the active cell, its size kept (`verbs::move_chart`).
@@ -383,6 +393,12 @@ impl Command {
         Command::InsertChart,
         Command::PreviewChart,
         Command::DeleteChart,
+        Command::InsertBarChart,
+        Command::InsertLineChart,
+        Command::InsertPieChart,
+        Command::ChartToBar,
+        Command::ChartToLine,
+        Command::ChartToPie,
         Command::RestyleChart,
         Command::MoveChart,
         Command::WrapText,
@@ -506,6 +522,35 @@ impl Command {
         Command::CurrencyDollar,
         Command::CurrencyPound,
     ];
+
+    /// The three *Insert … Chart* verbs and the three *Change to …* ones, each in
+    /// `ChartKind::ALL`'s order.
+    pub const INSERT_CHART_KINDS: [Command; 3] = [
+        Command::InsertBarChart,
+        Command::InsertLineChart,
+        Command::InsertPieChart,
+    ];
+    pub const CHART_KINDS: [Command; 3] = [
+        Command::ChartToBar,
+        Command::ChartToLine,
+        Command::ChartToPie,
+    ];
+
+    /// The kind an *Insert … Chart* verb inserts, or `None` for every other verb.
+    pub fn inserts_chart_kind(self) -> Option<grind_sheet::ChartKind> {
+        Self::INSERT_CHART_KINDS
+            .iter()
+            .position(|c| *c == self)
+            .map(|i| grind_sheet::ChartKind::ALL[i])
+    }
+
+    /// The kind a *Change to …* verb turns a chart into, or `None` for every other verb.
+    pub fn chart_kind(self) -> Option<grind_sheet::ChartKind> {
+        Self::CHART_KINDS
+            .iter()
+            .position(|c| *c == self)
+            .map(|i| grind_sheet::ChartKind::ALL[i])
+    }
 
     /// Which of `numfmt::CURRENCIES` this verb writes, by index — `None` for every other verb.
     pub fn currency(self) -> Option<usize> {
@@ -802,26 +847,6 @@ pub const MENUS: &[Menu] = &[
                 label: "&Explain Formula…\tCtrl+Shift+E",
             },
             Item::Verb {
-                command: Command::InsertChart,
-                label: "Insert &Chart",
-            },
-            Item::Verb {
-                command: Command::PreviewChart,
-                label: "Chart &Preview…",
-            },
-            Item::Verb {
-                command: Command::RestyleChart,
-                label: "Chan&ge Chart…",
-            },
-            Item::Verb {
-                command: Command::MoveChart,
-                label: "Move Chart &Here",
-            },
-            Item::Verb {
-                command: Command::DeleteChart,
-                label: "De&lete Chart",
-            },
-            Item::Verb {
                 command: Command::Evaluate,
                 label: "E&valuate…",
             },
@@ -854,6 +879,60 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::RemoveRule,
                 label: "Remove Cond&itional Format…",
+            },
+        ],
+    },
+    // The charts' own: inserted as the cells want or as a kind somebody chose, previewed, and the
+    // selected chart (else the last) turned into another kind, restyled, moved or deleted — the
+    // GNOME dialog's three kind buttons as six items, which is what outgrew Data.
+    Menu {
+        title: "&Chart",
+        items: &[
+            Item::Verb {
+                command: Command::InsertChart,
+                label: "Insert &Chart",
+            },
+            Item::Verb {
+                command: Command::InsertBarChart,
+                label: "Insert &Bar Chart",
+            },
+            Item::Verb {
+                command: Command::InsertLineChart,
+                label: "Insert &Line Chart",
+            },
+            Item::Verb {
+                command: Command::InsertPieChart,
+                label: "Insert P&ie Chart",
+            },
+            Item::Verb {
+                command: Command::PreviewChart,
+                label: "Chart &Preview…",
+            },
+            Item::Separator,
+            Item::Verb {
+                command: Command::ChartToBar,
+                label: "Change to B&ar Chart",
+            },
+            Item::Verb {
+                command: Command::ChartToLine,
+                label: "Change to Li&ne Chart",
+            },
+            Item::Verb {
+                command: Command::ChartToPie,
+                label: "Change to Pi&e Chart",
+            },
+            Item::Verb {
+                command: Command::RestyleChart,
+                label: "Chan&ge Chart…",
+            },
+            Item::Separator,
+            Item::Verb {
+                command: Command::MoveChart,
+                label: "Move Chart &Here",
+            },
+            Item::Verb {
+                command: Command::DeleteChart,
+                label: "&Delete Chart",
             },
         ],
     },
@@ -1286,6 +1365,12 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::InsertChart
         | Command::PreviewChart
         | Command::DeleteChart
+        | Command::InsertBarChart
+        | Command::InsertLineChart
+        | Command::InsertPieChart
+        | Command::ChartToBar
+        | Command::ChartToLine
+        | Command::ChartToPie
         | Command::RestyleChart
         | Command::MoveChart
         | Command::WrapText
@@ -1536,6 +1621,26 @@ mod tests {
         ));
     }
 
+    /// Every kind GNOME's chart dialog offers is an item here, to insert as and to change to,
+    /// in `ChartKind::ALL`'s order, and only over the grid.
+    #[test]
+    fn every_chart_kind_is_an_item_to_insert_as_and_change_to() {
+        for (i, kind) in grind_sheet::ChartKind::ALL.into_iter().enumerate() {
+            for command in [Command::INSERT_CHART_KINDS[i], Command::CHART_KINDS[i]] {
+                let label = label_for(command).expect("in a menu");
+                assert!(label.replace('&', "").contains(kind.name()), "{label}");
+                assert!(!applies_to(command, grind_core::DocumentKind::Text));
+            }
+            assert_eq!(
+                Command::INSERT_CHART_KINDS[i].inserts_chart_kind(),
+                Some(kind)
+            );
+            assert_eq!(Command::CHART_KINDS[i].chart_kind(), Some(kind));
+        }
+        assert_eq!(Command::InsertChart.inserts_chart_kind(), None);
+        assert_eq!(Command::RestyleChart.chart_kind(), None);
+    }
+
     #[test]
     fn every_menu_has_distinct_mnemonics() {
         let mnemonic = |label: &str| {
@@ -1722,6 +1827,12 @@ mod tests {
             Command::InsertChart,
             Command::PreviewChart,
             Command::DeleteChart,
+            Command::InsertBarChart,
+            Command::InsertLineChart,
+            Command::InsertPieChart,
+            Command::ChartToBar,
+            Command::ChartToLine,
+            Command::ChartToPie,
             Command::RestyleChart,
             Command::MoveChart,
             Command::BordersAll,

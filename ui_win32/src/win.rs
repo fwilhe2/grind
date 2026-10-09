@@ -1742,6 +1742,7 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
         // only when the pane changes: the currency the active cell has now.
         WM_INITMENUPOPUP => {
             check_format(hwnd, HMENU(wparam.0 as *mut std::ffi::c_void));
+            check_chart_kind(hwnd, HMENU(wparam.0 as *mut std::ffi::c_void));
             LRESULT(0)
         }
         // A character, after the keyboard layout and after the IME — which is why a printable
@@ -2185,6 +2186,9 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
         // A chart's own menu, over the chart `context_on_chart` has just selected — the three
         // verbs every window offers there, each of which has its key on a selected chart too.
         &[
+            Command::ChartToBar,
+            Command::ChartToLine,
+            Command::ChartToPie,
             Command::RestyleChart,
             Command::MoveChart,
             Command::DeleteChart,
@@ -3945,7 +3949,15 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::FillAcross => fill_across(hwnd),
         Command::MergeCells => merge_cells(hwnd, true),
         Command::UnmergeCells => merge_cells(hwnd, false),
-        Command::InsertChart => insert_chart(hwnd),
+        Command::InsertChart => insert_chart(hwnd, None),
+        Command::InsertBarChart | Command::InsertLineChart | Command::InsertPieChart => {
+            insert_chart(hwnd, command.inserts_chart_kind())
+        }
+        Command::ChartToBar | Command::ChartToLine | Command::ChartToPie => {
+            if let Some(kind) = command.chart_kind() {
+                set_chart_kind(hwnd, kind);
+            }
+        }
         Command::PreviewChart => preview_chart(hwnd),
         Command::DeleteChart => delete_chart(hwnd),
         Command::RestyleChart => restyle_chart(hwnd),
@@ -4215,9 +4227,10 @@ fn merge_cells(hwnd: HWND, merge: bool) {
     refresh(hwnd);
 }
 
-/// Data ▸ Insert Chart — `grind_sheet::verbs::insert_chart` over the selection; this window says
-/// only where a column and a row sit, in millimetres.
-fn insert_chart(hwnd: HWND) {
+/// Chart ▸ Insert Chart, and Insert Bar/Line/Pie Chart — `grind_sheet::verbs::insert_chart` over
+/// the selection, as `kind` or as the kind the cells want; this window says only where a column
+/// and a row sit, in millimetres.
+fn insert_chart(hwnd: HWND, kind: Option<grind_sheet::ChartKind>) {
     // SAFETY: one borrow, no dialog.
     unsafe {
         with_sheet(hwnd, |state| {
@@ -4228,6 +4241,7 @@ fn insert_chart(hwnd: HWND) {
                 state.sheet,
                 start,
                 end,
+                kind,
                 |col, row| {
                     (
                         state.geom.cols.offset_of(col) * px,
@@ -4244,33 +4258,67 @@ fn insert_chart(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// Data ▸ Chart Preview… — the chart Insert would make, drawn in a dialog of its own; **Insert**
-/// there is the same `insert_chart` as the menu's, and Cancel writes nothing. The borrow is
+/// Chart ▸ Chart Preview… — the chart Insert would make, drawn in a dialog of its own with the
+/// three kinds to press, opening on the one the cells want; **Insert** there is the same
+/// `insert_chart` as the menu's, as the kind pressed, and Cancel writes nothing. The borrow is
 /// released before the dialog opens (decision 7).
 fn preview_chart(hwnd: HWND) {
     // SAFETY: one borrow, ended before the modal below.
     let made = unsafe {
         with_sheet(hwnd, |state| {
             let (start, end) = state.selection.rect();
-            let made =
-                grind_sheet::verbs::preview_insert_chart(&state.app, state.sheet, start, end);
+            let preview = |kind| {
+                grind_sheet::verbs::preview_insert_chart(&state.app, state.sheet, start, end, kind)
+            };
+            let made = preview(None).and_then(|(guessed, _)| {
+                let pictures = grind_sheet::ChartKind::ALL
+                    .into_iter()
+                    .map(|kind| preview(Some(kind)).map(|(chart, data)| (kind, chart, data)))
+                    .collect::<grind_sheet::Result<Vec<_>>>()?;
+                let shown = grind_sheet::ChartKind::ALL
+                    .iter()
+                    .position(|kind| *kind == guessed.kind)
+                    .unwrap_or(0);
+                Ok((pictures, shown))
+            });
             if let Err(error) = &made {
                 state.say(Some(error.to_string()));
             }
-            made.ok().map(|(chart, data)| (chart, data, state.geom.dpi))
+            made.ok()
+                .map(|(pictures, shown)| (pictures, shown, state.geom.dpi))
         })
         .flatten()
     };
-    if let Some((chart, data, dpi)) = made
-        && crate::dialog::chart_preview(hwnd, &chart, &data, dpi)
+    if let Some((pictures, shown, dpi)) = made
+        && let Some(kind) = crate::dialog::chart_preview(hwnd, pictures, shown, dpi)
     {
-        insert_chart(hwnd);
+        insert_chart(hwnd, Some(kind));
         return;
     }
     refresh(hwnd);
 }
 
-/// Data ▸ Change Chart… — the selected chart, else the last: its kind, title and legend in words
+/// Chart ▸ Change to Bar/Line/Pie Chart, and the same three on a chart's own menu — the selected
+/// chart, else the last, turned into `kind` (`verbs::set_chart_kind`).
+fn set_chart_kind(hwnd: HWND, kind: grind_sheet::ChartKind) {
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            state.say(Some(match state.chart_target() {
+                None => "This sheet has no chart.".to_owned(),
+                Some(index) => {
+                    match grind_sheet::verbs::set_chart_kind(&state.app, state.sheet, index, kind) {
+                        Ok(said) => format!("{said} Ctrl+Z takes it back."),
+                        Err(why) => why,
+                    }
+                }
+            }));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Chart ▸ Change Chart… — the selected chart, else the last: its kind, title and legend in words
 /// (`verbs::restyle_chart`). Return on a selected chart, a double click on one, and its menu.
 fn restyle_chart(hwnd: HWND) {
     let Some(words) = dialog::prompt(
@@ -4299,7 +4347,7 @@ fn restyle_chart(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// Data ▸ Move Chart Here — the selected chart, else the last: its corner to the active cell's,
+/// Chart ▸ Move Chart Here — the selected chart, else the last: its corner to the active cell's,
 /// its size kept (`verbs::move_chart`), over the offsets this window draws the grid at.
 fn move_chart(hwnd: HWND) {
     // SAFETY: one borrow, no dialog.
@@ -4329,7 +4377,7 @@ fn move_chart(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// Data ▸ Delete Chart — the selected chart (Delete, Backspace, its menu), else the last.
+/// Chart ▸ Delete Chart — the selected chart (Delete, Backspace, its menu), else the last.
 fn delete_chart(hwnd: HWND) {
     // SAFETY: one borrow, no dialog.
     unsafe {
@@ -5503,6 +5551,38 @@ fn format_step_decimals(hwnd: HWND, step: i8) {
     });
 }
 
+/// Check the *Change to …* item naming the kind the chart those items act on already is — the
+/// selected chart, else the last — in whichever menu is opening, `check_format`'s arrangement.
+fn check_chart_kind(hwnd: HWND, popup: HMENU) {
+    // SAFETY: one borrow; nothing inside dispatches. `None` off the grid.
+    let Some(kind) = (unsafe {
+        with_sheet(hwnd, |state| {
+            let index = state.chart_target()?;
+            state
+                .app
+                .charts(state.sheet)
+                .ok()?
+                .get(index)
+                .map(|chart| chart.kind)
+        })
+    }) else {
+        return;
+    };
+    for (command, each) in Command::CHART_KINDS
+        .into_iter()
+        .zip(grind_sheet::ChartKind::ALL)
+    {
+        let flag = match kind == Some(each) {
+            true => MF_CHECKED,
+            false => MF_UNCHECKED,
+        };
+        // SAFETY: `popup` is the menu Windows is about to show, alive for this message.
+        unsafe {
+            let _ = CheckMenuItem(popup, u32::from(command.id()), (MF_BYCOMMAND | flag).0);
+        }
+    }
+}
+
 /// Check the format items that describe the active cell — the currency its format names, and the
 /// strip's toggles that are in — and uncheck the rest, in whichever menu is opening.
 /// `MF_BYCOMMAND` on a popup that holds none of them — File, say — finds nothing and changes
@@ -6451,6 +6531,12 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::MergeCells
         | Command::UnmergeCells
         | Command::InsertChart
+        | Command::InsertBarChart
+        | Command::InsertLineChart
+        | Command::InsertPieChart
+        | Command::ChartToBar
+        | Command::ChartToLine
+        | Command::ChartToPie
         | Command::PreviewChart
         | Command::DeleteChart
         | Command::RestyleChart
@@ -7604,6 +7690,12 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::MergeCells
         | Command::UnmergeCells
         | Command::InsertChart
+        | Command::InsertBarChart
+        | Command::InsertLineChart
+        | Command::InsertPieChart
+        | Command::ChartToBar
+        | Command::ChartToLine
+        | Command::ChartToPie
         | Command::PreviewChart
         | Command::DeleteChart
         | Command::RestyleChart

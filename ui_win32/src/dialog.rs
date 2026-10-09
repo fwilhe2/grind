@@ -448,15 +448,16 @@ use windows::Win32::UI::Controls::{EM_SETLIMITTEXT, EM_SETSEL};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetActiveWindow, SetFocus};
 use windows::Win32::UI::WindowsAndMessaging::{
-    BS_DEFPUSHBUTTON, CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DestroyWindow,
-    DispatchMessageW, ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_MULTILINE, ES_READONLY, GWLP_USERDATA,
-    GetMessageW, GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, HMENU,
-    IDC_ARROW, IsDialogMessageW, LB_ADDSTRING, LB_GETCOUNT, LB_GETCURSEL, LB_GETSEL, LB_SETCURSEL,
-    LB_SETSEL, LBN_DBLCLK, LBS_MULTIPLESEL, LBS_NOTIFY, LoadCursorW, MSG, PostQuitMessage,
-    RegisterClassW, SW_HIDE, SW_SHOW, SendMessageW, SetWindowLongPtrW, SetWindowTextW, ShowWindow,
-    TranslateMessage, WM_COMMAND, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC,
-    WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_SETFONT, WNDCLASSW, WS_BORDER, WS_CAPTION,
-    WS_CHILD, WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    BM_SETCHECK, BS_AUTORADIOBUTTON, BS_DEFPUSHBUTTON, BS_PUSHLIKE, CREATESTRUCTW, CreateWindowExW,
+    DefWindowProcW, DestroyWindow, DispatchMessageW, ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_MULTILINE,
+    ES_READONLY, GWLP_USERDATA, GetMessageW, GetWindowLongPtrW, GetWindowRect,
+    GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IsDialogMessageW, LB_ADDSTRING,
+    LB_GETCOUNT, LB_GETCURSEL, LB_GETSEL, LB_SETCURSEL, LB_SETSEL, LBN_DBLCLK, LBS_MULTIPLESEL,
+    LBS_NOTIFY, LoadCursorW, MSG, PostQuitMessage, RegisterClassW, SW_HIDE, SW_SHOW, SendMessageW,
+    SetWindowLongPtrW, SetWindowTextW, ShowWindow, TranslateMessage, WM_COMMAND, WM_CTLCOLOREDIT,
+    WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_SETFONT,
+    WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_GROUP, WS_POPUP, WS_SYSMENU, WS_TABSTOP,
+    WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::gdi::{Brush, Font};
@@ -1553,10 +1554,15 @@ extern "system" fn filter_proc(
 const PREVIEW_CLASS: &str = "GrindChartPreviewClass";
 static PREVIEW_REGISTERED: AtomicBool = AtomicBool::new(false);
 
-/// What the preview window owns while it is up: the chart to draw, and whether Insert was chosen.
+/// What the preview window owns while it is up: a picture of the chart as each kind, which one is
+/// shown, and whether Insert was chosen.
 struct Preview {
-    chart: grind_sheet::Chart,
-    data: grind_sheet::ChartData,
+    pictures: Vec<(
+        grind_sheet::ChartKind,
+        grind_sheet::Chart,
+        grind_sheet::ChartData,
+    )>,
+    shown: usize,
     dpi: u32,
     theme: Theme,
     /// How tall the strip of buttons under the picture is, in pixels.
@@ -1566,24 +1572,36 @@ struct Preview {
     _font: Option<Font>,
 }
 
-/// Show the chart *Insert Chart* would make and ask whether to insert it: `true` for **Insert**,
-/// `false` for Cancel, Escape or closing it. The picture is `sheet/chart.rs`'s own marks over
-/// `grind_sheet::chart_paint`, so what is previewed is what the grid then draws. Nothing is
-/// written here; the caller inserts on `true`.
+/// The first of the preview's three kind buttons' control ids; the rest follow in
+/// `ChartKind::ALL`'s order.
+const PREVIEW_KIND_ID: i32 = 300;
+
+/// Show the chart *Insert Chart* would make and ask whether to insert it, with the GNOME dialog's
+/// three kind buttons — Bar, Line, Pie — beside Insert, the one `shown` names pressed: the kind
+/// pressed for **Insert**, `None` for Cancel, Escape or closing it. `pictures` is the chart as
+/// each kind. The picture is `sheet/chart.rs`'s own marks over `grind_sheet::chart_paint`, so
+/// what is previewed is what the grid then draws. Nothing is written here; the caller inserts.
 ///
 /// A nested message loop like every function in this file: the caller has released its borrow.
 pub fn chart_preview(
     owner: HWND,
-    chart: &grind_sheet::Chart,
-    data: &grind_sheet::ChartData,
+    pictures: Vec<(
+        grind_sheet::ChartKind,
+        grind_sheet::Chart,
+        grind_sheet::ChartData,
+    )>,
+    shown: usize,
     dpi: u32,
-) -> bool {
+) -> Option<grind_sheet::ChartKind> {
+    if pictures.is_empty() {
+        return None;
+    }
     let class = gdi::wide(PREVIEW_CLASS);
     // SAFETY: as `prompt` — the class name outlives the calls, and the boxed state is handed to
     // the popup and taken back in `WM_NCDESTROY`.
     unsafe {
         let Ok(instance) = GetModuleHandleW(None) else {
-            return false;
+            return None;
         };
         if !PREVIEW_REGISTERED.swap(true, Ordering::SeqCst) {
             let wc = WNDCLASSW {
@@ -1595,7 +1613,7 @@ pub fn chart_preview(
             };
             if RegisterClassW(&wc) == 0 {
                 PREVIEW_REGISTERED.store(false, Ordering::SeqCst);
-                return false;
+                return None;
             }
         }
         let owner_dpi = GetDpiForWindow(owner).max(96);
@@ -1608,9 +1626,12 @@ pub fn chart_preview(
 
         let theme = theme();
         let strip = px(46.0);
+        let kinds: Vec<grind_sheet::ChartKind> =
+            pictures.iter().map(|(kind, _, _)| *kind).collect();
+        let shown = shown.min(pictures.len() - 1);
         let state = Box::new(Preview {
-            chart: chart.clone(),
-            data: data.clone(),
+            pictures,
+            shown,
             dpi,
             theme,
             strip,
@@ -1633,7 +1654,7 @@ pub fn chart_preview(
             Some(instance.into()),
             Some(Box::into_raw(state).cast()),
         ) else {
-            return false;
+            return None;
         };
         let font = Font::new(crate::gdi::ui_face(), px(crate::theme::text::BODY), false);
         let button = (px(84.0), px(26.0));
@@ -1682,6 +1703,48 @@ pub fn chart_preview(
             true,
         );
         make("Cancel", IDCANCEL.0, client.right - pad - button.0, false);
+        // The kinds, as push-like radio buttons along the strip's other end: one group, the
+        // shown one pressed.
+        let narrow = px(64.0);
+        for (i, kind) in kinds.iter().enumerate() {
+            let class = gdi::wide("BUTTON");
+            let text = gdi::wide(kind.name());
+            let mut style = WS_CHILD
+                | WS_VISIBLE
+                | WS_TABSTOP
+                | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(
+                    (BS_AUTORADIOBUTTON | BS_PUSHLIKE) as u32,
+                );
+            if i == 0 {
+                style |= WS_GROUP;
+            }
+            let control = CreateWindowExW(
+                Default::default(),
+                PCWSTR(class.as_ptr()),
+                PCWSTR(text.as_ptr()),
+                style,
+                pad + (narrow + px(4.0)) * i as i32,
+                row,
+                narrow,
+                button.1,
+                Some(popup),
+                Some(HMENU(
+                    (PREVIEW_KIND_ID + i as i32) as usize as *mut std::ffi::c_void,
+                )),
+                Some(instance.into()),
+                None,
+            )
+            .unwrap_or_default();
+            SendMessageW(
+                control,
+                WM_SETFONT,
+                Some(WPARAM(font.handle().0 as usize)),
+                Some(LPARAM(1)),
+            );
+            if i == shown {
+                SendMessageW(control, BM_SETCHECK, Some(WPARAM(1)), None);
+            }
+        }
         with_preview(popup, |preview| preview._font = Some(font));
 
         let _ = EnableWindow(owner, false);
@@ -1703,7 +1766,10 @@ pub fn chart_preview(
             let _ = TranslateMessage(&message);
             DispatchMessageW(&message);
         }
-        let chosen = with_preview(popup, |preview| preview.insert).unwrap_or(false);
+        let chosen = with_preview(popup, |preview| {
+            preview.insert.then(|| preview.pictures[preview.shown].0)
+        })
+        .flatten();
         let _ = EnableWindow(owner, true);
         let _ = SetActiveWindow(owner);
         let _ = DestroyWindow(popup);
@@ -1761,14 +1827,15 @@ extern "system" fn preview_proc(
                             pad,
                             None,
                         );
+                        let (_, chart, data) = &preview.pictures[preview.shown];
                         crate::sheet::chart::paint_in(
                             buffer.dc(),
                             preview.theme,
                             crate::gdi::ui_face(),
                             preview.dpi,
                             size,
-                            &preview.chart,
-                            &preview.data,
+                            chart,
+                            data,
                         );
                         let _ = windows::Win32::Graphics::Gdi::SetViewportOrgEx(
                             buffer.dc(),
@@ -1792,6 +1859,18 @@ extern "system" fn preview_proc(
                         preview.insert = id == IDOK.0;
                         preview.finished = true;
                     });
+                }
+            } else if id >= PREVIEW_KIND_ID {
+                // A kind button: the picture follows it. The button presses itself.
+                // SAFETY: one borrow, no dispatch; the repaint is queued, not run here.
+                unsafe {
+                    with_preview(hwnd, |preview| {
+                        let i = (id - PREVIEW_KIND_ID) as usize;
+                        if i < preview.pictures.len() {
+                            preview.shown = i;
+                        }
+                    });
+                    let _ = windows::Win32::Graphics::Gdi::InvalidateRect(Some(hwnd), None, false);
                 }
             }
             LRESULT(0)
