@@ -193,7 +193,10 @@ paints is static cell styling, applied once, not one of those. No charts, no aut
 `ui_sheet_gtk`'s measurement of the text in it, and this shell would need the same pass.
 
 **The document.** No pages, no print, no zoom, no RTL (`doc/text-layout.md`). No footnotes or
-fields, because the core has none. An image in a file is kept and not drawn, and a named
+fields, because the core has none. An image in a file is kept and not drawn — though its
+alternative text is this shell's to write: `:alt <text>` and `:desc <text>` beside a picture, `:alt!`
+to remove both, and either bare puts the command line back holding what the picture says now,
+to edit in place rather than retype — and a named
 *character* style is kept and not interpreted (`doc/text-core.md`). A table is drawn as a grid
 now, but **every column of it is the same width**: a table carries no style of its own in this
 build, so there are no column widths to honour and no merge to create — `doc/text-core.md`'s

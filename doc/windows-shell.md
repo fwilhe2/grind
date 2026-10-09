@@ -605,6 +605,17 @@ at run time; and the Windows 10/11 compatibility id. `artifacts.yml` reads it ba
 `.exe` beside the icon and the version block, since `embed_resource` silently embeds nothing where it
 finds no resource compiler — which is every machine but `windows-latest`, this one included.
 
+The first body built on the shape after it was finished is **alt text** (Format ▸ *Picture Alt
+Text…*, and the text pane's context menu over a picture): `dialog::alt_text`, a body with **two**
+fields where every other has at most one — the picture decoded by WIC on the window's own ground,
+the short field, `grind_text::picture::advice` and a count redrawn under it on every `EN_CHANGE`,
+and the long description, a multi-line `EDIT` with no scroll bar of its own — whose rows are
+`modal::alt_body`, tested on Linux, and which gives up the picture's height first when the work
+area is short. Each field keeps its own focus, so each frame wears the accent only while it has the
+keyboard. Seen under Wine; it found one bug a review would not have — `SetWindowTextW` fills the
+field before the modal knows which control it is, and the `EN_CHANGE` that fires then reset the
+count to nought.
+
 ### 13. The menu bar is **drawn**, in the band Windows' own would take — *decided in W14*
 
 Decision 4 is unchanged: the menu bar is this platform's growable surface. What changed is who
