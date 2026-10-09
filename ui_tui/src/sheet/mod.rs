@@ -10,6 +10,7 @@
 
 pub mod app;
 pub mod assist;
+pub mod chartpane;
 pub mod chartview;
 pub mod geom;
 pub mod keymap;
@@ -37,10 +38,11 @@ Spreadsheet:
   :across                 — the cell the selection grew from, into all of it; one undo step
   :value                  — formulas in the selection become the values they show
   :yank-values            — the selection as shown (results, not formulas) into the register
-  :chart  :chart!         — a chart of the table here (drawn by the other windows); drop the last
-  :chart <words>          — change the last chart: line|bar|pie  title=…|no-title  legend=top|…|none
+  :chart  :chart!         — a chart of the table here (drawn by the other windows); drop the chart
+  :chart <words>          — change the chart: line|bar|pie  title=…|no-title  legend=top|…|none
                             width=12cm  height=8cm
-  :chart here             — move the last chart so it starts at the cursor's cell
+  :chart here             — move the chart so it starts at the cursor's cell
+                            (the chart: the one :charts selected, else the sheet's last)
   :calc [text]            — every formula in the document, searchable; Enter jumps to its cell
   :functions [text]       — the functions, with plain names; Enter starts a formula with one
   :locale [tag|none]      — the document's own locale (de-DE): how it spells numbers
@@ -48,7 +50,8 @@ Spreadsheet:
   :friendly               — the formula line in plain words at rest, or as stored
   :filter                 — an autofilter over the selection (or the table around one cell); again to drop
   :eval <formula>         — what it would come to, storing nothing
-  :charts   — the sheet's charts, drawn in characters
+  :charts   — the sheet's charts: j/k choose one, drawn in characters below the list;
+              d delete · m move here · HJKL nudge · +/- size · Enter change · Esc let go
   :rule <look> <condition> — draw the selection differently while a formula is true:
                             :rule red =B2>100; looks are red, yellow, green, blue,
                             red-text, green-text, bold and strike

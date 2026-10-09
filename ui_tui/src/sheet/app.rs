@@ -158,9 +158,14 @@ pub struct App {
     help: crate::help::Help,
     /// `:licences` — the third-party list, read-only.
     licences: crate::help::Help,
-    /// `:charts` — the same scrolling text pane, holding what [`super::chartview`] drew.
+    /// `:chart preview` — the scrolling text pane, holding what [`super::chartview`] drew.
     charts: crate::help::Help,
     charts_text: String,
+    /// `:charts` — the sheet's charts as a list to take hold of (`chartpane.rs`).
+    chart_pane: super::chartpane::Charts,
+    /// The selected chart, as its sheet and its index there: what `:chart <words>`, `:chart here`
+    /// and `:chart!` mean, else the sheet's last (`doc/chart-handling.md`).
+    chart_selected: Option<(usize, usize)>,
     /// The code view, when it is showing, and the projection it is showing (`doc/dsl.md` §6).
     ///
     /// Projected **once, when the pane opens**, and dropped when it closes — which is §6.3's
@@ -217,6 +222,8 @@ impl App {
             licences: crate::help::Help::default(),
             charts: crate::help::Help::default(),
             charts_text: String::new(),
+            chart_pane: super::chartpane::Charts::default(),
+            chart_selected: None,
             code: crate::code::Code::default(),
             source: None,
             problems: crate::problems::Problems::default(),
@@ -274,6 +281,10 @@ impl App {
         if self.licences.is_open() {
             let lines = crate::help::licences().lines().count();
             self.licences.on_key(key.code, lines, self.help_height());
+            return;
+        }
+        if self.chart_pane.is_open() {
+            self.on_chart_pane_key(key.code);
             return;
         }
         if self.charts.is_open() {
@@ -1364,63 +1375,185 @@ impl App {
         }
     }
 
-    /// `:charts` — every chart on this sheet drawn in characters (`chartview`), in the scrolling
-    /// pane `:help` uses. Reads and shows; nothing is written.
-    fn cmd_charts(&mut self) {
-        let charts = self.core.charts(self.sheet).unwrap_or_default();
-        if charts.is_empty() {
-            self.status = "no chart on this sheet \u{2014} :chart makes one".to_owned();
-            return;
-        }
-        let mut text = String::new();
-        for (index, chart) in charts.iter().enumerate() {
-            match self.core.chart_data(self.sheet, index) {
-                Ok(data) => {
-                    for line in super::chartview::lines(chart, &data, 72) {
-                        text.push_str(&line);
-                        text.push('\n');
-                    }
-                }
-                Err(error) => text.push_str(&format!("{error}\n")),
-            }
-            text.push('\n');
-        }
-        self.charts_text = text;
-        self.charts.open();
-    }
+    /// The rough page geometry this shell places a chart by — a column 25 mm, a row 5 mm —
+    /// since a terminal cell has no size on paper. `:chart` and `:chart here` use it too.
+    const COL_MM: f64 = 25.0;
+    const ROW_MM: f64 = 5.0;
 
-    /// `:chart <words>` — the sheet's last chart changed: `line`, `bar` or `pie`, `title=…` or
-    /// `no-title`, `legend=top|bottom|start|end|none` (`grind_sheet::verbs::restyle_chart`).
-    fn cmd_restyle_chart(&mut self, words: &str) {
+    /// The selected chart's index, if it is on the sheet showing and still exists.
+    fn chart_now(&self) -> Option<usize> {
+        let (sheet, index) = self.chart_selected?;
         let count = self
             .core
             .charts(self.sheet)
             .map_or(0, |charts| charts.len());
-        self.status = match count {
-            0 => "no chart on this sheet \u{2014} :chart makes one".to_owned(),
-            n => match grind_sheet::verbs::restyle_chart(&self.core, self.sheet, n - 1, words) {
-                Ok(said) => format!("{said} u takes it back"),
-                Err(why) => why,
-            },
+        (sheet == self.sheet && index < count).then_some(index)
+    }
+
+    /// The chart a chart command means: the selected one, else the sheet's last.
+    fn chart_target(&self) -> Option<usize> {
+        self.chart_now().or_else(|| {
+            self.core
+                .charts(self.sheet)
+                .ok()
+                .and_then(|charts| charts.len().checked_sub(1))
+        })
+    }
+
+    /// `:charts` — the sheet's charts as a list, the selected one drawn in characters under it
+    /// (`chartpane.rs`). Reads and shows until a key asks for a change.
+    fn cmd_charts(&mut self) {
+        match self.chart_target() {
+            None => self.status = "no chart on this sheet \u{2014} :chart makes one".to_owned(),
+            Some(index) => {
+                self.chart_selected = Some((self.sheet, index));
+                self.chart_pane.open(index);
+            }
+        }
+    }
+
+    /// The pane's rows — one per chart, what it is and where — and the selected chart drawn in
+    /// characters, `width` wide.
+    fn chart_pane_text(&self, width: usize) -> (Vec<String>, Vec<String>) {
+        let charts = self.core.charts(self.sheet).unwrap_or_default();
+        let mm = |length: &str| grind_sheet::style::length_mm(length).unwrap_or(0.0);
+        let rows = charts
+            .iter()
+            .enumerate()
+            .map(|(index, chart)| {
+                let at = Pos::new(
+                    (mm(&chart.y) / Self::ROW_MM) as u32,
+                    (mm(&chart.x) / Self::COL_MM) as u32,
+                );
+                let title = chart
+                    .title
+                    .as_deref()
+                    .filter(|title| !title.is_empty())
+                    .map(|title| format!(" \u{201c}{title}\u{201d}"))
+                    .unwrap_or_default();
+                format!(
+                    " {}  {:?}{title} \u{b7} {:.1} \u{d7} {:.1} cm at {}",
+                    index + 1,
+                    chart.kind,
+                    mm(&chart.width) / 10.0,
+                    mm(&chart.height) / 10.0,
+                    grind_sheet::a1::format(None, at),
+                )
+            })
+            .collect();
+        let index = self.chart_pane.selected();
+        let drawing = match (charts.get(index), self.core.chart_data(self.sheet, index)) {
+            (Some(chart), Ok(data)) => super::chartview::lines(chart, &data, width.min(72)),
+            (_, Err(error)) => vec![error.to_string()],
+            _ => Vec::new(),
+        };
+        (rows, drawing)
+    }
+
+    /// A key in `:charts`, and what it asks done to the selected chart — each change one undo
+    /// step, the pane left open on it so the next key can follow.
+    fn on_chart_pane_key(&mut self, code: KeyCode) {
+        use super::chartpane::Reply;
+        let count = self
+            .core
+            .charts(self.sheet)
+            .map_or(0, |charts| charts.len());
+        let reply = self.chart_pane.on_key(code, count);
+        let mm = |length: &str| grind_sheet::style::length_mm(length).unwrap_or(0.0);
+        let chart = |index: usize| {
+            self.core
+                .charts(self.sheet)
+                .ok()
+                .and_then(|charts| charts.get(index).cloned())
+        };
+        match reply {
+            Reply::Stay => self.chart_selected = Some((self.sheet, self.chart_pane.selected())),
+            Reply::Close => {}
+            Reply::Release => self.chart_selected = None,
+            Reply::Delete(index) => {
+                self.chart_selected = None;
+                self.status = match self.core.remove_chart(self.sheet, index) {
+                    Ok(()) => grind_sheet::chart_frame::deleted_sentence("u"),
+                    Err(error) => error.to_string(),
+                };
+                match count.saturating_sub(1) {
+                    0 => self.chart_pane.close(),
+                    left => {
+                        let at = index.min(left - 1);
+                        self.chart_pane.open(at);
+                        self.chart_selected = Some((self.sheet, at));
+                    }
+                }
+            }
+            Reply::Move(index) => {
+                self.chart_selected = Some((self.sheet, index));
+                self.cmd_move_chart();
+            }
+            Reply::Change(index) => {
+                self.chart_selected = Some((self.sheet, index));
+                self.status = format!("change it \u{2014} {}", grind_sheet::verbs::CHART_WORDS);
+                self.mode = Mode::Command {
+                    buf: "chart ".to_owned(),
+                };
+            }
+            Reply::Nudge(index, dc, dr) => {
+                let Some(chart) = chart(index) else { return };
+                let x = (mm(&chart.x) + f64::from(dc) * Self::COL_MM).max(0.0);
+                let y = (mm(&chart.y) + f64::from(dr) * Self::ROW_MM).max(0.0);
+                let (x, y) = (
+                    grind_sheet::style::mm_length(x),
+                    grind_sheet::style::mm_length(y),
+                );
+                self.reshape(index, &x, &y, &chart.width, &chart.height, "moved");
+            }
+            Reply::Scale(index, factor) => {
+                let Some(chart) = chart(index) else { return };
+                let side =
+                    |length: &str| grind_sheet::style::mm_length((mm(length) * factor).max(10.0));
+                let (w, h) = (side(&chart.width), side(&chart.height));
+                let word = match factor > 1.0 {
+                    true => "bigger",
+                    false => "smaller",
+                };
+                self.reshape(index, &chart.x, &chart.y, &w, &h, word);
+            }
+        }
+    }
+
+    fn reshape(&mut self, index: usize, x: &str, y: &str, w: &str, h: &str, what: &str) {
+        self.status = match self.core.reshape_chart(self.sheet, index, x, y, w, h) {
+            Ok(()) => format!("chart {what} \u{2014} u takes it back"),
+            Err(error) => error.to_string(),
         };
     }
 
-    /// `:chart here` — the sheet's last chart moved so its corner is the cursor's cell, its size
-    /// kept (`verbs::move_chart`), over the same rough geometry `:chart` places one with.
+    /// `:chart <words>` — the chart changed (the selected one, else the sheet's last): `line`,
+    /// `bar` or `pie`, `title=…` or `no-title`, `legend=top|bottom|start|end|none`, and its size
+    /// (`grind_sheet::verbs::restyle_chart`).
+    fn cmd_restyle_chart(&mut self, words: &str) {
+        self.status = match self.chart_target() {
+            None => "no chart on this sheet \u{2014} :chart makes one".to_owned(),
+            Some(index) => {
+                match grind_sheet::verbs::restyle_chart(&self.core, self.sheet, index, words) {
+                    Ok(said) => format!("{said} u takes it back"),
+                    Err(why) => why,
+                }
+            }
+        };
+    }
+
+    /// `:chart here` — the chart (the selected one, else the sheet's last) moved so its corner is
+    /// the cursor's cell, its size kept (`verbs::move_chart`), over the same rough geometry
+    /// `:chart` places one with.
     fn cmd_move_chart(&mut self) {
-        let count = self
-            .core
-            .charts(self.sheet)
-            .map_or(0, |charts| charts.len());
-        let (col_mm, row_mm) = (25.0, 5.0);
-        self.status = match count {
-            0 => "no chart on this sheet \u{2014} :chart makes one".to_owned(),
-            n => match grind_sheet::verbs::move_chart(
+        self.status = match self.chart_target() {
+            None => "no chart on this sheet \u{2014} :chart makes one".to_owned(),
+            Some(index) => match grind_sheet::verbs::move_chart(
                 &self.core,
                 self.sheet,
-                n - 1,
+                index,
                 self.active,
-                |col, row| (f64::from(col) * col_mm, f64::from(row) * row_mm),
+                |col, row| (f64::from(col) * Self::COL_MM, f64::from(row) * Self::ROW_MM),
             ) {
                 Ok(said) => format!("{said} u takes it back"),
                 Err(why) => why,
@@ -1428,18 +1561,17 @@ impl App {
         };
     }
 
-    /// `:chart!` — the sheet's last chart removed.
+    /// `:chart!` — the chart (the selected one, else the sheet's last) removed.
     fn cmd_unchart(&mut self) {
-        let count = self
-            .core
-            .charts(self.sheet)
-            .map_or(0, |charts| charts.len());
-        self.status = match count {
-            0 => "no chart on this sheet".to_owned(),
-            n => match self.core.remove_chart(self.sheet, n - 1) {
-                Ok(()) => "dropped the last chart \u{2014} u brings it back".to_owned(),
-                Err(e) => e.to_string(),
-            },
+        self.status = match self.chart_target() {
+            None => "no chart on this sheet".to_owned(),
+            Some(index) => {
+                self.chart_selected = None;
+                match self.core.remove_chart(self.sheet, index) {
+                    Ok(()) => grind_sheet::chart_frame::deleted_sentence("u"),
+                    Err(e) => e.to_string(),
+                }
+            }
         };
     }
 
@@ -2456,9 +2588,18 @@ impl App {
         {
             self.active = anchor;
         }
+        if self.chart_pane.is_open() {
+            let (rows, drawing) = self.chart_pane_text(usize::from(area.width.saturating_sub(4)));
+            self.chart_pane.draw(frame, area, &rows, &drawing);
+            return;
+        }
         if self.charts.is_open() {
-            self.charts
-                .draw_titled(frame, area, &self.charts_text, " charts — j/k scroll ");
+            self.charts.draw_titled(
+                frame,
+                area,
+                &self.charts_text,
+                " chart preview — j/k scroll ",
+            );
             return;
         }
         if self.problems.is_open() {
@@ -3655,6 +3796,56 @@ mod tests {
         assert!(text.contains("charts"), "{text}");
         assert!(text.contains("CDU"), "{text}");
         assert!(text.contains('█'), "{text}");
+    }
+
+    /// `:charts` is a list to take hold of a chart in: one selected, and the keys every window
+    /// gives a selected chart acting on it, each one undo step.
+    #[test]
+    fn charts_pane_selects_a_chart_and_acts_on_it() {
+        let mut app = filled();
+        press(&mut app, KeyCode::Char('v'));
+        press(&mut app, KeyCode::Char('l'));
+        press(&mut app, KeyCode::Char('j'));
+        app.run_command("chart");
+        app.run_command("chart");
+        assert_eq!(app.core.charts(0).unwrap().len(), 2, "{}", app.status);
+        app.run_command("charts");
+        let text = screen(&mut app, 100, 20).join("\n");
+        assert!(
+            text.contains(" 1  Bar") && text.contains(" 2  Bar"),
+            "{text}"
+        );
+        assert!(text.contains("d delete"), "the keys are said: {text}");
+        // It opens on the last; k selects the first, and L nudges that one a column right.
+        press(&mut app, KeyCode::Char('k'));
+        let x = |app: &App, i: usize| app.core.charts(0).unwrap()[i].x.clone();
+        let (first, second) = (x(&app, 0), x(&app, 1));
+        press(&mut app, KeyCode::Char('L'));
+        assert_ne!(x(&app, 0), first, "{}", app.status);
+        assert_eq!(x(&app, 1), second, "only the selected one moves");
+        let wide = app.core.charts(0).unwrap()[0].width.clone();
+        press(&mut app, KeyCode::Char('+'));
+        assert_ne!(app.core.charts(0).unwrap()[0].width, wide);
+        // d deletes it and says how to get it back; the pane stays on what is left.
+        press(&mut app, KeyCode::Char('d'));
+        assert_eq!(app.core.charts(0).unwrap().len(), 1);
+        assert!(app.status.contains('u'), "{}", app.status);
+        assert!(app.chart_pane.is_open());
+        // Enter leaves the command line ready to change the selected chart.
+        press(&mut app, KeyCode::Enter);
+        assert!(!app.chart_pane.is_open());
+        type_str(&mut app, "pie");
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            app.core.charts(0).unwrap()[0].kind,
+            grind_sheet::ChartKind::Pie,
+            "{}",
+            app.status
+        );
+        // Esc lets go of it: with nothing selected the commands mean the last chart again.
+        app.run_command("charts");
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.chart_now(), None);
     }
 
     /// While `:format percent` is still being typed the status bar says what it would make of the
