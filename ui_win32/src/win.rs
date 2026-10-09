@@ -69,11 +69,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     PostQuitMessage, RegisterClassW, SB_BOTTOM, SB_HORZ, SB_LINEDOWN, SB_LINEUP, SB_PAGEDOWN,
     SB_PAGEUP, SB_THUMBPOSITION, SB_THUMBTRACK, SB_TOP, SB_VERT, SCROLLINFO, SCROLLINFO_MASK,
     SIF_PAGE, SIF_POS, SIF_RANGE, SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetCursor, SetMenu, SetWindowLongPtrW,
-    SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW, TPM_RETURNCMD,
-    TPM_RIGHTBUTTON, TrackPopupMenuEx, TranslateMessage, WHEEL_DELTA, WM_APP, WM_CHAR, WM_CLOSE,
-    WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_INITMENUPOPUP, WM_KEYDOWN, WM_KILLFOCUS,
+    SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetCursor, SetWindowLongPtrW, SetWindowPos,
+    SetWindowTextW, ShowWindow, SystemParametersInfoW, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    TrackPopupMenuEx, TranslateMessage, WHEEL_DELTA, WM_APP, WM_CHAR, WM_CLOSE, WM_COMMAND,
+    WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
+    WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_INITMENUPOPUP, WM_KEYDOWN, WM_KILLFOCUS,
     WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
     WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE,
     WM_VSCROLL, WNDCLASSW, WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
@@ -106,6 +106,7 @@ use crate::dialog::{self, Answer, Com};
 use crate::gdi::{self, BackBuffer, Brush, Dib, Font};
 use crate::image;
 use crate::menu::{self, Command, Item};
+use crate::menubar;
 use crate::metrics::{Faces, Fonts};
 use crate::notice;
 use crate::problems;
@@ -128,6 +129,10 @@ use grind_sheet::clip;
 use grind_sheet::{App, Filter, Pos, RecalcMode, TableOptions, a1, csv, find};
 use grind_text::caret::START;
 use grind_text::{Caret, Layout, markdown};
+use windows::Win32::UI::WindowsAndMessaging::{
+    HTMENU, SC_KEYMENU, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCLBUTTONDOWN,
+    WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_NCPAINT, WM_SYSCOMMAND,
+};
 
 /// The display name, which is not the file name (`doc/windows-shell.md`, decision 1).
 const APP_NAME: &str = "Grind";
@@ -1668,8 +1673,9 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
                     pane.retheme(theme);
                     theme::apply_window_chrome(hwnd, theme);
                     // The modals paint themselves in this palette too, and cannot be handed it
-                    // at the call site — `dialog::use_theme` says why.
+                    // at the call site — `dialog::use_theme` says why — and so does the bar.
                     dialog::use_theme(theme);
+                    menubar::set_theme(theme);
                     // Registered here rather than in `opened`, because it needs a window to
                     // post to — and because a document read *before* there is one must not
                     // arrive as a change the user made. That is the whole of why this shell
@@ -1687,6 +1693,54 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             make_children(hwnd);
             refresh(hwnd);
             LRESULT(0)
+        }
+        // The menu bar is this shell's own, drawn in the band above the client area that
+        // Windows' would have taken (`menubar.rs`): the band is reserved here, painted on every
+        // non-client repaint, and is the menu as far as hit-testing goes.
+        WM_NCCALCSIZE => menubar::nc_calc_size(hwnd, wparam, lparam),
+        WM_NCPAINT => {
+            // SAFETY: the default frame first, with the message's own arguments.
+            let result = unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
+            menubar::nc_paint(hwnd);
+            result
+        }
+        WM_NCACTIVATE => {
+            // SAFETY: as above.
+            let result = unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
+            menubar::nc_paint(hwnd);
+            result
+        }
+        // SAFETY (all three): the default answer, with the message's own arguments.
+        WM_NCHITTEST => menubar::nc_hit(hwnd, lparam)
+            .unwrap_or_else(|| unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }),
+        WM_NCMOUSEMOVE => {
+            menubar::nc_mouse_move(hwnd, lparam);
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
+        WM_NCMOUSELEAVE => {
+            menubar::nc_mouse_leave(hwnd);
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
+        WM_NCLBUTTONDOWN if wparam.0 == HTMENU as usize => {
+            if let Some(command) = menubar::nc_button_down(hwnd, lparam).and_then(menu::command_for)
+            {
+                do_command(hwnd, command);
+            }
+            LRESULT(0)
+        }
+        // Alt, F10 and Alt+letter, which Windows turns into this whether or not a window has a
+        // bar of its own — and the drawn one answers it.
+        WM_SYSCOMMAND if (wparam.0 & 0xfff0) == SC_KEYMENU as usize => {
+            match menubar::key_menu(hwnd, lparam.0 as u32) {
+                Some(picked) => {
+                    if let Some(command) = picked.and_then(menu::command_for) {
+                        do_command(hwnd, command);
+                    }
+                    LRESULT(0)
+                }
+                // SAFETY: Alt+Space, the window menu, handed back.
+                None => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
+            }
         }
         // Nothing to erase: the painter writes every pixel of the client area onto a back
         // buffer and blits it in one move, so letting the default erase first would show the
@@ -1892,9 +1946,11 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
                     pane.retheme(theme);
                     theme::apply_window_chrome(hwnd, theme);
                     // The modals paint themselves in this palette too, and cannot be handed it
-                    // at the call site — `dialog::use_theme` says why.
+                    // at the call site — `dialog::use_theme` says why — and so does the bar.
                     dialog::use_theme(theme);
+                    menubar::set_theme(theme);
                 });
+                menubar::nc_paint(hwnd);
                 let _ = InvalidateRect(Some(hwnd), None, false);
                 DefWindowProcW(hwnd, message, wparam, lparam)
             }
@@ -2073,6 +2129,8 @@ fn build_menu(hwnd: HWND) {
     // string — and the bar belongs to the window from `SetMenu` until it is destroyed with it.
     unsafe {
         let Ok(bar) = CreateMenu() else { return };
+        let mut titles = Vec::new();
+        let mut popups = Vec::new();
         for menu in menu::MENUS {
             // A menu with nothing this pane answers to — `Sheet`/`Data` on the text pane — is
             // left out of the bar entirely rather than added with an
@@ -2123,8 +2181,12 @@ fn build_menu(hwnd: HWND) {
             }
             let title = gdi::wide(menu.title);
             let _ = AppendMenuW(bar, MF_POPUP, popup.0 as usize, PCWSTR(title.as_ptr()));
+            titles.push(menu.title);
+            popups.push(popup);
         }
-        let _ = SetMenu(hwnd, Some(bar));
+        // Kept rather than attached: attaching it is what would bring Windows' own bar back, and
+        // the bar is drawn by `menubar.rs` in the band Windows' own would have taken.
+        menubar::install(hwnd, bar, titles, popups);
     }
 }
 
@@ -5045,7 +5107,7 @@ fn explain_formula(hwnd: HWND) {
         return;
     };
     let rows: Vec<String> = explained.lines().map(str::to_owned).collect();
-    dialog::choose(hwnd, &format!("{address} explained"), &rows, 0);
+    dialog::show_list(hwnd, &format!("{address} explained"), &rows);
 }
 
 /// `Pane::project`, spelled so [`with_pane`] can be handed it directly rather than a closure that
@@ -5145,7 +5207,7 @@ fn go_to_address(hwnd: HWND, address: &str) {
 /// accelerator, so the row picked (or Escape) is thrown away; the list exists to be read.
 fn show_shortcuts(hwnd: HWND) {
     let rows = menu::shortcuts();
-    let _ = dialog::choose(hwnd, "Keyboard Shortcuts", &rows, 0);
+    dialog::show_list(hwnd, "Keyboard Shortcuts", &rows);
 }
 
 /// F9. The banner reports what happened, including when nothing did — a key that appears to do
@@ -6350,7 +6412,12 @@ fn sheet_delete(hwnd: HWND) {
     // The last sheet is refused by `App::remove_sheet` itself, with a sentence saying why, and
     // that refusal arrives in the error box below. There is deliberately no check here: a rule
     // the core holds and a shell restates is a rule with two spellings.
-    if !dialog::confirm(hwnd, &format!("Delete {name} and everything on it?")) {
+    if !dialog::confirm(
+        hwnd,
+        &format!("Delete {name}?"),
+        &format!("{name} and everything on it will be deleted."),
+        "Delete",
+    ) {
         return;
     }
     // SAFETY: a fresh borrow, taken after the question rather than across it.

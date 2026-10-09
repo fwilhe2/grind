@@ -30,6 +30,10 @@ fn main() {
         // compiler that tried and choked is not" — the distinction this build script cares
         // about, since the former is every host but `windows-latest` and the latter would mean
         // `grind.rc` itself is broken.
+        // What `grind.rc` pulls in, which `embed_resource` does not know to watch.
+        for input in ["data/grind.manifest", "data/grind.ico"] {
+            println!("cargo:rerun-if-changed={input}");
+        }
         let result = embed_resource::compile("data/grind.rc", embed_resource::NONE);
         // Printed unconditionally, not only on failure: `manifest_optional()` swallows
         // `Ok` and `NotAttempted` alike, so a run where the resource silently failed to embed

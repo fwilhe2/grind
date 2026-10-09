@@ -14,6 +14,12 @@
 // dependency on it for six pixels nobody edits at build time.
 1 ICON "grind.ico"
 
+// The application manifest: Common Controls 6, per-monitor DPI v2, and the Windows versions this
+// was written for (grind.manifest says why each). `1` is CREATEPROCESS_MANIFEST_RESOURCE_ID and
+// `24` is RT_MANIFEST, both spelled as numbers for the reason the version block below gives:
+// this file includes no headers.
+1 24 "grind.manifest"
+
 // The version block's name is the literal `1`, not `VS_VERSION_INFO`.
 //
 // They mean the same thing only when `winver.h` has been included: `VS_VERSION_INFO` is a

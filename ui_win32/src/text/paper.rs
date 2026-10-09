@@ -52,7 +52,7 @@ pub fn title(page: usize, pages: usize, paper: &grind_core::page::PageGeometry) 
         let mm = |v: f64| (v * 10.0).round() / 10.0;
         format!("{} × {} mm", mm(paper.width), mm(paper.height))
     });
-    format!("Print Preview — page {} of {pages} · {name}", page + 1)
+    format!("Page {} of {pages} · {name}", page + 1)
 }
 
 /// Pixels per point to rasterise a page for a printer reporting `dpi`.
@@ -96,19 +96,13 @@ mod tests {
 
     #[test]
     fn the_title_counts_pages_and_names_the_paper() {
-        assert_eq!(
-            title(0, 3, &PageGeometry::a4()),
-            "Print Preview — page 1 of 3 · A4"
-        );
+        assert_eq!(title(0, 3, &PageGeometry::a4()), "Page 1 of 3 · A4");
         let letter = PageGeometry {
             width: 215.9,
             height: 279.4,
             ..PageGeometry::a4()
         };
-        assert_eq!(
-            title(1, 2, &letter),
-            "Print Preview — page 2 of 2 · 215.9 × 279.4 mm"
-        );
+        assert_eq!(title(1, 2, &letter), "Page 2 of 2 · 215.9 × 279.4 mm");
     }
 
     #[test]

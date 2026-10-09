@@ -443,6 +443,15 @@ jobs:
             exit 1
           }
           Write-Host "Icon: $($icon.Width)x$($icon.Height)"
+          # The application manifest (`ui_win32/data/grind.manifest`, decision 12): without it
+          # every system-drawn control is the Windows 2000 one and the process is not reliably
+          # per-monitor DPI aware. It is UTF-8 in `.rsrc`, so its text is in the file as written.
+          $ascii = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($exe))
+          if (-not ($ascii.Contains("Microsoft.Windows.Common-Controls") -and $ascii.Contains("PerMonitorV2"))) {
+            Write-Error "no application manifest embedded in $exe - check grind.rc"
+            exit 1
+          }
+          Write-Host "Manifest: Common Controls 6, PerMonitorV2"
 
       # The assertion that makes a drawing refactor provable (W2, `doc/windows-shell.md`
       # decision 5).

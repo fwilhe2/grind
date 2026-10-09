@@ -32,6 +32,15 @@ stripes across the window; the text pane's document stands on a **page**; the fo
 row of real buttons that **respond to the pointer**; and the accent is **the user's own**, which
 reverses decision 9 and is the one thing here that is a decision rather than a measurement.
 
+**W14 is the modern pass, and like W10 it changed what the window looks like rather than what it
+can do** — decisions 12 and 13. Every dialog this shell draws is now one shape, Fluent's
+*ContentDialog*, **fitted to the monitor it opens on** rather than asked for at a fixed size that
+ran off a laptop's screen; `MessageBoxW` is gone from every path but the one before a window
+exists; the buttons, lists and fields inside a dialog are drawn by this shell and follow the theme;
+the menu bar is drawn too, in the band Windows' own would have taken; and the executable carries an
+application manifest, so what Windows still draws (an `EDIT`, a scroll bar, a popup menu) is the
+current control rather than Windows 2000's.
+
 **W5a is the text pane, and it settles decision 3** — the one genuinely open question this
 document had. `metrics.rs` is GDI on both halves, as the table below chose: `GetTextExtentExPointW`
 to measure and `ExtTextOutW` with the advances that same call produced to draw. The pane reads,
@@ -122,7 +131,7 @@ entry, About box, and the AppUserModelID that decides taskbar grouping.
 
 ### 2. Win32 + GDI, through the `windows` crate
 
-No manifest, no COM apartment beyond what the file dialog needs, and `+crt-static` in a new
+No runtime, no COM apartment beyond what the file dialog needs, and `+crt-static` in a new
 `.cargo/config.toml` so the MSVC C runtime is linked in rather than looked for. The claim in
 the one-liner above is then *checkable*, and CI checks it by reading the import table back
 rather than trusting it.
@@ -130,6 +139,12 @@ rather than trusting it.
 This is already measured, before a line of the shell exists — see *Evidence* at the end.
 `grind.exe`, built for `x86_64-pc-windows-msvc` from this workspace on this Linux machine,
 imports exactly four DLLs, all of them part of Windows.
+
+*Since W14 the executable does carry an application manifest* (`ui_win32/data/grind.manifest`,
+decision 12) — a resource in the `.exe`, not a file beside it and not a dependency: it asks for the
+Common Controls 6 every Windows since XP ships, per-monitor DPI v2, and the Windows 10/11
+compatibility context. What W0 meant by "no manifest" was no side-by-side runtime to install, and
+that is still true.
 
 Rejected, each for the reason `doc/decision-win32-shell.md` gives at length: WinUI 3 in C#
 (two runtime installs), `windows-reactor` (0.x, four months old, still needs the App SDK
@@ -268,9 +283,11 @@ F5, so this shell needs no go-to dialog either.
 
 The admission test transfers unchanged: a **verb** goes in a menu, a **property of the
 selection** goes on the format strip, and `CellStyle` + `numfmt::Format` + `CharStyle` bound the
-latter. What must not happen is a *toolbar* in the Common Controls v6 sense — that class needs
-the application manifest this binary deliberately does not have. The format strip is therefore
-**drawn**, in GDI, as part of the window, exactly as the grid is.
+latter. What must not happen is a *toolbar* in the Common Controls v6 sense — W0 refused it for
+needing a manifest, and since W14 has one the refusal stands on the better reason: a `ToolbarWindow32`
+draws itself in the system's style and ignores this window's palette, which is exactly the half-themed
+look decision 10 was written against. The format strip is therefore **drawn**, in GDI, as part of
+the window, exactly as the grid is.
 
 `ui_sheet_gtk/src/main.rs`'s `chrome_tests` walk every `gio::Menu` in the window to check that
 each item routes somewhere real. The equivalent here is cheaper and better: the menus are
@@ -451,8 +468,8 @@ And `grind_core::search::score` is still unused here, because there is still no 
 
 ### 10. Fluent by **measurement**, not by toolkit — *decided in W10*
 
-This window has no Fluent controls and will not get any: they are downstream of the manifest and
-the Windows App SDK decision 2 rules out. What it *can* have is every number Fluent publishes,
+This window has no Fluent controls and will not get any: they are downstream of the Windows App
+SDK decision 2 rules out. What it *can* have is every number Fluent publishes,
 and that turns out to be most of what "looks like a Windows 11 application" means.
 
 The distinction matters because the obvious reading of "no Fluent" is "so it will look like
@@ -491,11 +508,9 @@ custom-painted window away when it is missing.
 
 The **modals follow the theme too** (`dialog.rs`), which is where this stops being a repaint: a
 white listbox inside a dark window is what "not themed" looks like at its worst, and the chooser
-*is* a listbox. The ground, the static text, the edit box and the list all take the palette
-through `WM_CTLCOLOR…` and `WM_ERASEBKGND`. What does not is listed with the gaps: a `BUTTON`
-ignores the brush it is handed, a `LISTBOX` draws its own selection bar in the system colour, and
-the menu bar and the message boxes are Windows' own. Those are four small light rectangles in a
-dark window rather than the whole window, which is the trade this milestone makes.
+*is* a listbox. W10 got the grounds, the edit box and the list's rows there through
+`WM_CTLCOLOR…`, and left four things system-drawn — the push buttons, the list's selection bar,
+the menu bar and the message boxes. **W14 drew all four** (decisions 12 and 13).
 
 ### 11. A window with no document shows the **choice**, not a spreadsheet — *decided in W11*
 
@@ -534,6 +549,104 @@ goes back, because a welcome screen you can only ever see once is a splash scree
 `--sheet` and `--text` still skip it, which is what keeps `grind-win32 --text` meaning exactly
 what it meant; `--render-to` with no file draws it, which is how it is looked at without Windows.
 
+### 12. Every dialog is one shape — ContentDialog's — and **it fits the screen** — *decided in W14*
+
+Until W14 this shell had five hand-built popups (a prompt, a chooser, the filter, the chart
+preview, the print preview) and `MessageBoxW` for the rest, and the complaint that ended it was
+that dialogs did not fit: content ran off the screen. Reading them showed why, and it was the same
+three mistakes five times over. Each asked for a fixed **outer** size in logical pixels — the print
+preview's 640 × 860 is 1075 pixels tall at 125%, taller than a 1080p work area — centred itself on
+its owner with **nothing stopping it at the monitor's edge**, and placed its buttons by **guessing
+the caption's height** (`h - button - 40`), which is a different number at every scaling.
+
+So there is now one modal, and two rules about it:
+
+- **The size is the content's, the bound is the screen's.** A caller describes its *body* — a
+  message, a field, a list, a reader, a chart, the pages — and `run` measures it in the fonts it
+  will be drawn in, before there is a window. `modal::wanted` turns that into a window size, and
+  `modal::place` clamps it to the **work area of the monitor the owner is on**, less a margin, and
+  centres it on the owner only as far as that allows. What does not fit is the body's to absorb: a
+  list or the reader scrolls, a chart or a page scales. The print preview asks to be as tall as the
+  screen and as wide as the page is at that height. All of it is a portable function, swept over six
+  scalings and three owner positions by `a_modal_never_leaves_the_work_area`, and checked under Wine
+  at 150% on a 1280 × 720 screen.
+- **The anatomy is ContentDialog's.** No caption — the caption and frame exist only so the
+  compositor gives the surface its shadow and Windows 11's rounded corner, and `WM_NCCALCSIZE`
+  hands the whole window to the client — then a title in the type ramp's *Subtitle* (20, semibold,
+  *Segoe UI Variable Display*), the body on the lighter layer, and a **footer** on the window's own
+  ground under a hairline, 24 pixels of padding throughout. Answers alone share the footer in equal
+  columns, at least two, so a lone *Close* takes the trailing half; anything that is not an answer
+  (*Previous*/*Next*, a chart's kinds, a filter's *Clear*) stands at the leading end and the
+  answers shrink to their words. One button is the **default**, drawn in the accent and meant by
+  Enter — and where an answer destroys something the default is the safe one, so *Delete Budget?*
+  has its accent on **Cancel**. The window behind is dimmed with Fluent's smoke (black at 30%) for as
+  long as the modal is up, except under Wine, which can draw a layered window's alpha only with a
+  compositor running and would draw it opaque.
+
+What is inside is drawn by this shell rather than handed to the system, which is what closes W10's
+four light rectangles. Buttons are `BS_OWNERDRAW` with a thin subclass that tracks the pointer —
+a button that does not answer hover is what most gives a custom-drawn window away — and tells the
+dialog manager the focused one is a push button, so Enter on a focused *Cancel* means Cancel. Lists
+are `LBS_OWNERDRAWFIXED`: Fluent's ListView row, a subtle rounded ground under the pointer and the
+selection, an accent pill on the selected row, a check box in place of the pill for the filter, and
+a tab in a row splitting it into two columns (the shortcut list's key against the trailing edge). A
+field is an `EDIT` with no border of its own inside a drawn TextBox — a control's ground and stroke,
+the strong line along the bottom turning into the accent, two pixels thick, while it has the
+keyboard. `MessageBoxW` is replaced by the same modal with the **verbs on the buttons** — *Save*,
+*Don't Save*, *Cancel*; *Delete*, *Cancel* — which is what Windows' own applications say and what
+*Yes*/*No* never did. Only `main.rs`'s message before any window exists is still a `MessageBoxW`,
+since there is no window yet to theme one after.
+
+The last piece is the **application manifest** (`ui_win32/data/grind.manifest`, linked by
+`grind.rc`): Common Controls 6, so what Windows still draws — the edit's caret and selection, the
+scroll bars, the popup menus, the file dialogs' own controls — is the current control rather than
+Windows 2000's; per-monitor DPI v2 from the loader rather than only from `SetProcessDpiAwarenessContext`
+at run time; and the Windows 10/11 compatibility id. `artifacts.yml` reads it back off the linked
+`.exe` beside the icon and the version block, since `embed_resource` silently embeds nothing where it
+finds no resource compiler — which is every machine but `windows-latest`, this one included.
+
+### 13. The menu bar is **drawn**, in the band Windows' own would take — *decided in W14*
+
+Decision 4 is unchanged: the menu bar is this platform's growable surface. What changed is who
+draws it. `user32`'s bar is a strip of `COLOR_MENUBAR` with a hairline under it that no palette
+chose, it stays light over a dark window, and there is no documented way to change either — so the
+window read as a W10 surface under a 1995 one.
+
+`menubar.rs` draws it instead, and the choice that kept this cheap is *where*: **in the non-client
+area**, directly above the client rectangle, exactly where the system's bar would be.
+`WM_NCCALCSIZE` takes the band off the top of the client, `WM_NCPAINT` paints it, `WM_NCHITTEST`
+calls it `HTMENU`. Every pane's own layout, hit-testing and child-control placement is in client
+coordinates and none of it moved. The look is Fluent's *MenuBar* in its compact size: the window's
+own ground (the caption is already painted in it, so caption, bar and format strip are one
+surface), titles in Body type, and a subtle rounded ground under the pointer, under the open menu
+and under the keyboard.
+
+What the system bar did for free is rebuilt on documented API, and each piece is tested or was
+driven under Wine:
+
+- **The popups are still Windows' own** — `TrackPopupMenuEx` over the same `HMENU`s `build_menu`
+  always made, kept rather than attached — so every item, accelerator label, check mark, mnemonic and
+  `WM_INITMENUPOPUP` check inside a menu is exactly what it was.
+- **Moving between menus**: Left and Right inside an open menu, and the pointer crossing onto another
+  title, close it and open the neighbour — a `WH_MSGFILTER` hook for the length of the menu loop, the
+  standard way a drawn bar does this. A press on the open menu's own title closes it.
+- **The keyboard**: Windows still turns Alt, F10 and Alt+letter into `SC_KEYMENU` for a window
+  with no bar of its own, and the drawn one answers it. Alt or F10 alone walks the bar (Left, Right,
+  Enter, Up, Down, a title's letter, Escape, Alt again) in a message loop of its own **without moving
+  the focus**, since moving it would commit a half-typed cell; Alt+letter opens that menu with its
+  first item highlighted; Escape out of a menu opened from the keyboard returns to the bar. Mnemonic
+  underlines are drawn only while the keyboard drives, Windows' own rule. Alt+Space is still the
+  window menu. `every_title_in_the_bar_has_a_mnemonic_and_no_two_share_one` holds the titles to it.
+- **Dark popups.** The menus themselves are the one thing this shell asks of Windows through API it
+  does not document: `uxtheme`'s `SetPreferredAppMode` (ordinal 135) and `FlushMenuThemes` (136),
+  and the `DarkMode_Explorer` theme class for scroll bars — the calls Notepad, Explorer and the
+  Settings app make, stable since Windows 10 1809. They are looked up rather than linked and skipped
+  below that build (`theme::dark_controls`), so a Windows without them gets the light menus it had.
+
+The cost, named: the bar is no longer `user32`'s, so **UI Automation sees no menu bar** — a screen
+reader reaches every verb through the popups and the accelerators but not the bar itself as a list of
+menus. That joins `accesskit_windows` on the deferred list.
+
 ## The crate
 
 A `*` marks what W0 through W3 have built; everything else is the plan.
@@ -549,6 +662,8 @@ ui_win32/
     grind.ico           * generated from grind.svg (`magick -define icon:auto-resize=...`), not
                           built by this crate — turning an SVG into an ICO needs librsvg
     grind.svg           * the source: the two GTK apps' own icon language, one mark
+    grind.manifest      * W14: Common Controls 6, per-monitor DPI v2, the Windows 10/11 id —
+                          linked by grind.rc as resource 1 of type 24 (decision 12)
   src/
     main.rs           *   argv, kind sniff, a message box for errors before a window exists
     args.rs           *   the command line as a pure function (W0)
@@ -566,10 +681,14 @@ ui_win32/
                           registry read and the window chrome (dark title bar, caption colour,
                           rounded corner) are the [W] half
     menu.rs           *   the menus as data, the accelerators, and the command-id table
+    menubar.rs       [~]* W14: the drawn menu bar — its layout, mnemonics and the keyboard's walk
+                          portable; the non-client band, the popups and the message filter [W]
+    modal.rs          *   W14: ContentDialog's anatomy, and `place`, which fits a modal to the
+                          work area of the monitor its owner is on
     notice.rs         *   every sentence the notice bar says, as a pure function
-    dialog.rs        [W]* every modal: the file dialogs, the questions, the text prompt and the
-                          chooser — themed since W10, through the one lever a self-painting
-                          control offers
+    dialog.rs        [W]* every modal: the file dialogs, and one drawn modal (W14) for the
+                          questions, messages, prompt, lists, filter and the two previews —
+                          its buttons, rows and fields owner-drawn, the owner dimmed
     sheet/
       geom.rs           * pixels <-> cells, prefix sums over the document's own widths, the
                           strip, and which visible track a cursor may stop on
@@ -719,6 +838,7 @@ Measured rather than argued, and measurable from Linux: compiling both spellings
 | **W12** | **The grid's format strip** — *done* | `sheet/format.rs` (portable: the controls, what each reads off the active cell, the read-change-write a toggle makes — `grind_sheet::format`'s since the Mac's M1, with the colours and the decimal steps — the nine number kinds and what picking one writes, the decimal steps, the picker's face); `strip.rs` (portable layout, GDI painting) now drawn by **both** panes; a format band over the name box; `Command::AlignLeft/Center/Right`, `PickBackground`, `NumberFormat`, `FewerDecimals`, `MoreDecimals`; Bold, Italic, Text Colour and Clear Formatting made both panes' verbs | **Met.** The row `doc/feature-matrix.md` §8 ranked first — *this window can barely format a cell* — is closed: under Wine a label was made bold with a click and with Ctrl+B, a currency stepped from two decimals to four with two quick clicks, turned into a percentage and back with one Ctrl+Z, coloured blue on yellow, and cleared; the saved file projects as `style B3 bold=#true color="#0074d9" background="#ffdc00"` and lints clean. The Format menu is the strip's verbs in the strip's order, checked as the strip draws them. 276 tests on Linux. The text pane renders **byte-identical** to its frames from before its painting moved into `strip.rs`, in both palettes. Two bugs found by *running* it — see below |
 
 | **W13** | **The page on paper** (`doc/pdf-export.md`) — *in progress* | ~~File ▸ Export PDF… (Ctrl+Shift+E), over `grind_print::export` with `grind_print::fonts_for`, the report on the notice bar~~ (done); ~~Print Preview (Ctrl+Shift+P), `dialog::page_preview`: one page at a time from `grind_print::raster`, fitted by `text/paper.rs` and composited by `gdi::blit_image`, Previous/Next/Print…/Close~~ (done); ~~Print… (Ctrl+P), `PrintDlgW` and the same rasters through `StartDocW` at the printer's resolution capped at 300 dpi, put down by `gdi::print_image`'s `StretchDIBits` since a printer driver need not support `AlphaBlend` — Windows has no API that prints a PDF~~ (done). All three type-check and lint for the msvc target and link under `cargo xwin`; the window still starts and draws under Wine, but no dialog of the three has been clicked through yet | the sample exports, previews and prints under Wine, and the PDF is the bytes `grind text export-pdf` writes |
+| **W14** | **The modern pass** — *done* | `modal.rs` (portable: ContentDialog's anatomy, `place` fitting a modal to the work area, the footer's two button rules, the list's size); `dialog.rs` rebuilt around one modal — owner-drawn buttons, lists and fields, the smoke, `MessageBoxW` replaced with verb buttons, `show_list` for a list that is only read, `confirm` taking its verb; `menubar.rs` (portable layout, mnemonics and the keyboard's walk; the non-client band, the popups, the message filter); `theme::dark_controls`; `data/grind.manifest` in `grind.rc` and read back in `artifacts.yml` | **Met.** Under Wine every modal opens inside the screen at 100% on 1366 × 768 and at 150% on 1280 × 720 — the print preview included, which used to open taller than either — in both palettes; the drawn bar opens a menu on a click, closes it on a second, follows the pointer across titles, walks from Alt and F10 and opens from Alt+letter, and typing still reaches the cell after it. 224 tests on Linux. Two bugs found by *running* it — see below |
 
 **W5 was the milestone to be nervous about**, not W1. The grid is arithmetic this project has
 done three times; the text pane is the first time `layout::Metrics` meets a proportional font
@@ -925,24 +1045,14 @@ rather than from a tab strip** until the UX pass below, on a reading of `doc/she
 was wrong: the strip that document removed for looking like a ribbon was its *tool* row's
 Format/View/Calculate tabs, and the GNOME window has sheet tabs to this day. Tabs are built now.
 
-**System-drawn, and therefore not themed by us — narrowed in W10.** This shell's *own* modals do
-follow the theme now: `dialog.rs`'s prompt and chooser take the palette for their ground, their
-label, their edit box and — the one that matters, since the chooser *is* a list — their listbox,
-through `WM_ERASEBKGND` and `WM_CTLCOLOR…`. What is left system-coloured is four things, and each
-is a control that ignores the lever rather than one nobody has got to:
-
-* a **`BUTTON` ignores the brush** it is handed by `WM_CTLCOLORBTN`, so OK and Cancel are the
-  system's. Following the theme means owner-drawing them, and with it the focus ring, the default
-  border and the keyboard states — a large amount of drawing for two words in a corner.
-* a **`LISTBOX` draws its own selection bar** in the system highlight colour, so the selected row
-  in the chooser is Windows' blue rather than this window's accent. Same answer: `LBS_OWNERDRAW`.
-* the **menu bar** is `user32`'s, which is what buys Alt navigation, mnemonics and DPI for free
-  (decision 4) and what makes it light over a dark window. Owner-drawn menus are a well-known
-  swamp and the trade is not obviously worth it.
-* a **`MessageBoxW`** is Windows'. Making one dark means not using one, which is a worse trade.
-
-The whole of that is four small light rectangles in a dark window, where before W10 it was every
-dialog this shell can open.
+**System-drawn, and therefore not themed by us — narrowed in W10, closed in W14.** W10 left four
+light rectangles in a dark window — the push buttons, a list's selection bar, the menu bar and the
+message boxes — and W14 drew all four (decisions 12 and 13). What Windows still draws is what it
+should: the file and print dialogs, which are the system's own and follow its theme; an `EDIT`'s
+caret and text selection; the scroll bars, themed dark through `DarkMode_Explorer` from 1809 on; and
+the popup menus, dark through the two `uxtheme` ordinals decision 13 names. **A dialog cannot be
+dragged** — ContentDialog cannot either, and the owner is dimmed and waiting — and **the drawn menu
+bar is not a UI Automation menu bar** (decision 13).
 
 **W10's own gaps.** The **system accent is followed but not its ramp**: Windows publishes
 `AccentPalette`, six precomputed tints, and this shell derives its own from `DWM\AccentColor`
@@ -962,7 +1072,8 @@ but a backdrop only shows through pixels the application does not paint, and a G
 fills its client area with an opaque brush paints all of them. *This is reasoned rather than
 measured*, and it is flagged as such in the sibling repository too. The dark title bar
 (`DWMWA_USE_IMMERSIVE_DARK_MODE`) is the part that survives and is implemented. No **Fluent
-controls** and no v6 **toolbar**, both downstream of having no manifest. No **shaping** at all
+controls**, which are WinUI's, and no v6 **toolbar**, which would draw itself in the system's style
+rather than this window's (decision 4). No **shaping** at all
 while `metrics.rs` is GDI's: decomposed text, ligatures, emoji sequences and the LTR complex
 scripts (Devanagari, Thai, Khmer) are each drawn as separate boxes. Decision 3 ranks these by
 likelihood and names the trigger; the LTR complex scripts in particular are a gap of this
@@ -1180,7 +1291,7 @@ about it is made here:
   the selection edge, the header bar and the assist band. What it cannot say is how the *system*
   chrome round all that looks: recent Wine has a dark mode of its own for common controls, so a
   themed listbox there is not evidence that a listbox on Windows would be themed, and the
-  push buttons and the menu bar this shell leaves alone may look different there than here.
+  popup menus and scroll bars this shell leaves to Windows may look different there than here.
 - Consolas is absent, so every screenshot exercises the `FIXED_PITCH | FF_MODERN` substitution
   path rather than the intended font.
 - The IME path, and clipboard interop with real Excel. `IFileDialog`'s COM path *does* run
@@ -1573,6 +1684,18 @@ missing call is in a file that does not exist, and the only way to see it is to 
    glyphs are clean. Recorded because the same misreading cost a debugging detour on the text pane
    the day before — a caret that looked off by thirty pixels and measured exact. **Measure a
    screenshot, never eyeball a scaled one.**
+
+### W14 found two, and both were the window manager's half of a borderless window
+
+- **Every modal opened a caption's height too short**, its footer cut off at the bottom.
+  `WM_NCCALCSIZE` was answered for `wparam` true and handed to the default for false — and false is
+  the form `CreateWindowExW` sends first, the one that decides the client rectangle the children
+  were then laid out in. The two disagreed by exactly the caption the window does not draw. Both
+  forms are answered now.
+- **The smoke was black.** Wine draws a layered window's alpha only where a compositor runs, and a
+  bare Xvfb has none, so the 30% dimming came out as an opaque rectangle hiding the window behind
+  the dialog. The smoke is skipped under Wine (`ntdll`'s `wine_get_version` is the check Wine
+  documents), which is right for a Wine user without a compositor too.
 
 ### The one thing that did not work — found, diagnosed and fixed in W0
 

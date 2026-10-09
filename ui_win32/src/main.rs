@@ -47,8 +47,14 @@ mod code;
 mod import;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod menu;
+// The drawn menu bar's layout, hit-testing and keyboard walk.
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
+mod menubar;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod metrics;
+// The modals' geometry — ContentDialog's anatomy, and fitting one to the screen.
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
+mod modal;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod notice;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]

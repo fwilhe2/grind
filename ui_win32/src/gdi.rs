@@ -109,13 +109,31 @@ impl Font {
         underline: bool,
         strike: bool,
     ) -> Self {
+        let weight = match bold {
+            true => FW_BOLD.0 as i32,
+            false => FW_NORMAL.0 as i32,
+        };
+        Self::with_weight(face, height, weight, italic, underline, strike)
+    }
+
+    /// A font at one of the type ramp's weights rather than only regular or bold — *Semibold*
+    /// (600) is what Fluent sets a dialog's title and a strong label in, and asking GDI for 700
+    /// instead is the difference between a title and a shout.
+    pub fn weighted(face: &str, height: i32, weight: i32) -> Self {
+        Self::with_weight(face, height, weight, false, false, false)
+    }
+
+    fn with_weight(
+        face: &str,
+        height: i32,
+        weight: i32,
+        italic: bool,
+        underline: bool,
+        strike: bool,
+    ) -> Self {
         let mut log = LOGFONTW {
             lfHeight: -height,
-            lfWeight: if bold {
-                FW_BOLD.0 as i32
-            } else {
-                FW_NORMAL.0 as i32
-            },
+            lfWeight: weight,
             lfItalic: u8::from(italic),
             lfUnderline: u8::from(underline),
             lfStrikeOut: u8::from(strike),
@@ -421,6 +439,163 @@ pub fn ui_face() -> &'static str {
             .find(|face| has_face(face))
             .unwrap_or("Segoe UI")
     })
+}
+
+/// The face for text set at 20 pixels and over — a dialog's title.
+///
+/// *Segoe UI Variable Display* is the optical size Windows 11 draws its titles in; the *Text*
+/// size [`ui_face`] answers is drawn for 12 to 19 pixels and looks heavy-handed above that. The
+/// same probe, for the same reason: GDI substitutes rather than fails.
+pub fn display_face() -> &'static str {
+    static FACE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    FACE.get_or_init(|| {
+        ["Segoe UI Variable Display", "Segoe UI"]
+            .into_iter()
+            .find(|face| has_face(face))
+            .unwrap_or("Segoe UI")
+    })
+}
+
+/// Where a line of text goes across the rectangle it is given.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Across {
+    Left,
+    Centre,
+    Right,
+}
+
+/// One line of text in the DC's current font, centred on `rect` vertically and placed across it
+/// by `across` — cut with an ellipsis rather than clipped mid-glyph when it does not fit, which is
+/// what a dialog's labels and a list's rows need and the grid's cells deliberately do not.
+pub fn line(dc: HDC, text: &str, rect: RECT, across: Across, ink: Rgb) {
+    use windows::Win32::Graphics::Gdi::{
+        DT_CENTER, DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_RIGHT, DT_SINGLELINE, DT_VCENTER,
+        DrawTextW, SetBkMode, SetTextColor, TRANSPARENT,
+    };
+    // A slice with no terminator: `DrawTextW` takes a length, and an empty slice is a return
+    // rather than a call — `sheet::draw::draw_text` has the history of both.
+    let mut wide: Vec<u16> = text.encode_utf16().collect();
+    if wide.is_empty() || rect.right <= rect.left {
+        return;
+    }
+    let mut rect = rect;
+    let flags = DT_SINGLELINE
+        | DT_VCENTER
+        | DT_NOPREFIX
+        | DT_END_ELLIPSIS
+        | match across {
+            Across::Left => DT_LEFT,
+            Across::Centre => DT_CENTER,
+            Across::Right => DT_RIGHT,
+        };
+    // SAFETY: the DC is the caller's and live; the buffer and rectangle are locals.
+    unsafe {
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, windows::Win32::Foundation::COLORREF(ink.colorref()));
+        DrawTextW(dc, &mut wide, &mut rect, flags);
+    }
+}
+
+/// A paragraph in the DC's current font, broken into lines at word boundaries to fit `rect`'s
+/// width, from its top. With `measure`, nothing is drawn and the height it *would* take is
+/// returned instead — the two share one call so they cannot break the text differently.
+pub fn paragraph(dc: HDC, text: &str, rect: RECT, ink: Rgb, measure: bool) -> i32 {
+    use windows::Win32::Graphics::Gdi::{
+        DT_CALCRECT, DT_LEFT, DT_NOPREFIX, DT_WORDBREAK, DrawTextW, SetBkMode, SetTextColor,
+        TRANSPARENT,
+    };
+    let mut wide: Vec<u16> = text.encode_utf16().collect();
+    if wide.is_empty() || rect.right <= rect.left {
+        return 0;
+    }
+    let mut rect = rect;
+    let mut flags = DT_LEFT | DT_WORDBREAK | DT_NOPREFIX;
+    if measure {
+        flags |= DT_CALCRECT;
+    }
+    // SAFETY: as [`line`].
+    unsafe {
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, windows::Win32::Foundation::COLORREF(ink.colorref()));
+        DrawTextW(dc, &mut wide, &mut rect, flags)
+    }
+}
+
+/// A DC for measuring with no window behind it, and a font already selected into it.
+///
+/// What a modal needs *before* its window exists: how wide its buttons' words are and how tall its
+/// message is, at the size it will be drawn, since its size is decided from them.
+pub struct Measure<'a> {
+    dc: HDC,
+    previous: HGDIOBJ,
+    _font: std::marker::PhantomData<&'a Font>,
+}
+
+impl<'a> Measure<'a> {
+    pub fn new(font: &'a Font) -> Option<Self> {
+        // SAFETY: a memory DC compatible with the screen, deleted in `Drop` once the font it was
+        // given has been deselected again.
+        unsafe {
+            let dc = CreateCompatibleDC(None);
+            if dc.is_invalid() {
+                return None;
+            }
+            let previous = SelectObject(dc, HGDIOBJ(font.handle().0));
+            Some(Self {
+                dc,
+                previous,
+                _font: std::marker::PhantomData,
+            })
+        }
+    }
+
+    pub fn width(&self, text: &str) -> i32 {
+        text_width(self.dc, text)
+    }
+
+    pub fn height(&self, text: &str, width: i32) -> i32 {
+        paragraph(
+            self.dc,
+            text,
+            RECT {
+                left: 0,
+                top: 0,
+                right: width.max(1),
+                bottom: 0,
+            },
+            Rgb(0, 0, 0),
+            true,
+        )
+    }
+}
+
+impl Drop for Measure<'_> {
+    fn drop(&mut self) {
+        // SAFETY: the font is put back before the DC goes — a font left selected in a deleted DC
+        // is the leak `Selected` exists to prevent.
+        unsafe {
+            SelectObject(self.dc, self.previous);
+            let _ = DeleteDC(self.dc);
+        }
+    }
+}
+
+/// A check mark — two strokes — inside `rect`, in `colour` at `width` pixels. Drawn rather than
+/// typed, for the reason [`triangle_down`] gives.
+pub fn check_mark(dc: HDC, rect: RECT, colour: Rgb, width: i32) {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::Polyline;
+    let (w, h) = (rect.right - rect.left, rect.bottom - rect.top);
+    let at = |fx: f64, fy: f64| POINT {
+        x: rect.left + (f64::from(w) * fx).round() as i32,
+        y: rect.top + (f64::from(h) * fy).round() as i32,
+    };
+    let pen = Pen::solid(colour, width.max(1));
+    let _pen = Selected::pen(dc, &pen);
+    // SAFETY: the DC is the caller's; the pen is selected for this scope.
+    unsafe {
+        let _ = Polyline(dc, &[at(0.2, 0.52), at(0.42, 0.74), at(0.8, 0.3)]);
+    }
 }
 
 /// Whether GDI has a font family by this name.

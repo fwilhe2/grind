@@ -1220,7 +1220,7 @@ pub fn label_for(command: Command) -> Option<&'static str> {
         })
 }
 
-/// Every command that carries a `\t`-separated accelerator, as one line each — W7's "key list",
+/// Every command that carries a `\t`-separated accelerator, as one line each — the name, a tab, and the key, which `dialog::show_list` draws as two columns — W7's "key list",
 /// the answer to `gtk::ShortcutsWindow` this shell can build with no resources and no dialog
 /// template: a plain read of the labels every menu item already has, so a shortcut shown here and
 /// a shortcut shown on the bar can never say two different things about the same command.
@@ -1237,7 +1237,7 @@ pub fn shortcuts() -> Vec<String> {
             Item::Verb { label, .. } => label.split_once('\t'),
             Item::Separator => None,
         })
-        .map(|(name, key)| format!("{} — {key}", name.replace('&', "")))
+        .map(|(name, key)| format!("{}\t{key}", name.replace('&', "")))
         .collect()
 }
 
@@ -1937,7 +1937,7 @@ mod tests {
         assert!(!rows.is_empty());
         for row in &rows {
             assert!(!row.contains('&'), "{row}");
-            assert!(row.contains(" — "), "{row}");
+            assert!(row.contains('\t'), "{row}");
         }
         assert!(
             rows.iter()

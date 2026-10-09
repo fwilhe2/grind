@@ -287,9 +287,22 @@ therefore shipping unlooked-at (the first frame it drew had a W1 bug in it — `
 is the fix, and ODF's *automatic* colour is what it means: the theme's ink where it reads on the
 ground the **document** chose, black or white where it does not); and `gdi::ui_face`, which asks
 `EnumFontFamiliesExW` for *Segoe UI Variable Text* before falling back to Segoe UI, since GDI
-substitutes silently for a face it has not got. The modals are themed too (`dialog.rs`), leaving
-the push buttons, a listbox's own selection bar, the menu bar and the message boxes as the named
-system-drawn remainder.
+substitutes silently for a face it has not got. The modals are themed too (`dialog.rs`).
+
+**W14 is the modern pass, and closed what W10 left system-drawn.** Every dialog is one shape,
+Fluent's *ContentDialog* (`modal.rs`, decision 12): no caption, a Subtitle title, a footer on the
+window's ground with the accent on the default — the *safe* answer where one destroys something —
+and **fitted to the work area of the owner's monitor** by `modal::place`, since the old popups asked
+for fixed outer sizes (the print preview's ran off a 1080p screen at 125%) and placed buttons by
+guessing the caption. Buttons, lists and fields are owner-drawn, `MessageBoxW` is replaced by verb
+buttons (*Save*/*Don't Save*/*Cancel*), and the owner is dimmed with Fluent's smoke (not under
+Wine, which draws it opaque). The **menu bar is drawn** (`menubar.rs`, decision 13) in the
+non-client band Windows' own would take, so no client coordinate moved; the popups are still
+`TrackPopupMenuEx` over the same `HMENU`s, a `WH_MSGFILTER` hook moves between menus, and
+`SC_KEYMENU` drives the keyboard. The `.exe` now carries an **application manifest**
+(`ui_win32/data/grind.manifest`: Common Controls 6, PMv2), read back in `artifacts.yml`; and the
+popup menus and scroll bars go dark through two `uxtheme` ordinals (`theme::dark_controls`), the
+shell's one undocumented API, looked up and skipped below 1809.
 
 **W5a is the text pane, and it settles this shell's one open decision.** `metrics.rs` is the
 fourth `layout::Metrics` implementation and the first one no toolkit handed over: GDI measures

@@ -654,6 +654,7 @@ fn read_dword(path: &str, name: &str) -> Option<u32> {
 /// [`Theme::backdrop`] is a token rather than a shade of the header band.
 #[cfg(windows)]
 pub fn apply_window_chrome(hwnd: windows::Win32::Foundation::HWND, theme: Theme) {
+    dark_controls(hwnd, theme);
     use windows::Win32::Foundation::COLORREF;
     use windows::Win32::Graphics::Dwm::{
         DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE,
@@ -697,6 +698,100 @@ pub fn apply_window_chrome(hwnd: windows::Win32::Foundation::HWND, theme: Theme)
             std::mem::size_of::<COLORREF>(),
         );
     }
+}
+
+/// The parts of the window Windows draws rather than this shell — the popup menus, the scroll
+/// bars — in the same palette as everything else.
+///
+/// **The one place this shell uses API Windows does not document**, and the reason is that there
+/// is no documented way to do it: a Win32 program's popup menus are light whatever the system's
+/// theme, and Notepad, Explorer and the Settings app are dark only because they call the same two
+/// `uxtheme` entry points this does (`SetPreferredAppMode`, ordinal 135, and `FlushMenuThemes`,
+/// 136), and give their scroll bars the theme class `DarkMode_Explorer`. Both have been stable
+/// since Windows 10 1809, which is what the build check is for — before it, ordinal 135 was not
+/// there to find. Every step is looked up rather than linked, so a Windows without them, or Wine,
+/// gets the light menus it had before and nothing worse.
+#[cfg(windows)]
+fn dark_controls(hwnd: windows::Win32::Foundation::HWND, theme: Theme) {
+    use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+    use windows::Win32::UI::Controls::SetWindowTheme;
+    use windows::core::{PCSTR, PCWSTR, w};
+
+    if windows_build() < 17763 {
+        return;
+    }
+    let dark = theme.mode == Mode::Dark;
+    // SAFETY: the two entry points are looked up by ordinal and called with the one integer
+    // argument each has always taken; `hwnd` is this window's.
+    unsafe {
+        let Ok(uxtheme) = LoadLibraryW(w!("uxtheme.dll")) else {
+            return;
+        };
+        let ordinal = |n: usize| GetProcAddress(uxtheme, PCSTR(n as *const u8));
+        // `PreferredAppMode`: 2 is ForceDark, 3 ForceLight. On 1809, where the same ordinal was
+        // `AllowDarkModeForApp(BOOL)`, either is true, and the system's own mode — which is what
+        // this palette was read from — decides.
+        if let Some(set_mode) = ordinal(135) {
+            let set_mode: unsafe extern "system" fn(i32) -> i32 = std::mem::transmute(set_mode);
+            set_mode(if dark { 2 } else { 3 });
+        }
+        if let Some(allow) = ordinal(133) {
+            let allow: unsafe extern "system" fn(windows::Win32::Foundation::HWND, i32) -> i32 =
+                std::mem::transmute(allow);
+            allow(hwnd, i32::from(dark));
+        }
+        if let Some(flush) = ordinal(136) {
+            let flush: unsafe extern "system" fn() = std::mem::transmute(flush);
+            flush();
+        }
+        let class = match dark {
+            true => w!("DarkMode_Explorer"),
+            false => w!("Explorer"),
+        };
+        let _ = SetWindowTheme(hwnd, class, PCWSTR::null());
+    }
+}
+
+/// Windows' build number, as Windows itself reports it — `RtlGetVersion`, which unlike
+/// `GetVersionExW` is not shimmed to say whatever the manifest asked for. Zero when it cannot be
+/// asked, which every check here reads as "too old".
+#[cfg(windows)]
+pub fn windows_build() -> u32 {
+    use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+    use windows::core::{s, w};
+
+    #[repr(C)]
+    struct Version {
+        size: u32,
+        major: u32,
+        minor: u32,
+        build: u32,
+        platform: u32,
+        service_pack: [u16; 128],
+    }
+    let mut version = Version {
+        size: std::mem::size_of::<Version>() as u32,
+        major: 0,
+        minor: 0,
+        build: 0,
+        platform: 0,
+        service_pack: [0; 128],
+    };
+    // SAFETY: `RtlGetVersion` writes an `OSVERSIONINFOW`, whose layout `Version` is, and reads
+    // its size from the first field.
+    unsafe {
+        let Ok(ntdll) = GetModuleHandleW(w!("ntdll.dll")) else {
+            return 0;
+        };
+        let Some(get) = GetProcAddress(ntdll, s!("RtlGetVersion")) else {
+            return 0;
+        };
+        let get: unsafe extern "system" fn(*mut Version) -> i32 = std::mem::transmute(get);
+        if get(&mut version) != 0 {
+            return 0;
+        }
+    }
+    version.build
 }
 
 #[cfg(test)]
