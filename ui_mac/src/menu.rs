@@ -21,6 +21,7 @@
 
 use grind_core::DocumentKind;
 use grind_core::style::PALETTE;
+use grind_sheet::ChartKind;
 use grind_sheet::format::Preset;
 use grind_text::markdown::Emphasis;
 
@@ -165,8 +166,9 @@ pub enum Command {
     FormulaToValue,
     /// An autofilter over the selection, or off again — Edit ▸ Filter (`sheet/filter.rs`).
     Filter,
-    /// A chart of the table the selection is in, beside it — Insert ▸ Chart.
-    InsertChart,
+    /// A chart of the table the selection is in, beside it — Insert ▸ Chart as the cells want,
+    /// Insert ▸ Bar/Line/Pie Chart as that kind (`verbs::insert_chart`'s `kind`).
+    InsertChart(Option<ChartKind>),
     /// The chart Insert ▸ Chart would make, drawn in an alert with Insert and Cancel — nothing
     /// is written unless Insert is chosen (`verbs::preview_insert_chart`).
     PreviewChart,
@@ -328,7 +330,10 @@ impl Command {
             Command::ExportPdf,
             Command::Print,
             Command::About,
-            Command::InsertChart,
+            Command::InsertChart(None),
+            Command::InsertChart(Some(ChartKind::Bar)),
+            Command::InsertChart(Some(ChartKind::Line)),
+            Command::InsertChart(Some(ChartKind::Pie)),
             Command::PreviewChart,
             Command::Filter,
             Command::CopyValue,
@@ -466,7 +471,7 @@ impl Command {
             | Command::Columns(_)
             | Command::FitAll
             | Command::DefineName
-            | Command::InsertChart
+            | Command::InsertChart(_)
             | Command::PreviewChart
             | Command::Filter
             | Command::CopyValue
@@ -1005,7 +1010,22 @@ pub static MENUS: &[Menu] = &[
             command("Sheet", None, Command::AddSheet),
             command("Function…", None, Command::InsertFunction),
             command("Name…", None, Command::DefineName),
-            command("Chart", None, Command::InsertChart),
+            command("Chart", None, Command::InsertChart(None)),
+            command(
+                "Bar Chart",
+                None,
+                Command::InsertChart(Some(ChartKind::Bar)),
+            ),
+            command(
+                "Line Chart",
+                None,
+                Command::InsertChart(Some(ChartKind::Line)),
+            ),
+            command(
+                "Pie Chart",
+                None,
+                Command::InsertChart(Some(ChartKind::Pie)),
+            ),
             command("Chart Preview…", None, Command::PreviewChart),
             Item::Separator,
             command("Table…", None, Command::InsertTable),
@@ -1274,6 +1294,20 @@ mod tests {
             assert_eq!(Command::from_tag(command.tag()), Some(command));
         }
         assert_eq!(Command::from_tag(-1), None);
+    }
+
+    /// Every kind GNOME's chart dialog offers is an Insert item here, named for it; a chart's
+    /// own menu changes one afterwards.
+    #[test]
+    fn every_chart_kind_is_an_item_to_insert_as() {
+        let items = entries();
+        for kind in ChartKind::ALL {
+            let (title, _, _) = items
+                .iter()
+                .find(|(_, _, action)| *action == Action::Command(Command::InsertChart(Some(kind))))
+                .unwrap_or_else(|| panic!("{kind:?} is in no menu"));
+            assert!(title.contains(kind.name()), "{title}");
+        }
     }
 
     #[test]

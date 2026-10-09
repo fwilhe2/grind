@@ -208,14 +208,29 @@ impl Pane {
                 self.import_csv(mtm, true);
                 return;
             }
-            Command::InsertChart => self.insert_chart(),
+            Command::InsertChart(kind) => self.insert_chart(kind),
             Command::PreviewChart => {
                 let (start, end) = selection.rect();
-                match verbs::preview_insert_chart(&self.app, sheet, start, end) {
-                    Ok((chart, data)) if crate::chart_preview::confirm(mtm, &chart, &data) => {
-                        self.insert_chart()
+                let preview =
+                    |kind| verbs::preview_insert_chart(&self.app, sheet, start, end, kind);
+                let pictures = preview(None).and_then(|(guessed, _)| {
+                    let pictures = grind_sheet::ChartKind::ALL
+                        .into_iter()
+                        .map(|kind| preview(Some(kind)).map(|(chart, data)| (kind, chart, data)))
+                        .collect::<grind_sheet::Result<Vec<_>>>()?;
+                    let shown = grind_sheet::ChartKind::ALL
+                        .iter()
+                        .position(|kind| *kind == guessed.kind)
+                        .unwrap_or(0);
+                    Ok((pictures, shown))
+                });
+                match pictures {
+                    Ok((pictures, shown)) => {
+                        match crate::chart_preview::choose(mtm, &pictures, shown) {
+                            Some(kind) => self.insert_chart(Some(kind)),
+                            None => Ok(()),
+                        }
                     }
-                    Ok(_) => Ok(()),
                     Err(error) => Err(error),
                 }
             }
@@ -319,11 +334,12 @@ impl Pane {
     /// Insert ▸ Chart: the table the selection is in, read the way `chart-add --from` reads one
     /// (`App::suggest_chart` — which way the series run, what names them, and what kind of chart
     /// the cells want), placed beside that table at the GNOME window's size, and brought into
-    /// sight. One undo step; there is no dialog, and changing the chart is the CLI's.
-    fn insert_chart(&self) -> grind_sheet::Result<()> {
+    /// sight — as `kind` when one was chosen (Insert ▸ Bar/Line/Pie Chart, or the preview's
+    /// control). One undo step; a chart's own menu changes it afterwards.
+    fn insert_chart(&self, kind: Option<grind_sheet::ChartKind>) -> grind_sheet::Result<()> {
         let sheet = self.sheet.get();
         let (start, end) = self.selection.get().rect();
-        verbs::insert_chart(&self.app, sheet, start, end, |col, row| {
+        verbs::insert_chart(&self.app, sheet, start, end, kind, |col, row| {
             let grid = self.grid.borrow();
             (
                 grid.cols.offset_of(col) / PT_PER_MM,

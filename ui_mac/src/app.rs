@@ -251,7 +251,7 @@ impl Delegate {
             | Command::Columns(_)
             | Command::FitAll
             | Command::DefineName
-            | Command::InsertChart
+            | Command::InsertChart(_)
             | Command::PreviewChart
             | Command::Filter
             | Command::CopyValue
