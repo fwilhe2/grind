@@ -1552,7 +1552,7 @@ impl App {
         }
     }
 
-    /// `:spell` — which language, and why; `:spell auto|en|de|off` chooses; `:spell ignore` and
+    /// `:spell` — which language, and why; `:spell auto|<lang>|off` chooses; `:spell ignore` and
     /// `:spell add` accept the misspelt word at the caret, for this session or for good.
     fn cmd_spell(&mut self, arg: &str) {
         match arg {
@@ -1580,7 +1580,14 @@ impl App {
                     }
                 }
                 None => {
-                    self.status = format!("no dictionary for {arg} \u{2014} :spell auto|en|de|off")
+                    let have: Vec<&str> = grind_spell::Language::ALL
+                        .iter()
+                        .map(|l| l.tag().split('-').next().unwrap_or(""))
+                        .collect();
+                    self.status = format!(
+                        "no dictionary for {arg} \u{2014} :spell auto|{}|off",
+                        have.join("|")
+                    )
                 }
             },
         }

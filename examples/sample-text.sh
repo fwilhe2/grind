@@ -364,6 +364,11 @@ if "$GRIND" text spell --help >/dev/null 2>&1; then
     text correct "$spelling" "$(text spell "$spelling" | grep recieve | cut -f1)" recieve receive >/dev/null
     text spell "$spelling" p1
     "$GRIND" lint "$spelling"
+    say "spell: seven languages — a French document is guessed as French from its common words"
+    french="$out/orthographe.fodt"
+    text new "$french" --force >/dev/null
+    text set "$french" p1 'Nous avons écrit à l’école, mais la lettre est arivée trop tard.' >/dev/null
+    text spell "$french" --suggest
 else
     say "spell: not in this build (compiled without the spell feature)"
 fi

@@ -35,7 +35,8 @@ Word processor:
   :find <text>   :s/old/new/        :words
   ]  [           — the next or previous misspelt word, underlined in red, with suggestions
   :fix N         :fix <word>       — replace the misspelt word here with suggestion N, or that
-  :spell [auto|en|de|off]          — which language; :spell ignore, :spell add accept a word
+  :spell [auto|<lang>|off]         — which language: en de fr es it pt pl; :spell ignore and
+                                      :spell add accept a word
   :outline       — every heading, indented; Enter goes to one
   :table [rows cols]                — a table before this block, drawn as a grid
   :md-in <file>  :md-out <file>     — markdown read in before this block, or the selection

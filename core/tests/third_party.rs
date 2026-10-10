@@ -140,6 +140,108 @@ const EXTRAS: &[Extra] = &[
             )
         },
     },
+    Extra {
+        name: "Grammalecte French dictionary (fr_FR)",
+        version: "7.5",
+        licence: "MPL-2.0",
+        source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/fr",
+        kind: "Dictionary",
+        paths: &[
+            "spell/dictionaries/fr-FR.aff",
+            "spell/dictionaries/fr-FR.dic",
+        ],
+        notice: |root| {
+            format!(
+                "Dictionnaires orthographiques français, version 7.5\n\
+                 Copyright (C) Olivier R. and the Grammalecte contributors. https://grammalecte.net/\n\n\
+                 Used here unmodified; its source is the two files named above.\n\n{}",
+                licence_text(root, "MPL-2.0")
+            )
+        },
+    },
+    Extra {
+        name: "RLA-ES Spanish dictionary (es_ES)",
+        version: "2.8",
+        licence: "GPL-3.0-or-later OR LGPL-3.0-or-later OR MPL-1.1+",
+        source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/es",
+        kind: "Dictionary",
+        paths: &[
+            "spell/dictionaries/es-ES.aff",
+            "spell/dictionaries/es-ES.dic",
+        ],
+        notice: |root| {
+            format!(
+                "Diccionario para corrección ortográfica en español, versión 2.8\n\
+                 Copyright (C) Santiago Bosio and the RLA-ES contributors. https://github.com/sbosio/rla-es\n\n\
+                 Offered under the GNU GPL version 3 or later, the GNU LGPL version 3 or later, or \
+                 the Mozilla Public License version 1.1 or later; used here under the Mozilla \
+                 Public License version 2.0, unmodified.\n\n{}",
+                licence_text(root, "MPL-2.0")
+            )
+        },
+    },
+    Extra {
+        name: "Italian Writing Aids dictionary (it_IT)",
+        version: "5.0",
+        licence: "GPL-3.0-only",
+        source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/it",
+        kind: "Dictionary",
+        paths: &[
+            "spell/dictionaries/it-IT.aff",
+            "spell/dictionaries/it-IT.dic",
+        ],
+        notice: |root| {
+            format!(
+                "Estensione linguistica italiana - Italian Writing Aids\n\
+                 Copyright (C) 2010-2016 Andrea Pescetti.\n\
+                 Portions Copyright (C) 2001-2008 Gianluca Turconi and other authors.\n\n\
+                 Used here unmodified.\n\n{}",
+                licence_text(root, "GPL-3.0-only")
+            )
+        },
+    },
+    Extra {
+        name: "European Portuguese dictionary (pt_PT)",
+        version: "",
+        licence: "GPL-2.0-only OR LGPL-2.1-only OR MPL-1.1",
+        source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/pt-PT",
+        kind: "Dictionary",
+        paths: &[
+            "spell/dictionaries/pt-PT.aff",
+            "spell/dictionaries/pt-PT.dic",
+        ],
+        notice: |root| {
+            format!(
+                "Portuguese (Portugal) dictionary for Hunspell\n\
+                 Copyright (C) 2006-2009 José João de Almeida, Rui Vilela and Alberto Simões. \
+                 Departamento de Informática, Universidade do Minho.\n\n\
+                 Offered under the GNU GPL version 2, the GNU LGPL version 2.1 or the Mozilla \
+                 Public License version 1.1; used here under the GNU LGPL version 2.1, \
+                 unmodified.\n\n{}",
+                licence_text(root, "LGPL-2.1-only")
+            )
+        },
+    },
+    Extra {
+        name: "Polish dictionary (pl_PL)",
+        version: "2008.12.06",
+        licence: "GPL-3.0-only",
+        source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/pl",
+        kind: "Dictionary",
+        paths: &[
+            "spell/dictionaries/pl-PL.aff",
+            "spell/dictionaries/pl-PL.dic",
+        ],
+        notice: |root| {
+            format!(
+                "Polish spelling dictionary, generated 2008.12.06\n\
+                 Copyright (C) 2008 Marek Futrega, Marcin Miłkowski and the Polish Native Lang Project.\n\n\
+                 Offered under the GPL, the LGPL, the MPL and Creative Commons ShareAlike, with \
+                 no versions named; used here under the GNU GPL version 3, unmodified.\n\n{}",
+                licence_text(root, "GPL-3.0-only")
+            )
+        },
+    },
     // `catalog.rs` holds each function's `Syntax:` and `Summary:` lines verbatim from the
     // specification, and OASIS's terms ask for their notice on every derivative work.
     Extra {

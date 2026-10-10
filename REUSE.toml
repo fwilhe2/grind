@@ -191,3 +191,43 @@ SPDX-License-Identifier = "LicenseRef-SCOWL"
 path = ["spell/dictionaries/de-DE.aff", "spell/dictionaries/de-DE.dic"]
 SPDX-FileCopyrightText = "1998-2016 Björn Jacke <bjoern@j3e.de>"
 SPDX-License-Identifier = "GPL-2.0-only OR GPL-3.0-only"
+
+# The five after English and German, from the same release of wooorm/dictionaries (8cfea40):
+# dictionary-fr 3.0.0, -es 4.0.0, -it 2.0.0, -pt-pt 2.0.0 and -pl 2.0.0, copied unmodified and
+# renamed by tag. Each is declared under the one licence this suite takes it under, which is
+# not always the only one it is offered under:
+#
+# - French is Grammalecte's 7.5, under MPL-2.0 alone (the affix file carries Exhibit A, without
+#   the "Incompatible With Secondary Licenses" notice, so MPL-2.0 §3.3 lets it sit in this work).
+# - Spanish is RLA-ES's es_ES 2.8, offered under GPL-3.0-or-later, LGPL-3.0-or-later or
+#   "MPL version 1.1 or later"; taken under MPL-2.0, the later MPL.
+# - Italian is the Italian Writing Aids' it_IT 5.0, under GPL-3.0.
+# - European Portuguese is the University of Minho's pt_PT, offered under GPL-2.0, LGPL-2.1 or
+#   MPL-1.1; taken under LGPL-2.1, whose §3 allows a later GPL, since GPL-2.0-only and MPL-1.1
+#   cannot be combined with AGPL-3.0.
+# - Polish is the Polish Native Lang Project's pl_PL of 2008-12-06, offered under "GPL, LGPL,
+#   MPL and Creative Commons ShareAlike" with no versions named; taken under GPL-3.0.
+[[annotations]]
+path = ["spell/dictionaries/fr-FR.aff", "spell/dictionaries/fr-FR.dic"]
+SPDX-FileCopyrightText = "Olivier R. and the Grammalecte contributors <https://grammalecte.net/>"
+SPDX-License-Identifier = "MPL-2.0"
+
+[[annotations]]
+path = ["spell/dictionaries/es-ES.aff", "spell/dictionaries/es-ES.dic"]
+SPDX-FileCopyrightText = "Santiago Bosio and the RLA-ES contributors"
+SPDX-License-Identifier = "MPL-2.0"
+
+[[annotations]]
+path = ["spell/dictionaries/it-IT.aff", "spell/dictionaries/it-IT.dic"]
+SPDX-FileCopyrightText = ["2010-2016 Andrea Pescetti", "2001-2008 Gianluca Turconi and other authors"]
+SPDX-License-Identifier = "GPL-3.0-only"
+
+[[annotations]]
+path = ["spell/dictionaries/pt-PT.aff", "spell/dictionaries/pt-PT.dic"]
+SPDX-FileCopyrightText = "2006-2009 José João de Almeida, Rui Vilela, Alberto Simões <https://natura.di.uminho.pt/>"
+SPDX-License-Identifier = "LGPL-2.1-only"
+
+[[annotations]]
+path = ["spell/dictionaries/pl-PL.aff", "spell/dictionaries/pl-PL.dic"]
+SPDX-FileCopyrightText = "2008 Marek Futrega, Marcin Miłkowski and the Polish Native Lang Project"
+SPDX-License-Identifier = "GPL-3.0-only"
