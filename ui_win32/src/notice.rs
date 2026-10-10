@@ -258,7 +258,18 @@ pub fn none_misspelt(language: &str) -> String {
 
 /// F7, or a right click, with spelling turned off.
 pub fn spelling_off() -> String {
-    "Spelling is off. View ▸ Spelling Language… turns it on.".to_owned()
+    "Spelling is off. View ▸ Check Spelling (Shift+F7) turns it on.".to_owned()
+}
+
+/// Check Spelling turned off over a spreadsheet — which is remembered, and says so, since a
+/// switch that outlives the window is one somebody should know they have flipped.
+pub fn spelling_turned_off() -> String {
+    "Spelling is off in every spreadsheet until Shift+F7 turns it back on.".to_owned()
+}
+
+/// The spreadsheet's spelling choice could not be written to the person's settings.
+pub fn spelling_not_remembered(why: &str) -> String {
+    format!("Spelling changed for this window only: {why}.")
 }
 
 /// Why a document is not being checked at all (`grind_spell::Unchecked`).

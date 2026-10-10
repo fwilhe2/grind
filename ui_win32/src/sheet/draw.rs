@@ -166,7 +166,7 @@ mod windows_impl {
     fn draw_wrapped(
         dc: HDC,
         frame: &Frame,
-        text: &str,
+        (text, misspelt): (&str, &[std::ops::Range<usize>]),
         value: &CellValue,
         style: Option<&CellStyle>,
         cell: (i32, i32, i32, i32),
@@ -227,6 +227,23 @@ mod windows_impl {
                 look::align(value, style),
                 ink,
                 pad,
+            );
+            // Each misspelt word's part on this line, counted from the line's own start.
+            let here: Vec<std::ops::Range<usize>> = misspelt
+                .iter()
+                .filter_map(|m| {
+                    let (start, end) = (m.start.max(line.start), m.end.min(line.end));
+                    (start < end).then(|| start - line.start..end - line.start)
+                })
+                .collect();
+            draw_squiggles(
+                dc,
+                &piece,
+                &here,
+                (left, line_top, right, line_bottom),
+                look::align(value, style),
+                pad,
+                frame,
             );
         }
         // SAFETY: restoring the state saved above.
@@ -541,10 +558,14 @@ mod windows_impl {
                     // what the row is not tall enough for is cut by the cell (L3 grew the row).
                     let style = frame.viewport.style(row, col);
                     if grind_sheet::look::wraps(style) && !grind_sheet::numfmt::is_number(value) {
+                        let misspelt = match frame.formula_text.contains_key(&(row, col)) {
+                            true => &[][..],
+                            false => frame.viewport.misspelt(row, col),
+                        };
                         draw_wrapped(
                             dc,
                             frame,
-                            text,
+                            (text, misspelt),
                             value,
                             style,
                             (left, top, right, bottom),
@@ -594,6 +615,19 @@ mod windows_impl {
                     draw_text(
                         dc, text, text_left, top, text_right, bottom, look.align, ink, pad,
                     );
+                    // A misspelt word's squiggle — only under the text the core checked, never
+                    // a formula shown in its place (`Viewport::misspelt`).
+                    if !frame.formula_text.contains_key(&(row, col)) {
+                        draw_squiggles(
+                            dc,
+                            text,
+                            frame.viewport.misspelt(row, col),
+                            (text_left, top, text_right, bottom),
+                            look.align,
+                            pad,
+                            frame,
+                        );
+                    }
                 }
             }
         }
@@ -634,11 +668,15 @@ mod windows_impl {
                     theme,
                 );
                 let style = m.style.as_ref();
+                let misspelt = match frame.formula_text.contains_key(&(row, col)) {
+                    true => &[][..],
+                    false => frame.viewport.misspelt(row, col),
+                };
                 if grind_sheet::look::wraps(style) && !grind_sheet::numfmt::is_number(&m.value) {
                     draw_wrapped(
                         dc,
                         frame,
-                        text,
+                        (text, misspelt),
                         &m.value,
                         style,
                         (left, top, right, bottom),
@@ -660,6 +698,15 @@ mod windows_impl {
                     false => text,
                 };
                 draw_text(dc, text, left, top, right, bottom, look.align, ink, pad);
+                draw_squiggles(
+                    dc,
+                    text,
+                    misspelt,
+                    (left, top, right, bottom),
+                    look.align,
+                    pad,
+                    frame,
+                );
             }
         }
 
@@ -1557,6 +1604,62 @@ mod windows_impl {
     /// Public to the crate because the text pane's chrome — its status bar and its notice bar —
     /// is the same one line of text in a rectangle, and two spellings of "clipped, with an
     /// ellipsis, in the theme's ink" is one too many.
+    /// The squiggle under each misspelt word of a line `draw_text` has just drawn with the same
+    /// rectangle, alignment and padding — placed by measuring the text before the word and the
+    /// word itself in the DC's current font, the font it was drawn in, so the mark and the ink
+    /// agree. Text too long for its cell is drawn from the left and cut with an ellipsis, so the
+    /// marks are too, and none reaches past the ellipsis. `misspelt` counts characters of `text`.
+    fn draw_squiggles(
+        dc: HDC,
+        text: &str,
+        misspelt: &[std::ops::Range<usize>],
+        (left, top, right, bottom): (i32, i32, i32, i32),
+        align: Align,
+        pad: f64,
+        frame: &Frame,
+    ) {
+        if misspelt.is_empty() {
+            return;
+        }
+        let text = super::one_line(text);
+        let pad = pad.round() as i32;
+        let (from, to) = (left + pad, (right - pad - 1).max(left + pad));
+        let room = to - from;
+        let full = gdi::text_width(dc, &text);
+        let (origin, limit) = match full > room {
+            true => (from, to - gdi::text_width(dc, "\u{2026}")),
+            false => (
+                match align {
+                    Align::Left => from,
+                    Align::Right => to - full,
+                    Align::Center => from + (room - full) / 2,
+                },
+                to,
+            ),
+        };
+        let height = gdi::line_height(dc);
+        let line_top = top + (bottom - top - height) / 2;
+        let dpi = frame.geom.dpi;
+        let width = |chars: usize| -> i32 {
+            gdi::text_width(dc, &text.chars().take(chars).collect::<String>())
+        };
+        for range in misspelt {
+            let start = f64::from(origin + width(range.start));
+            let end = f64::from(origin + width(range.end)).min(f64::from(limit));
+            if end <= start {
+                continue;
+            }
+            gdi::squiggle(
+                dc,
+                start,
+                end,
+                f64::from(line_top + height) - crate::sheet::geom::scale(3.0, dpi),
+                crate::sheet::geom::scale(2.0, dpi),
+                frame.theme.misspelt,
+            );
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn draw_text(
         dc: HDC,

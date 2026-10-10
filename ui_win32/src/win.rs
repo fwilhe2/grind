@@ -519,6 +519,20 @@ struct Sheet {
     chart_selected: Option<(usize, usize)>,
     /// A chart held by the pointer; the document is written once, on release.
     chart_grab: Option<crate::sheet::chart::Grab>,
+    /// Spelling (`doc/spelling.md`, "In a spreadsheet"): the person's remembered choice
+    /// (`grind_spell::preference`) — so Check Spelling off here is off in every spreadsheet —
+    /// what it came to for this document, and the dictionary Ignore All adds to. `checked` is
+    /// `None` when nothing is checked, which is also when nothing is underlined.
+    spelling: grind_spell::Setting,
+    /// The last setting that was not Off — what Shift+F7 turns spelling back on to.
+    spelling_on: grind_spell::Setting,
+    checked: Option<grind_spell::Choice>,
+    speller: Option<std::sync::Arc<grind_spell::Speller>>,
+    /// The guess has read all a guess reads and cannot change, so edits stop sampling it.
+    settled: bool,
+    /// The misspelt word F7 last stopped on, so the next F7 goes on to the word after it — in
+    /// the same cell when it has another — rather than back to the cell's first.
+    spell_stop: Option<grind_sheet::Misspelling>,
 }
 
 /// What a click on the strip landed on. The two fields there are *drawn* until somebody clicks
@@ -557,6 +571,66 @@ enum Drag {
 }
 
 impl Sheet {
+    /// Attach what [`Sheet::spelling`] says to the document — on open and whenever the choice
+    /// changes. A document in a language with no dictionary says so on the notice bar rather
+    /// than having every word underlined.
+    fn check_spelling(&mut self) {
+        self.settled = false;
+        match self.spelling.apply(&self.app) {
+            Ok(Some((choice, speller))) => {
+                self.checked = Some(choice);
+                self.speller = Some(speller);
+            }
+            Ok(None) => {
+                self.checked = None;
+                self.speller = None;
+            }
+            Err(why) => {
+                self.checked = None;
+                self.speller = None;
+                self.say(Some(notice::spelling_unchecked(&why.to_string())));
+            }
+        }
+    }
+
+    /// Choose a spelling setting, remember it for every spreadsheet, and apply it.
+    fn set_spelling(&mut self, setting: grind_spell::Setting) {
+        self.spelling = setting;
+        if setting != grind_spell::Setting::Off {
+            self.spelling_on = setting;
+        }
+        self.say(None);
+        if let Err(why) =
+            grind_spell::preference::save(grind_core::DocumentKind::Spreadsheet, setting)
+        {
+            self.say(Some(notice::spelling_not_remembered(&why.to_string())));
+        }
+        self.check_spelling();
+    }
+
+    /// While the language is only a guess, guess again as the document grows
+    /// (`grind_spell::reguess`), until it has more words than a guess reads.
+    fn reconsider_spelling(&mut self) {
+        let Some(choice) = self.checked else {
+            return;
+        };
+        if self.settled
+            || self.spelling != grind_spell::Setting::Automatic
+            || !matches!(
+                choice.source,
+                grind_spell::Source::Guessed | grind_spell::Source::Default
+            )
+        {
+            return;
+        }
+        let words = grind_core::spell::Spelled::sample(&self.app).len();
+        if grind_spell::reguess(&self.app, self.spelling, choice, words) {
+            self.check_spelling();
+        } else if words >= grind_core::spell::GUESS_SAMPLE {
+            self.settled = true;
+        }
+    }
+
     /// Rebuild the geometry for the current client size and DPI.
     ///
     /// Everything measured is rebuilt from the *document's* lengths rather than scaled from the
@@ -1418,7 +1492,8 @@ fn opened_sheet(path: Option<PathBuf>, theme: Theme) -> Result<Sheet, String> {
 }
 
 fn opened_sheet_on(app: grind_sheet::App, path: Option<PathBuf>, theme: Theme) -> Sheet {
-    Sheet {
+    let remembered = grind_spell::preference::load(DocumentKind::Spreadsheet);
+    let mut sheet = Sheet {
         app,
         tabs: std::cell::RefCell::new(Vec::new()),
         path,
@@ -1471,7 +1546,18 @@ fn opened_sheet_on(app: grind_sheet::App, path: Option<PathBuf>, theme: Theme) -
         format_pressed: None,
         chart_selected: None,
         chart_grab: None,
-    }
+        spelling: remembered,
+        spelling_on: match remembered {
+            grind_spell::Setting::Off => grind_spell::Setting::Automatic,
+            on => on,
+        },
+        checked: None,
+        speller: None,
+        settled: false,
+        spell_stop: None,
+    };
+    sheet.check_spelling();
+    sheet
 }
 
 /// Draw one frame of a document to a `.bmp` and exit — **with no window, no compositor and no
@@ -2022,6 +2108,7 @@ fn refresh(hwnd: HWND) {
     // SAFETY: no nested loop inside.
     let after = unsafe {
         with_sheet(hwnd, |state| {
+            state.reconsider_spelling();
             state.relayout(
                 f64::from(rect.right - rect.left),
                 f64::from(rect.bottom - rect.top),
@@ -2106,7 +2193,7 @@ fn build_menu(hwnd: HWND) {
     // SAFETY: one borrow, for the kind and the two overlay checkmarks; nothing inside dispatches.
     // The role overlay has no meaning on the text pane (`CellRole` is the grid's alone), so it
     // reads `false` there rather than a second flag nothing ever sets.
-    let (surface, roles_on, names_on, friendly_on, formulas_on) = unsafe {
+    let (surface, roles_on, names_on, friendly_on, formulas_on, spelling_on) = unsafe {
         with_pane(hwnd, |pane| {
             let surface = pane.surface();
             match pane {
@@ -2116,15 +2203,23 @@ fn build_menu(hwnd: HWND) {
                     sheet.overlays.names,
                     sheet.friendly,
                     sheet.formulas,
+                    sheet.spelling != grind_spell::Setting::Off,
                 ),
-                Pane::Text(text) => (surface, false, text.show_names, false, false),
-                // No document, so none of the three checkmarks means anything — and `items_for`
+                Pane::Text(text) => (
+                    surface,
+                    false,
+                    text.show_names,
+                    false,
+                    false,
+                    text.spelling != grind_spell::Setting::Off,
+                ),
+                // No document, so none of the checkmarks means anything — and `items_for`
                 // leaves every menu they live in out of the bar anyway.
-                Pane::Welcome(_) => (surface, false, false, false, false),
+                Pane::Welcome(_) => (surface, false, false, false, false, false),
             }
         })
     }
-    .unwrap_or((menu::Surface::Welcome, false, false, false, false));
+    .unwrap_or((menu::Surface::Welcome, false, false, false, false, false));
     // SAFETY: every label buffer outlives the `AppendMenuW` that reads it — Windows copies the
     // string — and the bar belongs to the window from `SetMenu` until it is destroyed with it.
     unsafe {
@@ -2163,6 +2258,7 @@ fn build_menu(hwnd: HWND) {
                             Command::ToggleNames => Some(names_on),
                             Command::ToggleFriendly => Some(friendly_on),
                             Command::ToggleFormulas => Some(formulas_on),
+                            Command::ToggleSpelling => Some(spelling_on),
                             _ => None,
                         };
                         if let Some(checked) = checked {
@@ -2351,6 +2447,40 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
         };
         spelling_popup(hwnd, at, wrong, &with_alt);
         return;
+    }
+    // Over a cell with a misspelt word in it the grid's menu leads the same way — the cell under
+    // the pointer, or for the keyboard the active one.
+    if !is_welcome(hwnd) && !on_tab && !on_chart {
+        let keyboard = (x, y) == (-1.0, -1.0);
+        let mut client = at;
+        // SAFETY: `hwnd` is this window's and `client` is a live local.
+        unsafe {
+            let _ = ScreenToClient(hwnd, &mut client);
+        }
+        // SAFETY: one borrow, released before the popup.
+        let wrong = unsafe {
+            with_sheet(hwnd, |state| {
+                state.checked?;
+                let pos = match keyboard {
+                    true => state.selection.active,
+                    false => match state.geom.hit(f64::from(client.x), f64::from(client.y)) {
+                        crate::sheet::geom::Hit::Cell { row, col } => Pos::new(row, col),
+                        _ => return None,
+                    },
+                };
+                state
+                    .app
+                    .misspellings(Some(state.sheet), Some((pos, pos)))
+                    .ok()?
+                    .into_iter()
+                    .next()
+            })
+        }
+        .flatten();
+        if wrong.is_some() {
+            sheet_spelling_popup(hwnd, at, wrong, commands);
+            return;
+        }
     }
     // SAFETY: the popup is built and destroyed within this call, and `TrackPopupMenuEx` is the
     // one nested message loop in it — decision 7's rule, and nothing is borrowed across it.
@@ -4152,9 +4282,10 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::ExportMarkdown
         | Command::ExportPdf
         | Command::PrintPreview
-        | Command::NextMisspelling
-        | Command::SpellingLanguage
         | Command::Print => {}
+        Command::NextMisspelling => sheet_next_misspelling(hwnd),
+        Command::SpellingLanguage => sheet_spelling_language(hwnd),
+        Command::ToggleSpelling => sheet_toggle_spelling(hwnd),
         Command::Shortcuts => show_shortcuts(hwnd),
         Command::About => dialog::about(hwnd),
         Command::Licences => dialog::licences(hwnd),
@@ -5996,39 +6127,40 @@ fn text_spelling_language(hwnd: HWND) {
     text_refresh(hwnd);
 }
 
+/// What somebody picked from a spelling popup.
+enum SpellPick {
+    Nothing,
+    Correct(String),
+    Ignore,
+    Add,
+    Command(Command),
+}
+
 /// A popup with a misspelt word's suggestions, Ignore All and Add to Dictionary on top, and
-/// `commands` under them — the text pane's context menu and F7's popup are this one function.
-/// `wrong` is `None` over a word spelled right, which leaves only the commands.
-fn spelling_popup(
+/// `commands` under them — both panes' context menus and F7's popup are this one function, so
+/// the two panes offer a misspelling the same rows. `word` is `None` over a word spelled right,
+/// which leaves only the commands. Runs a nested message loop, so nothing may be borrowed across
+/// it (decision 7): the suggestions are asked for before, and the pick is acted on after.
+fn spelling_menu(
     hwnd: HWND,
     at: POINT,
-    wrong: Option<grind_text::Misspelling>,
+    word: Option<&str>,
+    offers: &[String],
     commands: &[Command],
-) {
-    // Asked before the popup opens: tens of milliseconds, and the core is not to be borrowed
-    // across a nested message loop (decision 7).
-    let offers: Vec<String> = match &wrong {
-        // SAFETY: one borrow; `suggest` dispatches nothing.
-        Some(wrong) => unsafe { with_text(hwnd, |text| text.app.suggest(&wrong.word)) }
-            .unwrap_or_default()
-            .into_iter()
-            .take(usize::from(menu::SPELLING_IDS - 2))
-            .collect(),
-        None => Vec::new(),
-    };
+) -> SpellPick {
     let ignore = menu::SPELLING_FIRST_ID + menu::SPELLING_IDS - 2;
     let add = ignore + 1;
     // SAFETY: the popup is built and destroyed within this call, and `TrackPopupMenuEx` is the
     // one nested message loop in it — nothing is borrowed across it.
     let picked = unsafe {
         let Ok(popup) = CreatePopupMenu() else {
-            return;
+            return SpellPick::Nothing;
         };
         let append = |flags, id: u16, label: &str| {
             let label = gdi::wide(label);
             let _ = AppendMenuW(popup, flags, usize::from(id), PCWSTR(label.as_ptr()));
         };
-        if wrong.is_some() {
+        if word.is_some() {
             for (i, word) in offers.iter().enumerate() {
                 append(MF_STRING, menu::SPELLING_FIRST_ID + i as u16, word);
             }
@@ -6043,6 +6175,10 @@ fn spelling_popup(
             }
         }
         for command in commands {
+            // The currencies are a group of their own, as they are in the Format menu.
+            if command.currency() == Some(0) {
+                let _ = AppendMenuW(popup, MF_SEPARATOR, 0, PCWSTR::null());
+            }
             if let Some(label) = menu::label_for(*command) {
                 append(MF_STRING, command.id(), label);
             }
@@ -6058,38 +6194,81 @@ fn spelling_popup(
         let _ = DestroyMenu(popup);
         result.0 as u16
     };
+    match picked {
+        0 => SpellPick::Nothing,
+        id if word.is_some() && id == ignore => SpellPick::Ignore,
+        id if word.is_some() && id == add => SpellPick::Add,
+        id if word.is_some() && (menu::SPELLING_FIRST_ID..ignore).contains(&id) => offers
+            .get(usize::from(id - menu::SPELLING_FIRST_ID))
+            .map_or(SpellPick::Nothing, |with| SpellPick::Correct(with.clone())),
+        id => menu::command_for(id).map_or(SpellPick::Nothing, SpellPick::Command),
+    }
+}
+
+/// The suggestions a popup offers for `word`, as many as it has rows for.
+fn offers_for(suggestions: Vec<String>) -> Vec<String> {
+    suggestions
+        .into_iter()
+        .take(usize::from(menu::SPELLING_IDS - 2))
+        .collect()
+}
+
+/// Accept `word` into `speller` — for this session, and with `add` in the person's own list
+/// too — and the sentence the notice bar says about it.
+fn accept_word(speller: Option<&grind_spell::Speller>, word: &str, add: bool) -> Option<String> {
+    let speller = speller?;
+    speller.accept(word);
+    Some(match add {
+        false => notice::accepted(word, None),
+        true => match grind_spell::personal::add(word) {
+            Ok(path) => notice::accepted(word, Some(&path.display().to_string())),
+            Err(error) => error.to_string(),
+        },
+    })
+}
+
+/// The text pane's spelling popup: [`spelling_menu`] over a misspelt word in a paragraph.
+fn spelling_popup(
+    hwnd: HWND,
+    at: POINT,
+    wrong: Option<grind_text::Misspelling>,
+    commands: &[Command],
+) {
+    // Asked before the popup opens: tens of milliseconds, and the core is not to be borrowed
+    // across a nested message loop (decision 7).
+    let offers: Vec<String> = match &wrong {
+        // SAFETY: one borrow; `suggest` dispatches nothing.
+        Some(wrong) => offers_for(
+            unsafe { with_text(hwnd, |text| text.app.suggest(&wrong.word)) }.unwrap_or_default(),
+        ),
+        None => Vec::new(),
+    };
+    let picked = spelling_menu(
+        hwnd,
+        at,
+        wrong.as_ref().map(|w| w.word.as_str()),
+        &offers,
+        commands,
+    );
     match (picked, wrong) {
-        (0, _) => {}
-        (id, Some(wrong)) if id == ignore || id == add => {
+        (SpellPick::Command(command), _) => do_command(hwnd, command),
+        (pick @ (SpellPick::Ignore | SpellPick::Add), Some(wrong)) => {
             // SAFETY: a fresh borrow, taken after the popup has closed.
             unsafe {
                 with_text(hwnd, |text| {
-                    let Some(speller) = text.speller.clone() else {
-                        return;
-                    };
-                    speller.accept(&wrong.word);
-                    let said = match id == add {
-                        false => notice::accepted(&wrong.word, None),
-                        true => match grind_spell::personal::add(&wrong.word) {
-                            Ok(path) => {
-                                notice::accepted(&wrong.word, Some(&path.display().to_string()))
-                            }
-                            Err(error) => error.to_string(),
-                        },
-                    };
-                    text.say(Some(said));
+                    let add = matches!(pick, SpellPick::Add);
+                    if let Some(said) = accept_word(text.speller.as_deref(), &wrong.word, add) {
+                        text.say(Some(said));
+                    }
                 });
             }
             text_refresh(hwnd);
         }
-        (id, Some(wrong)) if (menu::SPELLING_FIRST_ID..ignore).contains(&id) => {
-            let Some(with) = offers.get(usize::from(id - menu::SPELLING_FIRST_ID)) else {
-                return;
-            };
+        (SpellPick::Correct(with), Some(wrong)) => {
             // SAFETY: a fresh borrow, taken after the popup has closed.
             unsafe {
                 with_text(hwnd, |text| {
-                    match text.app.correct(wrong.caret(), &wrong.word, with) {
+                    match text.app.correct(wrong.caret(), &wrong.word, &with) {
                         Ok(()) => {
                             let end = Caret {
                                 block: wrong.block,
@@ -6104,12 +6283,200 @@ fn spelling_popup(
             }
             text_refresh(hwnd);
         }
-        (id, _) => {
-            if let Some(command) = menu::command_for(id) {
-                do_command(hwnd, command);
-            }
-        }
+        _ => {}
     }
+}
+
+/// The grid's spelling popup: [`spelling_menu`] over a misspelt word in a text cell, with the
+/// cell menu's `commands` under it.
+fn sheet_spelling_popup(
+    hwnd: HWND,
+    at: POINT,
+    wrong: Option<grind_sheet::Misspelling>,
+    commands: &[Command],
+) {
+    let offers: Vec<String> = match &wrong {
+        // SAFETY: one borrow; `suggest` dispatches nothing.
+        Some(wrong) => offers_for(
+            unsafe { with_sheet(hwnd, |state| state.app.suggest(&wrong.word)) }.unwrap_or_default(),
+        ),
+        None => Vec::new(),
+    };
+    let picked = spelling_menu(
+        hwnd,
+        at,
+        wrong.as_ref().map(|w| w.word.as_str()),
+        &offers,
+        commands,
+    );
+    match (picked, wrong) {
+        (SpellPick::Command(command), _) => do_command(hwnd, command),
+        (pick @ (SpellPick::Ignore | SpellPick::Add), Some(wrong)) => {
+            // SAFETY: a fresh borrow, taken after the popup has closed.
+            unsafe {
+                with_sheet(hwnd, |state| {
+                    let add = matches!(pick, SpellPick::Add);
+                    if let Some(said) = accept_word(state.speller.as_deref(), &wrong.word, add) {
+                        state.say(Some(said));
+                    }
+                    state.spell_stop = None;
+                });
+            }
+            refresh(hwnd);
+        }
+        (SpellPick::Correct(with), Some(wrong)) => {
+            // SAFETY: a fresh borrow, taken after the popup has closed. `correct` notifies, and
+            // the observer posts rather than sends.
+            unsafe {
+                with_sheet(hwnd, |state| {
+                    match state.app.correct(
+                        wrong.sheet,
+                        wrong.pos,
+                        wrong.offset,
+                        &wrong.word,
+                        &with,
+                    ) {
+                        Ok(_) => {
+                            state.dirty = true;
+                            state.spell_stop = None;
+                            state.say(None);
+                        }
+                        Err(error) => state.say(Some(error.to_string())),
+                    }
+                });
+            }
+            refresh(hwnd);
+        }
+        _ => {}
+    }
+}
+
+/// F7 over the grid — the next misspelt word in reading order, across every sheet and wrapping
+/// as F3 does: its cell selected, and the spelling popup opened under it.
+fn sheet_next_misspelling(hwnd: HWND) {
+    // SAFETY: one borrow, released before the popup's nested message loop.
+    let found = unsafe {
+        with_sheet(hwnd, |state| {
+            let Some(choice) = state.checked else {
+                state.say(Some(notice::spelling_off()));
+                return None;
+            };
+            let all = state.app.misspellings(None, None).unwrap_or_default();
+            if all.is_empty() {
+                state.say(Some(notice::none_misspelt(choice.language.name())));
+                return None;
+            }
+            let key = |m: &grind_sheet::Misspelling| (m.sheet, m.pos.row, m.pos.col, m.offset);
+            let active = state.selection.active;
+            // From the word F7 last stopped on while its cell is still the active one, else from
+            // just before the active cell, so a cell's own first word is the next one.
+            let after = match &state.spell_stop {
+                Some(stop) if stop.sheet == state.sheet && stop.pos == active => key(stop),
+                _ => (state.sheet, active.row, active.col, usize::MAX),
+            };
+            let fresh = !matches!(&state.spell_stop,
+                Some(stop) if stop.sheet == state.sheet && stop.pos == active);
+            let index = all
+                .iter()
+                .position(|m| {
+                    let k = key(m);
+                    match fresh {
+                        true => (k.0, k.1, k.2) >= (after.0, after.1, after.2),
+                        false => k > after,
+                    }
+                })
+                .unwrap_or(0);
+            let wrong = all[index].clone();
+            state.sheet = wrong.sheet;
+            state.selection = Selection::at(wrong.pos);
+            state.spell_stop = Some(wrong.clone());
+            state.say(Some(notice::misspelt(index, all.len(), &wrong.word)));
+            Some(wrong)
+        })
+    }
+    .flatten();
+    refresh(hwnd);
+    let Some(wrong) = found else {
+        return;
+    };
+    // Under the cell, where a right click on it would have opened the same popup.
+    // SAFETY: one borrow; nothing inside dispatches.
+    let cell = unsafe {
+        with_sheet(hwnd, |state| {
+            state.geom.cell_rect(wrong.pos.row, wrong.pos.col)
+        })
+    };
+    let mut at = match cell {
+        Some(rect) => POINT {
+            x: rect.x.round() as i32,
+            y: (rect.y + rect.h).round() as i32,
+        },
+        None => POINT { x: 0, y: 0 },
+    };
+    // SAFETY: `hwnd` is this window's and `at` is a live local.
+    unsafe {
+        let _ = ClientToScreen(hwnd, &mut at);
+    }
+    sheet_spelling_popup(hwnd, at, Some(wrong), &[]);
+}
+
+/// View ▸ Spelling Language… over the grid — Automatic, a dictionary by name, or Off, in the
+/// listbox every chooser here uses — remembered for every spreadsheet.
+fn sheet_spelling_language(hwnd: HWND) {
+    // SAFETY: one borrow, released before the dialog.
+    let Some(current) = (unsafe { with_sheet(hwnd, |state| state.spelling) }) else {
+        return;
+    };
+    let settings = grind_spell::Setting::ALL;
+    let items: Vec<String> = settings.iter().map(|s| s.label().to_owned()).collect();
+    let selected = settings.iter().position(|s| *s == current).unwrap_or(0);
+    let Some(choice) = dialog::choose(hwnd, "Spelling Language", &items, selected) else {
+        return;
+    };
+    // SAFETY: a fresh borrow, taken after the dialog has closed.
+    unsafe {
+        with_sheet(hwnd, |state| state.set_spelling(settings[choice]));
+    }
+    build_menu(hwnd);
+    refresh(hwnd);
+}
+
+/// View ▸ Check Spelling (Shift+F7) over the grid: off, or back on to the language it was last
+/// on in — remembered, so off here is off in every spreadsheet until it is turned back on.
+fn sheet_toggle_spelling(hwnd: HWND) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let next = match state.spelling {
+                grind_spell::Setting::Off => state.spelling_on,
+                _ => grind_spell::Setting::Off,
+            };
+            state.set_spelling(next);
+            if next == grind_spell::Setting::Off {
+                state.say(Some(notice::spelling_turned_off()));
+            }
+        });
+    }
+    build_menu(hwnd);
+    refresh(hwnd);
+}
+
+/// View ▸ Check Spelling (Shift+F7) over a text document: off, or back on — the session's, as
+/// the text pane's Spelling Language… is.
+fn text_toggle_spelling(hwnd: HWND) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    unsafe {
+        with_text(hwnd, |text| {
+            text.spelling = match text.spelling {
+                grind_spell::Setting::Off => grind_spell::Setting::Automatic,
+                _ => grind_spell::Setting::Off,
+            };
+            text.say(None);
+            text.check_spelling();
+        });
+    }
+    build_menu(hwnd);
+    text_refresh(hwnd);
 }
 
 /// Edit ▸ Replace… — what, then with what, then `App::replace` over every sheet in one undo
@@ -6722,6 +7089,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::PrintPreview
         | Command::NextMisspelling
         | Command::SpellingLanguage
+        | Command::ToggleSpelling
         | Command::Print
         | Command::ShowSource
         | Command::CheckDocument
@@ -7769,6 +8137,7 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::PrintPreview => text_print_preview(hwnd),
         Command::NextMisspelling => text_next_misspelling(hwnd),
         Command::SpellingLanguage => text_spelling_language(hwnd),
+        Command::ToggleSpelling => text_toggle_spelling(hwnd),
         Command::Print => text_print(hwnd),
         Command::ShowSource => show_source(hwnd),
         Command::CheckDocument => check_document(hwnd),

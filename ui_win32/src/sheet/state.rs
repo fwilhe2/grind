@@ -262,6 +262,20 @@ mod tests {
         assert_eq!(Mode::Edit.toggled(), Mode::Enter);
     }
 
+    /// The spelling keys reach the grid as well as the text pane: F7 the next misspelt word,
+    /// Shift+F7 spelling off and on (`doc/spelling.md`, "In a spreadsheet").
+    #[test]
+    fn f7_and_shift_f7_are_the_spelling_verbs_over_the_grid() {
+        assert_eq!(
+            on_key(Mode::Ready, Key::F7, Mods::default()),
+            Outcome::Do(Command::NextMisspelling)
+        );
+        assert_eq!(
+            on_key(Mode::Ready, Key::F7, shift()),
+            Outcome::Do(Command::ToggleSpelling)
+        );
+    }
+
     #[test]
     fn delete_and_backspace_empty_the_selection() {
         for key in [Key::Delete, Key::Backspace] {

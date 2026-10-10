@@ -345,8 +345,13 @@ pub enum Command {
     CheckDocument,
     /// F7: select the next misspelt word and offer what it might have been (`doc/spelling.md`).
     NextMisspelling,
-    /// Automatic, a dictionary by name, or Off — `grind_spell::Setting`, the session's choice.
+    /// Automatic, a dictionary by name, or Off — `grind_spell::Setting`. The session's choice
+    /// over a text document; over a spreadsheet the remembered one (`grind_spell::preference`).
     SpellingLanguage,
+    /// Shift+F7 — spelling off, or back on to the last language it was on in: LibreOffice's
+    /// *Automatic Spell Checking* key. Over a spreadsheet it is remembered, so off stays off in
+    /// every spreadsheet until it is turned back on (`doc/spelling.md`, "In a spreadsheet").
+    ToggleSpelling,
     /// `doc/view-modes.md`'s role overlay, on or off. The grid's alone: the text pane has no
     /// `CellRole`.
     ToggleRoles,
@@ -496,6 +501,7 @@ impl Command {
         Command::CheckDocument,
         Command::NextMisspelling,
         Command::SpellingLanguage,
+        Command::ToggleSpelling,
         Command::ToggleRoles,
         Command::ToggleFormulas,
         Command::ZoomIn,
@@ -1157,6 +1163,10 @@ pub const MENUS: &[Menu] = &[
                 label: "&Check Document\tF8",
             },
             Item::Verb {
+                command: Command::ToggleSpelling,
+                label: "Check S&pelling\tShift+F7",
+            },
+            Item::Verb {
                 command: Command::NextMisspelling,
                 label: "Next &Misspelling\tF7",
             },
@@ -1300,6 +1310,7 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::Char('L'), true, true) => Some(Command::ToggleFilter),
         (Key::F8, false, false) => Some(Command::CheckDocument),
         (Key::F7, false, false) => Some(Command::NextMisspelling),
+        (Key::F7, false, true) => Some(Command::ToggleSpelling),
         (Key::Char('F'), true, false) => Some(Command::Find),
         (Key::Char('H'), true, false) => Some(Command::Replace),
         (Key::F3, false, false) => Some(Command::FindNext),
@@ -1482,10 +1493,11 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::ExportMarkdown
         | Command::ExportPdf
         | Command::PrintPreview
-        | Command::Print
-        // Spelling is the word processor's: a cell holds a value rather than prose.
-        | Command::NextMisspelling
-        | Command::SpellingLanguage => matches!(kind, Text),
+        | Command::Print => matches!(kind, Text),
+        // Spelling checks a paragraph's words and a text cell's alike (`doc/spelling.md`).
+        Command::NextMisspelling | Command::SpellingLanguage | Command::ToggleSpelling => {
+            matches!(kind, Text | Spreadsheet)
+        }
         // The two New verbs and the way back to the welcome screen mean the same thing over either
         // document: they replace what the window is showing, and what it is showing now does not
         // change what they do.
@@ -1625,10 +1637,13 @@ mod tests {
             Command::NextMisspelling,
             grind_core::DocumentKind::Text
         ));
-        assert!(!applies_to(
+        for command in [
+            Command::NextMisspelling,
             Command::SpellingLanguage,
-            grind_core::DocumentKind::Spreadsheet
-        ));
+            Command::ToggleSpelling,
+        ] {
+            assert!(applies_to(command, grind_core::DocumentKind::Spreadsheet));
+        }
     }
 
     /// Every kind GNOME's chart dialog offers is an item here, to insert as and to change to,
@@ -1699,6 +1714,10 @@ mod tests {
             shift: true,
             ..Default::default()
         };
+        let shift = Mods {
+            shift: true,
+            ..Default::default()
+        };
         for (key, mods, want) in [
             (Key::Char('N'), ctrl, Command::NewSheet),
             (Key::Char('N'), ctrl_shift, Command::NewText),
@@ -1728,6 +1747,7 @@ mod tests {
             (Key::Char('L'), ctrl_shift, Command::ToggleFilter),
             (Key::F8, Mods::default(), Command::CheckDocument),
             (Key::F7, Mods::default(), Command::NextMisspelling),
+            (Key::F7, shift, Command::ToggleSpelling),
         ] {
             assert_eq!(accelerator(key, mods), Some(want), "{key:?}");
             assert!(verbs.contains(&want), "{want:?} is in no menu");

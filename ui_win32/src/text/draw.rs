@@ -135,26 +135,6 @@ mod windows_impl {
         pub misspelt: &'a [grind_text::Misspelling],
     }
 
-    /// A wavy line from `left` to `right` with its crests at `top`: steps of `step` pixels,
-    /// alternately up and down, each a filled square — `FillRect` is the one primitive this
-    /// painter trusts to land on the same pixels at every DPI, and a pen's diagonal does not.
-    fn squiggle(dc: HDC, left: f64, right: f64, top: f64, step: f64, ink: crate::theme::Rgb) {
-        let step = step.max(1.0).round() as i32;
-        let (left, right, top) = (
-            left.round() as i32,
-            right.round() as i32,
-            top.round() as i32,
-        );
-        let mut x = left;
-        let mut down = false;
-        while x < right {
-            let y = top + if down { step } else { 0 };
-            gdi::fill(dc, x, y, (x + step).min(right), y + step, ink);
-            x += step;
-            down = !down;
-        }
-    }
-
     /// Draw one frame of the document onto `dc`.
     ///
     /// Every pixel of the client area is written, which is what lets `WM_ERASEBKGND` be answered
@@ -372,7 +352,7 @@ mod windows_impl {
                         wrong.offset,
                         wrong.offset + wrong.len,
                     ) {
-                        squiggle(
+                        gdi::squiggle(
                             dc,
                             x + f64::from(left),
                             x + f64::from(right),

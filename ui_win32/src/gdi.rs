@@ -404,6 +404,39 @@ pub fn text_width(dc: HDC, text: &str) -> i32 {
     size.cx
 }
 
+/// How tall a line of the DC's current font is, in pixels — what a string as high as its font
+/// measures, so a mark under text can be placed where `DrawTextW` put that text.
+pub fn line_height(dc: HDC) -> i32 {
+    let wide: Vec<u16> = "Ag".encode_utf16().collect();
+    let mut size = windows::Win32::Foundation::SIZE::default();
+    // SAFETY: the buffer and the size are live locals that outlive the call.
+    unsafe {
+        let _ = GetTextExtentPoint32W(dc, &wide, &mut size);
+    }
+    size.cy
+}
+
+/// A wavy line from `left` to `right` with its crests at `top`: steps of `step` pixels,
+/// alternately up and down, each a filled square — `FillRect` is the one primitive this painter
+/// trusts to land on the same pixels at every DPI, and a pen's diagonal does not. A misspelt
+/// word's mark, in the text pane and the grid alike (`doc/spelling.md`).
+pub fn squiggle(dc: HDC, left: f64, right: f64, top: f64, step: f64, ink: Rgb) {
+    let step = step.max(1.0).round() as i32;
+    let (left, right, top) = (
+        left.round() as i32,
+        right.round() as i32,
+        top.round() as i32,
+    );
+    let mut x = left;
+    let mut down = false;
+    while x < right {
+        let y = top + if down { step } else { 0 };
+        fill(dc, x, y, (x + step).min(right), y + step, ink);
+        x += step;
+        down = !down;
+    }
+}
+
 /// The client area, as GDI measures it.
 pub fn client_rect(hwnd: HWND) -> RECT {
     let mut rect = RECT::default();
