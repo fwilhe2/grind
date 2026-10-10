@@ -578,6 +578,28 @@ cp "$book" "$out/stale.fods"
 sheet set "$out/stale.fods" B2 1 >/dev/null
 sheet lint "$out/stale.fods" || true       # an error exits non-zero, so CI can gate on it
 
+# --- spelling: the words in text cells -------------------------------------------------------
+# `doc/spelling.md`, "In a spreadsheet". Only typed text is checked — never a number, a date or a
+# formula's result — and every misspelt word comes with its cell and where in it the word starts,
+# so the correction is a second command fed by the first. `grind sheet spelling off` turns it off
+# for every spreadsheet, which this script leaves alone: it is the person's, not the sample's.
+
+if "$GRIND" sheet spell --help >/dev/null 2>&1; then
+    say "spell: the misspelt words in text cells, with what they might have been"
+    spelling="$out/spelling.fods"
+    run new "$spelling" --force
+    run set "$spelling" A1 'Quarterly reveneu'
+    run set "$spelling" A2 'Recieved from customers'
+    run set "$spelling" B2 1200
+    run set "$spelling" A3 '="not checked: wrogn"'
+    sheet spell "$spelling" --suggest
+    say "correct: the cell, the word and its replacement — one undo step, still text"
+    run correct "$spelling" A2 Recieved Received
+    sheet get "$spelling" A2
+else
+    say "spell: not in this build (compiled without the spell feature)"
+fi
+
 # --- build: the same table, generated ------------------------------------------------------
 # `doc/dsl.md` layer 1, D7. The document above was written a cell at a time; `examples/budget.rhai`
 # says the same table once, with the categories as data and a loop for the rows. The arrow

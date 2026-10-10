@@ -32,6 +32,7 @@ use grind_sheet::{App, Pos, look, numfmt};
 
 use super::geom::{self, Grid, HEADER_H, HEADER_W, Rect};
 pub use crate::ops::Op;
+use crate::text::paint::SPELL_DOT;
 
 /// How far a cell's text stands off its edges, across and down.
 pub const PAD_X: f64 = 4.0;
@@ -63,6 +64,8 @@ pub struct Palette {
     /// Whether the page is dark, which is what lifts a document's own colours along their hue
     /// (`grind_core::color::document_ink`).
     pub dark: bool,
+    /// A misspelt word's dots — `systemRedColor`, as on the page.
+    pub misspelt: Rgb,
 }
 
 impl Palette {
@@ -74,6 +77,7 @@ impl Palette {
         header_ink: (0x6e, 0x6e, 0x73),
         accent: (0x00, 0x7a, 0xff),
         dark: false,
+        misspelt: (0xff, 0x3b, 0x30),
     };
     pub const DARK: Palette = Palette {
         page: (0x1e, 0x1e, 0x1e),
@@ -83,6 +87,7 @@ impl Palette {
         header_ink: (0x98, 0x98, 0x9d),
         accent: (0x0a, 0x84, 0xff),
         dark: true,
+        misspelt: (0xff, 0x45, 0x3a),
     };
 }
 
@@ -365,9 +370,22 @@ pub fn cells(
                 palette.ink,
                 palette.dark,
             );
+            // The words the core found misspelt — only in the text it checked, never in a
+            // formula shown in its place (`Viewport::misspelt`).
+            let misspelt = match formula {
+                None => viewport.misspelt(row, col),
+                Some(_) => &[],
+            };
             if look::wraps(style) && !numfmt::is_number(&value) {
                 if !cell.intersection(&view).is_empty() {
-                    ops.extend(wrapped_text(text, &value, style, cell, ink, metrics));
+                    ops.extend(wrapped_text(
+                        text,
+                        &value,
+                        style,
+                        cell,
+                        (ink, misspelt, palette.misspelt),
+                        metrics,
+                    ));
                 }
                 continue;
             }
@@ -423,8 +441,10 @@ pub fn cells(
                 *clip = reach;
             }
             let lines = lines(&op, style, metrics);
+            let dots = dots(&op, misspelt, metrics, palette.misspelt);
             ops.push(op);
             ops.extend(lines);
+            ops.extend(dots);
         }
     }
     // Each merge's text, across the whole merge, whether or not its top-left cell is in view.
@@ -456,19 +476,25 @@ pub fn cells(
             palette.ink,
             palette.dark,
         );
+        let misspelt = match formula {
+            None => viewport.misspelt(m.anchor.row, m.anchor.col),
+            Some(_) => &[],
+        };
         if look::wraps(style) && !numfmt::is_number(&value) {
-            ops.extend(wrapped_text(text, &value, style, area, ink, metrics));
+            ops.extend(wrapped_text(
+                text,
+                &value,
+                style,
+                area,
+                (ink, misspelt, palette.misspelt),
+                metrics,
+            ));
             continue;
         }
-        ops.push(cell_text(
-            one_line(text),
-            &[],
-            &value,
-            style,
-            area,
-            ink,
-            metrics,
-        ));
+        let op = cell_text(one_line(text), &[], &value, style, area, ink, metrics);
+        let dots = dots(&op, misspelt, metrics, palette.misspelt);
+        ops.push(op);
+        ops.extend(dots);
     }
     // Each checkbox: a box in the ink, filled with the accent and ticked when its linked cell
     // says so.
@@ -769,6 +795,51 @@ fn lines(op: &Op, style: Option<&grind_sheet::style::CellStyle>, metrics: &dyn M
     out
 }
 
+/// A misspelt word's dots under a cell's text op — the page's own mark ([`SPELL_DOT`] apart,
+/// along the bottom of the line, `doc/spelling.md`), placed from the portable metrics as
+/// [`lines`] places an underline, and clipped where the text is. `ranges` count characters of
+/// the op's text.
+fn dots(op: &Op, ranges: &[std::ops::Range<usize>], metrics: &dyn Metrics, color: Rgb) -> Vec<Op> {
+    let Op::Text {
+        x,
+        top,
+        text,
+        style,
+        clip,
+        ..
+    } = op
+    else {
+        return Vec::new();
+    };
+    if ranges.is_empty() {
+        return Vec::new();
+    }
+    let mut advances = Vec::new();
+    metrics.advances(text, style, &mut advances);
+    let at = |chars: usize| match chars {
+        0 => 0.0,
+        n => advances
+            .get(n - 1)
+            .or(advances.last())
+            .copied()
+            .map_or(0.0, f64::from),
+    };
+    let y = top + f64::from(metrics.line_height(style)) - SPELL_DOT;
+    let mut out = Vec::new();
+    for range in ranges {
+        let (left, right) = (x + at(range.start), x + at(range.end));
+        let mut dot = left;
+        while dot < right {
+            let rect = Rect::new(dot, y, SPELL_DOT, SPELL_DOT).intersection(clip);
+            if !rect.is_empty() {
+                out.push(Op::Fill { rect, color });
+            }
+            dot += 2.0 * SPELL_DOT;
+        }
+    }
+    out
+}
+
 /// A wrapping cell's text, broken at its column's width by `grind_core::layout::wrap` — the
 /// breaker the page and the GNOME window's row heights use — one line an op, aligned across as a
 /// line is and the block of lines placed down the cell as one line would be. What does not fit
@@ -780,7 +851,7 @@ fn wrapped_text(
     value: &grind_sheet::model::CellValue,
     style: Option<&grind_sheet::style::CellStyle>,
     cell: Rect,
-    ink: Rgb,
+    (ink, misspelt, misspelt_ink): (Rgb, &[std::ops::Range<usize>], Rgb),
     metrics: &dyn Metrics,
 ) -> Vec<Op> {
     let text_style = look::text_style(style);
@@ -802,7 +873,7 @@ fn wrapped_text(
     layout
         .lines()
         .iter()
-        .map(|line| {
+        .flat_map(|line| {
             let piece: String = text
                 .chars()
                 .skip(line.start)
@@ -817,14 +888,24 @@ fn wrapped_text(
                 look::Align::Center => cell.x + (cell.w - piece_w) / 2.0,
                 look::Align::Right => cell.right() - PAD_X - piece_w,
             };
-            Op::Text {
+            let op = Op::Text {
                 x,
                 top: top + f64::from(line.top),
                 text: piece,
                 style: text_style.clone(),
                 color: ink,
                 clip: cell,
-            }
+            };
+            // Each misspelt word's part on this line, counted from the line's own start.
+            let here: Vec<std::ops::Range<usize>> = misspelt
+                .iter()
+                .filter_map(|m| {
+                    let (start, end) = (m.start.max(line.start), m.end.min(line.end));
+                    (start < end).then(|| start - line.start..end - line.start)
+                })
+                .collect();
+            let dots = dots(&op, &here, metrics, misspelt_ink);
+            std::iter::once(op).chain(dots)
         })
         .collect()
 }
@@ -1064,6 +1145,51 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// A lexicon over a fixed list — enough to make the core report a misspelling.
+    struct List(&'static [&'static str]);
+
+    impl grind_sheet::Lexicon for List {
+        fn knows(&self, word: &str) -> bool {
+            self.0.contains(&word.to_lowercase().as_str())
+        }
+        fn suggest(&self, _: &str) -> Vec<String> {
+            Vec::new()
+        }
+        fn language(&self) -> &str {
+            "en-US"
+        }
+    }
+
+    /// The page's dotted red mark under a misspelt word in a cell — from where the word starts to
+    /// where it ends in `Fixed`'s one unit a character, and nothing at all with spelling off.
+    #[test]
+    fn a_misspelt_word_in_a_cell_is_dotted_where_it_is() {
+        let app = sheet();
+        app.enter(0, Pos::new(3, 0), "Pay teh rent", RecalcMode::Document)
+            .unwrap();
+        let red = |ops: &[Op]| -> Vec<Rect> {
+            ops.iter()
+                .filter_map(|op| match op {
+                    Op::Fill { rect, color } if *color == Palette::LIGHT.misspelt => Some(*rect),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert!(red(&drawn(&app)).is_empty(), "nothing is checked yet");
+        app.set_lexicon(Some(std::sync::Arc::new(List(&["pay", "rent", "the"]))));
+        let dots = red(&drawn(&app));
+        assert!(!dots.is_empty());
+        let row = Grid::of(&app, 0).cell(3, 0);
+        let start = row.x + PAD_X + 4.0;
+        assert_eq!(dots[0].x, start, "from the start of “teh”");
+        assert!(
+            dots.iter()
+                .all(|d| d.x >= start && d.right() <= start + 3.0 + SPELL_DOT)
+        );
+        app.set_lexicon(None);
+        assert!(red(&drawn(&app)).is_empty(), "off is off");
     }
 
     #[test]

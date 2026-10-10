@@ -2,10 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Spelling on the page (`doc/spelling.md`): Edit ▸ Spelling's *Check Document Now* (⌘;) and
-//! *Spelling Language…*, and the rows that lead the context menu over a misspelt word — what it
-//! might have been, *Ignore Spelling* and *Learn Spelling*, the names every Mac text view gives
-//! them.
+//! Spelling on the page and on the grid (`doc/spelling.md`): Edit ▸ Spelling's *Check Document
+//! Now* (⌘;), *Spelling Language…* and *Check Spelling While Typing*, and the rows that lead the
+//! context menu over a misspelt word — what it might have been, *Ignore Spelling* and *Learn
+//! Spelling*, the names every Mac text view gives them. On the grid the setting is remembered for
+//! every spreadsheet (`grind_spell::preference`); on the page it is the session's.
 //!
 //! The decisions are the core's and `grind_spell`'s — which words are wrong
 //! (`App::misspellings`), what they might have been (`App::suggest`), which dictionary
@@ -18,8 +19,10 @@ use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{NSMenu, NSMenuItem};
 use objc2_foundation::NSString;
 
+use grind_sheet::Pos;
 use grind_text::{Caret, Misspelling};
 
+use crate::grid_view::Pane;
 use crate::menu::{COMMAND_SELECTOR, Command, SUGGESTIONS, Spell};
 use crate::page_view::TextPane;
 use crate::prompt;
@@ -51,6 +54,14 @@ impl TextPane {
         match spell {
             Spell::Next => self.next_misspelling(mtm),
             Spell::Language => self.choose_language(mtm),
+            Spell::Toggle => {
+                self.spelling.set(match self.spelling.get() {
+                    grind_spell::Setting::Off => grind_spell::Setting::Automatic,
+                    _ => grind_spell::Setting::Off,
+                });
+                self.check_spelling();
+                self.act_on(|_, _, _| Ok(()));
+            }
             Spell::Ignore | Spell::Learn => {
                 let Some((wrong, _)) = self.offers.borrow_mut().take() else {
                     return;
@@ -95,7 +106,7 @@ impl TextPane {
             prompt::tell(
                 mtm,
                 "Spelling is off.",
-                "Edit ▸ Spelling ▸ Spelling Language… turns it on.",
+                "Edit ▸ Spelling ▸ Check Spelling While Typing turns it on.",
             );
             return;
         }
@@ -153,12 +164,159 @@ impl TextPane {
     }
 }
 
-/// The rows that lead the page's context menu over the misspelt word at `caret`: up to
-/// [`SUGGESTIONS`] of what it might have been (or *No Guesses Found*), *Ignore Spelling*, *Learn
-/// Spelling*, and a separator — nothing at all over a word spelled right. The word and its
-/// suggestions are kept on the page, which is what a `Spell::Correct(n)` row later means.
-pub fn lead_menu(pane: &TextPane, menu: &NSMenu, caret: Caret, mtm: MainThreadMarker) {
-    let Some(wrong) = pane.misspelt_at(caret) else {
+impl Pane {
+    /// Attach what [`Pane::spelling`] says to the document — when the pane is made and whenever
+    /// the choice changes — and draw again, since what is underlined has changed.
+    pub fn check_spelling(&self) {
+        *self.speller.borrow_mut() = match self.spelling.get().apply(&self.app) {
+            Ok(Some((_, speller))) => Some(speller),
+            Ok(None) | Err(_) => None,
+        };
+        *self.spell_stop.borrow_mut() = None;
+        self.repaint();
+    }
+
+    /// Choose a setting, remember it for every spreadsheet, and apply it.
+    fn set_spelling(&self, setting: grind_spell::Setting, mtm: MainThreadMarker) {
+        self.spelling.set(setting);
+        if setting != grind_spell::Setting::Off {
+            self.spelling_on.set(setting);
+        }
+        if let Err(why) =
+            grind_spell::preference::save(grind_core::DocumentKind::Spreadsheet, setting)
+        {
+            prompt::tell(mtm, "The setting was not remembered.", &why.to_string());
+        }
+        self.check_spelling();
+        if let Err(why) = setting.apply(&self.app) {
+            prompt::tell(mtm, "This document is not checked.", &why.to_string());
+        }
+    }
+
+    /// One of Edit ▸ Spelling's verbs over the grid, or a context-menu row's.
+    pub fn spell(&self, spell: Spell, mtm: MainThreadMarker) {
+        match spell {
+            Spell::Next => self.next_misspelling(mtm),
+            Spell::Language => self.choose_language(mtm),
+            Spell::Toggle => {
+                let next = match self.spelling.get() {
+                    grind_spell::Setting::Off => self.spelling_on.get(),
+                    _ => grind_spell::Setting::Off,
+                };
+                self.set_spelling(next, mtm);
+            }
+            Spell::Ignore | Spell::Learn => {
+                let Some((wrong, _)) = self.offers.borrow_mut().take() else {
+                    return;
+                };
+                if let Some(speller) = self.speller.borrow().as_ref() {
+                    speller.accept(&wrong.word);
+                }
+                if spell == Spell::Learn
+                    && let Err(error) = grind_spell::personal::add(&wrong.word)
+                {
+                    prompt::tell(mtm, "The word could not be learned.", &error.to_string());
+                }
+                self.repaint();
+            }
+            Spell::Correct(index) => {
+                let Some((wrong, offers)) = self.offers.borrow_mut().take() else {
+                    return;
+                };
+                let Some(with) = offers.get(usize::from(index)) else {
+                    return;
+                };
+                // Refused only when the cell changed under the open menu, which it then shows.
+                let _ = self
+                    .app
+                    .correct(wrong.sheet, wrong.pos, wrong.offset, &wrong.word, with);
+            }
+        }
+    }
+
+    /// *Check Document Now* — the next misspelt word in reading order, across every sheet and
+    /// wrapping: its cell selected, and the sheet it is on shown; right-click it for what it might
+    /// have been.
+    fn next_misspelling(&self, mtm: MainThreadMarker) {
+        if self.speller.borrow().is_none() {
+            prompt::tell(
+                mtm,
+                "Spelling is off.",
+                "Edit ▸ Spelling ▸ Check Spelling While Typing turns it on.",
+            );
+            return;
+        }
+        let all = self.app.misspellings(None, None).unwrap_or_default();
+        if all.is_empty() {
+            prompt::tell(
+                mtm,
+                "No misspelt words.",
+                "Every word is in the dictionary.",
+            );
+            return;
+        }
+        let key = |m: &grind_sheet::Misspelling| (m.sheet, m.pos.row, m.pos.col, m.offset);
+        let (sheet, active) = (self.sheet.get(), self.selection.get().active);
+        let stop = self
+            .spell_stop
+            .borrow()
+            .clone()
+            .filter(|m| m.sheet == sheet && m.pos == active);
+        let index = match stop {
+            // On from the word last stopped on, which may be in the same cell.
+            Some(stop) => all.iter().position(|m| key(m) > key(&stop)),
+            // From this cell's own first word.
+            None => all
+                .iter()
+                .position(|m| (m.sheet, m.pos.row, m.pos.col) >= (sheet, active.row, active.col)),
+        }
+        .unwrap_or(0);
+        let wrong = all[index].clone();
+        if wrong.sheet != sheet {
+            self.show_sheet(wrong.sheet);
+        }
+        self.select(grind_sheet::nav::Selection::at(wrong.pos));
+        *self.spell_stop.borrow_mut() = Some(wrong);
+    }
+
+    /// *Spelling Language…* over the grid — Automatic, a dictionary by name, or Off, remembered
+    /// for every spreadsheet.
+    fn choose_language(&self, mtm: MainThreadMarker) {
+        let settings = grind_spell::Setting::ALL;
+        let items: Vec<String> = settings.iter().map(|s| s.label().to_owned()).collect();
+        let current = settings
+            .iter()
+            .position(|s| *s == self.spelling.get())
+            .unwrap_or(0);
+        let Some(picked) = prompt::pick(
+            mtm,
+            "Spelling Language",
+            "Which dictionary checks spreadsheets, from now on.",
+            "Choose",
+            &items,
+            current,
+        ) else {
+            return;
+        };
+        self.set_spelling(settings[picked], mtm);
+    }
+}
+
+/// The rows that lead the grid's context menu over a cell with a misspelt word in it — the
+/// page's rows ([`lead_menu`]), for the cell's first misspelt word — kept on the pane, which is
+/// what a `Spell::Correct(n)` row later means. Nothing at all over a cell spelled right, or with
+/// spelling off.
+pub fn lead_grid_menu(pane: &Pane, menu: &NSMenu, cell: Pos, mtm: MainThreadMarker) {
+    let wrong = match pane.speller.borrow().is_some() {
+        true => pane
+            .app
+            .misspellings(Some(pane.sheet.get()), Some((cell, cell)))
+            .unwrap_or_default()
+            .into_iter()
+            .next(),
+        false => None,
+    };
+    let Some(wrong) = wrong else {
         *pane.offers.borrow_mut() = None;
         return;
     };
@@ -168,6 +326,13 @@ pub fn lead_menu(pane: &TextPane, menu: &NSMenu, caret: Caret, mtm: MainThreadMa
         .into_iter()
         .take(usize::from(SUGGESTIONS))
         .collect();
+    insert_rows(menu, &offers, mtm);
+    *pane.offers.borrow_mut() = Some((wrong, offers));
+}
+
+/// The rows themselves: up to [`SUGGESTIONS`] of what a word might have been (or *No Guesses
+/// Found*), *Ignore Spelling*, *Learn Spelling* and a separator, at the head of `menu`.
+fn insert_rows(menu: &NSMenu, offers: &[String], mtm: MainThreadMarker) {
     let mut rows: Vec<Retained<NSMenuItem>> = Vec::new();
     for (index, word) in offers.iter().enumerate() {
         rows.push(item(
@@ -194,6 +359,24 @@ pub fn lead_menu(pane: &TextPane, menu: &NSMenu, caret: Caret, mtm: MainThreadMa
     for (at, row) in rows.iter().enumerate() {
         menu.insertItem_atIndex(row, at as isize);
     }
+}
+
+/// The rows that lead the page's context menu over the misspelt word at `caret`: up to
+/// [`SUGGESTIONS`] of what it might have been (or *No Guesses Found*), *Ignore Spelling*, *Learn
+/// Spelling*, and a separator — nothing at all over a word spelled right. The word and its
+/// suggestions are kept on the page, which is what a `Spell::Correct(n)` row later means.
+pub fn lead_menu(pane: &TextPane, menu: &NSMenu, caret: Caret, mtm: MainThreadMarker) {
+    let Some(wrong) = pane.misspelt_at(caret) else {
+        *pane.offers.borrow_mut() = None;
+        return;
+    };
+    let offers: Vec<String> = pane
+        .app
+        .suggest(&wrong.word)
+        .into_iter()
+        .take(usize::from(SUGGESTIONS))
+        .collect();
+    insert_rows(menu, &offers, mtm);
     *pane.offers.borrow_mut() = Some((wrong, offers));
 }
 

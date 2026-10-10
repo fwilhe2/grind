@@ -290,6 +290,8 @@ impl Delegate {
             Command::Spell(spell) => {
                 if let Some(page) = self.front_document().and_then(|document| document.page()) {
                     page.spell(spell, self.mtm());
+                } else if let Some(pane) = self.front_pane() {
+                    pane.spell(spell, self.mtm());
                 }
                 return;
             }

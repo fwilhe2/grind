@@ -221,8 +221,13 @@ pub enum Track {
 pub enum Spell {
     /// Select the next misspelt word after the caret, wrapping — *Check Document Now*, ⌘;.
     Next,
-    /// Automatic, a dictionary by name, or Off — `grind_spell::Setting`, the session's choice.
+    /// Automatic, a dictionary by name, or Off — `grind_spell::Setting`. The session's choice on
+    /// a page; on a grid the remembered one (`grind_spell::preference`).
     Language,
+    /// *Check Spelling While Typing* — AppKit's own name for the switch: off, or back on to the
+    /// last language it was on in. On a grid it is remembered, so off stays off in every
+    /// spreadsheet (`doc/spelling.md`, "In a spreadsheet"); on a page it is the session's.
+    Toggle,
     /// The word under the pointer accepted for this session — *Ignore Spelling*.
     Ignore,
     /// The word under the pointer added to the person's own list — *Learn Spelling*.
@@ -292,6 +297,7 @@ impl Command {
         all.extend([
             Command::Spell(Spell::Next),
             Command::Spell(Spell::Language),
+            Command::Spell(Spell::Toggle),
             Command::Spell(Spell::Ignore),
             Command::Spell(Spell::Learn),
         ]);
@@ -454,8 +460,9 @@ impl Command {
             | Command::Print
             | Command::MoveParagraph(_)
             | Command::DeleteParagraph
-            | Command::ParagraphStyle
-            | Command::Spell(_) => text,
+            | Command::ParagraphStyle => text,
+            // A paragraph's words and a text cell's are checked alike (`doc/spelling.md`).
+            Command::Spell(_) => sheet || text,
             Command::AddSheet
             | Command::RenameSheet
             | Command::DeleteSheet
@@ -835,6 +842,11 @@ static SPELLING: Menu = Menu {
             Command::Spell(Spell::Next),
         ),
         command("Spelling Language…", None, Command::Spell(Spell::Language)),
+        command(
+            "Check Spelling While Typing",
+            None,
+            Command::Spell(Spell::Toggle),
+        ),
     ],
 };
 

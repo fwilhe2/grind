@@ -151,6 +151,9 @@ impl Pane {
             Command::Calculations => self.calculations.borrow().is_some(),
             Command::CellRoles => self.overlays.get().roles,
             Command::Names => self.overlays.get().names,
+            Command::Spell(crate::menu::Spell::Toggle) => {
+                self.spelling.get() != grind_spell::Setting::Off
+            }
             _ => cells::checked(command, &self.active()),
         }
     }
@@ -281,6 +284,9 @@ impl TextPane {
     pub fn format_checked(&self, command: Command) -> bool {
         match command {
             Command::Names => self.names.get(),
+            Command::Spell(crate::menu::Spell::Toggle) => {
+                self.spelling.get() != grind_spell::Setting::Off
+            }
             _ => {
                 let (kind, style) = self.block_kind();
                 page::checked(command, &self.here(), &kind, style.as_deref())

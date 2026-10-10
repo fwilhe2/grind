@@ -123,13 +123,23 @@ pub struct Pane {
     /// A chart held by the pointer — drawn where the drag has it until the button comes up, which
     /// is one `App::reshape_chart`.
     chart_grab: Cell<Option<crate::sheet::chart::Grab>>,
+    /// Spelling (`doc/spelling.md`, "In a spreadsheet", `spelling.rs`): the person's remembered
+    /// choice — so *Check Spelling While Typing* off here is off in every spreadsheet — the last
+    /// one that was not Off, the dictionary *Ignore Spelling* adds to, the word and suggestions
+    /// the context menu was opened on, and the word *Check Document Now* last stopped on.
+    pub(crate) spelling: Cell<grind_spell::Setting>,
+    pub(crate) spelling_on: Cell<grind_spell::Setting>,
+    pub(crate) speller: RefCell<Option<Arc<grind_spell::Speller>>>,
+    pub(crate) offers: RefCell<Option<(grind_sheet::Misspelling, Vec<String>)>>,
+    pub(crate) spell_stop: RefCell<Option<grind_sheet::Misspelling>>,
 }
 
 impl Pane {
     pub fn new(app: Arc<grind_sheet::App>) -> Rc<Pane> {
         let text = CoreText::new(BASE_PT);
         let grid = Grid::measured(&app, 0, &text);
-        Rc::new_cyclic(|me| Pane {
+        let remembered = grind_spell::preference::load(grind_core::DocumentKind::Spreadsheet);
+        let pane = Rc::new_cyclic(|me| Pane {
             me: me.clone(),
             app,
             sheet: Cell::new(0),
@@ -157,7 +167,25 @@ impl Pane {
             calculations: RefCell::new(None),
             chart_selected: Cell::new(None),
             chart_grab: Cell::new(None),
-        })
+            spelling: Cell::new(remembered),
+            spelling_on: Cell::new(match remembered {
+                grind_spell::Setting::Off => grind_spell::Setting::Automatic,
+                on => on,
+            }),
+            speller: RefCell::new(None),
+            offers: RefCell::new(None),
+            spell_stop: RefCell::new(None),
+        });
+        pane.check_spelling();
+        pane
+    }
+
+    /// Ask every view of this pane to draw again — after a change the document did not make,
+    /// such as spelling switched on or off.
+    pub(crate) fn repaint(&self) {
+        for view in self.views.borrow().iter().filter_map(Weak::load) {
+            view.setNeedsDisplay(true);
+        }
     }
 
     /// The selected chart's index, if it is on the sheet showing and still exists.
@@ -795,6 +823,7 @@ pub(crate) fn palette() -> Palette {
         header_ink: rgb(&NSColor::secondaryLabelColor()),
         accent: rgb(&NSColor::controlAccentColor()),
         dark: color::luminance(page) < 0.5,
+        misspelt: rgb(&NSColor::systemRedColor()),
     }
 }
 
@@ -1446,14 +1475,16 @@ impl GridView {
         if let Some(menu) = self.chart_menu(event) {
             return Some(menu);
         }
-        self.context(event);
-        Some(crate::app::context_menu(
-            &crate::menu::GRID_CONTEXT,
-            self.mtm(),
-        ))
+        let cell = self.context(event);
+        let menu = crate::app::context_menu(&crate::menu::GRID_CONTEXT, self.mtm());
+        // Over a misspelt word the menu leads with what it might have been, as on the page.
+        crate::spelling::lead_grid_menu(self.ivars(), &menu, cell, self.mtm());
+        Some(menu)
     }
 
-    fn context(&self, event: &NSEvent) {
+    /// Move the selection to the clicked cell unless it is already inside it, and answer which
+    /// cell was clicked.
+    fn context(&self, event: &NSEvent) -> grind_sheet::Pos {
         let pane = self.ivars();
         let at = located(self, event);
         let (x, y) = (at.x - HEADER_W, at.y - HEADER_H);
@@ -1465,6 +1496,7 @@ impl GridView {
         if !inside {
             pane.select(clicked);
         }
+        cell
     }
 
     fn act(&self, action: keys::GridAction) {
