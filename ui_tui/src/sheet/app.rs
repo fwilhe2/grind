@@ -186,6 +186,20 @@ pub struct App {
     quit: bool,
     /// Set by `:new` and `:open`; the event loop takes it and swaps the pane.
     switch: Option<crate::app::Switch>,
+    /// Spelling (`doc/spelling.md`, "In a spreadsheet"): what `:spell` last said — remembered
+    /// for every spreadsheet (`grind_spell::preference`) — what that came to for this document,
+    /// and the dictionary `:spell ignore` adds to. `None` checks nothing, which is where a pane
+    /// starts until [`App::spelling`] attaches one, so a test's frame is the same whatever the
+    /// machine's own setting is.
+    spelling: grind_spell::Setting,
+    checked: Option<grind_spell::Choice>,
+    speller: Option<Arc<grind_spell::Speller>>,
+    /// The edit count spelling last looked at, and whether the guess has read all a guess reads.
+    spelling_seen: u64,
+    settled: bool,
+    /// The misspelt word `]` or `[` last stopped on — what `:fix`, `:spell ignore` and
+    /// `:spell add` mean while the cursor is still on its cell.
+    misspelt_at: Option<grind_sheet::Misspelling>,
 }
 
 impl App {
@@ -231,7 +245,21 @@ impl App {
             imported: None,
             quit: false,
             switch: None,
+            spelling: grind_spell::Setting::Automatic,
+            checked: None,
+            speller: None,
+            spelling_seen: 0,
+            settled: false,
+            misspelt_at: None,
         }
+    }
+
+    /// Start checking spelling as the person last said spreadsheets should be checked — the
+    /// remembered setting, so `:spell off` in one session is off in the next.
+    pub fn spelling(mut self) -> Self {
+        self.spelling = grind_spell::preference::load(grind_core::DocumentKind::Spreadsheet);
+        self.check_spelling();
+        self
     }
 
     /// Start as an imported workbook: named after it, unsaved, with no path to write to, and
@@ -387,6 +415,7 @@ impl App {
             Action::Indent(step) => self.indent(step),
             Action::Plain => self.write_style(None, "plain"),
             Action::Next(forward) => self.step_match(forward),
+            Action::Misspelt(forward) => self.step_misspelt(forward),
             Action::Escape => {
                 self.anchor = None;
                 // Escape puts the search away as well as the selection: a grid still marked with
@@ -396,6 +425,228 @@ impl App {
                 self.mode = Mode::Normal;
             }
         }
+    }
+
+    // --- spelling (`doc/spelling.md`, "In a spreadsheet") ---
+
+    /// Attach what [`App::spelling`] says to the core. A document in a language there is no
+    /// dictionary for is not checked, and says so rather than underlining every word.
+    fn check_spelling(&mut self) {
+        self.spelling_seen = self.redraw.edits();
+        self.settled = false;
+        self.misspelt_at = None;
+        match self.spelling.apply(&self.core) {
+            Ok(Some((choice, speller))) => {
+                self.checked = Some(choice);
+                self.speller = Some(speller);
+            }
+            Ok(None) => {
+                self.checked = None;
+                self.speller = None;
+            }
+            Err(why) => {
+                self.checked = None;
+                self.speller = None;
+                self.status = format!("spelling is not checked: {why}");
+            }
+        }
+    }
+
+    /// While the language is only a guess, guess again once the document has changed — the
+    /// first words typed into a new sheet deciding it (`grind_spell::reguess`) — until the
+    /// document has more words than a guess reads, past which it cannot change.
+    fn reconsider_spelling(&mut self) {
+        let edits = self.redraw.edits();
+        if edits == self.spelling_seen || self.settled {
+            return;
+        }
+        self.spelling_seen = edits;
+        let Some(choice) = self.checked else {
+            return;
+        };
+        if self.spelling != grind_spell::Setting::Automatic
+            || !matches!(
+                choice.source,
+                grind_spell::Source::Guessed | grind_spell::Source::Default
+            )
+        {
+            return;
+        }
+        let words = grind_core::spell::Spelled::sample(&*self.core).len();
+        if grind_spell::reguess(&self.core, self.spelling, choice, words) {
+            self.check_spelling();
+        } else if words >= grind_core::spell::GUESS_SAMPLE {
+            self.settled = true;
+        }
+    }
+
+    /// `:spell` — which language, and why; `:spell auto|<lang>|off` chooses, for every
+    /// spreadsheet from now on; `:spell ignore` and `:spell add` accept the misspelt word here,
+    /// for this session or for good.
+    fn cmd_spell(&mut self, arg: &str) {
+        match arg {
+            "" => {
+                self.status = match self.checked {
+                    Some(choice) => {
+                        let wrong = self.core.misspellings(None, None).unwrap_or_default().len();
+                        format!(
+                            "spelling in {} ({}) \u{2014} {wrong} misspelt, ] goes to the next",
+                            choice.language.name(),
+                            choice.source.label()
+                        )
+                    }
+                    None => "spelling is off \u{2014} :spell auto turns it on".to_string(),
+                }
+            }
+            "ignore" | "add" => self.accept_misspelt(arg == "add"),
+            _ => match grind_spell::Setting::from_tag(arg) {
+                Some(setting) => {
+                    self.spelling = setting;
+                    self.status.clear();
+                    let kept = grind_spell::preference::save(
+                        grind_core::DocumentKind::Spreadsheet,
+                        setting,
+                    );
+                    self.check_spelling();
+                    if self.status.is_empty() {
+                        self.cmd_spell("");
+                    }
+                    if let Err(why) = kept {
+                        self.status = format!("{} \u{2014} not remembered: {why}", self.status);
+                    }
+                }
+                None => {
+                    let have: Vec<&str> = grind_spell::Language::ALL
+                        .iter()
+                        .map(|l| l.tag().split('-').next().unwrap_or(""))
+                        .collect();
+                    self.status = format!(
+                        "no dictionary for {arg} \u{2014} :spell auto|{}|off",
+                        have.join("|")
+                    )
+                }
+            },
+        }
+    }
+
+    /// The misspelt word the cursor is on: the one `]` stopped on while the cursor is still in
+    /// its cell, else the cell's first.
+    fn misspelt_here(&self) -> Option<grind_sheet::Misspelling> {
+        let here = |m: &grind_sheet::Misspelling| m.sheet == self.sheet && m.pos == self.active;
+        if let Some(wrong) = self.misspelt_at.as_ref().filter(|m| here(m)) {
+            return Some(wrong.clone());
+        }
+        self.core
+            .misspellings(Some(self.sheet), Some((self.active, self.active)))
+            .ok()?
+            .into_iter()
+            .next()
+    }
+
+    /// `]` / `[` — the cursor to the next or previous misspelt word in reading order, across
+    /// every sheet and wrapping as `n` does, and what it might have been on the status line.
+    fn step_misspelt(&mut self, forward: bool) {
+        if self.checked.is_none() {
+            self.status = "spelling is off \u{2014} :spell auto turns it on".to_string();
+            return;
+        }
+        let all = self.core.misspellings(None, None).unwrap_or_default();
+        if all.is_empty() {
+            self.status = "no misspelt words".to_string();
+            return;
+        }
+        let key = |m: &grind_sheet::Misspelling| (m.sheet, m.pos.row, m.pos.col, m.offset);
+        let here = match self.misspelt_here() {
+            Some(m) => key(&m),
+            // Off any misspelt word: just before this cell going forward, just after it back.
+            None => (
+                self.sheet,
+                self.active.row,
+                self.active.col,
+                if forward { 0 } else { usize::MAX },
+            ),
+        };
+        let on_word = self.misspelt_here().is_some();
+        let at = match forward {
+            true => all
+                .iter()
+                .position(|m| key(m) > here || (!on_word && key(m) == here))
+                .unwrap_or(0),
+            false => all
+                .iter()
+                .rposition(|m| key(m) < here)
+                .unwrap_or(all.len() - 1),
+        };
+        let wrong = all[at].clone();
+        self.sheet = wrong.sheet;
+        self.active = wrong.pos;
+        self.anchor = None;
+        let offers: Vec<String> = self
+            .core
+            .suggest(&wrong.word)
+            .into_iter()
+            .take(5)
+            .enumerate()
+            .map(|(i, word)| format!("{} {word}", i + 1))
+            .collect();
+        self.status = format!(
+            "{} of {}: \u{201c}{}\u{201d} \u{2014} {}  (:fix N, :spell ignore, :spell add)",
+            at + 1,
+            all.len(),
+            wrong.word,
+            match offers.is_empty() {
+                true => "no suggestions".to_string(),
+                false => offers.join("  "),
+            }
+        );
+        self.misspelt_at = Some(wrong);
+    }
+
+    /// `:fix N` or `:fix word` — the misspelt word here replaced by the Nth suggestion `]`
+    /// offered, or by the word given, one undo step (`App::correct`); the cell stays text.
+    fn cmd_fix(&mut self, with: &str) {
+        let Some(wrong) = self.misspelt_here() else {
+            self.status = "no misspelt word here \u{2014} ] goes to the next".to_string();
+            return;
+        };
+        let with = match with.parse::<usize>() {
+            Ok(n) => match self.core.suggest(&wrong.word).get(n.wrapping_sub(1)) {
+                Some(word) => word.clone(),
+                None => {
+                    self.status = format!("no suggestion {n} for {}", wrong.word);
+                    return;
+                }
+            },
+            Err(_) => with.to_string(),
+        };
+        match self
+            .core
+            .correct(wrong.sheet, wrong.pos, wrong.offset, &wrong.word, &with)
+        {
+            Ok(_) => {
+                self.misspelt_at = None;
+                self.status = format!("{} \u{2192} {with}", wrong.word);
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// Accept the misspelt word here: for this session, and with `forever` in the person's own
+    /// word list too (`grind_spell::personal`), which no document carries.
+    fn accept_misspelt(&mut self, forever: bool) {
+        let (Some(wrong), Some(speller)) = (self.misspelt_here(), self.speller.clone()) else {
+            self.status = "no misspelt word here \u{2014} ] goes to the next".to_string();
+            return;
+        };
+        speller.accept(&wrong.word);
+        self.misspelt_at = None;
+        self.status = match forever {
+            false => format!("\u{201c}{}\u{201d} ignored for this session", wrong.word),
+            true => match grind_spell::personal::add(&wrong.word) {
+                Ok(path) => format!("\u{201c}{}\u{201d} added to {}", wrong.word, path.display()),
+                Err(e) => format!("could not add {}: {e}", wrong.word),
+            },
+        };
     }
 
     // --- find (`:find`, then `n` / `N`) ---
@@ -1232,6 +1483,9 @@ impl App {
             _ if cmd.starts_with("chart ") => self.cmd_restyle_chart(cmd[6..].trim()),
             "yank-values" => self.cmd_yank_values(),
             "find" => self.cmd_find(""),
+            "spell" => self.cmd_spell(""),
+            _ if cmd.starts_with("spell ") => self.cmd_spell(cmd[6..].trim()),
+            _ if cmd.starts_with("fix ") => self.cmd_fix(cmd[4..].trim()),
             "merge" => self.cmd_merge(true),
             "unmerge" => self.cmd_merge(false),
             "hide" => self.cmd_hide(true, false),
@@ -2594,6 +2848,7 @@ impl App {
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
+        self.reconsider_spelling();
         let area = frame.area();
         self.help_height = usize::from(area.height);
         if self.help.is_open() {
@@ -2920,18 +3175,36 @@ impl App {
                         indented.as_str()
                     }
                 };
-                spans.push(Span::styled(
-                    geom::pad(
-                        text,
-                        width,
-                        alignment(cell, numeric),
-                        match numeric {
-                            true => geom::Fit::Number,
-                            false => geom::Fit::Text,
-                        },
-                    ),
-                    style,
-                ));
+                // A misspelt word is underlined in red, as in the word processor's half — but
+                // only in the text the core checked: not a formula shown in its place, not a
+                // checkbox's mark ahead of it. Shifted past the indent the text was given.
+                let marks: Vec<std::ops::Range<usize>> =
+                    match (boxed.is_none() && shown_formula.is_none(), &viewport) {
+                        (true, Some(v)) => v
+                            .misspelt(r, c)
+                            .iter()
+                            .map(|m| m.start + indent..m.end + indent)
+                            .collect(),
+                        _ => Vec::new(),
+                    };
+                for (piece, marked) in geom::pad_marked(
+                    text,
+                    width,
+                    alignment(cell, numeric),
+                    match numeric {
+                        true => geom::Fit::Number,
+                        false => geom::Fit::Text,
+                    },
+                    &marks,
+                ) {
+                    let style = match marked {
+                        true => style
+                            .add_modifier(Modifier::UNDERLINED)
+                            .underline_color(Color::Red),
+                        false => style,
+                    };
+                    spans.push(Span::styled(piece, style));
+                }
             }
             lines.push(Line::from(spans));
         }
@@ -3434,6 +3707,63 @@ mod tests {
         assert_eq!(app.core.merges(0).unwrap(), vec![]);
         let after = super::tests::screen(&mut app, 60, 8).join("\n");
         assert!(after.contains("hidden"), "{after}");
+    }
+
+    /// Spelling in this half (`doc/spelling.md`, "In a spreadsheet"): only a misspelt word's
+    /// letters are underlined in red, `]` goes to it with suggestions, `:fix 1` takes the first,
+    /// and a number or a formula's result is never marked. Attached by language rather than by
+    /// `:spell`, which would write the machine's own remembered setting.
+    #[test]
+    fn a_misspelt_word_is_underlined_stepped_to_and_fixed() {
+        let mut app = app();
+        for (pos, value) in [
+            (Pos::new(0, 0), "Recieve it"),
+            (Pos::new(1, 0), "1200"),
+            (Pos::new(2, 0), "=\"wrogn\""),
+            (Pos::new(3, 1), "the goods"),
+        ] {
+            app.core
+                .enter(0, pos, value, grind_sheet::RecalcMode::Document)
+                .unwrap();
+        }
+        let underlined = |app: &mut App| -> String {
+            let mut terminal = Terminal::new(TestBackend::new(60, 10)).unwrap();
+            terminal.draw(|frame| app.draw(frame)).unwrap();
+            let buffer = terminal.backend().buffer().clone();
+            let mut out = String::new();
+            for r in 0..10 {
+                for c in 0..60 {
+                    let cell = &buffer[(c, r)];
+                    if cell.modifier.contains(Modifier::UNDERLINED)
+                        && cell.underline_color == Color::Red
+                    {
+                        out.push_str(cell.symbol());
+                    }
+                }
+            }
+            out
+        };
+        assert_eq!(
+            underlined(&mut app),
+            "",
+            "nothing is checked until spelling is on"
+        );
+        app.spelling = grind_spell::Setting::In(grind_spell::Language::English);
+        app.check_spelling();
+        assert_eq!(underlined(&mut app), "Recieve");
+
+        app.active = Pos::new(5, 5);
+        press(&mut app, KeyCode::Char(']'));
+        assert_eq!(app.active, Pos::new(0, 0));
+        assert!(app.status.contains("Receive"), "{}", app.status);
+        app.run_command("fix 1");
+        assert_eq!(
+            app.core.get(0, Pos::new(0, 0)).unwrap(),
+            CellValue::Text("Receive it".to_owned())
+        );
+        assert_eq!(underlined(&mut app), "");
+        press(&mut app, KeyCode::Char(']'));
+        assert_eq!(app.status, "no misspelt words");
     }
 
     /// A checkbox reads `[ ]` or `[x]` by its linked cell, and Space ticks it.

@@ -239,7 +239,9 @@ fn prepare(kind: DocumentKind, path: Option<PathBuf>) -> io::Result<Pane> {
                 }
             }
             Ok(Pane::Sheet(Box::new(
-                sheet::app::App::new(core, redraw, path).imported(imported),
+                sheet::app::App::new(core, redraw, path)
+                    .imported(imported)
+                    .spelling(),
             )))
         }
     }

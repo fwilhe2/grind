@@ -21,6 +21,7 @@ Spreadsheet:
   i, a  edit the cell     c  edit from empty
   x, d  clear the cell, or everything selected
   n, N  the next / previous match of the last :find
+  ]  [  the next / previous misspelt word, underlined in red, with suggestions
   w b } {  jump to the next edge of the data (Ctrl+arrows too)
   V  select the row   Ctrl+V  the column   Ctrl+A  everything the sheet uses
   While typing a formula: Tab accepts a completion, Up/Down pick one, Esc dismisses
@@ -33,6 +34,9 @@ Spreadsheet:
   :general                :recalc
   :group                  — thousands grouped, or not, over the selection
   :find <text>            — every cell whose text or formula holds it; n / N step
+  :fix N  :fix <word>     — the misspelt word ] stopped on, replaced by suggestion N or that
+  :spell [auto|<lang>|off] — check text cells in en de fr es it pt pl, or not; remembered for
+                            every spreadsheet. :spell ignore and :spell add accept a word
   :s/old/new/             — replace it in every cell, one undo step
   :down  :right           — fill the selection from its first cell (references shift)
   :across                 — the cell the selection grew from, into all of it; one undo step

@@ -249,6 +249,23 @@ pub enum Fit {
 /// wide character never half-lands in the last cell — and **says it is a cut**: text that does not
 /// fit ends in `…`, the other shells' own mark, and a number becomes `###` ([`Fit::Number`]).
 pub fn pad(text: &str, width: usize, align: Align, fit: Fit) -> String {
+    pad_marked(text, width, align, fit, &[])
+        .into_iter()
+        .map(|(piece, _)| piece)
+        .collect()
+}
+
+/// [`pad`], cut into pieces at `marks` — character ranges of `text` — each piece saying whether
+/// it is marked: what a misspelt word's underline is drawn over. A mark follows the text
+/// wherever the alignment put it, stops where a cut does, and never covers the padding, the
+/// ellipsis or the column separator.
+pub fn pad_marked(
+    text: &str,
+    width: usize,
+    align: Align,
+    fit: Fit,
+    marks: &[std::ops::Range<usize>],
+) -> Vec<(String, bool)> {
     let room = width.saturating_sub(1);
     let needed = text.width();
     let kept = match (needed <= room, fit) {
@@ -280,18 +297,70 @@ pub fn pad(text: &str, width: usize, align: Align, fit: Fit) -> String {
         Align::Right => (spare, 0),
         Align::Centre => (spare / 2, spare - spare / 2),
     };
-    let mut out = " ".repeat(before);
-    out.push_str(&kept);
-    out.push_str(&" ".repeat(after));
-    // The column separator, which every alignment keeps.
-    out.push(' ');
-    out
+    // Only text kept as itself carries a mark: `###` is not the number's characters.
+    let marking = matches!(fit, Fit::Text) && !marks.is_empty();
+    let mut pieces: Vec<(String, bool)> = vec![(" ".repeat(before), false)];
+    for (index, c) in kept.chars().enumerate() {
+        let ellipsis = c == '\u{2026}' && index + 1 == kept.chars().count() && needed > room;
+        let marked = marking && !ellipsis && marks.iter().any(|m| m.contains(&index));
+        match pieces.last_mut() {
+            Some((piece, was)) if *was == marked => piece.push(c),
+            _ => pieces.push((c.to_string(), marked)),
+        }
+    }
+    // The padding after, and the column separator, which every alignment keeps.
+    let tail = format!("{} ", " ".repeat(after));
+    match pieces.last_mut() {
+        Some((piece, false)) => piece.push_str(&tail),
+        _ => pieces.push((tail, false)),
+    }
+    pieces.retain(|(piece, _)| !piece.is_empty());
+    pieces
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use unicode_width::UnicodeWidthStr;
+
+    #[test]
+    // One misspelt word is a slice of one range, which is what `pad_marked` takes.
+    #[allow(clippy::single_range_in_vec_init)]
+    fn a_mark_follows_the_text_and_stops_at_a_cut() {
+        let marked = |pieces: Vec<(String, bool)>| -> Vec<String> {
+            pieces
+                .into_iter()
+                .filter(|(_, m)| *m)
+                .map(|(p, _)| p)
+                .collect()
+        };
+        let left = pad_marked("We recieve it", 16, Align::Left, Fit::Text, &[3..10]);
+        assert_eq!(marked(left.clone()), ["recieve"]);
+        assert_eq!(
+            left.iter().map(|(p, _)| p.as_str()).collect::<String>(),
+            pad("We recieve it", 16, Align::Left, Fit::Text)
+        );
+        let right = pad_marked("Teh", 10, Align::Right, Fit::Text, &[0..3]);
+        assert_eq!(right[0], ("      ".to_owned(), false));
+        assert_eq!(marked(right), ["Teh"]);
+        // Cut short: the part of the word that shows is marked, the ellipsis is not.
+        let cut = pad_marked("Recieved from", 7, Align::Left, Fit::Text, &[0..8]);
+        assert_eq!(marked(cut.clone()), ["Recie"]);
+        assert_eq!(
+            cut.iter().map(|(p, _)| p.as_str()).collect::<String>(),
+            "Recie\u{2026} "
+        );
+        assert!(
+            marked(pad_marked(
+                "12345678",
+                4,
+                Align::Right,
+                Fit::Number,
+                &[0..8]
+            ))
+            .is_empty()
+        );
+    }
 
     fn tracks(sized: &[(u32, &str)], hidden: &[u32]) -> Tracks {
         Tracks::new(

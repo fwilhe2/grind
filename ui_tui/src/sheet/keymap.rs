@@ -110,6 +110,9 @@ pub enum Action {
     SelectAll,
     /// `n` / `N` — the next or previous match of the last `:find`, vi's own two keys for it.
     Next(bool),
+    /// `]` / `[` — the next or previous misspelt word, with what it might have been on the
+    /// status line (`doc/spelling.md`) — the word processor's two keys, in this half too.
+    Misspelt(bool),
     /// `Esc` — leave Visual mode, changing nothing.
     Escape,
 }
@@ -163,6 +166,8 @@ pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<
         KeyCode::Char('c') => Some(Action::Change),
         KeyCode::Char('n') => Some(Action::Next(true)),
         KeyCode::Char('N') => Some(Action::Next(false)),
+        KeyCode::Char(']') => Some(Action::Misspelt(true)),
+        KeyCode::Char('[') => Some(Action::Misspelt(false)),
         KeyCode::Char('u') => Some(Action::Undo),
         KeyCode::Char('r') if ctrl => Some(Action::Redo),
         KeyCode::Char(':') => Some(Action::Command),
@@ -330,6 +335,19 @@ mod tests {
         assert_eq!(
             normal_action(KeyCode::Char('N'), KeyModifiers::NONE, false),
             Some(Action::Next(false))
+        );
+    }
+
+    /// The word processor's keys for the next and previous misspelt word, in this half too.
+    #[test]
+    fn brackets_step_between_misspelt_words() {
+        assert_eq!(
+            normal_action(KeyCode::Char(']'), KeyModifiers::NONE, false),
+            Some(Action::Misspelt(true))
+        );
+        assert_eq!(
+            normal_action(KeyCode::Char('['), KeyModifiers::NONE, false),
+            Some(Action::Misspelt(false))
         );
     }
 
