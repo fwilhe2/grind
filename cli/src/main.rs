@@ -1787,7 +1787,8 @@ enum TextCommand {
         file: Option<PathBuf>,
         /// Blocks to check, e.g. p3 or p3:p9 — the whole document when left out
         range: Option<String>,
-        /// The language to check in: en or de, or any tag of either (de-AT, en_GB.UTF-8)
+        /// The language to check in: en, de, fr, es, it, pt or pl, or any tag of one (de-AT,
+        /// en_GB.UTF-8)
         #[arg(long, value_name = "LANG")]
         language: Option<String>,
         /// Print what each word might have been, best first
@@ -2505,6 +2506,63 @@ enum Command {
         inline: bool,
     },
 
+    /// Print every misspelt word in a text cell, with its cell and where in it the word starts
+    ///
+    /// Only typed text is checked — never a number, a date or a formula's result — in one
+    /// language per document (doc/spelling.md): the one --language names, else the one the
+    /// document's own locale states, else the one whose dictionary knows most of its words.
+    /// Which it was goes to stderr. Words in your own list ($XDG_CONFIG_HOME/grind/words) are
+    /// accepted; --add puts one there. Nothing is written to the document.
+    #[cfg(feature = "spell")]
+    Spell {
+        #[arg(required_unless_present = "add")]
+        file: Option<PathBuf>,
+        /// Check only this sheet, by name
+        #[arg(long, value_name = "NAME")]
+        sheet: Option<String>,
+        /// The language to check in: en, de, fr, es, it, pt or pl, or any tag of one (de-AT,
+        /// en_GB.UTF-8)
+        #[arg(long, value_name = "LANG")]
+        language: Option<String>,
+        /// Print what each word might have been, best first
+        #[arg(long)]
+        suggest: bool,
+        /// Add a word to your own list instead of checking anything
+        #[arg(long, value_name = "WORD", conflicts_with_all = ["sheet", "language", "suggest"])]
+        add: Option<String>,
+    },
+
+    /// Replace one misspelt word in a text cell — what picking a suggestion does
+    ///
+    /// The word is named as well as placed, so a correction aimed at a cell that has since
+    /// changed is refused rather than overwriting whatever is there now. The cell stays text
+    /// and keeps its look; one undo step.
+    Correct {
+        file: PathBuf,
+        /// The cell, e.g. B4 or Sheet2.B4
+        address: String,
+        /// The word that is there now
+        word: String,
+        /// What it should be
+        with: String,
+        /// Where the word starts, in characters, as `sheet spell` prints it — the first time
+        /// the word occurs in the cell when left out
+        #[arg(long, value_name = "N")]
+        at: Option<usize>,
+    },
+
+    /// Print or set whether spreadsheets are spell-checked, and in what
+    ///
+    /// `off` turns spelling off in every spreadsheet window and for `grind lint`, and keeps it
+    /// off until `auto` (the default: the document's own language, else a guess) or a language
+    /// turns it back on. Remembered in $XDG_CONFIG_HOME/grind/spelling — yours, not any
+    /// document's. With no setting, prints the remembered one.
+    #[cfg(feature = "spell")]
+    Spelling {
+        /// auto, off, or a language: en, de, fr, es, it, pt or pl
+        setting: Option<String>,
+    },
+
     /// Print every cell holding some text, with its address
     ///
     /// What is searched is what a formula bar shows: a formula in display syntax
@@ -2863,7 +2921,9 @@ fn run(cli: &Cli) -> Result<Report, String> {
             let options = lint_options(*hints, off);
             let findings = match document_kind(file)? {
                 DocumentKind::Spreadsheet => {
-                    open_as(file, DocumentKind::Spreadsheet, cli)?.lint(&options)
+                    let app = open_as(file, DocumentKind::Spreadsheet, cli)?;
+                    check_spelling(&app);
+                    app.lint(&options)
                 }
                 DocumentKind::Text => open_text_checked(file)?.lint(&options),
                 kind => return Err(unsupported(file, Some(kind))),
@@ -3044,6 +3104,25 @@ fn unsupported(file: &Path, kind: Option<DocumentKind>) -> String {
 /// handing it a document of the wrong kind produces an empty one rather than an error. A user
 /// who typed the wrong subcommand deserves to be told which one is right, not handed a
 /// spreadsheet with no cells in it.
+/// [`load`], with spelling checked the way the person has said spreadsheets should be
+/// (`grind sheet spelling`) — what `lint` opens with, so its `misspelt` rule has something to ask,
+/// and stays silent once spelling is turned off.
+fn load_checked(file: &Path, cli: &Cli) -> Result<App, String> {
+    let app = load(file, cli)?;
+    check_spelling(&app);
+    Ok(app)
+}
+
+/// Attach the remembered spreadsheet spelling setting to `app` — nothing at all when it is `off`,
+/// or when this build has no dictionaries. A language with no dictionary is linted without
+/// spelling, silently: `grind sheet spell` is where that is worth saying.
+fn check_spelling(app: &App) {
+    #[cfg(feature = "spell")]
+    let _ = grind_spell::preference::load(DocumentKind::Spreadsheet).apply(app);
+    #[cfg(not(feature = "spell"))]
+    let _ = app;
+}
+
 fn open_as(file: &Path, wanted: DocumentKind, cli: &Cli) -> Result<App, String> {
     let bytes = std::fs::read(file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
     match grind_sheet::kind(&bytes) {
@@ -3226,7 +3305,7 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             true => Ok(rule_list(&grind_sheet::lint::RULES)),
             false => Ok(lint_report(
                 file,
-                load(file, cli)?.lint(&lint_options(*hints, off)),
+                load_checked(file, cli)?.lint(&lint_options(*hints, off)),
             )),
         },
 
@@ -4003,6 +4082,92 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 _ => format!("={}", grind_sheet::formula::parse::parse(formula).say()?),
             };
             Ok(Report::Text(TextReport { lines: vec![line] }))
+        }
+
+        #[cfg(feature = "spell")]
+        Command::Spell {
+            file,
+            sheet,
+            language,
+            suggest,
+            add,
+        } => {
+            if let Some(word) = add {
+                let path = grind_spell::personal::add(word).map_err(|e| e.to_string())?;
+                return text_lines(vec![format!("{word}\t{}", path.display())]);
+            }
+            let file = file.as_deref().expect("clap requires a file without --add");
+            let app = load(file, cli)?;
+            let named = language.as_deref().map(spell_language).transpose()?;
+            let (choice, _) = grind_spell::attach(&app, named).map_err(|e| e.to_string())?;
+            eprintln!(
+                "grind: checking in {} ({})",
+                choice.language.tag(),
+                choice.source.label()
+            );
+            let only = match sheet {
+                Some(name) => Some(a1::sheet(&app, name).say()?),
+                None => None,
+            };
+            let mut lines = Vec::new();
+            for wrong in app.misspellings(only).say()? {
+                let name = app.sheet_name(wrong.sheet).say()?;
+                let mut line =
+                    format!("{}\t{}\t{}", wrong.address(&name), wrong.offset, wrong.word);
+                if *suggest {
+                    line.push('\t');
+                    line.push_str(&app.suggest(&wrong.word).join(", "));
+                }
+                lines.push(line);
+            }
+            text_lines(lines)
+        }
+
+        Command::Correct {
+            file,
+            address,
+            word,
+            with,
+            at,
+        } => {
+            let app = load(file, cli)?;
+            let reference = a1::parse(address).say()?;
+            if !a1::is_single(&reference) {
+                return Err(format!("{address}: correct takes one cell, not a range"));
+            }
+            let (sheet, pos, _) = a1::resolve(&app, &reference).say()?;
+            let offset = match at {
+                Some(offset) => *offset,
+                // The first time the word occurs *as a word*: `recieve` in `recieved` is not it.
+                None => {
+                    let text = app.input_text(sheet, pos).say()?;
+                    let chars: Vec<char> = text.chars().collect();
+                    grind_core::spell::words(&text)
+                        .into_iter()
+                        .find(|range| chars[range.clone()].iter().collect::<String>() == *word)
+                        .map(|range| range.start)
+                        .ok_or_else(|| format!("{address} has no word {word:?}"))?
+                }
+            };
+            app.correct(sheet, pos, offset, word, with).say()?;
+            finish(&app, cli, file, word != with)
+        }
+
+        #[cfg(feature = "spell")]
+        Command::Spelling { setting } => {
+            use grind_spell::{Setting, preference};
+            let kind = DocumentKind::Spreadsheet;
+            if let Some(tag) = setting {
+                let chosen = Setting::from_tag(tag).ok_or_else(|| {
+                    format!(
+                        "{tag:?} is none of auto, off, or a language: en, de, fr, es, it, pt, pl"
+                    )
+                })?;
+                preference::save(kind, chosen).map_err(|e| e.to_string())?;
+            }
+            let now = preference::load(kind);
+            let place = preference::path().map_or_else(String::new, |p| p.display().to_string());
+            text_lines(vec![format!("{}\t{place}", now.tag())])
         }
 
         Command::Find {

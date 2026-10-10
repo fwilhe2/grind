@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! The spelling dictionaries (`doc/spelling.md`): Hunspell's, compiled in, checked by
-//! [`spellbook`], and handed to a [`grind_text::App`] as a [`Lexicon`].
+//! [`spellbook`], and handed to either application's `App` as a [`Lexicon`] through
+//! [`grind_core::spell::Spelled`] — this crate names neither application.
 //!
 //! `grind-text` decides what a word is and which words are worth checking; this crate only
 //! answers whether one is spelled right. It is a separate crate for the reason `grind-print` is:
@@ -18,7 +19,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock, RwLock};
 
-use grind_text::{App, Lexicon};
+use grind_core::spell::{GUESS_SAMPLE, Lexicon, Spelled, normalise};
 
 /// A language this build has a dictionary for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -156,10 +157,7 @@ impl Speller {
 
     /// Accept `word` from now on, for as long as this speller lives.
     pub fn accept(&self, word: &str) {
-        self.words
-            .write()
-            .unwrap()
-            .insert(grind_text::spell::normalise(word));
+        self.words.write().unwrap().insert(normalise(word));
     }
 }
 
@@ -248,12 +246,12 @@ impl std::fmt::Display for Unchecked {
 
 /// Which language to check `app`'s document in: `named` if somebody named one, then the one the
 /// document states, then a guess from its words, then the desktop's language, then English.
-pub fn choose(app: &App, named: Option<Language>) -> Result<Choice, Unchecked> {
+pub fn choose(app: &(impl Spelled + ?Sized), named: Option<Language>) -> Result<Choice, Unchecked> {
     let choice = |language, source| Ok(Choice { language, source });
     if let Some(language) = named {
         return choice(language, Source::Named);
     }
-    if let Some(tag) = app.language() {
+    if let Some(tag) = app.stated_language() {
         if tag.eq_ignore_ascii_case("zxx") {
             return Err(Unchecked::NoLanguage);
         }
@@ -277,10 +275,11 @@ pub fn choose(app: &App, named: Option<Language>) -> Result<Choice, Unchecked> {
 /// their articles and particles. Only a text with not one of them in it (a heading, a list of
 /// nouns) falls to the second stage: a vote by the full dictionaries of the desktop's language
 /// and English, the two the default would pick between anyway — so at most two are loaded.
-fn guess(app: &App, desktop: Option<Language>) -> Option<Language> {
+fn guess(app: &(impl Spelled + ?Sized), desktop: Option<Language>) -> Option<Language> {
+    let sample = app.sample();
     let common: Vec<Common> = Language::ALL.iter().map(|l| Common(*l)).collect();
     let lexicons: Vec<&dyn Lexicon> = common.iter().map(|c| c as &dyn Lexicon).collect();
-    if let Some(at) = app.guess_language(&lexicons) {
+    if let Some(at) = grind_core::spell::guess(&sample, &lexicons) {
         return Some(Language::ALL[at]);
     }
     let mut fallback = vec![desktop.unwrap_or(Language::English), Language::English];
@@ -290,7 +289,7 @@ fn guess(app: &App, desktop: Option<Language>) -> Option<Language> {
         .map(|l| Speller::new(*l, BTreeSet::new()))
         .collect();
     let lexicons: Vec<&dyn Lexicon> = spellers.iter().map(|s| s as &dyn Lexicon).collect();
-    app.guess_language(&lexicons).map(|at| fallback[at])
+    grind_core::spell::guess(&sample, &lexicons).map(|at| fallback[at])
 }
 
 /// A [`Lexicon`] that knows only a language's commonest short words — articles, pronouns,
@@ -369,7 +368,10 @@ impl Lexicon for Common {
 /// [`choose`] a language and attach a [`Speller`] for it — with the person's own words
 /// ([`personal::load`]) — to `app`. The speller is handed back too, so a shell can
 /// [`Speller::accept`] a word into it. With nothing to check in, `app` is left checking nothing.
-pub fn attach(app: &App, named: Option<Language>) -> Result<(Choice, Arc<Speller>), Unchecked> {
+pub fn attach(
+    app: &(impl Spelled + ?Sized),
+    named: Option<Language>,
+) -> Result<(Choice, Arc<Speller>), Unchecked> {
     match choose(app, named) {
         Ok(choice) => {
             let speller = Arc::new(Speller::new(choice.language, personal::load()));
@@ -439,7 +441,10 @@ impl Setting {
 
     /// Attach what this setting means to `app`: `Ok(None)` when it is [`Setting::Off`] and
     /// nothing is checked, otherwise [`attach`]'s answer.
-    pub fn apply(self, app: &App) -> Result<Option<(Choice, Arc<Speller>)>, Unchecked> {
+    pub fn apply(
+        self,
+        app: &(impl Spelled + ?Sized),
+    ) -> Result<Option<(Choice, Arc<Speller>)>, Unchecked> {
         match self {
             Setting::Off => {
                 app.set_lexicon(None);
@@ -454,12 +459,17 @@ impl Setting {
 /// Whether a window checking in `current` should [`Setting::apply`] again because the document
 /// has grown into another language — the first sentences typed into an empty window deciding
 /// it rather than the desktop's language. Only while the setting is automatic and the language
-/// only a guess, and only below [`grind_text::spell::GUESS_SAMPLE`] words, past which a guess
+/// only a guess, and only below [`GUESS_SAMPLE`] words, past which a guess
 /// cannot change; `words` is the document's count, which every shell already has for its
 /// status bar.
-pub fn reguess(app: &App, setting: Setting, current: Choice, words: usize) -> bool {
+pub fn reguess(
+    app: &(impl Spelled + ?Sized),
+    setting: Setting,
+    current: Choice,
+    words: usize,
+) -> bool {
     let guessing = matches!(current.source, Source::Guessed | Source::Default);
-    if setting != Setting::Automatic || !guessing || words > grind_text::spell::GUESS_SAMPLE {
+    if setting != Setting::Automatic || !guessing || words > GUESS_SAMPLE {
         return false;
     }
     choose(app, None)
@@ -469,9 +479,109 @@ pub fn reguess(app: &App, setting: Setting, current: Choice, words: usize) -> bo
 /// [`attach`] in the document's own language, unless a dictionary is attached already — what a
 /// shell with no spelling interface of its own calls before it lints, so its problems pane lists
 /// misspellings too. Quietly does nothing when there is nothing to check in.
-pub fn ensure(app: &App) {
+pub fn ensure(app: &(impl Spelled + ?Sized)) {
     if app.spelling_language().is_none() {
         let _ = attach(app, None);
+    }
+}
+
+/// `$XDG_CONFIG_HOME/grind` (`~/.config/grind`, or `%APPDATA%\grind` on Windows) — where the
+/// person's own spelling files live, or `None` with no home directory to put them in.
+fn config_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .filter(|v| !v.is_empty())
+                .map(|home| PathBuf::from(home).join(".config"))
+        })
+        .or_else(|| std::env::var_os("APPDATA").map(PathBuf::from))?;
+    Some(base.join("grind"))
+}
+
+/// Whether spelling is checked at all, and in what — **remembered**, one [`Setting`] per kind of
+/// document, in `$XDG_CONFIG_HOME/grind/spelling`. What makes spelling easy to turn off and
+/// keep off: a spreadsheet full of part numbers, names and codes is somewhere a person may not
+/// want it, and one choice in any window should hold for the next window too.
+///
+/// The file is a line per kind — `spreadsheet off`, `text de-DE` — with `#` comments, and a kind
+/// it does not name is [`Setting::Automatic`]: checked, in the language [`choose`] picks. Like
+/// the word list, it is the person's and never the document's (`doc/spelling.md`, decision 5).
+pub mod preference {
+    use super::*;
+    use grind_core::DocumentKind;
+
+    /// Where the setting lives, or `None` with no home directory to put it in.
+    pub fn path() -> Option<PathBuf> {
+        Some(config_dir()?.join("spelling"))
+    }
+
+    fn key(kind: DocumentKind) -> &'static str {
+        match kind {
+            DocumentKind::Spreadsheet => "spreadsheet",
+            DocumentKind::Text => "text",
+            DocumentKind::Presentation => "presentation",
+        }
+    }
+
+    /// The setting for `kind` in a file's text: the last line naming it wins, and a line this
+    /// build cannot read is ignored rather than read as something else.
+    pub fn parse(text: &str, kind: DocumentKind) -> Setting {
+        text.lines()
+            .rev()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .filter_map(|line| line.split_once(char::is_whitespace))
+            .filter(|(name, _)| *name == key(kind))
+            .find_map(|(_, value)| Setting::from_tag(value))
+            .unwrap_or_default()
+    }
+
+    /// The remembered setting for `kind` — [`Setting::Automatic`] when nothing was ever chosen.
+    pub fn load(kind: DocumentKind) -> Setting {
+        path()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .map_or_else(Setting::default, |text| parse(&text, kind))
+    }
+
+    /// `text` with `kind`'s line replaced by `setting` — or removed, for [`Setting::Automatic`],
+    /// so the file only ever holds what somebody chose. Every other line, comments included, is
+    /// kept as it was.
+    pub fn with(text: &str, kind: DocumentKind, setting: Setting) -> String {
+        let mut lines: Vec<String> = text
+            .lines()
+            .filter(|line| {
+                line.trim()
+                    .split_once(char::is_whitespace)
+                    .is_none_or(|(name, _)| name != key(kind))
+            })
+            .map(str::to_owned)
+            .collect();
+        if setting != Setting::Automatic {
+            lines.push(format!("{} {}", key(kind), setting.tag()));
+        }
+        let mut out = lines.join("\n");
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out
+    }
+
+    /// Remember `setting` for `kind`. Nothing is written when it is already what is remembered.
+    pub fn save(kind: DocumentKind, setting: Setting) -> std::io::Result<PathBuf> {
+        let path = path().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "no home directory")
+        })?;
+        let existing = std::fs::read_to_string(&path).unwrap_or_default();
+        if parse(&existing, kind) == setting {
+            return Ok(path);
+        }
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(&path, with(&existing, kind, setting))?;
+        Ok(path)
     }
 }
 
@@ -484,16 +594,7 @@ pub mod personal {
 
     /// Where the list lives, or `None` with no home directory to put it in.
     pub fn path() -> Option<PathBuf> {
-        let base = std::env::var_os("XDG_CONFIG_HOME")
-            .filter(|v| !v.is_empty())
-            .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .filter(|v| !v.is_empty())
-                    .map(|home| PathBuf::from(home).join(".config"))
-            })
-            .or_else(|| std::env::var_os("APPDATA").map(PathBuf::from))?;
-        Some(base.join("grind").join("words"))
+        Some(config_dir()?.join("words"))
     }
 
     /// The words in a list's text: one per line, blank lines and `#` comments ignored.
@@ -501,7 +602,7 @@ pub mod personal {
         text.lines()
             .map(str::trim)
             .filter(|line| !line.is_empty() && !line.starts_with('#'))
-            .map(grind_text::spell::normalise)
+            .map(normalise)
             .collect()
     }
 
@@ -518,7 +619,7 @@ pub mod personal {
         let path = path().ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::NotFound, "no home directory")
         })?;
-        let word = grind_text::spell::normalise(word.trim());
+        let word = normalise(word.trim());
         let existing = std::fs::read_to_string(&path).unwrap_or_default();
         if parse(&existing).contains(&word) {
             return Ok(path);
@@ -540,7 +641,7 @@ pub mod personal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grind_text::BlockKind;
+    use grind_text::{App, BlockKind};
 
     fn english() -> Speller {
         Speller::new(Language::English, BTreeSet::new())
@@ -802,6 +903,47 @@ mod tests {
             !reguess(&app, Setting::Automatic, guessed, 10_000),
             "past the sample"
         );
+    }
+
+    #[test]
+    fn the_remembered_setting_is_one_line_per_kind_and_automatic_is_no_line() {
+        use grind_core::DocumentKind::{Spreadsheet, Text};
+        let text = "# mine\nspreadsheet off\n";
+        assert_eq!(preference::parse(text, Spreadsheet), Setting::Off);
+        assert_eq!(preference::parse(text, Text), Setting::Automatic);
+        assert_eq!(
+            preference::parse("text klingon\ntext de\n", Text),
+            Setting::In(Language::German)
+        );
+        let both = preference::with(text, Text, Setting::In(Language::French));
+        assert_eq!(both, "# mine\nspreadsheet off\ntext fr-FR\n");
+        assert_eq!(
+            preference::parse(&both, Text),
+            Setting::In(Language::French)
+        );
+        let back = preference::with(&both, Spreadsheet, Setting::Automatic);
+        assert_eq!(back, "# mine\ntext fr-FR\n");
+        assert_eq!(preference::with("", Spreadsheet, Setting::Automatic), "");
+    }
+
+    #[test]
+    fn a_spreadsheet_is_checked_through_the_same_door() {
+        let app = grind_sheet::App::new();
+        let at = grind_sheet::Pos::new(0, 0);
+        app.enter(
+            0,
+            at,
+            "Das ist ein Haus mit einem Fehller.",
+            grind_sheet::RecalcMode::Document,
+        )
+        .unwrap();
+        let (choice, _) = attach(&app, None).unwrap();
+        assert_eq!(choice.language, Language::German);
+        let wrong = app.misspellings(None).unwrap();
+        assert_eq!(wrong.len(), 1);
+        assert_eq!(wrong[0].word, "Fehller");
+        assert!(Setting::Off.apply(&app).unwrap().is_none());
+        assert!(app.misspellings(None).unwrap().is_empty());
     }
 
     #[test]

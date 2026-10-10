@@ -701,6 +701,28 @@ impl Sheet {
         (rows, cols)
     }
 
+    /// Every cell holding **typed text** — a text value and no formula — in reading order, row
+    /// by row: what spelling checks (`doc/spelling.md`). A formula's result is the formula's,
+    /// not prose somebody typed, and is never checked. One step per occupied cell, so a sparse
+    /// sheet costs what it holds rather than its rectangle ([`Sheet::rows_carrying`]'s reason).
+    pub fn text_cells(&self) -> Vec<(Pos, String)> {
+        let mut out = Vec::new();
+        for (col, column) in self.cols.iter().enumerate() {
+            for rows in column.occupied() {
+                for row in rows {
+                    let pos = Pos::new(row, col as u32);
+                    if let CellValue::Text(text) = column.get(row)
+                        && !self.formulas.contains_key(&pos)
+                    {
+                        out.push((pos, text));
+                    }
+                }
+            }
+        }
+        out.sort_by_key(|(pos, _)| (pos.row, pos.col));
+        out
+    }
+
     /// Every row holding **anything** — [`Sheet::used_rows`]'s five things — as sorted,
     /// disjoint ranges.
     ///

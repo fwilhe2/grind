@@ -11,10 +11,14 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+# The `Lexicon` trait this crate implements, the rules for what a word is, and `Spelled` — the
+# one door into a document of either kind. The dictionaries are the only thing that lives here,
+# and no application crate is a dependency: both are only tested against.
 grind-core = { path = "../core" }
-# The `Lexicon` trait this crate implements, and the rules for what a word is: those are the
-# word processor's, and the dictionaries are the only thing that lives here.
-grind-text = { path = "../text" }
 # A Hunspell-compatible checker in pure Rust (doc/spelling.md, "Why spellbook"): no system
 # library, so the same answers on every platform this suite builds for. Pre-1.0, so pinned.
 spellbook = "=0.4.2"
+
+[dev-dependencies]
+grind-text = { path = "../text" }
+grind-sheet = { path = "../sheet" }

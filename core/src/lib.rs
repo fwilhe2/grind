@@ -36,6 +36,7 @@ pub mod odf;
 pub mod page;
 pub mod projection;
 pub mod search;
+pub mod spell;
 pub mod style;
 pub mod third_party;
 pub mod utf16;

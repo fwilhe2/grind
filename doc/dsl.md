@@ -532,7 +532,7 @@ by a test") made mechanical rather than promised.
 | A cell whose cached value disagrees with its formula | `stale-value` | sheet — loop B's check, pointed at one document |
 | A colour outside `style::PALETTE` | `off-palette` | both, as a hint, off by default |
 | A construct the projection cannot spell | `unspellable` | both — the bijectivity guard, as a diagnostic. Charts for the sheet, images for text |
-| A word the spelling dictionary does not know | `misspelt` | text — a warning, and only when a dictionary is attached (`doc/spelling.md`): a build without `grind-spell` has the rule and never fires it |
+| A word the spelling dictionary does not know | `misspelt` | both — a warning, and only when a dictionary is attached (`doc/spelling.md`): a build without `grind-spell` has the rule and never fires it, and in a spreadsheet only typed text is checked and `grind sheet spelling off` silences it |
 
 Two rows of the original table became two rules rather than one (`empty-reference` and
 `missing-sheet`): they share a sentence and nothing else — one is an error and the other is a

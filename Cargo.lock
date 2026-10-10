@@ -1291,6 +1291,7 @@ name = "grind-spell"
 version = "0.0.0"
 dependencies = [
  "grind-core",
+ "grind-sheet",
  "grind-text",
  "spellbook",
 ]

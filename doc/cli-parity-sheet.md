@@ -242,7 +242,18 @@ stops ratcheting.
   colour (`--hints`, off by default) and anything a `.grind` of the document would not carry.
   `--rules` lists them, `--off <rule>` silences one, and an *error*-severity finding exits
   non-zero so CI can gate on it. Nothing is written — linting a file leaves its bytes exactly as
-  they were, the same promise view modes make
+  they were, the same promise view modes make. With spelling on (`grind sheet spelling`), a
+  misspelt word in a text cell too
+- `set_lexicon` — `grind sheet spell`, which attaches `grind_spell`'s dictionary for the
+  document's language (`doc/spelling.md`; `--language` names one), and `grind sheet lint`, which
+  attaches the one `grind sheet spelling` remembers — or none, once it says `off`
+- `spelling_language` — `grind sheet spell`, which prints the language it checks in, and why, on
+  stderr
+- `misspellings` — `grind sheet spell [--sheet NAME]`, one `Sheet1.B4<TAB>offset<TAB>word` line per
+  misspelt word in a text cell, and `grind sheet lint`'s `misspelt` rule
+- `suggest` — `grind sheet spell --suggest`, a fourth column with what each word might have been
+- `correct` — `grind sheet correct <cell> <word> <with> [--at N]`, one undo step; the cell stays
+  text and keeps its look
 - `calculations` — `grind sheet calculations`, one line per calculated cell (address, formula,
   result, the functions it calls) plus a tally of which functions the document uses.
   `--filter` narrows it by sheet, address, formula text or function name, through

@@ -31,6 +31,7 @@ use crate::formula::lex::CellRef;
 use crate::formula::parse::{Expr, parse};
 use crate::graph::RefIndex;
 use crate::model::{Document, Pos};
+use crate::spell::Lexicon;
 use crate::style::CellStyle;
 
 /// A cell whose cached value is not what its formula computes.
@@ -91,17 +92,37 @@ pub const UNSPELLABLE: Rule = Rule {
     what: "a construct the projection cannot spell",
 };
 
+/// A word in a text cell the spelling dictionary does not know (`doc/spelling.md`, "In a
+/// spreadsheet") — `grind_text::lint::MISSPELT`'s twin, under the same id.
+///
+/// Runs only when there *is* a dictionary — [`lint_with`] with a lexicon, which is what
+/// [`crate::App::lint`] does once a shell or the CLI has attached one — so spelling turned off
+/// is this rule silent. Only typed text is checked: a number, a date and a formula's result
+/// have no words somebody wrote. A warning, and never a reason for `grind lint` to fail a build.
+pub const MISSPELT: Rule = Rule {
+    id: "misspelt",
+    severity: Severity::Warning,
+    what: "a word the spelling dictionary does not know",
+};
+
 /// Every rule this application has, in the order `grind sheet lint --rules` prints them.
-pub const RULES: [Rule; 5] = [
+pub const RULES: [Rule; 6] = [
     STALE_VALUE,
     MISSING_SHEET,
     EMPTY_REFERENCE,
     OFF_PALETTE,
     UNSPELLABLE,
+    MISSPELT,
 ];
 
-/// Check a document against every rule `options` wants.
+/// Check a document against every rule `options` wants — every rule but [`MISSPELT`], which
+/// needs a dictionary ([`lint_with`]).
 pub fn lint(doc: &Document, options: &Options) -> Report {
+    lint_with(doc, options, None)
+}
+
+/// [`lint`], and spelling as well when there is a `lexicon` to check it against.
+pub fn lint_with(doc: &Document, options: &Options, lexicon: Option<&dyn Lexicon>) -> Report {
     let mut report = Report::default();
     if options.wants(&STALE_VALUE) {
         stale_values(doc, &mut report);
@@ -117,6 +138,11 @@ pub fn lint(doc: &Document, options: &Options) -> Report {
     }
     if options.wants(&UNSPELLABLE) {
         unspellable(doc, &mut report);
+    }
+    if let Some(lexicon) = lexicon
+        && options.wants(&MISSPELT)
+    {
+        misspelt(doc, lexicon, &mut report);
     }
     report.sort();
     report
@@ -320,6 +346,24 @@ fn unspellable(doc: &Document, report: &mut Report) {
                     chart.kind.class(),
                     chart.x,
                     chart.y
+                ),
+            )) {
+                return;
+            }
+        }
+    }
+}
+
+fn misspelt(doc: &Document, lexicon: &dyn Lexicon, report: &mut Report) {
+    for (index, sheet) in doc.sheets.iter().enumerate() {
+        for wrong in crate::spell::check_sheet(index, sheet, lexicon) {
+            if !report.push(Diagnostic::new(
+                &MISSPELT,
+                wrong.address(&sheet.name),
+                format!(
+                    "{:?} is not in the {} dictionary",
+                    wrong.word,
+                    lexicon.language()
                 ),
             )) {
                 return;

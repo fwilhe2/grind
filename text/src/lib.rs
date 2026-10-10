@@ -922,12 +922,6 @@ impl App {
         lexicon.map_or_else(Vec::new, |l| l.suggest(&spell::normalise(word)))
     }
 
-    /// Which of `lexicons` knows the most of this document's words ([`spell::guess`]) — how a
-    /// language is picked for a document that does not state one.
-    pub fn guess_language(&self, lexicons: &[&dyn spell::Lexicon]) -> Option<usize> {
-        spell::guess(&self.state.read().unwrap().doc.blocks, lexicons)
-    }
-
     /// Replace the `word` at `at` with `with` — what picking a suggestion does — in one undo
     /// step, keeping the formatting the word's first character had.
     ///
@@ -2705,6 +2699,26 @@ fn block_at(state: &State, index: usize) -> Result<Block> {
         .block(index)
         .cloned()
         .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(index))))
+}
+
+/// What `grind-spell` chooses a language through and attaches a dictionary to — each method the
+/// inherent one of the same name, and [`spell::sample`] for the guess.
+impl grind_core::spell::Spelled for App {
+    fn set_lexicon(&self, lexicon: Option<Arc<dyn spell::Lexicon>>) {
+        App::set_lexicon(self, lexicon);
+    }
+
+    fn spelling_language(&self) -> Option<String> {
+        App::spelling_language(self)
+    }
+
+    fn stated_language(&self) -> Option<String> {
+        self.language()
+    }
+
+    fn sample(&self) -> Vec<String> {
+        spell::sample(&self.state.read().unwrap().doc.blocks)
+    }
 }
 
 #[cfg(test)]

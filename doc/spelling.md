@@ -101,11 +101,40 @@ Together the seven are about 12 MB of word lists, compiled into every binary tha
 spelling. A dictionary is parsed only when it is first asked for, so a binary that checks one
 language pays to load one.
 
+## In a spreadsheet
+
+Built 2026-10-10. The same rules, the same dictionaries and the same choice of language, through
+the same door: what a word is and which words are checked moved from `grind_text::spell` into
+`grind_core::spell` the day a second application wanted them, beside the `Lexicon` trait and a
+`Spelled` trait that each application's `App` implements — so `grind-spell` chooses, attaches and
+turns off a dictionary without naming either application, and depends on neither.
+
+1. **Only typed text is checked.** A cell holding a text value with no formula behind it — a
+   heading, a label, a note (`Sheet::text_cells`). A number, a date and a boolean have no words,
+   and a formula's result is what the formula computed rather than prose somebody wrote, so
+   `="wrogn"` is not underlined. Inside a cell the word rules are decision 3's.
+2. **The language a spreadsheet states is its locale's** — `fo:language` on the default cell
+   style, which `Document::locale` already reads to decide how numbers are spelled. Then the
+   guess, as for text.
+3. **The misspelt ranges travel in the `Viewport`** (`Viewport::misspelt`), as character ranges
+   into what each cell displays, so no shell checks a word itself and every shell underlines the
+   same ones. Empty when no dictionary is attached, which is what *off* is.
+4. **A correction is `App::correct(sheet, cell, offset, word, with)`**: one undo step, the cell
+   stays text whatever the new word looks like, and dependants recalculate.
+5. **Easy to turn off, and it stays off.** A spreadsheet of part numbers, surnames and codes is
+   somewhere a person may well not want it. One choice — `off`, `auto`, or a language — is
+   **remembered** per kind of document in `$XDG_CONFIG_HOME/grind/spelling`
+   (`grind_spell::preference`), beside the personal word list and for the same reason: it is the
+   person's, never the document's. Every spreadsheet window opens with it and every toggle writes
+   it; `grind sheet spelling off` sets it from a terminal, and `grind sheet lint` and `grind lint`
+   follow it. The text windows do not read it yet: their Spelling menus are still the session's
+   (a gap below).
+
 ## Where it reaches
 
 | Client | What it has |
 |---|---|
-| `grind` | `grind text spell [range] [--language] [--suggest]`, `--add`, `grind text correct`; `misspelt` in `grind text lint` and `grind lint` |
+| `grind` | `grind text spell [range] [--language] [--suggest]`, `--add`, `grind text correct`; `misspelt` in `grind text lint` and `grind lint`. For spreadsheets `grind sheet spell [--sheet] [--language] [--suggest]`, `grind sheet correct <cell> <word> <with> [--at]`, and `grind sheet spelling [auto\|off\|<lang>]` — the remembered switch, which `grind sheet lint` and `grind lint` follow |
 | `grind-text-gtk` | Wavy underlines (not under the word still being typed), suggestions, Ignore All and Add to Dictionary on right-click, a Spelling submenu (Automatic, each language in its own name, Off), the language in the status bar, and Check Document |
 | `grind-tui` | Words underlined in red (not the one being typed), `]`/`[` to the next or previous with suggestions on the status line, `:fix N` or `:fix <word>`, `:spell ignore` and `:spell add`, `:spell auto\|en\|de\|fr\|es\|it\|pt\|pl\|off`, the language on the status bar, and `:lint` |
 | `grind-win32` | A squiggle in Fluent's critical red, suggestions with Ignore All and Add to Dictionary at the head of the context menu (right click, or Shift+F10 with the caret in the word), F7 for the next word with the same popup, View ▸ Spelling Language…, the language on the status bar, and Check Document |
@@ -131,6 +160,9 @@ language pays to load one.
 - **The Mac does not guess again.** Its menu is a view over `grind_spell::Setting` like every
   other shell's, but a new document's guess is not revisited as it grows (`grind_spell::reguess`,
   which the terminal and Windows call after each edit), and the language is not on a status line.
+- **The text windows do not remember.** `grind_spell::preference` keeps a setting per kind of
+  document and the spreadsheet windows read and write theirs; the word processor's Spelling menus
+  are still the session's, and turning them to the remembered setting is a line in each.
 - **The browser.** Twelve megabytes the page should fetch on first use, one language at a time, rather than carry, the way
   `grind-print`'s fonts are fetched.
 - **A personal list in the projection or the document.** Deliberately not (decision 5).

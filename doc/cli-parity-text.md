@@ -202,7 +202,6 @@ had no width and therefore no lines.
 - `language` — `grind text spell` without `--language`: the language the document states is the second thing asked
 - `misspellings` — `grind text spell [range]`, one `p12+40<TAB>word` line per misspelt word, and `grind text lint`'s `misspelt` rule
 - `suggest` — `grind text spell --suggest`, a third column with what each word might have been
-- `guess_language` — `grind text spell` on a document that states no language: the dictionary that knows most of its words is the one it checks in
 - `correct` — `grind text correct <at> <word> <with>`, one undo step, the word's formatting kept
 - `counts` — `grind text words` — blocks, headings, words, characters
 - `font_generics` — `grind text export-pdf`, `pages` and `preview`, which fall back to a face of the declared kind when a family is not installed; nothing prints the map on its own

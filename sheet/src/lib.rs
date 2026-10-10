@@ -43,6 +43,7 @@ pub mod odf;
 pub mod place;
 pub mod projection;
 pub mod rule;
+pub mod spell;
 pub mod style;
 pub mod summary;
 pub mod table_format;
@@ -66,6 +67,7 @@ pub use chart::{
 };
 pub use filter::Filter;
 pub use model::{CellValue, Checkbox, Document, Link, Pos, Sheet, Span};
+pub use spell::{Lexicon, Misspelling};
 pub use table_format::{TableOptions, TotalsFunction};
 
 /// What can go wrong with a **spreadsheet**.
@@ -88,6 +90,9 @@ pub enum Error {
     /// A formula or a name that is not what §5 says one is. Rejected at the point it is
     /// *defined* rather than stored and discovered later — see [`App::set_name`].
     Formula(String),
+    /// A correction aimed at a cell that no longer holds the word it names — the document
+    /// changed between finding a misspelling and fixing it ([`App::correct`]).
+    Stale(String),
 }
 
 impl fmt::Display for Error {
@@ -102,6 +107,7 @@ impl fmt::Display for Error {
             ),
             Error::BadSheet(e) => write!(f, "{e}"),
             Error::Formula(e) => write!(f, "{e}"),
+            Error::Stale(e) => write!(f, "{e}"),
         }
     }
 }
@@ -263,6 +269,11 @@ pub struct Viewport {
     /// narrows to fit a column ([`Viewport::narrower`]) — and the locale they are spelled in.
     general: Vec<bool>,
     locale: Option<locale::Locale>,
+    /// The misspelt words of every cell drawn here that has any, as character ranges into what
+    /// the cell displays — empty unless a dictionary is attached ([`App::set_lexicon`]). Carried
+    /// so that four shells underline exactly the words the core found, and a list for `names`'
+    /// reason: almost every cell has none.
+    misspelt: Vec<(Pos, Vec<Range<usize>>)>,
 }
 
 /// One merged range as a renderer draws it: the whole area, with what its top-left cell shows.
@@ -381,6 +392,16 @@ impl Viewport {
         &self.checkboxes
     }
 
+    /// The misspelt words in what one cell displays, as character ranges into
+    /// [`Viewport::text`] — what a renderer underlines. Empty for a cell with none, and for every
+    /// cell when no dictionary is attached. A merge's words are its top-left cell's.
+    pub fn misspelt(&self, row: u32, col: u32) -> &[Range<usize>] {
+        self.misspelt
+            .iter()
+            .find(|(pos, _)| *pos == Pos::new(row, col))
+            .map_or(&[], |(_, ranges)| ranges.as_slice())
+    }
+
     /// Whether one cell is hidden under a merge — inside one and not its top-left cell.
     pub fn covered(&self, row: u32, col: u32) -> bool {
         self.merge_at(row, col)
@@ -432,6 +453,11 @@ pub struct App {
     /// Its own lock rather than a `State` field, so a read that wants an overlay does not
     /// have to take the write lock to fill it. The order is always state-then-analysis.
     analysis: RwLock<Option<Arc<view::Analysis>>>,
+    /// The dictionary spelling is checked against, when a shell or the CLI has handed one in
+    /// ([`App::set_lexicon`]). Beside the document rather than in it: whether somebody wants
+    /// their cells checked, and in which language, is theirs and never written
+    /// (`doc/spelling.md`, decision 5). Its own lock, taken after `state`'s.
+    lexicon: RwLock<Option<Arc<dyn spell::Lexicon>>>,
 }
 
 impl App {
@@ -1705,6 +1731,22 @@ impl App {
             .filter(|(pos, _)| rows.contains(&pos.row) && cols.contains(&pos.col))
             .map(|(pos, c)| (pos, checkbox_state(&state.doc, sheet, c)))
             .collect();
+        let misspelt = match self.lexicon.read().unwrap().clone() {
+            None => Vec::new(),
+            Some(lexicon) => {
+                let anchors = merges.iter().map(|m: &Merged| m.anchor);
+                let cells = rows
+                    .clone()
+                    .flat_map(|row| cols.clone().map(move |col| Pos::new(row, col)));
+                cells
+                    .chain(anchors)
+                    .filter_map(|pos| {
+                        let ranges = misspelt_shown(&state.doc, s, pos, lexicon.as_ref());
+                        (!ranges.is_empty()).then_some((pos, ranges))
+                    })
+                    .collect()
+            }
+        };
         Ok(Viewport {
             rows,
             cols,
@@ -1717,6 +1759,7 @@ impl App {
             checkboxes,
             general,
             locale: state.doc.locale.clone(),
+            misspelt,
         })
     }
 
@@ -1877,8 +1920,104 @@ impl App {
     /// stored classification goes stale and a derived one cannot). `grind sheet lint` is the
     /// CLI twin, and a shell that wants squiggles turns each address into a byte range through
     /// the projection's span map (§6.2) rather than by inventing a second addressing.
+    ///
+    /// With a [`spell::Lexicon`] attached ([`App::set_lexicon`]) the `misspelt` rule runs too, so
+    /// every problems pane lists the words the dictionary does not know with no code of its own.
     pub fn lint(&self, options: &grind_core::lint::Options) -> grind_core::lint::Report {
-        lint::lint(&self.state.read().unwrap().doc, options)
+        let state = self.state.read().unwrap();
+        let lexicon = self.lexicon.read().unwrap().clone();
+        lint::lint_with(&state.doc, options, lexicon.as_deref())
+    }
+
+    // --- spelling (`doc/spelling.md`, "In a spreadsheet") ---
+
+    /// Check spelling against `lexicon` from now on, or with `None` stop checking — which is
+    /// how spelling is turned off.
+    ///
+    /// Observers are **not** told: the document has not changed, and an observer's one signal
+    /// means it has. The caller that attaches a lexicon redraws its own grid.
+    pub fn set_lexicon(&self, lexicon: Option<Arc<dyn spell::Lexicon>>) {
+        *self.lexicon.write().unwrap() = lexicon;
+    }
+
+    /// The language spelling is being checked in — the attached lexicon's BCP 47 tag — or `None`
+    /// when nothing is checked.
+    pub fn spelling_language(&self) -> Option<String> {
+        let lexicon = self.lexicon.read().unwrap();
+        lexicon.as_ref().map(|l| l.language().to_owned())
+    }
+
+    /// Every misspelt word in one sheet, or in every sheet with `None`, in reading order — empty
+    /// when no dictionary is attached. Only typed text is checked: never a number, a date or a
+    /// formula's result ([`Sheet::text_cells`]).
+    pub fn misspellings(&self, sheet: Option<usize>) -> Result<Vec<spell::Misspelling>> {
+        let Some(lexicon) = self.lexicon.read().unwrap().clone() else {
+            return Ok(Vec::new());
+        };
+        let state = self.state.read().unwrap();
+        let sheets = match sheet {
+            Some(sheet) => {
+                state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+                sheet..sheet + 1
+            }
+            None => 0..state.doc.sheets.len(),
+        };
+        Ok(sheets
+            .flat_map(|i| spell::check_sheet(i, &state.doc.sheets[i], lexicon.as_ref()))
+            .collect())
+    }
+
+    /// What `word` might have been, best first — empty when no dictionary is attached. Slow next
+    /// to [`App::misspellings`] (tens of milliseconds), so it is asked one word at a time.
+    pub fn suggest(&self, word: &str) -> Vec<String> {
+        let lexicon = self.lexicon.read().unwrap().clone();
+        lexicon.map_or_else(Vec::new, |l| l.suggest(&spell::normalise(word)))
+    }
+
+    /// Replace the `word` at character `offset` of a text cell with `with` — what picking a
+    /// suggestion does — as one undo step, and recalculate what reads the cell. The cell stays
+    /// text whatever the correction looks like, and keeps its style and format.
+    ///
+    /// The word is named rather than only measured so that a correction aimed at a cell that has
+    /// changed since the misspelling was found is refused instead of overwriting whatever now
+    /// sits there.
+    pub fn correct(
+        &self,
+        sheet: usize,
+        pos: Pos,
+        offset: usize,
+        word: &str,
+        with: &str,
+    ) -> Result<Option<Recalc>> {
+        self.mutate(|state| {
+            let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+            let at = a1::format(Some(&s.name), pos);
+            let text = match (s.get(pos), s.formula(pos)) {
+                (CellValue::Text(text), None) => text,
+                _ => return Err(Error::Stale(format!("{at} holds no typed text"))),
+            };
+            let chars: Vec<char> = text.chars().collect();
+            let len = word.chars().count();
+            let found: String = chars.iter().skip(offset).take(len).collect();
+            if found != word || offset + len > chars.len() {
+                return Err(Error::Stale(format!(
+                    "{at}+{offset} reads {found:?}, not {word:?}"
+                )));
+            }
+            let corrected: String = chars[..offset]
+                .iter()
+                .copied()
+                .chain(with.chars())
+                .chain(chars[offset + len..].iter().copied())
+                .collect();
+            let edit = Action::SetFormula {
+                sheet,
+                pos,
+                formula: None,
+                value: CellValue::Text(corrected),
+            };
+            commit(state, sheet, vec![edit], RecalcMode::Document)
+        })
     }
 
     /// Every calculated cell in the document, sheet by sheet and address by address.
@@ -2893,6 +3032,37 @@ fn entered_kind(value: &CellValue) -> Entered {
 }
 
 /// [`App::find`] under a lock somebody else already holds.
+/// The misspelt words of one cell, as character ranges into what it **displays** — its own
+/// text, found inside a text format's surrounding words (`"Item: "@`) where it has one. Empty for
+/// any cell that is not typed text ([`Sheet::text_cells`]'s rule), and for one whose display does
+/// not contain its text at all.
+fn misspelt_shown(
+    doc: &Document,
+    s: &Sheet,
+    pos: Pos,
+    lexicon: &dyn spell::Lexicon,
+) -> Vec<Range<usize>> {
+    let CellValue::Text(text) = s.get(pos) else {
+        return Vec::new();
+    };
+    if s.formula(pos).is_some() {
+        return Vec::new();
+    }
+    let unknown = spell::unknown(&text, lexicon);
+    if unknown.is_empty() {
+        return Vec::new();
+    }
+    let shown = render_in(s, pos, doc.null_date, doc.locale.as_ref());
+    let Some(byte) = shown.find(text.as_str()) else {
+        return Vec::new();
+    };
+    let shift = shown[..byte].chars().count();
+    unknown
+        .into_iter()
+        .map(|(range, _)| range.start + shift..range.end + shift)
+        .collect()
+}
+
 fn hits(doc: &Document, search: &find::Search) -> Result<Vec<find::Hit>> {
     let sheets = match search.sheet {
         Some(sheet) => {
@@ -3491,4 +3661,31 @@ pub fn write_bytes(doc: &Document, form: Form) -> Result<Vec<u8>> {
 pub fn write_file(doc: &Document, path: &Path) -> Result<()> {
     grind_core::atomic::write(path, &write_bytes(doc, Form::from_path(path))?)?;
     Ok(())
+}
+
+/// What `grind-spell` chooses a language through and attaches a dictionary to. The language a
+/// spreadsheet **states** is its own locale's (`Document::locale`, `fo:language` on the default
+/// cell style) — the one setting that already says which language its cells are in.
+impl grind_core::spell::Spelled for App {
+    fn set_lexicon(&self, lexicon: Option<Arc<dyn spell::Lexicon>>) {
+        App::set_lexicon(self, lexicon);
+    }
+
+    fn spelling_language(&self) -> Option<String> {
+        App::spelling_language(self)
+    }
+
+    fn stated_language(&self) -> Option<String> {
+        self.state
+            .read()
+            .unwrap()
+            .doc
+            .locale
+            .as_ref()
+            .map(locale::Locale::tag)
+    }
+
+    fn sample(&self) -> Vec<String> {
+        spell::sample(&self.state.read().unwrap().doc)
+    }
 }
