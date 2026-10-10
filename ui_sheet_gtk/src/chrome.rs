@@ -692,7 +692,29 @@ pub fn view_menu_model() -> gio::Menu {
         Some("win.friendly-formulas"),
     );
     model.append_section(None, &formulas);
+
+    // Spelling is a reading too — it underlines and never writes — and the one whose choice
+    // outlives the window: off here is off in every spreadsheet until it is turned back on.
+    let spelling = gio::Menu::new();
+    spelling.append(Some("Check Spelling"), Some("win.spell-check"));
+    spelling.append_submenu(Some("Spelling Language"), &spelling_menu_model());
+    model.append_section(None, &spelling);
     model
+}
+
+/// The Spelling Language submenu: Automatic, each dictionary by its own name, and Off — radio
+/// items over the one `spell-language` action, as the word processor's window has them.
+pub fn spelling_menu_model() -> gio::Menu {
+    let menu = gio::Menu::new();
+    for setting in grind_spell::Setting::ALL {
+        let item = gio::MenuItem::new(Some(setting.label()), None);
+        item.set_action_and_target_value(
+            Some("win.spell-language"),
+            Some(&setting.tag().to_variant()),
+        );
+        menu.append_item(&item);
+    }
+    menu
 }
 
 /// The sheet tab strip: one toggle button per sheet, and a `+`.

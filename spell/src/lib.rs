@@ -939,11 +939,11 @@ mod tests {
         .unwrap();
         let (choice, _) = attach(&app, None).unwrap();
         assert_eq!(choice.language, Language::German);
-        let wrong = app.misspellings(None).unwrap();
+        let wrong = app.misspellings(None, None).unwrap();
         assert_eq!(wrong.len(), 1);
         assert_eq!(wrong[0].word, "Fehller");
         assert!(Setting::Off.apply(&app).unwrap().is_none());
-        assert!(app.misspellings(None).unwrap().is_empty());
+        assert!(app.misspellings(None, None).unwrap().is_empty());
     }
 
     #[test]

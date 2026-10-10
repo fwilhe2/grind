@@ -356,7 +356,7 @@ fn unspellable(doc: &Document, report: &mut Report) {
 
 fn misspelt(doc: &Document, lexicon: &dyn Lexicon, report: &mut Report) {
     for (index, sheet) in doc.sheets.iter().enumerate() {
-        for wrong in crate::spell::check_sheet(index, sheet, lexicon) {
+        for wrong in crate::spell::check_sheet(index, sheet, None, lexicon) {
             if !report.push(Diagnostic::new(
                 &MISSPELT,
                 wrong.address(&sheet.name),

@@ -67,6 +67,9 @@ pub struct Palette {
     pub header_text: gdk::RGBA,
     /// The accent, for the selection and the active cell.
     pub accent: gdk::RGBA,
+    /// A misspelt word's wavy underline — the theme's own error colour, the red libadwaita
+    /// gives every error, as the word processor's window draws it.
+    pub misspelt: gdk::RGBA,
 }
 
 impl Palette {
@@ -93,6 +96,7 @@ impl Palette {
             // libadwaita ≥ 1.6 has an accent API; on 1.5 the named colour is the way, and
             // it is what the API returns anyway.
             accent: named(widget, "accent_bg_color").unwrap_or(BLUE),
+            misspelt: named(widget, "error_color").unwrap_or(RED),
         }
     }
 }
@@ -100,6 +104,7 @@ impl Palette {
 const WHITE: gdk::RGBA = gdk::RGBA::WHITE;
 const BLACK: gdk::RGBA = gdk::RGBA::BLACK;
 const BLUE: gdk::RGBA = gdk::RGBA::new(0.21, 0.52, 0.89, 1.0);
+const RED: gdk::RGBA = gdk::RGBA::new(0.88, 0.11, 0.14, 1.0);
 
 /// Eight colours for the references in a formula, in the order they appear.
 ///
@@ -353,6 +358,7 @@ mod tests {
             header: background,
             header_text: foreground,
             accent: BLUE,
+            misspelt: RED,
         }
     }
 

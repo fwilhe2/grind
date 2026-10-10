@@ -249,7 +249,7 @@ stops ratcheting.
   attaches the one `grind sheet spelling` remembers — or none, once it says `off`
 - `spelling_language` — `grind sheet spell`, which prints the language it checks in, and why, on
   stderr
-- `misspellings` — `grind sheet spell [--sheet NAME]`, one `Sheet1.B4<TAB>offset<TAB>word` line per
+- `misspellings` — `grind sheet spell [range] [--sheet NAME]`, one `Sheet1.B4<TAB>offset<TAB>word` line per
   misspelt word in a text cell, and `grind sheet lint`'s `misspelt` rule
 - `suggest` — `grind sheet spell --suggest`, a fourth column with what each word might have been
 - `correct` — `grind sheet correct <cell> <word> <with> [--at N]`, one undo step; the cell stays

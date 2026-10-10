@@ -202,6 +202,18 @@ struct Ui {
     /// A text document somebody tried to open here, waiting on the banner's *Open in Text* —
     /// and while it is set, the banner's button means that rather than *Recalculate Anyway*.
     handoff: RefCell<Option<PathBuf>>,
+    /// Whether spelling is checked, and in what — remembered across windows and sessions
+    /// (`grind_spell::preference`, `doc/spelling.md` "In a spreadsheet"), so turning it off once
+    /// keeps it off.
+    spelling: Cell<grind_spell::Setting>,
+    /// What the last setting that was not *Off* was, so Check Spelling turns back on to the
+    /// language somebody chose rather than to Automatic.
+    spelling_on: Cell<grind_spell::Setting>,
+    /// What that setting came to for this document — `None` while nothing is checked.
+    checked: Cell<Option<grind_spell::Choice>>,
+    /// The guess has read all a guess reads and cannot change, so the document is no longer
+    /// sampled on every edit. Cleared whenever a dictionary is attached afresh.
+    settled: Cell<bool>,
 }
 
 impl Ui {
@@ -309,6 +321,7 @@ impl Ui {
         // click to make the arrow keys work. Two traits spell `set_focus`; this is the one.
         gtk::prelude::GtkWindowExt::set_focus(&window, Some(&grid));
 
+        let remembered = grind_spell::preference::load(grind_core::DocumentKind::Spreadsheet);
         let ui = Rc::new(Self {
             app: app.clone(),
             window,
@@ -335,8 +348,16 @@ impl Ui {
             imported: RefCell::new(None),
             closing: Cell::new(false),
             handoff: RefCell::new(None),
+            spelling: Cell::new(remembered),
+            spelling_on: Cell::new(match remembered {
+                grind_spell::Setting::Off => grind_spell::Setting::Automatic,
+                on => on,
+            }),
+            checked: Cell::new(None),
+            settled: Cell::new(false),
         });
         ui.wire(application);
+        ui.check_spelling(false);
         ui.refresh();
         // Nothing has moved yet, so the status bar and the formula bar would otherwise stay
         // empty until the first keystroke.
@@ -362,9 +383,16 @@ impl Ui {
                     // Drain: N changes are one repaint, which is what keeps a recalculation
                     // of a thousand cells from queueing a thousand frames.
                     while receiver.try_recv().is_ok() {}
+                    let opened = ui.loading.get();
                     ui.dirty.set(!ui.loading.replace(false));
                     ui.refresh();
                     ui.grid.invalidate();
+                    // A document just opened is checked in its own language; one being edited
+                    // may still be deciding what its language is.
+                    match opened {
+                        true => ui.check_spelling(false),
+                        false => ui.reconsider_spelling(),
+                    }
                     if ui.app.take_recalc_owed() {
                         ui.recalc_in_background(true, false);
                     }
@@ -482,6 +510,48 @@ impl Ui {
             }
         ));
         self.window.add_action(&shown);
+
+        // Spelling (`doc/spelling.md`, "In a spreadsheet"): one toggle, Shift+F7 as in every
+        // office suite, and a choice of language beside it. Both write the person's remembered
+        // setting rather than anything in the document, so neither needs an undo entry or a
+        // dirty flag — and both mean every spreadsheet window from now on, which is what makes
+        // *off* stay off.
+        let check = gio::SimpleAction::new_stateful(
+            "spell-check",
+            None,
+            &(self.spelling.get() != grind_spell::Setting::Off).to_variant(),
+        );
+        check.connect_activate(glib::clone!(
+            #[strong(rename_to = ui)]
+            self,
+            move |_, _| {
+                let next = match ui.spelling.get() {
+                    grind_spell::Setting::Off => ui.spelling_on.get(),
+                    _ => grind_spell::Setting::Off,
+                };
+                ui.set_spelling(next);
+            }
+        ));
+        self.window.add_action(&check);
+        accelerate(application, "spell-check");
+        let language = gio::SimpleAction::new_stateful(
+            TARGETED[0],
+            Some(glib::VariantTy::STRING),
+            &self.spelling.get().tag().to_variant(),
+        );
+        language.connect_activate(glib::clone!(
+            #[strong(rename_to = ui)]
+            self,
+            move |_, target| {
+                if let Some(setting) = target
+                    .and_then(|v| v.get::<String>())
+                    .and_then(|tag| grind_spell::Setting::from_tag(&tag))
+                {
+                    ui.set_spelling(setting);
+                }
+            }
+        ));
+        self.window.add_action(&language);
 
         // `doc/dsl.md` §6, D9 — the document as its projection, on the other page of the
         // stack. Stateful like the two overlays above and for the same reason: it is a way of
@@ -607,6 +677,88 @@ impl Ui {
 
     fn toast(&self, text: &str) {
         self.toasts.add_toast(adw::Toast::new(text));
+    }
+
+    // --- spelling (`doc/spelling.md`, "In a spreadsheet") ---
+
+    /// Attach a dictionary for what the Spelling setting says — on every open, and when the
+    /// setting changes — and hand the grid the speller its cell menu teaches words to. `say`
+    /// announces the outcome, which a change of setting wants and an open does not; a document
+    /// in a language there is no dictionary for always says so, once, rather than underlining
+    /// every word.
+    fn check_spelling(self: &Rc<Self>, say: bool) {
+        self.settled.set(false);
+        let outcome = self.spelling.get().apply(&self.app);
+        let speller = match outcome {
+            Ok(Some((choice, speller))) => {
+                self.checked.set(Some(choice));
+                if say {
+                    self.toast(&format!(
+                        "Checking spelling in {}, {}",
+                        choice.language.name(),
+                        choice.source.label()
+                    ));
+                }
+                Some(speller)
+            }
+            Ok(None) => {
+                self.checked.set(None);
+                if say {
+                    self.toast("Spelling is off in every spreadsheet until it is turned back on");
+                }
+                None
+            }
+            Err(why) => {
+                self.checked.set(None);
+                self.toast(&format!("Spelling is not checked: {why}"));
+                None
+            }
+        };
+        self.grid.set_speller(speller);
+        if let Some(action) = self.window.lookup_action("spell-check") {
+            action.change_state(&self.checked.get().is_some().to_variant());
+        }
+    }
+
+    /// Choose a spelling setting, remember it for every spreadsheet window, and apply it.
+    fn set_spelling(self: &Rc<Self>, setting: grind_spell::Setting) {
+        self.spelling.set(setting);
+        if setting != grind_spell::Setting::Off {
+            self.spelling_on.set(setting);
+        }
+        if let Err(why) =
+            grind_spell::preference::save(grind_core::DocumentKind::Spreadsheet, setting)
+        {
+            self.toast(&format!("The setting was not remembered: {why}"));
+        }
+        if let Some(action) = self.window.lookup_action("spell-language") {
+            action.change_state(&setting.tag().to_variant());
+        }
+        self.check_spelling(true);
+    }
+
+    /// While the language is only a guess — a new document, or one stating none — guess again
+    /// as it fills, so the first words typed into an empty sheet decide it rather than the
+    /// desktop's language (`grind_spell::reguess`). Settled once the document has more words
+    /// than a guess reads, so a large sheet is not sampled on every edit.
+    fn reconsider_spelling(self: &Rc<Self>) {
+        use grind_spell::Source;
+        let Some(choice) = self.checked.get() else {
+            return;
+        };
+        if self.settled.get()
+            || self.spelling.get() != grind_spell::Setting::Automatic
+            || !matches!(choice.source, Source::Guessed | Source::Default)
+        {
+            return;
+        }
+        let words = grind_core::spell::Spelled::sample(&*self.app).len();
+        if grind_spell::reguess(&self.app, self.spelling.get(), choice, words) {
+            self.check_spelling(false);
+        } else if words >= grind_core::spell::GUESS_SAMPLE {
+            // A guess cannot change past the sample, so stop asking.
+            self.settled.set(true);
+        }
     }
 
     /// A toast with an Undo button — the HIG pattern for anything destructive that is
@@ -1900,7 +2052,7 @@ struct Verb {
 /// Named here rather than inside `wire` so that the View menu, the palette and the shortcuts
 /// window read the same list the wiring does. None of them writes a byte, which is why they
 /// need no confirmation, no dirty flag and no undo entry.
-const READINGS: [(&str, &str, &str); 5] = [
+const READINGS: [(&str, &str, &str); 6] = [
     (
         "friendly-formulas",
         "Read Formulas as Sentences",
@@ -1910,7 +2062,15 @@ const READINGS: [(&str, &str, &str); 5] = [
     ("show-roles", "Show What Each Cell Is", "<Control><Shift>r"),
     ("show-formulas", "Show Formulas Instead of Results", ""),
     ("show-source", "Show the Source", "<Control><Shift>u"),
+    // Shift+F7 is *Automatic Spell Checking* in LibreOffice, so the key a person already has
+    // in their fingers turns it off here too.
+    ("spell-check", "Check Spelling", "<Shift>F7"),
 ];
+
+/// The one action a menu reaches **with a target** — the Spelling Language submenu's radio
+/// items, one per `grind_spell::Setting` — and so the one the palette, which activates an action
+/// with none, cannot offer. Check Spelling is its palette half.
+const TARGETED: [&str; 1] = ["spell-language"];
 
 /// Bind a reading's accelerator, as [`READINGS`] spells it.
 ///
@@ -2727,7 +2887,40 @@ mod chrome_tests {
             .into_iter()
             .map(|verb| verb.name)
             .chain(READINGS.iter().map(|(name, _, _)| *name))
+            .chain(TARGETED)
             .collect()
+    }
+
+    /// The cell menu's spelling sections name the grid's own `spell.` actions, one section per
+    /// word, and the language submenu offers every dictionary and both ends.
+    #[test]
+    fn the_spelling_menus_reach_the_grids_actions_and_every_dictionary() {
+        let model = grid::spelling_menu_model(&[
+            ("recieve".to_owned(), vec!["receive".to_owned()]),
+            ("teh".to_owned(), Vec::new()),
+        ]);
+        assert_eq!(model.n_items(), 2, "one section per word");
+        assert_eq!(
+            targets(&model.upcast()),
+            [
+                "spell.correct",
+                "spell.ignore",
+                "spell.add",
+                "spell.none",
+                "spell.ignore",
+                "spell.add"
+            ]
+        );
+        let languages = chrome::spelling_menu_model();
+        assert_eq!(
+            languages.n_items() as usize,
+            grind_spell::Setting::ALL.len()
+        );
+        assert!(
+            targets(&languages.upcast())
+                .iter()
+                .all(|action| action == "win.spell-language")
+        );
     }
 
     /// A menu item naming an action that does not exist is silent: GTK draws the row and
@@ -2774,6 +2967,11 @@ mod chrome_tests {
                     continue;
                 }
                 if let Some((_, first)) = seen.iter().find(|(seen, _)| *seen == action) {
+                    // A radio group is one action under several targets: one verb, one menu.
+                    let targeted = TARGETED.iter().any(|t| action == format!("win.{t}"));
+                    if targeted && *first == where_ {
+                        continue;
+                    }
                     panic!("{action} is in {first} and again in {where_}");
                 }
                 seen.push((action, where_));
@@ -2793,6 +2991,13 @@ mod chrome_tests {
     fn every_verb_is_in_the_palette_or_is_the_palette() {
         let listed: Vec<&str> = palette_rows().iter().map(|row| row.name).collect();
         for name in every_action() {
+            if TARGETED.contains(&name) {
+                assert!(
+                    !listed.contains(&name),
+                    "{name} needs a target the palette cannot give"
+                );
+                continue;
+            }
             if name == "palette" {
                 assert!(
                     !listed.contains(&name),

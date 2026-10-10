@@ -108,6 +108,15 @@ impl Grid {
     }
 
     /// Which of `doc/view-modes.md`'s overlays this view draws.
+    /// Check spelling with `speller` — the one the window's Spelling setting attached to the
+    /// document — or, with `None`, stop: what the cell menu's Ignore All and Add to Dictionary
+    /// teach. The underlines themselves come from the core (`Viewport::misspelt`), so this only
+    /// redraws.
+    pub fn set_speller(&self, speller: Option<Arc<grind_spell::Speller>>) {
+        self.imp().speller.replace(speller);
+        self.queue_draw();
+    }
+
     pub fn overlays(&self) -> grind_sheet::view::Overlays {
         self.imp().overlays.get()
     }
@@ -679,6 +688,46 @@ pub fn cell_menu_model() -> gio::Menu {
     model
 }
 
+/// How many suggestions the cell menu offers for each misspelt word, and for how many of a
+/// cell's words. Hunspell ranks them and past the first few they are rarely the word meant; and
+/// suggesting is tens of milliseconds a word, which a right click should not wait on for a cell
+/// full of them.
+pub const SUGGESTIONS: usize = 5;
+pub const SPELLING_WORDS: usize = 3;
+
+/// The spelling sections that lead the cell menu over a cell with misspelt words in it
+/// (`doc/spelling.md`, "In a spreadsheet"): for each word, what it might have been — each one
+/// `spell.correct` with `"<index>:<suggestion>"` as its target — then Ignore All and Add to
+/// Dictionary for that word. A free function so a test can walk it with no display.
+pub fn spelling_menu_model(words: &[(String, Vec<String>)]) -> gio::Menu {
+    let model = gio::Menu::new();
+    for (index, (word, suggestions)) in words.iter().enumerate() {
+        let section = gio::Menu::new();
+        for with in suggestions.iter().take(SUGGESTIONS) {
+            let item = gio::MenuItem::new(Some(with), None);
+            item.set_action_and_target_value(
+                Some("spell.correct"),
+                Some(&format!("{index}:{with}").to_variant()),
+            );
+            section.append_item(&item);
+        }
+        if suggestions.is_empty() {
+            section.append(Some("No Suggestions"), Some("spell.none"));
+        }
+        for (label, action) in [
+            ("Ignore All", "spell.ignore"),
+            ("Add to Dictionary", "spell.add"),
+        ] {
+            let item = gio::MenuItem::new(Some(label), None);
+            item.set_action_and_target_value(Some(action), Some(&index.to_string().to_variant()));
+            section.append_item(&item);
+        }
+        // A section's label names the word it is about, which matters once a cell has two.
+        model.append_section(Some(&format!("\u{201c}{word}\u{201d}")), &section);
+    }
+    model
+}
+
 mod imp {
     use super::*;
 
@@ -905,6 +954,13 @@ mod imp {
         /// `gio::Menu` of `win.` actions rather than by hand, so the same verbs the palette
         /// and the keyboard reach are the ones listed here.
         pub cell_menu: OnceCell<gtk::PopoverMenu>,
+        /// The speller the window attached, for the cell menu's Ignore All and Add to
+        /// Dictionary — `None` while spelling is off.
+        pub speller: RefCell<Option<Arc<grind_spell::Speller>>>,
+        /// The misspelt words of the cell the cell menu is open over, in the order its
+        /// spelling sections list them — what `spell.correct`, `spell.ignore` and `spell.add`
+        /// act on.
+        pub spell_target: RefCell<Vec<grind_sheet::Misspelling>>,
         /// Which chart that menu is currently open over.
         pub chart_menu_target: Cell<Option<usize>>,
         /// What the menu is currently open over: columns or rows, and the half-open range
@@ -1009,6 +1065,8 @@ mod imp {
                 chart_menu: OnceCell::new(),
                 chart_menu_target: Cell::new(None),
                 cell_menu: OnceCell::new(),
+                speller: RefCell::new(None),
+                spell_target: RefCell::new(Vec::new()),
                 hide_target: Cell::new(None),
             }
         }
@@ -1213,6 +1271,27 @@ mod imp {
             cell_menu.set_parent(&*widget);
             cell_menu.set_has_arrow(false);
             let _ = self.cell_menu.set(cell_menu);
+
+            // The spelling half of that menu: its own action group on this widget, because the
+            // words it acts on are this widget's state (`spell_target`) rather than the window's.
+            let spell = gio::SimpleActionGroup::new();
+            for name in ["correct", "ignore", "add"] {
+                let action = gio::SimpleAction::new(name, Some(glib::VariantTy::STRING));
+                action.connect_activate(glib::clone!(
+                    #[weak(rename_to = grid)]
+                    widget,
+                    move |_, target| {
+                        if let Some(target) = target.and_then(|v| v.get::<String>()) {
+                            grid.imp().spell(name, &target);
+                        }
+                    }
+                ));
+                spell.add_action(&action);
+            }
+            let none = gio::SimpleAction::new("none", None);
+            none.set_enabled(false);
+            spell.add_action(&none);
+            widget.insert_action_group("spell", Some(&spell));
 
             self.editor.set_buffer(&self.buffer);
             // The caret moving is its own event: the completion and the signature hint are
@@ -3408,8 +3487,81 @@ mod imp {
             if !inside {
                 self.set_selection(Selection::at(pos));
             }
+            menu.set_menu_model(Some(&self.cell_menu_for(pos)));
             menu.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
             menu.popup();
+        }
+
+        /// The cell menu for one cell: its misspelt words' sections first, when spelling is on
+        /// and it has any, then the menu every cell has.
+        fn cell_menu_for(&self, pos: Pos) -> gio::Menu {
+            let words = match (self.speller.borrow().is_some(), self.app.borrow().clone()) {
+                (true, Some(app)) => app
+                    .misspellings(Some(self.sheet.get()), Some((pos, pos)))
+                    .unwrap_or_default(),
+                _ => Vec::new(),
+            };
+            let words: Vec<grind_sheet::Misspelling> =
+                words.into_iter().take(SPELLING_WORDS).collect();
+            let model = gio::Menu::new();
+            if let Some(app) = self.app.borrow().clone()
+                && !words.is_empty()
+            {
+                let offers: Vec<(String, Vec<String>)> = words
+                    .iter()
+                    .map(|wrong| (wrong.word.clone(), app.suggest(&wrong.word)))
+                    .collect();
+                let spelling = super::spelling_menu_model(&offers);
+                for section in 0..spelling.n_items() {
+                    model.append_item(&gio::MenuItem::from_model(&spelling, section));
+                }
+            }
+            let rest = super::cell_menu_model();
+            for section in 0..rest.n_items() {
+                model.append_item(&gio::MenuItem::from_model(&rest, section));
+            }
+            self.spell_target.replace(words);
+            model
+        }
+
+        /// One of the cell menu's spelling items: `correct` with `"<index>:<suggestion>"`, or
+        /// `ignore`/`add` with the index of the word they are about.
+        fn spell(&self, verb: &str, target: &str) {
+            let (index, with) = match verb {
+                "correct" => match target.split_once(':') {
+                    Some((index, with)) => (index, Some(with)),
+                    None => return,
+                },
+                _ => (target, None),
+            };
+            let Some(wrong) = index
+                .parse::<usize>()
+                .ok()
+                .and_then(|i| self.spell_target.borrow().get(i).cloned())
+            else {
+                return;
+            };
+            match with {
+                Some(with) => {
+                    let Some(app) = self.app.borrow().clone() else {
+                        return;
+                    };
+                    // Refused only when the cell changed under the open menu; the menu is gone
+                    // and the cell shows what it now holds, which says so.
+                    let _ = app.correct(wrong.sheet, wrong.pos, wrong.offset, &wrong.word, with);
+                }
+                None => {
+                    if let Some(speller) = self.speller.borrow().as_ref() {
+                        speller.accept(&wrong.word);
+                    }
+                    // Ignore All is this session's; Add to Dictionary is the person's list, so
+                    // the next window knows the word too (`doc/spelling.md`, decision 5).
+                    if verb == "add" {
+                        let _ = grind_spell::personal::add(&wrong.word);
+                    }
+                    self.obj().queue_draw();
+                }
+            }
         }
 
         /// The right-click menu over a chart, at the point it was clicked.
@@ -4241,6 +4393,11 @@ mod imp {
                     // The style decides the font and the colour, and may override where the
                     // text sits — but not the *fallbacks*, which stay the value's own rules.
                     let style = viewport.style(row, col);
+                    // A formula shown in place of its result is not the text the core checked.
+                    let misspelt = match formula {
+                        None => viewport.misspelt(row, col),
+                        Some(_) => &[],
+                    };
                     layout.set_attributes(self.cell_attrs(style).as_ref());
                     // In role mode the colour says what the cell *is*, and the document's
                     // own text colour is suppressed with its fill (§4.5). The font is not:
@@ -4368,6 +4525,10 @@ mod imp {
                             .map_or(f.width + geom.scroll_x, |c| geom.cell_rect(row, c).x);
                         paint.w = (stop - cell.x).max(cell.w);
                     }
+                    let pad = match align {
+                        Align::Right => pad,
+                        _ => lead + indent,
+                    };
                     draw_text(
                         f.snapshot,
                         &layout,
@@ -4377,10 +4538,17 @@ mod imp {
                         text_w,
                         text_h,
                         (align, valign),
-                        match align {
-                            Align::Right => pad,
-                            _ => lead + indent,
-                        },
+                        pad,
+                    );
+                    draw_squiggles(
+                        f.snapshot,
+                        &layout,
+                        (&cell, paint),
+                        (text_w, text_h),
+                        (align, valign),
+                        pad,
+                        (text, misspelt),
+                        palette.misspelt,
                     );
                 }
             }
@@ -4481,6 +4649,10 @@ mod imp {
                     continue;
                 }
                 let style = m.style.as_ref();
+                let misspelt = match formula {
+                    None => viewport.misspelt(m.anchor.row, m.anchor.col),
+                    Some(_) => &[],
+                };
                 layout.set_attributes(self.cell_attrs(style).as_ref());
                 let role = self
                     .overlays
@@ -4522,6 +4694,10 @@ mod imp {
                     (w, h) = layout.pixel_size();
                     align = Align::Right;
                 }
+                let pad = match align {
+                    Align::Right => pad,
+                    _ => lead,
+                };
                 draw_text(
                     f.snapshot,
                     layout,
@@ -4531,10 +4707,17 @@ mod imp {
                     w,
                     h,
                     (align, valign),
-                    match align {
-                        Align::Right => pad,
-                        _ => lead,
-                    },
+                    pad,
+                );
+                draw_squiggles(
+                    f.snapshot,
+                    layout,
+                    (&cell, cell),
+                    (w, h),
+                    (align, valign),
+                    pad,
+                    (text, misspelt),
+                    f.palette.misspelt,
                 );
             }
         }
@@ -5098,9 +5281,19 @@ mod imp {
         align: (Align, VAlign),
         pad: f64,
     ) {
+        let (x, y) = origin(cell, (text_w, text_h), align, pad);
+        snapshot.push_clip(&rect(paint.x, paint.y, paint.w, paint.h));
+        snapshot.save();
+        snapshot.translate(&graphene::Point::new(x as f32, y as f32));
+        snapshot.append_layout(layout, &color);
+        snapshot.restore();
+        snapshot.pop();
+    }
+
+    /// Where [`draw_text`] puts the top-left of a layout `size` big inside `cell`.
+    fn origin(cell: &Rect, size: (i32, i32), align: (Align, VAlign), pad: f64) -> (f64, f64) {
         let (align, valign) = align;
-        let text_w = f64::from(text_w);
-        let text_h = f64::from(text_h);
+        let (text_w, text_h) = (f64::from(size.0), f64::from(size.1));
         let x = match align {
             Align::Left => cell.x + pad,
             Align::Center => cell.x + (cell.w - text_w) / 2.0,
@@ -5111,12 +5304,84 @@ mod imp {
             VAlign::Middle => cell.y + (cell.h - text_h) / 2.0,
             VAlign::Bottom => cell.y + cell.h - pad / 2.0 - text_h,
         };
+        (x, y)
+    }
+
+    /// The wavy underline under each misspelt word of a cell `draw_text` has just drawn with
+    /// the same arguments — the word processor's own mark (`ui_text_gtk`'s `squiggle`), so the
+    /// two windows mark a misspelling alike. Placed from the layout's own lines, so a word in
+    /// wrapped text is marked on the line it is on, and clipped as the text was. `misspelt`
+    /// counts characters of `text`, as the core's ranges do.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_squiggles(
+        snapshot: &gtk::Snapshot,
+        layout: &pango::Layout,
+        (cell, paint): (&Rect, Rect),
+        size: (i32, i32),
+        align: (Align, VAlign),
+        pad: f64,
+        (text, misspelt): (&str, &[std::ops::Range<usize>]),
+        ink: gtk::gdk::RGBA,
+    ) {
+        if misspelt.is_empty() {
+            return;
+        }
+        let byte = |chars: usize| {
+            text.char_indices()
+                .nth(chars)
+                .map_or(text.len(), |(at, _)| at) as i32
+        };
+        let (x, y) = origin(cell, size, align, pad);
+        let scale = f64::from(pango::SCALE);
         snapshot.push_clip(&rect(paint.x, paint.y, paint.w, paint.h));
-        snapshot.save();
-        snapshot.translate(&graphene::Point::new(x as f32, y as f32));
-        snapshot.append_layout(layout, &color);
-        snapshot.restore();
+        let mut lines = layout.iter();
+        loop {
+            if let Some(line) = lines.line_readonly() {
+                let (from, to) = (line.start_index(), line.start_index() + line.length());
+                let (_, logical) = lines.line_extents();
+                // The line's bottom less two, where the word processor puts it.
+                let under = y + f64::from(logical.y() + logical.height()) / scale - 2.0;
+                for range in misspelt {
+                    let (start, end) = (byte(range.start).max(from), byte(range.end).min(to));
+                    if start >= end {
+                        continue;
+                    }
+                    let left = f64::from(logical.x() + line.index_to_x(start, false)) / scale;
+                    let right = f64::from(logical.x() + line.index_to_x(end, false)) / scale;
+                    squiggle(
+                        snapshot,
+                        x + left.min(right),
+                        x + left.max(right),
+                        under,
+                        ink,
+                    );
+                }
+            }
+            if !lines.next_line() {
+                break;
+            }
+        }
         snapshot.pop();
+    }
+
+    /// A wavy underline from `left` to `right` with its troughs on `y` — a misspelt word's mark,
+    /// drawn the way `ui_text_gtk` draws it so it cannot be mistaken for underlined text.
+    fn squiggle(snapshot: &gtk::Snapshot, left: f64, right: f64, y: f64, ink: gtk::gdk::RGBA) {
+        const STEP: f32 = 2.0;
+        if right - left < 1.0 {
+            return;
+        }
+        let path = gtk::gsk::PathBuilder::new();
+        let (left, right, y) = (left as f32, right as f32, y as f32);
+        path.move_to(left, y);
+        let mut at = left;
+        let mut up = true;
+        while at < right {
+            at = (at + STEP).min(right);
+            path.line_to(at, if up { y - STEP } else { y });
+            up = !up;
+        }
+        snapshot.append_stroke(&path.to_path(), &gtk::gsk::Stroke::new(1.0), &ink);
     }
 
     /// Draw `layout` turned `degrees` anticlockwise about the middle of `cell`, clipped to it.

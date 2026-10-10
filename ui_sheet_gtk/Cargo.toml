@@ -28,6 +28,10 @@ grind-xlsx = { path = "../xlsx", optional = true }
 # and it is a direct dependency rather than a re-export because ranking a list of words is
 # not a spreadsheet's business to hand on (R8, from the other side).
 grind-core = { path = "../core" }
+# The dictionaries (`doc/spelling.md`, "In a spreadsheet"): the speller the cells are checked
+# against and the remembered switch that turns it off — a plain dependency, as in every native
+# shell.
+grind-spell = { path = "../spell" }
 # gtk4 is reached as `libadwaita::gtk`, so the two versions cannot drift apart.
 # The GNOME HIG widgets — banners, toasts, alert dialogs — are libadwaita's own.
 # v1_5 is the ubuntu-24.04 runtime, and every widget this shell uses exists there.

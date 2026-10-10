@@ -44,10 +44,22 @@ pub fn unknown(text: &str, lexicon: &dyn Lexicon) -> Vec<(std::ops::Range<usize>
     grind_core::spell::unknown(text, &[], lexicon)
 }
 
-/// Every misspelt word on one sheet, in reading order.
-pub fn check_sheet(sheet: usize, s: &Sheet, lexicon: &dyn Lexicon) -> Vec<Misspelling> {
+/// Every misspelt word on one sheet, in reading order — or only in the cells from `within`'s
+/// first corner to its second, inclusive.
+pub fn check_sheet(
+    sheet: usize,
+    s: &Sheet,
+    within: Option<(Pos, Pos)>,
+    lexicon: &dyn Lexicon,
+) -> Vec<Misspelling> {
+    let inside = |pos: Pos| {
+        within.is_none_or(|(start, end)| {
+            (start.row..=end.row).contains(&pos.row) && (start.col..=end.col).contains(&pos.col)
+        })
+    };
     s.text_cells()
         .into_iter()
+        .filter(|(pos, _)| inside(*pos))
         .flat_map(|(pos, text)| {
             unknown(&text, lexicon)
                 .into_iter()
@@ -134,12 +146,12 @@ mod tests {
             ("B2", "ODF https://exmaple.org e.g."),
         ]);
         assert!(
-            app.misspellings(None).unwrap().is_empty(),
+            app.misspellings(None, None).unwrap().is_empty(),
             "nothing attached"
         );
         app.set_lexicon(Some(Arc::new(List(WORDS))));
         let found: Vec<(String, usize, String)> = app
-            .misspellings(None)
+            .misspellings(None, None)
             .unwrap()
             .into_iter()
             .map(|m| (m.address("Sheet1"), m.offset, m.word))

@@ -2517,6 +2517,9 @@ enum Command {
     Spell {
         #[arg(required_unless_present = "add")]
         file: Option<PathBuf>,
+        /// Cells to check, e.g. B2:D9 or Sheet2.A1 — on every sheet checked when unqualified,
+        /// everywhere when left out
+        range: Option<String>,
         /// Check only this sheet, by name
         #[arg(long, value_name = "NAME")]
         sheet: Option<String>,
@@ -2528,7 +2531,7 @@ enum Command {
         #[arg(long)]
         suggest: bool,
         /// Add a word to your own list instead of checking anything
-        #[arg(long, value_name = "WORD", conflicts_with_all = ["sheet", "language", "suggest"])]
+        #[arg(long, value_name = "WORD", conflicts_with_all = ["range", "sheet", "language", "suggest"])]
         add: Option<String>,
     },
 
@@ -4087,6 +4090,7 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
         #[cfg(feature = "spell")]
         Command::Spell {
             file,
+            range,
             sheet,
             language,
             suggest,
@@ -4105,12 +4109,25 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 choice.language.tag(),
                 choice.source.label()
             );
-            let only = match sheet {
+            let mut only = match sheet {
                 Some(name) => Some(a1::sheet(&app, name).say()?),
                 None => None,
             };
+            let mut within = None;
+            if let Some(range) = range {
+                let reference = a1::parse(range).say()?;
+                let (on, start, end) = a1::resolve(&app, &reference).say()?;
+                // A qualified range names its own sheet; an unqualified one is on each checked.
+                if reference.start.sheet.is_some() {
+                    if only.is_some_and(|only| only != on) {
+                        return Err(format!("{range} is not on the sheet --sheet names"));
+                    }
+                    only = Some(on);
+                }
+                within = Some((start, end));
+            }
             let mut lines = Vec::new();
-            for wrong in app.misspellings(only).say()? {
+            for wrong in app.misspellings(only, within).say()? {
                 let name = app.sheet_name(wrong.sheet).say()?;
                 let mut line =
                     format!("{}\t{}\t{}", wrong.address(&name), wrong.offset, wrong.word);

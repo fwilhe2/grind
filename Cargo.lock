@@ -1281,6 +1281,7 @@ dependencies = [
  "async-channel",
  "grind-core",
  "grind-sheet",
+ "grind-spell",
  "grind-xlsx",
  "gtk4",
  "libadwaita",

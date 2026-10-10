@@ -1948,9 +1948,15 @@ impl App {
     }
 
     /// Every misspelt word in one sheet, or in every sheet with `None`, in reading order — empty
-    /// when no dictionary is attached. Only typed text is checked: never a number, a date or a
-    /// formula's result ([`Sheet::text_cells`]).
-    pub fn misspellings(&self, sheet: Option<usize>) -> Result<Vec<spell::Misspelling>> {
+    /// when no dictionary is attached. `within` narrows it to the cells from its first corner to
+    /// its second, inclusive, on whichever sheets are checked: a shell asking about the one cell
+    /// under the pointer does not check the whole sheet to answer. Only typed text is checked:
+    /// never a number, a date or a formula's result ([`Sheet::text_cells`]).
+    pub fn misspellings(
+        &self,
+        sheet: Option<usize>,
+        within: Option<(Pos, Pos)>,
+    ) -> Result<Vec<spell::Misspelling>> {
         let Some(lexicon) = self.lexicon.read().unwrap().clone() else {
             return Ok(Vec::new());
         };
@@ -1963,7 +1969,7 @@ impl App {
             None => 0..state.doc.sheets.len(),
         };
         Ok(sheets
-            .flat_map(|i| spell::check_sheet(i, &state.doc.sheets[i], lexicon.as_ref()))
+            .flat_map(|i| spell::check_sheet(i, &state.doc.sheets[i], within, lexicon.as_ref()))
             .collect())
     }
 
