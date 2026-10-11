@@ -1,0 +1,16 @@
+{
+    "files.associations": {
+        "*.grind": "kdl"
+    },
+    "[kdl]": {
+        "editor.snippetSuggestions": "top",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4
+    },
+    "[rhai]": {
+        "editor.snippetSuggestions": "top",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4
+    },
+    "grind.path": "grind"
+}

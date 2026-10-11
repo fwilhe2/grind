@@ -1,0 +1,82 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "grind: build",
+            "detail": "Build the open script into the spreadsheet beside it",
+            "type": "process",
+            "command": "${config:grind.path}",
+            "args": ["build", "${file}", "-o", "${fileDirname}/${fileBasenameNoExtension}.fods"],
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": {
+                "owner": "grind",
+                "fileLocation": ["autoDetected", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(?:grind: |\\s+)(.*):(\\d+):(\\d+): (.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "message": 4
+                }
+            }
+        },
+        {
+            "label": "grind: test",
+            "detail": "Run the test_… functions in the open script",
+            "type": "process",
+            "command": "${config:grind.path}",
+            "args": ["test", "${file}"],
+            "group": { "kind": "test", "isDefault": true },
+            "problemMatcher": {
+                "owner": "grind",
+                "fileLocation": ["autoDetected", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(?:grind: |\\s+)(.*):(\\d+):(\\d+): (.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "message": 4
+                }
+            }
+        },
+        {
+            "label": "grind: lint",
+            "detail": "Check the open document for problems — a .grind, a .fods, any form",
+            "type": "process",
+            "command": "${config:grind.path}",
+            "args": ["lint", "${file}"],
+            "group": "test",
+            "problemMatcher": {
+                "owner": "grind",
+                "fileLocation": ["autoDetected", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+): (.+?): (error|warning): (.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "code": 4,
+                    "severity": 5,
+                    "message": 6
+                }
+            }
+        },
+        {
+            "label": "grind: recalculate",
+            "detail": "Write every formula's answer into the open .grind, one line of diff per cell",
+            "type": "process",
+            "command": "${config:grind.path}",
+            "args": ["sheet", "recalc", "${file}"],
+            "problemMatcher": []
+        },
+        {
+            "label": "grind: open the built spreadsheet",
+            "detail": "Open what the build task wrote in grind's own window",
+            "type": "process",
+            "command": "grind-sheet-gtk",
+            "args": ["${fileDirname}/${fileBasenameNoExtension}.fods"],
+            "windows": { "command": "grind-win32" },
+            "osx": { "command": "open", "args": ["-a", "Grind", "${fileDirname}/${fileBasenameNoExtension}.fods"] },
+            "problemMatcher": []
+        }
+    ]
+}

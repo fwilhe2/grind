@@ -231,3 +231,15 @@ SPDX-License-Identifier = "LGPL-2.1-only"
 path = ["spell/dictionaries/pl-PL.aff", "spell/dictionaries/pl-PL.dic"]
 SPDX-FileCopyrightText = "2008 Marek Futrega, Marcin Miłkowski and the Polish Native Lang Project"
 SPDX-License-Identifier = "GPL-3.0-only"
+
+# What `grind init` writes into somebody else's project (doc/init.md): a starter script and its
+# data, editor settings, and repository files. Declared rather than annotated because a header
+# would be copied into every project it seeds, and CC0 rather than the code's AGPL for the
+# fixtures' reason: these are a starting point that belongs to the person from the moment it
+# is written, and copyleft on their `.gitignore` is not a sensible thing to hand them. They are
+# shipped (compiled into `grind`) and ours, so `core/tests/third_party.rs` lists them under
+# `OURS_OTHERWISE` rather than as a third-party component.
+[[annotations]]
+path = "cli/templates/**"
+SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+SPDX-License-Identifier = "CC0-1.0"

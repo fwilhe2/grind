@@ -65,7 +65,21 @@ with what it does underneath.
 
 ## 3. Working in your own project
 
-Four commands and one setting. Say your spreadsheets and scripts live in `~/work/pricing`:
+**One command does all of this section and §6:**
+
+```console
+$ grind init ~/work/pricing
+```
+
+It writes everything below — the snippets, the definition file, the settings, the tasks of §6,
+the two extension recommendations — plus a starter script that builds a spreadsheet, an
+`.editorconfig`, a `.gitignore` and a `.gitattributes` that makes `git diff` read an `.ods`. It
+never overwrites a file that is already there: a `settings.json` of your own is kept as it is,
+and the report says which line it is missing. `doc/init.md` is the design.
+
+What follows is what it does, by hand — for an editor other than VS Code, or a project that
+wants only part of it. Four commands and one setting. Say your spreadsheets and scripts live in
+`~/work/pricing`:
 
 ```console
 $ cd ~/work/pricing

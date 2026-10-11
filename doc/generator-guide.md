@@ -581,6 +581,13 @@ registering a function takes its documentation as an argument, so an undocumente
 added by forgetting. **`doc/editor-setup.md`** is the setup, including which of the two files
 an editor of yours can actually use, and what was measured to find out.
 
+To start a new project with all of it in place — both files, VS Code's settings and tasks, and a
+starter script that builds a spreadsheet out of a `data.json` beside it, with its tests:
+
+```console
+$ grind init ~/work/pricing
+```
+
 ---
 
 ## 15. Where to go next

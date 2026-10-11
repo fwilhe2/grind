@@ -54,6 +54,8 @@ pub enum Report {
     Pdf(PdfReport),
     /// `grind licences --list`: one row per third-party component (`doc/third-party.md`).
     Components(Vec<ComponentReport>),
+    /// What `grind init` wrote, kept and set (`doc/init.md`).
+    Init(crate::init::InitReport),
 }
 
 /// One third-party component, as `grind licences --list` prints it.
@@ -728,6 +730,7 @@ impl Report {
                     println!("{line}");
                 }
             }
+            Report::Init(init) => init.print_text(),
             Report::Components(components) => {
                 for c in components {
                     println!("{}\t{}\t{}\t{}", c.name, c.version, c.licence, c.source);

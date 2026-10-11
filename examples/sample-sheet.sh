@@ -668,4 +668,12 @@ say "the generated document is a document like any other"
 "$GRIND" lint "$out/generated.fods"
 "$GRIND" convert "$out/generated.fods" "$out/generated.grind" >/dev/null
 
+# A place to write scripts like these (doc/init.md): a starter that builds a spreadsheet, its
+# data and its tests, and around it VS Code's settings, tasks and snippets, an .editorconfig, a
+# .gitignore and a .gitattributes. Run twice, it writes nothing the second time — nothing that
+# exists is ever overwritten. `--force` here only because this directory is rebuilt every run.
+say "init: a directory set up for writing scripts in an editor"
+"$GRIND" init "$out/project" --force
+"$GRIND" test "$out/project/model.rhai"
+
 printf '\n%s and %s\n' "$book" "$out/sample.fods"

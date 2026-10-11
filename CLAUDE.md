@@ -92,7 +92,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/projection-guide.md` | **The projection's guide (D12)** — writing a `.grind` by hand, in the order the problems arrive, built on `examples/quote.grind`. Task-shaped where `doc/projection-sheet.md` is a vocabulary; §1 is the answer to *why would anybody want this*, and §10 the honest list of what converting *to* a projection drops |
 | `doc/generator-guide.md` | **The generator's guide (D14)** — from `examples/first.rhai` to `examples/timesheet.rhai`, four sheets that have to agree with each other. `cli/tests/editor.rs` builds every script it names |
 | `doc/editor-setup.md` | **VS Code for `.grind` and `.rhai`** — what each extension actually does, measured as installed rather than as described, and why the vocabulary ships as *snippets* as well as a `.d.rhai`: the published Rhai extension runs no language server. `.vscode/` is the shipped configuration and `cli/tests/editor.rs` holds both snippet files to the vocabularies they describe |
-| `doc/init.md` | **`grind init` and the language server after it — I0 built, I1–I7 planned.** Three CLI prerequisites first, now done (lint findings at a line through the span map, a suite-level `grind project` for git's `textconv`, the projection's snippets in the binary), then `init` — recommend extensions and never install them, never clobber a user's settings, no project manifest, generated files rewritten by `--update` and seeded ones never — and then `grind lsp` rather than a VS Code-only extension, with inline values as inlay hints that are shown and never written. §3 is the request's assumptions, challenged one at a time |
+| `doc/init.md` | **`grind init` and the language server after it — I0 and I1 built, I2–I7 planned.** Three CLI prerequisites first, now done (lint findings at a line through the span map, a suite-level `grind project` for git's `textconv`, the projection's snippets in the binary), then `init` — recommend extensions and never install them, never clobber a user's settings, no project manifest, generated files rewritten by `--update` and seeded ones never — and then `grind lsp` rather than a VS Code-only extension, with inline values as inlay hints that are shown and never written. §3 is the request's assumptions, challenged one at a time |
 | `doc/xlsx-import.md` | **Phase 11 — reading `.xlsx`, done, X0–X6 (values, formulas, number formats, styles and geometry, the document level, and every shell's Open).** Normative for that phase: its own crate behind a feature flag, one way in and never out, a fidelity report that is part of the output, and "Transitional, and the real world" — the section that decides whether the filter opens other people's files, since Transitional is what every real producer writes and markup compatibility is the tax they charge. **ECMA-376 is the source; LibreOffice stays the oracle** |
 | `doc/xlsx-format.md` | Clean-room notes on OOXML, the `doc/ods-format.md` of that filter. Every fact carries `MEASURED` / `SPEC` / `UNVERIFIED`, and **`UNVERIFIED` may not be implemented** |
 | `doc/docx-import.md` | **Reading `.docx` — done, DX0–DX6.** The word processor's `doc/xlsx-import.md`, under the same rules, plus its three own decisions: the OOXML container layer is **one shared crate** (`grind-ooxml`, hoisted out of `grind-xlsx`); the filter **writes ODF and lets `grind_text` read it**, because a Word document's look lives in named styles, list styles, a page and a header the text model reads and never writes — so an import is, from then on, indistinguishable from a document LibreOffice wrote; and an intermediate form, because some of Word's facts arrive after the content they change |
@@ -119,8 +119,9 @@ reuse lint                               # must stay compliant; CI gates on this
 ```
 
 `grind` is the CLI — `grind <app> <verb>`, plus a few suite-level verbs that read the
-document's kind out of the file (`info`, `convert`, `lint`, `project`) and one that has no document to read
-(`build`, which runs a generator script — `doc/dsl.md` layer 1). Every core capability is reachable from
+document's kind out of the file (`info`, `convert`, `lint`, `project`) and two that have no document to read
+(`build`, which runs a generator script — `doc/dsl.md` layer 1 — and `init`, which sets up a directory
+for writing one, `doc/init.md`). Every core capability is reachable from
 it, enforced by
 `cli/tests/parity.rs`:
 
@@ -137,6 +138,7 @@ cargo run -p grind-cli -- build examples/budget.rhai -o book.fods   # a script r
 cargo run -p grind-cli -- test examples/budget.rhai                # and asserts its own totals
 cargo run -p grind-cli -- build examples/timesheet.rhai -o month.fods  # four sheets that agree
 cargo run -p grind-cli -- lint examples/quote.grind       # a hand-written projection
+cargo run -p grind-cli -- init ~/work/pricing             # a starter script + VS Code + git, never clobbering
 cargo run -p grind-cli -- sheet import book.xlsx book.fods  # phase 11; one way in, never out
 cargo run -p grind-cli -- text export-pdf report.fodt report.pdf --paper a4   # ISO 216 only
 cargo run -p grind-cli -- text preview report.fodt page1.png --page 1 --dpi 96

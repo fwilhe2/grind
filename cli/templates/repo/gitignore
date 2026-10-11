@@ -1,0 +1,4 @@
+# Built by `grind build model.rhai -o model.fods` — the Build task. It is derived from the
+# script and its data, so it stays out of history and is rebuilt instead. A spreadsheet written
+# or edited by hand is source and belongs in git: keep it as .fods or .grind, which diff.
+/model.fods

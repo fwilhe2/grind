@@ -1,0 +1,9 @@
+# The two languages grind reads, indented the way its own examples are. Every editor in common
+# use reads this file, with or without a plugin.
+
+[*.{grind,rhai}]
+charset = utf-8
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+end_of_line = lf

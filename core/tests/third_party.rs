@@ -69,6 +69,15 @@ const NOT_SHIPPED: &[&str] = &[
     "Containerfile.distroless-cli",
 ];
 
+/// Our own files, shipped, under a licence other than the suite's **on purpose** — so they are
+/// not a third-party component and have no place on the list an About shows.
+///
+/// `cli/templates/` is what `grind init` writes into somebody else's project (`doc/init.md`):
+/// a starter script, its data and editor settings. CC0 so that a project started from them owes
+/// nothing to this one's licence — a model somebody writes by editing the starter is theirs, not
+/// a derivative of AGPL code. `REUSE.toml` carries the same reasoning beside the annotation.
+const OURS_OTHERWISE: &[&str] = &["cli/templates/**"];
+
 /// A component Cargo does not know about.
 struct Extra {
     name: &'static str,
@@ -353,6 +362,7 @@ fn everything_reuse_says_is_not_ours_is_on_the_list_or_never_shipped() {
     let mut unaccounted = Vec::new();
     for (path, licence) in &claims {
         if licence == "AGPL-3.0-or-later"
+            || OURS_OTHERWISE.contains(&path.as_str())
             || NOT_SHIPPED.iter().any(|p| path.starts_with(p))
             || claimed.contains(path.as_str())
         {

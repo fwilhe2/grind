@@ -12,6 +12,7 @@
 //! either format.
 
 mod fit;
+mod init;
 mod report;
 
 use std::io::Read;
@@ -1212,6 +1213,27 @@ enum Top {
         /// Always snippets, so `--snippets` beside it changes nothing.
         #[arg(long)]
         projection: bool,
+    },
+
+    /// Set up a directory for writing scripts and projections in an editor
+    ///
+    /// Writes a starter script that builds a spreadsheet (model.rhai, with its data.json and its
+    /// tests), and around it what an editor and git need: VS Code's recommended extensions,
+    /// settings and tasks, the vocabulary as snippets and a Rhai definition file, and an
+    /// .editorconfig, .gitignore and .gitattributes. In a git repository's root it also points
+    /// `diff=grind` at `grind project`, so `git diff` reads an .ods as the cells that changed.
+    ///
+    /// Nothing that exists is overwritten: a file with other content is kept and the report
+    /// says what it is missing, and --force replaces it. Running it twice writes nothing the
+    /// second time. No editor is touched — extensions are recommended, never installed — and
+    /// nothing written here is read back by grind, so any of it can be deleted.
+    Init {
+        /// The directory to set up, created if missing
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// Replace files that exist with other content
+        #[arg(long)]
+        force: bool,
     },
 
     /// Print the third-party components grind is built from, and their licences
@@ -3062,6 +3084,9 @@ fn run(cli: &Cli) -> Result<Report, String> {
             .map(str::to_owned)
             .collect(),
         })),
+
+        // No document and no script: a directory around them (`doc/init.md`).
+        Top::Init { dir, force } => Ok(Report::Init(init::init(dir, *force, PROJECTION_SNIPPETS)?)),
 
         // No document: the list is the core's, so every window's About and this agree.
         Top::Licences { list: true } => Ok(Report::Components(

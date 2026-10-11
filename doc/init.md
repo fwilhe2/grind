@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # `grind init` — a project for the two languages, and what comes after it
 
-**Status: I0 done (2026-10-11); I1 onwards planned, not built.** Written 2026-10-11 from the request *"the CLI should have an
+**Status: I0 and I1 done (2026-10-11); I2 onwards planned, not built.** Written 2026-10-11 from the request *"the CLI should have an
 `init` command that sets up a workspace for working with a `.rhai` or `.grind` in VS Code or
 other editors — environment, extensions, snippets, run commands, as complete an experience as
 possible; later, perhaps a VS Code extension that calculates values inline."* §3 is the part
@@ -334,6 +334,37 @@ Templates are compiled into the binary (`include_str!`), checked by the same tes
 them, and are deliberately *small*: `doc/generator-guide.md` and `doc/projection-guide.md` are
 the tutorials, and the starter's first comment points at the right one.
 
+### 4.5 What I1 built, and where it settled the plan
+
+`grind init [DIR] [--force]` — `cli/src/init.rs`, its templates in `cli/templates/` (CC0, since
+they are copied into other people's projects), held to I1's exit criterion by
+`cli/tests/init.rs`. Everything in §4.2 is written; `--template`, `--editor`, `--ci` and
+`--update` are the later milestones' and do not exist yet. Five things the plan left open or
+got slightly wrong:
+
+- **The starter is a cost sheet**: `model.rhai` reads three items out of `data.json`, writes
+  a monthly and a yearly column, each item's share and an AutoSum total, and carries three
+  `test_…` functions — the last of which is `d.lint().is_empty()`, so the starter checks its
+  own linter. Spelt for the `en-US` dictionary every unmarked document is checked against.
+- **The report's words are `wrote`, `unchanged`, `kept`, `replaced`, `set` and `skipped`.**
+  `unchanged` is what makes the second run visibly a no-op; `would add` became a note on a
+  `kept` line, and only where the missing piece matters — a `settings.json` with no `*.grind`
+  association, a `.gitattributes` with no `diff=grind`.
+- **A generated file's header names the commit as well as the version**, because the suite's
+  version number does not move yet and the commit is what tells two builds apart — which is
+  what I2's staleness check will compare.
+- **The open task is per platform**: `grind-sheet-gtk` on Linux, `grind-win32` on Windows,
+  `open -a Grind` on macOS, each on the `.fods` the build task wrote. `settings.json` states
+  `"grind.path": "grind"` rather than leaving `${config:grind.path}` unresolved.
+- **git's `textconv` is set only in a repository's root**, in its own `.git/config`, and a value
+  somebody already chose is kept even under `--force` — that is configuration, not a file of
+  ours. Outside a repository the report prints the command instead.
+
+**Not yet looked at in VS Code itself.** Every JSON file is parsed by the test, the snippet
+files with their header comments as JSONC, and both problem matchers' expressions were run
+against real `grind build`, `grind test` and `grind lint` output — but a task has not been run
+from an actual VS Code window.
+
 ---
 
 ## 5. The language server — the later half
@@ -382,7 +413,7 @@ plausible because `ui_web` already proves the core runs in a browser, and is not
 | | What | Exit criterion |
 |---|---|---|
 | **I0** — done | The three prerequisites (§2), as built there: `grind lint` reports `file:line:col` for a `.grind` through the span map (and keeps the address); a suite-level `grind project <file>` printing either kind's projection to stdout; the projection snippets compiled into the binary, printed by `grind definitions --projection`. Plus the stale `convert --help` sentence | `doc/editor-setup.md` §6's matcher lands every finding on its line; `git diff` with the §3.8 textconv shows a changed `.ods` as changed cells; `cli/tests/editor.rs` holds the embedded file to the shipped one |
-| **I1** | `grind init` for VS Code: §4.2's files, the `generator` template, never-clobber, the report | in a temp dir: the template builds, tests and lints clean; a second run writes nothing; a pre-existing `settings.json` survives byte for byte; nothing is written outside `DIR` |
+| **I1** — done | `grind init` for VS Code: §4.2's files, the `generator` template, never-clobber, the report | in a temp dir: the template builds, tests and lints clean; a second run writes nothing; a pre-existing `settings.json` survives byte for byte; nothing is written outside `DIR` |
 | **I2** | `--update` and the generated-file header; the `sheet` and `text` templates | upgrading the vocabulary (a test that adds a function) makes `init` report `stale` and `--update` fix it, touching no seeded file |
 | **I3** | `--editor zed`, `--editor helix`, several at once | each editor's files written and parsed back (TOML, JSON) by a test |
 | **I4** | `--ci github` | the workflow it writes runs green in this repository's own CI on the starter |
@@ -397,10 +428,8 @@ every editor and every repository today.
 
 ## 8. Open questions for the author
 
-1. **Is §3.1 right** — no manifest — or is there a workflow already in mind (several scripts,
-   shared data) that wants one now?
-2. **Default template**: `generator` (where the editor helps most) or `sheet` (where a newcomer
-   is likeliest to start)?
+1. ~~Is §3.1 right — no manifest?~~ Answered: no manifest; the recommendation stands.
+2. ~~Default template?~~ Answered: a script that builds a spreadsheet — `generator`.
 3. **The extension's home**: in this repository (Node in CI, one version number) or its own
    (a separate release cadence)? And publication — VS Code Marketplace, Open VSX, both?
 4. **`doc/dsl.md` §9**: amend the LSP row as §3.9 b proposes, or keep the server to `.grind`

@@ -1,0 +1,8 @@
+{
+    "currency": "$",
+    "items": [
+        { "name": "Rent", "monthly": 1450 },
+        { "name": "Utilities", "monthly": 180.5 },
+        { "name": "Internet", "monthly": 49.99 }
+    ]
+}

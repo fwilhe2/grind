@@ -1,0 +1,7 @@
+# `git diff` shows an OpenDocument package as its projection — the cells and paragraphs that
+# changed — instead of "Binary files differ". The command it runs is not committed with this
+# file, so each clone needs it once (`grind init` sets it in the repository it is run in):
+#
+#   git config diff.grind.textconv "grind project"
+*.ods diff=grind
+*.odt diff=grind
