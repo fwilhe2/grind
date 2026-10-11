@@ -19,7 +19,7 @@ path = "src/main.rs"
 # it. Off is a real configuration all the same: `--no-default-features` builds a `grind` with
 # no Excel code in it at all, and `win32.yml`-style "it still compiles without the feature"
 # claims rot silently unless something builds them.
-default = ["xlsx", "docx", "pdf", "spell"]
+default = ["xlsx", "docx", "pdf", "spell", "lsp"]
 xlsx = ["dep:grind-xlsx"]
 # The Word import filter (doc/docx-import.md) — the word processor's `xlsx`, optional for the
 # same reason.
@@ -30,6 +30,9 @@ pdf = ["dep:grind-print"]
 # Spelling (doc/spelling.md): `grind text spell` and lint's `misspelt` rule. Optional because it
 # is where the dictionaries live — off, `grind` carries no word list.
 spell = ["dep:grind-spell"]
+# `grind lsp`, the language server (doc/init.md I5). Optional because it brings the protocol
+# crates; on by default because an editor that cannot find it helps nobody.
+lsp = ["dep:grind-lsp"]
 
 [dependencies]
 # The suite-level half: `kind`, `Form`, and what a lint diagnostic is — the vocabulary a
@@ -47,6 +50,9 @@ grind-xlsx = { path = "../xlsx", optional = true }
 grind-docx = { path = "../docx", optional = true }
 grind-print = { path = "../print", optional = true }
 grind-spell = { path = "../spell", optional = true }
+# The language server. A reader under R11, so it links no evaluator: this crate hands it the
+# vocabulary and the compile-only syntax check through `grind_lsp::Host`.
+grind-lsp = { path = "../lsp", optional = true }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

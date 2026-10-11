@@ -183,6 +183,28 @@ impl Source {
             .map(|site| Location::of(&self.text, site.span.clone()))
     }
 
+    /// Every address the file spelled and where — the span map of the file **as read**, in
+    /// order through the file.
+    ///
+    /// [`super::Projection::anchors`]'s twin for the other text: that one is where each address
+    /// sits in a projection this build *writes*, this one where it sits in the one somebody
+    /// wrote, comments and alignment included. An editor working on the file wants this one —
+    /// a language server's hover, its inline values, and the line a lint finding is on.
+    pub fn anchors(&self) -> Vec<super::Anchor> {
+        let mut anchors: Vec<super::Anchor> = self
+            .sites
+            .iter()
+            .map(|(address, site)| super::Anchor {
+                address: address.clone(),
+                span: site.span.clone(),
+            })
+            .collect();
+        anchors.sort_by(|a, b| {
+            (a.span.start, a.span.end, &a.address).cmp(&(b.span.start, b.span.end, &b.address))
+        });
+        anchors
+    }
+
     /// How many addresses were recorded — what a test asserts a reader did not quietly stop
     /// doing.
     pub fn len(&self) -> usize {
@@ -253,6 +275,23 @@ mod tests {
         let mut accent = Source::new("é x");
         accent.record("x", 3..4, Shape::Value);
         assert_eq!(accent.locate("x").expect("recorded").column, 3);
+    }
+
+    #[test]
+    fn the_anchors_are_the_sites_in_file_order() {
+        let anchors: Vec<(String, Range<usize>)> = source()
+            .anchors()
+            .into_iter()
+            .map(|a| (a.address, a.span))
+            .collect();
+        assert_eq!(
+            anchors,
+            [
+                ("a".to_owned(), 0..3),
+                ("b".to_owned(), 4..7),
+                ("c".to_owned(), 8..13)
+            ]
+        );
     }
 
     #[test]

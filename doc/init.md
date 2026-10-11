@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # `grind init` — a project for the two languages, and what comes after it
 
-**Status: I0 and I1 done (2026-10-11); I2 onwards planned, not built.** Written 2026-10-11 from the request *"the CLI should have an
+**Status: I0, I1 and I5 done (2026-10-11); I2–I4, I6 and I7 planned, not built.** Written 2026-10-11 from the request *"the CLI should have an
 `init` command that sets up a workspace for working with a `.rhai` or `.grind` in VS Code or
 other editors — environment, extensions, snippets, run commands, as complete an experience as
 possible; later, perhaps a VS Code extension that calculates values inline."* §3 is the part
@@ -407,6 +407,40 @@ which would bring Node into a Rust workspace and a new job into CI.
 A **wasm** build of the server — so the extension runs in `vscode.dev` with no binary — is
 plausible because `ui_web` already proves the core runs in a browser, and is not planned.
 
+### 5.1 What I5 built, and where it departed from the table above
+
+`grind lsp` — the `grind-lsp` crate (`lsp/`), behind the CLI's `lsp` feature, on by default —
+over rust-analyzer's `lsp-server` and `lsp-types`, held to it by `lsp/tests/session.rs` (every
+request, in process, with a stand-in host) and `cli/tests/lsp.rs` (the real binary over real
+stdio, on `examples/quote.grind` and on scripts). Four departures, each on purpose:
+
+- **The `.rhai` half came forward from I7, the part of it that runs nothing.** The first session
+  in VS Code found nothing after `s.` and no hover, which is the script side, so I5 offers the
+  host vocabulary — methods after a dot, free functions elsewhere — and hover from it, read out
+  of `grind definitions`' own text. That is still not Rhai analysis: the server does not know
+  what `s` holds and offers every host type's methods after a dot, which is why `doc/dsl.md` §9
+  needed no amendment (§8's question 4).
+- **A script is compiled and never run.** The table above promised `build`'s errors and failing
+  tests as diagnostics; both need the script *run*, and a script runs because a person typed a
+  command, never because an editor opened a file. So the diagnostics are the compiler's syntax
+  errors (`grind_build::check`), and building and testing stay the tasks they are. I7's
+  provenance hints need a run too, and will have to arrive the same way — on a person's *Build*,
+  not on open.
+- **The evaluator is handed in, not linked.** The server opens documents, so R11
+  (`build/tests/manifest.rs`) lists it as a reader: the vocabulary arrives as text and the
+  syntax check and the dictionaries as a `grind_lsp::Host` the CLI implements.
+- **Not built:** code actions (*Recalculate*, *Fix spelling*, *Build*, *Run tests*), the
+  friendly reading of a formula in hover (it shows the formula through its names instead), and
+  I7's provenance.
+
+What the server needed from the core was one thing: where each address is in the file **as
+read** rather than in the projection this build writes. `App::source_anchors` is that, for both
+applications, and `grind <app> project --anchors --as-read` reaches it from the CLI (R9).
+
+**Not yet run in an editor.** VS Code needs I6's client to start a server at all, and none of
+Helix, Zed or Neovim was installed where this was written; `doc/editor-setup.md` §7.1 has their
+configuration, marked as not run.
+
 ---
 
 ## 6. What this plan does not do
@@ -433,7 +467,7 @@ plausible because `ui_web` already proves the core runs in a browser, and is not
 | **I2** | `--update` and the generated-file header; the `sheet` and `text` templates | upgrading the vocabulary (a test that adds a function) makes `init` report `stale` and `--update` fix it, touching no seeded file |
 | **I3** | `--editor zed`, `--editor helix`, several at once | each editor's files written and parsed back (TOML, JSON) by a test |
 | **I4** | `--ci github` | the workflow it writes runs green in this repository's own CI on the starter |
-| **I5** | `grind lsp` for `.grind`: diagnostics, hover, inlay hints, go-to-definition, completion | an LSP conformance test driving the server over stdio on `examples/quote.grind`; and the decision recorded in `doc/dsl.md` §9 |
+| **I5** — done | `grind lsp` for `.grind`, and the `.rhai` half that runs nothing (§5.1): diagnostics, hover, inlay hints, go-to-definition, completion | an LSP conformance test driving the server over stdio on `examples/quote.grind`; and the decision recorded in `doc/dsl.md` §9 |
 | **I6** | The VS Code client extension, and Helix/Zed configuration pointing at `grind lsp` | the extension opens `examples/quote.grind` in a VS Code test host and shows `G14`'s value as a hint |
 | **I7** | `.rhai` provenance in `grind-build` and its hints through the server | `examples/timesheet.rhai`'s loop line shows the range it produced; `grind build` output is byte-identical with provenance on and off |
 
@@ -448,8 +482,9 @@ every editor and every repository today.
 2. ~~Default template?~~ Answered: a script that builds a spreadsheet — `generator`.
 3. **The extension's home**: in this repository (Node in CI, one version number) or its own
    (a separate release cadence)? And publication — VS Code Marketplace, Open VSX, both?
-4. **`doc/dsl.md` §9**: amend the LSP row as §3.9 b proposes, or keep the server to `.grind`
-   only and leave `.rhai` with snippets?
+4. ~~`doc/dsl.md` §9: amend the LSP row?~~ Not needed so far: I5 serves `.rhai` with the
+   vocabulary and the compiler's syntax errors and analyses nothing (§5.1), which is inside the
+   row as written. It comes back at I7, whose provenance needs a script *run*.
 5. **`--ci github`**: worth carrying a forge-specific file at all, or document the two commands
    and let people write their own?
 

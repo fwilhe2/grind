@@ -270,6 +270,32 @@ pub fn build_with(source: &str, script: &str, data: Rc<dyn Data>) -> Result<Arti
     materialise(value, script)
 }
 
+/// **Whether a script parses** — compiled by the same engine `grind build` runs, and never
+/// evaluated.
+///
+/// What an editor may do with a script it merely has open: report the syntax error at its line
+/// and column as somebody types. Running it is not that — a script runs because a person typed
+/// `grind build` or `grind test` (`doc/dsl.md` §2), never because a file was opened, which is
+/// why the language server is handed this and not [`build`] (`doc/init.md` I5). Compiling needs
+/// no data and touches no host function, so nothing a script *does* happens here.
+///
+/// The engine is the real one rather than a bare `Engine::new_raw()`, because its limits are
+/// part of the language: an expression nested past the depth `grind build` allows is an error
+/// here too.
+pub fn check(source: &str, script: &str) -> Result<(), Error> {
+    let mut engine = engine::engine(Rc::new(NoData));
+    test::register(&mut engine);
+    engine.compile(source).map(|_| ()).map_err(|error| {
+        let at = error.position();
+        Error {
+            script: script.to_owned(),
+            line: at.line().map(|l| l as u32),
+            column: at.position().map(|c| c as u32),
+            message: without_position(&error.to_string()),
+        }
+    })
+}
+
 /// The returned tree as a document.
 ///
 /// Three accepted shapes, and the third is sugar: a script that builds one sheet may return

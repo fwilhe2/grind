@@ -46,7 +46,14 @@ works without a language server, and it has three limits worth knowing before th
   it. It reads as plain text.
 - **There is no hover.** Pointing at `push` in your code shows nothing, and nothing underlines a
   mistake while you type — `grind build` and `grind test` are the check, and their errors carry a
-  line and a column. Both need a language server, which grind does not have yet.
+  line and a column.
+
+All three are what a **language server** fixes, and grind has one: `grind lsp` offers a sheet's
+methods right after `s.`, shows each one's documentation properly, hovers, underlines a syntax
+error as you type, and in a `.grind` shows what every formula computes beside it. VS Code needs a
+small client extension to start it, which grind does not have yet; Helix, Neovim and other
+editors that start a language server themselves can use it today — grind's
+`doc/editor-setup.md` §7.1 has their configuration.
 
 `grind.d.rhai` is the same vocabulary as a Rhai definition file: every function with its
 parameters, types and documentation, in one file you can read.

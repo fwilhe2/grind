@@ -25,7 +25,7 @@
 const WORKSPACE: &str = include_str!("../../Cargo.toml");
 
 /// Every crate that must **not** name the generator, with its manifest.
-const READERS: [(&str, &str); 16] = [
+const READERS: [(&str, &str); 17] = [
     ("core", include_str!("../../core/Cargo.toml")),
     ("sheet", include_str!("../../sheet/Cargo.toml")),
     ("text", include_str!("../../text/Cargo.toml")),
@@ -42,6 +42,10 @@ const READERS: [(&str, &str); 16] = [
     ("print", include_str!("../../print/Cargo.toml")),
     // Spelling attaches a dictionary to an open document (doc/spelling.md); it evaluates nothing.
     ("spell", include_str!("../../spell/Cargo.toml")),
+    // The language server opens every `.grind` an editor shows it, and a script it is shown is
+    // compiled and never run — the check arrives from the CLI through `grind_lsp::Host`, which
+    // is exactly the shape that keeps an evaluator out of here (doc/init.md I5).
+    ("lsp", include_str!("../../lsp/Cargo.toml")),
     (
         "ui_web_print",
         include_str!("../../ui_web_print/Cargo.toml"),

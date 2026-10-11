@@ -161,6 +161,11 @@ had no width and therefore no lines.
   every command already takes one. `grind convert report.fodt report.grind` writes one.
   `grind project` is the suite-level twin: the kind is read out of the file, for a caller
   such as git's `textconv` that cannot say it, and the output is this verb's.
+- `source_anchors` — `grind text project <file> --anchors --as-read`: the span map of the
+  `.grind` as somebody wrote it rather than of the projection this build writes, in
+  `--anchors`' own shape, so an editor can find an address in the text it has open. Empty for
+  a document read from another form, which the flag reports as an error. `grind lsp` is its
+  other caller (`doc/init.md` I5)
 
 ## Reading
 

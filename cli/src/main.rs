@@ -189,6 +189,40 @@ fn text_lines(lines: Vec<String>) -> Result<Report, String> {
 /// the one copy, read at compile time so `grind definitions --projection` needs no repository.
 const PROJECTION_SNIPPETS: &str = include_str!("../../.vscode/grind-projection.code-snippets");
 
+/// `project --anchors --as-read`: the span map of the file as written, in `--anchors`' own
+/// shape — `address<TAB>line<TAB>start<TAB>end` — so one reader takes either.
+///
+/// The line is counted in the file itself, which is the text the spans are into; a document
+/// that was not read from a projection has no such map, and saying so beats printing nothing.
+fn as_read_report(
+    file: &Path,
+    anchors: Vec<grind_core::projection::Anchor>,
+) -> Result<Report, String> {
+    if anchors.is_empty() {
+        return Err(format!(
+            "{} was not read from a projection; --as-read describes a .grind as written",
+            file.display()
+        ));
+    }
+    let text = std::fs::read_to_string(file)
+        .map_err(|e| format!("cannot read {}: {e}", file.display()))?;
+    let line = |offset: usize| text[..offset.min(text.len())].matches('\n').count() + 1;
+    text_lines(
+        anchors
+            .iter()
+            .map(|a| {
+                format!(
+                    "{}\t{}\t{}\t{}",
+                    a.address,
+                    line(a.span.start),
+                    a.span.start,
+                    a.span.end
+                )
+            })
+            .collect(),
+    )
+}
+
 /// `<app> project`, for either application — the projection, or one of the two maps beside it.
 ///
 /// One function because there is one answer: `Projection` is the container's type, the same
@@ -660,7 +694,14 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             file,
             tokens,
             anchors,
-        } => project_report(&open_text(file)?.project(), *tokens, *anchors),
+            as_read,
+        } => {
+            let app = open_text(file)?;
+            match as_read {
+                true => as_read_report(file, app.source_anchors()),
+                false => project_report(&app.project(), *tokens, *anchors),
+            }
+        }
 
         TextCommand::Lint {
             file,
@@ -1132,6 +1173,13 @@ enum Top {
         /// Print the span map instead: one `address<TAB>line<TAB>start<TAB>end` line per anchor
         #[arg(long)]
         anchors: bool,
+        /// With --anchors: the span map of the file as written, not of the projection grind writes
+        ///
+        /// A .grind somebody wrote has comments and alignment of their own, so its lines are
+        /// not the ones `project` prints. This is where each address is in the file itself —
+        /// what an editor needs to find a cell in the text it has open.
+        #[arg(long, requires = "anchors")]
+        as_read: bool,
     },
 
     // `doc/dsl.md` layer 1.
@@ -1214,6 +1262,16 @@ enum Top {
         #[arg(long)]
         projection: bool,
     },
+
+    /// Run the language server, for an editor, over stdin and stdout
+    ///
+    /// For .grind files: diagnostics on the right line, hover over a cell for its formula and
+    /// what it shows, the value every formula computes shown beside it (never written), go to
+    /// a name's definition, and completion of nodes, functions and names. For .rhai scripts:
+    /// completion and hover from the whole vocabulary, and syntax errors as you type — a
+    /// script is compiled, never run. Point an editor's language client at `grind lsp`;
+    /// doc/editor-setup.md says how for each.
+    Lsp,
 
     /// Set up a directory for writing scripts and projections in an editor
     ///
@@ -1651,6 +1709,13 @@ enum TextCommand {
         /// rows: p12, #bookmark and §2.1.3 all anchor the same paragraph.
         #[arg(long)]
         anchors: bool,
+        /// With --anchors: the span map of the file as written, not of the projection grind writes
+        ///
+        /// A .grind somebody wrote has comments and alignment of their own, so its lines are
+        /// not the ones `project` prints. This is where each address is in the file itself —
+        /// what an editor needs to find a cell in the text it has open.
+        #[arg(long, requires = "anchors")]
+        as_read: bool,
     },
 
     /// Insert a block before an address, or at the end
@@ -2020,6 +2085,13 @@ enum Command {
         /// the thing every later IDE feature is built on.
         #[arg(long)]
         anchors: bool,
+        /// With --anchors: the span map of the file as written, not of the projection grind writes
+        ///
+        /// A .grind somebody wrote has comments and alignment of their own, so its lines are
+        /// not the ones `project` prints. This is where each address is in the file itself —
+        /// what an editor needs to find a cell in the text it has open.
+        #[arg(long, requires = "anchors")]
+        as_read: bool,
     },
 
     // `doc/dsl.md` §4.3's rules.
@@ -2926,6 +2998,11 @@ fn data_root(script: &Path, data: Option<&Path>) -> Result<grind_build::Director
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    // The language server owns stdout for as long as it runs: nothing may be printed around
+    // it, so it never reaches the report below.
+    if let Top::Lsp = cli.command {
+        return lsp();
+    }
     match run(&cli) {
         Ok(report) => {
             report.print(cli.format);
@@ -2942,6 +3019,46 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// `grind lsp`: the server, with what it may not link itself handed in (`grind_lsp::Host`).
+#[cfg(feature = "lsp")]
+fn lsp() -> ExitCode {
+    struct Host;
+    impl grind_lsp::Host for Host {
+        fn definitions(&self) -> String {
+            grind_build::definitions()
+        }
+        fn check_script(&self, source: &str) -> Result<(), grind_lsp::ScriptError> {
+            grind_build::check(source, "<script>").map_err(|e| grind_lsp::ScriptError {
+                line: e.line,
+                column: e.column,
+                message: e.message,
+            })
+        }
+        fn attach_spelling_sheet(&self, app: &App) {
+            check_spelling(app);
+        }
+        fn attach_spelling_text(&self, app: &TextApp) {
+            #[cfg(feature = "spell")]
+            let _ = grind_spell::attach(app, None);
+            #[cfg(not(feature = "spell"))]
+            let _ = app;
+        }
+    }
+    match grind_lsp::serve(&Host) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(message) => {
+            eprintln!("grind lsp: {message}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(not(feature = "lsp"))]
+fn lsp() -> ExitCode {
+    eprintln!("grind: this build has no language server (built without the `lsp` feature)");
+    ExitCode::FAILURE
 }
 
 fn run(cli: &Cli) -> Result<Report, String> {
@@ -2993,13 +3110,22 @@ fn run(cli: &Cli) -> Result<Report, String> {
             file,
             tokens,
             anchors,
+            as_read,
         } => match document_kind(file)? {
-            DocumentKind::Spreadsheet => project_report(
-                &open_as(file, DocumentKind::Spreadsheet, cli)?.project(),
-                *tokens,
-                *anchors,
-            ),
-            DocumentKind::Text => project_report(&open_text(file)?.project(), *tokens, *anchors),
+            DocumentKind::Spreadsheet => {
+                let app = open_as(file, DocumentKind::Spreadsheet, cli)?;
+                match as_read {
+                    true => as_read_report(file, app.source_anchors()),
+                    false => project_report(&app.project(), *tokens, *anchors),
+                }
+            }
+            DocumentKind::Text => {
+                let app = open_text(file)?;
+                match as_read {
+                    true => as_read_report(file, app.source_anchors()),
+                    false => project_report(&app.project(), *tokens, *anchors),
+                }
+            }
             kind => Err(unsupported(file, Some(kind))),
         },
 
@@ -3084,6 +3210,9 @@ fn run(cli: &Cli) -> Result<Report, String> {
             .map(str::to_owned)
             .collect(),
         })),
+
+        // Handled in `main`, before anything that prints: the server owns stdout.
+        Top::Lsp => unreachable!("`main` runs the language server itself"),
 
         // No document and no script: a directory around them (`doc/init.md`).
         Top::Init { dir, force } => Ok(Report::Init(init::init(dir, *force, PROJECTION_SNIPPETS)?)),
@@ -3376,7 +3505,14 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             file,
             tokens,
             anchors,
-        } => project_report(&load(file, cli)?.project(), *tokens, *anchors),
+            as_read,
+        } => {
+            let app = load(file, cli)?;
+            match as_read {
+                true => as_read_report(file, app.source_anchors()),
+                false => project_report(&app.project(), *tokens, *anchors),
+            }
+        }
 
         Command::Lint {
             file,

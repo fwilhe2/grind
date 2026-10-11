@@ -74,7 +74,7 @@ const META: &str = include_str!("../../suite/Cargo.toml");
 
 /// The members that ship no binary, each with the reason. A crate here is *not* a package that
 /// was forgotten.
-const UNPACKAGED: [(&str, &str); 14] = [
+const UNPACKAGED: [(&str, &str); 15] = [
     (
         "suite",
         "the meta-package: no binary, and its own test below holds it to the other four",
@@ -102,6 +102,10 @@ const UNPACKAGED: [(&str, &str); 14] = [
     (
         "spell",
         "a library — the dictionaries — and an optional dependency of the binaries that check spelling",
+    ),
+    (
+        "lsp",
+        "a library — the language server — that ships inside `grind` as `grind lsp`, not as a binary",
     ),
     (
         "ui_web_print",

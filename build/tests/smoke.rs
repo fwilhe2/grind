@@ -419,3 +419,38 @@ fn a_chart_with_nothing_to_draw_says_so() {
     let message = error(r#"chart("donut")"#);
     assert!(message.contains("bar, a line or a pie"), "{message}");
 }
+
+/// `check` compiles and never runs — what a language server may do with a script it merely has
+/// open (`doc/init.md` I5). A script that would fail the moment it ran, or never finish, is
+/// still one that *parses*, and only the parse is an editor's business.
+#[test]
+fn check_parses_and_never_runs() {
+    use grind_build::check;
+    // Each of these fails, or never returns, the moment it is run.
+    for runs_badly in [
+        "throw \"ran\";",
+        "loop { }",
+        "json(\"nowhere.json\")",
+        "let s = sheet(\"A\"); s.push(1, 2, 3, 4); s",
+    ] {
+        assert_eq!(check(runs_badly, "<script>"), Ok(()), "{runs_badly}");
+    }
+    assert!(
+        build(runs_badly_once(), "<script>").is_err(),
+        "and it really does fail when run"
+    );
+
+    let error =
+        check("let s = sheet(\"A\");\ns.push(row(1, 2)\n", "model.rhai").expect_err("unclosed");
+    assert_eq!((error.line, error.column), (Some(3), Some(1)));
+    assert_eq!(error.script, "model.rhai");
+    assert!(
+        !error.message.contains("(line"),
+        "the position is said once: {}",
+        error.message
+    );
+}
+
+fn runs_badly_once() -> &'static str {
+    "throw \"ran\";"
+}

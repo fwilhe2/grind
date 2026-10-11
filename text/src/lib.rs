@@ -687,6 +687,26 @@ impl App {
         projection::project(&self.state.read().unwrap().doc)
     }
 
+    /// Where each address is in the projection this document was **read from** — the file as
+    /// somebody wrote it, comments and alignment included — in file order. Empty for a document
+    /// that was not read from a `.grind`.
+    ///
+    /// [`App::project`]'s span map describes the projection this build would write; this one
+    /// describes the file on disk, which is the one an editor has open. It is what a language
+    /// server hovers over and puts inline values against (`doc/init.md` I5). After an edit
+    /// nobody has saved it still describes the file as read, for the same reason a lint
+    /// finding's location does.
+    pub fn source_anchors(&self) -> Vec<grind_core::projection::Anchor> {
+        self.state
+            .read()
+            .unwrap()
+            .doc
+            .projection_source
+            .as_deref()
+            .map(grind_core::projection::Source::anchors)
+            .unwrap_or_default()
+    }
+
     pub fn block_count(&self) -> usize {
         self.state.read().unwrap().doc.blocks.len()
     }

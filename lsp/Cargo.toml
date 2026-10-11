@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-lsp"
+version = "0.0.0"
+description = "A language server for the projection (.grind) and the generator (.rhai) — doc/init.md I5"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# What a document is and where its addresses are in the file it was read from — every answer
+# this server gives comes from the core; it holds no knowledge of its own.
+grind-core = { path = "../core" }
+grind-sheet = { path = "../sheet" }
+grind-text = { path = "../text" }
+# rust-analyzer's own protocol plumbing: the base protocol over stdio, and the message types.
+# Synchronous and small, which is all one document at a time needs. **Not** the generator's
+# crate: this one opens documents, so R11 keeps the evaluator out of it
+# (`build/tests/manifest.rs`), and the CLI hands in the vocabulary and the syntax check
+# instead (`Host`).
+lsp-server = "0.10"
+lsp-types = "0.97"
+serde_json = "1"
+
+[dev-dependencies]
+lsp-server = "0.10"
+serde_json = "1"
