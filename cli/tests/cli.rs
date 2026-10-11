@@ -1821,6 +1821,77 @@ fn lint_reports_what_a_document_says_about_itself_and_writes_nothing() {
     );
 }
 
+/// A finding in a `.grind` names the line and column it is on — `file:line:col:` in front, a
+/// `location` in the JSON — which is what an editor's problem matcher needs (`doc/init.md` I0).
+/// The address stays, and a document from any other form reports exactly as it always did.
+#[test]
+fn lint_puts_a_projection_finding_on_its_line() {
+    let dir = Sandbox::new("lint-lines");
+    let file = dir.path("book.grind");
+    let f = s(&file);
+    // Hand-spelled, with a comment and alignment the writer would not produce, so the line
+    // numbers can only come from the file as read.
+    std::fs::write(
+        &file,
+        "grind spreadsheet\n\n// two lines above the sheet\nsheet Sheet1 {\n    cell A1   1\n    cell B1   \"=[Gone.A1]\"\n}\n",
+    )
+    .expect("written");
+
+    let failed = grind(&["lint", &f]);
+    let report = String::from_utf8_lossy(&failed.stdout);
+    assert!(
+        report.contains(&format!("{f}:6:5: Sheet1.B1: error: ")),
+        "the cell node is on line 6, after its indentation:\n{report}"
+    );
+
+    let json = grind(&["--format", "json", "lint", &f]);
+    let json: serde_json::Value = serde_json::from_slice(&json.stdout).expect("json");
+    let location = &json["diagnostics"][0]["location"];
+    assert_eq!(location["line"], 6, "{json}");
+    assert_eq!(location["column"], 5, "{json}");
+
+    // The same document as a flat file has no lines to give, and says only the address.
+    let flat = dir.path("book.fods");
+    succeeds(grind(&["convert", &f, &s(&flat)]), &["convert"]);
+    let json = grind(&["--format", "json", "lint", &s(&flat)]);
+    let json: serde_json::Value = serde_json::from_slice(&json.stdout).expect("json");
+    assert_eq!(json["diagnostics"][0]["at"], "Sheet1.B1");
+    assert!(json["diagnostics"][0].get("location").is_none(), "{json}");
+
+    // And the word processor's: a block is a node, located the same way.
+    let text = dir.path("notes.grind");
+    std::fs::write(&text, "grind text\n\nh 1 \"One\"\n\nh 3 \"Too deep\"\n").expect("written");
+    let report = ok_top(&["lint", &s(&text)]);
+    assert!(
+        report.contains(&format!("{}:5:1: p2: warning: ", s(&text))),
+        "{report}"
+    );
+}
+
+/// `grind project` reads the kind out of the file and prints exactly what the application's
+/// own verb prints — the property git's `textconv` relies on, since it cannot say which kind a
+/// file is (`doc/init.md` §3.8).
+#[test]
+fn project_at_the_suite_level_is_the_application_verb() {
+    let dir = Sandbox::new("project-top");
+    let book = s(&dir.path("book.ods"));
+    ok(&["new", &book]);
+    ok(&["set", &book, "A1", "2"]);
+    let notes = s(&dir.path("notes.odt"));
+    succeeds(grind(&["text", "new", &notes]), &["text", "new"]);
+
+    for (app, file) in [("sheet", &book), ("text", &notes)] {
+        for flag in [None, Some("--anchors"), Some("--tokens")] {
+            let mut top = vec!["project", file.as_str()];
+            let mut own = vec![app, "project", file.as_str()];
+            top.extend(flag);
+            own.extend(flag);
+            assert_eq!(ok_top(&top), ok_top(&own), "{app} {flag:?}");
+        }
+    }
+    assert!(ok_top(&["project", &book]).starts_with("grind spreadsheet\n"));
+}
+
 /// **`doc/dsl.md` §6.5's first refactoring, D10**, from the outside: renaming a sheet carries
 /// the formulas that named it, in one undo step, and the document is clean afterwards.
 #[test]

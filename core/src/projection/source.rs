@@ -89,6 +89,47 @@ pub struct Site {
     pub shape: Shape,
 }
 
+/// Where a stretch of a file is, numbered the way an editor's gutter numbers it.
+///
+/// Lines and columns from 1, and a column counted in **characters** (Unicode scalar values)
+/// rather than bytes: that is what a compiler-style `file:line:col` means to VS Code's problem
+/// matcher, to Vim's quickfix list and to Emacs' compilation mode, and a byte column would put
+/// the mark in the wrong place on any line with an `é` before it. A language server wants UTF-16
+/// columns instead; it converts from the span, which is why the span is not thrown away.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct Location {
+    pub line: usize,
+    pub column: usize,
+    pub end_line: usize,
+    pub end_column: usize,
+}
+
+impl Location {
+    /// The location of `span` in `text`.
+    ///
+    /// Counts from the start each time, so one call is linear in the file: right for a lint
+    /// report, which is capped at `lint::MAX_DIAGNOSTICS`, and wrong for anything that asks per
+    /// keystroke — that wants a line index built once.
+    pub fn of(text: &str, span: Range<usize>) -> Self {
+        let point = |offset: usize| {
+            let before = &text[..offset];
+            let line_start = before.rfind('\n').map_or(0, |at| at + 1);
+            (
+                before.matches('\n').count() + 1,
+                before[line_start..].chars().count() + 1,
+            )
+        };
+        let (line, column) = point(span.start);
+        let (end_line, end_column) = point(span.end);
+        Location {
+            line,
+            column,
+            end_line,
+            end_column,
+        }
+    }
+}
+
 /// The text a document was read from, and where its addresses are in it.
 ///
 /// The address is a `String` for [`super::Anchor`]'s reason and no other: `Sheet1.B5` and `p12`
@@ -129,6 +170,17 @@ impl Source {
     /// Where an address is, if the file spelled it at all.
     pub fn site(&self, address: &str) -> Option<&Site> {
         self.sites.get(address)
+    }
+
+    /// Where an address is, as a line and column in the text as it was read — what turns a lint
+    /// finding at `Sheet1.B5` into one an editor can jump to.
+    ///
+    /// `None` for an address the file did not spell, as for [`Source::site`]. The text is the
+    /// file *as read*: after an edit nobody has saved, a location still names the place in the
+    /// file on disk, which is the one an editor showing that file wants.
+    pub fn locate(&self, address: &str) -> Option<Location> {
+        self.site(address)
+            .map(|site| Location::of(&self.text, site.span.clone()))
     }
 
     /// How many addresses were recorded — what a test asserts a reader did not quietly stop
@@ -182,6 +234,25 @@ mod tests {
             .splice(vec![(8..13, "THREE".to_owned()), (0..3, "ONE".to_owned())])
             .expect("two disjoint ranges");
         assert_eq!(text, "ONE two THREE\n", "out of order in, in order out");
+    }
+
+    #[test]
+    fn an_address_is_located_by_line_and_character_column() {
+        let mut source = Source::new("// é\ncell B5 \"café\"\n  row 1 2\n");
+        source.record("B5", 6..21, Shape::Node);
+        source.record("C7", 28..29, Shape::Value);
+        let b5 = source.locate("B5").expect("recorded");
+        assert_eq!(
+            (b5.line, b5.column, b5.end_line, b5.end_column),
+            (2, 1, 2, 15)
+        );
+        let c7 = source.locate("C7").expect("recorded");
+        assert_eq!((c7.line, c7.column), (3, 7), "after the indentation");
+        assert_eq!(source.locate("Z9"), None, "a file that never spelled it");
+        // `é` is two bytes and one column, so a byte count would put the mark one too far right.
+        let mut accent = Source::new("é x");
+        accent.record("x", 3..4, Shape::Value);
+        assert_eq!(accent.locate("x").expect("recorded").column, 3);
     }
 
     #[test]

@@ -227,6 +227,7 @@ mod tests {
             severity,
             at: at.to_owned(),
             message: "holds 99 and its formula computes 5".to_owned(),
+            location: None,
         }
     }
 

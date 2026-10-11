@@ -18,6 +18,8 @@
 
 use std::fmt;
 
+use crate::projection::{Location, Source};
+
 /// How loud a diagnostic is.
 ///
 /// Three levels rather than two, because the third is what makes the palette rule bearable:
@@ -78,6 +80,11 @@ pub struct Diagnostic {
     pub at: String,
     /// What is wrong, as a sentence fragment a shell can put after the address.
     pub message: String,
+    /// Where [`Diagnostic::at`] is in the file, when the document was read from a projection
+    /// that spelled it — filled by [`Report::locate_in`], never by a rule. Left out of the JSON
+    /// when there is none, so a `.fods` linted reports exactly what it always did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<Location>,
 }
 
 impl Diagnostic {
@@ -87,6 +94,7 @@ impl Diagnostic {
             severity: rule.severity,
             at: at.into(),
             message: message.into(),
+            location: None,
         }
     }
 }
@@ -160,6 +168,19 @@ impl Report {
     pub fn sort(&mut self) {
         self.diagnostics
             .sort_by(|a, b| (a.severity, a.rule, &a.at).cmp(&(b.severity, b.rule, &b.at)));
+    }
+
+    /// Give every finding the line and column its address has in `source`, the projection the
+    /// document was read from.
+    ///
+    /// The rules report addresses and nothing else, which is what keeps them from knowing what a
+    /// file is; this is the one step that does, applied after them. A finding whose address the
+    /// file never spelled — a cell inside a `style` range, the document as a whole — keeps no
+    /// location rather than borrowing a neighbour's.
+    pub fn locate_in(&mut self, source: &Source) {
+        for diagnostic in &mut self.diagnostics {
+            diagnostic.location = source.locate(&diagnostic.at);
+        }
     }
 
     pub fn is_empty(&self) -> bool {

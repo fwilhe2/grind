@@ -158,7 +158,9 @@ had no width and therefore no lines.
   one line each. The span map is richer here than on the spreadsheet's side, because a block
   answers to more than one address — `p12`, `#intro` and `§2.1.3` are all it, and all three are
   anchored. Reading a projection back needs no verb: the form is sniffed from the bytes, so
-  every command already takes one. `grind convert report.fodt report.grind` writes one
+  every command already takes one. `grind convert report.fodt report.grind` writes one.
+  `grind project` is the suite-level twin: the kind is read out of the file, for a caller
+  such as git's `textconv` that cannot say it, and the output is this verb's.
 
 ## Reading
 

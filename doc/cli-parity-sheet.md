@@ -177,6 +177,8 @@ stops ratcheting.
   line each — the two things §6 is built on, made readable before any shell draws them.
   Reading a projection back needs no verb: `grind_core::kind` sniffs the form from the bytes,
   so every command already takes one.
+  `grind project` is the suite-level twin: the kind is read out of the file, for a caller
+  such as git's `textconv` that cannot say it, and the output is this verb's.
 
 ## Reading
 

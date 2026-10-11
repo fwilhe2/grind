@@ -188,6 +188,7 @@ mod tests {
             severity,
             at: at.to_owned(),
             message: "heading level 3 follows level 1".to_owned(),
+            location: None,
         }
     }
 

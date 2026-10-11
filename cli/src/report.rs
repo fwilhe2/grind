@@ -840,8 +840,16 @@ impl Report {
             // One diagnostic per line, in the shape every compiler prints — so an editor's
             // error parser and a person reading a terminal both already understand it.
             Report::Lint(lint) => {
+                // `file:line:col: ` in front when the file spelled the address — a `.grind` —
+                // which is the compiler's shape an editor's error parser already reads. The
+                // address stays after it: it is what a person types back at `grind`.
                 for diagnostic in &lint.diagnostics {
-                    println!("{diagnostic}");
+                    match diagnostic.location {
+                        Some(at) => {
+                            println!("{}:{}:{}: {diagnostic}", lint.path, at.line, at.column)
+                        }
+                        None => println!("{diagnostic}"),
+                    }
                 }
                 if lint.truncated {
                     println!("(stopped after {} findings)", lint.diagnostics.len());

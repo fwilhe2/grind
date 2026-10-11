@@ -65,13 +65,14 @@ with what it does underneath.
 
 ## 3. Working in your own project
 
-Three commands and one setting. Say your spreadsheets and scripts live in `~/work/pricing`:
+Four commands and one setting. Say your spreadsheets and scripts live in `~/work/pricing`:
 
 ```console
 $ cd ~/work/pricing
 $ mkdir -p .vscode
-$ grind definitions --snippets > .vscode/grind.code-snippets
-$ grind definitions          > grind.d.rhai
+$ grind definitions --snippets   > .vscode/grind.code-snippets
+$ grind definitions --projection > .vscode/grind-projection.code-snippets
+$ grind definitions              > grind.d.rhai
 ```
 
 and `.vscode/settings.json`:
@@ -86,15 +87,14 @@ and `.vscode/settings.json`:
 }
 ```
 
-For the projection's nodes, copy `.vscode/grind-projection.code-snippets` out of this
-repository — it is a fixed vocabulary rather than a generated one, so it does not need a
-command.
+The second file is the projection's nodes. It is written by hand rather than generated, and
+the binary carries a copy, so it needs no checkout of this repository.
 
 **`files.associations` is the load-bearing line.** Without it `.grind` is plain text: no
 highlighting, no snippets, nothing. With it, VS Code treats the file as KDL, which is what it
 is.
 
-**Regenerate the snippets when you upgrade `grind`.** The file is the engine's own answer to
+**Regenerate the snippets when you upgrade `grind`.** The first file is the engine's own answer to
 *what can a script say*, so a new version of the binary may have new functions in it. There is
 no harm in running the command in a `Makefile`.
 
@@ -196,10 +196,13 @@ The check an editor cannot do, bound to a key. `.vscode/tasks.json`:
                 "owner": "grind",
                 "fileLocation": ["autoDetected", "${workspaceFolder}"],
                 "pattern": {
-                    "regexp": "^(.*): (error|warning): (.*)$",
+                    "regexp": "^(.*):(\\d+):(\\d+): (.+?): (error|warning): (.*)$",
                     "file": 1,
-                    "severity": 2,
-                    "message": 3
+                    "line": 2,
+                    "column": 3,
+                    "code": 4,
+                    "severity": 5,
+                    "message": 6
                 }
             },
             "group": "test"
@@ -214,11 +217,15 @@ The check an editor cannot do, bound to a key. `.vscode/tasks.json`:
 }
 ```
 
-The problem matcher is approximate: `grind lint`'s first field is an *address inside the
-document* (`Sales.D3`, `#intro`), not a file and a line, so a diagnostic will not open at a line
-number. That is a real gap, and the honest fix for it is the span map the code view is built on
-rather than a cleverer regular expression. Until then, `--format json` is the machine-readable
-form for anything that wants to do better.
+For a `.grind`, every finding whose address the file spells comes out in the compiler's shape
+— `quote.grind:58:34: Quote.B11: warning: … [misspelt]` — with the line and column read from
+the file as written, comments and alignment included, through the projection's span map. The
+matcher above takes the address as the problem's *code*, so it is still there to type back at
+`grind`. Two kinds of finding have no line and the matcher skips them: one about a document in
+another form (a `.fods` has no line a person wrote), and one whose address the file never
+spelled on its own, such as a cell covered only by a `style` range. Both still print, by
+address. `--format json` carries the same thing as a `location` object, with an end as well as
+a start, for anything that wants to underline a range.
 
 ---
 

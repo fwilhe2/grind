@@ -13,7 +13,7 @@
 //! | File | Written by | Checked how |
 //! |---|---|---|
 //! | `.vscode/grind.code-snippets` | `grind definitions --snippets` | it *is* what the command prints today |
-//! | `.vscode/grind-projection.code-snippets` | by hand | every node in the two grammar notes has a snippet, and every snippet names a node |
+//! | `.vscode/grind-projection.code-snippets` | by hand, and printed by `grind definitions --projection` | every node in the two grammar notes has a snippet, every snippet names a node, and the binary prints the file byte for byte |
 //!
 //! The second is weaker than the first on purpose, and the weakness is named: this checks
 //! **coverage**, not wording. A snippet whose description has gone out of date is a prose
@@ -115,6 +115,18 @@ fn the_shipped_snippets_are_current() {
         ".vscode/grind.code-snippets is out of date — run \
          `grind definitions --snippets > .vscode/grind.code-snippets`"
     );
+}
+
+/// The installed binary hands out the projection's snippets byte for byte — what `grind init`
+/// writes into a project with no copy of this repository (`doc/init.md` I0).
+#[test]
+fn the_binary_carries_the_projection_snippets() {
+    let out = Command::new(env!("CARGO_BIN_EXE_grind"))
+        .args(["definitions", "--projection"])
+        .output()
+        .expect("grind runs");
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8(out.stdout).expect("utf-8"), PROJECTION);
 }
 
 /// The vacuity guard: a scanner that found nothing would pass every test below.

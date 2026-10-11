@@ -855,9 +855,17 @@ impl App {
     ///
     /// With a [`spell::Lexicon`] attached ([`App::set_lexicon`]) the `misspelt` rule runs too, so
     /// every problems pane lists the words the dictionary does not know with no code of its own.
+    ///
+    /// A document read from a `.grind` gets each finding's line and column in that file too
+    /// ([`grind_core::lint::Report::locate_in`]), which is what lets an editor jump to it.
     pub fn lint(&self, options: &grind_core::lint::Options) -> grind_core::lint::Report {
         let lexicon = self.lexicon.read().unwrap().clone();
-        lint::lint_with(&self.state.read().unwrap().doc, options, lexicon.as_deref())
+        let state = self.state.read().unwrap();
+        let mut report = lint::lint_with(&state.doc, options, lexicon.as_deref());
+        if let Some(source) = state.doc.projection_source.as_deref() {
+            report.locate_in(source);
+        }
+        report
     }
 
     // --- spelling (`doc/spelling.md`) ---

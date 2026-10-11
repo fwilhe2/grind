@@ -44,7 +44,7 @@ pub mod emit;
 pub mod source;
 
 pub use emit::Emitter;
-pub use source::{Shape, Site, Source, entry_span, node_span};
+pub use source::{Location, Shape, Site, Source, entry_span, node_span};
 
 /// The KDL implementation, re-exported.
 ///

@@ -268,6 +268,17 @@ cp "$out/sample.grind" "$out/sample-before.grind"
 text type "$out/sample.grind" p2 "Still " >/dev/null
 diff -u "$out/sample-before.grind" "$out/sample.grind" | tail -n +3 || true
 
+# The suite-level verb reads the kind out of the file, which is what git needs to diff a package:
+# with `*.odt diff=grind` in .gitattributes and `git config diff.grind.textconv "grind project"`,
+# `git diff` shows an edited .odt as the blocks that changed (doc/init.md §3.8).
+say "project at the suite level: what git's textconv runs on a package"
+"$GRIND" project "$out/sample.odt" | sed -n '1,4p'
+
+# Linting a projection puts each finding on its line and column in the file as written — the
+# compiler's shape, which an editor's problem matcher reads (doc/editor-setup.md §6).
+say "lint a .grind: each finding at file:line:col"
+"$GRIND" lint "$out/sample.grind" || true
+
 # --- lint: what the document says about itself ---------------------------------------------
 # The word processor's half of `doc/dsl.md` §4.3: a heading level skipped, a link to a bookmark
 # nothing declares, a style name the document never declares, and anything a `.grind` of it

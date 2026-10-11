@@ -184,6 +184,10 @@ fn text_lines(lines: Vec<String>) -> Result<Report, String> {
     Ok(Report::Text(TextReport { lines }))
 }
 
+/// Every node of the projection as a VS Code snippet — `.vscode/grind-projection.code-snippets`,
+/// the one copy, read at compile time so `grind definitions --projection` needs no repository.
+const PROJECTION_SNIPPETS: &str = include_str!("../../.vscode/grind-projection.code-snippets");
+
 /// `<app> project`, for either application — the projection, or one of the two maps beside it.
 ///
 /// One function because there is one answer: `Projection` is the container's type, the same
@@ -1112,6 +1116,23 @@ enum Top {
         off: Vec<String>,
     },
 
+    /// Print any document as its projection, whatever kind it is
+    ///
+    /// The suite-level twin of `grind sheet project` and `grind text project`: the kind is
+    /// read out of the file, so a caller that does not know it first gets the plain-text form
+    /// either way. That caller is usually git — with `*.ods diff=grind` in `.gitattributes` and
+    /// `git config diff.grind.textconv "grind project"`, `git diff` shows a changed package as
+    /// the cells and blocks that changed.
+    Project {
+        file: PathBuf,
+        /// Print the token map instead: one `kind<TAB>start<TAB>end` line per token
+        #[arg(long, conflicts_with = "anchors")]
+        tokens: bool,
+        /// Print the span map instead: one `address<TAB>line<TAB>start<TAB>end` line per anchor
+        #[arg(long)]
+        anchors: bool,
+    },
+
     // `doc/dsl.md` layer 1.
     /// Build a document from a script
     ///
@@ -1161,7 +1182,7 @@ enum Top {
         data: Option<PathBuf>,
     },
 
-    /// Print what an editor needs to help you write a script
+    /// Print what an editor needs to help you write a script or a projection
     ///
     /// Every function `grind build` gives a script, with its parameters, its types and its
     /// documentation, as a Rhai definition file. Redirect it beside your scripts and an editor
@@ -1182,6 +1203,15 @@ enum Top {
         /// See doc/editor-setup.md for which of the two an editor of yours can use.
         #[arg(long)]
         snippets: bool,
+        /// Print VS Code snippets for the projection's nodes instead — a `.grind`, not a script
+        ///
+        /// Every node of both grammars, spreadsheet and text, with its arguments as tab stops:
+        ///
+        ///   grind definitions --projection > .vscode/grind-projection.code-snippets
+        ///
+        /// Always snippets, so `--snippets` beside it changes nothing.
+        #[arg(long)]
+        projection: bool,
     },
 
     /// Print the third-party components grind is built from, and their licences
@@ -2935,6 +2965,22 @@ fn run(cli: &Cli) -> Result<Report, String> {
             Ok(lint_report(file, findings))
         }
 
+        // The same function the two application verbs call, so the three cannot print three
+        // different projections of one file.
+        Top::Project {
+            file,
+            tokens,
+            anchors,
+        } => match document_kind(file)? {
+            DocumentKind::Spreadsheet => project_report(
+                &open_as(file, DocumentKind::Spreadsheet, cli)?.project(),
+                *tokens,
+                *anchors,
+            ),
+            DocumentKind::Text => project_report(&open_text(file)?.project(), *tokens, *anchors),
+            kind => Err(unsupported(file, Some(kind))),
+        },
+
         // The one verb that runs a script, and the only place in the suite that links an
         // evaluator (R11). Note what it does *not* do: it never reads the output, so building
         // over an existing document replaces it rather than editing it — a build product is
@@ -2999,11 +3045,18 @@ fn run(cli: &Cli) -> Result<Report, String> {
         // No document, no script — the vocabulary itself, for an editor rather than for a
         // person (doc/generator-spec.md §9). It is the engine's own answer: what this prints
         // is what `grind build` registered, so it cannot describe a function that is not there.
-        Top::Definitions { snippets } => Ok(Report::Text(TextReport {
-            lines: if *snippets {
-                grind_build::snippets()
-            } else {
-                grind_build::definitions()
+        //
+        // The projection's snippets are the exception: written by hand, held to the two grammar
+        // notes by `cli/tests/editor.rs`, and compiled in here so an installed `grind` can hand
+        // them to a project that has no copy of this repository (`doc/init.md` I0).
+        Top::Definitions {
+            snippets,
+            projection,
+        } => Ok(Report::Text(TextReport {
+            lines: match (*projection, *snippets) {
+                (true, _) => PROJECTION_SNIPPETS.to_owned(),
+                (false, true) => grind_build::snippets(),
+                (false, false) => grind_build::definitions(),
             }
             .lines()
             .map(str::to_owned)
