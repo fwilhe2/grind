@@ -2,13 +2,17 @@
 # SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 #
 # Notice: This file was modified by Florian Wilhelm on 2026-08-22
-# to build and package the grind cli.
+# to build and package the grind cli, and on 2026-10-11 to build on bookworm.
 #
 # https://github.com/GoogleContainerTools/distroless/blob/cd080764af3103b2f49fb5eb23297c72c945e77a/examples/rust/Dockerfile
 #
 # SPDX-License-Identifier: Apache-2.0
 
-FROM rust:1 as build-env
+# Built on the Debian release the image runs on. Bare `rust:1` follows Debian's newest
+# (trixie, glibc 2.41) while cc-debian12 is bookworm (glibc 2.36), so a binary linked there
+# may ask for a glibc the image does not have — which the arm64 build started doing, and the
+# "Print Sheet Version" step caught (`GLIBC_2.39' not found). Bump both together.
+FROM rust:1-bookworm AS build-env
 WORKDIR /app
 COPY . /app
 RUN cargo build --release -p grind-cli
