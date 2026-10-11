@@ -86,7 +86,12 @@ It writes everything below — the snippets, the definition file, the settings, 
 the two extension recommendations — plus a starter script that builds a spreadsheet, an
 `.editorconfig`, a `.gitignore` and a `.gitattributes` that makes `git diff` read an `.ods`. It
 never overwrites a file that is already there: a `settings.json` of your own is kept as it is,
-and the report says which line it is missing. `doc/init.md` is the design.
+and the report says which line it is missing. `--template sheet` or `--template text` starts
+from a hand-written `.grind` instead of a script, and `--template none` from nothing.
+
+**After upgrading grind, `grind init --update`** rewrites the snippets and the definition file
+— the vocabulary, which a newer grind may have more of — and touches nothing else; a plain
+`grind init` says `stale` beside any that are out of date. `doc/init.md` is the design.
 
 What follows is what it does, by hand — for an editor other than VS Code, or a project that
 wants only part of it. Four commands and one setting. Say your spreadsheets and scripts live in

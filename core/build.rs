@@ -5,6 +5,14 @@
 //! Stamps the commit, tree cleanliness and build date into env vars every shell's
 //! `--version`/about dialog reads through [`grind_core::build_info`]. One build script for
 //! the whole workspace, since every binary already depends on `grind-core`.
+//!
+//! *ponytail:* no `rerun-if-changed`, so Cargo re-runs this when a file of `grind-core` changes
+//! and not when `HEAD` moves — a debug build after a commit that touched only other crates still
+//! says the commit before it. Watching `.git/HEAD` would fix that and recompile every crate in the
+//! workspace after every commit, since they all depend on this one, which is a high price for a
+//! version string. Release builds start clean in CI and are right. Nothing may rely on the stamp
+//! being current in a development build: `grind init` decides a vocabulary is stale by its
+//! content for exactly this reason (`cli/src/init.rs`).
 
 use std::process::Command;
 

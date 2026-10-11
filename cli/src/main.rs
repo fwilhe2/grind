@@ -1275,8 +1275,9 @@ enum Top {
 
     /// Set up a directory for writing scripts and projections in an editor
     ///
-    /// Writes a starter script that builds a spreadsheet (model.rhai, with its data.json and its
-    /// tests), and around it what an editor and git need: VS Code's recommended extensions,
+    /// Writes a starter — by default a script that builds a spreadsheet (model.rhai, with its
+    /// data.json and its tests); --template picks a hand-written spreadsheet or text document
+    /// instead — and around it what an editor and git need: VS Code's recommended extensions,
     /// settings and tasks, the vocabulary as snippets and a Rhai definition file, and an
     /// .editorconfig, .gitignore and .gitattributes. In a git repository's root it also points
     /// `diff=grind` at `grind project`, so `git diff` reads an .ods as the cells that changed.
@@ -1285,10 +1286,21 @@ enum Top {
     /// says what it is missing, and --force replaces it. Running it twice writes nothing the
     /// second time. No editor is touched — extensions are recommended, never installed — and
     /// nothing written here is read back by grind, so any of it can be deleted.
+    ///
+    /// The vocabulary files it writes are this grind's, so a newer grind finds them `stale`;
+    /// `grind init --update` rewrites those and touches nothing else.
     Init {
         /// The directory to set up, created if missing
         #[arg(default_value = ".")]
         dir: PathBuf,
+        /// The starter to write — `generator` when none is named and the directory is new; none
+        /// when it is named and the directory was set up before
+        #[arg(long, value_enum)]
+        template: Option<init::Template>,
+        /// Rewrite only the generated vocabulary files — snippets and grind.d.rhai — when this
+        /// grind's differ; write and touch nothing else
+        #[arg(long, conflicts_with = "template")]
+        update: bool,
         /// Replace files that exist with other content
         #[arg(long)]
         force: bool,
@@ -3215,7 +3227,20 @@ fn run(cli: &Cli) -> Result<Report, String> {
         Top::Lsp => unreachable!("`main` runs the language server itself"),
 
         // No document and no script: a directory around them (`doc/init.md`).
-        Top::Init { dir, force } => Ok(Report::Init(init::init(dir, *force, PROJECTION_SNIPPETS)?)),
+        Top::Init {
+            dir,
+            template,
+            update,
+            force,
+        } => Ok(Report::Init(init::init(
+            dir,
+            init::Options {
+                template: *template,
+                force: *force,
+                update: *update,
+            },
+            PROJECTION_SNIPPETS,
+        )?)),
 
         // No document: the list is the core's, so every window's About and this agree.
         Top::Licences { list: true } => Ok(Report::Components(

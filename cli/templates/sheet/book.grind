@@ -1,0 +1,43 @@
+grind spreadsheet
+
+// A spreadsheet written by hand — the starter `grind init --template sheet` writes.
+//
+// This file *is* the spreadsheet, in the form that lives in git: every cell is a line, so a
+// change is a line of diff. Open it in grind's window, or turn it into a file LibreOffice opens:
+//
+//   grind lint     book.grind              the problems, if it has any
+//   grind sheet recalc book.grind          write every formula's answer into this file
+//   grind convert  book.grind book.ods     a package for anybody else
+//
+// The formulas below carry no answers yet, and that is allowed: `recalc` fills them in, one
+// line of diff per cell, and leaves these comments where they are. With grind's language server
+// the answers show beside each formula as you type. The guide is grind's
+// doc/projection-guide.md (https://github.com/fwilhe2/grind).
+
+// A name makes a formula say what it means. Names are the document's, so they sit outside
+// every sheet.
+name monthly "[$Costs.$B$2:.$B$4]"
+
+sheet Costs {
+    col 1 width="4cm"
+
+    // `at` says where a grid of plain values starts; each `row` is one line of the sheet.
+    at A1 {
+        row Item       Monthly  Yearly
+        row Rent       1450     #null
+        row Utilities  180.5    #null
+        row Internet   49.99    #null
+    }
+
+    // A `cell` is one cell that carries more than a value — here a formula, and no answer.
+    cell C2 "=[.B2]*12"
+    cell C3 "=[.B3]*12"
+    cell C4 "=[.B4]*12"
+    cell A5 Total
+    cell B5 "=SUM(monthly)"
+    cell C5 "=SUM([.C2:.C4])"
+
+    style A1:C1 bold=#true background=silver
+    style A5:C5 bold=#true
+    format B2:C5 currency decimals=2 symbol="$"
+}

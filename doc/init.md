@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # `grind init` — a project for the two languages, and what comes after it
 
-**Status: I0, I1, I5 and I6 done (2026-10-11); I2–I4 and I7 planned, not built.** Written 2026-10-11 from the request *"the CLI should have an
+**Status: I0, I1, I2, I5 and I6 done (2026-10-11); I3, I4 and I7 planned, not built.** Written 2026-10-11 from the request *"the CLI should have an
 `init` command that sets up a workspace for working with a `.rhai` or `.grind` in VS Code or
 other editors — environment, extensions, snippets, run commands, as complete an experience as
 possible; later, perhaps a VS Code extension that calculates values inline."* §3 is the part
@@ -381,6 +381,35 @@ the one that looks like a broken setup and is not; `init`'s report and README no
 `doc/editor-setup.md` §1 and §8 carry the measurements. A task has still not been *run* from a
 window.
 
+### 4.6 What I2 built
+
+`--update`, `stale`, and the `sheet`, `text` and `none` starters — `cli/src/init.rs`, held to
+the exit criterion by `cli/tests/init.rs`'s `update_rewrites_stale_vocabulary_and_nothing_else`.
+
+- **A generated file is stale when its *body* differs from what this binary would write.** Not
+  when its header does: the header's commit is the one `grind-core` was last built at, which an
+  incremental build does not refresh (`core/build.rs`'s `ponytail:`), and a new commit that
+  registered no function has made nobody's completion wrong. So a plain `init` reports `stale`
+  and writes nothing; `--update` rewrites exactly those, reports them `updated`, and lists
+  nothing else at all — no seeded file is written, not even one the user deleted. A file at a
+  generated path that does not begin with grind's header is the user's, and is kept even by
+  `--update`; `--force` replaces it.
+- **The header says how to rewrite it**: `grind init --update`, and the one `definitions`
+  command that writes that file alone.
+- **`--template generator|sheet|text|none`** (§4.4). `sheet` is `book.grind`, a three-item
+  spreadsheet with a name and formulas that carry no answers until `recalc`; `text` is
+  `notes.grind`, headings, a nested list and a table; `none` is the editor and repository files
+  alone. Each writes its own top of the README — what the starter is and the commands that work
+  on it — over the common rest. Only `generator` writes a `.gitignore`, because only a script
+  builds anything: a hand-written projection *is* the source.
+- **Found while building it: a second run added a second starter.** `init --template sheet`
+  followed by a plain `init` wrote the default script beside the spreadsheet. So with no
+  `--template` named, a directory `init` set up before — one of its generated files is there
+  under the header — gets no starter and its README is left out of the comparison; a new
+  directory still gets `generator`. `a_second_run_adds_no_second_starter` holds it.
+- `--update` and `--template` are refused together: one rewrites vocabulary and writes no
+  starter, the other is about nothing else.
+
 ---
 
 ## 5. The language server — the later half
@@ -499,7 +528,7 @@ once one is chosen, `grind init` can recommend `fwilhe2.grind` in `extensions.js
 |---|---|---|
 | **I0** — done | The three prerequisites (§2), as built there: `grind lint` reports `file:line:col` for a `.grind` through the span map (and keeps the address); a suite-level `grind project <file>` printing either kind's projection to stdout; the projection snippets compiled into the binary, printed by `grind definitions --projection`. Plus the stale `convert --help` sentence | `doc/editor-setup.md` §6's matcher lands every finding on its line; `git diff` with the §3.8 textconv shows a changed `.ods` as changed cells; `cli/tests/editor.rs` holds the embedded file to the shipped one |
 | **I1** — done | `grind init` for VS Code: §4.2's files, the `generator` template, never-clobber, the report | in a temp dir: the template builds, tests and lints clean; a second run writes nothing; a pre-existing `settings.json` survives byte for byte; nothing is written outside `DIR` |
-| **I2** | `--update` and the generated-file header; the `sheet` and `text` templates | upgrading the vocabulary (a test that adds a function) makes `init` report `stale` and `--update` fix it, touching no seeded file |
+| **I2** — done | `--update` and the generated-file header; the `sheet` and `text` templates | upgrading the vocabulary (a test that adds a function) makes `init` report `stale` and `--update` fix it, touching no seeded file |
 | **I3** | `--editor zed`, `--editor helix`, several at once | each editor's files written and parsed back (TOML, JSON) by a test |
 | **I4** | `--ci github` | the workflow it writes runs green in this repository's own CI on the starter |
 | **I5** — done | `grind lsp` for `.grind`, and the `.rhai` half that runs nothing (§5.1): diagnostics, hover, inlay hints, go-to-definition, completion | an LSP conformance test driving the server over stdio on `examples/quote.grind`; and the decision recorded in `doc/dsl.md` §9 |

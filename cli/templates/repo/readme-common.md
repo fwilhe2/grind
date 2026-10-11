@@ -1,19 +1,3 @@
-# A grind project
-
-Set up by `grind init`. `model.rhai` is a script that builds a spreadsheet out of `data.json`
-beside it; change the numbers there, rebuild, and every formula and total follows. This file is
-yours — rewrite it to say what your project is, and keep or drop the notes below.
-
-## Working on it
-
-| | VS Code | Command line |
-|---|---|---|
-| Build `model.fods` from the script | **Ctrl+Shift+B** on `model.rhai` | `grind build model.rhai -o model.fods` |
-| Run the `test_…` functions at its end | *Tasks: Run Test Task* | `grind test model.rhai` |
-| Check a document for problems | the *grind: lint* task | `grind lint model.fods` |
-| Write a `.grind`'s answers into it | the *grind: recalculate* task | `grind sheet recalc book.grind` |
-| Open what was built | the *grind: open the built spreadsheet* task | `grind-sheet-gtk model.fods` |
-
 Errors from the build, a failing test and lint findings in a `.grind` land on their line in the
 *Problems* panel. The language is described in grind's `doc/generator-guide.md`, and a
 hand-written spreadsheet (`.grind`) in `doc/projection-guide.md`:
@@ -62,9 +46,10 @@ parameters, types and documentation, in one file you can read.
 
 ## Keeping it current
 
-- **After upgrading grind, rewrite the generated files** — the two snippet files and
-  `grind.d.rhai` — so completion describes the functions this version has. Each one's first
-  lines name the command that writes it.
+- **After upgrading grind, run `grind init --update`.** It rewrites the generated files — the
+  two snippet files and `grind.d.rhai` — so completion describes the functions this version
+  has, and touches nothing else. A plain `grind init` says `stale` beside any that are out of
+  date.
 - **`git diff` reads an `.ods` as the cells that changed** because of `.gitattributes` and one
   setting that git keeps per clone rather than in the repository. In a fresh clone, run once:
 
@@ -72,5 +57,6 @@ parameters, types and documentation, in one file you can read.
   git config diff.grind.textconv "grind project"
   ```
 
-- `model.fods` is in `.gitignore` because it is built from the script. A spreadsheet you write
-  or edit by hand is source: keep it as `.fods` or `.grind`, which diff, and commit it.
+- A spreadsheet **built from a script** is derived: keep it out of git (`.gitignore`) and build
+  it again. One you **write or edit by hand** is source: keep it as `.grind` or `.fods`, which
+  diff, and commit it.

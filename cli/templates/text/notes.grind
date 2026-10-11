@@ -1,0 +1,35 @@
+grind text
+
+// A text document written by hand — the starter `grind init --template text` writes.
+//
+// This file *is* the document, in the form that lives in git: one block per line, so a change
+// is a line of diff. Open it in grind's window, or turn it into a file anybody opens:
+//
+//   grind lint     notes.grind              the problems, if it has any
+//   grind convert  notes.grind notes.odt    a package for anybody else
+//
+// The guide is grind's doc/projection-text.md (https://github.com/fwilhe2/grind).
+
+h 1 "Notes"
+p "A paragraph is a `p`, and **bold** and *italic* are written the way you would type them."
+
+h 2 "A list"
+list {
+    li "Each item is a line."
+    li "An item inside a `list` takes its depth from the nesting:"
+    list {
+        li "like this one."
+    }
+}
+
+h 2 "A table"
+table "Costs" {
+    row {
+        cell { p "Item" }
+        cell { p "Monthly" }
+    }
+    row {
+        cell { p "Rent" }
+        cell { p "1450" }
+    }
+}

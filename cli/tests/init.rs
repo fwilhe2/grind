@@ -296,7 +296,7 @@ fn a_file_the_user_had_survives_byte_for_byte() {
     assert!(line.contains("files.associations"), "{line}");
 
     // --force is the one way past it.
-    let forced = init(dir, ".", &["--force"]);
+    let forced = init(dir, ".", &["--force", "--template", "generator"]);
     assert_eq!(forced[".vscode/settings.json"], "replaced");
     assert_eq!(
         forced["model.rhai"], "unchanged",
@@ -348,4 +348,164 @@ fn a_file_where_the_directory_should_be_is_an_error() {
     let out = grind_in(&sandbox.0, &["init", "taken"]);
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("not a directory"));
+}
+
+/// Every starter is what its README says, and lints clean — spelling included.
+#[test]
+fn every_starter_lints_clean() {
+    for (template, starter) in [("sheet", "book.grind"), ("text", "notes.grind")] {
+        let sandbox = Sandbox::new(template);
+        let report = init(&sandbox.0, ".", &["--template", template]);
+        assert_eq!(report[starter], "wrote", "{template}");
+        assert!(
+            !report.contains_key("model.rhai"),
+            "only the starter asked for"
+        );
+        assert!(
+            !report.contains_key(".gitignore"),
+            "a projection is source: nothing derived"
+        );
+        let lint = ok_in(&sandbox.0, &["lint", starter]);
+        assert!(lint.contains("no problems found"), "{template}: {lint}");
+        let readme = std::fs::read_to_string(sandbox.0.join("README.md")).expect("written");
+        assert!(
+            readme.contains(starter),
+            "{template}'s README names its starter"
+        );
+    }
+
+    // The hand-written spreadsheet carries no answers until `recalc` writes them, one line each.
+    let sandbox = Sandbox::new("sheet-recalc");
+    init(&sandbox.0, ".", &["--template", "sheet"]);
+    let before = std::fs::read_to_string(sandbox.0.join("book.grind")).expect("there");
+    ok_in(&sandbox.0, &["sheet", "recalc", "book.grind"]);
+    let after = std::fs::read_to_string(sandbox.0.join("book.grind")).expect("there");
+    assert_eq!(
+        before.lines().count(),
+        after.lines().count(),
+        "answers are written in place"
+    );
+    assert!(ok_in(&sandbox.0, &["sheet", "view", "book.grind"]).contains("20165.88"));
+
+    let sandbox = Sandbox::new("none");
+    let report = init(&sandbox.0, ".", &["--template", "none"]);
+    assert_eq!(report["README.md"], "wrote");
+    assert!(
+        report
+            .keys()
+            .all(|p| !p.ends_with(".grind") && !p.ends_with(".rhai") || p == "grind.d.rhai")
+    );
+}
+
+/// Running it again names no starter, so it must not add one beside the first.
+#[test]
+fn a_second_run_adds_no_second_starter() {
+    let sandbox = Sandbox::new("one-starter");
+    init(&sandbox.0, ".", &["--template", "sheet"]);
+    let before = snapshot(&sandbox.0);
+    let again = init(&sandbox.0, ".", &[]);
+    assert!(
+        again.values().all(|action| action == "unchanged"),
+        "{again:?}"
+    );
+    assert!(!again.contains_key("model.rhai"));
+    assert_eq!(snapshot(&sandbox.0), before);
+}
+
+/// **I2's exit criterion**: a vocabulary from another grind is reported stale, `--update`
+/// rewrites it, and nothing seeded is touched — not even a file the user changed.
+#[test]
+fn update_rewrites_stale_vocabulary_and_nothing_else() {
+    let sandbox = Sandbox::new("update");
+    let dir = &sandbox.0;
+    init(dir, ".", &[]);
+    let current = std::fs::read_to_string(dir.join("grind.d.rhai")).expect("there");
+
+    // An older grind registered one function fewer; the user has since edited a seeded file.
+    let older = current.replacen("fn push(", "fn push_was_different(", 1);
+    assert_ne!(older, current, "the vocabulary has a push to change");
+    std::fs::write(dir.join("grind.d.rhai"), &older).expect("written");
+    std::fs::write(dir.join(".vscode/settings.json"), "{ \"theirs\": true }\n").expect("written");
+    std::fs::remove_file(dir.join("model.rhai")).expect("removed");
+
+    let before = snapshot(dir);
+    let report = init(dir, ".", &[]);
+    assert_eq!(report["grind.d.rhai"], "stale");
+    assert_eq!(report[".vscode/grind.code-snippets"], "unchanged");
+    assert_eq!(
+        snapshot(dir),
+        before,
+        "a plain run only reports a stale file"
+    );
+
+    let report = init(dir, ".", &["--update"]);
+    assert_eq!(report["grind.d.rhai"], "updated");
+    assert!(
+        report
+            .keys()
+            .all(|p| p.ends_with(".code-snippets") || p == "grind.d.rhai"),
+        "--update reports the generated files and nothing else: {report:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("grind.d.rhai")).expect("there"),
+        current
+    );
+    let after = snapshot(dir);
+    for (path, bytes) in &before {
+        if path != Path::new("grind.d.rhai") {
+            assert_eq!(
+                after.get(path),
+                Some(bytes),
+                "{} is untouched",
+                path.display()
+            );
+        }
+    }
+    assert!(
+        !dir.join("model.rhai").exists(),
+        "--update writes no seeded file, deleted or not"
+    );
+}
+
+/// The header names the build that wrote a file; a different one over the same vocabulary is
+/// not stale, so a new commit that registered nothing does not churn anybody's repository.
+#[test]
+fn only_the_vocabulary_makes_a_file_stale() {
+    let sandbox = Sandbox::new("header");
+    let dir = &sandbox.0;
+    init(dir, ".", &[]);
+    let path = dir.join(".vscode/grind.code-snippets");
+    let text = std::fs::read_to_string(&path).expect("there");
+    let (first, rest) = text.split_once('\n').expect("a header");
+    assert!(first.starts_with("// Generated by grind "));
+    let older = format!("// Generated by grind 0.0.0 (commit 0000000): an older build.\n{rest}");
+    std::fs::write(&path, &older).expect("written");
+    assert_eq!(
+        init(dir, ".", &["--update"])[".vscode/grind.code-snippets"],
+        "unchanged"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("there"),
+        older,
+        "and not rewritten"
+    );
+
+    // A file of that name grind did not write is not grind's to rewrite, --update or not.
+    std::fs::write(dir.join("grind.d.rhai"), "// my own notes\n").expect("written");
+    let report = init(dir, ".", &["--update"]);
+    assert_eq!(report["grind.d.rhai"], "kept");
+    assert_eq!(
+        init(dir, ".", &["--update", "--force"])["grind.d.rhai"],
+        "replaced"
+    );
+}
+
+#[test]
+fn update_and_a_template_are_two_different_requests() {
+    let sandbox = Sandbox::new("conflict");
+    let out = grind_in(&sandbox.0, &["init", "--update", "--template", "sheet"]);
+    assert!(
+        !out.status.success(),
+        "--update writes no starter, so it takes no template"
+    );
 }
