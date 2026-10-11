@@ -29,7 +29,7 @@ against their marketing.
 | Syntax errors underlined as you type | ● from the KDL language server | ○ nothing published does this — §5 |
 | Completion for every node / function | ● snippets, once a letter is typed | ● snippets, once a letter is typed — nothing on `s.`, and no filtering by what `s` is |
 | A description on the completion item | ◐ one line, behind Ctrl+Space | ◐ the engine's doc comment, as one plain-text detail line behind Ctrl+Space |
-| Hover documentation on code already written | ○ needs a language server — `grind lsp` has it (§7.1), VS Code's client is `doc/init.md` I6 | ○ the same |
+| Hover documentation on code already written | ○ with snippets alone — ● with `grind lsp` and its client (§7.1) | ○ the same — ● the same |
 | Types and signatures | ○ the node's example in its description | ● in the snippet's description, and in full in `grind.d.rhai` |
 | Actual validation of what you wrote | `grind lint` | `grind build` |
 
@@ -40,8 +40,7 @@ snippet's description arrives as the item's **detail** — one plain-text line, 
 Snippet)" appended, shown when the suggestion's details are open (Ctrl+Space a second time, or
 the `>` on the highlighted entry) — while its *documentation* pane holds only a preview of the
 code it inserts. Completing on the dot and hover over existing code are both a language server's:
-`grind lsp` has them (§7.1), and VS Code needs its client extension, `doc/init.md` I6, to start
-it. **And none of it reaches a `.grind` in an untrusted folder** — §8's
+`grind lsp` has them, and in VS Code its client extension starts it (§7.1). **And none of it reaches a `.grind` in an untrusted folder** — §8's
 first row.
 
 The last row is not a consolation prize. An editor cannot tell you that a formula reads a
@@ -286,8 +285,23 @@ method of every host type, and it says nothing about the script's own variables 
 (`doc/dsl.md` §9). And it never runs a script — opening a `.rhai` that would loop forever is as
 quick as opening any other.
 
-**VS Code** needs a client extension to start a server, and grind's is `doc/init.md` I6 — not
-built yet. Until it is, VS Code has §2–§6's snippets and tasks.
+**VS Code** starts a server through a client extension, and grind's is in this repository,
+`editors/vscode/` (`doc/init.md` I6). It is not published anywhere yet; build and install it:
+
+```console
+$ editors/vscode/package.sh                       # writes target/grind-0.0.1.vsix
+$ code --install-extension target/grind-0.0.1.vsix
+```
+
+CI builds the same file on every push (`artifacts.yml`'s `vscode` job, artifact `grind-vscode`).
+It starts `grind lsp` from `grind.path` (default `grind`), contributes a `grind` language with its
+own highlighting — so a `.grind` is recognised **even in an untrusted folder**, where the
+`files.associations` line of §3 is ignored — and declares `rhai` too, so a script is served with
+or without the Rhai extension. `grind.path` is honoured from a folder's settings only once the
+folder is trusted: in Restricted Mode a folder cannot choose the program VS Code runs.
+`editors/vscode/test/run.sh` is its test: a real VS Code, headless, with a fresh profile, no other
+extension and the folder untrusted, asked through its own completion, hover, inlay-hint and
+diagnostic commands.
 
 **Helix** (`languages.toml`, global or a project's `.helix/`):
 
@@ -336,7 +350,7 @@ Neovim shows after `vim.lsp.inlay_hint.enable(true)`.
 |---|---|
 | **A `.grind` is plain text, and no task runs** | the folder is in **Restricted Mode** — VS Code's state for a folder it has not been told to trust — and there it ignores the workspace's `files.associations`, so the snippets, scoped to `kdl`, never apply; it also refuses to run tasks. Trust the folder (*Restricted Mode* in the status bar, or *Workspaces: Manage Workspace Trust*), or put the association in your **user** settings, which apply either way. Measured: untrusted, `book.grind` opened as `plaintext`; trusted, as `kdl` with its `cell` snippets. A `.rhai` is unaffected, because the Rhai extension claims the file type itself |
 | **The description is missing from a completion** | it is the item's detail line, shown only when the details are open: press Ctrl+Space again while the list is up |
-| **Nothing is offered after `s.`** | expected: a snippet needs a letter (`s.pu`), and nothing knows what `s` is without a language server — `grind lsp` offers the methods after a dot (§7.1), which VS Code reaches once its client, `doc/init.md` I6, exists |
+| **Nothing is offered after `s.`** | expected: a snippet needs a letter (`s.pu`), and nothing knows what `s` is without a language server — `grind lsp` offers the methods after a dot (§7.1); in VS Code, install its client extension, `editors/vscode` |
 | **No highlighting in a `.grind`** | the `files.associations` entry is missing, or the window needs reloading after adding it. The language shown in the status bar should read *KDL* |
 | **No completions** | snippets are suppressed when `editor.snippetSuggestions` is `"none"`; the settings above set it to `"top"` for these two languages. Check that the `.code-snippets` file is in the *workspace folder's* `.vscode/`, not a parent's |
 | **Completions for functions that do not exist** | the snippet file is from an older `grind` — regenerate it (§3) |

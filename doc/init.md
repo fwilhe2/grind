@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # `grind init` — a project for the two languages, and what comes after it
 
-**Status: I0, I1 and I5 done (2026-10-11); I2–I4, I6 and I7 planned, not built.** Written 2026-10-11 from the request *"the CLI should have an
+**Status: I0, I1, I5 and I6 done (2026-10-11); I2–I4 and I7 planned, not built.** Written 2026-10-11 from the request *"the CLI should have an
 `init` command that sets up a workspace for working with a `.rhai` or `.grind` in VS Code or
 other editors — environment, extensions, snippets, run commands, as complete an experience as
 possible; later, perhaps a VS Code extension that calculates values inline."* §3 is the part
@@ -441,6 +441,41 @@ applications, and `grind <app> project --anchors --as-read` reaches it from the 
 Helix, Zed or Neovim was installed where this was written; `doc/editor-setup.md` §7.1 has their
 configuration, marked as not run.
 
+### 5.2 What I6 built
+
+`editors/vscode/` — grind's VS Code extension, plain JavaScript over `vscode-languageclient`
+10.1.1 (MIT; its tree is MIT, ISC and BlueOak-1.0.0), so it builds with no compiler. It starts
+`grind lsp` from `grind.path` and introduces it to VS Code; every answer is the server's. Three
+things it does beyond starting a process:
+
+- **It contributes a `grind` language** with its own small TextMate grammar
+  (`syntaxes/grind.tmLanguage.json`) rather than leaning on `kdl-org.kdl`. That is what makes a
+  `.grind` work in an **untrusted** folder: Restricted Mode ignores a folder's
+  `files.associations`, the trap the first session fell into, but not an extension's own
+  language. A project `grind init` set up still maps `*.grind` to KDL; the client's document
+  selector matches `**/*.grind` as well, so the server attaches either way.
+- **It declares `rhai` too**, so a script is served whether or not the Rhai extension is
+  installed; the two contributions merge.
+- **`grind.path` is a restricted setting.** In an untrusted folder VS Code reads it from the
+  user's settings only, so opening a folder cannot make VS Code run a program the folder names
+  (`capabilities.untrustedWorkspaces` in `package.json`).
+
+**Tested in VS Code itself**: `editors/vscode/test/run.sh` starts VS Code's Electron binary
+headless, with a fresh profile, no other extension installed and the folder untrusted, and
+`test/suite.js` asks VS Code's own commands — completion, hover, inlay hints, diagnostics — four
+checks: the folder is untrusted; `quote.grind` is `grind`, lints clean and shows `→ £62.00`
+beside F5 with G14 hovering its formula; after `s.` a script is offered `push`, documented, and
+no free function; a syntax error is underlined on its line. The runner exits non-zero when a
+check fails (shown by pointing it at `/bin/true` as the server). It needs VS Code installed, so
+it runs where a developer runs it, not in CI — **CI packages the `.vsix`** instead
+(`artifacts.yml`'s `vscode` job, artifact `grind-vscode`), and `editors/vscode/package.sh` does
+the same locally.
+
+**Not published.** §8's question 3 was answered by default rather than by decision: the
+extension lives in this repository, at its own version (`0.0.1`) under the publisher id
+`fwilhe2`, and is offered as a `.vsix`. Which marketplace, if any, is still the author's call;
+once one is chosen, `grind init` can recommend `fwilhe2.grind` in `extensions.json` (I2).
+
 ---
 
 ## 6. What this plan does not do
@@ -468,7 +503,7 @@ configuration, marked as not run.
 | **I3** | `--editor zed`, `--editor helix`, several at once | each editor's files written and parsed back (TOML, JSON) by a test |
 | **I4** | `--ci github` | the workflow it writes runs green in this repository's own CI on the starter |
 | **I5** — done | `grind lsp` for `.grind`, and the `.rhai` half that runs nothing (§5.1): diagnostics, hover, inlay hints, go-to-definition, completion | an LSP conformance test driving the server over stdio on `examples/quote.grind`; and the decision recorded in `doc/dsl.md` §9 |
-| **I6** | The VS Code client extension, and Helix/Zed configuration pointing at `grind lsp` | the extension opens `examples/quote.grind` in a VS Code test host and shows `G14`'s value as a hint |
+| **I6** — done | The VS Code client extension, and Helix/Zed configuration pointing at `grind lsp` | the extension opens `examples/quote.grind` in a VS Code test host and shows `G14`'s value as a hint |
 | **I7** | `.rhai` provenance in `grind-build` and its hints through the server | `examples/timesheet.rhai`'s loop line shows the range it produced; `grind build` output is byte-identical with provenance on and off |
 
 I0 is worth doing regardless of the rest: the line-accurate lint and `grind project` help
@@ -480,8 +515,8 @@ every editor and every repository today.
 
 1. ~~Is §3.1 right — no manifest?~~ Answered: no manifest; the recommendation stands.
 2. ~~Default template?~~ Answered: a script that builds a spreadsheet — `generator`.
-3. **The extension's home**: in this repository (Node in CI, one version number) or its own
-   (a separate release cadence)? And publication — VS Code Marketplace, Open VSX, both?
+3. **The extension's publication** — VS Code Marketplace, Open VSX, both, or a `.vsix` only?
+   Its *home* was settled by default in I6: this repository, `editors/vscode/` (§5.2).
 4. ~~`doc/dsl.md` §9: amend the LSP row?~~ Not needed so far: I5 serves `.rhai` with the
    vocabulary and the compiler's syntax errors and analyses nothing (§5.1), which is inside the
    row as written. It comes back at I7, whose provenance needs a script *run*.

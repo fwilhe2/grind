@@ -795,6 +795,22 @@ jobs:
           path: bundle/Grind.dmg
           if-no-files-found: error
 
+  # The VS Code client for `grind lsp` (doc/init.md I6), as a .vsix: packaged on every push so
+  # the extension cannot quietly stop building, and offered as an artifact rather than
+  # published — where it is published is the author's decision. No Rust here: the client starts
+  # whatever `grind` the user has, so it has nothing of this build's to carry.
+  vscode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Package the extension
+        run: editors/vscode/package.sh "$RUNNER_TEMP/vsix"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: grind-vscode
+          path: ${{ runner.temp }}/vsix/*.vsix
+          if-no-files-found: error
+
   wasm:
     runs-on: ubuntu-latest
     env:

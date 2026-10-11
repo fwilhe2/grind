@@ -50,10 +50,12 @@ works without a language server, and it has three limits worth knowing before th
 
 All three are what a **language server** fixes, and grind has one: `grind lsp` offers a sheet's
 methods right after `s.`, shows each one's documentation properly, hovers, underlines a syntax
-error as you type, and in a `.grind` shows what every formula computes beside it. VS Code needs a
-small client extension to start it, which grind does not have yet; Helix, Neovim and other
-editors that start a language server themselves can use it today — grind's
-`doc/editor-setup.md` §7.1 has their configuration.
+error as you type, and in a `.grind` shows what every formula computes beside it. VS Code starts
+it through grind's own extension, which is not in the marketplace yet: build it from grind's
+`editors/vscode/` (`package.sh`) and `code --install-extension` the `.vsix` it writes — it also
+makes a `.grind` work in an untrusted folder. Helix, Neovim and other editors that start a
+language server themselves need only a few lines of configuration; grind's
+`doc/editor-setup.md` §7.1 has both.
 
 `grind.d.rhai` is the same vocabulary as a Rhai definition file: every function with its
 parameters, types and documentation, in one file you can read.

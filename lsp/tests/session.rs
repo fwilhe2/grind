@@ -168,6 +168,26 @@ fn the_quote_is_clean_and_every_formula_shows_its_value() {
     assert_eq!(f5["label"], "→ £62.00");
 }
 
+/// An unsaved document has no `.grind` to go by — only grind's own client calling it `grind`.
+#[test]
+fn an_unsaved_projection_is_known_by_its_language() {
+    let mut client = Client::start();
+    let uri = "untitled:Untitled-1";
+    client.notify(
+        "textDocument/didOpen",
+        json!({ "textDocument": { "uri": uri, "languageId": "grind", "version": 1, "text": QUOTE } }),
+    );
+    assert_eq!(client.diagnostics(), Vec::<Value>::new());
+    let (line, column) = find(QUOTE, "cell G14");
+    let hover = client.at("textDocument/hover", uri, line, column + 6);
+    assert!(
+        hover["contents"]["value"]
+            .as_str()
+            .expect("markdown")
+            .contains("Quote.G14")
+    );
+}
+
 #[test]
 fn hover_reads_a_cell_and_a_name() {
     let mut client = Client::start();

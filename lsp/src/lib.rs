@@ -166,10 +166,11 @@ struct Server<'h> {
 }
 
 /// Which language a file is, from its name first and the editor's word for it second — a
-/// `.grind` arrives as `kdl` when the editor was told it is KDL.
+/// `.grind` arrives as `kdl` when the editor was told it is KDL, and an unsaved one has no name
+/// to go by, only grind's client calling it `grind`.
 fn language(uri: &Uri, id: &str) -> Option<Language> {
     let path = uri.as_str();
-    if path.ends_with(".grind") {
+    if path.ends_with(".grind") || id == "grind" {
         Some(Language::Grind)
     } else if path.ends_with(".rhai") || id == "rhai" {
         Some(Language::Rhai)

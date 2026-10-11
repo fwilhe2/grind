@@ -1,0 +1,68 @@
+{
+    "name": "grind",
+    "displayName": "grind",
+    "description": "The grind language server for .grind projections and .rhai generator scripts: completion with documentation, hover, diagnostics on the right line, and the value every formula computes shown beside it.",
+    "version": "0.0.1",
+    "publisher": "fwilhe2",
+    "license": "AGPL-3.0-or-later",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/fwilhe2/grind"
+    },
+    "engines": {
+        "vscode": "^1.91.0"
+    },
+    "categories": ["Programming Languages", "Linters"],
+    "main": "./extension.js",
+    "activationEvents": [],
+    "capabilities": {
+        "untrustedWorkspaces": {
+            "supported": "limited",
+            "description": "In an untrusted folder the folder's own grind.path is ignored, so opening one cannot make VS Code run a program that folder names.",
+            "restrictedConfigurations": ["grind.path"]
+        }
+    },
+    "contributes": {
+        "languages": [
+            {
+                "id": "grind",
+                "aliases": ["Grind projection", "grind"],
+                "extensions": [".grind"],
+                "configuration": "./language-configuration.json"
+            },
+            {
+                "id": "rhai",
+                "aliases": ["Rhai"],
+                "extensions": [".rhai"],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "grind",
+                "scopeName": "source.grind",
+                "path": "./syntaxes/grind.tmLanguage.json"
+            }
+        ],
+        "configuration": {
+            "title": "grind",
+            "properties": {
+                "grind.path": {
+                    "type": "string",
+                    "default": "grind",
+                    "markdownDescription": "The `grind` binary the language server is started from — `grind lsp`. Give a full path when it is not on your `PATH`."
+                }
+            }
+        },
+        "commands": [
+            {
+                "command": "grind.restartServer",
+                "title": "Restart the language server",
+                "category": "grind"
+            }
+        ]
+    },
+    "dependencies": {
+        "vscode-languageclient": "10.1.1"
+    }
+}

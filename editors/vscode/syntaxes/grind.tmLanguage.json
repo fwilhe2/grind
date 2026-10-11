@@ -1,0 +1,63 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "Grind projection",
+    "scopeName": "source.grind",
+    "patterns": [
+        { "include": "#comment" },
+        { "include": "#formula" },
+        { "include": "#string" },
+        { "include": "#keyword" },
+        { "include": "#number" },
+        { "include": "#property" },
+        { "include": "#node" }
+    ],
+    "repository": {
+        "comment": {
+            "patterns": [
+                { "name": "comment.line.double-slash.grind", "match": "//.*$" },
+                { "name": "comment.block.grind", "begin": "/\\*", "end": "\\*/" },
+                { "name": "comment.line.slashdash.grind", "match": "/-" }
+            ]
+        },
+        "formula": {
+            "name": "string.quoted.double.formula.grind",
+            "begin": "\"(?=(?:of:)?=)",
+            "end": "\"",
+            "patterns": [
+                { "name": "constant.character.escape.grind", "match": "\\\\." },
+                { "name": "support.function.grind", "match": "\\b[A-Z][A-Z0-9.]*(?=\\()" },
+                { "name": "variable.other.reference.grind", "match": "\\[[^\\]]*\\]" }
+            ]
+        },
+        "string": {
+            "patterns": [
+                { "name": "string.quoted.raw.grind", "begin": "(#+)\"", "end": "\"\\1" },
+                {
+                    "name": "string.quoted.double.grind",
+                    "begin": "\"",
+                    "end": "\"",
+                    "patterns": [{ "name": "constant.character.escape.grind", "match": "\\\\." }]
+                }
+            ]
+        },
+        "keyword": {
+            "name": "constant.language.grind",
+            "match": "#(true|false|null|inf|-inf|nan)\\b"
+        },
+        "number": {
+            "name": "constant.numeric.grind",
+            "match": "(?<![\\w.-])[-+]?\\d[\\d_]*(\\.\\d[\\d_]*)?([eE][-+]?\\d+)?\\b"
+        },
+        "property": {
+            "match": "([\\w.-]+)(=)",
+            "captures": {
+                "1": { "name": "variable.parameter.grind" },
+                "2": { "name": "punctuation.separator.grind" }
+            }
+        },
+        "node": {
+            "match": "^\\s*([A-Za-z_][\\w.-]*)",
+            "captures": { "1": { "name": "entity.name.tag.grind" } }
+        }
+    }
+}
