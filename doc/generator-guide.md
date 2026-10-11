@@ -306,7 +306,7 @@ workshop's month, from its time-tracking export:
 | `Rates` | the hourly rate per role — the table the Time sheet looks a rate up in |
 | `Time` | one row per timesheet line, its rate looked up and its value calculated |
 | `Materials` | one row per delivery note |
-| `Summary` | one row per job, its hours, labour and materials summed back out of the other two |
+| `Summary` | one row per job, its hours, labor and materials summed back out of the other two |
 
 ```console
 $ grind build examples/timesheet.rhai -o month.fods
@@ -318,7 +318,7 @@ Rates	5 rows	2 cols	0 formulas
 
 ```console
 $ grind sheet view month.fods A1:I6
-Job	Client	Quoted	Hours	Labour	Materials	Cost	Margin	Margin %
+Job	Client	Quoted	Hours	Labor	Materials	Cost	Margin	Margin %
 LJ-1041	Ash & Iron Bakery	8,400.00 £	36.0	1,952.00 £	1,399.20 £	3,954.42 £	4,445.58 £	52.9%
 LJ-1042	Bramble Court Hotel	14,250.00 £	59.0	3,261.50 £	3,508.75 £	7,988.90 £	6,261.11 £	43.9%
 LJ-1043	Wren Street Library	6,100.00 £	33.0	1,742.00 £	1,133.50 £	3,393.09 £	2,706.91 £	44.4%

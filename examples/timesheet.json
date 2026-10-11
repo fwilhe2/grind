@@ -43,11 +43,11 @@
         { "job": "LJ-1041", "supplier": "Fenwick Timber", "item": "European oak, 40mm, 6 boards", "cost": 1184.4 },
         { "job": "LJ-1041", "supplier": "Harrow Ironmongery", "item": "Soft-close runners, 8 pairs", "cost": 214.8 },
         { "job": "LJ-1042", "supplier": "Fenwick Timber", "item": "Walnut veneered MDF, 18mm, 14 sheets", "cost": 2938.5 },
-        { "job": "LJ-1042", "supplier": "Fenwick Timber", "item": "Walnut lippings, 60m", "cost": 402 },
+        { "job": "LJ-1042", "supplier": "Fenwick Timber", "item": "Walnut edging, 60m", "cost": 402 },
         { "job": "LJ-1042", "supplier": "Harrow Ironmongery", "item": "Cable grommets and brackets", "cost": 168.25 },
         { "job": "LJ-1043", "supplier": "Fenwick Timber", "item": "Birch ply, 18mm, 11 sheets", "cost": 946 },
         { "job": "LJ-1043", "supplier": "Coldwell Finishes", "item": "Water-based lacquer, 10l", "cost": 187.5 },
         { "job": "LJ-1044", "supplier": "Fenwick Timber", "item": "Beech, 32mm, 2 boards", "cost": 318.75 },
-        { "job": "LJ-1044", "supplier": "Coldwell Finishes", "item": "Solid surface offcut, 1.2m", "cost": 264 }
+        { "job": "LJ-1044", "supplier": "Coldwell Finishes", "item": "Solid surface remnant, 1.2m", "cost": 264 }
     ]
 }

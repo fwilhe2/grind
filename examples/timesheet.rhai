@@ -14,7 +14,7 @@
 //   Rates      the hourly rate per role — the table the Time sheet looks rates up in
 //   Time       one row per timesheet line, its rate looked up and its value calculated
 //   Materials  one row per delivery note
-//   Summary    one row per job, its hours, labour and materials summed back out of the other two
+//   Summary    one row per job, its hours, labor and materials summed back out of the other two
 //
 // Nothing below is told how many jobs, entries or deliveries there are. Add a job to
 // `timesheet.json` and it gets a summary row whose three SUMIFs cover the new rows, because
@@ -128,7 +128,7 @@ let materials_cost = "Materials.$D$2:$D$" + materials_last;
 
 let summary = sheet("Summary");
 summary.push(header([
-    "Job", "Client", "Quoted", "Hours", "Labour", "Materials", "Cost", "Margin", "Margin %",
+    "Job", "Client", "Quoted", "Hours", "Labor", "Materials", "Cost", "Margin", "Margin %",
 ]));
 
 for j in source.jobs {

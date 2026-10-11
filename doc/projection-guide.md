@@ -232,14 +232,14 @@ one inside is an error that says so. A name may also be an expression (`name tot
 What they buy is the difference between
 
 ```kdl
-cell G14 "=SUMIF([.C5:.C13];\"Labour\";[.G5:.G13])"
+cell G14 "=SUMIF([.C5:.C13];\"Labor\";[.G5:.G13])"
 cell F5  "=[$Assumptions.$B$2]"
 ```
 
 and
 
 ```kdl
-cell G14 "=SUMIF(kind;\"Labour\";amount)"
+cell G14 "=SUMIF(kind;\"Labor\";amount)"
 cell F5  "=benchRate"
 ```
 
@@ -324,9 +324,9 @@ $ git diff --stat
 ```
 
 ```diff
-     cell F14 Labour
--    cell G14 5063.23 formula="of:=SUMIF(kind;\"Labour\";amount)"
-+    cell G14 5308.225 formula="of:=SUMIF(kind;\"Labour\";amount)"
+     cell F14 Labor
+-    cell G14 5063.23 formula="of:=SUMIF(kind;\"Labor\";amount)"
++    cell G14 5308.225 formula="of:=SUMIF(kind;\"Labor\";amount)"
      cell F15 Materials
      cell G15 3650.71 formula="of:=SUMIF(kind;\"Materials\";amount)"
      cell F16 "Workshop overhead"
@@ -399,7 +399,7 @@ model needs. In order:
 | five `name` nodes | the ranges the formulas read, so they read like sentences (§5) |
 | `col` / `row` | widths and one row height (§6) |
 | one `at A1` block | thirteen rows: a title block, a blank row, a header row, nine line items |
-| a run of `cell F…` | the labour rates, each a formula reading the rate card on the other sheet |
+| a run of `cell F…` | the labor rates, each a formula reading the rate card on the other sheet |
 | a run of `cell G…` | nine line totals, `=[.D5]*[.F5]` — nine nearly identical lines, written out because a person can see all nine at once |
 | a summary block | `SUMIF` over the two names, then overhead, subtotal, VAT and total |
 | a facts block | hours quoted, materials share, and a `=DATE(2026;10;9)` under a date format |
@@ -459,10 +459,10 @@ those are not in the document. They live in the file, and they survive an *edit*
 
 ```kdl
 // what you wrote
-row L-BENCH   "Reception desk, bench joinery"   Labour   38   hours
+row L-BENCH   "Reception desk, bench joinery"   Labor    38   hours
 
 // what comes back from a round trip through .fods
-row L-BENCH "Reception desk, bench joinery" Labour 38 hours
+row L-BENCH "Reception desk, bench joinery" Labor 38 hours
 ```
 
 The practical rule: **the `.grind` is the file you keep**, and the `.fods`/`.ods` is what you

@@ -646,7 +646,7 @@ fn a_hand_written_projection_is_a_document() {
         ok(&["get", &s(&file), "G19", "--raw"]).trim(),
         "11550.38568"
     );
-    // Labour reads the rate card on the other sheet through a name, so re-pricing the shop is
+    // Labor reads the rate card on the other sheet through a name, so re-pricing the shop is
     // one edit in one place.
     // `of:` is ODF's namespace prefix on a formula, and `recalc` wrote the canonical spelling
     // back over the bare `=…` the file was typed with — tolerance on the way in, strictness on

@@ -1196,16 +1196,17 @@ enum Top {
         list: bool,
     },
 
-    /// Convert between the three physical forms — .ods, .fods and .grind
+    /// Convert between the three physical forms — package, flat file and .grind
     ///
-    /// The form comes from the output extension. Never between document *kinds*: a
+    /// The form comes from the output extension: .ods or .odt for the package, .fods or
+    /// .fodt for the flat file, .grind for the projection. Never between document *kinds*: a
     /// spreadsheet does not become a text document by being written differently.
     ///
     /// The projection (.grind) is a form like the other two rather than an export: it is
-    /// bijective with the *model*, so converting out to it and back returns the document this
-    /// build understands. What it does not understand is not in the file — but that is true of
-    /// every conversion here, because the original bytes are kept only when the form does not
-    /// change. A text document has no projection yet and says so.
+    /// bijective with the *model*, for both kinds, so converting out to it and back returns
+    /// the document this build understands. What it does not understand is not in the file —
+    /// but that is true of every conversion here, because the original bytes are kept only
+    /// when the form does not change.
     Convert { file: PathBuf, out: PathBuf },
 }
 

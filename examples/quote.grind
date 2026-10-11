@@ -24,7 +24,7 @@ grind spreadsheet
 // ─────────────────────────────────────────────────────────────────────────────────────────
 
 // Names are document-level in ODF, so they sit outside every sheet — and a formula that says
-// `SUMIF(kind;"Labour";amount)` is one anybody can read without counting columns.
+// `SUMIF(kind;"Labor";amount)` is one anybody can read without counting columns.
 name kind      "[$Quote.$C$5:.$C$13]"
 name amount    "[$Quote.$G$5:.$G$13]"
 name benchRate "[$Assumptions.$B$2]"
@@ -49,13 +49,13 @@ sheet Quote {
         row "Reception fit-out"  "Bramble Court Hotel"                  #null       #null #null "Raised"   #null
         row #null                #null                                  #null       #null #null #null      #null
         row Code                 Description                            Kind        Qty   Unit  Rate       Amount
-        row L-BENCH              "Reception desk, bench joinery"        Labour      38    hours #null      #null
-        row L-MACH               "Panel breakdown and edge banding"     Labour      16    hours #null      #null
-        row L-FIN                "Lacquer, two coats"                   Labour      12.5  hours #null      #null
-        row L-APP                "Sanding and preparation"              Labour      7.5   hours #null      #null
-        row L-FIT                "Delivery and fitting, two joiners"    Labour      14    hours #null      #null
+        row L-BENCH              "Reception desk, bench joinery"        Labor       38    hours #null      #null
+        row L-MACH               "Panel breakdown and edge banding"     Labor       16    hours #null      #null
+        row L-FIN                "Lacquer, two coats"                   Labor       12.5  hours #null      #null
+        row L-APP                "Sanding and preparation"              Labor       7.5   hours #null      #null
+        row L-FIT                "Delivery and fitting, two joiners"    Labor       14    hours #null      #null
         row M-WAL                "Walnut veneered MDF, 18mm"            Materials   14    sheets 209.89    #null
-        row M-LIP                "Walnut lippings"                      Materials   60    metres 6.7       #null
+        row M-LIP                "Walnut edging"                        Materials   60    meters 6.7       #null
         row M-IRON               "Cable grommets, brackets, fixings"    Materials   1     lot   168.25     #null
         row M-CONS               "Abrasives, lacquer, consumables"      Materials   1     lot   142        #null
     }
@@ -63,7 +63,7 @@ sheet Quote {
     // A `cell` is one cell that carries more than a value — here a formula and no answer at
     // all. The reader takes a bare `=…` in the value position as the formula.
     //
-    // Labour has no rate of its own: it reads the rate card on the other sheet, through the
+    // Labor has no rate of its own: it reads the rate card on the other sheet, through the
     // name declared at the top. Re-pricing the shop is one edit there, not five here.
     cell F5  "=benchRate"
     cell F6  "=benchRate*0.94"
@@ -87,8 +87,8 @@ sheet Quote {
     // The summary block. `SUMIF` over the two names, so adding a line to the table above needs
     // no change here as long as it stays inside the named ranges — and `grind lint` says so
     // when it does not.
-    cell F14 Labour
-    cell G14 "=SUMIF(kind;\"Labour\";amount)"
+    cell F14 Labor
+    cell G14 "=SUMIF(kind;\"Labor\";amount)"
     cell F15 Materials
     cell G15 "=SUMIF(kind;\"Materials\";amount)"
     cell F16 "Workshop overhead"
@@ -102,7 +102,7 @@ sheet Quote {
 
     // What the quote says about itself, for whoever reads it next.
     cell F21 "Hours quoted"
-    cell G21 "=SUMIF(kind;\"Labour\";[.D5:.D13])"
+    cell G21 "=SUMIF(kind;\"Labor\";[.D5:.D13])"
     cell F22 "Materials share"
     cell G22 "=[.G15]/[.G17]"
     cell F23 "Valid until"
