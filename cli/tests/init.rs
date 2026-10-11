@@ -112,6 +112,7 @@ fn a_new_directory_gets_every_file_and_nothing_outside_it() {
     for path in [
         "model.rhai",
         "data.json",
+        "README.md",
         ".vscode/extensions.json",
         ".vscode/settings.json",
         ".vscode/tasks.json",
@@ -155,6 +156,51 @@ fn a_new_directory_gets_every_file_and_nothing_outside_it() {
         settings.contains("\"*.grind\": \"kdl\""),
         "the load-bearing line"
     );
+}
+
+/// The README written beside the starter names tasks by their labels and files by their
+/// names; both must be what `init` actually wrote, or the first thing a person reads is wrong.
+#[test]
+fn the_readme_names_what_was_written() {
+    let sandbox = Sandbox::new("readme");
+    init(&sandbox.0, ".", &[]);
+    let readme = std::fs::read_to_string(sandbox.0.join("README.md")).expect("written");
+    let tasks: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(sandbox.0.join(".vscode/tasks.json")).expect("written"),
+    )
+    .expect("JSON");
+    let labels: Vec<&str> = tasks["tasks"]
+        .as_array()
+        .expect("tasks")
+        .iter()
+        .map(|t| t["label"].as_str().expect("label"))
+        .collect();
+    let mut named = 0;
+    for part in readme.split("*grind: ").skip(1) {
+        let label = format!("grind: {}", part.split('*').next().expect("closed"));
+        assert!(
+            labels.contains(&label.as_str()),
+            "README names {label:?}, tasks are {labels:?}"
+        );
+        named += 1;
+    }
+    assert!(named >= 3, "the README's task names were found");
+    for file in [
+        "model.rhai",
+        "data.json",
+        ".vscode/settings.json",
+        ".vscode/grind.code-snippets",
+        ".vscode/grind-projection.code-snippets",
+        "grind.d.rhai",
+        ".gitattributes",
+        ".gitignore",
+    ] {
+        assert!(readme.contains(file), "README mentions {file}");
+        assert!(sandbox.0.join(file).is_file(), "and {file} exists");
+    }
+    // The two things measured to surprise people (doc/editor-setup.md §8).
+    assert!(readme.contains("Restricted"), "the trust hint");
+    assert!(readme.contains("Ctrl+Space"), "where a description is");
 }
 
 #[test]

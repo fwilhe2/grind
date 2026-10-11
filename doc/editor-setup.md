@@ -27,10 +27,21 @@ against their marketing.
 | Syntax highlighting | ● KDL grammar | ● Rhai grammar |
 | Brace matching, auto-indent, comment toggling | ● | ● |
 | Syntax errors underlined as you type | ● from the KDL language server | ○ nothing published does this — §5 |
-| Completion for every node / function | ● snippets | ● snippets |
-| Documentation on the completion item | ● | ● from the doc comment the engine holds |
+| Completion for every node / function | ● snippets, once a letter is typed | ● snippets, once a letter is typed — nothing on `s.`, and no filtering by what `s` is |
+| A description on the completion item | ◐ one line, behind Ctrl+Space | ◐ the engine's doc comment, as one plain-text detail line behind Ctrl+Space |
+| Hover documentation on code already written | ○ needs a language server | ○ needs a language server |
 | Types and signatures | ○ the node's example in its description | ● in the snippet's description, and in full in `grind.d.rhai` |
 | Actual validation of what you wrote | `grind lint` | `grind build` |
+
+**Measured, not assumed** (2026-10-11, VS Code with both extensions, driven headless through its
+own `vscode.executeCompletionItemProvider`): typing `s.pu` offers the three `push` snippets and
+`s.` alone offers none, because a snippet is matched on a word and knows nothing about `s`. A
+snippet's description arrives as the item's **detail** — one plain-text line, "(Workspace
+Snippet)" appended, shown when the suggestion's details are open (Ctrl+Space a second time, or
+the `>` on the highlighted entry) — while its *documentation* pane holds only a preview of the
+code it inserts. Completing on the dot and hover over existing code are both a language server's,
+which is `doc/init.md` I5. **And none of it reaches a `.grind` in an untrusted folder** — §8's
+first row.
 
 The last row is not a consolation prize. An editor cannot tell you that a formula reads a
 deleted sheet or that a cached total disagrees with its formula; `grind lint` can, and it is one
@@ -262,6 +273,9 @@ that from the extension.
 
 | | |
 |---|---|
+| **A `.grind` is plain text, and no task runs** | the folder is in **Restricted Mode** — VS Code's state for a folder it has not been told to trust — and there it ignores the workspace's `files.associations`, so the snippets, scoped to `kdl`, never apply; it also refuses to run tasks. Trust the folder (*Restricted Mode* in the status bar, or *Workspaces: Manage Workspace Trust*), or put the association in your **user** settings, which apply either way. Measured: untrusted, `book.grind` opened as `plaintext`; trusted, as `kdl` with its `cell` snippets. A `.rhai` is unaffected, because the Rhai extension claims the file type itself |
+| **The description is missing from a completion** | it is the item's detail line, shown only when the details are open: press Ctrl+Space again while the list is up |
+| **Nothing is offered after `s.`** | expected: a snippet needs a letter (`s.pu`), and nothing knows what `s` is until there is a language server (`doc/init.md` I5) |
 | **No highlighting in a `.grind`** | the `files.associations` entry is missing, or the window needs reloading after adding it. The language shown in the status bar should read *KDL* |
 | **No completions** | snippets are suppressed when `editor.snippetSuggestions` is `"none"`; the settings above set it to `"top"` for these two languages. Check that the `.code-snippets` file is in the *workspace folder's* `.vscode/`, not a parent's |
 | **Completions for functions that do not exist** | the snippet file is from an older `grind` — regenerate it (§3) |

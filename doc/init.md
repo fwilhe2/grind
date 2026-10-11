@@ -142,8 +142,16 @@ line for `init` is therefore:
 
 That admits snippets, settings, tasks, recommendations, a starter document, `.gitignore`,
 `.gitattributes`, `.editorconfig` — and keeps out `launch.json` (there is no debugger, and a
-launch configuration that only runs a command is a task wearing a costume), a `README` (the
-author's, not a generator's), and a `Makefile` (a second, worse copy of `tasks.json`).
+launch configuration that only runs a command is a task wearing a costume), and a `Makefile` (a
+second, worse copy of `tasks.json`).
+
+**A `README.md` was first kept out too** — a project's README is its author's, not a
+generator's — and the author asked for one after using I1: the first session in VS Code ran into
+three things this document knew and the project did not say (Restricted Mode ignoring the
+`.grind` association, no completion on `s.`, the description behind Ctrl+Space). So `init`
+writes one, **seeded** like every other starting point: what to do first, what each task is, what
+completion will and will not do, and how to keep it current — and from then on it is the
+project's, to be rewritten into what the project is. One that exists is kept, as always.
 
 ### 3.5 "init" once — but the generated half goes stale
 
@@ -300,6 +308,7 @@ done to it: `wrote`, `kept`, `stale`, `updated`, `would add` (§3.6).
 | `.gitignore` | seeded | the starter's built output, with a comment saying why |
 | `.gitattributes` | seeded | §3.8 |
 | the starter (§4.4) | seeded | one document or script, which lints and tests clean |
+| `README.md` | seeded | first steps, the tasks, the trust hint, what completion does and does not do (§3.4) — held to the tasks and files it names by `cli/tests/init.rs` |
 
 ### 4.3 The tasks
 
@@ -360,10 +369,17 @@ got slightly wrong:
   somebody already chose is kept even under `--force` — that is configuration, not a file of
   ours. Outside a repository the report prints the command instead.
 
-**Not yet looked at in VS Code itself.** Every JSON file is parsed by the test, the snippet
-files with their header comments as JSONC, and both problem matchers' expressions were run
-against real `grind build`, `grind test` and `grind lint` output — but a task has not been run
-from an actual VS Code window.
+**Looked at in VS Code since, headless, and what it found.** Every JSON file is parsed by the
+test and both problem matchers' expressions were run against real `grind build`, `grind test`
+and `grind lint` output. After the first session in a real window reported no completion, VS
+Code itself was driven headless — its extension-test mode under Chromium's headless backend, a
+throwaway profile, `vscode.executeCompletionItemProvider` at a typed position — and measured:
+the snippet files (header comments and all) load, `s.pu` offers `push`, `s.` offers nothing, a
+description is a detail line behind Ctrl+Space, and in an **untrusted** folder a `.grind` opens
+as plain text because Restricted Mode ignores the workspace's `files.associations`. The last is
+the one that looks like a broken setup and is not; `init`'s report and README now say so, and
+`doc/editor-setup.md` §1 and §8 carry the measurements. A task has still not been *run* from a
+window.
 
 ---
 

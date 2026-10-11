@@ -6,9 +6,10 @@
 //! (`doc/init.md`, I1).
 //!
 //! **What it writes is `doc/editor-setup.md` §3 and §6, executed**, plus the repository files
-//! `doc/init.md` §3.7–§3.8 argue for and a starter script. The scope line is §3.4's: a file is
-//! written only if a person following this repository's own documentation would otherwise have
-//! written it by hand.
+//! `doc/init.md` §3.7–§3.8 argue for, a starter script, and a README saying what to do first and
+//! what the editor will and will not do. The scope line is §3.4's: a file is written only if a
+//! person following this repository's own documentation would otherwise have written it by hand
+//! — or, for the README, would otherwise have had to discover its contents by being surprised.
 //!
 //! Three rules, each a test in `cli/tests/init.rs`:
 //!
@@ -44,6 +45,11 @@ const TASKS: &str = include_str!("../templates/vscode/tasks.json");
 const EDITORCONFIG: &str = include_str!("../templates/repo/editorconfig");
 const GITIGNORE: &str = include_str!("../templates/repo/gitignore");
 const GITATTRIBUTES: &str = include_str!("../templates/repo/gitattributes");
+
+/// What to do first and what to expect — the things measured about the editor that a person
+/// would otherwise find out by being surprised (`doc/editor-setup.md` §8). Named in lower case
+/// in the tree so it is not mistaken for this repository's own.
+const README: &str = include_str!("../templates/repo/readme.md");
 
 /// What git runs to turn an OpenDocument package into text for a diff (`doc/init.md` §3.8).
 const TEXTCONV: &str = "grind project";
@@ -143,6 +149,7 @@ fn plan(projection_snippets: &str) -> Vec<Plan> {
     vec![
         seeded("model.rhai", MODEL, None),
         seeded("data.json", DATA, None),
+        seeded("README.md", README, None),
         seeded(".vscode/extensions.json", EXTENSIONS, None),
         seeded(
             ".vscode/settings.json",
@@ -223,7 +230,8 @@ pub fn init(dir: &Path, force: bool, projection_snippets: &str) -> Result<InitRe
     let mut next = vec![
         (
             format!("code {}", shown(dir)),
-            "open it; VS Code offers the two extensions .vscode/extensions.json recommends"
+            "open it, install the two extensions it offers, and trust the folder — in \
+             Restricted Mode a .grind stays plain text and no task runs (see README.md)"
                 .to_owned(),
         ),
         (
