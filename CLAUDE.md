@@ -69,6 +69,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/OpenDocument-v1.4-schema.rng` | ODF 1.4 Part 3 — content schema |
 | `doc/OpenDocument-v1.4-os-part4-formula.html` | ODF 1.4 Part 4 — OpenFormula semantics |
 | `doc/small-group.md` | The 110-function scope line, extracted from Part 4 §2.3.2 |
+| `doc/function-coverage.md` | **The evidence for moving a function past that line — descriptive, not normative.** How many functions ODF (393), LibreOffice (~516) and Excel (521) have, which ones real spreadsheets call (Enron, EUSES, LibreOffice's test documents), where the 112 stand, and the gaps ranked in tiers — the third of which needs an array value rather than more functions. `scripts/function-usage.py` re-measures the corpus half |
 | `doc/suite.md` | Phase 10 — the suite plan; normative for that phase, incl. R8/R9/R10 |
 | `doc/odt-format.md` | Clean-room notes for text documents. **§5 is `UNVERIFIED` and may not be implemented** |
 | `doc/text-core.md` | The text scope line — *invented*, not extracted, and checked by `text/tests/scope.rs` |

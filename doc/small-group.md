@@ -173,6 +173,10 @@ function here is still a Part 4 function with a normative definition; what it is
 of the Small Group conformance claim, which remains "all 110 of §2.3.2 E)" and is unaffected
 by anything on this list.
 
+`doc/function-coverage.md` is the measured side of the gate: which functions real
+spreadsheets call, how far this build is from LibreOffice and Excel, and the candidates ranked
+by that evidence. It recommends nothing on its own; an entry here still needs its own decision.
+
 - `ROW` — §6.13.29
 - `COLUMN` — §6.13.4
 
