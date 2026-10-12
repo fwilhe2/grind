@@ -1576,7 +1576,11 @@ fn functions_lists_what_this_build_implements() {
     assert!(out.contains("of the Small Group's 110"), "{out}");
     // The functions moved in by explicit decision are counted apart from the claim, so the
     // summary is never the nonsense "112 of 110".
-    assert!(out.contains("beyond it: COLUMN, ROW"), "{out}");
+    let summary = out.lines().last().unwrap_or_default();
+    assert!(summary.contains(" beyond it: "), "{out}");
+    for name in ["COLUMN", "IFERROR", "ROW"] {
+        assert!(summary.contains(name), "{name} missing from {summary}");
+    }
     assert!(!out.contains("SUBTOTAL"), "not in the Small Group");
 }
 

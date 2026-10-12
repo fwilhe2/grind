@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! §6.20 Text Functions — the Small Group's 14.
+//! §6.20 Text Functions — the Small Group's 14, and `CONCATENATE` and `SEARCH` from beyond it.
 //!
 //! Positions and lengths count **characters, not bytes**: `LEN("é")` is 1 and `MID` on a
 //! string of emoji must not split one. Every function here works on a `Vec<char>` for that
@@ -12,6 +12,7 @@
 //! Positions are 1-based here — this is the user's coordinate system, not the core's.
 
 use super::super::value::{FormulaError, Value};
+use super::super::wildcard;
 use super::Args;
 
 type Answer = Result<Value, FormulaError>;
@@ -32,6 +33,8 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "REPLACE" => replace(args),
         "SUBSTITUTE" => substitute(args),
         "T" => t(args),
+        "CONCATENATE" => concatenate(args),
+        "SEARCH" => search(args),
         _ => return None,
     })
 }
@@ -200,4 +203,38 @@ fn t(args: &mut Args) -> Answer {
         Value::Error(e) => return Err(e),
         _ => Value::Text(String::new()),
     })
+}
+
+/// §6.20.6 `CONCATENATE( { Text T } + )` — the `&` operator (§6.4.10) as a function, every
+/// argument converted by §6.3.14.
+fn concatenate(args: &mut Args) -> Answer {
+    args.arity(1..)?;
+    let mut out = String::new();
+    for i in 0..args.len() {
+        out.push_str(&args.text(i)?);
+    }
+    Ok(Value::Text(out))
+}
+
+/// §6.20.20 `SEARCH( Search ; T [ ; Start = 1 ] )`: `FIND` without case, and with the
+/// wildcards `HOST-USE-WILDCARDS` turns on (`wildcard.rs` is why they are on).
+///
+/// An empty search text is found nowhere, and a start before the first character or past
+/// the last is an error — both measured (`doc/ods-format.md` §4.1), where `FIND` clamps.
+fn search(args: &mut Args) -> Answer {
+    args.arity(2..=3)?;
+    let needle = args.text(0)?;
+    let haystack = args.text(1)?;
+    let start = if args.len() > 2 && !args.omitted(2) {
+        args.integer(2)?
+    } else {
+        1
+    };
+    let length = haystack.chars().count() as i64;
+    if needle.is_empty() || start < 1 || start > length {
+        return Err(FormulaError::Value);
+    }
+    let found =
+        wildcard::find(&needle, &haystack, start as usize - 1).ok_or(FormulaError::Value)?;
+    Ok(Value::number(found as f64 + 1.0))
 }

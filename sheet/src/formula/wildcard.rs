@@ -62,8 +62,11 @@ fn same(a: char, b: char) -> bool {
 
 /// Does `text`, in its entirety, match `pattern`?
 pub fn matches(pattern: &str, text: &str) -> bool {
-    let tokens = tokens(pattern);
     let text: Vec<char> = text.chars().collect();
+    walk(&tokens(pattern), &text)
+}
+
+fn walk(tokens: &[Token], text: &[char]) -> bool {
     // Greedy walk with one backtrack point: on a mismatch, the most recent `*` eats one more
     // character and the walk resumes from there. Linear in the common case and quadratic
     // only when a pattern is mostly stars, which no criterion in the corpus is.
@@ -96,6 +99,19 @@ pub fn matches(pattern: &str, text: &str) -> bool {
     }
     // Whole-cell: the pattern has to be spent too, bar trailing stars matching nothing.
     tokens[p..].iter().all(|token| *token == Token::Star)
+}
+
+/// Where `pattern` first matches a stretch of `text`, searching from character `from` —
+/// `SEARCH`'s question, which is unanchored where [`matches`] is anchored at both ends.
+///
+/// The leftmost start wins, and at a start the shortest match is as good as any: `SEARCH`
+/// reports a position, never a length. So the pattern is asked to match a *prefix* of what
+/// follows — [`matches`] with a `*` after it. A position counts characters, not bytes.
+pub fn find(pattern: &str, text: &str, from: usize) -> Option<usize> {
+    let mut open = tokens(pattern);
+    open.push(Token::Star);
+    let text: Vec<char> = text.chars().collect();
+    (from..text.len()).find(|&start| walk(&open, &text[start..]))
 }
 
 #[cfg(test)]
@@ -131,6 +147,17 @@ mod tests {
     fn matching_folds_case_like_the_equality_operator() {
         assert!(matches("A*", "apple"));
         assert!(matches("*PLE", "apple"));
+    }
+
+    #[test]
+    fn find_is_unanchored_and_reports_the_leftmost_start() {
+        assert_eq!(find("p*e", "apple", 0), Some(1));
+        assert_eq!(find("e*", "apple", 0), Some(4));
+        assert_eq!(find("p", "apple", 3), None);
+        assert_eq!(find("?", "abc", 1), Some(1));
+        assert_eq!(find("~*", "a*b", 0), Some(1));
+        assert_eq!(find("Z", "abc", 0), None);
+        assert_eq!(find("é", "CAFÉ", 0), Some(3));
     }
 
     #[test]

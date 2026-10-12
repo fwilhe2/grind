@@ -64,6 +64,7 @@ pub fn category(info: &FuncInfo) -> &'static str {
     match info.section.split('.').nth(1) {
         Some("9") => "Database",
         Some("10") => "Date & Time",
+        Some("11") => "External Access",
         Some("12") => "Financial",
         Some("13") => "Information",
         Some("14") => "Lookup & Reference",
@@ -143,6 +144,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "COLUMNS( Reference|Array R )",
         brief: "Returns the number of columns in a given range.",
         section: "6.13.5",
+    },
+    FuncInfo {
+        name: "CONCATENATE",
+        signature: "CONCATENATE( { Text T } + )",
+        brief: "Concatenate the text strings",
+        section: "6.20.6",
     },
     FuncInfo {
         name: "COS",
@@ -325,10 +332,28 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.10.11",
     },
     FuncInfo {
+        name: "HYPERLINK",
+        signature: "HYPERLINK( Text IRI [ ; Text|Number FunctionResult ] )",
+        brief: "Creation of a hyperlink involving an evaluated expression.",
+        section: "6.11.3",
+    },
+    FuncInfo {
         name: "IF",
         signature: "IF( Logical Condition [ ; [ Any IfTrue ] [ ; [ Any IfFalse ] ] ] )",
         brief: "Return one of two values, depending on a condition.",
         section: "6.15.4",
+    },
+    FuncInfo {
+        name: "IFERROR",
+        signature: "IFERROR( Any X ; Any Alternative )",
+        brief: "Return X unless it is an Error, in which case return an alternative value.",
+        section: "6.15.5",
+    },
+    FuncInfo {
+        name: "IFNA",
+        signature: "IFNA( Any X ; Any Alternative )",
+        brief: "Return X unless it is #N/A, in which case return an alternative value.",
+        section: "6.15.6",
     },
     FuncInfo {
         name: "INDEX",
@@ -607,6 +632,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "ROWS( Reference|Array R )",
         brief: "Returns the number of rows in a given range.",
         section: "6.13.30",
+    },
+    FuncInfo {
+        name: "SEARCH",
+        signature: "SEARCH( Text Search ; Text T [ ; Integer Start = 1 ] )",
+        brief: "Return the starting position of a given text.",
+        section: "6.20.20",
     },
     FuncInfo {
         name: "SECOND",

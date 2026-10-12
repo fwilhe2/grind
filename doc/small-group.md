@@ -190,6 +190,29 @@ by that evidence. It recommends nothing on its own; an entry here still needs it
   Decided 2026-08-16. The array form of `ROW` over a multi-row reference stays out with the
   rest of inline arrays.
 
+- `IFERROR` — §6.15.5
+- `IFNA` — §6.15.6
+- `CONCATENATE` — §6.20.6
+- `SEARCH` — §6.20.20
+- `HYPERLINK` — §6.11.3
+
+  **Evidence:** `doc/function-coverage.md` §3 and §4's Tier 1 — the classic band every corpus
+  calls. Measured over LibreOffice's test documents, a greedy pass adding one function at a
+  time unlocks whole files in this order: `SUBTOTAL`, `SUMPRODUCT`, `INDIRECT`, `CONCATENATE`,
+  `TEXT`, `SEARCH`, …; `CONCATENATE` is also Enron's tenth function by formula and EUSES's
+  fifth, `IFERROR` the standard wrapper since Excel 2007, and `SUMIFS`/`COUNTIFS` what Enron's
+  `{=SUM(IF(…))}` array formulas became. This entry admits the part of that band which needs
+  **no new machinery** — each one a scalar function over the argument layer, the criterion
+  matcher, the calendar or the annuity equation that already exist — and leaves out what does
+  need it, each for its own decision: `SUBTOTAL` (the row's filter state), `SUMPRODUCT`
+  (ForceArray), `INDIRECT`/`OFFSET` (a function that returns a reference), `TEXT` (a format
+  code is implementation-defined), `CELL` (outside every group), and `CEILING`/`FLOOR` (whose
+  Excel namesakes round differently, so implementing them changes what an imported workbook
+  recalculates to — `doc/xlsx-format.md` §5 has to be measured first). Every expectation in
+  `sheet/src/formula/funcs/beyond.rs` was measured against LibreOffice 26.8; where it answers
+  what the spec leaves open, `doc/ods-format.md` §4.1 records it, and where it contradicts the
+  spec the spec wins and the test says so. Decided 2026-10-12.
+
 ---
 
 ## Attribution

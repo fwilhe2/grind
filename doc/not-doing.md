@@ -54,13 +54,13 @@ explicit decision, and it must survive loop C. Nothing moves because it was easy
 
 | Not doing | Because |
 |---|---|
-| **Large Group** | 26 complex-number functions and specialised conversions. This is the named example of the bloat the project exists to avoid. |
+| **Large Group, wholesale** | Its complex-number functions and specialised conversions are the named example of the bloat the project exists to avoid, and stay out. The group is not only those, though: §2.3.4 also lists `IFERROR`, `SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `SEARCH`, `EDATE`, `IPMT`, `PPMT` and `HYPERLINK` — classic functions every corpus calls (`doc/function-coverage.md` §6). Those move one decision at a time like any other, and the ones that have are in `doc/small-group.md`'s second half. |
 | **Inline arrays (§5.13)** | Excluded from Small Group by §2.3.2. Parsed as a *syntactic* exclusion in loop B, never evaluated. |
 | **Array/matrix formulas** | Read as ordinary formulas. A whole second evaluation mode — result shapes, implicit iteration, `table:number-matrix-*-spanned` — for a construct §2.3.2 does not ask for. |
 | **Reference union `~`** | §2.3.2 excludes it from the operator set by name. Lexed and parsed so a document containing one still loads; evaluating it is `#VALUE!`. |
 | **Quoted labels and automatic intersection (§5.10)** | Excluded by §2.3.2, and the second is the feature that makes a spreadsheet's meaning depend on where a formula sits. |
 | **Regular expressions in criteria** | Wildcards are implemented (`wildcard.rs`); regexes are LibreOffice's own either/or, and picking the other branch doubles the surface of every criteria function. |
-| **Medium Group, wholesale** | Not never — but never *as a block*. It moves category by category on evidence that a real week of use needed one, which is the same gate as anything else here. `ROW` and `COLUMN` (§6.13.29, §6.13.4) are the first and so far only two to have moved, on 2026-08-16: R7's `fizzbuzz.fods` is eighteen copies of `IF(MOD(ROW();15)=0;…)` and recalculated to eighteen `#NAME?`. The evidence is written down in `doc/small-group.md`'s second half, which is what the gate asks for. |
+| **Medium Group, wholesale** | Not never — but never *as a block*. It moves category by category on evidence that a real week of use needed one, which is the same gate as anything else here. `ROW` and `COLUMN` (§6.13.29, §6.13.4) were the first two to move, on 2026-08-16: R7's `fizzbuzz.fods` is eighteen copies of `IF(MOD(ROW();15)=0;…)` and recalculated to eighteen `#NAME?`. The classic band that needs no new machinery followed on 2026-10-12, on `doc/function-coverage.md`'s corpus measurements. The evidence for each is written down in `doc/small-group.md`'s second half, which is what the gate asks for. |
 
 ### Presentation
 

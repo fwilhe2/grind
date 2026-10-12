@@ -34,6 +34,9 @@ mod math;
 mod stat;
 mod text;
 
+#[cfg(test)]
+mod beyond;
+
 /// Dispatch. §5.6: function names are case-insensitive.
 pub fn call(engine: &mut Engine, name: &str, args: &[Expr], at: Address) -> Value {
     let name = name.to_uppercase();
@@ -114,13 +117,23 @@ pub fn beyond_small_group() -> &'static [&'static str] {
 
 /// Kept in step with `doc/small-group.md`'s second half by the same test that checks the
 /// first, so this cannot quietly grow either.
-const BEYOND: &[&str] = &["COLUMN", "ROW"];
+const BEYOND: &[&str] = &[
+    "COLUMN",
+    "CONCATENATE",
+    "HYPERLINK",
+    "IFERROR",
+    "IFNA",
+    "ROW",
+    "SEARCH",
+];
 
 const NAMES: &[&str] = &[
     // logical (§6.15)
     "AND",
     "FALSE",
     "IF",
+    "IFERROR",
+    "IFNA",
     "NOT",
     "OR",
     "TRUE",
@@ -196,6 +209,10 @@ const NAMES: &[&str] = &[
     "T",
     "TRIM",
     "UPPER",
+    "CONCATENATE",
+    "SEARCH",
+    // external access (§6.11)
+    "HYPERLINK",
     // date and time (§6.10)
     "DATE",
     "DAY",

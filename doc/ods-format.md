@@ -374,6 +374,30 @@ is schema-legal but shows blank/0 until the next recalculation.
 Named ranges: `table:named-expressions` (document- or sheet-scoped) contains
 `table:named-range table:name="Foo" table:cell-range-address="Sheet1.$A$1:.$A$10" table:base-cell-address="Sheet1.$A$1"`. Formulas reference it by bare name: `of:=SUM(Foo)`.
 
+### 4.1 What functions do where Part 4 is silent — `MEASURED` (2026-10-12, LibreOffice 26.8.1.1)
+
+The functions `doc/small-group.md`'s second half admits are implemented from Part 4; this is
+the list of what the spec leaves open and the oracle answered, so the code can cite a
+measurement rather than a guess. Method: a flat document holding the fixture of
+`sheet/src/formula/funcs/beyond.rs` and one formula per row with **no cached value**,
+converted with `soffice --headless --convert-to fods` under a private profile, and the cached
+values read back.
+
+**Host settings first.** A document with no `table:calculation-settings` is read by
+LibreOffice with **regular expressions on**: `SEARCH("p*e";"apple")` is 5, because `p*e` is
+"zero or more `p`, then `e`". ODF's own default for `table:use-regular-expressions` is
+`true`. This build settled on wildcards instead (`sheet/src/formula/wildcard.rs`), so every
+measurement below was taken with `<table:calculation-settings table:use-wildcards="true"
+table:use-regular-expressions="false"/>` — the reading this build gives every document.
+
+| Call | LibreOffice | Spec | Decision |
+|---|---|---|---|
+| `SEARCH("";"abc")`, `SEARCH("a";"")` | `#VALUE!` | silent | error: an empty search text is found nowhere |
+| `SEARCH("a";"abc";0)`, `…;4)` | `Err:502`, `#VALUE!` | `Start ≥ 1` | error either side of the text, where `FIND` clamps |
+| `SEARCH("p*e";"apple")`, `SEARCH("e*";"apple")` | 2, 5 | silent on what a pattern must cover | a pattern matches a *stretch* of the text, leftmost start first — not anchored at both ends as a criterion is |
+| `CONCATENATE("a";1;TRUE())` | `a11` | §6.3.14: a true Logical is `"TRUE"` | **the spec**: `a1TRUE`, as `&` already gives |
+| `IFERROR([.C9];1)` (empty) | 0 | "return X" | X, reduced as `IF` reduces a branch |
+
 ---
 
 ## 5. Styles and number formats **[ODS]**

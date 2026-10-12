@@ -2,7 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! §6.15 Logical Functions — all six of the Small Group's.
+//! §6.15 Logical Functions — all six of the Small Group's, `IFERROR` and `IFNA` from beyond
+//! it, and §6.11.3 `HYPERLINK`, which is a logical function in all but its chapter: it
+//! chooses which of its arguments is the value.
 
 use super::super::eval::Operand;
 use super::super::value::{FormulaError, Value};
@@ -18,6 +20,9 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "AND" => fold(args, true),
         "OR" => fold(args, false),
         "IF" => if_(args),
+        "IFERROR" => if_error(args, |_| true),
+        "IFNA" => if_error(args, |e| e == FormulaError::NA),
+        "HYPERLINK" => hyperlink(args),
         _ => return None,
     })
 }
@@ -83,4 +88,27 @@ fn if_(args: &mut Args) -> Answer {
         Operand::Value(v) => v,
         area => args.scalar(area),
     })
+}
+
+/// §6.15.5 `IFERROR` and §6.15.6 `IFNA`, which differ only in which errors they catch.
+///
+/// "X is only computed once", and the alternative not at all unless it is taken — the same
+/// short circuit `IF` has, for the same reason.
+fn if_error(args: &mut Args, catches: impl Fn(FormulaError) -> bool) -> Answer {
+    args.arity(2..=2)?;
+    match args.value(0) {
+        Value::Error(e) if catches(e) => Ok(args.value(1)),
+        value => Ok(value),
+    }
+}
+
+/// §6.11.3 `HYPERLINK( IRI [ ; FunctionResult ] )`: the value is the second argument, else
+/// the first. Making a link of it is the host's business, and this host draws none.
+fn hyperlink(args: &mut Args) -> Answer {
+    args.arity(1..=2)?;
+    let iri = args.text(0)?;
+    if args.len() == 1 || args.omitted(1) {
+        return Ok(Value::Text(iri));
+    }
+    Ok(args.value(1))
 }
