@@ -193,3 +193,69 @@ fn hyperlink_is_worth_its_second_argument() {
     assert_eq!(number("=HYPERLINK(\"http://x\";42)"), 42.0);
     assert_eq!(number("=HYPERLINK(\"http://x\";[.B1])"), 10.0);
 }
+
+#[test]
+fn roundup_and_rounddown_step_away_from_and_towards_zero() {
+    // §6.17.7, §6.17.6.
+    assert_eq!(number("=ROUNDUP(2.1)"), 3.0);
+    assert_eq!(number("=ROUNDUP(-2.1)"), -3.0);
+    assert_eq!(number("=ROUNDUP(1.23456;2)"), 1.24);
+    assert_eq!(number("=ROUNDUP(1234;-2)"), 1300.0);
+    assert_eq!(number("=ROUNDUP(2)"), 2.0);
+    assert_eq!(number("=ROUNDUP(2.5;1.9)"), 2.5); // Digits truncates, as ROUND's does
+    assert_eq!(number("=ROUNDUP(-0.0001;3)"), -0.001);
+    assert_eq!(number("=ROUNDDOWN(2.9)"), 2.0);
+    assert_eq!(number("=ROUNDDOWN(-2.9)"), -2.0);
+    assert_eq!(number("=ROUNDDOWN(1.23456;3)"), 1.234);
+    assert_eq!(number("=ROUNDDOWN(1299;-2)"), 1200.0);
+}
+
+#[test]
+fn rounding_reads_a_value_to_fifteen_digits_before_it_steps() {
+    // Measured (`doc/ods-format.md` §4.1): 4.35*100 is 434.99999999999994 in binary, and the
+    // oracle rounds it down to 435 — the scaled value is read to the fifteen significant
+    // digits a spreadsheet shows before it is stepped, or a value that *displays* as 435
+    // would round down to 434.
+    assert_eq!(number("=ROUNDDOWN(4.35*100;0)"), 435.0);
+    assert_eq!(number("=ROUNDDOWN(0.29*100)"), 29.0);
+    assert_eq!(number("=ROUNDUP(0.1+0.2;1)"), 0.3);
+    assert_eq!(number("=ROUNDUP(1.005;2)"), 1.01);
+    assert_eq!(number("=QUOTIENT(0.3;0.1)"), 3.0);
+    // Fifteen digits, not fewer: a difference in the fifteenth still counts.
+    assert_eq!(number("=ROUNDUP(1.00000000000001)"), 2.0);
+    assert_eq!(number("=ROUNDDOWN(0.999999999999999)"), 0.0);
+}
+
+#[test]
+fn mround_takes_the_nearest_multiple_and_the_greater_on_a_tie() {
+    // §6.17.4.
+    assert_eq!(number("=MROUND(10;3)"), 9.0);
+    assert_eq!(number("=MROUND(-10;-3)"), -9.0);
+    assert_eq!(number("=MROUND(7.5;5)"), 10.0);
+    assert_eq!(number("=MROUND(2.5;5)"), 5.0);
+    assert_eq!(number("=MROUND(0;3)"), 0.0);
+    assert!((number("=MROUND(1.3;0.2)") - 1.4).abs() < 1e-15); // 6.5 steps, read as such
+    // The spec puts no sign constraint on A and B, and nor does the oracle.
+    assert_eq!(number("=MROUND(-10;3)"), -9.0);
+    assert_eq!(number("=MROUND(10;-3)"), 9.0);
+    // Measured: a multiple of zero is zero.
+    assert_eq!(number("=MROUND(5;0)"), 0.0);
+    // "In case that two such X exist, the greater one is the result": -5, not the oracle's
+    // -10, which rounds a tie away from zero as Excel does.
+    assert_eq!(number("=MROUND(-7.5;-5)"), -5.0);
+}
+
+#[test]
+fn quotient_truncates_and_sign_is_three_valued() {
+    // §6.16.48, §6.16.54.
+    assert_eq!(number("=QUOTIENT(7;2)"), 3.0);
+    assert_eq!(number("=QUOTIENT(-7;2)"), -3.0); // towards zero, unlike INT
+    assert_eq!(number("=QUOTIENT(7;-2)"), -3.0);
+    assert_eq!(number("=QUOTIENT(7.9;2.5)"), 3.0);
+    assert_eq!(error("=QUOTIENT(1;0)"), FormulaError::DivZero);
+    assert_eq!(number("=SIGN(-3)"), -1.0);
+    assert_eq!(number("=SIGN(0)"), 0.0);
+    assert_eq!(number("=SIGN(2.5)"), 1.0);
+    assert_eq!(number("=SIGN([.C9])"), 0.0);
+    assert_eq!(error("=SIGN(\"x\")"), FormulaError::Value);
+}

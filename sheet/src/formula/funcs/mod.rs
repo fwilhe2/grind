@@ -123,8 +123,13 @@ const BEYOND: &[&str] = &[
     "HYPERLINK",
     "IFERROR",
     "IFNA",
+    "MROUND",
+    "QUOTIENT",
+    "ROUNDDOWN",
+    "ROUNDUP",
     "ROW",
     "SEARCH",
+    "SIGN",
 ];
 
 const NAMES: &[&str] = &[
@@ -165,6 +170,11 @@ const NAMES: &[&str] = &[
     "SUMIF",
     "TAN",
     "TRUNC",
+    "QUOTIENT",
+    "SIGN",
+    "ROUNDUP",
+    "ROUNDDOWN",
+    "MROUND",
     // information (§6.13)
     "COLUMN",
     "COLUMNS",

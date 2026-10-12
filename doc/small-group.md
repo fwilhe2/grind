@@ -195,6 +195,11 @@ by that evidence. It recommends nothing on its own; an entry here still needs it
 - `CONCATENATE` — §6.20.6
 - `SEARCH` — §6.20.20
 - `HYPERLINK` — §6.11.3
+- `QUOTIENT` — §6.16.48
+- `SIGN` — §6.16.54
+- `ROUNDUP` — §6.17.7
+- `ROUNDDOWN` — §6.17.6
+- `MROUND` — §6.17.4
 
   **Evidence:** `doc/function-coverage.md` §3 and §4's Tier 1 — the classic band every corpus
   calls. Measured over LibreOffice's test documents, a greedy pass adding one function at a

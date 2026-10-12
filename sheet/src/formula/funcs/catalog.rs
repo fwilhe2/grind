@@ -501,6 +501,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.10.14",
     },
     FuncInfo {
+        name: "MROUND",
+        signature: "MROUND( Number A ; Number B )",
+        brief: "Rounds the number to given multiple.",
+        section: "6.17.4",
+    },
+    FuncInfo {
         name: "N",
         signature: "N( Any X )",
         brief: "Return the number of a value.",
@@ -585,6 +591,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.12.41",
     },
     FuncInfo {
+        name: "QUOTIENT",
+        signature: "QUOTIENT( Number A ; Number B )",
+        brief: "Return the integer portion of a division.",
+        section: "6.16.48",
+    },
+    FuncInfo {
         name: "RADIANS",
         signature: "RADIANS( Number N )",
         brief: "Convert degrees to radians.",
@@ -622,6 +634,18 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.17.5",
     },
     FuncInfo {
+        name: "ROUNDDOWN",
+        signature: "ROUNDDOWN( Number X [ ; Integer Digits = 0 ] )",
+        brief: "Rounds the value X towards zero to the number of digits specified by Digits.",
+        section: "6.17.6",
+    },
+    FuncInfo {
+        name: "ROUNDUP",
+        signature: "ROUNDUP( Number X [ ; Integer Digits = 0 ] )",
+        brief: "Rounds the value X away from zero to the number of digits specified by Digits",
+        section: "6.17.7",
+    },
+    FuncInfo {
         name: "ROW",
         signature: "ROW( [ Reference R ] )",
         brief: "Returns the row number(s) of a reference.",
@@ -644,6 +668,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "SECOND( TimeParam T )",
         brief: "Extracts the second (the integer 0 through 59) from a time. This function presumes that leap seconds never exist.",
         section: "6.10.17",
+    },
+    FuncInfo {
+        name: "SIGN",
+        signature: "SIGN( Number N )",
+        brief: "Return the sign of a number.",
+        section: "6.16.54",
     },
     FuncInfo {
         name: "SIN",

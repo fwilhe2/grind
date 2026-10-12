@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! §6.16 Mathematical Functions and §6.17 Rounding Functions — the Small Group's 24 and 3.
+//! §6.16 Mathematical Functions and §6.17 Rounding Functions — the Small Group's 24 and 3,
+//! and `QUOTIENT`, `SIGN`, `ROUNDUP`, `ROUNDDOWN` and `MROUND` from beyond it.
 //!
 //! Domain errors mostly need no code: `SQRT(-1)`, `LN(0)` and `POWER(-1;0.5)` all produce a
 //! non-finite double, and [`Value::number`] turns every one of those into `#NUM!` at the
@@ -46,6 +47,11 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "PRODUCT" => sequence(args, |ns| ns.iter().product()),
         "ROUND" => scaled(args, f64::round),
         "TRUNC" => scaled(args, f64::trunc),
+        "ROUNDUP" => scaled(args, |x| shown(x).abs().ceil().copysign(x)),
+        "ROUNDDOWN" => scaled(args, |x| shown(x).trunc()),
+        "MROUND" => mround(args),
+        "QUOTIENT" => quotient(args),
+        "SIGN" => unary(args, |n| if n == 0.0 { 0.0 } else { n.signum() }),
         _ => return None,
     })
 }
@@ -140,4 +146,53 @@ fn scaled(args: &mut Args, f: impl Fn(f64) -> f64) -> Answer {
     };
     let scale = 10f64.powi(digits.clamp(-308, 308) as i32);
     Ok(Value::number(f(x * scale) / scale))
+}
+
+/// A value as a spreadsheet *shows* it — rounded to fifteen significant digits, the most a
+/// double reliably carries — for a function about to step it to a whole number.
+///
+/// `4.35*100` is `434.99999999999994` in binary and displays as `435`; truncating the binary
+/// value makes `ROUNDDOWN` answer 434 to a number the user can see is 435. LibreOffice reads
+/// the value to fifteen digits first, which is measured rather than specified
+/// (`doc/ods-format.md` §4.1), and so does every function here that floors, ceils or
+/// truncates a quotient.
+pub fn shown(x: f64) -> f64 {
+    if x == 0.0 || !x.is_finite() {
+        return x;
+    }
+    format!("{x:.14e}").parse().unwrap_or(x)
+}
+
+/// §6.17.4 `MROUND(A; B)`: the multiple of `B` nearest `A`, and on a tie "the greater one".
+///
+/// The quotient is read as [`shown`] before the tie is judged, so `MROUND(1.3;0.2)` — whose
+/// quotient is `6.499999999999999` — is the tie it looks like. Neither sign is constrained;
+/// a multiple of zero is zero, as measured.
+fn mround(args: &mut Args) -> Answer {
+    args.arity(2..=2)?;
+    let (a, b) = (args.number(0)?, args.number(1)?);
+    if b == 0.0 {
+        return Ok(Value::Number(0.0));
+    }
+    let q = shown(a / b);
+    let below = q.floor();
+    let k = match (q - below).partial_cmp(&0.5) {
+        Some(std::cmp::Ordering::Less) => below,
+        Some(std::cmp::Ordering::Greater) => below + 1.0,
+        // A tie: of `b·below` and `b·(below + 1)`, the greater — which is the upper step for
+        // a positive `b` and the lower one for a negative.
+        _ if b > 0.0 => below + 1.0,
+        _ => below,
+    };
+    Ok(Value::number(k * b))
+}
+
+/// §6.16.48 `QUOTIENT(A; B)`: the integer portion of `A/B`, towards zero.
+fn quotient(args: &mut Args) -> Answer {
+    args.arity(2..=2)?;
+    let (a, b) = (args.number(0)?, args.number(1)?);
+    if b == 0.0 {
+        return Err(FormulaError::DivZero);
+    }
+    Ok(Value::number(shown(a / b).trunc()))
 }

@@ -397,6 +397,10 @@ table:use-regular-expressions="false"/>` — the reading this build gives every 
 | `SEARCH("p*e";"apple")`, `SEARCH("e*";"apple")` | 2, 5 | silent on what a pattern must cover | a pattern matches a *stretch* of the text, leftmost start first — not anchored at both ends as a criterion is |
 | `CONCATENATE("a";1;TRUE())` | `a11` | §6.3.14: a true Logical is `"TRUE"` | **the spec**: `a1TRUE`, as `&` already gives |
 | `IFERROR([.C9];1)` (empty) | 0 | "return X" | X, reduced as `IF` reduces a branch |
+| `ROUNDDOWN(4.35*100;0)`, `ROUNDUP(0.1+0.2;1)`, `QUOTIENT(0.3;0.1)` | 435, 0.3, 3 | silent | the scaled value is read to **fifteen significant digits** before it is stepped — `434.99999999999994` is 435 — and a difference in the fifteenth digit still counts (`ROUNDUP(1.00000000000001)` is 2). LibreOffice's `ROUND`, `TRUNC` and `INT` do the same (`ROUND(0.285;2)` is 0.29, `TRUNC(4.35*100)` 435) |
+| `MROUND(-10;3)`, `MROUND(10;-3)`, `MROUND(5;0)` | -9, 9, 0 | no sign constraint | the nearest multiple whatever the signs; a multiple of zero is zero |
+| `MROUND(-7.5;-5)` | -10 (a tie away from zero) | "the greater one" | **the spec**: -5 |
+| `QUOTIENT(1;0)` | `Err:502` | `B ≠ 0` | `#DIV/0!` |
 
 ---
 
