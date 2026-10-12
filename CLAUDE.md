@@ -1249,3 +1249,15 @@ meta-package, and `gio open note.fodt` — what a file manager's double-click ca
 installed `grind-text-gtk` on the document, with GIO resolving all four media types to the
 right window both on a machine with LibreOffice installed and on a data directory holding only
 grind's entries. R10's matrix, which S11 called `doc/shell-matrix.md`, is `doc/feature-matrix.md`.
+
+**Function compatibility: the classic band is in, and the rest waits on decisions.**
+`doc/function-coverage.md` §7 is the status: 26 functions of its Tier 1 that needed no new
+machinery moved in on 2026-10-12 (138 in all, `doc/small-group.md`'s second half), each held to
+an expectation measured against LibreOffice in `sheet/src/formula/funcs/beyond.rs`, with what
+the oracle answered where Part 4 is silent in `doc/ods-format.md` §4.1 — and where the two
+disagree, the spec wins and the test says so. `ROUND`/`TRUNC`/`INT` changed with them: they
+step the value a cell shows (`math::shown`), so `ROUND(0.285;2)` is 0.29. What is next —
+`INDIRECT`/`OFFSET`, `SUBTOTAL`, `SUMPRODUCT`, `TEXT`, `CELL`, `CEILING`/`FLOOR` — each needs an
+engine change or a scope decision first, and §7's table says which. Measure expectations with
+`table:use-wildcards="true"` in the oracle's document, or LibreOffice reads every criterion as a
+regular expression.

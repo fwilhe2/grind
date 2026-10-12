@@ -204,7 +204,65 @@ holds `IFERROR`, `SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `TEXT`, `SEARCH`, `INDIRECT
 `DATEDIF`, `IPMT`, `PPMT` and `HYPERLINK` — a good third of Tier 1. The row was amended on
 2026-10-12 when the classic band moved in.
 
-## 7. Re-measuring
+## 7. Where the work stands
+
+As of 2026-10-12. §1–§4 are the measurements; this is the state of the work they led to, and
+what each next step is waiting on.
+
+**Done — the classic band that needed no new machinery.** The 26 functions marked ✓ in §4,
+admitted in `doc/small-group.md`'s second half with their evidence. How they were built and
+where each piece is:
+
+- **Expectations measured, not assumed.** `sheet/src/formula/funcs/beyond.rs` holds every
+  one: each value comes from Part 4, or — where Part 4 is silent — from LibreOffice 26.8
+  converting a flat document that holds the formula with no cached value, under
+  `table:calculation-settings table:use-wildcards="true"`. Without that setting LibreOffice
+  reads every pattern as a regular expression. `doc/ods-format.md` §4.1 is the list of what
+  the oracle answered and what this build decided.
+- **Where the spec and the oracle disagree, the spec wins**, and the test says so at the line:
+  `CONCATENATE` writes a true Logical as `"TRUE"` (§6.3.14; LibreOffice writes `1`), `MROUND`
+  takes "the greater one" on a tie (−5 for `MROUND(-7.5;-5)`; LibreOffice and Excel give −10),
+  `ROUNDUP(8.234567890134;11)` rounds up (LibreOffice gives …013), `WORKDAY` takes §6.10.23's
+  fourth parameter (LibreOffice 26.8 refuses it), and a text `N` in `LARGE` converts (§6.3.5).
+  `WEEKNUM` puts the last days of December in week 1 of the next year, read literally, and the
+  oracle agrees (Excel says 53). The `IPMT` cells loop B still disagrees about are
+  LibreOffice's precision rather than ours — exact rational arithmetic over the same doubles
+  sides with this build from the twelfth digit.
+- **One change beyond the 26.** `ROUND`, `TRUNC` and `INT` now step the value a cell *shows*
+  — read to fifteen significant digits, and only below 10^11 (`math::shown`) — so
+  `ROUND(0.285;2)` is 0.29 as in LibreOffice and Excel, where it used to be 0.28. Above 10^11
+  the oracle's answer depends on its own binary steps and no rule in digits reproduces it; a
+  16-digit integer such as `2^52+1` is left exact.
+- **Two pieces of shared machinery.** `wildcard::find` (an unanchored match, for `SEARCH`) and
+  `criterion::several` (the `IFS` functions). Their signatures repeat a *pair* of parameters,
+  so `friendly.rs` reads a repeated group and `assist::part_for` is the one answer to which
+  part of a signature a hint emphasises, used by the core's band, the GNOME window and the
+  browser.
+- **The ratchets.** Loop B's `FLOOR` went from 13320 to 13900 (13395 → 14116 cells on a
+  2026-10 checkout, less a margin since CI's clone need not match). Loop E holds at 917 of
+  1000 with no new class of disagreement (`doc/differential-fuzz.md`).
+  `examples/sample-sheet.sh` uses ten of the functions, and `cli/tests/cli.rs` asserts five.
+
+**Known and left alone.** `FIND("";"abc")` is 1 here and `#VALUE!` in LibreOffice — older than
+this work and not yet decided. `ROUNDUP(8.06-8;2)` is 0.06 there and 0.07 here: LibreOffice
+tidies `6.0000000000000497` more coarsely than fifteen digits, and the measurements could not
+pin down the rule (`sal/rtl/math.cxx`, which would say, is not in the checkout used).
+LibreOffice's own fixtures for `SEARCH`, `COUNTIFS` and `AVERAGEIFS` use regular expressions,
+which this build reads as wildcards by `wildcard.rs`'s decision.
+
+**Next — each waits on a decision, not on code.** In greedy order (§3), with what it needs:
+
+| Function | Unlocks | Needs | Decision owed |
+|---|---|---|---|
+| `INDIRECT`, `OFFSET` | 9 files, then 3 | a function that returns a reference: `funcs::call` hands back an `Operand`, and `INDEX` should too | `graph.rs` cannot see a reference built at run time, so cell roles, lint and sheet-rename rewriting go wrong for a cell read only through one — name that gap or close it |
+| `SUBTOTAL` (and `AGGREGATE`) | 8 files | a row's filter and collapse state inside evaluation, and whether a referenced cell's formula calls `SUBTOTAL` | none in principle — the model already separates filter-hidden rows from rows hidden by hand, which is exactly §6.16.60's split |
+| `SUMPRODUCT` | 7 files | ForceArray: operators applied cell by cell over ranges, kept inside the function with no array value that spills | whether that narrows or breaks `doc/not-doing.md`'s "Array/matrix formulas" row; the same machinery would give `LOOKUP`'s array form and single-cell `{=SUM(IF(…))}` |
+| `TEXT` | 3 files | a format-code language | the code is implementation-defined and LibreOffice reads it in the document's locale; `numfmt` holds no format-code strings by rule, though `grind-xlsx`'s `numfmt.rs` parses Excel's and could be hoisted |
+| `CELL` | 3 files | an info-type vocabulary | outside every ODF group, and much of it implementation-defined |
+| `CEILING`, `FLOOR` | 5 files each | nothing new | Excel's namesakes round differently, so implementing them changes what an imported workbook recalculates to; measure `doc/xlsx-format.md` §5's list with loop E first |
+| `MAXIFS`, `MINIFS` and the rest of Tier 2 | — | `criterion::several` with a new `Mode`, for those two | each is outside ODF 1.4 and needs its spelling decided (`COM.MICROSOFT.*` is LibreOffice's convention, not a standard) |
+
+## 8. Re-measuring
 
 ```sh
 python3 -I scripts/function-usage.py "$GRIND_LO_CORPUS/sc/qa/unit/data" --skip functions

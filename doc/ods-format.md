@@ -394,6 +394,7 @@ table:use-regular-expressions="false"/>` — the reading this build gives every 
 |---|---|---|---|
 | `SEARCH("";"abc")`, `SEARCH("a";"")` | `#VALUE!` | silent | error: an empty search text is found nowhere |
 | `SEARCH("a";"abc";0)`, `…;4)` | `Err:502`, `#VALUE!` | `Start ≥ 1` | error either side of the text, where `FIND` clamps |
+| `FIND("";"abc")` | `#VALUE!` | silent | **not yet decided**: this build answers 1 (an empty text is found at the start), older than §4.1 and left as it is |
 | `SEARCH("p*e";"apple")`, `SEARCH("e*";"apple")` | 2, 5 | silent on what a pattern must cover | a pattern matches a *stretch* of the text, leftmost start first — not anchored at both ends as a criterion is |
 | `CONCATENATE("a";1;TRUE())` | `a11` | §6.3.14: a true Logical is `"TRUE"` | **the spec**: `a1TRUE`, as `&` already gives |
 | `IFERROR([.C9];1)` (empty) | 0 | "return X" | X, reduced as `IF` reduces a branch |
