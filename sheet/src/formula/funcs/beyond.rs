@@ -416,3 +416,169 @@ fn the_ifs_functions_refuse_ranges_of_different_shapes() {
     );
     assert_eq!(error("=COUNTIFS([.A1:.A7])"), FormulaError::Value);
 }
+
+// Serial numbers below are the document's default epoch, 1899-12-30: 46053 is 2026-01-31,
+// 46380 is 2026-12-24 (a Thursday).
+
+#[test]
+fn eomonth_and_edate_add_whole_months() {
+    // §6.10.10, §6.10.9: both truncate their arguments first.
+    assert_eq!(number("=EOMONTH(DATE(2026;1;15);0)"), 46053.0); // 2026-01-31
+    assert_eq!(number("=EOMONTH(DATE(2026;1;15);1)"), 46081.0); // 2026-02-28
+    assert_eq!(number("=EOMONTH(DATE(2024;1;31);1)"), 45351.0); // 2024-02-29
+    assert_eq!(number("=EOMONTH(DATE(2026;3;10);-14)"), 45688.0); // 2025-01-31
+    assert_eq!(number("=EOMONTH(DATE(2026;1;15);1.9)"), 46081.0);
+    assert_eq!(number("=EOMONTH(DATE(2026;1;15);-1.9)"), 46022.0); // 2025-12-31
+    assert_eq!(number("=EOMONTH(\"2026-05-05\";0)"), 46173.0);
+    assert_eq!(number("=EOMONTH(DATE(2026;1;15)+0.75;0)"), 46053.0);
+    // A day past the end of the new month is "adjusted to the last day" of it.
+    assert_eq!(number("=EDATE(DATE(2026;1;31);1)"), 46081.0); // 2026-02-28
+    assert_eq!(number("=EDATE(DATE(2024;1;31);1)"), 45351.0); // 2024-02-29
+    assert_eq!(number("=EDATE(DATE(2026;3;31);-1)"), 46081.0);
+    assert_eq!(number("=EDATE(DATE(2026;1;15);0)"), 46037.0);
+    assert_eq!(number("=EDATE(DATE(2026;1;15)+0.5;0)"), 46037.0); // the time is dropped
+    assert_eq!(number("=EDATE(DATE(2026;1;15);2.7)"), 46096.0); // 2026-03-15
+    assert_eq!(number("=EDATE(DATE(2026;1;15);-2.7)"), 45976.0); // 2025-11-15
+    assert_eq!(number("=EDATE(DATE(2026;5;31);-12)"), 45808.0); // 2025-05-31
+}
+
+#[test]
+fn weeknum_counts_from_the_week_holding_the_first_of_january() {
+    // §6.10.22: Mode picks the day a week starts on; "the week containing January 1 is the
+    // first week of the year". 2026-01-01 is a Thursday.
+    assert_eq!(number("=WEEKNUM(DATE(2026;1;1))"), 1.0);
+    assert_eq!(number("=WEEKNUM(DATE(2026;1;4))"), 2.0); // Sunday starts week 2
+    assert_eq!(number("=WEEKNUM(DATE(2026;1;4);2)"), 1.0); // ... unless weeks start Monday
+    assert_eq!(number("=WEEKNUM(DATE(2026;1;5);2)"), 2.0);
+    assert_eq!(number("=WEEKNUM(DATE(2026;1;6);13)"), 1.0); // Wednesday starts
+    assert_eq!(number("=WEEKNUM(DATE(2026;1;10);16)"), 3.0); // Saturday starts
+    assert_eq!(number("=WEEKNUM(DATE(2026;1;10);17)"), 2.0); // Sunday, as mode 1
+    assert_eq!(number("=WEEKNUM(DATE(2026;1;10);11)"), 2.0); // Monday, as mode 2
+    assert_eq!(number("=WEEKNUM(DATE(2026;12;26))"), 52.0);
+    assert_eq!(number("=WEEKNUM(DATE(2028;12;30))"), 53.0);
+    // Read literally, and the oracle does: the last days of December are in the week holding
+    // the *next* January 1, so they are week 1 — not Excel's 53.
+    assert_eq!(number("=WEEKNUM(DATE(2026;12;27))"), 1.0);
+    assert_eq!(number("=WEEKNUM(DATE(2026;12;31))"), 1.0);
+    assert_eq!(number("=WEEKNUM(DATE(2026;12;27);2)"), 52.0); // a Sunday, weeks from Monday
+    assert_eq!(number("=WEEKNUM(DATE(2026;12;28);2)"), 1.0);
+    // Modes 21 and 150 are ISO 8601.
+    assert_eq!(number("=WEEKNUM(DATE(2026;1;1);21)"), 1.0);
+    assert_eq!(number("=WEEKNUM(DATE(2027;1;1);21)"), 53.0);
+    assert_eq!(number("=WEEKNUM(DATE(2026;1;1);150)"), 1.0);
+    assert_eq!(number("=WEEKNUM(DATE(2026;1;1);1.5)"), 1.0); // Mode truncates
+    assert_eq!(error("=WEEKNUM(DATE(2026;1;1);3)"), FormulaError::Num);
+    assert_eq!(error("=WEEKNUM(DATE(2026;1;1);0)"), FormulaError::Num);
+    assert_eq!(error("=WEEKNUM(DATE(2026;1;1);\"x\")"), FormulaError::Value);
+}
+
+#[test]
+fn isoweeknum_is_the_week_of_its_thursday() {
+    // §6.10.12.
+    assert_eq!(number("=ISOWEEKNUM(DATE(2026;1;1))"), 1.0);
+    assert_eq!(number("=ISOWEEKNUM(DATE(2027;1;1))"), 53.0); // a Friday: 2026's last week
+    assert_eq!(number("=ISOWEEKNUM(DATE(2020;12;31))"), 53.0);
+    assert_eq!(number("=ISOWEEKNUM(DATE(2021;1;3))"), 53.0);
+    assert_eq!(number("=ISOWEEKNUM(DATE(2024;12;30))"), 1.0); // a Monday: 2025's first
+    assert_eq!(number("=ISOWEEKNUM(DATE(2026;6;15))"), 25.0);
+}
+
+#[test]
+fn networkdays_counts_both_ends_and_skips_weekends_and_holidays() {
+    // §6.10.15. 2026-12-21 is a Monday, 2026-12-31 a Thursday; D1:D2 holds the 25th and
+    // the 24th, E1:E7 a week with Friday and Saturday off, F1:F7 one with no working day.
+    let span = "DATE(2026;12;21);DATE(2026;12;31)";
+    assert_eq!(number(&format!("=NETWORKDAYS({span})")), 9.0);
+    assert_eq!(number(&format!("=NETWORKDAYS({span};[.D1:.D2])")), 7.0);
+    assert_eq!(
+        number(&format!("=NETWORKDAYS({span};DATE(2026;12;25))")),
+        8.0
+    );
+    assert_eq!(
+        number(&format!("=NETWORKDAYS({span};DATE(2026;12;26))")),
+        9.0
+    ); // a Saturday
+    assert_eq!(number(&format!("=NETWORKDAYS({span};[.D1:.D7])")), 7.0); // blanks are nothing
+    assert_eq!(number(&format!("=NETWORKDAYS({span};[.A1:.A2])")), 9.0); // and so is text
+    assert_eq!(number(&format!("=NETWORKDAYS({span};;[.E1:.E7])")), 9.0);
+    assert_eq!(
+        number(&format!("=NETWORKDAYS({span};[.D1:.D2];[.E1:.E7])")),
+        8.0
+    );
+    assert_eq!(number(&format!("=NETWORKDAYS({span};;[.F1:.F7])")), 0.0);
+    // Backwards is negative; a date's time is dropped; one day counts itself.
+    assert_eq!(
+        number("=NETWORKDAYS(DATE(2026;12;31);DATE(2026;12;21))"),
+        -9.0
+    );
+    assert_eq!(
+        number("=NETWORKDAYS(DATE(2026;12;31);DATE(2026;12;21);[.D1:.D2])"),
+        -7.0
+    );
+    assert_eq!(
+        number("=NETWORKDAYS(DATE(2026;12;21)+0.9;DATE(2026;12;31)+0.1)"),
+        9.0
+    );
+    assert_eq!(
+        number("=NETWORKDAYS(DATE(2026;12;21);DATE(2026;12;21))"),
+        1.0
+    );
+    assert_eq!(
+        number("=NETWORKDAYS(DATE(2026;12;26);DATE(2026;12;27))"),
+        0.0
+    );
+    assert_eq!(number("=NETWORKDAYS(\"2026-12-21\";\"2026-12-31\")"), 9.0);
+    // A work week is seven flags, Sunday first, or it is not one.
+    assert_eq!(
+        error(&format!("=NETWORKDAYS({span};;[.E1:.E6])")),
+        FormulaError::Value
+    );
+    assert_eq!(
+        error(&format!("=NETWORKDAYS({span};[.D1];[.B1:.B7])")),
+        FormulaError::Value
+    );
+    // Decades of days are counted, not walked.
+    assert_eq!(
+        number("=NETWORKDAYS(DATE(1900;1;1);DATE(9999;12;31))"),
+        2_113_190.0
+    );
+}
+
+#[test]
+fn workday_steps_over_weekends_and_holidays() {
+    // §6.10.23, from Thursday 2026-12-24 (46380).
+    assert_eq!(number("=WORKDAY(DATE(2026;12;24);1)"), 46381.0); // Friday the 25th
+    assert_eq!(number("=WORKDAY(DATE(2026;12;24);1;[.D1:.D2])"), 46384.0); // Monday the 28th
+    assert_eq!(number("=WORKDAY(DATE(2026;12;28);-1;[.D1:.D2])"), 46379.0); // the 23rd
+    assert_eq!(number("=WORKDAY(DATE(2026;12;24);5)"), 46387.0);
+    assert_eq!(number("=WORKDAY(DATE(2026;12;24);2.9)"), 46384.0); // Offset truncates
+    assert_eq!(number("=WORKDAY(DATE(2026;12;24);-2.9)"), 46378.0);
+    assert_eq!(number("=WORKDAY(DATE(2026;12;24)+0.5;1)"), 46381.0);
+    assert_eq!(number("=WORKDAY(DATE(2026;12;26);1)"), 46384.0); // from a Saturday
+    assert_eq!(number("=WORKDAY(DATE(2026;12;26);-1)"), 46381.0);
+    assert_eq!(
+        number("=WORKDAY(DATE(2026;12;24);1;\"2026-12-25\")"),
+        46384.0
+    );
+    // "If Offset is zero, then Date is returned" — a holiday or a Saturday included.
+    assert_eq!(number("=WORKDAY(DATE(2026;12;26);0)"), 46382.0);
+    assert_eq!(number("=WORKDAY(DATE(2026;12;25);0;[.D1])"), 46381.0);
+    // The fourth parameter is §6.10.23's, and LibreOffice 26.8 refuses it (Err:504); these
+    // follow the spec. Friday and Saturday off: Thursday + 1 is Sunday the 27th.
+    assert_eq!(number("=WORKDAY(DATE(2026;12;24);1;;[.E1:.E7])"), 46383.0);
+    assert_eq!(number("=WORKDAY(DATE(2026;12;24);0;;[.F1:.F7])"), 46380.0);
+    // "If all seven numbers in Workdays are non-zero and Offset is also non-zero, WORKDAY
+    // returns an error."
+    assert_eq!(
+        error("=WORKDAY(DATE(2026;12;24);1;;[.F1:.F7])"),
+        FormulaError::Value
+    );
+    // A long offset is jumped, not walked: 260 working days is 52 weeks.
+    assert_eq!(number("=WORKDAY(DATE(2026;12;24);260)"), 46380.0 + 364.0);
+    assert_eq!(number("=WORKDAY(DATE(2026;12;24);-260)"), 46380.0 - 364.0);
+    // The start day is not stepped onto, so of the two holidays only the 25th costs a day.
+    assert_eq!(
+        number("=WORKDAY(DATE(2026;12;24);260;[.D1:.D2])"),
+        46380.0 + 365.0
+    );
+}

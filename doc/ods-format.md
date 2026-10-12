@@ -409,6 +409,11 @@ table:use-regular-expressions="false"/>` — the reading this build gives every 
 | `MEDIAN`, `LARGE`, `SMALL` over no numbers | `#VALUE!` | silent | `#VALUE!` (not `AVERAGE`'s `#DIV/0!`) |
 | `RANK(7;…)` (absent), `RANK(30;[text only])` | `#N/A`, `#VALUE!` | "an Error" | `#N/A` for a value not in the data, compared exactly; `#VALUE!` for data with no numbers |
 | `SUMIFS(…;[.A1:.A6];…)` against a 7-row range, `SUMIFS(5;…)`, `SUMIFS(R;R1)` | `Err:502`, `Err:511` | "an Error" | `#VALUE!` for ranges of different shapes (the summed one included), a constant where a range belongs, and a range without its criterion |
+| `WEEKNUM(DATE(2026;12;31))`, `WEEKNUM(DATE(2026;12;28);2)` | 1, 1 | "the week containing January 1 is the first week" | week 1 — the days of late December that share a week with the *next* January 1 belong to it, read literally (Excel says 53) |
+| `WEEKNUM(…;0)`, `WEEKNUM(…;3)` | `Err:502` | `Mode` in {1, 2, 11…17, 21, 150} | `#NUM!`, as `WEEKDAY`'s bad type already is; a fractional mode truncates |
+| `WORKDAY(D;N;H;Workdays)` | `Err:504` — no fourth parameter | §6.10.23 defines it | **the spec**: the fourth parameter works as `NETWORKDAYS`' does (which LibreOffice does accept) |
+| `NETWORKDAYS(…;;[6 cells])`, `NETWORKDAYS(…;…;[text in it])` | `Err:502` | seven flags, Sunday first | `#VALUE!` unless there are exactly seven numbers or logicals |
+| `NETWORKDAYS(…;[.A1:.A2])` (text holidays), `WORKDAY(…;1;"2026-12-25")` | ignored; a date | DateSequence | text inside a range is nothing; a text argument is a date, as any DateParam is |
 
 **Where the fifteen-digit read stops.** It is not applied to every magnitude. A series
 `10^k·(1−4E−16)`, whose sixteenth digit always rounds the value up to `10^k`, snaps in

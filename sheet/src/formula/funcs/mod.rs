@@ -122,12 +122,16 @@ const BEYOND: &[&str] = &[
     "COLUMN",
     "CONCATENATE",
     "COUNTIFS",
+    "EDATE",
+    "EOMONTH",
     "HYPERLINK",
     "IFERROR",
     "IFNA",
+    "ISOWEEKNUM",
     "LARGE",
     "MEDIAN",
     "MROUND",
+    "NETWORKDAYS",
     "QUOTIENT",
     "RANK",
     "ROUNDDOWN",
@@ -137,6 +141,8 @@ const BEYOND: &[&str] = &[
     "SIGN",
     "SMALL",
     "SUMIFS",
+    "WEEKNUM",
+    "WORKDAY",
 ];
 
 const NAMES: &[&str] = &[
@@ -248,6 +254,12 @@ const NAMES: &[&str] = &[
     "TIME",
     "TODAY",
     "WEEKDAY",
+    "EDATE",
+    "EOMONTH",
+    "ISOWEEKNUM",
+    "NETWORKDAYS",
+    "WEEKNUM",
+    "WORKDAY",
     "YEAR",
     // lookup (§6.14)
     "CHOOSE",

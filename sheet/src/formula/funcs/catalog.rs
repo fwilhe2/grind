@@ -17,13 +17,15 @@
 //! as `doc/small-group.md` does: the grant for derivative works is conditional on passing
 //! the notice along (`CLAUDE.md`, REUSE).
 //!
-//! **Three of the spec's own `Syntax:` lines name the wrong function**, and are corrected
-//! here with the erratum noted at the entry — a signature that says `ISERR` under `ISNA`
-//! would be a defect in the tooltip, not fidelity to the source:
+//! **Four of the spec's own `Syntax:` lines are wrong**, and are corrected here with the
+//! erratum noted at the entry — a signature that says `ISERR` under `ISNA` would be a defect
+//! in the tooltip, not fidelity to the source. Three name the wrong function and one never
+//! closes its parenthesis:
 //!
 //! * §6.13.20 `ISNA` is written `ISERR( Scalar X )`
 //! * §6.20.18 `REPT` is written `T ( Text T ; Integer Count )`
 //! * §6.12.45 `SLN` is written `DDB( Number Cost ; Number Salvage ; Number LifeTime )`
+//! * §6.10.10 `EOMONTH` is written `EOMONTH( DateParam StartDate ; Integer MonthAdd`
 //!
 //! Each was found by the test below rather than by reading, which is the argument for
 //! having it. Nothing else is altered: the parameter names, the optional-argument brackets
@@ -290,6 +292,19 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.9.13",
     },
     FuncInfo {
+        name: "EDATE",
+        signature: "EDATE( DateParam StartDate ; Number MonthAdd )",
+        brief: "Returns the serial number of a given date when MonthAdd months is added",
+        section: "6.10.9",
+    },
+    FuncInfo {
+        name: "EOMONTH",
+        // Erratum: §6.10.10 never closes the parenthesis.
+        signature: "EOMONTH( DateParam StartDate ; Integer MonthAdd )",
+        brief: "Returns the serial number of the end of a month, given date plus MonthAdd months",
+        section: "6.10.10",
+    },
+    FuncInfo {
         name: "EVEN",
         signature: "EVEN( Number N )",
         brief: "Rounds a number up to the nearest even integer. Rounding is away from zero.",
@@ -429,6 +444,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.13.22",
     },
     FuncInfo {
+        name: "ISOWEEKNUM",
+        signature: "ISOWEEKNUM( DateParam D )",
+        brief: "Determines the ISO week number of the year for a given date.",
+        section: "6.10.12",
+    },
+    FuncInfo {
         name: "ISTEXT",
         signature: "ISTEXT( Scalar X )",
         brief: "Return TRUE if the parameter has type Text, else return FALSE. ISTEXT( X ) is equivalent to NOT(ISNONTEXT( X )).",
@@ -541,6 +562,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "NA()",
         brief: "Return the constant Error value #N/A.",
         section: "6.13.27",
+    },
+    FuncInfo {
+        name: "NETWORKDAYS",
+        signature: "NETWORKDAYS( DateParam Date1 ; DateParam Date2 [ ; [ DateSequence Holidays ] [ ; LogicalSequence Workdays ] ] )",
+        brief: "Returns the whole number of work days between two dates.",
+        section: "6.10.15",
     },
     FuncInfo {
         name: "NOT",
@@ -849,6 +876,18 @@ static CATALOG: &[FuncInfo] = &[
         signature: "WEEKDAY( DateParam D [ ; Integer Type = 1 ] )",
         brief: "Extracts the day of the week from a date; if text, uses current locale to convert to a date.",
         section: "6.10.21",
+    },
+    FuncInfo {
+        name: "WEEKNUM",
+        signature: "WEEKNUM( DateParam D [ ; Number Mode = 1 ] )",
+        brief: "Determines the week number of the year for a given date.",
+        section: "6.10.22",
+    },
+    FuncInfo {
+        name: "WORKDAY",
+        signature: "WORKDAY( DateParam Date ; Number Offset [ ; [ DateSequence Holidays ] [ ; LogicalSequence Workdays ] ] )",
+        brief: "Returns the date serial number which is a specified number of work days before or after an input date.",
+        section: "6.10.23",
     },
     FuncInfo {
         name: "YEAR",

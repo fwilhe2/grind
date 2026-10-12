@@ -207,6 +207,12 @@ by that evidence. It recommends nothing on its own; an entry here still needs it
 - `SUMIFS` — §6.16.63
 - `COUNTIFS` — §6.13.10
 - `AVERAGEIFS` — §6.18.6
+- `EOMONTH` — §6.10.10
+- `EDATE` — §6.10.9
+- `WEEKNUM` — §6.10.22
+- `ISOWEEKNUM` — §6.10.12
+- `NETWORKDAYS` — §6.10.15
+- `WORKDAY` — §6.10.23
 
   **Evidence:** `doc/function-coverage.md` §3 and §4's Tier 1 — the classic band every corpus
   calls. Measured over LibreOffice's test documents, a greedy pass adding one function at a

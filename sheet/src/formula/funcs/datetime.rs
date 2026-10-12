@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! §6.10 Date and Time Functions — the Small Group's 11.
+//! §6.10 Date and Time Functions — the Small Group's 11, and `EOMONTH`, `EDATE`,
+//! `WEEKNUM`, `ISOWEEKNUM`, `NETWORKDAYS` and `WORKDAY` from beyond it.
 //!
 //! All the calendar arithmetic lives in [`super::super::date`]; this file is the mapping
 //! from a function name onto it, plus the two pseudotypes §4.11.3 and §4.11.4 define.
@@ -18,7 +19,10 @@
 //! it from the cell's number format rather than from the function; phase 5 is where that
 //! becomes possible, and doing it before then would mean guessing.
 
+use std::collections::BTreeSet;
+
 use super::super::date;
+use super::super::eval::Operand;
 use super::super::value::{FormulaError, Value};
 use super::Args;
 
@@ -43,6 +47,12 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "SECOND" => from_clock(args, |s| s % 60),
 
         "WEEKDAY" => weekday(args),
+        "EOMONTH" => months_on(args, true),
+        "EDATE" => months_on(args, false),
+        "WEEKNUM" => weeknum(args),
+        "ISOWEEKNUM" => isoweeknum(args),
+        "NETWORKDAYS" => networkdays(args),
+        "WORKDAY" => workday(args),
         _ => return None,
     })
 }
@@ -123,6 +133,240 @@ fn weekday(args: &mut Args) -> Answer {
     };
     let day = date::weekday(serial, args.null_date());
     Ok(Value::number(((day - first).rem_euclid(7) + base) as f64))
+}
+
+/// §6.10.10 `EOMONTH( StartDate ; MonthAdd )` and §6.10.9 `EDATE( StartDate ; MonthAdd )`.
+///
+/// Both "first truncate StartDate and MonthAdd, then add MonthAdd number of months"; `EOMONTH`
+/// answers the last day of the month it lands in, `EDATE` the same day of the month, or that
+/// month's last day when it has no such day. [`date::serial`] rolls a day of 0 back to the
+/// last of the month before, which is the whole of the month-length arithmetic.
+fn months_on(args: &mut Args, end_of_month: bool) -> Answer {
+    args.arity(2..=2)?;
+    let start = args.serial(0)?;
+    let months = args.number(1)?.trunc() as i64;
+    let null_date = args.null_date();
+    let (y, m, d) = date::ymd(start, null_date);
+    let last = date::serial(y, m + months + 1, 0, null_date);
+    if end_of_month {
+        return Ok(Value::number(last));
+    }
+    let (_, _, last_day) = date::ymd(last, null_date);
+    Ok(Value::number(date::serial(
+        y,
+        m + months,
+        d.min(last_day),
+        null_date,
+    )))
+}
+
+/// The weekday a week starts on for each of §6.10.22's `Mode`s (Sunday is 0), or `None` for
+/// the two ISO 8601 modes.
+fn week_start(mode: i64) -> Result<Option<i64>, FormulaError> {
+    Ok(Some(match mode {
+        1 | 17 => 0,
+        2 | 11 => 1,
+        12..=16 => mode - 10,
+        21 | 150 => return Ok(None),
+        _ => return Err(FormulaError::Num),
+    }))
+}
+
+/// §6.10.22 `WEEKNUM( D [ ; Mode = 1 ] )`.
+///
+/// "The week containing January 1 is the first week of the year", read as written — so the
+/// last days of December that share a week with the *next* January 1 are week 1, which is
+/// also the oracle's answer and not Excel's 53 (`doc/ods-format.md` §4.1).
+fn weeknum(args: &mut Args) -> Answer {
+    args.arity(1..=2)?;
+    let day = args.serial(0)?.floor();
+    let mode = if args.len() > 1 && !args.omitted(1) {
+        args.integer(1)?
+    } else {
+        1
+    };
+    let null_date = args.null_date();
+    let Some(first) = week_start(mode)? else {
+        return Ok(Value::number(iso_week(day, null_date) as f64));
+    };
+    let starts =
+        |serial: f64| serial - (date::weekday(serial, null_date) - first).rem_euclid(7) as f64;
+    let week = starts(day);
+    let (year, _, _) = date::ymd(day, null_date);
+    if week + 6.0 >= date::serial(year + 1, 1, 1, null_date) {
+        return Ok(Value::Number(1.0));
+    }
+    let first_week = starts(date::serial(year, 1, 1, null_date));
+    Ok(Value::number(((week - first_week) / 7.0).round() + 1.0))
+}
+
+/// §6.10.12 `ISOWEEKNUM( D )`.
+fn isoweeknum(args: &mut Args) -> Answer {
+    args.arity(1..=1)?;
+    let day = args.serial(0)?.floor();
+    Ok(Value::number(iso_week(day, args.null_date()) as f64))
+}
+
+/// ISO 8601's week number: a week runs Monday to Sunday and belongs to the year its Thursday
+/// is in, so the week's number is where that Thursday falls in its own year.
+fn iso_week(day: f64, null_date: i64) -> i64 {
+    let monday_based = (date::weekday(day, null_date) + 6).rem_euclid(7);
+    let thursday = day - monday_based as f64 + 3.0;
+    let (year, _, _) = date::ymd(thursday, null_date);
+    ((thursday - date::serial(year, 1, 1, null_date)) / 7.0).floor() as i64 + 1
+}
+
+/// The `Holidays` parameter of §6.10.15 and §6.10.23: a DateSequence, each date's time
+/// dropped. Text and empty cells inside a range are nothing, as in any sequence; a text
+/// *argument* is a date, as any DateParam is.
+fn holidays(args: &mut Args, i: usize) -> Result<BTreeSet<i64>, FormulaError> {
+    if i >= args.len() || args.omitted(i) {
+        return Ok(BTreeSet::new());
+    }
+    let dates = match args.operand(i) {
+        Operand::Area(_) => args.numbers_range(i..i + 1)?,
+        Operand::Value(Value::Empty) => Vec::new(),
+        Operand::Value(_) => vec![args.serial(i)?],
+    };
+    Ok(dates.into_iter().map(|d| d.floor() as i64).collect())
+}
+
+/// The `Workdays` parameter: seven flags, Sunday first, non-zero meaning "not a working day"
+/// — or the Saturday-and-Sunday weekend when it is left out. Anything but seven numbers or
+/// logicals is `#VALUE!`.
+fn weekend(args: &mut Args, i: usize) -> Result<[bool; 7], FormulaError> {
+    if i >= args.len() || args.omitted(i) {
+        return Ok([true, false, false, false, false, false, true]);
+    }
+    let values = match args.operand(i) {
+        Operand::Area(area) => args.values_in(&area),
+        Operand::Value(value) => vec![value],
+    };
+    if values.len() != 7 {
+        return Err(FormulaError::Value);
+    }
+    let mut off = [false; 7];
+    for (flag, value) in off.iter_mut().zip(values) {
+        *flag = match value {
+            Value::Number(n) => n != 0.0,
+            Value::Bool(b) => b,
+            Value::Empty => false,
+            Value::Error(e) => return Err(e),
+            Value::Text(_) => return Err(FormulaError::Value),
+        };
+    }
+    Ok(off)
+}
+
+/// The calendar `NETWORKDAYS` and `WORKDAY` walk: which weekdays are off, and which dates.
+struct Calendar {
+    off: [bool; 7],
+    holidays: BTreeSet<i64>,
+    null_date: i64,
+}
+
+impl Calendar {
+    fn works(&self, day: i64) -> bool {
+        !self.off[date::weekday(day as f64, self.null_date) as usize]
+            && !self.holidays.contains(&day)
+    }
+
+    /// Working days in a week, holidays aside.
+    fn per_week(&self) -> i64 {
+        self.off.iter().filter(|off| !**off).count() as i64
+    }
+
+    /// Working days from `from` to `to`, both counted, `from <= to` — in whole weeks and a
+    /// remainder rather than one day at a time, so a span of centuries costs what a fortnight
+    /// does. Holidays come off afterwards, each once, and only those on a working weekday.
+    fn count(&self, from: i64, to: i64) -> i64 {
+        let days = to - from + 1;
+        let tail = from + days / 7 * 7;
+        let plain = |day: i64| !self.off[date::weekday(day as f64, self.null_date) as usize];
+        let weekdays =
+            days / 7 * self.per_week() + (tail..=to).filter(|d| plain(*d)).count() as i64;
+        let holidays = self
+            .holidays
+            .range(from..=to)
+            .filter(|d| plain(**d))
+            .count() as i64;
+        weekdays - holidays
+    }
+}
+
+/// §6.10.15 `NETWORKDAYS( Date1 ; Date2 [ ; [ Holidays ] [ ; Workdays ] ] )`: the working
+/// days from one date to the other, both counted, negative when the second is earlier.
+fn networkdays(args: &mut Args) -> Answer {
+    args.arity(2..=4)?;
+    let (a, b) = (
+        args.serial(0)?.floor() as i64,
+        args.serial(1)?.floor() as i64,
+    );
+    let calendar = Calendar {
+        holidays: holidays(args, 2)?,
+        off: weekend(args, 3)?,
+        null_date: args.null_date(),
+    };
+    Ok(Value::number(if a <= b {
+        calendar.count(a, b) as f64
+    } else {
+        -calendar.count(b, a) as f64
+    }))
+}
+
+/// §6.10.23 `WORKDAY( Date ; Offset [ ; [ Holidays ] [ ; Workdays ] ] )`.
+///
+/// `Offset` working days on from `Date`, which is not itself counted — and is the answer,
+/// holiday or weekend or not, when `Offset` is zero. The fourth parameter is the spec's;
+/// LibreOffice 26.8 refuses it, so where the two differ it is because there is nothing on
+/// that side to agree with.
+///
+/// A long offset is jumped in whole weeks while more than a week of working days remains,
+/// and the holidays the jump passed are owed back before the last stretch is walked.
+fn workday(args: &mut Args) -> Answer {
+    args.arity(2..=4)?;
+    let start = args.serial(0)?.floor() as i64;
+    let offset = args.number(1)?.trunc() as i64;
+    let calendar = Calendar {
+        holidays: holidays(args, 2)?,
+        off: weekend(args, 3)?,
+        null_date: args.null_date(),
+    };
+    if offset == 0 {
+        return Ok(Value::number(start as f64));
+    }
+    let per_week = calendar.per_week();
+    if per_week == 0 {
+        return Err(FormulaError::Value);
+    }
+    let step = offset.signum();
+    let (mut day, mut owed) = (start, offset.abs());
+    while owed > per_week {
+        let weeks = (owed - 1) / per_week;
+        let next = day + 7 * weeks * step;
+        let (low, high) = if step > 0 {
+            (day + 1, next)
+        } else {
+            (next, day - 1)
+        };
+        let skipped = calendar
+            .holidays
+            .range(low..=high)
+            .filter(|d| !calendar.off[date::weekday(**d as f64, calendar.null_date) as usize]);
+        owed -= weeks * per_week - skipped.count() as i64;
+        day = next;
+        // Past year 9999 is not a date this calendar can name.
+        if day.abs() > 3_000_000 {
+            return Err(FormulaError::Num);
+        }
+    }
+    while owed > 0 {
+        day += step;
+        if calendar.works(day) {
+            owed -= 1;
+        }
+    }
+    Ok(Value::number(day as f64))
 }
 
 #[cfg(test)]
