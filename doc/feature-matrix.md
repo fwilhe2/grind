@@ -162,7 +162,7 @@ than as a cursor on a hidden row.
 | Point mode — arrow keys build a reference | — | ● | ● ᵖᵐ | ● ᵖᵐ | ● ᵖᵐ | ● |
 | Friendly formulas — `Sum(Number: B2:B7)` | ● | ● | ● ᵉˣ | ● ᵉˣ | ● | ● |
 | Explain a nested formula, unfolded | ● | ● | ● ᵉˣ | ● ᵉˣ | ● | ● |
-| The 110 functions as a browsable list | ● | ● ᶠᵍ | ● ᶠᵍ | ● ᶠⁿ | ● | ● |
+| Every function as a browsable list | ● | ● ᶠᵍ | ● ᶠᵍ | ● ᶠⁿ | ● | ● |
 | Read a formula through the document's names | ● | ● | ● | ● | ● | ● |
 | Every calculated cell, searchable | ● | ● | ● ᶜᵃ | ● ᶜᵃ | ● ᶜᵃ | ● |
 | Find over cells | ● | ● ᵍ | ● ᶠ | ● ʰ | ● ⁱ | ● |

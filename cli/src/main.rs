@@ -4536,7 +4536,7 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             };
             lines.sort();
             let beyond = grind_sheet::formula::funcs::beyond_small_group();
-            // Not "112 of 110": the Small Group is the conformance claim and the functions
+            // Not "138 of 110": the Small Group is the conformance claim and the functions
             // moved in beside it are counted apart, or the line reads as broken arithmetic.
             let mut summary = format!(
                 "{} of the Small Group's {}",

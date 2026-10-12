@@ -131,6 +131,31 @@ run fill "$book" E2 E3:E7
 sheet get "$book" D5 --formula
 sheet get "$book" E5 --formula
 
+# Beyond the Small Group: functions moved in one decision at a time, each with the evidence
+# for it written down (doc/small-group.md's second half, doc/function-coverage.md).
+say "functions beyond the Small Group: the classic band every real spreadsheet calls"
+run set "$book" L1 'Over budget, unpaid'
+run set "$book" M1 '=COUNTIFS([.D2:.D7];"<0";[.F2:.F7];FALSE())'   # several criteria at once
+run set "$book" L2 'Second largest expense'
+run set "$book" M2 '=LARGE([.C2:.C7];2)'
+run set "$book" L3 'Median spend'
+run set "$book" M3 '=MEDIAN([.C2:.C7])'
+run set "$book" L4 'Rent, to the hundred'
+run set "$book" M4 '=ROUNDUP([.C2];-2)'
+run set "$book" L5 'Month end'
+run set "$book" M5 '=EOMONTH([.B17];0)'
+run set "$book" L6 'Working days left'
+run set "$book" M6 '=NETWORKDAYS([.B17];[.M5])'
+run set "$book" L7 'First month'"'"'s interest'
+run set "$book" M7 '=ROUND(IPMT(0.0625/12;1;360;-350000);2)'     # the PMT above, split
+run set "$book" L8 'Where the total is'
+run set "$book" M8 '=ADDRESS(ROW([.B8]);COLUMN([.B8]))'
+run set "$book" L9 'Travel, if budgeted'
+run set "$book" M9 '=IFERROR(VLOOKUP("Travel";[.A2:.C7];3;FALSE());0)'   # a miss, caught
+run set "$book" L10 'Label'
+run set "$book" M10 '=CONCATENATE([.A2];" and ";LOWER([.A3]))'
+sheet view "$book" L1:M10
+
 say "number formats: display only, the value never moves"
 run format "$book" B2:C8 currency --symbol '€' --grouping --decimals 2
 run format "$book" E2:E7 percent --decimals 1

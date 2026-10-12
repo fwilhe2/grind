@@ -215,6 +215,13 @@ triaged, and they are not evenly spread — the recurring classes, for whoever p
 - **Genuine numeric drift.** `FV` at a rate of `1e-15` differs in the 15th digit — that is the
   ceiling above, not a bug.
 
+The classic band that moved in on 2026-10-12 (`doc/small-group.md`'s second half) changed what
+a seed generates, since the catalog is what the generator walks, and added **no new class**:
+the same seed against LibreOffice 26.8 is 917 of 1000. What its 26 functions disagree about is
+the logical-in-a-range class above (`MEDIAN`, `SMALL`, `RANK`, `SUMIFS`, `COUNTIFS` over the
+boolean column), §6.3.14's `"TRUE"` in `CONCATENATE` (a decision, `doc/ods-format.md` §4.1),
+and degenerate parameters — a rate of −1, a negative `Nper`, a logical as `WORKDAY`'s offset.
+
 Part II, not built: `cargo-fuzz` targets for `lex`, `parse` and `display`, whose property
 needs no oracle — no panic on any input, and `parse → serialize → parse` stable. It wants
 nightly and a dev-dependency, so it lands on its own rather than inside this.

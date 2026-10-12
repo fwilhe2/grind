@@ -280,7 +280,7 @@ what lifts every ○ in §1's table for an editor that can start one:
 | | `.grind` | `.rhai` |
 |---|---|---|
 | Diagnostics | a read error where it says, every `grind lint` finding on its cell's line — spelling included | the syntax error, from the compiler `grind build` uses — **compiled, never run** |
-| Completion | the nodes; inside a formula, the 112 functions and the document's names | after `s.`, the methods and properties; anywhere else, the free functions — each with its documentation rendered |
+| Completion | the nodes; inside a formula, every function this build has and the document's names | after `s.`, the methods and properties; anywhere else, the free functions — each with its documentation rendered |
 | Hover | a cell's formula, through its names, and what it shows; a name's definition; a block's addresses | every registration of the name under the pointer, signature and documentation |
 | Inline values | what every formula computes, after it — **shown, never written**; `grind sheet recalc` still writes them | — |
 | Go to definition | a name's `name` node, a sheet's `sheet` node | — |

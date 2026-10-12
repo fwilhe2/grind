@@ -573,7 +573,7 @@ table `ui_sheet_gtk` and `ui_win32` each carried.
 |---|---|---|
 | `sheet/assist.rs` | portable | Which selectors steer a list of offers — `insertTab:` takes one, the vertical arrows step, Esc closes it for the word, and Return still commits — and what the formula read-out shows at rest and while typing |
 | `editor.rs` | Mac | A one-line band under the cell editor with the offers or the signature, the accent where the core says `Strong`; an accepted offer goes in through the field editor, so it is one step of the field's own undo |
-| `app.rs` `menu.rs` | both | View ▸ Friendly Formulas (on by default) and Explain Formula, Insert ▸ Function… (all 110 by name and plain-English name), View ▸ Cell Roles, Names and Show Source (⌥⌘U) |
+| `app.rs` `menu.rs` | both | View ▸ Friendly Formulas (on by default) and Explain Formula, Insert ▸ Function… (every function, by name and plain-English name), View ▸ Cell Roles, Names and Show Source (⌥⌘U) |
 | `sheet/paint.rs` `text/paint.rs` | portable | The role marker in a margin reserved at a cell's leading edge and a muted outline round each defined name; on a page, each bookmark named in the margin beside its line, never over the ink |
 | `places.rs` | portable | The sidebar's rows for either document — sheets, names and Problems; outline, bookmarks and Problems — and where each goes, a Problems row to another sheet if that is where the finding is |
 | `sidebar.rs` | Mac | One source list over those rows for both panes, so a page has a sidebar too; re-read when the document changes and not when the cursor moves |

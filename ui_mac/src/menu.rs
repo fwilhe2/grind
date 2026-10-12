@@ -91,7 +91,7 @@ pub enum Command {
     FriendlyFormulas,
     /// The active cell's formula unfolded, a call at a time, in plain English (M8).
     ExplainFormula,
-    /// All 110 functions, with their plain-English names, and the chosen one's call written
+    /// Every function, with its plain-English name, and the chosen one's call written
     /// into the cell — Excel for Mac's Insert ▸ Function… (M8).
     InsertFunction,
     /// `doc/view-modes.md`'s role overlay: a marker at each cell's leading edge saying what the

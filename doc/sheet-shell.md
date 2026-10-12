@@ -154,7 +154,7 @@ Formats are not added: rendering needs the text, already carried; the picker use
 ```rust
 pub struct FuncInfo { pub name: &'static str, pub signature: &'static str,
                       pub brief: &'static str, pub section: &'static str }
-pub fn catalog() -> &'static [FuncInfo]   // 112 entries
+pub fn catalog() -> &'static [FuncInfo]   // one entry per implemented function
 ```
 
 Signatures (argument names, `;`-separated — the hint UI splits on them) and one-line

@@ -69,7 +69,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/OpenDocument-v1.4-schema.rng` | ODF 1.4 Part 3 — content schema |
 | `doc/OpenDocument-v1.4-os-part4-formula.html` | ODF 1.4 Part 4 — OpenFormula semantics |
 | `doc/small-group.md` | The 110-function scope line, extracted from Part 4 §2.3.2 |
-| `doc/function-coverage.md` | **The evidence for moving a function past that line — descriptive, not normative.** How many functions ODF (393), LibreOffice (~516) and Excel (521) have, which ones real spreadsheets call (Enron, EUSES, LibreOffice's test documents), where the 112 stand, and the gaps ranked in tiers — the third of which needs an array value rather than more functions. `scripts/function-usage.py` re-measures the corpus half |
+| `doc/function-coverage.md` | **The evidence for moving a function past that line — descriptive, not normative.** How many functions ODF (393), LibreOffice (~516) and Excel (521) have, which ones real spreadsheets call (Enron, EUSES, LibreOffice's test documents), where the 138 stand, and the gaps ranked in tiers — the third of which needs an array value rather than more functions. `scripts/function-usage.py` re-measures the corpus half |
 | `doc/suite.md` | Phase 10 — the suite plan; normative for that phase, incl. R8/R9/R10 |
 | `doc/odt-format.md` | Clean-room notes for text documents. **§5 is `UNVERIFIED` and may not be implemented** |
 | `doc/text-core.md` | The text scope line — *invented*, not extracted, and checked by `text/tests/scope.rs` |
@@ -245,7 +245,7 @@ sharing its row, since a formula that will not parse leaves a notice up while th
 open. Beside it: the formula bar reads `Sum(Number: B2:B7)` where the document stores
 `=SUM([.B2:.B7])` (View ▸ Friendly Formulas, on by default as in the GNOME window, and the `fx`
 badge in the accent says which of the two is up), Data ▸ Explain Formula unfolds a nested call
-over `friendly::explain`, and Data ▸ Function List is all 110 with their plain-English names,
+over `friendly::explain`, and Data ▸ Function List is every function with its plain-English name,
 categories and summaries — the same four columns `grind sheet functions --long` prints — which
 writes the call it is asked for. Nothing here parses back and nothing is written: R1 says the
 document's formula is ODF's. The **look** changed with it, on one sentence — *quieter chrome, one
@@ -615,7 +615,8 @@ Current scoreboard (see each test's own comments for what each column means and 
 loop A (sheet) 360 read / 3 password-protected / 0 failed; loop A (text) 1755 read /
 4 password-protected / 4 independently confirmed non-documents / 0 failed; loop B parse 75845/77061 (1216 named
 syntactic exclusions); loop B display 75845 round-trip, 271 named ambiguity; loop B evaluate
-13327/52213 matching LO (`FLOOR` in the test is the ratchet — raise it, never lower it; run
+14116/52812 matching LO on a 2026-10 checkout, with the classic band in (13327/52213 at 112
+functions; `FLOOR` in the test is the ratchet — raise it, never lower it; run
 `GRIND_LOOP_B_DUMP=LOG cargo test -p grind-sheet --test corpus_eval -- --nocapture` for the scoreboard).
 Loop C is green both directions for the sheet and for text (17 documents out, 20 corpus
 documents / 10235 blocks back, 0 differences — the block count doubled when tables entered the
@@ -856,8 +857,12 @@ before it can be answered.
   point of failure for the value model, error set and §6.3 conversions. `eval.rs` recurses
   over the dependency graph rather than sorting one. `display.rs` is the formula bar's A1
   syntax layered on top of the same lexer/parser, not a second grammar. All 110 Small Group
-  functions are implemented; `funcs::implemented()` is checked against `doc/small-group.md`
-  by a test, which is the anti-bloat rule made mechanical. `assist.rs` is what a shell needs
+  functions are implemented, and 28 beyond it by explicit decision (`ROW`, `COLUMN` and the
+  classic band of `doc/function-coverage.md`'s Tier 1 that needed no new machinery);
+  `funcs::implemented()` is checked against both halves of `doc/small-group.md` by a test,
+  which is the anti-bloat rule made mechanical. `funcs/beyond.rs` holds the 28's expectations,
+  every one measured against LibreOffice, and `doc/ods-format.md` §4.1 is what the oracle
+  answered where Part 4 is silent. `assist.rs` is what a shell needs
   while somebody is *typing* one — which word may be completed, what to offer for it, which call
   the caret is inside and how a signature splits — three questions about display syntax and a
   caret offset, and here rather than in a shell since `ui_sheet_gtk` and `ui_win32` both ask

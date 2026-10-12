@@ -32,12 +32,15 @@ const CORPUS: &str = "sc/qa/unit/data";
 ///
 /// At 13327 with all 110 of the Small Group written, plus `ROW` and `COLUMN`, which moved in
 /// by explicit decision (`doc/small-group.md`, *Beyond the Small Group*) and were worth 126
-/// cells here on top of the R7 document that asked for them. The gap to 52213 is mostly
-/// `missing` —
+/// cells here on top of the R7 document that asked for them. The classic band of
+/// `doc/function-coverage.md`'s Tier 1 followed — 26 functions and `ROUND`/`TRUNC`/`INT`
+/// reading the value a cell shows — and was worth 721 cells on a 2026-10 checkout (13395 →
+/// 14116 of 52812); the floor takes most of that, not all, since CI's sparse clone need not be
+/// the same checkout. The gap to the total is mostly `missing` —
 /// fixtures for functions outside the Small Group entirely (`FOURIER`, `LINEST`, the whole
 /// `addin` category) — so the number to watch is the scoreboard's `wrong` column, not this
 /// one.
-const FLOOR: usize = 13_320;
+const FLOOR: usize = 13_900;
 
 fn corpus_root() -> Option<PathBuf> {
     let root = PathBuf::from(

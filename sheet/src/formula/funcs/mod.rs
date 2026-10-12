@@ -14,9 +14,11 @@
 //! skipped, an argument `"7"` converts — is the specified behaviour rather than an
 //! inconsistency to iron out.
 //!
-//! All 110 of the Small Group are here. What is left is not a missing function but two
-//! known gaps *inside* them, both named where they live: `criterion.rs` matches no
-//! wildcards or regular expressions, and array formulas are read as ordinary ones.
+//! All 110 of the Small Group are here, and the functions moved in beyond it one decision at
+//! a time (`doc/small-group.md`'s second half, [`beyond_small_group`]), whose measured
+//! expectations are `beyond.rs`. What is left inside them is two named gaps: criteria match
+//! wildcards and never regular expressions (`wildcard.rs` is why), and array formulas are
+//! read as ordinary ones.
 
 use super::eval::{Address, Area, Engine, Operand};
 use super::parse::Expr;
@@ -108,7 +110,7 @@ pub const SMALL_GROUP: usize = 110;
 /// The functions implemented **beyond** the Small Group — the plan's one-at-a-time escape
 /// hatch, and the second half of `doc/small-group.md`.
 ///
-/// Reported apart from [`implemented`] because "112 of 110" is not a sentence. A caller
+/// Reported apart from [`implemented`] because "138 of 110" is not a sentence. A caller
 /// saying how much of the Small Group it covers needs the extras counted separately, or the
 /// claim reads as broken arithmetic and stops meaning anything.
 pub fn beyond_small_group() -> &'static [&'static str] {

@@ -102,11 +102,11 @@ fn walk(tokens: &[Token], text: &[char]) -> bool {
 }
 
 /// Where `pattern` first matches a stretch of `text`, searching from character `from` —
-/// `SEARCH`'s question, which is unanchored where [`matches`] is anchored at both ends.
+/// `SEARCH`'s question, which is unanchored where [`matches()`] is anchored at both ends.
 ///
 /// The leftmost start wins, and at a start the shortest match is as good as any: `SEARCH`
 /// reports a position, never a length. So the pattern is asked to match a *prefix* of what
-/// follows — [`matches`] with a `*` after it. A position counts characters, not bytes.
+/// follows — [`matches()`] with a `*` after it. A position counts characters, not bytes.
 pub fn find(pattern: &str, text: &str, from: usize) -> Option<usize> {
     let mut open = tokens(pattern);
     open.push(Token::Star);

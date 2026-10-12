@@ -892,6 +892,13 @@ fn the_sample_script_still_builds_its_document() {
     // Two checkboxes, the second ticked through the CLI — which is its linked cell.
     assert_eq!(ok(&["get", &book, "I3"]).trim(), "TRUE");
     assert!(ok(&["checkbox", &book]).contains("Budget.J3\tlinked to I3"));
+    // The functions beyond the Small Group, over the budget's own rows: rent is the one
+    // category both over budget and unpaid, and 2026-08-16 is a Sunday.
+    assert_eq!(ok(&["get", &book, "M1", "--raw"]).trim(), "1");
+    assert_eq!(ok(&["get", &book, "M5", "--raw"]).trim(), "46265");
+    assert_eq!(ok(&["get", &book, "M6", "--raw"]).trim(), "11");
+    assert_eq!(ok(&["get", &book, "M8"]).trim(), "$B$8");
+    assert_eq!(ok(&["get", &book, "M9", "--raw"]).trim(), "0");
     // A styled and formatted header, and a currency cell whose value is untouched.
     assert_eq!(ok(&["get", &book, "B2", "--raw"]).trim(), "1800");
     assert!(ok(&["get", &book, "B2"]).contains('\u{20ac}'));
@@ -1575,7 +1582,7 @@ fn functions_lists_what_this_build_implements() {
     assert!(out.contains("SUM"));
     assert!(out.contains("of the Small Group's 110"), "{out}");
     // The functions moved in by explicit decision are counted apart from the claim, so the
-    // summary is never the nonsense "112 of 110".
+    // summary is never the nonsense "138 of 110".
     let summary = out.lines().last().unwrap_or_default();
     assert!(summary.contains(" beyond it: "), "{out}");
     for name in ["COLUMN", "IFERROR", "ROW"] {
