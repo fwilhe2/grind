@@ -380,6 +380,8 @@ sheet fmt --friendly --inline '=RATE([.A1];-100;1000;0;0;0.05)'  # the same, on 
 
 say "eval: what a formula would say at a cell, storing nothing"
 sheet eval "$book" B25 '=SUM([.B2:.B4])*2'
+say "eval --trace: the same formula taken apart, every sub-expression and what it comes to"
+sheet eval "$book" B25 '=IF([.B2]>0;SUM([.B2:.B4])*2;0)' --trace
 
 say "calculations: everything the document computes, and what it calls to do it"
 sheet calculations "$book"

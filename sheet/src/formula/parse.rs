@@ -15,7 +15,9 @@
 //! would need evaluator machinery that does not exist. They fail as syntax errors, which
 //! is a truthful answer.
 
-use super::lex::{Op, Reference, SyntaxError, Token, lex_spans};
+use std::ops::Range;
+
+use super::lex::{Op, Reference, SyntaxError, Token, lex_extents};
 use super::value::FormulaError;
 
 /// An expression (§5.2).
@@ -86,31 +88,74 @@ pub const MAX_DEPTH: usize = 1024;
 /// property of *when* to evaluate rather than of the expression, and is dropped until
 /// there is a recalculation engine with an opinion about it.
 pub fn parse(formula: &str) -> Result<Expr, SyntaxError> {
+    parse_with(formula, false).map(|(expr, _)| expr)
+}
+
+/// Where every node of a parsed expression sits in the text — a tree the same shape as the
+/// [`Expr`] beside it, child for child: a call's arguments, the operand of a sign, `%` or
+/// parentheses, and a binary operator's two sides, in that order.
+///
+/// A separate tree rather than a field on `Expr`, because every function in the crate
+/// matches on `Expr` and only a caller that shows a formula *taken apart* — the workbench's
+/// trace (`doc/formula-workbench.md` §3.1) — wants to know where a node is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Shape {
+    /// `char` offsets into the formula that was parsed, its intro included. An omitted
+    /// parameter (§5.6) is an empty range where it would have been.
+    pub range: Range<usize>,
+    pub children: Vec<Shape>,
+}
+
+/// [`parse`], and where each node came from.
+pub fn parse_spanned(formula: &str) -> Result<(Expr, Shape), SyntaxError> {
+    parse_with(formula, true).map(|(expr, shape)| (expr, shape.expect("asked for")))
+}
+
+fn parse_with(formula: &str, spanned: bool) -> Result<(Expr, Option<Shape>), SyntaxError> {
     let body = strip_intro(formula);
     // The intro is stripped before lexing, so every offset below is relative to `body`;
     // adding it back is what makes the reported position an offset into what was passed in.
     let intro = formula.chars().count() - body.chars().count();
-    let (tokens, offsets) = lex_spans(body).map_err(|e| shift(e, intro))?;
+    let (tokens, starts, ends) = lex_extents(body).map_err(|e| shift(e, intro))?;
     let mut p = Parser {
         tokens,
         pos: 0,
         nesting: 0,
+        spanned,
     };
     let parsed = p
         .expr(0)
-        .and_then(|(expr, _)| match p.pos == p.tokens.len() {
-            true => Ok(expr),
+        .and_then(|(expr, _, shape)| match p.pos == p.tokens.len() {
+            true => Ok((expr, shape)),
             false => p.fail("unexpected trailing input"),
         });
+    let length = body.chars().count();
     // The parser counts in tokens, which is the only unit it has; a caller wants a caret.
-    parsed.map_err(|e| SyntaxError {
-        at: offsets
-            .get(e.at)
-            .copied()
-            .unwrap_or_else(|| body.chars().count())
-            + intro,
+    let (expr, shape) = parsed.map_err(|e| SyntaxError {
+        at: starts.get(e.at).copied().unwrap_or(length) + intro,
         ..e
-    })
+    })?;
+    let shape = spanned.then(|| {
+        let start = |token: usize| starts.get(token).copied().unwrap_or(length) + intro;
+        in_chars(&shape, &start, &|token: usize| ends[token] + intro)
+    });
+    Ok((expr, shape))
+}
+
+/// A shape counted in tokens → the same shape counted in characters.
+fn in_chars(shape: &Shape, start: &dyn Fn(usize) -> usize, end: &dyn Fn(usize) -> usize) -> Shape {
+    let range = match shape.range.is_empty() {
+        true => start(shape.range.start)..start(shape.range.start),
+        false => start(shape.range.start)..end(shape.range.end - 1),
+    };
+    Shape {
+        range,
+        children: shape
+            .children
+            .iter()
+            .map(|child| in_chars(child, start, end))
+            .collect(),
+    }
 }
 
 fn shift(e: SyntaxError, by: usize) -> SyntaxError {
@@ -158,7 +203,14 @@ struct Parser {
     pos: usize,
     /// How many parentheses, calls and prefix signs are open around the current token.
     nesting: usize,
+    /// Whether to build a [`Shape`] beside the tree. Off for [`parse`], which the evaluator
+    /// calls once per formula per evaluation and which should not pay for it.
+    spanned: bool,
 }
+
+/// What every production returns: the expression, its depth, and — when asked — its shape
+/// in *token* indices, which [`in_chars`] turns into characters once at the end.
+type Parsed = (Expr, usize, Shape);
 
 impl Parser {
     fn peek(&self) -> Option<&Token> {
@@ -180,6 +232,18 @@ impl Parser {
         })
     }
 
+    /// A node over the tokens from `start` to here, holding `children` — which are dropped
+    /// unbuilt when nobody asked for shapes, so `parse` allocates nothing for them.
+    fn shape(&self, start: usize, children: impl FnOnce() -> Vec<Shape>) -> Shape {
+        Shape {
+            range: start..self.pos,
+            children: match self.spanned {
+                true => children(),
+                false => Vec::new(),
+            },
+        }
+    }
+
     fn expect(&mut self, token: Token, message: &str) -> Result<(), SyntaxError> {
         if self.peek() == Some(&token) {
             self.pos += 1;
@@ -194,8 +258,9 @@ impl Parser {
     /// Each expression comes back with its tree's depth, counted as it is built: a chain
     /// refused only after it was built would be too deep to *drop* safely, since dropping a
     /// tree recurses through it as well.
-    fn expr(&mut self, min_bp: u8) -> Result<(Expr, usize), SyntaxError> {
-        let (mut lhs, mut depth) = self.prefix()?;
+    fn expr(&mut self, min_bp: u8) -> Result<Parsed, SyntaxError> {
+        let start = self.pos;
+        let (mut lhs, mut depth, mut shape) = self.prefix()?;
         while let Some(&Token::Op(op)) = self.peek() {
             let bp = infix_bp(op);
             // `<=` rather than `<`: every operator in Table 1 is left-associative, and
@@ -211,14 +276,16 @@ impl Parser {
             self.pos += 1;
             if op == Op::Percent {
                 lhs = Expr::Postfix(op, Box::new(lhs));
+                shape = self.shape(start, || vec![shape]);
                 depth += 1;
                 continue;
             }
-            let (rhs, right) = self.expr(bp)?;
+            let (rhs, right, right_shape) = self.expr(bp)?;
             lhs = Expr::Binary(op, Box::new(lhs), Box::new(rhs));
+            shape = self.shape(start, || vec![shape, right_shape]);
             depth = depth.max(right) + 1;
         }
-        Ok((lhs, depth))
+        Ok((lhs, depth, shape))
     }
 
     /// One more level of nesting around `inner` — refused past [`MAX_NESTING`] before the
@@ -238,26 +305,31 @@ impl Parser {
         result
     }
 
-    fn prefix(&mut self) -> Result<(Expr, usize), SyntaxError> {
+    fn prefix(&mut self) -> Result<Parsed, SyntaxError> {
+        let start = self.pos;
+        let leaf = |p: &Self, expr: Expr| Ok((expr, 1, p.shape(start, Vec::new)));
         match self.next() {
-            Some(Token::Number(n)) => Ok((Expr::Number(n), 1)),
-            Some(Token::Text(s)) => Ok((Expr::Text(s), 1)),
-            Some(Token::Error(e)) => Ok((Expr::Error(e), 1)),
-            Some(Token::Ref(r)) => Ok((Expr::Ref(r), 1)),
-            Some(Token::Name(name)) => Ok((Expr::Name(name), 1)),
+            Some(Token::Number(n)) => leaf(self, Expr::Number(n)),
+            Some(Token::Text(s)) => leaf(self, Expr::Text(s)),
+            Some(Token::Error(e)) => leaf(self, Expr::Error(e)),
+            Some(Token::Ref(r)) => leaf(self, Expr::Ref(r)),
+            Some(Token::Name(name)) => leaf(self, Expr::Name(name)),
             Some(Token::Func(name)) => {
                 self.expect(Token::LParen, "expected `(` after a function name")?;
-                let (args, depth) = self.nested(Self::args)?;
-                Ok((Expr::Call { name, args }, depth + 1))
+                let (args, depth, shapes) = self.nested(Self::args)?;
+                let shape = self.shape(start, || shapes);
+                Ok((Expr::Call { name, args }, depth + 1, shape))
             }
             Some(Token::LParen) => {
-                let (inner, depth) = self.nested(|p| p.expr(0))?;
+                let (inner, depth, inner_shape) = self.nested(|p| p.expr(0))?;
                 self.expect(Token::RParen, "expected `)`")?;
-                Ok((Expr::Paren(Box::new(inner)), depth + 1))
+                let shape = self.shape(start, || vec![inner_shape]);
+                Ok((Expr::Paren(Box::new(inner)), depth + 1, shape))
             }
             Some(Token::Op(op @ (Op::Add | Op::Sub))) => {
-                let (inner, depth) = self.nested(|p| p.expr(PREFIX_BP))?;
-                Ok((Expr::Prefix(op, Box::new(inner)), depth + 1))
+                let (inner, depth, inner_shape) = self.nested(|p| p.expr(PREFIX_BP))?;
+                let shape = self.shape(start, || vec![inner_shape]);
+                Ok((Expr::Prefix(op, Box::new(inner)), depth + 1, shape))
             }
             _ => {
                 self.pos -= 1;
@@ -267,27 +339,32 @@ impl Parser {
     }
 
     /// §5.6 `ParameterList`, the `(` already consumed.
-    fn args(&mut self) -> Result<(Vec<Expr>, usize), SyntaxError> {
+    fn args(&mut self) -> Result<(Vec<Expr>, usize, Vec<Shape>), SyntaxError> {
         // "An empty list of parameters is considered a call with 0 parameters, not a call
         // with one parameter that happens to be empty" — TRUE() takes none.
         if self.peek() == Some(&Token::RParen) {
             self.pos += 1;
-            return Ok((Vec::new(), 0));
+            return Ok((Vec::new(), 0, Vec::new()));
         }
         let mut args = Vec::new();
+        let mut shapes = Vec::new();
         let mut deepest = 0;
         loop {
-            args.push(match self.peek() {
-                Some(Token::Semi | Token::RParen) => Expr::Empty,
+            let (arg, shape) = match self.peek() {
+                Some(Token::Semi | Token::RParen) => (Expr::Empty, self.shape(self.pos, Vec::new)),
                 _ => {
-                    let (arg, depth) = self.expr(0)?;
+                    let (arg, depth, shape) = self.expr(0)?;
                     deepest = deepest.max(depth);
-                    arg
+                    (arg, shape)
                 }
-            });
+            };
+            args.push(arg);
+            if self.spanned {
+                shapes.push(shape);
+            }
             match self.next() {
                 Some(Token::Semi) => {}
-                Some(Token::RParen) => return Ok((args, deepest)),
+                Some(Token::RParen) => return Ok((args, deepest, shapes)),
                 _ => {
                     self.pos -= 1;
                     return self.fail("expected `;` or `)`");

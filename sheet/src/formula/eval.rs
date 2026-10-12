@@ -109,6 +109,20 @@ pub struct Engine<'a> {
     /// again — what a cell shows, which is what a conditional-format rule is asked about while
     /// a sheet is drawn ([`Engine::over_cached`]).
     cached: bool,
+    /// What each node of the formula being traced came to ([`Engine::trace`]); `None`
+    /// whenever nothing is being traced, which is always but for the workbench.
+    recorder: Option<Recorder>,
+}
+
+/// The operands of one formula's nodes, keyed by the node's address in a tree the caller
+/// keeps alive for the whole evaluation — so no other node can share one, however many
+/// formulas are parsed and dropped while it runs.
+struct Recorder {
+    /// The depth the traced formula's own nodes are evaluated at. Another cell's formula
+    /// and a named expression both evaluate one deeper, which is how their nodes are told
+    /// from the traced formula's without a second walk.
+    depth: usize,
+    seen: HashMap<*const Expr, Operand>,
 }
 
 impl<'a> Engine<'a> {
@@ -120,6 +134,7 @@ impl<'a> Engine<'a> {
             depth: 0,
             extents: std::cell::RefCell::new(HashMap::new()),
             cached: false,
+            recorder: None,
         }
     }
 
@@ -192,8 +207,55 @@ impl<'a> Engine<'a> {
         value
     }
 
+    /// [`Engine::eval`] over a tree the caller already parsed, keeping what every node of it
+    /// came to — the workbench's trace (`doc/formula-workbench.md` §3.2, `formula::trace`).
+    ///
+    /// A node missing from the map was never evaluated: the branch `IF` did not take, the
+    /// alternative `IFERROR` did not need. That is the difference between a trace and
+    /// evaluating each sub-expression on its own, which would report `#DIV/0!` for a
+    /// division a guard exists to prevent. When a node is evaluated more than once the first
+    /// answer is kept; the same node at the same cell always comes to the same thing.
+    pub(crate) fn trace(
+        &mut self,
+        expr: &Expr,
+        at: Address,
+    ) -> (Value, HashMap<*const Expr, Operand>) {
+        if !self.visiting.insert(at) {
+            return (Value::Error(FormulaError::Num), HashMap::new());
+        }
+        self.depth += 1;
+        self.recorder = Some(Recorder {
+            depth: self.depth,
+            seen: HashMap::new(),
+        });
+        let operand = self.operand(expr, at);
+        let seen = self.recorder.take().map(|r| r.seen).unwrap_or_default();
+        let value = self.scalar(operand, at);
+        self.depth -= 1;
+        self.visiting.remove(&at);
+        // What `eval` does to the same value: a cell has no empty value to hold.
+        let value = match value {
+            Value::Empty => Value::Number(0.0),
+            value => value,
+        };
+        (value, seen)
+    }
+
     /// Evaluate an expression to an operand — a value, or a reference still in one piece.
     pub fn operand(&mut self, expr: &Expr, at: Address) -> Operand {
+        let operand = self.operand_of(expr, at);
+        if let Some(recorder) = self.recorder.as_mut()
+            && recorder.depth == self.depth
+        {
+            recorder
+                .seen
+                .entry(expr as *const Expr)
+                .or_insert_with(|| operand.clone());
+        }
+        operand
+    }
+
+    fn operand_of(&mut self, expr: &Expr, at: Address) -> Operand {
         match expr {
             Expr::Number(n) => Value::number(*n).into(),
             Expr::Text(s) => Value::Text(s.clone()).into(),

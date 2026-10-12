@@ -18,5 +18,6 @@ pub mod parse;
 pub mod rename;
 pub mod serialize;
 pub mod shift;
+pub mod trace;
 pub mod value;
 pub mod wildcard;

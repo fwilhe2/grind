@@ -837,6 +837,52 @@ fn preview_writes_nothing_notifies_nobody_and_records_no_history() {
     drop(held);
 }
 
+/// `trace` is `preview` taken apart, asked on every keystroke in the workbench — the same
+/// three properties, and the same answer at the root.
+#[test]
+fn trace_writes_nothing_notifies_nobody_records_no_history_and_agrees_with_preview() {
+    let app = Arc::new(App::new());
+    app.set_cell(0, p(0, 0), 4.0).unwrap();
+    let counter = Arc::new(Counter(AtomicUsize::new(0)));
+    app.set_observer(counter.clone());
+
+    let trace = app.trace(0, p(9, 9), "=A1*3").unwrap();
+    assert_eq!(trace.root.children.len(), 2);
+    assert_eq!(
+        app.preview(0, p(9, 9), "=[.A1]*3").unwrap(),
+        CellValue::Number(12.0)
+    );
+    assert_eq!(
+        trace.value,
+        grind_sheet::formula::value::Value::Number(12.0)
+    );
+    assert_eq!(counter.0.load(Ordering::SeqCst), 0, "no observer tick");
+    assert!(
+        app.undo() && !app.can_undo(),
+        "only the one edit is in the history"
+    );
+    assert_eq!(
+        app.get(0, p(9, 9)).unwrap(),
+        CellValue::Empty,
+        "nothing stored"
+    );
+
+    // Only a read lock.
+    let held = app.get_viewport(0, 0..1, 0..1).unwrap();
+    assert!(app.trace(0, p(0, 1), "=1+1").is_ok());
+    drop(held);
+
+    // A formula that will not parse is a formula error, and a sheet that is not there says so.
+    assert!(matches!(
+        app.trace(0, p(0, 1), "=SUM(A1"),
+        Err(grind_sheet::Error::Formula(_))
+    ));
+    assert!(matches!(
+        app.trace(7, p(0, 1), "=1"),
+        Err(grind_sheet::Error::NoSuchSheet(7))
+    ));
+}
+
 #[test]
 fn clearing_a_range_is_one_undo_step_and_takes_the_formulas_with_it() {
     let app = App::new();

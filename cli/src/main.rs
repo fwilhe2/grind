@@ -2273,6 +2273,10 @@ enum Command {
         /// The formula, e.g. '=SUM([.B2:.B4])'
         #[arg(allow_hyphen_values = true)]
         formula: String,
+        /// Take the formula apart: every sub-expression on its own line, indented by depth,
+        /// with what it comes to in place ("not evaluated" for a branch not taken)
+        #[arg(long)]
+        trace: bool,
     },
 
     /// Clear a cell or a range, leaving it empty
@@ -3704,10 +3708,16 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             file,
             address,
             formula,
+            trace,
         } => {
             let app = load(file, cli)?;
             let (sheet, pos, _) = single(&app, address)?;
             // A read, not an edit: nothing is stored and nothing is written.
+            if *trace {
+                return Ok(Report::Text(TextReport {
+                    lines: traced(&app, sheet, pos, formula)?,
+                }));
+            }
             let value = app.preview(sheet, pos, formula).say()?;
             Ok(Report::Text(TextReport {
                 lines: vec![report::show(&value)],
@@ -4987,6 +4997,46 @@ fn split_series(series: &[String]) -> Vec<(String, Option<String>)> {
 ///
 /// The CLI's own failures are already strings — a bad flag, a file that exists — so this is
 /// the one adapter between the two, rather than a closure at every call site.
+/// `eval --trace`: the formula in display syntax, one sub-expression a line indented by its
+/// depth, and each one's answer in a column — `App::trace`, read top to bottom.
+fn traced(app: &App, sheet: usize, pos: Pos, formula: &str) -> Result<Vec<String>, String> {
+    use grind_sheet::formula::display;
+    // The CLI takes a formula as the file stores it; a trace's spans are in display syntax.
+    let shown = display::to_display(formula).map_err(|e| e.to_string())?;
+    let trace = app.trace(sheet, pos, &shown).say()?;
+    let sheets: Vec<String> = (0..).map_while(|i| app.sheet_name(i).ok()).collect();
+    let rows: Vec<(String, String)> = trace
+        .rows()
+        .into_iter()
+        .map(|(depth, node)| {
+            let indent = "  ".repeat(depth);
+            // An omitted parameter (§5.6) has no text to show and nothing to come to.
+            match node.range.is_empty() {
+                true => (format!("{indent}(omitted)"), String::new()),
+                false => (
+                    format!("{indent}{}", &shown[node.range.clone()]),
+                    node.came_to.spelled(&sheets, sheet),
+                ),
+            }
+        })
+        .collect();
+    let width = rows
+        .iter()
+        .map(|(left, _)| left.chars().count())
+        .max()
+        .unwrap_or(0);
+    Ok(rows
+        .into_iter()
+        .map(|(left, answer)| {
+            let pad = width - left.chars().count();
+            match answer.is_empty() {
+                true => left,
+                false => format!("{left}{}  {answer}", " ".repeat(pad)),
+            }
+        })
+        .collect())
+}
+
 trait Say<T> {
     fn say(self) -> Result<T, String>;
 }

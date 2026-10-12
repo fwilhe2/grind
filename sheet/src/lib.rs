@@ -876,6 +876,22 @@ impl App {
         ))
     }
 
+    /// A formula taken apart: every sub-expression of `formula` — display syntax, with or
+    /// without its `=` — and what it comes to in place at `pos`, with nothing stored
+    /// (`doc/formula-workbench.md` §3.2, [`formula::trace`]).
+    ///
+    /// [`App::preview`]'s three properties, for the same reason: a read lock only, no
+    /// observer notified, no undo entry — the workbench asks it on every keystroke. Its
+    /// [`formula::trace::Trace::value`] is `preview`'s answer.
+    pub fn trace(&self, sheet: usize, pos: Pos, formula: &str) -> Result<formula::trace::Trace> {
+        let state = self.state.read().unwrap();
+        if state.doc.sheet(sheet).is_none() {
+            return Err(Error::NoSuchSheet(sheet));
+        }
+        formula::trace::trace(&state.doc, sheet, pos, formula)
+            .map_err(|e| Error::Formula(e.to_string()))
+    }
+
     /// Empty every cell in a rectangle, formulas included. Returns how many were not
     /// already empty.
     ///

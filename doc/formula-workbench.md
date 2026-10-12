@@ -6,9 +6,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # The formula workbench — a formula you can take apart, try and put back
 
-**Status: planned, F0 done.** F0 is this document and `doc/ods-format.md` §4.2, the
+**Status: F0 and F1 done.** F0 is this document and `doc/ods-format.md` §4.2, the
 measurement of when moving a sub-expression into its own cell changes what a formula means.
-Nothing below is built. **Experimental**: it ships behind the palette and the CLI, and it
+F1 is the trace: `parse::parse_spanned`, `display::parse_display`, `formula::trace`,
+`App::trace` and `grind sheet eval --trace`, held to loop B's corpus by
+`sheet/tests/corpus_trace.rs`. Nothing from F2 on is built. **Experimental**: it ships behind the palette and the CLI, and it
 changes no existing verb.
 
 ## 1. What it is
@@ -82,22 +84,37 @@ What already exists and is reused unchanged:
 
 What has to be added, all in `grind-sheet`:
 
-### 3.1 Spans on the tree (F1)
+### 3.1 Spans on the tree (F1, built)
 
-`parse.rs` lexes with spans (`lex_spans`) and then drops them. The workbench needs every node's
-byte range in the *display* text: to highlight a node, to put a value beside it, and to let
-somebody select a sub-expression by selecting its text. The plan is a parallel
-`Spanned { range, children }` tree returned beside `Expr` by a `parse_spanned`, so the
-`Expr` that every other caller matches on stays the same. `display::spans` already maps
-between canonical and display text for highlighting, and the new tree is expressed in display
-offsets through it.
+The workbench needs every node's byte range in the *display* text: to highlight a node, to put
+a value beside it, and to let somebody select a sub-expression by selecting its text. Built as
+a parallel `parse::Shape { range, children }` tree, child for child with the `Expr` beside it,
+so the `Expr` every other caller matches on is unchanged. The parser records each node's token
+range as it builds it (`lex::lex_extents` gives where each token ends as well as starts), and
+only when asked: `parse` passes `spanned: false` and builds no children for it, since the
+evaluator parses once per formula per evaluation. `display::parse_display` runs
+`from_display`'s one scanner and maps the canonical shape back onto the typed text, so a node
+that was respelled (`b2` → `[.B2]`, `TRUE` → `TRUE()`) covers exactly what was typed. An
+omitted parameter is an empty range where it would have been.
 
-### 3.2 `App::trace` (F1)
+**Held to the corpus**: for all 76,068 formulas of loop B that survive display form, every
+node's text cut out and parsed alone is that node's subtree exactly.
+
+### 3.2 `App::trace` (F1, built)
 
 ```rust
-pub fn trace(&self, sheet: usize, at: Pos, formula: &str, overlay: &Overlay) -> Result<Trace>
-// Trace { nodes: Vec<TraceNode> }, TraceNode { range, value: CellValue | Operand-ish, children }
+pub fn trace(&self, sheet: usize, pos: Pos, formula: &str) -> Result<formula::trace::Trace>
+// Trace { value: Value, root: Node }   Node { range, came_to: CameTo, children }
+// CameTo::Value(Value) | CameTo::Range(Area) | CameTo::Skipped
 ```
+
+`formula` is display syntax and every range is a byte range in it. The engine keeps a
+`Recorder` — each node's operand, keyed by the node, recorded only at the traced formula's own
+depth, so another cell's formula and a named expression (both evaluated one deeper) never land
+in it. A node it never saw was never evaluated. A one-cell reference is shown as that cell's
+value, with an empty cell as `Value::Empty` rather than 0: the trace is the one place a person
+can see the difference. `CameTo::spelled` writes an answer as a formula would (`"3"` is not
+`3`), and `Trace::rows` is the depth-first list the CLI prints.
 
 Every node of the tree evaluated at `at`, so a sub-expression's value is the one it has *in
 place*: a range shows as a range ("40 cells, 10…400") rather than being forced to a scalar, an
@@ -105,7 +122,10 @@ error shows as itself, and a branch `IF` did not take is marked *not evaluated* 
 being evaluated anyway. The last point is what distinguishes a trace from evaluating each
 sub-expression in isolation: `IF(B2=0;0;A2/B2)` must not show `#DIV/0!` on a branch that never
 ran. It takes the same read lock as `preview`, makes no undo entry and notifies no observer,
-and there is a test for each of the three, as `preview` has.
+and there is a test for each of the three, as `preview` has. **Held to the corpus**: 23,971
+traces (the first fifty formulas of each of 879 documents — each builds its own engine, as
+the workbench's will) have the evaluator's answer at the root; the four that differ are in
+documents calling `NOW()`, counted rather than failed.
 
 ### 3.3 `Overlay` (F2)
 
@@ -253,7 +273,7 @@ three columns stacked), `ui_mac`. Each gets a row in `doc/feature-matrix.md`.
 | | Builds | Done when |
 |---|---|---|
 | **F0** | This document and `doc/ods-format.md` §4.2 | done, 2026-10-12 |
-| **F1** | Spans, `App::trace`, `eval --trace` | Every node of every formula in loop B's corpus traces, and the root's value equals `preview`'s. A branch not taken is never evaluated (a test with `1/0` in it) |
+| **F1** | Spans, `App::trace`, `eval --trace` | done, 2026-10-12: every span over loop B's corpus, the root against the evaluator, and a branch not taken never evaluated |
 | **F2** | `Overlay`, `--with` | A dependent two formulas away reflects an override. No override leaves `trace` equal to `preview`. The document's bytes are unchanged after any number of traces |
 | **F3** | `display::pretty`, `--pretty` | Round trip over loop B's corpus: the joined lines parse to the same tree |
 | **F4** | `App::extract`, `grind sheet extract`, every row of §5 | Each §4.2 row is a test that is refused, warned or allowed as §5 says. Undo restores the bytes. Loop C holds an extracted document |
@@ -276,5 +296,10 @@ anything was built.
 - **Persistence**: the scratch formula and overrides live for the window's lifetime. Keeping
   them across sessions would need a store that is not the document (decision 3), and none is
   planned.
+- **A formula that reads its own cell** is traced, like `App::preview` evaluates it, against
+  what the cell holds *now* — the formula is not there yet, so it is not circular yet. Applying
+  it would make a cycle the trace did not show; the workbench should say so before Apply
+  rather than after (`trace.rs`'s
+  `a_formula_that_reads_its_own_cell_sees_what_the_cell_holds_now`).
 - **Array values** are absent from the engine, so a trace shows a range as a range and never as
   a matrix of values.

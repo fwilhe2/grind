@@ -55,7 +55,7 @@ use std::ops::Range;
 use crate::a1;
 
 use super::lex::{Reference, SyntaxError};
-use super::parse::{Expr, parse};
+use super::parse::{Expr, Shape, parse, parse_spanned};
 use super::serialize::Bare;
 
 /// What a scanned run of display-form text is.
@@ -146,72 +146,122 @@ pub fn to_input(text: &str) -> Result<String, DisplayError> {
 /// formula the file format can hold and the evaluator can read — never a rewrite of text
 /// that happened to look right.
 pub fn from_display(text: &str) -> Result<String, DisplayError> {
-    // The intro is stripped rather than copied, so the offsets the parser reports are
-    // offsets into what this function assembled and `origin` can map them straight back.
-    let body_start = usize::from(text.starts_with('='));
-
-    let mut out = String::new();
-    // One source byte offset per char of `out` — a formula is short and a lookup table is
-    // shorter than an interval map.
-    let mut origin: Vec<usize> = Vec::new();
-    let mut cursor = body_start;
-
-    for span in spans(text) {
-        if span.range.end <= body_start {
-            continue;
-        }
-        emit(
-            &mut out,
-            &mut origin,
-            &text[cursor..span.range.start],
-            cursor,
-            true,
-        );
-        let source = &text[span.range.clone()];
-        let at = span.range.start;
-        match span.kind {
-            // Already bracketed: an external-source reference, left exactly as it stands.
-            TokenKind::Ref if source.starts_with('[') => {
-                emit(&mut out, &mut origin, source, at, true)
-            }
-            TokenKind::Ref => {
-                let reference = a1::parse(source).map_err(|e| DisplayError {
-                    message: e.to_string(),
-                    at,
-                })?;
-                emit(&mut out, &mut origin, &reference.to_string(), at, false);
-            }
-            TokenKind::Bool => {
-                emit(
-                    &mut out,
-                    &mut origin,
-                    &format!("{}()", source.to_uppercase()),
-                    at,
-                    false,
-                );
-            }
-            _ => emit(&mut out, &mut origin, source, at, true),
-        }
-        cursor = span.range.end;
-    }
-    emit(&mut out, &mut origin, &text[cursor..], cursor, true);
-
-    let expr = parse(&out).map_err(|e| DisplayError {
-        message: e.message,
-        // `at` is a char offset into `out`; past the end means "at the end of the input".
-        at: origin.get(e.at).copied().unwrap_or(text.len()),
-    })?;
+    let canonical = Canonical::of(text)?;
+    let expr = parse(&canonical.out).map_err(|e| canonical.error(text, e))?;
     Ok(format!("={expr}"))
 }
 
-/// Append `text` to `out`, recording where each char came from.
+/// A display-form formula parsed, with every node's **byte** range in `text` — the
+/// workbench's tree (`doc/formula-workbench.md` §3.1), and [`from_display`]'s one pass with
+/// the shape kept.
 ///
-/// `verbatim` says whether the chars line up with the source: a rewritten run (`b2` →
-/// `.B2`) has no per-char correspondence, so every char of it points at the run's start.
-fn emit(out: &mut String, origin: &mut Vec<usize>, text: &str, src: usize, verbatim: bool) {
-    for (i, c) in text.char_indices() {
-        origin.push(if verbatim { src + i } else { src });
-        out.push(c);
+/// A node whose text was respelled on the way in (`b2` → `[.B2]`, `TRUE` → `TRUE()`)
+/// covers exactly the run it was spelled as, so selecting a node selects what was typed.
+pub fn parse_display(text: &str) -> Result<(Expr, Shape), DisplayError> {
+    let canonical = Canonical::of(text)?;
+    let (expr, shape) = parse_spanned(&canonical.out).map_err(|e| canonical.error(text, e))?;
+    Ok((expr, canonical.shape(&shape, text.len())))
+}
+
+/// Display text rebracketed into canonical form, with where each `char` of it came from.
+struct Canonical {
+    out: String,
+    /// One source byte offset per char of `out` — a formula is short and a lookup table is
+    /// shorter than an interval map.
+    origin: Vec<usize>,
+    /// Where the source run each char of `out` came from *ends*: the char's own end when
+    /// it was copied, the whole run's when it was respelled.
+    origin_end: Vec<usize>,
+}
+
+impl Canonical {
+    fn of(text: &str) -> Result<Self, DisplayError> {
+        // The intro is stripped rather than copied, so the offsets the parser reports are
+        // offsets into what this function assembled and `origin` can map them straight back.
+        let body_start = usize::from(text.starts_with('='));
+        let mut c = Canonical {
+            out: String::new(),
+            origin: Vec::new(),
+            origin_end: Vec::new(),
+        };
+        let mut cursor = body_start;
+        for span in spans(text) {
+            if span.range.end <= body_start {
+                continue;
+            }
+            c.emit(&text[cursor..span.range.start], cursor, None);
+            let source = &text[span.range.clone()];
+            let at = span.range.start;
+            let respelled = Some(span.range.end);
+            match span.kind {
+                // Already bracketed: an external-source reference, left exactly as it stands.
+                TokenKind::Ref if source.starts_with('[') => c.emit(source, at, None),
+                TokenKind::Ref => {
+                    let reference = a1::parse(source).map_err(|e| DisplayError {
+                        message: e.to_string(),
+                        at,
+                    })?;
+                    c.emit(&reference.to_string(), at, respelled);
+                }
+                TokenKind::Bool => {
+                    c.emit(&format!("{}()", source.to_uppercase()), at, respelled);
+                }
+                _ => c.emit(source, at, None),
+            }
+            cursor = span.range.end;
+        }
+        c.emit(&text[cursor..], cursor, None);
+        Ok(c)
+    }
+
+    /// Append `text`, recording where each char came from.
+    ///
+    /// `respelled` is the end of the source run when the chars do not line up with it: a
+    /// rewritten run (`b2` → `.B2`) has no per-char correspondence, so every char of it
+    /// points at the whole run.
+    fn emit(&mut self, text: &str, src: usize, respelled: Option<usize>) {
+        for (i, c) in text.char_indices() {
+            match respelled {
+                Some(end) => {
+                    self.origin.push(src);
+                    self.origin_end.push(end);
+                }
+                None => {
+                    self.origin.push(src + i);
+                    self.origin_end.push(src + i + c.len_utf8());
+                }
+            }
+            self.out.push(c);
+        }
+    }
+
+    fn error(&self, text: &str, e: SyntaxError) -> DisplayError {
+        DisplayError {
+            message: e.message,
+            // `at` is a char offset into `out`; past the end means "at the end of the input".
+            at: self.origin.get(e.at).copied().unwrap_or(text.len()),
+        }
+    }
+
+    /// A shape in chars of `out` → the same shape in bytes of the display text.
+    fn shape(&self, shape: &Shape, length: usize) -> Shape {
+        let start = self
+            .origin
+            .get(shape.range.start)
+            .copied()
+            .unwrap_or(length);
+        let range = match shape.range.is_empty() {
+            true => start..start,
+            false => start..self.origin_end[shape.range.end - 1],
+        };
+        Shape {
+            range,
+            children: shape
+                .children
+                .iter()
+                .map(|child| self.shape(child, length))
+                .collect(),
+        }
     }
 }
 

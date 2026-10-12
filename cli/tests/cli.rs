@@ -172,6 +172,53 @@ fn values_and_a_formula_survive_being_written_and_read_back() {
     );
 }
 
+/// `eval --trace` (`doc/formula-workbench.md` §3.2): every sub-expression on its own line in
+/// display syntax, its answer aligned beside it, a branch not taken never evaluated, text
+/// quoted so it cannot pass for a number — and the file untouched.
+#[test]
+fn eval_trace_takes_a_formula_apart_and_writes_nothing() {
+    let dir = Sandbox::new("trace");
+    let file = dir.path("book.fods");
+    ok(&["new", &s(&file)]);
+    ok(&["set", &s(&file), "A1", "4"]);
+    ok(&["set", &s(&file), "A2", "0"]);
+    ok(&["set", &s(&file), "B1", "3"]);
+    let before = std::fs::read(&file).unwrap();
+
+    let out = ok(&[
+        "eval",
+        &s(&file),
+        "D5",
+        "=IF([.A2]=0;[.B1]&\"\";[.A1]/[.A2])+0",
+        "--trace",
+    ]);
+    let lines: Vec<&str> = out.lines().collect();
+    let row = |text: &str| -> Vec<&str> {
+        let line = lines
+            .iter()
+            .find(|l| l.trim_start().starts_with(text))
+            .unwrap_or_else(|| panic!("no row for {text} in\n{out}"));
+        line.split("  ")
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .collect()
+    };
+    assert_eq!(
+        row("IF(A2=0;B1&\"\";A1/A2)+0"),
+        ["IF(A2=0;B1&\"\";A1/A2)+0", "3"]
+    );
+    assert_eq!(row("B1&\"\""), ["B1&\"\"", "\"3\""], "text is quoted");
+    assert_eq!(row("A1/A2"), ["A1/A2", "not evaluated"]);
+    assert!(lines[1].starts_with("  IF("), "indented by depth:\n{out}");
+    assert_eq!(std::fs::read(&file).unwrap(), before, "nothing written");
+
+    let omitted = ok(&["eval", &s(&file), "D5", "=IF(TRUE();;1)", "--trace"]);
+    assert!(
+        omitted.lines().any(|l| l.trim() == "(omitted)"),
+        "{omitted}"
+    );
+}
+
 #[test]
 fn a_value_is_typed_by_what_it_looks_like_unless_text_is_forced() {
     let dir = Sandbox::new("types");

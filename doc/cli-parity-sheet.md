@@ -40,6 +40,8 @@ stops ratcheting.
   relative references shifted and its absolute ones left alone — "extend a calculation into
   the next cell"
 - `preview` — `grind sheet eval <address> <formula>`, which stores nothing and writes nothing
+- `trace` — `grind sheet eval <address> <formula> --trace`: the same evaluation taken apart, one
+  sub-expression a line with what it comes to in place (`doc/formula-workbench.md` §3.2)
 - `set_cell` — not exposed directly: `grind sheet set` goes through `App::enter`, which is the
   typing rule every shell shares and which *replaces* whatever the cell held, formula
   included. `set_cell` is the primitive underneath it, and the one shape that can leave a

@@ -165,7 +165,7 @@ jobs:
       - run: |
           git clone --depth 1 --filter=blob:none --sparse https://github.com/LibreOffice/core.git /tmp/lo-core
           git -C /tmp/lo-core sparse-checkout set sc/qa/unit/data sw/qa
-      - run: cargo test --locked -p grind-sheet --test corpus_read --test corpus_parse --test corpus_eval --test read_values --test roundtrip -- --nocapture
+      - run: cargo test --locked -p grind-sheet --test corpus_read --test corpus_parse --test corpus_trace --test corpus_eval --test read_values --test roundtrip -- --nocapture
         env:
           GRIND_LO_CORPUS: /tmp/lo-core
       # Loop A for text, and loop C's "back" direction for text — which needs both the corpus

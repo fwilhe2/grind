@@ -155,13 +155,26 @@ pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
 /// that wants to put a caret on the problem needs a position in the text. Keeping them here
 /// rather than in a `Token` field means nothing that merely reads tokens pays for them.
 pub fn lex_spans(src: &str) -> Result<(Vec<Token>, Vec<usize>), SyntaxError> {
+    lex_extents(src).map(|(tokens, starts, _)| (tokens, starts))
+}
+
+/// Tokens, the `char` offset each starts at, and the one each ends at.
+pub type Extents = (Vec<Token>, Vec<usize>, Vec<usize>);
+
+/// The tokens with the `char` range each one covers — [`lex_spans`] plus where each token
+/// *ends*, which is what a node's span needs and a diagnostic does not (`parse_spanned`).
+pub fn lex_extents(src: &str) -> Result<Extents, SyntaxError> {
     // Char-indexed: the grammar allows non-ASCII in identifiers, sheet names and strings,
     // and byte offsets in a diagnostic would point at the wrong place.
     let src: Vec<char> = src.chars().collect();
     let mut out = Vec::new();
     let mut at = Vec::new();
+    let mut ends = Vec::new();
     let mut i = 0;
     while i < src.len() {
+        if ends.len() < out.len() {
+            ends.push(i);
+        }
         let c = src[i];
         at.truncate(out.len());
         at.resize(out.len() + 1, i);
@@ -269,8 +282,11 @@ pub fn lex_spans(src: &str) -> Result<(Vec<Token>, Vec<usize>), SyntaxError> {
             c => return err(format!("unexpected character {c:?}"), i),
         }
     }
+    if ends.len() < out.len() {
+        ends.push(src.len());
+    }
     at.truncate(out.len());
-    Ok((out, at))
+    Ok((out, at, ends))
 }
 
 /// §5.6 `FunctionName` / §5.11 `Identifier`, loosened to any Unicode alphabetic since the
