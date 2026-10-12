@@ -165,7 +165,7 @@ fn every_corpus_formula_traces_with_true_spans_and_the_evaluators_answer() {
                 evaluated += 1;
                 let at = Address::new(index, pos);
                 let want = Engine::new(&doc).eval(&canonical, at);
-                match trace(&doc, index, pos, &display) {
+                match trace(&doc, index, pos, &display, &Default::default()) {
                     Ok(t) if t.value == want => {}
                     Ok(_) if volatile => excused += 1,
                     Ok(t) => fail(

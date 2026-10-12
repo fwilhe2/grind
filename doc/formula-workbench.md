@@ -6,11 +6,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # The formula workbench — a formula you can take apart, try and put back
 
-**Status: F0 and F1 done.** F0 is this document and `doc/ods-format.md` §4.2, the
+**Status: F0, F1 and F2 done.** F0 is this document and `doc/ods-format.md` §4.2, the
 measurement of when moving a sub-expression into its own cell changes what a formula means.
 F1 is the trace: `parse::parse_spanned`, `display::parse_display`, `formula::trace`,
 `App::trace` and `grind sheet eval --trace`, held to loop B's corpus by
-`sheet/tests/corpus_trace.rs`. Nothing from F2 on is built. **Experimental**: it ships behind the palette and the CLI, and it
+`sheet/tests/corpus_trace.rs`. F2 is the *what if*: `trace::Overlay`, `App::overlay` and
+`eval --with`. Nothing from F3 on is built. **Experimental**: it ships behind the palette and the CLI, and it
 changes no existing verb.
 
 ## 1. What it is
@@ -127,11 +128,18 @@ traces (the first fifty formulas of each of 879 documents — each builds its ow
 the workbench's will) have the evaluator's answer at the root; the four that differ are in
 documents calling `NOW()`, counted rather than failed.
 
-### 3.3 `Overlay` (F2)
+### 3.3 `Overlay` (F2, built)
 
 ```rust
-pub struct Overlay { values: HashMap<Address, CellValue> }
+pub struct Overlay { values: HashMap<Address, Value> }   // set, clear, get, is_empty
+pub fn overlay(&self, entries: &[(usize, Pos, &str)]) -> Result<Overlay>   // on App
 ```
+
+`App::overlay` reads each entry by the typing rule `App::enter` uses for that cell (the `'`
+rule, a blank for an empty string, a date cell's ISO spelling, the document's locale), so an
+override means what typing it would mean. A value of the formula engine's own kind rather than
+a `CellValue`, because an override of *empty* has to stay empty — a cell cannot hold it, but
+"what if this were blank" is exactly the question.
 
 This is cheaper than it looks. `Engine::new` already evaluates every formula cell from its
 formula, with a memo of its own (`cached: false`), so seeding that memo with the overrides
@@ -274,7 +282,7 @@ three columns stacked), `ui_mac`. Each gets a row in `doc/feature-matrix.md`.
 |---|---|---|
 | **F0** | This document and `doc/ods-format.md` §4.2 | done, 2026-10-12 |
 | **F1** | Spans, `App::trace`, `eval --trace` | done, 2026-10-12: every span over loop B's corpus, the root against the evaluator, and a branch not taken never evaluated |
-| **F2** | `Overlay`, `--with` | A dependent two formulas away reflects an override. No override leaves `trace` equal to `preview`. The document's bytes are unchanged after any number of traces |
+| **F2** | `Overlay`, `--with` | done, 2026-10-12: an override two formulas away, into a range, on a formula cell and as a blank; the CLI's file unchanged |
 | **F3** | `display::pretty`, `--pretty` | Round trip over loop B's corpus: the joined lines parse to the same tree |
 | **F4** | `App::extract`, `grind sheet extract`, every row of §5 | Each §4.2 row is a test that is refused, warned or allowed as §5 says. Undo restores the bytes. Loop C holds an extracted document |
 | **F5** | The GTK pane, examples moved into a shared table | Rendered by `--render-to`, and the palette and context-menu entries walked by `chrome_tests` |

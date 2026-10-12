@@ -212,6 +212,36 @@ fn eval_trace_takes_a_formula_apart_and_writes_nothing() {
     assert!(lines[1].starts_with("  IF("), "indented by depth:\n{out}");
     assert_eq!(std::fs::read(&file).unwrap(), before, "nothing written");
 
+    // What if: `--with` overrides a cell for this evaluation only, read as typing it would be.
+    assert_eq!(
+        ok(&["eval", &s(&file), "D5", "=[.A1]/[.A2]", "--with", "A2=8"]).trim(),
+        "0.5"
+    );
+    let what_if = ok(&[
+        "eval",
+        &s(&file),
+        "D5",
+        "=[.A1]/[.A2]",
+        "--with",
+        "A2=-2",
+        "--with",
+        "A1=",
+        "--trace",
+    ]);
+    assert!(
+        what_if
+            .lines()
+            .any(|l| l.split_whitespace().eq(["A1", "empty"])),
+        "{what_if}"
+    );
+    assert!(
+        what_if
+            .lines()
+            .any(|l| l.split_whitespace().eq(["A2", "-2"])),
+        "{what_if}"
+    );
+    assert_eq!(std::fs::read(&file).unwrap(), before, "nothing written");
+
     let omitted = ok(&["eval", &s(&file), "D5", "=IF(TRUE();;1)", "--trace"]);
     assert!(
         omitted.lines().any(|l| l.trim() == "(omitted)"),

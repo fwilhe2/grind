@@ -138,6 +138,22 @@ impl<'a> Engine<'a> {
         }
     }
 
+    /// An engine that sees some cells holding something other than they do — the workbench's
+    /// *what if* (`doc/formula-workbench.md` §3.3).
+    ///
+    /// Seeding the memo is the whole mechanism, and it is honest because of how this engine
+    /// works: it evaluates every formula cell from its formula ([`Engine::new`] never trusts a
+    /// cached value), so a formula reading an overridden cell — directly, or through any chain
+    /// of other formulas — is evaluated against the override. A formula cell can be
+    /// overridden too, which is what "what if this subtotal were 0" means.
+    pub fn with_overlay(doc: &'a Document, overlay: &HashMap<Address, Value>) -> Self {
+        let mut engine = Self::new(doc);
+        engine
+            .cache
+            .extend(overlay.iter().map(|(at, v)| (*at, v.clone())));
+        engine
+    }
+
     /// An engine that reads every formula cell's cached value instead of evaluating it again:
     /// a question about what the sheet *shows*, asked while it is drawn. A conditional-format
     /// rule is evaluated through one (`crate::rule`), so drawing a screenful never recalculates

@@ -99,11 +99,48 @@ impl CameTo {
     }
 }
 
-/// Trace `formula`, written in display syntax with or without its `=`, as if it sat at `at`.
-pub fn trace(doc: &Document, sheet: usize, at: Pos, formula: &str) -> Result<Trace, DisplayError> {
+/// Cells that hold something else for one trace — the workbench's *what if*
+/// (`doc/formula-workbench.md` §3.3). Never written anywhere: it lives as long as a shell
+/// keeps it, and the document never hears of it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Overlay {
+    values: HashMap<Address, Value>,
+}
+
+impl Overlay {
+    /// Hold `value` in a cell, for this overlay only. An empty value is an override too —
+    /// "what if this cell were blank" — rather than the absence of one; [`Overlay::clear`]
+    /// is that.
+    pub fn set(&mut self, sheet: usize, pos: Pos, value: Value) {
+        self.values.insert(Address::new(sheet, pos), value);
+    }
+
+    /// Let a cell hold what it really holds again.
+    pub fn clear(&mut self, sheet: usize, pos: Pos) {
+        self.values.remove(&Address::new(sheet, pos));
+    }
+
+    pub fn get(&self, sheet: usize, pos: Pos) -> Option<&Value> {
+        self.values.get(&Address::new(sheet, pos))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+}
+
+/// Trace `formula`, written in display syntax with or without its `=`, as if it sat at `at`,
+/// with `overlay`'s cells holding what it says.
+pub fn trace(
+    doc: &Document,
+    sheet: usize,
+    at: Pos,
+    formula: &str,
+    overlay: &Overlay,
+) -> Result<Trace, DisplayError> {
     let (expr, shape) = display::parse_display(formula)?;
     let at = Address::new(sheet, at);
-    let mut engine = Engine::new(doc);
+    let mut engine = Engine::with_overlay(doc, &overlay.values);
     let (value, seen) = engine.trace(&expr, at);
     let root = node(&mut engine, &expr, &shape, &seen);
     Ok(Trace { value, root })
@@ -179,7 +216,7 @@ mod tests {
     }
 
     fn traced(formula: &str) -> Trace {
-        trace(&document(), 0, Pos::new(9, 9), formula).expect(formula)
+        trace(&document(), 0, Pos::new(9, 9), formula, &Overlay::default()).expect(formula)
     }
 
     /// Every node as `text → answer`, depth-first — the shape the CLI prints.
@@ -317,7 +354,7 @@ mod tests {
         // `doc/formula-workbench.md` §9 names that.
         let mut doc = document();
         doc.sheets[0].set(Pos::new(0, 3), CellValue::Number(41.0));
-        let t = trace(&doc, 0, Pos::new(0, 3), "=D1+1").unwrap();
+        let t = trace(&doc, 0, Pos::new(0, 3), "=D1+1", &Overlay::default()).unwrap();
         assert_eq!(t.value, Value::Number(42.0));
     }
 
@@ -341,9 +378,59 @@ mod tests {
         assert_eq!(spell(CameTo::Range(area(1))), "Data.B1:B3 (3 cells)");
     }
 
+    fn traced_with(formula: &str, overlay: &Overlay) -> Trace {
+        trace(&document(), 0, Pos::new(9, 9), formula, overlay).expect(formula)
+    }
+
+    #[test]
+    fn an_override_reaches_a_dependent_two_formulas_away() {
+        // A4 is `=A1*2` in the document; C1 below is `=A4+1`, so A1 → A4 → C1 → the trace.
+        let mut doc = document();
+        doc.sheets[0].set_formula(Pos::new(0, 2), "of:=[.A4]+1".into());
+        let mut overlay = Overlay::default();
+        overlay.set(0, Pos::new(0, 0), Value::Number(10.0));
+        let t = trace(&doc, 0, Pos::new(9, 9), "=C1*10", &overlay).unwrap();
+        assert_eq!(t.value, Value::Number(210.0), "(10*2+1)*10");
+        let real = trace(&doc, 0, Pos::new(9, 9), "=C1*10", &Overlay::default()).unwrap();
+        assert_eq!(real.value, Value::Number(90.0), "(4*2+1)*10");
+    }
+
+    #[test]
+    fn a_formula_cell_can_be_overridden_and_a_cell_made_blank() {
+        let mut overlay = Overlay::default();
+        overlay.set(0, Pos::new(3, 0), Value::Number(0.0)); // A4, a formula
+        overlay.set(0, Pos::new(0, 0), Value::Empty); // A1, a number
+        let t = traced_with("=A4+ISBLANK(A1)", &overlay);
+        assert_eq!(t.value, Value::Number(1.0));
+        assert_eq!(t.root.children[0].came_to, n(0.0));
+    }
+
+    #[test]
+    fn an_override_reaches_into_a_range() {
+        let mut overlay = Overlay::default();
+        overlay.set(0, Pos::new(1, 1), Value::Number(20.0)); // B2 of B1:B3
+        assert_eq!(
+            traced_with("=SUM(B1:B3)", &overlay).value,
+            Value::Number(24.0)
+        );
+        overlay.clear(0, Pos::new(1, 1));
+        assert!(overlay.is_empty());
+        assert_eq!(
+            traced_with("=SUM(B1:B3)", &overlay).value,
+            Value::Number(6.0)
+        );
+    }
+
     #[test]
     fn a_syntax_error_says_where() {
-        let e = trace(&document(), 0, Pos::new(9, 9), "=SUM(A1").unwrap_err();
+        let e = trace(
+            &document(),
+            0,
+            Pos::new(9, 9),
+            "=SUM(A1",
+            &Overlay::default(),
+        )
+        .unwrap_err();
         assert_eq!(e.at, 7);
     }
 }

@@ -846,7 +846,7 @@ fn trace_writes_nothing_notifies_nobody_records_no_history_and_agrees_with_previ
     let counter = Arc::new(Counter(AtomicUsize::new(0)));
     app.set_observer(counter.clone());
 
-    let trace = app.trace(0, p(9, 9), "=A1*3").unwrap();
+    let trace = app.trace(0, p(9, 9), "=A1*3", &Default::default()).unwrap();
     assert_eq!(trace.root.children.len(), 2);
     assert_eq!(
         app.preview(0, p(9, 9), "=[.A1]*3").unwrap(),
@@ -869,18 +869,58 @@ fn trace_writes_nothing_notifies_nobody_records_no_history_and_agrees_with_previ
 
     // Only a read lock.
     let held = app.get_viewport(0, 0..1, 0..1).unwrap();
-    assert!(app.trace(0, p(0, 1), "=1+1").is_ok());
+    assert!(app.trace(0, p(0, 1), "=1+1", &Default::default()).is_ok());
     drop(held);
 
     // A formula that will not parse is a formula error, and a sheet that is not there says so.
     assert!(matches!(
-        app.trace(0, p(0, 1), "=SUM(A1"),
+        app.trace(0, p(0, 1), "=SUM(A1", &Default::default()),
         Err(grind_sheet::Error::Formula(_))
     ));
     assert!(matches!(
-        app.trace(7, p(0, 1), "=1"),
+        app.trace(7, p(0, 1), "=1", &Default::default()),
         Err(grind_sheet::Error::NoSuchSheet(7))
     ));
+}
+
+/// `overlay` reads each value through the typing rule for *that* cell, and the trace sees it
+/// through every formula in between — while the document holds what it held.
+#[test]
+fn an_overlay_is_typed_like_input_and_reaches_through_formulas() {
+    use grind_sheet::formula::value::Value;
+    let app = App::new();
+    app.set_cell(0, p(0, 0), 4.0).unwrap();
+    app.set_formula(0, p(1, 0), "=[.A1]*2").unwrap();
+
+    let overlay = app
+        .overlay(&[(0, p(0, 0), "-1"), (0, p(2, 0), "'007"), (0, p(3, 0), "")])
+        .unwrap();
+    assert_eq!(overlay.get(0, p(0, 0)), Some(&Value::Number(-1.0)));
+    assert_eq!(
+        overlay.get(0, p(2, 0)),
+        Some(&Value::Text("007".into())),
+        "the ' rule"
+    );
+    assert_eq!(
+        overlay.get(0, p(3, 0)),
+        Some(&Value::Empty),
+        "a blank is an override"
+    );
+
+    let t = app.trace(0, p(9, 9), "=A2+1", &overlay).unwrap();
+    assert_eq!(t.value, Value::Number(-1.0), "A1 → A2 → here");
+    assert_eq!(
+        app.get(0, p(1, 0)).unwrap(),
+        CellValue::Number(8.0),
+        "the document is as it was"
+    );
+    assert!(app.overlay(&[(3, p(0, 0), "1")]).is_err());
+
+    // The document's own locale decides what a typed number is, here as in a cell.
+    app.set_locale(grind_sheet::locale::Locale::parse("de-DE"))
+        .unwrap();
+    let german = app.overlay(&[(0, p(0, 0), "1,5")]).unwrap();
+    assert_eq!(german.get(0, p(0, 0)), Some(&Value::Number(1.5)));
 }
 
 #[test]

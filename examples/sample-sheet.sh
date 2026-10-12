@@ -382,6 +382,8 @@ say "eval: what a formula would say at a cell, storing nothing"
 sheet eval "$book" B25 '=SUM([.B2:.B4])*2'
 say "eval --trace: the same formula taken apart, every sub-expression and what it comes to"
 sheet eval "$book" B25 '=IF([.B2]>0;SUM([.B2:.B4])*2;0)' --trace
+say "eval --with: what if a cell held something else — for this evaluation only"
+sheet eval "$book" B25 '=IF([.B2]>0;SUM([.B2:.B4])*2;0)' --with B2=-1 --trace
 
 say "calculations: everything the document computes, and what it calls to do it"
 sheet calculations "$book"

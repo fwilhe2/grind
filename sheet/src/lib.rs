@@ -883,13 +883,43 @@ impl App {
     /// [`App::preview`]'s three properties, for the same reason: a read lock only, no
     /// observer notified, no undo entry — the workbench asks it on every keystroke. Its
     /// [`formula::trace::Trace::value`] is `preview`'s answer.
-    pub fn trace(&self, sheet: usize, pos: Pos, formula: &str) -> Result<formula::trace::Trace> {
+    ///
+    /// `overlay` is the *what if*: cells holding something else for this trace only, every
+    /// formula that reads them evaluated against it ([`App::overlay`] builds one from what a
+    /// person typed). `&Overlay::default()` traces the document as it is.
+    pub fn trace(
+        &self,
+        sheet: usize,
+        pos: Pos,
+        formula: &str,
+        overlay: &formula::trace::Overlay,
+    ) -> Result<formula::trace::Trace> {
         let state = self.state.read().unwrap();
         if state.doc.sheet(sheet).is_none() {
             return Err(Error::NoSuchSheet(sheet));
         }
-        formula::trace::trace(&state.doc, sheet, pos, formula)
+        formula::trace::trace(&state.doc, sheet, pos, formula, overlay)
             .map_err(|e| Error::Formula(e.to_string()))
+    }
+
+    /// An [`formula::trace::Overlay`] from what a person typed for each cell — each read by
+    /// the typing rule [`App::enter`] uses for that cell, so `-1` is a number, `'-1` text, an
+    /// empty string a blank, a date cell takes its ISO spelling and a German document reads
+    /// `1,5` as one and a half. A formula is evaluated to its value against the document as it
+    /// is. Nothing is stored.
+    pub fn overlay(&self, entries: &[(usize, Pos, &str)]) -> Result<formula::trace::Overlay> {
+        let state = self.state.read().unwrap();
+        let mut overlay = formula::trace::Overlay::default();
+        for &(sheet, pos, input) in entries {
+            if state.doc.sheet(sheet).is_none() {
+                return Err(Error::NoSuchSheet(sheet));
+            }
+            let Action::SetFormula { value, .. } = typed(&state.doc, sheet, pos, input).1 else {
+                unreachable!("the typing rule only ever sets a cell");
+            };
+            overlay.set(sheet, pos, formula::eval::from_cell(value));
+        }
+        Ok(overlay)
     }
 
     /// Empty every cell in a rectangle, formulas included. Returns how many were not
