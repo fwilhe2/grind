@@ -582,3 +582,99 @@ fn workday_steps_over_weekends_and_holidays() {
         46380.0 + 365.0
     );
 }
+
+/// Fifteen significant digits, the most the oracle writes.
+fn close(formula: &str, want: f64) {
+    let got = number(formula);
+    assert!(
+        (got - want).abs() <= 1e-14 * want.abs().max(1.0),
+        "{formula}: {got}, not {want}"
+    );
+}
+
+#[test]
+fn ipmt_and_ppmt_split_a_payment_into_interest_and_principal() {
+    // §6.12.23, §6.12.37: the interest is the rate on the balance the period starts with,
+    // and the principal is the rest of PMT's payment.
+    close("=IPMT(0.1/12;1;36;8000)", -66.6666666666667);
+    // The last period's interest is a small difference of large terms. Exact rational
+    // arithmetic over the same doubles gives -2.1333677483528916…; LibreOffice writes
+    // -2.13336774835317, off in the twelfth digit, and this is the exact one.
+    close("=IPMT(0.1/12;36;36;8000)", -2.133_367_748_352_891_6);
+    close("=IPMT(0.1;3;3;8000)", -292.447129909365);
+    close("=IPMT(0.05;2;10;-1000;500)", 48.0123856258636);
+    close("=IPMT(0.1;2;3;8000;1000)", -528.09667673716);
+    close("=IPMT(-0.1;2;3;8000)", 504.79704797048);
+    // Paid at the start of each period, the first owes no interest yet.
+    assert_eq!(number("=IPMT(0.1;1;3;8000;0;1)"), 0.0);
+    close("=IPMT(0.1;2;3;8000;0;1)", -507.552870090635);
+    close("=IPMT(0.1;2;3;8000;;1)", -507.552870090635);
+    close("=IPMT(0.1;2;3;8000;0;2)", -507.552870090635); // a flag, as PMT reads it
+    assert_eq!(number("=IPMT(0;2;10;1000)"), 0.0);
+    // A period between two whole ones is a balance part-way through, measured.
+    close("=IPMT(0.1;1.5;3;8000)", -682.03299535915);
+
+    close("=PPMT(0.1/12;1;24;2000)", -75.6231860083664);
+    close("=PPMT(0.08;10;10;200000)", -27598.0534624214);
+    close("=PPMT(0.1;1;3;8000;0;1)", -2924.47129909365);
+    close("=PPMT(0.1;2;3;8000;0;1)", -2416.91842900302);
+    close("=PPMT(0.05;2;10;-1000;500)", 41.7399018568648);
+    close("=PPMT(0.1;2;3;8000;1000)", -2990.93655589124);
+    assert_eq!(number("=PPMT(0;2;10;1000)"), -100.0);
+    close("=PPMT(0.1;1.5;3;8000)", -2534.88543364387);
+
+    // A period outside 1..Nper is no period of this loan.
+    for f in ["IPMT", "PPMT"] {
+        assert_eq!(error(&format!("={f}(0.1;0;3;8000)")), FormulaError::Num);
+        assert_eq!(error(&format!("={f}(0.1;4;3;8000)")), FormulaError::Num);
+        assert_eq!(error(&format!("={f}(0.1;3.5;3;8000)")), FormulaError::Num);
+        assert_eq!(error(&format!("={f}(0.1;2;3)")), FormulaError::Value);
+    }
+}
+
+#[test]
+fn address_spells_a_reference_as_text() {
+    // §6.14.2 and its Table 21.
+    assert_eq!(text("=ADDRESS(1;1)"), "$A$1");
+    assert_eq!(text("=ADDRESS(2;3;2)"), "C$2");
+    assert_eq!(text("=ADDRESS(2;3;3)"), "$C2");
+    assert_eq!(text("=ADDRESS(2;3;4)"), "C2");
+    assert_eq!(text("=ADDRESS(2;3;1;FALSE())"), "R2C3");
+    assert_eq!(text("=ADDRESS(2;3;2;FALSE())"), "R2C[3]");
+    assert_eq!(text("=ADDRESS(2;3;3;FALSE())"), "R[2]C3");
+    assert_eq!(text("=ADDRESS(2;3;4;FALSE())"), "R[2]C[3]");
+    assert_eq!(text("=ADDRESS(1;27)"), "$AA$1");
+    assert_eq!(text("=ADDRESS(1;16384)"), "$XFD$1");
+    assert_eq!(text("=ADDRESS(1048576;1)"), "$A$1048576");
+    assert_eq!(text("=ADDRESS(2.9;3.9)"), "$C$2"); // truncated
+    assert_eq!(text("=ADDRESS(\"2\";\"3\")"), "$C$2");
+    assert_eq!(text("=ADDRESS(1;1;;)"), "$A$1"); // empty Abs and A1Style are the defaults
+    // "followed by a '.' … if A1Style is TRUE, or a '!' … if A1Style is FALSE".
+    assert_eq!(text("=ADDRESS(2;3;1;TRUE();\"Sheet2\")"), "Sheet2.$C$2");
+    assert_eq!(text("=ADDRESS(2;3;1;FALSE();\"Sheet2\")"), "Sheet2!R2C3");
+    assert_eq!(text("=ADDRESS(1;1;1;TRUE();\"\")"), "$A$1");
+    // Quoted when the name is not a plain word — measured, so INDIRECT can read it back.
+    assert_eq!(
+        text("=ADDRESS(2;3;1;TRUE();\"My Sheet\")"),
+        "'My Sheet'.$C$2"
+    );
+    assert_eq!(text("=ADDRESS(2;3;4;TRUE();\"it's\")"), "'it''s'.C2");
+    assert_eq!(text("=ADDRESS(1;1;1;1;\"Sheet-1\")"), "'Sheet-1'.$A$1");
+    assert_eq!(text("=ADDRESS(1;1;1;1;\"1abc\")"), "'1abc'.$A$1");
+    assert_eq!(text("=ADDRESS(1;1;1;1;\"a.b\")"), "'a.b'.$A$1");
+    assert_eq!(text("=ADDRESS(1;1;1;TRUE();5)"), "'5'.$A$1");
+    assert_eq!(text("=ADDRESS(1;1;1;1;\"Ä\")"), "Ä.$A$1");
+    assert_eq!(text("=ADDRESS(1;1;1;1;\"A_b\")"), "A_b.$A$1");
+    assert_eq!(text("=ADDRESS(1;1;1;0;\"My Sheet\")"), "'My Sheet'!R1C1");
+    // Measured: 5 to 8 read as 1 to 4.
+    assert_eq!(text("=ADDRESS(1;1;6)"), "A$1");
+    assert_eq!(text("=ADDRESS(1;1;8)"), "A1");
+    // Off the sheet, or an Abs that names nothing.
+    assert_eq!(error("=ADDRESS(0;1)"), FormulaError::Value);
+    assert_eq!(error("=ADDRESS(1;16385)"), FormulaError::Value);
+    assert_eq!(error("=ADDRESS(1048577;1)"), FormulaError::Value);
+    assert_eq!(error("=ADDRESS(;1)"), FormulaError::Value);
+    assert_eq!(error("=ADDRESS(1;1;0)"), FormulaError::Value);
+    assert_eq!(error("=ADDRESS(1;1;9)"), FormulaError::Value);
+    assert_eq!(error("=ADDRESS(1;1;1;\"x\")"), FormulaError::Value);
+}

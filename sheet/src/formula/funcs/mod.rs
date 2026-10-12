@@ -118,6 +118,7 @@ pub fn beyond_small_group() -> &'static [&'static str] {
 /// Kept in step with `doc/small-group.md`'s second half by the same test that checks the
 /// first, so this cannot quietly grow either.
 const BEYOND: &[&str] = &[
+    "ADDRESS",
     "AVERAGEIFS",
     "COLUMN",
     "CONCATENATE",
@@ -127,11 +128,13 @@ const BEYOND: &[&str] = &[
     "HYPERLINK",
     "IFERROR",
     "IFNA",
+    "IPMT",
     "ISOWEEKNUM",
     "LARGE",
     "MEDIAN",
     "MROUND",
     "NETWORKDAYS",
+    "PPMT",
     "QUOTIENT",
     "RANK",
     "ROUNDDOWN",
@@ -265,6 +268,7 @@ const NAMES: &[&str] = &[
     "CHOOSE",
     "HLOOKUP",
     "INDEX",
+    "ADDRESS",
     "MATCH",
     "VLOOKUP",
     // database (§6.9)
@@ -291,6 +295,8 @@ const NAMES: &[&str] = &[
     "RATE",
     "SLN",
     "SYD",
+    "IPMT",
+    "PPMT",
 ];
 
 /// A call's arguments, plus the engine needed to evaluate them.

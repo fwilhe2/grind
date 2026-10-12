@@ -213,6 +213,9 @@ by that evidence. It recommends nothing on its own; an entry here still needs it
 - `ISOWEEKNUM` — §6.10.12
 - `NETWORKDAYS` — §6.10.15
 - `WORKDAY` — §6.10.23
+- `IPMT` — §6.12.23
+- `PPMT` — §6.12.37
+- `ADDRESS` — §6.14.2
 
   **Evidence:** `doc/function-coverage.md` §3 and §4's Tier 1 — the classic band every corpus
   calls. Measured over LibreOffice's test documents, a greedy pass adding one function at a

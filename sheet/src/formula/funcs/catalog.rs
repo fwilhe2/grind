@@ -94,6 +94,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.16.3",
     },
     FuncInfo {
+        name: "ADDRESS",
+        signature: "ADDRESS( Integer Row ; Integer Column [ ; Integer Abs = 1 [ ; Logical A1Style = TRUE [ ; Text Sheet ] ] ] )",
+        brief: "Returns a cell address (reference) as text.",
+        section: "6.14.2",
+    },
+    FuncInfo {
         name: "AND",
         signature: "AND( { Logical|NumberSequenceList L } + )",
         brief: "Compute logical AND of all parameters.",
@@ -395,6 +401,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.17.2",
     },
     FuncInfo {
+        name: "IPMT",
+        signature: "IPMT( Number Rate ; Number Period ; Number Nper ; Number PV [ ; Number FV = 0 [ ; Number Type = 0 ] ] )",
+        brief: "Returns the amount of an annuity payment going towards interest.",
+        section: "6.12.23",
+    },
+    FuncInfo {
         name: "IRR",
         signature: "IRR( NumberSequence Values [ ; Number Guess = 0.1 ] )",
         brief: "Compute the internal rate of return for a series of cash flows.",
@@ -622,6 +634,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "POWER( Number A ; Number B )",
         brief: "Return the value of one number raised to the power of another number.",
         section: "6.16.46",
+    },
+    FuncInfo {
+        name: "PPMT",
+        signature: "PPMT( Number Rate ; Integer Period ; Integer Nper ; Number Present [ ; Number Future = 0 [ ; Number Type = 0 ] ] )",
+        brief: "Calculate the payment for a given period on the principal for an investment at a given interest rate and constant payments.",
+        section: "6.12.37",
     },
     FuncInfo {
         name: "PRODUCT",

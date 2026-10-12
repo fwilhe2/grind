@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! §6.14 Lookup Functions — the Small Group's five.
+//! §6.14 Lookup Functions — the Small Group's five, and `ADDRESS` from beyond it.
 //!
 //! `MATCH`, `VLOOKUP` and `HLOOKUP` share one search, described three times in §6.14 with
 //! the same three modes:
@@ -25,6 +25,7 @@ use std::cmp::Ordering;
 use crate::model::Pos;
 
 use super::super::eval::{Address, Area, order};
+use super::super::lex::column_name;
 use super::super::value::{FormulaError, Value};
 use super::super::wildcard;
 use super::Args;
@@ -38,6 +39,7 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "VLOOKUP" => lookup(args, true),
         "HLOOKUP" => lookup(args, false),
         "INDEX" => index(args),
+        "ADDRESS" => address(args),
         _ => return None,
     })
 }
@@ -204,6 +206,75 @@ fn index(args: &mut Args) -> Answer {
     };
     let pos = Pos::new(axis(row, source.rows)?, axis(col, source.cols)?);
     Ok(args.value_at(Address::new(source.sheet, pos)))
+}
+
+/// §6.14.2 `ADDRESS( Row ; Column [ ; Abs = 1 [ ; A1Style = TRUE [ ; Sheet ] ] ] )`: a
+/// reference spelled as text, without the brackets — `$C$2`, `R2C[3]`, `Data.$C$2`.
+///
+/// Table 21 is the whole of `Abs`: which of the column and row carry a `$`, or in R1C1 which
+/// are written bare rather than bracketed. The oracle reads 5 to 8 as 1 to 4, and so does
+/// this. A sheet name follows the spec's separators (`.` in A1 style, `!` in R1C1) and is
+/// quoted unless it is a plain word — letters, digits and `_`, not starting with a digit —
+/// which is the oracle's rule, measured (`doc/ods-format.md` §4.1), and what lets the text
+/// be read back as a reference.
+fn address(args: &mut Args) -> Answer {
+    args.arity(2..=5)?;
+    if args.omitted(0) || args.omitted(1) {
+        return Err(FormulaError::Value);
+    }
+    let (row, col) = (args.integer(0)?, args.integer(1)?);
+    if !(1..=i64::from(crate::MAX_ROWS)).contains(&row)
+        || !(1..=i64::from(crate::MAX_COLS)).contains(&col)
+    {
+        return Err(FormulaError::Value);
+    }
+    let abs = if args.len() > 2 && !args.omitted(2) {
+        args.integer(2)?
+    } else {
+        1
+    };
+    let (row_absolute, col_absolute) = match abs {
+        1 | 5 => (true, true),
+        2 | 6 => (true, false),
+        3 | 7 => (false, true),
+        4 | 8 => (false, false),
+        _ => return Err(FormulaError::Value),
+    };
+    let a1 = args.len() <= 3 || args.omitted(3) || args.logical(3)?;
+    let sheet = if args.len() > 4 && !args.omitted(4) {
+        args.text(4)?
+    } else {
+        String::new()
+    };
+
+    let mut out = String::new();
+    if !sheet.is_empty() {
+        let plain = sheet.chars().all(|c| c.is_alphanumeric() || c == '_')
+            && !sheet.starts_with(|c: char| c.is_ascii_digit());
+        if plain {
+            out.push_str(&sheet);
+        } else {
+            out.push_str(&format!("'{}'", sheet.replace('\'', "''")));
+        }
+        out.push(if a1 { '.' } else { '!' });
+    }
+    let dollar = |absolute: bool| if absolute { "$" } else { "" };
+    if a1 {
+        out.push_str(&format!(
+            "{}{}{}{row}",
+            dollar(col_absolute),
+            column_name(col as u32 - 1),
+            dollar(row_absolute)
+        ));
+    } else {
+        let part = |axis: char, n: i64, absolute: bool| match absolute {
+            true => format!("{axis}{n}"),
+            false => format!("{axis}[{n}]"),
+        };
+        out.push_str(&part('R', row, row_absolute));
+        out.push_str(&part('C', col, col_absolute));
+    }
+    Ok(Value::Text(out))
 }
 
 #[cfg(test)]

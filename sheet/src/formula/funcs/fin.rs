@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! §6.12 Financial Functions — the Small Group's ten.
+//! §6.12 Financial Functions — the Small Group's ten, and `IPMT` and `PPMT` from beyond it.
 //!
 //! Five of them (`PV`, `FV`, `PMT`, `NPER`, `RATE`) are one equation with a different
 //! unknown each time, written once in [`annuity`] and rearranged per function. §6.12.41
@@ -40,6 +40,8 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "SLN" => sln(args),
         "SYD" => syd(args),
         "DDB" => ddb(args),
+        "IPMT" => split(args, true),
+        "PPMT" => split(args, false),
         _ => return None,
     })
 }
@@ -106,11 +108,16 @@ fn fv(args: &mut Args) -> Answer {
     args.arity(3..=5)?;
     let (rate, nper, payment) = (args.number(0)?, args.number(1)?, args.number(2)?);
     let (pv, pay_type) = tail(args, 3)?;
-    Ok(Value::number(if rate == 0.0 {
+    Ok(Value::number(future(rate, nper, payment, pv, pay_type)))
+}
+
+/// §6.12.20's closed form: what is left after `nper` payments.
+fn future(rate: f64, nper: f64, payment: f64, pv: f64, pay_type: f64) -> f64 {
+    if rate == 0.0 {
         -pv - payment * nper
     } else {
         -(pv * (1.0 + growth(rate, nper)) + payment * series(rate, nper, pay_type))
-    }))
+    }
 }
 
 /// §6.12.36 `PMT( Rate ; Nper ; Pv [ ; Fv [ ; PayType ] ] )`. Constraint: `Nper > 0`.
@@ -121,11 +128,48 @@ fn pmt(args: &mut Args) -> Answer {
     if nper <= 0.0 {
         return Err(FormulaError::Num);
     }
-    Ok(Value::number(if rate == 0.0 {
+    Ok(Value::number(payment(rate, nper, pv, fv, pay_type)))
+}
+
+/// §6.12.36's closed form: the payment that brings `pv` to `fv` in `nper` periods.
+fn payment(rate: f64, nper: f64, pv: f64, fv: f64, pay_type: f64) -> f64 {
+    if rate == 0.0 {
         (-pv - fv) / nper
     } else {
         -(fv + pv * (1.0 + growth(rate, nper))) / series(rate, nper, pay_type)
-    }))
+    }
+}
+
+/// §6.12.23 `IPMT( Rate ; Period ; Nper ; PV [ ; FV = 0 [ ; Type = 0 ] ] )` and §6.12.37
+/// `PPMT`, which is the rest of the same payment: `PMT − IPMT`.
+///
+/// "The interest payment is the interest rate multiplied by the balance at the beginning of
+/// the period", and the balance after `Period − 1` payments is [`future`]'s, negated. Paid
+/// at the start of each period the first payment comes before any interest is owed, so it
+/// is all principal, and later ones are on a balance one payment further on. A period
+/// outside `1..=Nper` belongs to no loan — `#NUM!`; a fractional one is a balance part-way
+/// through, as measured.
+fn split(args: &mut Args, interest: bool) -> Answer {
+    args.arity(4..=6)?;
+    let (rate, period, nper, pv) = (
+        args.number(0)?,
+        args.number(1)?,
+        args.number(2)?,
+        args.number(3)?,
+    );
+    let (fv, pay_type) = tail(args, 4)?;
+    if period < 1.0 || period > nper {
+        return Err(FormulaError::Num);
+    }
+    let pmt = payment(rate, nper, pv, fv, pay_type);
+    let ipmt = if rate == 0.0 || (pay_type == 1.0 && period == 1.0) {
+        0.0
+    } else if pay_type == 1.0 {
+        (future(rate, period - 2.0, pmt, pv, 1.0) - pmt) * rate
+    } else {
+        future(rate, period - 1.0, pmt, pv, 0.0) * rate
+    };
+    Ok(Value::number(if interest { ipmt } else { pmt - ipmt }))
 }
 
 /// §6.12.29 `NPER( Rate ; Payment ; Pv [ ; Fv [ ; PayType ] ] )`.

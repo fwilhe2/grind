@@ -414,6 +414,10 @@ table:use-regular-expressions="false"/>` — the reading this build gives every 
 | `WORKDAY(D;N;H;Workdays)` | `Err:504` — no fourth parameter | §6.10.23 defines it | **the spec**: the fourth parameter works as `NETWORKDAYS`' does (which LibreOffice does accept) |
 | `NETWORKDAYS(…;;[6 cells])`, `NETWORKDAYS(…;…;[text in it])` | `Err:502` | seven flags, Sunday first | `#VALUE!` unless there are exactly seven numbers or logicals |
 | `NETWORKDAYS(…;[.A1:.A2])` (text holidays), `WORKDAY(…;1;"2026-12-25")` | ignored; a date | DateSequence | text inside a range is nothing; a text argument is a date, as any DateParam is |
+| `IPMT(0.1;1.5;3;8000)`, `IPMT(…;0;…)`, `IPMT(…;4;3;…)` | -682.03299535915, `Err:502` | `0 < Period < Nper` | a fractional period is the balance part-way through; outside `1..=Nper` is `#NUM!` |
+| `IPMT(0.1/12;36;36;8000)`, `IPMT(0.06/52;30;208;8000;0;1)` | -2.13336774835317, -8.06341136318208 | — | **exact**: rational arithmetic over the same doubles gives -2.1333677483528916… and -8.0634113631819843…, which this build matches to the last digit or two and the oracle misses from the twelfth; the last periods of a loan are a small difference of large terms |
+| `ADDRESS(1;1;6)`, `ADDRESS(1;1;9)` | `A$1`, `#VALUE!` | `1 ≤ Abs ≤ 4` | 5…8 read as 1…4, anything else `#VALUE!` |
+| `ADDRESS(…;"My Sheet")`, `"Sheet-1"`, `"1abc"`, `"a.b"`, `5` vs `"Ä"`, `"A_b"` | quoted, unquoted | silent | quoted (with `''` for a quote) unless the name is letters, digits and `_` not starting with a digit — so the text reads back as a reference |
 
 **Where the fifteen-digit read stops.** It is not applied to every magnitude. A series
 `10^k·(1−4E−16)`, whose sixteenth digit always rounds the value up to `10^k`, snaps in
