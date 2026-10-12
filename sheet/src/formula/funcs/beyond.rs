@@ -142,6 +142,11 @@ fn iferror_and_ifna_catch_what_they_name_and_nothing_else() {
     // The alternative is not evaluated unless it is taken, as `IF`'s branch is not.
     assert_eq!(number("=IFERROR(1;1/0)"), 1.0);
     assert_eq!(error("=IFERROR(1)"), FormulaError::Value);
+    // Measured: X may not be left empty, and an empty Alternative is a zero, as an empty
+    // branch of `IF` is.
+    assert_eq!(error("=IFERROR(;\"A\")"), FormulaError::Value);
+    assert_eq!(error("=IFNA(;\"A\")"), FormulaError::Value);
+    assert_eq!(number("=IFNA(NA();)"), 0.0);
 }
 
 #[test]
@@ -208,6 +213,9 @@ fn roundup_and_rounddown_step_away_from_and_towards_zero() {
     assert_eq!(number("=ROUNDDOWN(-2.9)"), -2.0);
     assert_eq!(number("=ROUNDDOWN(1.23456;3)"), 1.234);
     assert_eq!(number("=ROUNDDOWN(1299;-2)"), 1200.0);
+    // A 4 in the twelfth place rounds up to the eleventh, as §6.17.7 says and Excel agrees;
+    // LibreOffice answers 8.23456789013.
+    assert_eq!(number("=ROUNDUP(8.234567890134;11)"), 8.23456789014);
 }
 
 #[test]
@@ -224,6 +232,17 @@ fn rounding_reads_a_value_to_fifteen_digits_before_it_steps() {
     // Fifteen digits, not fewer: a difference in the fifteenth still counts.
     assert_eq!(number("=ROUNDUP(1.00000000000001)"), 2.0);
     assert_eq!(number("=ROUNDDOWN(0.999999999999999)"), 0.0);
+    // ... and only below 10^11. A 16-digit integer is not "shown" as 15 digits and rounded
+    // to a neighbour, and a large fraction is stepped as it is (`doc/ods-format.md` §4.1).
+    assert_eq!(number("=ROUNDDOWN(2^52+1)"), 4503599627370497.0);
+    assert_eq!(number("=ROUND(2^52+1;0)"), 4503599627370497.0);
+    assert_eq!(
+        number("=ROUNDDOWN(123456789012345+0.67)"),
+        123456789012345.0
+    );
+    assert_eq!(number("=ROUNDDOWN(99999999999999+0.96)"), 99999999999999.0);
+    assert_eq!(number("=ROUNDDOWN(10^11*(1-4E-16))"), 100000000000.0);
+    assert_eq!(number("=ROUNDDOWN(10^14*(1-4E-16))"), 99999999999999.0);
 }
 
 #[test]
@@ -253,6 +272,10 @@ fn quotient_truncates_and_sign_is_three_valued() {
     assert_eq!(number("=QUOTIENT(7;-2)"), -3.0);
     assert_eq!(number("=QUOTIENT(7.9;2.5)"), 3.0);
     assert_eq!(error("=QUOTIENT(1;0)"), FormulaError::DivZero);
+    // Neither parameter is optional, and an empty one is not a zero (measured).
+    assert_eq!(error("=QUOTIENT(7;)"), FormulaError::Value);
+    assert_eq!(error("=MROUND(15.5;)"), FormulaError::Value);
+    assert_eq!(error("=MROUND(;3)"), FormulaError::Value);
     assert_eq!(number("=SIGN(-3)"), -1.0);
     assert_eq!(number("=SIGN(0)"), 0.0);
     assert_eq!(number("=SIGN(2.5)"), 1.0);

@@ -31,8 +31,9 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "SQRT" => unary(args, f64::sqrt),
         "DEGREES" => unary(args, f64::to_degrees),
         "RADIANS" => unary(args, f64::to_radians),
-        // §6.17.2: rounding towards negative infinity, which is floor and not truncation.
-        "INT" => unary(args, f64::floor),
+        // §6.17.2: rounding towards negative infinity, which is floor and not truncation —
+        // of the value as it is shown, as every step to a whole number here is.
+        "INT" => unary(args, |n| shown(n).floor()),
         "EVEN" => unary(args, |n| step_away(n, 2.0, 0.0)),
         "ODD" => unary(args, |n| step_away(n, 2.0, 1.0)),
 
@@ -45,8 +46,8 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "SUM" => sequence(args, |ns| ns.iter().sum()),
         "SUMIF" => super::criterion::conditional(args, super::criterion::Mode::Sum),
         "PRODUCT" => sequence(args, |ns| ns.iter().product()),
-        "ROUND" => scaled(args, f64::round),
-        "TRUNC" => scaled(args, f64::trunc),
+        "ROUND" => scaled(args, |x| shown(x).round()),
+        "TRUNC" => scaled(args, |x| shown(x).trunc()),
         "ROUNDUP" => scaled(args, |x| shown(x).abs().ceil().copysign(x)),
         "ROUNDDOWN" => scaled(args, |x| shown(x).trunc()),
         "MROUND" => mround(args),
@@ -156,8 +157,14 @@ fn scaled(args: &mut Args, f: impl Fn(f64) -> f64) -> Answer {
 /// the value to fifteen digits first, which is measured rather than specified
 /// (`doc/ods-format.md` §4.1), and so does every function here that floors, ceils or
 /// truncates a quotient.
+///
+/// Only below 10^11, which is where the measurement is consistent. Above it a double's
+/// noise is in the fifth decimal and the oracle's answer depends on its own binary steps —
+/// `9.5E11·(1−4E−16)` snaps going down and not going up — so nothing written in digits
+/// reproduces it, and a 16-digit integer such as `2^52+1` must not become its 15-digit
+/// neighbour. A value that large is stepped as it is.
 pub fn shown(x: f64) -> f64 {
-    if x == 0.0 || !x.is_finite() {
+    if x == 0.0 || !x.is_finite() || x.abs() >= 1e11 {
         return x;
     }
     format!("{x:.14e}").parse().unwrap_or(x)
@@ -169,8 +176,7 @@ pub fn shown(x: f64) -> f64 {
 /// quotient is `6.499999999999999` — is the tie it looks like. Neither sign is constrained;
 /// a multiple of zero is zero, as measured.
 fn mround(args: &mut Args) -> Answer {
-    args.arity(2..=2)?;
-    let (a, b) = (args.number(0)?, args.number(1)?);
+    let (a, b) = two_required(args)?;
     if b == 0.0 {
         return Ok(Value::Number(0.0));
     }
@@ -189,10 +195,19 @@ fn mround(args: &mut Args) -> Answer {
 
 /// §6.16.48 `QUOTIENT(A; B)`: the integer portion of `A/B`, towards zero.
 fn quotient(args: &mut Args) -> Answer {
-    args.arity(2..=2)?;
-    let (a, b) = (args.number(0)?, args.number(1)?);
+    let (a, b) = two_required(args)?;
     if b == 0.0 {
         return Err(FormulaError::DivZero);
     }
     Ok(Value::number(shown(a / b).trunc()))
+}
+
+/// Two numbers neither of which may be left empty: `MROUND(15.5;)` is an error rather than
+/// a multiple of zero, which is the oracle's reading of a parameter with no default.
+fn two_required(args: &mut Args) -> Result<(f64, f64), FormulaError> {
+    args.arity(2..=2)?;
+    if args.omitted(0) || args.omitted(1) {
+        return Err(FormulaError::Value);
+    }
+    Ok((args.number(0)?, args.number(1)?))
 }

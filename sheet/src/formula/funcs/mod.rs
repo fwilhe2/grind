@@ -552,6 +552,20 @@ mod tests {
     }
 
     #[test]
+    fn rounding_steps_the_value_a_cell_shows_not_its_binary_neighbour() {
+        // `doc/ods-format.md` §4.1, measured: 0.285 is 0.28499999999999998 in binary and
+        // shows as 0.285, and the oracle rounds what it shows.
+        assert_eq!(number("=ROUND(0.285;2)"), 0.29);
+        assert_eq!(number("=ROUND(-0.285;2)"), -0.29);
+        assert_eq!(number("=ROUND(2.675;2)"), 2.68);
+        assert_eq!(number("=ROUND(1.005;2)"), 1.01);
+        assert_eq!(number("=TRUNC(4.35*100)"), 435.0);
+        assert_eq!(number("=TRUNC(0.29*100)"), 29.0);
+        assert_eq!(number("=INT(4.35*100)"), 435.0);
+        assert_eq!(number("=INT(-4.35*100)"), -435.0);
+    }
+
+    #[test]
     fn statistics_ignore_what_is_not_a_number() {
         assert_eq!(number("=AVERAGE([.A1:.A4])"), 2.0); // (1+3)/2, not /4
         assert_eq!(number("=MAX([.A1:.A4])"), 3.0);

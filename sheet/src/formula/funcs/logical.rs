@@ -96,7 +96,12 @@ fn if_(args: &mut Args) -> Answer {
 /// short circuit `IF` has, for the same reason.
 fn if_error(args: &mut Args, catches: impl Fn(FormulaError) -> bool) -> Answer {
     args.arity(2..=2)?;
+    if args.omitted(0) {
+        return Err(FormulaError::Value);
+    }
     match args.value(0) {
+        // An empty alternative is 0, as an empty branch of `IF` is.
+        Value::Error(e) if catches(e) && args.omitted(1) => Ok(Value::Number(0.0)),
         Value::Error(e) if catches(e) => Ok(args.value(1)),
         value => Ok(value),
     }

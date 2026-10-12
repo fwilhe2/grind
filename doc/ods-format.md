@@ -401,6 +401,23 @@ table:use-regular-expressions="false"/>` — the reading this build gives every 
 | `MROUND(-10;3)`, `MROUND(10;-3)`, `MROUND(5;0)` | -9, 9, 0 | no sign constraint | the nearest multiple whatever the signs; a multiple of zero is zero |
 | `MROUND(-7.5;-5)` | -10 (a tie away from zero) | "the greater one" | **the spec**: -5 |
 | `QUOTIENT(1;0)` | `Err:502` | `B ≠ 0` | `#DIV/0!` |
+| `MROUND(15.5;)`, `MROUND(;3)`, `QUOTIENT(7;)`, `IFERROR(;"A")`, `IFNA(;"A")` | `Err:502`, `Err:518` | no defaults | `#VALUE!`: a required parameter left empty is not a zero |
+| `IFNA(NA();)`, `IFERROR(1;)` | 0, 1 | silent | an empty Alternative is 0, as an empty `IF` branch is |
+| `ROUNDUP(8.234567890134;11)` | 8.23456789013 | "round away from zero" | **the spec** (and Excel): 8.23456789014 |
+
+**Where the fifteen-digit read stops.** It is not applied to every magnitude. A series
+`10^k·(1−4E−16)`, whose sixteenth digit always rounds the value up to `10^k`, snaps in
+`ROUNDDOWN` for every `k` from 0 to 11 and for every `m·10^11` up to `9·10^11`, and not at
+`10^12` or above; `ROUND(2^52+1;0)` is 4503599627370497 (a 16-digit integer is left alone),
+and `ROUNDDOWN(123456789012345+0.67)` is 123456789012345. Between `10^11` and `10^15` the
+answer depends on the oracle's own binary steps rather than on digits — `9.5E11·(1−4E−16)`
+snaps going down and `9.5E11·(1+6E−16)` does not snap going up, `2E12` the other way round —
+so no rule written in digits reproduces it, and this build reads to fifteen digits **below
+`10^11` only** (`math::shown`). Two divergences are left named rather than chased:
+`ROUNDUP(8.06-8;2)` is 0.06 there, a coarser tidy than fifteen digits of
+`6.0000000000000497` (`8.06-8=0.06` is still FALSE there, so it is not the subtraction), and
+a fixture written with regular expressions on (`SEARCH("Gewinn|Promotion|Replay";…)` in
+LibreOffice's own `search.fods`) reads `|` as a character here, by `wildcard.rs`'s decision.
 
 ---
 
