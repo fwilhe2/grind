@@ -6,12 +6,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # The formula workbench — a formula you can take apart, try and put back
 
-**Status: F0, F1 and F2 done.** F0 is this document and `doc/ods-format.md` §4.2, the
+**Status: F0 to F3 done.** F0 is this document and `doc/ods-format.md` §4.2, the
 measurement of when moving a sub-expression into its own cell changes what a formula means.
 F1 is the trace: `parse::parse_spanned`, `display::parse_display`, `formula::trace`,
 `App::trace` and `grind sheet eval --trace`, held to loop B's corpus by
 `sheet/tests/corpus_trace.rs`. F2 is the *what if*: `trace::Overlay`, `App::overlay` and
-`eval --with`. Nothing from F3 on is built. **Experimental**: it ships behind the palette and the CLI, and it
+`eval --with`. F3 is the layout: `serialize::pretty`, `display::pretty`, `Trace::by_line`
+and `eval --pretty`. Nothing from F4 on is built. **Experimental**: it ships behind the palette and the CLI, and it
 changes no existing verb.
 
 ## 1. What it is
@@ -148,14 +149,28 @@ could recompute, so no dependent can be stale. The cost is that a trace evaluate
 formula's whole precedent cone fresh, which is `preview`'s cost today. Overriding a formula
 cell's value is allowed, since that is what "what if this subtotal were 0" means.
 
-### 3.4 The layout (F3)
+### 3.4 The layout (F3, built)
 
-`display::pretty(canonical, width) -> Vec<Line>`: a call that fits in `width` stays on one
-line, and a call that does not puts each argument on its own line, indented, with the closing
-parenthesis on its own line. Each `Line` carries the node its value belongs to, so a shell
-draws `value_of(line.node)` at the line's end. It is held to two properties: joining the lines
-and reading them back gives the same `Expr` (the round-trip test), and the same input gives the
-same lines.
+`serialize::pretty(expr, width)`, and `display::pretty(text, width)` in front of it. A node
+that fits in `width` at its indent is printed flat by the one printer (`Bare`). A call that
+does not fit puts each argument on its own line, four spaces in, with the closing bracket back
+out. An operator chain breaks *before* each operator, so a line starting `+` or `&` is visibly
+a continuation. Nothing of 16 characters or fewer is broken (`UNBROKEN`), and neither is a
+reference range. Brackets come from the printer's own precedence rule, so a tree nobody
+parsed lays out as itself.
+
+What made this simpler than planned: **§5.14 allows line breaks between tokens**, so the
+laid-out text is still one valid display formula. The workbench traces *it*, and
+`Trace::by_line` gives each line the outermost node that starts on it. There is no second map
+from lines to nodes to keep in step. The one exception: an operator broken over lines does not
+claim its first line, since that line shows only its left operand (`ROUND(` over
+`ROUND(…) & " total"` reads as the `ROUND`). The root is exempt, because the formula's own
+answer belongs on the `=` line. Nodes carry a `trace::Kind` (call, operator, paren, leaf) for
+this and for a shell's drawing.
+
+**Held to the corpus**: every formula laid out at width 40 (6,058 of them are actually broken)
+reads back to the same tree, its spans hold in the laid-out text, and laying it out again
+changes nothing.
 
 ### 3.5 `App::extract` (F4)
 
@@ -283,7 +298,7 @@ three columns stacked), `ui_mac`. Each gets a row in `doc/feature-matrix.md`.
 | **F0** | This document and `doc/ods-format.md` §4.2 | done, 2026-10-12 |
 | **F1** | Spans, `App::trace`, `eval --trace` | done, 2026-10-12: every span over loop B's corpus, the root against the evaluator, and a branch not taken never evaluated |
 | **F2** | `Overlay`, `--with` | done, 2026-10-12: an override two formulas away, into a range, on a formula cell and as a blank; the CLI's file unchanged |
-| **F3** | `display::pretty`, `--pretty` | Round trip over loop B's corpus: the joined lines parse to the same tree |
+| **F3** | `display::pretty`, `--pretty` | done, 2026-10-12: the corpus round trip, its spans and its idempotence |
 | **F4** | `App::extract`, `grind sheet extract`, every row of §5 | Each §4.2 row is a test that is refused, warned or allowed as §5 says. Undo restores the bytes. Loop C holds an extracted document |
 | **F5** | The GTK pane, examples moved into a shared table | Rendered by `--render-to`, and the palette and context-menu entries walked by `chrome_tests` |
 | **F6** | The other clients | A row in `doc/feature-matrix.md` filled for each |

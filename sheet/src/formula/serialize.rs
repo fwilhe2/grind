@@ -213,6 +213,109 @@ fn cell_ref(f: &mut fmt::Formatter<'_>, c: &CellRef, bare: bool) -> fmt::Result 
     Ok(())
 }
 
+/// How far each level of a laid-out formula is indented ([`pretty`]).
+pub const INDENT: usize = 4;
+
+/// What is never broken, however narrow the width: `B2*C2` over two lines is harder to read
+/// than over one, and a deep enough formula would otherwise be broken down to its leaves.
+pub const UNBROKEN: usize = 16;
+
+/// An expression in display form laid over several lines, nesting indented, for a person to
+/// read — the workbench's layout (`doc/formula-workbench.md` §3.4).
+///
+/// The result is still **one formula**: §5.14 allows whitespace, line breaks included,
+/// between any two tokens, so these lines read back (through `formula::display`) to exactly
+/// the tree they were printed from, and a trace of them gives each line its node. Nothing
+/// here is ever stored; a cell holds the one-line form.
+///
+/// The rule, applied from the outside in: whatever fits in `width` columns at its indent is
+/// printed flat by [`Bare`]. A call that does not fit puts each argument on a line of its
+/// own, one level in, with the closing bracket back out; an operator chain breaks *before*
+/// each operator, so a line that starts with `+` is visibly a continuation; brackets open
+/// and close on lines of their own. A reference range is never broken, and neither is
+/// anything with nothing inside it to break at.
+pub fn pretty(e: &Expr, width: usize) -> String {
+    lines(e, width).join("\n")
+}
+
+fn lines(e: &Expr, width: usize) -> Vec<String> {
+    let flat = Bare(e).to_string();
+    if flat.chars().count() <= width.max(UNBROKEN) {
+        return vec![flat];
+    }
+    let inner = width.saturating_sub(INDENT);
+    match e {
+        Expr::Call { name, args } if !args.is_empty() => {
+            let mut out = vec![format!("{name}(")];
+            for (i, arg) in args.iter().enumerate() {
+                let mut arg = lines(arg, inner);
+                if i + 1 < args.len() {
+                    arg.last_mut().expect("never empty").push(';');
+                }
+                out.extend(indented(arg, INDENT));
+            }
+            out.push(")".to_owned());
+            out
+        }
+        Expr::Paren(inner_expr) => bracketed(lines(inner_expr, inner)),
+        // The range operator keeps its operands' brackets in display form (see `expr`), so
+        // it is printed whole rather than taken apart.
+        Expr::Binary(op, lhs, rhs) if *op != Op::Range => {
+            let bp = infix_bp(*op);
+            let mut out = child_lines(lhs, bp, width);
+            let lead = format!("{} ", op.text());
+            let rhs = child_lines(rhs, bp + 1, width.saturating_sub(lead.len()));
+            out.extend(led(&lead, rhs));
+            out
+        }
+        Expr::Prefix(op, operand) => led(op.text(), child_lines(operand, PREFIX_BP, width)),
+        Expr::Postfix(op, operand) => {
+            let mut out = child_lines(operand, POSTFIX_BP, width);
+            out.last_mut().expect("never empty").push_str(op.text());
+            out
+        }
+        _ => vec![flat],
+    }
+}
+
+/// [`lines`] for the child of something binding at `parent_bp`, bracketed by [`child`]'s
+/// rule — the one rule, so a laid-out formula cannot re-associate where a flat one would not.
+fn child_lines(e: &Expr, parent_bp: u8, width: usize) -> Vec<String> {
+    match binding_power(e) < parent_bp {
+        true => {
+            let flat = format!("({})", Bare(e));
+            match flat.chars().count() <= width.max(UNBROKEN) {
+                true => vec![flat],
+                false => bracketed(lines(e, width.saturating_sub(INDENT))),
+            }
+        }
+        false => lines(e, width),
+    }
+}
+
+fn bracketed(inner: Vec<String>) -> Vec<String> {
+    let mut out = vec!["(".to_owned()];
+    out.extend(indented(inner, INDENT));
+    out.push(")".to_owned());
+    out
+}
+
+/// `lead` in front of the first line, and the rest lined up under what follows it.
+fn led(lead: &str, lines: Vec<String>) -> Vec<String> {
+    let pad = lead.chars().count();
+    let mut lines = lines.into_iter();
+    let first = format!("{lead}{}", lines.next().unwrap_or_default());
+    std::iter::once(first)
+        .chain(indented(lines.collect(), pad))
+        .collect()
+}
+
+fn indented(lines: Vec<String>, by: usize) -> impl Iterator<Item = String> {
+    lines
+        .into_iter()
+        .map(move |line| format!("{}{line}", " ".repeat(by)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::lex::Op;
@@ -269,6 +372,64 @@ mod tests {
         assert_eq!(Expr::Name("Total".into()).to_string(), "Total");
         assert_eq!(Expr::Name("year end".into()).to_string(), "$$'year end'");
         assert_eq!(round_trip("=$$'year end'"), "$$'year end'");
+    }
+
+    fn laid_out(formula: &str, width: usize) -> String {
+        pretty(&parse(formula).expect(formula), width)
+    }
+
+    #[test]
+    fn what_fits_stays_on_one_line() {
+        assert_eq!(laid_out("=SUM([.A1:.A3])*2", 40), "SUM(A1:A3)*2");
+    }
+
+    #[test]
+    fn a_call_that_does_not_fit_puts_each_argument_on_its_own_line() {
+        assert_eq!(
+            laid_out("=IF([.B2]>0;ROUND([.B2]*[.C2];2);0)", 20),
+            "IF(\n    B2>0;\n    ROUND(B2*C2;2);\n    0\n)"
+        );
+        assert_eq!(
+            laid_out("=IF([.B2]>0;ROUND([.B2]*[.C2]*[.D2]*1.19;2);0)", 20),
+            "IF(\n    B2>0;\n    ROUND(\n        B2*C2*D2*1.19;\n        2\n    );\n    0\n)"
+        );
+    }
+
+    #[test]
+    fn a_chain_breaks_before_its_operators() {
+        assert_eq!(
+            laid_out("=SUM([.A1:.A9])+AVERAGE([.B1:.B9])-MAX([.C1:.C9])", 20),
+            "SUM(A1:A9)\n+ AVERAGE(B1:B9)\n- MAX(C1:C9)"
+        );
+    }
+
+    #[test]
+    fn brackets_the_printer_would_add_are_added_here_too() {
+        // A tree nobody parsed: (x+2)*3 has no Paren node, and must not print as x+2*3.
+        let call = |name: &str| Expr::Call {
+            name: name.into(),
+            args: vec![Expr::Number(1.0)],
+        };
+        let sum = Expr::Binary(
+            Op::Add,
+            Box::new(call("SOMEWHATLONGNAME")),
+            Box::new(call("ANOTHERLONGNAME")),
+        );
+        let product = Expr::Binary(Op::Mul, Box::new(sum), Box::new(Expr::Number(3.0)));
+        assert_eq!(
+            pretty(&product, 26),
+            "(\n    SOMEWHATLONGNAME(1)\n    + ANOTHERLONGNAME(1)\n)\n* 3"
+        );
+    }
+
+    #[test]
+    fn a_short_node_a_range_and_a_leaf_are_never_broken() {
+        assert_eq!(laid_out("=ROUND([.B2]*[.C2];2)", 1), "ROUND(B2*C2;2)");
+        assert_eq!(laid_out("=[Data.A1:.B2]", 3), "Data.A1:B2");
+        assert_eq!(
+            laid_out("=\"a long piece of text\"", 3),
+            "\"a long piece of text\""
+        );
     }
 
     #[test]

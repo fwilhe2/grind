@@ -384,6 +384,8 @@ say "eval --trace: the same formula taken apart, every sub-expression and what i
 sheet eval "$book" B25 '=IF([.B2]>0;SUM([.B2:.B4])*2;0)' --trace
 say "eval --with: what if a cell held something else — for this evaluation only"
 sheet eval "$book" B25 '=IF([.B2]>0;SUM([.B2:.B4])*2;0)' --with B2=-1 --trace
+say "eval --pretty: a long formula laid over lines, each line's answer beside it"
+sheet eval "$book" B25 '=IF([.B2]>0;ROUND(SUM([.B2:.B4])*1.19;2)&" incl. VAT";"nothing")' --pretty --width 30 --trace
 
 say "calculations: everything the document computes, and what it calls to do it"
 sheet calculations "$book"

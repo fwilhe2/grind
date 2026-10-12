@@ -4,13 +4,15 @@
 
 //! The workbench's trace, held to loop B's corpus (`doc/formula-workbench.md` F1).
 //!
-//! Two claims, over every formula the world wrote that survives display form:
+//! Three claims, over every formula the world wrote that survives display form:
 //!
 //! 1. **The spans are right.** Every node's text, cut out of the display formula and parsed
 //!    on its own, is that node's subtree exactly — so selecting a node in the workbench
 //!    selects the text that means it, and nothing else.
 //! 2. **The trace is the evaluator.** Its root is what the engine computes for the cell, so
 //!    the workbench can never show one answer and the cell hold another.
+//! 3. **The layout is the same formula.** `display::pretty` at a narrow width reads back to
+//!    the same tree, its spans hold, and laying it out again is a no-op (F3).
 //!
 //! Point it at a LibreOffice checkout, as for loop B:
 //!
@@ -19,7 +21,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use grind_sheet::formula::display::{from_display, parse_display, to_display};
+use grind_sheet::formula::display::{from_display, parse_display, pretty, to_display};
 use grind_sheet::formula::eval::{Address, Engine};
 use grind_sheet::formula::parse::{Expr, Shape, parse};
 use grind_sheet::formula::trace::trace;
@@ -27,6 +29,10 @@ use grind_sheet::formula::trace::trace;
 const DEFAULT_CHECKOUT: &str = "/home/florian/code/github.com/LibreOffice/core";
 const CORPUS: &str = "sc/qa/unit/data";
 const DIRS: [&str; 3] = ["functions", "ods", "fods"];
+
+/// Narrow enough that a good share of the corpus is broken over lines — the layout has to be
+/// exercised, not merely asked to print what already fits.
+const LAYOUT_WIDTH: usize = 40;
 
 /// The functions whose answer changes between two evaluations of the same formula — the
 /// clock and the dice (§6.10.15, §6.10.19, §6.16.50, §6.16.51). A document that calls one
@@ -119,6 +125,7 @@ fn every_corpus_formula_traces_with_true_spans_and_the_evaluators_answer() {
     assert!(!files.is_empty(), "corpus at {} is empty", root.display());
 
     let (mut spanned, mut evaluated, mut excused) = (0usize, 0usize, 0usize);
+    let mut laid_out = 0usize;
     let mut failures: BTreeMap<String, (usize, Vec<String>)> = BTreeMap::new();
     let mut fail = |kind: &str, example: String| {
         let entry = failures.entry(kind.to_owned()).or_default();
@@ -158,6 +165,26 @@ fn every_corpus_formula_traces_with_true_spans_and_the_evaluators_answer() {
                     Ok((again, _)) => fail("parsed differently", format!("{display} -> {again}")),
                     Err(e) => fail("did not parse", format!("{display}: {e}")),
                 }
+                // Claim 3: the layout is the same formula, its spans hold in it, and laying
+                // it out again changes nothing.
+                match pretty(&display, LAYOUT_WIDTH) {
+                    Ok(laid) => match parse_display(&laid) {
+                        Ok((again, shape)) if again == expr => {
+                            if let Err(why) = spans_hold(&laid, &expr, &shape) {
+                                fail("a laid-out span is wrong", format!("{laid}: {why}"));
+                            }
+                            if pretty(&laid, LAYOUT_WIDTH).as_deref() != Ok(laid.as_str()) {
+                                fail("laying out twice differs", laid.clone());
+                            }
+                            laid_out += usize::from(laid.contains('\n'));
+                        }
+                        Ok((again, _)) => {
+                            fail("laid out differently", format!("{laid} -> {again}"))
+                        }
+                        Err(e) => fail("layout did not parse", format!("{laid}: {e}")),
+                    },
+                    Err(e) => fail("did not lay out", format!("{display}: {e}")),
+                }
                 if budget == 0 {
                     continue;
                 }
@@ -180,8 +207,9 @@ fn every_corpus_formula_traces_with_true_spans_and_the_evaluators_answer() {
 
     let failed: usize = failures.values().map(|(n, _)| n).sum();
     eprintln!(
-        "trace: {spanned} formulas spanned, {evaluated} evaluated ({excused} differing in a \
-         document with a volatile function), in {} documents; {failed} failed",
+        "trace: {spanned} formulas spanned ({laid_out} broken over lines at width \
+         {LAYOUT_WIDTH}), {evaluated} evaluated ({excused} differing in a document with a \
+         volatile function), in {} documents; {failed} failed",
         files.len()
     );
     for (kind, (count, examples)) in &failures {

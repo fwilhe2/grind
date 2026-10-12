@@ -242,6 +242,42 @@ fn eval_trace_takes_a_formula_apart_and_writes_nothing() {
     );
     assert_eq!(std::fs::read(&file).unwrap(), before, "nothing written");
 
+    // --pretty lays it out over lines, and with --trace each line has its answer.
+    let long = "=IF([.A2]=0;ROUND(([.A1]+[.B1])*1.19;2)&\" total\";[.A1]/[.A2])";
+    assert_eq!(
+        ok(&["eval", &s(&file), "D5", long, "--pretty", "--width", "28"]),
+        "=IF(\n    A2=0;\n    ROUND((A1+B1)*1.19;2)\n    & \" total\";\n    A1/A2\n)\n"
+    );
+    let laid = ok(&[
+        "eval",
+        &s(&file),
+        "D5",
+        long,
+        "--pretty",
+        "--width",
+        "28",
+        "--trace",
+    ]);
+    let answer = |start: &str| {
+        let line = laid
+            .lines()
+            .find(|l| l.trim_start().starts_with(start))
+            .unwrap();
+        line.rsplit("  ").next().unwrap().trim().to_owned()
+    };
+    assert_eq!(answer("=IF("), "\"8.33 total\"");
+    assert_eq!(
+        answer("ROUND("),
+        "8.33",
+        "the ROUND, not the chain it starts"
+    );
+    assert_eq!(answer("A1/A2"), "not evaluated");
+    assert_eq!(
+        laid.lines().last(),
+        Some(")"),
+        "a closing bracket has no answer"
+    );
+
     let omitted = ok(&["eval", &s(&file), "D5", "=IF(TRUE();;1)", "--trace"]);
     assert!(
         omitted.lines().any(|l| l.trim() == "(omitted)"),

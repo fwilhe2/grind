@@ -151,6 +151,15 @@ pub fn from_display(text: &str) -> Result<String, DisplayError> {
     Ok(format!("={expr}"))
 }
 
+/// A display-form formula laid over several lines for reading — [`super::serialize::pretty`]
+/// behind its `=`. Still one formula: [`from_display`] reads it back to the same tree, so a
+/// workbench can trace the laid-out text itself and give every line its own answer
+/// ([`super::trace::Trace::by_line`]).
+pub fn pretty(text: &str, width: usize) -> Result<String, DisplayError> {
+    let (expr, _) = parse_display(text)?;
+    Ok(format!("={}", super::serialize::pretty(&expr, width)))
+}
+
 /// A display-form formula parsed, with every node's **byte** range in `text` — the
 /// workbench's tree (`doc/formula-workbench.md` §3.1), and [`from_display`]'s one pass with
 /// the shape kept.

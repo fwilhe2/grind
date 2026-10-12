@@ -2285,6 +2285,13 @@ enum Command {
             allow_hyphen_values = true
         )]
         with: Vec<String>,
+        /// Lay the formula out over several lines, nesting indented, in display syntax; with
+        /// --trace, each line's answer beside it. Read-only: nothing stored is laid out
+        #[arg(long)]
+        pretty: bool,
+        /// The width --pretty lays out to, in characters
+        #[arg(long, default_value_t = 60, requires = "pretty")]
+        width: usize,
     },
 
     /// Clear a cell or a range, leaving it empty
@@ -3718,6 +3725,8 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             formula,
             trace,
             with,
+            pretty,
+            width,
         } => {
             let app = load(file, cli)?;
             let (sheet, pos, _) = single(&app, address)?;
@@ -3731,6 +3740,15 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 entries.push((sheet, pos, value));
             }
             let overlay = app.overlay(&entries).say()?;
+            if *pretty {
+                let shown = grind_sheet::formula::display::to_display(formula).say()?;
+                let laid = grind_sheet::formula::display::pretty(&shown, *width).say()?;
+                let lines = match trace {
+                    true => laid_out(&app, sheet, pos, &laid, &overlay)?,
+                    false => laid.lines().map(str::to_owned).collect(),
+                };
+                return Ok(Report::Text(TextReport { lines }));
+            }
             if *trace {
                 return Ok(Report::Text(TextReport {
                     lines: traced(&app, sheet, pos, formula, &overlay)?,
@@ -5023,6 +5041,35 @@ fn split_series(series: &[String]) -> Vec<(String, Option<String>)> {
 ///
 /// The CLI's own failures are already strings — a bad flag, a file that exists — so this is
 /// the one adapter between the two, rather than a closure at every call site.
+/// `eval --pretty --trace`: the laid-out formula with each line's answer in a column — the
+/// outermost node starting on that line (`Trace::by_line`), and nothing for a closing bracket.
+fn laid_out(
+    app: &App,
+    sheet: usize,
+    pos: Pos,
+    laid: &str,
+    overlay: &grind_sheet::formula::trace::Overlay,
+) -> Result<Vec<String>, String> {
+    let trace = app.trace(sheet, pos, laid, overlay).say()?;
+    let sheets: Vec<String> = (0..).map_while(|i| app.sheet_name(i).ok()).collect();
+    let width = laid.lines().map(|l| l.chars().count()).max().unwrap_or(0);
+    Ok(laid
+        .lines()
+        .zip(trace.by_line(laid))
+        .map(|(line, node)| match node {
+            Some(node) => {
+                let pad = width - line.chars().count();
+                format!(
+                    "{line}{}  {}",
+                    " ".repeat(pad),
+                    node.came_to.spelled(&sheets, sheet)
+                )
+            }
+            None => line.to_owned(),
+        })
+        .collect())
+}
+
 /// `eval --trace`: the formula in display syntax, one sub-expression a line indented by its
 /// depth, and each one's answer in a column — `App::trace`, read top to bottom.
 fn traced(

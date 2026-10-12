@@ -35,9 +35,24 @@ pub struct Node {
     /// **Byte** range in the display text that was traced — what to highlight.
     pub range: Range<usize>,
     pub came_to: CameTo,
+    pub kind: Kind,
     /// In the order the expression has them: a call's arguments, a sign's or a bracket's
     /// operand, a binary operator's two sides.
     pub children: Vec<Node>,
+}
+
+/// What sort of node it is — what a shell needs to draw it and [`Trace::by_line`] to place
+/// its answer, without the expression tree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    /// A function call.
+    Call,
+    /// An operator and its operands — `A1*2`, `-A1`, `A1%`.
+    Operator,
+    /// Parentheses a person wrote.
+    Paren,
+    /// A constant, a reference, a name, or a parameter left empty.
+    Leaf,
 }
 
 /// What a node came to.
@@ -67,6 +82,38 @@ impl Trace {
         let mut out = Vec::new();
         walk(&self.root, 0, &mut out);
         out
+    }
+
+    /// For each line of `text` — the display text that was traced, typically laid out by
+    /// [`display::pretty`] — the outermost node that **starts** on it, or `None` for a line
+    /// that starts none (a closing bracket). So the first line carries the whole formula's
+    /// answer, `ROUND(` the call's, and `+ X` the answer of `X`.
+    ///
+    /// One exception: an operator broken over several lines does not claim its first line,
+    /// because that line shows only its left operand — `ROUND(` over `ROUND(…) & " total"`
+    /// must read as the `ROUND`. Its answer is its parent's to show. The root is exempt: the
+    /// formula's own answer belongs on the line that starts with `=`.
+    pub fn by_line<'a>(&'a self, text: &str) -> Vec<Option<&'a Node>> {
+        let mut starts = Vec::new();
+        let mut at = 0;
+        for line in text.split('\n') {
+            starts.push(at..at + line.len());
+            at += line.len() + 1;
+        }
+        let rows = self.rows();
+        starts
+            .into_iter()
+            .map(|line| {
+                rows.iter()
+                    .map(|(_, node)| *node)
+                    .filter(|node| !node.range.is_empty() && line.contains(&node.range.start))
+                    .find(|node| {
+                        std::ptr::eq(*node, &self.root)
+                            || node.kind != Kind::Operator
+                            || node.range.end <= line.end
+                    })
+            })
+            .collect()
     }
 }
 
@@ -161,6 +208,12 @@ fn node(
             None => CameTo::Range(area.clone()),
         },
     };
+    let kind = match expr {
+        Expr::Call { .. } => Kind::Call,
+        Expr::Prefix(..) | Expr::Postfix(..) | Expr::Binary(..) => Kind::Operator,
+        Expr::Paren(_) => Kind::Paren,
+        _ => Kind::Leaf,
+    };
     let children = children(expr)
         .into_iter()
         .zip(&shape.children)
@@ -169,6 +222,7 @@ fn node(
     Node {
         range: shape.range.clone(),
         came_to,
+        kind,
         children,
     }
 }
@@ -418,6 +472,51 @@ mod tests {
         assert_eq!(
             traced_with("=SUM(B1:B3)", &overlay).value,
             Value::Number(6.0)
+        );
+    }
+
+    #[test]
+    fn a_laid_out_formula_gives_each_line_its_answer() {
+        let text = display::pretty("=IF(A2=0;ROUND(SUM(B1:B3)*A1*1.19;2);A1/A2)", 28).unwrap();
+        assert_eq!(
+            text,
+            "=IF(\n    A2=0;\n    ROUND(\n        SUM(B1:B3)*A1*1.19;\n        2\n    );\n    A1/A2\n)"
+        );
+        let t = traced(&text);
+        let answers: Vec<String> = t
+            .by_line(&text)
+            .into_iter()
+            .map(|node| node.map_or(String::new(), |n| n.came_to.spelled(&[], 0)))
+            .collect();
+        assert_eq!(
+            answers,
+            [
+                "28.56",
+                "TRUE",
+                "28.56",
+                "28.56",
+                "2",
+                "",
+                "not evaluated",
+                ""
+            ]
+        );
+    }
+
+    #[test]
+    fn a_broken_operator_leaves_its_line_to_the_operand_on_it() {
+        let text = display::pretty("=IF(1;ROUND(SUM(B1:B3)*A1*1.19;2)&\" total\";0)", 28).unwrap();
+        assert_eq!(
+            text,
+            "=IF(\n    1;\n    ROUND(\n        SUM(B1:B3)*A1*1.19;\n        2\n    )\n    & \" total\";\n    0\n)"
+        );
+        let t = traced(&text);
+        let lines = t.by_line(&text);
+        assert_eq!(lines[2].unwrap().kind, Kind::Call, "ROUND( is the ROUND");
+        assert_eq!(lines[2].unwrap().came_to, n(28.56));
+        assert_eq!(
+            lines[0].unwrap().came_to,
+            CameTo::Value(Value::Text("28.56 total".into()))
         );
     }
 
