@@ -434,6 +434,61 @@ so no rule written in digits reproduces it, and this build reads to fifteen digi
 a fixture written with regular expressions on (`SEARCH("Gewinn|Promotion|Replay";…)` in
 LibreOffice's own `search.fods`) reads `|` as a character here, by `wildcard.rs`'s decision.
 
+### 4.2 Moving a sub-expression into its own cell — `MEASURED` (2026-10-12, LibreOffice 26.8.1.1)
+
+`doc/formula-workbench.md`'s *extract* replaces a sub-expression `S` of a formula `W(S)` with a
+reference to a new cell holding `=S`. This measures when `W([.helper])` means something other
+than `W(S)`. Method as §4.1 (one flat document, no cached values, wildcards on): each row holds
+`W(S)` inline, the helper `=S` in the same row, `W` over that helper, and `W` over a second
+helper a hundred rows below; the same file recalculated by this build beside it. `J1` is
+empty, `H1:H40` holds 10, 20, … 400.
+
+| `S` | `W` | inline | helper shows | `W(helper)` | this build, `W(helper)` |
+|---|---|---|---|---|---|
+| `[.J1]`, `IF(1;[.J1];0)` (empty) | `ISBLANK(S)` | TRUE | 0 | FALSE | FALSE |
+| ″ | `COUNTBLANK([.J1])` | 1 | 0 | 0 | 0 |
+| ″ | `S&"x"` | `x` | 0 | `0x` | `0x` |
+| ″ | `COUNT(S)`, `COUNTA(S)` | 0, 0 | 0 | 1, 1 | 1, 1 |
+| ″ | `S=""` | TRUE | 0 | **TRUE** | FALSE |
+| ″ | `ISNUMBER(S)` | FALSE | 0 | **FALSE** | TRUE |
+| `1>0` | `SUM(S)`, `COUNT(S)` | 1, 1 | TRUE | 1, 1 | **0, 0** |
+| `"3"`, `"3"&""` | `SUM(S)` | `#VALUE!` | `3` | 0 | 0 (inline: **3**) |
+| `"3"` | `AVERAGE(S;1)`, `COUNT(S)` | `#VALUE!`, 1 | `3` | 1, 0 | 1, 0 (inline: **2**, 1) |
+| `"3"` | `S+0` | 3 | `3` | 3 | 3 |
+| `""` | `ISBLANK(S)`, `COUNTA(S)` | FALSE, 1 | (no value type) | FALSE, 1 | FALSE, 1 |
+| `1/0`, `NA()` | `IFERROR(S;5)`, `ISNA(S)` | 5, TRUE | the error | 5, TRUE | 5, TRUE |
+| `[.H1:.H40]` (at row 22) | `S*2` | 440 | 220 | 440; far row `#VALUE!` | the same |
+| ″ | `SUM(S)`, `ROWS(S)` | 8200, 40 | 230 | 230, 1; far row `#VALUE!`, 1 | the same |
+| `ROW()` (at row 25) | `S*1` | 25 | 25 | 25; far row 125 | the same |
+| `DATE(2026;1;1)` | `S&""` | `46023` | a *date* | `46023` | `46023` (helper a plain number) |
+
+What it settles, each one also the spec's reading:
+
+- **An empty value does not survive a cell.** A formula whose result is an empty cell's value
+  stores 0, and every function that can tell empty from 0 changes its answer (§4.7). Both
+  implementations agree on six of the eight; the two they do not are below.
+- **A value given directly is not a value read through a reference** for a sequence parameter:
+  §6.3.7 converts a direct Text or Logical as a Number, and drops a referenced Text — and a
+  referenced Logical too, where Logical is a distinct type, as in this build (§8.2). So `"3"`
+  and `1>0` change meaning when moved out of `SUM`/`COUNT`/`AVERAGE`'s arguments, in both
+  implementations for text, and in this build for logicals.
+- **A range is not a value.** In a cell it is an implied intersection (§6.3.3) — the same row
+  gives one element and any other row `#VALUE!` — and as an argument that wants a reference
+  (`SUM`, `ROWS`) it is lost even in the same row.
+- **A position-dependent call moves with its cell**: `ROW()` with no argument answers the
+  helper's row. A relative *reference* does not, because `formula::shift` re-aims it.
+- Errors move unchanged, and so does a number (a helper's cached value is the same double).
+
+Found in passing, not decided here and recorded so they are not lost:
+
+- LibreOffice gives a formula cell whose result is empty a third state: it *shows* 0 and
+  `ISBLANK` is FALSE, but `=""` is TRUE and `ISNUMBER` FALSE. This build stores 0 and reads it
+  as 0.
+- `COUNT(IF(1;[.J1];0))` is 0 there and 1 here: an empty value passed directly.
+- `0.1*3=0.3` is TRUE there (an approximate equality) and FALSE here.
+- `SUM` over a sequence with no numbers is written by this build as `office:value="-0"`
+  (Rust's `f64` sum starts at −0.0); it displays as 0.
+
 ---
 
 ## 5. Styles and number formats **[ODS]**
