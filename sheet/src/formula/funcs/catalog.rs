@@ -423,6 +423,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.13.25",
     },
     FuncInfo {
+        name: "LARGE",
+        signature: "LARGE( NumberSequenceList List ; Number|Array N )",
+        brief: "Finds the nth largest value in a list.",
+        section: "6.18.40",
+    },
+    FuncInfo {
         name: "LEFT",
         signature: "LEFT( Text T [ ; Integer Length ] )",
         brief: "Return a selected number of text characters from the left.",
@@ -469,6 +475,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "MAX( { NumberSequenceList N } + )",
         brief: "Return the maximum from a set of numbers.",
         section: "6.18.45",
+    },
+    FuncInfo {
+        name: "MEDIAN",
+        signature: "MEDIAN( { NumberSequenceList X } + )",
+        brief: "Returns the median (middle) value in the list.",
+        section: "6.18.47",
     },
     FuncInfo {
         name: "MID",
@@ -603,6 +615,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.16.49",
     },
     FuncInfo {
+        name: "RANK",
+        signature: "RANK( Number Value ; NumberSequenceList Data [ ; Number Order = 0 ] )",
+        brief: "Returns the rank of a number in a list of numbers.",
+        section: "6.18.65",
+    },
+    FuncInfo {
         name: "RATE",
         signature: "RATE( Number Nper ; Number Payment ; Number Pv [ ; [ Number Fv = 0 ] [ ; [ Number PayType = 0 ] [ ; Number Guess = 0.1 ] ] ] )",
         brief: "Compute the interest rate per period of an investment.",
@@ -687,6 +705,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "SLN( Number Cost ; Number Salvage ; Number LifeTime )",
         brief: "Compute the amount of depreciation at a given period of time using the straight-line depreciation method.",
         section: "6.12.45",
+    },
+    FuncInfo {
+        name: "SMALL",
+        signature: "SMALL( NumberSequenceList List ; Integer|Array N )",
+        brief: "Finds the nth smallest value in a list.",
+        section: "6.18.70",
     },
     FuncInfo {
         name: "SQRT",

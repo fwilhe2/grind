@@ -123,13 +123,17 @@ const BEYOND: &[&str] = &[
     "HYPERLINK",
     "IFERROR",
     "IFNA",
+    "LARGE",
+    "MEDIAN",
     "MROUND",
     "QUOTIENT",
+    "RANK",
     "ROUNDDOWN",
     "ROUNDUP",
     "ROW",
     "SEARCH",
     "SIGN",
+    "SMALL",
 ];
 
 const NAMES: &[&str] = &[
@@ -204,6 +208,10 @@ const NAMES: &[&str] = &[
     "STDEVP",
     "VAR",
     "VARP",
+    "LARGE",
+    "MEDIAN",
+    "RANK",
+    "SMALL",
     // text (§6.20)
     "EXACT",
     "FIND",

@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! §6.18 Statistical Functions — the eight in the Small Group, minus `AVERAGEIF` (which
-//! needs §4.11.8 Criterion matching, still unbuilt).
+//! §6.18 Statistical Functions — the eight in the Small Group (`AVERAGEIF`'s matching lives
+//! in `criterion.rs`), and `LARGE`, `SMALL`, `MEDIAN` and `RANK` from beyond it.
 //!
 //! All of them take a NumberSequence, so all of them inherit §6.3.7's filtering: text and
 //! empty cells inside a range are *skipped*, not counted as zero. That is the difference
@@ -25,6 +25,10 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "VARP" => moment(args, false, false),
         "STDEV" => moment(args, true, true),
         "STDEVP" => moment(args, false, true),
+        "LARGE" => nth(args, true),
+        "SMALL" => nth(args, false),
+        "MEDIAN" => median(args),
+        "RANK" => rank(args),
         _ => return None,
     })
 }
@@ -74,4 +78,76 @@ fn moment(args: &mut Args, sample: bool, root: bool) -> Answer {
     let mean = numbers.iter().sum::<f64>() / n;
     let variance = numbers.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / divisor;
     Ok(Value::number(if root { variance.sqrt() } else { variance }))
+}
+
+/// The numbers of a sequence, in ascending order — what `LARGE`, `SMALL` and `MEDIAN` all
+/// rank. "Nothing to rank" is `#VALUE!` for each of them, as measured.
+fn ranked(numbers: Vec<f64>) -> Result<Vec<f64>, FormulaError> {
+    if numbers.is_empty() {
+        return Err(FormulaError::Value);
+    }
+    let mut numbers = numbers;
+    numbers.sort_by(f64::total_cmp);
+    Ok(numbers)
+}
+
+/// §6.18.40 `LARGE( List ; N )` and §6.18.70 `SMALL( List ; N )`.
+///
+/// The two constraints are not symmetrical — `ROUNDUP(N;0) = N` for `LARGE`,
+/// `ROUNDDOWN(N;0) = N` for `SMALL` — and the oracle applies each as the rounding it names,
+/// so `LARGE(…;1.5)` is the second largest and `SMALL(…;1.9)` the smallest. The array form
+/// of `N` stays out with the rest of arrays.
+fn nth(args: &mut Args, largest: bool) -> Answer {
+    args.arity(2..=2)?;
+    if args.omitted(1) {
+        return Err(FormulaError::Value);
+    }
+    let numbers = ranked(args.numbers_range(0..1)?)?;
+    let n = args.number(1)?;
+    let n = if largest { n.ceil() } else { n.floor() };
+    if n < 1.0 || n > numbers.len() as f64 {
+        return Err(FormulaError::Value);
+    }
+    let i = n as usize - 1;
+    Ok(Value::Number(if largest {
+        numbers[numbers.len() - 1 - i]
+    } else {
+        numbers[i]
+    }))
+}
+
+/// §6.18.47 `MEDIAN`: the middle number, or the mean of the middle two.
+fn median(args: &mut Args) -> Answer {
+    args.arity(1..)?;
+    let numbers = ranked(args.numbers()?)?;
+    let half = numbers.len() / 2;
+    Ok(Value::number(if numbers.len() % 2 == 1 {
+        numbers[half]
+    } else {
+        (numbers[half - 1] + numbers[half]) / 2.0
+    }))
+}
+
+/// §6.18.65 `RANK( Value ; Data [ ; Order = 0 ] )`: one plus how many numbers come before
+/// `Value` — larger ones by default, smaller ones for any non-zero `Order` — so equal values
+/// share a rank and the next one skips past them.
+///
+/// "Value shall exist in Data": a value that does not is `#N/A`, compared exactly, while a
+/// `Data` with no numbers in it at all is `#VALUE!` — two different errors, both measured.
+fn rank(args: &mut Args) -> Answer {
+    args.arity(2..=3)?;
+    let value = args.number(0)?;
+    let data = args.numbers_range(1..2)?;
+    let ascending = args.len() > 2 && !args.omitted(2) && args.number(2)? != 0.0;
+    if data.is_empty() {
+        return Err(FormulaError::Value);
+    }
+    if !data.contains(&value) {
+        return Err(FormulaError::NA);
+    }
+    let ahead = data
+        .iter()
+        .filter(|&&x| if ascending { x < value } else { x > value })
+        .count();
+    Ok(Value::number(ahead as f64 + 1.0))
 }

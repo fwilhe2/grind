@@ -200,6 +200,10 @@ by that evidence. It recommends nothing on its own; an entry here still needs it
 - `ROUNDUP` — §6.17.7
 - `ROUNDDOWN` — §6.17.6
 - `MROUND` — §6.17.4
+- `LARGE` — §6.18.40
+- `SMALL` — §6.18.70
+- `MEDIAN` — §6.18.47
+- `RANK` — §6.18.65
 
   **Evidence:** `doc/function-coverage.md` §3 and §4's Tier 1 — the classic band every corpus
   calls. Measured over LibreOffice's test documents, a greedy pass adding one function at a

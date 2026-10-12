@@ -404,6 +404,10 @@ table:use-regular-expressions="false"/>` — the reading this build gives every 
 | `MROUND(15.5;)`, `MROUND(;3)`, `QUOTIENT(7;)`, `IFERROR(;"A")`, `IFNA(;"A")` | `Err:502`, `Err:518` | no defaults | `#VALUE!`: a required parameter left empty is not a zero |
 | `IFNA(NA();)`, `IFERROR(1;)` | 0, 1 | silent | an empty Alternative is 0, as an empty `IF` branch is |
 | `ROUNDUP(8.234567890134;11)` | 8.23456789013 | "round away from zero" | **the spec** (and Excel): 8.23456789014 |
+| `LARGE(…;1.5)`, `LARGE(…;0.2)`, `SMALL(…;1.9)` | 2nd largest, largest, smallest | `ROUNDUP(N;0)=N`, `ROUNDDOWN(N;0)=N` | each constraint applied as the rounding it names: `LARGE` ceils `N`, `SMALL` floors it |
+| `LARGE(…;"2")` | `Err:504` | §6.3.5 converts text | **the spec**: `"2"` is 2 |
+| `MEDIAN`, `LARGE`, `SMALL` over no numbers | `#VALUE!` | silent | `#VALUE!` (not `AVERAGE`'s `#DIV/0!`) |
+| `RANK(7;…)` (absent), `RANK(30;[text only])` | `#N/A`, `#VALUE!` | "an Error" | `#N/A` for a value not in the data, compared exactly; `#VALUE!` for data with no numbers |
 
 **Where the fifteen-digit read stops.** It is not applied to every magnitude. A series
 `10^k·(1−4E−16)`, whose sixteenth digit always rounds the value up to `10^k`, snaps in

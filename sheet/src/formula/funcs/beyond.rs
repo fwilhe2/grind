@@ -282,3 +282,64 @@ fn quotient_truncates_and_sign_is_three_valued() {
     assert_eq!(number("=SIGN([.C9])"), 0.0);
     assert_eq!(error("=SIGN(\"x\")"), FormulaError::Value);
 }
+
+#[test]
+fn large_and_small_count_from_either_end_of_the_numbers() {
+    // §6.18.40, §6.18.70, over B1:B7 = 10, 20, 30, 40, "x", 5, 30 — text is skipped.
+    assert_eq!(number("=LARGE([.B1:.B7];1)"), 40.0);
+    assert_eq!(number("=LARGE([.B1:.B7];2)"), 30.0);
+    assert_eq!(number("=LARGE([.B1:.B7];3)"), 30.0); // a repeated value fills two places
+    assert_eq!(number("=LARGE([.B1:.B7];6)"), 5.0);
+    assert_eq!(number("=SMALL([.B1:.B7];1)"), 5.0);
+    assert_eq!(number("=SMALL([.B1:.B7];2)"), 10.0);
+    assert_eq!(number("=LARGE(5;1)"), 5.0);
+    assert_eq!(number("=LARGE([.B1:.B7];[.B6])"), 10.0); // N from a cell: B6 is 5
+    // A fractional N: "ROUNDUP(N;0) = N" for LARGE and "ROUNDDOWN(N;0) = N" for SMALL are
+    // the two constraints, and the oracle applies each as the rounding it names.
+    assert_eq!(number("=LARGE([.B1:.B7];1.5)"), 30.0);
+    assert_eq!(number("=LARGE([.B1:.B7];0.2)"), 40.0);
+    assert_eq!(number("=SMALL([.B1:.B7];1.9)"), 5.0);
+    assert_eq!(number("=SMALL([.B1:.B7];6.9)"), 40.0);
+    // "If the resulting N is <1 or larger than the size of List, Error is returned."
+    assert_eq!(error("=LARGE([.B1:.B7];7)"), FormulaError::Value);
+    assert_eq!(error("=LARGE([.B1:.B7];0)"), FormulaError::Value);
+    assert_eq!(error("=LARGE([.B1:.B7];-1)"), FormulaError::Value);
+    assert_eq!(error("=SMALL([.B1:.B7];0.5)"), FormulaError::Value);
+    assert_eq!(error("=SMALL([.C1:.C7];1)"), FormulaError::Value); // no numbers at all
+    assert_eq!(error("=LARGE([.B1:.B7])"), FormulaError::Value);
+}
+
+#[test]
+fn median_is_the_middle_number_or_the_mean_of_the_middle_two() {
+    // §6.18.47.
+    assert_eq!(number("=MEDIAN([.B1:.B7])"), 25.0); // 5 10 20 | 30 30 40 → (20+30)/2
+    assert_eq!(number("=MEDIAN(1;2;3;4)"), 2.5);
+    assert_eq!(number("=MEDIAN(3;1;2)"), 2.0);
+    assert_eq!(number("=MEDIAN(5)"), 5.0);
+    assert_eq!(number("=MEDIAN([.B1:.B4];TRUE())"), 20.0); // an argument TRUE is 1
+    assert_eq!(number("=MEDIAN([.B1:.B7];[.B1:.B7])"), 25.0);
+    // Measured: nothing to rank is #VALUE!, not AVERAGE's #DIV/0!.
+    assert_eq!(error("=MEDIAN([.C1:.C7])"), FormulaError::Value);
+}
+
+#[test]
+fn rank_counts_the_numbers_ahead_of_a_value() {
+    // §6.18.65, over the same column: descending by default, ties share a rank.
+    assert_eq!(number("=RANK(40;[.B1:.B7])"), 1.0);
+    assert_eq!(number("=RANK(30;[.B1:.B7])"), 2.0);
+    assert_eq!(number("=RANK(5;[.B1:.B7])"), 6.0);
+    assert_eq!(number("=RANK(5;[.B1:.B7];0)"), 6.0);
+    assert_eq!(number("=RANK(30;[.B1:.B7];)"), 2.0); // an empty Order is 0
+    assert_eq!(number("=RANK(30;[.B1:.B7];1)"), 4.0); // any non-zero order ascends
+    assert_eq!(number("=RANK(10;[.B1:.B7];2)"), 2.0);
+    assert_eq!(number("=RANK(\"10\";[.B1:.B7])"), 5.0); // Value is a Number, converted
+    assert_eq!(number("=RANK([.B1];[.B1:.B7])"), 5.0);
+    assert_eq!(number("=RANK(30;30)"), 1.0);
+    // "If Value does not exist in Data an Error is returned" — #N/A, measured; and an
+    // exact comparison, so a near miss is a miss.
+    assert_eq!(error("=RANK(7;[.B1:.B7])"), FormulaError::NA);
+    assert_eq!(error("=RANK(30.0000000000001;[.B1:.B7])"), FormulaError::NA);
+    // No numbers to rank among is #VALUE! rather than "not found" (measured).
+    assert_eq!(error("=RANK(30;[.C1:.C7])"), FormulaError::Value);
+    assert_eq!(error("=RANK(\"x\";[.B1:.B7])"), FormulaError::Value);
+}
