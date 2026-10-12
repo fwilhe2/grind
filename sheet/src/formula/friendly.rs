@@ -67,7 +67,9 @@ pub fn signature(name: &str) -> Option<(String, Vec<String>)> {
         .find(|info| info.name.eq_ignore_ascii_case(name))?;
     let (raw, repeating) = signature_params(info.signature);
     let mut labels: Vec<String> = raw.iter().map(|raw| param_alias(info.name, raw)).collect();
-    if repeating && let Some(last) = labels.last_mut() {
+    if repeating > 0
+        && let Some(last) = labels.last_mut()
+    {
         last.push('…');
     }
     Some((alias(info.name).unwrap_or(info.name).to_owned(), labels))
@@ -117,32 +119,54 @@ fn param_labels(name: &str, count: usize) -> Vec<Option<String>> {
     else {
         return vec![None; count];
     };
-    let (names, repeating) = signature_params(info.signature);
+    let (names, group) = signature_params(info.signature);
     if names.is_empty() {
         return vec![None; count];
     }
-    let fixed = if repeating {
-        names.len() - 1
-    } else {
-        names.len()
-    };
+    let fixed = names.len() - group;
     (0..count)
         .map(|i| {
             if i < fixed {
                 Some(param_alias(name, &names[i]))
-            } else if repeating {
-                let base = param_alias(name, names.last().expect("repeating implies a last name"));
+            } else if group == 1 {
+                let base = param_alias(name, names.last().expect("a group has a last name"));
                 let k = i - fixed + 1;
                 Some(if count - fixed == 1 {
                     base
                 } else {
                     format!("{base} {k}")
                 })
+            } else if group > 1 {
+                // A repeated *group* — `[ ; Reference R2 ; Criterion C2 ]...` — numbers its
+                // members by pass: the second time round, `R2` labels the third range.
+                let (j, pass) = ((i - fixed) % group, (i - fixed) / group);
+                Some(renumber(&param_alias(name, &names[fixed + j]), pass))
             } else {
                 None
             }
         })
         .collect()
+}
+
+/// `Range 2` on its `pass`th repetition past the first: `Range 2`, `Range 3`, … A label
+/// with no number of its own is left as it is.
+fn renumber(label: &str, pass: usize) -> String {
+    let digits = label.len() - label.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+    match label[label.len() - digits..].parse::<usize>() {
+        Ok(first) => format!("{}{}", &label[..label.len() - digits], first + pass),
+        Err(_) => label.to_owned(),
+    }
+}
+
+/// How many parameters `name`'s signature lists, and how many at the end of it repeat as a
+/// group — what a hint needs to know which parameter the tenth argument is. `None` for a
+/// function the catalog does not know.
+pub fn shape(name: &str) -> Option<(usize, usize)> {
+    let info = funcs::catalog()
+        .iter()
+        .find(|info| info.name.eq_ignore_ascii_case(name))?;
+    let (names, group) = signature_params(info.signature);
+    Some((names.len(), group))
 }
 
 /// The friendly name for a catalog parameter token, e.g. `Pv` → `Present Value`.
@@ -166,29 +190,39 @@ fn param_alias(func: &str, raw: &str) -> String {
         .unwrap_or_else(|| raw.to_string())
 }
 
-/// A catalog `Syntax:` line, split into its ordered parameter names and whether the last one
-/// repeats (`{ … } +`).
-fn signature_params(signature: &str) -> (Vec<String>, bool) {
+/// A catalog `Syntax:` line, split into its ordered parameter names and how many of them, at
+/// the end, repeat as a group: 1 for `{ … } +`, the members of the last bracket for the
+/// `[ ; Reference R2 ; Criterion C2 ]...` the several-criteria functions are written with,
+/// and 0 when nothing repeats.
+fn signature_params(signature: &str) -> (Vec<String>, usize) {
     let Some((_, rest)) = signature.split_once('(') else {
-        return (Vec::new(), false);
+        return (Vec::new(), 0);
     };
     let rest = rest.strip_suffix(')').unwrap_or(rest).trim();
     if rest.is_empty() {
-        return (Vec::new(), false);
+        return (Vec::new(), 0);
     }
     let parts: Vec<&str> = rest.split(';').collect();
-    let repeating = parts
-        .last()
-        .is_some_and(|part| part.trim_end().ends_with('+'));
-    let names = parts.iter().filter_map(|part| param_name(part)).collect();
-    (names, repeating)
+    let names: Vec<String> = parts.iter().filter_map(|part| param_name(part)).collect();
+    let group = if rest.ends_with('+') {
+        1
+    } else if let Some(tail) = rest.strip_suffix("...") {
+        let last_bracket = tail.rfind('[').unwrap_or(0);
+        tail[last_bracket..]
+            .split(';')
+            .filter_map(param_name)
+            .count()
+    } else {
+        0
+    };
+    (names, group)
 }
 
 /// One parameter's name out of its declaration, e.g. `" [ Number Fv = 0 ] [ "` → `Fv`: the
-/// last identifier before an `=` default (if any), with the optionality brackets and
-/// repetition braces stripped.
+/// last identifier before an `=` default (if any), with the optionality brackets,
+/// repetition braces and the `...` of a repeated group stripped.
 fn param_name(part: &str) -> Option<String> {
-    let cleaned: String = part.chars().filter(|c| !"[]{}+".contains(*c)).collect();
+    let cleaned: String = part.chars().filter(|c| !"[]{}+.".contains(*c)).collect();
     let before_default = cleaned.split('=').next().unwrap_or(&cleaned);
     before_default.split_whitespace().last().map(str::to_owned)
 }
@@ -204,6 +238,7 @@ static ALIASES: &[(&str, &str)] = &[
     ("ATAN2", "Arc Tangent (2 Argument)"),
     ("AVERAGE", "Average"),
     ("AVERAGEIF", "Average If"),
+    ("AVERAGEIFS", "Average If All"),
     ("CHOOSE", "Choose"),
     ("COLUMN", "Column"),
     ("COLUMNS", "Column Count"),
@@ -213,6 +248,7 @@ static ALIASES: &[(&str, &str)] = &[
     ("COUNTA", "Count All"),
     ("COUNTBLANK", "Count Blank"),
     ("COUNTIF", "Count If"),
+    ("COUNTIFS", "Count If All"),
     ("DATE", "Date"),
     ("DAVERAGE", "Database Average"),
     ("DAY", "Day"),
@@ -307,6 +343,7 @@ static ALIASES: &[(&str, &str)] = &[
     ("SUBSTITUTE", "Substitute Text"),
     ("SUM", "Sum"),
     ("SUMIF", "Sum If"),
+    ("SUMIFS", "Sum If All"),
     ("SYD", "Sum-Of-Years-Digits Depreciation"),
     ("T", "To Text"),
     ("TAN", "Tangent"),
@@ -327,6 +364,8 @@ static ALIASES: &[(&str, &str)] = &[
 /// `(function, raw token)` → alias, for the handful of single-letter tokens the spec reuses
 /// with a different meaning per function. Checked before [`PARAM_ALIASES`].
 static OVERRIDES: &[(&str, &str, &str)] = &[
+    ("AVERAGEIFS", "A", "Average Range"),
+    ("SUMIFS", "R", "Sum Range"),
     ("DAY", "D", "Date"),
     ("WEEKDAY", "D", "Date"),
     ("YEAR", "D", "Date"),
@@ -347,6 +386,8 @@ static PARAM_ALIASES: &[(&str, &str)] = &[
     ("B", "Number"),
     ("Base", "Base"),
     ("C", "Criterion"),
+    ("C1", "Criterion 1"),
+    ("C2", "Criterion 2"),
     ("Column", "Column"),
     ("Condition", "Condition"),
     ("Cost", "Cost"),
@@ -385,6 +426,8 @@ static PARAM_ALIASES: &[(&str, &str)] = &[
     ("Period", "Period"),
     ("Pv", "Present Value"),
     ("R", "Reference"),
+    ("R1", "Range 1"),
+    ("R2", "Range 2"),
     ("RangeLookup", "Range Lookup"),
     ("Rate", "Rate"),
     ("Row", "Row"),
@@ -444,6 +487,26 @@ mod tests {
             "Sum(Number 1: 1, Number 2: 2, Number 3: 3)"
         );
         assert_eq!(explain("of:=SUM(1)").unwrap(), "Sum(Number: 1)");
+    }
+
+    #[test]
+    fn a_repeated_pair_of_parameters_is_numbered_by_pair() {
+        // `[ ; Reference R2 ; Criterion C2 ]...` repeats two parameters together, and the
+        // third pair is the third range and the third criterion.
+        assert_eq!(
+            explain_inline("of:=COUNTIFS([.A1:.A2];1;[.B1:.B2];2;[.C1:.C2];3)").unwrap(),
+            "Count If All(Range 1: A1:A2, Criterion 1: 1, Range 2: B1:B2, Criterion 2: 2, \
+             Range 3: C1:C2, Criterion 3: 3)"
+        );
+        assert_eq!(
+            explain_inline("of:=SUMIFS([.B1:.B2];[.A1:.A2];1)").unwrap(),
+            "Sum If All(Sum Range: B1:B2, Range 1: A1:A2, Criterion 1: 1)"
+        );
+        let (_, params) = signature("COUNTIFS").expect("COUNTIFS is in the catalog");
+        assert_eq!(
+            params,
+            ["Range 1", "Criterion 1", "Range 2", "Criterion 2…"]
+        );
     }
 
     #[test]

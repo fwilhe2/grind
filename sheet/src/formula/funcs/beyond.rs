@@ -343,3 +343,76 @@ fn rank_counts_the_numbers_ahead_of_a_value() {
     assert_eq!(error("=RANK(30;[.C1:.C7])"), FormulaError::Value);
     assert_eq!(error("=RANK(\"x\";[.B1:.B7])"), FormulaError::Value);
 }
+
+#[test]
+fn the_ifs_functions_match_every_criterion_at_one_position() {
+    // §6.16.63, §6.13.10, §6.18.6: one cell position counts only if each range's cell at it
+    // matches that range's criterion. "apple" matches APPLE too: a criterion is `=`, and `=`
+    // folds case (§6.4.7).
+    assert_eq!(number("=SUMIFS([.B1:.B7];[.A1:.A7];\"apple\")"), 70.0); // B5's "x" is no number
+    assert_eq!(
+        number("=SUMIFS([.B1:.B7];[.A1:.A7];\"apple\";[.C1:.C7];\"red\")"),
+        40.0
+    );
+    assert_eq!(
+        number("=SUMIFS([.B1:.B7];[.A1:.A7];\"app*\";[.B1:.B7];\">10\")"),
+        60.0
+    );
+    assert_eq!(number("=SUMIFS([.B1:.B7];[.A1:.A7];\"zzz\")"), 0.0);
+    assert_eq!(number("=SUMIFS([.B1:.B7];[.A1:.A7];[.A1])"), 70.0); // a criterion cell
+    assert_eq!(number("=SUMIFS([.B1:.B7];[.A1:.A7];\"<>apple\")"), 65.0);
+    // Two columns wide, position by position: only column A says "apple".
+    assert_eq!(number("=SUMIFS([.B1:.C7];[.A1:.B7];\"apple\")"), 70.0);
+
+    assert_eq!(number("=COUNTIFS([.A1:.A7];\"apple\")"), 4.0);
+    assert_eq!(
+        number("=COUNTIFS([.A1:.A7];\"apple\";[.C1:.C7];\"red\")"),
+        3.0
+    );
+    assert_eq!(
+        number("=COUNTIFS([.B1:.B7];\">=20\";[.B1:.B7];\"<40\")"),
+        3.0
+    );
+    // §4.11.8's table for empty cells, unchanged from COUNTIF.
+    assert_eq!(number("=COUNTIFS([.D1:.D7];\"\")"), 5.0);
+    assert_eq!(number("=COUNTIFS([.D1:.D7];\"=\")"), 5.0);
+    assert_eq!(number("=COUNTIFS([.D1:.D7];\"<>\")"), 2.0);
+
+    assert!((number("=AVERAGEIFS([.B1:.B7];[.A1:.A7];\"apple\")") - 70.0 / 3.0).abs() < 1e-12);
+    assert_eq!(
+        number("=AVERAGEIFS([.B1:.B7];[.C1:.C7];\"red\";[.A1:.A7];\"apple\")"),
+        20.0
+    );
+    // "If no numbers are in the result set to be averaged, an Error is returned."
+    assert_eq!(
+        error("=AVERAGEIFS([.B1:.B7];[.A1:.A7];\"zzz\")"),
+        FormulaError::DivZero
+    );
+    assert_eq!(
+        error("=AVERAGEIFS([.B5];[.A5];\"apple\")"),
+        FormulaError::DivZero
+    );
+}
+
+#[test]
+fn the_ifs_functions_refuse_ranges_of_different_shapes() {
+    // "All reference ranges shall have the same dimension and size, else an Error."
+    assert_eq!(
+        error("=SUMIFS([.B1:.B7];[.A1:.A6];\"apple\")"),
+        FormulaError::Value
+    );
+    assert_eq!(
+        error("=COUNTIFS([.A1:.A7];\"apple\";[.B1:.B6];\">1\")"),
+        FormulaError::Value
+    );
+    // "Does not accept constant values as the reference parameter."
+    assert_eq!(error("=SUMIFS(5;[.A1:.A7];\"apple\")"), FormulaError::Value);
+    assert_eq!(error("=COUNTIFS(5;5)"), FormulaError::Value);
+    // A range without its criterion is a malformed call.
+    assert_eq!(error("=SUMIFS([.B1:.B7];[.A1:.A7])"), FormulaError::Value);
+    assert_eq!(
+        error("=SUMIFS([.B1:.B7];[.A1:.A7];\"apple\";[.C1:.C7])"),
+        FormulaError::Value
+    );
+    assert_eq!(error("=COUNTIFS([.A1:.A7])"), FormulaError::Value);
+}

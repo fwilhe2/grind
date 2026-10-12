@@ -19,6 +19,7 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "NA" => na(args),
         "COUNT" => count(args),
         "COUNTIF" => super::criterion::conditional(args, super::criterion::Mode::Count),
+        "COUNTIFS" => super::criterion::several(args, super::criterion::Mode::Count),
         "COUNTA" => count_a(args),
         "COUNTBLANK" => count_blank(args),
         "ROWS" => shape(args, true),

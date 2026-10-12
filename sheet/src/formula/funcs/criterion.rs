@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! §4.11.8 Criterion — the little matching language `COUNTIF`, `SUMIF` and `AVERAGEIF`
-//! share, and the reason those three live apart from their categories' other functions.
+//! share with their several-criteria forms `COUNTIFS`, `SUMIFS` and `AVERAGEIFS`, and the
+//! reason those six live apart from their categories' other functions.
 //!
 //! A criterion is a value, and if it is text it may *begin with a comparator*: `">=3"`
 //! compares, `"apple"` matches. The interesting half is what happens to empty cells, and
@@ -51,17 +52,7 @@ pub fn conditional(args: &mut Args, mode: Mode) -> Result<Value, FormulaError> {
     args.arity(if mode == Mode::Count { 2..=2 } else { 2..=3 })?;
     // "Does not accept constant values as the reference parameter" (§6.13.9 Constraints).
     let range = args.area(0).ok_or(FormulaError::Value)?;
-    // §4.11.8's opening line: "A reference to an empty cell is interpreted as the numeric
-    // value 0" — so a criterion *cell* that is blank counts zeros, where the literal `""`
-    // counts blanks. The two look identical by the time they are values, which is why the
-    // operand is inspected before it is reduced.
-    let criterion = match args.operand(1) {
-        Operand::Area(_) => match args.value(1) {
-            Value::Empty => Criterion::new(Value::Number(0.0)),
-            value => Criterion::new(value),
-        },
-        Operand::Value(value) => Criterion::new(value),
-    };
+    let criterion = criterion_at(args, 1);
     let values = if args.len() > 2 {
         Some(args.area(2).ok_or(FormulaError::Value)?)
     } else {
@@ -91,12 +82,88 @@ pub fn conditional(args: &mut Args, mode: Mode) -> Result<Value, FormulaError> {
             }
         }
     }
+    finish(mode, matched, counted, total)
+}
+
+/// What a [`Mode`] makes of the cells that matched: how many, the sum of their numbers, or
+/// the mean of those numbers — of which there may be none.
+fn finish(mode: Mode, matched: usize, counted: usize, total: f64) -> Result<Value, FormulaError> {
     Ok(match mode {
         Mode::Count => Value::number(matched as f64),
         Mode::Sum => Value::number(total),
         Mode::Average if counted == 0 => return Err(FormulaError::DivZero),
         Mode::Average => Value::number(total / counted as f64),
     })
+}
+
+/// The `i`th argument read as a criterion.
+///
+/// §4.11.8's opening line: "A reference to an empty cell is interpreted as the numeric value
+/// 0" — so a criterion *cell* that is blank counts zeros, where the literal `""` counts
+/// blanks. The two look identical by the time they are values, which is why the operand is
+/// inspected before it is reduced.
+fn criterion_at(args: &mut Args, i: usize) -> Criterion {
+    match args.operand(i) {
+        Operand::Area(_) => match args.value(i) {
+            Value::Empty => Criterion::new(Value::Number(0.0)),
+            value => Criterion::new(value),
+        },
+        Operand::Value(value) => Criterion::new(value),
+    }
+}
+
+/// `COUNTIFS` (§6.13.10), `SUMIFS` (§6.16.63) and `AVERAGEIFS` (§6.18.6): pairs of a range
+/// and its criterion, and a position counts only when every range's cell at it matches.
+///
+/// `SUMIFS` and `AVERAGEIFS` put the range they add up *first*, and unlike `SUMIF`'s third
+/// parameter it is not taken by geometry: "all reference ranges shall have the same
+/// dimension and size, else an Error is returned", the summed one included. A constant where
+/// a range belongs, or a range without its criterion, is `#VALUE!`.
+pub fn several(args: &mut Args, mode: Mode) -> Result<Value, FormulaError> {
+    let first = usize::from(mode != Mode::Count);
+    if args.len() < first + 2 || !(args.len() - first).is_multiple_of(2) {
+        return Err(FormulaError::Value);
+    }
+    let values = match mode {
+        Mode::Count => None,
+        _ => Some(args.area(0).ok_or(FormulaError::Value)?),
+    };
+    let mut pairs = Vec::new();
+    for i in (first..args.len()).step_by(2) {
+        let range = args.area(i).ok_or(FormulaError::Value)?;
+        pairs.push((range, criterion_at(args, i + 1)));
+    }
+    let (rows, cols) = (pairs[0].0.rows.len(), pairs[0].0.cols.len());
+    let same = |a: &super::super::eval::Area| a.rows.len() == rows && a.cols.len() == cols;
+    if !pairs.iter().all(|(range, _)| same(range)) || values.as_ref().is_some_and(|v| !same(v)) {
+        return Err(FormulaError::Value);
+    }
+
+    let (mut matched, mut counted, mut total) = (0usize, 0usize, 0.0);
+    for r in 0..rows as u32 {
+        for c in 0..cols as u32 {
+            let at = |area: &super::super::eval::Area| {
+                Address::new(
+                    area.sheet,
+                    Pos::new(area.rows.start + r, area.cols.start + c),
+                )
+            };
+            if !pairs
+                .iter()
+                .all(|(range, criterion)| criterion.matches(&args.value_at(at(range))))
+            {
+                continue;
+            }
+            matched += 1;
+            if let Some(area) = &values
+                && let Value::Number(n) = args.value_at(at(area))
+            {
+                counted += 1;
+                total += n;
+            }
+        }
+    }
+    finish(mode, matched, counted, total)
 }
 
 pub struct Criterion {

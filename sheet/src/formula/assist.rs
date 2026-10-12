@@ -220,6 +220,26 @@ pub fn signature_parts(name: &str, friendly: bool) -> Option<(String, Vec<String
     ))
 }
 
+/// Which part of [`signature_parts`] the `argument`th argument (0-based) falls in — the one a
+/// hint emphasises.
+///
+/// Itself while there is a part of that number; past the end, the repeating tail: `SUM`'s
+/// fifth argument is still `Number…`, and `COUNTIFS`' fifth is the range of its third pair,
+/// since `[ ; Reference R2 ; Criterion C2 ]...` repeats *two* parameters. A signature with
+/// nothing repeating clamps to its last part, and an unknown function hands the index back.
+pub fn part_for(name: &str, argument: usize) -> usize {
+    let Some((len, group)) = friendly::shape(name) else {
+        return argument;
+    };
+    if argument < len || len == 0 {
+        return argument;
+    }
+    match group {
+        0 => len - 1,
+        _ => len - group + (argument - (len - group)) % group,
+    }
+}
+
 /// The one line saying what a function does — the spec's own `Summary:`, for a hint that has
 /// room for it.
 pub fn brief(name: &str) -> Option<&'static str> {
@@ -411,19 +431,19 @@ fn offers_band(assist: &Assist) -> Vec<Piece> {
 
 /// `Sum(Number…)`, with the argument the caret is in in the accent.
 ///
-/// A repeating parameter is the last one however many arguments follow it, which is why the
-/// emphasised index is clamped rather than dropped — `=SUM(1;2;3;4;5|` is still inside `Number…`.
+/// Which part is emphasised is [`part_for`]'s answer — `=SUM(1;2;3;4;5|` is still inside
+/// `Number…`.
 fn signature_band(name: &str, argument: usize, friendly: bool) -> Vec<Piece> {
     let Some((head, parts)) = signature_parts(name, friendly) else {
         return Vec::new();
     };
-    let last = parts.len().saturating_sub(1);
+    let emphasised = part_for(name, argument);
     let mut pieces = vec![Piece::new(head, Ink::Plain), Piece::new("(", Ink::Muted)];
     for (at, part) in parts.iter().enumerate() {
         if at > 0 {
             pieces.push(Piece::new("; ", Ink::Muted));
         }
-        let ink = match at == argument.min(last) {
+        let ink = match at == emphasised {
             true => Ink::Strong,
             false => Ink::Plain,
         };
@@ -564,6 +584,21 @@ mod tests {
 
         assert_eq!(signature_parts("NOSUCHFUNCTION", false), None);
         assert_eq!(signature_parts("NOSUCHFUNCTION", true), None);
+    }
+
+    /// Which part of a signature an argument falls in: itself up to the end, then the
+    /// repeating tail — one parameter, or a group taken round again.
+    #[test]
+    fn an_argument_past_the_end_lands_in_the_repeating_part() {
+        assert_eq!(part_for("VLOOKUP", 2), 2);
+        assert_eq!(part_for("VLOOKUP", 9), 3); // nothing repeats: the last, clamped
+        assert_eq!(part_for("SUM", 4), 0); // `{ Number } +`
+        // `COUNTIFS( R1 ; C1 [ ; R2 ; C2 ]... )`: the fifth argument is the third range.
+        assert_eq!(part_for("COUNTIFS", 3), 3);
+        assert_eq!(part_for("COUNTIFS", 4), 2);
+        assert_eq!(part_for("COUNTIFS", 5), 3);
+        assert_eq!(part_for("SUMIFS", 5), 3); // one fixed parameter ahead of the pairs
+        assert_eq!(part_for("NOSUCHFUNCTION", 3), 3);
     }
 
     #[test]

@@ -204,6 +204,9 @@ by that evidence. It recommends nothing on its own; an entry here still needs it
 - `SMALL` — §6.18.70
 - `MEDIAN` — §6.18.47
 - `RANK` — §6.18.65
+- `SUMIFS` — §6.16.63
+- `COUNTIFS` — §6.13.10
+- `AVERAGEIFS` — §6.18.6
 
   **Evidence:** `doc/function-coverage.md` §3 and §4's Tier 1 — the classic band every corpus
   calls. Measured over LibreOffice's test documents, a greedy pass adding one function at a

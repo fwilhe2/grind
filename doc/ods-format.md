@@ -408,6 +408,7 @@ table:use-regular-expressions="false"/>` — the reading this build gives every 
 | `LARGE(…;"2")` | `Err:504` | §6.3.5 converts text | **the spec**: `"2"` is 2 |
 | `MEDIAN`, `LARGE`, `SMALL` over no numbers | `#VALUE!` | silent | `#VALUE!` (not `AVERAGE`'s `#DIV/0!`) |
 | `RANK(7;…)` (absent), `RANK(30;[text only])` | `#N/A`, `#VALUE!` | "an Error" | `#N/A` for a value not in the data, compared exactly; `#VALUE!` for data with no numbers |
+| `SUMIFS(…;[.A1:.A6];…)` against a 7-row range, `SUMIFS(5;…)`, `SUMIFS(R;R1)` | `Err:502`, `Err:511` | "an Error" | `#VALUE!` for ranges of different shapes (the summed one included), a constant where a range belongs, and a range without its criterion |
 
 **Where the fifteen-digit read stops.** It is not applied to every magnitude. A series
 `10^k·(1−4E−16)`, whose sixteenth digit always rounds the value up to `10^k`, snaps in

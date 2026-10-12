@@ -128,6 +128,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.18.5",
     },
     FuncInfo {
+        name: "AVERAGEIFS",
+        signature: "AVERAGEIFS( Reference A ; Reference R1 ; Criterion C1 [ ; Reference R2 ; Criterion C2 ]... )",
+        brief: "Average the values of cells that meet multiple criteria in multiple ranges.",
+        section: "6.18.6",
+    },
+    FuncInfo {
         name: "CHOOSE",
         signature: "CHOOSE( Integer Index ; { Any Value } + )",
         brief: "Uses an index to return a value from a list of values.",
@@ -180,6 +186,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "COUNTIF( ReferenceList R ; Criterion C )",
         brief: "Count the number of cells in a range that meet a criteria.",
         section: "6.13.9",
+    },
+    FuncInfo {
+        name: "COUNTIFS",
+        signature: "COUNTIFS( Reference R1 ; Criterion C1 [ ; Reference R2 ; Criterion C2 ]... )",
+        brief: "Count the number of cells that meet multiple criteria in multiple ranges.",
+        section: "6.13.10",
     },
     FuncInfo {
         name: "DATE",
@@ -747,6 +759,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "SUMIF( ReferenceList|Reference R ; Criterion C [ ; Reference S ] )",
         brief: "Sum the values of cells in a range that meet a criteria.",
         section: "6.16.62",
+    },
+    FuncInfo {
+        name: "SUMIFS",
+        signature: "SUMIFS( Reference R ; Reference R1 ; Criterion C1 [ ; Reference R2 ; Criterion C2 ]... )",
+        brief: "Sum the values of cells in a range that meet multiple criteria in multiple ranges.",
+        section: "6.16.63",
     },
     FuncInfo {
         name: "SYD",

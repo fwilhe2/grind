@@ -118,8 +118,10 @@ pub fn beyond_small_group() -> &'static [&'static str] {
 /// Kept in step with `doc/small-group.md`'s second half by the same test that checks the
 /// first, so this cannot quietly grow either.
 const BEYOND: &[&str] = &[
+    "AVERAGEIFS",
     "COLUMN",
     "CONCATENATE",
+    "COUNTIFS",
     "HYPERLINK",
     "IFERROR",
     "IFNA",
@@ -134,6 +136,7 @@ const BEYOND: &[&str] = &[
     "SEARCH",
     "SIGN",
     "SMALL",
+    "SUMIFS",
 ];
 
 const NAMES: &[&str] = &[
@@ -172,6 +175,7 @@ const NAMES: &[&str] = &[
     "SQRT",
     "SUM",
     "SUMIF",
+    "SUMIFS",
     "TAN",
     "TRUNC",
     "QUOTIENT",
@@ -186,6 +190,7 @@ const NAMES: &[&str] = &[
     "COUNTA",
     "COUNTBLANK",
     "COUNTIF",
+    "COUNTIFS",
     "ISBLANK",
     "ISERR",
     "ISERROR",
@@ -202,6 +207,7 @@ const NAMES: &[&str] = &[
     // statistical (§6.18)
     "AVERAGE",
     "AVERAGEIF",
+    "AVERAGEIFS",
     "MAX",
     "MIN",
     "STDEV",

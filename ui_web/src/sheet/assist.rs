@@ -237,20 +237,19 @@ fn offers_band(assist: &Assist) -> Vec<Piece> {
 
 /// `SUM(Number…)`, with the argument the caret is in in the accent.
 ///
-/// A repeating parameter is the last one however many arguments follow it, which is why the
-/// emphasised index is clamped rather than dropped — `=SUM(1;2;3;4;5|` is still inside
-/// `Number…`.
+/// Which part is emphasised is `assist::part_for`'s answer — `=SUM(1;2;3;4;5|` is still
+/// inside `Number…`, and `COUNTIFS`' fifth argument is its third range.
 fn signature_band(name: &str, argument: usize) -> Vec<Piece> {
     let Some((head, parts)) = core_assist::signature_parts(name, true) else {
         return Vec::new();
     };
-    let last = parts.len().saturating_sub(1);
+    let emphasised = core_assist::part_for(name, argument);
     let mut pieces = vec![Piece::new(head, Ink::Plain), Piece::new("(", Ink::Muted)];
     for (at, part) in parts.iter().enumerate() {
         if at > 0 {
             pieces.push(Piece::new("; ", Ink::Muted));
         }
-        let ink = match at == argument.min(last) {
+        let ink = match at == emphasised {
             true => Ink::Strong,
             false => Ink::Plain,
         };

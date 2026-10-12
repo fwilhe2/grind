@@ -35,15 +35,15 @@ pub use grind_sheet::formula::assist::{Candidate, candidates, prefix_at};
 /// way. The friendly spelling is the same vocabulary `friendly::explain` labels a finished
 /// formula with, so what a user reads while typing and what they read afterwards agree.
 ///
-/// A repeating parameter is the last one however many arguments follow it, which is why the
-/// emphasised index is clamped rather than dropped.
+/// Which part is emphasised is `assist::part_for`'s answer: a repeating parameter is the last
+/// one however many arguments follow it, and a repeating *pair* is taken round again.
 pub fn signature_markup(name: &str, argument: usize, friendly: bool) -> Option<String> {
     let (head, parts) = grind_sheet::formula::assist::signature_parts(name, friendly)?;
-    let last = parts.len().saturating_sub(1);
+    let emphasised = grind_sheet::formula::assist::part_for(name, argument);
     let parts: Vec<String> = parts
         .iter()
         .enumerate()
-        .map(|(i, part)| match i == argument.min(last) {
+        .map(|(i, part)| match i == emphasised {
             true => format!("<b>{}</b>", glib_escape(part)),
             false => glib_escape(part),
         })

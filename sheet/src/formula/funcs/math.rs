@@ -45,6 +45,7 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "FACT" => fact(args),
         "SUM" => sequence(args, |ns| ns.iter().sum()),
         "SUMIF" => super::criterion::conditional(args, super::criterion::Mode::Sum),
+        "SUMIFS" => super::criterion::several(args, super::criterion::Mode::Sum),
         "PRODUCT" => sequence(args, |ns| ns.iter().product()),
         "ROUND" => scaled(args, |x| shown(x).round()),
         "TRUNC" => scaled(args, |x| shown(x).trunc()),
