@@ -151,7 +151,7 @@ jobs:
 
       # Uploaded here rather than at the end of the job, so the numbers survive anything the
       # steps below do. They are the deliverable; the breakdowns are the bonus.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sizes-linux
           path: sizes-linux.jsonl
@@ -190,7 +190,7 @@ jobs:
           # The suite's meta-package (`suite/`, S11): installs nothing, depends on the four.
           # `--no-build` as ever — it has no binary, and its library target is never built.
           cargo deb -p grind --no-build
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: deb-packages
           path: target/debian/*.deb
@@ -205,7 +205,7 @@ jobs:
           # `noarch`: it holds no machine code. `cargo deb` has no equivalent switch, so the
           # .deb says amd64 — `suite/Cargo.toml` has the note.
           cargo generate-rpm -p suite -a noarch
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rpm-packages
           path: target/generate-rpm/*.rpm
@@ -222,7 +222,7 @@ jobs:
       # would hand out a binary nearly half again the size of the one that ships. See the
       # header.
       - name: Upload the Linux binaries
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-binaries
           path: |
@@ -564,21 +564,21 @@ jobs:
             --note 'the Windows shell — static CRT' \
             --out sizes-windows.jsonl
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sizes-windows
           path: sizes-windows.jsonl
           if-no-files-found: error
 
       - name: Upload the executable
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: grind-win32-x64
           path: target/release/grind-win32.exe
           if-no-files-found: error
 
       - name: Upload the frames
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: grind-win32-frame
           path: |
@@ -708,7 +708,7 @@ jobs:
         run: |
           genisoimage -o grind-win32-test.iso -V GRIND_WIN32_TEST -J -r iso-root/
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: grind-win32-test-iso
           path: grind-win32-test.iso
@@ -768,7 +768,7 @@ jobs:
       - name: Every document drawn twice in each appearance, and opened in a window
         run: .github/scripts/mac-frames.sh target/release/grind-mac target/release/grind frames
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: grind-mac-frames-${{ matrix.os }}
@@ -788,7 +788,7 @@ jobs:
           .github/scripts/mac-bundle.sh target/release/grind-mac \
             target/x86_64-apple-darwin/release/grind-mac bundle
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:
           name: grind-mac-dmg-${{ matrix.os }}
@@ -805,7 +805,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Package the extension
         run: editors/vscode/package.sh "$RUNNER_TEMP/vsix"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: grind-vscode
           path: ${{ runner.temp }}/vsix/*.vsix
@@ -879,14 +879,14 @@ jobs:
             --note 'the print module, loaded on first export' \
             --out sizes-wasm.jsonl
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sizes-wasm
           path: sizes-wasm.jsonl
           if-no-files-found: error
 
       - name: Upload the bundle
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: grind-web
           path: ui_web/dist
@@ -979,7 +979,7 @@ jobs:
       # Under one stable name, because that is what the next run's baseline step downloads.
       - name: Publish the merged report
         run: cat parts/*.jsonl > sizes.jsonl
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: binary-sizes
           path: sizes.jsonl
