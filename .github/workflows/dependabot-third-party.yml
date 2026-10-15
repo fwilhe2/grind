@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: dependabot-third-party
+
+# `core/tests/third_party.rs` rewrites `core/src/third_party/data.rs` and fails when a dependency
+# was added, removed or bumped (doc/third-party.md). A Dependabot bump always does that, so its
+# pull request could never be green without a human committing the regenerated file. This runs
+# the test on Dependabot's branch and commits what it rewrote.
+#
+# `pull_request_target` because a `pull_request` run for Dependabot gets a read-only token. That
+# is safe here only because the job is guarded on the actor and runs the *bump's* code, which is
+# a lockfile change and nothing else; never widen the `if`.
+#
+# A push made with the default `GITHUB_TOKEN` starts no workflow, so ci would never re-run on the
+# new commit. Set the repository's **Dependabot** secret `PUSH_TOKEN` to a PAT (or a GitHub App
+# token) with `contents: write`; without it the commit is still made but ci must be re-run by hand.
+on:
+  pull_request_target:
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    if: github.actor == 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.PUSH_TOKEN || secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: linux-debug
+          save-if: false
+      # The test rewrites the file as it fails, so the failure is the expected outcome here.
+      - run: cargo test --locked -p grind-core --test third_party || true
+      - name: Commit the regenerated list
+        run: |
+          if git diff --quiet -- core/src/third_party/data.rs; then
+            echo "third-party list already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/src/third_party/data.rs
+          git commit -m "Regenerate the third-party list"
+          git push
