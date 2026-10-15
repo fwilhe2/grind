@@ -40,7 +40,7 @@ fn with_part(bytes: &[u8], part: &str, content: &[u8]) -> Vec<u8> {
         let options: zip::write::FileOptions<()> = zip::write::FileOptions::default();
         for i in 0..archive.len() {
             let mut entry = archive.by_index(i).unwrap();
-            let name = entry.name().to_owned();
+            let name = entry.name().expect("a name").into_owned();
             let mut data = Vec::new();
             entry.read_to_end(&mut data).unwrap();
             zip.start_file(&name, options).unwrap();

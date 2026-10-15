@@ -1491,6 +1491,15 @@ pub(super) const COMPONENTS: &[Component] = &[
         notices: &[126],
     },
     Component {
+        name: "nix",
+        version: "0.31.3",
+        licence: "MIT",
+        copyright: "Copyright (c) 2015 Carl Lerche + nix-rust Authors",
+        source: "https://github.com/nix-rust/nix",
+        kind: Kind::Crate,
+        notices: &[126],
+    },
+    Component {
         name: "nom",
         version: "7.1.3",
         licence: "MIT",
@@ -3319,7 +3328,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "zip",
-        version: "8.6.0",
+        version: "9.0.2",
         licence: "MIT",
         copyright: "Copyright (c) 2014 Mathijs van de Nes",
         source: "https://github.com/zip-rs/zip2",

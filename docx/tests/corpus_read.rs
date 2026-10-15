@@ -181,5 +181,5 @@ fn looks_like_a_document(bytes: &[u8]) -> bool {
     };
     archive
         .file_names()
-        .any(|name| name.to_ascii_lowercase().starts_with("word/document"))
+        .any(|name| name.is_ok_and(|n| n.to_ascii_lowercase().starts_with("word/document")))
 }
