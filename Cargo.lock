@@ -1289,7 +1289,7 @@ dependencies = [
  "krilla",
  "krilla-svg",
  "resvg",
- "skrifa 0.42.1",
+ "skrifa 0.46.2",
  "tiny-skia",
  "usvg",
 ]
