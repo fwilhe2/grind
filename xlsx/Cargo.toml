@@ -21,7 +21,7 @@ grind-ooxml = { path = "../ooxml" }
 # Zero new dependencies: both of these are already `grind-core`'s. That is half the argument
 # against `calamine` in doc/xlsx-import.md, so it is worth keeping true.
 quick-xml = "0.42"
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate", "unreserved"] }
 
 [dev-dependencies]
 # Reading `tests/data/corpus/manifest.json` — the generated corpus's oracle

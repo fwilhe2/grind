@@ -451,8 +451,12 @@ impl Archive {
             if file.is_dir() {
                 continue;
             }
-            let out = super::package::read_entry(&mut file)
-                .map_err(|e| Error::Package(format!("{} will not decompress: {e}", file.name())))?;
+            let out = super::package::read_entry(&mut file).map_err(|e| {
+                Error::Package(format!(
+                    "{} will not decompress: {e}",
+                    String::from_utf8_lossy(file.name_raw())
+                ))
+            })?;
             // The claims were checked on opening; this holds what the parts actually held.
             total += out.len() as u64;
             if total > super::package::MAX_TOTAL_BYTES {
@@ -460,7 +464,7 @@ impl Archive {
                     "the package decompresses to more than any document does".to_owned(),
                 ));
             }
-            files.insert(file.name().to_owned(), out);
+            files.insert(String::from_utf8_lossy(file.name_raw()).into_owned(), out);
         }
         Ok(Self { files })
     }

@@ -25,4 +25,4 @@ grind-core = { path = "../core" }
 base64 = "0.23"
 # Building a synthetic package (a `Pictures/` entry an `xlink:href` points at) to test against,
 # rather than vendoring a real `.odt` for it.
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate", "unreserved"] }

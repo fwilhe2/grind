@@ -1035,7 +1035,12 @@ pub fn repackage(
     };
 
     let mut names: Vec<String> = (0..archive.len())
-        .filter_map(|i| archive.by_index_raw(i).ok().map(|f| f.name().to_owned()))
+        .filter_map(|i| {
+            archive
+                .by_index_raw(i)
+                .ok()
+                .map(|f| String::from_utf8_lossy(f.name_raw()).into_owned())
+        })
         .collect();
     names.retain(|n| !n.is_empty());
 
