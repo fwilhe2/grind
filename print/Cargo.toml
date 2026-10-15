@@ -46,7 +46,7 @@ krilla = { version = "=0.8.2", default-features = false, features = ["raster-ima
 # SVG's labels — a second shaper in the binary, named and accepted, since a chart without its
 # labels is not the chart.
 krilla-svg = "=0.8.1"
-resvg = { version = "=0.47.0", default-features = false, features = ["text"] }
+resvg = { version = "=0.48.1", default-features = false, features = ["text"] }
 usvg = { version = "=0.47.0", default-features = false, features = ["text"] }
 
 # The preview (doc/pdf-export.md §4): the same display list the PDF is written from, rasterised.

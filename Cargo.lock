@@ -1283,15 +1283,15 @@ dependencies = [
  "fontdb 0.24.0",
  "grind-core",
  "grind-text",
- "harfrust",
+ "harfrust 0.13.3",
  "hayro",
  "hayro-syntax",
  "krilla",
  "krilla-svg",
- "resvg",
+ "resvg 0.48.1",
  "skrifa 0.42.1",
  "tiny-skia",
- "usvg",
+ "usvg 0.47.0",
 ]
 
 [[package]]
@@ -1515,6 +1515,18 @@ dependencies = [
 
 [[package]]
 name = "harfrust"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c03d949a14aa089bbb282f7dd76a498a7f684428e4257202efc119ec010376f9"
+dependencies = [
+ "bitflags 2.13.1",
+ "bytemuck",
+ "read-fonts 0.41.0",
+ "smallvec",
+]
+
+[[package]]
+name = "harfrust"
 version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "948d0741125ba89cd3e1c23e5642415b6ade7e1d29d67ba25fb925b533e989d6"
@@ -1688,6 +1700,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09e54e57b4c48b40f7aec75635392b12b3421fa26fe8b4332e63138ed278459c"
 
 [[package]]
+name = "imagesize"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65b27460c2c92b037f3f94c538ed9a3342f3fdf923606781629ccb35f82d042a"
+
+[[package]]
 name = "indexmap"
 version = "2.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1786,7 +1804,7 @@ dependencies = [
  "float-cmp",
  "gif",
  "image-webp",
- "imagesize",
+ "imagesize 0.14.0",
  "indexmap",
  "pdf-writer",
  "png",
@@ -1811,11 +1829,11 @@ dependencies = [
  "flate2",
  "fontdb 0.23.0",
  "krilla",
- "resvg",
+ "resvg 0.47.0",
  "skrifa 0.42.1",
  "smallvec",
  "tiny-skia",
- "usvg",
+ "usvg 0.47.0",
 ]
 
 [[package]]
@@ -2817,8 +2835,23 @@ dependencies = [
  "rgb",
  "svgtypes",
  "tiny-skia",
- "usvg",
+ "usvg 0.47.0",
  "zune-jpeg",
+]
+
+[[package]]
+name = "resvg"
+version = "0.48.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67e3803f97b999e80cbf7c6ecdd07a8102204d92e1633cf48783720c521196bd"
+dependencies = [
+ "bytemuck",
+ "log",
+ "pico-args",
+ "rgb",
+ "svgtypes",
+ "tiny-skia",
+ "usvg 0.48.1",
 ]
 
 [[package]]
@@ -3640,7 +3673,7 @@ dependencies = [
  "data-url",
  "flate2",
  "fontdb 0.23.0",
- "imagesize",
+ "imagesize 0.14.0",
  "kurbo",
  "log",
  "pico-args",
@@ -3652,6 +3685,33 @@ dependencies = [
  "svgtypes",
  "tiny-skia-path",
  "ttf-parser",
+ "unicode-bidi",
+ "unicode-script",
+ "unicode-vo",
+ "xmlwriter",
+]
+
+[[package]]
+name = "usvg"
+version = "0.48.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "977d0a4abdef933f424a99fe09f95576e089b90aebc6f016a3bc813762493e91"
+dependencies = [
+ "base64 0.23.1",
+ "data-url",
+ "fontdb 0.24.0",
+ "harfrust 0.12.0",
+ "imagesize 0.15.0",
+ "kurbo",
+ "log",
+ "pico-args",
+ "roxmltree 0.21.1",
+ "simplecss",
+ "siphasher",
+ "skrifa 0.44.0",
+ "strict-num",
+ "svgtypes",
+ "tiny-skia-path",
  "unicode-bidi",
  "unicode-script",
  "unicode-vo",
