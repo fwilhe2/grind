@@ -1537,7 +1537,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "objc2",
-        version: "0.6.4",
+        version: "0.6.5",
         licence: "MIT",
         copyright: "By Mads Marquart <mads@marquart.dk>",
         source: "https://github.com/madsmtm/objc2",
@@ -2239,9 +2239,9 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "serde_json",
-        version: "1.0.151",
+        version: "1.0.154",
         licence: "MIT OR Apache-2.0",
-        copyright: "By Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>",
+        copyright: "",
         source: "https://github.com/serde-rs/json",
         kind: Kind::Crate,
         notices: &[8, 2],
