@@ -159,7 +159,7 @@ impl<'a> Package<'a> {
             if size > MAX_PART_BYTES {
                 return Err(Error::Package(format!(
                     "part {} claims {size} bytes",
-                    entry.name()
+                    String::from_utf8_lossy(entry.name_raw())
                 )));
             }
             total = total.saturating_add(size);
@@ -170,7 +170,7 @@ impl<'a> Package<'a> {
             }
             // A part whose name will not normalise cannot be referred to either, so dropping
             // it from the index is the same as not having it.
-            if let Some(name) = normalise(entry.name()) {
+            if let Some(name) = normalise(&String::from_utf8_lossy(entry.name_raw())) {
                 index.insert(name, i);
             }
         }

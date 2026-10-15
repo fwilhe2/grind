@@ -51,7 +51,7 @@ pub fn archive(bytes: &[u8]) -> Result<zip::ZipArchive<Cursor<&[u8]>>> {
         if size > MAX_PART_BYTES {
             return Err(Error::Package(format!(
                 "{} claims {size} bytes, more than any document's part",
-                entry.name()
+                String::from_utf8_lossy(entry.name_raw())
             )));
         }
         total = total.saturating_add(size);
@@ -204,7 +204,12 @@ pub fn entry_names(bytes: &[u8]) -> Vec<String> {
         return Vec::new();
     };
     (0..archive.len())
-        .filter_map(|i| archive.by_index_raw(i).ok().map(|f| f.name().to_owned()))
+        .filter_map(|i| {
+            archive
+                .by_index_raw(i)
+                .ok()
+                .map(|f| String::from_utf8_lossy(f.name_raw()).into_owned())
+        })
         .collect()
 }
 
