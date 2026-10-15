@@ -30,7 +30,7 @@ grind-text = { path = "../text" }
 # than holding the shaper back until krilla moves. Only bytes cross between them: harfrust shapes
 # and skrifa measures the same font data, so the two copies cannot disagree about a glyph id.
 # When krilla takes a newer skrifa, line all three up again and the duplicate goes.
-skrifa = "=0.42.1"
+skrifa = "=0.46.2"
 harfrust = "=0.14.0"
 fontdb = { version = "0.24", default-features = false, features = ["std", "fs"], optional = true }
 # The PDF writer (doc/pdf-export.md §2): glyphs our own layout placed, subset and embedded, with
