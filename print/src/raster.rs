@@ -165,7 +165,7 @@ fn draw(pixmap: &mut Pixmap, op: &Op, fonts: &Fonts, scaled: Transform, glyphs: 
             ..
         } => {
             if mime == "image/svg+xml"
-                && let Some(tree) = crate::svg::tree(data, fonts)
+                && let Some(tree) = crate::svg::preview_tree(data, fonts)
             {
                 let size = tree.size();
                 let at = Transform::from_row(
