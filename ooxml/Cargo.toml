@@ -16,4 +16,4 @@ repository.workspace = true
 grind-core = { path = "../core" }
 # Both already `grind-core`'s, so the import filters still add no dependency of their own.
 quick-xml = "0.42"
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
