@@ -403,7 +403,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "crc32fast",
-        version: "1.5.1",
+        version: "1.5.2",
         licence: "MIT OR Apache-2.0",
         copyright: "Copyright (c) 2018 Sam Rijs, Alex Crichton and contributors",
         source: "https://github.com/srijs/rust-crc32fast",
