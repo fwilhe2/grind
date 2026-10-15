@@ -2328,6 +2328,15 @@ pub(super) const COMPONENTS: &[Component] = &[
         notices: &[75, 76],
     },
     Component {
+        name: "skrifa",
+        version: "0.46.2",
+        licence: "MIT OR Apache-2.0",
+        copyright: "Copyright 2019 Fontations Developers",
+        source: "https://github.com/googlefonts/fontations",
+        kind: Kind::Crate,
+        notices: &[77, 78],
+    },
+    Component {
         name: "slab",
         version: "0.4.12",
         licence: "MIT",
