@@ -18,7 +18,7 @@ the blocks and names the styles below. Every measurement is DIN 5008 (A4, Form B
 
 Everything on it is made up.
 -->
-<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
  <office:styles>
   <style:default-style style:family="paragraph">
    <style:paragraph-properties fo:orphans="2" fo:widows="2" style:tab-stop-distance="1.25cm"/>
@@ -101,6 +101,10 @@ Everything on it is made up.
  </office:styles>
 
  <office:automatic-styles>
+  <!-- The stroke of the fold and punch marks. -->
+  <style:style style:name="Marke" style:family="graphic">
+   <style:graphic-properties draw:stroke="solid" svg:stroke-width="0.05cm" svg:stroke-color="#555555"/>
+  </style:style>
   <!-- First page: 10 mm of margin, then a 35 mm letterhead, so the body begins at 45 mm. -->
   <style:page-layout style:name="PL_Erste">
    <style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" style:print-orientation="portrait" fo:margin-top="1cm" fo:margin-bottom="0.8cm" fo:margin-left="2.5cm" fo:margin-right="2cm"/>
@@ -127,7 +131,8 @@ Everything on it is made up.
    <style:header>
     <text:p text:style-name="Briefkopf_20_Name">Hausverwaltung Mustermann</text:p>
     <text:p text:style-name="Briefkopf_20_Zeile">Immobilien · Verwaltung · Vermietung</text:p>
-    <text:p text:style-name="Briefkopf_20_Zeile">Beispielallee 1 · 99999 Musterstadt · Telefon 0123 / 456 789 0 · abrechnung@hausverwaltung.example</text:p>
+    <text:p text:style-name="Briefkopf_20_Zeile">Beispielallee 1 · 99999 Musterstadt · Telefon 0123 / 456 789 0 · abrechnung@hausverwaltung.example<!-- DIN 5008's fold marks at 105 mm and 210 mm from the top edge and its punch mark at 148.5 mm,
+        on the left margin: lines drawn on the page, which is what `draw:line` in a header is. --><draw:line draw:style-name="Marke" text:anchor-type="page" svg:x1="0.4cm" svg:y1="10.5cm" svg:x2="0.9cm" svg:y2="10.5cm"/><draw:line draw:style-name="Marke" text:anchor-type="page" svg:x1="0.4cm" svg:y1="14.85cm" svg:x2="0.8cm" svg:y2="14.85cm"/><draw:line draw:style-name="Marke" text:anchor-type="page" svg:x1="0.4cm" svg:y1="21cm" svg:x2="0.9cm" svg:y2="21cm"/></text:p>
    </style:header>
    <style:footer>
     <text:p text:style-name="Fusszeile_20_Brief">Hausverwaltung Mustermann GmbH · Amtsgericht Musterstadt HRB 000000 · Geschäftsführerin: Gabi Musterfrau</text:p>

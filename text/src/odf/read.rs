@@ -136,6 +136,10 @@ pub struct Builder {
     /// The header or footer paragraph being read, and those of it already read.
     marginal: Option<crate::marginal::Paragraph>,
     marginal_done: Vec<crate::marginal::Paragraph>,
+    /// The lines found in the header or footer being read, taken by the master when it closes.
+    marginal_lines: Vec<crate::marginal::Line>,
+    /// Each graphic style's stroke — `(width in mm, #rrggbb)` — for the lines a master draws.
+    graphic_strokes: HashMap<String, (f64, String)>,
     /// The citation of the note being read.
     citation: String,
     /// Whether the blocks being read are an index's generated entries ([`Block::generated`]).
@@ -170,6 +174,8 @@ type Room = (f64, f64);
 struct Marginals {
     header: Option<Vec<crate::marginal::Paragraph>>,
     footer: Option<Vec<crate::marginal::Paragraph>>,
+    /// The `draw:line`s in either, which belong to the page rather than to a paragraph.
+    lines: Vec<crate::marginal::Line>,
 }
 
 /// One `table:table` being read: its name, and the row number the next row in it takes.
@@ -263,6 +269,8 @@ impl Builder {
             layout_marginals: HashMap::new(),
             marginal: None,
             marginal_done: Vec::new(),
+            marginal_lines: Vec::new(),
+            graphic_strokes: HashMap::new(),
             citation: String::new(),
             generating: false,
             section: None,
@@ -395,6 +403,11 @@ impl Builder {
                         geometry: self.page_layouts.get(&master.1).copied(),
                         header,
                         footer,
+                        lines: self
+                            .master_marginals
+                            .get(&master.0)
+                            .map(|m| m.lines.clone())
+                            .unwrap_or_default(),
                         next: self.master_next.get(&master.0).cloned(),
                     },
                 )
@@ -923,7 +936,9 @@ impl Context<Builder> for MarginalText {
             return;
         }
         let paragraphs = std::mem::take(&mut b.marginal_done);
+        let lines = std::mem::take(&mut b.marginal_lines);
         let marginals = b.master_marginals.entry(self.master.clone()).or_default();
+        marginals.lines.extend(lines);
         match self.header {
             true => marginals.header = Some(paragraphs),
             false => marginals.footer = Some(paragraphs),
@@ -943,6 +958,30 @@ impl Context<Builder> for MarginalInline {
         let paragraph = b.marginal.as_mut()?;
         match (name.ns, name.local.as_str()) {
             (Ns::Text, "span" | "a") => return Some(Box::new(MarginalInline { closes: false })),
+            // A line drawn on the page — a fold mark, a rule — is the master's, not the
+            // paragraph's: its ends are `svg:` lengths from the page's corner.
+            (Ns::Draw, "line") => {
+                let at = |local: &str| {
+                    attrs
+                        .get(Ns::Svg, local)
+                        .and_then(grind_core::style::length_mm)
+                };
+                if let (Some(x1), Some(y1), Some(x2), Some(y2)) =
+                    (at("x1"), at("y1"), at("x2"), at("y2"))
+                    && b.marginal_lines.len() < MAX_STYLES
+                {
+                    let (width, color) = attrs
+                        .get(Ns::Draw, "style-name")
+                        .and_then(|name| b.graphic_strokes.get(name).cloned())
+                        .unwrap_or((0.18, "#000000".to_owned()));
+                    b.marginal_lines.push(crate::marginal::Line {
+                        from: (x1, y1),
+                        to: (x2, y2),
+                        width,
+                        color,
+                    });
+                }
+            }
             (Ns::Text, "page-number") => paragraph.parts.push(Part::PageNumber),
             (Ns::Text, "page-count") => paragraph.parts.push(Part::PageCount),
             (Ns::Text, "tab") => paragraph.push_text("\t"),
@@ -974,6 +1013,28 @@ impl Context<Builder> for MarginalInline {
         {
             b.marginal_done.push(paragraph);
         }
+    }
+}
+
+/// A `graphic` style: only its stroke, which is what a `draw:line` in a header is drawn with.
+struct GraphicStyleDef {
+    name: String,
+}
+
+impl Context<Builder> for GraphicStyleDef {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Style, "graphic-properties") && b.graphic_strokes.len() < MAX_STYLES {
+            let width = attrs
+                .get(Ns::Svg, "stroke-width")
+                .and_then(grind_core::style::length_mm)
+                .unwrap_or(0.18);
+            let color = attrs
+                .get(Ns::Svg, "stroke-color")
+                .unwrap_or("#000000")
+                .to_owned();
+            b.graphic_strokes.insert(self.name.clone(), (width, color));
+        }
+        None
     }
 }
 
@@ -1284,6 +1345,10 @@ impl Context<Builder> for Styles {
             && b.doc.styles.len() < MAX_STYLES
         {
             b.doc.styles.insert(declared.to_owned());
+        }
+        if attrs.get(Ns::Style, "family") == Some("graphic") {
+            let declared = attrs.get(Ns::Style, "name")?.to_owned();
+            return Some(Box::new(GraphicStyleDef { name: declared }));
         }
         if let Some(family @ ("table-cell" | "table-column")) = attrs.get(Ns::Style, "family") {
             let declared = attrs.get(Ns::Style, "name")?.to_owned();

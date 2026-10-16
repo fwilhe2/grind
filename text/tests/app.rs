@@ -1512,3 +1512,30 @@ fn every_master_page_keeps_its_own_page_layout() {
     assert_eq!(standard.geometry.expect("a layout").top, 15.0);
     assert_eq!(app.rest_master().as_deref(), Some("Standard"));
 }
+
+/// A `draw:line` in a master page's header is a line the *page* carries — a DIN 5008 letter's
+/// fold and punch marks — with the stroke its graphic style gives it, in millimetres from the
+/// page's corner (`Master::lines`).
+#[test]
+fn a_line_in_a_header_belongs_to_the_master_page() {
+    let template = r##"<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
+ <office:automatic-styles>
+  <style:style style:name="Mark" style:family="graphic"><style:graphic-properties svg:stroke-width="0.1cm" svg:stroke-color="#ff0000"/></style:style>
+  <style:page-layout style:name="One"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="1cm" fo:margin-bottom="1cm" fo:margin-left="2cm" fo:margin-right="2cm"/></style:page-layout>
+ </office:automatic-styles>
+ <office:master-styles>
+  <style:master-page style:name="Standard" style:page-layout-name="One"><style:header><text:p>Head<draw:line draw:style-name="Mark" text:anchor-type="page" svg:x1="0.4cm" svg:y1="10.5cm" svg:x2="0.9cm" svg:y2="10.5cm"/></text:p></style:header></style:master-page>
+ </office:master-styles>
+ <office:body><office:text><text:p>x</text:p></office:text></office:body>
+</office:document>"##;
+    let app = grind_text::App::new();
+    app.open_bytes("t.fodt", template.as_bytes())
+        .expect("opens");
+    let lines = app.master("Standard").expect("a master").lines;
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(lines[0].from, (4.0, 105.0));
+    assert_eq!(lines[0].to, (9.0, 105.0));
+    assert_eq!(lines[0].width, 1.0);
+    assert_eq!(lines[0].color, "#ff0000");
+}

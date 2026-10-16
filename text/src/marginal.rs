@@ -114,3 +114,20 @@ mod tests {
         );
     }
 }
+
+/// A straight line drawn on every page set on a master page — a `draw:line` in its header or
+/// footer (rng:11962's paragraphs may hold one): the fold and punch marks of a DIN 5008 letter,
+/// a rule under a letterhead. Read for printing and never written.
+///
+/// Coordinates are millimetres **from the page's top-left corner**, as `svg:x1…y2` say them for
+/// a shape anchored to the page; the stroke is the graphic style's, or half a point of black when
+/// the file names none.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Line {
+    pub from: (f64, f64),
+    pub to: (f64, f64),
+    /// In millimetres.
+    pub width: f64,
+    /// `#rrggbb`.
+    pub color: String,
+}

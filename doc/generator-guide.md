@@ -604,7 +604,8 @@ tall, the address field and the information block beside it on **nine shared lin
 paragraph per line, address left of a tab and `Zeichen: … Datum: …` right of it, at 125 mm from
 the page edge), the subject at 98.5 mm, a footer with the bank details and `Seite 1 von 2`, and
 a smaller header on a continuation page. The template's header comment says which number is
-which. It does **not** draw fold and punch marks: the model has no drawing.
+which. The **fold and punch marks** are three `draw:line`s in the first page's header — lines
+the page carries, which `grind-print` draws on every page set on that master.
 
 **A series.** A script that ends with a **map of names to documents** — one letter per tenancy —
 is built into a directory, one file each:

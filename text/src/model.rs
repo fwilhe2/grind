@@ -595,6 +595,8 @@ pub struct Master {
     pub geometry: Option<grind_core::page::PageGeometry>,
     pub header: Option<crate::marginal::Marginal>,
     pub footer: Option<crate::marginal::Marginal>,
+    /// Lines drawn on every page set on it (`draw:line` in its header or footer).
+    pub lines: Vec<crate::marginal::Line>,
     /// `style:next-style-name`; `None` is the master itself.
     pub next: Option<String>,
 }

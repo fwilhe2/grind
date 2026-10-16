@@ -214,6 +214,15 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 let bottom = pt(geometry.height) - pt(geometry.bottom);
                 footer.draw(&mut ops, (left, bottom - footer.height), shown, count);
             }
+            // Lines the master draws on the page itself, from its top-left corner.
+            for line in &sheet.lines {
+                ops.push(Op::Line {
+                    from: (pt(line.from.0) as f32, pt(line.from.1) as f32),
+                    to: (pt(line.to.0) as f32, pt(line.to.1) as f32),
+                    width: pt(line.width) as f32,
+                    color: Rgb::parse(&line.color).unwrap_or(Rgb::BLACK),
+                });
+            }
             Page {
                 width: pt(geometry.width) as f32,
                 height: pt(geometry.height) as f32,
@@ -269,6 +278,8 @@ struct Kind {
 /// A kind of page, laid out: its geometry, its header and footer, and what is left for the body.
 struct Sheet<'a> {
     geometry: PageGeometry,
+    /// What the master draws on every page: fold marks, a rule (`draw:line` in its header).
+    lines: Vec<grind_text::marginal::Line>,
     header: Option<Marginal<'a>>,
     footer: Option<Marginal<'a>>,
     /// Where the body starts down the page, and how tall it is — in points.
@@ -302,6 +313,7 @@ impl<'a> Sheet<'a> {
         let height = (pt(geometry.text_height()) - room(&header) - room(&footer)).max(1.0);
         Sheet {
             geometry,
+            lines: master.as_ref().map(|m| m.lines.clone()).unwrap_or_default(),
             header,
             footer,
             top,
@@ -1831,6 +1843,38 @@ mod tests {
         };
         assert!(footer(0).contains("No. 1 of 1"), "{}", footer(0));
         assert!(footer(1).contains("No. 1 of 1"), "{}", footer(1));
+    }
+
+    /// A line a master draws — a fold mark — is on every page set on it, from the page's own
+    /// corner, in the stroke its graphic style names.
+    #[test]
+    fn a_master_pages_lines_are_drawn_on_its_pages() {
+        let bytes = r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles>
+              <style:style style:name="Mark" style:family="graphic"><style:graphic-properties svg:stroke-width="0.1cm" svg:stroke-color="#ff0000"/></style:style>
+              <style:page-layout style:name="pl"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/></style:page-layout>
+            </office:automatic-styles>
+            <office:master-styles>
+              <style:master-page style:name="Standard" style:page-layout-name="pl"><style:header><text:p>Head<draw:line draw:style-name="Mark" text:anchor-type="page" svg:x1="1cm" svg:y1="10.5cm" svg:x2="1.5cm" svg:y2="10.5cm"/></text:p></style:header></style:master-page>
+            </office:master-styles>
+            <office:body><office:text><text:p>body</text:p></office:text></office:body></office:document>"##;
+        let app = App::new();
+        app.open_bytes("marks.fodt", bytes.as_bytes()).unwrap();
+        let doc = typeset(&app, &setter(), &Options::default());
+        let lines: Vec<_> = doc.pages[0]
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                crate::ops::Op::Line {
+                    from, to, width, ..
+                } if (from.1 - 297.64).abs() < 1.0 => Some((*from, *to, *width)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        // 10.5 cm is 297.6 pt down, 1 cm is 28.35 pt across, 1 mm is 2.83 pt thick.
+        assert!((lines[0].0.0 - 28.35).abs() < 0.1 && (lines[0].1.0 - 42.52).abs() < 0.1);
+        assert!((lines[0].2 - 2.83).abs() < 0.05);
     }
 
     /// A style's `fo:break-before="page"` starts its paragraph on a page of its own.

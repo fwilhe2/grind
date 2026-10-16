@@ -73,17 +73,27 @@ for o in source.owners {
         + source.meeting.time + "**, " + source.meeting.place + ".");
     d.para("Brieftext", "Tagesordnung:");
 
+    // The agenda as a table: its number, its topic, and — where it costs money — this owner's
+    // share by their ownership fraction. Numbered by the script, so a topic added to the data
+    // renumbers everything after it.
+    let rows = [["**TOP**", "**Thema**", "**Ihr Anteil " + o.mea + "/1000**"]];
     let n = 0;
     for top in source.agenda {
         n += 1;
-        let line = "TOP " + n + ": " + top.title;
+        let share = "";
         if "amount" in top {
-            let share = cents(top.amount.to_float() * o.mea.to_float() / 1000.0);
-            line += " – " + top.note + " " + eur(top.amount) + "; Ihr Anteil " + o.mea + "/1000: **" + eur(share / 100.0) + "**"
-                + (if top.per == "Jahr" { " im Jahr (" + eur(share / 1200.0) + " im Monat)" } else { "" });
+            let cents_share = cents(top.amount.to_float() * o.mea.to_float() / 1000.0);
+            share = eur(cents_share / 100.0) + (if top.per == "Jahr" { " im Jahr" } else { "" });
         }
-        d.item(1, line).style("Aufzaehlung");
-        if "amount" in top && top.per == "einmalig" { d.bookmark(o.id + "cost"); }
+        rows.push([n.to_string(), top.title, share]);
+    }
+    d.table(rows, ["Tabelle", "Tabelle", "Tabelle_20_Betrag"]);
+    // The one-off cost's share is what a test reads: the last row of the agenda that has one.
+    for top in source.agenda {
+        if "amount" in top && top.per == "einmalig" {
+            d.para("Brieftext", top.note + " " + eur(top.amount) + ": Ihr Anteil **" + eur(cents(top.amount.to_float() * o.mea.to_float() / 1000.0) / 100.0) + "**.");
+            d.bookmark(o.id + "cost");
+        }
     }
 
     d.para("Ergebnis", "**Ihre Miteigentumsanteile: " + o.mea + "/1000** (" + o.unit + ").");
