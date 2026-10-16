@@ -126,9 +126,12 @@ for b in bills {
     } else {
         d.para("Brieftext", "wir bitten Sie, einer Erhöhung der Miete für **" + t.unit + "** ab dem " + source.effective
             + " zuzustimmen. Grundlage ist der " + source.mietspiegel.name + " (" + source.mietspiegel.note + "):");
-        d.item(1, "Wohnfläche: " + de(t.area, 1) + " m² × " + eur(t.reference_per_m2) + " = Vergleichsmiete **" + eur(b.reference / 100.0) + "**").style("Aufzaehlung");
-        d.item(1, "Ihre Miete vor drei Jahren: " + eur(t.rent_3y) + " – Obergrenze mit " + t.cap + " %: **" + eur(b.cap / 100.0) + "**").style("Aufzaehlung");
-        d.item(1, "Ihre heutige Miete: **" + eur(b.now / 100.0) + "**").style("Aufzaehlung");
+        d.table([
+            ["**Berechnung**", "**Betrag**"],
+            ["Vergleichsmiete: " + de(t.area, 1) + " m² × " + eur(t.reference_per_m2), eur(b.reference / 100.0)],
+            ["Obergrenze: Miete vor drei Jahren " + eur(t.rent_3y) + " + " + t.cap + " %", eur(b.cap / 100.0)],
+            ["Ihre heutige Miete", eur(b.now / 100.0)],
+        ], ["Tabelle", "Tabelle_20_Betrag"]);
         if b.outcome == "capped" {
             d.para("Brieftext", "Die Vergleichsmiete liegt über der Obergrenze. Wir erhöhen deshalb nur bis zur Obergrenze (" + source.cap_note + ").");
         }

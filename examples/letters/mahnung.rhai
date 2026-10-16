@@ -131,14 +131,28 @@ for b in bills {
     d.para("Brieftext", t.greeting + ",");
     d.para("Brieftext", tone.opening);
 
+    // The open rents as a table — with a column of interest from the second reminder on, and the
+    // fee as its own row. Money on the right.
+    let interest = t.level >= 2;
+    let head = ["**Miete**", "**Fällig**", "**Bezahlt**", "**Offen**"];
+    if interest { head.push("**Verzugszinsen**"); }
+    let rows = [head];
     for l in b.lines {
-        d.item(1, "Miete " + l.month + ": fällig " + eur(l.due) + ", bezahlt " + eur(l.paid)
-            + ", offen **" + eur(l.open / 100.0) + "**"
-            + (if l.interest > 0 { " (Verzugszinsen für " + l.days + " Tage: " + eur(l.interest / 100.0) + ")" } else { "" })).style("Aufzaehlung");
+        let row = [l.month, eur(l.due), eur(l.paid), eur(l.open / 100.0)];
+        if interest { row.push(eur(l.interest / 100.0) + " (" + l.days + " Tage)"); }
+        rows.push(row);
     }
     if b.fee > 0 {
-        d.item(1, "Mahngebühr: **" + eur(b.fee / 100.0) + "**").style("Aufzaehlung");
+        let row = ["Mahngebühr", "", "", ""];
+        row.push(eur(b.fee / 100.0));
+        rows.push(row);
     }
+    let total = ["**Summe**", "", "", ""];
+    if interest { total.push("**" + eur(b.total / 100.0) + "**"); } else { total[3] = "**" + eur(b.total / 100.0) + "**"; }
+    rows.push(total);
+    let money = ["Tabelle", "Tabelle_20_Betrag", "Tabelle_20_Betrag", "Tabelle_20_Betrag"];
+    if interest { money.push("Tabelle_20_Betrag"); }
+    d.table(rows, money);
 
     d.para("Ergebnis", "**Offen: " + eur(b.total / 100.0) + ".** Bitte überweisen Sie den Betrag bis zum " + deadline
         + " auf das Konto " + landlord.iban + ".");

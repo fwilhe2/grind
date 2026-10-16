@@ -393,7 +393,10 @@ exactly that much. Every method returns the document.
 | `t.para(text)` | `Text` | a paragraph |
 | `t.heading(level, text)` | `Text` | a heading, level `1`–`6`. The outline is implied by the levels and by nothing else |
 | `t.para(style, text)` | `Text` | a paragraph in the named paragraph style a template declares |
-| `t.style(style)` | `Text` | set the named paragraph style of the block last said — a list item, a heading or a paragraph. Like `bookmark`, it needs a block to say it on |
+| `t.style(style)` | `Text` | set the named paragraph style of the block last said — a list item, a heading or a paragraph. Like `bookmark`, it needs a block to say it on — and refuses a table, which is many |
+| `t.table(rows)` | `Text` | a table: an array of rows, each an array of cell texts (the suite's notation, so `**Item**` is a bold heading cell). Every row has the same number of cells; a ragged one is refused by row. Its cells are `rows × columns` blocks. A table may open the document |
+| `t.table(rows, styles)` | `Text` | the same, with a paragraph style per column from a template — `["", "Amount"]`, `""` for none — which is where a right-aligned amount goes |
+| `t.page_break()` | `Text` | the next paragraph, heading or item starts a page. Said as a paragraph style **the document declares** (`grind-break-<style>`, derived from the block's own, plus `fo:break-before`), so it works under any template and none; before a table it is refused |
 | `t.item(depth, text)` | `Text` | a list item nested `1`–`9` deep |
 | `t.item(text)` | `Text` | the same, at depth 1 |
 | `t.bookmark(name)` | `Text` | anchor a bookmark at the start of the block last said. `#name` then addresses it, and survives editing where `p12` does not |

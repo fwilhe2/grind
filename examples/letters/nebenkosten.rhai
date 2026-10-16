@@ -221,19 +221,18 @@ for b in bills {
         + de(t.area, 1) + " m², " + t.persons + (if t.persons == 1 { " Person" } else { " Personen" })
         + "). Ihre Anteile im Einzelnen:");
 
+    // The shares as a table: what, the bill, by which key, and the share — the money on the
+    // right. Four short columns, because the columns are equal and a wrapped cell doubles a row.
+    let rows = [["**Kostenart**", "**Rechnung**", "**Verteilung**", "**Ihr Anteil**"]];
     for l in b.lines {
-        d.item(1, l.name + " (" + KEYS[l.key] + ", " + de(l.part * 100.0, 2) + " % von "
-            + eur(l.total) + "): **" + eur(l.share / 100.0) + "**").style("Aufzaehlung");
+        rows.push([l.name, eur(l.total), KEYS[l.key] + ", " + de(l.part * 100.0, 2) + " %", eur(l.share / 100.0)]);
     }
-    d.item(1, "Heizung, nach Verbrauch (" + de(consumption_share * 100.0, 0) + " %: "
-        + de(t.kwh, 0) + " von " + de(totals.kwh, 0) + " kWh = " + de(b.metered_part * 100.0, 2)
-        + " %): **" + eur(b.metered_share / 100.0) + "**").style("Aufzaehlung");
-    d.item(1, "Heizung, Grundkosten (" + de((1.0 - consumption_share) * 100.0, 0)
-        + " %: Wohnfläche, " + de(b.base_part * 100.0, 2) + " % von " + eur(b.base) + "): **"
-        + eur(b.base_share / 100.0) + "**").style("Aufzaehlung");
+    rows.push(["Heizung, Verbrauch", eur(b.metered), de(t.kwh, 0) + " von " + de(totals.kwh, 0) + " kWh", eur(b.metered_share / 100.0)]);
+    rows.push(["Heizung, Grundkosten", eur(b.base), "Wohnfläche, " + de(b.base_part * 100.0, 2) + " %", eur(b.base_share / 100.0)]);
+    rows.push(["**Summe**", "", "", "**" + eur(b.sum / 100.0) + "**"]);
+    d.table(rows, ["Tabelle", "Tabelle_20_Betrag", "Tabelle", "Tabelle_20_Betrag"]);
 
-    d.para("Brieftext", "Ihre Betriebskosten betragen insgesamt **" + eur(b.sum / 100.0)
-        + "**. Dem stehen Ihre Vorauszahlungen von " + t.months + " × " + eur(t.prepayment)
+    d.para("Brieftext", "Dem stehen Ihre Vorauszahlungen von " + t.months + " × " + eur(t.prepayment)
         + " = **" + eur(b.paid / 100.0) + "** gegenüber.");
 
     if b.balance > 0 {
@@ -261,7 +260,6 @@ for b in bills {
             + eur(monthly) + "** anzupassen (bisher " + eur(t.prepayment) + ").");
     }
 
-    d.para("Brieftext", "Bei Rückfragen erreichen Sie uns unter " + landlord.phone + ".");
     d.para("Gruss", "Mit freundlichen Grüßen");
     d.para("Unterschrift", landlord.signed);
 }

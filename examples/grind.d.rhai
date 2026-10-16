@@ -175,6 +175,12 @@ fn locale(format: Format, tag: string) -> Format;
 /// from anywhere in the document.
 fn name(sheet: Sheet, name: string, target: string) -> Sheet;
 
+/// The next paragraph, heading or item starts a new page.
+///
+/// Said as a paragraph style the document declares for it — `fo:break-before` —
+/// so it works whatever template the document starts from, and none.
+fn page_break(document: Text) -> Text;
+
 /// A paragraph.
 ///
 /// The text is read in the notation the whole suite types in: `**bold**`,
@@ -266,6 +272,16 @@ fn sum_above() -> Cell;
 
 /// The currency symbol — `"€"` (the default), `"$"`, `"£"`, `"CHF"`.
 fn symbol(format: Format, symbol: string) -> Format;
+
+/// A table: an array of rows, each an array of cell texts. Every row needs the
+/// same number of cells. A cell's text is read in the suite's notation, so
+/// `**bold**` makes a heading row.
+fn table(document: Text, rows: array) -> Text;
+
+/// A table whose columns are set in the paragraph styles the template declares —
+/// `["Name", "Amount"]`, with `""` for a column with none. An amount's column is
+/// where a right-aligned style goes.
+fn table(document: Text, rows: array, styles: array) -> Text;
 
 /// An empty text document. Say headings, paragraphs and list items into it, and
 /// return it at the end of the script.

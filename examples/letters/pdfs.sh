@@ -31,7 +31,7 @@ if grep -q uebersicht "$here/$name.rhai"; then ids="$ids uebersicht"; fi
 for id in $ids; do
     printf '{ "only": "%s" }\n' "$id" > "$work/select.json"
     "$GRIND" build "$here/$name.rhai" --data "$work" -o "$work/$id.fodt" >/dev/null
-    "$GRIND" text export-pdf "$work/$id.fodt" "$out/$name-$id.pdf" --paper a4 --bundled-fonts \
+    "$GRIND" text export-pdf "$work/$id.fodt" "$out/$name-$id.pdf" --bundled-fonts \
         --title "$name $id" >/dev/null
     echo "$out/$name-$id.pdf"
 done

@@ -359,6 +359,14 @@
     "prefix": "name",
     "scope": "rhai"
   },
+  "page_break(document: Text) -> Text": {
+    "body": [
+      "page_break()"
+    ],
+    "description": "The next paragraph, heading or item starts a new page.\n\nSaid as a paragraph style the document declares for it — `fo:break-before` —\nso it works whatever template the document starts from, and none.",
+    "prefix": "page_break",
+    "scope": "rhai"
+  },
   "para(document: Text, style: string, text: string) -> Text": {
     "body": [
       "para(${1:style}, ${2:text})"
@@ -525,6 +533,22 @@
     ],
     "description": "The currency symbol — `\"€\"` (the default), `\"$\"`, `\"£\"`, `\"CHF\"`.",
     "prefix": "symbol",
+    "scope": "rhai"
+  },
+  "table(document: Text, rows: array) -> Text": {
+    "body": [
+      "table(${1:rows})"
+    ],
+    "description": "A table: an array of rows, each an array of cell texts. Every row needs the\nsame number of cells. A cell's text is read in the suite's notation, so\n`**bold**` makes a heading row.",
+    "prefix": "table",
+    "scope": "rhai"
+  },
+  "table(document: Text, rows: array, styles: array) -> Text": {
+    "body": [
+      "table(${1:rows}, ${2:styles})"
+    ],
+    "description": "A table whose columns are set in the paragraph styles the template declares —\n`[\"Name\", \"Amount\"]`, with `\"\"` for a column with none. An amount's column is\nwhere a right-aligned style goes.",
+    "prefix": "table",
     "scope": "rhai"
   },
   "text() -> Text": {

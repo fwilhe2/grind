@@ -28,7 +28,7 @@ Everything on it is made up.
 
   <!-- The return-address line: 7 pt, exactly 5 mm tall, as wide as the window. -->
   <style:style style:name="Ruecksendeangabe" style:family="paragraph" style:parent-style-name="Standard" style:next-style-name="Anschriftzeile" style:master-page-name="Erste_20_Seite">
-   <style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm" fo:margin-left="0cm" fo:margin-right="8cm" fo:line-height="0.5cm" fo:break-before="page"/>
+   <style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm" fo:margin-left="0cm" fo:margin-right="8cm" fo:line-height="0.5cm" fo:break-before="page" style:page-number="1"/>
    <style:text-properties fo:font-size="7pt" fo:color="#4a5563"/>
   </style:style>
   <!-- One line of the address field and the information block beside it: the left of the tab
@@ -54,6 +54,14 @@ Everything on it is made up.
   <style:style style:name="Aufzaehlung" style:family="paragraph" style:parent-style-name="Standard">
    <style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0.1cm"/>
    <style:text-properties fo:font-size="9.5pt"/>
+  </style:style>
+  <!-- A table's cells: small, close-set, the amount column on the right. -->
+  <style:style style:name="Tabelle" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-top="0.02cm" fo:margin-bottom="0.02cm"/>
+   <style:text-properties fo:font-size="9.5pt"/>
+  </style:style>
+  <style:style style:name="Tabelle_20_Betrag" style:display-name="Tabelle Betrag" style:family="paragraph" style:parent-style-name="Tabelle">
+   <style:paragraph-properties fo:text-align="end"/>
   </style:style>
   <style:style style:name="Ergebnis" style:family="paragraph" style:parent-style-name="Brieftext">
    <style:paragraph-properties fo:margin-top="0.2cm" fo:margin-bottom="0.4cm" fo:keep-together="always"/>
