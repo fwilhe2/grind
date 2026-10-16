@@ -36,6 +36,10 @@ fn grind_in(dir: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_grind"))
         .current_dir(dir)
         .args(args)
+        // A developer's own remembered spelling language (`~/.config/grind/spelling`) must not
+        // decide whether a starter lints clean.
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("HOME")
         .output()
         .expect("grind runs")
 }

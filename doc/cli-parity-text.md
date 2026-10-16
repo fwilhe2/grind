@@ -220,6 +220,8 @@ had no width and therefore no lines.
 - `marginals` — `grind text export-pdf` and `preview`, which draw the header and footer on every page; nothing prints them on their own
 - `resolve_style` — the same, for a header or footer paragraph's style
 - `first_page_marginals` — the same, for a first page set on a master page of its own (Writer's *First Page*)
+- `master` — the same, for every master page by name: a paragraph whose style names one opens a page on it anywhere (`doc/pdf-export.md` P8b), which `grind text export-pdf`, `pages` and `preview` draw
+- `rest_master` — the name of the master the body's pages are set on, read by the same three verbs
 - `paragraph` — `grind text pages` and `export-pdf`, which lay every block out by its resolved paragraph style (`doc/pdf-export.md` P5); no verb prints a style's resolution on its own yet
 - `paragraph_defaults` — `grind text pages` and `export-pdf`, whose page breaks honour the default paragraph style's widows and orphans (`doc/odt-format.md` §5c); no verb prints them on their own, since they mean nothing apart from a page
 - `page` — `grind info`, whose `page` line (and JSON `page` object) is the page the master page names, or the A4 a document stating none prints on (`doc/pdf-export.md` P2)

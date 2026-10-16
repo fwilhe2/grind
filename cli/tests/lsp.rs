@@ -29,6 +29,9 @@ impl Server {
     fn start() -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_grind"))
             .arg("lsp")
+            // Spelling follows the person's remembered setting; a test follows nobody's.
+            .env_remove("XDG_CONFIG_HOME")
+            .env_remove("HOME")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
