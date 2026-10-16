@@ -1102,10 +1102,16 @@ struct Figure {
 fn figure(view: &BlockView, measure: f64, body: &RoleFace<'_>) -> Option<Figure> {
     let (image, caption) = picture_of(view)?;
     let length = |value: &Option<String>| value.as_deref().and_then(length_mm).map(pt);
-    let (w, h) = (
-        length(&image.width)?.max(1.0),
-        length(&image.height)?.max(1.0),
-    );
+    // The size the document gives it, or — for a picture that states none, as one imported
+    // from Markdown does — its own pixels at 96 to the inch, the size a browser would draw it.
+    let (w, h) = match (length(&image.width), length(&image.height)) {
+        (Some(w), Some(h)) => (w, h),
+        _ => {
+            let (w, h) = intrinsic_pixels(&image.data)?;
+            (f64::from(w) * 0.75, f64::from(h) * 0.75)
+        }
+    };
+    let (w, h) = (w.max(1.0), h.max(1.0));
     let width = w.min(measure.max(1.0));
     let picture = h * width / w;
     let caption = caption.map(str::to_owned).filter(|c| !c.trim().is_empty());
@@ -1120,6 +1126,44 @@ fn figure(view: &BlockView, measure: f64, body: &RoleFace<'_>) -> Option<Figure>
         caption,
         height: picture + below,
     })
+}
+
+/// A PNG's, a JPEG's or a GIF's own width and height in pixels, read from its header — `None`
+/// for anything else, which is then not drawn rather than drawn at a guessed size.
+fn intrinsic_pixels(data: &[u8]) -> Option<(u32, u32)> {
+    let be32 = |at: usize| Some(u32::from_be_bytes(data.get(at..at + 4)?.try_into().ok()?));
+    let be16 = |at: usize| {
+        Some(u32::from(u16::from_be_bytes(
+            data.get(at..at + 2)?.try_into().ok()?,
+        )))
+    };
+    let le16 = |at: usize| {
+        Some(u32::from(u16::from_le_bytes(
+            data.get(at..at + 2)?.try_into().ok()?,
+        )))
+    };
+    if data.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Some((be32(16)?, be32(20)?));
+    }
+    if data.starts_with(b"GIF8") {
+        return Some((le16(6)?, le16(8)?));
+    }
+    if data.starts_with(&[0xFF, 0xD8]) {
+        // Walk the segments to the first start-of-frame, which carries the size.
+        let mut at = 2;
+        while at + 9 < data.len() {
+            if data[at] != 0xFF {
+                return None;
+            }
+            let marker = data[at + 1];
+            let length = be16(at + 2)? as usize;
+            if matches!(marker, 0xC0..=0xC3 | 0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF) {
+                return Some((be16(at + 7)?, be16(at + 5)?));
+            }
+            at += 2 + length;
+        }
+    }
+    None
 }
 
 fn caption_layout(text: &str, measure: f64, body: &RoleFace<'_>) -> grind_core::layout::Layout {
@@ -1875,6 +1919,19 @@ mod tests {
         // 10.5 cm is 297.6 pt down, 1 cm is 28.35 pt across, 1 mm is 2.83 pt thick.
         assert!((lines[0].0.0 - 28.35).abs() < 0.1 && (lines[0].1.0 - 42.52).abs() < 0.1);
         assert!((lines[0].2 - 2.83).abs() < 0.05);
+    }
+
+    /// A picture that states no size — one imported from Markdown — is drawn at its own pixels,
+    /// 96 to the inch, rather than left out.
+    #[test]
+    fn a_picture_without_a_size_is_drawn_at_its_own() {
+        let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        png.extend_from_slice(&200u32.to_be_bytes());
+        png.extend_from_slice(&100u32.to_be_bytes());
+        assert_eq!(intrinsic_pixels(&png), Some((200, 100)));
+        let gif = b"GIF89a\x40\x01\xf0\x00";
+        assert_eq!(intrinsic_pixels(gif), Some((320, 240)));
+        assert_eq!(intrinsic_pixels(b"not a picture"), None);
     }
 
     /// A style's `fo:break-before="page"` starts its paragraph on a page of its own.
