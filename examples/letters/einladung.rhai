@@ -6,7 +6,7 @@
 // money items that are each owner's share by their ownership fraction.
 //
 //   grind test examples/letters/einladung.rhai
-//   examples/letters/pdfs.sh einladung /tmp/letters
+//   grind build examples/letters/einladung.rhai -o letters --as pdf
 //
 // Every owner gets the same agenda, numbered by the script rather than typed (so a topic added
 // to `einladung.json` renumbers everything after it), with their own *Miteigentumsanteile* — and,
@@ -15,11 +15,7 @@
 // than none. Everything in `einladung.json` is made up.
 
 
-// One letter or all of them: `examples/letters/pdfs.sh` writes a `select.json` — `{ "only": "..." }`
-// — beside the data to get one PDF per recipient. The calculation runs in full either way.
 let source = json("einladung.json");
-let only = "";
-try { only = json("select.json").only; } catch { }
 
 // --- German figures ------------------------------------------------------------------------
 //
@@ -91,10 +87,10 @@ if total != 1000 {
     throw "the ownership fractions add up to " + total + "/1000, not 1000/1000";
 }
 
-let d = text_from("brief-din5008.fodt");
+let letters = #{};
 
 for o in source.owners {
-    if only != "" && only != o.id { continue; }
+    let d = text_from("brief-din5008.fodt");
 
     d.para("Ruecksendeangabe", landlord.name + " · " + landlord.street + " · " + landlord.city);
     field(d, [o.name, o.street, o.city], [
@@ -130,21 +126,22 @@ for o in source.owners {
     d.para("Brieftext", "Wenn Sie nicht teilnehmen können, bevollmächtigen Sie bitte schriftlich eine Person Ihres Vertrauens. Rückfragen: " + landlord.phone + ".");
     d.para("Gruss", "Mit freundlichen Grüßen");
     d.para("Unterschrift", landlord.signed);
+    letters[o.id] = d;
 }
 
-d;
+letters;
 
 // --- checks --------------------------------------------------------------------------------
 
 fn test_the_shares_of_a_cost_follow_the_fractions(d) {
     // 48.000,00 € × 270/1000 = 12.960,00 €, for the owner with two flats; × 118/1000 = 5.664,00 €.
-    assert(d.block("#o3cost").contains("**12.960,00 €**") || d.block("#o3cost").contains("12.960,00 €"), d.block("#o3cost"));
-    assert(d.block("#o1cost").contains("5.664,00 €"), d.block("#o1cost"));
+    assert(d.doc("o3").block("#o3cost").contains("**12.960,00 €**") || d.doc("o3").block("#o3cost").contains("12.960,00 €"), d.doc("o3").block("#o3cost"));
+    assert(d.doc("o1").block("#o1cost").contains("5.664,00 €"), d.doc("o1").block("#o1cost"));
 }
 
 fn test_every_owner_has_a_letter(d) {
     for id in ["o1", "o2", "o3", "o4", "o5", "o6"] {
-        assert(d.block("#" + id).starts_with("Ihre Miteigentumsanteile: "), id);
+        assert(d.doc(id).block("#" + id).starts_with("Ihre Miteigentumsanteile: "), id);
     }
 }
 

@@ -5,7 +5,7 @@
 // Rent-increase letters: a calculation with a rule in it — the *Kappungsgrenze*.
 //
 //   grind test examples/letters/mieterhoehung.rhai
-//   examples/letters/pdfs.sh mieterhoehung /tmp/letters
+//   grind build examples/letters/mieterhoehung.rhai -o letters --as pdf
 //
 // A landlord may raise the rent up to the local comparative rent (the Mietspiegel's figure per
 // square metre times the flat's area), but not by more than a cap over the rent paid three years
@@ -18,11 +18,7 @@
 // the mechanism, not advice. Everything in `mieterhoehung.json` is invented.
 
 
-// One letter or all of them: `examples/letters/pdfs.sh` writes a `select.json` — `{ "only": "..." }`
-// — beside the data to get one PDF per recipient. The calculation runs in full either way.
 let source = json("mieterhoehung.json");
-let only = "";
-try { only = json("select.json").only; } catch { }
 
 // --- German figures ------------------------------------------------------------------------
 //
@@ -101,11 +97,11 @@ for t in source.tenants {
     bills.push(#{ t: t, now: now, reference: reference, cap: cap, new_rent: new_rent, outcome: outcome });
 }
 
-let d = text_from("brief-din5008.fodt");
+let letters = #{};
 
 for b in bills {
+    let d = text_from("brief-din5008.fodt");
     let t = b.t;
-    if only != "" && only != t.id { continue; }
 
     d.para("Ruecksendeangabe", landlord.name + " · " + landlord.street + " · " + landlord.city);
     field(d, [t.name, source.building.street, source.building.city], [
@@ -146,30 +142,31 @@ for b in bills {
 
     d.para("Gruss", "Mit freundlichen Grüßen");
     d.para("Unterschrift", landlord.signed);
+    letters[t.id] = d;
 }
 
-d;
+letters;
 
 // --- checks --------------------------------------------------------------------------------
 
 fn test_an_increase_up_to_the_comparative_rent(d) {
     // 58,0 m² × 9,40 € = 545,20 €; the cap is 470 × 1,2 = 564,00 €, so the Mietspiegel decides.
-    assert(d.block("#e1").starts_with("Neue Miete: 545,20 € (+ 47,20 € im Monat, + 9,5 %)"), d.block("#e1"));
+    assert(d.doc("e1").block("#e1").starts_with("Neue Miete: 545,20 € (+ 47,20 € im Monat, + 9,5 %)"), d.doc("e1").block("#e1"));
 }
 
 fn test_the_cap_holds_an_increase_back(d) {
     // 76,0 m² × 10,90 € = 828,40 €, but 640 × 1,2 = 768,00 €: the cap decides.
-    assert(d.block("#e2").starts_with("Neue Miete: 768,00 €"), d.block("#e2"));
+    assert(d.doc("e2").block("#e2").starts_with("Neue Miete: 768,00 €"), d.doc("e2").block("#e2"));
 }
 
 fn test_a_rent_above_the_comparative_rent_is_left_alone_at_all(d) {
     // 64,0 m² × 9,40 € = 601,60 €, below today's 640,00 €: no increase.
-    assert(d.block("#e3").starts_with("Miete unverändert: 640,00 €"), d.block("#e3"));
+    assert(d.doc("e3").block("#e3").starts_with("Miete unverändert: 640,00 €"), d.doc("e3").block("#e3"));
 }
 
 fn test_a_rent_above_the_comparative_rent_is_left_alone(d) {
     // 82,5 m² × 8,80 € = 726,00 €, below today's 745,00 €.
-    assert(d.block("#e4").starts_with("Miete unverändert: 745,00 €"), d.block("#e4"));
+    assert(d.doc("e4").block("#e4").starts_with("Miete unverändert: 745,00 €"), d.doc("e4").block("#e4"));
 }
 
 fn test_the_document_contradicts_itself_nowhere(d) {

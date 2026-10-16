@@ -6,7 +6,7 @@
 // `nebenkosten.rhai`, a different calculation.
 //
 //   grind test examples/letters/mahnung.rhai
-//   examples/letters/pdfs.sh mahnung /tmp/letters
+//   grind build examples/letters/mahnung.rhai -o letters --as pdf
 //
 // Level 1 is a friendly reminder, level 2 a second reminder that charges default interest and a
 // fee, level 3 a last warning that says what the landlord may do next. What differs between
@@ -17,11 +17,7 @@
 // Everything in `mahnung.json` is made up, the base rate included.
 
 
-// One letter or all of them: `examples/letters/pdfs.sh` writes a `select.json` — `{ "only": "mahnung" }`
-// — beside the data to get one PDF per recipient. The calculation runs in full either way.
 let source = json("mahnung.json");
-let only = "";
-try { only = json("select.json").only; } catch { }
 
 // --- German figures ------------------------------------------------------------------------
 //
@@ -110,11 +106,11 @@ for t in source.tenants {
     bills.push(#{ t: t, lines: lines, open: open, interest: interest, fee: fee, total: open + interest + fee });
 }
 
-let d = text_from("brief-din5008.fodt");
+let letters = #{};
 
 for b in bills {
+    let d = text_from("brief-din5008.fodt");
     let t = b.t;
-    if only != "" && only != t.id { continue; }
     let tone = TONE[t.level.to_string()];
     let deadline = source.deadlines[t.level.to_string()];
 
@@ -172,25 +168,26 @@ for b in bills {
 
     d.para("Gruss", "Mit freundlichen Grüßen");
     d.para("Unterschrift", landlord.signed);
+    letters[t.id] = d;
 }
 
-d;
+letters;
 
 // --- checks --------------------------------------------------------------------------------
 
 fn test_level_one_is_a_reminder_without_interest_or_fee(d) {
-    assert_eq(d.block("#m1"), "Offen: 842,00 €. Bitte überweisen Sie den Betrag bis zum 23. Oktober 2026 auf das Konto DE00 0000 0000 0000 0000 00.");
+    assert_eq(d.doc("m1").block("#m1"), "Offen: 842,00 €. Bitte überweisen Sie den Betrag bis zum 23. Oktober 2026 auf das Konto DE00 0000 0000 0000 0000 00.");
 }
 
 fn test_level_two_adds_interest_and_a_fee(d) {
     // 290,00 € open for 46 days and 690,00 € for 16 days, both at 7,27 % a year:
     // 290 × 0,0727 × 46 / 365 = 2,66 and 690 × 0,0727 × 16 / 365 = 2,20, and a 5,00 € fee.
-    assert(d.block("#m2").starts_with("Offen: 989,86 €"), d.block("#m2"));
+    assert(d.doc("m2").block("#m2").starts_with("Offen: 989,86 €"), d.doc("m2").block("#m2"));
 }
 
 fn test_level_three_carries_the_largest_claim(d) {
     // Three rents of 755,50 €, interest of 6,92 + 2,41 + 1,81, and a 10,00 € fee.
-    assert(d.block("#m3").starts_with("Offen: 2.287,64 €"), d.block("#m3"));
+    assert(d.doc("m3").block("#m3").starts_with("Offen: 2.287,64 €"), d.doc("m3").block("#m3"));
 }
 
 fn test_the_document_contradicts_itself_nowhere(d) {

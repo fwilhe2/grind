@@ -606,27 +606,29 @@ the page edge), the subject at 98.5 mm, a footer with the bank details and `Seit
 a smaller header on a continuation page. The template's header comment says which number is
 which. It does **not** draw fold and punch marks: the model has no drawing.
 
-`grind build` writes one document per run, so `examples/letters/pdfs.sh` runs the script once per
-recipient — a `select.json` beside the data says which letter, `{ "only": "w3a" }` — and hands
-each result to `grind text export-pdf`, giving `w1.pdf` … `w5.pdf` and `uebersicht.pdf`, one
-A4 page each. Every run still does the whole calculation and its check, so a single letter is
-verified against all the bills. `--bundled-fonts` makes the bytes reproducible: the same data
-writes the same PDFs on any machine.
+**A series.** A script that ends with a **map of names to documents** — one letter per tenancy —
+is built into a directory, one file each:
 
 ```console
-$ GRIND=target/debug/grind examples/letters/pdfs.sh nebenkosten /tmp/letters
-/tmp/letters/nebenkosten-w1.pdf
+$ grind build examples/letters/nebenkosten.rhai -o letters --as pdf
+letters/uebersicht.pdf
+letters/w1.pdf
 …
 ```
 
-Building the series *without* `select.json` writes all seven into one document, one page each
-(the first paragraph's style starts a page), which is a way to read the whole run. The
-continuation pages of that document wear the small header rather than the letterhead: a master
-page named by a style applies to the document's first page only, so a PDF per recipient is how
-every letter gets its letterhead.
+`--as pdf` sets each letter on the bundled fonts only, so the same data writes the same PDFs on
+any machine; without it the letters are flat ODF (`.fodt`), the form that diffs. `grind test`
+asks one letter of the series by name: `d.doc("w3a").block("#w3a")`. Every letter is checked
+against all the bills, because the whole calculation runs once and only the *writing* is per
+recipient.
+
+**The letterhead on every letter.** Each letter opens with a paragraph whose style names a master
+page (`style:master-page-name`) and restarts the page numbers, so a document made of many letters
+— the same script, written as one `text()` instead of a map — still gives each its letterhead, its
+own margins and its own "Seite 1 von 1".
 
 What it ran into, so you do not: a script has no `ceil`; `from` and `until` are Rhai keywords
-and cannot be property names; the model has no table, so the cost lines are a list; and the
+and cannot be property names; a table's columns are equal widths (so the cells are short); and the
 size of text in the address field is the paragraph's, not the character's, which is why the
 information block shares its 10 pt.
 
@@ -641,7 +643,7 @@ directory under `examples/`, and a script reads its data from the directory it i
 |---|---|
 | `examples/prices/` | data in a file (§6) |
 | `examples/timesheet/` | four sheets that agree (§8) |
-| `examples/letters/` | a series of DIN 5008 letters from one template, `brief-din5008.fodt`, and `pdfs.sh` to write one PDF per recipient: `nebenkosten` (a calculation per tenancy), `mahnung` (three tones of dunning letter, interest worked out per item), `mieterhoehung` (a rule with a cap — the letter chooses its own sentence), `einladung` (an agenda that is data, and each owner's share of what a topic costs) |
+| `examples/letters/` | a series of DIN 5008 letters from one template, `brief-din5008.fodt`, each built as a series — a file per recipient: `nebenkosten` (a calculation per tenancy), `mahnung` (three tones of dunning letter, interest worked out per item), `mieterhoehung` (a rule with a cap — the letter chooses its own sentence), `einladung` (an agenda that is data, and each owner's share of what a topic costs) |
 | `examples/darlehen/` | one repayment schedule per scenario as live formulas, with a chart each and a comparison sheet |
 | `examples/notenbuch/` | a grade book whose weights and grade scale are cells the formulas look up; the tests are the boundaries |
 | `examples/loc/` | a document that lives in git as a build product |

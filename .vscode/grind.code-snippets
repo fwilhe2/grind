@@ -167,6 +167,22 @@
     "prefix": "decimals",
     "scope": "rhai"
   },
+  "doc(document: Built, name: string) -> Built": {
+    "body": [
+      "doc(${1:name})"
+    ],
+    "description": "One document of a series, by the name the script gave it — a script that ended\nwith a map of names to documents. `d.doc(\"w1\").block(\"#w1\")`.",
+    "prefix": "doc",
+    "scope": "rhai"
+  },
+  "docs(document: Built) -> array": {
+    "body": [
+      "docs()"
+    ],
+    "description": "The names of a series' documents, in order; none for a single document.",
+    "prefix": "docs",
+    "scope": "rhai"
+  },
   "format(kind: string) -> Format": {
     "body": [
       "format(${1:kind})"

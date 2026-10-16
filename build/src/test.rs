@@ -96,11 +96,16 @@ pub fn run(source: &str, script: &str, data: Rc<dyn crate::Data>) -> Result<Test
         .eval_ast::<Dynamic>(&ast)
         .map_err(|e| crate::position(script, &e))?;
     let artifact = crate::materialise(value, script)?;
-    if let Artifact::Spreadsheet(app) = &artifact {
-        // The answers a test asks about are the formulas', so they are computed first — the
-        // same recalculation `grind build` does before it writes.
-        app.recalc().map_err(|e| Error::at(script, e.to_string()))?;
+    // The answers a test asks about are the formulas', so they are computed first — the same
+    // recalculation `grind build` does before it writes.
+    fn recalc(artifact: &Artifact) -> Result<(), String> {
+        match artifact {
+            Artifact::Spreadsheet(app) => app.recalc().map(|_| ()).map_err(|e| e.to_string()),
+            Artifact::Series(all) => all.iter().try_for_each(|(_, one)| recalc(one)),
+            Artifact::Text(_) => Ok(()),
+        }
     }
+    recalc(&artifact).map_err(|e| Error::at(script, e))?;
     let kind = artifact.kind();
     let built = Built(Rc::new(artifact));
 
@@ -167,6 +172,13 @@ fn failure(script: &str, error: &EvalAltResult) -> Error {
     out
 }
 
+/// What a document method says when it is asked of a series.
+fn series_says(method: &str) -> Box<EvalAltResult> {
+    failed(format!(
+        "this is a series of documents: `d.doc(\"name\").{method}(…)` asks one of them"
+    ))
+}
+
 /// A failed assertion, as the runtime error Rhai positions at the call that raised it.
 fn failed(message: String) -> Box<EvalAltResult> {
     EvalAltResult::ErrorRuntime(message.into(), rhai::Position::NONE).into()
@@ -218,6 +230,7 @@ impl Built {
             Artifact::Text(_) => Err(failed(
                 "this document is a text document, and `cell` asks a spreadsheet".to_owned(),
             )),
+            Artifact::Series(_) => Err(series_says("cell")),
         }
     }
 
@@ -227,6 +240,38 @@ impl Built {
             Artifact::Spreadsheet(_) => Err(failed(
                 "this document is a spreadsheet, and `block` asks a text document".to_owned(),
             )),
+            Artifact::Series(_) => Err(series_says("block")),
+        }
+    }
+
+    /// One document of a series, by the name the script gave it.
+    fn doc(&self, name: &str) -> Result<Built, Box<EvalAltResult>> {
+        match &*self.0 {
+            Artifact::Series(all) => all
+                .iter()
+                .find(|(each, _)| each == name)
+                .map(|(_, one)| Built(Rc::clone(one)))
+                .ok_or_else(|| {
+                    let have: Vec<&str> = all.iter().map(|(each, _)| each.as_str()).collect();
+                    failed(format!(
+                        "the series has no {name:?}; it has {}",
+                        have.join(", ")
+                    ))
+                }),
+            _ => Err(failed(
+                "this is one document, not a series — `doc` names one of a series".to_owned(),
+            )),
+        }
+    }
+
+    /// The names of a series' documents, in order; none for a single document.
+    fn docs(&self) -> rhai::Array {
+        match &*self.0 {
+            Artifact::Series(all) => all
+                .iter()
+                .map(|(name, _)| Dynamic::from(name.clone()))
+                .collect(),
+            _ => rhai::Array::new(),
         }
     }
 
@@ -267,6 +312,18 @@ impl Built {
         let report = match &*self.0 {
             Artifact::Spreadsheet(app) => app.lint(&options),
             Artifact::Text(app) => app.lint(&options),
+            // Every document's findings, each said under its name.
+            Artifact::Series(all) => {
+                return all
+                    .iter()
+                    .flat_map(|(name, one)| {
+                        Built(Rc::clone(one))
+                            .lint()
+                            .into_iter()
+                            .map(move |finding| Dynamic::from(format!("{name}: {finding}")))
+                    })
+                    .collect();
+            }
         };
         report
             .diagnostics
@@ -384,6 +441,23 @@ pub fn register(engine: &mut Engine) {
             "/// `\"§2.1\"`.",
         ],
         |document: &mut Built, address: ImmutableString| document.block(&address),
+    );
+    hint(
+        engine,
+        "doc",
+        ["document: Built", "name: string", "Built"],
+        [
+            "/// One document of a series, by the name the script gave it — a script that ended",
+            "/// with a map of names to documents. `d.doc(\"w1\").block(\"#w1\")`.",
+        ],
+        |document: &mut Built, name: ImmutableString| document.doc(&name),
+    );
+    hint(
+        engine,
+        "docs",
+        ["document: Built", "array"],
+        ["/// The names of a series' documents, in order; none for a single document."],
+        |document: &mut Built| document.docs(),
     );
     hint(
         engine,

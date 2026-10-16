@@ -80,6 +80,10 @@ pub enum Artifact {
     // lopsided enum for a value made once per build.
     Spreadsheet(Box<grind_sheet::App>),
     Text(Box<grind_text::App>),
+    /// **Many documents**: a script that ended with a map of name to document — one letter per
+    /// recipient — is a series, and `grind build -o DIR` writes `DIR/<name>.<ext>` for each.
+    /// All of one kind, and never nested. Shared (`Rc`) because a test asks for one by name.
+    Series(Vec<(String, Rc<Artifact>)>),
 }
 
 impl Artifact {
@@ -88,6 +92,8 @@ impl Artifact {
         match self {
             Artifact::Spreadsheet(_) => grind_core::kind::DocumentKind::Spreadsheet,
             Artifact::Text(_) => grind_core::kind::DocumentKind::Text,
+            // A series is of one kind, which `materialise` checks; it has at least one member.
+            Artifact::Series(all) => all[0].1.kind(),
         }
     }
 }
@@ -302,6 +308,61 @@ pub fn check(source: &str, script: &str) -> Result<(), Error> {
 /// the sheet, because `spreadsheet()` around a single `sheet(…)` is ceremony. `doc/dsl.md`
 /// §4.2's sketch ends with a bare `s`, and it runs.
 pub(crate) fn materialise(value: Dynamic, script: &str) -> Result<Artifact, Error> {
+    if value.is::<rhai::Map>() {
+        return series(value.cast::<rhai::Map>(), script);
+    }
+    single(value, script)
+}
+
+/// A map of name to document: the files a build of many documents writes. A name is a file's
+/// stem, so what a file system would mangle is refused here, at the name, instead of by an
+/// `open` that fails halfway through a series.
+fn series(map: rhai::Map, script: &str) -> Result<Artifact, Error> {
+    if map.is_empty() {
+        return Err(Error::at(
+            script,
+            "a series of documents needs at least one",
+        ));
+    }
+    let mut all: Vec<(String, Rc<Artifact>)> = Vec::new();
+    for (name, value) in map {
+        let valid = !name.is_empty()
+            && name.len() <= 100
+            && !name.starts_with('.')
+            && name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
+        if !valid {
+            return Err(Error::at(
+                script,
+                format!(
+                    "{name:?} cannot be a file name: a series is named by letters, digits, `-`, `_` and `.`"
+                ),
+            ));
+        }
+        if value.is::<rhai::Map>() {
+            return Err(Error::at(
+                script,
+                format!("{name}: a series is a map of documents, not of maps"),
+            ));
+        }
+        let artifact = single(value, script).map_err(|mut e| {
+            e.message = format!("{name}: {}", e.message);
+            e
+        })?;
+        all.push((name.to_string(), Rc::new(artifact)));
+    }
+    let kind = all[0].1.kind();
+    if let Some((name, _)) = all.iter().find(|(_, one)| one.kind() != kind) {
+        return Err(Error::at(
+            script,
+            format!("{name} is not a {kind:?} like the others: a series is one kind of document"),
+        ));
+    }
+    Ok(Artifact::Series(all))
+}
+
+fn single(value: Dynamic, script: &str) -> Result<Artifact, Error> {
     let named = value.type_name().to_owned();
     if let Some(book) = value.clone().try_cast::<sheet::Book>() {
         return sheet::materialise(&book)
@@ -322,7 +383,7 @@ pub(crate) fn materialise(value: Dynamic, script: &str) -> Result<Artifact, Erro
         script,
         format!(
             "a script has to end with the document it built — a `sheet(…)`, a `spreadsheet()` \
-             or a `text()`. This one ended with {named}"
+             or a `text()` — or with a map of names to documents. This one ended with {named}"
         ),
     ))
 }

@@ -16,7 +16,7 @@ use grind_sheet::{App, CellValue, Pos};
 fn spreadsheet(source: &str) -> App {
     match build(source, "<test>").unwrap_or_else(|e| panic!("{e}")) {
         Artifact::Spreadsheet(app) => *app,
-        Artifact::Text(_) => panic!("that script built a text document"),
+        Artifact::Text(_) | Artifact::Series(_) => panic!("that script built a text document"),
     }
 }
 
@@ -287,7 +287,9 @@ fn an_address_comes_from_the_core() {
 fn text(source: &str) -> grind_text::App {
     match build(source, "<test>").unwrap_or_else(|e| panic!("{e}")) {
         Artifact::Text(app) => *app,
-        Artifact::Spreadsheet(_) => panic!("that script built a spreadsheet"),
+        Artifact::Spreadsheet(_) | Artifact::Series(_) => {
+            panic!("that script built a spreadsheet")
+        }
     }
 }
 

@@ -1182,7 +1182,10 @@ goes stale.
 every `.rhai` under `examples/`. `examples/letters/` is the word processor's: DIN 5008 letters from one
 flat-ODF template through **`text_from("brief-din5008.fodt")`** and `para(style, text)`/`.style(name)`
 (`doc/generator-spec.md` §3.5, §5) — a generator cannot declare a page or a style, a template does — and
-`pdfs.sh <name> <out>` writes one PDF per recipient by building once per `select.json`.
+a script that ends with a **map of names to documents** is a *series* — `grind build -o DIR [--as pdf]` writes
+one file per recipient (`doc/generator-spec.md` §1). A generated text document can say `d.table(rows)` and
+`d.page_break()`, and a paragraph whose style names a master page opens a page on it anywhere
+(`doc/pdf-export.md` P8b).
 
 **The two languages owed four documents, and three of them are written** (§7, D11–D14). A design
 record is not a specification somebody can implement against, nor a guide somebody can learn

@@ -879,75 +879,63 @@ fn a_script_can_build_a_text_document() {
 #[test]
 fn a_script_writes_a_letter_per_tenancy_and_they_add_up() {
     let dir = Sandbox::new("build-nebenkosten");
-    let out = dir.path("letters.fodt");
-    let again = dir.path("again.fodt");
-    ok_top(&[
-        "build",
-        &s(&example("letters/nebenkosten.rhai")),
-        "-o",
-        &s(&out),
-    ]);
-    ok_top(&[
-        "build",
-        &s(&example("letters/nebenkosten.rhai")),
-        "-o",
-        &s(&again),
-    ]);
-    assert_eq!(std::fs::read(&out).unwrap(), std::fs::read(&again).unwrap());
+    let script = s(&example("letters/nebenkosten.rhai"));
+    ok_top(&["build", &script, "-o", &s(&dir.path("letters"))]);
+    ok_top(&["build", &script, "-o", &s(&dir.path("again"))]);
+    for id in ["w1", "w2", "w3a", "w3b", "w4", "w5", "uebersicht"] {
+        let name = format!("{id}.fodt");
+        assert_eq!(
+            std::fs::read(dir.path(&format!("letters/{name}"))).unwrap(),
+            std::fs::read(dir.path(&format!("again/{name}"))).unwrap(),
+            "{id}: the same data writes the same bytes"
+        );
+    }
 
-    let view = ok_top(&["text", "view", &s(&out)]);
-    assert_eq!(
-        view.matches("Mit freundlichen Grüßen").count(),
-        6,
-        "a letter per tenancy"
-    );
+    // Each recipient's letter is a document of its own: one sign-off, and the figures of
+    // that tenancy — Frau Musterfrau owes 73,77 € and nobody else's balance is in her letter.
+    let w1 = s(&dir.path("letters/w1.fodt"));
+    let view = ok_top(&["text", "view", &w1]);
+    assert_eq!(view.matches("Mit freundlichen Grüßen").count(), 1);
     assert!(view.contains("Nachzahlung: 73,77 €"), "{view}");
-    assert!(view.contains("Rundungsdifferenz 0,02 €"), "{view}");
+    assert!(!view.contains("145,16"), "another tenant's balance");
+    let overview = ok_top(&["text", "view", &s(&dir.path("letters/uebersicht.fodt"))]);
+    assert!(overview.contains("Rundungsdifferenz 0,02 €"), "{overview}");
+    let out = dir.path("letters/w1.fodt");
     // An error would exit non-zero, which `ok_top` refuses.
     ok_top(&["lint", &s(&out)]);
     let tests = ok_top(&["test", &s(&example("letters/nebenkosten.rhai"))]);
     assert!(tests.contains("3 passed, 0 failed"), "{tests}");
 }
 
-/// The series as files: `examples/letters/pdfs.sh` runs the script once per recipient and writes
-/// one PDF each, which only works if a single letter is checked against *all* the bills.
+/// **A series**: a script that ends with a map of names to documents is built into a directory,
+/// one file each — here one DIN 5008 letter per recipient, as PDFs. The same data writes the same
+/// bytes, which is what writing a letter series down for an audit asks.
 #[cfg(feature = "pdf")]
 #[test]
-fn the_letter_script_writes_one_pdf_per_recipient() {
+fn a_script_that_returns_a_map_of_letters_writes_a_pdf_each() {
     let dir = Sandbox::new("nebenkosten-pdf");
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("the workspace root");
-    let run = || {
-        let output = Command::new("bash")
-            .arg(root.join("examples/letters/pdfs.sh"))
-            .arg("nebenkosten")
-            .arg(s(&dir.path("out")))
-            .env("GRIND", env!("CARGO_BIN_EXE_grind"))
-            .output()
-            .expect("bash runs");
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+    let script = s(&example("letters/nebenkosten.rhai"));
+    let run = |out: &str| {
+        ok_top(&["build", &script, "-o", &s(&dir.path(out)), "--as", "pdf"]);
     };
-    run();
-    let first =
-        std::fs::read(dir.path("out/nebenkosten-w3a.pdf")).expect("a PDF for the tenant who left");
-    assert!(first.starts_with(b"%PDF-"));
-    for id in ["w1", "w2", "w3b", "w4", "w5", "uebersicht"] {
-        assert!(
-            dir.path(&format!("out/nebenkosten-{id}.pdf")).exists(),
-            "{id}"
-        );
+    run("out");
+    for id in ["w1", "w2", "w3a", "w3b", "w4", "w5", "uebersicht"] {
+        let bytes = std::fs::read(dir.path(&format!("out/{id}.pdf"))).expect(id);
+        assert!(bytes.starts_with(b"%PDF-"), "{id}");
     }
-    // The same data writes the same bytes.
-    run();
+    run("again");
     assert_eq!(
-        first,
-        std::fs::read(dir.path("out/nebenkosten-w3a.pdf")).unwrap()
+        std::fs::read(dir.path("out/w3a.pdf")).unwrap(),
+        std::fs::read(dir.path("again/w3a.pdf")).unwrap(),
+        "the same data writes the same bytes"
     );
+    // Flat ODF by default: the form that diffs.
+    ok_top(&["build", &script, "-o", &s(&dir.path("flat"))]);
+    assert!(dir.path("flat/w1.fodt").exists());
+    // And a file name where a directory belongs is refused rather than half-written.
+    let refused = grind(&["build", &script, "-o", &s(&dir.path("one.fodt"))]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("directory"));
 }
 
 /// The sender is written twice on purpose — the letterhead and footer in the template
@@ -1007,7 +995,19 @@ fn every_example_script_builds_and_passes_its_own_tests() {
         let source = std::fs::read_to_string(&script).expect("a script");
         let text = source.contains("text_from(") || source.contains("text()");
         let out = dir.path(if text { "out.fodt" } else { "out.fods" });
-        ok_top(&["build", &s(&script), "-o", &s(&out)]);
+        let built = grind(&["build", &s(&script), "-o", &s(&out)]);
+        if !built.status.success()
+            && String::from_utf8_lossy(&built.stderr).contains("written into a directory")
+        {
+            // A series: a script that returned a map of documents.
+            ok_top(&["build", &s(&script), "-o", &s(&dir.path("series"))]);
+        } else {
+            assert!(
+                built.status.success(),
+                "{script:?}: {}",
+                String::from_utf8_lossy(&built.stderr)
+            );
+        }
         if source.contains("fn test_") {
             let report = ok_top(&["test", &s(&script)]);
             assert!(report.contains(" 0 failed"), "{script:?}: {report}");

@@ -42,6 +42,7 @@ and that value must be a document:
 | `Spreadsheet` | a spreadsheet, from `spreadsheet()` |
 | `Sheet` | a one-sheet spreadsheet — sugar, so a script that builds one sheet may end with it |
 | `Text` | a text document, from `text()` |
+| a **map** of names to documents | a **series**: `#{ "w1": letter_1, "w2": letter_2 }`. `grind build -o DIR` writes `DIR/w1.fodt`, `DIR/w2.fodt` …, and `--as pdf` writes each letter as a PDF on the bundled fonts, so the same script writes the same PDFs anywhere. All of one kind, never nested, and a name is a file's stem — letters, digits, `-`, `_` and `.` |
 
 Anything else is an error naming what came back. The **kind of document is decided by what the
 script returned**, never by the output's name — the same rule `grind_core::kind` follows on the
@@ -663,6 +664,8 @@ Registered for `grind test`; a `grind build` has nothing to assert, and never ca
 | `c.display` | a string | what the cell shows, through its number format |
 | `c.formula` | a string or `()` | its formula in OpenFormula's syntax, `"=SUM([.B2:.B3])"` |
 | `d.block(address)` | a string | one block's text in a text document, by any of its addresses — `"p2"`, `"#intro"`, `"§2.1"` |
+| `d.doc(name)` | a built document | one document of a series, by the name the script gave it — `d.doc("w1").block("#w1")`. On a series `cell`, `block` and `lint` ask every document or refuse, and say so |
+| `d.docs()` | an array of strings | the names of a series' documents, in order; empty for a single document |
 | `d.lint()` | an array of strings | every error and warning `grind lint` would report, one line each; `assert(d.lint().is_empty())` is a document that contradicts itself nowhere |
 
 A test that fails does not stop the others. The report names each test and, for a failure, the

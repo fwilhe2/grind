@@ -45,7 +45,9 @@ impl Sandbox {
         let data = Directory::new(&self.0).expect("a data directory");
         match build_with(source, "model.rhai", Rc::new(data)) {
             Ok(Artifact::Spreadsheet(app)) => Ok(*app),
-            Ok(Artifact::Text(_)) => panic!("that script built a text document"),
+            Ok(Artifact::Text(_) | Artifact::Series(_)) => {
+                panic!("that script built a text document")
+            }
             Err(e) => Err(e.to_string()),
         }
     }

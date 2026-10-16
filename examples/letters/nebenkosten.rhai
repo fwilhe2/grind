@@ -4,7 +4,8 @@
 //
 // A series of letters — Word's Serienbrief, with the arithmetic inside — doc/dsl.md layer 1.
 //
-//   grind build examples/letters/nebenkosten.rhai -o nebenkosten.fodt
+//   grind build examples/letters/nebenkosten.rhai -o letters --as pdf   # a PDF per recipient
+//   grind build examples/letters/nebenkosten.rhai -o letters            # or flat ODF
 //   grind test  examples/letters/nebenkosten.rhai
 //
 // The yearly service-charge statement (Nebenkostenabrechnung) of a small block of flats: one
@@ -19,7 +20,7 @@
 // figures and the wording come out of one source, so the letter cannot say 3,412.50 € where
 // the sum says 3,421.50 €.
 //
-// It comes out as **DIN 5008 letters** — a PDF per tenancy, `examples/letters/pdfs.sh` — set in a
+// It comes out as **DIN 5008 letters** — a PDF per tenancy (`grind build … --as pdf`) — set in a
 // template (`brief-din5008.fodt`): the page, the letterhead and the paragraph styles are
 // designed once in a word processor, and this script says which style each block is set in.
 //
@@ -30,14 +31,6 @@
 // the day an auditor asks what was sent.
 
 let source = json("nebenkosten.json");
-
-// One letter or all of them. `examples/letters/pdfs.sh` builds the series once per recipient
-// to get one PDF each, by putting a `select.json` — `{ "only": "w3a" }`, or `"uebersicht"` for
-// the property manager's page — in the data directory. Without one, everything is written into
-// one document. The *calculation* below runs in full either way, so a single letter is
-// checked against all the bills exactly as the whole series is.
-let only = "";
-try { only = json("select.json").only; } catch { }
 
 // --- German figures ------------------------------------------------------------------------
 //
@@ -183,8 +176,8 @@ if drift.abs() > bills.len * 2 * (source.costs.len + 2) {
 // document beside this script, which a generator could not declare and a person can design in
 // any word processor. `brief-din5008.fodt` is DIN 5008 Form B — its header says which
 // measurement is which. The script says blocks and names the style each one is set in.
-let d = text_from("brief-din5008.fodt");
 let landlord = source.landlord;
+let letters = #{};
 
 /// The nine lines of DIN 5008's address field, each also a line of the information block beside
 /// it. The left of the first tab is the address — empty for the three lines of the additional
@@ -202,7 +195,7 @@ fn field(d, address, info) {
 
 for b in bills {
     let t = b.t;
-    if only != "" && only != t.id { continue; }
+    let d = text_from("brief-din5008.fodt");
 
     d.para("Ruecksendeangabe", landlord.name + " · " + landlord.street + " · " + landlord.city);
     field(d, [t.name, source.building.street, source.building.city], [
@@ -262,11 +255,13 @@ for b in bills {
 
     d.para("Gruss", "Mit freundlichen Grüßen");
     d.para("Unterschrift", landlord.signed);
+    letters[t.id] = d;
 }
 
 // --- the page for the property manager ----------------------------------------------------
 
-if only == "" || only == "uebersicht" {
+{
+    let d = text_from("brief-din5008.fodt");
     d.para("Ruecksendeangabe", "Interne Aufstellung · nicht zum Versand");
     field(d, ["Hausverwaltung Mustermann GmbH", "Abteilung Abrechnung", landlord.street, landlord.city], [
         ["Zeichen:", "NK-" + source.year],
@@ -289,9 +284,10 @@ if only == "" || only == "uebersicht" {
         + (if owed >= 0 { "Nachzahlung " + eur(owed / 100.0) } else { "Guthaben " + eur(-owed / 100.0) })
         + "**.");
     d.bookmark("uebersicht");
+    letters["uebersicht"] = d;
 }
 
-d;
+letters;
 
 // --- checks --------------------------------------------------------------------------------
 //
@@ -302,19 +298,19 @@ d;
 fn test_every_tenancy_has_a_letter_with_the_right_result(d) {
     // Each of these is a figure worked out by hand from `nebenkosten.json`, so a change to the
     // keys or to the rounding shows up here before it shows up in a letter somebody posts.
-    assert(d.block("#w1").starts_with("Nachzahlung: 73,77 €"), d.block("#w1"));
-    assert(d.block("#w2").starts_with("Guthaben: 145,16 €"), d.block("#w2"));
-    assert(d.block("#w3a").starts_with("Nachzahlung: 88,74 €"), d.block("#w3a"));
-    assert(d.block("#w3b").starts_with("Guthaben: 81,31 €"), d.block("#w3b"));
-    assert(d.block("#w4").starts_with("Nachzahlung: 71,95 €"), d.block("#w4"));
-    assert(d.block("#w5").starts_with("Guthaben: 136,47 €"), d.block("#w5"));
+    assert(d.doc("w1").block("#w1").starts_with("Nachzahlung: 73,77 €"), d.doc("w1").block("#w1"));
+    assert(d.doc("w2").block("#w2").starts_with("Guthaben: 145,16 €"), d.doc("w2").block("#w2"));
+    assert(d.doc("w3a").block("#w3a").starts_with("Nachzahlung: 88,74 €"), d.doc("w3a").block("#w3a"));
+    assert(d.doc("w3b").block("#w3b").starts_with("Guthaben: 81,31 €"), d.doc("w3b").block("#w3b"));
+    assert(d.doc("w4").block("#w4").starts_with("Nachzahlung: 71,95 €"), d.doc("w4").block("#w4"));
+    assert(d.doc("w5").block("#w5").starts_with("Guthaben: 136,47 €"), d.doc("w5").block("#w5"));
 }
 
 fn test_the_summary_reconciles_to_the_bills(d) {
     // 1.240,00 + 1.496,00 + 2.310,50 + 862,40 + 1.080,00 + 372,60 + 7.420,00, and the letters
     // add up to two cents more, which is the rounding of six shares each of eight costs.
-    assert(d.block("#uebersicht").contains("von 14.781,50 € Gesamtkosten (Rundungsdifferenz 0,02 €)"), d.block("#uebersicht"));
-    assert(d.block("#uebersicht").contains("Guthaben 128,48 €"), d.block("#uebersicht"));
+    assert(d.doc("uebersicht").block("#uebersicht").contains("von 14.781,50 € Gesamtkosten (Rundungsdifferenz 0,02 €)"), d.doc("uebersicht").block("#uebersicht"));
+    assert(d.doc("uebersicht").block("#uebersicht").contains("Guthaben 128,48 €"), d.doc("uebersicht").block("#uebersicht"));
 }
 
 fn test_the_document_contradicts_itself_nowhere(d) {

@@ -123,3 +123,48 @@ fn a_page_break_before_a_table_is_refused() {
     .to_string();
     assert!(error.contains("page_break"), "{error}");
 }
+
+fn series(script: &str) -> Vec<(String, grind_text::App)> {
+    match build(script, "doc.rhai") {
+        Ok(Artifact::Series(all)) => all
+            .into_iter()
+            .map(|(name, one)| match std::rc::Rc::try_unwrap(one) {
+                Ok(Artifact::Text(app)) => (name, *app),
+                _ => panic!("{name} is not a text document"),
+            })
+            .collect(),
+        Ok(_) => panic!("that script built one document"),
+        Err(e) => panic!("{e}"),
+    }
+}
+
+/// A script that ends with a map of names to documents is a series, in the map's order.
+#[test]
+fn a_map_of_documents_is_a_series() {
+    let all = series(
+        r#"let letters = #{};
+           for who in ["b", "a"] {
+               let d = text();
+               d.para("Dear " + who);
+               letters[who] = d;
+           }
+           letters"#,
+    );
+    let names: Vec<&str> = all.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["a", "b"], "ordered by name");
+    assert!(flat(&all[0].1).contains("Dear a"));
+}
+
+#[test]
+fn a_series_is_named_for_files_and_is_one_kind() {
+    let bad = |script: &str| build(script, "x.rhai").err().expect("refused").to_string();
+    assert!(
+        bad(r#"let d = text(); d.para("x"); #{ "../evil": d }"#).contains("cannot be a file name")
+    );
+    assert!(bad(r#"#{}"#).contains("at least one"));
+    assert!(
+        bad(r#"let d = text(); d.para("x"); #{ "a": d, "b": sheet("S") }"#)
+            .contains("one kind of document")
+    );
+    assert!(bad(r#"let d = text(); d.para("x"); #{ "a": #{ "b": d } }"#).contains("not of maps"));
+}

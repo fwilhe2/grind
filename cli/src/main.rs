@@ -86,6 +86,76 @@ fn spell_language(tag: &str) -> Result<grind_spell::Language, String> {
     })
 }
 
+/// `grind build` over a script that ended with a map of documents: each into `dir` under its
+/// name, in the form `--as` names — flat ODF by default, because it is the one that diffs.
+fn write_series(
+    all: &[(String, std::rc::Rc<grind_build::Artifact>)],
+    dir: &Path,
+    series_as: Option<&str>,
+    no_recalc: bool,
+    cli: &Cli,
+) -> Result<Report, String> {
+    use grind_build::Artifact;
+    let kind = all[0].1.kind();
+    let ext = match (series_as, kind) {
+        (Some(ext), _) => ext.trim_start_matches('.'),
+        (None, DocumentKind::Spreadsheet) => "fods",
+        (None, _) => "fodt",
+    };
+    if !matches!(ext, "fodt" | "odt" | "fods" | "ods" | "grind" | "pdf") {
+        return Err(format!(
+            "{ext:?} is not something a series is written as: fodt, odt, fods, ods, grind or pdf"
+        ));
+    }
+    if dir.extension().is_some() {
+        return Err(format!(
+            "{} has an extension, and a series is written into a directory: one file per document",
+            dir.display()
+        ));
+    }
+    if !cli.dry_run {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    let mut written = Vec::new();
+    for (name, one) in all {
+        let path = dir.join(format!("{name}.{ext}"));
+        match &**one {
+            Artifact::Spreadsheet(app) => {
+                if !no_recalc {
+                    app.recalc().say()?;
+                }
+                if !cli.dry_run {
+                    app.save_file(&path).say()?;
+                }
+            }
+            Artifact::Text(app) => match ext {
+                "pdf" => {
+                    #[cfg(feature = "pdf")]
+                    if !cli.dry_run {
+                        let options = grind_print::Options {
+                            paper: None,
+                            title: Some(name.clone()),
+                        };
+                        let (bytes, _) = grind_print::export(app, fonts(app, true), &options)?;
+                        grind_core::atomic::write(&path, &bytes)
+                            .map_err(|e| format!("{}: {e}", path.display()))?;
+                    }
+                    #[cfg(not(feature = "pdf"))]
+                    return Err("this build has no PDF export".to_owned());
+                }
+                _ => {
+                    if !cli.dry_run {
+                        app.save_file(&path).map_err(|e| e.to_string())?;
+                    }
+                }
+            },
+            Artifact::Series(_) => unreachable!("a series is never nested"),
+        }
+        written.push(show_path(&path));
+    }
+    text_lines(written)
+}
+
 /// The fonts a PDF command sets the document in: the machine's as well as the bundled ones,
 /// unless `--bundled-fonts` asks for output that is the same everywhere.
 #[cfg(feature = "pdf")]
@@ -1224,9 +1294,16 @@ enum Top {
     Build {
         /// The script to run
         script: PathBuf,
-        /// Where to write the document it built — .ods/.fods, .odt/.fodt, or .grind
+        /// Where to write the document it built — .ods/.fods, .odt/.fodt, or .grind. A script
+        /// that ends with a **map of names to documents** (one letter per recipient) is a
+        /// series, and this is then a directory: `DIR/<name>.<ext>` for each, `fodt` or `fods`
+        /// unless `--as` says otherwise
         #[arg(short, long, value_name = "PATH")]
         out: PathBuf,
+        /// What to write a series as: fodt, odt, fods, ods, grind — or `pdf` for letters, set on
+        /// the bundled fonts only, so the same script writes the same PDFs on any machine
+        #[arg(long = "as", value_name = "EXT")]
+        series_as: Option<String>,
         /// Directory the script may read data from, instead of its own
         ///
         /// A script reads JSON and nothing else, from inside this one directory and nowhere
@@ -3208,6 +3285,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
         Top::Build {
             script,
             out,
+            series_as,
             no_recalc,
             data,
         } => {
@@ -3224,6 +3302,9 @@ fn run(cli: &Cli) -> Result<Report, String> {
             )
             .map_err(|e| e.to_string())?;
             match built {
+                grind_build::Artifact::Series(all) => {
+                    write_series(&all, out, series_as.as_deref(), *no_recalc, cli)
+                }
                 grind_build::Artifact::Spreadsheet(app) => {
                     if !no_recalc {
                         // A generated document has no cached values until something computes

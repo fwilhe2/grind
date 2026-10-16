@@ -82,6 +82,13 @@ fn colors(chart: Chart, colors: array) -> Chart;
 /// Fraction digits, 0 to 255. Exactly this many, never "up to".
 fn decimals(format: Format, decimals: int) -> Format;
 
+/// One document of a series, by the name the script gave it — a script that ended
+/// with a map of names to documents. `d.doc("w1").block("#w1")`.
+fn doc(document: Built, name: string) -> Built;
+
+/// The names of a series' documents, in order; none for a single document.
+fn docs(document: Built) -> array;
+
 /// A number format by name: `general`, `number`, `percent`, `currency`, `date`,
 /// `datetime`, `time`, `boolean` or `text`.
 ///
