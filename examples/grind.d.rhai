@@ -107,6 +107,21 @@ fn format(sheet: Sheet, range: string, format: Format) -> Sheet;
 /// A number format by name over a range — `s.format("B17", "date")`.
 fn format(sheet: Sheet, range: string, kind: string) -> Sheet;
 
+/// An amount of money with two decimals: after the number with a space where the
+/// locale writes a decimal comma (`1.234,50 €`), before it elsewhere (`$1,234.50`).
+/// A plain space; a script that wants a no-break one says so.
+fn format_money(x: ?, symbol: string, locale: string) -> string;
+
+/// A number as text with exactly `decimals` fraction digits and the locale's own
+/// separators — `format_number(1234.5, 2, "de-DE")` is `1.234,50`. A negative gets a
+/// real minus sign (U+2212). The locale is an argument and never the machine's, so the
+/// same script writes the same text anywhere.
+fn format_number(x: ?, decimals: int, locale: string) -> string;
+
+/// A fraction as a percentage — `format_percent(0.1648, 2, "de-DE")` is `16,48 %`,
+/// and `16.48%` in English, where the sign is not set apart.
+fn format_percent(fraction: ?, decimals: int, locale: string) -> string;
+
 /// A formula written the way a formula bar shows one — `formula("SUM(B2:B7)")`.
 ///
 /// Converted to ODF syntax by the core's own converter, so a formula that does not

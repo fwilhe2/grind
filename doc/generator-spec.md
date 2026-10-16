@@ -264,6 +264,23 @@ with no filesystem can therefore still run every script that does not ask for a 
 With data it is *the same source and the same data*: a build system's contract rather than a
 weakening of one, with the inputs named in the script and living beside it.
 
+### 3.6 Numbers as text
+
+A cell shows a number through a `format(…)`; a text document holds *text*, so a letter's figures
+are spelled by the script. Three functions, over the core's own separators
+(`grind_core::locale`) so a figure in a letter and the same figure in a cell are spelled alike.
+**The locale is an argument and never the machine's** — the same script writes the same letters
+on any computer, which §2.5 asks.
+
+| Call | Returns | Meaning |
+|---|---|---|
+| `format_number(x, decimals, locale)` | a string | exactly `decimals` fraction digits (0–9), the locale's grouping and decimal marks, a real minus sign (U+2212) when negative and never on a zero — `format_number(1234.5, 2, "de-DE")` is `1.234,50`. `x` is an integer or a float |
+| `format_money(x, symbol, locale)` | a string | two decimals, the symbol *after* the number with a space in a decimal-comma locale (`1.234,50 €`) and *before* it elsewhere (`$1,234.50`). A plain space |
+| `format_percent(fraction, decimals, locale)` | a string | a fraction as a percentage: `0.1648` is `16,48 %`, and `16.48%` in English |
+
+Rounding is half away from zero, once, on whole units of the last decimal place. A locale that is
+not a language tag, a non-finite number and more than nine decimals are errors.
+
 ---
 
 ## 4. The host API — the spreadsheet

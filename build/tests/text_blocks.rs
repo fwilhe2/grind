@@ -168,3 +168,26 @@ fn a_series_is_named_for_files_and_is_one_kind() {
     );
     assert!(bad(r#"let d = text(); d.para("x"); #{ "a": #{ "b": d } }"#).contains("not of maps"));
 }
+
+/// A letter's figures are text spelled for a locale, by host functions rather than by thirty
+/// lines pasted into every script.
+#[test]
+fn numbers_are_spelled_for_a_locale_by_the_host() {
+    let app = text(
+        r#"let d = text();
+           d.para(format_number(1234.5, 2, "de-DE") + " | " + format_money(7, "€", "de-DE")
+               + " | " + format_money(1234.5, "$", "en-US") + " | " + format_percent(0.1648, 2, "de-DE")
+               + " | " + format_number(-3, 0, "de-DE"));
+           d"#,
+    );
+    assert!(
+        flat(&app).contains("1.234,50 | 7,00 € | $1,234.50 | 16,48 % | −3"),
+        "{}",
+        flat(&app)
+    );
+    let error = build(r#"format_number(1, 2, "")"#, "x.rhai")
+        .err()
+        .expect("refused")
+        .to_string();
+    assert!(error.contains("not a locale"), "{error}");
+}

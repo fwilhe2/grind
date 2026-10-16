@@ -59,6 +59,7 @@ pub mod chart;
 pub mod data;
 pub mod engine;
 pub mod hint;
+pub mod numbers;
 pub mod sheet;
 pub mod test;
 pub mod text;

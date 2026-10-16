@@ -223,6 +223,30 @@
     "prefix": "format",
     "scope": "rhai"
   },
+  "format_money(x: ?, symbol: string, locale: string) -> string": {
+    "body": [
+      "format_money(${1:x}, ${2:symbol}, ${3:locale})"
+    ],
+    "description": "An amount of money with two decimals: after the number with a space where the\nlocale writes a decimal comma (`1.234,50 €`), before it elsewhere (`$1,234.50`).\nA plain space; a script that wants a no-break one says so.",
+    "prefix": "format_money",
+    "scope": "rhai"
+  },
+  "format_number(x: ?, decimals: int, locale: string) -> string": {
+    "body": [
+      "format_number(${1:x}, ${2:decimals}, ${3:locale})"
+    ],
+    "description": "A number as text with exactly `decimals` fraction digits and the locale's own\nseparators — `format_number(1234.5, 2, \"de-DE\")` is `1.234,50`. A negative gets a\nreal minus sign (U+2212). The locale is an argument and never the machine's, so the\nsame script writes the same text anywhere.",
+    "prefix": "format_number",
+    "scope": "rhai"
+  },
+  "format_percent(fraction: ?, decimals: int, locale: string) -> string": {
+    "body": [
+      "format_percent(${1:fraction}, ${2:decimals}, ${3:locale})"
+    ],
+    "description": "A fraction as a percentage — `format_percent(0.1648, 2, \"de-DE\")` is `16,48 %`,\nand `16.48%` in English, where the sign is not set apart.",
+    "prefix": "format_percent",
+    "scope": "rhai"
+  },
   "formula(source: string) -> Cell": {
     "body": [
       "formula(${1:source})"

@@ -35,49 +35,15 @@ let source = json("nebenkosten.json");
 // --- German figures ------------------------------------------------------------------------
 //
 // A text document holds *text*, so a number has to be spelled out by the script, and the
-// spelling is the reader's: 1.234,56 € rather than 1,234.56. One function, used for money,
-// areas and consumption alike. It works in whole units of the last decimal place — an integer
-// — so that two figures that are equal print equally.
+// spelling is the reader's: 1.234,56 € rather than 1,234.56. The locale is an argument — never
+// the machine's — so the same script writes the same letters anywhere.
 
-/// `1234.5` with 2 decimals is `1.234,50`; a minus sign is the real one, U+2212.
-fn de(x, decimals) {
-    let scale = 1;
-    for i in 0..decimals {
-        scale *= 10;
-    }
-    let units = (x.to_float() * scale.to_float()).round().to_int();
-    let negative = units < 0;
-    if negative {
-        units = -units;
-    }
-    let whole = (units / scale).to_string();
-    let grouped = "";
-    while whole.len > 3 {
-        grouped = "." + whole.sub_string(whole.len - 3) + grouped;
-        whole = whole.sub_string(0, whole.len - 3);
-    }
-    grouped = whole + grouped;
-    if decimals > 0 {
-        let fraction = (units % scale).to_string();
-        while fraction.len < decimals {
-            fraction = "0" + fraction;
-        }
-        grouped += "," + fraction;
-    }
-    if negative { "−" + grouped } else { grouped }
-}
-
-fn eur(x) { de(x, 2) + " €" }
+fn de(x, decimals) { format_number(x, decimals, "de-DE") }
+fn eur(x) { format_money(x, "€", "de-DE") }
 
 /// A figure in cents, so that the shares of one bill are rounded once, each, and then *added* —
 /// the way the tenants' letters will be checked by a person with a calculator.
 fn cents(x) { (x.to_float() * 100.0).round().to_int() }
-
-/// Up to the next whole euro; there is no `ceil` in the dialect.
-fn ceil_euro(x) {
-    let whole = x.to_int();
-    if x > whole.to_float() { whole + 1 } else { whole }
-}
 
 // --- the keys ------------------------------------------------------------------------------
 //
@@ -248,7 +214,7 @@ for b in bills {
     if t.active {
         // Next year's prepayment follows this year's cost, per month, rounded up to a whole
         // euro — the way a landlord would put it, and what the tenant will find easy to set up.
-        let monthly = ceil_euro((b.sum.to_float() / 100.0) / t.months.to_float());
+        let monthly = ((b.sum.to_float() / 100.0) / t.months.to_float()).ceiling().to_int();
         d.para("Brieftext", "Wir empfehlen, die monatliche Vorauszahlung ab dem nächsten Monat auf **"
             + eur(monthly) + "** anzupassen (bisher " + eur(t.prepayment) + ").");
     }

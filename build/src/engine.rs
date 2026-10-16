@@ -87,6 +87,7 @@ pub fn engine(data: Rc<dyn Data>) -> Engine {
     crate::sheet::register(&mut engine);
     crate::chart::register(&mut engine);
     crate::text::register(&mut engine);
+    crate::numbers::register(&mut engine);
     // The one door outward, and `data.rs` is the whole of what it opens onto.
     crate::data::register(&mut engine, data);
     engine

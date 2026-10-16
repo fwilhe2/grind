@@ -97,7 +97,7 @@ fn documented() -> Vec<String> {
         // §3.5 is the third API table: `json(…)` belongs to neither application, because it
         // belongs to both, and it sits with the values it produces rather than in one half.
         if let Some(heading) = line.strip_prefix("### ") {
-            if heading.starts_with("3.5") {
+            if heading.starts_with("3.5") || heading.starts_with("3.6") {
                 inside = true;
             } else if heading.starts_with("3.") {
                 inside = false;
@@ -141,7 +141,7 @@ fn every_registered_function_is_in_the_specification() {
     assert!(
         missing.is_empty(),
         "registered and undocumented: {missing:?}. Every function a script can call has a row \
-         in doc/generator-spec.md §3.5, §4, §5 or §10 — that is the check the specification \
+         in doc/generator-spec.md §3.5, §3.6, §4, §5 or §10 — that is the check the specification \
          exists to pass, since adding one is three lines in register()."
     );
 }

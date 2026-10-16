@@ -627,7 +627,7 @@ page (`style:master-page-name`) and restarts the page numbers, so a document mad
 — the same script, written as one `text()` instead of a map — still gives each its letterhead, its
 own margins and its own "Seite 1 von 1".
 
-What it ran into, so you do not: a script has no `ceil`; `from` and `until` are Rhai keywords
+What it ran into, so you do not: a script rounds up with `.ceiling()`; `from` and `until` are Rhai keywords
 and cannot be property names; a table's columns are equal widths (so the cells are short); and the
 size of text in the address field is the paragraph's, not the character's, which is why the
 information block shares its 10 pt.
@@ -649,9 +649,10 @@ directory under `examples/`, and a script reads its data from the directory it i
 | `examples/loc/` | a document that lives in git as a build product |
 
 `cli/tests/cli.rs` builds **every** script it finds under `examples/` and runs the tests of each
-one that has any, so a new example needs no entry in a list. All the data is made up. Each letter
-script repeats the same thirty lines of number formatting (`de`, `eur`) — the dialect has no
-`import`, which is the cost of a script being one file with nothing it can load.
+one that has any, so a new example needs no entry in a list. All the data is made up. Numbers in a letter
+are text, spelled by `format_number`, `format_money` and `format_percent` with the locale as an
+argument (`doc/generator-spec.md` §3.6) — the dialect has no `import`, so what every letter needs
+is a host function rather than thirty lines pasted into each.
 
 ---
 
