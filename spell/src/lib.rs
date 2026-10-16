@@ -102,6 +102,7 @@ impl Language {
         }
     }
 
+    #[cfg(feature = "bundled")]
     fn files(self) -> (&'static str, &'static str) {
         macro_rules! pair {
             ($tag:literal) => {
@@ -122,15 +123,45 @@ impl Language {
         }
     }
 
-    /// The parsed dictionary — built the first time it is asked for (40 to 300 milliseconds,
-    /// Polish the slowest) and shared for the life of the process.
-    pub fn dictionary(self) -> &'static spellbook::Dictionary {
+    fn cell(self) -> &'static OnceLock<spellbook::Dictionary> {
         static CELLS: [OnceLock<spellbook::Dictionary>; Language::ALL.len()] =
             [const { OnceLock::new() }; Language::ALL.len()];
-        CELLS[self as usize].get_or_init(|| {
-            let (aff, dic) = self.files();
-            spellbook::Dictionary::new(aff, dic)
-                .unwrap_or_else(|e| panic!("the bundled {} dictionary parses: {e}", self.tag()))
+        &CELLS[self as usize]
+    }
+
+    /// Whether this language's dictionary is here: always, in a build that carries them, and
+    /// once [`Language::provide`] has been handed it in one that does not.
+    pub fn available(self) -> bool {
+        cfg!(feature = "bundled") || self.cell().get().is_some()
+    }
+
+    /// Hand over the Hunspell files of a dictionary this build does not carry — what the
+    /// browser fetches the first time a language is asked for. The first call for a language
+    /// wins; the files are parsed here, which is 40 to 300 milliseconds.
+    pub fn provide(self, aff: &str, dic: &str) -> Result<(), String> {
+        if self.cell().get().is_some() {
+            return Ok(());
+        }
+        let parsed = spellbook::Dictionary::new(aff, dic)
+            .map_err(|e| format!("the {} dictionary does not parse: {e}", self.tag()))?;
+        let _ = self.cell().set(parsed);
+        Ok(())
+    }
+
+    /// The parsed dictionary — built the first time it is asked for (40 to 300 milliseconds,
+    /// Polish the slowest) and shared for the life of the process. In a build without the
+    /// bundled dictionaries it is the one [`Language::provide`] was given, and asking for a
+    /// language that was never provided is a bug in the caller: ask [`Language::available`].
+    pub fn dictionary(self) -> &'static spellbook::Dictionary {
+        self.cell().get_or_init(|| {
+            #[cfg(feature = "bundled")]
+            {
+                let (aff, dic) = self.files();
+                spellbook::Dictionary::new(aff, dic)
+                    .unwrap_or_else(|e| panic!("the bundled {} dictionary parses: {e}", self.tag()))
+            }
+            #[cfg(not(feature = "bundled"))]
+            panic!("the {} dictionary was never provided", self.tag())
         })
     }
 }
@@ -230,6 +261,9 @@ pub enum Unchecked {
     NoDictionary(String),
     /// The document says it is in no language (`zxx`) — code, a list of part numbers.
     NoLanguage,
+    /// This build fetches its dictionaries and this one has not arrived yet: whoever asks
+    /// fetches it, [`Language::provide`]s it, and asks again.
+    NotLoaded(Language),
 }
 
 impl std::fmt::Display for Unchecked {
@@ -240,6 +274,13 @@ impl std::fmt::Display for Unchecked {
                 "the document is in {tag}, and this build has no dictionary for it"
             ),
             Unchecked::NoLanguage => write!(f, "the document says it is in no language"),
+            Unchecked::NotLoaded(language) => {
+                write!(
+                    f,
+                    "the {} dictionary has not been loaded yet",
+                    language.name()
+                )
+            }
         }
     }
 }
@@ -284,6 +325,11 @@ fn guess(app: &(impl Spelled + ?Sized), desktop: Option<Language>) -> Option<Lan
     }
     let mut fallback = vec![desktop.unwrap_or(Language::English), Language::English];
     fallback.dedup();
+    // Only dictionaries that are here: a build that fetches them does not fetch two to guess.
+    fallback.retain(|language| language.available());
+    if fallback.is_empty() {
+        return None;
+    }
     let spellers: Vec<Speller> = fallback
         .iter()
         .map(|l| Speller::new(*l, BTreeSet::new()))
@@ -373,6 +419,10 @@ pub fn attach(
     named: Option<Language>,
 ) -> Result<(Choice, Arc<Speller>), Unchecked> {
     match choose(app, named) {
+        Ok(choice) if !choice.language.available() => {
+            app.set_lexicon(None);
+            Err(Unchecked::NotLoaded(choice.language))
+        }
         Ok(choice) => {
             let speller = Arc::new(Speller::new(choice.language, personal::load()));
             app.set_lexicon(Some(speller.clone()));

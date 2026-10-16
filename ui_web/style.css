@@ -735,6 +735,17 @@ input[type="text"] {
   font-style: italic;
 }
 
+/* A word the spell checker does not know (`doc/spelling.md`): a wavy red line under it and
+   nothing else — it never changes the text or the metrics, so the caret stays where it is. The
+   cells of a grid draw the same line under the same words. */
+.run.wrong,
+.cell .wrong {
+  text-decoration: underline wavy #d6342c;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  text-decoration-skip-ink: none;
+}
+
 .run.u {
   text-decoration: underline;
 }

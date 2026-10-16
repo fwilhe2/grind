@@ -418,6 +418,10 @@ impl Ui {
         let mut open: Option<OpenTable> = None;
         let columns = table::columns(viewport.iter().filter_map(|block| block.cell.as_ref()));
 
+        // The words the checker underlines — none until a dictionary is attached
+        // (`crate::spelling`), which is also what turning spelling off is.
+        let wrong = self.app.misspellings(0..self.app.block_count());
+
         self.dom.flow.set_text_content(None);
         for block in viewport.iter() {
             let face = self.faces.of(&block.kind, block.style.as_deref());
@@ -480,7 +484,13 @@ impl Ui {
                 // both lines, and drawing the caret on both is drawing it twice.
                 let here = (block.index == caret.block && layout.line_at(caret.offset) == number)
                     .then_some(caret.offset);
-                self.draw_line(&row, block, line.start..line.end, &selection, here)?;
+                self.draw_line(
+                    &row,
+                    block,
+                    line.start..line.end,
+                    (&selection, &wrong),
+                    here,
+                )?;
                 // `doc/view-modes.md` §3.6: a bookmark contributes no characters, so it is
                 // the one part of a text document a reader cannot see at all. With the mode
                 // on, each one is named on the line it falls on — after the text rather than
@@ -547,7 +557,7 @@ impl Ui {
         row: &Element,
         block: &BlockView,
         line: std::ops::Range<usize>,
-        selection: &Option<(Caret, Caret)>,
+        (selection, wrong): (&Option<(Caret, Caret)>, &[grind_text::Misspelling]),
         caret: Option<usize>,
     ) -> Result<(), JsValue> {
         let text: Vec<char> = block.text.chars().collect();
@@ -582,7 +592,22 @@ impl Ui {
         };
 
         let mut drawn = false;
-        for piece in runs::cut(line.clone(), &block.runs, within, caret, &anchors_here) {
+        // The block's misspelt words, but not the one still being typed: a caret at the end of a
+        // word is the word not finished, and underlining it on every keystroke is noise.
+        let misspelt: Vec<std::ops::Range<usize>> = wrong
+            .iter()
+            .filter(|w| w.block == block.index)
+            .map(|w| w.offset..w.offset + w.len)
+            .filter(|word| caret != Some(word.end))
+            .collect();
+        for piece in runs::cut_spelled(
+            line.clone(),
+            &block.runs,
+            within,
+            caret,
+            &anchors_here,
+            &misspelt,
+        ) {
             if anchors_here.contains(&piece.range.start) {
                 let tick = self.dom.document.create_element("span")?;
                 tick.set_class_name("mark-tick");
@@ -815,6 +840,12 @@ impl Ui {
     /// `doc/text-shell.md` named both as the browser pane's next candidates; one palette
     /// answers both without a second dialog to open, style and keep accessible.
     pub fn targets(&self, query: &str) -> Vec<Entry> {
+        let mut out = self.spelling_entries(query);
+        out.extend(self.heading_targets(query));
+        out
+    }
+
+    fn heading_targets(&self, query: &str) -> Vec<Entry> {
         let query = query.trim();
         if query.is_empty() {
             // With nothing typed, the outline *is* the useful list — a document's own table of
@@ -875,6 +906,103 @@ impl Ui {
         }
         out.truncate(6);
         out
+    }
+
+    // --- spelling (`crate::spelling`) ---
+
+    /// The misspelt word the caret is in or at the end of, if the checker has found one.
+    pub fn misspelt_here(&self) -> Option<grind_text::Misspelling> {
+        let at = self.caret.get();
+        self.app
+            .misspellings(at.block..at.block + 1)
+            .into_iter()
+            .find(|m| m.offset <= at.offset && at.offset <= m.offset + m.len)
+    }
+
+    /// The palette's spelling rows for the word at the caret: what it might have been, and
+    /// whether to leave it alone. Empty with the caret anywhere else.
+    fn spelling_entries(&self, query: &str) -> Vec<Entry> {
+        let Some(wrong) = self.misspelt_here() else {
+            return Vec::new();
+        };
+        let suggestions: Vec<String> = self.app.suggest(&wrong.word).into_iter().take(5).collect();
+        // Offered for an empty query, for the words that name them, and for what somebody typing
+        // the correction they mean would be typing: `receive`, over the word `recieve`.
+        let query = query.trim().to_lowercase();
+        let asks = query.is_empty()
+            || ["spelling", "replace", "correct", "ignore", "dictionary"]
+                .iter()
+                .any(|word| word.contains(query.as_str()))
+            || wrong.word.to_lowercase().contains(&query)
+            || suggestions
+                .iter()
+                .any(|with| with.to_lowercase().contains(&query));
+        if !asks {
+            return Vec::new();
+        }
+        let mut out: Vec<Entry> = suggestions
+            .into_iter()
+            .enumerate()
+            .map(|(n, with)| {
+                Entry::target(
+                    format!("spell.fix:{n}"),
+                    format!(
+                        "Replace \u{201c}{}\u{201d} with \u{201c}{with}\u{201d}",
+                        wrong.word
+                    ),
+                    "Spelling",
+                )
+            })
+            .collect();
+        out.push(Entry::target(
+            "spell.ignore",
+            format!("Ignore \u{201c}{}\u{201d}", wrong.word),
+            "Spelling",
+        ));
+        out.push(Entry::target(
+            "spell.add",
+            format!("Add \u{201c}{}\u{201d} to your dictionary", wrong.word),
+            "Spelling",
+        ));
+        out
+    }
+
+    /// Replace the word at the caret with the `n`th suggestion — one undo step, the word's
+    /// formatting kept (`App::correct`).
+    pub fn fix_misspelt(&self, n: usize) {
+        let Some(wrong) = self.misspelt_here() else {
+            return self.set_message("No misspelt word here".to_owned());
+        };
+        let Some(with) = self.app.suggest(&wrong.word).into_iter().nth(n) else {
+            return self.set_message(format!("No suggestion {} for {}", n + 1, wrong.word));
+        };
+        match self.app.correct(wrong.caret(), &wrong.word, &with) {
+            Ok(()) => {
+                self.set_caret(Caret {
+                    block: wrong.block,
+                    offset: wrong.offset + with.chars().count(),
+                });
+                self.set_message(format!("{} \u{2192} {with}", wrong.word));
+            }
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    /// Put the caret on the next misspelt word, wrapping round the end — and say what it might
+    /// have been.
+    pub fn next_misspelling(&self) {
+        let all = self.app.misspellings(0..self.app.block_count());
+        let at = self.caret.get();
+        let after = |m: &grind_text::Misspelling| (m.block, m.offset) > (at.block, at.offset);
+        let Some(wrong) = all.iter().find(|m| after(m)).or_else(|| all.first()) else {
+            return self.set_message("Nothing is misspelt".to_owned());
+        };
+        self.set_caret(wrong.caret());
+        let suggestions: Vec<String> = self.app.suggest(&wrong.word).into_iter().take(3).collect();
+        self.set_message(match suggestions.is_empty() {
+            true => format!("{} \u{2014} no suggestion", wrong.word),
+            false => format!("{} \u{2014} {}", wrong.word, suggestions.join(", ")),
+        });
     }
 
     // --- whole paragraphs ---

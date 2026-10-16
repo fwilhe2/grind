@@ -77,6 +77,40 @@ pub const SHEET: &[Command] = &[
     cmd("doc.about", "About this build", "Document", "", false),
     cmd("doc.undo", "Undo", "Document", "Ctrl+Z", false),
     cmd("doc.redo", "Redo", "Document", "Ctrl+Shift+Z", false),
+    // --- spelling (`doc/spelling.md`): a language for this kind of document, remembered ---
+    cmd("spell.auto", "Spelling: automatic", "Spelling", "", false),
+    cmd(
+        "spell.en-US",
+        "Spelling: English (US)",
+        "Spelling",
+        "",
+        false,
+    ),
+    cmd("spell.de-DE", "Spelling: Deutsch", "Spelling", "", false),
+    cmd(
+        "spell.fr-FR",
+        "Spelling: Fran\u{e7}ais",
+        "Spelling",
+        "",
+        false,
+    ),
+    cmd(
+        "spell.es-ES",
+        "Spelling: Espa\u{f1}ol",
+        "Spelling",
+        "",
+        false,
+    ),
+    cmd("spell.it-IT", "Spelling: Italiano", "Spelling", "", false),
+    cmd(
+        "spell.pt-PT",
+        "Spelling: Portugu\u{ea}s",
+        "Spelling",
+        "",
+        false,
+    ),
+    cmd("spell.pl-PL", "Spelling: Polski", "Spelling", "", false),
+    cmd("spell.off", "Spelling: off", "Spelling", "", false),
     cmd("sheet.recalc", "Recalculate", "Document", "F9", true),
     // CSV, the one non-ODF format this suite reads and writes (`doc/not-doing.md` §2).
     // **Three rows rather than two**: the delimiter a window writes comes from the name it is
@@ -433,6 +467,47 @@ pub const TEXT: &[Command] = &[
     cmd("doc.about", "About this build", "Document", "", false),
     cmd("doc.undo", "Undo", "Document", "Ctrl+Z", false),
     cmd("doc.redo", "Redo", "Document", "Ctrl+Shift+Z", false),
+    // --- spelling (`doc/spelling.md`): a language for this kind of document, remembered ---
+    cmd("spell.auto", "Spelling: automatic", "Spelling", "", false),
+    cmd(
+        "spell.en-US",
+        "Spelling: English (US)",
+        "Spelling",
+        "",
+        false,
+    ),
+    cmd("spell.de-DE", "Spelling: Deutsch", "Spelling", "", false),
+    cmd(
+        "spell.fr-FR",
+        "Spelling: Fran\u{e7}ais",
+        "Spelling",
+        "",
+        false,
+    ),
+    cmd(
+        "spell.es-ES",
+        "Spelling: Espa\u{f1}ol",
+        "Spelling",
+        "",
+        false,
+    ),
+    cmd("spell.it-IT", "Spelling: Italiano", "Spelling", "", false),
+    cmd(
+        "spell.pt-PT",
+        "Spelling: Portugu\u{ea}s",
+        "Spelling",
+        "",
+        false,
+    ),
+    cmd("spell.pl-PL", "Spelling: Polski", "Spelling", "", false),
+    cmd("spell.off", "Spelling: off", "Spelling", "", false),
+    cmd(
+        "spell.next",
+        "Go to the next misspelling",
+        "Spelling",
+        "",
+        false,
+    ),
     // Markdown, the word processor's CSV: read in before the caret's block, written out from the
     // selection (or the whole document). A download names itself, so no dialect to choose.
     cmd(
@@ -653,6 +728,28 @@ mod tests {
         assert_eq!(shown[0].id, "doc.open");
         let common = SHEET.iter().filter(|c| c.common).count();
         assert_eq!(shown.len(), common);
+    }
+
+    /// Both panes offer exactly the settings the other clients' menus do — `Setting::ALL`, each
+    /// by its own name — so a language added to `grind-spell` is a row here or this fails.
+    #[test]
+    fn both_panes_offer_every_spelling_setting_by_name() {
+        for table in [SHEET, TEXT] {
+            for setting in grind_spell::Setting::ALL {
+                let id = format!("spell.{}", setting.tag());
+                let command = table
+                    .iter()
+                    .find(|command| command.id == id)
+                    .unwrap_or_else(|| panic!("{id}"));
+                let name = match setting {
+                    grind_spell::Setting::In(_) => setting.label().to_owned(),
+                    other => other.label().to_lowercase(),
+                };
+                assert_eq!(command.title, format!("Spelling: {name}"), "{id}");
+            }
+        }
+        assert!(TEXT.iter().any(|c| c.id == "spell.next"));
+        assert!(!SHEET.iter().any(|c| c.id == "spell.next"));
     }
 
     #[test]

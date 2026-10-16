@@ -72,6 +72,15 @@ dom.window.HTMLAnchorElement.prototype.click = function () {
   downloads.at(-1).name = this.download;
 };
 
+// The dictionaries spelling is checked with (`ui_web/src/spelling.rs`) are fetched from
+// `dictionaries/` beside the page; here that is the repository's own copy.
+dom.window.fetch = async (url) => {
+  const file = path.join(here, "..", "spell/dictionaries", path.basename(String(url)));
+  if (!fs.existsSync(file)) return { ok: false, status: 404 };
+  const text = fs.readFileSync(file, "utf8");
+  return { ok: true, status: 200, text: async () => text };
+};
+
 // Instantiating the module runs `start()`, which wires the page up.
 require(path.join(here, ".smoke/grind_web.js"));
 
@@ -953,6 +962,54 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   typeInDoc("hi");
   await frame();
   check("and typing into it reaches the core", blocks(), ["hi"]);
+
+  // --- spelling (doc/spelling.md) --------------------------------------------------------
+  //
+  // The dictionary is fetched when a document arrives with spelling on, so the underline comes
+  // a moment after the text does.
+  const settle = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await frame();
+    await frame();
+  };
+  const wrong = () => [...document.querySelectorAll("#flow .wrong")].map((el) => el.textContent);
+  await openFile("misspelt.fodt", FODT.replace("One paragraph.", "We recieve your letter."));
+  await settle();
+  check("a misspelt word is underlined once its dictionary has arrived", wrong(), ["recieve"]);
+  check("and the line reads as it did", blocks(), ["Title", "We recieve your letter."]);
+
+  // Moving the caret into the word offers what it might have been, in the palette.
+  pressInDoc("ArrowDown");
+  for (let i = 0; i < 6; i++) pressInDoc("ArrowRight");
+  palette("k", { ctrlKey: true });
+  check("the palette offers a correction for the word at the caret",
+    paletteRows().some((row) => row.includes("receive")), true);
+  paletteType("receive");
+  paletteEnter();
+  await frame();
+  check("picking it corrects the word", blocks(), ["Title", "We receive your letter."]);
+  await settle();
+  check("and nothing is underlined any more", wrong(), []);
+
+  // A language is chosen from the palette, remembered, and its dictionary fetched.
+  await command("Spelling: Deutsch");
+  await settle();
+  check("a language is remembered for this kind of document",
+    dom.window.localStorage.getItem("grind.spelling.text"), "de-DE");
+  check("and German does not know English words", wrong().length > 0, true);
+  await command("Spelling: off");
+  await settle();
+  check("off underlines nothing", wrong(), []);
+  check("and is remembered", dom.window.localStorage.getItem("grind.spelling.text"), "off");
+  await command("Spelling: automatic");
+  await settle();
+  check("automatic forgets the choice", dom.window.localStorage.getItem("grind.spelling.text"), null);
+
+  // A spreadsheet is checked the same way, in the text its cells hold.
+  await openFile("misspelt.fods", FODS.replace("from a file", "recieve it"));
+  await settle();
+  check("a misspelt word in a cell is underlined",
+    [...document.querySelectorAll("td.cell .wrong")].map((el) => el.textContent), ["recieve"]);
 
   await command("Welcome screen");
   check("the welcome pane is reachable again", byId("welcome").hidden, false);

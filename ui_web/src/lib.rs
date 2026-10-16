@@ -40,6 +40,7 @@ pub mod ink;
 pub mod palette;
 pub mod problems;
 pub mod sheet;
+pub mod spelling;
 pub mod swatch;
 pub mod text;
 
@@ -163,6 +164,8 @@ pub fn start() -> Result<(), JsValue> {
         fonts: RefCell::new(None),
         pick: Cell::new(Pick::Document),
         csv_words: RefCell::new(String::new()),
+        sheet_speller: RefCell::new(None),
+        text_speller: RefCell::new(None),
     });
 
     // The page's own two "declared in Rust, used in CSS" numbers — see each function.
@@ -321,6 +324,11 @@ struct Shell {
     pick: Cell<Pick>,
     /// What a person typed for the next CSV import (`Pick::CsvWith`), taken by it.
     csv_words: RefCell<String>,
+    /// The speller attached to each pane's document, so "Ignore" and "Add to your dictionary"
+    /// can teach it a word (`spelling.rs`). `None` while spelling is off or its dictionary is
+    /// still arriving.
+    sheet_speller: RefCell<Option<Arc<grind_spell::Speller>>>,
+    text_speller: RefCell<Option<Arc<grind_spell::Speller>>>,
 }
 
 /// The bundled fonts' file names under `fonts/`: `grind_print::fonts::BUNDLED_NAMES`, which
@@ -581,6 +589,7 @@ impl Shell {
             "edit.cut" => self.copy_out(true),
             "edit.copy-value" => self.copy_value(),
             "edit.paste" => self.paste_in(),
+            id if id.starts_with("spell.") => self.run_spelling(id),
             "view.source" => self.toggle_source(),
             "view.problems" => self.toggle_problems(),
             "sheet.calculations" => self.find_calculations(),
@@ -1245,6 +1254,9 @@ impl Shell {
                     web_sys::console::error_1(&error);
                 }
                 self.set_message(summary.unwrap_or_else(|| format!("Opened {name}")));
+                // The language is the person's remembered choice, or the document's own — and
+                // its dictionary is fetched the first time it is wanted.
+                spelling::spawn(mode.kind(), false);
             }
             // Tolerance is the reader's job, not the shell's: if the core will not take it,
             // saying why is all there is to do.
@@ -1370,6 +1382,7 @@ impl Shell {
             web_sys::console::error_1(&error);
         }
         self.set_message(String::new());
+        spelling::spawn(Some(kind), false);
     }
 }
 
@@ -1390,6 +1403,14 @@ pub(crate) fn with_shell(f: impl FnOnce(&Shell)) {
     let shell = SHELL.with(|slot| slot.borrow().clone());
     if let Some(shell) = shell {
         f(&shell);
+    }
+}
+
+/// Reach the live shell *as an `Rc`*, for work that has to outlive the call — a fetch.
+pub(crate) fn with_rc_shell(f: impl FnOnce(Rc<Shell>)) {
+    let shell = SHELL.with(|slot| slot.borrow().clone());
+    if let Some(shell) = shell {
+        f(shell);
     }
 }
 

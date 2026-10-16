@@ -474,7 +474,16 @@ impl Ui {
                             None => viewport.text(row, col).unwrap_or_default().to_string(),
                         }),
                 };
-                cell.set_text_content(Some(&text));
+                // The words the checker underlines, in what the cell *shows*: not while it is
+                // being edited, and not under a formula's own text.
+                let wrong = match (active && editing, self.formulas.get()) {
+                    (false, false) => viewport.misspelt(pos.row, pos.col),
+                    _ => &[],
+                };
+                match wrong.is_empty() {
+                    true => cell.set_text_content(Some(&text)),
+                    false => self.append_spelled(&cell, &text, wrong)?,
+                }
                 // A checkbox: a real `<input type=checkbox>` ahead of the text, so the browser
                 // draws it in the platform's own look and a screen reader announces it as one.
                 // A click on it is handled by `on_click`, which writes the linked cell.
@@ -653,6 +662,41 @@ impl Ui {
             self.dom.tabs.append_child(&tab)?;
         }
         Ok(())
+    }
+
+    /// A cell's text with each misspelt word in a span the stylesheet underlines. `wrong` is
+    /// character ranges into `text`, which is what [`grind_sheet::Viewport::misspelt`] answers.
+    fn append_spelled(
+        &self,
+        cell: &Element,
+        text: &str,
+        wrong: &[std::ops::Range<usize>],
+    ) -> Result<(), JsValue> {
+        let chars: Vec<char> = text.chars().collect();
+        let mut at = 0;
+        let put = |from: usize, to: usize, wrong: bool| -> Result<(), JsValue> {
+            if from >= to {
+                return Ok(());
+            }
+            let piece: String = chars[from.min(chars.len())..to.min(chars.len())]
+                .iter()
+                .collect();
+            if wrong {
+                let span = self.dom.document.create_element("span")?;
+                span.set_class_name("wrong");
+                span.set_text_content(Some(&piece));
+                cell.append_child(&span)?;
+            } else {
+                cell.append_child(&self.dom.document.create_text_node(&piece))?;
+            }
+            Ok(())
+        };
+        for range in wrong {
+            put(at, range.start, false)?;
+            put(range.start, range.end, true)?;
+            at = range.end;
+        }
+        put(at, chars.len(), false)
     }
 
     fn render_chrome(&self, selection: &Selection) -> Result<(), JsValue> {

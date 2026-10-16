@@ -29,6 +29,8 @@ pub struct Piece {
     /// `xlink:href`, when this piece is inside a link.
     pub href: Option<String>,
     pub selected: bool,
+    /// Whether it is (part of) a word the spell checker underlines.
+    pub wrong: bool,
 }
 
 /// Cut `line` into pieces. `runs` are the block's own, in order; `selection` is in the same
@@ -39,12 +41,26 @@ pub struct Piece {
 /// kerning (`text/mod.rs`). `anchors` are bookmark offsets, boundaries for the same reason: a
 /// tick drawn at one has to sit against its own kerning too, not inside whichever run it lands
 /// in the middle of.
+#[cfg(test)]
 pub fn cut(
     line: Range<usize>,
     runs: &[RunView],
     selection: Option<Range<usize>>,
     caret: Option<usize>,
     anchors: &[usize],
+) -> Vec<Piece> {
+    cut_spelled(line, runs, selection, caret, anchors, &[])
+}
+
+/// [`cut`], with the misspelt words of the block — in the same offsets — each a boundary at
+/// both ends, so the wavy underline starts and stops exactly on the word.
+pub fn cut_spelled(
+    line: Range<usize>,
+    runs: &[RunView],
+    selection: Option<Range<usize>>,
+    caret: Option<usize>,
+    anchors: &[usize],
+    misspelt: &[Range<usize>],
 ) -> Vec<Piece> {
     if line.start >= line.end {
         return Vec::new();
@@ -69,6 +85,10 @@ pub fn cut(
     for at in anchors {
         mark(*at);
     }
+    for word in misspelt {
+        mark(word.start);
+        mark(word.end);
+    }
     bounds.sort_unstable();
     bounds.dedup();
 
@@ -86,6 +106,9 @@ pub fn cut(
                 selected: selection
                     .as_ref()
                     .is_some_and(|sel| sel.start <= start && end <= sel.end),
+                wrong: misspelt
+                    .iter()
+                    .any(|word| word.start <= start && end <= word.end),
             }
         })
         .collect()
@@ -117,6 +140,9 @@ pub fn classes(piece: &Piece) -> String {
     }
     if piece.selected {
         class.push_str(" sel");
+    }
+    if piece.wrong {
+        class.push_str(" wrong");
     }
     class
 }
@@ -173,6 +199,23 @@ mod tests {
             font_weight: Some("bold".into()),
             ..CharStyle::default()
         }
+    }
+
+    #[test]
+    fn a_misspelt_word_is_cut_out_of_the_line_and_marked() {
+        let runs = [run(0, "a wrongg word", CharStyle::default())];
+        let word: Range<usize> = 2..8;
+        let pieces = cut_spelled(0..13, &runs, None, None, &[], std::slice::from_ref(&word));
+        assert_eq!(
+            pieces.iter().map(|p| p.range.clone()).collect::<Vec<_>>(),
+            vec![0..2, 2..8, 8..13]
+        );
+        assert_eq!(
+            pieces.iter().map(|p| p.wrong).collect::<Vec<_>>(),
+            [false, true, false]
+        );
+        assert!(classes(&pieces[1]).contains(" wrong"));
+        assert!(!classes(&pieces[0]).contains("wrong"));
     }
 
     #[test]
@@ -269,6 +312,7 @@ mod tests {
             },
             href: None,
             selected: false,
+            wrong: false,
         };
         let inline = css(&piece, false);
         assert!(inline.contains("color:#ff4136;"), "{inline}");

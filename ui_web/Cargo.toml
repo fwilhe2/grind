@@ -30,6 +30,10 @@ grind-docx = { path = "../docx", optional = true }
 grind-core = { path = "../core" }
 grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
+# Spelling (`doc/spelling.md`): Hunspell's checker and the rules, **without** the twelve megabytes
+# of word lists — the page fetches the one language it needs from `dictionaries/`
+# (`grind_spell::Language::provide`), the way it fetches the PDF fonts.
+grind-spell = { path = "../spell", default-features = false }
 wasm-bindgen = "0.2"
 # Reading a picked file is a promise, and it is the only async thing here.
 wasm-bindgen-futures = "0.4"
@@ -80,6 +84,8 @@ features = [
   "Navigator",
   "Node",
   "Response",
+  # The remembered spelling setting (`spelling.rs`), per kind of document.
+  "Storage",
   "SvgElement",
   "Text",
   "TextMetrics",

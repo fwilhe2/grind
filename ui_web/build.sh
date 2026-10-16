@@ -80,5 +80,11 @@ cp "$root/ui_web/index.html" "$root/ui_web/style.css" "$dist/"
 mkdir -p "$dist/fonts"
 cp "$root"/print/fonts/*.ttf "$dist/fonts/"
 
+# The dictionaries spelling is checked with (doc/spelling.md), fetched one language at a time the
+# first time a document in it is open with spelling on — twelve megabytes the page should not
+# carry. `grind_web` links `grind-spell` without its bundled lists and asks for these.
+mkdir -p "$dist/dictionaries"
+cp "$root"/spell/dictionaries/*.aff "$root"/spell/dictionaries/*.dic "$dist/dictionaries/"
+
 echo "ui_web/dist is ready — serve it, do not open index.html from disk:"
 echo "  python3 -m http.server --directory ui_web/dist 8000"
