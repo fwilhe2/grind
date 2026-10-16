@@ -181,6 +181,12 @@ fn name(sheet: Sheet, name: string, target: string) -> Sheet;
 /// `_italic_`, `` `code` ``.
 fn para(document: Text, text: string) -> Text;
 
+/// A paragraph in a named paragraph style the template declares.
+///
+/// Without a template (`text_from`) no style is declared, and `grind lint` reports
+/// the name as undeclared.
+fn para(document: Text, style: string, text: string) -> Text;
+
 /// Where the chart's top-left corner sits on the sheet, as two ODF lengths from
 /// the sheet's own corner — `.position("0cm", "6cm")`.
 fn position(chart: Chart, x: string, y: string) -> Chart;
@@ -240,6 +246,10 @@ fn spreadsheet() -> Spreadsheet;
 /// In a script styles *layer* — a later one adds to what is underneath.
 fn style() -> Style;
 
+/// Set the named paragraph style of the block last said, which the template
+/// declares. `para(style, text)` is the same thing for a paragraph, in one call.
+fn style(document: Text, style: string) -> Text;
+
 /// Styling over the row's own cells — as many as the row holds, and no more.
 fn style(row: Row, style: Style) -> Row;
 
@@ -260,6 +270,14 @@ fn symbol(format: Format, symbol: string) -> Format;
 /// An empty text document. Say headings, paragraphs and list items into it, and
 /// return it at the end of the script.
 fn text() -> Text;
+
+/// An empty text document that starts from a template: a flat ODF text document
+/// (`.fodt`) in the data directory, whose page, master pages — letterhead,
+/// footer — and named paragraph styles the document keeps. Its own body is
+/// dropped; say new blocks into it, naming a style with `para(style, text)`.
+///
+/// The template is read through the same walls as `json`.
+fn text_from(template: string) -> Text;
 
 /// The chart's own title, drawn above it.
 fn title(chart: Chart, text: string) -> Chart;

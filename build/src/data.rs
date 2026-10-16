@@ -204,10 +204,8 @@ impl Loaded {
         }
     }
 
-    fn json(&self, name: &str) -> Result<Dynamic, Box<EvalAltResult>> {
-        if let Some(value) = self.cache.borrow().get(name) {
-            return Ok(value.clone());
-        }
+    /// One file's text, through the same walls whatever it is parsed as afterwards.
+    fn text(&self, name: &str) -> Result<String, Box<EvalAltResult>> {
         if self.cache.borrow().len() >= MAX_FILES {
             return Err(bad(format!(
                 "{name}: a script may read {MAX_FILES} data files, which is more than a \
@@ -221,6 +219,28 @@ impl Loaded {
                 text.len()
             )));
         }
+        Ok(text)
+    }
+
+    /// A flat ODF text document to start a `Text` from. Counted with the data files, and
+    /// cached under a key no JSON name can have.
+    fn template(&self, name: &str) -> Result<String, Box<EvalAltResult>> {
+        let key = format!("template:{name}");
+        if let Some(value) = self.cache.borrow().get(&key) {
+            return Ok(value.clone().cast::<String>());
+        }
+        let text = self.text(name)?;
+        self.cache
+            .borrow_mut()
+            .insert(key, Dynamic::from(text.clone()));
+        Ok(text)
+    }
+
+    fn json(&self, name: &str) -> Result<Dynamic, Box<EvalAltResult>> {
+        if let Some(value) = self.cache.borrow().get(name) {
+            return Ok(value.clone());
+        }
+        let text = self.text(name)?;
         let parsed: serde_json::Value =
             serde_json::from_str(&text).map_err(|e| bad(format!("{name}: {e}")))?;
         let value = self::dynamic(parsed);
@@ -270,7 +290,24 @@ fn dynamic(value: serde_json::Value) -> Dynamic {
 
 /// `json(name)`, the only door a script has to anything outside itself.
 pub(crate) fn register(engine: &mut Engine, data: Rc<dyn Data>) {
-    let loaded = Loaded::new(data);
+    let loaded = Rc::new(Loaded::new(data));
+    let templates = Rc::clone(&loaded);
+    crate::hint::hint(
+        engine,
+        "text_from",
+        ["template: string", "Text"],
+        [
+            "/// An empty text document that starts from a template: a flat ODF text document",
+            "/// (`.fodt`) in the data directory, whose page, master pages — letterhead,",
+            "/// footer — and named paragraph styles the document keeps. Its own body is",
+            "/// dropped; say new blocks into it, naming a style with `para(style, text)`.",
+            "///",
+            "/// The template is read through the same walls as `json`.",
+        ],
+        move |name: &str| -> Result<crate::text::Doc, Box<EvalAltResult>> {
+            Ok(crate::text::Doc::from_template(templates.template(name)?))
+        },
+    );
     crate::hint::hint(
         engine,
         "json",

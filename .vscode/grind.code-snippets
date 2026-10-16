@@ -359,6 +359,14 @@
     "prefix": "name",
     "scope": "rhai"
   },
+  "para(document: Text, style: string, text: string) -> Text": {
+    "body": [
+      "para(${1:style}, ${2:text})"
+    ],
+    "description": "A paragraph in a named paragraph style the template declares.\n\nWithout a template (`text_from`) no style is declared, and `grind lint` reports\nthe name as undeclared.",
+    "prefix": "para",
+    "scope": "rhai"
+  },
   "para(document: Text, text: string) -> Text": {
     "body": [
       "para(${1:text})"
@@ -479,6 +487,14 @@
     "prefix": "style",
     "scope": "rhai"
   },
+  "style(document: Text, style: string) -> Text": {
+    "body": [
+      "style(${1:style})"
+    ],
+    "description": "Set the named paragraph style of the block last said, which the template\ndeclares. `para(style, text)` is the same thing for a paragraph, in one call.",
+    "prefix": "style",
+    "scope": "rhai"
+  },
   "style(row: Row, style: Style) -> Row": {
     "body": [
       "style(${1:style})"
@@ -517,6 +533,14 @@
     ],
     "description": "An empty text document. Say headings, paragraphs and list items into it, and\nreturn it at the end of the script.",
     "prefix": "text",
+    "scope": "rhai"
+  },
+  "text_from(template: string) -> Text": {
+    "body": [
+      "text_from(${1:template})"
+    ],
+    "description": "An empty text document that starts from a template: a flat ODF text document\n(`.fodt`) in the data directory, whose page, master pages — letterhead,\nfooter — and named paragraph styles the document keeps. Its own body is\ndropped; say new blocks into it, naming a style with `para(style, text)`.\n\nThe template is read through the same walls as `json`.",
+    "prefix": "text_from",
     "scope": "rhai"
   },
   "title(chart: Chart, text: string) -> Chart": {

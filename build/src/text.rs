@@ -44,7 +44,12 @@ type Res<T> = Result<T, Box<EvalAltResult>>;
 /// Shared like [`crate::sheet::Sheet`] and for the same reason — a document handed to a
 /// function has to be the same document when it comes back.
 #[derive(Clone, Default)]
-pub struct Doc(Rc<RefCell<Vec<Block>>>);
+pub struct Doc {
+    blocks: Rc<RefCell<Vec<Block>>>,
+    /// The flat ODF text document this one starts from — its page, its master pages with their
+    /// headers and footers, and the paragraph styles blocks may name — if `text_from` said one.
+    template: Option<Rc<String>>,
+}
 
 struct Block {
     kind: BlockKind,
@@ -52,6 +57,8 @@ struct Block {
     markdown: String,
     /// A bookmark anchored at the start of this block, if a script asked for one.
     bookmark: Option<String>,
+    /// The named paragraph style of this block, which the template declares.
+    style: Option<String>,
 }
 
 /// Every method hands the document back, so a script may chain — and because it is a shared
@@ -82,6 +89,40 @@ pub fn register(engine: &mut Engine) {
             "/// `_italic_`, `` `code` ``.",
         ],
         |doc: &mut Doc, text: &str| doc.push(BlockKind::Paragraph, text),
+    );
+    hint(
+        engine,
+        "para",
+        ["document: Text", "style: string", "text: string", "Text"],
+        [
+            "/// A paragraph in a named paragraph style the template declares.",
+            "///",
+            "/// Without a template (`text_from`) no style is declared, and `grind lint` reports",
+            "/// the name as undeclared.",
+        ],
+        |doc: &mut Doc, style: &str, text: &str| {
+            doc.push_styled(BlockKind::Paragraph, text, Some(style.to_owned()))
+        },
+    );
+    // Like `bookmark`, on the block last said — which is what lets a list item, a heading or a
+    // paragraph take a template's style without a second overload of each.
+    hint(
+        engine,
+        "style",
+        ["document: Text", "style: string", "Text"],
+        [
+            "/// Set the named paragraph style of the block last said, which the template",
+            "/// declares. `para(style, text)` is the same thing for a paragraph, in one call.",
+        ],
+        |doc: &mut Doc, style: &str| -> Res<Doc> {
+            let mut blocks = doc.blocks.borrow_mut();
+            let last = blocks
+                .last_mut()
+                .ok_or_else(|| bad("style() needs a block to set it on"))?;
+            last.style = Some(style.to_owned());
+            drop(blocks);
+            Ok(doc.clone())
+        },
     );
     hint(
         engine,
@@ -135,7 +176,7 @@ pub fn register(engine: &mut Engine) {
             "/// `p12` does not.",
         ],
         |doc: &mut Doc, name: &str| -> Res<Doc> {
-            let mut blocks = doc.0.borrow_mut();
+            let mut blocks = doc.blocks.borrow_mut();
             let last = blocks
                 .last_mut()
                 .ok_or_else(|| bad("bookmark() needs a block to anchor to"))?;
@@ -149,13 +190,13 @@ pub fn register(engine: &mut Engine) {
         "blocks",
         ["document: Text", "int"],
         ["/// How many blocks have been said."],
-        |doc: &mut Doc| doc.0.borrow().len() as i64,
+        |doc: &mut Doc| doc.blocks.borrow().len() as i64,
     );
     hint_get(
         engine,
         "blocks",
         ["/// How many blocks have been said."],
-        |doc: &mut Doc| doc.0.borrow().len() as i64,
+        |doc: &mut Doc| doc.blocks.borrow().len() as i64,
     );
 }
 
@@ -165,19 +206,44 @@ fn bad(message: impl Into<String>) -> Box<EvalAltResult> {
 
 impl Doc {
     fn push(&mut self, kind: BlockKind, markdown: &str) -> Doc {
-        self.0.borrow_mut().push(Block {
+        self.push_styled(kind, markdown, None)
+    }
+
+    fn push_styled(&mut self, kind: BlockKind, markdown: &str, style: Option<String>) -> Doc {
+        self.blocks.borrow_mut().push(Block {
             kind,
             markdown: markdown.to_owned(),
             bookmark: None,
+            style,
         });
         self.clone()
+    }
+
+    /// A document that starts from `template`, flat ODF text, read by the data wall's rules.
+    pub(crate) fn from_template(template: String) -> Doc {
+        Doc {
+            blocks: Rc::default(),
+            template: Some(Rc::new(template)),
+        }
     }
 }
 
 /// Build the document a script described.
 pub fn materialise(doc: &Doc) -> Result<App, String> {
     let app = App::new();
-    let blocks = doc.0.borrow();
+    if let Some(template) = &doc.template {
+        // The template's body is read as the empty document it should be; what survives is the
+        // part a save carries through untouched — page, master pages, styles.
+        app.open_bytes("template.fodt", template.as_bytes())
+            .map_err(say)?;
+        // Keep the template's page and styles, not its words. If the document refuses to be
+        // empty, the one block it keeps is filled first, below, like a new document's.
+        let kept = app.block_count();
+        if kept > 0 {
+            app.delete(0..kept).map_err(say)?;
+        }
+    }
+    let blocks = doc.blocks.borrow();
     if blocks.is_empty() {
         return Err("a text document needs at least one block".to_owned());
     }
@@ -204,6 +270,10 @@ pub fn materialise(doc: &Doc) -> Result<App, String> {
         }
         if let Some(name) = &block.bookmark {
             app.set_bookmark(name, Some(index)).map_err(say)?;
+        }
+        if let Some(style) = &block.style {
+            app.set_style(index..index + 1, Some(style.clone()))
+                .map_err(say)?;
         }
     }
     // A document with fewer blocks than the empty one started with cannot happen — there is

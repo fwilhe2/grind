@@ -270,3 +270,50 @@ fn a_data_directory_has_to_be_a_directory() {
     assert!(Directory::new(&file).is_err());
     assert!(Directory::new(Path::new("/no/such/place")).is_err());
 }
+
+/// `text_from(…)` — a template is read through the same walls, and what it declares reaches the
+/// built document: a block named a style the template has is set in it, and the template's
+/// page and master pages are in the saved file.
+#[test]
+fn a_template_supplies_the_styles_a_generated_letter_names() {
+    let dir = Sandbox::new("template");
+    dir.write(
+        "letter.fodt",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
+ <office:styles>
+  <style:style style:name="Subject" style:family="paragraph"><style:text-properties fo:font-weight="bold"/></style:style>
+ </office:styles>
+ <office:master-styles>
+  <style:master-page style:name="Standard"><style:footer><text:p>A made-up footer</text:p></style:footer></style:master-page>
+ </office:master-styles>
+ <office:body><office:text><text:p>dropped</text:p></office:text></office:body>
+</office:document>"#,
+    );
+    let data = Directory::new(&dir.0).expect("a data directory");
+    let Artifact::Text(app) = build_with(
+        "let d = text_from(\"letter.fodt\");\nd.para(\"Subject\", \"Hello\");\nd.para(\"Body\");\nd.style(\"Subject\");\nd",
+        "letter.rhai",
+        Rc::new(data),
+    )
+    .expect("it builds") else {
+        panic!("that script built a spreadsheet");
+    };
+    assert_eq!(app.block_count(), 2, "the template's own body is gone");
+    let bytes = app.save_bytes(grind_sheet::Form::Flat).expect("it saves");
+    let xml = String::from_utf8(bytes).expect("flat ODF is text");
+    assert!(xml.contains("A made-up footer"), "the master page survived");
+    assert!(
+        xml.contains(r#"text:style-name="Subject""#),
+        "the style was applied"
+    );
+    assert!(!xml.contains("dropped"), "{xml}");
+
+    // A template is read like data: from inside the directory, and nowhere else.
+    let outside = Directory::new(&dir.0).expect("a data directory");
+    let error = build_with("text_from(\"../letter.fodt\")", "x.rhai", Rc::new(outside))
+        .err()
+        .expect("refused")
+        .to_string();
+    assert!(error.contains(".."), "{error}");
+}

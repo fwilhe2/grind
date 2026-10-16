@@ -15,8 +15,8 @@ outranks both, because it asks the engine.
 A guide is a different document, and it is **`doc/generator-guide.md`** (`doc/dsl.md` §7, D14) —
 from a first script to a four-sheet model, in the order the problems arrive. This one is for
 somebody arguing with an edge case, not for somebody learning. Everything here is true of the
-build in this repository; `examples/first.rhai`, `examples/budget.rhai`, `examples/prices.rhai`,
-`examples/timesheet.rhai` and `examples/report.rhai` are the worked examples, and
+build in this repository; `examples/first.rhai`, `examples/budget.rhai`, `examples/prices/prices.rhai`,
+`examples/timesheet/timesheet.rhai` and `examples/report.rhai` are the worked examples, and
 `build/tests/smoke.rs` executes most of what follows.
 
 ---
@@ -244,6 +244,16 @@ array, a string is a string, `null` is `()`, and a number is an integer when it 
 float otherwise. **Object keys come back sorted** — JSON says an object is unordered, and a
 script that needs the author's order wants an array.
 
+**A template is the one other thing a script may read.** `text_from("letter.fodt")` takes a flat
+ODF text document from the same directory through the same walls (a name inside the directory,
+`MAX_BYTES`, counted in `MAX_FILES`, cached) and starts a `Text` from it: the page, the master
+pages with their headers and footers, and every paragraph style stay, and the body is
+discarded. What a script cannot *declare* — a page, a letterhead, a style — a person designs in
+a word processor and a script *uses*, by name, with `para(style, text)` or `.style(style)`.
+Like JSON, a document read this way is an input and cannot do anything: it holds no script and
+no reference outside itself. `examples/letters/brief-din5008.fodt` is the worked one. A style the
+template does not declare is `grind lint`'s `undeclared-style`, as it would be anywhere else.
+
 Reading is a *host capability*, not a language one: `grind_build::Data` is a trait,
 `Directory` is the implementation with the walls above, and a caller that supplies `NoData` —
 which is the default, and what `build()` uses — gets an error naming `--data` instead. A host
@@ -382,9 +392,12 @@ exactly that much. Every method returns the document.
 | `text()` | `Text` | an empty document |
 | `t.para(text)` | `Text` | a paragraph |
 | `t.heading(level, text)` | `Text` | a heading, level `1`–`6`. The outline is implied by the levels and by nothing else |
+| `t.para(style, text)` | `Text` | a paragraph in the named paragraph style a template declares |
+| `t.style(style)` | `Text` | set the named paragraph style of the block last said — a list item, a heading or a paragraph. Like `bookmark`, it needs a block to say it on |
 | `t.item(depth, text)` | `Text` | a list item nested `1`–`9` deep |
 | `t.item(text)` | `Text` | the same, at depth 1 |
 | `t.bookmark(name)` | `Text` | anchor a bookmark at the start of the block last said. `#name` then addresses it, and survives editing where `p12` does not |
+| `text_from(template)` | `Text` | an empty text document that **starts from a template** — §3.5. Its page, master pages (letterhead, footer) and named paragraph styles are kept; its own body is dropped |
 | `t.blocks()`, `t.blocks` | an integer | how many blocks have been said |
 
 **The inline notation is `grind_text::markdown`'s**, read through `App::type_markdown` — the
@@ -489,7 +502,7 @@ and a script that needs one writes the document and then runs `grind` on it.
 | The **null date**, the null year | — | a document-level setting no generated document has yet wanted |
 | **Character formatting** beyond the notation — a font, a size, a colour on a run | `grind text format` | it reaches the model through a *caret*, and a script says blocks |
 | **Images** | `grind text image` | `doc/dsl.md` §3.8's open question, and they have no projection either |
-| **Named paragraph styles** | — | a generator cannot *declare* one, so every block using it would be a `grind lint` `undeclared-style` finding |
+| **Declaring a named paragraph style**, a page, a header | a template: `text_from(…)` (§3.5), then `para(style, text)` | the model carries styles by name and never authors one; a template's are declared by the person who designed it, and a block naming one is not an `undeclared-style` finding |
 
 ---
 
@@ -549,7 +562,7 @@ time rather than a red underline. Rhai's standard library is deliberately left o
 anybody reads.
 
 A guide is a different document from a reference, and the editor setup is a third: **`doc/generator-guide.md`** is from
-a first script to `examples/timesheet.rhai`, and **`doc/editor-setup.md`** is the two commands
+a first script to `examples/timesheet/timesheet.rhai`, and **`doc/editor-setup.md`** is the two commands
 above with what each extension actually does.
 
 ---
