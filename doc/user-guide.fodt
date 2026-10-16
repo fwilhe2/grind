@@ -1,0 +1,618 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0">
+ 
+ <office:automatic-styles>
+  <style:style style:name="T1" style:family="text">
+   <style:text-properties fo:font-weight="bold"/>
+  </style:style>
+  <style:style style:name="T2" style:family="text">
+   <style:text-properties fo:font-family="monospace"/>
+  </style:style>
+  <style:style style:name="T3" style:family="text">
+   <style:text-properties fo:font-style="italic"/>
+  </style:style>
+ </office:automatic-styles><office:body>
+  <office:text>
+    <text:h text:outline-level="1">grind User Guide</text:h>
+    <text:p>Draft of 16 October 2026. grind has no release yet, and this guide describes the software as it is built today. Where something is missing or works differently in one program, the text says so.</text:p>
+    <text:h text:outline-level="1">1. About this guide</text:h>
+    <text:h text:outline-level="2">1.1 Who this guide is for</text:h>
+    <text:p>This guide is for people who want to write letters and reports, build spreadsheets, and keep their files in an open format. You do not need to be a programmer. The last chapters show how to automate work from a terminal, and you can skip them.</text:p>
+    <text:h text:outline-level="2">1.2 What grind is</text:h>
+    <text:p>grind is an office suite with two kinds of document: <text:span text:style-name="T1">spreadsheets</text:span><text:s/>and <text:span text:style-name="T1">text documents</text:span>. Both are saved in OpenDocument (ODF), the open standard that LibreOffice, Collabora and many other programs read and write. Nothing you make in grind is locked to grind.</text:p>
+    <text:p>The suite comes as several programs. They share one engine, so a formula or a spelling rule means the same thing in all of them.</text:p>
+    <table:table table:name="Table1">
+     <table:table-column table:number-columns-repeated="3"/>
+     <table:table-row>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T1">Program</text:span></text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T1">What it is</text:span></text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T1">Runs on</text:span></text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>grind-sheet-gtk</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>The spreadsheet window</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Linux (GNOME)</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>grind-text-gtk</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>The word processor window</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Linux (GNOME)</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>grind-tui</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Both, in a terminal</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Linux, macOS, Windows</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>grind web</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Both, in a browser tab</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Any current browser</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>grind for Windows</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Both, in one window</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Windows</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>grind for Mac</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Both, in one window</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>macOS</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>grind (the command line)</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Every function, from the shell</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Linux, macOS, Windows</text:p>
+      </table:table-cell>
+     </table:table-row>
+    </table:table>
+    <text:p>Which program you use is a matter of taste. A document made in one opens in all the others.</text:p>
+    <text:h text:outline-level="2">1.3 Conventions used in this guide</text:h>
+    <text:p>Keys are written like <text:span text:style-name="T1">Ctrl+S</text:span>. A <text:span text:style-name="T1">bold</text:span><text:s/>word is something you see on the screen, such as a button or a menu entry. Text in <text:span text:style-name="T2">this typeface</text:span><text:s/>is something you type. A line that begins with <text:span text:style-name="T2">$</text:span><text:s/>is typed in a terminal, without the <text:span text:style-name="T2">$</text:span>.</text:p>
+    <text:p>Shortcuts are given for the Linux windows. The Windows and Mac programs follow their own platform&apos;s conventions, and the command palette (section 4.3) works the same everywhere.</text:p>
+    <text:h text:outline-level="1">2. Getting started</text:h>
+    <text:h text:outline-level="2">2.1 Starting a program</text:h>
+    <text:p>Open a terminal and give the program the name of a file. If you give no name, you start with an empty document.</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind-sheet-gtk budget.fods</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind-text-gtk letter.fodt</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind-tui report.fodt</text:p>
+    <text:p>The terminal program, <text:span text:style-name="T2">grind-tui</text:span>, looks at the file itself to see whether it is a spreadsheet or a text document, so one command opens both. To start an empty text document, type <text:span text:style-name="T2">grind-tui --text</text:span>.</text:p>
+    <text:p>The browser version is a web page. Your administrator or you serve it from a web server, and you open the address in a browser. Nothing is installed, and documents never leave your computer: a file you open is read by the page itself, and a file you save is downloaded to your usual downloads folder.</text:p>
+    <text:p>The Windows and Mac programs open on a welcome screen with three choices: <text:span text:style-name="T1">New Spreadsheet</text:span>, <text:span text:style-name="T1">New Text Document</text:span><text:s/>and <text:span text:style-name="T1">Open a Document</text:span>.</text:p>
+    <text:h text:outline-level="2">2.2 Your first spreadsheet</text:h>
+    <text:p>Open a new spreadsheet. The grid is made of rows, numbered, and columns, lettered. The place where a row and a column meet is a <text:span text:style-name="T1">cell</text:span>, named by its column and row: the cell in column B, row 3 is <text:span text:style-name="T1">B3</text:span>.</text:p>
+    <text:p>Click a cell and type. A number is stored as a number and a word as text. Press <text:span text:style-name="T1">Enter</text:span><text:s/>to accept it and move down. To calculate, begin with an equals sign:</text:p>
+    <text:p text:style-name="Preformatted Text">=B2*1.19</text:p>
+    <text:p>A formula always starts with <text:span text:style-name="T2">=</text:span>. When you press <text:span text:style-name="T1">Enter</text:span><text:s/>the cell shows the result and the formula bar above the grid keeps the formula, so you can read it and change it later.</text:p>
+    <text:h text:outline-level="2">2.3 Your first text document</text:h>
+    <text:p>Open a new text document. A text document is a sequence of <text:span text:style-name="T1">blocks</text:span>: paragraphs, headings and list items. Type as you would in any word processor. <text:span text:style-name="T1">Enter</text:span><text:s/>ends a block and starts a new one. <text:span text:style-name="T1">Backspace</text:span><text:s/>at the start of a block joins it to the one above.</text:p>
+    <text:h text:outline-level="2">2.4 Saving</text:h>
+    <text:p>Press <text:span text:style-name="T1">Ctrl+S</text:span><text:s/>to save. If the document has no name yet, you are asked for one.</text:p>
+    <text:p>grind writes two forms of ODF. A <text:span text:style-name="T1">flat</text:span><text:s/>file (<text:span text:style-name="T2">.fods</text:span><text:s/>for a spreadsheet, <text:span text:style-name="T2">.fodt</text:span><text:s/>for a text document) is a single readable text file. A <text:span text:style-name="T1">package</text:span><text:s/>(<text:span text:style-name="T2">.ods</text:span>, <text:span text:style-name="T2">.odt</text:span>) is a compressed archive. Both open anywhere. The flat form is the one grind offers first, because it works well with version control and because you can open it in a text editor if something ever goes wrong. Choose the package form by giving the file that extension.</text:p>
+    <text:p>A third form, <text:span text:style-name="T2">.grind</text:span>, shows the same document as plain text. Section 9.4 explains when that is useful.</text:p>
+    <text:p>When you open a file that another program made, grind keeps everything it does not itself understand, and writes it back when you save. Saving a document never makes it worse.</text:p>
+    <text:h text:outline-level="1">3. Working with spreadsheets</text:h>
+    <text:h text:outline-level="2">3.1 Moving around and selecting</text:h>
+    <text:p>Use the arrow keys, or click. <text:span text:style-name="T1">Ctrl+arrow</text:span><text:s/>jumps to the edge of the data. <text:span text:style-name="T1">Home</text:span><text:s/>and <text:span text:style-name="T1">End</text:span><text:s/>go to the ends of the row, and <text:span text:style-name="T1">Page Up</text:span><text:s/>and <text:span text:style-name="T1">Page Down</text:span><text:s/>move a screenful. <text:span text:style-name="T1">Ctrl+A</text:span><text:s/>selects everything. To select a block of cells, drag across them, or hold <text:span text:style-name="T1">Shift</text:span><text:s/>and use the arrows. Click a row number or a column letter to select the whole row or column.</text:p>
+    <text:h text:outline-level="2">3.2 Entering data</text:h>
+    <text:p>Type into the selected cell. <text:span text:style-name="T1">Enter</text:span><text:s/>accepts and moves down, <text:span text:style-name="T1">Tab</text:span><text:s/>accepts and moves right, <text:span text:style-name="T1">Esc</text:span><text:s/>cancels. Press <text:span text:style-name="T1">F2</text:span>, or double-click the cell, to edit what is already there.</text:p>
+    <text:p>grind decides what you typed by the same rule everywhere. A leading <text:span text:style-name="T2">=</text:span><text:s/>means a formula, a number means a number, and anything else is text. To enter text that looks like a number or a formula, such as a part number <text:span text:style-name="T2">007</text:span>, start it with an apostrophe: <text:span text:style-name="T2">&apos;007</text:span>.</text:p>
+    <text:p>Which characters are the decimal point and the thousands separator depends on the document&apos;s <text:span text:style-name="T1">locale</text:span>. See section 3.8.</text:p>
+    <text:h text:outline-level="2">3.3 Formulas and functions</text:h>
+    <text:p>Formulas follow the OpenFormula standard. They use the usual operators (<text:span text:style-name="T2">+ - * / ^</text:span>), cell references such as <text:span text:style-name="T2">B3</text:span>, ranges such as <text:span text:style-name="T2">B2:B9</text:span>, and functions such as <text:span text:style-name="T2">SUM</text:span>, <text:span text:style-name="T2">AVERAGE</text:span>, <text:span text:style-name="T2">IF</text:span><text:s/>and <text:span text:style-name="T2">VLOOKUP</text:span>. A reference to a cell on another sheet puts the sheet name first: <text:span text:style-name="T2">Prices.B2</text:span>.</text:p>
+    <text:p>To see every function grind offers, open the function list from the menu, or in a terminal type <text:span text:style-name="T2">grind sheet functions</text:span>. Each function comes with a plain-English name and a summary.</text:p>
+    <text:p><text:span text:style-name="T1">Formulas in plain English.</text:span><text:s/>The formula bar can read a formula back to you as a sentence. <text:span text:style-name="T2">=SUM(B2:B7)</text:span><text:s/>becomes <text:span text:style-name="T3">Sum(Number: B2:B7)</text:span>. This is only a reading aid. It never changes the formula, and you can switch it off. For a long formula, the <text:span text:style-name="T1">Explain</text:span><text:s/>command takes it apart step by step.</text:p>
+    <text:p><text:span text:style-name="T1">Typing help.</text:span><text:s/>While you type a function name, grind offers the names that fit. Press <text:span text:style-name="T1">Tab</text:span><text:s/>to accept an offer. <text:span text:style-name="T1">Enter</text:span><text:s/>still finishes the cell. A hint shows which argument you are on.</text:p>
+    <text:p><text:span text:style-name="T1">Recalculation.</text:span><text:s/>Formulas recalculate when something they depend on changes. Press <text:span text:style-name="T1">F9</text:span><text:s/>to recalculate everything.</text:p>
+    <text:p>If a formula uses a function that grind does not implement yet, the cell keeps the value it had and the document says so. <text:span text:style-name="T2">grind sheet functions</text:span><text:s/>lists what is available.</text:p>
+    <text:h text:outline-level="2">3.4 Filling, copying and clearing</text:h>
+    <text:p>Select a cell and drag its fill handle, or select a range and press <text:span text:style-name="T1">Ctrl+D</text:span><text:s/>to fill down or <text:span text:style-name="T1">Ctrl+R</text:span><text:s/>to fill right. References in the formula shift as they are copied, so <text:span text:style-name="T2">=B2*2</text:span><text:s/>filled down becomes <text:span text:style-name="T2">=B3*2</text:span>. Use <text:span text:style-name="T1">Ctrl+C</text:span>, <text:span text:style-name="T1">Ctrl+X</text:span><text:s/>and <text:span text:style-name="T1">Ctrl+V</text:span><text:s/>to copy, cut and paste. A copied range is placed on the clipboard as tab-separated text, so it pastes into any other spreadsheet. <text:span text:style-name="T1">Delete</text:span><text:s/>clears the selected cells.</text:p>
+    <text:h text:outline-level="2">3.5 Formatting cells</text:h>
+    <text:p>The format bar changes how the selected cells look. You can set bold, italic and underline, alignment, text colour and background colour, borders and wrapping. You can also set how a number is shown: as a plain number, a percentage, a currency amount or a date, with more or fewer decimals.</text:p>
+    <text:p>Formatting changes only what is displayed. A cell showing 1,235 might hold 1234.5. The value is not rounded unless you round it with a function.</text:p>
+    <text:p>Drag the line between two column letters to change a column&apos;s width. Double-click the line to fit the column to its widest entry. Rows work the same way. Hold <text:span text:style-name="T1">Ctrl</text:span><text:s/>and use the mouse wheel to zoom.</text:p>
+    <text:h text:outline-level="2">3.6 Several sheets</text:h>
+    <text:p>A document can hold several sheets, shown as tabs. Use the <text:span text:style-name="T1">+</text:span><text:s/>button to add one. Right-click a tab to rename or delete the sheet. When you rename a sheet, grind updates every formula, name and chart that refers to it.</text:p>
+    <text:h text:outline-level="2">3.7 Charts</text:h>
+    <text:p>Select the cells you want to draw and insert a chart. Bar, line and pie charts are available. A chart appears on the sheet, and you can click it to select it, drag it to move it, drag a handle to resize it, and press <text:span text:style-name="T1">Delete</text:span><text:s/>to remove it. The chart dialog shows a preview while you choose, and it guesses sensible settings, such as whether your labels are in the first row or the first column.</text:p>
+    <text:h text:outline-level="2">3.8 Locale</text:h>
+    <text:p>Every spreadsheet has a <text:span text:style-name="T1">locale</text:span><text:s/>that decides how numbers and dates are shown and read. In a German locale you type <text:span text:style-name="T2">1.234,50</text:span>, and in an American one you type <text:span text:style-name="T2">1,234.50</text:span>. The locale is stored in the document, so two people open the same file and see the same thing. Change it in <text:span text:style-name="T1">Document Settings</text:span>, or in a terminal:</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind sheet locale budget.fods de-DE</text:p>
+    <text:h text:outline-level="2">3.9 Finding and replacing</text:h>
+    <text:p><text:span text:style-name="T1">Ctrl+F</text:span><text:s/>opens the search bar. Search looks at what the cells show, and replace changes formulas and text. Replacing can be undone with <text:span text:style-name="T1">Ctrl+Z</text:span><text:s/>in one step.</text:p>
+    <text:h text:outline-level="2">3.10 Importing and exporting</text:h>
+    <text:p>grind opens Excel workbooks (<text:span text:style-name="T2">.xlsx</text:span>) and reads them in. It does not write them. When you open a workbook, grind makes a new, unsaved ODF document from it and tells you what, if anything, could not be carried over, such as a feature grind does not have. The original file is never touched. Choose <text:span text:style-name="T1">Save</text:span><text:s/>to keep the result as an ODF file.</text:p>
+    <text:p>CSV and TSV files open as new spreadsheets too. To bring a CSV file into the sheet you already have, use <text:span text:style-name="T1">Import CSV</text:span>. To write a range out, use <text:span text:style-name="T1">Export CSV</text:span>. The program can usually tell the delimiter from the file itself.</text:p>
+    <text:h text:outline-level="2">3.11 Seeing what is data and what is code</text:h>
+    <text:p>A spreadsheet mixes numbers somebody typed with formulas somebody wrote, and a table does not show the difference. grind can. The view options mark each cell as an input, a calculation or a label, and show where each named range lives. Nothing is written to the document, and you can turn the marks on and off at any time.</text:p>
+    <text:p>For a careful review, the <text:span text:style-name="T1">source view</text:span><text:s/>shows the whole document as plain text, one line per cell. A line you select there selects the same cell in the grid.</text:p>
+    <text:h text:outline-level="1">4. Working with text documents</text:h>
+    <text:h text:outline-level="2">4.1 Blocks, headings and lists</text:h>
+    <text:p>Everything in a text document is a block. Choose a block&apos;s kind from the style box in the toolbar: body text, <text:span text:style-name="T1">Title</text:span>, <text:span text:style-name="T1">Subtitle</text:span>, <text:span text:style-name="T1">Heading 1</text:span><text:s/>to <text:span text:style-name="T1">Heading 6</text:span>, or a list item. Headings build the document&apos;s outline, which you can open to jump around a long document.</text:p>
+    <text:p>In the Linux window, <text:span text:style-name="T1">Ctrl+0</text:span><text:s/>gives the current block body text and <text:span text:style-name="T1">Ctrl+1</text:span>, <text:span text:style-name="T1">Ctrl+2</text:span><text:s/>and <text:span text:style-name="T1">Ctrl+3</text:span><text:s/>make it a heading of that level. <text:span text:style-name="T1">Ctrl+Shift+O</text:span><text:s/>opens the outline.</text:p>
+    <text:h text:outline-level="2">4.2 Formatting text</text:h>
+    <text:p>Select text, then use the toolbar or the keys: <text:span text:style-name="T1">Ctrl+B</text:span><text:s/>for bold, <text:span text:style-name="T1">Ctrl+I</text:span><text:s/>for italic and <text:span text:style-name="T1">Ctrl+U</text:span><text:s/>for underline. You can also strike through, set a font and size, and choose a text colour or a highlight. <text:span text:style-name="T1">Clear</text:span><text:s/>removes the direct formatting from the selection.</text:p>
+    <text:p>You can also type your formatting. When you type <text:span text:style-name="T2">**bold**</text:span>, the asterisks disappear and the word turns bold. The same works for <text:span text:style-name="T2">*italic*</text:span>, <text:span text:style-name="T2">__underline__</text:span>, <text:span text:style-name="T2">~~struck~~</text:span><text:s/>and <text:span text:style-name="T2">`code`</text:span>. At the start of a line, <text:span text:style-name="T2"># </text:span><text:s/>makes a heading and <text:span text:style-name="T2">- </text:span><text:s/>starts a list. One <text:span text:style-name="T1">Ctrl+Z</text:span><text:s/>takes back the whole of a formatted word.</text:p>
+    <text:h text:outline-level="2">4.3 The command palette</text:h>
+    <text:p>Everything the toolbar cannot hold is in the <text:span text:style-name="T1">command palette</text:span>. Press <text:span text:style-name="T1">Ctrl+K</text:span>, type a few letters of what you want, and press <text:span text:style-name="T1">Enter</text:span>. The palette lists commands, and it also jumps to places in the document: type the start of a heading, a bookmark&apos;s name, or an address such as <text:span text:style-name="T2">p12</text:span>.</text:p>
+    <text:p>In a spreadsheet the same box jumps to a cell (<text:span text:style-name="T2">B12</text:span>), a sheet, or a named range, and lists the functions that match what you typed.</text:p>
+    <text:h text:outline-level="2">4.4 Tables and pictures</text:h>
+    <text:p>Insert a table from the palette, giving the number of rows and columns. Click a cell to type in it. A cell can hold several paragraphs. To insert a picture, choose the picture command and select an image file. Give each picture alternative text, which screen readers speak and which appears when the picture cannot be shown. The picture&apos;s badge in the browser version opens the dialog for it.</text:p>
+    <text:h text:outline-level="2">4.5 Moving around, finding and going to a place</text:h>
+    <text:p><text:span text:style-name="T1">Ctrl+F</text:span><text:s/>searches, and <text:span text:style-name="T1">Ctrl+G</text:span><text:s/>goes to an address. Addresses work in three ways. <text:span text:style-name="T2">p12</text:span><text:s/>is the twelfth paragraph. <text:span text:style-name="T2">#intro</text:span><text:s/>is a bookmark named <text:span text:style-name="T3">intro</text:span>, and <text:span text:style-name="T2">§2.1</text:span><text:s/>is the first subsection of the second section. Bookmarks and section addresses stay correct when you edit above them. A paragraph number does not.</text:p>
+    <text:h text:outline-level="2">4.6 Pages, print preview and PDF</text:h>
+    <text:p>grind lays a document out on pages only when you print or export it. While you write, the document is one continuous column. Use <text:span text:style-name="T1">Print Preview</text:span><text:s/>to see the pages, <text:span text:style-name="T1">Export as PDF</text:span><text:s/>to write a PDF file, and <text:span text:style-name="T1">Print</text:span><text:s/>to send the document to a printer. Papers are the ISO sizes, A4 by default. The page your document states, with its margins, header and footer, is the page grind prints on.</text:p>
+    <text:p>Press <text:span text:style-name="T1">Ctrl+Shift+E</text:span><text:s/>to export, <text:span text:style-name="T1">Ctrl+Shift+P</text:span><text:s/>for the preview and <text:span text:style-name="T1">Ctrl+P</text:span><text:s/>to print.</text:p>
+    <text:p>The same document always produces the same PDF. Use the bundled fonts option when you need identical files on different computers.</text:p>
+    <text:h text:outline-level="2">4.7 Letters, headers and footers</text:h>
+    <text:p>When a document&apos;s page has a header and footer, grind prints them on every page. A page number or a page count in a header or footer shows the right number on each page.</text:p>
+    <text:p>grind can read a letter template that puts a letterhead on the first page and a smaller header on the pages after it, and it prints both. It also draws the lines a template includes on the page, such as the fold and punch marks of a German business letter.</text:p>
+    <text:h text:outline-level="2">4.8 Markdown and Word</text:h>
+    <text:p>Markdown is the plain-text notation many people use for notes. Open a <text:span text:style-name="T2">.md</text:span><text:s/>file and it becomes a new, unsaved text document. <text:span text:style-name="T1">Import Markdown</text:span><text:s/>inserts one into the document you have, and <text:span text:style-name="T1">Export Markdown</text:span><text:s/>(<text:span text:style-name="T1">Ctrl+Alt+S</text:span>) saves a document, or a selection, as Markdown. A picture goes out as a file beside the Markdown file.</text:p>
+    <text:p>Word documents (<text:span text:style-name="T2">.docx</text:span>) open the same way Excel workbooks do: they are converted to a new document, with a note of anything that did not come across. grind does not write Word files.</text:p>
+    <text:h text:outline-level="1">5. Spelling</text:h>
+    <text:p>Spelling is checked as you type. A word grind does not know gets a wavy red line. The word you are still typing is left alone.</text:p>
+    <text:h text:outline-level="2">5.1 Languages</text:h>
+    <text:p>grind checks English (US), German, French, Spanish, Italian, Portuguese (Portugal) and Polish. A document is checked in one language at a time. By default the language is <text:span text:style-name="T1">Automatic</text:span>. grind uses the language the document states, if it states one, and otherwise decides from the words you wrote.</text:p>
+    <text:p>To choose a language yourself, use the <text:span text:style-name="T1">Spelling Language</text:span><text:s/>menu. In the spreadsheet window it is in the View menu. Pick a language, <text:span text:style-name="T1">Automatic</text:span>, or <text:span text:style-name="T1">Off</text:span>. In the command palette, the same choices are the commands that begin with <text:span text:style-name="T3">Spelling</text:span>. The browser version fetches a language&apos;s dictionary the first time you need it, so the first check in a language takes a moment.</text:p>
+    <text:p>Your choice is remembered, separately for spreadsheets and for text documents, and it applies to every document you open until you change it. It is a setting of yours, and it is never written into a document. If you switch spelling off, it stays off.</text:p>
+    <text:h text:outline-level="2">5.2 Correcting a word</text:h>
+    <text:p>Right-click a misspelt word to see suggestions. Choose one to replace the word. <text:span text:style-name="T1">Ignore All</text:span><text:s/>accepts the word for this session, and <text:span text:style-name="T1">Add to Dictionary</text:span><text:s/>keeps it in your own word list for good. In the browser version, open the command palette with the cursor in the word, and the same choices are listed there.</text:p>
+    <text:p>In a spreadsheet, only text you typed is checked, never a number, a date or the result of a formula. In a terminal, <text:span text:style-name="T2">]</text:span><text:s/>and <text:span text:style-name="T2">[</text:span><text:s/>jump to the next and previous misspelt word.</text:p>
+    <text:h text:outline-level="1">6. Using grind in a terminal</text:h>
+    <text:p><text:span text:style-name="T2">grind-tui</text:span><text:s/>is a complete program for the terminal. It is modal, like the editor vi. <text:span text:style-name="T1">Normal</text:span><text:s/>mode moves, <text:span text:style-name="T1">Visual</text:span><text:s/>mode selects, <text:span text:style-name="T1">Insert</text:span><text:s/>mode types, and a colon opens a command line.</text:p>
+    <text:h text:outline-level="2">6.1 Basic keys</text:h>
+    <table:table table:name="Table2">
+     <table:table-column table:number-columns-repeated="2"/>
+     <table:table-row>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T1">Key</text:span></text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T1">What it does</text:span></text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T2">h</text:span><text:s/><text:span text:style-name="T2">j</text:span><text:s/><text:span text:style-name="T2">k</text:span><text:s/><text:span text:style-name="T2">l</text:span><text:s/>or the arrows</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Move</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T2">i</text:span></text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Start typing (Insert mode)</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T2">Esc</text:span></text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Return to Normal mode</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T2">v</text:span></text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Start selecting (Visual mode)</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T2">y</text:span>, <text:span text:style-name="T2">p</text:span>, <text:span text:style-name="T2">d</text:span></text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Copy, paste and delete</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T2">/</text:span><text:s/>and <text:span text:style-name="T2">n</text:span></text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Search, and go to the next match</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T2">:w</text:span></text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Save</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T2">:q</text:span></text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Quit</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T2">:</text:span><text:s/>followed by a command</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Run a command, for example <text:span text:style-name="T2">:spell de</text:span></text:p>
+      </table:table-cell>
+     </table:table-row>
+    </table:table>
+    <text:p>In a spreadsheet, <text:span text:style-name="T2">:sheet</text:span><text:s/>switches sheets, <text:span text:style-name="T2">:find</text:span><text:s/>and <text:span text:style-name="T2">:s/old/new/</text:span><text:s/>search and replace, and <text:span text:style-name="T2">:eval</text:span><text:s/>tries out a formula. In a text document, <text:span text:style-name="T2">:table</text:span><text:s/>inserts a table, <text:span text:style-name="T2">:mark</text:span><text:s/>sets a bookmark, and <text:span text:style-name="T2">:spell</text:span><text:s/>and <text:span text:style-name="T2">:lint</text:span><text:s/>check your writing.</text:p>
+    <text:p>The status bar at the bottom shows the document name, whether it has unsaved changes, the current mode, and your position.</text:p>
+    <text:h text:outline-level="1">7. Using grind in the browser</text:h>
+    <text:p>The browser version has one bar of buttons: open, save, undo and redo, and a <text:span text:style-name="T1">Commands</text:span><text:s/>button. Everything else is in the command palette (<text:span text:style-name="T1">Ctrl+K</text:span>). The page has no menus.</text:p>
+    <text:p>A document opens when you pick it with <text:span text:style-name="T1">Open</text:span>, or when you drop the file on the page. <text:span text:style-name="T1">Save</text:span><text:s/>downloads a copy; it does not write over the original. When you open a spreadsheet, a formula bar and the sheet tabs appear. When you open a text document, a format toolbar appears.</text:p>
+    <text:p>Your browser keeps your spelling choices and your personal word list for this page only. Clearing your site data clears them.</text:p>
+    <text:h text:outline-level="1">8. The command line</text:h>
+    <text:p>Every function of grind is also a command. This is useful for repeating a job, for scripts, and for checking a file without opening it.</text:p>
+    <text:h text:outline-level="2">8.1 The shape of a command</text:h>
+    <text:p text:style-name="Preformatted Text">$ grind &lt;area&gt; &lt;verb&gt; &lt;file&gt; [arguments]</text:p>
+    <text:p>The area is <text:span text:style-name="T2">sheet</text:span><text:s/>for spreadsheets and <text:span text:style-name="T2">text</text:span><text:s/>for text documents. A few verbs work on any document and tell what it is by reading it: <text:span text:style-name="T2">info</text:span>, <text:span text:style-name="T2">lint</text:span>, <text:span text:style-name="T2">convert</text:span><text:s/>and <text:span text:style-name="T2">project</text:span>. Each command loads the file, does one thing, and writes it back.</text:p>
+    <text:p>Add <text:span text:style-name="T2">--dry-run</text:span><text:s/>to see what a command would do without writing anything. Add <text:span text:style-name="T2">--format json</text:span><text:s/>to get the answer in a form other programs can read.</text:p>
+    <text:h text:outline-level="2">8.2 Spreadsheet examples</text:h>
+    <text:p text:style-name="Preformatted Text">$ grind sheet new book.ods</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind sheet set book.ods A1 1</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind sheet set book.ods A2 &apos;=[.A1]*2&apos;</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind sheet recalc book.ods</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind sheet view book.ods A1:A2</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind sheet import-csv book.ods data.csv</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind sheet export-csv book.ods --delimiter tab</text:p>
+    <text:p>Notice that the command line writes references in the document&apos;s own form, <text:span text:style-name="T2">[.A1]</text:span>, which is the way ODF stores them.</text:p>
+    <text:h text:outline-level="2">8.3 Text document examples</text:h>
+    <text:p text:style-name="Preformatted Text">$ grind text new letter.fodt</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind text view letter.fodt</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind text import-md letter.fodt notes.md</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind text export-md letter.fodt</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind text export-pdf letter.fodt letter.pdf --paper a4</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind text preview letter.fodt page1.png --page 1</text:p>
+    <text:p>A block in a text document is addressed by its position (<text:span text:style-name="T2">p12</text:span>), by a bookmark (<text:span text:style-name="T2">#intro</text:span>) or by its place in the outline (<text:span text:style-name="T2">§2.1</text:span>).</text:p>
+    <text:h text:outline-level="2">8.4 Whatever the document is</text:h>
+    <text:p text:style-name="Preformatted Text">$ grind info report.fodt</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind lint report.fodt</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind convert book.fods book.ods</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind convert book.fods book.grind</text:p>
+    <text:p><text:span text:style-name="T2">grind info</text:span><text:s/>tells you what a document is and how big. <text:span text:style-name="T2">grind lint</text:span><text:s/>checks it for problems and exits with an error if it finds one. <text:span text:style-name="T2">grind convert</text:span><text:s/>changes between the three forms, the package, the flat file and the plain-text <text:span text:style-name="T2">.grind</text:span><text:s/>form.</text:p>
+    <text:h text:outline-level="2">8.5 Spelling from the shell</text:h>
+    <text:p text:style-name="Preformatted Text">$ grind text spell report.fodt --suggest</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind text spelling de</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind sheet spelling off</text:p>
+    <text:p>The first command lists the misspelt words in a document and suggests corrections. The other two set the remembered spelling choice for text documents and for spreadsheets. With no setting, they print what is set now.</text:p>
+    <text:h text:outline-level="1">9. Automating work</text:h>
+    <text:p>grind has no macros, and it never will. Instead it has two safer ways to repeat work.</text:p>
+    <text:h text:outline-level="2">9.1 Scripts that build documents</text:h>
+    <text:p>A script is a small file in a restricted language (Rhai) that describes a document. It cannot read your files, use the network, or run programs. It can read a data file placed next to it. Because of that, the same script and data always produce exactly the same document.</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind build budget.rhai -o budget.fods</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind test budget.rhai</text:p>
+    <text:p>The first command builds the document. The second runs the checks written into the script, such as &quot;the total is the sum of the rows&quot;, and reports any that fail.</text:p>
+    <text:p>This is the right tool for jobs like a monthly report, a loan schedule, a grade book or a set of letters. The <text:span text:style-name="T2">examples</text:span><text:s/>folder has working scripts for each. The letter scripts build one DIN 5008 business letter per recipient from a table of data, and write them as PDF files:</text:p>
+    <text:p text:style-name="Preformatted Text">$ grind build examples/letters/nebenkosten.rhai -o letters --as pdf</text:p>
+    <text:p>When a script returns several documents, the output is a folder with one file for each.</text:p>
+    <text:h text:outline-level="2">9.2 Templates</text:h>
+    <text:p>A letter script starts from a template, a normal text document with the page, letterhead and styles you designed. Your script says what goes in, and the template says how it looks. Make the template in any word processor and save it as a flat text document.</text:p>
+    <text:h text:outline-level="2">9.3 Checking a document</text:h>
+    <text:p><text:span text:style-name="T2">grind lint</text:span><text:s/>looks for the kind of mistake people make in spreadsheets: a total that no longer matches its parts, a reference to a cell that is empty, a misspelt word. It never changes the document.</text:p>
+    <text:h text:outline-level="2">9.4 The plain-text form</text:h>
+    <text:p>The <text:span text:style-name="T2">.grind</text:span><text:s/>form writes a document as readable text. A spreadsheet appears as a list of sheets and cells. A text document appears as blocks. You can edit it in any editor, and a change to one cell is one line in a version-control diff. You rarely need it, but it is the way to review a spreadsheet someone else made, or to keep your documents in Git.</text:p>
+    <text:h text:outline-level="1">10. Troubleshooting</text:h>
+    <text:h text:outline-level="2">10.1 A file will not open</text:h>
+    <text:p>Check what the file is with <text:span text:style-name="T2">grind info file</text:span>. A password-protected file cannot be opened. If the file is damaged, open it in a text editor. A flat file is readable text, and often the problem is plain to see.</text:p>
+    <text:h text:outline-level="2">10.2 The formula shows an error</text:h>
+    <text:p>The cell holds an error value, such as <text:span text:style-name="T2">#DIV/0!</text:span><text:s/>or <text:span text:style-name="T2">#NAME?</text:span>. Select the cell and read its formula. The plain-English reading often points at the problem. A function that grind does not implement shows as unavailable, and <text:span text:style-name="T2">grind sheet functions</text:span><text:s/>lists what exists.</text:p>
+    <text:h text:outline-level="2">10.3 Numbers look wrong</text:h>
+    <text:p>Check the document&apos;s locale (section 3.8). A number typed as <text:span text:style-name="T2">1.234</text:span><text:s/>is one thousand two hundred thirty-four in German and one and a quarter in English.</text:p>
+    <text:h text:outline-level="2">10.4 Spelling underlines every word</text:h>
+    <text:p>The document may be in a language other than the one being checked. Open the <text:span text:style-name="T1">Spelling Language</text:span><text:s/>menu and choose the right language, or <text:span text:style-name="T1">Automatic</text:span>.</text:p>
+    <text:h text:outline-level="2">10.5 A document looks different in another program</text:h>
+    <text:p>grind keeps what it does not understand, but two programs can draw the same ODF differently, and a file made by another program may use features grind does not have. Fonts that are not installed are replaced. The PDF you export is the best way to share exactly how a page looks.</text:p>
+    <text:h text:outline-level="2">10.6 Getting help</text:h>
+    <text:p>Use <text:span text:style-name="T2">grind --help</text:span>, or <text:span text:style-name="T2">grind sheet --help</text:span><text:s/>and <text:span text:style-name="T2">grind text --help</text:span><text:s/>for the areas, and add <text:span text:style-name="T2">--help</text:span><text:s/>to any verb for its full description. For problems with the programs, report an issue on the project&apos;s page.</text:p>
+    <text:h text:outline-level="1">Appendix A: Keyboard shortcuts</text:h>
+    <text:p>These are the shortcuts of the Linux windows. Where a window has no shortcut for a command, use the command palette.</text:p>
+    <table:table table:name="Table3">
+     <table:table-column table:number-columns-repeated="3"/>
+     <table:table-row>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T1">Keys</text:span></text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T1">Spreadsheet</text:span></text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T1">Text document</text:span></text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+N</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>New document</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>New document</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+O</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Open</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Open</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+S</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Save</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Save</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+Shift+S</text:p>
+      </table:table-cell>
+      <table:table-cell/>
+      <table:table-cell>
+       <text:p>Save as</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+Z</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Undo</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Undo</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+Shift+Z or Ctrl+Y</text:p>
+      </table:table-cell>
+      <table:table-cell/>
+      <table:table-cell>
+       <text:p>Redo</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+F</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Find</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Find</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+G</text:p>
+      </table:table-cell>
+      <table:table-cell/>
+      <table:table-cell>
+       <text:p>Go to an address</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+K</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Command palette</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Command palette</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>F8</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Check the document</text:p>
+      </table:table-cell>
+      <table:table-cell/>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>F9</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Recalculate</text:p>
+      </table:table-cell>
+      <table:table-cell/>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Shift+F7</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Spelling on and off</text:p>
+      </table:table-cell>
+      <table:table-cell/>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+C, Ctrl+X, Ctrl+V</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Copy, cut, paste</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Copy, cut, paste</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+D, Ctrl+R</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Fill down, fill right</text:p>
+      </table:table-cell>
+      <table:table-cell/>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+B, Ctrl+I, Ctrl+U</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Bold, italic, underline</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Bold, italic, underline</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+0 to Ctrl+3</text:p>
+      </table:table-cell>
+      <table:table-cell/>
+      <table:table-cell>
+       <text:p>Body text, headings 1 to 3</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+Shift+O</text:p>
+      </table:table-cell>
+      <table:table-cell/>
+      <table:table-cell>
+       <text:p>Outline</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+Shift+U</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Show source</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Show source</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+Alt+S</text:p>
+      </table:table-cell>
+      <table:table-cell/>
+      <table:table-cell>
+       <text:p>Save as Markdown</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+Shift+E</text:p>
+      </table:table-cell>
+      <table:table-cell/>
+      <table:table-cell>
+       <text:p>Export as PDF</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+Shift+P</text:p>
+      </table:table-cell>
+      <table:table-cell/>
+      <table:table-cell>
+       <text:p>Print preview</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+P</text:p>
+      </table:table-cell>
+      <table:table-cell/>
+      <table:table-cell>
+       <text:p>Print</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Ctrl+?</text:p>
+      </table:table-cell>
+      <table:table-cell/>
+      <table:table-cell>
+       <text:p>List of shortcuts</text:p>
+      </table:table-cell>
+     </table:table-row>
+    </table:table>
+    <text:h text:outline-level="1">Appendix B: Glossary</text:h>
+    <text:p><text:span text:style-name="T1">Block.</text:span><text:s/>A paragraph, heading or list item in a text document.</text:p>
+    <text:p><text:span text:style-name="T1">Bookmark.</text:span><text:s/>A name attached to a place in a text document. It keeps pointing at the same place when you edit above it.</text:p>
+    <text:p><text:span text:style-name="T1">Cell.</text:span><text:s/>One box in a spreadsheet, named by its column and row.</text:p>
+    <text:p><text:span text:style-name="T1">Flat file.</text:span><text:s/>An ODF document saved as one plain text file, such as <text:span text:style-name="T2">.fods</text:span><text:s/>or <text:span text:style-name="T2">.fodt</text:span>.</text:p>
+    <text:p><text:span text:style-name="T1">Formula.</text:span><text:s/>An entry in a cell that starts with <text:span text:style-name="T2">=</text:span><text:s/>and calculates a value.</text:p>
+    <text:p><text:span text:style-name="T1">Lint.</text:span><text:s/>An automatic check of a document for mistakes.</text:p>
+    <text:p><text:span text:style-name="T1">Locale.</text:span><text:s/>The set of conventions a document follows for numbers, such as which character is the decimal point.</text:p>
+    <text:p><text:span text:style-name="T1">ODF.</text:span><text:s/>OpenDocument Format, the open standard grind uses for its files.</text:p>
+    <text:p><text:span text:style-name="T1">Package.</text:span><text:s/>An ODF document saved as a compressed archive, such as <text:span text:style-name="T2">.ods</text:span><text:s/>or <text:span text:style-name="T2">.odt</text:span>.</text:p>
+    <text:p><text:span text:style-name="T1">Palette.</text:span><text:s/>The searchable list of commands that opens with Ctrl+K.</text:p>
+    <text:p><text:span text:style-name="T1">Template.</text:span><text:s/>A document that provides the page, the letterhead and the styles for others.</text:p>
+  </office:text>
+ </office:body>
+</office:document>
