@@ -1,0 +1,69 @@
+{
+    "issued": "16. Oktober 2026",
+    "effective": "1. Januar 2027",
+    "cap_percent": 20,
+    "cap_note": "20 % in drei Jahren (§ 558 Abs. 3 BGB; 15 % in Gebieten mit angespanntem Wohnungsmarkt)",
+    "mietspiegel": {
+        "name": "Mietspiegel Musterstadt 2026 (erfunden)",
+        "note": "Wohnlage mittel, Baujahr 1965–1989"
+    },
+    "landlord": {
+        "name": "Hausverwaltung Mustermann GmbH",
+        "street": "Beispielallee 1",
+        "city": "99999 Musterstadt",
+        "phone": "0123 / 456 789 0",
+        "email": "abrechnung@hausverwaltung.example",
+        "iban": "DE00 0000 0000 0000 0000 00",
+        "signed": "Gabi Musterfrau"
+    },
+    "building": {
+        "street": "Beispielweg 12",
+        "city": "99999 Musterstadt"
+    },
+    "tenants": [
+        {
+            "id": "e1",
+            "name": "Frau Erika Musterfrau",
+            "greeting": "Sehr geehrte Frau Musterfrau",
+            "unit": "Wohnung 1 (EG links)",
+            "area": 58.0,
+            "rent": 498.0,
+            "rent_3y": 470.0,
+            "reference_per_m2": 9.4,
+            "cap": 20
+        },
+        {
+            "id": "e2",
+            "name": "Familie Beispiel",
+            "greeting": "Sehr geehrte Familie Beispiel",
+            "unit": "Wohnung 2 (EG rechts)",
+            "area": 76.0,
+            "rent": 760.0,
+            "rent_3y": 640.0,
+            "reference_per_m2": 10.9,
+            "cap": 20
+        },
+        {
+            "id": "e3",
+            "name": "Herr Max Mustermann",
+            "greeting": "Sehr geehrter Herr Mustermann",
+            "unit": "Wohnung 4 (1. OG rechts)",
+            "area": 64.0,
+            "rent": 640.0,
+            "rent_3y": 600.0,
+            "reference_per_m2": 9.4,
+            "cap": 20
+        },
+        {
+            "id": "e4",
+            "name": "Herr Otto Normalverbraucher",
+            "greeting": "Sehr geehrter Herr Normalverbraucher",
+            "unit": "Wohnung 5 (2. OG)",
+            "area": 82.5,
+            "rent": 745.0,
+            "rent_3y": 745.0,
+            "reference_per_m2": 8.8,
+            "cap": 20
+        }
+    ]
+}

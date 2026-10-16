@@ -1,0 +1,28 @@
+{
+    "class": "Klasse 8b (Beispielschule Musterstadt)",
+    "subject": "Mathematik, 1. Halbjahr",
+    "weights": [
+        { "name": "Klassenarbeit 1", "weight": 25 },
+        { "name": "Klassenarbeit 2", "weight": 25 },
+        { "name": "Test", "weight": 10 },
+        { "name": "Mitarbeit", "weight": 40 }
+    ],
+    "scale": [
+        { "from": 0,  "grade": 6 },
+        { "from": 20, "grade": 5 },
+        { "from": 40, "grade": 4 },
+        { "from": 55, "grade": 3 },
+        { "from": 70, "grade": 2 },
+        { "from": 85, "grade": 1 }
+    ],
+    "students": [
+        { "name": "Alex Muster",       "scores": [88, 92, 90, 85] },
+        { "name": "Bea Beispiel",      "scores": [72, 65, 80, 70] },
+        { "name": "Chris Probe",       "scores": [55, 48, 60, 62] },
+        { "name": "Dana Platzhalter",  "scores": [35, 42, 50, 45] },
+        { "name": "Eli Testfall",      "scores": [92, 78, 95, 88] },
+        { "name": "Finn Mustermann",   "scores": [18, 25, 30, 40] },
+        { "name": "Gabi Probefrau",    "scores": [70, 70, 70, 70] },
+        { "name": "Hanno Beispielmann","scores": [84, 86, 85, 85] }
+    ]
+}

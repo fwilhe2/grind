@@ -5,7 +5,7 @@
 // A month's job costing for a joinery workshop — doc/dsl.md layer 1, and the worked example
 // `doc/generator-guide.md` builds up to.
 //
-//   grind build examples/timesheet.rhai -o month.fods
+//   grind build examples/timesheet/timesheet.rhai -o month.fods
 //
 // `examples/budget.rhai` is one table from a list. This one is the shape a generator is
 // actually for: **four sheets that have to agree with each other**, built out of an export

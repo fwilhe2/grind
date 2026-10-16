@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+
+A business-letter template, DIN 5008 Form B, for `examples/letters/nebenkosten.rhai`.
+
+What a generator cannot declare — a page, a letterhead, a paragraph style — a template does, and
+`text_from("brief-din5008.fodt")` starts a document from it. Its body is empty; the script says
+the blocks and names the styles below. Every measurement is DIN 5008 (A4, Form B):
+
+  left margin 25 mm, right 20 mm; the letterhead (the first page's header) ends 45 mm from the
+  top edge, where the return-address line begins; the address field is 85 mm wide and 45 mm tall
+  (5 mm return address, 12.7 mm additional and remark zone, 27.3 mm address zone), and the
+  information block sits beside it 125 mm from the left edge; the subject line is 98.46 mm from
+  the top; line pitch in the field is 4.23 mm.
+
+Everything on it is made up.
+-->
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
+ <office:styles>
+  <style:default-style style:family="paragraph">
+   <style:paragraph-properties fo:orphans="2" fo:widows="2" style:tab-stop-distance="1.25cm"/>
+   <style:text-properties style:font-name="Liberation Sans" fo:font-family="Liberation Sans" fo:font-size="10.5pt" fo:language="de" fo:country="DE"/>
+  </style:default-style>
+  <style:style style:name="Standard" style:family="paragraph" style:class="text"/>
+
+  <!-- The return-address line: 7 pt, exactly 5 mm tall, as wide as the window. -->
+  <style:style style:name="Ruecksendeangabe" style:family="paragraph" style:parent-style-name="Standard" style:next-style-name="Anschriftzeile" style:master-page-name="Erste_20_Seite">
+   <style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm" fo:margin-left="0cm" fo:margin-right="8cm" fo:line-height="0.5cm" fo:break-before="page"/>
+   <style:text-properties fo:font-size="7pt" fo:color="#4a5563"/>
+  </style:style>
+  <!-- One line of the address field and the information block beside it: the left of the tab
+       is the address, the right of it the block, whose labels start at 100 mm from the text
+       edge (125 mm from the page's) and values at 124 mm. -->
+  <style:style style:name="Anschriftzeile" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm" fo:line-height="0.423cm">
+    <style:tab-stops>
+     <style:tab-stop style:position="10cm"/>
+     <style:tab-stop style:position="12.4cm"/>
+    </style:tab-stops>
+   </style:paragraph-properties>
+   <style:text-properties fo:font-size="10pt"/>
+  </style:style>
+  <!-- The subject line: 98.46 mm from the top, no word "Betreff", and two lines of air below. -->
+  <style:style style:name="Betreff" style:family="paragraph" style:parent-style-name="Standard" style:next-style-name="Brieftext">
+   <style:paragraph-properties fo:margin-top="1.04cm" fo:margin-bottom="0.846cm" fo:keep-with-next="always"/>
+   <style:text-properties fo:font-weight="bold"/>
+  </style:style>
+  <style:style style:name="Brieftext" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-top="0.15cm" fo:margin-bottom="0.2cm" fo:line-height="112%"/>
+  </style:style>
+  <style:style style:name="Aufzaehlung" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0.1cm"/>
+   <style:text-properties fo:font-size="9.5pt"/>
+  </style:style>
+  <style:style style:name="Ergebnis" style:family="paragraph" style:parent-style-name="Brieftext">
+   <style:paragraph-properties fo:margin-top="0.2cm" fo:margin-bottom="0.4cm" fo:keep-together="always"/>
+   <style:text-properties fo:font-size="11pt"/>
+  </style:style>
+  <style:style style:name="Gruss" style:family="paragraph" style:parent-style-name="Brieftext">
+   <style:paragraph-properties fo:margin-top="0.4cm" fo:margin-bottom="0cm" fo:keep-with-next="always"/>
+  </style:style>
+  <style:style style:name="Unterschrift" style:family="paragraph" style:parent-style-name="Brieftext">
+   <style:paragraph-properties fo:margin-top="1.3cm" fo:margin-bottom="0cm"/>
+  </style:style>
+  <style:style style:name="Zwischenueberschrift" style:family="paragraph" style:parent-style-name="Brieftext">
+   <style:paragraph-properties fo:margin-top="0.3cm" fo:margin-bottom="0.15cm" fo:keep-with-next="always"/>
+   <style:text-properties fo:font-weight="bold" fo:color="#1f3a5f"/>
+  </style:style>
+
+  <style:style style:name="Briefkopf_20_Name" style:display-name="Briefkopf Name" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-top="0.4cm" fo:margin-bottom="0.1cm"/>
+   <style:text-properties fo:font-size="21pt" fo:font-weight="bold" fo:color="#1f3a5f"/>
+  </style:style>
+  <style:style style:name="Briefkopf_20_Zeile" style:display-name="Briefkopf Zeile" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm"/>
+   <style:text-properties fo:font-size="8.5pt" fo:color="#4a5563"/>
+  </style:style>
+  <style:style style:name="Fusszeile_20_Brief" style:display-name="Fusszeile Brief" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm" fo:text-align="center"/>
+   <style:text-properties fo:font-size="7.5pt" fo:color="#4a5563"/>
+  </style:style>
+  <style:style style:name="Folgeseite_20_Kopf" style:display-name="Folgeseite Kopf" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm">
+    <style:tab-stops>
+     <style:tab-stop style:position="16.5cm" style:type="right"/>
+    </style:tab-stops>
+   </style:paragraph-properties>
+   <style:text-properties fo:font-size="8.5pt" fo:color="#4a5563"/>
+  </style:style>
+ </office:styles>
+
+ <office:automatic-styles>
+  <!-- First page: 10 mm of margin, then a 35 mm letterhead, so the body begins at 45 mm. -->
+  <style:page-layout style:name="PL_Erste">
+   <style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" style:print-orientation="portrait" fo:margin-top="1cm" fo:margin-bottom="0.8cm" fo:margin-left="2.5cm" fo:margin-right="2cm"/>
+   <style:header-style>
+    <style:header-footer-properties fo:min-height="3.5cm" fo:margin-bottom="0cm"/>
+   </style:header-style>
+   <style:footer-style>
+    <style:header-footer-properties fo:min-height="1.2cm" fo:margin-top="0.4cm"/>
+   </style:footer-style>
+  </style:page-layout>
+  <style:page-layout style:name="PL_Folge">
+   <style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" style:print-orientation="portrait" fo:margin-top="1.5cm" fo:margin-bottom="0.8cm" fo:margin-left="2.5cm" fo:margin-right="2cm"/>
+   <style:header-style>
+    <style:header-footer-properties fo:min-height="0.5cm" fo:margin-bottom="1cm"/>
+   </style:header-style>
+   <style:footer-style>
+    <style:header-footer-properties fo:min-height="1.2cm" fo:margin-top="0.4cm"/>
+   </style:footer-style>
+  </style:page-layout>
+ </office:automatic-styles>
+
+ <office:master-styles>
+  <style:master-page style:name="Erste_20_Seite" style:display-name="Erste Seite" style:page-layout-name="PL_Erste" style:next-style-name="Standard">
+   <style:header>
+    <text:p text:style-name="Briefkopf_20_Name">Hausverwaltung Mustermann</text:p>
+    <text:p text:style-name="Briefkopf_20_Zeile">Immobilien · Verwaltung · Vermietung</text:p>
+    <text:p text:style-name="Briefkopf_20_Zeile">Beispielallee 1 · 99999 Musterstadt · Telefon 0123 / 456 789 0 · abrechnung@hausverwaltung.example</text:p>
+   </style:header>
+   <style:footer>
+    <text:p text:style-name="Fusszeile_20_Brief">Hausverwaltung Mustermann GmbH · Amtsgericht Musterstadt HRB 000000 · Geschäftsführerin: Gabi Musterfrau</text:p>
+    <text:p text:style-name="Fusszeile_20_Brief">IBAN DE00 0000 0000 0000 0000 00 · BIC MUSTDE00XXX · USt-IdNr. DE000000000 · Seite <text:page-number text:select-page="current">1</text:page-number> von <text:page-count>1</text:page-count></text:p>
+   </style:footer>
+  </style:master-page>
+  <style:master-page style:name="Standard" style:page-layout-name="PL_Folge">
+   <style:header>
+    <text:p text:style-name="Folgeseite_20_Kopf">Hausverwaltung Mustermann GmbH<text:tab/>Seite <text:page-number text:select-page="current">2</text:page-number> von <text:page-count>2</text:page-count></text:p>
+   </style:header>
+   <style:footer>
+    <text:p text:style-name="Fusszeile_20_Brief">Hausverwaltung Mustermann GmbH · Beispielallee 1 · 99999 Musterstadt</text:p>
+   </style:footer>
+  </style:master-page>
+ </office:master-styles>
+
+ <office:body>
+  <office:text/>
+ </office:body>
+</office:document>

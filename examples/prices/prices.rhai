@@ -4,7 +4,7 @@
 //
 // Data and code, separated — doc/generator-spec.md §3.5.
 //
-//   grind build examples/prices.rhai -o prices.fods
+//   grind build examples/prices/prices.rhai -o prices.fods
 //
 // Everything this document *says* is here; everything it *contains* is in `prices.json` beside
 // it, which somebody who has never read a line of Rhai can edit. That is the whole point: a

@@ -613,7 +613,7 @@ fn a_script_tests_its_own_totals() {
     assert!(stdout.contains("3 passed, 1 failed"), "{stdout}");
 
     // A script with no tests is an error rather than a pass.
-    let output = grind(&["test", &s(&example("prices.rhai"))]);
+    let output = grind(&["test", &s(&example("prices/prices.rhai"))]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("defines no tests"));
 }
@@ -651,14 +651,14 @@ fn a_script_builds_the_budget() {
 }
 
 /// **Data and code, separated** (`doc/generator-spec.md` §3.5): the numbers live in
-/// `examples/prices.json` and the script says only what the document is. The walls around that
+/// `examples/prices/prices.json` and the script says only what the document is. The walls around that
 /// are `grind-build`'s and tested there; this is the end-to-end half — the default data
 /// directory is the script's own, so `json("prices.json")` finds the file beside it.
 #[test]
 fn a_script_reads_its_data_from_beside_itself() {
     let dir = Sandbox::new("build-data");
     let out = dir.path("prices.fods");
-    ok_top(&["build", &s(&example("prices.rhai")), "-o", &s(&out)]);
+    ok_top(&["build", &s(&example("prices/prices.rhai")), "-o", &s(&out)]);
 
     // A row per item in the JSON, its value computed, and the total over all five.
     assert_eq!(ok(&["get", &s(&out), "B2"]).trim(), "Oak board, 2m");
@@ -683,7 +683,12 @@ fn a_script_reads_its_data_from_beside_itself() {
 fn a_script_builds_a_month_out_of_four_sheets_that_agree() {
     let dir = Sandbox::new("build-timesheet");
     let out = dir.path("month.fods");
-    ok_top(&["build", &s(&example("timesheet.rhai")), "-o", &s(&out)]);
+    ok_top(&[
+        "build",
+        &s(&example("timesheet/timesheet.rhai")),
+        "-o",
+        &s(&out),
+    ]);
 
     // Summary is first because it is the sheet anybody opens, and it was built last because it
     // needed the other three to exist.
@@ -867,6 +872,147 @@ fn a_script_can_build_a_text_document() {
         ok_top(&["text", "view", &s(&out)]).contains("North led on volume"),
         "the loop wrote a section per region"
     );
+}
+
+/// **A series of letters** (`doc/generator-guide.md` §12): one letter per tenancy, worked out
+/// from data rather than filled in, and the same bytes for the same data.
+#[test]
+fn a_script_writes_a_letter_per_tenancy_and_they_add_up() {
+    let dir = Sandbox::new("build-nebenkosten");
+    let out = dir.path("letters.fodt");
+    let again = dir.path("again.fodt");
+    ok_top(&[
+        "build",
+        &s(&example("letters/nebenkosten.rhai")),
+        "-o",
+        &s(&out),
+    ]);
+    ok_top(&[
+        "build",
+        &s(&example("letters/nebenkosten.rhai")),
+        "-o",
+        &s(&again),
+    ]);
+    assert_eq!(std::fs::read(&out).unwrap(), std::fs::read(&again).unwrap());
+
+    let view = ok_top(&["text", "view", &s(&out)]);
+    assert_eq!(
+        view.matches("Mit freundlichen Grüßen").count(),
+        6,
+        "a letter per tenancy"
+    );
+    assert!(view.contains("Nachzahlung: 73,77 €"), "{view}");
+    assert!(view.contains("Rundungsdifferenz 0,02 €"), "{view}");
+    // An error would exit non-zero, which `ok_top` refuses.
+    ok_top(&["lint", &s(&out)]);
+    let tests = ok_top(&["test", &s(&example("letters/nebenkosten.rhai"))]);
+    assert!(tests.contains("3 passed, 0 failed"), "{tests}");
+}
+
+/// The series as files: `examples/letters/pdfs.sh` runs the script once per recipient and writes
+/// one PDF each, which only works if a single letter is checked against *all* the bills.
+#[cfg(feature = "pdf")]
+#[test]
+fn the_letter_script_writes_one_pdf_per_recipient() {
+    let dir = Sandbox::new("nebenkosten-pdf");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("the workspace root");
+    let run = || {
+        let output = Command::new("bash")
+            .arg(root.join("examples/letters/pdfs.sh"))
+            .arg("nebenkosten")
+            .arg(s(&dir.path("out")))
+            .env("GRIND", env!("CARGO_BIN_EXE_grind"))
+            .output()
+            .expect("bash runs");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    run();
+    let first =
+        std::fs::read(dir.path("out/nebenkosten-w3a.pdf")).expect("a PDF for the tenant who left");
+    assert!(first.starts_with(b"%PDF-"));
+    for id in ["w1", "w2", "w3b", "w4", "w5", "uebersicht"] {
+        assert!(
+            dir.path(&format!("out/nebenkosten-{id}.pdf")).exists(),
+            "{id}"
+        );
+    }
+    // The same data writes the same bytes.
+    run();
+    assert_eq!(
+        first,
+        std::fs::read(dir.path("out/nebenkosten-w3a.pdf")).unwrap()
+    );
+}
+
+/// The sender is written twice on purpose — the letterhead and footer in the template
+/// (`examples/letters/brief-din5008.fodt`), the same details in the data (`examples/letters/nebenkosten.json`) —
+/// because a header can only come from a template. So the two are held to each other here: a
+/// letter whose body says one phone number and whose footer says another is the failure this
+/// catches.
+#[test]
+fn the_letter_template_and_the_letter_data_name_the_same_sender() {
+    let template =
+        std::fs::read_to_string(example("letters/brief-din5008.fodt")).expect("the template");
+    let data: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(example("letters/nebenkosten.json")).expect("data"),
+    )
+    .expect("JSON");
+    let landlord = &data["landlord"];
+    for field in ["name", "street", "city", "phone", "email", "iban"] {
+        let value = landlord[field].as_str().expect(field);
+        assert!(
+            template.contains(value),
+            "the template never says the landlord's {field} ({value:?}) that the data does"
+        );
+    }
+    let signed = landlord["signed"].as_str().expect("signed");
+    assert!(
+        template.contains(signed),
+        "the footer names a different signatory than {signed}"
+    );
+}
+
+/// **Every script under `examples/` builds, and every one that carries tests passes them.**
+///
+/// Examples live one directory each when they come with more than the script — data, a
+/// template, a wrapper script — so the walk is recursive. A new example is covered by being put
+/// there, which is the point: the guide names a few, and nobody should have to remember to
+/// add the rest to a list.
+#[test]
+fn every_example_script_builds_and_passes_its_own_tests() {
+    fn scripts(dir: &Path, found: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("a directory").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                scripts(&path, found);
+            } else if path.extension().is_some_and(|e| e == "rhai")
+                && !path.to_string_lossy().ends_with(".d.rhai")
+            {
+                found.push(path);
+            }
+        }
+    }
+    let mut found = Vec::new();
+    scripts(&example(""), &mut found);
+    assert!(found.len() >= 8, "found only {found:?}");
+
+    let dir = Sandbox::new("every-example");
+    for script in found {
+        let source = std::fs::read_to_string(&script).expect("a script");
+        let text = source.contains("text_from(") || source.contains("text()");
+        let out = dir.path(if text { "out.fodt" } else { "out.fods" });
+        ok_top(&["build", &s(&script), "-o", &s(&out)]);
+        if source.contains("fn test_") {
+            let report = ok_top(&["test", &s(&script)]);
+            assert!(report.contains(" 0 failed"), "{script:?}: {report}");
+        }
+    }
 }
 
 /// A script that fails says where, because a generator whose errors have no line number is a

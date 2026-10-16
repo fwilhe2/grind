@@ -7,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 # Generating a spreadsheet — the generator guide
 
 **`doc/dsl.md` §7, D14.** This is the *guide*: from a five-line script to
-`examples/timesheet.rhai`, in the order the problems arrive. It is not the specification —
+`examples/timesheet/timesheet.rhai`, in the order the problems arrive. It is not the specification —
 `doc/generator-spec.md` is, exhaustively, and it is checked against the engine in both
 directions. When this file and that one disagree about what is legal, that one is right.
 
@@ -218,7 +218,7 @@ named ranges and a second sheet that reaches across to the first. It is D7's exi
 
 ---
 
-## 6. Data in a file — `examples/prices.rhai`
+## 6. Data in a file — `examples/prices/prices.rhai`
 
 A `const` at the top works until somebody who does not read Rhai needs to change it. Then the
 data wants to be a file:
@@ -296,7 +296,7 @@ meaning what it reads as and not.
 
 ---
 
-## 8. Several sheets that agree — `examples/timesheet.rhai`
+## 8. Several sheets that agree — `examples/timesheet/timesheet.rhai`
 
 This is the shape a generator is actually for, and the one worth reading in full. A joinery
 workshop's month, from its time-tracking export:
@@ -309,7 +309,7 @@ workshop's month, from its time-tracking export:
 | `Summary` | one row per job, its hours, labor and materials summed back out of the other two |
 
 ```console
-$ grind build examples/timesheet.rhai -o month.fods
+$ grind build examples/timesheet/timesheet.rhai -o month.fods
 Summary	13 rows	9 cols	36 formulas
 Time	23 rows	8 cols	44 formulas
 Materials	10 rows	4 cols	0 formulas
@@ -363,7 +363,7 @@ $ grind sheet get month.fods D2 --formula
 =SUMIF([Time.$B$2:.$B$23];[.A2];[Time.$E$2:.$E$23])
 ```
 
-Add a job to `examples/timesheet.json` and it gets a summary row whose three `SUMIF`s cover the
+Add a job to `examples/timesheet/timesheet.json` and it gets a summary row whose three `SUMIF`s cover the
 new lines. That is the property the whole design is for.
 
 ### Let the document do the lookup
@@ -497,7 +497,7 @@ What that buys, concretely: a generated document can be committed. Rebuild it, a
 diff is line-by-line readable:
 
 ```console
-$ grind build examples/timesheet.rhai -o month.grind
+$ grind build examples/timesheet/timesheet.rhai -o month.grind
 ```
 
 which is the point at which the two halves of `doc/dsl.md` meet: a script writes the document,
@@ -542,6 +542,114 @@ $ grind build examples/report.rhai -o report.fodt
 is `grind_text::markdown`'s — `**bold**`, `_italic_`, `` `code` `` mean here exactly what they
 mean while typing in any shell of this suite, because there is one reader for them. A bookmark
 is an address that survives editing above it, which `p12` does not.
+
+---
+
+### A series of letters — `examples/letters/nebenkosten.rhai`
+
+Word calls it a *Serienbrief*: one template, a list of recipients, a letter each. The shape
+generalises past filling in a name, and `examples/letters/nebenkosten.rhai` is the case that shows why a
+script beats a template. It is the yearly service-charge statement for a small block of flats,
+one letter per tenancy, and **every bit of its data is made up** (`examples/letters/nebenkosten.json`:
+Musterstadt, Familie Beispiel, an IBAN of zeros).
+
+```console
+$ grind build examples/letters/nebenkosten.rhai -o nebenkosten.fodt
+140 blocks	7 headings	1433 words	9433 characters	7 min read
+#uebersicht
+#w1
+…
+$ grind test examples/letters/nebenkosten.rhai
+ok	test_every_tenancy_has_a_letter_with_the_right_result
+ok	test_the_document_contradicts_itself_nowhere
+ok	test_the_summary_reconciles_to_the_bills
+examples/letters/nebenkosten.rhai: 3 passed, 0 failed
+```
+
+A mail merge fills *fields*; this one **calculates** them. The water bill is split by persons ×
+months, so the tenant who moved out in June and the one who moved in in July each get a letter
+about the same flat, and the shares of all six add up to the bills. Three things in it are worth
+copying:
+
+* **Compute first, write second.** The script builds one map per tenancy before any letter
+  exists, because the property manager's last page needs all of them and so does the check.
+* **A generator may refuse.** If the letters drift from the bills by more than rounding, the
+  script `throw`s and `grind build` writes nothing, with the line. Six wrong letters are worse
+  than none.
+* **The test reads what a tenant will read.** A text document has no cells, so `d.block("#w3a")`
+  — a bookmark on each letter's result line — is the handle, and the assertions are the
+  sentences themselves.
+
+The date on the letters is data (`"issued"`), not today's: a script has no clock (§11), and the
+same data builds the same letters on the day they are posted and the day somebody asks what was
+sent. Figures are spelled for a German reader by a `de()` function in the script, because a
+text document holds text.
+
+**Out as PDFs, on a real DIN 5008 letter.** A generator cannot declare a page, a letterhead or a
+paragraph style, and a letter is mostly those. So the design lives in a **template** —
+`examples/letters/brief-din5008.fodt`, a flat ODF document with an empty body, which a person designs in
+any word processor — and the script starts from it with `text_from("brief-din5008.fodt")` and
+names a style for each block:
+
+```rhai
+let d = text_from("brief-din5008.fodt");
+d.para("Ruecksendeangabe", "Hausverwaltung Mustermann GmbH · Beispielallee 1 · 99999 Musterstadt");
+d.para("Betreff", "Betriebskostenabrechnung 2025 – Wohnung 1");
+d.item(1, "Grundsteuer: **204,32 €**").style("Aufzaehlung");
+```
+
+The template is DIN 5008 Form B, measured: A4, left margin 25 mm and right 20 mm, a 35 mm
+letterhead as the first page's header so the body begins at 45 mm, a return-address line 5 mm
+tall, the address field and the information block beside it on **nine shared lines** (one
+paragraph per line, address left of a tab and `Zeichen: … Datum: …` right of it, at 125 mm from
+the page edge), the subject at 98.5 mm, a footer with the bank details and `Seite 1 von 2`, and
+a smaller header on a continuation page. The template's header comment says which number is
+which. It does **not** draw fold and punch marks: the model has no drawing.
+
+`grind build` writes one document per run, so `examples/letters/pdfs.sh` runs the script once per
+recipient — a `select.json` beside the data says which letter, `{ "only": "w3a" }` — and hands
+each result to `grind text export-pdf`, giving `w1.pdf` … `w5.pdf` and `uebersicht.pdf`, one
+A4 page each. Every run still does the whole calculation and its check, so a single letter is
+verified against all the bills. `--bundled-fonts` makes the bytes reproducible: the same data
+writes the same PDFs on any machine.
+
+```console
+$ GRIND=target/debug/grind examples/letters/pdfs.sh nebenkosten /tmp/letters
+/tmp/letters/nebenkosten-w1.pdf
+…
+```
+
+Building the series *without* `select.json` writes all seven into one document, one page each
+(the first paragraph's style starts a page), which is a way to read the whole run. The
+continuation pages of that document wear the small header rather than the letterhead: a master
+page named by a style applies to the document's first page only, so a PDF per recipient is how
+every letter gets its letterhead.
+
+What it ran into, so you do not: a script has no `ceil`; `from` and `until` are Rhai keywords
+and cannot be property names; the model has no table, so the cost lines are a list; and the
+size of text in the address field is the paragraph's, not the character's, which is why the
+information block shares its 10 pt.
+
+---
+
+### More examples, and where they live
+
+An example that comes with more than a script — data, a template, a wrapper — has its own
+directory under `examples/`, and a script reads its data from the directory it is in:
+
+| Directory | What it shows |
+|---|---|
+| `examples/prices/` | data in a file (§6) |
+| `examples/timesheet/` | four sheets that agree (§8) |
+| `examples/letters/` | a series of DIN 5008 letters from one template, `brief-din5008.fodt`, and `pdfs.sh` to write one PDF per recipient: `nebenkosten` (a calculation per tenancy), `mahnung` (three tones of dunning letter, interest worked out per item), `mieterhoehung` (a rule with a cap — the letter chooses its own sentence), `einladung` (an agenda that is data, and each owner's share of what a topic costs) |
+| `examples/darlehen/` | one repayment schedule per scenario as live formulas, with a chart each and a comparison sheet |
+| `examples/notenbuch/` | a grade book whose weights and grade scale are cells the formulas look up; the tests are the boundaries |
+| `examples/loc/` | a document that lives in git as a build product |
+
+`cli/tests/cli.rs` builds **every** script it finds under `examples/` and runs the tests of each
+one that has any, so a new example needs no entry in a list. All the data is made up. Each letter
+script repeats the same thirty lines of number formatting (`de`, `eur`) — the dialect has no
+`import`, which is the cost of a script being one file with nothing it can load.
 
 ---
 

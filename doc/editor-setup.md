@@ -68,7 +68,7 @@ $ code --install-extension kdl-org.kdl
 $ code --install-extension rhaiscript.vscode-rhai
 ```
 
-Then open `examples/quote.grind` and `examples/timesheet.rhai` and type. In the first, `cell`
+Then open `examples/quote.grind` and `examples/timesheet/timesheet.rhai` and type. In the first, `cell`
 offers a cell node with its formula as a tab stop; in the second, `s.` then `pu` offers `push`
 with what it does underneath.
 

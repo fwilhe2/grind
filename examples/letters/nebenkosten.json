@@ -1,0 +1,74 @@
+{
+    "year": 2025,
+    "issued": "16. Oktober 2026",
+    "due": "30. November 2026",
+    "landlord": {
+        "name": "Hausverwaltung Mustermann GmbH",
+        "street": "Beispielallee 1",
+        "city": "99999 Musterstadt",
+        "phone": "0123 / 456 789 0",
+        "email": "abrechnung@hausverwaltung.example",
+        "iban": "DE00 0000 0000 0000 0000 00",
+        "signed": "Gabi Musterfrau"
+    },
+    "building": {
+        "street": "Beispielweg 12",
+        "city": "99999 Musterstadt"
+    },
+    "heating": {
+        "amount": 7420.00,
+        "consumption_share": 0.7
+    },
+    "costs": [
+        { "name": "Grundsteuer",            "amount": 1240.00, "key": "area" },
+        { "name": "Gebäudeversicherung",    "amount": 1496.00, "key": "area" },
+        { "name": "Wasser und Abwasser",    "amount": 2310.50, "key": "persons" },
+        { "name": "Müllabfuhr",             "amount":  862.40, "key": "persons" },
+        { "name": "Hausreinigung",          "amount": 1080.00, "key": "units" },
+        { "name": "Allgemeinstrom",         "amount":  372.60, "key": "units" }
+    ],
+    "tenancies": [
+        {
+            "id": "w1", "unit": "Wohnung 1 (EG links)",
+            "name": "Frau Erika Musterfrau", "greeting": "Sehr geehrte Frau Musterfrau",
+            "area": 58.0, "persons": 1, "months": 12,
+            "start": "1. Januar 2025", "end": "31. Dezember 2025", "active": true,
+            "prepayment": 165, "kwh": 9800
+        },
+        {
+            "id": "w2", "unit": "Wohnung 2 (EG rechts)",
+            "name": "Familie Beispiel", "greeting": "Sehr geehrte Familie Beispiel",
+            "area": 76.0, "persons": 4, "months": 12,
+            "start": "1. Januar 2025", "end": "31. Dezember 2025", "active": true,
+            "prepayment": 340, "kwh": 21500
+        },
+        {
+            "id": "w3a", "unit": "Wohnung 3 (1. OG links)",
+            "name": "Herr Hans Platzhalter", "greeting": "Sehr geehrter Herr Platzhalter",
+            "area": 71.5, "persons": 1, "months": 6,
+            "start": "1. Januar 2025", "end": "30. Juni 2025", "active": false,
+            "prepayment": 195, "kwh": 6900
+        },
+        {
+            "id": "w3b", "unit": "Wohnung 3 (1. OG links)",
+            "name": "Frau Lena Testmann", "greeting": "Sehr geehrte Frau Testmann",
+            "area": 71.5, "persons": 2, "months": 6,
+            "start": "1. Juli 2025", "end": "31. Dezember 2025", "active": true,
+            "prepayment": 260, "kwh": 8100
+        },
+        {
+            "id": "w4", "unit": "Wohnung 4 (1. OG rechts)",
+            "name": "Herr Max Mustermann", "greeting": "Sehr geehrter Herr Mustermann",
+            "area": 64.0, "persons": 2, "months": 12,
+            "start": "1. Januar 2025", "end": "31. Dezember 2025", "active": true,
+            "prepayment": 210, "kwh": 12400
+        },
+        {
+            "id": "w5", "unit": "Wohnung 5 (2. OG)",
+            "name": "Herr Otto Normalverbraucher", "greeting": "Sehr geehrter Herr Normalverbraucher",
+            "area": 82.5, "persons": 3, "months": 12,
+            "start": "1. Januar 2025", "end": "31. Dezember 2025", "active": true,
+            "prepayment": 300, "kwh": 17300
+        }
+    ]
+}

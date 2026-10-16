@@ -533,7 +533,7 @@ once one is chosen, `grind init` can recommend `fwilhe2.grind` in `extensions.js
 | **I4** | `--ci github` | the workflow it writes runs green in this repository's own CI on the starter |
 | **I5** — done | `grind lsp` for `.grind`, and the `.rhai` half that runs nothing (§5.1): diagnostics, hover, inlay hints, go-to-definition, completion | an LSP conformance test driving the server over stdio on `examples/quote.grind`; and the decision recorded in `doc/dsl.md` §9 |
 | **I6** — done | The VS Code client extension, and Helix/Zed configuration pointing at `grind lsp` | the extension opens `examples/quote.grind` in a VS Code test host and shows `G14`'s value as a hint |
-| **I7** | `.rhai` provenance in `grind-build` and its hints through the server | `examples/timesheet.rhai`'s loop line shows the range it produced; `grind build` output is byte-identical with provenance on and off |
+| **I7** | `.rhai` provenance in `grind-build` and its hints through the server | `examples/timesheet/timesheet.rhai`'s loop line shows the range it produced; `grind build` output is byte-identical with provenance on and off |
 
 I0 is worth doing regardless of the rest: the line-accurate lint and `grind project` help
 every editor and every repository today.

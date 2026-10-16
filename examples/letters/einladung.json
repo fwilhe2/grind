@@ -1,0 +1,100 @@
+{
+    "issued": "16. Oktober 2026",
+    "community": "Wohnungseigentümergemeinschaft Beispielweg 12",
+    "meeting": {
+        "date": "Donnerstag, 19. November 2026",
+        "time": "19:00 Uhr",
+        "place": "Gemeindesaal Musterstadt, Probestraße 3, 99999 Musterstadt"
+    },
+    "landlord": {
+        "name": "Hausverwaltung Mustermann GmbH",
+        "street": "Beispielallee 1",
+        "city": "99999 Musterstadt",
+        "phone": "0123 / 456 789 0",
+        "email": "abrechnung@hausverwaltung.example",
+        "iban": "DE00 0000 0000 0000 0000 00",
+        "signed": "Gabi Musterfrau"
+    },
+    "owners": [
+        {
+            "id": "o1",
+            "name": "Frau Erika Musterfrau",
+            "greeting": "Sehr geehrte Frau Musterfrau",
+            "street": "Beispielweg 12",
+            "city": "99999 Musterstadt",
+            "unit": "Wohnung 1",
+            "mea": 118
+        },
+        {
+            "id": "o2",
+            "name": "Familie Beispiel",
+            "greeting": "Sehr geehrte Familie Beispiel",
+            "street": "Beispielweg 12",
+            "city": "99999 Musterstadt",
+            "unit": "Wohnung 2",
+            "mea": 154
+        },
+        {
+            "id": "o3",
+            "name": "Beispiel Immobilien GmbH",
+            "greeting": "Sehr geehrte Damen und Herren",
+            "street": "Musterring 7",
+            "city": "99998 Probehausen",
+            "unit": "Wohnungen 3 und 4",
+            "mea": 270
+        },
+        {
+            "id": "o4",
+            "name": "Herr Otto Normalverbraucher",
+            "greeting": "Sehr geehrter Herr Normalverbraucher",
+            "street": "Beispielweg 12",
+            "city": "99999 Musterstadt",
+            "unit": "Wohnung 5",
+            "mea": 168
+        },
+        {
+            "id": "o5",
+            "name": "Frau Lena Testmann",
+            "greeting": "Sehr geehrte Frau Testmann",
+            "street": "Platzhalterweg 4",
+            "city": "99997 Beispieldorf",
+            "unit": "Wohnung 6",
+            "mea": 150
+        },
+        {
+            "id": "o6",
+            "name": "Herr Karl Probemann",
+            "greeting": "Sehr geehrter Herr Probemann",
+            "street": "Beispielweg 12",
+            "city": "99999 Musterstadt",
+            "unit": "Wohnung 7",
+            "mea": 140
+        }
+    ],
+    "agenda": [
+        {
+            "title": "Begrüßung und Feststellung der Beschlussfähigkeit"
+        },
+        {
+            "title": "Genehmigung der Jahresabrechnung 2025"
+        },
+        {
+            "title": "Wirtschaftsplan 2027",
+            "note": "Gesamtes Hausgeld für das Jahr",
+            "amount": 31200.0,
+            "per": "Jahr"
+        },
+        {
+            "title": "Sanierung des Daches",
+            "note": "Angebot der Dachbau Probe GmbH, Gesamtkosten",
+            "amount": 48000.0,
+            "per": "einmalig"
+        },
+        {
+            "title": "Wahl des Verwaltungsbeirats"
+        },
+        {
+            "title": "Verschiedenes"
+        }
+    ]
+}

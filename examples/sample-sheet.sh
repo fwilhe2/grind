@@ -653,14 +653,14 @@ sheet view "$out/generated.fods" B8:E8 --formulas   # the totals the loop wrote
 say "test: the generated document's totals, checked"
 "$GRIND" test "$here/budget.rhai"
 
-# Data and code, separated: `examples/prices.rhai` says what the document *is* and
-# `examples/prices.json` beside it says what is *in* it, which somebody who has never read a
+# Data and code, separated: `examples/prices/prices.rhai` says what the document *is* and
+# `examples/prices/prices.json` beside it says what is *in* it, which somebody who has never read a
 # line of Rhai can edit. A script reads JSON and nothing else, from one directory a person
 # named — the script's own, or `--data` — with `..`, absolute paths and symlinks pointing out
 # all refused (doc/generator-spec.md §3.5).
 
 say "build: the numbers in a JSON file, the shape in the script"
-"$GRIND" build "$here/prices.rhai" -o "$out/prices.fods"
+"$GRIND" build "$here/prices/prices.rhai" -o "$out/prices.fods"
 sheet view "$out/prices.fods" A1:F9
 sheet view "$out/prices.fods" F7:F9 --formulas
 

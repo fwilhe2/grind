@@ -1,0 +1,93 @@
+{
+    "issued": "16. Oktober 2026",
+    "interest_percent": 7.27,
+    "interest_note": "5 Prozentpunkte über dem Basiszinssatz von 2,27 % (erfundener Wert)",
+    "fees": {
+        "1": 0,
+        "2": 5,
+        "3": 10
+    },
+    "deadlines": {
+        "1": "23. Oktober 2026",
+        "2": "30. Oktober 2026",
+        "3": "26. Oktober 2026"
+    },
+    "landlord": {
+        "name": "Hausverwaltung Mustermann GmbH",
+        "street": "Beispielallee 1",
+        "city": "99999 Musterstadt",
+        "phone": "0123 / 456 789 0",
+        "email": "abrechnung@hausverwaltung.example",
+        "iban": "DE00 0000 0000 0000 0000 00",
+        "signed": "Gabi Musterfrau"
+    },
+    "building": {
+        "street": "Beispielweg 12",
+        "city": "99999 Musterstadt"
+    },
+    "tenants": [
+        {
+            "id": "m1",
+            "name": "Herr Karl Testmann",
+            "greeting": "Sehr geehrter Herr Testmann",
+            "unit": "Wohnung 6 (2. OG rechts)",
+            "level": 1,
+            "items": [
+                {
+                    "month": "Oktober 2026",
+                    "due": 842.0,
+                    "paid": 0,
+                    "days": 12
+                }
+            ]
+        },
+        {
+            "id": "m2",
+            "name": "Frau Berta Probefrau",
+            "greeting": "Sehr geehrte Frau Probefrau",
+            "unit": "Wohnung 7 (DG links)",
+            "level": 2,
+            "items": [
+                {
+                    "month": "August 2026",
+                    "due": 690.0,
+                    "paid": 400.0,
+                    "days": 46
+                },
+                {
+                    "month": "September 2026",
+                    "due": 690.0,
+                    "paid": 0,
+                    "days": 16
+                }
+            ]
+        },
+        {
+            "id": "m3",
+            "name": "Herr Fritz Beispielmann",
+            "greeting": "Sehr geehrter Herr Beispielmann",
+            "unit": "Wohnung 8 (DG rechts)",
+            "level": 3,
+            "items": [
+                {
+                    "month": "August 2026",
+                    "due": 755.5,
+                    "paid": 0,
+                    "days": 46
+                },
+                {
+                    "month": "September 2026",
+                    "due": 755.5,
+                    "paid": 0,
+                    "days": 16
+                },
+                {
+                    "month": "Oktober 2026",
+                    "due": 755.5,
+                    "paid": 0,
+                    "days": 12
+                }
+            ]
+        }
+    ]
+}

@@ -500,7 +500,7 @@ So when the repetition gets tiring, you do not want a bigger projection. You wan
 layer:
 
 ```console
-$ grind build examples/timesheet.rhai -o month.fods
+$ grind build examples/timesheet/timesheet.rhai -o month.fods
 ```
 
 A script *returns* a document and `grind build` writes it. Adding a job to the data file adds
@@ -512,7 +512,7 @@ The two fit together the obvious way — a generator can write a `.grind` as eas
 because a projection is a form:
 
 ```console
-$ grind build examples/timesheet.rhai -o month.grind
+$ grind build examples/timesheet/timesheet.rhai -o month.grind
 ```
 
 which gives a generated document that is *also* reviewable in a pull request.

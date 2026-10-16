@@ -91,7 +91,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/`, `text/src/projection/` and `build/`. Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips — D0–D5, both document types) and layer 1 (a generator, one direction, `grind build` — D7's `grind build` and D8's `grind test` both built) |
 | `doc/generator-spec.md` | **The generator's language — normative for `build/`.** §8 is the editor half: `grind definitions` writes a Rhai `.d.rhai` file from the engine itself and `--snippets` writes the same vocabulary as VS Code snippets, so completion and hover cover it with or without a language server, and `build/src/hint.rs` is why every function has documentation to show — registering one *takes* the comment, so an undocumented function cannot be added by forgetting. The Rhai dialect (which features are taken, what is removed and *how*, every limit, what determinism rests on), the whole host API for both document types, how the returned tree becomes a document, and §7's list of what a script cannot say and what to do instead. `doc/dsl.md` §4 is the argument; this is the reference, and `build/tests/spec.rs` holds it to the code in both directions |
 | `doc/projection-guide.md` | **The projection's guide (D12)** — writing a `.grind` by hand, in the order the problems arrive, built on `examples/quote.grind`. Task-shaped where `doc/projection-sheet.md` is a vocabulary; §1 is the answer to *why would anybody want this*, and §10 the honest list of what converting *to* a projection drops |
-| `doc/generator-guide.md` | **The generator's guide (D14)** — from `examples/first.rhai` to `examples/timesheet.rhai`, four sheets that have to agree with each other. `cli/tests/editor.rs` builds every script it names |
+| `doc/generator-guide.md` | **The generator's guide (D14)** — from `examples/first.rhai` to `examples/timesheet/timesheet.rhai`, four sheets that have to agree with each other. `cli/tests/editor.rs` builds every script it names |
 | `doc/editor-setup.md` | **VS Code for `.grind` and `.rhai`** — what each extension actually does, measured as installed rather than as described, and why the vocabulary ships as *snippets* as well as a `.d.rhai`: the published Rhai extension runs no language server. `.vscode/` is the shipped configuration and `cli/tests/editor.rs` holds both snippet files to the vocabularies they describe |
 | `doc/init.md` | **`grind init`, the language server and its VS Code client — I0, I1, I2, I5 and I6 built; I3, I4 and I7 planned.** Three CLI prerequisites first, now done (lint findings at a line through the span map, a suite-level `grind project` for git's `textconv`, the projection's snippets in the binary), then `init` — recommend extensions and never install them, never clobber a user's settings, no project manifest, generated files rewritten by `--update` and seeded ones never — and then `grind lsp` rather than a VS Code-only extension, with inline values as inlay hints that are shown and never written. §3 is the request's assumptions, challenged one at a time |
 | `doc/xlsx-import.md` | **Phase 11 — reading `.xlsx`, done, X0–X6 (values, formulas, number formats, styles and geometry, the document level, and every shell's Open).** Normative for that phase: its own crate behind a feature flag, one way in and never out, a fidelity report that is part of the output, and "Transitional, and the real world" — the section that decides whether the filter opens other people's files, since Transitional is what every real producer writes and markup compatibility is the tax they charge. **ECMA-376 is the source; LibreOffice stays the oracle** |
@@ -137,7 +137,7 @@ cargo run -p grind-cli -- sheet export-csv book.ods --delimiter tab
 cargo run -p grind-cli -- --format json info book.ods    # suite level: reads the kind
 cargo run -p grind-cli -- build examples/budget.rhai -o book.fods   # a script returns a document
 cargo run -p grind-cli -- test examples/budget.rhai                # and asserts its own totals
-cargo run -p grind-cli -- build examples/timesheet.rhai -o month.fods  # four sheets that agree
+cargo run -p grind-cli -- build examples/timesheet/timesheet.rhai -o month.fods  # four sheets that agree
 cargo run -p grind-cli -- lint examples/quote.grind       # a hand-written projection
 cargo run -p grind-cli -- init ~/work/pricing             # a starter script + VS Code + git, never clobbering
 cargo run -p grind-cli -- init --update ~/work/pricing    # after upgrading: rewrite stale vocabulary, nothing else
@@ -1152,7 +1152,7 @@ and the name deleted in the same batch.
 
 **D7 is `grind build` — layer 1 has begun.** `grind build model.rhai -o model.fods` runs a Rhai
 script that **returns** a document and writes it, for either document type;
-`examples/budget.rhai` and `examples/report.rhai` are the two smallest worked examples, `examples/timesheet.rhai` (with `timesheet.json`) is the one `doc/generator-guide.md` builds up to, and the first is
+`examples/budget.rhai` and `examples/report.rhai` are the two smallest worked examples, `examples/timesheet/timesheet.rhai` (with `timesheet.json`) is the one `doc/generator-guide.md` builds up to, and the first is
 D7's exit criterion — `examples/sample-sheet.sh`'s budget, said once with the categories as data
 and a loop for the rows. The arrow points one way: a script produces a document and is never
 recovered from one, so this is `build` rather than a form `convert` reaches. Three things hold
@@ -1170,12 +1170,19 @@ every `fn test_…(d)` in it called with the document it built — assertions (`
 `doc/generator-spec.md` §10. `grind build` never calls a test, so a model and its checks are one
 file — `examples/budget.rhai` ends with four, and CI runs them. The rest of §6.5's table is the
 open list. A script may read JSON data beside itself (`json("prices.json")`,
-`examples/prices.rhai` + `prices.json`), which is the one amendment to §2's "no I/O" and is
+`examples/prices/prices.rhai` + `prices.json`), which is the one amendment to §2's "no I/O" and is
 narrower than the rule it replaces — `doc/generator-spec.md` §3.5 has the four walls and
 `build/tests/data.rs` tests each of them, including a symlink pointing out. **`grind
 definitions`** prints the vocabulary as a Rhai definition file for an editor (§8);
 `examples/grind.d.rhai` is a generated copy kept in the tree, with a test that fails when it
 goes stale.
+
+**The generator's examples live one directory each when they come with more than a script**
+(`examples/{prices,timesheet,letters,darlehen,notenbuch,loc}/`), and `cli/tests/cli.rs` builds and tests
+every `.rhai` under `examples/`. `examples/letters/` is the word processor's: DIN 5008 letters from one
+flat-ODF template through **`text_from("brief-din5008.fodt")`** and `para(style, text)`/`.style(name)`
+(`doc/generator-spec.md` §3.5, §5) — a generator cannot declare a page or a style, a template does — and
+`pdfs.sh <name> <out>` writes one PDF per recipient by building once per `select.json`.
 
 **The two languages owed four documents, and three of them are written** (§7, D11–D14). A design
 record is not a specification somebody can implement against, nor a guide somebody can learn
@@ -1190,8 +1197,8 @@ project with no §3.7-style guard.
 joinery quote whose formulas carry no answers until `grind sheet recalc` fills them in, asserted
 cell by cell in `cli/tests/cli.rs` along with the two properties the guide is *for*: one edit is
 one line of diff, and an untouched save returns the bytes that were read.
-`doc/generator-guide.md` runs from `examples/first.rhai` to `examples/timesheet.rhai` — four
-sheets that have to agree with each other, built out of `examples/timesheet.json`, whose
+`doc/generator-guide.md` runs from `examples/first.rhai` to `examples/timesheet/timesheet.rhai` — four
+sheets that have to agree with each other, built out of `examples/timesheet/timesheet.json`, whose
 cross-sheet ranges are measured from tables another loop wrote rather than counted.
 `cli/tests/editor.rs` builds every script either guide names and fails when one moves.
 

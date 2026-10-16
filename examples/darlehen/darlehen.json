@@ -1,0 +1,9 @@
+{
+    "currency": "€",
+    "title": "Darlehensvergleich für ein Beispielhaus",
+    "scenarios": [
+        { "name": "Standard",  "principal": 250000, "rate": 3.6, "years": 25 },
+        { "name": "Kurz",      "principal": 250000, "rate": 3.2, "years": 15 },
+        { "name": "Lang",      "principal": 250000, "rate": 4.1, "years": 30 }
+    ]
+}
