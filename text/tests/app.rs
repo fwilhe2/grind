@@ -1483,3 +1483,32 @@ fn undo_all_depth(app: &App) -> usize {
     }
     steps
 }
+
+/// Every master page is read with the page layout it names, so a paragraph that opens a page on
+/// a master of its own — a letter in a series — is set on *that* page's margins, header and
+/// footer, not the body's (`Document::masters`).
+#[test]
+fn every_master_page_keeps_its_own_page_layout() {
+    let template = r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
+ <office:automatic-styles>
+  <style:page-layout style:name="One"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="1cm" fo:margin-bottom="1cm" fo:margin-left="2.5cm" fo:margin-right="2cm"/></style:page-layout>
+  <style:page-layout style:name="Rest"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="1.5cm" fo:margin-bottom="1cm" fo:margin-left="2.5cm" fo:margin-right="2cm"/></style:page-layout>
+ </office:automatic-styles>
+ <office:master-styles>
+  <style:master-page style:name="First" style:page-layout-name="One" style:next-style-name="Standard"><style:header><text:p>Letterhead</text:p></style:header></style:master-page>
+  <style:master-page style:name="Standard" style:page-layout-name="Rest"/>
+ </office:master-styles>
+ <office:body><office:text><text:p>x</text:p></office:text></office:body>
+</office:document>"#;
+    let app = grind_text::App::new();
+    app.open_bytes("t.fodt", template.as_bytes())
+        .expect("opens");
+    let first = app.master("First").expect("the first master");
+    assert_eq!(first.geometry.expect("a layout").top, 10.0);
+    assert_eq!(first.next.as_deref(), Some("Standard"));
+    assert!(first.header.is_some());
+    let standard = app.master("Standard").expect("the body's master");
+    assert_eq!(standard.geometry.expect("a layout").top, 15.0);
+    assert_eq!(app.rest_master().as_deref(), Some("Standard"));
+}

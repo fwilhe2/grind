@@ -379,6 +379,28 @@ impl Builder {
         self.doc.first_page = first
             .filter(|first| rest.as_ref().is_some_and(|rest| rest.0 != first.0))
             .map(|first| marginals_of(&first));
+
+        // Every master page, by name, so a paragraph that starts a page on a master of its own
+        // anywhere in the document — a letter in a series — gets that one's page, header and
+        // footer rather than only the first page's (`crate::model::Master`).
+        self.doc.rest_master = rest.as_ref().map(|(name, _)| name.clone());
+        let masters: Vec<(String, crate::model::Master)> = self
+            .master_pages
+            .iter()
+            .map(|master| {
+                let (header, footer) = marginals_of(master);
+                (
+                    master.0.clone(),
+                    crate::model::Master {
+                        geometry: self.page_layouts.get(&master.1).copied(),
+                        header,
+                        footer,
+                        next: self.master_next.get(&master.0).cloned(),
+                    },
+                )
+            })
+            .collect();
+        self.doc.masters = masters.into_iter().collect();
     }
 
     /// Record the package this document is being read from, so a `draw:image`'s `xlink:href`
@@ -1067,6 +1089,7 @@ impl Context<Builder> for ParagraphStyleDef {
             props.widows = get("widows");
             props.orphans = get("orphans");
             props.tab_stop_distance = attrs.get(Ns::Style, "tab-stop-distance").map(str::to_owned);
+            props.page_number = attrs.get(Ns::Style, "page-number").map(str::to_owned);
             return Some(Box::new(TabStopsDef));
         } else if name.is(Ns::Style, "text-properties") {
             // The family the way a run's is read: the font-face indirection first, resolved to

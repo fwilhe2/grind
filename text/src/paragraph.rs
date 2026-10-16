@@ -43,6 +43,9 @@ pub struct ParagraphProps {
     /// `style:master-page-name` on the style itself: the master page a paragraph in this style
     /// starts. Empty in the file is none.
     pub master_page: Option<String>,
+    /// `style:page-number` on the style: `auto` or the number the page it starts is counted as.
+    /// A number restarts the page numbering there (`doc/pdf-export.md`, *Master pages*).
+    pub page_number: Option<String>,
     /// `style:tab-stop-distance` — the interval between the default tab stops.
     pub tab_stop_distance: Option<String>,
     /// `style:tab-stops` — the paragraph's own stops, in order. A style that states its own
@@ -99,6 +102,9 @@ impl ParagraphProps {
         }
         if over.master_page.is_some() {
             self.master_page.clone_from(&over.master_page);
+        }
+        if over.page_number.is_some() {
+            self.page_number.clone_from(&over.page_number);
         }
         if over.tab_stop_distance.is_some() {
             self.tab_stop_distance.clone_from(&over.tab_stop_distance);

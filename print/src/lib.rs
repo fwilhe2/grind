@@ -180,7 +180,15 @@ pub fn preview(
 pub fn export(app: &App, fonts: Fonts, options: &Options) -> Result<(Vec<u8>, Report), String> {
     let setter = Typesetter::new(fonts);
     let page = options.paper.or(app.page()).unwrap_or_default();
-    let doc = text::typeset(app, &setter, &text::Options { paper: Some(page) });
+    // Only a paper somebody *asked for* overrides the master pages' own: the report below says
+    // which one the first page is on, and every page is set on its own master.
+    let doc = text::typeset(
+        app,
+        &setter,
+        &text::Options {
+            paper: options.paper,
+        },
+    );
     let missing_glyphs = doc
         .pages
         .iter()

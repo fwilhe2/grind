@@ -1047,6 +1047,18 @@ impl App {
         self.state.read().unwrap().doc.first_page.clone()
     }
 
+    /// One master page by name — its page, header and footer, and the master after it
+    /// ([`model::Master`]) — and the name of the master the body's pages are set on. What a
+    /// printer asks for each time a paragraph says it starts a page on a master of its own.
+    pub fn master(&self, name: &str) -> Option<model::Master> {
+        self.state.read().unwrap().doc.masters.get(name).cloned()
+    }
+
+    /// The name of the master the document's ordinary pages are set on, if it has any.
+    pub fn rest_master(&self) -> Option<String> {
+        self.state.read().unwrap().doc.rest_master.clone()
+    }
+
     /// A paragraph style resolved by name, as [`App::paragraph`] resolves a block's — what a
     /// header paragraph, which is no block, is laid out by.
     pub fn resolve_style(&self, name: Option<&str>) -> paragraph::Resolved {

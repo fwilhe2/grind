@@ -587,6 +587,18 @@ pub struct Section {
     pub blocks: Vec<crate::model::BlockId>,
 }
 
+/// One `style:master-page`, read for printing and never written: the page its pages are set on,
+/// their header and footer, and the master the page after one of its own is set on.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Master {
+    /// The page layout it names, or `None` when the file does not state one.
+    pub geometry: Option<grind_core::page::PageGeometry>,
+    pub header: Option<crate::marginal::Marginal>,
+    pub footer: Option<crate::marginal::Marginal>,
+    /// `style:next-style-name`; `None` is the master itself.
+    pub next: Option<String>,
+}
+
 /// A text document.
 #[derive(Clone, Debug)]
 pub struct Document {
@@ -668,6 +680,12 @@ pub struct Document {
         Option<crate::marginal::Marginal>,
         Option<crate::marginal::Marginal>,
     )>,
+    /// Every master page by name, and the name of the one the body's pages are set on
+    /// ([`Document::page`] comes from it). A paragraph whose style names a master starts a page
+    /// on it wherever it is (`doc/pdf-export.md`); `first_page` is the same fact for the first
+    /// paragraph alone. Read for printing and never written.
+    pub masters: BTreeMap<String, Master>,
+    pub rest_master: Option<String>,
     /// The next id to hand out. Monotonic, never reused, so a stale [`BlockId`] is always
     /// stale rather than silently pointing at something new.
     next_id: u64,
@@ -739,6 +757,8 @@ impl Document {
             notes: Vec::new(),
             header: None,
             first_page: None,
+            masters: BTreeMap::new(),
+            rest_master: None,
             footer: None,
             next_id: 0,
             source: None,

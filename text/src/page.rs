@@ -91,7 +91,24 @@ pub struct Page {
     pub pieces: Vec<Piece>,
     /// The table cells on this page, for the rules drawn round them.
     pub cells: Vec<CellBox>,
+    /// Which [`Slot`] the page is set on — `0` for a document with one kind of page.
+    pub slot: usize,
+    /// Set when this page starts a run of page numbers again: the number it is counted as.
+    pub restart: Option<u32>,
 }
+
+/// A kind of page, as far as cutting the document into pages is concerned: how tall its text
+/// area is, and which kind the page after it is. A master page, once its header and footer have
+/// taken their share of the sheet (`grind-print`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Slot {
+    pub height: f64,
+    pub next: usize,
+}
+
+/// Where a block starts a page of its own kind: the [`Slot`] it is set on, and the number the
+/// page is counted as when it restarts the numbering.
+pub type Starts = std::collections::HashMap<usize, (usize, Option<u32>)>;
 
 /// Break the document into pages whose text area is `column` wide and `height` tall.
 ///
@@ -130,6 +147,40 @@ pub fn paginate_first(
     rules: Rules,
     picture: &dyn Fn(&BlockView, f64) -> Option<f64>,
 ) -> Vec<Page> {
+    let slots = [
+        Slot {
+            height: first,
+            next: 1,
+        },
+        Slot { height, next: 1 },
+    ];
+    paginate_slots(
+        app,
+        faces,
+        column,
+        &slots,
+        (0, &Starts::new()),
+        spacing,
+        rules,
+        picture,
+    )
+}
+
+/// [`paginate`] over several kinds of page: the document's first page is set on `slots[start]`,
+/// each page after on the `next` of the one before — and a block in `starts` begins a new page
+/// set on its own, wherever it is. A series of letters on one letterhead is that: every letter
+/// opens on the first-page master, and runs on to the continuation one.
+#[allow(clippy::too_many_arguments)]
+pub fn paginate_slots(
+    app: &App,
+    faces: &dyn Faces,
+    column: f64,
+    slots: &[Slot],
+    (start, starts): (usize, &Starts),
+    spacing: &Spacing,
+    rules: Rules,
+    picture: &dyn Fn(&BlockView, f64) -> Option<f64>,
+) -> Vec<Page> {
     // The flow's own idea of where everything sits, from a top of zero: a page has its own top
     // margin, which is the page's business rather than the flow's.
     let spacing = Spacing {
@@ -140,10 +191,12 @@ pub fn paginate_first(
     let viewport = app.get_viewport(0..app.block_count());
     let units = units(app, faces, &laid, &viewport, picture, spacing.cell_pad);
     let mut cut = Cut {
-        pages: vec![Page::default()],
+        pages: vec![Page {
+            slot: start,
+            ..Page::default()
+        }],
         origin: 0.0,
-        first,
-        height,
+        slots,
         reserved: 0.0,
     };
     // A page break after the block before: the next unit starts a page wherever it is.
@@ -162,6 +215,14 @@ pub fn paginate_first(
                 breaks,
                 notes,
             } => {
+                // A block that opens a page on a master of its own: a new page unless this one
+                // is empty already, and then set on that master.
+                if let Some(&(slot_of, restart)) = starts.get(&slot.index) {
+                    if !cut.fresh() {
+                        cut.turn(lines.first().map_or(slot.top, |line| line.top));
+                    }
+                    cut.set_slot(slot_of, restart);
+                }
                 if breaks.page_before && !cut.fresh() {
                     cut.turn(lines.first().map_or(slot.top, |line| line.top));
                 }
@@ -403,18 +464,17 @@ fn units(
 }
 
 /// The cut in progress: the pages so far, and where in the flow the current one begins.
-struct Cut {
+struct Cut<'a> {
     pages: Vec<Page>,
     /// The flow's y at the top of the current page.
     origin: f64,
-    /// The first page's text area, and every other page's.
-    first: f64,
-    height: f64,
+    /// The kinds of page there are: each page's text area, and what follows it.
+    slots: &'a [Slot],
     /// What the footnotes cited on the current page take from the foot of it.
     reserved: f64,
 }
 
-impl Cut {
+impl Cut<'_> {
     fn page(&mut self) -> &mut Page {
         self.pages.last_mut().expect("there is always a page")
     }
@@ -427,17 +487,25 @@ impl Cut {
 
     /// Start a new page whose top is the flow's `at`.
     fn turn(&mut self, at: f64) {
-        self.pages.push(Page::default());
+        let next = self.slots[self.pages.last().map_or(0, |page| page.slot)].next;
+        self.pages.push(Page {
+            slot: next,
+            ..Page::default()
+        });
         self.origin = at;
         self.reserved = 0.0;
     }
 
+    /// Set the current page, which has nothing on it, on another kind of page.
+    fn set_slot(&mut self, slot: usize, restart: Option<u32>) {
+        let page = self.page();
+        page.slot = slot;
+        page.restart = restart;
+    }
+
     /// How tall the current page's text area is.
     fn page_height(&self) -> f64 {
-        match self.pages.len() {
-            1 => self.first,
-            _ => self.height,
-        }
+        self.slots[self.pages.last().map_or(0, |page| page.slot)].height
     }
 
     /// How tall the body of the current page may be, its footnotes' room taken out.

@@ -16,7 +16,7 @@ use grind_core::layout::{Fragment, wrap};
 use grind_core::page::{PageGeometry, pt};
 use grind_core::style::{TextStyle, length_mm};
 use grind_text::flow::{self, CellBox};
-use grind_text::page::{Piece, Rules, paginate_first};
+use grind_text::page::{Piece, Rules, paginate_slots};
 use grind_text::{App, BlockKind, BlockView, Caret, paint, picture_of};
 
 use crate::align::{self, Align};
@@ -42,35 +42,22 @@ pub struct Options {
 /// Typeset `app`'s document with `setter`'s fonts.
 pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     setter.hint(app.font_generics());
-    let geometry = options.paper.or(app.page()).unwrap_or_default();
-    let (left, margin_top) = (pt(geometry.left), pt(geometry.top));
-    let width = pt(geometry.text_width());
-    // The header from the top margin down and the footer from the bottom margin up, each with
-    // the space between it and the body: what is left is the body's (`doc/odt-format.md` §5c,
-    // fact 9).
-    let (header, footer) = app.marginals();
-    let header = header.map(|m| Marginal::lay_out(app, setter, &m, width));
-    let footer = footer.map(|m| Marginal::lay_out(app, setter, &m, width));
-    // A first page on a master page of its own wears that one's header and footer, and its
-    // body has what they leave (`Document::first_page`).
-    let (first_header, first_footer) = match app.first_page_marginals() {
-        Some((h, f)) => (
-            h.map(|m| Marginal::lay_out(app, setter, &m, width)),
-            f.map(|m| Marginal::lay_out(app, setter, &m, width)),
-        ),
-        None => (None, None),
-    };
-    let first_own = app.first_page_marginals().is_some();
-    let room = |m: &Option<Marginal<'_>>| m.as_ref().map_or(0.0, |m| m.height + m.spacing);
-    let top = margin_top + room(&header);
-    let height = (pt(geometry.text_height()) - room(&header) - room(&footer)).max(1.0);
-    let (first_top, first_height) = match first_own {
-        true => (
-            margin_top + room(&first_header),
-            (pt(geometry.text_height()) - room(&first_header) - room(&first_footer)).max(1.0),
-        ),
-        false => (top, height),
-    };
+    let default_geometry = options.paper.or(app.page()).unwrap_or_default();
+    // The flow is cut at one measure, the document's own: master pages of a document that state
+    // other margins are laid out at this width and drawn at their own left edge.
+    let width = pt(default_geometry.text_width());
+    let (kinds, starts) = page_kinds(app);
+    let sheets: Vec<Sheet<'_>> = kinds
+        .iter()
+        .map(|kind| Sheet::lay_out(app, setter, kind, default_geometry, options, width))
+        .collect();
+    let slots: Vec<grind_text::page::Slot> = sheets
+        .iter()
+        .map(|sheet| grind_text::page::Slot {
+            height: sheet.height,
+            next: sheet.next,
+        })
+        .collect();
     let faces = role_faces(setter);
     let viewport = app.get_viewport(0..app.block_count());
     let looks: std::collections::HashMap<String, grind_text::table_look::TableLook> = viewport
@@ -129,25 +116,27 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         orphans: stated.orphans.unwrap_or(0) as usize,
         widows: stated.widows.unwrap_or(0) as usize,
     };
-    let pages = paginate_first(
+    let pages = paginate_slots(
         app,
         &column,
         width,
-        (first_height, height),
+        &slots,
+        (0, &starts),
         &SPACING,
         breaking,
         &picture,
     );
+    let numbering = numbering(&pages);
 
     let mut outline = Vec::new();
     let pages = pages
         .iter()
         .enumerate()
         .map(|(number, page)| {
-            let (top, header, footer) = match number == 0 && first_own {
-                true => (first_top, &first_header, &first_footer),
-                false => (top, &header, &footer),
-            };
+            let sheet = &sheets[page.slot];
+            let (geometry, top, header, footer) =
+                (sheet.geometry, sheet.top, &sheet.header, &sheet.footer);
+            let (left, margin_top) = (pt(geometry.left), pt(geometry.top));
             let mut ops = Vec::new();
             let mut span: Option<(Caret, Caret)> = None;
             let mut cover = |from: Caret, to: Caret| {
@@ -215,13 +204,15 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                     cover(caret(piece.index, from), caret(piece.index, to));
                 }
             }
-            let count = pages.len();
+            // The page's number within its run, and how many the run has: the whole document's
+            // unless a paragraph's style restarted the numbering (`doc/pdf-export.md`).
+            let (shown, count) = numbering[number];
             if let Some(header) = header {
-                header.draw(&mut ops, (left, margin_top), number + 1, count);
+                header.draw(&mut ops, (left, margin_top), shown, count);
             }
             if let Some(footer) = footer {
                 let bottom = pt(geometry.height) - pt(geometry.bottom);
-                footer.draw(&mut ops, (left, bottom - footer.height), number + 1, count);
+                footer.draw(&mut ops, (left, bottom - footer.height), shown, count);
             }
             Page {
                 width: pt(geometry.width) as f32,
@@ -266,6 +257,144 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         outline,
         structure,
     }
+}
+
+/// One kind of page the document is set on: a master page, resolved.
+struct Kind {
+    /// The master's name, or `None` for the document's own default page.
+    name: Option<String>,
+    next: usize,
+}
+
+/// A kind of page, laid out: its geometry, its header and footer, and what is left for the body.
+struct Sheet<'a> {
+    geometry: PageGeometry,
+    header: Option<Marginal<'a>>,
+    footer: Option<Marginal<'a>>,
+    /// Where the body starts down the page, and how tall it is — in points.
+    top: f64,
+    height: f64,
+    next: usize,
+}
+
+impl<'a> Sheet<'a> {
+    fn lay_out(
+        app: &'a App,
+        setter: &'a Typesetter,
+        kind: &Kind,
+        default: PageGeometry,
+        options: &Options,
+        width: f64,
+    ) -> Self {
+        let master = kind.name.as_deref().and_then(|name| app.master(name));
+        let geometry = options
+            .paper
+            .or_else(|| master.as_ref().and_then(|m| m.geometry))
+            .unwrap_or(default);
+        let (header, footer) = match &master {
+            Some(master) => (master.header.clone(), master.footer.clone()),
+            None => app.marginals(),
+        };
+        let header = header.map(|m| Marginal::lay_out(app, setter, &m, width));
+        let footer = footer.map(|m| Marginal::lay_out(app, setter, &m, width));
+        let room = |m: &Option<Marginal<'_>>| m.as_ref().map_or(0.0, |m| m.height + m.spacing);
+        let top = pt(geometry.top) + room(&header);
+        let height = (pt(geometry.text_height()) - room(&header) - room(&footer)).max(1.0);
+        Sheet {
+            geometry,
+            header,
+            footer,
+            top,
+            height,
+            next: kind.next,
+        }
+    }
+}
+
+/// The kinds of page the document uses — kind `0` is the one its first page is set on — and the
+/// blocks that open a page of a kind of their own.
+///
+/// A master page is named by the paragraph that starts it (`style:master-page-name`, `doc/odt-format.md`
+/// §5c fact 17), and the pages after it are set on its `style:next-style-name`: a letter
+/// series is a letter's first paragraph, over and over, and each letter gets its letterhead.
+fn page_kinds(app: &App) -> (Vec<Kind>, grind_text::page::Starts) {
+    let mut kinds: Vec<Kind> = Vec::new();
+    let slot_of = |kinds: &mut Vec<Kind>, name: Option<&str>| -> usize {
+        match kinds.iter().position(|kind| kind.name.as_deref() == name) {
+            Some(at) => at,
+            None => {
+                kinds.push(Kind {
+                    name: name.map(str::to_owned),
+                    next: 0,
+                });
+                kinds.len() - 1
+            }
+        }
+    };
+    let viewport = app.get_viewport(0..app.block_count());
+    let first = viewport
+        .iter()
+        .next()
+        .and_then(|view| app.paragraph(view.index)?.props.master_page);
+    let rest = app.rest_master();
+    // The page the document opens on: what its first paragraph names, else the body's master.
+    let opening = first.or_else(|| rest.clone());
+    slot_of(&mut kinds, opening.as_deref());
+    let mut starts = grind_text::page::Starts::new();
+    for view in viewport.iter().filter(|view| view.cell.is_none()) {
+        let Some(props) = app.paragraph(view.index).map(|resolved| resolved.props) else {
+            continue;
+        };
+        let Some(name) = props.master_page else {
+            continue;
+        };
+        let restart = props
+            .page_number
+            .as_deref()
+            .and_then(|n| n.trim().parse::<u32>().ok());
+        let at = slot_of(&mut kinds, Some(&name));
+        starts.insert(view.index, (at, restart));
+    }
+    // Each kind's successor: its master's `next-style-name`, else itself — and a successor may
+    // be a kind nothing else names, so this grows the list it walks.
+    let mut at = 0;
+    while at < kinds.len() {
+        let next = match kinds[at].name.as_deref().and_then(|name| app.master(name)) {
+            Some(master) => match master.next {
+                Some(next) if app.master(&next).is_some() => slot_of(&mut kinds, Some(&next)),
+                _ => at,
+            },
+            None => at,
+        };
+        kinds[at].next = next;
+        at += 1;
+    }
+    (kinds, starts)
+}
+
+/// Each page's number and the last number of its run: the whole document is one run unless a
+/// paragraph's style restarted the numbering (`style:page-number`), in which case the pages
+/// from there to the next restart are — so "page 1 of 2" is a letter's own, in a series.
+fn numbering(pages: &[grind_text::page::Page]) -> Vec<(usize, usize)> {
+    let mut runs: Vec<(usize, usize)> = Vec::new(); // (first page index, first number)
+    for (at, page) in pages.iter().enumerate() {
+        if at == 0 || page.restart.is_some() {
+            runs.push((at, page.restart.map_or(1, |n| n as usize)));
+        }
+    }
+    pages
+        .iter()
+        .enumerate()
+        .map(|(at, _)| {
+            let run = runs
+                .iter()
+                .rposition(|(first, _)| *first <= at)
+                .unwrap_or(0);
+            let (first, number) = runs[run];
+            let end = runs.get(run + 1).map_or(pages.len(), |(next, _)| *next);
+            (number + at - first, number + end - first - 1)
+        })
+        .collect()
 }
 
 /// A face for every block whose paragraph style says something about its text
@@ -1661,6 +1790,47 @@ mod tests {
             top(&typeset.pages[0]) < top(&typeset.pages[1]),
             "page 1's text starts at the margin, page 2's under the header"
         );
+    }
+
+    /// A paragraph whose style names a master page opens a page on it **wherever it is**, not
+    /// only first: a series of letters on one letterhead, each with its own page numbers
+    /// (`style:page-number`), the master's own margins, and `Page 1 of 1` that is the letter's.
+    #[test]
+    fn every_paragraph_naming_a_master_opens_a_page_on_it() {
+        let bytes = r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles>
+              <style:style style:name="Opening" style:family="paragraph" style:master-page-name="Letter"><style:paragraph-properties style:page-number="1"/></style:style>
+              <style:page-layout style:name="pl1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="1cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/></style:page-layout>
+              <style:page-layout style:name="pl2"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="3cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/></style:page-layout>
+            </office:automatic-styles>
+            <office:master-styles>
+              <style:master-page style:name="Standard" style:page-layout-name="pl2"/>
+              <style:master-page style:name="Letter" style:page-layout-name="pl1" style:next-style-name="Standard"><style:footer><text:p>No. <text:page-number/> of <text:page-count/></text:p></style:footer></style:master-page>
+            </office:master-styles>
+            <office:body><office:text>
+              <text:p text:style-name="Opening">FIRST</text:p><text:p>body one</text:p>
+              <text:p text:style-name="Opening">SECOND</text:p><text:p>body two</text:p>
+            </office:text></office:body></office:document>"#;
+        let app = App::new();
+        app.open_bytes("series.fodt", bytes.as_bytes()).unwrap();
+        let doc = typeset(&app, &setter(), &Options::default());
+        assert_eq!(doc.pages.len(), 2, "one page a letter");
+        let on = |page: usize, want: &str| texts(&doc.pages[page]).iter().any(|t| t.2 == want);
+        assert!(on(0, "FIRST") && on(1, "SECOND"));
+        // Both pages are on the Letter master — its 1 cm top margin, not Standard's 3 cm — and
+        // both are "No. 1 of 1": the second letter restarted the numbering.
+        let first_top = |page: usize| texts(&doc.pages[page])[0].1;
+        assert_eq!(first_top(0), first_top(1));
+        assert!(first_top(0) < 40.0, "{}", first_top(0));
+        let footer = |page: usize| {
+            texts(&doc.pages[page])
+                .into_iter()
+                .map(|t| t.2)
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        assert!(footer(0).contains("No. 1 of 1"), "{}", footer(0));
+        assert!(footer(1).contains("No. 1 of 1"), "{}", footer(1));
     }
 
     /// A style's `fo:break-before="page"` starts its paragraph on a page of its own.
