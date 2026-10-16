@@ -1015,6 +1015,49 @@ fn every_example_script_builds_and_passes_its_own_tests() {
     }
 }
 
+/// The spelling setting is the person's, one line per kind of document in one file
+/// (`doc/spelling.md`, decision 5): choosing a language for text leaves spreadsheets as they
+/// were, and the next command reads what the last one wrote.
+#[cfg(feature = "spell")]
+#[test]
+fn the_remembered_spelling_setting_is_one_line_per_kind_of_document() {
+    let home = Sandbox::new("spelling-setting");
+    let run = |args: &[&str]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_grind"))
+            .args(args)
+            .env("XDG_CONFIG_HOME", home.path("config"))
+            .output()
+            .expect("the binary runs");
+        assert!(
+            output.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    };
+    let first = |out: String| out.split('\t').next().unwrap_or("").to_owned();
+
+    assert_eq!(first(run(&["text", "spelling"])), "auto");
+    assert_eq!(first(run(&["text", "spelling", "de"])), "de-DE");
+    assert_eq!(
+        first(run(&["sheet", "spelling"])),
+        "auto",
+        "a spreadsheet's is its own"
+    );
+    run(&["sheet", "spelling", "off"]);
+    assert_eq!(
+        first(run(&["text", "spelling"])),
+        "de-DE",
+        "and so is a text document's"
+    );
+    assert_eq!(first(run(&["sheet", "spelling"])), "off");
+    let file = std::fs::read_to_string(home.path("config/grind/spelling")).expect("the file");
+    assert!(
+        file.contains("text de-DE") && file.contains("spreadsheet off"),
+        "{file}"
+    );
+}
+
 /// A script that fails says where, because a generator whose errors have no line number is a
 /// generator nobody debugs.
 #[test]

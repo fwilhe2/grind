@@ -130,7 +130,11 @@ impl TextPane {
             find_bar: RefCell::new(None),
             blink: Cell::new(Blink::default()),
             blinker: RefCell::new(None),
-            spelling: Cell::new(grind_spell::Setting::Automatic),
+            // Remembered for every text document (`grind_spell::preference`), as the grid's is
+            // for every spreadsheet.
+            spelling: Cell::new(grind_spell::preference::load(
+                grind_core::DocumentKind::Text,
+            )),
             speller: RefCell::new(None),
             offers: RefCell::new(None),
         })

@@ -127,18 +127,20 @@ turns off a dictionary without naming either application, and depends on neither
    (`grind_spell::preference`), beside the personal word list and for the same reason: it is the
    person's, never the document's. Every spreadsheet window opens with it and every toggle writes
    it; `grind sheet spelling off` sets it from a terminal, and `grind sheet lint` and `grind lint`
-   follow it. The text windows do not read it yet: their Spelling menus are still the session's
-   (a gap below).
+   follow it. **The text windows read and write theirs too** (2026-10-16): one line per kind in the
+   same file, `text de-DE`, set from a window's Spelling menu or `grind text spelling`, and
+   followed by `grind text lint`, `grind lint` and — when no `--language` is given — `grind text
+   spell`. The browser is the one client with no spelling, and so nothing to choose a language for.
 
 ## Where it reaches
 
 | Client | What it has |
 |---|---|
-| `grind` | `grind text spell [range] [--language] [--suggest]`, `--add`, `grind text correct`; `misspelt` in `grind text lint` and `grind lint`. For spreadsheets `grind sheet spell [--sheet] [--language] [--suggest]`, `grind sheet correct <cell> <word> <with> [--at]`, and `grind sheet spelling [auto\|off\|<lang>]` — the remembered switch, which `grind sheet lint` and `grind lint` follow |
-| `grind-text-gtk` | Wavy underlines (not under the word still being typed), suggestions, Ignore All and Add to Dictionary on right-click, a Spelling submenu (Automatic, each language in its own name, Off), the language in the status bar, and Check Document |
-| `grind-sheet-gtk` | The word processor's wavy underline under misspelt words in text cells — ordinary, overflowing, wrapped and merged; not turned text — and a spelling section per word (up to three) leading the cell's right-click menu: suggestions, Ignore All, Add to Dictionary. View ▸ Check Spelling (Shift+F7, LibreOffice's key, and in the palette) turns it off and on, and View ▸ Spelling Language chooses; both are **remembered**. Check the Document lists the words |
-| `grind-tui` | Words underlined in red (not the one being typed), `]`/`[` to the next or previous with suggestions on the status line, `:fix N` or `:fix <word>`, `:spell ignore` and `:spell add`, `:spell auto\|en\|de\|fr\|es\|it\|pt\|pl\|off`, the language on the status bar, and `:lint`. **In a spreadsheet** the same: a misspelt word's letters underlined in red (only the text the core checked, and only what a narrow column shows), `]`/`[` across every sheet, `:fix N`/`:fix <word>`, `:spell ignore`/`add`, and `:spell auto\|<lang>\|off` — **remembered** for every spreadsheet |
-| `grind-win32` | A squiggle in Fluent's critical red, suggestions with Ignore All and Add to Dictionary at the head of the context menu (right click, or Shift+F10 with the caret in the word), F7 for the next word with the same popup, View ▸ Spelling Language…, the language on the status bar, and Check Document. **In a spreadsheet** the same squiggle under a text cell's misspelt words (wrapped and merged cells too, stopping at an ellipsis), the same popup leading a cell's right-click menu, F7 across every sheet, and View ▸ Check Spelling (Shift+F7) — **remembered** for every spreadsheet, as View ▸ Spelling Language… is there; over a text document both stay the session's |
+| `grind` | `grind text spell [range] [--language] [--suggest]`, `--add`, `grind text correct`, and `grind text spelling [auto\|off\|<lang>]` — the remembered switch for text, the twin of the sheet's; `misspelt` in `grind text lint` and `grind lint`. For spreadsheets `grind sheet spell [--sheet] [--language] [--suggest]`, `grind sheet correct <cell> <word> <with> [--at]`, and `grind sheet spelling [auto\|off\|<lang>]` — the remembered switch, which `grind sheet lint` and `grind lint` follow |
+| `grind-text-gtk` | Wavy underlines (not under the word still being typed), suggestions, Ignore All and Add to Dictionary on right-click, a Spelling submenu (Automatic, each language in its own name, Off) — **remembered** for every text document — the language in the status bar, and Check Document |
+| `grind-sheet-gtk` | The word processor's wavy underline under misspelt words in text cells — ordinary, overflowing, wrapped and merged; not turned text — and a spelling section per word (up to three) leading the cell's right-click menu: suggestions, Ignore All, Add to Dictionary. View ▸ Check Spelling (Shift+F7, LibreOffice's key, and in the palette) turns it off and on, and View ▸ Spelling Language chooses (and so does *Spelling Language…* in the command palette, Ctrl+K, which is where the verb is found first); both are **remembered**. Check the Document lists the words |
+| `grind-tui` | Words underlined in red (not the one being typed), `]`/`[` to the next or previous with suggestions on the status line, `:fix N` or `:fix <word>`, `:spell ignore` and `:spell add`, `:spell auto\|en\|de\|fr\|es\|it\|pt\|pl\|off` — **remembered** for every text document — the language on the status bar, and `:lint`. **In a spreadsheet** the same: a misspelt word's letters underlined in red (only the text the core checked, and only what a narrow column shows), `]`/`[` across every sheet, `:fix N`/`:fix <word>`, `:spell ignore`/`add`, and `:spell auto\|<lang>\|off` — **remembered** for every spreadsheet |
+| `grind-win32` | A squiggle in Fluent's critical red, suggestions with Ignore All and Add to Dictionary at the head of the context menu (right click, or Shift+F10 with the caret in the word), F7 for the next word with the same popup, View ▸ Spelling Language…, the language on the status bar, and Check Document. **In a spreadsheet** the same squiggle under a text cell's misspelt words (wrapped and merged cells too, stopping at an ellipsis), the same popup leading a cell's right-click menu, F7 across every sheet, and View ▸ Check Spelling (Shift+F7) — **remembered** for every spreadsheet, as View ▸ Spelling Language… is there; over a text document both are remembered for every text document |
 | `grind-mac` | The dotted red underline, drawn by the portable `text/paint.rs`; suggestions, *Ignore Spelling* and *Learn Spelling* leading the page's context menu over a misspelt word, and Edit ▸ Spelling ▸ *Check Document Now* (⌘;, the next word selected) and *Spelling Language…* (`ui_mac/src/spelling.rs`, 2026-10-07, type-checked only); the misspelt words in the sidebar's Problems. **In a spreadsheet** the same dotted red line under a text cell's misspelt words (from the portable `sheet/paint.rs`, tested), the same rows leading a cell's context menu, *Check Document Now* across every sheet, and Edit ▸ Spelling ▸ *Check Spelling While Typing* — AppKit's own name for the switch, **remembered** for every spreadsheet; type-checked only |
 | `grind-web` | Nothing yet |
 
@@ -149,7 +151,7 @@ turns off a dictionary without naming either application, and depends on neither
   style), which needs the text model to *read* both and the writer to carry them.
 - **Setting the document's language.** Read and never written: stating one means writing
   `office:styles`, which the text writer does not own (`doc/text-core.md`). The menu's choice is
-  the session's.
+  the person's remembered setting, never the document's.
 - **Regional spellings.** One dictionary per language: `en-GB` is checked as American English,
   `de-AT`/`de-CH` as German German (so Swiss `ss` for `ß` is underlined), `pt-BR` as European
   Portuguese (`facto`, `receção`) and Latin American Spanish as Spain's. Each is one more pair
@@ -161,9 +163,6 @@ turns off a dictionary without naming either application, and depends on neither
 - **The Mac does not guess again**, on the page or on the grid. Its menu is a view over `grind_spell::Setting` like every
   other shell's, but a new document's guess is not revisited as it grows (`grind_spell::reguess`,
   which the terminal and Windows call after each edit), and the language is not on a status line.
-- **The text windows do not remember.** `grind_spell::preference` keeps a setting per kind of
-  document and the spreadsheet windows read and write theirs; the word processor's Spelling menus
-  are still the session's, and turning them to the remembered setting is a line in each.
 - **The browser.** Twelve megabytes the page should fetch on first use, one language at a time, rather than carry, the way
   `grind-print`'s fonts are fetched.
 - **A personal list in the projection or the document.** Deliberately not (decision 5).

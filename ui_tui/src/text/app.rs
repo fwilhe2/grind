@@ -337,6 +337,9 @@ pub struct App {
     /// where a pane starts until [`App::spelling`] attaches one, so a test's frame is the
     /// document's alone.
     spelling: grind_spell::Setting,
+    /// Whether a `:spell` choice is written to the person's remembered setting — on for a pane opened
+    /// on a file (`spelling()`), off in a test.
+    remember_spelling: bool,
     checked: Option<grind_spell::Choice>,
     speller: Option<Arc<grind_spell::Speller>>,
     /// [`RedrawFlag::edits`] as of the last time the language was reconsidered.
@@ -382,15 +385,28 @@ impl App {
             quit: false,
             switch: None,
             spelling: grind_spell::Setting::Automatic,
+            remember_spelling: false,
             checked: None,
             speller: None,
             spelling_seen: 0,
         }
     }
 
-    /// Start checking spelling, in the document's own language — what a pane opened on a file
-    /// does, and the GTK window too.
+    /// Start checking spelling as the person last said text documents should be checked — the
+    /// remembered setting, so `:spell de` in one session is German in the next — and remember
+    /// what they choose from here on. What a pane opened on a file does.
     pub fn spelling(mut self) -> Self {
+        self.spelling = grind_spell::preference::load(grind_core::DocumentKind::Text);
+        self.remember_spelling = true;
+        self.check_spelling();
+        self
+    }
+
+    /// Check spelling under `setting`, remembering nothing: what a test wants, since a test that
+    /// remembered would write the developer's own configuration.
+    #[cfg(test)]
+    fn spelling_in(mut self, setting: grind_spell::Setting) -> Self {
+        self.spelling = setting;
         self.check_spelling();
         self
     }
@@ -1574,9 +1590,18 @@ impl App {
                 Some(setting) => {
                     self.spelling = setting;
                     self.status.clear();
+                    let kept = self
+                        .remember_spelling
+                        .then(|| {
+                            grind_spell::preference::save(grind_core::DocumentKind::Text, setting)
+                        })
+                        .transpose();
                     self.check_spelling();
                     if self.status.is_empty() {
                         self.cmd_spell("");
+                    }
+                    if let Err(why) = kept {
+                        self.status = format!("{} \u{2014} not remembered: {why}", self.status);
                     }
                 }
                 None => {
@@ -3711,8 +3736,8 @@ mod tests {
     /// suggestions on the status line, `:fix 1` takes the first, and `:spell off` stops it all.
     #[test]
     fn a_misspelt_word_is_underlined_stepped_to_and_fixed() {
-        let mut app = app(&["We recieve the letter.", "All good here."]).spelling();
-        app.run_command("spell en");
+        let mut app = app(&["We recieve the letter.", "All good here."])
+            .spelling_in(grind_spell::Setting::In(grind_spell::Language::English));
         let underlined = |app: &mut App, col: u16| {
             let mut terminal = Terminal::new(TestBackend::new(50, 6)).unwrap();
             terminal.draw(|frame| app.draw(frame)).unwrap();
@@ -3754,8 +3779,8 @@ mod tests {
 
     #[test]
     fn the_word_being_typed_is_not_underlined_and_ignore_accepts_one() {
-        let mut app = app(&[""]).spelling();
-        app.run_command("spell en");
+        let mut app =
+            app(&[""]).spelling_in(grind_spell::Setting::In(grind_spell::Language::English));
         press(&mut app, KeyCode::Char('i'));
         type_str(&mut app, "Ths");
         let underlined = |app: &mut App| {

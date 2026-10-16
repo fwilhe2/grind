@@ -55,11 +55,11 @@ impl TextPane {
             Spell::Next => self.next_misspelling(mtm),
             Spell::Language => self.choose_language(mtm),
             Spell::Toggle => {
-                self.spelling.set(match self.spelling.get() {
+                let next = match self.spelling.get() {
                     grind_spell::Setting::Off => grind_spell::Setting::Automatic,
                     _ => grind_spell::Setting::Off,
-                });
-                self.check_spelling();
+                };
+                self.set_spelling(next, mtm);
                 self.act_on(|_, _, _| Ok(()));
             }
             Spell::Ignore | Spell::Learn => {
@@ -136,8 +136,20 @@ impl TextPane {
         });
     }
 
-    /// *Spelling Language…* — Automatic, a dictionary by name, or Off. The session's choice: the
-    /// document's own language is read and never written (`doc/spelling.md`).
+    /// Choose a setting, remember it for every text document, and apply it.
+    fn set_spelling(&self, setting: grind_spell::Setting, mtm: MainThreadMarker) {
+        self.spelling.set(setting);
+        if let Err(why) = grind_spell::preference::save(grind_core::DocumentKind::Text, setting) {
+            prompt::tell(mtm, "The setting was not remembered.", &why.to_string());
+        }
+        self.check_spelling();
+        if let Err(why) = setting.apply(&self.app) {
+            prompt::tell(mtm, "This document is not checked.", &why.to_string());
+        }
+    }
+
+    /// *Spelling Language…* — Automatic, a dictionary by name, or Off. Remembered for every text
+    /// document; the document's own language is read and never written (`doc/spelling.md`).
     fn choose_language(&self, mtm: MainThreadMarker) {
         let settings = grind_spell::Setting::ALL;
         let items: Vec<String> = settings.iter().map(|s| s.label().to_owned()).collect();
@@ -148,18 +160,14 @@ impl TextPane {
         let Some(picked) = prompt::pick(
             mtm,
             "Spelling Language",
-            "Which dictionary checks this document, for as long as it is open.",
+            "Which dictionary checks text documents. Remembered for every one.",
             "Choose",
             &items,
             current,
         ) else {
             return;
         };
-        self.spelling.set(settings[picked]);
-        self.check_spelling();
-        if let Err(why) = self.spelling.get().apply(&self.app) {
-            prompt::tell(mtm, "This document is not checked.", &why.to_string());
-        }
+        self.set_spelling(settings[picked], mtm);
         self.act_on(|_, _, _| Ok(()));
     }
 }

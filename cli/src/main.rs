@@ -46,15 +46,32 @@ fn open_text(file: &Path) -> Result<TextApp, String> {
     Ok(app)
 }
 
-/// [`open_text`], with spelling checked in the document's own language when this build has the
+/// [`open_text`], with spelling checked the way the person has said text documents should be
+/// (`grind text spelling`) — by default in the document's own language, when this build has the
 /// dictionaries — what `lint` opens with, so its `misspelt` rule has something to ask. A
 /// document in a language there is no dictionary for is linted without spelling, silently:
 /// `grind text spell` is where that is worth saying.
 fn open_text_checked(file: &Path) -> Result<TextApp, String> {
     let app = open_text(file)?;
     #[cfg(feature = "spell")]
-    let _ = grind_spell::attach(&app, None);
+    let _ = grind_spell::preference::load(DocumentKind::Text).apply(&app);
     Ok(app)
+}
+
+/// `grind <app> spelling [setting]`: print, or set and then print, the remembered spelling setting
+/// for one kind of document — the same file the windows read and write.
+#[cfg(feature = "spell")]
+fn spelling_setting(kind: DocumentKind, setting: &Option<String>) -> Result<Report, String> {
+    use grind_spell::{Setting, preference};
+    if let Some(tag) = setting {
+        let chosen = Setting::from_tag(tag).ok_or_else(|| {
+            format!("{tag:?} is none of auto, off, or a language: en, de, fr, es, it, pt, pl")
+        })?;
+        preference::save(kind, chosen).map_err(|e| e.to_string())?;
+    }
+    let now = preference::load(kind);
+    let place = preference::path().map_or_else(String::new, |p| p.display().to_string());
+    text_lines(vec![format!("{}\t{place}", now.tag())])
 }
 
 /// `--language`: a tag naming one of the dictionaries this build carries.
@@ -902,6 +919,8 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
         }
 
         #[cfg(feature = "spell")]
+        TextCommand::Spelling { setting } => spelling_setting(DocumentKind::Text, setting),
+        #[cfg(feature = "spell")]
         TextCommand::Spell {
             file,
             range,
@@ -915,7 +934,16 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
             }
             let file = file.as_deref().expect("clap requires a file without --add");
             let app = open_text(file)?;
-            let named = language.as_deref().map(spell_language).transpose()?;
+            // Without --language, the language the person remembered for text documents, if
+            // they chose one; `off` is for the windows and `lint`, and an explicit `spell`
+            // is asked for, so it still checks.
+            let named = match language.as_deref() {
+                Some(tag) => Some(spell_language(tag)?),
+                None => match grind_spell::preference::load(DocumentKind::Text) {
+                    grind_spell::Setting::In(language) => Some(language),
+                    _ => None,
+                },
+            };
             let (choice, _) = grind_spell::attach(&app, named).map_err(|e| e.to_string())?;
             eprintln!(
                 "grind: checking in {} ({})",
@@ -1927,6 +1955,19 @@ enum TextCommand {
         /// Add a word to your own list instead of checking anything
         #[arg(long, value_name = "WORD", conflicts_with_all = ["range", "language", "suggest"])]
         add: Option<String>,
+    },
+
+    /// Print or set whether text documents are spell-checked, and in what
+    ///
+    /// `off` turns spelling off in every text window and for `grind lint`, and keeps it off
+    /// until `auto` (the default: the document's own language, else a guess) or a language
+    /// turns it back on. Remembered in $XDG_CONFIG_HOME/grind/spelling — yours, not any
+    /// document's — beside the spreadsheets' own setting (`grind sheet spelling`). With no
+    /// setting, prints the remembered one.
+    #[cfg(feature = "spell")]
+    Spelling {
+        /// auto, off, or a language: en, de, fr, es, it, pt or pl
+        setting: Option<String>,
     },
 
     /// Replace one misspelt word — what picking a suggestion does
@@ -3072,7 +3113,7 @@ fn lsp() -> ExitCode {
         }
         fn attach_spelling_text(&self, app: &TextApp) {
             #[cfg(feature = "spell")]
-            let _ = grind_spell::attach(app, None);
+            let _ = grind_spell::preference::load(DocumentKind::Text).apply(app);
             #[cfg(not(feature = "spell"))]
             let _ = app;
         }
@@ -4396,7 +4437,13 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             }
             let file = file.as_deref().expect("clap requires a file without --add");
             let app = load(file, cli)?;
-            let named = language.as_deref().map(spell_language).transpose()?;
+            let named = match language.as_deref() {
+                Some(tag) => Some(spell_language(tag)?),
+                None => match grind_spell::preference::load(DocumentKind::Spreadsheet) {
+                    grind_spell::Setting::In(language) => Some(language),
+                    _ => None,
+                },
+            };
             let (choice, _) = grind_spell::attach(&app, named).map_err(|e| e.to_string())?;
             eprintln!(
                 "grind: checking in {} ({})",
@@ -4465,21 +4512,7 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
         }
 
         #[cfg(feature = "spell")]
-        Command::Spelling { setting } => {
-            use grind_spell::{Setting, preference};
-            let kind = DocumentKind::Spreadsheet;
-            if let Some(tag) = setting {
-                let chosen = Setting::from_tag(tag).ok_or_else(|| {
-                    format!(
-                        "{tag:?} is none of auto, off, or a language: en, de, fr, es, it, pt, pl"
-                    )
-                })?;
-                preference::save(kind, chosen).map_err(|e| e.to_string())?;
-            }
-            let now = preference::load(kind);
-            let place = preference::path().map_or_else(String::new, |p| p.display().to_string());
-            text_lines(vec![format!("{}\t{place}", now.tag())])
-        }
+        Command::Spelling { setting } => spelling_setting(DocumentKind::Spreadsheet, setting),
 
         Command::Find {
             file,

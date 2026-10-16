@@ -354,7 +354,11 @@ impl Ui {
             loading: Cell::new(false),
             closing: Cell::new(false),
             markdown_twin: Cell::new(false),
-            spelling: Cell::new(grind_spell::Setting::Automatic),
+            // The person's own choice for text documents, remembered across windows and
+            // sessions (`grind_spell::preference`) — never the document's.
+            spelling: Cell::new(grind_spell::preference::load(
+                grind_core::DocumentKind::Text,
+            )),
             checked: Cell::new(None),
         });
         ui.wire(application);
@@ -503,7 +507,9 @@ impl Ui {
         let spelling = gio::SimpleAction::new_stateful(
             "spell-language",
             Some(glib::VariantTy::STRING),
-            &grind_spell::Setting::Automatic.tag().to_variant(),
+            &grind_spell::preference::load(grind_core::DocumentKind::Text)
+                .tag()
+                .to_variant(),
         );
         spelling.connect_activate(glib::clone!(
             #[strong(rename_to = ui)]
@@ -513,8 +519,13 @@ impl Ui {
                     return;
                 };
                 action.set_state(&target.to_variant());
-                ui.spelling
-                    .set(grind_spell::Setting::from_tag(&target).unwrap_or_default());
+                let setting = grind_spell::Setting::from_tag(&target).unwrap_or_default();
+                ui.spelling.set(setting);
+                if let Err(why) =
+                    grind_spell::preference::save(grind_core::DocumentKind::Text, setting)
+                {
+                    ui.toast(&format!("The setting was not remembered: {why}"));
+                }
                 ui.check_spelling();
                 ui.refresh();
             }

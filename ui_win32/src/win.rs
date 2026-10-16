@@ -971,6 +971,16 @@ struct Text {
 }
 
 impl Text {
+    /// Choose a spelling setting, remember it for every text document, and apply it.
+    fn set_spelling(&mut self, setting: grind_spell::Setting) {
+        self.spelling = setting;
+        self.say(None);
+        if let Err(why) = grind_spell::preference::save(DocumentKind::Text, setting) {
+            self.say(Some(notice::spelling_not_remembered(&why.to_string())));
+        }
+        self.check_spelling();
+    }
+
     /// Attach what [`Text::spelling`] says to the document — on open and whenever the choice
     /// changes. A document in a language with no dictionary says so on the notice bar rather
     /// than having every word underlined.
@@ -1459,7 +1469,8 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
         needle: String::new(),
         hover: None,
         pressed: None,
-        spelling: grind_spell::Setting::Automatic,
+        // Remembered for every text document, as the grid's is for every spreadsheet.
+        spelling: grind_spell::preference::load(DocumentKind::Text),
         checked: None,
         speller: None,
     };
@@ -6103,8 +6114,8 @@ fn text_next_misspelling(hwnd: HWND) {
 }
 
 /// View ▸ Spelling Language… — Automatic, a dictionary by name, or Off, in the listbox every
-/// other chooser here uses. The session's choice: the document's own language is read and never
-/// written (`doc/spelling.md`).
+/// other chooser here uses. Remembered for every text document; the document's own language is
+/// read and never written (`doc/spelling.md`).
 fn text_spelling_language(hwnd: HWND) {
     // SAFETY: one borrow, released before the dialog.
     let Some(current) = (unsafe { with_text(hwnd, |text| text.spelling) }) else {
@@ -6118,11 +6129,7 @@ fn text_spelling_language(hwnd: HWND) {
     };
     // SAFETY: a fresh borrow, taken after the dialog has closed.
     unsafe {
-        with_text(hwnd, |text| {
-            text.spelling = settings[choice];
-            text.say(None);
-            text.check_spelling();
-        });
+        with_text(hwnd, |text| text.set_spelling(settings[choice]));
     }
     text_refresh(hwnd);
 }
@@ -6467,12 +6474,11 @@ fn text_toggle_spelling(hwnd: HWND) {
     // SAFETY: one borrow; nothing inside dispatches.
     unsafe {
         with_text(hwnd, |text| {
-            text.spelling = match text.spelling {
+            let next = match text.spelling {
                 grind_spell::Setting::Off => grind_spell::Setting::Automatic,
                 _ => grind_spell::Setting::Off,
             };
-            text.say(None);
-            text.check_spelling();
+            text.set_spelling(next);
         });
     }
     build_menu(hwnd);

@@ -737,6 +737,43 @@ impl Ui {
         self.check_spelling(true);
     }
 
+    /// Spelling Language…: the same choice the View menu's submenu makes, as a dialog the
+    /// command palette can open — a palette row cannot carry the submenu's radio targets, and
+    /// the submenu sits two levels down in a popover, which is where nobody looks first.
+    fn spelling_language_dialog(self: &Rc<Self>) {
+        let settings = grind_spell::Setting::ALL;
+        let labels: Vec<&str> = settings.iter().map(|s| s.label()).collect();
+        let choices = gtk::DropDown::from_strings(&labels);
+        let current = self.spelling.get();
+        choices.set_selected(settings.iter().position(|s| *s == current).unwrap_or(0) as u32);
+        let dialog = adw::AlertDialog::new(
+            Some("Spelling Language"),
+            Some("Which dictionary checks spreadsheets. Remembered for every one."),
+        );
+        dialog.set_extra_child(Some(&choices));
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("choose", "Choose");
+        dialog.set_response_appearance("choose", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("choose"));
+        dialog.set_close_response("cancel");
+        dialog.choose(
+            &self.window,
+            gio::Cancellable::NONE,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |response| {
+                    if response != "choose" {
+                        return;
+                    }
+                    if let Some(setting) = settings.get(choices.selected() as usize) {
+                        ui.set_spelling(*setting);
+                    }
+                }
+            ),
+        );
+    }
+
     /// While the language is only a guess — a new document, or one stating none — guess again
     /// as it fills, so the first words typed into an empty sheet decide it rather than the
     /// desktop's language (`grind_spell::reguess`). Settled once the document has more words
@@ -2489,6 +2526,13 @@ fn actions() -> Vec<Verb> {
         verb("functions", &[], "Functions…", "Document", |ui| {
             ui.explore_functions()
         }),
+        verb(
+            "spelling-language",
+            &[],
+            "Spelling Language…",
+            "View",
+            |ui| ui.spelling_language_dialog(),
+        ),
         verb(
             "document-settings",
             &[],
