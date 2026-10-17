@@ -99,6 +99,36 @@ asks for one language (decision 4).
 6. **A correction is an edit in the core**: `App::correct(at, word, with)`, one undo step, the
    word's formatting kept, refused when the word is no longer where it was found.
 
+7. **No grammar checker** (decided 2026-10-17). [Harper](https://github.com/Automattic/harper)
+   (Automattic, Apache-2.0, pure Rust, English only) was the candidate, and it was measured
+   before it was turned down — `harper-core 2.13.0`, default features off, a release build:
+
+   | | Measured |
+   |---|---|
+   | What it adds | real catches Hunspell cannot see: `an test`, `the the`, `could of`, `it's tail`, `alot`, `Their going`, `irregardless`; misses `went their`, `Me and him went` |
+   | Binary | **11 MB** stripped |
+   | Dependencies | **92 crates** new to `Cargo.lock`, among them an ML stack (`burn`, `ndarray`, through its tagger `harper-brill`), `rayon` and `html5ever`/`ammonia` |
+   | Load | about 0.65 s and 150 MB peak, where English Hunspell is 17 ms |
+   | Speed | about 20 µs a word once warm (a paragraph in about 1 ms, 10,000 words in 230 ms); suggestions for misspellings are slow, 1.75 s on a 270-character sample |
+   | Licence | Apache-2.0 throughout, all on `ALLOWED`; the provenance of its 55,000-word `dictionary.dict` is not stated in the crate |
+   | Releases | every few days — findings would move with each upgrade |
+
+   Three things decided it. **Its spelling is worse for us than ours**: it underlines `ODF` and
+   `OpenDocument` (decision 3's whole point) and knows nothing of the personal list, so its
+   `SpellCheck` rule would have to be switched off and `Lexicon` kept. **It cannot meet
+   decision 4**: a German paragraph drew seventeen findings, every word "misspelled" plus
+   `liegt` → `lie gt` and `und` → `ind`, so without a language per paragraph (the first gap
+   below) it could only run on a document whose first language is English. And **the cost is
+   out of proportion**: 11 MB and an ML framework in the browser bundle and every package,
+   for one language, plus a second underline and a span-wide `App::correct` in six clients.
+
+   The alternatives are worse fits: **LanguageTool** is the best checker and covers German,
+   but it is Java, about 200 MB and a server — reachable only over HTTP, which no build here
+   carries; **nlprule** (Rust, LanguageTool's rules for English, German and Spanish) has been
+   unmaintained since about 2021 and its rule data inherits LanguageTool's LGPL; **Vale**,
+   **write-good** and **proselint** are style linters, not grammar checkers, and Go or Python.
+   Revisit when a language per paragraph exists and an embeddable checker covers German too.
+
 ## The languages
 
 English and German first, because they were the author's; then the next five by the number of
