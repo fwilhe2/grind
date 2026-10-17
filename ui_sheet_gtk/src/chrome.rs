@@ -707,7 +707,9 @@ pub fn view_menu_model() -> gio::Menu {
 pub fn spelling_menu_model() -> gio::Menu {
     let menu = gio::Menu::new();
     for setting in grind_spell::Setting::ALL {
-        let item = gio::MenuItem::new(Some(setting.label()), None);
+        // `🇩🇪  Deutsch`: Pango draws the flag from the desktop's colour emoji font, and the
+        // name says the same thing for a desktop without one.
+        let item = gio::MenuItem::new(Some(&setting.row(true)), None);
         item.set_action_and_target_value(
             Some("win.spell-language"),
             Some(&setting.tag().to_variant()),
@@ -904,7 +906,12 @@ pub fn tab_menu_model() -> gio::Menu {
 /// costs a walk of the range. ponytail: the walk runs on the main thread, so a selection
 /// spanning a very large used extent stutters the drag; the plan's answer is a worker and a
 /// generation counter, which is the threading milestone's machinery rather than this one's.
-pub fn status_bar(grid: &Grid, app: &Arc<App>, badge: &gtk::Button) -> gtk::Box {
+pub fn status_bar(
+    grid: &Grid,
+    app: &Arc<App>,
+    badge: &gtk::Button,
+    picker: &gtk::MenuButton,
+) -> gtk::Box {
     // Right-aligned and dimmed: it is the far end of the bar the sheet tabs start
     // ([`bottom_bar`]), and it is a readout rather than something to press.
     let label = gtk::Label::builder()
@@ -965,6 +972,7 @@ pub fn status_bar(grid: &Grid, app: &Arc<App>, badge: &gtk::Button) -> gtk::Box 
     ));
     bar.append(&modes);
     bar.append(badge);
+    bar.append(picker);
 
     let pending: Rc<Cell<Option<glib::SourceId>>> = Rc::new(Cell::new(None));
     let app = app.clone();
@@ -1001,6 +1009,20 @@ pub fn number_badge() -> gtk::Button {
     badge.add_css_class("flat");
     badge.add_css_class("numeric");
     badge
+}
+
+/// The spelling language, on the status bar beside [`number_badge`]: the setting's flag
+/// (`grind_spell::Setting::chip`) as the button, and the Spelling Language menu under it — so the
+/// two questions a person typing into a cell has, *which decimal sign* and *which language*, are
+/// answered in one place. The window sets the label whenever the setting changes.
+pub fn spelling_picker() -> gtk::MenuButton {
+    let picker = gtk::MenuButton::builder()
+        .menu_model(&spelling_menu_model())
+        .direction(gtk::ArrowType::Up)
+        .always_show_arrow(false)
+        .build();
+    picker.add_css_class("flat");
+    picker
 }
 
 /// The window's one bottom bar: the sheet tabs at the start, the selection's arithmetic at the

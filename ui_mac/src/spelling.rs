@@ -152,7 +152,7 @@ impl TextPane {
     /// document; the document's own language is read and never written (`doc/spelling.md`).
     fn choose_language(&self, mtm: MainThreadMarker) {
         let settings = grind_spell::Setting::ALL;
-        let items: Vec<String> = settings.iter().map(|s| s.label().to_owned()).collect();
+        let items: Vec<String> = settings.iter().map(|s| s.row(true)).collect();
         let current = settings
             .iter()
             .position(|s| *s == self.spelling.get())
@@ -181,11 +181,12 @@ impl Pane {
             Ok(None) | Err(_) => None,
         };
         *self.spell_stop.borrow_mut() = None;
+        self.show_spelling_setting();
         self.repaint();
     }
 
     /// Choose a setting, remember it for every spreadsheet, and apply it.
-    fn set_spelling(&self, setting: grind_spell::Setting, mtm: MainThreadMarker) {
+    pub(crate) fn set_spelling(&self, setting: grind_spell::Setting, mtm: MainThreadMarker) {
         self.spelling.set(setting);
         if setting != grind_spell::Setting::Off {
             self.spelling_on.set(setting);
@@ -291,7 +292,7 @@ impl Pane {
     /// for every spreadsheet.
     fn choose_language(&self, mtm: MainThreadMarker) {
         let settings = grind_spell::Setting::ALL;
-        let items: Vec<String> = settings.iter().map(|s| s.label().to_owned()).collect();
+        let items: Vec<String> = settings.iter().map(|s| s.row(true)).collect();
         let current = settings
             .iter()
             .position(|s| *s == self.spelling.get())

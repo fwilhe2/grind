@@ -27,10 +27,10 @@ use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSBeep, NSColor, NSLayoutAttribute, NSTextAlignment, NSTextField,
-    NSTitlebarAccessoryViewController, NSView, NSWindow,
+    NSAutoresizingMaskOptions, NSBeep, NSColor, NSLayoutAttribute, NSPopUpButton, NSTextAlignment,
+    NSTextField, NSTitlebarAccessoryViewController, NSView, NSWindow,
 };
-use objc2_foundation::{NSObject, NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{NSArray, NSObject, NSPoint, NSRect, NSSize, NSString};
 
 use crate::grid_view::Pane;
 
@@ -40,6 +40,8 @@ use crate::grid_view::Pane;
 const BAR_H: f64 = 30.0;
 const NAME_W: f64 = 120.0;
 const STATUS_W: f64 = 400.0;
+/// The spelling-language picker's width — `🇵🇹  Português`, the longest row, and its arrows.
+const PICK_W: f64 = 150.0;
 
 define_class!(
     /// The name box's target: what Return in the box does. A control holds its target weakly, so
@@ -74,6 +76,35 @@ define_class!(
                     field.setStringValue(&NSString::from_str(&shown));
                 }
             }
+        }
+    }
+);
+
+define_class!(
+    /// The spelling picker's target: a row chosen is a setting chosen, remembered for every
+    /// spreadsheet exactly as Edit ▸ Spelling ▸ *Spelling Language…* remembers it.
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "GrindSpellingPicker"]
+    #[ivars = Weak<Pane>]
+    pub struct SpellingPicker;
+
+    impl SpellingPicker {
+        #[unsafe(method(spellingPicked:))]
+        fn picked(&self, sender: &AnyObject) {
+            let (Some(pane), Some(popup)) = (
+                self.ivars().upgrade(),
+                sender.downcast_ref::<NSPopUpButton>(),
+            ) else {
+                return;
+            };
+            let Some(setting) = usize::try_from(popup.indexOfSelectedItem())
+                .ok()
+                .and_then(|at| grind_spell::Setting::ALL.get(at))
+            else {
+                return;
+            };
+            pane.set_spelling(*setting, self.mtm());
         }
     }
 );
@@ -139,7 +170,7 @@ pub fn attach(window: &NSWindow, pane: &Rc<Pane>, mtm: MainThreadMarker) {
             msg_send![super(this), initWithFrame: rect(
                 NAME_W + 16.0,
                 4.0,
-                (width - NAME_W - STATUS_W - 32.0).max(0.0),
+                (width - NAME_W - STATUS_W - PICK_W - 40.0).max(0.0),
                 22.0,
             )]
         }
@@ -154,11 +185,43 @@ pub fn attach(window: &NSWindow, pane: &Rc<Pane>, mtm: MainThreadMarker) {
     bar.addSubview(&formula);
 
     let status = NSTextField::labelWithString(&NSString::from_str(""), mtm);
-    status.setFrame(rect(width - STATUS_W - 8.0, 7.0, STATUS_W, 16.0));
+    status.setFrame(rect(width - STATUS_W - PICK_W - 16.0, 7.0, STATUS_W, 16.0));
     status.setAlignment(NSTextAlignment::Right);
     status.setTextColor(Some(&NSColor::secondaryLabelColor()));
     status.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinXMargin);
     bar.addSubview(&status);
+
+    // Beside the read-out and its number spelling, which language spelling is checked in:
+    // `🌐  All languages`, `🇩🇪  Deutsch`, `Off` — AppKit draws the flags from Apple Color Emoji.
+    let picker = NSPopUpButton::initWithFrame_pullsDown(
+        NSPopUpButton::alloc(mtm),
+        rect(width - PICK_W - 8.0, 3.0, PICK_W, 24.0),
+        false,
+    );
+    let rows: Vec<Retained<NSString>> = grind_spell::Setting::ALL
+        .iter()
+        .map(|setting| NSString::from_str(&setting.row(true)))
+        .collect();
+    picker.addItemsWithTitles(&NSArray::from_retained_slice(&rows));
+    picker.setBordered(false);
+    picker.setToolTip(Some(&NSString::from_str(
+        "Which language spelling is checked in",
+    )));
+    picker.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinXMargin);
+    let chooser: Retained<SpellingPicker> = {
+        let this = SpellingPicker::alloc(mtm).set_ivars(Rc::downgrade(pane));
+        // SAFETY: `init` is `NSObject`'s designated initialiser.
+        unsafe { msg_send![super(this), init] }
+    };
+    // SAFETY: the target answers the action's selector and outlives the control, for the name
+    // box's reason.
+    unsafe {
+        picker.setTarget(Some(&chooser));
+        picker.setAction(Some(sel!(spellingPicked:)));
+    }
+    bar.addSubview(&picker);
+    pane.set_spelling_picker(&picker);
+    pane.keep(chooser.into_super());
 
     let controller = NSTitlebarAccessoryViewController::new(mtm);
     controller.setView(&bar);

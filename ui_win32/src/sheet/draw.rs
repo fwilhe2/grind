@@ -312,6 +312,10 @@ mod windows_impl {
         /// edge inwards, so it is the *sheet's name* that is elided on a narrow window rather
         /// than the arithmetic somebody is watching.
         pub status_right: &'a str,
+        /// At the very end, past it: the spelling language in letters — `ALL`, `DE`, `Off` —
+        /// since GDI draws no colour glyph and Windows has no flag emoji to draw anyway
+        /// (`grind_spell::Setting::chip`). A click there chooses one.
+        pub status_picker: &'a str,
         /// What the name box shows — an address, or the name of the range if it has one.
         ///
         /// Drawn here rather than read out of the child `EDIT` control, and that is deliberate
@@ -1128,20 +1132,45 @@ mod windows_impl {
             // short of fitting and `DT_END_ELLIPSIS` replaces the whole of it with `…`. The
             // rendered frame said so before this comment did.
             let pad_px = pad.round() as i32;
+            // The spelling picker first, at the very end, in the ink a control has rather than
+            // the read-out's quieter one: it is the one thing on this side to press.
+            let picker_w = gdi::text_width(dc, frame.status_picker) + pad_px * 2 + 2;
+            let picker = (right - picker_w).max(left);
+            draw_text(
+                dc,
+                frame.status_picker,
+                picker,
+                top,
+                right,
+                bottom,
+                Align::Right,
+                theme.text,
+                pad,
+            );
             let width = gdi::text_width(dc, frame.status_right);
-            let split = (right - width - pad_px * 2 - 2).max(left);
+            let split = (picker - width - pad_px * 2 - 2).max(left);
             draw_text(
                 dc,
                 frame.status_right,
                 split,
                 top,
-                right,
+                picker,
                 bottom,
                 Align::Right,
                 theme.text_secondary,
                 pad,
             );
-            tabs = draw_tabs(dc, frame, rect, f64::from(split));
+            let mut laid = draw_tabs(dc, frame, rect, f64::from(split));
+            laid.push(crate::sheet::tabs::Tab {
+                target: crate::sheet::tabs::Target::Spelling,
+                rect: crate::sheet::geom::Rect {
+                    x: f64::from(picker),
+                    y: f64::from(top),
+                    w: f64::from(right - picker),
+                    h: f64::from(bottom - top),
+                },
+            });
+            tabs = laid;
         }
         tabs
     }
@@ -1211,6 +1240,8 @@ mod windows_impl {
                         pad,
                     );
                 }
+                // Laid out by the status bar's own painter, never by `tabs::layout`.
+                Target::Spelling => {}
                 Target::Add => draw_text(
                     dc,
                     "+",

@@ -41,6 +41,10 @@ pub enum Target {
     Sheet(usize),
     /// The `+` after the last tab: Add Sheet.
     Add,
+    /// The spelling language at the bar's far end (`grind_spell::Setting::chip`) — not a tab,
+    /// but a place on the same bar a click means something on, so it is hit-tested with them.
+    /// `layout` never makes one; the painter adds it where it drew it.
+    Spelling,
 }
 
 /// One tab, or the add button, where it was placed.

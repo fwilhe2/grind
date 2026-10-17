@@ -162,6 +162,30 @@ turns off a dictionary without naming either application, and depends on neither
 | `grind-mac` | The dotted red underline, drawn by the portable `text/paint.rs`; suggestions, *Ignore Spelling* and *Learn Spelling* leading the page's context menu over a misspelt word, and Edit ▸ Spelling ▸ *Check Document Now* (⌘;, the next word selected) and *Spelling Language…* (`ui_mac/src/spelling.rs`, 2026-10-07, type-checked only); the misspelt words in the sidebar's Problems. **In a spreadsheet** the same dotted red line under a text cell's misspelt words (from the portable `sheet/paint.rs`, tested), the same rows leading a cell's context menu, *Check Document Now* across every sheet, and Edit ▸ Spelling ▸ *Check Spelling While Typing* — AppKit's own name for the switch, **remembered** for every spreadsheet; type-checked only |
 | `grind-web` | **2026-10-16.** The same checker, with `grind-spell` linked **without** its bundled lists (`default-features = false`, +0.4 MB of module) and the dictionaries *fetched*: `ui_web/build.sh` puts them in `dictionaries/` beside the page, and the first time a document opens with spelling on `spelling.rs` fetches that one language's `.aff` and `.dic` and hands them to `Language::provide` — 40 to 300 ms of parsing, once a visit. A wavy red line under a misspelt word in the text pane (not under the word still being typed) and in a spreadsheet's text cells; the palette (Ctrl+K) offers a correction, *Ignore* and *Add to your dictionary* for the word at the caret, *Go to the next misspelling*, and the *Spelling:* rows — Automatic, each language, Off. The choice is **remembered** per kind of document in `localStorage` (`grind.spelling.text`/`.spreadsheet`), as is the personal list (`grind.spelling.words`). Gaps: no suggestions or Ignore on a spreadsheet's cell, and no guessing again as a document grows |
 
+### The picker on the status bar
+
+Since 2026-10-17 every spreadsheet client's status bar ends with two answers, beside each other:
+how the document spells a number (`1.234,5 · de-DE`) and which language spelling is checked in.
+The second is a **flag** — `grind_spell::Setting::chip`: 🌐 for all languages, the dictionary's
+own country for one (🇺🇸 🇩🇪 🇫🇷 🇪🇸 🇮🇹 🇵🇹 🇵🇱), `Off` as a word — and pressing it chooses.
+
+A flag is usually the wrong picture for a language; here it is the right one, because each
+dictionary *is* one country's spelling (`pt-PT`, not Brazil's), and the flag says exactly that.
+It is drawn from the **platform's own emoji font** wherever there is one that has flags: the
+GNOME window (Pango, Noto Color Emoji), the Mac (Apple Color Emoji, an `NSPopUpButton` in the
+titlebar accessory) and the browser off Windows. Where there is not, the chip is the two-letter
+code (`Setting::code`: `ALL`, `DE`) **on purpose** rather than by accident:
+
+- **Windows ships no flag glyphs** — Segoe UI Emoji draws the two letters for every flag, in
+  every browser on Windows too, so `ui_web` asks the user agent and shows the letters there;
+- **GDI draws no colour glyph at all**, so `grind-win32` would get boxes even if the font had
+  flags — it draws `ALL`/`DE` at the bar's end, and a click there opens View ▸ Spelling Language…;
+- **a terminal cannot be trusted with a flag's width** (one cell or two, by terminal), which
+  would misalign the bar — `grind-tui` shows the letters, and `:spell` is its picker.
+
+The menus beside the pickers carry the flag too (`Setting::row`: `🇩🇪  Deutsch`). The word
+processor's windows keep the language's name in their status line, and have no flag picker yet.
+
 ## The gaps, named
 
 - **A language per paragraph or run.** Every language is accepted everywhere now, which answers

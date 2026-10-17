@@ -228,6 +228,8 @@ struct Chrome {
     sheet_add: HtmlButtonElement,
     /// The status bar's number spelling — `1.234,5 · de-DE` — on a spreadsheet only.
     numbers: HtmlButtonElement,
+    /// Beside it, the spelling language as a flag (`spelling::chip`), for either document.
+    pub(crate) spelling_picker: HtmlButtonElement,
     name: HtmlElement,
     save: HtmlButtonElement,
     /// The separator between the file verbs and the history ones, which goes with them.
@@ -279,6 +281,7 @@ impl Chrome {
             tabs: element(document, "tabs")?,
             sheet_add: element(document, "sheet-add")?,
             numbers: element(document, "numbers")?,
+            spelling_picker: element(document, "spelling-picker")?,
             name: element(document, "name")?,
             save: element(document, "save")?,
             verb_rule: element(document, "verb-rule")?,
@@ -455,6 +458,8 @@ impl Shell {
         self.dom.tabs.set_hidden(!sheet);
         self.dom.sheet_add.set_hidden(!sheet);
         self.dom.numbers.set_hidden(!sheet);
+        self.dom.spelling_picker.set_hidden(welcome);
+        self.show_spelling_chip();
         self.dom.sheet_tools.set_hidden(!sheet);
         self.dom.text_tools.set_hidden(sheet || welcome);
         self.dom.tools.set_hidden(welcome);
@@ -522,6 +527,15 @@ impl Shell {
         self.swatches.close();
         self.sheet.close_filter_menu();
         if let Err(error) = self.palette.open(self.entries("")) {
+            web_sys::console::error_1(&error);
+        }
+    }
+
+    /// The palette with `query` typed into it, and the entries for it.
+    pub(crate) fn open_palette_with(&self, query: &str) {
+        self.swatches.close();
+        self.sheet.close_filter_menu();
+        if let Err(error) = self.palette.open_with(query, self.entries(query)) {
             web_sys::console::error_1(&error);
         }
     }
@@ -1571,6 +1585,8 @@ fn wire_toolbar(shell: &Rc<Shell>) -> Result<(), JsValue> {
         ("recalc", "sheet.recalc", false),
         ("sheet-add", "sheet.add", false),
         ("numbers", "doc.locale", false),
+        // Keeps the focus: it belongs in the palette the flag opens.
+        ("spelling-picker", "spell.choose", true),
         ("s-bold", "style.bold", false),
         ("s-italic", "style.italic", false),
         ("s-underline", "style.underline", false),

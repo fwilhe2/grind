@@ -36,8 +36,8 @@ use objc2_app_kit::{
     NSAccessibilityPostNotificationWithUserInfo, NSAutoresizingMaskOptions, NSBeep, NSColor,
     NSColorPanel, NSColorSpace, NSControlStateValueOff, NSControlStateValueOn, NSCursor,
     NSCursorFrameResizeDirections, NSCursorFrameResizePosition, NSEvent, NSEventGestureAxis,
-    NSEventModifierFlags, NSFontManager, NSGraphicsContext, NSMenu, NSMenuItem, NSScrollView,
-    NSTextField, NSView,
+    NSEventModifierFlags, NSFontManager, NSGraphicsContext, NSMenu, NSMenuItem, NSPopUpButton,
+    NSScrollView, NSTextField, NSView,
 };
 use objc2_core_graphics::CGContext;
 use objc2_foundation::{
@@ -83,6 +83,9 @@ pub struct Pane {
     kept: RefCell<Vec<Retained<NSObject>>>,
     /// The name box, once the window has one — what Go To puts the keyboard in.
     name_box: RefCell<Option<Weak<NSTextField>>>,
+    /// The titlebar's spelling-language picker (`accessory.rs`), kept so a choice made in the
+    /// Edit menu shows in it too.
+    spelling_picker: RefCell<Option<Weak<NSPopUpButton>>>,
     /// The two bands, which change size with the sheet.
     bands: RefCell<Option<(Weak<ColumnHeader>, Weak<RowHeader>)>>,
     /// The cell being edited, if one is (`editor.rs`).
@@ -151,6 +154,7 @@ impl Pane {
             listeners: RefCell::new(Vec::new()),
             kept: RefCell::new(Vec::new()),
             name_box: RefCell::new(None),
+            spelling_picker: RefCell::new(None),
             bands: RefCell::new(None),
             edit: RefCell::new(None),
             banner: RefCell::new(None),
@@ -548,6 +552,23 @@ impl Pane {
     /// Remember the window's name box, for Go To.
     pub fn set_name_box(&self, field: &Retained<NSTextField>) {
         *self.name_box.borrow_mut() = Some(Weak::from_retained(field));
+    }
+
+    pub fn set_spelling_picker(&self, picker: &Retained<NSPopUpButton>) {
+        *self.spelling_picker.borrow_mut() = Some(Weak::from_retained(picker));
+        self.show_spelling_setting();
+    }
+
+    /// Put the spelling setting on the titlebar's picker, whichever way it was chosen.
+    pub(crate) fn show_spelling_setting(&self) {
+        let picker = self.spelling_picker.borrow().as_ref().and_then(Weak::load);
+        if let Some(picker) = picker {
+            let at = grind_spell::Setting::ALL
+                .iter()
+                .position(|s| *s == self.spelling.get())
+                .unwrap_or(0);
+            picker.selectItemAtIndex(at as isize);
+        }
     }
 
     /// Go To: the keyboard into the name box, whose text a field selects as it takes focus, so

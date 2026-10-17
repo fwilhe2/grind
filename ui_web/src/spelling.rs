@@ -134,6 +134,9 @@ pub(crate) fn spawn(kind: Option<DocumentKind>, announce: bool) {
 impl Shell {
     /// A `spell.*` command: choosing a language, or acting on the word at the caret.
     pub(crate) fn run_spelling(self: &Rc<Self>, id: &str) {
+        if id == "spell.choose" {
+            return self.open_palette_with("Spelling: ");
+        }
         if let Some(setting) = setting_of(id) {
             let Some(kind) = self.mode.get().kind() else {
                 return;
@@ -227,8 +230,29 @@ impl Shell {
             }
             break;
         }
+        self.show_spelling_chip();
         request_repaint(&self.pending);
     }
+
+    /// Put the remembered setting for the document showing on the status bar's flag.
+    pub(crate) fn show_spelling_chip(&self) {
+        let Some(kind) = self.mode.get().kind() else {
+            return;
+        };
+        let setting = load(kind);
+        let picker = &self.dom.spelling_picker;
+        picker.set_text_content(Some(setting.chip(draws_flags())));
+        picker.set_title(&format!("Spelling: {} — click to choose", setting.label()));
+    }
+}
+
+/// Whether this browser draws a flag emoji as a flag. Windows ships no flag glyphs — every
+/// browser on it draws the two letters (`DE`) instead — so there the chip says `DE` on purpose
+/// rather than by accident; everywhere else the platform's own emoji font draws the flag.
+fn draws_flags() -> bool {
+    web_sys::window()
+        .and_then(|window| window.navigator().user_agent().ok())
+        .is_none_or(|agent| !agent.contains("Windows"))
 }
 
 #[cfg(test)]

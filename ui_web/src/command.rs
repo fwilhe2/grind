@@ -78,6 +78,8 @@ pub const SHEET: &[Command] = &[
     cmd("doc.undo", "Undo", "Document", "Ctrl+Z", false),
     cmd("doc.redo", "Redo", "Document", "Ctrl+Shift+Z", false),
     // --- spelling (`doc/spelling.md`): a language for this kind of document, remembered ---
+    // The status bar's flag runs the first: the palette, opened on the rows after it.
+    cmd("spell.choose", "Spelling language…", "Spelling", "", false),
     cmd(
         "spell.auto",
         "Spelling: all languages",
@@ -474,6 +476,8 @@ pub const TEXT: &[Command] = &[
     cmd("doc.undo", "Undo", "Document", "Ctrl+Z", false),
     cmd("doc.redo", "Redo", "Document", "Ctrl+Shift+Z", false),
     // --- spelling (`doc/spelling.md`): a language for this kind of document, remembered ---
+    // The status bar's flag runs the first: the palette, opened on the rows after it.
+    cmd("spell.choose", "Spelling language…", "Spelling", "", false),
     cmd(
         "spell.auto",
         "Spelling: all languages",

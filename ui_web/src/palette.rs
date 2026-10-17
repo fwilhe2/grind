@@ -60,6 +60,15 @@ impl Palette {
         self.input.focus()
     }
 
+    /// Open it with `query` already typed — the status bar's spelling flag opens it on the
+    /// spelling rows. The caller supplies the entries for that query.
+    pub fn open_with(&self, query: &str, entries: Vec<Entry>) -> Result<(), JsValue> {
+        self.input.set_value(query);
+        self.root.set_hidden(false);
+        self.show(entries)?;
+        self.input.focus()
+    }
+
     pub fn close(&self) {
         self.root.set_hidden(true);
         self.shown.borrow_mut().clear();

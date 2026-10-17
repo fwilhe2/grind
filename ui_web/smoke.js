@@ -385,6 +385,14 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   // The status bar says how this document spells a number, and an entry in the other spelling is
   // read anyway and said (`sheet/src/reading.rs`). Both steps are undone, so the cell is as it was.
   check("the status bar says how numbers are spelled", byId("numbers").textContent, "1,234.5");
+  // Beside it, the spelling language as a flag — 🌐 for all of them — which opens the choice.
+  check("and which language spelling is checked in", byId("spelling-picker").textContent, "\u{1F310}");
+  byId("spelling-picker").click();
+  await frame();
+  check("whose flag opens the choice", byId("palette-input").value, "Spelling: ");
+  check("of every language", paletteRows().some((row) => row.includes("Deutsch")), true);
+  palette("Escape");
+  await frame();
   const localePrompt = dom.window.prompt;
   dom.window.prompt = () => "de-DE";
   await command("Document locale");

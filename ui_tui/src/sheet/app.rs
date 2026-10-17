@@ -3334,10 +3334,13 @@ impl App {
                     // How this document spells a number, so which sign is the decimal one is
                     // never a guess (`grind_sheet::locale::badge`) — first to give way when the
                     // bar is short, since the arithmetic is what a selection is for.
+                    // Then the spelling language in letters (`ALL`, `DE`, `Off`): a terminal cannot
+                    // be trusted with a flag's width, and `:spell` is the picker.
                     Span::styled(
                         format!(
-                            "{}  \u{00b7}  ",
-                            grind_sheet::locale::badge(self.core.locale().as_ref())
+                            "{}  \u{00b7}  {}  \u{00b7}  ",
+                            grind_sheet::locale::badge(self.core.locale().as_ref()),
+                            self.spelling.chip(false)
                         ),
                         chrome::muted(),
                     ),
@@ -4863,7 +4866,10 @@ mod tests {
             "gives way at 80 columns: {status:?}"
         );
         let status = status_line(&mut app, 120, 8);
-        assert!(status.ends_with("1,234.5  \u{00b7}  A3"), "{status:?}");
+        assert!(
+            status.ends_with("1,234.5  \u{00b7}  ALL  \u{00b7}  A3"),
+            "{status:?}"
+        );
     }
 
     /// A German document adds up in German — the separator is the document's, the four-decimal

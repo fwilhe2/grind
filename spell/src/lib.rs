@@ -82,6 +82,37 @@ impl Language {
         }
     }
 
+    /// The flag of the country whose spelling the dictionary is — `🇩🇪` for `de-DE` — as the two
+    /// regional-indicator symbols an emoji font draws as one flag. A dictionary *is* one
+    /// country's spelling (`pt-PT`, not Brazil's), which is what makes a flag accurate here
+    /// rather than the usual mistake of a flag for a language. Where the platform has no flag
+    /// glyphs — Windows draws `DE` for them, GDI no colour glyph at all, a terminal disagrees
+    /// with itself about the width — a shell shows [`Language::code`] instead.
+    pub fn flag(self) -> &'static str {
+        match self {
+            Language::English => "\u{1F1FA}\u{1F1F8}",
+            Language::German => "\u{1F1E9}\u{1F1EA}",
+            Language::French => "\u{1F1EB}\u{1F1F7}",
+            Language::Spanish => "\u{1F1EA}\u{1F1F8}",
+            Language::Italian => "\u{1F1EE}\u{1F1F9}",
+            Language::Portuguese => "\u{1F1F5}\u{1F1F9}",
+            Language::Polish => "\u{1F1F5}\u{1F1F1}",
+        }
+    }
+
+    /// The language in two capitals — `DE` — where a flag cannot be drawn.
+    pub fn code(self) -> &'static str {
+        match self {
+            Language::English => "EN",
+            Language::German => "DE",
+            Language::French => "FR",
+            Language::Spanish => "ES",
+            Language::Italian => "IT",
+            Language::Portuguese => "PT",
+            Language::Polish => "PL",
+        }
+    }
+
     /// The dictionary for a BCP 47 tag or a POSIX locale name — `de`, `de-AT`, `de_DE.UTF-8`,
     /// `en-GB`. Matched on the language alone: one dictionary per language is what this build
     /// carries, so `en-GB` is checked as American English and `pt-BR` as European Portuguese, and
@@ -585,6 +616,42 @@ impl Setting {
         }
     }
 
+    /// Its picture, for a status-bar picker: `🌐` for every language, the dictionary's flag for
+    /// one ([`Language::flag`]), and `None` for off, which is a word rather than a picture.
+    pub fn flag(self) -> Option<&'static str> {
+        match self {
+            Setting::Automatic => Some("\u{1F310}"),
+            Setting::In(language) => Some(language.flag()),
+            Setting::Off => None,
+        }
+    }
+
+    /// The same in letters, where the platform cannot draw a flag: `ALL`, `DE`, `OFF`.
+    pub fn code(self) -> &'static str {
+        match self {
+            Setting::Automatic => "ALL",
+            Setting::In(language) => language.code(),
+            Setting::Off => "OFF",
+        }
+    }
+
+    /// What a picker's button shows: the flag with emoji, the code without — `Off` either way.
+    pub fn chip(self, emoji: bool) -> &'static str {
+        match (emoji, self.flag()) {
+            (true, Some(flag)) => flag,
+            (_, None) => "Off",
+            (false, Some(_)) => self.code(),
+        }
+    }
+
+    /// One row of a picker: `🇩🇪  Deutsch`, or `DE  Deutsch`, or plain `Off`.
+    pub fn row(self, emoji: bool) -> String {
+        match self {
+            Setting::Off => self.label().to_owned(),
+            _ => format!("{}  {}", self.chip(emoji), self.label()),
+        }
+    }
+
     /// What a menu calls it.
     pub fn label(self) -> &'static str {
         match self {
@@ -1042,6 +1109,24 @@ mod tests {
         assert!(!choice.every());
         let (choice, _) = Setting::Automatic.apply(&app).unwrap().unwrap();
         assert!(choice.every());
+    }
+
+    #[test]
+    fn each_flag_is_the_dictionarys_own_country() {
+        for language in Language::ALL {
+            let country = language.tag().split('-').nth(1).unwrap();
+            let flag: String = country
+                .chars()
+                .map(|c| char::from_u32(0x1F1E6 + (c as u32 - 'A' as u32)).unwrap())
+                .collect();
+            assert_eq!(language.flag(), flag, "{language:?}");
+            assert_eq!(language.code(), &language.tag()[..2].to_uppercase());
+        }
+        assert_eq!(Setting::Automatic.chip(true), "\u{1F310}");
+        assert_eq!(Setting::Automatic.chip(false), "ALL");
+        assert_eq!(Setting::Off.chip(true), "Off");
+        assert_eq!(Setting::In(Language::German).row(false), "DE  Deutsch");
+        assert_eq!(Setting::Off.row(true), "Off");
     }
 
     #[test]

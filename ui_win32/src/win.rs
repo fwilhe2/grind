@@ -3403,6 +3403,11 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
             sheet_add(hwnd);
             return;
         }
+        // The status bar's spelling language: View ▸ Spelling Language…'s own chooser.
+        Some(crate::sheet::tabs::Target::Spelling) => {
+            sheet_spelling_language(hwnd);
+            return;
+        }
         None => {}
     }
     // A chart floats over the cells, so it answers before any of them (`doc/chart-handling.md`):
@@ -7292,6 +7297,7 @@ fn draw_frame(dc: HDC, state: &Sheet) {
             sheets: &sheets,
             sheet: state.sheet,
             status_right: &status_right,
+            status_picker: state.spelling.chip(false),
             name: &name,
             formula: friendly.as_deref().unwrap_or(&formula),
             friendly: friendly.is_some(),

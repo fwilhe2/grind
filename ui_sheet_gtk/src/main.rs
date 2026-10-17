@@ -178,6 +178,9 @@ struct Ui {
     banner: adw::Banner,
     /// The status bar's number spelling — `1.234,5 · de-DE` — refreshed with the document.
     spelling_badge: gtk::Button,
+    /// Beside it, the spelling language: `🌐` for every language, a dictionary's flag for one,
+    /// `Off` — a menu over the same `spell-language` action as View ▸ Spelling Language.
+    spelling_picker: gtk::MenuButton,
     tabs: Rc<chrome::Tabs>,
     strip: Rc<formatting::Strip>,
     formula_bar: Rc<chrome::FormulaBar>,
@@ -288,6 +291,7 @@ impl Ui {
 
         let banner = adw::Banner::new("");
         let spelling_badge = chrome::number_badge();
+        let spelling_picker = chrome::spelling_picker();
         let add_sheet = gtk::Button::from_icon_name("list-add-symbolic");
         add_sheet.set_tooltip_text(Some("Add Sheet"));
         add_sheet.set_action_name(Some("win.sheet-add"));
@@ -311,7 +315,7 @@ impl Ui {
         view.add_top_bar(&banner);
         view.add_bottom_bar(&chrome::bottom_bar(
             &tabs.widget,
-            &chrome::status_bar(&grid, app, &spelling_badge),
+            &chrome::status_bar(&grid, app, &spelling_badge, &spelling_picker),
         ));
 
         let window = adw::ApplicationWindow::builder()
@@ -337,6 +341,7 @@ impl Ui {
             toasts,
             banner,
             spelling_badge,
+            spelling_picker,
             tabs,
             strip,
             formula_bar,
@@ -694,7 +699,13 @@ impl Ui {
     /// every word.
     fn check_spelling(self: &Rc<Self>, say: bool) {
         self.settled.set(false);
-        let outcome = self.spelling.get().apply(&self.app);
+        let setting = self.spelling.get();
+        self.spelling_picker.set_label(setting.chip(true));
+        self.spelling_picker.set_tooltip_text(Some(&format!(
+            "Spelling: {} — click to choose",
+            setting.label()
+        )));
+        let outcome = setting.apply(&self.app);
         let speller = match outcome {
             Ok(Some((choice, speller))) => {
                 self.checked.set(Some(choice));
