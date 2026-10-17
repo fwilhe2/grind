@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 //
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: MIT
 //
 // The household budget of `examples/sample-sheet.sh`, generated — doc/dsl.md layer 1, D7.
 //

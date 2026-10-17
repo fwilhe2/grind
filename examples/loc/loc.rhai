@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 //
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: MIT
 //
 // How big grind is, release by release — a spreadsheet that lives in git, built by a script.
 //

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 #
-# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 #
 # Build a text document that uses **every feature this build supports**, through the CLI and
 # nothing else. `examples/sample-sheet.sh` is this script's spreadsheet twin, and the rule is the

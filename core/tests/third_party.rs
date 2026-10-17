@@ -69,14 +69,27 @@ const NOT_SHIPPED: &[&str] = &[
     "Containerfile.distroless-cli",
 ];
 
-/// Our own files, shipped, under a licence other than the suite's **on purpose** — so they are
-/// not a third-party component and have no place on the list an About shows.
+/// Our own files under a licence other than the suite's **on purpose**, as path prefixes — so
+/// they are not a third-party component and have no place on the list an About shows.
+/// `REUSE.toml`'s opening comment is the rule that decides which licence each one has.
 ///
 /// `cli/templates/` is what `grind init` writes into somebody else's project (`doc/init.md`):
 /// a starter script, its data and editor settings. CC0 so that a project started from them owes
 /// nothing to this one's licence — a model somebody writes by editing the starter is theirs, not
-/// a derivative of AGPL code. `REUSE.toml` carries the same reasoning beside the annotation.
-const OURS_OTHERWISE: &[&str] = &["cli/templates/**"];
+/// a derivative of AGPL code. `examples/` and `.vscode/` are MIT for the same reason with a line
+/// of credit kept; the READMEs, CONTRIBUTING.md and CLAUDE.md are prose, so CC-BY-4.0, and the
+/// AppStream metainfo is CC0 because the format asks for a permissive `metadata_license`.
+const OURS_OTHERWISE: &[&str] = &[
+    "cli/templates/",
+    "examples/",
+    ".vscode/",
+    "README",
+    "CONTRIBUTING.md",
+    "CLAUDE.md",
+    "editors/vscode/README.md",
+    "ui_sheet_gtk/data/io.github.fwilhe2.Sheet.metainfo.xml",
+    "ui_text_gtk/data/io.github.fwilhe2.Text.metainfo.xml",
+];
 
 /// A component Cargo does not know about.
 struct Extra {
@@ -362,7 +375,7 @@ fn everything_reuse_says_is_not_ours_is_on_the_list_or_never_shipped() {
     let mut unaccounted = Vec::new();
     for (path, licence) in &claims {
         if licence == "AGPL-3.0-or-later"
-            || OURS_OTHERWISE.contains(&path.as_str())
+            || OURS_OTHERWISE.iter().any(|p| path.starts_with(p))
             || NOT_SHIPPED.iter().any(|p| path.starts_with(p))
             || claimed.contains(path.as_str())
         {

@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 //
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: MIT
 //
 // A month's job costing for a joinery workshop — doc/dsl.md layer 1, and the worked example
 // `doc/generator-guide.md` builds up to.

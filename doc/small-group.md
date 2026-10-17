@@ -2,7 +2,7 @@
 SPDX-FileCopyrightText: 2025 OASIS Open
 SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 
-SPDX-License-Identifier: LicenseRef-OASIS-IPR AND AGPL-3.0-or-later
+SPDX-License-Identifier: LicenseRef-OASIS-IPR AND CC-BY-4.0
 -->
 
 # OpenFormula Small Group — the phase 4 work list
@@ -243,4 +243,4 @@ The function list and section references on this page are extracted from
 terms permit derivative works that "assist in its implementation" provided the copyright
 notice is carried along — see `LICENSES/LicenseRef-OASIS-IPR.txt`, and
 `doc/OpenDocument-v1.4-os-part4-formula.html` for the document itself. The surrounding
-commentary is AGPL-3.0-or-later.
+commentary is CC-BY-4.0, as all of `doc/` is.

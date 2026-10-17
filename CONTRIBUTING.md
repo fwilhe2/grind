@@ -1,7 +1,7 @@
 <!--
 SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 
-SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-License-Identifier: CC-BY-4.0
 -->
 
 # Contributing
@@ -24,9 +24,22 @@ MPL-2.0 forever; a clean-room implementation is wholly ours to license.
 
 ## Licensing and REUSE
 
-The project is **AGPL-3.0-or-later** — network use counts as distribution (§13), so a
-modified version offered as a hosted service must publish its source. Contributions are
-accepted under the same terms.
+The **code** is **AGPL-3.0-or-later** — network use counts as distribution (§13), so a
+modified version offered as a hosted service must publish its source. Everything that is not a
+program is licensed for what it is used for:
+
+| What | Licence | Why |
+|---|---|---|
+| Code: every crate, the shells, build, CI and test code | AGPL-3.0-or-later | The product |
+| Prose: `doc/`, the READMEs, the user guide, this file, `CLAUDE.md` | CC-BY-4.0 | Prose is quoted, translated and excerpted; a program's copyleft fits none of that |
+| What is meant to be copied: `examples/`, `.vscode/` | MIT | A model somebody starts from an example owes a line of credit, not this licence |
+| Data and what `grind init` seeds: the test fixtures, `cli/templates/` | CC0-1.0 | A fixture goes into a bug report; a seeded `.gitignore` is the person's own from the start |
+| Anything vendored | Its upstream's | Not ours to restate |
+
+`REUSE.toml`'s opening comment is the same table, and `core/tests/third_party.rs`'s
+`OURS_OTHERWISE` lists the shipped files of ours that are not AGPL, so they are not mistaken
+for a third-party component. Contributions are accepted under the licence of the file they
+change.
 
 **[REUSE](https://reuse.software) compliance is enforced in CI.** Every file — source, docs,
 config, generated — carries machine-readable copyright and license information. Before you
@@ -36,11 +49,11 @@ push:
 reuse lint
 ```
 
-Adding a file means annotating it:
+Adding a file means annotating it, with the licence the table above gives it:
 
 ```sh
 reuse annotate --copyright "Your Name <you@example.com>" \
-               --license AGPL-3.0-or-later path/to/file
+               --license AGPL-3.0-or-later path/to/file.rs   # CC-BY-4.0 for a doc, MIT for an example
 ```
 
 Files that cannot carry a header (generated output such as `Cargo.lock`) are declared in

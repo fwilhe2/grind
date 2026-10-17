@@ -1,7 +1,7 @@
 <!--
 SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 
-SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-License-Identifier: CC-BY-4.0
 -->
 
 # Charts — clean-room notes and the scope line

@@ -7,7 +7,7 @@ when touching that area rather than expecting the full rationale here.
 <!--
 SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 
-SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-License-Identifier: CC-BY-4.0
 -->
 
 ## What this is
@@ -101,7 +101,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/conditional-format.md` | **Conditional formatting's one rule type — built.** The scope line (a formula true here draws a `CellStyle` over the cell's own; colour scales, data bars and icon sets stay out), the model (`sheet/src/rule.rs`: several ranges, one base cell, first true rule wins — LibreOffice's order, measured), and §3's questions, answered in `doc/ods-format.md` §3.6. The viewport evaluates rules, so no shell does; ODF is the standard `style:map`/`is-true-formula` spelling with the rule's style a common style; `.xlsx` rules arrive through `xlsx/src/rules.rs` (`doc/xlsx-format.md` §4.12). Editing rules from a window is the open row |
 | `doc/chart-handling.md` | **Taking hold of a chart — normative for `sheet/src/chart_frame.rs` and every shell's half.** A click selects; a selected chart wears the accent and eight handles for as long as it is selected; the body moves it, a handle resizes it, Shift keeps proportions on a corner; the release is one `reshape_chart`; Delete/Backspace delete, arrows nudge, Return changes, Escape lets go, any other key lets go *and* means what it means; the chart verbs mean the selected chart, else the last. The terminal's half is a list (`:charts`) since it has no pointer |
 | `doc/pdf-export.md` | **PDF export and print preview for the word processor — decided, being built.** Pagination as an *output*, derived and never stored (the editor stays continuous); krilla writes the PDF from glyphs our own layout placed, shaped by harfrust, in the optional `grind-print` crate; one display list feeds the PDF and the preview. **Paper is ISO 216**: A4 by default, never a US size by choice. Milestones P0–P9, loop G as pagination's differential |
-| `doc/spelling.md` | **Spelling — normative for `text/src/spell.rs`, `spell/` and every shell's underline.** Hunspell dictionaries (English, German) checked by `spellbook`, compiled into the optional `grind-spell` crate; the core decides what a word is and which are checked (`Lexicon`, injected like `Metrics`); **one language per document** — named, else stated (`fo:language` on `Standard`), else guessed from the words; a personal word list that is never written into a document. Multilingual documents are its first named gap |
+| `doc/spelling.md` | **Spelling — normative for `text/src/spell.rs`, `spell/` and every shell's underline.** Hunspell dictionaries (English, German) checked by `spellbook`, compiled into the optional `grind-spell` crate; the core decides what a word is and which are checked (`Lexicon`, injected like `Metrics`); **every language by default** — a word any of the seven dictionaries knows is right, the document's own language (named, else stated by `fo:language` on `Standard`, else guessed from the words) asked first and suggesting, and one language *alone* only when asked for; a personal word list that is never written into a document. A language per paragraph is its first named gap |
 | `doc/third-party.md` | **Every third-party component and its licence — normative for `core/src/third_party/` and every About.** One list in the core, *generated* by `core/tests/third_party.rs` from `cargo metadata` (every binary's normal-edge closure), each crate's own licence files and the fonts' own `name` tables; the test **rewrites the file and fails** when it is stale, refuses a licence not on its `ALLOWED` list, and holds every file REUSE says is not ours to the list or to `NOT_SHIPPED`. `grind licences` prints it |
 | `doc/not-doing.md` | The feature line as a product document |
 
@@ -924,11 +924,16 @@ before it can be answered.
 
 ## REUSE / licensing
 
-**AGPL-3.0-or-later**, REUSE compliance enforced in CI. New files need annotating:
+REUSE compliance enforced in CI. **The licence follows what a file is for**
+(`CONTRIBUTING.md`'s table, `REUSE.toml`'s opening comment): code **AGPL-3.0-or-later**;
+prose — `doc/`, the READMEs, the user guide, `CONTRIBUTING.md`, this file — **CC-BY-4.0**;
+what is meant to be copied — `examples/`, `.vscode/` — **MIT**; data and what `grind init`
+seeds — fixtures, `cli/templates/` — **CC0-1.0**. A shipped file of ours that is not AGPL goes
+on `OURS_OTHERWISE` in `core/tests/third_party.rs`. New files need annotating:
 
 ```sh
 reuse annotate --copyright "Florian Wilhelm <fwilhelm.wgt+github@gmail.com>" \
-               --license AGPL-3.0-or-later path/to/file
+               --license AGPL-3.0-or-later path/to/file   # CC-BY-4.0 / MIT / CC0-1.0 as above
 ```
 
 `Cargo.lock` is declared in `REUSE.toml` instead of annotated. **Never annotate

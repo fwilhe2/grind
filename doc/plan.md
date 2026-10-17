@@ -1,7 +1,7 @@
 <!--
 SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 
-SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-License-Identifier: CC-BY-4.0
 -->
 
 # Rust ODF spreadsheet core with native shells
@@ -101,6 +101,12 @@ exactly the asset someone embeds in a hosted service, and plain GPL asks nothing
 running modified code on a server is not distribution. AGPL §13 closes that — anyone
 offering a modified version over a network must publish their source. The planned wasm shell
 makes the hosted case concrete rather than theoretical.
+
+AGPL is the licence of the **code**. What is not a program is licensed for what it is used
+for (`CONTRIBUTING.md`, "Licensing and REUSE"): prose — this file and the rest of `doc/` — is
+CC-BY-4.0, the examples meant to be copied are MIT, and fixtures and the files `grind init`
+seeds are CC0-1.0. Copyleft on a paragraph or on somebody's starter script protects nothing
+§13 is for.
 
 Three consequences to plan around:
 
