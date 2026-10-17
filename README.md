@@ -48,7 +48,13 @@ The cli is a first class citizen, no matter if it is used by a human, in shell s
 
 # License
 
-Licensed under GNU Affero General Public License v3 or later. Full text in [LICENSES](./LICENSES).
+The application is licensed under GNU Affero General Public License v3 or later. Full text in [LICENSES](./LICENSES).
+
+Sample code is licensed under MIT.
+
+Docs are licensed under CC-BY-4.0.
+
+Each file carries a corresponding header.
 
 # Trademarks
 
