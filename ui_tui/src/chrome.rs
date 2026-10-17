@@ -247,8 +247,10 @@ pub fn bar(
     let sum = |spans: &[Span<'static>]| spans.iter().map(|span| span.width()).sum::<usize>();
     let mut left = left;
     let mut right = right;
-    if sum(&left) + sum(&right) > width {
-        right.clear();
+    // The right-hand end gives way a span at a time, first span first, so a caller puts what
+    // matters least at its front — the sheet's number spelling before the arithmetic.
+    while !right.is_empty() && sum(&left) + sum(&right) > width {
+        right.remove(0);
     }
     let mut used = sum(&left);
     if used > width {

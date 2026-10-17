@@ -67,7 +67,8 @@ fn a_document_locale_spells_every_unmarked_number() {
     assert_eq!(shown(&app, a1), "1234.5");
 }
 
-/// Typing in a German document reads German — and only well-formed German.
+/// Typing in a German document reads German first, and the other spelling where German cannot
+/// be meant (`sheet/src/reading.rs`).
 #[test]
 fn a_typed_number_is_read_the_documents_way() {
     let app = App::new();
@@ -79,19 +80,58 @@ fn a_typed_number_is_read_the_documents_way() {
         ("-0,25", CellValue::Number(-0.25)),
         ("1e3", CellValue::Number(1000.0)),
         ("007", CellValue::Number(7.0)),
-        // Not one and a half: `.` groups thousands here, and `1.5` is not a group of three.
-        ("1.5", CellValue::Text("1.5".into())),
+        // `.` groups thousands here, and `1.5` is not a group of three — so it can only be
+        // the other spelling's one and a half.
+        ("1.5", CellValue::Number(1.5)),
+        ("1,234.5", CellValue::Number(1234.5)),
+        // One separator and three digits: the document's way, a thousand.
+        ("1.234", CellValue::Number(1234.0)),
         ("1,2,3", CellValue::Text("1,2,3".into())),
+        ("17.10.2026", CellValue::Text("17.10.2026".into())),
+        ("'1.5", CellValue::Text("1.5".into())),
     ] {
         enter(&app, at, typed);
         assert_eq!(value(&app, at), want, "{typed:?}");
     }
-    // A document with no locale reads what it always read.
+    // A document with no locale spells numbers the ISO way, and reads the comma the same way.
     let plain = App::new();
     enter(&plain, at, "1,5");
-    assert_eq!(value(&plain, at), CellValue::Text("1,5".into()));
+    assert_eq!(value(&plain, at), CellValue::Number(1.5));
     enter(&plain, at, "1.5");
     assert_eq!(value(&plain, at), CellValue::Number(1.5));
+}
+
+/// An entry read the other way, or read one way where it could have meant a thousand times
+/// more, says so; one read the document's own way says nothing.
+#[test]
+fn an_unexpected_reading_comes_back_with_its_sentence() {
+    let app = App::new();
+    app.set_locale(german()).unwrap();
+    let at = Pos::new(0, 0);
+    let entered = |typed: &str| {
+        app.enter(0, at, typed, grind_sheet::RecalcMode::Document)
+            .unwrap()
+    };
+    assert_eq!(entered("1,5").reading, None);
+    assert_eq!(entered("'1.5").reading, None);
+    let other = entered("1.5");
+    assert_eq!(other.readings, 1);
+    assert_eq!(
+        other.reading.unwrap().sentence(app.locale().as_ref()),
+        "Read 1.5 as 1,5: this document writes decimals with a comma. Type '1.5 to keep it as \
+         text."
+    );
+    assert!(entered("1.234").reading.is_some());
+    // A paste counts every cell read that way, and keeps the first.
+    let rows = vec![vec!["1.5".to_owned(), "2,5".to_owned(), "3.25".to_owned()]];
+    let pasted = app
+        .enter_range(0, at, &rows, grind_sheet::RecalcMode::Document)
+        .unwrap();
+    assert_eq!(pasted.readings, 2);
+    assert!(matches!(
+        pasted.reading,
+        Some(grind_sheet::Reading::Other { ref typed, .. }) if typed == "1.5"
+    ));
 }
 
 /// What the formula bar puts in front of somebody is what typing it back reads as the same
@@ -141,8 +181,14 @@ fn a_text_that_looks_like_a_german_number_is_quoted_for_editing() {
     app.set_cell(0, at, "1.5").unwrap();
     assert_eq!(
         app.input_text(0, at).unwrap(),
-        "1.5",
-        "not a number here, so no quote"
+        "'1.5",
+        "typed back it would be read as one and a half"
+    );
+    app.set_cell(0, at, "1.2.3").unwrap();
+    assert_eq!(
+        app.input_text(0, at).unwrap(),
+        "1.2.3",
+        "a number in neither spelling, so no quote"
     );
 }
 

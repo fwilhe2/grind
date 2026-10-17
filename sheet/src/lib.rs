@@ -42,6 +42,7 @@ pub mod numfmt;
 pub mod odf;
 pub mod place;
 pub mod projection;
+pub mod reading;
 pub mod rule;
 pub mod spell;
 pub mod style;
@@ -67,6 +68,7 @@ pub use chart::{
 };
 pub use filter::Filter;
 pub use model::{CellValue, Checkbox, Document, Link, Pos, Sheet, Span};
+pub use reading::Reading;
 pub use spell::{Lexicon, Misspelling};
 pub use table_format::{TableOptions, TotalsFunction};
 
@@ -569,12 +571,14 @@ impl App {
             if state.doc.sheet(sheet).is_none() {
                 return Err(Error::NoSuchSheet(sheet));
             }
-            let (kind, edit) = typed(&state.doc, sheet, pos, input);
+            let (kind, edit, reading) = typed(&state.doc, sheet, pos, input);
             let recalc = commit(state, sheet, vec![edit], recalc)?;
             Ok(EnterOutcome {
                 kind,
                 cells: 1,
                 recalc,
+                readings: usize::from(reading.is_some()),
+                reading,
             })
         })
     }
@@ -607,12 +611,17 @@ impl App {
             }
             let mut kind = Entered::Cleared;
             let mut edits = Vec::new();
+            let (mut reading, mut readings) = (None, 0);
             for (r, row) in rows.iter().enumerate() {
                 for (c, input) in row.iter().enumerate() {
                     let pos = Pos::new(anchor.row + r as u32, anchor.col + c as u32);
-                    let (this, edit) = typed(&state.doc, sheet, pos, input);
+                    let (this, edit, read) = typed(&state.doc, sheet, pos, input);
                     if (r, c) == (0, 0) {
                         kind = this;
+                    }
+                    if read.is_some() {
+                        readings += 1;
+                        reading = reading.or(read);
                     }
                     edits.push(edit);
                 }
@@ -623,6 +632,8 @@ impl App {
                 kind,
                 cells,
                 recalc,
+                reading,
+                readings,
             })
         })
     }
@@ -712,8 +723,14 @@ impl App {
                     let pos = at(row, col);
                     // `csv::input` spells a number the ISO way, whatever the file or the
                     // document spell one, so it is read the ISO way too.
-                    let (this, edit) =
-                        typed_in(&state.doc, sheet, pos, &csv::input(field, options), None);
+                    let (this, edit, _) = typed_in(
+                        &state.doc,
+                        sheet,
+                        pos,
+                        &csv::input(field, options),
+                        None,
+                        true,
+                    );
                     if (row, col) == (0, 0) {
                         kind = this;
                     }
@@ -726,6 +743,8 @@ impl App {
                 kind,
                 cells,
                 recalc,
+                reading: None,
+                readings: 0,
             })
         })
     }
@@ -855,6 +874,8 @@ impl App {
                 kind,
                 cells,
                 recalc,
+                reading: None,
+                readings: 0,
             })
         })
     }
@@ -3039,7 +3060,7 @@ pub enum Entered {
 }
 
 /// What one [`App::enter`] or [`App::enter_range`] did.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct EnterOutcome {
     /// What the input became — the anchor cell's, for a range.
     pub kind: Entered,
@@ -3049,6 +3070,26 @@ pub struct EnterOutcome {
     /// and `changed` is what recalculating *would* have changed — the number a banner
     /// reports, and the reason it has to be offered rather than done.
     pub recalc: Option<Recalc>,
+    /// The first number read in a way worth telling the person about — the other decimal sign,
+    /// or a separator that could have meant a thousand ([`reading`]). A shell shows its
+    /// [`Reading::sentence`] once, after the entry.
+    pub reading: Option<Reading>,
+    /// How many cells were read that way, of which `reading` is the first.
+    pub readings: usize,
+}
+
+impl EnterOutcome {
+    /// What a shell says after the entry, in a document spelled the `locale` way — the reading's
+    /// sentence, and for a paste how many more cells were read alike — or `None` when every
+    /// number was read the document's own way.
+    pub fn note(&self, locale: Option<&locale::Locale>) -> Option<String> {
+        let sentence = self.reading.as_ref()?.sentence(locale);
+        Some(match self.readings {
+            0 | 1 => sentence,
+            2 => format!("{sentence} (One more cell was read the same way.)"),
+            n => format!("{sentence} ({} more cells were read the same way.)", n - 1),
+        })
+    }
 }
 
 /// What one cell displays: its own number format applied, or the general one (§5.2).
@@ -3209,19 +3250,26 @@ fn input_of(doc: &Document, sheet: usize, pos: Pos) -> Result<String> {
     })
 }
 
-fn typed(doc: &Document, sheet: usize, pos: Pos, input: &str) -> (Entered, Action) {
-    typed_in(doc, sheet, pos, input, doc.locale.as_ref())
+fn typed(
+    doc: &Document,
+    sheet: usize,
+    pos: Pos,
+    input: &str,
+) -> (Entered, Action, Option<Reading>) {
+    typed_in(doc, sheet, pos, input, doc.locale.as_ref(), false)
 }
 
 /// A typed number, read the way the document spells one — `reading` is its locale, or `None`
-/// for the ISO spelling ([`read_number`]).
+/// for the ISO spelling — and where that cannot be meant, the other way ([`reading::read`]);
+/// `strict` reads only the first, for a value nobody typed.
 fn typed_in(
     doc: &Document,
     sheet: usize,
     pos: Pos,
     input: &str,
     reading: Option<&locale::Locale>,
-) -> (Entered, Action) {
+    strict: bool,
+) -> (Entered, Action, Option<Reading>) {
     let cell = |kind, value| {
         (
             kind,
@@ -3231,6 +3279,7 @@ fn typed_in(
                 formula: None,
                 value,
             },
+            None,
         )
     };
     // The `'` rule is load-bearing rather than a convenience: without it the strings `=x`
@@ -3250,6 +3299,7 @@ fn typed_in(
                 formula: Some(input.to_owned()),
                 value,
             },
+            None,
         );
     }
     // A cell already known to hold a date or a time (by format or by `NumberKind`, see
@@ -3265,8 +3315,9 @@ fn typed_in(
             return cell(Entered::Number, CellValue::Number(n));
         }
     }
-    if let Some(n) = read_number(input, reading) {
-        return cell(Entered::Number, CellValue::Number(n));
+    if let Some((n, note)) = reading::read(input, reading, strict) {
+        let (kind, action, _) = cell(Entered::Number, CellValue::Number(n));
+        return (kind, action, note);
     }
     match input {
         "TRUE" | "true" => cell(Entered::Bool, CellValue::Bool(true)),
@@ -3274,30 +3325,6 @@ fn typed_in(
         "" => cell(Entered::Cleared, CellValue::Empty),
         _ => cell(Entered::Text, CellValue::Text(input.to_owned())),
     }
-}
-
-/// A number, as somebody typing into a document in `locale` spells one
-/// (`doc/ods-format.md` §5.2, "The document's own language").
-///
-/// With no locale this is the reading every typed number has always had, Rust's own — `1.5`,
-/// `-3`, `1e5`, `007`. With one, the document's separators decide: `1,5` and `1.234,5` are
-/// numbers in a German document, through the same position-checked reading a CSV field gets
-/// ([`csv::number`], so `1,2,3` is not a thousand and twenty-three). What that reading refuses
-/// is still a number if it has no separator in it that the locale could mean otherwise — `007`
-/// and `1e5` — and text if it has one: `1.5` in a German document is not one and a half, and
-/// guessing that it is would make `1.234` mean two different numbers in two cells.
-fn read_number(input: &str, locale: Option<&locale::Locale>) -> Option<f64> {
-    let Some(locale) = locale else {
-        return input.parse().ok();
-    };
-    let (decimal, group) = locale::separators(Some(locale));
-    if let Some(iso) = csv::number(input, decimal, group) {
-        return iso.parse().ok();
-    }
-    if input.contains(['.', ',', ' ', '\u{a0}', '\u{202f}']) {
-        return None;
-    }
-    input.parse().ok()
 }
 
 /// Apply an edit and, if asked, the recalculation behind it — as **one** undo entry.

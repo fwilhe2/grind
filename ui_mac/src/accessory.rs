@@ -35,10 +35,11 @@ use objc2_foundation::{NSObject, NSPoint, NSRect, NSSize, NSString};
 use crate::grid_view::Pane;
 
 /// The bar's height, the name box's width — room for `AA1048576` or a short name — and the
-/// status read-out's, room for a sum, a count and an average.
+/// status read-out's, room for a sum, a count and an average and then the number spelling
+/// (`1.234,5 · de-DE`).
 const BAR_H: f64 = 30.0;
 const NAME_W: f64 = 120.0;
-const STATUS_W: f64 = 300.0;
+const STATUS_W: f64 = 400.0;
 
 define_class!(
     /// The name box's target: what Return in the box does. A control holds its target weakly, so
@@ -180,7 +181,9 @@ pub fn attach(window: &NSWindow, pane: &Rc<Pane>, mtm: MainThreadMarker) {
         name.setStringValue(&NSString::from_str(&place::name_box(
             &pane.app, sheet, selection,
         )));
-        status.setStringValue(&NSString::from_str(&place::status(
+        // The arithmetic, then how the document spells a number — `1.234,5 · de-DE` — so
+        // which sign is the decimal one is never a guess.
+        status.setStringValue(&NSString::from_str(&place::status_and_numbers(
             &pane.app, sheet, selection,
         )));
     });

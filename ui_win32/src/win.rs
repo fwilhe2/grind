@@ -4003,6 +4003,10 @@ fn commit_edit(hwnd: HWND, dir: Option<Dir>) {
                 Ok(outcome) => {
                     if let Some(recalc) = outcome.recalc.filter(|recalc| recalc.spoiled > 0) {
                         state.say(Some(notice::recalc_skipped(recalc.spoiled)));
+                    } else if let Some(note) = outcome.note(state.app.locale().as_ref()) {
+                        // `1.5` in a German document was read as one and a half — the core's
+                        // sentence, as `error.to_string()` is below.
+                        state.say(Some(note));
                     }
                 }
                 Err(error) => state.say(Some(error.to_string())),
@@ -4370,6 +4374,8 @@ fn paste(hwnd: HWND) {
                 Ok(outcome) => {
                     if let Some(recalc) = outcome.recalc.filter(|r| r.spoiled > 0) {
                         state.say(Some(notice::recalc_skipped(recalc.spoiled)));
+                    } else if let Some(note) = outcome.note(state.app.locale().as_ref()) {
+                        state.say(Some(note));
                     }
                     let last = Pos::new(
                         start.row + rows.len().saturating_sub(1) as u32,
@@ -7202,7 +7208,7 @@ fn draw_frame(dc: HDC, state: &Sheet) {
                 .get_viewport(0, 0..0, 0..0)
                 .expect("an empty rectangle of the first sheet always reads")
         });
-    let status_right = status::selection_text(&state.app, state.sheet, state.selection);
+    let status_right = status::status_right(&state.app, state.sheet, state.selection);
     let sheets: Vec<String> = (0..state.app.sheet_count())
         .map(|index| state.app.sheet_name(index).unwrap_or_default())
         .collect();

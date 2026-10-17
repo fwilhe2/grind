@@ -30,6 +30,17 @@ pub fn status(app: &App, sheet: usize, selection: Selection) -> String {
     summary::status_text(app, sheet, start, end)
 }
 
+/// [`status`], then how the document spells a number (`locale::badge`, `1.234,5 · de-DE`) — the
+/// read-out a status bar with one string to fill shows, so which sign is the decimal one is
+/// always in view. A bar with room for two pieces shows the badge on its own instead.
+pub fn status_and_numbers(app: &App, sheet: usize, selection: Selection) -> String {
+    let badge = crate::locale::badge(app.locale().as_ref());
+    match status(app, sheet, selection) {
+        arithmetic if arithmetic.is_empty() => badge,
+        arithmetic => format!("{arithmetic}  \u{00b7}  {badge}"),
+    }
+}
+
 /// The defined name covering *exactly* this selection, if there is one.
 ///
 /// Exactly, not overlapping: a name is a handle on one range, and offering it for a selection

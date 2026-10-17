@@ -1042,7 +1042,10 @@ impl App {
         {
             Ok(outcome) => {
                 self.leave_visual();
-                self.status = format!("put {} cell(s)", outcome.cells);
+                self.status = match outcome.note(self.core.locale().as_ref()) {
+                    Some(note) => note,
+                    None => format!("put {} cell(s)", outcome.cells),
+                };
             }
             Err(e) => self.status = e.to_string(),
         }
@@ -1342,7 +1345,11 @@ impl App {
                         Some(r) => {
                             format!("{} cell(s) skipped recalculating — run :recalc", r.spoiled)
                         }
-                        None => String::new(),
+                        // `1.5` in a German document was read as one and a half: say so, `u`
+                        // takes it back and `'1.5` keeps it text.
+                        None => outcome
+                            .note(self.core.locale().as_ref())
+                            .unwrap_or_default(),
                     };
                 }
                 Err(e) => {
@@ -3323,10 +3330,19 @@ impl App {
                     mode.chip(),
                     Span::styled(format!(" {says}"), chrome::status_style()),
                 ],
-                vec![Span::styled(
-                    format!("{} ", self.selection_summary()),
-                    chrome::muted(),
-                )],
+                vec![
+                    // How this document spells a number, so which sign is the decimal one is
+                    // never a guess (`grind_sheet::locale::badge`) — first to give way when the
+                    // bar is short, since the arithmetic is what a selection is for.
+                    Span::styled(
+                        format!(
+                            "{}  \u{00b7}  ",
+                            grind_sheet::locale::badge(self.core.locale().as_ref())
+                        ),
+                        chrome::muted(),
+                    ),
+                    Span::styled(format!("{} ", self.selection_summary()), chrome::muted()),
+                ],
             ))
             .style(chrome::status_style()),
             status_area,
@@ -4836,11 +4852,18 @@ mod tests {
         assert!(status.contains("Count 3"), "{status:?}");
         assert!(status.contains("Avg 20"), "{status:?}");
 
-        // A single cell says only where it is: it has nothing to add up.
+        // A single cell says only where it is: it has nothing to add up — and, with the room,
+        // how this document spells a number.
         press(&mut app, KeyCode::Esc);
         let status = status_line(&mut app, 80, 8);
         assert!(status.ends_with("A3"), "{status:?}");
         assert!(!status.contains("Sum"), "{status:?}");
+        assert!(
+            !status.contains("1,234.5"),
+            "gives way at 80 columns: {status:?}"
+        );
+        let status = status_line(&mut app, 120, 8);
+        assert!(status.ends_with("1,234.5  \u{00b7}  A3"), "{status:?}");
     }
 
     /// A German document adds up in German — the separator is the document's, the four-decimal

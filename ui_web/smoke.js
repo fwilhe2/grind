@@ -382,6 +382,26 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   await frame();
   check("Escape leaves the cell alone", shown(), "42");
 
+  // The status bar says how this document spells a number, and an entry in the other spelling is
+  // read anyway and said (`sheet/src/reading.rs`). Both steps are undone, so the cell is as it was.
+  check("the status bar says how numbers are spelled", byId("numbers").textContent, "1,234.5");
+  const localePrompt = dom.window.prompt;
+  dom.window.prompt = () => "de-DE";
+  await command("Document locale");
+  await frame();
+  dom.window.prompt = localePrompt;
+  check("and follows the document's locale", byId("numbers").textContent, "1.234,5 \u00b7 de-DE");
+  type("2.5");
+  press("Enter");
+  await frame();
+  check("the other decimal sign is read, and said",
+    byId("message").textContent.startsWith("Read 2.5 as 2,5"), true);
+  press("ArrowUp");
+  await command("Undo");
+  await command("Undo");
+  await frame();
+  check("and both come back off", [shown(), byId("numbers").textContent], ["42", "1,234.5"]);
+
   type("=SU");
   await frame();
   check("the assist band offers a completion for a prefix", assistText().includes("SUM"), true);
@@ -1001,9 +1021,9 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   await settle();
   check("off underlines nothing", wrong(), []);
   check("and is remembered", dom.window.localStorage.getItem("grind.spelling.text"), "off");
-  await command("Spelling: automatic");
+  await command("Spelling: all languages");
   await settle();
-  check("automatic forgets the choice", dom.window.localStorage.getItem("grind.spelling.text"), null);
+  check("all languages forgets the choice", dom.window.localStorage.getItem("grind.spelling.text"), null);
 
   // A spreadsheet is checked the same way, in the text its cells hold.
   await openFile("misspelt.fods", FODS.replace("from a file", "recieve it"));

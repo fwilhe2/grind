@@ -218,6 +218,34 @@ pub fn separators(locale: Option<&Locale>) -> (char, char) {
     locale.map_or(DEFAULT, |l| (l.decimal(), l.group()))
 }
 
+/// One number spelled with `locale`'s separators — `1.234,5`, `1,234.5`, `1 234,5` — which is
+/// the quickest way to say both at once: a shell's status bar shows it so nobody has to wonder
+/// which sign is the decimal one.
+pub fn sample(locale: Option<&Locale>) -> String {
+    let (decimal, group) = separators(locale);
+    format!("1{group}234{decimal}5")
+}
+
+/// What a status bar shows for a document's number spelling: [`sample`], then the locale's tag
+/// when the document states one — `1.234,5 · de-DE`, or `1,234.5` for an unmarked document.
+pub fn badge(locale: Option<&Locale>) -> String {
+    match locale {
+        Some(locale) => format!("{} \u{00b7} {}", sample(Some(locale)), locale.tag()),
+        None => sample(None),
+    }
+}
+
+/// A separator's name in a sentence — `comma`, `point`, `space`.
+pub fn separator_name(c: char) -> &'static str {
+    match c {
+        ',' => "comma",
+        '.' => "point",
+        '\'' | '\u{2019}' => "apostrophe",
+        c if c.is_whitespace() => "space",
+        _ => "sign",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,6 +344,18 @@ mod tests {
         assert_eq!(from_posix("C.UTF-8"), None);
         assert_eq!(from_posix("POSIX"), None);
         assert_eq!(from_posix(""), None);
+    }
+
+    #[test]
+    fn the_sample_shows_both_separators_and_the_badge_names_the_locale() {
+        assert_eq!(sample(None), "1,234.5");
+        let de = Locale::new("de", "DE");
+        assert_eq!(sample(Some(&de)), "1.234,5");
+        assert_eq!(badge(Some(&de)), "1.234,5 \u{00b7} de-DE");
+        assert_eq!(badge(None), "1,234.5");
+        assert_eq!(sample(Some(&Locale::new("fr", "FR"))), "1\u{a0}234,5");
+        assert_eq!(separator_name(','), "comma");
+        assert_eq!(separator_name('\u{a0}'), "space");
     }
 
     #[test]

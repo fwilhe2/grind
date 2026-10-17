@@ -678,8 +678,13 @@ So this build takes the document's language as *its* rule and makes the file say
   — and shows whatever the opening LibreOffice's own locale says, which is LibreOffice's
   behaviour for every document and not something a file can change.
 - **Typing**: the document's decimal point and grouping are what a typed number is read with
-  (`1,5` is one and a half in a German document) — this build's rule, not LibreOffice's, which
-  reads input by the machine's locale too.
+  first (`1,5` is one and a half in a German document) — this build's rule, not LibreOffice's,
+  which reads input by the machine's locale too. Since 2026-10-17 what the document's spelling
+  cannot mean is read the **other** way (`1.5` and `1,234.5` in German are numbers, not text), and
+  the one ambiguous shape — one separator, then exactly three digits (`1.234`) — is read the
+  document's way; both come back with a sentence every client shows after the entry, and `'`
+  still keeps anything as text. `sheet/src/reading.rs` is the rule and its reasons. A CSV field
+  is read strictly, since `csv::input` has already spelled it the ISO way.
 
 ### 5.3 Style pooling (minimality + correctness)
 

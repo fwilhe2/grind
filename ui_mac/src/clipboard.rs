@@ -90,7 +90,10 @@ impl Pane {
                     &notice::recalc_skipped(recalc.spoiled),
                     Some(Action::RecalculateAnyway),
                 ))),
-                None => self.say(None),
+                None => match outcome.note(self.app.locale().as_ref()) {
+                    Some(note) => self.say(Some((&note, None))),
+                    None => self.say(None),
+                },
             },
             Err(error) => self.say(Some((&error.to_string(), None))),
         }

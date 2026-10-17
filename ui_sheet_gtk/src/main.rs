@@ -176,6 +176,8 @@ struct Ui {
     title: adw::WindowTitle,
     toasts: adw::ToastOverlay,
     banner: adw::Banner,
+    /// The status bar's number spelling — `1.234,5 · de-DE` — refreshed with the document.
+    spelling_badge: gtk::Button,
     tabs: Rc<chrome::Tabs>,
     strip: Rc<formatting::Strip>,
     formula_bar: Rc<chrome::FormulaBar>,
@@ -285,6 +287,7 @@ impl Ui {
         header.pack_end(&find);
 
         let banner = adw::Banner::new("");
+        let spelling_badge = chrome::number_badge();
         let add_sheet = gtk::Button::from_icon_name("list-add-symbolic");
         add_sheet.set_tooltip_text(Some("Add Sheet"));
         add_sheet.set_action_name(Some("win.sheet-add"));
@@ -308,7 +311,7 @@ impl Ui {
         view.add_top_bar(&banner);
         view.add_bottom_bar(&chrome::bottom_bar(
             &tabs.widget,
-            &chrome::status_bar(&grid, app),
+            &chrome::status_bar(&grid, app, &spelling_badge),
         ));
 
         let window = adw::ApplicationWindow::builder()
@@ -333,6 +336,7 @@ impl Ui {
             title,
             toasts,
             banner,
+            spelling_badge,
             tabs,
             strip,
             formula_bar,
@@ -670,6 +674,8 @@ impl Ui {
         self.undo.set_sensitive(self.app.can_undo());
         self.redo.set_sensitive(self.app.can_redo());
         self.tabs.refresh();
+        self.spelling_badge
+            .set_label(&grind_sheet::locale::badge(self.app.locale().as_ref()));
         // Undo, redo and a load all change the cell under an unmoved selection, which is
         // what the format strip is showing.
         self.strip.refresh();
@@ -815,6 +821,8 @@ impl Ui {
         match notice {
             Notice::BadFormula(message, _) => self.toast(&format!("Not a formula: {message}")),
             Notice::Refused(message) => self.toast(&message),
+            // A toast with Undo: the entry landed, and taking it back is the other answer.
+            Notice::Read(sentence) => self.undoable_toast(&sentence),
             // A banner rather than a toast: this is a *state* the document is in, not an
             // event that happened, and it stays true until something recalculates.
             Notice::RecalcSkipped(spoiled) => {

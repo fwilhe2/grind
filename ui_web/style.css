@@ -107,6 +107,13 @@ body {
   flex: 1;
 }
 
+/* The number badge: a readout that is also the way to change what it reads. */
+.numbers {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+  padding: 0 0.4rem;
+}
+
 .rule {
   width: 1px;
   align-self: stretch;

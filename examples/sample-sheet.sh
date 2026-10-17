@@ -452,7 +452,8 @@ sheet export-csv "$out/sample.fods" B8:E8 --formulas
 
 # --- the document's own locale: how it spells its numbers ----------------------------------
 # A document may say what language it is in (`doc/ods-format.md` §5.2). One that says German
-# shows `1234,5` for a number with no format, reads `1,5` typed into it as one and a half, and
+# shows `1234,5` for a number with no format, reads `1,5` typed into it as one and a half — and
+# `2.5` as two and a half too, saying so, since German could not have meant it — and
 # gives a format made in it German separators that it keeps wherever it is opened. No cell's
 # value changes: this is how the document speaks, not what it holds. A document of its own, so
 # the budget above keeps the spelling every other line of this script prints.
@@ -463,9 +464,10 @@ run new "$german" --force --locale de-DE
 sheet locale "$german"
 run set "$german" A1 '1,5'                                  # one and a half
 run set "$german" A2 '1.234,5'
+run set "$german" A4 '2.5'                                  # the other spelling: read as 2,5, and said
 run set "$german" A3 '=[.A1]+[.A2]'
 run format "$german" A3 number --grouping --decimals 2      # 1.236,00, and German for good
-sheet view "$german" A1:A3
+sheet view "$german" A1:A4
 sheet get "$german" A3 --raw                                # the value is the same number
 
 say "locale: taken away again — the plain numbers follow, the format keeps its own"

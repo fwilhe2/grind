@@ -814,6 +814,13 @@ before it can be answered.
   the typing rule reads an ISO date only into a cell already formatted as one, so
   `App::import_csv` applies those formats in pass one and asks the ordinary question in pass
   two, both in a single undo entry (`commit_after`).
+- **`sheet/src/reading.rs`** — how a *typed* number is read: the document's spelling first, the
+  other one (point and comma swapped) where the document's cannot be meant — `1.5` in a German
+  document is one and a half, not text — and one separator with exactly three digits after it
+  (`1.234`) read the document's way and flagged as ambiguous. Either comes back on
+  `EnterOutcome::note` as one sentence every client shows; `'` still forces text, and a CSV
+  field is read strictly. Every sheet client's status bar shows `grind_core::locale::badge`
+  (`1.234,5 · de-DE`), so which sign is the decimal one is never a guess.
 - **`core/src/locale.rs`** — decimal point and grouping separator only (two characters).
   Everything else (month names, CLDR tables) is a deliberate, named gap.
 - **`core/src/kind.rs`** — which document type some bytes are, decided *before* parsing,

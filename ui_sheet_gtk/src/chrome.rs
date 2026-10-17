@@ -904,7 +904,7 @@ pub fn tab_menu_model() -> gio::Menu {
 /// costs a walk of the range. ponytail: the walk runs on the main thread, so a selection
 /// spanning a very large used extent stutters the drag; the plan's answer is a worker and a
 /// generation counter, which is the threading milestone's machinery rather than this one's.
-pub fn status_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
+pub fn status_bar(grid: &Grid, app: &Arc<App>, badge: &gtk::Button) -> gtk::Box {
     // Right-aligned and dimmed: it is the far end of the bar the sheet tabs start
     // ([`bottom_bar`]), and it is a readout rather than something to press.
     let label = gtk::Label::builder()
@@ -964,6 +964,7 @@ pub fn status_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
         move |overlays| modes.set_visible(overlays.roles)
     ));
     bar.append(&modes);
+    bar.append(badge);
 
     let pending: Rc<Cell<Option<glib::SourceId>>> = Rc::new(Cell::new(None));
     let app = app.clone();
@@ -986,6 +987,20 @@ pub fn status_bar(grid: &Grid, app: &Arc<App>) -> gtk::Box {
         }
     ));
     bar
+}
+
+/// How this document spells a number — `1.234,5 · de-DE` — always on the status bar, since which
+/// sign is the decimal one is the question nobody should have to type a number to answer.
+/// `grind_sheet::locale::badge` is the text; clicking it opens Document Settings, where the
+/// locale is changed. The window sets the label whenever the document changes.
+pub fn number_badge() -> gtk::Button {
+    let badge = gtk::Button::builder()
+        .action_name("win.document-settings")
+        .tooltip_text("How this document writes numbers — click to change its locale")
+        .build();
+    badge.add_css_class("flat");
+    badge.add_css_class("numeric");
+    badge
 }
 
 /// The window's one bottom bar: the sheet tabs at the start, the selection's arithmetic at the

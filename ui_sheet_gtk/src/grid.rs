@@ -413,6 +413,10 @@ pub enum Notice {
     /// The core refused, and said why — a rectangle too large to format, a sheet that is
     /// gone. Carries the core's own message rather than a rephrasing of it.
     Refused(String),
+    /// The entry landed, but a number in it was read in a way worth saying — the other decimal
+    /// sign, or a separator that could have meant a thousand. Carries the core's sentence
+    /// (`grind_sheet::EnterOutcome::note`).
+    Read(String),
     /// The user asked to change the chart at this index on the active sheet — a double-click
     /// on it, or *Edit Chart* from its context menu. The dialog lives in the window rather
     /// than here, so the grid says what was asked for instead of asking it.
@@ -2527,6 +2531,9 @@ mod imp {
                     if let Some(recalc) = outcome.recalc.filter(|r| r.spoiled > 0) {
                         self.notice(Notice::RecalcSkipped(recalc.spoiled));
                     }
+                    if let Some(note) = outcome.note(app.locale().as_ref()) {
+                        self.notice(Notice::Read(note));
+                    }
                 }
                 Err(error) => self.notice(Notice::BadFormula(error.to_string(), 0)),
             }
@@ -2767,6 +2774,9 @@ mod imp {
                             Ok(outcome) => {
                                 if let Some(recalc) = outcome.recalc.filter(|r| r.spoiled > 0) {
                                     imp.notice(Notice::RecalcSkipped(recalc.spoiled));
+                                }
+                                if let Some(note) = outcome.note(app.locale().as_ref()) {
+                                    imp.notice(Notice::Read(note));
                                 }
                                 // Select what landed, which is what makes a paste visible
                                 // and a second paste elsewhere obvious.

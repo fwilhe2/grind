@@ -20,10 +20,12 @@ use grind_sheet::{App, place};
 
 use super::keymap::Selection;
 
-/// Where the selection is, and what it adds up to — `grind_sheet::place::status`, which is
-/// nothing for a single cell and `summary`'s sentence otherwise.
-pub fn selection_text(app: &App, sheet: usize, selection: Selection) -> String {
-    place::status(app, sheet, selection)
+/// The status bar's right-hand end: where the selection is and what it adds up to
+/// (`grind_sheet::place::status`, nothing for a single cell), then how the document spells a
+/// number (`grind_sheet::locale::badge`, `1.234,5 · de-DE`) — always there, so which sign is the
+/// decimal one is never a guess. Data ▸ Document Locale… changes it.
+pub fn status_right(app: &App, sheet: usize, selection: Selection) -> String {
+    place::status_and_numbers(app, sheet, selection)
 }
 
 /// What the name box shows for a selection: what it is called, or where it is —
@@ -72,6 +74,25 @@ mod tests {
             anchor: Pos::new(a.0, a.1),
             active: Pos::new(b.0, b.1),
         }
+    }
+
+    /// The far end of the bar says how this document spells a number, beside the arithmetic or
+    /// on its own for one cell.
+    #[test]
+    fn the_status_bar_ends_with_the_number_spelling() {
+        let app = book();
+        assert_eq!(
+            status_right(&app, 0, Selection::at(Pos::new(1, 1))),
+            "1,234.5"
+        );
+        app.set_locale(grind_sheet::locale::Locale::parse("de-DE"))
+            .unwrap();
+        let right = status_right(&app, 0, from((1, 1), (3, 1)));
+        assert!(
+            right.ends_with("  \u{00b7}  1.234,5 \u{00b7} de-DE"),
+            "{right}"
+        );
+        assert!(right.contains("60"), "{right}");
     }
 
     /// The bar shows what would be typed back in, not what the cell displays — which for a

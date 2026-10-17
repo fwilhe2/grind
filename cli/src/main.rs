@@ -2128,7 +2128,9 @@ enum Command {
     /// `sheet locale book.fods de-DE` makes every number with no format, and every format that
     /// names no locale of its own, read `1.234,5`; a number typed afterwards is read the same
     /// way (`1,5` is one and a half). A format that names its own locale keeps it. `--clear`
-    /// takes the document's away again, and with neither it prints the one it has, or `none`.
+    /// takes the document's away again, and with neither it prints the one it has, or `none`,
+    /// and beside it a number spelled that way. A number typed in the other spelling where this
+    /// one cannot be meant — `1.5` in a German document — is read that way, and `set` says so.
     Locale {
         file: PathBuf,
         /// A language, and optionally a country: de-DE, fr, pt-BR
@@ -3573,8 +3575,16 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
         Command::Locale { file, tag, clear } => {
             let app = load(file, cli)?;
             if tag.is_none() && !clear {
-                let shown = app.locale().map_or_else(|| "none".to_owned(), |l| l.tag());
-                return Ok(Report::Text(TextReport { lines: vec![shown] }));
+                // The tag, then a number spelled the document's way, so `1.234,5` says at once
+                // which sign is the decimal one.
+                let locale = app.locale();
+                let shown = locale
+                    .as_ref()
+                    .map_or_else(|| "none".to_owned(), |l| l.tag());
+                let sample = grind_sheet::locale::sample(locale.as_ref());
+                return Ok(Report::Text(TextReport {
+                    lines: vec![format!("{shown}\t{sample}")],
+                }));
             }
             let before = app.locale();
             app.set_locale(tag.clone()).say()?;
@@ -3704,8 +3714,13 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             // `App::enter` is the typing rule, shared with every GUI: a leading `=` is a
             // formula stored verbatim with its cached value, a leading `'` is text, and
             // `--text` is that same rule spelled as a flag.
-            app.enter(sheet, pos, &forced_text(&value, *text), mode(*recalc))
+            let outcome = app
+                .enter(sheet, pos, &forced_text(&value, *text), mode(*recalc))
                 .say()?;
+            // `1.5` in a German document is read as one and a half; say so, as every window does.
+            if let Some(note) = outcome.note(app.locale().as_ref()) {
+                eprintln!("grind: {note}");
+            }
             finish(&app, cli, file, true)
         }
 
@@ -3723,6 +3738,9 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 .map(|line| line.split('\t').map(str::to_owned).collect())
                 .collect();
             let outcome = app.enter_range(sheet, pos, &rows, mode(*recalc)).say()?;
+            if let Some(note) = outcome.note(app.locale().as_ref()) {
+                eprintln!("grind: {note}");
+            }
             finish(&app, cli, file, outcome.cells > 0)
         }
 

@@ -541,7 +541,12 @@ impl Pane {
                         &notice::recalc_skipped(recalc.spoiled),
                         Some(Action::RecalculateAnyway),
                     ))),
-                    None => self.say(None),
+                    // `1.5` in a German document was read as one and a half: the core's
+                    // sentence, on the banner.
+                    None => match outcome.note(self.app.locale().as_ref()) {
+                        Some(note) => self.say(Some((&note, None))),
+                        None => self.say(None),
+                    },
                 }
                 self.step(dir);
             }

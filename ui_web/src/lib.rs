@@ -226,6 +226,8 @@ struct Chrome {
     /// The sheet tabs and their `+`. A document has no sheets, so both go with the grid.
     tabs: HtmlElement,
     sheet_add: HtmlButtonElement,
+    /// The status bar's number spelling — `1.234,5 · de-DE` — on a spreadsheet only.
+    numbers: HtmlButtonElement,
     name: HtmlElement,
     save: HtmlButtonElement,
     /// The separator between the file verbs and the history ones, which goes with them.
@@ -276,6 +278,7 @@ impl Chrome {
             text_tools: element(document, "text-tools")?,
             tabs: element(document, "tabs")?,
             sheet_add: element(document, "sheet-add")?,
+            numbers: element(document, "numbers")?,
             name: element(document, "name")?,
             save: element(document, "save")?,
             verb_rule: element(document, "verb-rule")?,
@@ -451,6 +454,7 @@ impl Shell {
         self.dom.formula_bar.set_hidden(!sheet);
         self.dom.tabs.set_hidden(!sheet);
         self.dom.sheet_add.set_hidden(!sheet);
+        self.dom.numbers.set_hidden(!sheet);
         self.dom.sheet_tools.set_hidden(!sheet);
         self.dom.text_tools.set_hidden(sheet || welcome);
         self.dom.tools.set_hidden(welcome);
@@ -1566,6 +1570,7 @@ fn wire_toolbar(shell: &Rc<Shell>) -> Result<(), JsValue> {
         ("redo", "doc.redo", false),
         ("recalc", "sheet.recalc", false),
         ("sheet-add", "sheet.add", false),
+        ("numbers", "doc.locale", false),
         ("s-bold", "style.bold", false),
         ("s-italic", "style.italic", false),
         ("s-underline", "style.underline", false),

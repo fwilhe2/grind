@@ -153,6 +153,8 @@ struct Dom {
     chart_menu: HtmlElement,
     message: HtmlElement,
     summary: HtmlElement,
+    /// `grind_sheet::locale::badge` — which sign is this document's decimal one.
+    numbers: HtmlElement,
     /// The autofilter's dropdown (§9.4, `filter_ui.rs`): one popover, reused for every field
     /// and moved under whichever button opened it — the same technique `swatch.rs` uses.
     filter_menu: HtmlElement,
@@ -178,6 +180,7 @@ impl Dom {
             chart_menu: element(document, "chart-menu")?,
             message: element(document, "message")?,
             summary: element(document, "summary")?,
+            numbers: element(document, "numbers")?,
             filter_menu: element(document, "filter-menu")?,
             filter_list: element(document, "filter-list")?,
             filter_all: element(document, "filter-select-all")?,
@@ -745,6 +748,11 @@ impl Ui {
             }
         }
         self.dom.summary.set_text_content(Some(&summary));
+        self.dom
+            .numbers
+            .set_text_content(Some(&grind_sheet::locale::badge(
+                self.app.locale().as_ref(),
+            )));
 
         Ok(())
     }
@@ -1577,7 +1585,11 @@ impl Ui {
                     anchor: last,
                     active: anchor,
                 });
-                self.set_message(format!("Pasted {} cell(s)", outcome.cells));
+                self.set_message(
+                    outcome
+                        .note(self.app.locale().as_ref())
+                        .unwrap_or_else(|| format!("Pasted {} cell(s)", outcome.cells)),
+                );
             }
             Err(error) => self.set_message(error.to_string()),
         }
@@ -2782,7 +2794,8 @@ impl Ui {
                         "{} cell(s) skipped recalculating — press Recalc",
                         recalc.spoiled
                     ),
-                    None => String::new(),
+                    // `1.5` in a German document was read as one and a half: say so.
+                    None => outcome.note(self.app.locale().as_ref()).unwrap_or_default(),
                 }),
                 Err(error) => {
                     self.set_message(error.to_string());
