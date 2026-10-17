@@ -698,6 +698,10 @@ pub fn view_menu_model() -> gio::Menu {
     let spelling = gio::Menu::new();
     spelling.append(Some("Check Spelling"), Some("win.spell-check"));
     spelling.append_submenu(Some("Spelling Language"), &spelling_menu_model());
+    spelling.append(
+        Some("Personal Dictionary…"),
+        Some("win.personal-dictionary"),
+    );
     model.append_section(None, &spelling);
     model
 }
@@ -1016,8 +1020,17 @@ pub fn number_badge() -> gtk::Button {
 /// two questions a person typing into a cell has, *which decimal sign* and *which language*, are
 /// answered in one place. The window sets the label whenever the setting changes.
 pub fn spelling_picker() -> gtk::MenuButton {
+    // The languages, then the one other thing about spelling a person maintains: their words.
+    let menu = gio::Menu::new();
+    menu.append_section(None, &spelling_menu_model());
+    let words = gio::Menu::new();
+    words.append(
+        Some("Personal Dictionary…"),
+        Some("win.personal-dictionary"),
+    );
+    menu.append_section(None, &words);
     let picker = gtk::MenuButton::builder()
-        .menu_model(&spelling_menu_model())
+        .menu_model(&menu)
         .direction(gtk::ArrowType::Up)
         .always_show_arrow(false)
         .build();

@@ -37,6 +37,7 @@ Spreadsheet:
   :fix N  :fix <word>     — the misspelt word ] stopped on, replaced by suggestion N or that
   :spell [auto|<lang>|off] — check text cells in en de fr es it pt pl, or not; remembered for
                             every spreadsheet. :spell ignore and :spell add accept a word
+  :dict  :dict add|rm WORD — your own dictionary: Enter on a word removes it
   :s/old/new/             — replace it in every cell, one undo step
   :down  :right           — fill the selection from its first cell (references shift)
   :across                 — the cell the selection grew from, into all of it; one undo step

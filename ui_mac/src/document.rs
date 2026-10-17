@@ -322,6 +322,8 @@ mod mac {
                             }
                         });
                         pane.set_find_bar(find_bar::attach(&window, &pane, mtm));
+                        // Which language spelling is checked in, where the grid has it.
+                        accessory::attach_page(&window, &pane, mtm);
                         // The window's subtitle counts the words, as it changes.
                         let counted = {
                             let app = pane.app.clone();

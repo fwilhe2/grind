@@ -245,6 +245,12 @@ impl Speller {
     pub fn accept(&self, word: &str) {
         self.words.write().unwrap().insert(normalise(word));
     }
+
+    /// Stop accepting `word` — what removing it from the personal list means for a document
+    /// already open. A word the dictionary itself knows stays known, of course.
+    pub fn forget(&self, word: &str) {
+        self.words.write().unwrap().remove(&normalise(word));
+    }
 }
 
 impl Lexicon for Speller {
@@ -835,6 +841,54 @@ pub mod personal {
             .map_or_else(BTreeSet::new, |text| parse(&text))
     }
 
+    /// What somebody typed as a word to add, made into one — trimmed, `’` folded to `'` — or
+    /// why it is not one: nothing, or several words, since one line of the list is one word.
+    /// Every client's *Add* goes through this, so each refuses the same things.
+    pub fn word(typed: &str) -> Result<String, &'static str> {
+        let word = normalise(typed.trim());
+        match () {
+            _ if word.is_empty() => Err("type a word to add"),
+            _ if word.chars().any(char::is_whitespace) => Err("one word at a time"),
+            _ if word.starts_with('#') => Err("a word cannot begin with #, which marks a comment"),
+            _ => Ok(word),
+        }
+    }
+
+    /// Every word on the list, sorted — what a *Personal Dictionary* view shows.
+    pub fn words() -> Vec<String> {
+        load().into_iter().collect()
+    }
+
+    /// `text` without the line holding `word`; every other line, comments included, as it was.
+    pub fn without(text: &str, word: &str) -> String {
+        let word = normalise(word.trim());
+        let mut out: String = text
+            .lines()
+            .filter(|line| normalise(line.trim()) != word)
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out
+    }
+
+    /// Take `word` off the list on disk. `Ok(false)` when it was not there, and nothing is
+    /// written then.
+    pub fn remove(word: &str) -> std::io::Result<bool> {
+        let Some(path) = path() else {
+            return Ok(false);
+        };
+        let Ok(existing) = std::fs::read_to_string(&path) else {
+            return Ok(false);
+        };
+        if !parse(&existing).contains(&normalise(word.trim())) {
+            return Ok(false);
+        }
+        std::fs::write(&path, without(&existing, word))?;
+        Ok(true)
+    }
+
     /// Add `word` to the list on disk — appended, so a list somebody keeps by hand keeps its
     /// order and its comments. Nothing is written when the word is already there.
     pub fn add(word: &str) -> std::io::Result<PathBuf> {
@@ -1109,6 +1163,23 @@ mod tests {
         assert!(!choice.every());
         let (choice, _) = Setting::Automatic.apply(&app).unwrap().unwrap();
         assert!(choice.every());
+    }
+
+    #[test]
+    fn the_personal_list_is_kept_one_word_a_line_and_loses_only_the_line_asked() {
+        assert_eq!(personal::word("  Grind "), Ok("Grind".to_owned()));
+        assert_eq!(personal::word("Florian’s"), Ok("Florian's".to_owned()));
+        assert!(personal::word("").is_err());
+        assert!(personal::word("two words").is_err());
+        assert!(personal::word("#tag").is_err());
+        let text = "# mine\ngrind\nODF\n";
+        assert_eq!(personal::without(text, "grind"), "# mine\nODF\n");
+        assert_eq!(personal::without(text, "nope"), text);
+        let speller = english();
+        speller.accept("grnid");
+        assert!(speller.knows("grnid"));
+        speller.forget("grnid");
+        assert!(!speller.knows("grnid"));
     }
 
     #[test]

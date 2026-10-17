@@ -92,6 +92,44 @@ pub fn add_word(word: &str) -> Result<(), String> {
         .map_err(|_| "the browser refused to keep it".to_owned())
 }
 
+/// Take a word off the personal dictionary. `Ok(false)` when it was not on it.
+pub fn remove_word(word: &str) -> Result<bool, String> {
+    let storage = storage().ok_or("the browser keeps nothing for this page")?;
+    let mut all = words();
+    let before = all.len();
+    all.retain(|w| w != word);
+    if all.len() == before {
+        return Ok(false);
+    }
+    storage
+        .set_item(WORDS, &all.join("\n"))
+        .map(|()| true)
+        .map_err(|_| "the browser refused to keep it".to_owned())
+}
+
+/// The palette's row prefix for a word on the personal dictionary — picking it removes it.
+pub const FORGET: &str = "Remove from your dictionary: ";
+
+/// The palette's rows for the personal dictionary, as `(command id, title)`: one per word, once
+/// the query is a beginning of [`FORGET`] at least `Remove` long, or [`FORGET`] and then part of
+/// a word — which is what `spell.words` opens the palette on, and what typing narrows.
+pub fn forget(query: &str, words: &[String]) -> Vec<(String, String)> {
+    let query = query.trim_start().to_lowercase();
+    let prefix = FORGET.to_lowercase();
+    let narrow = match query.strip_prefix(&prefix) {
+        Some(rest) => rest.trim().to_owned(),
+        None if query.trim().len() >= "remove".len() && prefix.starts_with(query.trim()) => {
+            String::new()
+        }
+        None => return Vec::new(),
+    };
+    words
+        .iter()
+        .filter(|word| word.to_lowercase().contains(&narrow))
+        .map(|word| (format!("spell.forget:{word}"), format!("{FORGET}{word}")))
+        .collect()
+}
+
 /// The language a command id names, `spell.de-DE` — or `spell.auto`, `spell.off`.
 pub fn setting_of(id: &str) -> Option<Setting> {
     id.strip_prefix("spell.").and_then(Setting::from_tag)
@@ -136,6 +174,51 @@ impl Shell {
     pub(crate) fn run_spelling(self: &Rc<Self>, id: &str) {
         if id == "spell.choose" {
             return self.open_palette_with("Spelling: ");
+        }
+        // The personal dictionary: its words as palette rows, each one's pick removing it.
+        if id == "spell.words" {
+            return self.open_palette_with(FORGET);
+        }
+        if id == "spell.add-word" {
+            let typed = web_sys::window()
+                .and_then(|w| {
+                    w.prompt_with_message("A word spelling should accept in every document")
+                        .ok()
+                })
+                .flatten();
+            let Some(typed) = typed else { return };
+            let said = match grind_spell::personal::word(&typed) {
+                Err(why) => why.to_string(),
+                Ok(word) => match add_word(&word) {
+                    Err(why) => format!("{word} was not added: {why}"),
+                    Ok(()) => {
+                        for speller in [&self.sheet_speller, &self.text_speller] {
+                            if let Some(speller) = speller.borrow().as_ref() {
+                                speller.accept(&word);
+                            }
+                        }
+                        format!("{word} added to your dictionary")
+                    }
+                },
+            };
+            self.set_message(said);
+            return request_repaint(&self.pending);
+        }
+        if let Some(word) = id.strip_prefix("spell.forget:") {
+            let said = match remove_word(word) {
+                Ok(true) => {
+                    for speller in [&self.sheet_speller, &self.text_speller] {
+                        if let Some(speller) = speller.borrow().as_ref() {
+                            speller.forget(word);
+                        }
+                    }
+                    format!("{word} removed from your dictionary")
+                }
+                Ok(false) => format!("{word} is not in your dictionary"),
+                Err(why) => format!("{word} was not removed: {why}"),
+            };
+            self.set_message(said);
+            return request_repaint(&self.pending);
         }
         if let Some(setting) = setting_of(id) {
             let Some(kind) = self.mode.get().kind() else {
@@ -261,6 +344,22 @@ mod tests {
 
     /// A command id carries a setting in the vocabulary a menu's state and `:spell` already
     /// speak, so the palette's rows are `Setting::ALL` and nothing else.
+    #[test]
+    fn the_dictionarys_words_are_rows_once_the_query_reaches_for_them() {
+        let words = ["Grind".to_owned(), "grnid".to_owned(), "ODF".to_owned()];
+        assert_eq!(forget(FORGET, &words).len(), 3);
+        assert_eq!(forget("remove", &words).len(), 3);
+        assert_eq!(
+            forget(&format!("{FORGET}gr"), &words),
+            [
+                ("spell.forget:Grind".to_owned(), format!("{FORGET}Grind")),
+                ("spell.forget:grnid".to_owned(), format!("{FORGET}grnid")),
+            ]
+        );
+        assert!(forget("rem", &words).is_empty());
+        assert!(forget("bold", &words).is_empty());
+    }
+
     #[test]
     fn every_setting_has_a_command_id_and_back() {
         for setting in Setting::ALL {

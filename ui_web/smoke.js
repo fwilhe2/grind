@@ -393,6 +393,20 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("of every language", paletteRows().some((row) => row.includes("Deutsch")), true);
   palette("Escape");
   await frame();
+  // The personal dictionary: a word added through the prompt is a row to remove it by.
+  const wordPrompt = dom.window.prompt;
+  dom.window.prompt = () => "Grindwort";
+  await command("add a word to your dictionary");
+  await frame();
+  dom.window.prompt = wordPrompt;
+  check("a word goes into your dictionary", byId("message").textContent, "Grindwort added to your dictionary");
+  check("and is kept", dom.window.localStorage.getItem("grind.spelling.words"), "Grindwort");
+  await command("your dictionary");
+  await frame();
+  check("which lists it, ready to remove", paletteRows().some((row) => row.includes("Remove from your dictionary: Grindwort")), true);
+  paletteEnter();
+  await frame();
+  check("and picking it removes it", dom.window.localStorage.getItem("grind.spelling.words"), "");
   const localePrompt = dom.window.prompt;
   dom.window.prompt = () => "de-DE";
   await command("Document locale");

@@ -380,6 +380,14 @@ if "$GRIND" text spell --help >/dev/null 2>&1; then
     text new "$french" --force >/dev/null
     text set "$french" p1 'Nous avons écrit à l’école, mais la lettre est arivée trop tard.' >/dev/null
     text spell "$french" --suggest
+    say "words: your own dictionary — kept here beside the sample, never in your real one"
+    # `grind words` reads and writes $XDG_CONFIG_HOME/grind/words; pointing that at the output
+    # directory keeps this script from touching the list of whoever runs it.
+    words() { XDG_CONFIG_HOME="$out/config" "$GRIND" words "$@"; }
+    rm -f "$out/config/grind/words"
+    words --add Grind >/dev/null
+    words --add recieve >/dev/null
+    words --remove recieve
 else
     say "spell: not in this build (compiled without the spell feature)"
 fi

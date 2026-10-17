@@ -348,6 +348,9 @@ pub enum Command {
     /// Automatic, a dictionary by name, or Off — `grind_spell::Setting`. The session's choice
     /// over a text document; over a spreadsheet the remembered one (`grind_spell::preference`).
     SpellingLanguage,
+    /// The personal dictionary (`grind_spell::personal`): the words every spelling check
+    /// accepts, listed, added to and taken from — the same list `grind words` keeps.
+    PersonalDictionary,
     /// Shift+F7 — spelling off, or back on to the last language it was on in: LibreOffice's
     /// *Automatic Spell Checking* key. Over a spreadsheet it is remembered, so off stays off in
     /// every spreadsheet until it is turned back on (`doc/spelling.md`, "In a spreadsheet").
@@ -501,6 +504,7 @@ impl Command {
         Command::CheckDocument,
         Command::NextMisspelling,
         Command::SpellingLanguage,
+        Command::PersonalDictionary,
         Command::ToggleSpelling,
         Command::ToggleRoles,
         Command::ToggleFormulas,
@@ -1174,6 +1178,10 @@ pub const MENUS: &[Menu] = &[
                 command: Command::SpellingLanguage,
                 label: "Spelling &Language…",
             },
+            Item::Verb {
+                command: Command::PersonalDictionary,
+                label: "Personal &Dictionary…",
+            },
             Item::Separator,
             Item::Verb {
                 command: Command::ToggleRoles,
@@ -1495,7 +1503,10 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::PrintPreview
         | Command::Print => matches!(kind, Text),
         // Spelling checks a paragraph's words and a text cell's alike (`doc/spelling.md`).
-        Command::NextMisspelling | Command::SpellingLanguage | Command::ToggleSpelling => {
+        Command::NextMisspelling
+        | Command::SpellingLanguage
+        | Command::PersonalDictionary
+        | Command::ToggleSpelling => {
             matches!(kind, Text | Spreadsheet)
         }
         // The two New verbs and the way back to the welcome screen mean the same thing over either

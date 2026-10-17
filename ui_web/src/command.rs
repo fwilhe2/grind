@@ -80,6 +80,21 @@ pub const SHEET: &[Command] = &[
     // --- spelling (`doc/spelling.md`): a language for this kind of document, remembered ---
     // The status bar's flag runs the first: the palette, opened on the rows after it.
     cmd("spell.choose", "Spelling language…", "Spelling", "", false),
+    // The personal dictionary: under the same `Spelling:` the flag opens the palette on.
+    cmd(
+        "spell.words",
+        "Spelling: your dictionary…",
+        "Spelling",
+        "",
+        false,
+    ),
+    cmd(
+        "spell.add-word",
+        "Spelling: add a word to your dictionary…",
+        "Spelling",
+        "",
+        false,
+    ),
     cmd(
         "spell.auto",
         "Spelling: all languages",
@@ -478,6 +493,21 @@ pub const TEXT: &[Command] = &[
     // --- spelling (`doc/spelling.md`): a language for this kind of document, remembered ---
     // The status bar's flag runs the first: the palette, opened on the rows after it.
     cmd("spell.choose", "Spelling language…", "Spelling", "", false),
+    // The personal dictionary: under the same `Spelling:` the flag opens the palette on.
+    cmd(
+        "spell.words",
+        "Spelling: your dictionary…",
+        "Spelling",
+        "",
+        false,
+    ),
+    cmd(
+        "spell.add-word",
+        "Spelling: add a word to your dictionary…",
+        "Spelling",
+        "",
+        false,
+    ),
     cmd(
         "spell.auto",
         "Spelling: all languages",

@@ -41,6 +41,7 @@ mod rules;
 mod settings;
 mod state;
 mod theme;
+mod words;
 
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -2547,6 +2548,16 @@ fn actions() -> Vec<Verb> {
             "Spelling Language…",
             "View",
             |ui| ui.spelling_language_dialog(),
+        ),
+        verb(
+            "personal-dictionary",
+            &[],
+            "Personal Dictionary…",
+            "View",
+            |ui| {
+                let again = ui.clone();
+                words::present(&ui.window, move || again.check_spelling(false));
+            },
         ),
         verb(
             "document-settings",

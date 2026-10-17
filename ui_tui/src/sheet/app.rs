@@ -145,6 +145,8 @@ pub struct App {
     functions: crate::pick::Pick,
     /// `:calc`, when it is showing — every formula in the document, each row a jump.
     calculations: crate::pick::Pick,
+    /// `:dict` — the personal dictionary (`crate::dict`).
+    dict: crate::pick::Pick,
     /// `:rules`, when it is showing — the sheet's conditional-format rules, each row a jump.
     rules: crate::pick::Pick,
     /// `:explain`, when it is showing — the active cell's formula unfolded, one call a row.
@@ -228,6 +230,7 @@ impl App {
             assist: Assist::default(),
             functions: crate::pick::Pick::default(),
             calculations: crate::pick::Pick::default(),
+            dict: crate::pick::Pick::default(),
             rules: crate::pick::Pick::default(),
             explained: crate::pick::Pick::default(),
             friendly: true,
@@ -335,6 +338,14 @@ impl App {
             let height = self.help_height();
             if let crate::pick::Nav::Chose(address) = self.calculations.on_key(key.code, height) {
                 self.cmd_jump(&address);
+            }
+            return;
+        }
+        if self.dict.is_open() {
+            let height = self.help_height();
+            if let crate::pick::Nav::Chose(word) = self.dict.on_key(key.code, height) {
+                self.status = crate::dict::remove(&word, self.speller.as_deref());
+                crate::dict::open(&mut self.dict, None);
             }
             return;
         }
@@ -1491,6 +1502,10 @@ impl App {
             "find" => self.cmd_find(""),
             "spell" => self.cmd_spell(""),
             _ if cmd.starts_with("spell ") => self.cmd_spell(cmd[6..].trim()),
+            "dict" => crate::dict::open(&mut self.dict, None),
+            _ if cmd.starts_with("dict ") => {
+                self.status = crate::dict::command(cmd[5..].trim(), self.speller.as_deref());
+            }
             _ if cmd.starts_with("fix ") => self.cmd_fix(cmd[4..].trim()),
             "merge" => self.cmd_merge(true),
             "unmerge" => self.cmd_merge(false),
@@ -2903,6 +2918,10 @@ impl App {
         }
         if self.calculations.is_open() {
             self.calculations.draw(frame, area, "calculations");
+            return;
+        }
+        if self.dict.is_open() {
+            self.dict.draw(frame, area, "words");
             return;
         }
         if self.rules.is_open() {
@@ -4834,6 +4853,22 @@ mod tests {
         assert_eq!(app.core.charts(0).unwrap()[0].x, "75.000mm");
         app.run_command("chart!");
         assert!(app.core.charts(0).unwrap().is_empty());
+    }
+
+    /// `:dict` opens the personal dictionary in a pane of its own, any key closes it, and a verb
+    /// it does not know says what it does know. Reading only: adding and removing write the
+    /// person's own list, which `grind-spell`'s tests and the CLI's cover against a scratch one.
+    #[test]
+    fn dict_opens_the_personal_dictionary_and_says_its_verbs() {
+        let mut app = app();
+        app.run_command("dict");
+        assert!(app.dict.is_open());
+        press(&mut app, KeyCode::Esc);
+        assert!(!app.dict.is_open());
+        app.run_command("dict frob");
+        assert!(app.status.starts_with("usage: :dict"), "{}", app.status);
+        app.run_command("dict add two words");
+        assert_eq!(app.status, "one word at a time");
     }
 
     /// The status bar adds the selection up, through the evaluator rather than through a

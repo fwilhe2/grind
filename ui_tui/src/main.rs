@@ -21,6 +21,7 @@
 mod app;
 mod chrome;
 mod code;
+mod dict;
 mod help;
 mod import;
 mod ink;

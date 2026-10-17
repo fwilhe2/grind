@@ -33,6 +33,7 @@ mod metrics;
 mod print;
 mod theme;
 mod view;
+mod words;
 
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -173,6 +174,10 @@ struct Ui {
     toasts: adw::ToastOverlay,
     banner: adw::Banner,
     status: gtk::Label,
+    /// At the status line's end, the spelling language: `🌐` for every language, a dictionary's
+    /// flag for one, `Off` — a menu over `spell-language` and the personal dictionary, the
+    /// spreadsheet window's picker (`doc/spelling.md`, "The picker on the status bar").
+    spelling_picker: gtk::MenuButton,
     address: gtk::Entry,
     goto: gtk::MenuButton,
     undo: gtk::Button,
@@ -304,13 +309,16 @@ impl Ui {
             .ellipsize(gtk::pango::EllipsizeMode::End)
             .build();
         status.add_css_class("dim-label");
+        status.set_hexpand(true);
+        let spelling_picker = spelling_picker();
         let status_bar = gtk::Box::builder()
             .margin_start(12)
-            .margin_end(12)
-            .margin_top(4)
-            .margin_bottom(4)
+            .margin_end(6)
+            .margin_top(2)
+            .margin_bottom(2)
             .build();
         status_bar.append(&status);
+        status_bar.append(&spelling_picker);
 
         let content = adw::ToolbarView::builder().content(&toasts).build();
         content.add_top_bar(&header);
@@ -340,6 +348,7 @@ impl Ui {
             toasts,
             banner,
             status,
+            spelling_picker,
             address,
             goto,
             undo,
@@ -649,11 +658,8 @@ impl Ui {
             (1, minutes) => format!("1 word  ·  {minutes} min read"),
             (n, minutes) => format!("{n} words  ·  {minutes} min read"),
         };
+        // The language is the picker's to say, at the line's end.
         self.reconsider_spelling(counts.words);
-        let words = match self.checked.get() {
-            Some(choice) => format!("{words}  ·  {}", choice.name()),
-            None => words,
-        };
         self.status.set_text(&match here.is_empty() {
             true => words,
             false => format!("{here}  ·  {words}"),
@@ -669,7 +675,13 @@ impl Ui {
     /// the menu changes (`doc/spelling.md`). A document in a language there is no dictionary for
     /// is not checked, and says so once rather than underlining every word.
     fn check_spelling(self: &Rc<Self>) {
-        match self.spelling.get().apply(&self.app) {
+        let setting = self.spelling.get();
+        self.spelling_picker.set_label(setting.chip(true));
+        self.spelling_picker.set_tooltip_text(Some(&format!(
+            "Spelling: {} — click to choose",
+            setting.label()
+        )));
+        match setting.apply(&self.app) {
             Ok(Some((choice, speller))) => {
                 self.checked.set(Some(choice));
                 self.doc.set_speller(Some(speller));
@@ -1563,6 +1575,10 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         // F8, the "next problem" key, and the same one `grind-sheet-gtk` uses — one suite, one
         // key for one job (`doc/dsl.md` §4.3, D6).
         ("lint", &["F8"][..], |ui| ui.lint()),
+        ("personal-dictionary", &[][..], |ui| {
+            let again = ui.clone();
+            words::present(&ui.window, move || again.check_spelling());
+        }),
         // The clipboard. Plain text both ways — see `Doc::copy` — and the three keys every
         // other application uses, so nothing here needs learning.
         ("cut", &["<Control>x"][..], |ui| {
@@ -1741,7 +1757,14 @@ fn primary_menu() -> gio::Menu {
     structure.append(Some("Go to Address…"), Some("win.goto"));
     structure.append(Some("Word Count"), Some("win.words"));
     structure.append(Some("Check Document"), Some("win.lint"));
-    structure.append_submenu(Some("Spelling"), &spelling_menu());
+    let spelling = spelling_menu();
+    let words = gio::Menu::new();
+    words.append(
+        Some("Personal Dictionary…"),
+        Some("win.personal-dictionary"),
+    );
+    spelling.append_section(None, &words);
+    structure.append_submenu(Some("Spelling"), &spelling);
     menu.append_section(None, &structure);
 
     let view = gio::Menu::new();
@@ -1760,9 +1783,9 @@ fn primary_menu() -> gio::Menu {
 /// the one `spell-language` action.
 fn spelling_menu() -> gio::Menu {
     let menu = gio::Menu::new();
-    let choices = grind_spell::Setting::ALL.map(|s| (s.label(), s));
-    for (label, choice) in choices {
-        let item = gio::MenuItem::new(Some(label), None);
+    for choice in grind_spell::Setting::ALL {
+        // `🇩🇪  Deutsch`, as the spreadsheet window's menu has it.
+        let item = gio::MenuItem::new(Some(&choice.row(true)), None);
         item.set_action_and_target_value(
             Some("win.spell-language"),
             Some(&choice.tag().to_variant()),
@@ -1770,6 +1793,25 @@ fn spelling_menu() -> gio::Menu {
         menu.append_item(&item);
     }
     menu
+}
+
+/// The status line's spelling picker: the setting's flag as the button, the languages and the
+/// personal dictionary under it. `check_spelling` sets the label.
+fn spelling_picker() -> gtk::MenuButton {
+    let menu = gio::Menu::new();
+    menu.append_section(None, &spelling_menu());
+    let words = gio::Menu::new();
+    words.append(
+        Some("Personal Dictionary…"),
+        Some("win.personal-dictionary"),
+    );
+    menu.append_section(None, &words);
+    let picker = gtk::MenuButton::builder()
+        .menu_model(&menu)
+        .direction(gtk::ArrowType::Up)
+        .build();
+    picker.add_css_class("flat");
+    picker
 }
 
 /// The observer's end of the bridge: a token, because nothing from the page may cross a

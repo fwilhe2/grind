@@ -63,6 +63,10 @@ pub struct Pick {
     rows: Vec<Row>,
     selected: usize,
     scroll: usize,
+    /// What the pane says with no rows, and what `Enter` does, when they are not the defaults
+    /// — a list that is not of places in the document ([`Pick::says`]).
+    empty: Option<String>,
+    enter: Option<String>,
 }
 
 /// What a key did, in the terms the shell cares about.
@@ -89,6 +93,15 @@ impl Pick {
         self.title = title.to_owned();
         self.rows = rows;
         self.scroll = 0;
+        self.empty = None;
+        self.enter = None;
+    }
+
+    /// Word the pane for a list that is not of places: the sentence it shows with no rows, and
+    /// what `Enter` does to a row (`Enter removes it`). Set after [`Pick::open`].
+    pub fn says(&mut self, empty: &str, enter: &str) {
+        self.empty = Some(empty.to_owned());
+        self.enter = Some(enter.to_owned());
     }
 
     pub fn close(&mut self) {
@@ -144,7 +157,10 @@ impl Pick {
         let mut lines: Vec<Line> = Vec::with_capacity(height);
         if self.rows.is_empty() {
             lines.push(Line::from(Span::styled(
-                format!(" This document has no {what}."),
+                match &self.empty {
+                    Some(empty) => format!(" {empty}"),
+                    None => format!(" This document has no {what}."),
+                },
                 Style::default().add_modifier(Modifier::DIM),
             )));
         }
@@ -173,9 +189,10 @@ impl Pick {
         let footer = match self.rows.is_empty() {
             true => "  any key closes  ".to_owned(),
             false => format!(
-                "  {} of {}  \u{00b7}  Enter goes there, j/k moves, any other key closes  ",
+                "  {} of {}  \u{00b7}  {}, j/k moves, any other key closes  ",
                 self.selected + 1,
-                self.rows.len()
+                self.rows.len(),
+                self.enter.as_deref().unwrap_or("Enter goes there")
             ),
         };
         frame.render_widget(

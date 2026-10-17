@@ -91,6 +91,9 @@ mod windows_impl {
         /// so that two `--render-to` frames of one document are identical.
         pub caret_on: bool,
         pub status: &'a str,
+        /// The spelling language in letters at the bar's end, in `Page::status_picker` — GDI has
+        /// no colour glyphs and Windows no flags (`grind_spell::Setting::chip`).
+        pub status_picker: &'a str,
         pub banner: Option<&'a str>,
         /// The chrome's two sizes — never the document's. `font_px` is `theme::text::CAPTION`,
         /// for the status bar and the name overlay's marks; `body_px` is `theme::text::BODY`, for
@@ -460,15 +463,28 @@ mod windows_impl {
         // No hairline over it: the page's own surface already ends above, and the change from
         // one ground to the other is the edge. See `sheet::draw::paint`'s status bar.
         gdi::fill(dc, left, top, right, bottom, theme.backdrop);
+        let (picker, _, _, _) = page.status_picker().edges();
         draw_text(
             dc,
             frame.status,
             left,
             top,
-            right,
+            picker,
             bottom,
             Align::Left,
             theme.text_secondary,
+            scale(crate::theme::space::GROUP, page.dpi),
+        );
+        // In a control's ink rather than the read-out's: it is the one thing on the bar to press.
+        draw_text(
+            dc,
+            frame.status_picker,
+            picker,
+            top,
+            right,
+            bottom,
+            Align::Right,
+            theme.text,
             scale(crate::theme::space::GROUP, page.dpi),
         );
 

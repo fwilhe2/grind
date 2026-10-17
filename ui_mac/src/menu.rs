@@ -228,6 +228,9 @@ pub enum Spell {
     /// last language it was on in. On a grid it is remembered, so off stays off in every
     /// spreadsheet (`doc/spelling.md`, "In a spreadsheet"); on a page it is the session's.
     Toggle,
+    /// *Personal Dictionary…* — the words every spelling check accepts, listed, added to and
+    /// taken from (`grind_spell::personal`, the list `grind words` keeps).
+    Dictionary,
     /// The word under the pointer accepted for this session — *Ignore Spelling*.
     Ignore,
     /// The word under the pointer added to the person's own list — *Learn Spelling*.
@@ -297,6 +300,7 @@ impl Command {
         all.extend([
             Command::Spell(Spell::Next),
             Command::Spell(Spell::Language),
+            Command::Spell(Spell::Dictionary),
             Command::Spell(Spell::Toggle),
             Command::Spell(Spell::Ignore),
             Command::Spell(Spell::Learn),
@@ -402,6 +406,7 @@ impl Command {
                 | Command::Calculations
                 | Command::ParagraphStyle
                 | Command::Spell(Spell::Language)
+                | Command::Spell(Spell::Dictionary)
         )
     }
 
@@ -842,6 +847,11 @@ static SPELLING: Menu = Menu {
             Command::Spell(Spell::Next),
         ),
         command("Spelling Language…", None, Command::Spell(Spell::Language)),
+        command(
+            "Personal Dictionary…",
+            None,
+            Command::Spell(Spell::Dictionary),
+        ),
         command(
             "Check Spelling While Typing",
             None,

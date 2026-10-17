@@ -99,6 +99,14 @@ pub struct TextPane {
     pub(crate) spelling: Cell<grind_spell::Setting>,
     pub(crate) speller: RefCell<Option<Arc<grind_spell::Speller>>>,
     pub(crate) offers: RefCell<Option<(grind_text::Misspelling, Vec<String>)>>,
+    /// The titlebar's spelling picker (`accessory::attach_page`), and the target it holds only
+    /// weakly — kept so a choice made in the Edit menu shows in it too.
+    pub(crate) spelling_picker: RefCell<
+        Option<(
+            Weak<objc2_app_kit::NSPopUpButton>,
+            Retained<objc2::runtime::NSObject>,
+        )>,
+    >,
 }
 
 /// Set for a drive, whose snapshots must not depend on when they were taken: the caret stays lit
@@ -137,6 +145,7 @@ impl TextPane {
             )),
             speller: RefCell::new(None),
             offers: RefCell::new(None),
+            spelling_picker: RefCell::new(None),
         })
     }
 

@@ -313,6 +313,8 @@ pub struct App {
     find: Find,
     /// The outline, when it is showing — one row per heading, each a jump.
     outline: crate::pick::Pick,
+    /// `:dict` — the personal dictionary (`crate::dict`).
+    dict: crate::pick::Pick,
     /// The key list, when it is showing. Presentation state like everything else here.
     help: crate::help::Help,
     /// `:licences` — the third-party list, read-only.
@@ -376,6 +378,7 @@ impl App {
             names: false,
             find: Find::default(),
             outline: crate::pick::Pick::default(),
+            dict: crate::pick::Pick::default(),
             help: crate::help::Help::default(),
             licences: crate::help::Help::default(),
             code: crate::code::Code::default(),
@@ -454,6 +457,14 @@ impl App {
             let height = self.help_height();
             if let crate::pick::Nav::Chose(address) = self.outline.on_key(key.code, height) {
                 self.cmd_jump(&address);
+            }
+            return;
+        }
+        if self.dict.is_open() {
+            let height = self.help_height();
+            if let crate::pick::Nav::Chose(word) = self.dict.on_key(key.code, height) {
+                self.status = crate::dict::remove(&word, self.speller.as_deref());
+                crate::dict::open(&mut self.dict, None);
             }
             return;
         }
@@ -992,6 +1003,10 @@ impl App {
             "words" => self.cmd_words(),
             "spell" => self.cmd_spell(""),
             _ if cmd.starts_with("spell ") => self.cmd_spell(cmd[6..].trim()),
+            "dict" => crate::dict::open(&mut self.dict, None),
+            _ if cmd.starts_with("dict ") => {
+                self.status = crate::dict::command(cmd[5..].trim(), self.speller.as_deref());
+            }
             _ if cmd.starts_with("fix ") => self.cmd_fix(cmd[4..].trim()),
             "plain" => self.set_selection_style(&CharStyle::default(), "plain"),
             "find" => self.cmd_find(""),
@@ -2279,6 +2294,10 @@ impl App {
             self.outline.draw(frame, area, "headings");
             return;
         }
+        if self.dict.is_open() {
+            self.dict.draw(frame, area, "words");
+            return;
+        }
         if let Some(projection) = self.source.take() {
             let title = self.document_name();
             self.code.draw(frame, area, &projection, &title);
@@ -2491,10 +2510,9 @@ impl App {
             Some((from, to)) => format!("{} selected \u{00b7} {where_}", span_len(from, to)),
             None => where_,
         };
-        let at = match self.checked {
-            Some(choice) => format!("{} \u{00b7} {at}", choice.tag()),
-            None => at,
-        };
+        // The spelling language in letters, as the spreadsheet's bar has it (`ALL`, `DE`, `Off`):
+        // a terminal cannot be trusted with a flag's width, and `:spell` is the picker.
+        let at = format!("{} \u{00b7} {at}", self.spelling.chip(false));
         frame.render_widget(
             Paragraph::new(chrome::bar(
                 status_area.width,

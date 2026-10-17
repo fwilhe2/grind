@@ -4305,6 +4305,7 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::Print => {}
         Command::NextMisspelling => sheet_next_misspelling(hwnd),
         Command::SpellingLanguage => sheet_spelling_language(hwnd),
+        Command::PersonalDictionary => personal_dictionary(hwnd),
         Command::ToggleSpelling => sheet_toggle_spelling(hwnd),
         Command::Shortcuts => show_shortcuts(hwnd),
         Command::About => dialog::about(hwnd),
@@ -6459,6 +6460,78 @@ fn sheet_spelling_language(hwnd: HWND) {
     refresh(hwnd);
 }
 
+/// View ▸ Personal Dictionary… over either pane: the list in `dialog::choose`'s listbox, whose
+/// first row adds a word and every other row removes the one it names — asked again after each
+/// change, so a list is maintained in one sitting, until Cancel. The running speller is told
+/// at once (`Speller::accept`/`forget`), so what is underlined changes behind the dialog.
+fn personal_dictionary(hwnd: HWND) {
+    use grind_spell::personal;
+    let tell = |word: &str, add: bool| {
+        let act = |speller: &Option<std::sync::Arc<grind_spell::Speller>>| {
+            if let Some(speller) = speller {
+                match add {
+                    true => speller.accept(word),
+                    false => speller.forget(word),
+                }
+            }
+        };
+        // SAFETY: one borrow each; nothing inside dispatches.
+        unsafe {
+            let _ = with_sheet(hwnd, |state| act(&state.speller));
+            let _ = with_text(hwnd, |state| act(&state.speller));
+        }
+    };
+    let mut said = None;
+    loop {
+        let words = personal::words();
+        let mut items = vec!["Add a word…".to_owned()];
+        items.extend(
+            words
+                .iter()
+                .map(|word| format!("Remove \u{201c}{word}\u{201d}")),
+        );
+        let title = match &said {
+            Some(said) => format!("Personal Dictionary \u{2014} {said}"),
+            None => "Personal Dictionary".to_owned(),
+        };
+        let Some(picked) = dialog::choose(hwnd, &title, &items, 0) else {
+            break;
+        };
+        said = Some(match picked {
+            0 => {
+                let Some(typed) = dialog::prompt(hwnd, "Add a Word", "Word", "") else {
+                    continue;
+                };
+                match personal::word(&typed)
+                    .map_err(str::to_owned)
+                    .and_then(|word| {
+                        personal::add(&word)
+                            .map(|_| word)
+                            .map_err(|e| e.to_string())
+                    }) {
+                    Ok(word) => {
+                        tell(&word, true);
+                        format!("{word} added")
+                    }
+                    Err(why) => why,
+                }
+            }
+            n => {
+                let word = &words[n - 1];
+                match personal::remove(word) {
+                    Ok(_) => {
+                        tell(word, false);
+                        format!("{word} removed")
+                    }
+                    Err(why) => why.to_string(),
+                }
+            }
+        });
+        refresh(hwnd);
+    }
+    refresh(hwnd);
+}
+
 /// View ▸ Check Spelling (Shift+F7) over the grid: off, or back on to the language it was last
 /// on in — remembered, so off here is off in every spreadsheet until it is turned back on.
 fn sheet_toggle_spelling(hwnd: HWND) {
@@ -7106,6 +7179,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::PrintPreview
         | Command::NextMisspelling
         | Command::SpellingLanguage
+        | Command::PersonalDictionary
         | Command::ToggleSpelling
         | Command::Print
         | Command::ShowSource
@@ -7967,6 +8041,12 @@ fn text_drop_selection(text: &mut Text) -> bool {
 /// extends.
 fn text_button_down(hwnd: HWND, lparam: LPARAM) {
     let (x, y) = point(lparam);
+    // The status bar's spelling language: Spelling Language…'s own chooser.
+    // SAFETY: one borrow; arithmetic.
+    if unsafe { with_text(hwnd, |text| text.page.status_picker().contains(x, y)) } == Some(true) {
+        text_spelling_language(hwnd);
+        return;
+    }
     // SAFETY: one borrow; the hit test is arithmetic over the page geometry and dispatches
     // nothing.
     let hit = unsafe { with_text(hwnd, |text| text.page.strip_hit(x, y)) }.flatten();
@@ -8155,6 +8235,7 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::PrintPreview => text_print_preview(hwnd),
         Command::NextMisspelling => text_next_misspelling(hwnd),
         Command::SpellingLanguage => text_spelling_language(hwnd),
+        Command::PersonalDictionary => personal_dictionary(hwnd),
         Command::ToggleSpelling => text_toggle_spelling(hwnd),
         Command::Print => text_print(hwnd),
         Command::ShowSource => show_source(hwnd),
@@ -9351,11 +9432,8 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
         .get(state.caret.block)
         .map(|block| text::status::describe(&block.kind, block.style.as_deref()))
         .unwrap_or_default();
+    // The language is the picker's to say, at the bar's end (`Page::status_picker`).
     let status = text::status::status_line(&here, selected_chars(state), state.app.counts());
-    let status = match state.checked {
-        Some(choice) => format!("{status}  \u{00b7}  {}", choice.name()),
-        None => status,
-    };
     // The word still being typed is not underlined: the caret at its end with nothing selected
     // is somebody halfway through it, and every word processor waits.
     let (from, to) = state.range();
@@ -9382,6 +9460,7 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
             caret: state.caret,
             caret_on: state.caret_on && !system_caret,
             status: &status,
+            status_picker: state.spelling.chip(false),
             banner: state.banner.as_deref(),
             font_px: scale(theme::text::CAPTION, state.page.dpi).round() as i32,
             body_px: scale(theme::text::BODY, state.page.dpi).round() as i32,

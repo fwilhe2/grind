@@ -511,6 +511,12 @@ impl Shell {
                 }
             }
         }
+        // The personal dictionary's words, once the query reaches for them (`spelling::forget`).
+        entries.extend(
+            spelling::forget(query, &spelling::words())
+                .into_iter()
+                .map(|(id, title)| Entry::target(id, title, "Spelling")),
+        );
         // The cells holding the query, *after* the verbs (`sheet::Ui::found` says why).
         match self.mode.get() {
             Mode::Sheet => {

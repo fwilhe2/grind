@@ -14,6 +14,8 @@
 //! pane's popup is the same rows in the same order. What is here is AppKit: an `NSMenu` led by
 //! items made at the moment the menu opens, since a word's suggestions are not a table.
 
+use std::sync::Arc;
+
 use objc2::rc::Retained;
 use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{NSMenu, NSMenuItem};
@@ -27,6 +29,64 @@ use crate::menu::{COMMAND_SELECTOR, Command, SUGGESTIONS, Spell};
 use crate::page_view::TextPane;
 use crate::prompt;
 
+/// Edit ▸ Spelling ▸ *Personal Dictionary…*, over either pane: the list in [`prompt::pick`]'s
+/// pop-up, whose first row adds a word and every other row removes the one it names — asked
+/// again after each change, so a list is maintained in one sitting, until Cancel. `speller` is
+/// told at once (`Speller::accept`/`forget`), so what is underlined changes with it.
+fn maintain_dictionary(speller: Option<Arc<grind_spell::Speller>>, mtm: MainThreadMarker) {
+    use grind_spell::personal;
+    let mut said = "The words spelling accepts in every document and every language. Yours, \
+                    kept on this Mac and never written into a document."
+        .to_owned();
+    loop {
+        let words = personal::words();
+        let mut items = vec!["Add a Word…".to_owned()];
+        items.extend(
+            words
+                .iter()
+                .map(|word| format!("Remove \u{201c}{word}\u{201d}")),
+        );
+        let Some(picked) = prompt::pick(mtm, "Personal Dictionary", &said, "Choose", &items, 0)
+        else {
+            return;
+        };
+        said = match picked {
+            0 => {
+                let Some(typed) = prompt::ask(mtm, "Add a Word", "", "Add", "") else {
+                    continue;
+                };
+                match personal::word(&typed)
+                    .map_err(str::to_owned)
+                    .and_then(|word| {
+                        personal::add(&word)
+                            .map(|_| word)
+                            .map_err(|e| e.to_string())
+                    }) {
+                    Ok(word) => {
+                        if let Some(speller) = &speller {
+                            speller.accept(&word);
+                        }
+                        format!("\u{201c}{word}\u{201d} was added.")
+                    }
+                    Err(why) => why,
+                }
+            }
+            n => {
+                let word = &words[n - 1];
+                match personal::remove(word) {
+                    Ok(_) => {
+                        if let Some(speller) = &speller {
+                            speller.forget(word);
+                        }
+                        format!("\u{201c}{word}\u{201d} was removed.")
+                    }
+                    Err(why) => why.to_string(),
+                }
+            }
+        };
+    }
+}
+
 impl TextPane {
     /// Attach what [`TextPane::spelling`] says to the document — on the first spelling verb and
     /// whenever the choice changes, so *Ignore Spelling* has a dictionary of this page's own to
@@ -36,6 +96,23 @@ impl TextPane {
             Ok(Some((_, speller))) => Some(speller),
             Ok(None) | Err(_) => None,
         };
+        self.show_spelling_setting();
+    }
+
+    /// Put the spelling setting on the titlebar's picker, whichever way it was chosen.
+    fn show_spelling_setting(&self) {
+        let picker = self
+            .spelling_picker
+            .borrow()
+            .as_ref()
+            .and_then(|(picker, _)| picker.load());
+        if let Some(picker) = picker {
+            let at = grind_spell::Setting::ALL
+                .iter()
+                .position(|s| *s == self.spelling.get())
+                .unwrap_or(0);
+            picker.selectItemAtIndex(at as isize);
+        }
     }
 
     /// The misspelt word `at` is in, from its first character to just past its last.
@@ -54,6 +131,10 @@ impl TextPane {
         match spell {
             Spell::Next => self.next_misspelling(mtm),
             Spell::Language => self.choose_language(mtm),
+            Spell::Dictionary => {
+                maintain_dictionary(self.speller.borrow().clone(), mtm);
+                self.act_on(|_, _, _| Ok(()));
+            }
             Spell::Toggle => {
                 let next = match self.spelling.get() {
                     grind_spell::Setting::Off => grind_spell::Setting::Automatic,
@@ -137,7 +218,7 @@ impl TextPane {
     }
 
     /// Choose a setting, remember it for every text document, and apply it.
-    fn set_spelling(&self, setting: grind_spell::Setting, mtm: MainThreadMarker) {
+    pub(crate) fn set_spelling(&self, setting: grind_spell::Setting, mtm: MainThreadMarker) {
         self.spelling.set(setting);
         if let Err(why) = grind_spell::preference::save(grind_core::DocumentKind::Text, setting) {
             prompt::tell(mtm, "The setting was not remembered.", &why.to_string());
@@ -207,6 +288,10 @@ impl Pane {
         match spell {
             Spell::Next => self.next_misspelling(mtm),
             Spell::Language => self.choose_language(mtm),
+            Spell::Dictionary => {
+                maintain_dictionary(self.speller.borrow().clone(), mtm);
+                self.repaint();
+            }
             Spell::Toggle => {
                 let next = match self.spelling.get() {
                     grind_spell::Setting::Off => self.spelling_on.get(),
@@ -406,4 +491,20 @@ fn item(title: &str, command: Option<Command>, mtm: MainThreadMarker) -> Retaine
         None => made.setEnabled(false),
     }
     made
+}
+
+impl crate::accessory::SpellingHost for TextPane {
+    fn choose_spelling(&self, setting: grind_spell::Setting, mtm: MainThreadMarker) {
+        self.set_spelling(setting, mtm);
+        self.act_on(|_, _, _| Ok(()));
+    }
+
+    fn hold_spelling_picker(
+        &self,
+        picker: &Retained<objc2_app_kit::NSPopUpButton>,
+        target: Retained<objc2::runtime::NSObject>,
+    ) {
+        *self.spelling_picker.borrow_mut() = Some((objc2::rc::Weak::from_retained(picker), target));
+        self.show_spelling_setting();
+    }
 }

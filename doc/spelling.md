@@ -83,7 +83,16 @@ asks for one language (decision 4).
 
 5. **The person's own words are theirs, not the document's.** `$XDG_CONFIG_HOME/grind/words`
    (`~/.config/grind/words`, `%APPDATA%\grind\words`), one per line, `#` for comments — one list
-   for every document and every language. Nothing about spelling is ever written into a document:
+   for every document and every language. **It is maintained, not only grown** (2026-10-17):
+   `grind words` lists it, `--add`s a word and `--remove`s one, and every client has a
+   *Personal Dictionary* to do the same — a dialog of rows with a Remove each in both GNOME
+   windows, `:dict` (`Enter` removes, `:dict add|rm WORD`) in the terminal, a list whose first
+   row adds in the Windows and Mac windows, and *Spelling: your dictionary…* in the browser's
+   palette, whose rows remove (the browser's list is `localStorage`'s, as its setting is). A
+   removed word is forgotten by the speller already attached (`Speller::forget`), so its
+   underline comes back without reopening anything; what a typed word must be — one word, no
+   leading `#` — is `personal::word`, so every client refuses the same things. Nothing about
+   spelling is ever written into a document:
    checking is a reading, like `doc/view-modes.md`'s overlays, and a file's bytes after a save are
    what they would have been with spelling off.
 
@@ -183,8 +192,11 @@ code (`Setting::code`: `ALL`, `DE`) **on purpose** rather than by accident:
 - **a terminal cannot be trusted with a flag's width** (one cell or two, by terminal), which
   would misalign the bar — `grind-tui` shows the letters, and `:spell` is its picker.
 
-The menus beside the pickers carry the flag too (`Setting::row`: `🇩🇪  Deutsch`). The word
-processor's windows keep the language's name in their status line, and have no flag picker yet.
+The menus beside the pickers carry the flag too (`Setting::row`: `🇩🇪  Deutsch`), with the
+personal dictionary under the languages. **The word processor has the same picker** (2026-10-17):
+at the end of the status line in the GNOME window, the terminal (`ALL`/`DE`) and the Windows
+window (`ALL`/`DE`, a click chooses), in the browser's shared bottom bar, and in the Mac's text
+window in a titlebar accessory of its own, where the grid's picker sits.
 
 ## The gaps, named
 

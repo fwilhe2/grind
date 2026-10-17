@@ -1419,6 +1419,21 @@ enum Top {
         list: bool,
     },
 
+    /// Print your personal dictionary, or add a word to it or remove one
+    ///
+    /// The words every spelling check accepts, in every document and every language, kept one
+    /// per line in $XDG_CONFIG_HOME/grind/words — yours, never written into a document
+    /// (doc/spelling.md, decision 5). The same list every window's Personal Dictionary shows.
+    #[cfg(feature = "spell")]
+    Words {
+        /// Add this word
+        #[arg(long, conflicts_with = "remove")]
+        add: Option<String>,
+        /// Remove this word
+        #[arg(long)]
+        remove: Option<String>,
+    },
+
     /// Convert between the three physical forms — package, flat file and .grind
     ///
     /// The form comes from the output extension: .ods or .odt for the package, .fods or
@@ -3396,6 +3411,20 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 .map(str::to_owned)
                 .collect(),
         })),
+
+        #[cfg(feature = "spell")]
+        Top::Words { add, remove } => {
+            use grind_spell::personal;
+            if let Some(typed) = add {
+                personal::add(&personal::word(typed)?).map_err(|e| e.to_string())?;
+            }
+            if let Some(word) = remove
+                && !personal::remove(word).map_err(|e| e.to_string())?
+            {
+                return Err(format!("{word:?} is not in your dictionary"));
+            }
+            text_lines(personal::words())
+        }
 
         Top::Convert { file, out } => match document_kind(file)? {
             DocumentKind::Spreadsheet => {

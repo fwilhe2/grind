@@ -176,6 +176,18 @@ impl Page {
         }
     }
 
+    /// The status bar's far end, where the spelling language is drawn in letters (`ALL`, `DE`,
+    /// `Off`) and a click chooses another — wide enough for three capitals at any DPI.
+    pub fn status_picker(&self) -> Rect {
+        let status = self.status();
+        let w = scale(56.0, self.dpi).min(status.w);
+        Rect {
+            x: status.x + status.w - w,
+            w,
+            ..status
+        }
+    }
+
     /// One control on the strip: `w` wide, at Fluent's control height, centred in the band.
     ///
     /// Every rectangle below is one of these, which is what stops the strip drifting back into

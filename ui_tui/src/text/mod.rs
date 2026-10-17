@@ -37,6 +37,7 @@ Word processor:
   :fix N         :fix <word>       — replace the misspelt word here with suggestion N, or that
   :spell [auto|<lang>|off]         — which language: en de fr es it pt pl; :spell ignore and
                                       :spell add accept a word
+  :dict          :dict add|rm WORD — your own dictionary: Enter on a word removes it
   :outline       — every heading, indented; Enter goes to one
   :table [rows cols]                — a table before this block, drawn as a grid
   :md-in <file>  :md-out <file>     — markdown read in before this block, or the selection
