@@ -205,11 +205,7 @@ impl Shell {
                         _ => *self.text_speller.borrow_mut() = Some(speller),
                     }
                     if announce {
-                        self.set_message(format!(
-                            "Checking spelling in {} ({})",
-                            choice.language.name(),
-                            choice.source.label()
-                        ));
+                        self.set_message(format!("Checking spelling in {}", choice.describe()));
                     } else {
                         self.set_message(String::new());
                     }

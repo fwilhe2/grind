@@ -490,9 +490,8 @@ impl App {
                     Some(choice) => {
                         let wrong = self.core.misspellings(None, None).unwrap_or_default().len();
                         format!(
-                            "spelling in {} ({}) \u{2014} {wrong} misspelt, ] goes to the next",
-                            choice.language.name(),
-                            choice.source.label()
+                            "spelling in {} \u{2014} {wrong} misspelt, ] goes to the next",
+                            choice.describe()
                         )
                     }
                     None => "spelling is off \u{2014} :spell auto turns it on".to_string(),

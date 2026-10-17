@@ -1577,9 +1577,8 @@ impl App {
                     Some(choice) => {
                         let wrong = self.core.misspellings(0..usize::MAX).len();
                         format!(
-                            "spelling in {} ({}) \u{2014} {wrong} misspelt, ] goes to the next",
-                            choice.language.name(),
-                            choice.source.label()
+                            "spelling in {} \u{2014} {wrong} misspelt, ] goes to the next",
+                            choice.describe()
                         )
                     }
                     None => "spelling is off \u{2014} :spell auto turns it on".to_string(),
@@ -2493,7 +2492,7 @@ impl App {
             None => where_,
         };
         let at = match self.checked {
-            Some(choice) => format!("{} \u{00b7} {at}", choice.language.tag()),
+            Some(choice) => format!("{} \u{00b7} {at}", choice.tag()),
             None => at,
         };
         frame.render_widget(

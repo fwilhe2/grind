@@ -651,7 +651,7 @@ impl Ui {
         };
         self.reconsider_spelling(counts.words);
         let words = match self.checked.get() {
-            Some(choice) => format!("{words}  ·  {}", choice.language.name()),
+            Some(choice) => format!("{words}  ·  {}", choice.name()),
             None => words,
         };
         self.status.set_text(&match here.is_empty() {

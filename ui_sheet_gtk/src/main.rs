@@ -693,11 +693,7 @@ impl Ui {
             Ok(Some((choice, speller))) => {
                 self.checked.set(Some(choice));
                 if say {
-                    self.toast(&format!(
-                        "Checking spelling in {}, {}",
-                        choice.language.name(),
-                        choice.source.label()
-                    ));
+                    self.toast(&format!("Checking spelling in {}", choice.describe()));
                 }
                 Some(speller)
             }

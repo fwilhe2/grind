@@ -1015,11 +1015,7 @@ fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
                 },
             };
             let (choice, _) = grind_spell::attach(&app, named).map_err(|e| e.to_string())?;
-            eprintln!(
-                "grind: checking in {} ({})",
-                choice.language.tag(),
-                choice.source.label()
-            );
+            eprintln!("grind: checking in {}", choice.describe());
             let blocks = match range {
                 Some(range) => span(&app, range)?,
                 None => 0..app.block_count(),
@@ -2012,9 +2008,10 @@ enum TextCommand {
 
     /// Print every misspelt word, with its address
     ///
-    /// Checked in one language per document (doc/spelling.md): the one --language names, else
-    /// the one the document states, else the one whose dictionary knows most of its words.
-    /// Which it was goes to stderr. Words in your own list ($XDG_CONFIG_HOME/grind/words, one
+    /// A word any dictionary knows is right (doc/spelling.md), unless --language names one, which
+    /// is then the only one checked. Otherwise the document's own language — the one it states,
+    /// else the one whose dictionary knows most of its words — is asked first and suggests;
+    /// which it was goes to stderr. Words in your own list ($XDG_CONFIG_HOME/grind/words, one
     /// per line) are accepted; --add puts one there. Nothing is written to the document.
     #[cfg(feature = "spell")]
     Spell {
@@ -2782,10 +2779,11 @@ enum Command {
 
     /// Print every misspelt word in a text cell, with its cell and where in it the word starts
     ///
-    /// Only typed text is checked — never a number, a date or a formula's result — in one
-    /// language per document (doc/spelling.md): the one --language names, else the one the
-    /// document's own locale states, else the one whose dictionary knows most of its words.
-    /// Which it was goes to stderr. Words in your own list ($XDG_CONFIG_HOME/grind/words) are
+    /// Only typed text is checked — never a number, a date or a formula's result — and a word
+    /// any dictionary knows is right (doc/spelling.md), unless --language names one, which is
+    /// then the only one checked. Otherwise the language the document's own locale states, else
+    /// the one whose dictionary knows most of its words, is asked first and suggests; which it
+    /// was goes to stderr. Words in your own list ($XDG_CONFIG_HOME/grind/words) are
     /// accepted; --add puts one there. Nothing is written to the document.
     #[cfg(feature = "spell")]
     Spell {
@@ -4526,11 +4524,7 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
                 },
             };
             let (choice, _) = grind_spell::attach(&app, named).map_err(|e| e.to_string())?;
-            eprintln!(
-                "grind: checking in {} ({})",
-                choice.language.tag(),
-                choice.source.label()
-            );
+            eprintln!("grind: checking in {}", choice.describe());
             let mut only = match sheet {
                 Some(name) => Some(a1::sheet(&app, name).say()?),
                 None => None,

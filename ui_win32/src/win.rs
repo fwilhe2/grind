@@ -6078,7 +6078,7 @@ fn text_next_misspelling(hwnd: HWND) {
             let (_, at) = text::keymap::ordered(text.anchor, text.caret);
             let Some(index) = grind_text::find::step(&carets, at, grind_text::find::Towards::Next)
             else {
-                text.say(Some(notice::none_misspelt(choice.language.name())));
+                text.say(Some(notice::none_misspelt(&choice.describe())));
                 return None;
             };
             let wrong = all[index].clone();
@@ -6370,7 +6370,7 @@ fn sheet_next_misspelling(hwnd: HWND) {
             };
             let all = state.app.misspellings(None, None).unwrap_or_default();
             if all.is_empty() {
-                state.say(Some(notice::none_misspelt(choice.language.name())));
+                state.say(Some(notice::none_misspelt(&choice.describe())));
                 return None;
             }
             let key = |m: &grind_sheet::Misspelling| (m.sheet, m.pos.row, m.pos.col, m.offset);
@@ -9341,7 +9341,7 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
         .unwrap_or_default();
     let status = text::status::status_line(&here, selected_chars(state), state.app.counts());
     let status = match state.checked {
-        Some(choice) => format!("{status}  \u{00b7}  {}", choice.language.name()),
+        Some(choice) => format!("{status}  \u{00b7}  {}", choice.name()),
         None => status,
     };
     // The word still being typed is not underlined: the caret at its end with nothing selected

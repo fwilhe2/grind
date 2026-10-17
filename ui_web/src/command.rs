@@ -78,7 +78,13 @@ pub const SHEET: &[Command] = &[
     cmd("doc.undo", "Undo", "Document", "Ctrl+Z", false),
     cmd("doc.redo", "Redo", "Document", "Ctrl+Shift+Z", false),
     // --- spelling (`doc/spelling.md`): a language for this kind of document, remembered ---
-    cmd("spell.auto", "Spelling: automatic", "Spelling", "", false),
+    cmd(
+        "spell.auto",
+        "Spelling: all languages",
+        "Spelling",
+        "",
+        false,
+    ),
     cmd(
         "spell.en-US",
         "Spelling: English (US)",
@@ -468,7 +474,13 @@ pub const TEXT: &[Command] = &[
     cmd("doc.undo", "Undo", "Document", "Ctrl+Z", false),
     cmd("doc.redo", "Redo", "Document", "Ctrl+Shift+Z", false),
     // --- spelling (`doc/spelling.md`): a language for this kind of document, remembered ---
-    cmd("spell.auto", "Spelling: automatic", "Spelling", "", false),
+    cmd(
+        "spell.auto",
+        "Spelling: all languages",
+        "Spelling",
+        "",
+        false,
+    ),
     cmd(
         "spell.en-US",
         "Spelling: English (US)",

@@ -1,18 +1,19 @@
 <!--
 SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 
-SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-License-Identifier: CC-BY-4.0
 -->
 
 # Spelling
 
 **Normative for `text/src/spell.rs`, `spell/` and every shell's underline.** Built 2026-10-06:
-English and German, one language per document, in the core, the CLI, `grind lint` and the GNOME
+English and German, then one language per document, in the core, the CLI, `grind lint` and the GNOME
 window, with every other shell's problems pane listing the words. Since 2026-10-07 the terminal
 and Windows shells underline and correct as well, and so does the Mac (type-checked, not yet run);
 the browser has it since 2026-10-16, with its dictionaries fetched rather than carried (*Where it reaches*). Since 2026-10-10 there are
 seven languages: French, Spanish, Italian, Portuguese and Polish joined the first two (*The
-languages*).
+languages*). Since 2026-10-17 a word is right when **any** of the seven knows it, unless somebody
+asks for one language (decision 4).
 
 ## The decisions
 
@@ -45,7 +46,24 @@ languages*).
    apostrophe or hyphen between letters; a hyphenated word is right when the whole is or every
    part is; `’` is checked as `'`.
 
-4. **One language per document**, chosen in this order (`grind_spell::choose`):
+4. **Every language, unless one is asked for.** By default a word is right when any dictionary
+   this build has knows it (`grind_spell::Speller::every`): a German letter quoting an English
+   sentence, or an English report naming a *Straße*, underlines nothing that is spelled right.
+   Checking in **one language alone** has to be asked for — `--language`, a shell's Spelling
+   menu, `grind <app> spelling de` — and is then exactly that language. The menus call the
+   default *All languages*; its tag stays `auto`, so a remembered setting means what it meant.
+
+   The cost was measured before it was taken. **Loading** all seven is about a quarter of a
+   second and 57 MB in a release build, Polish half of both, so `attach` parses them on a
+   thread of its own and the document's own language is always asked first — a word spelled
+   right in it never reaches the other six. **Accuracy**: of 61 common English misspellings,
+   7 are words somewhere else (`wich`, `accomodate`, `fo`, `si`, `ot`, `nad`, `het`); of 25
+   German ones, 6 (`Packet`, `nich`, `dei`, `sien`, `Hasu`, `abre`). Nearly all are three or
+   four letters long, which is the named gap below.
+
+   The document's **first** language — the one asked first, the one suggestions come from and
+   the one the status bar names under *All languages* — is chosen in this order
+   (`grind_spell::choose`):
    1. the one somebody named — `--language`, or a shell's Spelling menu;
    2. the one the document **states**: `fo:language`/`fo:country` on its `Standard` paragraph
       style, over the default paragraph style, which is where LibreOffice keeps it. A language
@@ -146,9 +164,16 @@ turns off a dictionary without naming either application, and depends on neither
 
 ## The gaps, named
 
-- **Several languages in one document.** The next step, and a requirement rather than a nicety: a
-  language per paragraph and per run (`fo:language` on a paragraph style, an automatic text
-  style), which needs the text model to *read* both and the writer to carry them.
+- **A language per paragraph or run.** Every language is accepted everywhere now, which answers
+  a mixed document without knowing where each language is; what it cannot do is underline a word
+  that is right in Polish but wrong *here*. Reading `fo:language` per paragraph style and per
+  automatic text style would let a stated language narrow its own text, and would choose the
+  suggestions per word.
+- **Short words slip through.** A two- to four-letter slip is often a word in another language
+  (decision 4's measurement). A rule that a word that short must be known to the first language
+  would catch most of them, at the price of underlining a short foreign word (`oui`, `hola`).
+- **The browser accepts only what it has fetched.** It fetches the first language's dictionary,
+  so *All languages* there means the ones a visit has already loaded.
 - **Setting the document's language.** Read and never written: stating one means writing
   `office:styles`, which the text writer does not own (`doc/text-core.md`). The menu's choice is
   the person's remembered setting, never the document's.

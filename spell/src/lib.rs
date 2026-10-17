@@ -10,10 +10,13 @@
 //! answers whether one is spelled right. It is a separate crate for the reason `grind-print` is:
 //! two megabytes of word lists belong in the binaries that check spelling and in no other.
 //!
-//! **One language per document**, picked by [`choose`] in a fixed order — the one somebody
-//! named, then the one the document states, then the one that knows most of its words — and
-//! beside it the person's own word list ([`personal`]), which is theirs rather than the
-//! document's and so is never written into one.
+//! **Every language, unless somebody asks for one.** A word is right when any dictionary this
+//! build has knows it, so a German letter quoting an English sentence underlines neither. The
+//! document's own language — picked by [`choose`] in a fixed order: the one somebody named, then
+//! the one the document states, then the one that knows most of its words — is the *first*
+//! dictionary asked and the one suggestions come from; naming a language ([`Setting::In`]) is how
+//! to check in that one alone. Beside the dictionaries is the person's own word list
+//! ([`personal`]), which is theirs rather than the document's and so is never written into one.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -166,20 +169,41 @@ impl Language {
     }
 }
 
-/// A [`Lexicon`]: one language's dictionary, and the words somebody has said are right.
+/// A [`Lexicon`]: one language's dictionary — or that one first and every other after it — and
+/// the words somebody has said are right.
 pub struct Speller {
     language: Language,
+    /// Whether a word any other dictionary knows is right too ([`Speller::every`]).
+    every: bool,
     /// The personal list and whatever was added this session — "Add to Dictionary" and
     /// "Ignore" both land here; only the first also writes [`personal`]'s file.
     words: RwLock<BTreeSet<String>>,
 }
 
 impl Speller {
+    /// A speller for `language` alone.
     pub fn new(language: Language, words: BTreeSet<String>) -> Self {
         Speller {
             language,
+            every: false,
             words: RwLock::new(words),
         }
+    }
+
+    /// A speller that asks `first` and then every other language this build has — what a document
+    /// is checked with unless somebody named one. Suggestions, and the language messages name,
+    /// are `first`'s. Where dictionaries are fetched rather than carried, "every other" is the
+    /// ones that have arrived.
+    pub fn every(first: Language, words: BTreeSet<String>) -> Self {
+        Speller {
+            every: true,
+            ..Speller::new(first, words)
+        }
+    }
+
+    /// Whether a word any dictionary knows is accepted, rather than only [`Speller::language_of`]'s.
+    pub fn is_every(&self) -> bool {
+        self.every
     }
 
     pub fn language_of(&self) -> Language {
@@ -197,10 +221,21 @@ impl Lexicon for Speller {
         if self.language.dictionary().check(word) {
             return true;
         }
-        let words = self.words.read().unwrap();
-        // A listed word is accepted as listed and capitalised, the way Hunspell treats its own:
-        // `grind` listed means `Grind` at the start of a sentence is right too.
-        words.contains(word) || words.contains(&lower_first(word))
+        {
+            let words = self.words.read().unwrap();
+            // A listed word is accepted as listed and capitalised, the way Hunspell treats its
+            // own: `grind` listed means `Grind` at the start of a sentence is right too.
+            if words.contains(word) || words.contains(&lower_first(word)) {
+                return true;
+            }
+        }
+        // Only a word the first dictionary does not know gets this far, so the others cost
+        // nothing for a word spelled right in the document's own language.
+        self.every
+            && Language::ALL
+                .iter()
+                .filter(|other| **other != self.language && other.available())
+                .any(|other| other.dictionary().check(word))
     }
 
     fn suggest(&self, word: &str) -> Vec<String> {
@@ -247,10 +282,49 @@ impl Source {
 }
 
 /// The language a document is checked in, and why.
+///
+/// Unless it was [`Source::Named`], `language` is only the *first* dictionary asked and the one
+/// suggestions come from: a word any other dictionary knows is accepted as well ([`Choice::every`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Choice {
     pub language: Language,
     pub source: Source,
+}
+
+impl Choice {
+    /// Whether every language's words are accepted — anything but a language somebody named.
+    pub fn every(self) -> bool {
+        self.source != Source::Named
+    }
+
+    /// What a status bar shows: `All languages`, or the one language's own name.
+    pub fn name(self) -> &'static str {
+        match self.every() {
+            true => Setting::Automatic.label(),
+            false => self.language.name(),
+        }
+    }
+
+    /// The short form, for a narrow status line: `all`, or the one language's tag.
+    pub fn tag(self) -> &'static str {
+        match self.every() {
+            true => "all",
+            false => self.language.tag(),
+        }
+    }
+
+    /// One sentence on what is checked and why — `every language, suggestions in Deutsch (guessed
+    /// from the text)`, or `Deutsch (chosen)`.
+    pub fn describe(self) -> String {
+        match self.every() {
+            true => format!(
+                "every language, suggestions in {} ({})",
+                self.language.name(),
+                self.source.label()
+            ),
+            false => format!("{} ({})", self.language.name(), self.source.label()),
+        }
+    }
 }
 
 /// What [`choose`] answers when there is nothing to check in.
@@ -287,6 +361,8 @@ impl std::fmt::Display for Unchecked {
 
 /// Which language to check `app`'s document in: `named` if somebody named one, then the one the
 /// document states, then a guess from its words, then the desktop's language, then English.
+/// Anything but `named` is the first of every language rather than the only one
+/// ([`Choice::every`]).
 pub fn choose(app: &(impl Spelled + ?Sized), named: Option<Language>) -> Result<Choice, Unchecked> {
     let choice = |language, source| Ok(Choice { language, source });
     if let Some(language) = named {
@@ -412,7 +488,8 @@ impl Lexicon for Common {
 }
 
 /// [`choose`] a language and attach a [`Speller`] for it — with the person's own words
-/// ([`personal::load`]) — to `app`. The speller is handed back too, so a shell can
+/// ([`personal::load`]) — to `app`: that language alone when it was `named`, otherwise that one
+/// first and [`Speller::every`] other after it. The speller is handed back too, so a shell can
 /// [`Speller::accept`] a word into it. With nothing to check in, `app` is left checking nothing.
 pub fn attach(
     app: &(impl Spelled + ?Sized),
@@ -424,7 +501,13 @@ pub fn attach(
             Err(Unchecked::NotLoaded(choice.language))
         }
         Ok(choice) => {
-            let speller = Arc::new(Speller::new(choice.language, personal::load()));
+            let speller = Arc::new(match choice.every() {
+                true => {
+                    warm();
+                    Speller::every(choice.language, personal::load())
+                }
+                false => Speller::new(choice.language, personal::load()),
+            });
             app.set_lexicon(Some(speller.clone()));
             Ok((choice, speller))
         }
@@ -435,15 +518,37 @@ pub fn attach(
     }
 }
 
+/// Parse every dictionary on a thread of its own, once a process — about a quarter of a second
+/// and 57 MB in all, Polish half of both — so the first word the document's own language does
+/// not know does not wait for six more to load. A build with no threads (the browser) parses a
+/// dictionary as it arrives instead.
+fn warm() {
+    #[cfg(not(target_family = "wasm"))]
+    {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            let _ = std::thread::Builder::new()
+                .name("grind-spell-warm".into())
+                .spawn(|| {
+                    for language in Language::ALL.into_iter().filter(|l| l.available()) {
+                        language.dictionary();
+                    }
+                });
+        });
+    }
+}
+
 /// What somebody has said about spelling for one window — a shell's Spelling menu, `:spell`.
 /// The session's rather than the document's: the document's own language is read and never
 /// written (`doc/spelling.md`, "Setting the document's language").
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Setting {
-    /// [`choose`]'s order: the language the document states, else the one whose dictionary
-    /// knows most of its words.
+    /// A word any dictionary knows is right, with [`choose`]'s language — the one the document
+    /// states, else the one whose dictionary knows most of its words — asked first and
+    /// suggesting. The default: checking in one language alone has to be asked for.
     #[default]
     Automatic,
+    /// That language alone.
     In(Language),
     Off,
 }
@@ -474,7 +579,7 @@ impl Setting {
     /// `de-DE`. `None` for a word that is none of them.
     pub fn from_tag(tag: &str) -> Option<Setting> {
         match tag.trim() {
-            "auto" | "automatic" => Some(Setting::Automatic),
+            "auto" | "automatic" | "all" | "any" => Some(Setting::Automatic),
             "off" | "none" => Some(Setting::Off),
             tag => Language::from_tag(tag).map(Setting::In),
         }
@@ -483,7 +588,7 @@ impl Setting {
     /// What a menu calls it.
     pub fn label(self) -> &'static str {
         match self {
-            Setting::Automatic => "Automatic",
+            Setting::Automatic => "All languages",
             Setting::In(language) => language.name(),
             Setting::Off => "Off",
         }
@@ -907,6 +1012,36 @@ mod tests {
         let wrong = app.misspellings(0..2);
         assert_eq!(wrong.len(), 1);
         assert_eq!(wrong[0].word, "Fehller");
+    }
+
+    #[test]
+    fn every_language_is_accepted_unless_one_was_asked_for() {
+        let app = App::new();
+        app.insert(
+            0,
+            BlockKind::Paragraph,
+            "The letter said Straße, mañana and cześć, and one wrod.",
+        )
+        .unwrap();
+        let (choice, speller) = attach(&app, None).unwrap();
+        assert_eq!(choice.language, Language::English);
+        assert!(choice.every() && speller.is_every());
+        assert_eq!(choice.name(), "All languages");
+        assert_eq!(app.spelling_language().as_deref(), Some("en-US"));
+        let words = |app: &App| -> Vec<String> {
+            app.misspellings(0..1).into_iter().map(|w| w.word).collect()
+        };
+        assert_eq!(words(&app), ["wrod"]);
+        // Suggestions are the first language's.
+        assert!(app.suggest("wrod").contains(&"word".to_owned()));
+        let (choice, speller) = attach(&app, Some(Language::English)).unwrap();
+        assert!(!choice.every() && !speller.is_every());
+        assert_eq!(choice.name(), "English (US)");
+        assert_eq!(words(&app), ["Straße", "mañana", "cześć", "wrod"]);
+        let (choice, _) = Setting::In(Language::English).apply(&app).unwrap().unwrap();
+        assert!(!choice.every());
+        let (choice, _) = Setting::Automatic.apply(&app).unwrap().unwrap();
+        assert!(choice.every());
     }
 
     #[test]
