@@ -30,7 +30,7 @@
 #   7. M7's: a label made bold, a currency's decimals stepped, a cell coloured and cleared and
 #      another coloured and kept, all through the Format menu or its keys, and the projection
 #      says each; and on a page, a heading from the Paragraph menu and ⌘I-then-type in italic;
-#   8. M8's: `=SU`, ↓ and Tab take SUM from the assist's offers; choosing a Problems row in the
+#   8. M8's: `=SUM`, ↓, ↑ and Tab take SUM from the assist's offers; choosing a Problems row in the
 #      sidebar lands on its cell on another sheet; and with every overlay on and the source pane
 #      open, a save writes the bytes that were read.
 #
@@ -400,12 +400,16 @@ bounded 120 "$mac" "$out/moved.fodt" --drive "$out/move.drive" --out "$out/moved
 say "   Move Up swaps the caret's paragraph with the one above"
 
 say "== formula literacy, the sidebar and the overlays"
-# M8's: `=SU` offers SUBSTITUTE first, ↓ steps to SUM and Tab takes it; the call is finished by
-# hand and committed with Return, which the list never claims.
+# M8's: `=SUM` offers SUM first and SUMIF after it; ↓ steps to SUMIF, ↑ steps back, and Tab
+# takes SUM. The call is finished by hand and committed with Return, which the list never
+# claims. Typed as far as `SUM` so the drive does not depend on which other functions begin
+# with `SU`: it once pressed ↓ once from `=SU`, and SUBTOTAL arriving between SUBSTITUTE and
+# SUM was enough to break it.
 "$grind" sheet new "$out/assisted.fods" > /dev/null
 cat > "$out/assist.drive" <<'DRIVE'
-type =SU
+type =SUM
 key down
+key up
 key tab
 type 1;2)
 key return
@@ -417,7 +421,7 @@ bounded 120 "$mac" "$out/assisted.fods" --drive "$out/assist.drive" --out "$out/
 cat "$out/assist.txt"
 [ "$("$grind" sheet get --input "$out/assisted.fods" A1)" = "=SUM(1;2)" ] \
     || fail "Tab did not take SUM: A1 holds $("$grind" sheet get --input "$out/assisted.fods" A1)"
-say "   =SU, ↓ and Tab take SUM, and Return commits the call"
+say "   =SUM, ↓ and ↑ step through the offers, Tab takes SUM, and Return commits the call"
 
 # Point mode: with the caret where a reference could go, the arrows point at cells instead of
 # committing, Shift grows the range, and typing the `)` ends pointing.
