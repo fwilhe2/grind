@@ -125,6 +125,9 @@ pub struct Builder {
     filter: Option<(usize, Filter)>,
     /// The `table:filter-condition` being read: its field number and the values so far.
     filter_values: (u32, BTreeSet<String>),
+    /// The conditions of a `table:filter-or` being read, held until it ends: kept only when
+    /// every one names the same column. `None` outside one.
+    filter_or: Option<Vec<(u32, BTreeSet<String>)>>,
 
     // --- charts (`doc/chart-format.md`) ---
     /// The chart being assembled out of the `draw:frame`/`draw:object` currently open, if any.
@@ -267,6 +270,7 @@ impl Builder {
             row_hidden: false,
             filter: None,
             filter_values: Default::default(),
+            filter_or: None,
             pending_chart: None,
             controls: HashMap::new(),
             placed: Vec::new(),
@@ -1436,8 +1440,8 @@ struct DatabaseRange;
 impl Context<Builder> for DatabaseRange {
     fn start_child(&mut self, name: &Name, _a: &Attrs, _b: &mut Builder) -> Option<Ctx> {
         // `table:filter` and `table:filter-and` are both just wrappers around the
-        // conditions this model keeps; `table:filter-or` is not, so it goes to `Ignore` and
-        // the range keeps its buttons and no conditions.
+        // conditions this model keeps; `table:filter-or` is one only when all its conditions
+        // name one column ([`FilterOr`]).
         name.is(Ns::Table, "filter")
             .then(|| Box::new(FilterAnd) as Ctx)
     }
@@ -1457,6 +1461,10 @@ impl Context<Builder> for FilterAnd {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         match (name.ns, name.local.as_str()) {
             (Ns::Table, "filter-and") => Some(Box::new(FilterAnd)),
+            (Ns::Table, "filter-or") if b.filter_or.is_none() => {
+                b.filter_or = Some(Vec::new());
+                Some(Box::new(FilterOr { readable: true }))
+            }
             (Ns::Table, "filter-condition") => {
                 // Only a set of values. Anything else — `<`, `begins-with`, top-10 — is
                 // dropped rather than half-applied (see [`crate::filter`]).
@@ -1507,6 +1515,46 @@ impl Context<Builder> for FilterCondition {
 
     fn end(&mut self, b: &mut Builder) {
         let (field, values) = std::mem::take(&mut b.filter_values);
+        if let Some(or) = b.filter_or.as_mut() {
+            or.push((field, values));
+        } else if let Some((_, filter)) = b.filter.as_mut() {
+            filter.keep.insert(field, values);
+        }
+    }
+}
+
+/// `table:filter-or`. LibreOffice saves a one-column autofilter as an `or` of one condition,
+/// so an `or` cannot simply be ignored; and an `or` of values in one column is a set of
+/// values, which is the model. One across columns keeps a row *either* admits, which no set
+/// per column can say — so it is dropped whole, as is one holding anything this reader does
+/// not take (another operator, a nested `and`), since dropping one branch of an `or` would
+/// hide rows the file shows.
+struct FilterOr {
+    readable: bool,
+}
+
+impl Context<Builder> for FilterOr {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        let child = name
+            .is(Ns::Table, "filter-condition")
+            .then(|| FilterAnd.start_child(name, attrs, b))
+            .flatten();
+        if child.is_none() {
+            self.readable = false;
+        }
+        child
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        let conditions = b.filter_or.take().unwrap_or_default();
+        let Some((field, _)) = conditions.first() else {
+            return;
+        };
+        let field = *field;
+        if !self.readable || conditions.iter().any(|(f, _)| *f != field) {
+            return;
+        }
+        let values = conditions.into_iter().flat_map(|(_, v)| v).collect();
         if let Some((_, filter)) = b.filter.as_mut() {
             filter.keep.insert(field, values);
         }

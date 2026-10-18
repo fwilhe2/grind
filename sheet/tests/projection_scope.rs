@@ -300,7 +300,7 @@ fn the_corpus_emits_nothing_undocumented() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
     let mut seen = BTreeSet::new();
     let mut checked = 0;
-    for dir in ["kb", "samples"] {
+    for dir in ["kb", "samples", "functions"] {
         for entry in std::fs::read_dir(root.join(dir)).expect("the vendored corpus is there") {
             let path = entry.expect("a readable directory entry").path();
             if !path.extension().is_some_and(|e| e == "fods" || e == "ods") {

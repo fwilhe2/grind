@@ -428,6 +428,7 @@ table:use-regular-expressions="false"/>` — the reading this build gives every 
 | `SUMPRODUCT([.B1:.B7];[.F1:.F7])` over a text, `SUMPRODUCT("2";3)` | the text is 0 | silent | an element that is not a number or a logical is 0, a text argument too — and an *operator* given that text is still `#VALUE!` (`[.B5]*1`) |
 | `SUMPRODUCT(LEN([.A1:.A4]))`, `SUMPRODUCT(IF([.B1:.B4]>15;1;0))`, `SUMPRODUCT(COUNTIF([.A1:.A7];[.A1:.A2]))` | 18, 3, 5 | §3.3 2.2: a function given an array where it expects a scalar is iterated | as specified; which parameters expect one value is read off each function's `Syntax:` line |
 | `SUMPRODUCT(([.A1:.A7]="apple")*1)` | 3, or 4 with `table:case-sensitive="false"` | §3.4 HOST-CASE-SENSITIVE | this build compares case-insensitively; ODF's default for the attribute is `true`, so the oracle compares a document that does not say so case-sensitively — a divergence older than `SUMPRODUCT`, and every comparison has it |
+| `PPMT(0.0375/12;300;300;-280000)`, `FV(0.0025;120;-250)`, `PV(0.04/12;240;-1500)`, `RATE(48;-450;18000)` | wrong from the 13th digit (`RATE` from the 12th: its iteration stops early) | the equation | this build's, which fifty-digit decimal arithmetic over the same doubles agrees with to the 16th digit; `NPER` was the one the oracle had right, and now this build does too (`ln_1p`) — `sheet/tests/function_samples.rs` names the four |
 | `IPMT(0.1;1.5;3;8000)`, `IPMT(…;0;…)`, `IPMT(…;4;3;…)` | -682.03299535915, `Err:502` | `0 < Period < Nper` | a fractional period is the balance part-way through; outside `1..=Nper` is `#NUM!` |
 | `IPMT(0.1/12;36;36;8000)`, `IPMT(0.06/52;30;208;8000;0;1)` | -2.13336774835317, -8.06341136318208 | — | **exact**: rational arithmetic over the same doubles gives -2.1333677483528916… and -8.0634113631819843…, which this build matches to the last digit or two and the oracle misses from the twelfth; the last periods of a loan are a small difference of large terms |
 | `ADDRESS(1;1;6)`, `ADDRESS(1;1;9)` | `A$1`, `#VALUE!` | `1 ≤ Abs ≤ 4` | 5…8 read as 1…4, anything else `#VALUE!` |
@@ -728,6 +729,13 @@ including `fo:background-color`, `fo:color`, `fo:font-size`, `fo:font-weight`,
 | `fo:margin-left="0.5cm"` (an indent) | `0.1965in` (2026-10-05, LibreOffice 26.8 on a US-locale machine) | A length comes back in the converting machine's unit, rounded. Compare as a length. |
 | — | `fo:margin-left="0cm"`, `style:rotation-angle="0"`, `style:text-underline-style="none"`, `style:text-line-through-style="none"` on every cell style | Each is the absence of the property, which the reader reads as no value — as it reads `"none"` borders. |
 | — | `style:text-align-source`, `style:repeat-content` | Added unasked. Harmless, and a reminder that a style comes back with more than it left with. |
+
+An **autofilter** keeping a set of values in one column, written as a `table:filter-condition`
+(`table:operator="="`, one `table:filter-set-item` per value) directly under `table:filter`,
+comes back wrapped in a `table:filter-or` of that one condition (2026-10-18, LibreOffice
+26.8.1.1, `sheet/tests/data/functions/math.fods`). An `or` of one condition is that
+condition, and an `or` whose conditions all name one column is the union of their values;
+only an `or` across columns says something a set of values per column cannot.
 
 A style applied to every cell of a column also comes back on the **column**
 (`table:table-column table:default-cell-style-name=…`) with the cells themselves unstyled,

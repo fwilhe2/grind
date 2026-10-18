@@ -17,7 +17,9 @@
 //! means the bytes are a **real producer's** rather than our idea of one. Vendored at
 //! `tests/data/corpus/` from run
 //! <https://github.com/fwilhe2/ooxmlgen/actions/runs/34999727235> (ooxmlgen 0.2.0,
-//! 2026-09-15). 76 fixtures, 5.4 MB of workbook and a 360 KB manifest, and R7's rule applies
+//! 2026-09-15), with the `functions/` family added on 2026-10-18 by `scripts/function-samples.sh`
+//! from a local run that left every earlier fixture byte-identical. 86 fixtures, 5.4 MB of
+//! workbook and a 640 KB manifest, and R7's rule applies
 //! to all of it: **vendored, so the requirement cannot skip**.
 //!
 //! What makes it worth its size is `manifest.json`. It is not an index — it is the
@@ -66,9 +68,9 @@ use grind_sheet::style::CellStyle;
 use grind_xlsx::{Dropped, Error, Flavour};
 
 /// The ratchet, and the only number here that is about the corpus rather than about the
-/// filter: 76 fixtures at the vendored revision. **Raise it, never lower it** — a corpus that
+/// filter: 86 fixtures at the vendored revision. **Raise it, never lower it** — a corpus that
 /// was thinned and a vendoring that half failed look identical from here otherwise.
-const FLOOR: usize = 76;
+const FLOOR: usize = 86;
 
 /// Claims this build does not satisfy yet: `(fixture, claim, the milestone and the reason)`.
 ///

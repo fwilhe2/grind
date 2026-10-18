@@ -403,9 +403,13 @@ fn owned(key: &str) -> bool {
             TABLE,
             &["named-expressions", "named-expression", "named-range"],
         )
+        // `filter-or` is the shape LibreOffice saves a one-column filter in, which the reader
+        // takes as the set of values it is. A filter this model could not read (an `or`
+        // across columns, an operator other than `=`) is replaced when the filter is changed,
+        // like any other condition it cannot hold; an untouched one is spliced, as it was.
         || is(
             TABLE,
-            &["database-ranges", "database-range", "filter", "filter-and"],
+            &["database-ranges", "database-range", "filter", "filter-and", "filter-or"],
         )
         || is(TABLE, &["filter-condition", "filter-set-item"])
         || is(TABLE, &["calculation-settings", "null-date"])

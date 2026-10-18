@@ -197,7 +197,8 @@ fn nper(args: &mut Args) -> Answer {
     ) {
         return Err(FormulaError::Num);
     }
-    Ok(Value::number(ratio.ln() / (1.0 + rate).ln()))
+    // `ln_1p`, as `growth` does: `1 + Rate` rounded first loses the digits a small rate has.
+    Ok(Value::number(ratio.ln() / rate.ln_1p()))
 }
 
 /// §6.12.42 `RATE( Nper ; Payment ; Pv [ ; Fv [ ; PayType [ ; Guess ] ] ] )`.
@@ -481,6 +482,17 @@ mod tests {
         assert_eq!(number("=NPER(0;-100;1000)"), 10.0);
         assert_eq!(eval("=RATE(0;-100;1000)"), Value::Error(FormulaError::Num));
         assert_eq!(eval("=PMT(0.05;0;1000)"), Value::Error(FormulaError::Num));
+    }
+
+    /// The mortgage in `tests/data/functions/financial.fods`: 280,000 at 3.75% a year, paid
+    /// back at 2000 a month. The exact answer, from fifty-digit decimal arithmetic over the
+    /// same doubles, is 184.40405884083278…; `1 + Rate` rounded before its logarithm used to
+    /// lose the fourteenth digit (184.40405884083015), where the oracle had it.
+    #[test]
+    fn nper_keeps_the_digits_a_small_rate_carries() {
+        let n = number("=NPER(0.0375/12;-2000;280000)");
+        let exact = 184.404_058_840_832_8;
+        assert!((n - exact).abs() <= 2e-15 * exact, "{n}");
     }
 
     #[test]

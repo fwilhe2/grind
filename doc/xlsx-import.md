@@ -1089,7 +1089,7 @@ are a real producer's rather than our idea of one, and which answers risk 3 with
 for a dozen real documents to be collected. `xlsx/tests/fixtures.rs` stays exactly as it is:
 its packages are readable *in the source*, which is a different and still necessary property.
 
-**76 fixtures, 5.4 MB, vendored** at `xlsx/tests/data/corpus/` from run
+**76 fixtures, 5.4 MB, vendored** (86 since 2026-10-18, when the `functions/` family was added from a local run, `scripts/function-samples.sh`, every earlier fixture byte-identical) at `xlsx/tests/data/corpus/` from run
 [34999727235](https://github.com/fwilhe2/ooxmlgen/actions/runs/34999727235) (ooxmlgen 0.2.0,
 2026-09-15) — R7's rule, so the check cannot skip, and no workflow change: `grind-xlsx` is a
 default member and the whole corpus imports in 1.2 s. Eight families, one per thing that can
@@ -1130,7 +1130,7 @@ carry the difference and all three are checked in **both directions**:
 Everything else is asserted. At X0 that was 138 of 161 claims, with the cell-level half held by
 one assertion that `report.cells == 0`, written to fail the day X1 began. It did, and was
 replaced by the comparison it promised; X2 added a formula claim per formula cell and X3 a
-display claim per formatted one. **1708 of 1735 claims now** — 1340 of 1341 cells, 123 of 125
+display claim per formatted one. **3327 of 3372 claims now** — 2756 of 2757 cells, 308 of 326
 formulas and 89 of 107 displays — one claim per cell per question (`cell:Sheet!A1`,
 `formula:Sheet!A1`, `display:Sheet!A1`), so a table entry can name exactly the cell it excuses.
 

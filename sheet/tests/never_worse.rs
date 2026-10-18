@@ -72,7 +72,7 @@ const EDITS: &[Edit] = &[
 ];
 
 fn documents() -> Vec<PathBuf> {
-    let mut files: Vec<PathBuf> = ["kb", "samples"]
+    let mut files: Vec<PathBuf> = ["kb", "samples", "functions"]
         .iter()
         .flat_map(|dir| {
             std::fs::read_dir(

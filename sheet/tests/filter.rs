@@ -146,3 +146,99 @@ fn a_filter_by_colour_hides_nothing_it_cannot_judge() {
         Vec::<u32>::new()
     );
 }
+
+/// A two-column sheet — shop and amount — under one autofilter whose `table:filter` is
+/// `body`, read back.
+fn filtered(body: &str) -> Vec<u32> {
+    let rows: String = [("Shop", None), ("Market Hall", Some(86.4)), ("Bakery", Some(12.75)),
+        ("Green Grocer", Some(23.6)), ("Bakery", Some(9.3))]
+        .iter()
+        .map(|(shop, amount)| {
+            let amount = amount.map_or_else(
+                || r#"<table:table-cell office:value-type="string"><text:p>Amount</text:p></table:table-cell>"#.to_owned(),
+                |n| format!(r#"<table:table-cell office:value-type="float" office:value="{n}"><text:p>{n}</text:p></table:table-cell>"#),
+            );
+            format!(r#"<table:table-row><table:table-cell office:value-type="string"><text:p>{shop}</text:p></table:table-cell>{amount}</table:table-row>"#)
+        })
+        .collect();
+    let fods = format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+ xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+ xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+ office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+<office:body><office:spreadsheet>
+<table:table table:name="S"><table:table-column table:number-columns-repeated="2"/>{rows}</table:table>
+<table:database-ranges><table:database-range table:name="__Anonymous_Sheet_DB__0"
+ table:target-range-address="S.A1:S.B5" table:display-filter-buttons="true">
+<table:filter>{body}</table:filter></table:database-range></table:database-ranges>
+</office:spreadsheet></office:body></office:document>"##
+    );
+    let doc = grind_sheet::read_bytes("or.fods", fods.as_bytes()).expect("loads");
+    let sheet = doc.sheet(0).expect("one sheet");
+    sheet.hidden_rows(doc.null_date, doc.locale.as_ref())
+}
+
+/// LibreOffice 26.8 saves a one-column autofilter as an `or` of a single condition — measured
+/// on its own save of `sheet/tests/data/functions/math.fods`. An `or` of one condition is that
+/// condition, and the rows it hides must be the rows LibreOffice hid.
+#[test]
+fn an_or_of_one_condition_is_that_condition() {
+    let hidden = filtered(
+        r#"<table:filter-or>
+<table:filter-condition table:value="Green Grocer" table:operator="=" table:field-number="0">
+<table:filter-set-item table:value="Green Grocer"/><table:filter-set-item table:value="Market Hall"/>
+</table:filter-condition></table:filter-or>"#,
+    );
+    assert_eq!(hidden, vec![2, 4], "the two bakery rows");
+}
+
+/// Several conditions on one column, joined by `or`, keep any of their values: a set, which is
+/// exactly what the model holds.
+#[test]
+fn an_or_over_one_column_keeps_any_of_its_values() {
+    let hidden = filtered(
+        r#"<table:filter-or>
+<table:filter-condition table:value="Market Hall" table:operator="=" table:field-number="0"/>
+<table:filter-condition table:value="Bakery" table:operator="=" table:field-number="0"/>
+</table:filter-or>"#,
+    );
+    assert_eq!(hidden, vec![3], "only the green grocer");
+}
+
+/// An `or` across two columns keeps a row either column admits — which no set per column can
+/// say, so it is dropped whole rather than read as an `and`, which would hide rows the file
+/// shows.
+#[test]
+fn an_or_across_columns_hides_nothing_it_cannot_judge() {
+    let hidden = filtered(
+        r#"<table:filter-or>
+<table:filter-condition table:value="Market Hall" table:operator="=" table:field-number="0"/>
+<table:filter-condition table:value="9.3" table:operator="=" table:field-number="1"/>
+</table:filter-or>"#,
+    );
+    assert_eq!(hidden, Vec::<u32>::new());
+}
+
+/// The `or` LibreOffice saves is a filter this model holds, so changing it rewrites it — rather
+/// than refusing the save as if the `or` were content the model never saw.
+#[test]
+fn a_filter_libreoffice_saved_as_an_or_can_be_changed() {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/functions/math.fods");
+    let app = grind_sheet::App::new();
+    app.open_bytes("math.fods", &std::fs::read(&path).expect("reads"))
+        .expect("opens");
+    let receipts = 1;
+    let mut filter = app.filter(receipts).expect("a sheet").expect("a filter");
+    filter.keep.insert(1, ["Market Hall".to_owned()].into());
+    app.set_filter(receipts, Some(filter)).expect("sets");
+    let saved = app.save_bytes(grind_sheet::Form::Flat).expect("saves");
+    let doc = grind_sheet::read_bytes("math.fods", &saved).expect("reads back");
+    let sheet = doc.sheet(receipts).expect("Receipts");
+    assert_eq!(
+        sheet.hidden_rows(doc.null_date, doc.locale.as_ref()),
+        vec![2, 4, 5, 7, 8],
+        "only Market Hall's three receipts are left showing"
+    );
+}

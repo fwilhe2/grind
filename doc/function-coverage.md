@@ -230,6 +230,13 @@ needed one decision, and each decision turned out smaller than the table below u
 - Loop B went from 14116 to 14471 matching cells (`FLOOR` 14250), loop E to 930 of 1000 on
   LibreOffice 26.8, and `examples/sample-sheet.sh` uses all four.
 
+**Done — samples for every function (2026-10-18).** `sheet/tests/data/functions/` calls all 144
+on realistic data, 188 times, with LibreOffice's answer beside each (`README.md` there is the
+readable index), and `xlsx/tests/data/corpus/functions/` is the same as Excel workbooks. 202 of
+206 formula cells agree with the oracle (the samples and the data sheets' own formulas); the four that do not are LibreOffice's precision in
+`PPMT`, `FV`, `PV` and `RATE`, checked against fifty-digit arithmetic (`doc/ods-format.md`
+§4.1). Writing them fixed `NPER`'s precision and the reading of LibreOffice's `filter-or`.
+
 **Done — the classic band that needed no new machinery.** The 26 functions marked ✓ in §4,
 admitted in `doc/small-group.md`'s second half with their evidence. How they were built and
 where each piece is:
