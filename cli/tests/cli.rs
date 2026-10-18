@@ -1201,6 +1201,11 @@ fn the_sample_script_still_builds_its_document() {
     assert_eq!(ok(&["get", &book, "M6", "--raw"]).trim(), "11");
     assert_eq!(ok(&["get", &book, "M8"]).trim(), "$B$8");
     assert_eq!(ok(&["get", &book, "M9", "--raw"]).trim(), "0");
+    assert_eq!(ok(&["get", &book, "M11", "--raw"]).trim(), "2000");
+    // Groceries and Transport, the two rows the filter leaves showing.
+    assert_eq!(ok(&["get", &book, "M12", "--raw"]).trim(), "792.19");
+    // The same two rows, chosen by a condition rather than by a filter.
+    assert_eq!(ok(&["get", &book, "M13", "--raw"]).trim(), "792.19");
     // A styled and formatted header, and a currency cell whose value is untouched.
     assert_eq!(ok(&["get", &book, "B2", "--raw"]).trim(), "1800");
     assert!(ok(&["get", &book, "B2"]).contains('\u{20ac}'));
@@ -1272,7 +1277,7 @@ fn recalc_warns_on_stderr_when_it_turns_a_value_into_an_error() {
   <office:spreadsheet>
    <table:table table:name="Sheet1">
     <table:table-column/>
-    <table:table-row><table:table-cell table:formula="of:=SUBTOTAL(9;[.B1:.B2])" office:value-type="float" office:value="169.625"><text:p>169.625</text:p></table:table-cell></table:table-row>
+    <table:table-row><table:table-cell table:formula="of:=BESSELJ([.B1];1)" office:value-type="float" office:value="169.625"><text:p>169.625</text:p></table:table-cell></table:table-row>
    </table:table>
   </office:spreadsheet>
  </office:body>
@@ -1890,7 +1895,7 @@ fn functions_lists_what_this_build_implements() {
     for name in ["COLUMN", "IFERROR", "ROW"] {
         assert!(summary.contains(name), "{name} missing from {summary}");
     }
-    assert!(!out.contains("SUBTOTAL"), "not in the Small Group");
+    assert!(!out.contains("BESSELJ"), "not in the Small Group");
 }
 
 #[test]

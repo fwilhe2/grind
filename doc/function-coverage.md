@@ -9,23 +9,26 @@ SPDX-License-Identifier: CC-BY-4.0
 **Descriptive, not normative.** `doc/small-group.md` is the scope line and `doc/not-doing.md`
 the product line; this document is the *evidence* those two ask for before a function moves —
 how many functions each application has, which ones real spreadsheets call, and where this
-build's 138 stand against both. Measured 2026-10-11 and re-measured 2026-10-12, after the
-classic band that needed no new machinery moved in; every figure says where it came from, and
+build's 144 stand against both. Measured 2026-10-11 and re-measured 2026-10-12, after the
+classic band that needed no new machinery moved in, and on 2026-10-18 after `SUBTOTAL`,
+`SUMPRODUCT`, `CEILING` and `FLOOR` did; every figure says where it came from, and
 the corpus figures re-derive with `scripts/function-usage.py`.
 
 ## 1. The answer in four lines
 
-- **138 implemented**: the 110 of ODF 1.4 Part 4 §2.3.2 E) (the Small Group), `ROW` and
-  `COLUMN`, and the 26 of Tier 1 below that needed no new machinery (`doc/small-group.md`'s
-  second half). Every one exists under the same name in Excel and in LibreOffice.
-- That is **every function among Enron's fifteen most used except `SUBTOTAL` and `CELL`**, and
-  the formula cells of LibreOffice's own test documents call only implemented functions
-  **73.5%** of the time (71.6% at 112).
-- What is left of the classic band is **the part that needs an engine change** — `SUBTOTAL`
-  (a row's filter state), `SUMPRODUCT` (ForceArray), `INDIRECT` and `OFFSET` (a function
-  that returns a reference), `TEXT` (a format code), `CELL`, and `CEILING`/`FLOOR` (Excel's
-  namesakes round differently) — and then **Excel's post-2010 additions, of which this build
-  has two** (`IFNA` and `ISOWEEKNUM`, both 2013 and both in ODF).
+- **144 implemented**: the 110 of ODF 1.4 Part 4 §2.3.2 E) (the Small Group), `ROW` and
+  `COLUMN`, the 26 of Tier 1 below that needed no new machinery, then `SUBTOTAL`,
+  `SUMPRODUCT`, `CEILING` and `FLOOR` — and Excel's own `CEILING` and `FLOOR` under the names
+  LibreOffice gives them, `COM.MICROSOFT.CEILING` and `COM.MICROSOFT.FLOOR`
+  (`doc/small-group.md`'s second half).
+- That is **every function among Enron's fifteen most used except `CELL`**, and the formula
+  cells of LibreOffice's own test documents call only implemented functions **73.9%** of the
+  time (73.5% at 138, 71.6% at 112), in 189 of its 274 files.
+- What is left of the classic band is **the part that needs an engine change or a decision**
+  — `INDIRECT` and `OFFSET` (a function that returns a reference), `TEXT` (a format code),
+  `CELL`, `LOOKUP`'s array form — and then **Excel's post-2010 additions, of which this build
+  has two** (`IFNA` and `ISOWEEKNUM`, both 2013 and both in ODF). Those ODF lacks travel as
+  `COM.MICROSOFT.*` in a file (`doc/xlsx-format.md` §5.1), which settles their spelling.
 - Most of those post-2010 additions are not in ODF 1.4 at all, and the most visible of them
   (`FILTER`, `SORT`, `UNIQUE`, `LET`, `LAMBDA`) need an array value the engine does not have.
   That is an engine decision, not a list of functions.
@@ -142,8 +145,8 @@ left says, in its last column, what stands in its way.
 
 | Function | ODF group | Evidence |
 |---|---|---|
-| `SUBTOTAL` | Medium | Enron #12 by workbook; LO corpus blocks 10 files — needs a row's filter and collapse state inside evaluation |
-| `SUMPRODUCT` | Medium | LO corpus blocks 10; the pre-`SUMIFS` idiom — needs ForceArray, operators applied cell by cell |
+| ✓ `SUBTOTAL` | Medium | Enron #12 by workbook; LO corpus blocks 10 files — moved in on 2026-10-18 over `Sheet::row_hidden`, the filter's own answer |
+| ✓ `SUMPRODUCT` | Medium | LO corpus blocks 10; the pre-`SUMIFS` idiom — moved in on 2026-10-18 with ForceArray evaluation inside the argument (`array.rs`) |
 | ✓ `CONCATENATE` | Medium | Enron (formulas) #10, EUSES #5, LO 6 |
 | ✓ `IFERROR` | Large | LO 5; the standard wrapper since Excel 2007 |
 | ✓ `SUMIFS`, `COUNTIFS`, `AVERAGEIFS` | Large | What Enron's `{=SUM(IF(…))}` became |
@@ -206,8 +209,26 @@ holds `IFERROR`, `SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `TEXT`, `SEARCH`, `INDIRECT
 
 ## 7. Where the work stands
 
-As of 2026-10-12. §1–§4 are the measurements; this is the state of the work they led to, and
+As of 2026-10-18. §1–§4 are the measurements; this is the state of the work they led to, and
 what each next step is waiting on.
+
+**Done — the second step (2026-10-18): `SUBTOTAL`, `SUMPRODUCT`, `CEILING`, `FLOOR`.** Each
+needed one decision, and each decision turned out smaller than the table below used to say:
+
+- **`CEILING` and `FLOOR`** waited on "Excel's namesakes round differently". Measuring the
+  oracle's `.xlsx` import (`doc/xlsx-format.md` §5.1, every one of Excel's 520 functions)
+  showed it never hands Excel's `CEILING` to ODF's: it writes `COM.MICROSOFT.CEILING`, and
+  likewise `COM.MICROSOFT.*` for every Excel function ODF lacks, `LEGACY.*` for the old
+  distributions, and ODF's own name for four of Excel 2010's. `grind-xlsx` now writes the
+  same names, and the engine has Excel's two beside ODF's two.
+- **`SUBTOTAL`** asks `Sheet::row_hidden` — the filter's own answer, the one every renderer
+  draws — and the model already kept hand-hidden rows apart, which is §6.16.60's split.
+- **`SUMPRODUCT`** evaluates its arguments in array mode (`sheet/src/formula/array.rs`):
+  operators place by place, a function given an array where it expects one value iterated
+  (which parameters those are is read off each signature), and the result reduced to one
+  number inside the function. `doc/not-doing.md`'s array row is narrowed, not crossed.
+- Loop B went from 14116 to 14471 matching cells (`FLOOR` 14250), loop E to 930 of 1000 on
+  LibreOffice 26.8, and `examples/sample-sheet.sh` uses all four.
 
 **Done — the classic band that needed no new machinery.** The 26 functions marked ✓ in §4,
 admitted in `doc/small-group.md`'s second half with their evidence. How they were built and
@@ -255,8 +276,7 @@ which this build reads as wildcards by `wildcard.rs`'s decision.
 | Function | Unlocks | Needs | Decision owed |
 |---|---|---|---|
 | `INDIRECT`, `OFFSET` | 9 files, then 3 | a function that returns a reference: `funcs::call` hands back an `Operand`, and `INDEX` should too | `graph.rs` cannot see a reference built at run time, so cell roles, lint and sheet-rename rewriting go wrong for a cell read only through one — name that gap or close it |
-| `SUBTOTAL` (and `AGGREGATE`) | 8 files | a row's filter and collapse state inside evaluation, and whether a referenced cell's formula calls `SUBTOTAL` | none in principle — the model already separates filter-hidden rows from rows hidden by hand, which is exactly §6.16.60's split |
-| `SUMPRODUCT` | 7 files | ForceArray: operators applied cell by cell over ranges, kept inside the function with no array value that spills | whether that narrows or breaks `doc/not-doing.md`'s "Array/matrix formulas" row; the same machinery would give `LOOKUP`'s array form and single-cell `{=SUM(IF(…))}` |
+| `AGGREGATE` | — | `SUBTOTAL`'s machinery plus its option bits (errors, nested aggregates) | not Part 4: `COM.MICROSOFT.AGGREGATE`, as the next section's names are |
 | `TEXT` | 3 files | a format-code language | the code is implementation-defined and LibreOffice reads it in the document's locale; `numfmt` holds no format-code strings by rule, though `grind-xlsx`'s `numfmt.rs` parses Excel's and could be hoisted |
 | `CELL` | 3 files | an info-type vocabulary | outside every ODF group, and much of it implementation-defined |
 | `MAXIFS`, `MINIFS` and the rest of Tier 2 | — | `criterion::several` with a new `Mode`, for those two | each is outside ODF 1.4 and needs its spelling decided (`COM.MICROSOFT.*` is LibreOffice's convention, not a standard) |

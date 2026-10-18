@@ -190,41 +190,11 @@ fn param_alias(func: &str, raw: &str) -> String {
         .unwrap_or_else(|| raw.to_string())
 }
 
-/// A catalog `Syntax:` line, split into its ordered parameter names and how many of them, at
-/// the end, repeat as a group: 1 for `{ … } +`, the members of the last bracket for the
-/// `[ ; Reference R2 ; Criterion C2 ]...` the several-criteria functions are written with,
-/// and 0 when nothing repeats.
+/// A catalog `Syntax:` line's ordered parameter names, and how many at the end repeat as a
+/// group ([`funcs::parameters`]).
 fn signature_params(signature: &str) -> (Vec<String>, usize) {
-    let Some((_, rest)) = signature.split_once('(') else {
-        return (Vec::new(), 0);
-    };
-    let rest = rest.strip_suffix(')').unwrap_or(rest).trim();
-    if rest.is_empty() {
-        return (Vec::new(), 0);
-    }
-    let parts: Vec<&str> = rest.split(';').collect();
-    let names: Vec<String> = parts.iter().filter_map(|part| param_name(part)).collect();
-    let group = if rest.ends_with('+') {
-        1
-    } else if let Some(tail) = rest.strip_suffix("...") {
-        let last_bracket = tail.rfind('[').unwrap_or(0);
-        tail[last_bracket..]
-            .split(';')
-            .filter_map(param_name)
-            .count()
-    } else {
-        0
-    };
-    (names, group)
-}
-
-/// One parameter's name out of its declaration, e.g. `" [ Number Fv = 0 ] [ "` → `Fv`: the
-/// last identifier before an `=` default (if any), with the optionality brackets,
-/// repetition braces and the `...` of a repeated group stripped.
-fn param_name(part: &str) -> Option<String> {
-    let cleaned: String = part.chars().filter(|c| !"[]{}+.".contains(*c)).collect();
-    let before_default = cleaned.split('=').next().unwrap_or(&cleaned);
-    before_default.split_whitespace().last().map(str::to_owned)
+    let (params, group) = funcs::parameters(signature);
+    (params.into_iter().map(|(_, name)| name).collect(), group)
 }
 
 /// One entry per catalog function (checked by a test below), a plain-English name for its
@@ -352,9 +322,11 @@ static ALIASES: &[(&str, &str)] = &[
     ("STDEV", "Standard Deviation"),
     ("STDEVP", "Standard Deviation (Population)"),
     ("SUBSTITUTE", "Substitute Text"),
+    ("SUBTOTAL", "Subtotal"),
     ("SUM", "Sum"),
     ("SUMIF", "Sum If"),
     ("SUMIFS", "Sum If All"),
+    ("SUMPRODUCT", "Sum Of Products"),
     ("SYD", "Sum-Of-Years-Digits Depreciation"),
     ("T", "To Text"),
     ("TAN", "Tangent"),
@@ -424,6 +396,7 @@ static PARAM_ALIASES: &[(&str, &str)] = &[
     ("FV", "Future Value"),
     ("FunctionResult", "Shown Value"),
     ("Future", "Future Value"),
+    ("Function", "Function Number"),
     ("Fv", "Future Value"),
     ("Guess", "Guess"),
     ("Holidays", "Holidays"),
@@ -465,6 +438,7 @@ static PARAM_ALIASES: &[(&str, &str)] = &[
     ("Search", "Search"),
     ("SearchRegion", "Search Region"),
     ("Seconds", "Seconds"),
+    ("Sequence", "Range"),
     ("Sheet", "Sheet"),
     ("Significance", "Multiple Of"),
     ("Start", "Start"),

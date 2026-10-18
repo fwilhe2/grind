@@ -36,7 +36,11 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
 
 /// §6.18.3. An average of nothing is a division by zero, and says so.
 fn average(args: &mut Args) -> Answer {
-    let numbers = args.numbers()?;
+    mean(&args.numbers()?)
+}
+
+/// [`average`] over numbers already in hand — `SUBTOTAL`'s too.
+pub(super) fn mean(numbers: &[f64]) -> Answer {
     if numbers.is_empty() {
         return Err(FormulaError::DivZero);
     }
@@ -48,11 +52,15 @@ fn average(args: &mut Args) -> Answer {
 /// §6.18.45 `MAX` and §6.18.48 `MIN`, which return 0 when handed no numbers at all — the
 /// spec's answer, and the one that keeps `MAX(A1:A9)` over an empty column from erroring.
 fn extreme(args: &mut Args, max: bool) -> Answer {
-    let numbers = args.numbers()?;
+    extreme_of(&args.numbers()?, max)
+}
+
+/// [`extreme`] over numbers already in hand.
+pub(super) fn extreme_of(numbers: &[f64], max: bool) -> Answer {
     Ok(Value::number(
         numbers
-            .into_iter()
-            .fold(None, |best: Option<f64>, n| {
+            .iter()
+            .fold(None, |best: Option<f64>, &n| {
                 Some(match best {
                     None => n,
                     Some(b) if max => b.max(n),
@@ -64,12 +72,16 @@ fn extreme(args: &mut Args, max: bool) -> Answer {
 }
 
 /// Variance and standard deviation, sample or population.
+fn moment(args: &mut Args, sample: bool, root: bool) -> Answer {
+    moment_of(&args.numbers()?, sample, root)
+}
+
+/// [`moment`] over numbers already in hand.
 ///
 /// Two passes rather than the `E[x²] - E[x]²` shortcut: that identity is exact in algebra
 /// and catastrophically inexact in floating point for values with a large mean and a small
 /// spread, which is a normal shape for a spreadsheet column.
-fn moment(args: &mut Args, sample: bool, root: bool) -> Answer {
-    let numbers = args.numbers()?;
+pub(super) fn moment_of(numbers: &[f64], sample: bool, root: bool) -> Answer {
     let n = numbers.len() as f64;
     let divisor = if sample { n - 1.0 } else { n };
     if divisor <= 0.0 {

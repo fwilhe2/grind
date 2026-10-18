@@ -747,7 +747,8 @@ mod tests {
         assert!(!assist.is_offering(), "accepting closes the list");
 
         // A defined name is inserted as itself — it is not a call.
-        let mut assist = read("=subt", 5);
+        // (`subt` alone would offer SUBTOTAL first, which is a function.)
+        let mut assist = read("=subtotal_", 10);
         let (_, replacement) = assist.accept().expect("the name is offered");
         assert_eq!(replacement, "subtotal_2026");
     }

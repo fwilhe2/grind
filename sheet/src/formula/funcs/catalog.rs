@@ -31,6 +31,10 @@
 //! having it. Nothing else is altered: the parameter names, the optional-argument brackets
 //! and the summaries are the spec's.
 //!
+//! **The `COM.MICROSOFT.` entries are not the spec's**, because Part 4 has no such
+//! functions: their lines are written here in its style, and their section is the chapter
+//! their ODF namesake is in (`doc/small-group.md`'s last section says why).
+//!
 //! Two tests hold it in place: [`catalog`] names exactly what
 //! [`super::implemented`] does, and every section number matches `doc/small-group.md`. The
 //! catalog **documents** — arity checking stays where it is, inside each function.
@@ -53,6 +57,78 @@ pub struct FuncInfo {
 /// wants, and the order a person reads.
 pub fn catalog() -> &'static [FuncInfo] {
     CATALOG
+}
+
+/// A `Syntax:` line's parameters in order, each as its declared type and name — `("Number",
+/// "Fv")` out of `[ Number Fv = 0 ]` — and how many of them, at the end, repeat as a group:
+/// 1 for `{ … } +`, the members of the last bracket for the `[ ; Reference R2 ; Criterion C2
+/// ]...` the several-criteria functions are written with, and 0 when nothing repeats.
+pub fn parameters(signature: &str) -> (Vec<(String, String)>, usize) {
+    let Some((_, rest)) = signature.split_once('(') else {
+        return (Vec::new(), 0);
+    };
+    let rest = rest.strip_suffix(')').unwrap_or(rest).trim();
+    if rest.is_empty() {
+        return (Vec::new(), 0);
+    }
+    let params: Vec<(String, String)> = rest.split(';').filter_map(parameter).collect();
+    let group = if rest.ends_with('+') {
+        1
+    } else if let Some(tail) = rest.strip_suffix("...") {
+        let last_bracket = tail.rfind('[').unwrap_or(0);
+        tail[last_bracket..]
+            .split(';')
+            .filter_map(parameter)
+            .count()
+    } else {
+        0
+    };
+    (params, group)
+}
+
+/// One parameter's type and name out of its declaration, e.g. `" [ Number Fv = 0 ] [ "` →
+/// `("Number", "Fv")`: the first and last identifiers before an `=` default (if any), with
+/// the optionality brackets, repetition braces and the `...` of a repeated group stripped.
+fn parameter(part: &str) -> Option<(String, String)> {
+    let cleaned: String = part.chars().filter(|c| !"[]{}+.".contains(*c)).collect();
+    let before_default = cleaned.split('=').next().unwrap_or(&cleaned);
+    let mut words = before_default.split_whitespace();
+    let kind = words.next()?;
+    Some((kind.to_owned(), words.last().unwrap_or(kind).to_owned()))
+}
+
+/// Whether the `index`th argument of a call to `name` is one value rather than a range of
+/// them — what decides, inside a ForceArray parameter, whether an array handed to it is
+/// iterated over (§3.3 2.2: "a non-scalar value is passed to a function argument that
+/// expects a scalar") or taken whole, as `SUM`'s sequence is.
+///
+/// Read off the declared type, so a parameter is one value when every alternative it
+/// accepts is: `Number`, `Text|Number` and `Any` are, `NumberSequence`, `Reference|Array`
+/// and a database's `Criteria` range are not. An argument past the signature is not
+/// iterated either; the function refuses it on its own.
+pub fn takes_one_value(name: &str, index: usize) -> bool {
+    const ONE: &[&str] = &[
+        "Any",
+        "Criterion",
+        "DateParam",
+        "Field",
+        "Integer",
+        "Logical",
+        "Number",
+        "Scalar",
+        "Text",
+        "TimeParam",
+    ];
+    let Some(info) = CATALOG.iter().find(|info| info.name == name) else {
+        return false;
+    };
+    let (params, group) = parameters(info.signature);
+    let index = match index.checked_sub(params.len()) {
+        None => index,
+        Some(_) if group == 0 => return false,
+        Some(past) => params.len() - group + past % group,
+    };
+    params[index].0.split('|').all(|kind| ONE.contains(&kind))
 }
 
 /// The function group a shell would file `info` under, e.g. for a help browser.
@@ -818,6 +894,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.20.21",
     },
     FuncInfo {
+        name: "SUBTOTAL",
+        signature: "SUBTOTAL( Integer Function ; NumberSequence Sequence )",
+        brief: "Evaluates a function on a range.",
+        section: "6.16.60",
+    },
+    FuncInfo {
         name: "SUM",
         signature: "SUM( { NumberSequenceList N } + )",
         brief: "Sum (add) the set of numbers, including all numbers in ranges.",
@@ -834,6 +916,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "SUMIFS( Reference R ; Reference R1 ; Criterion C1 [ ; Reference R2 ; Criterion C2 ]... )",
         brief: "Sum the values of cells in a range that meet multiple criteria in multiple ranges.",
         section: "6.16.63",
+    },
+    FuncInfo {
+        name: "SUMPRODUCT",
+        signature: "SUMPRODUCT( { ForceArray Array A }+ )",
+        brief: "Returns the sum of the products of the matrix elements.",
+        section: "6.16.64",
     },
     FuncInfo {
         name: "SYD",

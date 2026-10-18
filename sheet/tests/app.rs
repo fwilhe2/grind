@@ -263,7 +263,8 @@ fn recalc_is_one_undo_step_and_a_no_op_when_nothing_changed() {
 /// This engine implements a subset of OpenFormula, so recalculating a document that uses
 /// anything outside it turns a good cached value into `#NAME?`. That is honest, and it is
 /// also data loss — `spoiled` is what lets a shell say so instead of writing the file back
-/// quietly. Found against a real document: `table.fods` uses `SUBTOTAL`.
+/// quietly. Found against a real document: `table.fods` uses `SUBTOTAL`, which has since been
+/// implemented — `BESSELJ` (Tier 4, `doc/function-coverage.md`) stands in for it here.
 #[test]
 fn recalc_counts_the_values_it_spoiled() {
     let app = App::new();
@@ -274,8 +275,7 @@ fn recalc_counts_the_values_it_spoiled() {
     let doc = app.save_bytes(grind_sheet::Form::Flat).unwrap();
     let app = App::new();
     app.open_bytes("book.fods", &doc).unwrap();
-    app.set_formula(0, p(2, 0), "=SUBTOTAL(9;[.A1:.A2])")
-        .unwrap();
+    app.set_formula(0, p(2, 0), "=BESSELJ([.A2];1)").unwrap();
     app.set_cell(0, p(2, 0), 169.625).unwrap();
 
     let recalc = app.recalc().unwrap();
@@ -781,8 +781,7 @@ fn a_deferred_recalculation_is_owed_then_paid_into_the_same_undo_entry() {
 fn an_edit_that_would_spoil_a_cell_still_commits_without_recalculating() {
     let app = App::new();
     app.set_cell(0, p(0, 0), 5.0).unwrap();
-    app.set_formula(0, p(1, 0), "=SUBTOTAL(9;[.A1:.A1])")
-        .unwrap();
+    app.set_formula(0, p(1, 0), "=BESSELJ([.A1];1)").unwrap();
     app.set_cell(0, p(1, 0), 5.0).unwrap(); // a cached value from a better evaluator
 
     let outcome = app.enter(0, p(0, 0), "6", RecalcMode::Document).unwrap();

@@ -154,7 +154,11 @@ run set "$book" L9 'Travel, if budgeted'
 run set "$book" M9 '=IFERROR(VLOOKUP("Travel";[.A2:.C7];3;FALSE());0)'   # a miss, caught
 run set "$book" L10 'Label'
 run set "$book" M10 '=CONCATENATE([.A2];" and ";LOWER([.A3]))'
-sheet view "$book" L1:M10
+run set "$book" L11 'Rent, to the next 250'
+run set "$book" M11 '=CEILING([.C2];250)'
+run set "$book" L13 'Food and fares, the old way'
+run set "$book" M13 '=SUMPRODUCT(([.A2:.A7]="Groceries")+([.A2:.A7]="Transport");[.C2:.C7])'   # SUMIFS before there was one
+sheet view "$book" L1:M13
 
 say "number formats: display only, the value never moves"
 run format "$book" B2:C8 currency --symbol '€' --grouping --decimals 2
@@ -294,6 +298,10 @@ run filter "$book" --clear
 # Put it back, so the document this script leaves behind actually has one to look at: the
 # GTK shell draws a dropdown button in every heading cell of the range.
 run filter "$book" A1:H7 A=Groceries A=Transport
+# A subtotal steps over the rows the filter hides, where a SUM counts them all.
+run set "$book" L12 'Spend shown'
+run set "$book" M12 '=SUBTOTAL(109;[.C2:.C7])'
+sheet get "$book" M12
 
 # Format as table: Excel's own feature, built from constructs this build already writes on
 # their own — the filter above, alternating `style:style` shading, an ordinary `SUM` formula

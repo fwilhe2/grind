@@ -194,6 +194,28 @@ impl<'a> Engine<'a> {
         value
     }
 
+    /// Whether `SUBTOTAL` counts this cell (§6.16.60): not when its row is hidden by the
+    /// sheet's filter, nor — when `collapsed` asks, for the functions 101 to 111 — when it is
+    /// hidden by hand, nor when its own formula calls `SUBTOTAL`, so a grand total over a
+    /// column of subtotals does not count them twice.
+    ///
+    /// The filter's answer is [`crate::model::Sheet::row_hidden`]'s, the one every renderer draws: the rows
+    /// a person sees hidden are the rows a subtotal steps over.
+    pub fn counted_by_subtotal(&self, at: Address, collapsed: bool) -> bool {
+        let Some(sheet) = self.doc.sheet(at.sheet) else {
+            return true;
+        };
+        let row = at.pos.row;
+        if (collapsed && sheet.row_manually_hidden(row))
+            || sheet.row_hidden(row, self.doc.null_date, self.doc.locale.as_ref())
+        {
+            return false;
+        }
+        !sheet.formula(at.pos).is_some_and(|formula| {
+            super::funcs::used(formula).is_some_and(|names| names.iter().any(|n| n == "SUBTOTAL"))
+        })
+    }
+
     /// Evaluate a formula as if it sat in cell `at` — which matters: implied intersection
     /// (§6.3.3) and every relative reference are relative to that cell.
     pub fn eval(&mut self, formula: &str, at: Address) -> Value {
@@ -285,14 +307,8 @@ impl<'a> Engine<'a> {
             Expr::Name(name) => self.named(name, at),
             Expr::Call { name, args } => funcs::call(self, name, args, at).into(),
             Expr::Prefix(op, operand) => self.prefix(*op, operand, at).into(),
-            Expr::Postfix(_, operand) => {
-                // The only postfix operator is `%` (§6.4.14).
-                let value = self.value_of(operand, at);
-                match value.to_number() {
-                    Ok(n) => Value::number(n / 100.0).into(),
-                    Err(e) => e.into(),
-                }
-            }
+            // The only postfix operator is `%` (§6.4.14).
+            Expr::Postfix(_, operand) => percent(self.value_of(operand, at)).into(),
             Expr::Binary(op, lhs, rhs) => self.binary(*op, lhs, rhs, at),
         }
     }
@@ -321,15 +337,7 @@ impl<'a> Engine<'a> {
     }
 
     fn prefix(&mut self, op: Op, operand: &Expr, at: Address) -> Value {
-        let value = self.value_of(operand, at);
-        match op {
-            // §6.4.15 is explicit that prefix `+` converts nothing at all.
-            Op::Add => value,
-            _ => match value.to_number() {
-                Ok(n) => Value::number(-n),
-                Err(e) => Value::Error(e),
-            },
-        }
+        prefix(op, self.value_of(operand, at))
     }
 
     fn binary(&mut self, op: Op, lhs: &Expr, rhs: &Expr, at: Address) -> Operand {
@@ -531,8 +539,28 @@ pub fn to_cell(value: Value) -> CellValue {
     }
 }
 
+/// A prefix operator applied to a value: §6.4.15 is explicit that prefix `+` converts
+/// nothing at all, and `-` negates a number (§6.4.16).
+pub(crate) fn prefix(op: Op, value: Value) -> Value {
+    match op {
+        Op::Add => value,
+        _ => match value.to_number() {
+            Ok(n) => Value::number(-n),
+            Err(e) => Value::Error(e),
+        },
+    }
+}
+
+/// Postfix `%` applied to a value (§6.4.14).
+pub(crate) fn percent(value: Value) -> Value {
+    match value.to_number() {
+        Ok(n) => Value::number(n / 100.0),
+        Err(e) => Value::Error(e),
+    }
+}
+
 /// The arithmetic, comparison and concatenation operators (§6.4.2–§6.4.10).
-fn scalar_binary(op: Op, left: Value, right: Value) -> Value {
+pub(crate) fn scalar_binary(op: Op, left: Value, right: Value) -> Value {
     // §4.6: an operator given an error returns that error. Left first, arbitrarily but
     // consistently.
     if let Some(e) = left.error().or_else(|| right.error()) {

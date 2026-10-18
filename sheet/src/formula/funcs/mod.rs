@@ -69,7 +69,7 @@ pub fn implemented() -> Vec<&'static str> {
     NAMES.to_vec()
 }
 
-pub use catalog::{FuncInfo, catalog, category};
+pub use catalog::{FuncInfo, catalog, category, parameters, takes_one_value};
 
 /// Every function a formula calls, outermost first, each named once and upper-cased.
 ///
@@ -149,7 +149,9 @@ const BEYOND: &[&str] = &[
     "SEARCH",
     "SIGN",
     "SMALL",
+    "SUBTOTAL",
     "SUMIFS",
+    "SUMPRODUCT",
     "WEEKNUM",
     "WORKDAY",
 ];
@@ -191,6 +193,8 @@ const NAMES: &[&str] = &[
     "SUM",
     "SUMIF",
     "SUMIFS",
+    "SUBTOTAL",
+    "SUMPRODUCT",
     "TAN",
     "TRUNC",
     "QUOTIENT",
@@ -449,6 +453,34 @@ impl Args<'_, '_> {
             Operand::Area(area) => Some(area),
             Operand::Value(_) => None,
         }
+    }
+
+    /// The `i`th argument evaluated in array mode — a ForceArray parameter (§6.3.4,
+    /// `array.rs`).
+    pub fn array(&mut self, i: usize) -> super::array::Matrix {
+        match self.args.get(i) {
+            Some(expr) => super::array::evaluate(self.engine, expr, self.at),
+            None => super::array::evaluate(self.engine, &Expr::Empty, self.at),
+        }
+    }
+
+    /// The values of the `i`th argument that `SUBTOTAL` counts ([`Engine::counted_by_subtotal`]),
+    /// in row-major order. `None` when the argument is not a reference: §6.16.60's sequence is
+    /// a range of cells, and the oracle refuses anything else.
+    pub fn counted(&mut self, i: usize, collapsed: bool) -> Option<Vec<Value>> {
+        let Operand::Area(area) = self.operand(i) else {
+            return None;
+        };
+        let cells: Vec<Address> = area
+            .cells()
+            .filter(|&cell| self.engine.counted_by_subtotal(cell, collapsed))
+            .collect();
+        Some(
+            cells
+                .into_iter()
+                .map(|cell| self.engine.value(cell))
+                .collect(),
+        )
     }
 
     /// Was this parameter written but left empty — the `;;` of §5.6?

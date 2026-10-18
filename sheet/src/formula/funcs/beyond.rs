@@ -368,6 +368,220 @@ fn excels_ceiling_and_floor_keep_their_own_names_and_their_own_rule() {
     assert_eq!(number("=com.microsoft.ceiling(-2.5;2)"), -2.0);
 }
 
+/// [`table`] with rows hidden the two ways §6.16.60 tells apart, and column G holding what
+/// a subtotal must step over: G1 `=SUBTOTAL(9;[.B1:.B7])`, G2 5, G3 `=SUM([.B1:.B2])`, G4 7.
+///
+/// A filter on column C keeps red and yellow, so rows 2 and 3 — the green ones — are hidden
+/// by it; row 4 is hidden by hand, which ODF writes as `table:visibility="collapse"`. The
+/// oracle's document says the same with those two attributes on the rows.
+fn hidden() -> Document {
+    let mut document = table();
+    let sheet = &mut document.sheets[0];
+    sheet.set_filter(Some(crate::filter::Filter {
+        name: crate::filter::ANONYMOUS.into(),
+        start: Pos::new(0, 0),
+        end: Pos::new(6, 5),
+        contains_header: false,
+        buttons: true,
+        keep: [(2, ["red", "Red", "yellow"].map(String::from).into())].into(),
+    }));
+    sheet.set_row_hidden(3, true);
+    sheet.set_formula(Pos::new(0, 6), "=SUBTOTAL(9;[.B1:.B7])".into());
+    sheet.set(Pos::new(1, 6), CellValue::Number(5.0));
+    sheet.set_formula(Pos::new(2, 6), "=SUM([.B1:.B2])".into());
+    sheet.set(Pos::new(3, 6), CellValue::Number(7.0));
+    document
+}
+
+fn subtotal(formula: &str) -> Value {
+    let document = hidden();
+    Engine::new(&document).eval(formula, Address::new(0, Pos::new(20, 0)))
+}
+
+#[track_caller]
+fn subtotal_is(formula: &str, want: f64) {
+    match subtotal(formula) {
+        Value::Number(n) => assert!(
+            (n - want).abs() <= 1e-12 * want.abs().max(1.0),
+            "{formula}: {n}, not {want}"
+        ),
+        other => panic!("{formula} evaluated to {other:?}"),
+    }
+}
+
+#[test]
+fn subtotal_steps_over_filtered_rows_and_other_subtotals() {
+    // §6.16.60, over B1:B7 = 10, 20, 30, 40, "x", 5, 30 with 20 and 30 filtered out and 40
+    // hidden by hand: 1–11 skip what the filter hides, 101–111 what is collapsed as well.
+    subtotal_is("=SUBTOTAL(9;[.B1:.B7])", 85.0);
+    subtotal_is("=SUBTOTAL(109;[.B1:.B7])", 45.0);
+    subtotal_is("=SUBTOTAL(1;[.B1:.B7])", 21.25);
+    subtotal_is("=SUBTOTAL(101;[.B1:.B7])", 15.0);
+    subtotal_is("=SUBTOTAL(2;[.B1:.B7])", 4.0);
+    subtotal_is("=SUBTOTAL(102;[.B1:.B7])", 3.0);
+    subtotal_is("=SUBTOTAL(3;[.A1:.A7])", 5.0);
+    subtotal_is("=SUBTOTAL(103;[.A1:.A7])", 4.0);
+    subtotal_is("=SUBTOTAL(3;[.B1:.B7])", 5.0); // the text "x" counts, as COUNTA's does
+    subtotal_is("=SUBTOTAL(4;[.B1:.B7])", 40.0);
+    subtotal_is("=SUBTOTAL(104;[.B1:.B7])", 30.0);
+    subtotal_is("=SUBTOTAL(5;[.B1:.B7])", 5.0);
+    subtotal_is("=SUBTOTAL(6;[.B1:.B7])", 60000.0);
+    subtotal_is("=SUBTOTAL(106;[.B1:.B7])", 1500.0);
+    subtotal_is("=SUBTOTAL(7;[.B1:.B7])", 16.5201896679992);
+    subtotal_is("=SUBTOTAL(8;[.B1:.B7])", 14.3069039278245);
+    subtotal_is("=SUBTOTAL(10;[.B1:.B7])", 272.916666666667);
+    subtotal_is("=SUBTOTAL(11;[.B1:.B7])", 204.6875);
+    subtotal_is("=SUBTOTAL(111;[.B1:.B7])", 116.666666666667);
+    // A cell whose formula calls SUBTOTAL is never counted, so a grand total over a column
+    // of subtotals does not count them twice; G3 is a SUM in a filtered row, and G4 is
+    // hidden by hand.
+    subtotal_is("=SUBTOTAL(9;[.G1:.G4])", 7.0);
+    subtotal_is("=SUBTOTAL(109;[.G1:.G4])", 0.0);
+    subtotal_is("=SUM([.G1:.G4])", 127.0); // SUM itself skips nothing
+    // Several references, as Excel allows, and a whole rectangle — a hidden *row* is hidden
+    // in every column of it.
+    subtotal_is("=SUBTOTAL(9;[.B1:.B7];[.G1:.G4])", 92.0);
+    subtotal_is("=SUBTOTAL(9;[.A1:.F7])", 46473.0);
+    subtotal_is("=SUBTOTAL(9;[.B:.B])", 85.0);
+    subtotal_is("=SUBTOTAL(9;[.B1])", 10.0);
+    subtotal_is("=SUBTOTAL(9;[.B2])", 0.0);
+    // The function number is truncated and converted; anything outside the two bands is an
+    // error (the oracle's Err:502), and so is a sequence that is not a reference.
+    subtotal_is("=SUBTOTAL(9.7;[.B1:.B7])", 85.0);
+    subtotal_is("=SUBTOTAL(109.2;[.B1:.B7])", 45.0);
+    subtotal_is("=SUBTOTAL(\"9\";[.B1:.B7])", 85.0);
+    for bad in [
+        "=SUBTOTAL(0;[.B1:.B7])",
+        "=SUBTOTAL(12;[.B1:.B7])",
+        "=SUBTOTAL(100;[.B1:.B7])",
+        "=SUBTOTAL(112;[.B1:.B7])",
+        "=SUBTOTAL(;[.B1:.B7])",
+        "=SUBTOTAL(9)",
+        "=SUBTOTAL(9;5;\"7\")",
+        "=SUBTOTAL(2;[.B1:.B7]*1)",
+    ] {
+        assert_eq!(subtotal(bad), Value::Error(FormulaError::Value), "{bad}");
+    }
+    // An average or a deviation of nothing divides by zero, as AVERAGE and STDEV do.
+    assert_eq!(
+        subtotal("=SUBTOTAL(1;[.C1:.C7])"),
+        Value::Error(FormulaError::DivZero)
+    );
+    assert_eq!(
+        subtotal("=SUBTOTAL(7;[.B4:.B5])"),
+        Value::Error(FormulaError::DivZero)
+    );
+}
+
+#[test]
+fn sumproduct_multiplies_arrays_element_by_element_and_adds_the_products() {
+    // §6.16.64 over the fixture's columns: B = 10, 20, 30, 40, "x", 5, 30; E = 0 × 5, 1, 1;
+    // F = 1 × 7. An element that is not a number is a zero — the "x" and every text — and
+    // a logical is 1 or 0.
+    assert_eq!(number("=SUMPRODUCT([.B1:.B4];[.E1:.E4])"), 0.0);
+    assert_eq!(number("=SUMPRODUCT([.B1:.B4];[.F1:.F4])"), 100.0);
+    assert_eq!(number("=SUMPRODUCT([.B1:.B7];[.F1:.F7])"), 135.0);
+    assert_eq!(number("=SUMPRODUCT([.B1:.B7])"), 135.0);
+    assert_eq!(number("=SUMPRODUCT([.B1:.C4];[.D1:.E4])"), 1391410.0);
+    assert_eq!(number("=SUMPRODUCT([.D1:.D4];[.B1:.B4])"), 1391410.0);
+    assert_eq!(number("=SUMPRODUCT([.B5:.B6];[.F5:.F6])"), 5.0);
+    assert_eq!(number("=SUMPRODUCT([.A1:.A2];[.B1:.B2])"), 0.0);
+    assert_eq!(number("=SUMPRODUCT(2;3)"), 6.0);
+    assert_eq!(number("=SUMPRODUCT(\"2\";3)"), 0.0);
+    // ForceArray (§6.3.4): an operator inside is applied element by element (§3.3 2.2),
+    // a single value is repeated, and a comparison is an array of logicals.
+    assert_eq!(number("=SUMPRODUCT([.B1:.B4]*2)"), 200.0);
+    assert_eq!(number("=SUMPRODUCT([.B1:.B4]+[.B1])"), 140.0);
+    assert_eq!(number("=SUMPRODUCT([.B1:.B4]^2)"), 3000.0);
+    assert_eq!(number("=SUMPRODUCT([.B1:.B4]%)"), 1.0);
+    assert_eq!(number("=SUMPRODUCT(-[.B1:.B4])"), -100.0);
+    assert_eq!(number("=SUMPRODUCT([.B1:.B4]&\"\")"), 0.0);
+    assert_eq!(number("=SUMPRODUCT([.B1:.B4]*TRUE())"), 100.0);
+    assert_eq!(number("=SUMPRODUCT([.B1:.B4]*[.F1:.F4];[.B1:.B4])"), 3000.0);
+    assert_eq!(number("=SUMPRODUCT([.B1:.B4]>15)"), 3.0);
+    assert_eq!(number("=SUMPRODUCT(--([.B1:.B4]>15))"), 3.0);
+    assert_eq!(number("=SUMPRODUCT([.B1:.B4]=[.B1:.B4])"), 4.0);
+    assert_eq!(number("=SUMPRODUCT([.B1:.B7]=\"x\")"), 1.0);
+    assert_eq!(number("=SUMPRODUCT(([.B1:.B4]>15)*([.B1:.B4]))"), 90.0);
+    assert_eq!(number("=SUMPRODUCT(([.B1:.B4]>15)+0;[.B1:.B4])"), 90.0);
+    // The idiom SUMIFS replaced, under this build's case-insensitive comparison (the oracle
+    // agrees once `table:case-sensitive` is false; ODF's default is true).
+    assert_eq!(
+        number("=SUMPRODUCT(([.A1:.A7]=\"apple\")*1;[.B1:.B7])"),
+        70.0
+    );
+    assert_eq!(number("=SUMPRODUCT(([.A1:.A7]=\"apple\");[.B1:.B7])"), 70.0);
+    assert_eq!(
+        number("=SUMPRODUCT(--([.A1:.A7]=\"apple\");[.B1:.B7])"),
+        70.0
+    );
+    assert_eq!(
+        number("=SUMPRODUCT(([.A1:.A7]=\"apple\")*([.C1:.C7]=\"red\"))"),
+        3.0
+    );
+    // A function given an array where it expects one value is evaluated once per element
+    // (§3.3 2.2); one whose parameter is a sequence takes the range whole.
+    assert_eq!(number("=SUMPRODUCT(LEN([.A1:.A4]))"), 18.0);
+    assert_eq!(number("=SUMPRODUCT(ABS(-[.B1:.B4]))"), 100.0);
+    assert_eq!(number("=SUMPRODUCT(IF([.B1:.B4]>15;1;0))"), 3.0);
+    assert_eq!(number("=SUMPRODUCT(IF([.B1:.B4]>15;[.B1:.B4];0))"), 90.0);
+    assert_eq!(number("=SUMPRODUCT(ROUND([.B1:.B4]/3;0))"), 33.0);
+    assert_eq!(number("=SUMPRODUCT(MID([.A1:.A2];1;1)=\"a\")"), 1.0);
+    assert_eq!(number("=SUMPRODUCT(ISNUMBER([.B1:.B7])*1)"), 6.0);
+    assert_eq!(number("=SUMPRODUCT(SUM([.B1:.B4])*[.F1:.F4])"), 400.0);
+    assert_eq!(number("=SUMPRODUCT(COUNTIF([.A1:.A7];[.A1:.A2]))"), 5.0);
+    // An error in any element is the answer, as it is for an operator.
+    assert_eq!(
+        error("=SUMPRODUCT([.B1:.B7]*[.F1:.F7])"),
+        FormulaError::Value
+    );
+    assert_eq!(
+        error("=SUMPRODUCT(([.A1:.A7]=\"apple\")*[.B1:.B7])"),
+        FormulaError::Value
+    );
+    assert_eq!(
+        error("=SUMPRODUCT([.B1:.B4]/[.E1:.E4])"),
+        FormulaError::DivZero
+    );
+    assert_eq!(
+        error("=SUMPRODUCT([.B1:.B4];1/[.E1:.E4])"),
+        FormulaError::DivZero
+    );
+    assert_eq!(error("=SUMPRODUCT(1/0)"), FormulaError::DivZero);
+    // "All matrices shall have the same dimensions."
+    assert_eq!(
+        error("=SUMPRODUCT([.B1:.B4];[.F1:.F3])"),
+        FormulaError::Value
+    );
+    assert_eq!(
+        error("=SUMPRODUCT([.B1:.B4];[.D1:.E2])"),
+        FormulaError::Value
+    );
+    assert_eq!(
+        error("=SUMPRODUCT([.B1:.B2];[.B1:.C1])"),
+        FormulaError::Value
+    );
+    assert_eq!(error("=SUMPRODUCT([.B1:.B4];\"a\")"), FormulaError::Value);
+    // An argument that is one error is the answer before any shape is compared — a
+    // function this build lacks says #NAME?, not that its one value is the wrong size.
+    assert_eq!(error("=SUMPRODUCT([.B1:.B4];1/0)"), FormulaError::DivZero);
+    assert_eq!(
+        error("=SUMPRODUCT([.B1:.B4];NOSUCH(1))"),
+        FormulaError::Name
+    );
+    assert_eq!(error("=SUMPRODUCT([.B1:.B4];NA())"), FormulaError::NA);
+    assert_eq!(
+        error("=SUMPRODUCT([.B1:.B4];[.F1:.F3];1/0)"),
+        FormulaError::DivZero
+    );
+    assert_eq!(error("=SUMPRODUCT([.B1:.B4];)"), FormulaError::Value);
+    assert_eq!(error("=SUMPRODUCT()"), FormulaError::Value);
+    // An operator over arrays of different lengths fills the shorter one's missing places
+    // with #N/A (§3.3 2.2.2, Note 8), and the sum carries it: the spec, where the oracle
+    // quietly sums the overlap and answers 60.
+    assert_eq!(error("=SUMPRODUCT([.B1:.B4]*[.F1:.F3])"), FormulaError::NA);
+}
+
 #[test]
 fn quotient_truncates_and_sign_is_three_valued() {
     // §6.16.48, §6.16.54.

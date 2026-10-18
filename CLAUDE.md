@@ -69,7 +69,7 @@ collation) is semantic, not syntactic, and a syntax translator leaks it. Normati
 | `doc/OpenDocument-v1.4-schema.rng` | ODF 1.4 Part 3 — content schema |
 | `doc/OpenDocument-v1.4-os-part4-formula.html` | ODF 1.4 Part 4 — OpenFormula semantics |
 | `doc/small-group.md` | The 110-function scope line, extracted from Part 4 §2.3.2 |
-| `doc/function-coverage.md` | **The evidence for moving a function past that line — descriptive, not normative.** How many functions ODF (393), LibreOffice (~516) and Excel (521) have, which ones real spreadsheets call (Enron, EUSES, LibreOffice's test documents), where the 138 stand, and the gaps ranked in tiers — the third of which needs an array value rather than more functions. `scripts/function-usage.py` re-measures the corpus half |
+| `doc/function-coverage.md` | **The evidence for moving a function past that line — descriptive, not normative.** How many functions ODF (393), LibreOffice (~516) and Excel (521) have, which ones real spreadsheets call (Enron, EUSES, LibreOffice's test documents), where the 144 stand, and the gaps ranked in tiers — the third of which needs an array value rather than more functions. `scripts/function-usage.py` re-measures the corpus half |
 | `doc/suite.md` | Phase 10 — the suite plan; normative for that phase, incl. R8/R9/R10 |
 | `doc/odt-format.md` | Clean-room notes for text documents. **§5 is `UNVERIFIED` and may not be implemented** |
 | `doc/text-core.md` | The text scope line — *invented*, not extracted, and checked by `text/tests/scope.rs` |
@@ -865,12 +865,15 @@ before it can be answered.
   point of failure for the value model, error set and §6.3 conversions. `eval.rs` recurses
   over the dependency graph rather than sorting one. `display.rs` is the formula bar's A1
   syntax layered on top of the same lexer/parser, not a second grammar. All 110 Small Group
-  functions are implemented, and 28 beyond it by explicit decision (`ROW`, `COLUMN` and the
-  classic band of `doc/function-coverage.md`'s Tier 1 that needed no new machinery);
+  functions are implemented, and 34 beyond it by explicit decision (`ROW`, `COLUMN`, the
+  classic band of `doc/function-coverage.md`'s Tier 1, `SUBTOTAL`, `SUMPRODUCT`, and
+  Excel's `CEILING`/`FLOOR` as `COM.MICROSOFT.*`, the names LibreOffice gives them);
   `funcs::implemented()` is checked against both halves of `doc/small-group.md` by a test,
-  which is the anti-bloat rule made mechanical. `funcs/beyond.rs` holds the 28's expectations,
+  which is the anti-bloat rule made mechanical. `funcs/beyond.rs` holds the 34's expectations,
   every one measured against LibreOffice, and `doc/ods-format.md` §4.1 is what the oracle
-  answered where Part 4 is silent. `assist.rs` is what a shell needs
+  answered where Part 4 is silent. `array.rs` is ForceArray (§6.3.4) — a parameter evaluated
+  in array mode, operators place by place and a scalar parameter iterated, reduced to one
+  value inside the function, so nothing spills and `doc/not-doing.md`'s array row stands. `assist.rs` is what a shell needs
   while somebody is *typing* one — which word may be completed, what to offer for it, which call
   the caret is inside and how a signature splits — three questions about display syntax and a
   caret offset, and here rather than in a shell since `ui_sheet_gtk` and `ui_win32` both ask
@@ -1275,12 +1278,17 @@ grind's entries. R10's matrix, which S11 called `doc/shell-matrix.md`, is `doc/f
 
 **Function compatibility: the classic band is in, and the rest waits on decisions.**
 `doc/function-coverage.md` §7 is the status: 26 functions of its Tier 1 that needed no new
-machinery moved in on 2026-10-12 (138 in all, `doc/small-group.md`'s second half), each held to
+machinery moved in on 2026-10-12, and `SUBTOTAL`, `SUMPRODUCT`, `CEILING` and `FLOOR` on
+2026-10-18 (144 in all, `doc/small-group.md`'s second half), each held to
 an expectation measured against LibreOffice in `sheet/src/formula/funcs/beyond.rs`, with what
 the oracle answered where Part 4 is silent in `doc/ods-format.md` §4.1 — and where the two
 disagree, the spec wins and the test says so. `ROUND`/`TRUNC`/`INT` changed with them: they
-step the value a cell shows (`math::shown`), so `ROUND(0.285;2)` is 0.29. What is next —
-`INDIRECT`/`OFFSET`, `SUBTOTAL`, `SUMPRODUCT`, `TEXT`, `CELL`, `CEILING`/`FLOOR` — each needs an
+step the value a cell shows (`math::shown`), so `ROUND(0.285;2)` is 0.29. **Excel's functions
+travel under the oracle's names**: `grind-xlsx` writes Excel's `CEILING` as
+`COM.MICROSOFT.CEILING`, every Excel-only function as `COM.MICROSOFT.*`, the old distributions
+as `LEGACY.*` — LibreOffice's own import, measured over all 520 (`doc/xlsx-format.md` §5.1) —
+so a recalculation never hands a workbook's call to an ODF function of the same name and a
+different answer. What is next — `INDIRECT`/`OFFSET`, `TEXT`, `CELL`, `LOOKUP` — each needs an
 engine change or a scope decision first, and §7's table says which. Measure expectations with
 `table:use-wildcards="true"` in the oracle's document, or LibreOffice reads every criterion as a
 regular expression.

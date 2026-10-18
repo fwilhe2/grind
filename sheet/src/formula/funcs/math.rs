@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! §6.16 Mathematical Functions and §6.17 Rounding Functions — the Small Group's 24 and 3,
-//! and `QUOTIENT`, `SIGN`, `ROUNDUP`, `ROUNDDOWN`, `MROUND`, `CEILING` and `FLOOR` from
+//! and `QUOTIENT`, `SIGN`, `SUBTOTAL`, `SUMPRODUCT`, `ROUNDUP`, `ROUNDDOWN`, `MROUND`, `CEILING` and `FLOOR` from
 //! beyond it — with Excel's own `CEILING` and `FLOOR` beside the last two, under the names
 //! LibreOffice gives them.
 //!
@@ -49,6 +49,8 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "SUMIF" => super::criterion::conditional(args, super::criterion::Mode::Sum),
         "SUMIFS" => super::criterion::several(args, super::criterion::Mode::Sum),
         "PRODUCT" => sequence(args, |ns| ns.iter().product()),
+        "SUBTOTAL" => subtotal(args),
+        "SUMPRODUCT" => sumproduct(args),
         "ROUND" => scaled(args, |x| shown(x).round()),
         "TRUNC" => scaled(args, |x| shown(x).trunc()),
         "ROUNDUP" => scaled(args, |x| shown(x).abs().ceil().copysign(x)),
@@ -77,6 +79,108 @@ fn unary(args: &mut Args, f: impl Fn(f64) -> f64) -> Answer {
 fn nullary(args: &Args, value: f64) -> Answer {
     args.arity(0..=0)?;
     Ok(Value::Number(value))
+}
+
+/// §6.16.60 `SUBTOTAL( Function ; Sequence … )`: one of eleven aggregates over the cells of
+/// the references that are not hidden by the filter — nor, for 101 to 111, by hand — and do
+/// not hold a subtotal of their own ([`Args::counted`]).
+///
+/// Several references, as Excel and the oracle both accept, though §6.16.60 names one. The
+/// function number is truncated; one outside both bands, an empty one, and a sequence that is
+/// not a reference are `#VALUE!` where the oracle answers `Err:502` (`doc/ods-format.md`
+/// §4.1). Each aggregate is its own function's, over the cells left: text in a reference is
+/// skipped, an error is passed on except by the two counts, and an average of nothing is
+/// `#DIV/0!`.
+fn subtotal(args: &mut Args) -> Answer {
+    args.arity(2..)?;
+    if args.omitted(0) {
+        return Err(FormulaError::Value);
+    }
+    let (function, collapsed) = match args.integer(0)? {
+        id @ 1..=11 => (id, false),
+        id @ 101..=111 => (id - 100, true),
+        _ => return Err(FormulaError::Value),
+    };
+    let mut values = Vec::new();
+    for i in 1..args.len() {
+        values.extend(args.counted(i, collapsed).ok_or(FormulaError::Value)?);
+    }
+    let count = |keep: fn(&Value) -> bool| {
+        Ok(Value::number(
+            values.iter().filter(|v| keep(v)).count() as f64
+        ))
+    };
+    match function {
+        2 => return count(|v| matches!(v, Value::Number(_))),
+        3 => return count(|v| !matches!(v, Value::Empty)),
+        _ => {}
+    }
+    let mut numbers = Vec::new();
+    for value in &values {
+        match value {
+            Value::Number(n) => numbers.push(*n),
+            Value::Error(e) => return Err(*e),
+            Value::Empty | Value::Text(_) | Value::Bool(_) => {}
+        }
+    }
+    use super::stat::{extreme_of, mean, moment_of};
+    match function {
+        1 => mean(&numbers),
+        4 => extreme_of(&numbers, true),
+        5 => extreme_of(&numbers, false),
+        6 => Ok(Value::number(numbers.iter().product())),
+        7 => moment_of(&numbers, true, true),
+        8 => moment_of(&numbers, false, true),
+        9 => Ok(Value::number(numbers.iter().sum())),
+        10 => moment_of(&numbers, true, false),
+        _ => moment_of(&numbers, false, false),
+    }
+}
+
+/// §6.16.64 `SUMPRODUCT( { ForceArray Array A }+ )`: the arrays multiplied place by place
+/// and the products added.
+///
+/// Every argument is evaluated in array mode (`array.rs`), so `([.A1:.A9]="x")*[.B1:.B9]`
+/// is the column of products it reads as. An element that is not a number is a zero — a
+/// text, an empty cell — and a logical is 1 or 0, as in the oracle. An error anywhere is the
+/// answer, and an argument that is one error is that answer before shapes are compared;
+/// arrays of different shapes are `#VALUE!` ("All matrices shall have the same
+/// dimensions"), and so is an empty argument.
+fn sumproduct(args: &mut Args) -> Answer {
+    args.arity(1..)?;
+    let mut arrays = Vec::with_capacity(args.len());
+    for i in 0..args.len() {
+        if args.omitted(i) {
+            return Err(FormulaError::Value);
+        }
+        arrays.push(args.array(i));
+    }
+    // An argument that came to one error is the answer before any shape is compared, as the
+    // oracle has it: `SUMPRODUCT([.B1:.B4];NOSUCH(1))` is #NAME?, not #VALUE!.
+    if let Some(e) = arrays.iter().find_map(|a| match a.values() {
+        [Value::Error(e)] => Some(*e),
+        _ => None,
+    }) {
+        return Err(e);
+    }
+    let (rows, cols) = (arrays[0].rows, arrays[0].cols);
+    if arrays.iter().any(|a| (a.rows, a.cols) != (rows, cols)) {
+        return Err(FormulaError::Value);
+    }
+    let mut sum = 0.0;
+    for place in 0..rows * cols {
+        let mut product = 1.0;
+        for array in &arrays {
+            product *= match &array.values()[place] {
+                Value::Number(n) => *n,
+                Value::Bool(b) => f64::from(u8::from(*b)),
+                Value::Error(e) => return Err(*e),
+                Value::Empty | Value::Text(_) => 0.0,
+            };
+        }
+        sum += product;
+    }
+    Ok(Value::number(sum))
 }
 
 /// §6.16.30 `EVEN` and §6.16.44 `ODD`: to the next integer of the given parity, away from

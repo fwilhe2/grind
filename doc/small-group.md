@@ -248,6 +248,28 @@ by that evidence. It recommends nothing on its own; an entry here still needs it
   `doc/xlsx-format.md` §5.1's question, and the next entry's answer. No new machinery.
   Decided 2026-10-18.
 
+- `SUBTOTAL` — §6.16.60
+
+  **Evidence:** the first function `doc/function-coverage.md`'s greedy pass adds — it unlocks
+  more of LibreOffice's test documents than any other missing function — and Enron's twelfth
+  by workbook. It needed one piece of new machinery, and only that: a way for evaluation to ask
+  which rows a filter hides, which the model already answers for every renderer
+  (`Sheet::row_hidden`) and already keeps apart from rows hidden by hand — exactly §6.16.60's
+  split between 1–11 and 101–111. Measured against the oracle with both kinds of hidden row;
+  what it answers where §6.16.60 is silent is `doc/ods-format.md` §4.1. Decided 2026-10-18.
+
+- `SUMPRODUCT` — §6.16.64
+
+  **Evidence:** the second function the greedy pass adds — seven of LibreOffice's test
+  documents — and the idiom every spreadsheet used for several conditions before `SUMIFS`:
+  `SUMPRODUCT(([.A1:.A9]="x")*[.B1:.B9])`. Its parameter is ForceArray (§6.3.4), so it needed
+  array evaluation inside one argument: operators applied place by place and a function
+  given an array where it expects one value evaluated once per element (§3.3 2.2), each
+  parameter's arity read off the catalog's own signature. Contained in `array.rs` and reduced
+  to one value before anything else sees it, which is why `doc/not-doing.md`'s array row is
+  narrowed rather than crossed. Where the oracle and §3.3 disagree — an operator over arrays
+  of two lengths — the spec wins (`doc/ods-format.md` §4.1). Decided 2026-10-18.
+
 ## Excel's functions, under LibreOffice's names
 
 **Not Part 4 functions.** ODF has no namespace for a function the standard does not define,
