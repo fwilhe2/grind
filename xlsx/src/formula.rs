@@ -756,18 +756,173 @@ fn row_index(digits: &str) -> Option<u32> {
     (row > 0 && row <= MAX_ROWS).then(|| row - 1)
 }
 
-/// The name under Excel's markers, uppercased.
+/// The name a formula should carry in ODF: Excel's name under its markers, uppercased, then
+/// renamed where OpenFormula spells the same function differently.
 ///
 /// `_xlfn.` is how a workbook names a function readers older than it had not got; `_xlws.` is
 /// the same marker for one that is worksheet-only. Neither is part of the name, and a document
 /// that kept them would name functions nothing has ever implemented.
+///
+/// The renaming is the oracle's, measured name by name (`doc/xlsx-format.md` §5.1), and it is
+/// what keeps a recalculation honest: Excel's two-parameter `CEILING` is not §6.17.1's, so a
+/// workbook's `CEILING` becomes `COM.MICROSOFT.CEILING`, the name that means Excel's — as
+/// LibreOffice's own import writes it. Carrying the bare name would hand the cell to a
+/// function with the same name and a different answer.
 fn function_name(word: &str) -> String {
     let mut name = word;
     for marker in ["_xlfn.", "_xlws."] {
         name = name.strip_prefix(marker).unwrap_or(name);
     }
-    name.to_ascii_uppercase()
+    let name = name.to_ascii_uppercase();
+    if MICROSOFT.contains(&name.as_str()) {
+        format!("COM.MICROSOFT.{name}")
+    } else if LEGACY.contains(&name.as_str()) {
+        format!("LEGACY.{name}")
+    } else if let Some((_, odf)) = ODF_NAMED.iter().find(|(excel, _)| *excel == name) {
+        (*odf).to_owned()
+    } else {
+        name
+    }
 }
+
+/// Excel's functions OpenFormula has no name for, which ODF documents carry under
+/// LibreOffice's `COM.MICROSOFT.` prefix — each one what the oracle's import wrote for it, or,
+/// from `ARRAYTOTEXT` on, the name its *own* documents use for one its import does not know
+/// (`sc/qa`, `doc/xlsx-format.md` §5.1).
+const MICROSOFT: &[&str] = &[
+    "CEILING",
+    "FLOOR",
+    "AGGREGATE",
+    "BETA.DIST",
+    "BETA.INV",
+    "BINOM.DIST",
+    "BINOM.INV",
+    "CEILING.MATH",
+    "CEILING.PRECISE",
+    "CHISQ.DIST",
+    "CHISQ.DIST.RT",
+    "CHISQ.INV",
+    "CHISQ.INV.RT",
+    "CHISQ.TEST",
+    "CHOOSECOLS",
+    "CHOOSEROWS",
+    "CONCAT",
+    "CONFIDENCE.NORM",
+    "CONFIDENCE.T",
+    "COVARIANCE.P",
+    "COVARIANCE.S",
+    "DROP",
+    "ENCODEURL",
+    "ERF.PRECISE",
+    "ERFC.PRECISE",
+    "EXPAND",
+    "EXPON.DIST",
+    "F.DIST.RT",
+    "F.INV.RT",
+    "F.TEST",
+    "FILTER",
+    "FILTERXML",
+    "FLOOR.MATH",
+    "FLOOR.PRECISE",
+    "FORECAST.ETS",
+    "FORECAST.ETS.CONFINT",
+    "FORECAST.ETS.SEASONALITY",
+    "FORECAST.ETS.STAT",
+    "FORECAST.LINEAR",
+    "GAMMA.DIST",
+    "GAMMA.INV",
+    "GAMMALN.PRECISE",
+    "HSTACK",
+    "HYPGEOM.DIST",
+    "IFS",
+    "LET",
+    "LOGNORM.DIST",
+    "LOGNORM.INV",
+    "MAXIFS",
+    "MINIFS",
+    "MODE.MULT",
+    "MODE.SNGL",
+    "NEGBINOM.DIST",
+    "NORM.DIST",
+    "NORM.INV",
+    "NORM.S.DIST",
+    "NORM.S.INV",
+    "PERCENTILE.EXC",
+    "PERCENTILE.INC",
+    "PERCENTRANK.EXC",
+    "PERCENTRANK.INC",
+    "POISSON.DIST",
+    "QUARTILE.EXC",
+    "QUARTILE.INC",
+    "RANDARRAY",
+    "RANK.AVG",
+    "RANK.EQ",
+    "SEQUENCE",
+    "SORT",
+    "SORTBY",
+    "STDEV.P",
+    "STDEV.S",
+    "SWITCH",
+    "T.DIST",
+    "T.DIST.2T",
+    "T.DIST.RT",
+    "T.INV",
+    "T.INV.2T",
+    "T.TEST",
+    "TAKE",
+    "TEXTAFTER",
+    "TEXTBEFORE",
+    "TEXTJOIN",
+    "TEXTSPLIT",
+    "TOCOL",
+    "TOROW",
+    "UNIQUE",
+    "VAR.P",
+    "VAR.S",
+    "VSTACK",
+    "WEBSERVICE",
+    "WEIBULL.DIST",
+    "WRAPCOLS",
+    "WRAPROWS",
+    "XLOOKUP",
+    "XMATCH",
+    "Z.TEST",
+    // Unknown to the oracle's import; spelled as its own documents spell them.
+    "ARRAYTOTEXT",
+    "BAHTTEXT",
+    "BYCOL",
+    "BYROW",
+    "ISO.CEILING",
+    "ISOMITTED",
+    "LAMBDA",
+    "MAKEARRAY",
+    "MAP",
+    "NETWORKDAYS.INTL",
+    "REDUCE",
+    "SCAN",
+    "WORKDAY.INTL",
+];
+
+/// Excel's pre-2010 distributions, which ODF keeps under `LEGACY.` because §6.18 gave the
+/// plain name to the function their successors became.
+const LEGACY: &[&str] = &[
+    "CHIDIST",
+    "CHIINV",
+    "CHITEST",
+    "FDIST",
+    "FINV",
+    "NORMSDIST",
+    "NORMSINV",
+    "TDIST",
+];
+
+/// Excel 2010's names for functions OpenFormula already had, under its own spelling.
+const ODF_NAMED: &[(&str, &str)] = &[
+    ("F.DIST", "FDIST"),
+    ("F.INV", "FINV"),
+    ("FORMULATEXT", "FORMULA"),
+    ("SKEW.P", "SKEWP"),
+];
 
 #[cfg(test)]
 mod tests {
@@ -883,11 +1038,8 @@ mod tests {
 
     #[test]
     fn excels_markers_are_not_part_of_the_name() {
-        assert_eq!(
-            odf("_xlfn.XLOOKUP(3,A1:A4,B1:B4)"),
-            "XLOOKUP(3;[.A1:.A4];[.B1:.B4])"
-        );
-        assert_eq!(odf("_xlfn.CONCAT(B1,B2)"), "CONCAT([.B1];[.B2])");
+        assert_eq!(odf("_xlfn.IFNA(A1,0)"), "IFNA([.A1];0)");
+        assert_eq!(odf("_xlfn.ISOWEEKNUM(A1)"), "ISOWEEKNUM([.A1])");
         assert_eq!(odf("SUM(_xlfn.SINGLE(A1:A4))"), "SUM([.A1:.A4])");
         assert_eq!(odf("@A1"), "[.A1]");
         // Without the marker it is somebody's own function, and unwrapping it would change
@@ -1006,6 +1158,43 @@ mod tests {
 
     /// Which functions a translated formula names is `funcs::used`'s question, asked of the
     /// text this file produced — one walker over the AST rather than a second one here.
+    #[test]
+    fn a_function_odf_names_otherwise_gets_the_name_the_oracle_writes() {
+        // `doc/xlsx-format.md` §5.1, measured: Excel's two-parameter CEILING and FLOOR are
+        // not §6.17's, and LibreOffice imports them under the names that mean Excel's.
+        assert_eq!(odf("CEILING(A1,2)"), "COM.MICROSOFT.CEILING([.A1];2)");
+        assert_eq!(odf("FLOOR(A1,2)"), "COM.MICROSOFT.FLOOR([.A1];2)");
+        // Excel's own functions, ODF has none of.
+        assert_eq!(
+            odf("_xlfn.XLOOKUP(3,A1:A4,B1:B4)"),
+            "COM.MICROSOFT.XLOOKUP(3;[.A1:.A4];[.B1:.B4])"
+        );
+        assert_eq!(
+            odf("_xlfn.CONCAT(B1,B2)"),
+            "COM.MICROSOFT.CONCAT([.B1];[.B2])"
+        );
+        assert_eq!(
+            odf("_xlfn.STDEV.S(A1:A4)"),
+            "COM.MICROSOFT.STDEV.S([.A1:.A4])"
+        );
+        assert_eq!(
+            odf("_xlfn._xlws.SORT(A1:A4)"),
+            "COM.MICROSOFT.SORT([.A1:.A4])"
+        );
+        // The old distributions, which ODF keeps under a prefix of their own …
+        assert_eq!(odf("NORMSDIST(1)"), "LEGACY.NORMSDIST(1)");
+        assert_eq!(odf("TDIST(1,2,1)"), "LEGACY.TDIST(1;2;1)");
+        // … and the new ones whose meaning ODF already has under another name.
+        assert_eq!(odf("_xlfn.F.DIST(1,2,3,TRUE)"), "FDIST(1;2;3;TRUE())");
+        assert_eq!(odf("_xlfn.SKEW.P(A1:A4)"), "SKEWP([.A1:.A4])");
+        assert_eq!(odf("_xlfn.FORMULATEXT(A1)"), "FORMULA([.A1])");
+        // Lower case is still the same name.
+        assert_eq!(odf("ceiling(A1,2)"), "COM.MICROSOFT.CEILING([.A1];2)");
+        // A name the two agree on stays as it is.
+        assert_eq!(odf("ROUND(A1,2)"), "ROUND([.A1];2)");
+        assert_eq!(odf("TINV(0.5,2)"), "TINV(0.5;2)");
+    }
+
     #[test]
     fn the_functions_a_translated_formula_names_are_the_cores_answer() {
         let ours = odf("SUM(ABS(A1),MAX(B1:B2))");

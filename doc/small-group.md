@@ -234,6 +234,40 @@ by that evidence. It recommends nothing on its own; an entry here still needs it
   what the spec leaves open, `doc/ods-format.md` §4.1 records it, and where it contradicts the
   spec the spec wins and the test says so. Decided 2026-10-12.
 
+- `CEILING` — §6.17.1
+- `FLOOR` — §6.17.3
+
+  **Evidence:** five of LibreOffice's test documents each, and `doc/function-coverage.md`'s
+  Tier 1. Held back on 2026-10-12 because Excel's two-parameter namesakes round differently
+  and an imported workbook would recalculate to a different number; measured on 2026-10-18,
+  that worry turned out to be about a different function. LibreOffice writes Excel's
+  `CEILING` and `FLOOR` into ODF as `COM.MICROSOFT.CEILING` and `COM.MICROSOFT.FLOOR` (three
+  of its test documents carry each), so an ODF file that says `CEILING` means §6.17.1's,
+  and the oracle computes that one — the Mode rule, and opposite signs refused
+  (`doc/ods-format.md` §4.1). What an `.xlsx` import should spell Excel's as is
+  `doc/xlsx-format.md` §5.1's question, and the next entry's answer. No new machinery.
+  Decided 2026-10-18.
+
+## Excel's functions, under LibreOffice's names
+
+**Not Part 4 functions.** ODF has no namespace for a function the standard does not define,
+and LibreOffice writes Excel's under a `COM.MICROSOFT.` prefix — measured both ways in
+`doc/xlsx-format.md` §5.1: its own `.xlsx` import produces those names, and its own documents
+carry them (109 of its test documents). An entry here is admitted for the same reason as
+everything above it, one at a time on evidence, and its section is the **chapter** of Part 4
+its ODF counterpart is in — where a help browser files it — never a definition: the
+definition is Excel's, and the expectations are measured against the oracle's function of the
+same name.
+
+- `COM.MICROSOFT.CEILING` — §6.17
+- `COM.MICROSOFT.FLOOR` — §6.17
+
+  **Evidence:** every `.xlsx` with a `CEILING` or `FLOOR` in it. Excel's two-parameter
+  functions round on the number line and §6.17's do not (`CEILING(-4.5,1)` is -4 in Excel and
+  `#NUM!` in §6.17.1), so `grind-xlsx` imports them under these names, as the oracle does —
+  and without them an imported workbook's `CEILING` would recalculate to `#NAME?`. Three of
+  LibreOffice's test documents carry each. Decided 2026-10-18.
+
 ---
 
 ## Attribution

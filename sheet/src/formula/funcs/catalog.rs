@@ -142,6 +142,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.18.6",
     },
     FuncInfo {
+        name: "CEILING",
+        signature: "CEILING( Number N [ ; [ Number Significance ] [ ; Number Mode ] ] )",
+        brief: "Round a number N up to the nearest multiple of the second parameter, significance.",
+        section: "6.17.1",
+    },
+    FuncInfo {
         name: "CHOOSE",
         signature: "CHOOSE( Integer Index ; { Any Value } + )",
         brief: "Uses an index to return a value from a list of values.",
@@ -158,6 +164,18 @@ static CATALOG: &[FuncInfo] = &[
         signature: "COLUMNS( Reference|Array R )",
         brief: "Returns the number of columns in a given range.",
         section: "6.13.5",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.CEILING",
+        signature: "COM.MICROSOFT.CEILING( Number N ; Number Significance )",
+        brief: "Excel's CEILING: rounds N up to a multiple of Significance on the number line.",
+        section: "6.17",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.FLOOR",
+        signature: "COM.MICROSOFT.FLOOR( Number N ; Number Significance )",
+        brief: "Excel's FLOOR: rounds N down to a multiple of Significance on the number line.",
+        section: "6.17",
     },
     FuncInfo {
         name: "CONCATENATE",
@@ -345,6 +363,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "FIND( Text Search ; Text T [ ; Integer Start = 1 ] )",
         brief: "Return the starting position of a given text.",
         section: "6.20.9",
+    },
+    FuncInfo {
+        name: "FLOOR",
+        signature: "FLOOR( Number N [ ; [ Number Significance ] [ ; Number Mode ] ] )",
+        brief: "Round a number N down to the nearest multiple of the second parameter, significance.",
+        section: "6.17.3",
     },
     FuncInfo {
         name: "FV",

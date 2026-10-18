@@ -152,7 +152,7 @@ left says, in its last column, what stands in its way.
 | `OFFSET` | Medium | Enron #7 (Jansen), O'Beirne #14; as `INDIRECT` |
 | `CELL` | outside every group | Enron #14 — and a variance swamp, Part 4 leaves much of it implementation-defined |
 | ✓ `ROUNDUP`, `ROUNDDOWN`, `MROUND` | Medium | LO 3–5 each |
-| `CEILING`, `FLOOR` | Medium | LO 5 each — Excel's namesakes round differently, so implementing them changes what an imported workbook recalculates to; `doc/xlsx-format.md` §5 first |
+| ✓ `CEILING`, `FLOOR` | Medium | LO 5 each — moved in on 2026-10-18 with Excel's own two beside them, `COM.MICROSOFT.CEILING` and `COM.MICROSOFT.FLOOR`, which is what LibreOffice's import (and now ours) calls Excel's; the worry about imported workbooks was about those names (`doc/xlsx-format.md` §5.1) |
 | ✓ `LARGE`, `SMALL`, `MEDIAN`, `RANK` | Medium | LO 4 each |
 | ✓ `SEARCH` | Large | LO 4 |
 | ✓ `ADDRESS` | Medium | LO 6 |
@@ -259,7 +259,6 @@ which this build reads as wildcards by `wildcard.rs`'s decision.
 | `SUMPRODUCT` | 7 files | ForceArray: operators applied cell by cell over ranges, kept inside the function with no array value that spills | whether that narrows or breaks `doc/not-doing.md`'s "Array/matrix formulas" row; the same machinery would give `LOOKUP`'s array form and single-cell `{=SUM(IF(…))}` |
 | `TEXT` | 3 files | a format-code language | the code is implementation-defined and LibreOffice reads it in the document's locale; `numfmt` holds no format-code strings by rule, though `grind-xlsx`'s `numfmt.rs` parses Excel's and could be hoisted |
 | `CELL` | 3 files | an info-type vocabulary | outside every ODF group, and much of it implementation-defined |
-| `CEILING`, `FLOOR` | 5 files each | nothing new | Excel's namesakes round differently, so implementing them changes what an imported workbook recalculates to; measure `doc/xlsx-format.md` §5's list with loop E first |
 | `MAXIFS`, `MINIFS` and the rest of Tier 2 | — | `criterion::several` with a new `Mode`, for those two | each is outside ODF 1.4 and needs its spelling decided (`COM.MICROSOFT.*` is LibreOffice's convention, not a standard) |
 
 ## 8. Re-measuring

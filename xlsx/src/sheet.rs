@@ -1204,11 +1204,11 @@ mod tests {
         assert_eq!(sheet.formula(at("A1")), Some("=NOSUCHFUNCTION([.B1])"));
         assert_eq!(
             sheet.formula(at("B1")),
-            Some("=XLOOKUP(3;[.C1:.C2];[.D1:.D2])")
+            Some("=COM.MICROSOFT.XLOOKUP(3;[.C1:.C2];[.D1:.D2])")
         );
         assert_eq!(
             report.unknown_functions,
-            ["NOSUCHFUNCTION", "XLOOKUP"]
+            ["COM.MICROSOFT.XLOOKUP", "NOSUCHFUNCTION"]
                 .map(str::to_owned)
                 .into_iter()
                 .collect()

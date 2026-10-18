@@ -265,6 +265,110 @@ fn mround_takes_the_nearest_multiple_and_the_greater_on_a_tie() {
 }
 
 #[test]
+fn ceiling_and_floor_step_towards_an_infinity_unless_a_mode_says_away_from_zero() {
+    // §6.17.1, §6.17.3: with no Mode, the mathematical ceiling and floor of N/Significance.
+    assert_eq!(number("=CEILING(2.5)"), 3.0);
+    assert_eq!(number("=CEILING(-2.5)"), -2.0);
+    assert_eq!(number("=CEILING(2.5;2)"), 4.0);
+    assert_eq!(number("=CEILING(-2.5;-2)"), -2.0);
+    assert_eq!(number("=CEILING(-4.1;-2;0)"), -4.0);
+    assert_eq!(number("=CEILING(4;2)"), 4.0);
+    assert_eq!(number("=FLOOR(2.5)"), 2.0);
+    assert_eq!(number("=FLOOR(-2.5)"), -3.0);
+    assert_eq!(number("=FLOOR(2.5;2)"), 2.0);
+    assert_eq!(number("=FLOOR(-2.5;-2)"), -4.0);
+    // A Mode other than zero rounds the magnitude — CEILING away from zero, FLOOR towards it
+    // — and an empty Significance is still ±1.
+    assert_eq!(number("=CEILING(-2.5;-2;1)"), -4.0);
+    assert_eq!(number("=CEILING(-2.5;-2;-1)"), -4.0);
+    assert_eq!(number("=CEILING(2.5;2;-1)"), 4.0);
+    assert_eq!(number("=CEILING(-2.5;;1)"), -3.0);
+    assert_eq!(number("=CEILING(2.5;;1)"), 3.0);
+    assert_eq!(number("=CEILING(2.5;;)"), 3.0);
+    assert_eq!(number("=FLOOR(-2.5;-2;1)"), -2.0);
+    assert_eq!(number("=FLOOR(-2.5;;1)"), -2.0);
+    // "If any of the two parameters N or Significance is zero, the result is zero" — and an
+    // empty N is a zero, measured.
+    assert_eq!(number("=CEILING(0;2)"), 0.0);
+    assert_eq!(number("=CEILING(2.5;0)"), 0.0);
+    assert_eq!(number("=CEILING(;2)"), 0.0);
+    assert_eq!(number("=CEILING([.D9];2)"), 0.0);
+    assert_eq!(number("=FLOOR(0;2)"), 0.0);
+    assert_eq!(number("=FLOOR(2.5;0)"), 0.0);
+    // The quotient is read as it is shown before it is stepped, as every rounding here is;
+    // the multiple itself is a product, as near as a double holds it (the oracle writes
+    // fifteen digits, so it cannot say which neighbour it holds).
+    close("=CEILING(1.25;0.1)", 1.3);
+    close("=CEILING(0.1+0.2;0.1)", 0.3);
+    close("=FLOOR(1.35;0.1)", 1.3);
+    close("=FLOOR(0.3;0.1)", 0.3);
+    assert_eq!(number("=FLOOR(4.35*100;1)"), 435.0);
+    close("=FLOOR(-0.3;-0.1;1)", -0.3);
+    // The multiple is the one shown, too: three times 2.3 is 6.9 and not 6.8999999999999995,
+    // which LibreOffice's own test document compares to a typed 6.9.
+    assert_eq!(number("=FLOOR(7.9;2.3)"), 6.9);
+    assert_eq!(number("=FLOOR(-7.9;-2.3;1)"), -6.9);
+    assert_eq!(number("=MROUND(7.9;2.3)"), 6.9);
+    assert_eq!(number("=CEILING(\"3.5\";1)"), 4.0);
+    // "Both N and Significance shall … have the same sign": the oracle refuses the other
+    // signs whatever the Mode, where Excel's two-parameter CEILING would round -2.5 to -2.
+    assert_eq!(error("=CEILING(-2.5;2)"), FormulaError::Num);
+    assert_eq!(error("=CEILING(2.5;-2)"), FormulaError::Num);
+    assert_eq!(error("=CEILING(-2.5;2;1)"), FormulaError::Num);
+    assert_eq!(error("=CEILING(-2.5;2;0)"), FormulaError::Num);
+    assert_eq!(error("=FLOOR(-2.5;2)"), FormulaError::Num);
+    assert_eq!(error("=FLOOR(2.5;-2)"), FormulaError::Num);
+    assert_eq!(error("=FLOOR(-2.5;2;1)"), FormulaError::Num);
+    assert_eq!(error("=CEILING(2.5;2;\"x\")"), FormulaError::Value);
+    assert_eq!(error("=CEILING(2.5;[.C1])"), FormulaError::Value);
+}
+
+#[test]
+fn excels_ceiling_and_floor_keep_their_own_names_and_their_own_rule() {
+    // What an Excel workbook's CEILING and FLOOR are imported as (`doc/xlsx-format.md`
+    // §5.1), measured against the oracle's functions of the same names: the quotient stepped
+    // up or down on the number line, so a negative N with a positive Significance is allowed
+    // where §6.17 refuses it, and two negatives round the magnitude.
+    assert_eq!(number("=COM.MICROSOFT.CEILING(2.5;2)"), 4.0);
+    assert_eq!(number("=COM.MICROSOFT.CEILING(-2.5;2)"), -2.0);
+    assert_eq!(number("=COM.MICROSOFT.CEILING(-2.5;-2)"), -4.0);
+    assert_eq!(number("=COM.MICROSOFT.CEILING(-4.5;1)"), -4.0);
+    assert_eq!(number("=COM.MICROSOFT.CEILING(-0.5;-1)"), -1.0);
+    assert_eq!(number("=COM.MICROSOFT.CEILING(7.9;2.3)"), 9.2);
+    assert_eq!(number("=COM.MICROSOFT.CEILING(0.1+0.2;0.1)"), 0.3);
+    assert_eq!(number("=COM.MICROSOFT.CEILING(\"3.5\";1)"), 4.0);
+    assert_eq!(number("=COM.MICROSOFT.FLOOR(2.5;2)"), 2.0);
+    assert_eq!(number("=COM.MICROSOFT.FLOOR(-2.5;2)"), -4.0);
+    assert_eq!(number("=COM.MICROSOFT.FLOOR(-2.5;-2)"), -2.0);
+    assert_eq!(number("=COM.MICROSOFT.FLOOR(-4.5;1)"), -5.0);
+    assert_eq!(number("=COM.MICROSOFT.FLOOR(-0.5;-1)"), 0.0);
+    assert_eq!(number("=COM.MICROSOFT.FLOOR(7.9;2.3)"), 6.9);
+    assert_eq!(number("=COM.MICROSOFT.FLOOR(-7.9;-2.3)"), -6.9);
+    assert_eq!(number("=COM.MICROSOFT.FLOOR(0.3;0.1)"), 0.3);
+    // A zero: CEILING's answer is zero either way, FLOOR's only for a zero N — dividing by
+    // a zero Significance is Excel's #DIV/0!, where the oracle answers its generic Err:502.
+    assert_eq!(number("=COM.MICROSOFT.CEILING(2.5;0)"), 0.0);
+    assert_eq!(number("=COM.MICROSOFT.CEILING(0;2)"), 0.0);
+    assert_eq!(number("=COM.MICROSOFT.CEILING(2.5;)"), 0.0);
+    assert_eq!(number("=COM.MICROSOFT.CEILING(;2)"), 0.0);
+    assert_eq!(number("=COM.MICROSOFT.FLOOR(0;0)"), 0.0);
+    assert_eq!(number("=COM.MICROSOFT.FLOOR(0;2)"), 0.0);
+    assert_eq!(error("=COM.MICROSOFT.FLOOR(2.5;0)"), FormulaError::DivZero);
+    // A positive N with a negative Significance is refused, and both parameters are needed.
+    assert_eq!(error("=COM.MICROSOFT.CEILING(2.5;-2)"), FormulaError::Num);
+    assert_eq!(error("=COM.MICROSOFT.CEILING(4.5;-1)"), FormulaError::Num);
+    assert_eq!(error("=COM.MICROSOFT.FLOOR(2.5;-2)"), FormulaError::Num);
+    assert_eq!(error("=COM.MICROSOFT.CEILING(2.5)"), FormulaError::Value);
+    assert_eq!(error("=COM.MICROSOFT.FLOOR(2.5)"), FormulaError::Value);
+    assert_eq!(
+        error("=COM.MICROSOFT.CEILING(2.5;2;1)"),
+        FormulaError::Value
+    );
+    // Lower case is the same name, as for every function (§5.6).
+    assert_eq!(number("=com.microsoft.ceiling(-2.5;2)"), -2.0);
+}
+
+#[test]
 fn quotient_truncates_and_sign_is_three_valued() {
     // §6.16.48, §6.16.54.
     assert_eq!(number("=QUOTIENT(7;2)"), 3.0);

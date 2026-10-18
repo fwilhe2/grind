@@ -676,23 +676,37 @@ Measured 2026-10-05 by converting one cell per `<alignment>` variant to `.fods` 
 
 ## 5. Functions whose semantics differ under the same name
 
-`doc/xlsx-import.md` Part II §3 takes the decision: the importer carries the name and Excel's
-cached value, and never renames or rewrites. This section is the **list** — the names where
-Excel and OpenFormula disagree about the answer, so that a future warning can name them
-instead of saying "some formulas may differ".
+`doc/xlsx-import.md` Part II §3 takes the decision: the importer translates a function by its
+**name** — the name that means the same function in ODF, measured below — and never rewrites a
+call. This section is the list of where that matters.
 
-Known candidates, all `UNVERIFIED` until each is run against the oracle: `CEILING` and `FLOOR`
-with a negative significand, `MOD` with operands of opposite sign, `ROUND`'s tie rule, and the
-error produced by `x^y` for a negative `x` and a fractional `y`. Loop E's machinery already
-generates and compares exactly this shape of case, and is the cheap way to build the list.
+Known candidates under one name in both, all `UNVERIFIED` until each is run against the oracle:
+`MOD` with operands of opposite sign, `ROUND`'s tie rule, and the error produced by `x^y` for a
+negative `x` and a fractional `y`. Loop E's machinery already generates and compares exactly
+this shape of case, and is the cheap way to build the list. `MOD`, `ROUND`, `INT` and `TRUNC`
+are implemented, and are where a divergence would bite.
 
-One thing X2 did settle: of that list, **`CEILING`, `FLOOR`, `ROUNDDOWN` and `ROUNDUP` are not
-in the Small Group at all**, so an imported workbook that calls them reports them as unknown
-functions and recalculating replaces the value with `#NAME?` rather than with a differently
-rounded number. `MOD`, `ROUND`, `INT` and `TRUNC` *are* implemented, and are where the divergence
-this section is about actually bites.
+`CEILING` and `FLOOR` were on that list and are not any more: they are two names, §5.1.
 
----
+### 5.1 The names the oracle's import gives Excel's functions — `MEASURED` (2026-10-18, LibreOffice 26.8.1.1)
+
+Method: a workbook with one call per cell, every function Excel has — 289 unprefixed and 231
+written as `_xlfn.` — each with one argument and then, for the ones that came back lowercased,
+again with a plausible argument list; converted with `soffice --headless --convert-to fods`
+and the `table:formula` of each cell read back. A name the oracle's import does not know comes
+back **lowercased with its marker** (`_xlfn.iso.ceiling`), and evaluates to `#NAME?` there.
+
+| Excel writes | The oracle writes | Which |
+|---|---|---|
+| `CEILING`, `FLOOR` | `COM.MICROSOFT.CEILING`, `COM.MICROSOFT.FLOOR` | the only two unprefixed names given Microsoft's prefix: Excel's are not §6.17's. Measured against the oracle's own functions of those names: `(-2.5;2)` is -2 and -4, `(-2.5;-2)` is -4 and -2, a positive N with a negative Significance is `Err:502`, `FLOOR(2.5;0)` is `Err:502` and `CEILING(2.5;0)` 0 — the multiple of `N/Significance` stepped on the number line, as Excel's documentation describes |
+| `CHIDIST`, `CHIINV`, `CHITEST`, `FDIST`, `FINV`, `NORMSDIST`, `NORMSINV`, `TDIST` | `LEGACY.` + the name | ODF's prefix for the pre-2010 distributions; `TINV`, `BETADIST` and the rest keep their names |
+| `_xlfn.F.DIST`, `_xlfn.F.INV`, `_xlfn.SKEW.P`, `_xlfn.FORMULATEXT` | `FDIST`, `FINV`, `SKEWP`, `FORMULA` | Excel 2010's names for what ODF already had |
+| `_xlfn.IFNA`, `ISOWEEKNUM`, `DAYS`, `XOR`, `COT`, `NUMBERVALUE`, `UNICHAR`, `SHEET`, `GAMMA`, `PHI`, `RRI`, `PDURATION`, … | the name, marker stripped | ODF has them under Excel's name |
+| `_xlfn.AGGREGATE`, `CEILING.MATH`, `CONCAT`, `IFS`, `MAXIFS`, `MINIFS`, `STDEV.S`, `SWITCH`, `TEXTJOIN`, `XLOOKUP`, `XMATCH`, `LET`, the dotted statistics, the dynamic-array functions, … (`xlsx/src/formula.rs`'s `MICROSOFT`) | `COM.MICROSOFT.` + the name | Excel's own functions, which ODF does not have |
+| `_xlfn._xlws.SORT`, `_xlfn._xlws.FILTER` | `COM.MICROSOFT.SORT`, `COM.MICROSOFT.FILTER` | Excel's spelling for worksheet-only functions; with `_xlfn.` alone the oracle does not recognise them |
+| `_xlfn.ARRAYTOTEXT`, `BYCOL`, `BYROW`, `ISO.CEILING`, `ISOMITTED`, `LAMBDA`, `MAKEARRAY`, `MAP`, `NETWORKDAYS.INTL`, `REDUCE`, `SCAN`, `WORKDAY.INTL`, `BAHTTEXT` | lowercased, marker kept | names the oracle's *import* does not know, though its own documents carry every one as `COM.MICROSOFT.` + the name (`sc/qa`) — which is what this filter writes, since that is the name an ODF reader looks for |
+| `_xlfn.BINOM.DIST.RANGE`, `ECMA.CEILING`, `IMCOSH`, `IMCOT`, `IMCSC`, `IMCSCH`, `IMSEC`, `IMSECH`, `IMSINH`, `IMTAN`, `IMAGE`, `REGEXEXTRACT`, `REGEXREPLACE`, `REGEXTEST`, `VALUETOTEXT`, `GROUPBY`, `PIVOTBY`, `PERCENTOF`, `TRIMRANGE` | lowercased, marker kept | unknown to the oracle in either direction; this filter strips the marker and carries the name, which is nobody's |
+| the cube functions, `CALL`, `REGISTER.ID`, `RTD`, `PHONETIC`, `USDOLLAR` | lowercased | not functions anywhere in ODF |
 
 ## 6. Where facts come from
 

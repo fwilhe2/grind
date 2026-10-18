@@ -3,7 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! §6.16 Mathematical Functions and §6.17 Rounding Functions — the Small Group's 24 and 3,
-//! and `QUOTIENT`, `SIGN`, `ROUNDUP`, `ROUNDDOWN` and `MROUND` from beyond it.
+//! and `QUOTIENT`, `SIGN`, `ROUNDUP`, `ROUNDDOWN`, `MROUND`, `CEILING` and `FLOOR` from
+//! beyond it — with Excel's own `CEILING` and `FLOOR` beside the last two, under the names
+//! LibreOffice gives them.
 //!
 //! Domain errors mostly need no code: `SQRT(-1)`, `LN(0)` and `POWER(-1;0.5)` all produce a
 //! non-finite double, and [`Value::number`] turns every one of those into `#NUM!` at the
@@ -52,6 +54,10 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "ROUNDUP" => scaled(args, |x| shown(x).abs().ceil().copysign(x)),
         "ROUNDDOWN" => scaled(args, |x| shown(x).trunc()),
         "MROUND" => mround(args),
+        "CEILING" => multiple(args, f64::ceil),
+        "FLOOR" => multiple(args, f64::floor),
+        "COM.MICROSOFT.CEILING" => excel_multiple(args, f64::ceil, None),
+        "COM.MICROSOFT.FLOOR" => excel_multiple(args, f64::floor, Some(FormulaError::DivZero)),
         "QUOTIENT" => quotient(args),
         "SIGN" => unary(args, |n| if n == 0.0 { 0.0 } else { n.signum() }),
         _ => return None,
@@ -175,7 +181,8 @@ pub fn shown(x: f64) -> f64 {
 ///
 /// The quotient is read as [`shown`] before the tie is judged, so `MROUND(1.3;0.2)` — whose
 /// quotient is `6.499999999999999` — is the tie it looks like. Neither sign is constrained;
-/// a multiple of zero is zero, as measured.
+/// a multiple of zero is zero, as measured. The multiple is read as [`shown`] too: three
+/// times 2.3 is 6.9, not the double below it.
 fn mround(args: &mut Args) -> Answer {
     let (a, b) = two_required(args)?;
     if b == 0.0 {
@@ -191,7 +198,69 @@ fn mround(args: &mut Args) -> Answer {
         _ if b > 0.0 => below + 1.0,
         _ => below,
     };
-    Ok(Value::number(k * b))
+    Ok(Value::number(shown(k * b)))
+}
+
+/// §6.17.1 `CEILING` and §6.17.3 `FLOOR`: `N` stepped to a multiple of `Significance` by
+/// `step` — the ceiling or the floor of the quotient.
+///
+/// With no `Mode`, or a zero one, the step is taken on the number line, so `CEILING(-2.5)` is
+/// -2. Any other `Mode` steps the magnitude and puts the sign back: `CEILING(-2.5;;1)` is -3
+/// and `FLOOR(-2.5;;1)` is -2. An empty `Significance` is ±1 with `N`'s sign, a zero in
+/// either is a zero answer, and opposite signs are `#NUM!` whatever the Mode — the spec's
+/// constraint, which the oracle enforces too (`doc/ods-format.md` §4.1). That last rule is
+/// where Excel's two-parameter namesakes part company: they round `-2.5` by `2` happily.
+/// The multiple is read as [`shown`], as `MROUND`'s is, so `FLOOR(7.9;2.3)` equals 6.9.
+fn multiple(args: &mut Args, step: fn(f64) -> f64) -> Answer {
+    args.arity(1..=3)?;
+    let n = args.number(0)?;
+    let significance = if args.omitted(1) {
+        if n < 0.0 { -1.0 } else { 1.0 }
+    } else {
+        args.number(1)?
+    };
+    let magnitude = !args.omitted(2) && args.number(2)? != 0.0;
+    if n == 0.0 || significance == 0.0 {
+        return Ok(Value::Number(0.0));
+    }
+    if (n < 0.0) != (significance < 0.0) {
+        return Err(FormulaError::Num);
+    }
+    let q = shown(n / significance);
+    // Both signs agree, so the quotient is positive and `step` on it steps the magnitude;
+    // on the number line a negative pair needs the opposite step.
+    let k = if magnitude || n > 0.0 {
+        step(q)
+    } else {
+        -step(-q)
+    };
+    Ok(Value::number(shown(k * significance)))
+}
+
+/// Excel's `CEILING` and `FLOOR`, which an ODF document carries as `COM.MICROSOFT.CEILING`
+/// and `COM.MICROSOFT.FLOOR` (`doc/xlsx-format.md` §5.1): exactly two parameters, and the
+/// quotient stepped by `step` on the number line *whatever* the signs — which, for two
+/// negatives, is the magnitude stepped the other way, as Excel's documentation puts it.
+///
+/// What it refuses is a positive `N` with a negative `Significance` (`#NUM!`). A zero is a
+/// zero answer, except where `by_zero` says what a zero `Significance` is instead: `FLOOR`
+/// divides by it, `#DIV/0!`, which is Excel's answer where the oracle gives its generic
+/// `Err:502`.
+fn excel_multiple(args: &mut Args, step: fn(f64) -> f64, by_zero: Option<FormulaError>) -> Answer {
+    args.arity(2..=2)?;
+    let (n, significance) = (args.number(0)?, args.number(1)?);
+    if n == 0.0 {
+        return Ok(Value::Number(0.0));
+    }
+    if significance == 0.0 {
+        return by_zero.map_or(Ok(Value::Number(0.0)), Err);
+    }
+    if n > 0.0 && significance < 0.0 {
+        return Err(FormulaError::Num);
+    }
+    Ok(Value::number(shown(
+        step(shown(n / significance)) * significance,
+    )))
 }
 
 /// §6.16.48 `QUOTIENT(A; B)`: the integer portion of `A/B`, towards zero.

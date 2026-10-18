@@ -501,7 +501,10 @@ translated formula is one our own parser could have produced, or it is not trans
 | `,` between arguments | `;` | §5.6 |
 | `TRUE`, `FALSE` | `TRUE()`, `FALSE()` | §6.15; `display.rs` already does this |
 | `#REF!`, `#DIV/0!`, `#N/A` … | same names | §5.12's set is Excel's set |
-| `_xlfn.XLOOKUP` | `XLOOKUP` | prefix stripped; then reported as unknown |
+| `_xlfn.XLOOKUP`, `_xlfn._xlws.SORT` | `COM.MICROSOFT.XLOOKUP`, `COM.MICROSOFT.SORT` | markers stripped, then the oracle's name (`doc/xlsx-format.md` §5.1); reported as unknown where this build has no such function |
+| `CEILING`, `FLOOR` | `COM.MICROSOFT.CEILING`, `COM.MICROSOFT.FLOOR` | Excel's two-parameter functions, not §6.17's (§5.1) |
+| `NORMSDIST`, `TDIST`, … | `LEGACY.NORMSDIST`, `LEGACY.TDIST`, … | the pre-2010 distributions, under ODF's prefix for them |
+| `_xlfn.F.DIST`, `_xlfn.SKEW.P`, `_xlfn.FORMULATEXT` | `FDIST`, `SKEWP`, `FORMULA` | Excel 2010's names for functions ODF already had |
 | `@A1`, `_xlfn.SINGLE(A1)` | `[.A1]` | the implicit-intersection marker, dropped |
 | `-2^2` | `-2^2` | both bind prefix `-` above `^`; §5.5's surprise is Excel's too |
 | `{1,2;3,4}` | — | inline array (§5.13, excluded by §2.3.2) → `Dropped::ArrayFormula` |
@@ -526,14 +529,21 @@ the follower shifts a reference to A1 up by a row, off the sheet.
 **Array formulas** (`t="array"`) are out of scope by §2.3.2: the cell keeps its cached value,
 loses its formula, and is counted.
 
-**What is deliberately not translated: semantics.** `CEILING`, `FLOOR`, `MOD` with negative
-operands and `ROUND`'s tie rule differ between Excel and OpenFormula *under the same name*.
-The importer does not rename or rewrite them — it carries the name and Excel's cached value.
-Recalculating in this build then applies ODF's rule, which is the correct behaviour for an
-ODF document and a change the user must choose: `sheet recalc` already reports how many
-values it replaced, and `App::stale` already reports how many disagree. No new machinery, and
-`doc/xlsx-format.md` gets the list of names whose semantics differ so the warning can name
-them later.
+**A function is translated by name, never by rewriting.** A name OpenFormula spells
+differently gets the spelling that *means* the same function — the oracle's own import,
+measured name by name in `doc/xlsx-format.md` §5.1 — and every other name is carried as it is.
+That is what keeps recalculation honest: Excel's two-parameter `CEILING` is not §6.17.1's, so a
+workbook's `CEILING(-4.5,1)` becomes `COM.MICROSOFT.CEILING(-4.5;1)`, which this build and
+LibreOffice both evaluate to Excel's -4, where the bare name would recalculate to §6.17.1's
+`#NUM!`. *Amended 2026-10-18*: until then this paragraph decided the opposite — carry
+`CEILING` and let recalculation apply ODF's rule — which was written while `CEILING` was not
+implemented, before the oracle's import had been measured, and would have turned a loud
+`#NAME?` into a quiet wrong number the day it was.
+
+What a name cannot fix stays as it is: `MOD` with negative operands, `ROUND`'s tie rule and
+the error of `x^y` for a negative `x` keep their names in both applications, and recalculating
+applies ODF's rule, which `sheet recalc` reports as values replaced and `App::stale` as values
+that disagree. `doc/xlsx-format.md` §5 is the list.
 
 ### 4. Number formats (X3) — **built**
 

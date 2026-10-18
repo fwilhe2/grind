@@ -48,8 +48,10 @@
 //!   right and this build is the one that cannot say it.
 //! - [`DECIDED_OTHERWISE`] — a claim this build will never satisfy because it answers the
 //!   question differently *on purpose*. Two are about hostile files, three are manifests that
-//!   disagree with their own fixture's bytes, and two are spellings where ours is as true as
-//!   the one asked for. Each is a place where the corpus should change rather than the code.
+//!   disagree with their own fixture's bytes, two are spellings where ours is as true as
+//!   the one asked for, and ten are a function spelled the way the oracle's import spells it
+//!   ([`ORACLE_SPELLING`]). Each is a place where the corpus should change rather than the
+//!   code.
 //!
 //! Everything not in either table is asserted. Run it like anything else:
 //!
@@ -78,6 +80,16 @@ const PENDING: &[(&str, &str, &str)] = &[
     // either held or named in one of the two tables below. Kept, and still checked in both
     // directions, because the corpus grows.
 ];
+
+/// Why ten formula claims name a function differently: the manifest gives Excel's name with
+/// its marker stripped, and this build writes the name the oracle's own import writes — the
+/// manifest's `oracle` field, word for word.
+const ORACLE_SPELLING: &str = "The manifest expects Excel's name with the `_xlfn.` marker stripped; this build \
+     writes the name LibreOffice's import writes, which the manifest records as the cell's \
+     `oracle` spelling. Excel's two-parameter CEILING and FLOOR are not §6.17's, and its newer \
+     functions are not in OpenFormula at all, so the bare name would either be a different \
+     function or nobody's: `COM.MICROSOFT.CEILING` is the one an ODF reader recalculates as \
+     Excel does (`doc/xlsx-format.md` §5.1).";
 
 /// Claims this build answers differently **on purpose**: `(fixture, claim, why ours stands)`.
 ///
@@ -206,7 +218,9 @@ const DECIDED_OTHERWISE: &[(&str, &str, &str)] = &[
          the first two. Its thirteen formulas are MOD×3, ROUND×5, CEILING×2, FLOOR, INT and \
          TRUNC, read out of `xl/worksheets/sheet1.xml` on 2026-09-20 — ROUNDDOWN and ROUNDUP \
          appear in the file's prose and nowhere in its cells. Reporting a name no formula \
-         mentions is the one thing this field must never do.",
+         mentions is the one thing this field must never do. Since 2026-10-18 this build \
+         reports none at all: the two it does call are imported as `COM.MICROSOFT.CEILING` \
+         and `COM.MICROSOFT.FLOOR`, which it evaluates.",
     ),
     (
         "formulas/references.xlsx",
@@ -237,6 +251,28 @@ const DECIDED_OTHERWISE: &[(&str, &str, &str)] = &[
          (`xml.rs`), so the claim is the generator's source indentation leaking into its \
          expectation rather than anything the workbook contains.",
     ),
+    (
+        "formulas/semantics-differ.xlsx",
+        "formula:Divergent!B9",
+        ORACLE_SPELLING,
+    ),
+    (
+        "formulas/semantics-differ.xlsx",
+        "formula:Divergent!B10",
+        ORACLE_SPELLING,
+    ),
+    (
+        "formulas/semantics-differ.xlsx",
+        "formula:Divergent!B11",
+        ORACLE_SPELLING,
+    ),
+    ("formulas/xlfn.xlsx", "formula:Extended!D1", ORACLE_SPELLING),
+    ("formulas/xlfn.xlsx", "formula:Extended!D2", ORACLE_SPELLING),
+    ("formulas/xlfn.xlsx", "formula:Extended!D3", ORACLE_SPELLING),
+    ("formulas/xlfn.xlsx", "formula:Extended!D4", ORACLE_SPELLING),
+    ("formulas/xlfn.xlsx", "formula:Extended!D5", ORACLE_SPELLING),
+    ("formulas/xlfn.xlsx", "formula:Extended!D6", ORACLE_SPELLING),
+    ("formulas/xlfn.xlsx", "unknown-functions", ORACLE_SPELLING),
 ];
 
 /// Claims the **model** cannot satisfy: `(fixture, claim, the class and what is missing)`.
