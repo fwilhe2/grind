@@ -73,5 +73,8 @@ case "$format" in
 # build here has the same one. `--allow-downgrades` covers a run older than what
 # is installed, which is what testing a branch's package looks like.
 deb) sudo apt-get install -y --reinstall --allow-downgrades "${files[@]}" ;;
-rpm) sudo rpm -Uvh --force "${files[@]}" ;;
+# CI does not sign its packages, and rpm 6 (`%_pkgverify_level all`) refuses an unsigned one
+# by default. `digest` still checks every package against its own checksums, which
+# is what catches a truncated download; only the missing signature is let through.
+rpm) sudo rpm -Uvh --force --define '_pkgverify_level digest' "${files[@]}" ;;
 esac
