@@ -31,7 +31,7 @@ path = "src/lib.rs"
 name = "grind"
 maintainer = "Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 copyright = "2026, Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
-license-file = ["../LICENSES/AGPL-3.0-or-later.txt", "0"]
+license-file = ["../packaging/copyright", "0"]
 section = "metapackages"
 # ponytail: `Architecture: amd64` rather than the `all` a meta-package would normally carry,
 # because `cargo deb` takes the architecture from the build target and has no key to override
@@ -48,7 +48,10 @@ assets = [["README.md", "usr/share/doc/grind/README.md", "644"]]
 # block is the whole of this package, spelled out.
 [package.metadata.generate-rpm]
 name = "grind"
-assets = [{ source = "README.md", dest = "/usr/share/doc/grind/README.md", mode = "644", doc = true }]
+assets = [
+    { source = "README.md", dest = "/usr/share/doc/grind/README.md", mode = "644", doc = true },
+    { source = "../LICENSES/AGPL-3.0-or-later.txt", dest = "/usr/share/licenses/grind/AGPL-3.0-or-later.txt", mode = "644" },
+]
 [package.metadata.generate-rpm.requires]
 grind-cli = "= 0.0.0"
 grind-tui = "= 0.0.0"

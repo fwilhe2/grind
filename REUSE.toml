@@ -289,3 +289,15 @@ SPDX-License-Identifier = "AGPL-3.0-or-later"
 path = ["doc/user-guide.fodt", "doc/user-guide.md", "doc/user-guide.images/**"]
 SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 SPDX-License-Identifier = "CC-BY-4.0"
+
+# The Debian copyright file every `.deb` installs (`cargo deb` reads it as `license-file`). The
+# deb822 format has no comment syntax a parser is obliged to skip, so a header would become a
+# field. It carries the AGPL's own text, re-indented the way the format requires — as Debian
+# itself carries every licence — and `cli/tests/packaging.rs` holds that text to `LICENSES/`.
+[[annotations]]
+path = "packaging/copyright"
+SPDX-FileCopyrightText = [
+    "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>",
+    "2007 Free Software Foundation, Inc. <http://fsf.org/>",
+]
+SPDX-License-Identifier = "AGPL-3.0-or-later"

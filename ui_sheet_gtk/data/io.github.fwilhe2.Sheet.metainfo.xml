@@ -17,7 +17,10 @@ SPDX-License-Identifier: CC0-1.0
   </developer>
   <description>
     <p>
-      Sheet reads and writes OpenDocument Spreadsheet (.ods, .fods) files directly, against
+      Sheet is the spreadsheet of grind, an office suite whose native format is OpenDocument.
+    </p>
+    <p>
+      It reads and writes OpenDocument Spreadsheet (.ods, .fods) files directly, against
       the OASIS ODF specification rather than through a translation layer. It is not a port
       of LibreOffice and shares no code with it.
     </p>
@@ -30,6 +33,12 @@ SPDX-License-Identifier: CC0-1.0
       A CSV or TSV file opens the same way: a new ODF spreadsheet named after it, the delimiter
       read from the file itself.
     </p>
+    <ul>
+      <li>Formulas with OpenFormula's own semantics, not Excel's, and an assistant while typing them</li>
+      <li>Cell styles, number formats, merged cells, charts and conditional formatting</li>
+      <li>Saves by changing as little of a file as it can, so a flat .fods diffs line by line</li>
+      <li>A command palette (Ctrl+K) that finds every command the window has</li>
+    </ul>
   </description>
   <provides>
     <mediatype>application/vnd.oasis.opendocument.spreadsheet</mediatype>
@@ -40,8 +49,17 @@ SPDX-License-Identifier: CC0-1.0
     <mediatype>text/tab-separated-values</mediatype>
   </provides>
   <launchable type="desktop-id">io.github.fwilhe2.Sheet.desktop</launchable>
-  <url type="homepage">https://github.com/fwilhe2/sheet</url>
-  <url type="vcs-browser">https://github.com/fwilhe2/sheet</url>
+  <url type="homepage">https://github.com/fwilhe2/grind</url>
+  <url type="bugtracker">https://github.com/fwilhe2/grind/issues</url>
+  <url type="vcs-browser">https://github.com/fwilhe2/grind</url>
+  <branding>
+    <color type="primary" scheme_preference="light">#7fdbff</color>
+    <color type="primary" scheme_preference="dark">#001f3f</color>
+  </branding>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
   <content_rating type="oars-1.1" />
   <releases>
     <release version="0.0.0" date="2026-08-18" />

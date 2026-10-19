@@ -5,7 +5,7 @@
 [package]
 name = "grind-sheet-gtk"
 version = "0.0.0"
-description = "An ODF-native spreadsheet — the GNOME shell"
+description = "An ODF-native spreadsheet for GNOME"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -54,8 +54,16 @@ async-channel = "2"
 name = "grind-sheet-gtk"
 maintainer = "Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 copyright = "2026, Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
-license-file = ["../LICENSES/AGPL-3.0-or-later.txt", "0"]
+license-file = ["../packaging/copyright", "0"]
 section = "gnome"
+extended-description = """\
+Sheet is the spreadsheet of grind, an office suite whose native format is \
+OpenDocument. It reads and writes .ods and .fods files directly against the \
+OASIS specification, evaluates formulas with OpenFormula's semantics rather \
+than Excel's, and saves by changing as little of a file as it can, so a flat \
+.fods diffs line by line. It has cell styles and number formats, charts, a \
+formula assistant and a command palette. Excel workbooks and CSV files open as \
+new, unsaved ODF spreadsheets; it never writes Excel's format."""
 depends = "$auto"
 assets = [
     ["target/release/grind-sheet-gtk", "usr/bin/grind-sheet-gtk", "755"],
@@ -70,6 +78,10 @@ assets = [
 
 # Read by `cargo generate-rpm` (artifacts.yml). It has no `$auto` equivalent, so the
 # shared-library names are spelled out — the same two libraries `depends` above discovers.
+#
+# ponytail: the .rpm's Description is its summary again — `cargo generate-rpm` has no key for a
+# long one (cat-in-136/cargo-generate-rpm#142), so `extended-description` above reaches the .deb
+# only, and GNOME Software shows a local .rpm with one line. Upgrade: that key, once released.
 [package.metadata.generate-rpm]
 name = "grind-sheet-gtk"
 assets = [
@@ -77,6 +89,7 @@ assets = [
     { source = "data/io.github.fwilhe2.Sheet.desktop", dest = "/usr/share/applications/io.github.fwilhe2.Sheet.desktop", mode = "644" },
     { source = "data/io.github.fwilhe2.Sheet.metainfo.xml", dest = "/usr/share/metainfo/io.github.fwilhe2.Sheet.metainfo.xml", mode = "644" },
     { source = "data/icons/hicolor/scalable/apps/io.github.fwilhe2.Sheet.svg", dest = "/usr/share/icons/hicolor/scalable/apps/io.github.fwilhe2.Sheet.svg", mode = "644" },
+    { source = "../LICENSES/AGPL-3.0-or-later.txt", dest = "/usr/share/licenses/grind-sheet-gtk/AGPL-3.0-or-later.txt", mode = "644" },
 ]
 [package.metadata.generate-rpm.requires]
 gtk4 = "*"

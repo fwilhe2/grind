@@ -17,14 +17,45 @@ SPDX-License-Identifier: CC0-1.0
   </developer>
   <description>
     <p>
-      Text reads and writes OpenDocument Text (.odt, .fodt) files directly, against the OASIS
+      Text is the word processor of grind, an office suite whose native format is OpenDocument.
+    </p>
+    <p>
+      It reads and writes OpenDocument Text (.odt, .fodt) files directly, against the OASIS
       ODF specification rather than through a translation layer. It is not a port of
       LibreOffice and shares no code with it.
     </p>
+    <p>
+      It also opens Word documents (.docx, .docm) and Markdown files by importing them: each
+      comes up as a new, unsaved ODF text document. It never writes a Word file, and it never
+      makes itself the default for one.
+    </p>
+    <ul>
+      <li>Headings, lists, tables and character formatting</li>
+      <li>Markdown read as it is typed: **bold** becomes bold</li>
+      <li>Spelling in seven languages, checked in all of them at once</li>
+      <li>PDF export and a print preview, on ISO 216 paper</li>
+      <li>Saves by changing as little of a file as it can, so a flat .fodt diffs line by line</li>
+    </ul>
   </description>
+  <provides>
+    <mediatype>application/vnd.oasis.opendocument.text</mediatype>
+    <mediatype>application/vnd.oasis.opendocument.text-flat-xml</mediatype>
+    <mediatype>application/vnd.openxmlformats-officedocument.wordprocessingml.document</mediatype>
+    <mediatype>application/vnd.ms-word.document.macroEnabled.12</mediatype>
+    <mediatype>text/markdown</mediatype>
+  </provides>
   <launchable type="desktop-id">io.github.fwilhe2.Text.desktop</launchable>
-  <url type="homepage">https://github.com/fwilhe2/sheet</url>
-  <url type="vcs-browser">https://github.com/fwilhe2/sheet</url>
+  <url type="homepage">https://github.com/fwilhe2/grind</url>
+  <url type="bugtracker">https://github.com/fwilhe2/grind/issues</url>
+  <url type="vcs-browser">https://github.com/fwilhe2/grind</url>
+  <branding>
+    <color type="primary" scheme_preference="light">#7fdbff</color>
+    <color type="primary" scheme_preference="dark">#001f3f</color>
+  </branding>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
   <content_rating type="oars-1.1" />
   <releases>
     <release version="0.0.0" date="2026-09-02" />

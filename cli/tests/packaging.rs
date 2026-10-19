@@ -399,3 +399,59 @@ fn each_gui_shell_declares_itself_to_the_desktop() {
         assert!(!file.trim().is_empty(), "an installed data file is empty");
     }
 }
+
+/// The Debian copyright file every `.deb` installs, and the licence text it must carry.
+const COPYRIGHT: &str = include_str!("../../packaging/copyright");
+const AGPL: &str = include_str!("../../LICENSES/AGPL-3.0-or-later.txt");
+
+/// What a software centre shows before somebody installs a package: a long description and a
+/// licence it can read. GNOME Software takes both from the package itself for a local file —
+/// it does not open the AppStream metainfo inside — so a `.deb` with no `extended-description`
+/// was one line of text, and a copyright file that was the licence pasted under a `License:`
+/// line was not the machine-readable format its first line claimed.
+#[test]
+fn every_deb_describes_itself_and_states_its_licence() {
+    for (dir, manifest) in PACKAGED
+        .iter()
+        .map(|crate_| (crate_.dir, crate_.manifest))
+        .chain([("suite", META)])
+    {
+        assert!(
+            manifest.contains("extended-description = \"\"\""),
+            "{dir}/Cargo.toml's .deb has no extended-description, so it is described by its \
+             summary alone"
+        );
+        assert!(
+            manifest.contains("license-file = [\"../packaging/copyright\", \"0\"]"),
+            "{dir}/Cargo.toml's .deb does not install packaging/copyright"
+        );
+        assert!(
+            manifest.contains("source = \"../LICENSES/AGPL-3.0-or-later.txt\""),
+            "{dir}/Cargo.toml's .rpm does not ship the licence's text"
+        );
+    }
+
+    // deb822: the full text is a continuation of the stand-alone `License:` paragraph — every
+    // line indented by one space, an empty one spelled ` .` — and must be the licence verbatim.
+    let (_, text) = COPYRIGHT
+        .split_once("\n\nLicense: AGPL-3.0-or-later\n")
+        .expect("packaging/copyright has a stand-alone License paragraph for the AGPL");
+    let unfolded: Vec<&str> = text
+        .lines()
+        .map(|line| {
+            let line = line
+                .strip_prefix(' ')
+                .expect("a continuation line is indented");
+            if line == "." { "" } else { line }
+        })
+        .collect();
+    let original: Vec<&str> = AGPL.lines().map(str::trim_end).collect();
+    assert_eq!(
+        unfolded, original,
+        "packaging/copyright's licence text differs from LICENSES/AGPL-3.0-or-later.txt"
+    );
+    assert!(COPYRIGHT.starts_with(
+        "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/\n"
+    ));
+    assert!(COPYRIGHT.contains("\n\nFiles: *\n"));
+}

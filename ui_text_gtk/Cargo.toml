@@ -5,7 +5,7 @@
 [package]
 name = "grind-text-gtk"
 version = "0.0.0"
-description = "An ODF-native word processor — the GNOME shell"
+description = "An ODF-native word processor for GNOME"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -52,8 +52,16 @@ async-channel = "2"
 name = "grind-text-gtk"
 maintainer = "Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 copyright = "2026, Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
-license-file = ["../LICENSES/AGPL-3.0-or-later.txt", "0"]
+license-file = ["../packaging/copyright", "0"]
 section = "gnome"
+extended-description = """\
+Text is the word processor of grind, an office suite whose native format is \
+OpenDocument. It reads and writes .odt and .fodt files directly against the \
+OASIS specification and saves by changing as little of a file as it can, so a \
+flat .fodt diffs line by line. It has headings, lists, tables, character \
+formatting, spelling in seven languages, PDF export and a print preview, and \
+reads Markdown as it is typed. Word documents and Markdown files open as new, \
+unsaved ODF documents; it never writes Word's format."""
 depends = "$auto"
 assets = [
     ["target/release/grind-text-gtk", "usr/bin/grind-text-gtk", "755"],
@@ -68,6 +76,10 @@ assets = [
 
 # Read by `cargo generate-rpm` (artifacts.yml). It has no `$auto` equivalent, so the
 # shared-library names are spelled out — the same two libraries `depends` above discovers.
+#
+# ponytail: the .rpm's Description is its summary again — `cargo generate-rpm` has no key for a
+# long one (cat-in-136/cargo-generate-rpm#142), so `extended-description` above reaches the .deb
+# only, and GNOME Software shows a local .rpm with one line. Upgrade: that key, once released.
 [package.metadata.generate-rpm]
 name = "grind-text-gtk"
 assets = [
@@ -75,6 +87,7 @@ assets = [
     { source = "data/io.github.fwilhe2.Text.desktop", dest = "/usr/share/applications/io.github.fwilhe2.Text.desktop", mode = "644" },
     { source = "data/io.github.fwilhe2.Text.metainfo.xml", dest = "/usr/share/metainfo/io.github.fwilhe2.Text.metainfo.xml", mode = "644" },
     { source = "data/icons/hicolor/scalable/apps/io.github.fwilhe2.Text.svg", dest = "/usr/share/icons/hicolor/scalable/apps/io.github.fwilhe2.Text.svg", mode = "644" },
+    { source = "../LICENSES/AGPL-3.0-or-later.txt", dest = "/usr/share/licenses/grind-text-gtk/AGPL-3.0-or-later.txt", mode = "644" },
 ]
 [package.metadata.generate-rpm.requires]
 gtk4 = "*"
