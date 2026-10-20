@@ -44,6 +44,9 @@ stops ratcheting.
   else for one evaluation, read by the typing rule, never stored (`doc/formula-workbench.md` §3.3)
 - `trace` — `grind sheet eval <address> <formula> --trace`: the same evaluation taken apart, one
   sub-expression a line with what it comes to in place (`doc/formula-workbench.md` §3.2)
+- `assist_context` — `grind sheet assist <address>`: what a formula assistant would be shown of
+  the document for a formula there, the exact text a model is given (`doc/formula-assistant.md`
+  §4.1). No model, nothing written; `--format json` for the structure
 - `set_cell` — not exposed directly: `grind sheet set` goes through `App::enter`, which is the
   typing rule every shell shares and which *replaces* whatever the cell held, formula
   included. `set_cell` is the primitive underneath it, and the one shape that can leave a

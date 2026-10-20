@@ -2394,6 +2394,17 @@ enum Command {
         recalc: bool,
     },
 
+    /// Print what a formula assistant would be shown of the document, for a formula at a cell
+    ///
+    /// The top of every sheet, the rows above the cell, the defined names and the locale —
+    /// bounded however large the document is, and exactly the text a model is given
+    /// (doc/formula-assistant.md). No model is involved, and nothing is written.
+    Assist {
+        file: PathBuf,
+        /// Cell address the formula would go in, e.g. B5 or Summary.C2
+        address: String,
+    },
+
     /// Evaluate a formula against the document without storing anything
     ///
     /// The address is where the formula would sit, which is what its relative references
@@ -3884,6 +3895,14 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             let (_, start, end) = a1::resolve(&app, &a1::parse(address).say()?).say()?;
             let outcome = app.fill(sheet, from, start, end, mode(*recalc)).say()?;
             finish(&app, cli, file, outcome.cells > 0)
+        }
+
+        Command::Assist { file, address } => {
+            let app = load(file, cli)?;
+            let (sheet, pos, _) = single(&app, address)?;
+            Ok(Report::Assist(Box::new(
+                app.assist_context(sheet, pos).say()?,
+            )))
         }
 
         Command::Eval {
