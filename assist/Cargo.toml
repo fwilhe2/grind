@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-assist"
+version = "0.0.0"
+description = "A local formula assistant: a model proposes, the engine decides (doc/formula-assistant.md)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# A0 has no model in it and so no dependency beyond the spreadsheet: the prompt, the `Backend`
+# a model will sit behind, and the benchmark that scores one. The inference runtime arrives at
+# A3, chosen on A1's numbers, and is the reason this crate is its own.
+[dependencies]
+grind-sheet = { path = "../sheet" }
+# A1's loopback backend (`server.rs`) speaks llama-server's JSON. Already in the workspace's tree.
+serde_json = "1"

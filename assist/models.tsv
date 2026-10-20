@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: CC0-1.0
+#
+# The models the formula assistant is measured with (doc/formula-assistant.md §3, decision 4).
+# One per line, tab-separated: a short name, the file name, the download URL pinned to a
+# repository revision, the file's SHA-256, its size in bytes, and the weights' licence. Read by
+# scripts/llama-server.sh; never downloaded by grind itself.
+smollm3-3b	SmolLM3-Q4_K_M.gguf	https://huggingface.co/ggml-org/SmolLM3-3B-GGUF/resolve/4965cb60b150737b68a0408c36aeefb65078f894/SmolLM3-Q4_K_M.gguf	8334b850b7bd46238c16b0c550df2138f0889bf433809008cc17a8b05761863e	1915305312	Apache-2.0
+olmo3-7b	Olmo-3-7B-Instruct-Q4_K_M.gguf	https://huggingface.co/lmstudio-community/Olmo-3-7B-Instruct-GGUF/resolve/893e8b40befaf8a27cadd1349c0a9cbbe529cffd/Olmo-3-7B-Instruct-Q4_K_M.gguf	a87e10578f328b087f888ac7bd1018555e26028a1130980f20312b4de3a10d70	4471601152	Apache-2.0

@@ -1180,6 +1180,14 @@ name = "grind"
 version = "0.0.0"
 
 [[package]]
+name = "grind-assist"
+version = "0.0.0"
+dependencies = [
+ "grind-sheet",
+ "serde_json",
+]
+
+[[package]]
 name = "grind-build"
 version = "0.0.0"
 dependencies = [
