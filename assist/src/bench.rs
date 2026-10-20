@@ -20,6 +20,7 @@ use std::path::Path;
 
 use grind_sheet::{App, CellValue, Pos};
 
+use crate::fence::Fence;
 use crate::{Backend, Catalog, Request, Verdict, check, prompt};
 
 /// One task.
@@ -89,14 +90,9 @@ impl Bench {
         Ok(bench)
     }
 
-    /// Ask `backend` for `candidates` formulas for every task, and check each one.
-    pub fn run(
-        &self,
-        backend: &mut dyn Backend,
-        candidates: usize,
-        catalog: Catalog,
-    ) -> Result<Score, String> {
-        self.run_each(backend, candidates, catalog, |_, _| {})
+    /// Ask `backend` for formulas for every task as `setup` says, and check each one.
+    pub fn run(&self, backend: &mut dyn Backend, setup: Setup) -> Result<Score, String> {
+        self.run_each(backend, setup, |_, _| {})
     }
 
     /// [`Bench::run`], calling `each` with every task and its outcome as it is scored — for a
@@ -104,25 +100,17 @@ impl Bench {
     pub fn run_each(
         &self,
         backend: &mut dyn Backend,
-        candidates: usize,
-        catalog: Catalog,
+        setup: Setup,
         mut each: impl FnMut(&Task, &Outcome),
     ) -> Result<Score, String> {
         let mut outcomes = Vec::new();
         for task in &self.tasks {
+            let request = self.request(task, setup)?;
             let app = &self.documents[task.document].1;
-            let context = app
-                .assist_context(task.sheet, task.at)
-                .map_err(|e| e.to_string())?;
-            let request = Request {
-                id: task.id.clone(),
-                prompt: prompt(&context, &task.request, catalog),
-                candidates,
-            };
             let proposed = backend.propose(&request)?;
             let verdicts = proposed
                 .iter()
-                .take(candidates)
+                .take(setup.candidates)
                 .map(|c| check(app, task.sheet, task.at, c, &task.expected))
                 .collect();
             let outcome = Outcome {
@@ -135,6 +123,29 @@ impl Bench {
         }
         Ok(Score { outcomes })
     }
+
+    /// What a backend is asked for one task.
+    pub fn request(&self, task: &Task, setup: Setup) -> Result<Request, String> {
+        let app = &self.documents[task.document].1;
+        let context = app
+            .assist_context(task.sheet, task.at)
+            .map_err(|e| e.to_string())?;
+        Ok(Request {
+            id: task.id.clone(),
+            prompt: prompt(&context, &task.request, setup.catalog),
+            candidates: setup.candidates,
+            fence: setup.fence.then(|| Fence::for_context(&context).gbnf()),
+        })
+    }
+}
+
+/// One configuration of the benchmark: one row group of §5's table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Setup {
+    pub candidates: usize,
+    pub catalog: Catalog,
+    /// Whether every candidate is generated inside [`Fence`] (A2).
+    pub fence: bool,
 }
 
 fn samples(app: &App, sheet: usize, document: usize, name: &str) -> Result<Vec<Task>, String> {

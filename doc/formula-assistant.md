@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # The formula assistant — a local model that proposes, and grind that decides
 
-**Status: a proposal, with A0 built and A1's setup built** (§4.2.1). No model is in the tree, and
+**Status: a proposal, with A0 built, A1's setup built** (§4.2.1) **and A2's fence built** (§4.3). No model is in the tree, and
 nothing past A1 is decided until its numbers are in (§5.1). This document is the research behind "should grind use a language
 model, and if so how", written so the decision can be made on evidence rather than on
 enthusiasm. Its first milestone was a benchmark with no model in it at all: `App::assist_context`
@@ -216,13 +216,24 @@ What building it changed, each found by the first smoke run:
    window bought nothing and cost a gigabyte of KV cache on a 16 GB machine that was already
    swapping.
 
-### 4.3 The fence (A2)
+### 4.3 The fence (A2, the grammar built)
 
-`llguidance` (MIT, Rust): a Lark-like grammar compiled to a token mask per step, about 50 µs per
-token. It is a crate, so the fence is the same whatever the runtime — llama.cpp embeds the same
-library, and with candle it drives the sampling loop directly. The grammar is **generated** by
-`grind-assist` from `funcs::implemented()` and the display lexer's token classes, never written
-by hand.
+`assist/src/fence.rs` builds the grammar **per request**: the operators and literals of display
+syntax, the engine's own functions (`funcs::implemented()`), and the document's own sheet names
+and defined names — so a function this build lacks, a sheet that does not exist, a name nobody
+defined, Excel's `,` and `Sheet!A1`, a header used as a reference and a `...` are all unwritable,
+not rejected afterwards. It starts after the `=` the backend prefills. Everything else is looser
+than the parser on purpose: no arity, no types, and `check` still parses every candidate.
+
+The grammar is data, rendered two ways: `Fence::gbnf`, the text llama.cpp's server takes in a
+request's `grammar` field, and `Fence::accepts`, a small recogniser over the same rules. The test
+that matters is the second against the first's input: **every one of the 188 reference formulas
+is accepted by the grammar built for its own document**, so the fence can never be what caps a
+model's score (`assist/tests/bench.rs`). A1's runner takes `--fence on|off|both`.
+
+For measuring, the server's own GBNF engine is enough. For shipping, the plan is unchanged:
+`llguidance` (MIT, Rust; a token mask per step in about 50 µs), which llama.cpp embeds and candle
+can drive directly — the same rules, rendered to its Lark-like syntax at A3.
 
 ### 4.4 The loop (A2)
 

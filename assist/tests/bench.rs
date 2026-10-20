@@ -15,13 +15,22 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use grind_assist::bench::Bench;
+use grind_assist::bench::{Bench, Setup};
+use grind_assist::fence::Fence;
 use grind_assist::{Backend, Catalog, Request, Verdict};
 use grind_sheet::formula::funcs;
 
 fn bench() -> Bench {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../sheet/tests/data/functions");
     Bench::load(&dir).expect("the function samples load")
+}
+
+fn setup(candidates: usize) -> Setup {
+    Setup {
+        candidates,
+        catalog: Catalog::Whole,
+        fence: true,
+    }
 }
 
 struct Reference(HashMap<String, String>);
@@ -64,9 +73,7 @@ fn the_reference_answers_score_every_task() {
         .iter()
         .map(|t| (t.id.clone(), t.reference.clone()))
         .collect();
-    let score = bench
-        .run(&mut Reference(answers), 1, Catalog::Whole)
-        .unwrap();
+    let score = bench.run(&mut Reference(answers), setup(1)).unwrap();
     let missed: Vec<String> = score
         .outcomes
         .iter()
@@ -80,7 +87,7 @@ fn the_reference_answers_score_every_task() {
 #[test]
 fn garbage_scores_nothing_and_every_kind_is_named() {
     let bench = bench();
-    let score = bench.run(&mut Garbage, 3, Catalog::Whole).unwrap();
+    let score = bench.run(&mut Garbage, setup(3)).unwrap();
     let tasks = bench.tasks.len();
     assert_eq!(score.first_right(), 0);
     assert_eq!(score.any_right(), 0);
@@ -112,4 +119,23 @@ fn the_model_is_never_shown_an_answer() {
             task.id
         );
     }
+}
+
+/// The fence lets every right answer through: each sample's own formula is accepted by the
+/// grammar built for its document — the exact GBNF a server is sent. A fence that refused a
+/// right answer would cap every model's score without anyone noticing.
+#[test]
+fn the_fence_lets_every_reference_answer_through() {
+    let bench = bench();
+    let refused: Vec<String> = bench
+        .tasks
+        .iter()
+        .filter(|task| {
+            let app = &bench.documents[task.document].1;
+            let context = app.assist_context(task.sheet, task.at).unwrap();
+            !Fence::for_context(&context).accepts(task.reference.trim_start_matches('='))
+        })
+        .map(|task| format!("{}: {}", task.id, task.reference))
+        .collect();
+    assert!(refused.is_empty(), "{}", refused.join("\n"));
 }

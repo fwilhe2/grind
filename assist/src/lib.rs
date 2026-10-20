@@ -23,6 +23,7 @@ use grind_sheet::formula::{display, funcs, value::FormulaError};
 use grind_sheet::{App, CellValue, Pos};
 
 pub mod bench;
+pub mod fence;
 pub mod server;
 
 /// What a model is asked: the prompt, and how many candidates are wanted.
@@ -33,6 +34,9 @@ pub struct Request {
     pub id: String,
     pub prompt: Prompt,
     pub candidates: usize,
+    /// The grammar every candidate must be generated in, as GBNF ([`fence::Fence`]), or `None`
+    /// for an unfenced request. A stand-in backend ignores it.
+    pub fence: Option<String>,
 }
 
 /// A prompt in the two parts a chat model takes: what is the same for every request, and what

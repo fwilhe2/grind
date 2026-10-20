@@ -12,7 +12,8 @@
 //! ```
 //!
 //! Options: `--url` (default `http://127.0.0.1:8080`), `--candidates` (5), `--catalog`
-//! (`whole`, `none` or `both`, the default), `--limit` (the first N tasks), `--only` (tasks whose
+//! (`whole`, `none` or `both`, the default), `--fence` (`off`, the default, `on` or `both`: the
+//! A2 grammar, [`grind_assist::fence`]), `--limit` (the first N tasks), `--only` (tasks whose
 //! id or function contains this), `--out DIR` (one JSON line per task and configuration, every
 //! raw reply included, for reading the failures afterwards).
 //!
@@ -25,7 +26,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use grind_assist::bench::{Bench, Score};
+use grind_assist::bench::{Bench, Score, Setup};
 use grind_assist::server::{Server, Timing};
 use grind_assist::{Catalog, Verdict};
 use serde_json::json;
@@ -34,6 +35,7 @@ struct Options {
     url: String,
     candidates: usize,
     catalogs: Vec<Catalog>,
+    fences: Vec<bool>,
     limit: Option<usize>,
     only: Option<String>,
     out: Option<PathBuf>,
@@ -44,6 +46,7 @@ fn options() -> Result<Options, String> {
         url: "http://127.0.0.1:8080".into(),
         candidates: 5,
         catalogs: vec![Catalog::Whole, Catalog::None],
+        fences: vec![false],
         limit: None,
         only: None,
         out: None,
@@ -63,6 +66,14 @@ fn options() -> Result<Options, String> {
                     "none" => vec![Catalog::None],
                     "both" => vec![Catalog::Whole, Catalog::None],
                     other => return Err(format!("--catalog {other}: whole, none or both")),
+                }
+            }
+            "--fence" => {
+                options.fences = match value()?.as_str() {
+                    "on" => vec![true],
+                    "off" => vec![false],
+                    "both" => vec![true, false],
+                    other => return Err(format!("--fence {other}: on, off or both")),
                 }
             }
             other => return Err(format!("unknown option {other}")),
@@ -96,16 +107,27 @@ fn run() -> Result<(), String> {
         std::fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
     }
 
-    for &catalog in &options.catalogs {
-        let label = match catalog {
-            Catalog::Whole => "whole",
-            Catalog::None => "none",
-        };
-        eprintln!("— {model}, catalog {label}, {} tasks", bench.tasks.len());
+    let setups = options.fences.iter().flat_map(|&fence| {
+        options.catalogs.iter().map(move |&catalog| Setup {
+            candidates: options.candidates,
+            catalog,
+            fence,
+        })
+    });
+    for setup in setups {
+        let label = format!(
+            "{}{}",
+            match setup.catalog {
+                Catalog::Whole => "catalog whole",
+                Catalog::None => "catalog none",
+            },
+            if setup.fence { ", fenced" } else { "" }
+        );
+        eprintln!("— {model}, {label}, {} tasks", bench.tasks.len());
         let (from, started) = (server.timings.len(), Instant::now());
         let total = bench.tasks.len();
         let mut done = 0;
-        let score = bench.run_each(&mut server, options.candidates, catalog, |task, outcome| {
+        let score = bench.run_each(&mut server, setup, |task, outcome| {
             done += 1;
             let mark = match outcome.first() {
                 Some(Verdict::Right) => "right",
@@ -122,11 +144,11 @@ fn run() -> Result<(), String> {
         let timings = &server.timings[from..];
         print!(
             "{}",
-            table(&model, label, &score, options.candidates, timings, elapsed)
+            table(&model, &label, &score, options.candidates, timings, elapsed)
         );
         if let Some(out) = &options.out {
             write_lines(
-                &out.join(format!("{}-{label}.jsonl", slug(&model))),
+                &out.join(format!("{}-{}.jsonl", slug(&model), slug(&label))),
                 &bench,
                 &score,
                 &server.replies[from..],
@@ -151,7 +173,7 @@ fn table(
         |label: &str, n: usize| format!("| {label} | {n}/{tasks} ({:.0}%) |\n", pct(n, tasks));
     let greedy = score.at(1);
     let [unparseable, error, wrong, right] = greedy.verdicts();
-    let mut out = format!("\n### {model}, catalog {catalog}\n\n| | |\n|---|---|\n");
+    let mut out = format!("\n### {model}, {catalog}\n\n| | |\n|---|---|\n");
     out += &row("greedy, right", right);
     for n in [3, 5].into_iter().filter(|n| *n <= candidates) {
         out += &row(

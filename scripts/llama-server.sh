@@ -18,7 +18,8 @@
 #
 # Environment: GRIND_MODELS (where model files live; default $XDG_DATA_HOME/grind/models),
 # GRIND_LLAMA_PORT (8080), GRIND_LLAMA_CTX (8192 tokens), GRIND_LLAMA_THREADS (physical cores),
-# CONTAINER (docker, else podman).
+# GRIND_LLAMA_ARGS (more server flags, e.g. "-fa on -ctk q8_0 -ctv q8_0" to halve a 7B model's
+# attention cache on a machine short of memory), CONTAINER (docker, else podman).
 #
 # The server answers the same request with the same bytes: one slot (`-np 1`), so a request never
 # shares a batch with another, and the benchmark asks with `temperature: 0` and a fixed seed.
@@ -72,7 +73,8 @@ case ${1:-} in
             "$image" \
             -m "/models/$(basename "$path")" \
             --host 0.0.0.0 --port 8080 \
-            -c "$ctx" -np 1 --threads "$threads" --seed 0 --jinja >/dev/null
+            -c "$ctx" -np 1 --threads "$threads" --seed 0 --jinja \
+            ${GRIND_LLAMA_ARGS:-} >/dev/null
         echo "serving $(basename "$path") on http://127.0.0.1:$port with $threads threads; waiting for it to load" >&2
         for _ in $(seq 1 120); do
             curl -sf "http://127.0.0.1:$port/health" >/dev/null && { echo "ready" >&2; exit 0; }
@@ -88,5 +90,5 @@ case ${1:-} in
     logs) exec "$engine" logs -f "$name" ;;
     stop) "$engine" rm -f "$name" ;;
     models) grep -v '^#' assist/models.tsv | cut -f1,2,5,6 | column -t ;;
-    *) sed -n '7,22p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    *) awk 'NR >= 7 && !/^#/ { exit } NR >= 7 { sub(/^# ?/, ""); print }' "$0"; exit 2 ;;
 esac

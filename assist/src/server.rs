@@ -118,6 +118,9 @@ impl Server {
         if self.prefill {
             body["stop"] = json!(["\n"]);
         }
+        if let Some(fence) = &request.fence {
+            body["grammar"] = json!(fence);
+        }
         let reply = self.http("POST", "/v1/chat/completions", Some(&body))?;
         let timings = &reply["timings"];
         self.timings.push(Timing {
