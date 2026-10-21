@@ -15,5 +15,9 @@ repository.workspace = true
 # A3, chosen on A1's numbers, and is the reason this crate is its own.
 [dependencies]
 grind-sheet = { path = "../sheet" }
+# Excel's formula syntax read as a fallback (`check_with`): a small model writes Excel whatever it is
+# told, and the import filter's translator already turns Excel's spelling into the core's tree.
+# Ours, and it adds nothing to the dependency tree that `grind-sheet` has not.
+grind-xlsx = { path = "../xlsx" }
 # A1's loopback backend (`server.rs`) speaks llama-server's JSON. Already in the workspace's tree.
 serde_json = "1"

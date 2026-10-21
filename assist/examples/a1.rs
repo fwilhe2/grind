@@ -47,6 +47,7 @@ struct Options {
     rules: bool,
     examples: usize,
     sample: Option<usize>,
+    excel: bool,
 }
 
 fn options() -> Result<Options, String> {
@@ -62,6 +63,7 @@ fn options() -> Result<Options, String> {
         rules: false,
         examples: 0,
         sample: None,
+        excel: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
@@ -70,6 +72,7 @@ fn options() -> Result<Options, String> {
             "--url" => options.url = value()?,
             "--no-prefill" => options.prefill = false,
             "--rules" => options.rules = true,
+            "--excel" => options.excel = true,
             "--examples" => options.examples = value()?.parse().map_err(|e| format!("{e}"))?,
             "--sample" => options.sample = Some(value()?.parse().map_err(|e| format!("{e}"))?),
             "--candidates" => options.candidates = value()?.parse().map_err(|e| format!("{e}"))?,
@@ -132,7 +135,12 @@ fn run() -> Result<(), String> {
         std::fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
     }
 
-    let (candidates, rules, examples) = (options.candidates, options.rules, options.examples);
+    let (candidates, rules, examples, excel) = (
+        options.candidates,
+        options.rules,
+        options.examples,
+        options.excel,
+    );
     let setups: Vec<Setup> = options
         .fences
         .iter()
@@ -143,12 +151,13 @@ fn run() -> Result<(), String> {
                 fence,
                 rules,
                 examples,
+                excel,
             })
         })
         .collect();
     for setup in setups {
         let label = format!(
-            "{}{}{}{}",
+            "{}{}{}{}{}",
             match setup.catalog {
                 Catalog::Whole => "catalog whole".to_owned(),
                 Catalog::None => "catalog none".to_owned(),
@@ -156,6 +165,7 @@ fn run() -> Result<(), String> {
             },
             if setup.fence { ", fenced" } else { "" },
             if setup.rules { ", rules" } else { "" },
+            if setup.excel { ", excel read" } else { "" },
             match setup.examples {
                 0 => String::new(),
                 n => format!(", {n} examples"),

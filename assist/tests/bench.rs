@@ -32,6 +32,7 @@ fn setup(candidates: usize) -> Setup {
         fence: true,
         rules: true,
         examples: 12,
+        excel: false,
     }
 }
 

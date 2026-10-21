@@ -241,19 +241,84 @@ impl Verdict {
     }
 }
 
-/// Check one candidate formula at `pos` against the answer it should give.
-///
-/// Nothing is stored: [`App::preview`] takes a read lock and makes no undo entry. Numbers agree
-/// to nine significant digits — the question is whether the model chose the right formula, not
-/// the engine's last digits, which `sheet/tests/function_samples.rs` holds to the oracle on its
-/// own.
+/// Check one candidate formula at `pos` against the answer it should give, reading it as display
+/// syntax only. [`check_with`] with `excel: false`.
 pub fn check(app: &App, sheet: usize, pos: Pos, candidate: &str, expected: &CellValue) -> Verdict {
+    check_with(app, sheet, pos, candidate, expected, false)
+}
+
+/// How a candidate was read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Spelling {
+    /// Display syntax, the formula bar's: `SUM(Ledger.D2:D14;1)`.
+    Display,
+    /// Excel's, translated by the import filter: `SUM(Ledger!D2:D14,1)`.
+    Excel,
+}
+
+/// A candidate as the stored formula it means, and which reading produced it: display syntax
+/// first, and with `excel`, Excel's syntax through `grind_xlsx::formula::translate` when display
+/// syntax refuses it. Either way the result is a tree printed by the core's own serialiser — a
+/// formula the parser could have produced — never a string rewritten into one.
+///
+/// Display first, because a formula that reads both ways must mean what the formula bar means.
+/// The translator renames nothing whose semantics differ between the two (Excel's `CEILING`
+/// arrives as `COM.MICROSOFT.CEILING`), so a translated candidate cannot quietly change meaning.
+pub fn read(candidate: &str, excel: bool) -> Option<(String, Spelling)> {
     let typed = candidate.trim();
     let typed = match typed.starts_with('=') {
         true => typed.to_owned(),
         false => format!("={typed}"),
     };
-    let Ok(canonical) = display::from_display(&typed) else {
+    let as_excel = || {
+        grind_xlsx::formula::translate(&typed)
+            .ok()
+            .map(|expr| (format!("={expr}"), Spelling::Excel))
+    };
+    // `!` outside a string is Excel's sheet separator to anybody writing a formula from a
+    // request; in display syntax it is the intersection operator, which §2.3.2 leaves out of the
+    // Small Group, and `Ledger!D2` would read as the name `Ledger` intersected with `D2`, which is
+    // #NULL!. So a `!` sends the candidate to Excel's reading first.
+    if excel
+        && bang_outside_strings(&typed)
+        && let Some(read) = as_excel()
+    {
+        return Some(read);
+    }
+    if let Ok(canonical) = display::from_display(&typed) {
+        return Some((canonical, Spelling::Display));
+    }
+    match excel {
+        true => as_excel(),
+        false => None,
+    }
+}
+
+fn bang_outside_strings(text: &str) -> bool {
+    let mut quoted = false;
+    text.chars().any(|c| {
+        if c == '"' {
+            quoted = !quoted;
+        }
+        c == '!' && !quoted
+    })
+}
+
+/// [`check`], reading Excel's syntax too when `excel` is set ([`read`]).
+///
+/// Nothing is stored: [`App::preview`] takes a read lock and makes no undo entry. Numbers agree
+/// to nine significant digits — the question is whether the model chose the right formula, not
+/// the engine's last digits, which `sheet/tests/function_samples.rs` holds to the oracle on its
+/// own.
+pub fn check_with(
+    app: &App,
+    sheet: usize,
+    pos: Pos,
+    candidate: &str,
+    expected: &CellValue,
+    excel: bool,
+) -> Verdict {
+    let Some((canonical, _)) = read(candidate, excel) else {
         return Verdict::Unparseable;
     };
     let value = match app.preview(sheet, pos, &canonical) {
@@ -416,5 +481,36 @@ mod tests {
         assert!(!prompt.system.contains("Functions"));
         assert!(prompt.user.contains("\nAVERAGE("), "{}", prompt.user);
         assert_eq!(prompt.user.matches(" — ").count(), 5);
+    }
+
+    #[test]
+    fn excel_is_read_only_when_asked_and_only_after_display_syntax() {
+        let app = app();
+        let nine = CellValue::Number(9.0);
+        assert_eq!(
+            check(&app, 0, pos(3, 0), "=SUM(A1,A3)+A2", &nine),
+            Verdict::Unparseable
+        );
+        assert_eq!(
+            check_with(&app, 0, pos(3, 0), "=SUM(A1,A3)+A2", &nine, true),
+            Verdict::Right
+        );
+        assert_eq!(
+            check_with(&app, 0, pos(3, 0), "=SUM(Sheet1!A1:A3)", &nine, true),
+            Verdict::Right
+        );
+        assert_eq!(read("=SUM(A1:A3)", true).unwrap().1, Spelling::Display);
+        assert_eq!(read("=SUM(A1,A3)", true).unwrap().1, Spelling::Excel);
+        // Excel's CEILING is not ODF's: it arrives under the name LibreOffice gives it.
+        assert!(
+            read("=CEILING(A1,2)", true)
+                .unwrap()
+                .0
+                .contains("COM.MICROSOFT.CEILING")
+        );
+        assert_eq!(read("=SUM(A1,", true), None);
+        // A `!` is Excel's sheet separator here, never ODF's intersection.
+        assert_eq!(read("=SUM(Sheet1!A1:A3)", true).unwrap().1, Spelling::Excel);
+        assert_eq!(read("=LEN(\"Hi!\")", true).unwrap().1, Spelling::Display);
     }
 }

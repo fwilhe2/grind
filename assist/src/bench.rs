@@ -21,7 +21,7 @@ use std::path::Path;
 use grind_sheet::{App, CellValue, Pos};
 
 use crate::fence::Fence;
-use crate::{Backend, Catalog, Coaching, Request, Verdict, check, prompt};
+use crate::{Backend, Catalog, Coaching, Request, Verdict, check_with, prompt};
 
 /// One task.
 #[derive(Clone, Debug)]
@@ -150,7 +150,7 @@ impl Bench {
             let verdicts = proposed
                 .iter()
                 .take(setup.candidates)
-                .map(|c| check(app, task.sheet, task.at, c, &task.expected))
+                .map(|c| check_with(app, task.sheet, task.at, c, &task.expected, setup.excel))
                 .collect();
             let outcome = Outcome {
                 id: task.id.clone(),
@@ -193,6 +193,8 @@ pub struct Setup {
     pub rules: bool,
     /// How many worked examples, from other documents ([`Bench::examples`]).
     pub examples: usize,
+    /// Read a candidate as Excel's syntax when display syntax refuses it ([`crate::read`]).
+    pub excel: bool,
 }
 
 fn samples(app: &App, sheet: usize, document: usize, name: &str) -> Result<Vec<Task>, String> {

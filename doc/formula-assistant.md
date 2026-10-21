@@ -365,6 +365,17 @@ wants to write; it cannot supply what it should. The limit is the model's capaci
 prompt. The next idea worth measuring is to make the model *choose* among the glance's real ranges
 rather than write addresses.
 
+**Reading Excel's syntax as well, 2026-10-21.** A candidate display syntax refuses is read
+through the import filter's translator (`grind_xlsx::formula::translate`, `read`/`check_with`,
+the runner's `--excel`): a parsed tree printed by the core's serialiser, never a rewritten string,
+and Excel's `CEILING` arrives as `COM.MICROSOFT.CEILING`. A `!` outside a string sends a
+candidate to Excel's reading first, since display syntax would take `Ledger!D2` for the
+intersection operator. Re-scoring the saved runs with no model (`--example rescore`): the
+catalog-and-no-fence run goes from 4 to **9** greedy, 8 to **13 (7%)** first of five and 9 to 15
+any of five, with unparseable greedy answers 117 → 25 — the best result of any configuration, and
+a cheaper fix for syntax than the fence. But of the 92 greedy answers it made readable only 5 were
+right: Excel's spelling was hiding the real failure, not causing it.
+
 ## 6. The CLI (R9)
 
 ```sh

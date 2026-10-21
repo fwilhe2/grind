@@ -1184,6 +1184,7 @@ name = "grind-assist"
 version = "0.0.0"
 dependencies = [
  "grind-sheet",
+ "grind-xlsx",
  "serde_json",
 ]
 
