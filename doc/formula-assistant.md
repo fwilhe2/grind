@@ -481,7 +481,10 @@ grind sheet answer book.fods E2:E40 '=IF(…)' --apply     # written: one batch,
    formats — date, time, money with its symbol, percentage, number, text, TRUE/FALSE, mixed — and a
    hint: the distinct texts (four, then a count), the lowest and highest value, or a computed
    column's formula. A table ends at its last row with a value, since formatted blanks count as
-   used. Compact enough to read before pasting it, which decision 1 depends on.
+   used. A small table (30 data rows, 8 columns) is also **shown whole**, every row numbered, when
+   values may be shown — so a form of labels and values (`Tiles per box | 12`) says which cell holds
+   what, which no column summary can. Compact enough to read before pasting it, which decision 1
+   depends on.
 3. **`--no-values` keeps every value home.** Headers, types and the request; nothing a cell holds.
 4. **Say where the formula goes and how it is filled.** A range means *the formula for its first
    cell, filled over the rest*: the prompt says so, says relative references move, and says `$`
@@ -517,8 +520,8 @@ first row, −1340.35 in October's, −23.60 in November's, empty elsewhere. One
   verbs over its existing prompt, list and confirmation modals. The Mac three Edit-menu verbs over
   `NSAlert`s (written and type-checked; like the rest of that shell, not yet run). Every client
   has it.
-- **Layouts that are not one table per sheet** — several tables on a sheet, a form of label and
-  value — are described as one table with mixed columns.
+- **Several tables on one sheet** are described as one table with mixed columns. A form of labels
+  and values reads well when it is small enough to be shown whole; a large one does not.
 - **Locale.** The prompt states the document's locale; numbers in the hints are shown as the cells
   show them, and an answer is read in the formula bar's own spelling or Excel's.
 

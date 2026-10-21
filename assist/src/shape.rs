@@ -22,6 +22,11 @@ use grind_sheet::{App, CellValue, Pos, a1};
 const SCAN: u32 = 2000;
 /// Distinct text values listed before `…`.
 const EXAMPLES: usize = 4;
+/// A table this small is shown whole when values may be shown: every row, numbered, so a form of
+/// labels and values (`Tiles per box | 12`) says which cell holds what — something a column's
+/// type and range cannot.
+const WHOLE_ROWS: u32 = 30;
+const WHOLE_COLS: u32 = 8;
 
 /// One sheet's table.
 #[derive(Clone, Debug, PartialEq)]
@@ -33,6 +38,9 @@ pub struct Table {
     pub first: u32,
     pub last: u32,
     pub columns: Vec<Column>,
+    /// Every data row as the cells show it, when the table is small enough and values may be
+    /// shown — `(row, cells)`, the row 0-based.
+    pub rows: Option<Vec<(u32, Vec<String>)>>,
 }
 
 /// One column of a [`Table`].
@@ -112,12 +120,24 @@ pub fn describe(app: &App, sheet: usize, values: bool) -> Option<Table> {
     let columns = (0..cols)
         .map(|col| column(app, sheet, col, header, first, last, values))
         .collect();
+    let small = last - first < WHOLE_ROWS && cols <= WHOLE_COLS;
+    let rows = (values && small).then(|| {
+        (first..=last)
+            .map(|row| {
+                let cells = (0..cols)
+                    .map(|col| cut(&app.value_text(sheet, Pos { row, col }).unwrap_or_default()))
+                    .collect();
+                (row, cells)
+            })
+            .collect()
+    });
     Some(Table {
         sheet: app.sheet_name(sheet).ok()?,
         header,
         first,
         last,
         columns,
+        rows,
     })
 }
 
@@ -278,6 +298,12 @@ impl fmt::Display for Table {
             }
             writeln!(f)?;
         }
+        if let Some(rows) = &self.rows {
+            writeln!(f, "  Every row (row number, then each column):")?;
+            for (row, cells) in rows {
+                writeln!(f, "  {:>4}  {}", row + 1, cells.join(" | "))?;
+            }
+        }
         Ok(())
     }
 }
@@ -334,6 +360,9 @@ mod tests {
         assert!(text.contains("A  Date"), "{text}");
         assert!(text.contains("text: Income, Groceries"), "{text}");
         assert!(text.contains("money (€): "), "{text}");
+        // Small, so shown whole, row by row.
+        assert!(text.contains("     3  "), "{text}");
+        assert!(text.contains("| Groceries |"), "{text}");
         assert!(text.contains("date: "), "{text}");
     }
 
@@ -345,5 +374,6 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("Category"), "{text}");
+        assert!(!text.contains("Every row"), "{text}");
     }
 }
