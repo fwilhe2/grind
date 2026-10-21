@@ -4259,6 +4259,9 @@ fn do_command(hwnd: HWND, command: Command) {
         // every command has a handler.
         Command::FunctionList => function_list(hwnd),
         Command::ExplainFormula => explain_formula(hwnd),
+        Command::AskFormula => ask_formula(hwnd, true),
+        Command::AskFormulaPrivate => ask_formula(hwnd, false),
+        Command::CheckAnswer => check_answer(hwnd),
         Command::ToggleFriendly => toggle_friendly(hwnd),
         // The format strip's verbs, from the menu or a key — the same `format_control` a click on
         // the strip reaches, so the two cannot mean different things.
@@ -5290,6 +5293,111 @@ fn explain_formula(hwnd: HWND) {
     };
     let rows: Vec<String> = explained.lines().map(str::to_owned).collect();
     dialog::show_list(hwnd, &format!("{address} explained"), &rows);
+}
+
+// --- A prompt for any model (doc/formula-assistant.md §11) ---
+
+/// *Ask Any Model for a Formula…* — what the formula over the selection should do, then the
+/// prompt on the clipboard and shown, so it can be read before it is pasted anywhere. `values:
+/// false` keeps every value of the document out of it. Grind sends it nowhere.
+fn ask_formula(hwnd: HWND, values: bool) {
+    let Some(request) = dialog::prompt(
+        hwnd,
+        "Ask Any Model for a Formula",
+        "What should the formula over the selection do?",
+        "",
+    ) else {
+        return;
+    };
+    // SAFETY: one borrow, after the dialog; nothing inside dispatches.
+    let Some(prompt) = (unsafe {
+        with_sheet(hwnd, |state| {
+            let (start, end) = state.selection.rect();
+            grind_assist::copy::copy_prompt(&state.app, state.sheet, start, end, &request, values)
+        })
+    }) else {
+        return;
+    };
+    let prompt = match prompt {
+        Ok(prompt) => prompt,
+        Err(why) => return dialog::error(hwnd, &why),
+    };
+    let copied = clipboard::set_text(hwnd, &prompt);
+    let rows: Vec<String> = prompt.lines().map(str::to_owned).collect();
+    dialog::show_list(
+        hwnd,
+        match copied {
+            true => {
+                "Copied — paste it into the model you choose, then Data ▸ Check a Model's Answer"
+            }
+            false => "Copy it into the model you choose, then Data ▸ Check a Model's Answer",
+        },
+        &rows,
+    );
+}
+
+/// *Check a Model's Answer…* — read in either syntax, filled over the selection on a copy of the
+/// document, every value shown; **Apply** writes it, one undo step.
+fn check_answer(hwnd: HWND) {
+    let Some(formula) = dialog::prompt(hwnd, "Check a Model's Answer", "The model's formula:", "=")
+    else {
+        return;
+    };
+    // SAFETY: one borrow, after the dialog; nothing inside dispatches.
+    let Some((tried, start, end)) = (unsafe {
+        with_sheet(hwnd, |state| {
+            let (start, end) = state.selection.rect();
+            (
+                grind_assist::copy::try_answer(&state.app, state.sheet, start, end, &formula),
+                start,
+                end,
+            )
+        })
+    }) else {
+        return;
+    };
+    let tried = match tried {
+        Ok(tried) => tried,
+        Err(why) => return dialog::error(hwnd, &why),
+    };
+    if !dialog::confirm(
+        hwnd,
+        "Check a Model's Answer",
+        &answer_summary(&tried),
+        "Apply",
+    ) {
+        return;
+    }
+    // SAFETY: one borrow, after the dialog; nothing inside dispatches.
+    unsafe {
+        with_sheet(hwnd, |state| {
+            let written =
+                grind_assist::copy::apply_answer(&state.app, state.sheet, start, end, &tried);
+            state.say(Some(match written {
+                Ok(()) => format!("{} written — Ctrl+Z takes it back", tried.formula),
+                Err(why) => why,
+            }));
+        });
+    }
+    refresh(hwnd);
+}
+
+/// What a checked answer comes to, as the confirmation's text: how it was read, then each target
+/// cell and its value — the first thirty, and how many more.
+fn answer_summary(tried: &grind_assist::copy::Tried) -> String {
+    let read = match tried.spelling {
+        grind_assist::Spelling::Display => "Read as written",
+        grind_assist::Spelling::Excel => "Read as Excel's syntax",
+    };
+    let mut lines = vec![format!("{read}: {}", tried.formula), String::new()];
+    for (pos, value) in tried.values.iter().take(30) {
+        let shown = if value.is_empty() { "(empty)" } else { value };
+        lines.push(format!("{}\t{shown}", grind_sheet::a1::format(None, *pos)));
+    }
+    if tried.values.len() > 30 {
+        lines.push(format!("… and {} more", tried.values.len() - 30));
+    }
+    lines.join("\n")
 }
 
 /// `Pane::project`, spelled so [`with_pane`] can be handed it directly rather than a closure that
@@ -7123,6 +7231,9 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::Recalculate
         | Command::FunctionList
         | Command::ExplainFormula
+        | Command::AskFormula
+        | Command::AskFormulaPrivate
+        | Command::CheckAnswer
         | Command::ToggleFriendly
         | Command::ToggleFilter
         | Command::FormatTable
@@ -8291,6 +8402,9 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::SheetPrevious
         | Command::FunctionList
         | Command::ExplainFormula
+        | Command::AskFormula
+        | Command::AskFormulaPrivate
+        | Command::CheckAnswer
         | Command::ToggleFriendly
         | Command::ToggleFilter
         | Command::FormatTable
