@@ -1320,6 +1320,7 @@ name = "grind-sheet-gtk"
 version = "0.0.0"
 dependencies = [
  "async-channel",
+ "grind-assist",
  "grind-core",
  "grind-sheet",
  "grind-spell",
