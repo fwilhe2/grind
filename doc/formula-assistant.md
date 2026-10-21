@@ -510,9 +510,10 @@ first row, −1340.35 in October's, −23.60 in November's, empty elsewhere. One
 
 ### 11.3 Open, and named
 
-- **The windows.** Every shell's half is two verbs over this crate: *Copy a Prompt for a Formula…*
-  (a request field, the prompt shown and copied) and *Check a Formula Answer…* (a pasted answer,
-  every value shown, Apply). `grind-sheet-gtk` first, through its palette.
+- **The other windows.** `grind-sheet-gtk` has it (*Ask Any Model for a Formula…*, `ask.rs`: one
+  dialog — request, Copy Prompt with the prompt shown, the answer, Check, Apply only for the answer
+  checked). The terminal, the browser, Windows and the Mac do not yet; each is the same two calls
+  over `grind_assist::copy`.
 - **Layouts that are not one table per sheet** — several tables on a sheet, a form of label and
   value — are described as one table with mixed columns.
 - **Locale.** The prompt states the document's locale; numbers in the hints are shown as the cells
