@@ -23,8 +23,10 @@ use grind_sheet::formula::{display, friendly, funcs, value::FormulaError};
 use grind_sheet::{App, CellValue, Pos};
 
 pub mod bench;
+pub mod copy;
 pub mod fence;
 pub mod server;
+pub mod shape;
 
 /// What a model is asked: the prompt, and how many candidates are wanted.
 #[derive(Clone, Debug)]
