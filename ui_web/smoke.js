@@ -359,6 +359,18 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   await frame();
   // jsdom has no `showModal`, so what is checked is what the dialog was filled with.
   check("Explain unfolds it in a dialog", byId("explain").textContent.includes("B1 explained") && byId("explain").textContent.includes("Sum"), true);
+  // Ask any model for a formula (doc/formula-assistant.md §11): the prompt and the checked answer
+  // are both what the #ask dialog was filled with, for showModal's reason above.
+  const askPrompt = dom.window.prompt;
+  dom.window.prompt = () => "the two numbers added";
+  await command("Ask any model for a formula — copy a prompt");
+  await frame();
+  check("Ask writes a prompt for any model into a dialog", byId("ask").textContent.includes("## What I want") && byId("ask").textContent.includes("the two numbers added"), true);
+  dom.window.prompt = () => "=SUM(A1,A2)";
+  await command("Check a model's answer");
+  await frame();
+  dom.window.prompt = askPrompt;
+  check("and an answer in Excel's syntax is read, its value shown", byId("ask").textContent.includes("Excel") && byId("ask").textContent.includes("42"), true);
   await command("Read formulas in plain words");
   await frame();
   check("and the reading can be turned off", byId("summary").textContent.includes("Sum(Number"), false);

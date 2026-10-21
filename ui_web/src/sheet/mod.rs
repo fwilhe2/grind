@@ -241,6 +241,9 @@ pub struct Ui {
     chart_selected: Cell<Option<usize>>,
     /// A chart held by the pointer; the document is written once, when the button comes up.
     chart_grab: Cell<Option<grab::Grab>>,
+    /// A model's answer that was checked and shown, waiting for the dialog's Apply.
+    #[cfg(feature = "assist")]
+    asked: RefCell<Option<(usize, Pos, Pos, grind_assist::copy::Tried)>>,
 }
 
 impl Ui {
@@ -274,10 +277,14 @@ impl Ui {
             filter_checks: RefCell::new(Vec::new()),
             chart_selected: Cell::new(None),
             chart_grab: Cell::new(None),
+            #[cfg(feature = "assist")]
+            asked: RefCell::new(None),
         });
         wire_grid(&ui)?;
         wire_editor(&ui)?;
         wire_filter_menu(&ui)?;
+        #[cfg(feature = "assist")]
+        wire_ask(&ui)?;
         Ok(ui)
     }
 
@@ -979,6 +986,16 @@ impl Ui {
             "name.delete" => self.delete_name(),
             "edit.evaluate" => self.evaluate(),
             "edit.explain" => self.explain(),
+            #[cfg(feature = "assist")]
+            "assist.prompt" => self.ask_prompt(true),
+            #[cfg(feature = "assist")]
+            "assist.prompt-private" => self.ask_prompt(false),
+            #[cfg(feature = "assist")]
+            "assist.answer" => self.ask_answer(),
+            #[cfg(not(feature = "assist"))]
+            "assist.prompt" | "assist.prompt-private" | "assist.answer" => {
+                self.set_message("This page was built without the formula assistant".to_owned())
+            }
             "doc.locale" => self.document_locale(),
             "chart.insert" => self.insert_chart(None),
             "chart.insert-bar" => self.insert_chart(Some(ChartKind::Bar)),
@@ -2231,6 +2248,105 @@ impl Ui {
             }),
             Err(_) => self.set_message(format!("“{}” is not a locale — try de-DE", typed.trim())),
         }
+    }
+
+    /// *Ask any model for a formula — copy a prompt…* (`doc/formula-assistant.md` §11): what the
+    /// formula over the selection should do, then the prompt on the clipboard and shown in a
+    /// dialog, so it can be read before it is pasted anywhere. `values: false` keeps every value
+    /// of the document out of it. The page sends it nowhere.
+    #[cfg(feature = "assist")]
+    fn ask_prompt(&self, values: bool) {
+        let Some(request) = self.ask("What should the formula over the selection do?", "") else {
+            return;
+        };
+        if request.trim().is_empty() {
+            return;
+        }
+        let (start, end) = self.selection.get().rect();
+        let prompt = match grind_assist::copy::copy_prompt(
+            &self.app,
+            self.sheet.get(),
+            start,
+            end,
+            &request,
+            values,
+        ) {
+            Ok(prompt) => prompt,
+            Err(why) => return self.set_message(why),
+        };
+        let copied = match crate::clipboard() {
+            Some(clipboard) => {
+                let _ = clipboard.write_text(&prompt);
+                true
+            }
+            None => false,
+        };
+        let escape = crate::about::escape;
+        self.show_ask(&format!(
+            "<h2>A prompt for any model</h2><p>{}</p><pre class=\"explain\">{}</pre>\
+             <form method=\"dialog\"><button class=\"about-close\" type=\"submit\">Close</button></form>",
+            match copied {
+                true => "Copied. Paste it into the model you choose, then Ctrl+K ▸ <em>Check a model's answer…</em>",
+                false => "Copy it into the model you choose, then Ctrl+K ▸ <em>Check a model's answer…</em>",
+            },
+            escape(&prompt)
+        ));
+    }
+
+    /// *Check a model's answer…* — read in either syntax, filled over the selection on a copy of
+    /// the document, every value shown; the dialog's Apply writes it, one undo step.
+    #[cfg(feature = "assist")]
+    fn ask_answer(&self) {
+        let Some(formula) = self.ask("The model's formula", "=") else {
+            return;
+        };
+        let (sheet, (start, end)) = (self.sheet.get(), self.selection.get().rect());
+        let tried = match grind_assist::copy::try_answer(&self.app, sheet, start, end, &formula) {
+            Ok(tried) => tried,
+            Err(why) => return self.set_message(why),
+        };
+        let escape = crate::about::escape;
+        let read = match tried.spelling {
+            grind_assist::Spelling::Display => "Read as written",
+            grind_assist::Spelling::Excel => "Read as Excel's syntax",
+        };
+        let rows: String = tried
+            .values
+            .iter()
+            .map(|(pos, value)| {
+                format!(
+                    "{}\t{}\n",
+                    a1::format(None, *pos),
+                    if value.is_empty() { "(empty)" } else { value }
+                )
+            })
+            .collect();
+        let html = format!(
+            "<h2>{read}</h2><pre class=\"explain\">{}\n\n{}</pre>\
+             <form method=\"dialog\"><button class=\"about-close\" value=\"apply\" type=\"submit\">Apply</button> \
+             <button class=\"about-close\" value=\"close\" type=\"submit\">Close</button></form>",
+            escape(&tried.formula),
+            escape(&rows)
+        );
+        *self.asked.borrow_mut() = Some((sheet, start, end, tried));
+        self.show_ask(&html);
+    }
+
+    /// The dialog both of the above fill — `#ask`, closed by its own buttons, whose `close`
+    /// listener (`wire_ask`) applies a checked answer when the button was Apply.
+    #[cfg(feature = "assist")]
+    fn show_ask(&self, html: &str) {
+        let Some(dialog) = self
+            .dom
+            .document
+            .get_element_by_id("ask")
+            .and_then(|e| e.dyn_into::<web_sys::HtmlDialogElement>().ok())
+        else {
+            return;
+        };
+        dialog.set_return_value("");
+        dialog.set_inner_html(html);
+        let _ = dialog.show_modal();
     }
 
     /// *Explain this formula in words* — the active cell's formula unfolded, one call a line,
@@ -3535,6 +3651,36 @@ fn wire_editor(ui: &Rc<Ui>) -> Result<(), JsValue> {
             web_sys::console::error_1(&error);
         }
     })
+}
+/// The ask dialog's Apply: a checked answer is written when the dialog closes on that button,
+/// and forgotten whichever way it closes.
+#[cfg(feature = "assist")]
+fn wire_ask(ui: &Rc<Ui>) -> Result<(), JsValue> {
+    let Some(dialog) = ui
+        .dom
+        .document
+        .get_element_by_id("ask")
+        .and_then(|e| e.dyn_into::<web_sys::HtmlDialogElement>().ok())
+    else {
+        return Ok(());
+    };
+    let shell = ui.clone();
+    let closed = dialog.clone();
+    listen(&dialog, "close", move |_: web_sys::Event| {
+        let Some((sheet, start, end, tried)) = shell.asked.borrow_mut().take() else {
+            return;
+        };
+        if closed.return_value() == "apply" {
+            shell.set_message(
+                match grind_assist::copy::apply_answer(&shell.app, sheet, start, end, &tried) {
+                    Ok(()) => format!("{} written — Ctrl+Z takes it back", tried.formula),
+                    Err(why) => why,
+                },
+            );
+        }
+        let _ = shell.dom.surface.focus();
+    })?;
+    Ok(())
 }
 
 /// The autofilter's popover (§9.4, `filter_ui.rs`): "Select all", a value ticked or

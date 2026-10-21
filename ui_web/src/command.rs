@@ -346,6 +346,29 @@ pub const SHEET: &[Command] = &[
         "",
         false,
     ),
+    // A prompt to copy into a model the person chooses, and the check of what it answers
+    // (`doc/formula-assistant.md` §11). Over the selection.
+    cmd(
+        "assist.prompt",
+        "Ask any model for a formula — copy a prompt…",
+        "Edit",
+        "",
+        false,
+    ),
+    cmd(
+        "assist.prompt-private",
+        "Ask any model for a formula, without the document's values…",
+        "Edit",
+        "",
+        false,
+    ),
+    cmd(
+        "assist.answer",
+        "Check a model's answer…",
+        "Edit",
+        "",
+        false,
+    ),
     // Charts: authored beside the table the selection means (`verbs::insert_chart`) and changed in
     // words (`verbs::restyle_chart`). The last three mean the selected chart — a click on one
     // selects it (`sheet/grab.rs`) — else the sheet's last.

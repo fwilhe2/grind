@@ -277,6 +277,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Explain this formula: the active cell's formula unfolded in plain words, read and
          dismissed like About (ui_web/src/sheet/mod.rs's `explain`). -->
     <dialog id="explain" class="about"></dialog>
+    <!-- Ask any model for a formula: the prompt to copy, or a model's answer checked with Apply
+         (ui_web/src/sheet/mod.rs's `ask_prompt` and `ask_answer`, doc/formula-assistant.md §11). -->
+    <dialog id="ask" class="about"></dialog>
 
     <!--
       Alt text: a picture's alternative text, short and long (`svg:title`, `svg:desc`), written
