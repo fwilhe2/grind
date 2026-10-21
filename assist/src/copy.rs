@@ -11,7 +11,10 @@
 //! the document, reading a formula, checking it — all work. This keeps those and lets the person
 //! pick the model.
 
+use grind_sheet::formula::lex::{Op, Reference};
+use grind_sheet::formula::parse::Expr;
 use grind_sheet::formula::{display, funcs, parse, shift};
+use grind_sheet::numfmt::Format;
 use grind_sheet::{App, Form, Pos, RecalcMode, a1};
 
 use crate::{Spelling, read, shape};
@@ -104,6 +107,8 @@ pub struct Tried {
     pub formula: String,
     /// The stored spelling, which [`apply_answer`] writes.
     pub canonical: String,
+    /// The number format the results take ([`inherited_format`]), if any.
+    pub format: Option<Format>,
     /// Every target cell and what it shows once the formula is filled and the copy recalculated.
     pub values: Vec<(Pos, String)>,
 }
@@ -125,7 +130,8 @@ pub fn try_answer(
     let bytes = app.save_bytes(Form::Flat).map_err(|e| e.to_string())?;
     copy.open_bytes("copy.fods", &bytes)
         .map_err(|e| e.to_string())?;
-    put(&copy, sheet, start, end, &canonical)?;
+    let format = inherited_format(app, sheet, start, end, &canonical);
+    put(&copy, sheet, start, end, &canonical, format.as_ref())?;
     let mut values = Vec::new();
     for row in start.row..=end.row {
         for col in start.col..=end.col {
@@ -137,6 +143,7 @@ pub fn try_answer(
         spelling,
         formula: display::to_display(&canonical).unwrap_or_else(|_| canonical.clone()),
         canonical,
+        format,
         values,
     })
 }
@@ -150,13 +157,135 @@ pub fn apply_answer(
     end: Pos,
     tried: &Tried,
 ) -> Result<(), String> {
-    put(app, sheet, start, end, &tried.canonical)
+    put(
+        app,
+        sheet,
+        start,
+        end,
+        &tried.canonical,
+        tried.format.as_ref(),
+    )
+}
+
+/// The number format a result takes: the one format shared by the cells its **value comes from**
+/// ([`carried`]) — the amounts a `SUMIFS` adds rather than the dates it compares, both branches of
+/// an `IF`, the operands of `+` — when the target cells have none of their own. A result that is
+/// a count, a month, a comparison or anything else whose kind is not its inputs' takes nothing,
+/// and so does one drawn from two formats; a format somebody already put on the target is never
+/// replaced.
+pub fn inherited_format(
+    app: &App,
+    sheet: usize,
+    start: Pos,
+    end: Pos,
+    canonical: &str,
+) -> Option<Format> {
+    let own = (start.row..=end.row)
+        .flat_map(|row| (start.col..=end.col).map(move |col| Pos { row, col }))
+        .any(|pos| app.format_at(sheet, pos).ok().flatten().is_some());
+    if own {
+        return None;
+    }
+    let expr = parse::parse(canonical).ok()?;
+    let mut found: Option<Format> = None;
+    for reference in carried(&expr)? {
+        let Ok((at, from, to)) = a1::resolve_in(app, sheet, reference) else {
+            return None;
+        };
+        // The first few numeric cells of the range speak for it; a header above them does not.
+        let numeric = (from.row..=to.row.min(from.row + 50))
+            .flat_map(|row| (from.col..=to.col).map(move |col| Pos { row, col }))
+            .filter(|pos| matches!(app.get(at, *pos), Ok(grind_sheet::CellValue::Number(_))))
+            .take(5);
+        for pos in numeric {
+            let format = app.format_at(at, pos).ok().flatten()?;
+            match &found {
+                Some(seen) if *seen != format => return None,
+                _ => found = Some(format),
+            }
+        }
+    }
+    found
+}
+
+/// The references a formula's *value* is carried from, or `None` when the value is of another
+/// kind than any input (a count, a month, a comparison, a lookup's column, a call this table does
+/// not know). A literal carries nothing and does not spoil the rest: `IF(…;SUM(D2:D9);"")` is
+/// carried from `D2:D9`.
+fn union<'a>(items: &[&'a Expr]) -> Option<Vec<&'a Reference>> {
+    let mut all = Vec::new();
+    for item in items {
+        all.extend(carried(item)?);
+    }
+    Some(all)
+}
+
+fn carried<'a>(expr: &'a Expr) -> Option<Vec<&'a Reference>> {
+    match expr {
+        Expr::Ref(reference) => Some(vec![reference]),
+        Expr::Number(_) | Expr::Text(_) | Expr::Empty => Some(Vec::new()),
+        Expr::Paren(inner) | Expr::Prefix(_, inner) => carried(inner),
+        Expr::Binary(op, left, right) => match op {
+            Op::Add | Op::Sub | Op::Mul | Op::Div => union(&[left.as_ref(), right.as_ref()]),
+            _ => None,
+        },
+        Expr::Call { name, args } => {
+            let pick = |indices: &[usize]| -> Vec<&'a Expr> {
+                indices.iter().filter_map(|&i| args.get(i)).collect()
+            };
+            let all: Vec<&Expr> = args.iter().collect();
+            match name.as_str() {
+                "SUM"
+                | "MIN"
+                | "MAX"
+                | "AVERAGE"
+                | "MEDIAN"
+                | "ROUND"
+                | "ROUNDUP"
+                | "ROUNDDOWN"
+                | "TRUNC"
+                | "INT"
+                | "ABS"
+                | "MROUND"
+                | "CEILING"
+                | "FLOOR"
+                | "COM.MICROSOFT.CEILING"
+                | "COM.MICROSOFT.FLOOR"
+                | "EOMONTH"
+                | "EDATE"
+                | "WORKDAY" => union(&all),
+                "LARGE" | "SMALL" | "INDEX" | "IFERROR" | "IFNA" => union(&pick(&[0, 1])),
+                "SUBTOTAL" => union(&pick(&[1])),
+                "IF" => union(&pick(&[1, 2])),
+                "CHOOSE" => union(&all[1.min(all.len())..]),
+                "SUMIF" | "AVERAGEIF" => match args.len() {
+                    3 => union(&pick(&[2])),
+                    _ => union(&pick(&[0])),
+                },
+                "SUMIFS" | "AVERAGEIFS" => union(&pick(&[0])),
+                _ => None,
+            }
+        }
+        Expr::Postfix(..) | Expr::Error(_) | Expr::Name(_) => None,
+    }
 }
 
 /// The formula in `start`, and in every other cell of the range with its relative references
 /// moved by that cell's offset ([`shift::shift`], what a fill does), entered as **one** batch by
 /// the typing rule — so taking back an applied answer is one Ctrl+Z, not a formula and a fill.
-fn put(app: &App, sheet: usize, start: Pos, end: Pos, canonical: &str) -> Result<(), String> {
+fn put(
+    app: &App,
+    sheet: usize,
+    start: Pos,
+    end: Pos,
+    canonical: &str,
+    format: Option<&Format>,
+) -> Result<(), String> {
+    // The format first, so that one Ctrl+Z takes the formulas — everything that shows — away.
+    if let Some(format) = format {
+        app.set_format(sheet, start, end, Some(format.clone()))
+            .map_err(|e| e.to_string())?;
+    }
     let expr = parse::parse(canonical).map_err(|e| e.to_string())?;
     let mut rows = Vec::new();
     for row in start.row..=end.row {
@@ -242,5 +371,34 @@ mod tests {
         assert_eq!(app.formula(0, b4).unwrap(), None);
         assert_eq!(app.value_text(0, Pos { row: 3, col: 0 }).unwrap(), "-3");
         assert!(try_answer(&app, 0, b2, b4, "=SUM(").is_err());
+    }
+
+    #[test]
+    fn a_result_takes_the_format_of_what_it_reads_when_there_is_one() {
+        let app = App::new();
+        let euro = grind_sheet::numfmt::preset(grind_sheet::numfmt::Kind::Currency, 2, true, "€");
+        let a = |row| Pos { row, col: 0 };
+        app.set_format(0, a(1), a(3), Some(euro.clone())).unwrap();
+        let rows: Vec<Vec<String>> = ["Amount", "10", "5", "-3"]
+            .iter()
+            .map(|r| vec![(*r).to_owned()])
+            .collect();
+        app.enter_range(0, a(0), &rows, RecalcMode::No).unwrap();
+        let b2 = Pos { row: 1, col: 1 };
+        let tried = try_answer(&app, 0, b2, b2, "=SUM(A2:A4)").unwrap();
+        assert_eq!(tried.format, Some(euro));
+        assert_eq!(
+            tried.values[0].1,
+            app.value_text(0, a(1)).unwrap().replace("10", "12")
+        );
+        // Over a plain number as well: two formats, so none.
+        app.enter(0, Pos { row: 5, col: 0 }, "7", RecalcMode::No)
+            .unwrap();
+        assert_eq!(try_answer(&app, 0, b2, b2, "=A2+A6").unwrap().format, None);
+        // Applied: one step back takes the formula; the format left behind is on an empty cell.
+        apply_answer(&app, 0, b2, b2, &tried).unwrap();
+        assert!(app.format_at(0, b2).unwrap().is_some());
+        assert!(app.undo());
+        assert_eq!(app.formula(0, b2).unwrap(), None);
     }
 }

@@ -494,6 +494,12 @@ grind sheet answer book.fods E2:E40 '=IF(…)' --apply     # written: one batch,
    document, so a formula reading its neighbours sees their new values and the document gets no
    edit, no undo entry and no notification. `--apply` (`apply_answer`) then writes the same
    formulas as **one** batch — one Ctrl+Z — moved to each cell as a fill moves them.
+7. **A result takes the format of what its value comes from** (`inherited_format`): the amounts a
+   `SUMIFS` adds rather than the dates it compares, both branches of an `IF`, the operands of `+`
+   and `*` — and nothing for a count, a month, a comparison, a lookup or a function the table does
+   not know. Only when every such cell shares one format, and only where the target has no format
+   of its own. On apply the format goes in before the formulas, so one Ctrl+Z still takes away
+   everything that shows.
 
 ### 11.2 Tried
 
@@ -507,8 +513,6 @@ first row, −1340.35 in October's, −23.60 in November's, empty elsewhere. One
 - **The windows.** Every shell's half is two verbs over this crate: *Copy a Prompt for a Formula…*
   (a request field, the prompt shown and copied) and *Check a Formula Answer…* (a pasted answer,
   every value shown, Apply). `grind-sheet-gtk` first, through its palette.
-- **Formats of the result.** Applied cells carry no number format; a sum of money shows as a plain
-  number until the person formats it.
 - **Layouts that are not one table per sheet** — several tables on a sheet, a form of label and
   value — are described as one table with mixed columns.
 - **Locale.** The prompt states the document's locale; numbers in the hints are shown as the cells
