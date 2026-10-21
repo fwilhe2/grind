@@ -234,6 +234,59 @@ impl Pane {
                     Err(error) => Err(error),
                 }
             }
+            // A prompt for any model, and the check of its answer (`doc/formula-assistant.md`
+            // §11). The prompt goes on the pasteboard whole; the alert shows its head.
+            Command::AskFormula | Command::AskFormulaPrivate => {
+                let Some(request) = prompt::ask(
+                    mtm,
+                    "Ask Any Model for a Formula",
+                    "What should the formula over the selection do?",
+                    "Copy Prompt",
+                    "",
+                ) else {
+                    return;
+                };
+                let (start, end) = selection.rect();
+                let values = command == Command::AskFormula;
+                match grind_assist::copy::copy_prompt(
+                    &self.app, sheet, start, end, &request, values,
+                ) {
+                    Ok(text) => {
+                        crate::clipboard::write(&text, false);
+                        prompt::tell(
+                            mtm,
+                            "Prompt copied — paste it into the model you choose",
+                            &crate::asked::head(&text, 40),
+                        );
+                    }
+                    Err(why) => prompt::tell(mtm, "No prompt could be written.", &why),
+                }
+                return;
+            }
+            Command::CheckAnswer => {
+                let Some(formula) = prompt::ask(
+                    mtm,
+                    "Check a Model's Answer",
+                    "The model's formula, in the formula bar's syntax or Excel's.",
+                    "Check",
+                    "=",
+                ) else {
+                    return;
+                };
+                let (start, end) = selection.rect();
+                let tried =
+                    match grind_assist::copy::try_answer(&self.app, sheet, start, end, &formula) {
+                        Ok(tried) => tried,
+                        Err(why) => return prompt::tell(mtm, "That is not a formula.", &why),
+                    };
+                if prompt::confirm(mtm, &tried.formula, &crate::asked::answer(&tried), "Apply")
+                    && let Err(why) =
+                        grind_assist::copy::apply_answer(&self.app, sheet, start, end, &tried)
+                {
+                    prompt::tell(mtm, "The answer could not be written.", &why);
+                }
+                return;
+            }
             Command::Evaluate => {
                 let at = selection.active;
                 let Some(typed) = prompt::ask(

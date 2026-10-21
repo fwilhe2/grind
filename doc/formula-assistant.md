@@ -510,12 +510,13 @@ first row, −1340.35 in October's, −23.60 in November's, empty elsewhere. One
 
 ### 11.3 Open, and named
 
-- **The other windows.** `grind-sheet-gtk` has it (*Ask Any Model for a Formula…*, `ask.rs`: one
+- **The windows.** `grind-sheet-gtk` has it (*Ask Any Model for a Formula…*, `ask.rs`: one
   dialog — request, Copy Prompt with the prompt shown, the answer, Check, Apply only for the answer
   checked). The terminal has `:prompt`, `:answer` and `:answer!` (the prompt in a pane and through OSC
   52). The browser has three Ctrl+K rows over an `#ask` dialog with Apply; Windows three Data-menu
-  verbs over its existing prompt, list and confirmation modals. The Mac does not yet; it is the
-  same two calls over `grind_assist::copy`.
+  verbs over its existing prompt, list and confirmation modals. The Mac three Edit-menu verbs over
+  `NSAlert`s (written and type-checked; like the rest of that shell, not yet run). Every client
+  has it.
 - **Layouts that are not one table per sheet** — several tables on a sheet, a form of label and
   value — are described as one table with mixed columns.
 - **Locale.** The prompt states the document's locale; numbers in the hints are shown as the cells

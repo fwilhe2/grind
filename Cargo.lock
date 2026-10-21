@@ -1261,6 +1261,7 @@ version = "0.0.0"
 dependencies = [
  "crc32fast",
  "flate2",
+ "grind-assist",
  "grind-core",
  "grind-docx",
  "grind-print",

@@ -73,3 +73,13 @@ pub fn tell(mtm: MainThreadMarker, message: &str, detail: &str) {
     alert.setInformativeText(&NSString::from_str(detail));
     alert.runModal();
 }
+
+/// A question with one action and Cancel, Cancel the default: `true` when `action` was chosen.
+pub fn confirm(mtm: MainThreadMarker, message: &str, detail: &str, action: &str) -> bool {
+    let alert = NSAlert::new(mtm);
+    alert.setMessageText(&NSString::from_str(message));
+    alert.setInformativeText(&NSString::from_str(detail));
+    alert.addButtonWithTitle(&NSString::from_str(action));
+    alert.addButtonWithTitle(&NSString::from_str("Cancel"));
+    alert.runModal() == NSAlertFirstButtonReturn
+}
