@@ -6,13 +6,13 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # The formula assistant — a local model that proposes, and grind that decides
 
-**Status: a proposal, with A0 built, A1's setup built** (§4.2.1) **and A2's fence built** (§4.3). No model is in the tree, and
-nothing past A1 is decided until its numbers are in (§5.1). This document is the research behind "should grind use a language
-model, and if so how", written so the decision can be made on evidence rather than on
-enthusiasm. Its first milestone was a benchmark with no model in it at all: `App::assist_context`
-(`sheet/src/assist_context.rs`), `grind sheet assist`, and the `grind-assist` crate (`assist/`) —
-the prompt, the `Backend` trait, the check of one candidate, and the benchmark over the 188
-function samples, proved by two stand-in backends in `assist/tests/bench.rs`.
+**Status: the local model is a no-go (§5.1); a prompt for any model is built (§11).** A0, A1 and A2
+were built and measured: on the floor's hardware the best fully open model that fits, SmolLM3-3B,
+gets 13 of 188 tasks right, and neither prompts, a grammar nor Excel's syntax read as a fallback
+lift it much further. What *does* work is everything grind owns — describing a document, reading a
+formula in either syntax, checking it — so §11 keeps those and lets the person choose the model:
+`grind sheet prompt` writes a prompt to copy into any model, `grind sheet answer` checks what it
+said and `--apply` writes it. The earlier sections are the record of how that was found.
 
 ## 1. What it is
 
@@ -434,7 +434,7 @@ line decision 9 draws. And not the function samples, which are the benchmark.
 |---|---|
 | **A chat** | A conversation is unverifiable prose by construction. The assistant has two outputs — a formula and a checked sentence — and both are checked |
 | **Writing without Apply** | Decision 1. Not even with a setting |
-| **Cloud backends** | Constraint 3. Not as an option either: an option is a default someone else picks |
+| **Cloud backends** | Constraint 3. Not as an option either: an option is a default someone else picks. §11 is not one: grind sends nothing, a *person* copies a prompt they can read into a model they chose |
 | **Downloading models** | Decision 4. Grind has no network code |
 | **The word processor** | Rewriting or generating a text document's prose is exactly the output decision 7 refuses: nothing can check it. A text-side feature would have to find its own checkable output first |
 | **Generating macros, scripts or `grind build` generators** | A generator is code a person runs; code a model wrote and nobody read is the macro line from the other side (`doc/not-doing.md` §1) |
@@ -455,6 +455,64 @@ line decision 9 draws. And not the function samples, which are the benchmark.
   and an ordinary current laptop, and the floor may move.
 - **GPU use.** Not ruled out — llama.cpp and candle both use Metal, Vulkan or CUDA when present —
   but nothing may *require* one, and every number in this document is a CPU number.
+
+## 11. A prompt for any model (built)
+
+The turn §5.1 points to. The benchmark found that the small local model is what fails and that
+every part grind owns works: the glance, the reading of a formula in display syntax *or* Excel's
+(`read`), and the check by evaluation. So grind keeps those parts and stops pretending to own the
+model: it writes a prompt the person copies into whichever model they trust — a big local one, a
+cloud one, a colleague — and checks what comes back before anything is written.
+
+```sh
+grind sheet prompt book.fods E2:E40 "sum all expenses of a month and show the result only in the first row of that month"
+grind sheet prompt book.fods E2:E40 "…" --no-values     # headers and types only
+grind sheet answer book.fods E2:E40 '=IF(…)'             # read, filled on a copy, every value shown
+grind sheet answer book.fods E2:E40 '=IF(…)' --apply     # written: one batch, one undo step
+```
+
+### 11.1 Decisions
+
+1. **Grind sends nothing.** There is no network code and this adds none: the prompt is text on
+   stdout (in a window, on the clipboard). Constraint 3 is about what *grind* does; a person who
+   pastes a prompt into a service has read it and chosen to.
+2. **Describe the shape, not the cells** (`grind_assist::shape`). A table per sheet: the header
+   row, the data rows, and per column its header, a type read from the values and their number
+   formats — date, time, money with its symbol, percentage, number, text, TRUE/FALSE, mixed — and a
+   hint: the distinct texts (four, then a count), the lowest and highest value, or a computed
+   column's formula. A table ends at its last row with a value, since formatted blanks count as
+   used. Compact enough to read before pasting it, which decision 1 depends on.
+3. **`--no-values` keeps every value home.** Headers, types and the request; nothing a cell holds.
+4. **Say where the formula goes and how it is filled.** A range means *the formula for its first
+   cell, filled over the rest*: the prompt says so, says relative references move, and says `$`
+   does not. Most requests that matter — a running balance, a per-row category, "the first row of
+   each month" — are fill-down formulas.
+5. **Either syntax back.** A capable model writes Excel by habit; the prompt says both are fine
+   and `read` takes both (§5.1's last paragraph). The function list in the prompt is grind's 144,
+   by name only.
+6. **The answer is tried on a copy.** `try_answer` fills and recalculates a scratch copy of the
+   document, so a formula reading its neighbours sees their new values and the document gets no
+   edit, no undo entry and no notification. `--apply` (`apply_answer`) then writes the same
+   formulas as **one** batch — one Ctrl+Z — moved to each cell as a fill moves them.
+
+### 11.2 Tried
+
+A two-month ledger (Date, Category, Description, Amount in €), E2:E12, the request above. An
+Excel-syntax answer of the kind a large model writes came back right: −1328.15 in September's
+first row, −1340.35 in October's, −23.60 in November's, empty elsewhere. One try, not a benchmark —
+§5's harness can measure a cloud model the same way when somebody chooses to.
+
+### 11.3 Open, and named
+
+- **The windows.** Every shell's half is two verbs over this crate: *Copy a Prompt for a Formula…*
+  (a request field, the prompt shown and copied) and *Check a Formula Answer…* (a pasted answer,
+  every value shown, Apply). `grind-sheet-gtk` first, through its palette.
+- **Formats of the result.** Applied cells carry no number format; a sum of money shows as a plain
+  number until the person formats it.
+- **Layouts that are not one table per sheet** — several tables on a sheet, a form of label and
+  value — are described as one table with mixed columns.
+- **Locale.** The prompt states the document's locale; numbers in the hints are shown as the cells
+  show them, and an answer is read in the formula bar's own spelling or Excel's.
 
 ## Sources
 
