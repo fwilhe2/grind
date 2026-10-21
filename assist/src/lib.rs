@@ -19,7 +19,7 @@
 //! - [`mod@bench`], the benchmark over the function samples, scored by value and never by text.
 
 use grind_sheet::assist_context::AssistContext;
-use grind_sheet::formula::{display, funcs, value::FormulaError};
+use grind_sheet::formula::{display, friendly, funcs, value::FormulaError};
 use grind_sheet::{App, CellValue, Pos};
 
 pub mod bench;
@@ -62,6 +62,22 @@ pub enum Catalog {
     Whole,
     /// None: what the model knows on its own.
     None,
+    /// The `n` functions whose names and summaries share the most words with the request — a
+    /// short list a small model can read, at the price of a per-request part the server cannot
+    /// keep between requests.
+    Relevant(usize),
+}
+
+/// What a prompt teaches beyond the bare instructions — the variants tried after A1 found
+/// SmolLM3 writing Excel, choosing `VLOOKUP` for everything and referring to the empty sheet its
+/// formula sits on.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Coaching {
+    /// [`RULES`]: name the sheet in every reference, and grind's spelling against Excel's.
+    pub rules: bool,
+    /// Worked examples, `(request, formula)`, shown before the document. The benchmark takes them
+    /// from *other* documents than the task's, so a task never sees its own answer.
+    pub examples: Vec<(String, String)>,
 }
 
 /// Something that proposes formulas: a model behind a runtime (A1 on), or a stand-in.
@@ -84,29 +100,124 @@ bar shows it. Rules:
 - Write text in double quotes, and a date as DATE(year;month;day).
 - Answer with the formula alone: no explanation, no code fence.";
 
-/// The prompt for one request: the fixed instructions and, with [`Catalog::Whole`], every
-/// function the engine implements with its signature and summary, as the system part; the
-/// document as `context` renders it and what the person asked for as the user part.
-pub fn prompt(context: &AssistContext, request: &str, catalog: Catalog) -> Prompt {
-    let system = match catalog {
-        Catalog::Whole => {
-            let mut functions: Vec<String> = funcs::catalog()
-                .iter()
-                .map(|info| format!("{} — {}", info.signature, info.brief))
-                .collect();
-            functions.sort();
-            format!(
-                "{INSTRUCTIONS}\n- Call only the functions in this list, with the parameters it \
-                 gives.\n\nFunctions:\n{}",
-                functions.join("\n")
-            )
-        }
-        Catalog::None => INSTRUCTIONS.to_owned(),
-    };
-    Prompt {
-        system,
-        user: format!("The document:\n{context}\nThe request: {request}\n"),
+/// The rules [`Coaching::rules`] adds, each aimed at a failure A1 counted.
+const RULES: &str = "\
+- The sheet the formula goes in is usually empty. The data is on the other sheets shown, so name
+  the sheet in every reference: Ledger.D2:D14, never D2:D14.
+- This is not Excel. Write SUM(A1;A2), never SUM(A1,A2). Write Ledger.A1, never Ledger!A1. Write
+  TRUE() and FALSE().
+- Choose the simplest function that does what is asked. To add, count or average the rows that
+  meet a condition use SUMIF, COUNTIF or AVERAGEIF. Use VLOOKUP, INDEX or MATCH only to find one
+  value by a key. Use a function on a single cell when the request is about one cell.
+- Write one formula and stop.";
+
+/// The prompt for one request. The system part is everything that does not depend on the request
+/// — the instructions, the rules, the whole catalog, the examples — so a server keeps it; the
+/// user part is the document as `context` renders it, a relevant catalog if one was asked for,
+/// and the request.
+pub fn prompt(
+    context: &AssistContext,
+    request: &str,
+    catalog: Catalog,
+    coaching: &Coaching,
+) -> Prompt {
+    let mut system = INSTRUCTIONS.to_owned();
+    if coaching.rules {
+        system = format!("{system}\n{RULES}");
     }
+    if catalog == Catalog::Whole {
+        let mut functions: Vec<String> = funcs::catalog().iter().map(line).collect();
+        functions.sort();
+        system = format!(
+            "{system}\n- Call only the functions in this list, with the parameters it gives.\n\n\
+             Functions:\n{}",
+            functions.join("\n")
+        );
+    }
+    if !coaching.examples.is_empty() {
+        let shown: Vec<String> = coaching
+            .examples
+            .iter()
+            .map(|(request, formula)| format!("Request: {request}\nFormula: {formula}"))
+            .collect();
+        system = format!(
+            "{system}\n\nExamples, from other documents:\n\n{}",
+            shown.join("\n\n")
+        );
+    }
+    let mut user = format!("The document:\n{context}\n");
+    if let Catalog::Relevant(n) = catalog {
+        let functions: Vec<String> = relevant(request, n).into_iter().map(line).collect();
+        user += &format!(
+            "Functions that may help (call only functions this spreadsheet has):\n{}\n\n",
+            functions.join("\n")
+        );
+    }
+    user += &format!("The request: {request}\n");
+    Prompt { system, user }
+}
+
+/// The functions spreadsheets call most, in order — `doc/function-coverage.md`'s corpus counts,
+/// abridged — for breaking ties in [`relevant`].
+const COMMON: &[&str] = &[
+    "SUM",
+    "IF",
+    "SUMIF",
+    "COUNTIF",
+    "AVERAGE",
+    "ROUND",
+    "COUNT",
+    "MAX",
+    "MIN",
+    "VLOOKUP",
+    "INDEX",
+    "MATCH",
+    "AND",
+    "OR",
+    "COUNTA",
+    "SUMPRODUCT",
+    "IFERROR",
+    "ABS",
+    "INT",
+    "LEFT",
+];
+
+fn line(info: &funcs::FuncInfo) -> String {
+    format!("{} — {}", info.signature, info.brief)
+}
+
+/// The `n` functions sharing the most words with `request`: its name, plain-English name and
+/// summary against the request's words, each cut to five letters so `averages` meets `average`.
+/// Ties go to [`COMMON`] first and catalog order after, so a request sharing no word with any
+/// summary still gets the functions people use most rather than the alphabet's first dozen.
+fn relevant(request: &str, n: usize) -> Vec<&'static funcs::FuncInfo> {
+    let stems = |text: &str| -> Vec<String> {
+        text.split(|c: char| !c.is_alphanumeric())
+            .filter(|w| w.chars().count() >= 3)
+            .map(|w| w.to_lowercase().chars().take(5).collect())
+            .collect()
+    };
+    let asked = stems(request);
+    let mut scored: Vec<(usize, usize, &funcs::FuncInfo)> = funcs::catalog()
+        .iter()
+        .enumerate()
+        .map(|(at, info)| {
+            let alias = friendly::alias(info.name).unwrap_or(info.name);
+            let words = stems(&format!("{} {alias} {}", info.name, info.brief));
+            let shared = asked.iter().filter(|w| words.contains(w)).count();
+            let rank = COMMON
+                .iter()
+                .position(|c| *c == info.name)
+                .unwrap_or(COMMON.len() + at);
+            (shared, rank, info)
+        })
+        .collect();
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    scored
+        .into_iter()
+        .take(n)
+        .map(|(_, _, info)| info)
+        .collect()
 }
 
 /// What became of one candidate, in the order the checks run.
@@ -250,7 +361,12 @@ mod tests {
     fn the_prompt_carries_the_context_exactly_and_every_function() {
         let app = app();
         let context = app.assist_context(0, pos(3, 0)).unwrap();
-        let prompt = prompt(&context, "the total of column A", Catalog::Whole);
+        let prompt = prompt(
+            &context,
+            "the total of column A",
+            Catalog::Whole,
+            &Coaching::default(),
+        );
         assert!(prompt.user.contains(&context.to_string()));
         for name in funcs::implemented() {
             assert!(
@@ -263,8 +379,42 @@ mod tests {
                 .user
                 .ends_with("The request: the total of column A\n")
         );
-        let bare = super::prompt(&context, "the total of column A", Catalog::None);
+        let bare = super::prompt(
+            &context,
+            "the total of column A",
+            Catalog::None,
+            &Coaching::default(),
+        );
         assert_eq!(bare.user, prompt.user);
         assert!(!bare.system.contains("SUM("));
+    }
+
+    #[test]
+    fn coaching_goes_where_a_server_can_keep_it() {
+        let app = app();
+        let context = app.assist_context(0, pos(3, 0)).unwrap();
+        let coaching = Coaching {
+            rules: true,
+            examples: vec![(
+                "Spent on tea".into(),
+                "=SUMIF(Ledger.B2:B9;\"Tea\";Ledger.D2:D9)".into(),
+            )],
+        };
+        let prompt = prompt(
+            &context,
+            "the average mark",
+            Catalog::Relevant(5),
+            &coaching,
+        );
+        assert!(prompt.system.contains("never SUM(A1,A2)"));
+        assert!(
+            prompt
+                .system
+                .contains("Request: Spent on tea\nFormula: =SUMIF(")
+        );
+        // The relevant catalog depends on the request, so it is the user part's.
+        assert!(!prompt.system.contains("Functions"));
+        assert!(prompt.user.contains("\nAVERAGE("), "{}", prompt.user);
+        assert_eq!(prompt.user.matches(" — ").count(), 5);
     }
 }

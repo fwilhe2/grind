@@ -30,6 +30,8 @@ fn setup(candidates: usize) -> Setup {
         candidates,
         catalog: Catalog::Whole,
         fence: true,
+        rules: true,
+        examples: 12,
     }
 }
 
@@ -138,4 +140,28 @@ fn the_fence_lets_every_reference_answer_through() {
         .map(|task| format!("{}: {}", task.id, task.reference))
         .collect();
     assert!(refused.is_empty(), "{}", refused.join("\n"));
+}
+
+/// A worked example never comes from the task's own document, and a sample is spread over all of
+/// them.
+#[test]
+fn examples_come_from_elsewhere_and_a_sample_covers_every_document() {
+    let mut bench = bench();
+    for task in &bench.tasks {
+        let own: Vec<&str> = bench
+            .pool
+            .iter()
+            .filter(|t| t.document == task.document)
+            .map(|t| t.reference.as_str())
+            .collect();
+        let examples = bench.examples(task.document, 12);
+        assert_eq!(examples.len(), 12);
+        assert!(examples.iter().all(|(_, f)| !own.contains(&f.as_str())));
+    }
+    bench.sample(40);
+    assert_eq!(bench.tasks.len(), 40);
+    let documents: std::collections::BTreeSet<usize> =
+        bench.tasks.iter().map(|t| t.document).collect();
+    assert_eq!(documents.len(), bench.documents.len());
+    assert_eq!(bench.pool.len(), 188);
 }

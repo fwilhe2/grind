@@ -292,6 +292,79 @@ scored to nine significant digits, not fifteen: the question is whether the mode
 formula, and the engine's last digits against the oracle's are `sheet/tests/function_samples.rs`'s
 to hold — four of them differ there, on purpose (`DIVERGES`).
 
+### 5.1 What A1 measured (2026-10-20/21)
+
+One machine, the floor's: an Intel i7-8565U (four cores, a 15 W laptop part), 16 GB of RAM with
+an ordinary desktop open beside the run, no GPU. The server and model pins of §4.2.1. Every run
+is all 188 tasks; *greedy* is candidate 0, *first of n* is the first of n candidates that
+survives decision 1's checks, *any of n* is §4.4's step 4 with the oracle's value as the
+expectation.
+
+| SmolLM3-3B (Q4_K_M) | catalog, no fence | no catalog, no fence | catalog, fence (first grammar) | catalog, fence (fixed grammar) |
+|---|---|---|---|---|
+| greedy, right | 4 (2%) | 3 (2%) | 2 (1%) | 3 (2%) |
+| first of 3 right | 7 (4%) | 3 (2%) | 5 (3%) | 6 (3%) |
+| first of 5 right | 8 (4%) | 3 (2%) | 6 (3%) | — |
+| any of 3 / of 5 right | — / 9 (5%) | — / 3 (2%) | — / 14 (7%) | 13 (7%) / — |
+| greedy misses: unparseable, error, wrong | 117, 31, 36 | 142, 19, 24 | 66, 73, 47 | 52, 77, 56 |
+| per task: prompt read; per candidate: reply | 3.9 s; 5.3 s (20 tokens) | 1.5 s; 5.0 s (30) | 3.5 s; 30.7 s (120) | 3.6 s; 9.4 s (34) |
+| wall time | 146 min | 136 min | 384 min | 175 min, 3 candidates |
+
+**OLMo 3 7B was not measured**, and why is itself the answer for this hardware: loaded beside a
+desktop on 16 GB — with a 6k window and a quantised attention cache — it exhausted swap (8 of 8
+GB), read the catalog at 5.6 tokens a second (13 minutes for the first task) and generated at 1.8.
+The run was stopped rather than let the out-of-memory killer choose a victim among the user's
+applications. Two more facts it cost: the `lmstudio-community` GGUF's embedded chat template uses
+a Jinja filter llama.cpp's engine lacks (the server refuses to load it; `--chat-template chatml`
+is the workaround, since OLMo 3 speaks ChatML), and under that template a prefilled `=` is not
+continued — the model answers `assistant` — so it would have run with `--no-prefill`, where it
+does follow "the formula alone" (`=A1+A2+A3`).
+
+What the numbers say:
+
+1. **SmolLM3-3B is not useful for this, in any configuration measured.** The best top-1 figure is
+   4%; the ceiling with the answer handed over is 7%. Decision 1 did its job — nothing wrong was
+   *shown* as right — but a check that rejects almost everything is an assistant that answers
+   almost nothing.
+2. **The catalog is worth little and the fence is worth less than hoped.** Without the catalog the
+   model is no worse at top-1. The fence removed Excel's syntax as intended (unparseable greedy
+   answers 117 → 66) but the model's *choices* did not improve: it reaches for `VLOOKUP` for nearly
+   every task, refers to the empty sheet the formula sits on instead of the data sheet the glance
+   shows, and invents comparisons to fill a formula out. Syntax was the visible failure; it was
+   not the main one.
+3. **The first grammar had a bug that made it slower and worse**: it did not allow the newline a
+   model ends a formula with, so the backend's stop at the end of the line could never fire and
+   the model extended formula after formula with `& " " & …` until the 120-token limit cut it off
+   unparseable — six hours for a two-hour run. Fixed (`root ::= expr "\n"?`), and the re-run is the
+   last column: replies fell from 120 tokens to 34 and the run took less than half the time, but
+   the score did not move. Every one of its 52 unparseable greedy answers still ran to the
+   token limit — the model degenerates into repetition (`--VYR1:VYR9 --VYR2:VYR8 …`,
+   `*60/60*60/60…`) rather than ending — which no grammar can fix.
+4. **12% of the tasks can be hit by chance** — 17 expect a logical and 6 expect 0 or 1 — so a few
+   points of any column here are not evidence of anything. A2's benchmark should weight or
+   separate them.
+5. **The floor's hardware is a hard constraint, not a footnote.** A 3B model costs about 3 GB and
+   runs; a 7B model does not fit beside a desktop on 16 GB. The prompt cache (§4.2.1) is what
+   makes even 3B usable: a first question in a document costs minutes, a second costs seconds.
+
+**The go/no-go: no-go for SmolLM3-3B as the assistant's model.** The milestone's exit criterion
+— *+ check* top-1 clearly useful — is not met. What would change the answer, cheapest first: a
+prompt that names the data sheets and says that an unqualified reference means the empty sheet
+the formula is on (the commonest wrong answer); few-shot examples drawn from the *other*
+documents' samples; a bigger model on a machine that can hold one (OLMo 3 7B, measured on a
+machine with the memory to spare); and A6's fine-tuning, whose synthetic data this benchmark can
+already score. None of them is tried until the next one is chosen on purpose.
+
+**Prompt variants, 2026-10-21** (40 evenly spread tasks, three candidates; `--rules`,
+`--examples 12`, `--catalog relevant:12`, and a fence that requires a sheet name on an empty
+target sheet): none moves correctness off the baseline's 2–4 of 40. Twelve worked examples from
+other documents are the one change that alters behaviour — unparseable greedy answers 20 → 3 —
+but the model then writes the right function on its own empty sheet's cells. The strict fence makes
+it worse: denied `C2`, it continues `C` as `COLUMN(` and loops. A grammar removes what a model
+wants to write; it cannot supply what it should. The limit is the model's capacity, not the
+prompt. The next idea worth measuring is to make the model *choose* among the glance's real ranges
+rather than write addresses.
+
 ## 6. The CLI (R9)
 
 ```sh

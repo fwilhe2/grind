@@ -21,7 +21,7 @@ use std::path::Path;
 use grind_sheet::{App, CellValue, Pos};
 
 use crate::fence::Fence;
-use crate::{Backend, Catalog, Request, Verdict, check, prompt};
+use crate::{Backend, Catalog, Coaching, Request, Verdict, check, prompt};
 
 /// One task.
 #[derive(Clone, Debug)]
@@ -46,7 +46,10 @@ pub struct Task {
 pub struct Bench {
     /// `(file name, the document with its samples emptied)`.
     pub documents: Vec<(String, App)>,
+    /// The tasks a run asks; [`Bench::sample`] narrows them.
     pub tasks: Vec<Task>,
+    /// Every task, whatever was sampled — where worked examples come from.
+    pub pool: Vec<Task>,
 }
 
 /// The sheet the samples are on, in every document.
@@ -65,6 +68,7 @@ impl Bench {
         let mut bench = Bench {
             documents: Vec::new(),
             tasks: Vec::new(),
+            pool: Vec::new(),
         };
         for path in paths {
             let name = path.file_name().unwrap().to_string_lossy().into_owned();
@@ -87,7 +91,42 @@ impl Bench {
             bench.tasks.append(&mut tasks);
             bench.documents.push((name, app));
         }
+        bench.pool = bench.tasks.clone();
         Ok(bench)
+    }
+
+    /// Keep `n` tasks spread evenly over the list — every document and most categories — for a
+    /// run that has to be short. The same `n` keeps the same tasks every time.
+    pub fn sample(&mut self, n: usize) {
+        let all = std::mem::take(&mut self.tasks);
+        let len = all.len();
+        let n = n.min(len);
+        let keep: Vec<usize> = (0..n).map(|i| i * len / n.max(1)).collect();
+        self.tasks = all
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| keep.contains(i))
+            .map(|(_, t)| t)
+            .collect();
+    }
+
+    /// `n` worked examples for a task in `document`: request and reference formula, spread
+    /// evenly over every *other* document's tasks, so a task is never shown its own answer or
+    /// one written against its own sheets.
+    pub fn examples(&self, document: usize, n: usize) -> Vec<(String, String)> {
+        // A sample written as a sequel to the one above it ("The same, as a population") means
+        // nothing on its own, so it is not an example.
+        let others: Vec<&Task> = self
+            .pool
+            .iter()
+            .filter(|t| t.document != document)
+            .filter(|t| !t.request.starts_with("The same") && !t.request.starts_with('…'))
+            .collect();
+        let n = n.min(others.len());
+        (0..n)
+            .map(|i| others[i * others.len() / n.max(1)])
+            .map(|t| (t.request.clone(), t.reference.clone()))
+            .collect()
     }
 
     /// Ask `backend` for formulas for every task as `setup` says, and check each one.
@@ -130,9 +169,13 @@ impl Bench {
         let context = app
             .assist_context(task.sheet, task.at)
             .map_err(|e| e.to_string())?;
+        let coaching = Coaching {
+            rules: setup.rules,
+            examples: self.examples(task.document, setup.examples),
+        };
         Ok(Request {
             id: task.id.clone(),
-            prompt: prompt(&context, &task.request, setup.catalog),
+            prompt: prompt(&context, &task.request, setup.catalog, &coaching),
             candidates: setup.candidates,
             fence: setup.fence.then(|| Fence::for_context(&context).gbnf()),
         })
@@ -146,6 +189,10 @@ pub struct Setup {
     pub catalog: Catalog,
     /// Whether every candidate is generated inside [`Fence`] (A2).
     pub fence: bool,
+    /// [`Coaching::rules`].
+    pub rules: bool,
+    /// How many worked examples, from other documents ([`Bench::examples`]).
+    pub examples: usize,
 }
 
 fn samples(app: &App, sheet: usize, document: usize, name: &str) -> Result<Vec<Task>, String> {

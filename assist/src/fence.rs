@@ -69,18 +69,31 @@ pub struct Fence {
 impl Fence {
     /// The fence for a formula in the document `context` shows. The grammar starts *after* the
     /// `=`, which the backend prefills.
+    ///
+    /// When the sheet the formula goes in is **empty**, every reference must name one of the other
+    /// sheets: a reference into an empty sheet can only ever read blanks, so it is never what was
+    /// meant. The prompt variants after A1 found SmolLM3 choosing the right function and then
+    /// pointing it at its own empty sheet (`MAX(C2:C11)` for `MAX(Marks.C2:E11)`) whatever the
+    /// instructions said. A sheet with data in it keeps unqualified references.
     pub fn for_context(context: &AssistContext) -> Fence {
+        let target = context.at.rsplit_once('.').map(|(sheet, _)| sheet);
+        let empty = context
+            .sheets
+            .iter()
+            .any(|s| Some(s.name.as_str()) == target && s.shown.is_empty());
         let sheets: Vec<&str> = context
             .sheets
             .iter()
             .map(|s| s.name.as_str())
             .chain(context.sheets_left_out.iter().map(String::as_str))
+            .filter(|name| !(empty && Some(*name) == target))
             .collect();
         let names: Vec<&str> = context.names.iter().map(|(n, _)| n.as_str()).collect();
-        Fence::new(&sheets, &names)
+        Fence::new(&sheets, &names, empty)
     }
 
-    fn new(sheets: &[&str], names: &[&str]) -> Fence {
+    /// `qualified`: every reference names its sheet.
+    fn new(sheets: &[&str], names: &[&str], qualified: bool) -> Fence {
         let ws = || opt(lit(" "));
         let digit = || class(&[('0', '9')]);
         let mut functions: Vec<&str> = funcs::implemented().to_vec();
@@ -101,7 +114,11 @@ impl Fence {
             primary.push(rule("name"));
         }
         let mut rules = vec![
-            ("root", rule("expr")),
+            // The formula, then the newline a model wants to end it with: the backend stops at the
+            // newline. Without it the grammar forbids the one way a model has of saying "done",
+            // and A2's first run watched SmolLM3 extend formula after formula with `& " " & …`
+            // until the token limit cut it off unparseable.
+            ("root", seq([rule("expr"), opt(lit("\n"))])),
             (
                 "expr",
                 seq([
@@ -195,7 +212,10 @@ impl Fence {
             (
                 "ref",
                 seq([
-                    opt(seq([rule("sheet"), lit(".")])),
+                    match qualified {
+                        true => seq([rule("sheet"), lit(".")]),
+                        false => opt(seq([rule("sheet"), lit(".")])),
+                    },
                     rule("cell"),
                     opt(seq([
                         lit(":"),
@@ -401,7 +421,7 @@ mod tests {
     use super::*;
 
     fn fence() -> Fence {
-        Fence::new(&["Ledger", "Garden", "My Sheet"], &["tax_rate"])
+        Fence::new(&["Ledger", "Garden", "My Sheet"], &["tax_rate"], false)
     }
 
     #[test]
@@ -419,6 +439,7 @@ mod tests {
             "IF(A1 > 0; \"say \"\"hi\"\"\"; 1.5E-3)",
             "$A$1:B$2",
             "COM.MICROSOFT.CEILING(Ledger.C2*1.03;5)",
+            "SUM(A1:A3)\n",
         ] {
             assert!(fence.accepts(ok), "{ok}");
         }
@@ -434,6 +455,7 @@ mod tests {
             "VLOOKUP(\"x\";Shipping.From kg;2)",
             "SUMMATION(A1:A3)",
             "SUM(A1:A3) ",
+            "SUM(A1:A3)\n\n",
             "IF(A1;...;0)",
             "net_income*2",
             "",
@@ -476,5 +498,14 @@ mod tests {
         assert!(gbnf.contains("function ::= \"COM.MICROSOFT.CEILING\" | "));
         assert!(gbnf.contains("sheet ::= \"Ledger\" | \"Garden\" | \"'My Sheet'\""));
         assert!(gbnf.contains("string ::= \"\\\"\" ([^\"\\n] | \"\\\"\\\"\"){0,200} \"\\\"\""));
+    }
+
+    #[test]
+    fn on_an_empty_sheet_every_reference_names_another() {
+        let fence = Fence::new(&["Marks"], &[], true);
+        assert!(fence.accepts("MAX(Marks.C2:E11)"));
+        assert!(fence.accepts("MAX(Marks.C2:Marks.E11)"));
+        assert!(!fence.accepts("MAX(C2:C11)"));
+        assert!(!fence.accepts("MAX(Samples.C2:C11)"));
     }
 }
