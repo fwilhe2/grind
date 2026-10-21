@@ -168,7 +168,7 @@ pub fn apply_answer(
 }
 
 /// The number format a result takes: the one format shared by the cells its **value comes from**
-/// ([`carried`]) — the amounts a `SUMIFS` adds rather than the dates it compares, both branches of
+/// — the amounts a `SUMIFS` adds rather than the dates it compares, both branches of
 /// an `IF`, the operands of `+` — when the target cells have none of their own. A result that is
 /// a count, a month, a comparison or anything else whose kind is not its inputs' takes nothing,
 /// and so does one drawn from two formats; a format somebody already put on the target is never

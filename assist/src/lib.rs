@@ -75,7 +75,7 @@ pub enum Catalog {
 /// formula sits on.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Coaching {
-    /// [`RULES`]: name the sheet in every reference, and grind's spelling against Excel's.
+    /// The rules: name the sheet in every reference, and grind's spelling against Excel's.
     pub rules: bool,
     /// Worked examples, `(request, formula)`, shown before the document. The benchmark takes them
     /// from *other* documents than the task's, so a task never sees its own answer.
