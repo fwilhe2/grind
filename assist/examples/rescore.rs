@@ -47,42 +47,29 @@ fn main() {
             rows.push((verdicts(false), verdicts(true)));
         }
         let n = rows.first().map(|(v, _)| v.len()).unwrap_or(0);
-        let survives = |v: &&Verdict| v.survives();
-        let greedy = |pick: fn(&(Vec<Verdict>, Vec<Verdict>)) -> &Vec<Verdict>| {
-            rows.iter().filter(|r| pick(r)[0] == Verdict::Right).count()
-        };
-        let first = |pick: fn(&(Vec<Verdict>, Vec<Verdict>)) -> &Vec<Verdict>| {
-            rows.iter()
-                .filter(|r| pick(r).iter().find(survives) == Some(&Verdict::Right))
-                .count()
-        };
-        let any = |pick: fn(&(Vec<Verdict>, Vec<Verdict>)) -> &Vec<Verdict>| {
-            rows.iter()
-                .filter(|r| pick(r).contains(&Verdict::Right))
-                .count()
-        };
-        let unparseable = |pick: fn(&(Vec<Verdict>, Vec<Verdict>)) -> &Vec<Verdict>| {
-            rows.iter()
-                .filter(|r| pick(r)[0] == Verdict::Unparseable)
-                .count()
-        };
-        let (old, new): (
-            fn(&(Vec<Verdict>, Vec<Verdict>)) -> &Vec<Verdict>,
-            fn(&(Vec<Verdict>, Vec<Verdict>)) -> &Vec<Verdict>,
-        ) = (|r| &r.0, |r| &r.1);
+        let old: Vec<&[Verdict]> = rows.iter().map(|(v, _)| v.as_slice()).collect();
+        let new: Vec<&[Verdict]> = rows.iter().map(|(_, v)| v.as_slice()).collect();
+        let ([g0, f0, a0, u0], [g1, f1, a1, u1]) = (summary(&old), summary(&new));
         let name = Path::new(&path)
             .file_name()
             .map(|f| f.to_string_lossy().into_owned())
             .unwrap_or(path.clone());
         println!("\n### {name} ({} tasks × {n})\n", rows.len());
         println!("| | as run | + Excel read |\n|---|---|---|");
-        println!("| greedy right | {} | {} |", greedy(old), greedy(new));
-        println!("| first of {n} right | {} | {} |", first(old), first(new));
-        println!("| any of {n} right | {} | {} |", any(old), any(new));
-        println!(
-            "| greedy unparseable | {} | {} |",
-            unparseable(old),
-            unparseable(new)
-        );
+        println!("| greedy right | {g0} | {g1} |");
+        println!("| first of {n} right | {f0} | {f1} |");
+        println!("| any of {n} right | {a0} | {a1} |");
+        println!("| greedy unparseable | {u0} | {u1} |");
     }
+}
+
+/// Greedy right, first surviving candidate right, any candidate right, greedy unparseable.
+fn summary(rows: &[&[Verdict]]) -> [usize; 4] {
+    let count = |f: &dyn Fn(&[Verdict]) -> bool| rows.iter().filter(|r| f(r)).count();
+    [
+        count(&|r| r[0] == Verdict::Right),
+        count(&|r| r.iter().find(|v| v.survives()) == Some(&Verdict::Right)),
+        count(&|r| r.contains(&Verdict::Right)),
+        count(&|r| r[0] == Verdict::Unparseable),
+    ]
 }
