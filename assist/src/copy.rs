@@ -11,7 +11,7 @@
 //! the document, reading a formula, checking it — all work. This keeps those and lets the person
 //! pick the model.
 
-use grind_sheet::formula::{display, funcs};
+use grind_sheet::formula::{display, funcs, parse, shift};
 use grind_sheet::{App, Form, Pos, RecalcMode, a1};
 
 use crate::{Spelling, read, shape};
@@ -153,10 +153,27 @@ pub fn apply_answer(
     put(app, sheet, start, end, &tried.canonical)
 }
 
+/// The formula in `start`, and in every other cell of the range with its relative references
+/// moved by that cell's offset ([`shift::shift`], what a fill does), entered as **one** batch by
+/// the typing rule — so taking back an applied answer is one Ctrl+Z, not a formula and a fill.
 fn put(app: &App, sheet: usize, start: Pos, end: Pos, canonical: &str) -> Result<(), String> {
-    app.set_formula(sheet, start, canonical)
-        .map_err(|e| e.to_string())?;
-    app.fill(sheet, start, start, end, RecalcMode::Document)
+    let expr = parse::parse(canonical).map_err(|e| e.to_string())?;
+    let mut rows = Vec::new();
+    for row in start.row..=end.row {
+        let mut cells = Vec::new();
+        for col in start.col..=end.col {
+            let moved = shift::shift(
+                &expr,
+                i64::from(row - start.row),
+                i64::from(col - start.col),
+            );
+            // The typing rule takes the stored spelling, as every shell hands it after
+            // `from_display`.
+            cells.push(format!("={moved}"));
+        }
+        rows.push(cells);
+    }
+    app.enter_range(sheet, start, &rows, RecalcMode::Document)
         .map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -218,6 +235,12 @@ mod tests {
         assert_eq!(app.formula(0, b2).unwrap(), None);
         apply_answer(&app, 0, b2, b4, &tried).unwrap();
         assert_eq!(app.value_text(0, b4).unwrap(), "12");
+        assert_eq!(app.input_text(0, b4).unwrap(), "=SUM(B3;A4)");
+        // One step back takes the whole answer away.
+        assert!(app.undo());
+        assert_eq!(app.formula(0, b2).unwrap(), None);
+        assert_eq!(app.formula(0, b4).unwrap(), None);
+        assert_eq!(app.value_text(0, Pos { row: 3, col: 0 }).unwrap(), "-3");
         assert!(try_answer(&app, 0, b2, b4, "=SUM(").is_err());
     }
 }
