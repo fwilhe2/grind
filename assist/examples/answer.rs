@@ -15,7 +15,7 @@
 use std::path::Path;
 
 use grind_assist::Spelling;
-use grind_sheet::{App, Pos, RecalcMode, a1};
+use grind_sheet::{App, Pos, a1};
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
@@ -32,39 +32,36 @@ fn main() {
     app.open_file(Path::new(file)).expect("the document opens");
     let (sheet, start, end) =
         a1::resolve(&app, &a1::parse(target).expect("a cell or a range")).expect("a sheet");
-    let Some((canonical, spelling)) = grind_assist::read(answer, true) else {
-        eprintln!("not a formula in either syntax: {answer}");
-        std::process::exit(1);
-    };
+    let tried =
+        grind_assist::copy::try_answer(&app, sheet, start, end, answer).unwrap_or_else(|e| {
+            eprintln!("{e}");
+            std::process::exit(1);
+        });
     println!(
         "read as {}: {}",
-        match spelling {
+        match tried.spelling {
             Spelling::Display => "display syntax",
             Spelling::Excel => "Excel syntax, translated",
         },
-        grind_sheet::formula::display::to_display(&canonical).unwrap_or(canonical.clone())
+        tried.formula
     );
-    app.set_formula(sheet, start, &canonical).expect("set");
-    app.fill(sheet, start, start, end, RecalcMode::Document)
-        .expect("fill");
     let (_, cols) = app.used_extent(sheet).unwrap();
-    for row in start.row..=end.row {
-        let mut line = vec![format!("{:>4}", row + 1)];
+    for (pos, value) in &tried.values {
+        let mut line = vec![format!("{:>4}", pos.row + 1)];
         for col in (0..cols)
             .filter(|c| !(start.col..=end.col).contains(c))
             .take(4)
         {
-            line.push(app.value_text(sheet, Pos { row, col }).unwrap_or_default());
+            line.push(
+                app.value_text(sheet, Pos { row: pos.row, col })
+                    .unwrap_or_default(),
+            );
         }
-        for col in start.col..=end.col {
-            line.push(format!(
-                "→ {}",
-                app.value_text(sheet, Pos { row, col }).unwrap_or_default()
-            ));
-        }
+        line.push(format!("→ {value}"));
         println!("{}", line.join(" | "));
     }
     if let Some(out) = write {
+        grind_assist::copy::apply_answer(&app, sheet, start, end, &tried).expect("applied");
         app.save_file(Path::new(&out)).expect("saved");
         println!("written to {out}");
     }

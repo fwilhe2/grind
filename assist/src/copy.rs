@@ -11,10 +11,10 @@
 //! the document, reading a formula, checking it — all work. This keeps those and lets the person
 //! pick the model.
 
-use grind_sheet::formula::funcs;
-use grind_sheet::{App, Pos, a1};
+use grind_sheet::formula::{display, funcs};
+use grind_sheet::{App, Form, Pos, RecalcMode, a1};
 
-use crate::shape;
+use crate::{Spelling, read, shape};
 
 /// The prompt for a formula in `start` (filled to `end` when they differ) on `sheet`, doing what
 /// `request` says. `values` puts example values in the description; without it only headers and
@@ -95,6 +95,72 @@ pub fn copy_prompt(
     Ok(out)
 }
 
+/// What an answer would do, worked out on a scratch copy of the document.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Tried {
+    /// Which syntax the answer was read in.
+    pub spelling: Spelling,
+    /// The formula as the formula bar shows it, for the first target cell.
+    pub formula: String,
+    /// The stored spelling, which [`apply_answer`] writes.
+    pub canonical: String,
+    /// Every target cell and what it shows once the formula is filled and the copy recalculated.
+    pub values: Vec<(Pos, String)>,
+}
+
+/// Read `answer` in display or Excel syntax ([`read`]), put it in `start`, fill it to `end` and
+/// recalculate — all on a **copy** of the document, so a formula reading its neighbours (a running
+/// balance) sees their new values, and the document itself is untouched: no undo entry, no
+/// observer, nothing to take back. Refused when the answer is not a formula in either syntax.
+pub fn try_answer(
+    app: &App,
+    sheet: usize,
+    start: Pos,
+    end: Pos,
+    answer: &str,
+) -> Result<Tried, String> {
+    let (canonical, spelling) =
+        read(answer, true).ok_or_else(|| format!("not a formula in either syntax: {answer}"))?;
+    let copy = App::new();
+    let bytes = app.save_bytes(Form::Flat).map_err(|e| e.to_string())?;
+    copy.open_bytes("copy.fods", &bytes)
+        .map_err(|e| e.to_string())?;
+    put(&copy, sheet, start, end, &canonical)?;
+    let mut values = Vec::new();
+    for row in start.row..=end.row {
+        for col in start.col..=end.col {
+            let pos = Pos { row, col };
+            values.push((pos, copy.value_text(sheet, pos).map_err(|e| e.to_string())?));
+        }
+    }
+    Ok(Tried {
+        spelling,
+        formula: display::to_display(&canonical).unwrap_or_else(|_| canonical.clone()),
+        canonical,
+        values,
+    })
+}
+
+/// Write what [`try_answer`] tried into the document itself: the formula in `start`, filled to
+/// `end`, recalculated. Ordinary edits, each one an undo step.
+pub fn apply_answer(
+    app: &App,
+    sheet: usize,
+    start: Pos,
+    end: Pos,
+    tried: &Tried,
+) -> Result<(), String> {
+    put(app, sheet, start, end, &tried.canonical)
+}
+
+fn put(app: &App, sheet: usize, start: Pos, end: Pos, canonical: &str) -> Result<(), String> {
+    app.set_formula(sheet, start, canonical)
+        .map_err(|e| e.to_string())?;
+    app.fill(sheet, start, start, end, RecalcMode::Document)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,5 +196,28 @@ mod tests {
             !prompt.contains("Tea"),
             "values were asked to stay home: {prompt}"
         );
+    }
+
+    #[test]
+    fn an_answer_is_tried_on_a_copy_and_a_running_total_sees_its_neighbours() {
+        let app = App::new();
+        let rows: Vec<Vec<String>> = ["Amount", "10", "5", "-3"]
+            .iter()
+            .map(|r| vec![(*r).to_owned()])
+            .collect();
+        app.enter_range(0, Pos { row: 0, col: 0 }, &rows, RecalcMode::No)
+            .unwrap();
+        let (b2, b4) = (Pos { row: 1, col: 1 }, Pos { row: 3, col: 1 });
+        // Excel's spelling of a running balance: each row adds its amount to the row above.
+        let tried = try_answer(&app, 0, b2, b4, "=SUM(B1,A2)").unwrap();
+        assert_eq!(tried.spelling, Spelling::Excel);
+        assert_eq!(tried.formula, "=SUM(B1;A2)");
+        let shown: Vec<&str> = tried.values.iter().map(|(_, v)| v.as_str()).collect();
+        assert_eq!(shown, ["10", "15", "12"]);
+        // The document was not touched.
+        assert_eq!(app.formula(0, b2).unwrap(), None);
+        apply_answer(&app, 0, b2, b4, &tried).unwrap();
+        assert_eq!(app.value_text(0, b4).unwrap(), "12");
+        assert!(try_answer(&app, 0, b2, b4, "=SUM(").is_err());
     }
 }
