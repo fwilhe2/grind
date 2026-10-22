@@ -39,6 +39,9 @@ grind-core = { path = "../core" }
 grind-xlsx = { path = "../xlsx", optional = true }
 grind-docx = { path = "../docx", optional = true }
 grind-sheet = { path = "../sheet" }
+# Data ▸ *Ask Any Model for a Formula…* and *Check a Model's Answer…* (`doc/formula-assistant.md`
+# §11): a prompt to copy and the check of what comes back. Portable, no model, no network.
+grind-assist = { path = "../assist" }
 grind-text = { path = "../text" }
 # Spelling (doc/spelling.md): the dictionaries, attached before Check Document runs.
 grind-spell = { path = "../spell" }

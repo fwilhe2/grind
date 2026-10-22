@@ -2394,6 +2394,54 @@ enum Command {
         recalc: bool,
     },
 
+    /// Print what a formula assistant would be shown of the document, for a formula at a cell
+    ///
+    /// The top of every sheet, the rows above the cell, the defined names and the locale —
+    /// bounded however large the document is, and exactly the text a model is given
+    /// (doc/formula-assistant.md). No model is involved, and nothing is written.
+    Assist {
+        file: PathBuf,
+        /// Cell address the formula would go in, e.g. B5 or Summary.C2
+        address: String,
+    },
+
+    /// Write a prompt that asks any language model for a formula
+    ///
+    /// Each sheet described by its shape — header, data rows, every column's header, type and a
+    /// hint of its values — then the request, where the formula goes and how it is filled, and
+    /// how to answer. Copy it into the model you choose; check what it answers with
+    /// `grind sheet answer`. Nothing is sent anywhere and nothing is written
+    /// (doc/formula-assistant.md §11).
+    #[cfg(feature = "assist")]
+    Prompt {
+        file: PathBuf,
+        /// Where the formula goes: a cell, or a range it is filled over, e.g. E2:E40
+        address: String,
+        /// What the formula should do, in your own words
+        request: String,
+        /// Describe headers and types only: no value of the document goes in the prompt
+        #[arg(long)]
+        no_values: bool,
+    },
+
+    /// Check a formula a language model answered, and write it with --apply
+    ///
+    /// Read in the formula bar's syntax or Excel's, filled over the address and recalculated on
+    /// a copy of the document; every target cell's value is printed. With --apply the formula is
+    /// written into the document, filled and recalculated.
+    #[cfg(feature = "assist")]
+    Answer {
+        file: PathBuf,
+        /// Where the formula goes: the same cell or range the prompt named
+        address: String,
+        /// The model's answer, e.g. '=SUMIF(B2:B40,"Groceries",D2:D40)'
+        #[arg(allow_hyphen_values = true)]
+        formula: String,
+        /// Write it into the document, rather than only showing what it would show
+        #[arg(long)]
+        apply: bool,
+    },
+
     /// Evaluate a formula against the document without storing anything
     ///
     /// The address is where the formula would sit, which is what its relative references
@@ -3884,6 +3932,61 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
             let (_, start, end) = a1::resolve(&app, &a1::parse(address).say()?).say()?;
             let outcome = app.fill(sheet, from, start, end, mode(*recalc)).say()?;
             finish(&app, cli, file, outcome.cells > 0)
+        }
+
+        #[cfg(feature = "assist")]
+        Command::Prompt {
+            file,
+            address,
+            request,
+            no_values,
+        } => {
+            let app = load(file, cli)?;
+            let (sheet, start, end) = a1::resolve(&app, &a1::parse(address).say()?).say()?;
+            let prompt =
+                grind_assist::copy::copy_prompt(&app, sheet, start, end, request, !no_values)?;
+            Ok(Report::Text(TextReport {
+                lines: prompt.lines().map(str::to_owned).collect(),
+            }))
+        }
+
+        #[cfg(feature = "assist")]
+        Command::Answer {
+            file,
+            address,
+            formula,
+            apply,
+        } => {
+            let app = load(file, cli)?;
+            let (sheet, start, end) = a1::resolve(&app, &a1::parse(address).say()?).say()?;
+            let tried = grind_assist::copy::try_answer(&app, sheet, start, end, formula)?;
+            if *apply {
+                grind_assist::copy::apply_answer(&app, sheet, start, end, &tried)?;
+                return finish(&app, cli, file, true);
+            }
+            let mut lines = vec![format!(
+                "{}\t{}",
+                tried.formula,
+                match tried.spelling {
+                    grind_assist::Spelling::Display => "display syntax",
+                    grind_assist::Spelling::Excel => "Excel syntax, translated",
+                }
+            )];
+            lines.extend(
+                tried
+                    .values
+                    .iter()
+                    .map(|(pos, value)| format!("{}\t{value}", a1::format(None, *pos))),
+            );
+            Ok(Report::Text(TextReport { lines }))
+        }
+
+        Command::Assist { file, address } => {
+            let app = load(file, cli)?;
+            let (sheet, pos, _) = single(&app, address)?;
+            Ok(Report::Assist(Box::new(
+                app.assist_context(sheet, pos).say()?,
+            )))
         }
 
         Command::Eval {

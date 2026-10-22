@@ -205,6 +205,15 @@ pub enum Command {
     /// arguments labelled with the parameter they fill, one per line once a call stops fitting
     /// on one. Read-only, and it never parses back (R1: the document's formula is ODF's).
     ExplainFormula,
+    /// A prompt asking any language model for a formula over the selection, on the clipboard and
+    /// shown — `grind_assist::copy::copy_prompt` (`doc/formula-assistant.md` §11). Grind sends it
+    /// nowhere.
+    AskFormula,
+    /// The same, with headers and types only: no value of the document in it.
+    AskFormulaPrivate,
+    /// What a model answered, read in either syntax, filled over the selection on a copy and shown
+    /// — then written on **Apply**, one undo step (`grind_assist::copy::try_answer`).
+    CheckAnswer,
     /// Whether the formula bar shows that same reading in place of the text that would be typed
     /// back in — `friendly::explain_inline`, and the `fx` badge says which of the two is up.
     ToggleFriendly,
@@ -450,6 +459,9 @@ impl Command {
         Command::Recalculate,
         Command::FunctionList,
         Command::ExplainFormula,
+        Command::AskFormula,
+        Command::AskFormulaPrivate,
+        Command::CheckAnswer,
         Command::ToggleFriendly,
         Command::ToggleFilter,
         Command::FormatTable,
@@ -860,6 +872,18 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::ExplainFormula,
                 label: "&Explain Formula…\tCtrl+Shift+E",
+            },
+            Item::Verb {
+                command: Command::AskFormula,
+                label: "As&k Any Model for a Formula…",
+            },
+            Item::Verb {
+                command: Command::AskFormulaPrivate,
+                label: "Ask Any Model, Wit&hout the Document's Values…",
+            },
+            Item::Verb {
+                command: Command::CheckAnswer,
+                label: "Check a Model's A&nswer…",
             },
             Item::Verb {
                 command: Command::Evaluate,
@@ -1429,6 +1453,9 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         // has no formulas, so a function list in one would offer things it cannot hold.
         | Command::FunctionList
         | Command::ExplainFormula
+        | Command::AskFormula
+        | Command::AskFormulaPrivate
+        | Command::CheckAnswer
         | Command::ToggleFriendly
         | Command::ToggleFilter
         | Command::FormatTable
@@ -1899,6 +1926,9 @@ mod tests {
             Command::Evaluate,
             Command::FunctionList,
             Command::ExplainFormula,
+            Command::AskFormula,
+            Command::AskFormulaPrivate,
+            Command::CheckAnswer,
             Command::ToggleFriendly,
             Command::SheetAdd,
             Command::SheetRename,

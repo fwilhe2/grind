@@ -25,7 +25,7 @@
 const WORKSPACE: &str = include_str!("../../Cargo.toml");
 
 /// Every crate that must **not** name the generator, with its manifest.
-const READERS: [(&str, &str); 17] = [
+const READERS: [(&str, &str); 18] = [
     ("core", include_str!("../../core/Cargo.toml")),
     ("sheet", include_str!("../../sheet/Cargo.toml")),
     ("text", include_str!("../../text/Cargo.toml")),
@@ -46,6 +46,9 @@ const READERS: [(&str, &str); 17] = [
     // compiled and never run — the check arrives from the CLI through `grind_lsp::Host`, which
     // is exactly the shape that keeps an evaluator out of here (doc/init.md I5).
     ("lsp", include_str!("../../lsp/Cargo.toml")),
+    // The formula assistant opens a document to show a model a glance of it, and what a model
+    // proposes is a formula the engine checks, never a script (doc/formula-assistant.md).
+    ("assist", include_str!("../../assist/Cargo.toml")),
     (
         "ui_web_print",
         include_str!("../../ui_web_print/Cargo.toml"),

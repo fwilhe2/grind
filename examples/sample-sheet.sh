@@ -394,6 +394,17 @@ say "eval --with: what if a cell held something else — for this evaluation onl
 sheet eval "$book" B25 '=IF([.B2]>0;SUM([.B2:.B4])*2;0)' --with B2=-1 --trace
 say "eval --pretty: a long formula laid over lines, each line's answer beside it"
 sheet eval "$book" B25 '=IF([.B2]>0;ROUND(SUM([.B2:.B4])*1.19;2)&" incl. VAT";"nothing")' --pretty --width 30 --trace
+say "assist: what a formula assistant would be shown of the document — no model, nothing written"
+sheet assist "$book" B25
+# The formula assistant is a cargo feature, like the import filter below.
+if "$GRIND" sheet prompt --help >/dev/null 2>&1; then
+    say "prompt: a prompt to copy into any language model — the document's shape, the request, how to answer"
+    sheet prompt "$book" B25 "the total of the three amounts above, plus 19% VAT" --no-values
+    say "answer: what a model's answer would show, read in its own syntax (Excel's here); --apply writes it"
+    sheet answer "$book" B25 '=SUM(B2:B4)*1.19'
+else
+    say "prompt: not in this build (compiled without the assist feature)"
+fi
 
 say "calculations: everything the document computes, and what it calls to do it"
 sheet calculations "$book"

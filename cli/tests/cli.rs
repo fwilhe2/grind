@@ -285,6 +285,65 @@ fn eval_trace_takes_a_formula_apart_and_writes_nothing() {
     );
 }
 
+/// `prompt` describes the document and writes nothing; `answer` reads Excel's syntax, shows what
+/// the formula would show over the whole range and writes nothing either; `answer --apply`
+/// writes it (doc/formula-assistant.md §11).
+#[cfg(feature = "assist")]
+#[test]
+fn a_prompt_for_any_model_and_the_check_of_its_answer() {
+    let dir = Sandbox::new("prompt");
+    let file = dir.path("book.fods");
+    ok(&["new", &s(&file)]);
+    ok(&[
+        "paste",
+        &s(&file),
+        "A1",
+        "Item\tPrice\nTea\t3.5\nCake\t4\nJam\t2.5",
+    ]);
+    let before = std::fs::read(&file).unwrap();
+
+    let prompt = ok(&[
+        "prompt",
+        &s(&file),
+        "C2:C4",
+        "price with VAT",
+        "--no-values",
+    ]);
+    assert!(
+        prompt.contains("a table in A1:B4 — row 1 is the header"),
+        "{prompt}"
+    );
+    assert!(prompt.contains("price with VAT"), "{prompt}");
+    assert!(
+        !prompt.contains("Tea"),
+        "--no-values kept a value in: {prompt}"
+    );
+
+    let answer = ok(&["answer", &s(&file), "C2:C4", "=ROUND(B2*1.19,2)"]);
+    assert_eq!(
+        answer.lines().collect::<Vec<_>>(),
+        [
+            "=ROUND(B2*1.19;2)\tExcel syntax, translated",
+            "C2\t4.17",
+            "C3\t4.76",
+            "C4\t2.98"
+        ]
+    );
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        before,
+        "a check wrote the file"
+    );
+
+    ok(&["answer", &s(&file), "C2:C4", "=ROUND(B2*1.19,2)", "--apply"]);
+    assert_eq!(
+        ok(&["view", &s(&file), "C4", "--formulas"]).trim(),
+        "=ROUND([.B4]*1.19;2)"
+    );
+    let refused = sheet(&["answer", &s(&file), "C2", "=ROUND(B2*"]);
+    assert!(!refused.status.success());
+}
+
 #[test]
 fn a_value_is_typed_by_what_it_looks_like_unless_text_is_forced() {
     let dir = Sandbox::new("types");

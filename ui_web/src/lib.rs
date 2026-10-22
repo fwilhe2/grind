@@ -1502,7 +1502,7 @@ fn confirm(question: &str) -> bool {
 /// Looked up by property rather than through `Navigator::clipboard`, which assumes it is
 /// there — it is absent in some browsers and in every headless runtime, and calling a method
 /// on `undefined` would throw out of wasm rather than come back as `None`.
-fn clipboard() -> Option<web_sys::Clipboard> {
+pub(crate) fn clipboard() -> Option<web_sys::Clipboard> {
     let navigator = web_sys::window()?.navigator();
     let value = js_sys::Reflect::get(&navigator, &JsValue::from_str("clipboard")).ok()?;
     (!value.is_undefined() && !value.is_null()).then(|| value.unchecked_into())

@@ -140,6 +140,14 @@ pub enum Command {
     Print,
     /// A formula worked out at the active cell without storing it — Edit ▸ Evaluate….
     Evaluate,
+    /// A prompt asking any language model for a formula over the selection, on the pasteboard —
+    /// Edit ▸ Ask Any Model for a Formula… (`doc/formula-assistant.md` §11).
+    AskFormula,
+    /// The same with headers and types only, no value of the document in it.
+    AskFormulaPrivate,
+    /// What a model answered, read in either syntax, its values shown, written on Apply — Edit ▸
+    /// Check a Model's Answer….
+    CheckAnswer,
     /// The locale the document speaks in, asked for — Format ▸ Document Locale….
     DocumentLocale,
     /// A conditional-format rule over the selection — Format ▸ Conditional Formatting ▸ Add
@@ -352,6 +360,9 @@ impl Command {
             Command::CopyValue,
             Command::FormulaToValue,
             Command::Evaluate,
+            Command::AskFormula,
+            Command::AskFormulaPrivate,
+            Command::CheckAnswer,
             Command::DocumentLocale,
             Command::AddRule,
             Command::RemoveRule,
@@ -400,6 +411,9 @@ impl Command {
                 | Command::ImageDescription
                 | Command::PreviewChart
                 | Command::Evaluate
+                | Command::AskFormula
+                | Command::AskFormulaPrivate
+                | Command::CheckAnswer
                 | Command::DocumentLocale
                 | Command::AddRule
                 | Command::RemoveRule
@@ -495,6 +509,9 @@ impl Command {
             | Command::CopyValue
             | Command::FormulaToValue
             | Command::Evaluate
+            | Command::AskFormula
+            | Command::AskFormulaPrivate
+            | Command::CheckAnswer
             | Command::DocumentLocale
             | Command::AddRule
             | Command::RemoveRule
@@ -1016,6 +1033,13 @@ pub static MENUS: &[Menu] = &[
             command("Filter", key("f", SHIFT_CMD), Command::Filter),
             command("Formula to Value", None, Command::FormulaToValue),
             command("Evaluate…", None, Command::Evaluate),
+            command("Ask Any Model for a Formula…", None, Command::AskFormula),
+            command(
+                "Ask Any Model, Without the Document's Values…",
+                None,
+                Command::AskFormulaPrivate,
+            ),
+            command("Check a Model's Answer…", None, Command::CheckAnswer),
             Item::Submenu {
                 title: "Fill",
                 menu: &FILL,

@@ -30,6 +30,8 @@ mod accessory;
 #[cfg(target_os = "macos")]
 mod app;
 mod args;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod asked;
 #[cfg(target_os = "macos")]
 mod banner;
 #[cfg(target_os = "macos")]

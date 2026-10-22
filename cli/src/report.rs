@@ -56,6 +56,9 @@ pub enum Report {
     Components(Vec<ComponentReport>),
     /// What `grind init` wrote, kept and set (`doc/init.md`).
     Init(crate::init::InitReport),
+    /// What a formula assistant would be shown of a document (`doc/formula-assistant.md` §4.1).
+    /// Boxed for the reason `CellStyle` is.
+    Assist(Box<grind_sheet::assist_context::AssistContext>),
 }
 
 /// One third-party component, as `grind licences --list` prints it.
@@ -731,6 +734,8 @@ impl Report {
                 }
             }
             Report::Init(init) => init.print_text(),
+            // The text a model is given, exactly — decision 8 of doc/formula-assistant.md.
+            Report::Assist(context) => print!("{context}"),
             Report::Components(components) => {
                 for c in components {
                     println!("{}\t{}\t{}\t{}", c.name, c.version, c.licence, c.source);

@@ -17,12 +17,16 @@ path = "src/main.rs"
 # The Excel import filter (`doc/xlsx-import.md`, X6): on by default, as in `grind-cli`, and
 # a window built without it opens ODF and nothing else.
 [features]
-default = ["xlsx"]
+default = ["xlsx", "assist"]
 xlsx = ["dep:grind-xlsx"]
+# *Ask Any Model for a Formula…* (`doc/formula-assistant.md` §11): a prompt to copy and the check
+# of what comes back. No model and no network in it; on by default, as in `grind-cli`.
+assist = ["dep:grind-assist"]
 
 [dependencies]
 grind-sheet = { path = "../sheet" }
 grind-xlsx = { path = "../xlsx", optional = true }
+grind-assist = { path = "../assist", optional = true }
 # Named directly for one thing only: `search::score`, which ranks the command palette. The
 # spreadsheet's own vocabulary all arrives through `grind-sheet`; this is the generic half,
 # and it is a direct dependency rather than a re-export because ranking a list of words is

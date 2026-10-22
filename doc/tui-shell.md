@@ -87,6 +87,7 @@ shorter than one being edited.
 | Fill | `:down`, `:right` — the selection's leading line replicated, references shifted | — |
 | Interchange | `:csv-in <file>` — at the cursor, delimiter sniffed from the file's own content (`csv::Import::sniffed`, the options every window imports with); `:csv-out <file>` — the selection or the whole used sheet, and `.tsv` writes tabs (`csv::Dialect::for_name`) | — |
 | Evaluate | `:eval <formula>` — what it would come to, storing nothing | — |
+| Ask any model | `:prompt [--no-values] <words>` — a prompt for a formula over the selection, in a pane and through OSC 52; `:answer <formula>` shows what it would come to, `:answer!` writes it (`doc/formula-assistant.md` §11) | — |
 | Find | `:find <text>`, then `n`/`N`; every match marked in the grid; `:s/old/new/` | `:find <text>`, then `n`/`N`; every match marked in the line; `:s/old/new/` |
 | Outline | — | `:outline` — a pane, one row per heading, indented; `Enter` goes to one |
 | Paper | — | `:pdf <file>` — the document typeset and written as a PDF, the export's report on the status bar; `:pages` — where each page of that PDF begins, in the outline's pane, `Enter` goes to the top of one (`doc/pdf-export.md`). A terminal cannot *show* a page, so there is no preview: a named gap |
@@ -243,7 +244,10 @@ pane with a different `Vec` — a shell that grew a fifth list widget would have
 
 The register is this shell's own, not the system clipboard — a terminal cannot reach
 one without a protocol the host may not speak, and vi's register is the convention a reader of
-this shell already has. Markdown-while-typing costs two undo steps rather than one (an erase
+this shell already has. `:prompt` is the one exception, because its text is *for* another program:
+it is written with OSC 52, which most current terminals honour and the rest ignore silently, and
+it is always shown in a pane as well, so a terminal that ignores the sequence loses nothing.
+Markdown-while-typing costs two undo steps rather than one (an erase
 and a style), which is the honest price of not inventing a compound action for a shell's own
 convenience.
 

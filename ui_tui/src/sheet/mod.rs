@@ -55,6 +55,11 @@ Spreadsheet:
   :friendly               — the formula line in plain words at rest, or as stored
   :filter                 — an autofilter over the selection (or the table around one cell); again to drop
   :eval <formula>         — what it would come to, storing nothing
+  :prompt <words>         — a prompt asking any model for a formula over the selection, in a pane
+                            and on the clipboard where the terminal allows; --no-values first
+                            keeps every value out of it
+  :answer <formula>       — what the model's answer would show over the selection, either syntax
+  :answer! <formula>      — the same, written: one undo step
   :charts   — the sheet's charts: j/k choose one, drawn in characters below the list;
               d delete · m move here · HJKL nudge · +/- size · Enter change · Esc let go
   :rule <look> <condition> — draw the selection differently while a formula is true:

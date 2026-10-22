@@ -67,6 +67,9 @@ const NOT_SHIPPED: &[&str] = &[
     "print/tests/",
     // The container recipe: it builds an image of `grind`, and nothing of it is in one.
     "Containerfile.distroless-cli",
+    // The pinned model list `scripts/llama-server.sh` reads (doc/formula-assistant.md §4.2.1):
+    // data for a script, compiled into nothing.
+    "assist/models.tsv",
 ];
 
 /// Our own files under a licence other than the suite's **on purpose**, as path prefixes — so

@@ -21,6 +21,7 @@ use std::sync::{Arc, RwLock};
 
 pub mod a1;
 pub mod action;
+pub mod assist_context;
 pub mod autoheight;
 pub mod chart;
 pub mod chart_frame;
@@ -941,6 +942,15 @@ impl App {
             overlay.set(sheet, pos, formula::eval::from_cell(value));
         }
         Ok(overlay)
+    }
+
+    /// What a formula assistant is shown of the document for a formula going in at `pos`
+    /// (`doc/formula-assistant.md` §4.1): the top of every sheet, the rows above `pos`, the
+    /// defined names and the locale, bounded whatever the document's size. Its `Display` is the
+    /// text a model is given, exactly. A read lock only; nothing is stored.
+    pub fn assist_context(&self, sheet: usize, pos: Pos) -> Result<assist_context::AssistContext> {
+        let state = self.state.read().unwrap();
+        assist_context::build(&state.doc, sheet, pos)
     }
 
     /// Empty every cell in a rectangle, formulas included. Returns how many were not

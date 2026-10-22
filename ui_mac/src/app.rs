@@ -257,6 +257,9 @@ impl Delegate {
             | Command::CopyValue
             | Command::FormulaToValue
             | Command::Evaluate
+            | Command::AskFormula
+            | Command::AskFormulaPrivate
+            | Command::CheckAnswer
             | Command::FillAcross
             | Command::Merge(_)
             | Command::Calculations

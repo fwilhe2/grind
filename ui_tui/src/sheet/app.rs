@@ -1479,6 +1479,12 @@ impl App {
             "functions" => self.cmd_functions(""),
             "calc" => self.cmd_calc(""),
             _ if cmd.starts_with("calc ") => self.cmd_calc(cmd[5..].trim()),
+            #[cfg(feature = "assist")]
+            _ if cmd.starts_with("prompt ") => self.cmd_prompt(cmd[7..].trim()),
+            #[cfg(feature = "assist")]
+            _ if cmd.starts_with("answer! ") => self.cmd_answer(cmd[8..].trim(), true),
+            #[cfg(feature = "assist")]
+            _ if cmd.starts_with("answer ") => self.cmd_answer(cmd[7..].trim(), false),
             _ if cmd.starts_with("functions ") => self.cmd_functions(cmd[10..].trim()),
             "filter" => self.cmd_filter(),
             // Conditional formatting (`doc/conditional-format.md` §4): what each look writes and
@@ -2065,6 +2071,90 @@ impl App {
             }
             _ => self.status = format!("{address} holds no formula to explain"),
         }
+    }
+
+    /// `:prompt [--no-values] <words>` — a prompt asking any model for a formula over the
+    /// selection (`doc/formula-assistant.md` §11), shown in the pane a line a row and put on the
+    /// system clipboard through OSC 52 where the terminal honours it. Grind sends it nowhere.
+    #[cfg(feature = "assist")]
+    fn cmd_prompt(&mut self, words: &str) {
+        let (values, request) = match words.strip_prefix("--no-values") {
+            Some(rest) => (false, rest.trim()),
+            None => (true, words),
+        };
+        if request.is_empty() {
+            self.status = "say what the formula should do: :prompt <words>".to_owned();
+            return;
+        }
+        let (start, end) = self.rect();
+        match grind_assist::copy::copy_prompt(&self.core, self.sheet, start, end, request, values) {
+            Ok(prompt) => {
+                let address = grind_sheet::a1::format(None, start);
+                let rows = prompt
+                    .lines()
+                    .map(|line| crate::pick::Row {
+                        address: address.clone(),
+                        label: line.to_owned(),
+                        depth: 0,
+                    })
+                    .collect();
+                self.explained.open("prompt for any model", rows, None);
+                self.status = match osc52(&prompt) {
+                    true => "prompt copied \u{2014} paste it into the model you choose, then :answer <its formula>",
+                    false => "the prompt is in the pane \u{2014} copy it into the model you choose, then :answer <its formula>",
+                }
+                .to_owned();
+            }
+            Err(e) => self.status = e,
+        }
+    }
+
+    /// `:answer <formula>` — what a model's answer would show over the selection, read in either
+    /// syntax and worked out on a copy; `:answer!` writes it, one undo step.
+    #[cfg(feature = "assist")]
+    fn cmd_answer(&mut self, formula: &str, apply: bool) {
+        let (start, end) = self.rect();
+        let tried =
+            match grind_assist::copy::try_answer(&self.core, self.sheet, start, end, formula) {
+                Ok(tried) => tried,
+                Err(e) => {
+                    self.status = e;
+                    return;
+                }
+            };
+        if apply {
+            self.status = match grind_assist::copy::apply_answer(
+                &self.core, self.sheet, start, end, &tried,
+            ) {
+                Ok(()) => format!("{} written \u{2014} u takes it back", tried.formula),
+                Err(e) => e,
+            };
+            self.leave_visual();
+            return;
+        }
+        let read = match tried.spelling {
+            grind_assist::Spelling::Display => "as written",
+            grind_assist::Spelling::Excel => "as Excel's syntax",
+        };
+        let rows = tried
+            .values
+            .iter()
+            .map(|(pos, value)| {
+                let address = grind_sheet::a1::format(None, *pos);
+                let shown = if value.is_empty() { "(empty)" } else { value };
+                crate::pick::Row {
+                    label: format!("{address}  {shown}"),
+                    address,
+                    depth: 0,
+                }
+            })
+            .collect();
+        self.explained.open(
+            &format!("{} \u{2014} read {read}", tried.formula),
+            rows,
+            None,
+        );
+        self.status = format!(":answer! {formula} writes it");
     }
 
     /// `:friendly` — the formula line's plain-words reading turned off, or back on.
@@ -3551,6 +3641,39 @@ fn not_a_kind(word: &str) -> String {
     format!("\u{201c}{word}\u{201d} is not a kind of chart \u{2014} bar, line or pie")
 }
 
+/// Put `text` on the system clipboard with OSC 52, the one way a terminal program can reach it.
+/// `false` when standard output is not a terminal (a test, a pipe) — and a terminal that ignores
+/// the sequence says nothing, which is why the caller always shows the text as well.
+#[cfg(feature = "assist")]
+fn osc52(text: &str) -> bool {
+    use std::io::{IsTerminal, Write};
+    let mut out = std::io::stdout();
+    if !out.is_terminal() {
+        return false;
+    }
+    let sequence = format!("\x1b]52;c;{}\x07", base64(text.as_bytes()));
+    out.write_all(sequence.as_bytes()).is_ok() && out.flush().is_ok()
+}
+
+/// Standard base64, padded — all OSC 52 asks for, and not worth a dependency.
+#[cfg(feature = "assist")]
+fn base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = (u32::from(chunk[0]) << 16)
+            | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8)
+            | u32::from(*chunk.get(2).unwrap_or(&0));
+        for i in 0..4 {
+            match i <= chunk.len() {
+                true => out.push(TABLE[((n >> (18 - 6 * i)) & 63) as usize] as char),
+                false => out.push('='),
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4490,6 +4613,49 @@ mod tests {
         assert!(pane.contains("Round") && pane.contains("Sum"), "{pane}");
         press(&mut app, KeyCode::Esc);
         assert!(!app.explained.is_open());
+    }
+
+    /// `:prompt` puts a prompt for any model in the pane; `:answer` shows what a model's formula
+    /// would come to over the selection without writing it; `:answer!` writes it, and `u` takes
+    /// it back (`doc/formula-assistant.md` §11).
+    #[cfg(feature = "assist")]
+    #[test]
+    fn prompt_and_answer() {
+        let mut app = filled();
+        app.run_command("C2");
+        app.run_command("prompt --no-values the votes doubled");
+        assert!(app.explained.is_open());
+        let pane = screen(&mut app, 120, 30).join("\n");
+        assert!(pane.contains("a table in A1:B2"), "{pane}");
+        assert!(!pane.contains("CDU"), "--no-values kept a value in: {pane}");
+        press(&mut app, KeyCode::Esc);
+
+        app.run_command("answer =B2*2");
+        assert!(app.explained.is_open());
+        let pane = screen(&mut app, 120, 12).join("\n");
+        assert!(pane.contains("C2  2400"), "{pane}");
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.core.formula(0, Pos::new(1, 2)).unwrap(), None);
+
+        // Excel's syntax is read too, and written as the formula bar spells it.
+        app.run_command("answer! =SUM(B2,B2)");
+        assert_eq!(app.core.value_text(0, Pos::new(1, 2)).unwrap(), "2400");
+        assert!(app.status.contains("=SUM(B2;B2) written"), "{}", app.status);
+        press(&mut app, KeyCode::Char('u'));
+        assert_eq!(app.core.formula(0, Pos::new(1, 2)).unwrap(), None);
+
+        app.run_command("answer =SUM(");
+        assert!(app.status.contains("not a formula"), "{}", app.status);
+    }
+
+    #[cfg(feature = "assist")]
+    #[test]
+    fn base64_is_the_standard_one() {
+        assert_eq!(base64(b""), "");
+        assert_eq!(base64(b"f"), "Zg==");
+        assert_eq!(base64(b"fo"), "Zm8=");
+        assert_eq!(base64(b"foo"), "Zm9v");
+        assert_eq!(base64("€".as_bytes()), "4oKs");
     }
 
     /// `:fit rows` takes the selected rows' own heights away, and `:fit all` fits every column in

@@ -22,6 +22,8 @@
 //! it must be `Send`, and a GTK widget is not — and one local future drains it, coalescing
 //! a burst of changes into a single refresh.
 
+#[cfg(feature = "assist")]
+mod ask;
 mod chart;
 mod chart_dialog;
 mod chrome;
@@ -2542,6 +2544,20 @@ fn actions() -> Vec<Verb> {
         verb("functions", &[], "Functions…", "Document", |ui| {
             ui.explore_functions()
         }),
+        // A prompt to copy into a model the person chooses, and the check of its answer
+        // (`doc/formula-assistant.md` §11). Over the selection: one cell, or a column the
+        // formula is filled down.
+        #[cfg(feature = "assist")]
+        verb(
+            "ask-formula",
+            &[],
+            "Ask Any Model for a Formula…",
+            "Document",
+            |ui| {
+                let (start, end) = ui.grid.selection().rect();
+                ask::present(&ui.window, &ui.app, ui.grid.sheet(), start, end)
+            },
+        ),
         verb(
             "spelling-language",
             &[],
