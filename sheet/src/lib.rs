@@ -46,12 +46,8 @@ pub mod tracks;
 pub mod verbs;
 pub mod view;
 
-/// What this crate takes from `grind-core` and hands on under its own name.
-///
-/// The crate boundary is the seam — `grind-core` compiles knowing nothing about spreadsheets,
-/// and its `tests/generic.rs` fails the build if that stops being true (R8). These are
-/// ergonomics on this side of it: a shell that only edits spreadsheets says `grind_sheet::` for
-/// everything, and the split does not leak into it.
+/// What this crate takes from `grind-core` and hands on, so a spreadsheet-only shell says
+/// `grind_sheet::` for everything.
 pub use grind_core::{DocumentKind, Form, Observer, build_info, kind, locale};
 
 pub use action::Action;
@@ -66,28 +62,22 @@ pub use reading::Reading;
 pub use spell::{Lexicon, Misspelling};
 pub use table_format::{TableOptions, TotalsFunction};
 
-/// What can go wrong with a **spreadsheet**.
-///
-/// The generic failures — a zip that will not open, XML that will not parse, a document we
-/// have no key for, the filesystem — belong to every document type and live in
-/// [`grind_core::Error`], reached through [`Error::Odf`]. R8 is why the split exists; `?` is
-/// why it costs one `From` impl rather than a rewrite of every call site.
+/// What can go wrong with a spreadsheet. The failures any document can have — a zip, XML,
+/// encryption, the filesystem — are [`grind_core::Error`], reached through [`Error::Odf`] (R8).
 #[derive(Debug)]
 pub enum Error {
     /// Something true of any ODF document, not just a spreadsheet.
     Odf(grind_core::Error),
     NoSuchSheet(usize),
-    /// A request whose size is the problem rather than its content — see
-    /// [`MAX_FORMATTED_CELLS`].
+    /// A request whose size is the problem — see [`MAX_FORMATTED_CELLS`].
     TooLarge(u64),
     /// A sheet operation ODF has no spelling for: a name another sheet already has, an
     /// empty one, or removing the document's last sheet.
     BadSheet(String),
-    /// A formula or a name that is not what §5 says one is. Rejected at the point it is
-    /// *defined* rather than stored and discovered later — see [`App::set_name`].
+    /// A formula or a name that is not what §5 says one is, rejected when defined
+    /// ([`App::set_name`]).
     Formula(String),
-    /// A correction aimed at a cell that no longer holds the word it names — the document
-    /// changed between finding a misspelling and fixing it ([`App::correct`]).
+    /// A correction aimed at a cell that no longer holds the word it names ([`App::correct`]).
     Stale(String),
 }
 
@@ -123,8 +113,7 @@ impl From<std::io::Error> for Error {
 }
 
 impl Error {
-    /// Whether this is a particular generic failure — `Error::Odf(Encrypted)` without the
-    /// nesting at every call site. Loop A's one documented loosening is spelled with it.
+    /// Whether this is `Error::Odf(Encrypted)`, without the nesting at every call site.
     pub fn is_encrypted(&self) -> bool {
         matches!(self, Error::Odf(grind_core::Error::Encrypted))
     }
@@ -132,36 +121,24 @@ impl Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// How big a sheet is: the bounds every other spreadsheet uses, and the ones the reader
-/// clamps a repeat count to.
-///
-/// Public because a shell has to lay out a scrollbar over the same sheet the reader filled,
-/// and two copies of these numbers is one copy too many. Note this is *not* a limit on what
-/// [`formula::lex`] will parse — a foreign file may name a cell past the end and still has
-/// to load (R5), so the bound is applied where an address becomes a place on *this* sheet,
-/// in [`a1::resolve`].
+/// How big a sheet is: the bounds every other spreadsheet uses, and what the reader clamps a
+/// repeat count to. Not a limit on what [`formula::lex`] parses — a foreign file may name a cell
+/// past the end and must still load (R5) — but on where an address becomes a place, in
+/// [`a1::resolve`].
 pub const MAX_ROWS: u32 = 1_048_576;
 pub const MAX_COLS: u32 = 16_384;
 
-/// How many cells one [`App::set_format`] may cover.
-///
-/// Formats are stored per cell, so this bounds the memory a single command can ask for.
-/// Well above any rectangle a person selects, well below a whole sheet.
+/// How many cells one [`App::set_format`] may cover. Formats are stored per cell, so this bounds
+/// the memory one command can ask for: well above any selection, well below a whole sheet.
 pub const MAX_FORMATTED_CELLS: u64 = 1 << 16;
 
-/// How many columns or rows one [`App::set_col_width`] may cover — and, on the way in, how
-/// long a run of equally sized tracks is still *layout* rather than background.
+/// How many columns or rows one [`App::set_col_width`] may cover, and on reading how long a run of
+/// equally sized tracks is still layout rather than background. A
+/// `table:number-columns-repeated="16368"` column says "the rest of the sheet is the default
+/// width", so the reader's cap and the writer's limit are one number.
 ///
-/// One constant for both ends on purpose: a `<table:table-column
-/// table:number-columns-repeated="16368"/>` is a file saying "the rest of the sheet is the
-/// default width", not a decision about sixteen thousand columns, and materialising it would
-/// be that many equal strings per sheet. Setting a run this program then refuses to read
-/// back would be the same bug from the other side, so the reader's cap and the writer's
-/// limit are the same number.
-///
-/// ponytail: a document that really does size 2000 columns loses them past the cap. Storing
-/// a per-sheet *default* size instead would keep it, and is two more fields on `Sheet` plus a
-/// rule for which wins — worth it when a file turns up that needs it.
+/// ponytail: a document that really sizes 2000 columns loses them past the cap. A per-sheet
+/// default size would keep them, when a file needs it.
 pub const MAX_TRACK_RUN: u32 = 1024;
 
 /// One calculated cell, as an explorer lists it ([`App::calculations`]).
@@ -185,11 +162,8 @@ impl Calculation {
         format!("{}.{}", self.sheet_name, a1::format(None, self.pos))
     }
 
-    /// Whether a search finds this one — its sheet, address, formula or any function it
-    /// calls, case-insensitively, and everything when the needle is empty.
-    ///
-    /// Here rather than in each shell so that a dialog's search box and `--filter` cannot
-    /// answer the same question differently.
+    /// Whether a search finds this one — its sheet, address, formula or a function it calls,
+    /// case-insensitively; everything for an empty needle.
     pub fn matches(&self, needle: &str) -> bool {
         let needle = needle.trim().to_uppercase();
         needle.is_empty()
@@ -199,8 +173,7 @@ impl Calculation {
     }
 }
 
-/// Which functions a set of calculations uses, commonest first and ties alphabetical —
-/// "what is this spreadsheet actually doing", which the per-cell list only implies.
+/// Which functions a set of calculations uses, commonest first, ties alphabetical.
 pub fn function_tally(calculations: &[Calculation]) -> Vec<(String, usize)> {
     let mut tally: Vec<(String, usize)> = Vec::new();
     for name in calculations.iter().flat_map(|calc| &calc.functions) {
@@ -213,62 +186,40 @@ pub fn function_tally(calculations: &[Calculation]) -> Vec<(String, usize)> {
     tally
 }
 
-/// A rectangle of values, already resolved — what a renderer draws.
-///
-/// Requesting rows or columns past the end of the sheet is normal, not an error: a user
-/// may scroll into blank space. Those cells come back empty. (This is where a grid parts
-/// company with a text editor, whose viewport must clamp to the last line so that a stale
-/// scroll offset cannot blank the view.)
+/// A rectangle of values, already resolved — what a renderer draws. Rows and columns past the end
+/// of the sheet come back empty, since scrolling into blank space is normal.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Viewport {
     pub rows: Range<u32>,
     pub cols: Range<u32>,
     cells: Vec<CellValue>, // row-major
-    /// What each cell *displays* — its number format applied (doc/ods-format.md §5).
-    ///
-    /// Carried beside the values rather than left to the caller because rendering needs the
-    /// cell's format and the document's epoch, and a shell has neither: handing it the value
-    /// alone would make every renderer either wrong about dates or a second implementation
-    /// of `numfmt`.
+    /// What each cell displays, its number format applied (`doc/ods-format.md` §5), since a shell
+    /// has neither the format nor the epoch.
     texts: Vec<String>,
-    /// How each cell *looks* — weight, colours, alignment, borders (`style.rs`).
+    /// How each cell looks (`style.rs`), carried beside the text so a renderer takes the lock
+    /// once.
     ///
-    /// Beside the text for the same reason: a renderer that had to ask for a style per cell
-    /// would either take the lock once per cell or keep its own copy of the document. One
-    /// clone per styled cell, and the vector is viewport-sized rather than sheet-sized.
-    ///
-    /// ponytail: a `CellStyle` is nine `Option<String>`s and this clones them per visible
-    /// cell. Interning them — the writer already pools styles — is the upgrade, once a
-    /// profile says a screenful of styled cells costs anything.
+    /// ponytail: a `CellStyle` of nine `Option<String>`s is cloned per visible cell; interning
+    /// them is the upgrade once a profile says it matters.
     styles: Vec<Option<style::CellStyle>>,
-    /// What each cell *is* — `doc/view-modes.md`'s role overlay, row-major and total.
-    ///
-    /// `None` when the read did not ask for it ([`view::Overlays`]), because deriving a role
-    /// needs a document-wide analysis and a shell that draws no roles must not pay for one.
-    /// A fourth parallel vector for the same reason the second and third are here: a
-    /// renderer asking per cell would take the lock per cell.
+    /// What each cell is — `doc/view-modes.md`'s role overlay, row-major. `None` unless the read
+    /// asked for it ([`view::Overlays`]): roles need a document-wide analysis.
     roles: Option<Vec<view::CellRole>>,
-    /// The name anchors *intersecting* this rectangle — a list rather than a per-cell
-    /// vector, because a name binds to a **range** as often as to a cell and `sales` over
-    /// `A2:A50` is one anchor, not forty-nine.
+    /// The name anchors intersecting this rectangle — a list, since a name binds a range as often
+    /// as a cell.
     names: Vec<view::NameAnchor>,
-    /// The merges *intersecting* this rectangle, each carrying its top-left cell's text and
-    /// look — a list rather than a per-cell vector for `names`' reason, and the anchor's text
-    /// beside it because a merge scrolled half out of view is still drawn with it, from a
-    /// cell this rectangle does not include.
+    /// The merges intersecting this rectangle, each with its top-left cell's text and look, since
+    /// a merge half scrolled out of view is drawn from a cell outside the rectangle.
     merges: Vec<Merged>,
-    /// The checkboxes drawn in this rectangle, each with whether it is ticked — resolved here
-    /// because a linked one's state is another cell's value, perhaps off screen or on another
-    /// sheet.
+    /// The checkboxes drawn in this rectangle and whether each is ticked — a linked one's state is
+    /// another cell's value, perhaps off screen.
     checkboxes: Vec<(Pos, bool)>,
-    /// Which cells hold a plain number in the General format — the only ones whose spelling
-    /// narrows to fit a column ([`Viewport::narrower`]) — and the locale they are spelled in.
+    /// Which cells hold a plain number in the General format, the only ones that narrow to fit a
+    /// column ([`Viewport::narrower`]).
     general: Vec<bool>,
     locale: Option<locale::Locale>,
-    /// The misspelt words of every cell drawn here that has any, as character ranges into what
-    /// the cell displays — empty unless a dictionary is attached ([`App::set_lexicon`]). Carried
-    /// so that four shells underline exactly the words the core found, and a list for `names`'
-    /// reason: almost every cell has none.
+    /// The misspelt words of each cell drawn here that has any, as character ranges into what it
+    /// displays — empty without a dictionary ([`App::set_lexicon`]).
     misspelt: Vec<(Pos, Vec<Range<usize>>)>,
 }
 
@@ -279,8 +230,7 @@ pub struct Merged {
     pub anchor: Pos,
     /// The bottom-right cell, inclusive.
     pub end: Pos,
-    /// The top-left cell's value — what decides, with no alignment of its own, which side of
-    /// the merge its text sits on.
+    /// The top-left cell's value, which decides which side of the merge an unaligned text sits on.
     pub value: CellValue,
     /// What the top-left cell displays.
     pub text: String,
@@ -318,9 +268,8 @@ impl Viewport {
     }
 
     /// The shorter spellings to try, in order, when a cell's [`Viewport::text`] does not fit its
-    /// column — fewer decimals, then scientific notation ([`numfmt::narrower`]). Empty for every
-    /// cell but a plain number in the General format: a format that states its decimals means
-    /// them, and such a number that does not fit is `###` (`doc/ods-format.md` §5.2).
+    /// column ([`numfmt::narrower`]). Empty except for a plain number in the General format; any
+    /// other number that does not fit is `###` (`doc/ods-format.md` §5.2).
     pub fn narrower(&self, row: u32, col: u32) -> Vec<String> {
         let Some(at) = self.at(row, col) else {
             return Vec::new();
@@ -331,32 +280,23 @@ impl Viewport {
         }
     }
 
-    /// How one cell looks, or `None` for a plain cell — and for one outside the viewport.
-    ///
-    /// A renderer wants both answers to be "draw nothing special", so the two `None`s are
-    /// deliberately the same: an unstyled cell and a cell off screen need no distinction.
+    /// How one cell looks, or `None` for a plain cell and for one outside the viewport alike.
     pub fn style(&self, row: u32, col: u32) -> Option<&style::CellStyle> {
         self.styles.get(self.at(row, col)?)?.as_ref()
     }
 
-    /// What one cell *is*, or `None` when the read did not ask for roles — and for a cell
-    /// outside the viewport.
-    ///
-    /// Unlike [`Viewport::style`], the two `None`s here mean different things and a caller
-    /// that cares knows which it is asking: a shell in role mode requested the overlay, so
-    /// `None` can only be a cell it is not drawing.
+    /// What one cell is, or `None` when the read did not ask for roles or the cell is outside the
+    /// viewport.
     pub fn role(&self, row: u32, col: u32) -> Option<view::CellRole> {
         self.roles.as_ref()?.get(self.at(row, col)?).copied()
     }
 
-    /// Every name anchor intersecting this rectangle. Empty when the read did not ask for
-    /// them, and empty when there are none — a shell draws nothing either way.
+    /// Every name anchor intersecting this rectangle; empty when not asked for.
     pub fn names(&self) -> &[view::NameAnchor] {
         &self.names
     }
 
-    /// The name bound to one cell, if any — the per-cell question the CLI's `--names` asks
-    /// and a formula bar asks again.
+    /// The name bound to one cell, if any.
     pub fn name_at(&self, row: u32, col: u32) -> Option<&str> {
         self.names
             .iter()
@@ -369,8 +309,8 @@ impl Viewport {
         &self.merges
     }
 
-    /// The merge one cell is part of — its top-left cell or one it covers. A renderer draws
-    /// the top-left cell over the whole area and nothing for the others.
+    /// The merge one cell is part of, its top-left or a covered cell. A renderer draws the
+    /// top-left cell over the whole area.
     pub fn merge_at(&self, row: u32, col: u32) -> Option<&Merged> {
         self.merges.iter().find(|m| m.contains(row, col))
     }
@@ -388,9 +328,8 @@ impl Viewport {
         &self.checkboxes
     }
 
-    /// The misspelt words in what one cell displays, as character ranges into
-    /// [`Viewport::text`] — what a renderer underlines. Empty for a cell with none, and for every
-    /// cell when no dictionary is attached. A merge's words are its top-left cell's.
+    /// The misspelt words in what one cell displays, as character ranges into [`Viewport::text`].
+    /// A merge's words are its top-left cell's.
     pub fn misspelt(&self, row: u32, col: u32) -> &[Range<usize>] {
         self.misspelt
             .iter()
@@ -420,8 +359,8 @@ struct State {
     doc: Document,
     undo: Vec<Action>,
     redo: Vec<Action>,
-    /// Bumped by every [`App::mutate`], so a computation done under a *read* lock can tell, when
-    /// it comes to write its answer, that the document moved underneath it.
+    /// Bumped by every [`App::mutate`], so work done under a read lock can tell the document moved
+    /// before it writes.
     version: u64,
     /// [`App::defer_recalc`]: `RecalcMode::Document` records that a recalculation is owed
     /// instead of doing it.
@@ -430,29 +369,19 @@ struct State {
     recalc_owed: bool,
 }
 
-/// The application. Shells hold an `Arc<App>` and call these methods.
-///
-/// Every method takes `&self`; the lock lives inside, so one `App` can be shared between a
-/// UI thread and background work without the shell thinking about it.
+/// The application. Shells hold an `Arc<App>` and call these methods; every method takes `&self`
+/// and the lock lives inside.
 #[derive(Default)]
 pub struct App {
     state: RwLock<State>,
     observer: RwLock<Option<Arc<dyn Observer>>>,
-    /// `doc/view-modes.md`'s document-wide analysis, computed on first use and dropped on
-    /// every mutation.
-    ///
-    /// A cache with an invalidation rule is where correctness usually goes to die, so the
-    /// rule is kept trivial: it is emptied in [`App::mutate`], the one place a document
-    /// changes and observers are notified, and the first cut recomputes everything — which
-    /// means the only bug available here is a stale cache, never a wrong one.
-    ///
-    /// Its own lock rather than a `State` field, so a read that wants an overlay does not
-    /// have to take the write lock to fill it. The order is always state-then-analysis.
+    /// `doc/view-modes.md`'s document-wide analysis, computed on first use and dropped in
+    /// [`App::mutate`], the one place a document changes. Its own lock, so a read can fill it
+    /// without the write lock; the order is always state, then analysis.
     analysis: RwLock<Option<Arc<view::Analysis>>>,
-    /// The dictionary spelling is checked against, when a shell or the CLI has handed one in
-    /// ([`App::set_lexicon`]). Beside the document rather than in it: whether somebody wants
-    /// their cells checked, and in which language, is theirs and never written
-    /// (`doc/spelling.md`, decision 5). Its own lock, taken after `state`'s.
+    /// The dictionary spelling is checked against ([`App::set_lexicon`]) — beside the document
+    /// rather than in it, since it is never written (`doc/spelling.md`, decision 5). Locked after
+    /// `state`.
     lexicon: RwLock<Option<Arc<dyn spell::Lexicon>>>,
 }
 
@@ -465,12 +394,8 @@ impl App {
         *self.observer.write().unwrap() = Some(observer);
     }
 
-    /// Mutate, then notify — **with the write lock already released**.
-    ///
-    /// An observer is expected to call straight back into the app to re-read what changed.
-    /// Notifying while still holding the lock deadlocks it. There is a test
-    /// (`an_observer_may_read_the_app_without_deadlocking`) and it is the reason this
-    /// helper exists rather than each method locking and notifying for itself.
+    /// Mutate, then notify with the write lock released: an observer calls straight back in to
+    /// re-read (`an_observer_may_read_the_app_without_deadlocking`).
     fn mutate<R>(&self, f: impl FnOnce(&mut State) -> R) -> R {
         let result = {
             let mut state = self.state.write().unwrap();
@@ -478,8 +403,7 @@ impl App {
             state.version += 1;
             result
         };
-        // Before the notification, because an observer reads straight back in and must not
-        // be handed a reading of the document as it was.
+        // Before notifying, so an observer reading back in is not handed the old analysis.
         *self.analysis.write().unwrap() = None;
         self.notify();
         result
@@ -508,11 +432,8 @@ impl App {
         })
     }
 
-    /// Set a formula and its cached value together (doc/ods-format.md §4).
-    ///
-    /// The value is computed here rather than left to a later `recalc`, because a formula
-    /// saved without one renders blank in LibreOffice. Evaluating against the document as it
-    /// stands is also what a spreadsheet does when you press Enter.
+    /// Set a formula and its cached value together (`doc/ods-format.md` §4): a formula saved
+    /// without a value renders blank in LibreOffice.
     pub fn set_formula(&self, sheet: usize, pos: Pos, formula: &str) -> Result<()> {
         self.mutate(|state| {
             if state.doc.sheet(sheet).is_none() {
@@ -537,23 +458,14 @@ impl App {
         })
     }
 
-    /// What pressing Enter means — the typing rule, in the core so no two shells disagree.
+    /// What pressing Enter means — the typing rule. A leading `=` is a formula in canonical syntax
+    /// (a shell converts display form first, [`formula::display::from_display`]), a leading `'`
+    /// forces text, an empty string clears the cell, and anything else is a number, a logical or
+    /// text. One [`Action`], so typing a number over a formula removes the formula.
     ///
-    /// `input` is what the user typed, and `typed` decides what it is: a leading `=`
-    /// is a formula in **canonical** syntax (a shell converts display form first, with
-    /// [`formula::display::from_display`]), a leading `'` forces the rest to be text, an
-    /// empty string clears the cell, and anything else is a number, a logical or text.
-    ///
-    /// One [`Action`], so a cell that held a formula loses it when a number is typed over
-    /// it — which is what every spreadsheet does and what two separate calls would get
-    /// wrong.
-    ///
-    /// With [`RecalcMode::Document`] the dependents are recalculated inside the same lock
-    /// and land in the **same undo entry**, so one Ctrl+Z takes back the edit and its
-    /// ripple. Unless it would *spoil* a cell — a cached value this build's function set
-    /// cannot reproduce — in which case the edit still commits, the recalculation is
-    /// skipped, and [`EnterOutcome::recalc`] says so: refusing the edit would make a
-    /// document that uses one unimplemented function read-only, which is worse than stale.
+    /// With [`RecalcMode::Document`] the dependents are recalculated in the same undo entry —
+    /// unless that would spoil a cell (a cached value this build cannot reproduce): then the edit
+    /// commits, the recalculation is skipped, and [`EnterOutcome::recalc`] says so.
     pub fn enter(
         &self,
         sheet: usize,
@@ -577,14 +489,9 @@ impl App {
         })
     }
 
-    /// Fill a rectangle from `anchor`, one row per row — the core half of a paste.
-    ///
-    /// Every cell goes through the same rule [`App::enter`] uses, so a pasted `=A1+1` is a
-    /// formula and a pasted `'123` is text; the whole thing plus its recalculation is one
-    /// [`Action::Batch`], so undoing a paste is one step. Ragged rows are fine: a row's
-    /// cells land where the row puts them.
-    ///
-    /// Bounded by [`MAX_FORMATTED_CELLS`], for the reason [`App::set_format`] is.
+    /// Fill a rectangle from `anchor`, one row per row — the core half of a paste. Every cell goes
+    /// through [`App::enter`]'s rule, and the whole paste and its recalculation are one undo step.
+    /// Ragged rows are fine. Bounded by [`MAX_FORMATTED_CELLS`].
     pub fn enter_range(
         &self,
         sheet: usize,
@@ -632,31 +539,14 @@ impl App {
         })
     }
 
-    /// Read a CSV or TSV file into the sheet, starting at `anchor`.
+    /// Read a CSV or TSV file into the sheet, starting at `anchor`: a paste with a parser in
+    /// front. [`csv::parse`] cuts the fields, [`csv::input`] says what a person would have typed
+    /// to mean each one, and the typing rule decides the rest.
     ///
-    /// A paste with a parser in front of it, and deliberately little more: [`csv::parse`] cuts
-    /// the text into fields, [`csv::input`] says what a person would have **typed** to mean
-    /// each one, and the typing rule every other entry point uses decides the rest. So an
-    /// imported field and a typed one reach the document through the same door, and this
-    /// method has no opinion of its own about what a field means.
-    ///
-    /// The whole import — formats, values and the recalculation behind them — is one undo
-    /// entry.
-    ///
-    /// [`csv::Import::dates`] is the one thing here that is not simply a paste, and it is a
-    /// *precondition* rather than a second rule. The typing rule reads an ISO date into a cell
-    /// whose format already says it holds one (`date_kind`), which is `doc/sheet-shell.md`
-    /// C3's deliberate refusal to guess. Formatting the column first is therefore the whole
-    /// mechanism — and it cannot be done from outside, because a format on an *empty* cell
-    /// does not survive a save (the `TODO:` in `odf/read.rs`), so a `format` command followed
-    /// by an `import` command would silently lose it between the two processes. Pass one below
-    /// applies those formats to the document, pass two asks the ordinary question, and both
-    /// land in one entry.
-    ///
-    /// Bounded by [`MAX_FORMATTED_CELLS`], because a paste is what this is. A file bigger than
-    /// that is an error naming the number rather than an undo stack with a million entries in
-    /// it — split it, or write a generator (`doc/dsl.md` layer 1), which is the shape that
-    /// exists for bulk.
+    /// [`csv::Import::dates`] formats the target cells as dates first, because the typing rule
+    /// reads an ISO date only into a cell formatted as one; then the fields are read, and both
+    /// passes are one undo entry. Bounded by [`MAX_FORMATTED_CELLS`] like any paste; bulk data
+    /// wants a generator.
     pub fn import_csv(
         &self,
         sheet: usize,
@@ -680,9 +570,8 @@ impl App {
             let at =
                 |row: usize, col: usize| Pos::new(anchor.row + row as u32, anchor.col + col as u32);
 
-            // Pass one: the formats a date field needs, applied rather than queued — `typed`
-            // reads the document and not the batch. `--text` says guess nothing, and outranks
-            // this for that reason.
+            // Pass one: the formats date fields need, applied now, since `typed` reads the
+            // document rather than the batch. `--text` outranks it.
             let mut inverses = Vec::new();
             if options.dates && !options.text {
                 let null_date = state.doc.null_date;
@@ -743,18 +632,9 @@ impl App {
         })
     }
 
-    /// Write a rectangle out as CSV or TSV.
-    ///
-    /// **What a cell shows**, not what it stores: a date leaves as a date and a percentage as
-    /// a percentage, because the number format is the only place a document says which of
-    /// those a number is. `45000` in a file nobody can read as a date is the alternative, and
-    /// it is what makes an export need a second explanation.
-    ///
-    /// [`csv::Export::formulas`] asks for the source instead, in display form (`=SUM(B2:B4)`)
-    /// — LibreOffice's "save cell formulas" and the same spelling a formula bar shows.
-    ///
-    /// One read lock for the whole rectangle, and it hands back text rather than cells, so
-    /// rule 1 holds: nothing here is a getter for the document.
+    /// Write a rectangle out as CSV or TSV: what each cell shows, so a date leaves as a date — the
+    /// format is the only place a document says which a number is. [`csv::Export::formulas`]
+    /// writes formulas instead, in display form. Hands back text, not cells (rule 1).
     pub fn export_csv(
         &self,
         sheet: usize,
@@ -771,8 +651,7 @@ impl App {
                 let pos = Pos::new(row, col);
                 let formula = options.formulas.then(|| s.formula(pos)).flatten();
                 fields.push(match formula {
-                    // A formula this build cannot parse goes out as it is stored — the same
-                    // honesty `App::input_text` shows for one.
+                    // A formula that will not parse goes out as stored.
                     Some(formula) => {
                         formula::display::to_display(formula).unwrap_or_else(|_| formula.to_owned())
                     }
@@ -784,13 +663,9 @@ impl App {
         Ok(csv::write(&rows, options))
     }
 
-    /// Replicate `source` across a rectangle — a fill, the way a drag handle or Ctrl+D/
-    /// Ctrl+R work elsewhere. A formula's relative references shift by each target cell's
-    /// offset from `source` ([`formula::shift`]); its absolute ones do not. A plain value is
-    /// copied as is.
-    ///
-    /// One [`Action::Batch`], bounded by [`MAX_FORMATTED_CELLS`], for the same reasons
-    /// [`App::enter_range`] is.
+    /// Replicate `source` across a rectangle, as a drag handle or Ctrl+D/Ctrl+R does: relative
+    /// references shift by each target's offset ([`formula::shift`]), absolute ones do not, and a
+    /// plain value is copied. One undo step, bounded by [`MAX_FORMATTED_CELLS`].
     pub fn fill(
         &self,
         sheet: usize,
@@ -805,8 +680,7 @@ impl App {
             let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
             (s.formula(source).map(str::to_owned), s.get(source))
         };
-        // A formula this build cannot parse is copied verbatim rather than refused — the
-        // same honesty `App::input_text` shows for one.
+        // A formula that will not parse is copied verbatim.
         let parsed = formula
             .as_deref()
             .and_then(|f| formula::parse::parse(f).ok());
@@ -874,12 +748,9 @@ impl App {
         })
     }
 
-    /// What a formula *would* evaluate to, without storing anything.
-    ///
-    /// Three properties a shell leans on, and there is a test for each: it takes only a
-    /// **read** lock, so it is safe from a worker thread; it notifies **no observer**; and
-    /// it creates **no undo entry**. That is what makes a live result chip and a status-bar
-    /// aggregate cheap enough to recompute while someone is typing.
+    /// What a formula would evaluate to, without storing anything: a read lock only, no observer
+    /// notified and no undo entry, so a live result or a status-bar sum can be recomputed while
+    /// someone types.
     pub fn preview(&self, sheet: usize, pos: Pos, formula: &str) -> Result<CellValue> {
         let state = self.state.read().unwrap();
         if state.doc.sheet(sheet).is_none() {
@@ -891,17 +762,12 @@ impl App {
         ))
     }
 
-    /// A formula taken apart: every sub-expression of `formula` — display syntax, with or
-    /// without its `=` — and what it comes to in place at `pos`, with nothing stored
-    /// (`doc/formula-workbench.md` §3.2, [`formula::trace`]).
+    /// A formula taken apart: every sub-expression of `formula` (display syntax, `=` optional) and
+    /// what it comes to at `pos`, nothing stored (`doc/formula-workbench.md` §3.2).
+    /// [`App::preview`]'s guarantees, as the workbench asks on every keystroke.
     ///
-    /// [`App::preview`]'s three properties, for the same reason: a read lock only, no
-    /// observer notified, no undo entry — the workbench asks it on every keystroke. Its
-    /// [`formula::trace::Trace::value`] is `preview`'s answer.
-    ///
-    /// `overlay` is the *what if*: cells holding something else for this trace only, every
-    /// formula that reads them evaluated against it ([`App::overlay`] builds one from what a
-    /// person typed). `&Overlay::default()` traces the document as it is.
+    /// `overlay` holds cells that read differently for this trace only ([`App::overlay`] builds
+    /// one); `&Overlay::default()` traces the document as it is.
     pub fn trace(
         &self,
         sheet: usize,
@@ -917,11 +783,9 @@ impl App {
             .map_err(|e| Error::Formula(e.to_string()))
     }
 
-    /// An [`formula::trace::Overlay`] from what a person typed for each cell — each read by
-    /// the typing rule [`App::enter`] uses for that cell, so `-1` is a number, `'-1` text, an
-    /// empty string a blank, a date cell takes its ISO spelling and a German document reads
-    /// `1,5` as one and a half. A formula is evaluated to its value against the document as it
-    /// is. Nothing is stored.
+    /// An [`formula::trace::Overlay`] from what a person typed for each cell, each read by
+    /// [`App::enter`]'s rule for that cell. A formula is evaluated to its value. Nothing is
+    /// stored.
     pub fn overlay(&self, entries: &[(usize, Pos, &str)]) -> Result<formula::trace::Overlay> {
         let state = self.state.read().unwrap();
         let mut overlay = formula::trace::Overlay::default();
@@ -937,12 +801,9 @@ impl App {
         Ok(overlay)
     }
 
-    /// Empty every cell in a rectangle, formulas included. Returns how many were not
+    /// Empty every cell in a rectangle, formulas included, as one undo step bounded by
+    /// [`MAX_FORMATTED_CELLS`]; already empty cells are left out. Returns how many were not
     /// already empty.
-    ///
-    /// [`App::set_format`]'s shape, for the same reasons: one [`Action::Batch`] so that
-    /// Delete over a selection is one undo step, bounded by [`MAX_FORMATTED_CELLS`], and a
-    /// cell that is already empty is left out rather than written with what it holds.
     pub fn clear_range(&self, sheet: usize, start: Pos, end: Pos) -> Result<usize> {
         let cells = self.rectangle(start, end)?;
         self.mutate(|state| {
@@ -992,30 +853,19 @@ impl App {
 
     // --- find and replace ---
 
-    /// Every cell a [`find::Search`] matches, in reading order — sheet by sheet, then row by
-    /// row. What is searched is each cell's [`App::input_text`]; [`find`]'s module comment is
-    /// why.
-    ///
-    /// Bounded by each sheet's used extent, which is the rectangle the document occupies — the
-    /// ODF sheet limit is a million rows and none of them is worth walking.
+    /// Every cell a [`find::Search`] matches, in reading order — sheet by sheet, row by row —
+    /// searching each cell's [`App::input_text`] within its sheet's used extent.
     pub fn find(&self, search: &find::Search) -> Result<Vec<find::Hit>> {
         let state = self.state.read().unwrap();
         hits(&state.doc, search)
     }
 
-    /// Replace every occurrence [`App::find`] would report, in one undo step.
-    ///
-    /// Each rewritten cell goes back in through the typing rule, as if the replaced text had
-    /// been typed into it: a formula stays a formula (its display form converted with
-    /// [`formula::display::to_input`], the step every shell takes on Enter), a date cell
-    /// reads its ISO spelling back, and `12` replaced into `123` is a number. A cell whose
-    /// replaced text is a formula that will not parse is **left alone** and listed in
-    /// [`find::Replaced::refused`] — neither silently turned into text nor stored as a formula
-    /// nothing can evaluate — and the rest of the replace still happens.
-    ///
-    /// Bounded by [`MAX_FORMATTED_CELLS`] cells changed, because that is the size of the undo
-    /// entry. With [`RecalcMode::Document`] the ripple lands in the same entry, as
-    /// [`App::enter_range`]'s does.
+    /// Replace every occurrence [`App::find`] would report, as one undo step. Each rewritten cell
+    /// goes back through the typing rule: a formula stays a formula, a date cell reads its ISO
+    /// spelling, and `12` replaced into `123` is a number. A cell whose result is a formula that
+    /// will not parse is left alone and listed in [`find::Replaced::refused`]. Bounded by
+    /// [`MAX_FORMATTED_CELLS`] changed cells; with [`RecalcMode::Document`] the recalculation
+    /// lands in the same entry.
     pub fn replace(
         &self,
         search: &find::Search,
@@ -1056,18 +906,11 @@ impl App {
 
     // --- sheets ---
     //
-    // Adding and removing a sheet shifts every later index, which the undo stack survives
-    // because it is strictly ordered — see `Document::apply`. Nothing here reorders sheets:
-    // a new one is appended, because that is the button a shell has, and a move is a
-    // capability to add when something can ask for it rather than a parameter to carry now.
+    // Adding or removing a sheet shifts every later index; the undo stack survives because it is
+    // strictly ordered (`Document::apply`). A new sheet is appended; there is no move yet.
 
-    /// The name a new sheet is offered: the first `SheetN` no sheet already has, compared the way
-    /// sheet names are — without regard to case. What every spreadsheet offers and nobody has to
-    /// think about.
-    ///
-    /// The GNOME window, the browser and the terminal each spelled this, and the Windows pane
-    /// suggested `Sheet{count + 1}`, which a document with a `Sheet3` among two sheets already
-    /// has; the macOS shell would have been a fifth answer.
+    /// The name a new sheet is offered: the first `SheetN` no sheet has, compared without regard
+    /// to case.
     pub fn fresh_sheet_name(&self) -> String {
         let taken: Vec<String> = (0..self.sheet_count())
             .filter_map(|i| self.sheet_name(i).ok())
@@ -1096,22 +939,12 @@ impl App {
         })
     }
 
-    /// Rename a sheet, **and everything in the document that names it** — `doc/dsl.md` §6.5's
-    /// first refactoring, D10. Returns how many references were rewritten.
+    /// Rename a sheet, and every formula, named expression and chart range that names it, as one
+    /// undo step (`doc/dsl.md` §6.5). Returns how many references were rewritten.
     ///
-    /// A formula naming the old sheet, a named expression defined in terms of it, and a chart
-    /// range built from it all follow the rename. It used to be a documented loss
-    /// (`doc/not-doing.md`: the cells went stale and recalculated to `#REF!`), and the fix is the
-    /// shape §6.5 argues every refactoring should have: **one [`Action::Batch`]**, so three
-    /// hundred rewritten formulas are one Ctrl+Z and a failure part-way is not a half-renamed
-    /// document.
-    ///
-    /// The rewrite is an AST substitution re-serialised by the printer
-    /// ([`formula::rename`]), never a textual one — `Sales` occurs inside `SalesTax` and inside
-    /// `"Sales"`, and a name that needs quoting is not spelled the same before and after. A
-    /// formula this build cannot *parse* is left exactly as it was and is not counted: rewriting
-    /// text nobody understood is how a refactoring corrupts a document. `grind sheet lint`'s
-    /// `missing-sheet` is what finds one afterwards.
+    /// The rewrite is an AST substitution ([`formula::rename`]), never a textual one. A formula
+    /// that will not parse is left as it was and not counted; `grind sheet lint`'s `missing-sheet`
+    /// finds it.
     pub fn rename_sheet(&self, sheet: usize, name: &str) -> Result<usize> {
         self.mutate(|state| {
             check_sheet_name(&state.doc, name, Some(sheet))?;
@@ -1137,14 +970,8 @@ impl App {
         })
     }
 
-    /// Remove a sheet and everything on it.
-    ///
-    /// The last one is refused: a document with no sheet is a spreadsheet with nowhere to
-    /// type, and every shell would need a special case for it. Undoing brings the cells back
-    /// — the inverse carries the whole sheet.
-    ///
-    /// Formulas on *other* sheets that name this one are left alone, for the same reason and
-    /// with the same consequence as [`App::rename_sheet`].
+    /// Remove a sheet and everything on it; undo brings it back. The last sheet is refused.
+    /// Formulas on other sheets naming this one are left as they are, and recalculate to `#REF!`.
     pub fn remove_sheet(&self, sheet: usize) -> Result<()> {
         self.mutate(|state| {
             if state.doc.sheets.len() <= 1 {
@@ -1162,16 +989,11 @@ impl App {
         })
     }
 
-    /// Set — or with `None`, clear — the number format of every cell in a rectangle.
+    /// Set — or with `None`, clear — the number format of every cell in a rectangle, as one undo
+    /// step. Returns how many cells were touched.
     ///
-    /// A rectangle rather than one cell because formatting a column is the normal case, and
-    /// one [`Action::Batch`] because undoing it should be one step. Returns how many cells
-    /// were touched.
-    ///
-    /// The rectangle is bounded by [`MAX_FORMATTED_CELLS`]: a format costs an entry per
-    /// cell (see `Sheet::formats`), so `A1:Z1000000` is a memory-exhaustion request rather
-    /// than an intent, and refusing it is more useful than serving it slowly. A *whole
-    /// column* does not get here — a shell resolves `A:A` against the used extent first.
+    /// Bounded by [`MAX_FORMATTED_CELLS`]: a format costs an entry per cell, so `A1:Z1000000` is
+    /// refused. A whole column (`A:A`) is resolved against the used extent by the caller first.
     pub fn set_format(
         &self,
         sheet: usize,
@@ -1184,8 +1006,8 @@ impl App {
             if state.doc.sheet(sheet).is_none() {
                 return Err(Error::NoSuchSheet(sheet));
             }
-            // A no-op cell is left out of the batch, so re-applying a format a cell already
-            // has does not push an undo entry that restores nothing.
+            // A cell that already has the format is left out, so re-applying one pushes no empty
+            // undo entry.
             let updates = cells
                 .filter(|pos| {
                     state.doc.sheet(sheet).and_then(|s| s.format(*pos)) != format.as_ref()
@@ -1211,12 +1033,9 @@ impl App {
             .flat_map(move |row| (start.col..=end.col).map(move |col| Pos::new(row, col))))
     }
 
-    /// Set — or with `None`, clear — the styling of every cell in a rectangle.
-    ///
-    /// The twin of [`App::set_format`] in every respect: one [`Action::Batch`] so undo is
-    /// one step, bounded by [`MAX_FORMATTED_CELLS`] for the same reason, and it *replaces*
-    /// rather than merges — a shell that wants "make this bold as well" reads the style
-    /// first, which is one call and keeps this one from growing a merge policy.
+    /// Set — or with `None`, clear — the styling of every cell in a rectangle, as
+    /// [`App::set_format`] does. It replaces rather than merges: "bold as well" reads the style
+    /// first ([`App::style_at`]).
     pub fn set_style(
         &self,
         sheet: usize,
@@ -1225,8 +1044,8 @@ impl App {
         style: Option<style::CellStyle>,
     ) -> Result<usize> {
         let cells = self.rectangle(start, end)?;
-        // A style that sets nothing is no style, so the two spellings of "plain" cannot
-        // produce different documents.
+        // A style that sets nothing is no style, so both spellings of "plain" give the same
+        // document.
         let style = style.filter(|s| !s.is_plain());
         self.mutate(|state| {
             if state.doc.sheet(sheet).is_none() {
@@ -1244,16 +1063,10 @@ impl App {
         })
     }
 
-    /// Set — or with `None`, clear — the width of a run of columns (§5.4).
-    ///
-    /// A range rather than one column because dragging three column headers wider is one
-    /// gesture and should be one undo step, and bounded by [`MAX_TRACK_RUN`] because that is
-    /// how long a run this program will read back.
-    ///
-    /// The width is an ODF length as the document stores it — `"2.5cm"`, `"64pt"`. It is
-    /// checked here rather than at each shell: a length nothing can parse would be a column
-    /// that silently vanishes from every renderer, and `style::mm_length` is what a shell
-    /// that has measured something in millimetres spells it with.
+    /// Set — or with `None`, clear — the width of a run of columns (§5.4), as one undo step,
+    /// bounded by [`MAX_TRACK_RUN`]. The width is an ODF length (`"2.5cm"`, `"64pt"`), checked
+    /// here: an unparseable one would be a column no renderer draws. `style::mm_length` spells a
+    /// measured one.
     pub fn set_col_width(
         &self,
         sheet: usize,
@@ -1305,13 +1118,10 @@ impl App {
         })
     }
 
-    /// Fit tracks to their content, as one undo step: each column of `widths` set to its
-    /// width (`None` back to the default — an empty column), and every row in `rows` that has a
-    /// height of its own given it back, since a row without one already grows to hold what is in
-    /// it. *Fit Content to Cells* is every column in use and every row; the widths are measured
-    /// by the caller, in its own font, with [`fit::widest`].
-    ///
-    /// Only rows that carry a height are touched, so `rows` may be the whole sheet.
+    /// Fit tracks to their content, as one undo step: each column of `widths` set to its width
+    /// (`None` for the default), and every row in `rows` that has a height of its own given it
+    /// back. The caller measures widths in its own font, with [`fit::widest`]. Rows without a
+    /// height are untouched, so `rows` may be the whole sheet.
     pub fn fit(
         &self,
         sheet: usize,
@@ -1348,10 +1158,8 @@ impl App {
         })
     }
 
-    /// Hide — or with `hidden: false`, show — a run of columns by hand (§5.4's
-    /// `table:visibility="collapse"`). Same shape as [`App::set_col_width`]: a range because
-    /// selecting several headers and hiding them is one gesture and one undo step, and
-    /// bounded by [`MAX_TRACK_RUN`] for the same reason.
+    /// Hide — or with `hidden: false`, show — a run of columns by hand
+    /// (`table:visibility="collapse"`), as one undo step bounded by [`MAX_TRACK_RUN`].
     pub fn set_col_hidden(&self, sheet: usize, cols: Range<u32>, hidden: bool) -> Result<usize> {
         if cols.len() as u64 > u64::from(MAX_TRACK_RUN) {
             return Err(Error::TooLarge(cols.len() as u64));
@@ -1395,16 +1203,14 @@ impl App {
         })
     }
 
-    /// Every column hidden by hand, in order — what a shell draws at zero width and offers
-    /// to unhide.
+    /// Every column hidden by hand, in order.
     pub fn hidden_cols(&self, sheet: usize) -> Result<Vec<u32>> {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
         Ok(s.hidden_cols().collect())
     }
 
-    /// The row twin of [`App::hidden_cols`] — distinct from [`App::hidden_rows`], which is
-    /// what the *filter* hides rather than what a person hid directly.
+    /// Every row hidden by hand — unlike [`App::hidden_rows`], which is what the filter hides.
     pub fn manually_hidden_rows(&self, sheet: usize) -> Result<Vec<u32>> {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
@@ -1425,12 +1231,9 @@ impl App {
         }
     }
 
-    /// Every sized column of a sheet, in order — what a renderer turns into prefix sums.
-    ///
-    /// The whole sheet rather than a viewport's worth, because an offset has to be counted
-    /// from column zero: a caller asking only about what is on screen would have to add up
-    /// the columns before it anyway. Sparse and capped by [`MAX_TRACK_RUN`] on the way in,
-    /// so this is a handful of entries rather than 16384.
+    /// Every sized column of a sheet, in order, for a renderer's prefix sums: offsets count from
+    /// column zero, so the whole sheet rather than a viewport. Sparse and capped by
+    /// [`MAX_TRACK_RUN`].
     pub fn col_widths(&self, sheet: usize) -> Result<Vec<(u32, String)>> {
         let state = self.state.read().unwrap();
         let sheet = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
@@ -1447,17 +1250,12 @@ impl App {
             .collect())
     }
 
-    /// Recalculate every formula in the document, storing the results.
+    /// Recalculate every formula in the document, storing the results as one undo step; only
+    /// changed cells go in, so recalculating a current document leaves the history alone.
     ///
-    /// Only cells whose value actually changed go into the undo entry, so recalculating an
-    /// already-current document is a no-op that leaves the history alone — and the whole
-    /// recalculation is one [`Action::Batch`], so undoing it is one step.
-    ///
-    /// [`Recalc::spoiled`] is the number that matters to a caller. This engine implements a
-    /// subset of OpenFormula, so recalculating a document that uses a function it does not
-    /// have replaces a perfectly good cached value with `#NAME?`. That is the honest result
-    /// of *this* recalculation, but it is also data loss, and a shell has to be able to say
-    /// so rather than quietly writing the file back.
+    /// [`Recalc::spoiled`] counts cached values replaced by an error — usually `#NAME?` for a
+    /// function this build lacks. That is data loss, which a shell must be able to tell the user
+    /// about.
     pub fn recalc(&self) -> Result<Recalc> {
         self.mutate(|state| {
             state.recalc_owed = false;
@@ -1475,13 +1273,10 @@ impl App {
         })
     }
 
-    /// Make `RecalcMode::Document` *owe* a recalculation rather than perform one.
-    ///
-    /// A full recalculation is as slow as the document is big — a minute for a Monte-Carlo
-    /// workbook of 600,000 formulas — and [`App::enter`] does it with the write lock held, so
-    /// every read, a repaint included, waits for it. A shell that cannot afford that turns this
-    /// on, learns that one is owed from [`App::take_recalc_owed`], and does it off its UI thread
-    /// with [`App::recalc_in_place`], which holds only a read lock while it computes.
+    /// Make `RecalcMode::Document` owe a recalculation rather than perform one. A full
+    /// recalculation takes as long as the document is big — a minute for 600,000 formulas — and
+    /// [`App::enter`] holds the write lock while it runs. A shell that cannot wait learns one is
+    /// owed from [`App::take_recalc_owed`] and runs [`App::recalc_in_place`] off its UI thread.
     pub fn defer_recalc(&self, on: bool) {
         let mut state = self.state.write().unwrap();
         state.defer_recalc = on;
@@ -1496,19 +1291,14 @@ impl App {
         std::mem::take(&mut self.state.write().unwrap().recalc_owed)
     }
 
-    /// [`App::recalc`] for a caller that cannot stand still: the answer is computed under a
-    /// **read** lock, so the document can still be read (and drawn) the whole time, and written
-    /// only when it is done — if nothing else changed it meanwhile. `progress` is called with
-    /// `(formulas done, formulas in all)` as it goes.
+    /// [`App::recalc`] computed under a read lock, so the document can still be read and drawn
+    /// meanwhile, and written only if nothing changed in between. `progress` gets `(formulas done,
+    /// formulas in all)`.
     ///
-    /// `merge` puts the result in the undo entry on top of the stack, which is how a deferred
-    /// recalculation becomes part of the edit that owed it, as [`RecalcMode::Document`] does.
-    /// `force` writes even when recalculating would break cached values (`Recalc::spoiled`).
-    ///
-    /// `Ok(None)` means the document changed while this was computing, so the answer would have
-    /// been about a document that no longer exists: nothing was written, and a caller that still
-    /// wants one asks again. Whoever calls this must not write to the document meanwhile — a
-    /// writer queued behind this read lock makes every later reader wait for it too.
+    /// `merge` adds the result to the top undo entry, so a deferred recalculation belongs to the
+    /// edit that owed it; `force` writes even when it would spoil cached values. `Ok(None)` means
+    /// the document changed meanwhile and nothing was written. The caller must not write to the
+    /// document while this runs.
     pub fn recalc_in_place(
         &self,
         merge: bool,
@@ -1544,25 +1334,10 @@ impl App {
         })
     }
 
-    /// How many formula cells hold a value that recalculating would change — and, of those,
-    /// how many would *break*.
-    ///
-    /// A cached value and a formula are two claims about the same cell, and editing a cell a
-    /// formula reads makes them disagree without touching the formula's own cell. The
-    /// document is then internally inconsistent: it says `SUM(B2:B4)` and it says `1500`,
-    /// and only one of those can be right. ODF has no "dirty" bit to write, and every reader
-    /// including LibreOffice shows the cached value until something recalculates — so a
-    /// caller that has just edited a cell has to be able to *tell the user*, which is what
-    /// this is for.
-    ///
-    /// The same walk [`App::recalc`] does, without writing anything: no dependency graph, no
-    /// second implementation of what counts as stale, and no chance of the two disagreeing.
-    /// The cost is a full recalculation, which is the cost of `recalc` itself.
-    ///
-    /// `spoiled` is carried for the same reason it is on [`Recalc`]: a document is free to
-    /// use any of Part 4's other ~370 functions, and a cell that would recalculate to
-    /// `#NAME?` is a cell this build must not be trusted to fix. Stale-and-spoiled means
-    /// "this needs recalculating and I am not the one who can do it".
+    /// How many formula cells hold a value that recalculating would change, and how many of those
+    /// would break. Editing a cell a formula reads leaves the formula's cached value wrong, and
+    /// ODF has no dirty bit, so a shell needs this to tell the user. The same walk [`App::recalc`]
+    /// does, without writing; it costs a full recalculation. `spoiled` is as on [`Recalc`].
     pub fn stale(&self) -> Recalc {
         let state = self.state.read().unwrap();
         let (updates, spoiled) = recalculated(&state.doc);
@@ -1615,14 +1390,14 @@ impl App {
 
     // --- documents ---
 
-    /// Replace the document. History is dropped: an undo across a file boundary would
-    /// apply an action addressed to a document that no longer exists.
+    /// Replace the document. History is dropped: an undo would apply to a document that no longer
+    /// exists.
     pub fn open_bytes(&self, name: &str, bytes: &[u8]) -> Result<()> {
         self.open_document(read_bytes(name, bytes)?)
     }
 
-    /// Hold a document that has already been read — [`read_bytes`] is the slow half of an open
-    /// and takes no `App`, so a shell can run it on a worker thread and only *this* on its own.
+    /// Hold a document already read — [`read_bytes`] is the slow half and takes no `App`, so a
+    /// shell can run it on a worker thread.
     pub fn open_document(&self, doc: Document) -> Result<()> {
         self.mutate(|state| {
             state.doc = doc;
@@ -1636,9 +1411,8 @@ impl App {
         self.open_bytes(&path.display().to_string(), &std::fs::read(path)?)
     }
 
-    /// Serialise the current document. Paired with [`App::save_file`] because the browser
-    /// has no filesystem (doc/plan.md, rule 5), and this is the whole reason the core
-    /// never exposes its `Document`: saving is an operation, not a getter.
+    /// Serialise the current document. The browser has no filesystem (rule 5), and saving is an
+    /// operation, never a getter for the document.
     pub fn save_bytes(&self, form: Form) -> Result<Vec<u8>> {
         write_bytes(&self.state.read().unwrap().doc, form)
     }
@@ -1647,35 +1421,17 @@ impl App {
         write_file(&self.state.read().unwrap().doc, path)
     }
 
-    /// The document as its **projection** — plain text, with the token and span maps beside it
-    /// (`doc/dsl.md` §3).
-    ///
-    /// Two things at once, and that is the point of the milestone order: it is what a `.grind`
-    /// file holds, and it is what a code view shows of a document nobody has saved (§6). A
-    /// shell reads it, colours it from [`projection::Projection::tokens`], and asks
-    /// [`projection::Projection::address_at`] which cell the caret is in.
-    ///
-    /// Whole-document rather than range-taking, which is a real tension with rule 1 and is
-    /// resolved rather than ignored: §6.3 makes a code view an `Observer` over *its own*
-    /// scroll window, and the range-taking call is D9's. Until a shell has one, the only
-    /// caller is `grind sheet project`, for which the whole document is the request.
-    ///
-    /// **Nothing here writes to the document** — the same promise `get_viewport_with`'s
-    /// overlays make, and for the same reason: a projection is a view of a model, not a
-    /// second copy of one.
+    /// The document as its projection — plain text, with the token and span maps beside it
+    /// (`doc/dsl.md` §3): what a `.grind` file holds and what every shell's source view shows.
+    /// Whole-document, so a source view reads all of it. Nothing is written.
     pub fn project(&self) -> projection::Projection {
         projection::project(&self.state.read().unwrap().doc)
     }
 
-    /// Where each address is in the projection this document was **read from** — the file as
-    /// somebody wrote it, comments and alignment included — in file order. Empty for a document
-    /// that was not read from a `.grind`.
-    ///
-    /// [`App::project`]'s span map describes the projection this build would write; this one
-    /// describes the file on disk, which is the one an editor has open. It is what a language
-    /// server hovers over and puts inline values against (`doc/init.md` I5). After an edit
-    /// nobody has saved it still describes the file as read, for the same reason a lint
-    /// finding's location does.
+    /// Where each address is in the projection this document was read from — the file as written,
+    /// comments and alignment included — in file order; empty unless it was read from a `.grind`.
+    /// What a language server hovers over. After an unsaved edit it still describes the file on
+    /// disk.
     pub fn source_anchors(&self) -> Vec<grind_core::projection::Anchor> {
         self.state
             .read()
@@ -1695,11 +1451,8 @@ impl App {
         Ok(s.get(pos))
     }
 
-    /// Read a rectangle. The only way a shell reads cells.
-    ///
-    /// Plain values, texts and styles — `get_viewport_with(…, Overlays::NONE)`. The overlays
-    /// are a separate entry point rather than an argument here because Rust has no default
-    /// arguments and every ordinary paint in four shells asks for none of them.
+    /// Read a rectangle — the only way a shell reads cells: `get_viewport_with(…,
+    /// Overlays::NONE)`.
     pub fn get_viewport(
         &self,
         sheet: usize,
@@ -1709,16 +1462,10 @@ impl App {
         self.get_viewport_with(sheet, rows, cols, view::Overlays::NONE)
     }
 
-    /// Read a rectangle, with `doc/view-modes.md`'s derived overlays on it.
-    ///
-    /// Requested rather than always computed: roles and name anchors both need a
-    /// document-wide analysis — *nothing references this cell* cannot be answered inside a
-    /// viewport — and a shell that draws neither must not pay for one. The analysis is built
-    /// once per document state and cached; this read is viewport-shaped,
-    /// which is rule 1 unchanged.
-    ///
-    /// **Nothing about this writes to the document.** That is the feature's whole promise
-    /// and `sheet/tests/view_modes.rs` asserts it on the bytes.
+    /// Read a rectangle with `doc/view-modes.md`'s derived overlays. Roles and name anchors need a
+    /// document-wide analysis, built once per document state and cached, so a shell that draws
+    /// neither does not pay. Nothing is written (`sheet/tests/view_modes.rs` asserts it on the
+    /// bytes).
     pub fn get_viewport_with(
         &self,
         sheet: usize,
@@ -1738,9 +1485,8 @@ impl App {
         let mut general = Vec::with_capacity(size);
         let analysis = overlays.any().then(|| self.analysis(&state.doc));
         let mut roles = overlays.roles.then(|| Vec::with_capacity(size));
-        // Conditional formats are evaluated here, against what the cells show, and handed over
-        // as the style the cell is drawn in — so no shell evaluates a rule
-        // (`doc/conditional-format.md` §2).
+        // Conditional formats are evaluated here, against what the cells show, so no shell
+        // evaluates a rule (`doc/conditional-format.md` §2).
         let mut engine =
             (!s.rules().is_empty()).then(|| formula::eval::Engine::over_cached(&state.doc));
         let mut look = |pos: Pos| -> Option<style::CellStyle> {
@@ -1752,8 +1498,8 @@ impl App {
                 Some(rule) => Some(rule.over(own)),
                 None => own.cloned(),
             };
-            // A number format's own colour — a red negative's red — is drawn over the cell's
-            // (`doc/ods-format.md` §5.2), so no shell asks which branch a value took.
+            // A number format's own colour (a red negative's red) is drawn over the cell's
+            // (`doc/ods-format.md` §5.2).
             if let Some(color) = s.format(pos).and_then(|f| f.color_of(&s.get(pos))) {
                 look.get_or_insert_with(Default::default).color = Some(color.to_owned());
             }
@@ -1844,17 +1590,14 @@ impl App {
         })
     }
 
-    /// The document-wide analysis, built if it is not already there.
-    ///
-    /// `doc` is passed in rather than read again because every caller already holds the read
-    /// lock — and taking it twice is how a lock order gets invented by accident.
+    /// The document-wide analysis, built if missing. `doc` is passed in because every caller
+    /// already holds the read lock.
     fn analysis(&self, doc: &Document) -> Arc<view::Analysis> {
         if let Some(analysis) = self.analysis.read().unwrap().clone() {
             return analysis;
         }
-        // Two threads may both build one here. That costs a duplicated walk and cannot give
-        // a wrong answer — both read the same document under the same read lock — and it is
-        // preferable to holding a write lock across the build.
+        // Two threads may both build one; that duplicates a walk but cannot give a wrong answer,
+        // and beats holding a write lock across the build.
         let fresh = Arc::new(view::Analysis::build(doc));
         *self.analysis.write().unwrap() = Some(fresh.clone());
         fresh
@@ -1880,31 +1623,18 @@ impl App {
         Ok((s.used_rows(), s.used_cols()))
     }
 
-    /// What an editor puts in front of a user for one cell: the text that, entered back
-    /// unchanged, leaves the cell exactly as it is.
-    ///
-    /// [`App::enter`]'s inverse, and in the core for that reason — a shell deriving it
-    /// would be deriving the typing rule a second time, and the two would drift on the
-    /// cases that matter. A text cell that would otherwise read as a number, a logical or a
-    /// formula comes back with the `'` that forces it to text: `007` typed back without one
-    /// is the number 7.
-    ///
-    /// A formula comes back in **display form** (`=SUM(B2:B4)`), so a shell hands it to
-    /// [`formula::display::from_display`] on the way back in, exactly as it does for a
-    /// formula the user typed. That one step is the whole difference between what an editor
-    /// holds and what [`App::enter`] takes.
-    ///
-    /// A date or time comes back in the ISO spelling [`numfmt::general`] already promises is
-    /// always typeable back in — `date_kind` decides a cell counts as one whenever its
-    /// format says so, or failing that its [`model::NumberKind`] does, so a cell LibreOffice
-    /// wrote with `office:date-value` and no style of its own still round-trips.
+    /// What an editor puts in front of a user for one cell: the text that, entered back unchanged,
+    /// leaves the cell as it is — [`App::enter`]'s inverse. Text that would otherwise read as a
+    /// number, a logical or a formula gets a leading `'`. A formula comes back in display form
+    /// (`=SUM(B2:B4)`), which a shell converts with [`formula::display::from_display`] on the way
+    /// back in. A date or time comes back in ISO, which reads back in: `date_kind` decides a cell
+    /// is one by its format, else by its [`model::NumberKind`].
     pub fn input_text(&self, sheet: usize, pos: Pos) -> Result<String> {
         let state = self.state.read().unwrap();
         input_of(&state.doc, sheet, pos)
     }
 
-    /// What the cell *displays* — a formula's result, formatted, rather than its source.
-    /// "Copy Value" is this instead of [`App::input_text`].
+    /// What the cell displays — a formula's result, formatted; what "Copy Value" copies.
     pub fn value_text(&self, sheet: usize, pos: Pos) -> Result<String> {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
@@ -1916,33 +1646,24 @@ impl App {
         ))
     }
 
-    /// How one cell looks, or `None` for a plain one.
-    ///
-    /// [`App::set_style`] *replaces* rather than merges, deliberately — so "make this bold as
-    /// well" is this call, a field set, and one `set_style`. That read-merge-write is what a
-    /// toolbar's bold button is, and the reason the merge policy lives in the caller that
-    /// knows which button was pressed rather than in the core.
+    /// How one cell looks, or `None` for a plain one — what a toolbar reads before
+    /// [`App::set_style`], which replaces rather than merges.
     pub fn style_at(&self, sheet: usize, pos: Pos) -> Result<Option<style::CellStyle>> {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
         Ok(s.style(pos).cloned())
     }
 
-    /// How one cell's value is spelled, or `None` for the general format.
-    ///
-    /// The twin of [`App::style_at`], and what a format picker shows as its current state.
-    /// Not carried in the [`Viewport`], because rendering needs the *text*, which is already
-    /// there — this is for the one cell a user is asking about.
+    /// How one cell's value is spelled, or `None` for the general format — what a format picker
+    /// shows.
     pub fn format_at(&self, sheet: usize, pos: Pos) -> Result<Option<numfmt::Format>> {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
         Ok(s.format(pos).cloned())
     }
 
-    /// What one cell **would** show under `format` — `None` being the general format — in the
-    /// document's own locale, with nothing written. A format picker's live sample asks this as
-    /// the person changes a setting, so the sample is the renderer's own answer rather than a
-    /// second one the picker makes up.
+    /// What one cell would show under `format` (`None` being general), in the document's locale,
+    /// with nothing written — a format picker's live sample.
     pub fn shown_as(
         &self,
         sheet: usize,
@@ -1959,16 +1680,9 @@ impl App {
         })
     }
 
-    /// A cell's formula in display form, **with the document's names substituted** —
-    /// `doc/view-modes.md` §3.3. `None` for a cell holding a plain value.
-    ///
-    /// [`App::input_text`]'s reading rather than its replacement: what comes back here is
-    /// for *showing*, and typing it back in would store the names rather than the
-    /// references. A formula bar that lets a name be edited is a shell decision and this is
-    /// the answer it reads either way.
-    ///
-    /// A formula that will not parse comes back exactly as it is stored, which is what
-    /// [`App::input_text`] does with one and for the same reason.
+    /// A cell's formula in display form with the document's names substituted (`doc/view-modes.md`
+    /// §3.3); `None` for a plain value. For showing only: typing it back would store the names. A
+    /// formula that will not parse comes back as stored.
     pub fn named_formula(&self, sheet: usize, pos: Pos) -> Result<Option<String>> {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
@@ -1976,10 +1690,8 @@ impl App {
             return Ok(None);
         };
         let at = formula::eval::Address::new(sheet, pos);
-        // `view::Names` rather than the cached [`view::Analysis`] on purpose: this needs the
-        // name anchors and nothing else, and building those is one parse per declared name
-        // where an analysis recalculates the document. A formula bar asks per selection
-        // change, and it must not cost a recalculation to read one cell.
+        // `view::Names` rather than the cached analysis: this needs only the name anchors, one
+        // parse per name, where an analysis recalculates the document.
         Ok(Some(
             view::Names::build(&state.doc)
                 .display(&state.doc, at, formula)
@@ -1994,19 +1706,10 @@ impl App {
         Ok(s.formula(pos).map(str::to_owned))
     }
 
-    /// Check the document against [`lint`]'s rules — `doc/dsl.md` §4.3, D6.
-    ///
-    /// A read: nothing is stored, nothing is marked, and linting a document leaves its bytes
-    /// exactly as they were — the same promise view modes make, and for the same reason (a
-    /// stored classification goes stale and a derived one cannot). `grind sheet lint` is the
-    /// CLI twin, and a shell that wants squiggles turns each address into a byte range through
-    /// the projection's span map (§6.2) rather than by inventing a second addressing.
-    ///
-    /// With a [`spell::Lexicon`] attached ([`App::set_lexicon`]) the `misspelt` rule runs too, so
-    /// every problems pane lists the words the dictionary does not know with no code of its own.
-    ///
-    /// A document read from a `.grind` gets each finding's line and column in that file too
-    /// ([`grind_core::lint::Report::locate_in`]), which is what lets an editor jump to it.
+    /// Check the document against [`lint`]'s rules (`doc/dsl.md` §4.3). A read: nothing is stored.
+    /// With a [`spell::Lexicon`] attached the `misspelt` rule runs too. A document read from a
+    /// `.grind` gets each finding's line and column in that file
+    /// ([`grind_core::lint::Report::locate_in`]).
     pub fn lint(&self, options: &grind_core::lint::Options) -> grind_core::lint::Report {
         let state = self.state.read().unwrap();
         let lexicon = self.lexicon.read().unwrap().clone();
@@ -2019,11 +1722,8 @@ impl App {
 
     // --- spelling (`doc/spelling.md`, "In a spreadsheet") ---
 
-    /// Check spelling against `lexicon` from now on, or with `None` stop checking — which is
-    /// how spelling is turned off.
-    ///
-    /// Observers are **not** told: the document has not changed, and an observer's one signal
-    /// means it has. The caller that attaches a lexicon redraws its own grid.
+    /// Check spelling against `lexicon` from now on, or with `None` stop. Observers are not told,
+    /// since the document has not changed; the caller redraws.
     pub fn set_lexicon(&self, lexicon: Option<Arc<dyn spell::Lexicon>>) {
         *self.lexicon.write().unwrap() = lexicon;
     }
@@ -2035,11 +1735,9 @@ impl App {
         lexicon.as_ref().map(|l| l.language().to_owned())
     }
 
-    /// Every misspelt word in one sheet, or in every sheet with `None`, in reading order — empty
-    /// when no dictionary is attached. `within` narrows it to the cells from its first corner to
-    /// its second, inclusive, on whichever sheets are checked: a shell asking about the one cell
-    /// under the pointer does not check the whole sheet to answer. Only typed text is checked:
-    /// never a number, a date or a formula's result ([`Sheet::text_cells`]).
+    /// Every misspelt word in one sheet, or every sheet with `None`, in reading order; empty
+    /// without a dictionary. `within` narrows it to a rectangle on whichever sheets are checked.
+    /// Only typed text is checked ([`Sheet::text_cells`]).
     pub fn misspellings(
         &self,
         sheet: Option<usize>,
@@ -2061,20 +1759,16 @@ impl App {
             .collect())
     }
 
-    /// What `word` might have been, best first — empty when no dictionary is attached. Slow next
-    /// to [`App::misspellings`] (tens of milliseconds), so it is asked one word at a time.
+    /// What `word` might have been, best first; empty without a dictionary. Tens of milliseconds,
+    /// so one word at a time.
     pub fn suggest(&self, word: &str) -> Vec<String> {
         let lexicon = self.lexicon.read().unwrap().clone();
         lexicon.map_or_else(Vec::new, |l| l.suggest(&spell::normalise(word)))
     }
 
-    /// Replace the `word` at character `offset` of a text cell with `with` — what picking a
-    /// suggestion does — as one undo step, and recalculate what reads the cell. The cell stays
-    /// text whatever the correction looks like, and keeps its style and format.
-    ///
-    /// The word is named rather than only measured so that a correction aimed at a cell that has
-    /// changed since the misspelling was found is refused instead of overwriting whatever now
-    /// sits there.
+    /// Replace the `word` at character `offset` of a text cell with `with`, as one undo step,
+    /// recalculating what reads it. The cell stays text and keeps its style and format. Refused if
+    /// the cell no longer holds `word` there.
     pub fn correct(
         &self,
         sheet: usize,
@@ -2114,16 +1808,9 @@ impl App {
         })
     }
 
-    /// Every calculated cell in the document, sheet by sheet and address by address.
-    ///
-    /// What a "where is this number coming from" question needs answered in one place: a
-    /// spreadsheet hides its formulas behind their results, and the only way to see them all
-    /// is a list of them. Plain arithmetic counts — `=[.A1]/2` calls nothing and is still a
-    /// calculation — so this is every formula cell rather than every cell calling a function,
-    /// and [`Calculation::functions`] is empty rather than absent for one.
-    ///
-    /// Filtering is the caller's: a dialog's search box and a `--filter` flag want different
-    /// matching, and neither wants the whole document re-read per keystroke.
+    /// Every calculated cell in the document, sheet by sheet and address by address — plain
+    /// arithmetic included (`=[.A1]/2`), with an empty [`Calculation::functions`]. Filtering is
+    /// the caller's.
     pub fn calculations(&self) -> Vec<Calculation> {
         let state = self.state.read().unwrap();
         let null_date = state.doc.null_date;
@@ -2139,8 +1826,8 @@ impl App {
                     sheet: index,
                     sheet_name: s.name.clone(),
                     pos,
-                    // Display form, because that is the spelling a user reads in the formula
-                    // bar; one that will not parse is shown exactly as it is stored.
+                    // Display form, as the formula bar shows it; one that will not parse as
+                    // stored.
                     formula: formula::display::to_display(formula)
                         .unwrap_or_else(|_| formula.to_owned()),
                     value: render_in(s, pos, null_date, locale),
@@ -2161,10 +1848,9 @@ impl App {
         self.state.read().unwrap().doc.locale.clone()
     }
 
-    /// Set the document's own locale, or take it away with `None` — one undo step, and every
-    /// number shown through a format with no locale of its own, or through none at all, is
-    /// spelled the new way at once; what is typed afterwards is read the new way too. Nothing is
-    /// written to any cell: this changes how the document *speaks*, not what it holds.
+    /// Set the document's own locale, or with `None` remove it, as one undo step. Every number
+    /// shown through a format without a locale of its own is spelled the new way at once, and
+    /// typing is read the new way. No cell changes.
     pub fn set_locale(&self, locale: Option<locale::Locale>) -> Result<()> {
         self.mutate(|state| {
             if state.doc.locale == locale {
@@ -2180,24 +1866,15 @@ impl App {
         })
     }
 
-    /// A number spelled the way this document spells a number with no format —
-    /// [`numfmt::spell_number`] in its locale. What a shell's status bar and any other place that
-    /// shows a computed number beside the grid use, so a German document's sum reads `1234,5`
-    /// where its cells do.
+    /// A number spelled the way this document spells an unformatted one ([`numfmt::spell_number`])
+    /// — for a status bar's sum.
     pub fn display_number(&self, n: f64) -> String {
         numfmt::spell_number(n, self.state.read().unwrap().doc.locale.as_ref())
     }
 
-    /// Define a named expression, or redefine one (§5.11).
-    ///
-    /// `expression` is OpenFormula text without the `of:=` prefix, exactly as a formula
-    /// stores it — `[$Data.$A$1:.$B$9]` for a named range, `SUM([$Data.$A$1:.$A$9])` for a
-    /// named expression. The two are the same thing to everything downstream, which is why
-    /// the reader turns a `table:named-range` into the reference it stands for.
-    ///
-    /// It is **parsed before it is stored**, because a name is used from every formula in
-    /// the document: a broken one is not one broken cell but `#NAME?` everywhere it is
-    /// mentioned, and the address it was typed at is long gone by then.
+    /// Define or redefine a named expression (§5.11). `expression` is OpenFormula without `of:=` —
+    /// `[$Data.$A$1:.$B$9]` for a range, `SUM([$Data.$A$1:.$A$9])` for an expression. Parsed
+    /// before it is stored: a broken name is `#NAME?` in every formula using it.
     pub fn set_name(&self, name: &str, expression: &str) -> Result<()> {
         validate_name(name)?;
         formula::parse::parse(expression).map_err(|e| Error::Formula(e.to_string()))?;
@@ -2215,19 +1892,13 @@ impl App {
         })
     }
 
-    /// Rename a named expression, and every formula and every other name that uses it
-    /// (`doc/dsl.md` §6.5's Rename row — the named-expression half, beside
-    /// [`App::rename_sheet`]).
+    /// Rename a named expression and every formula and name that uses it, as one undo step
+    /// (`doc/dsl.md` §6.5). An AST substitution (`formula::rename::rename_name`): `rate` inside
+    /// `rate_2`, `"rate"` or `RATE(…)` is untouched, and a formula that will not parse is left for
+    /// `grind lint`. Cached values are kept. Returns how many formulas and names were rewritten.
     ///
-    /// One [`Action::Batch`], so one undo takes the whole rename back. The rewrite is
-    /// `formula::rename::rename_name`, an AST substitution: `rate` inside `rate_2`, inside
-    /// `"rate"` or as the function `RATE(…)` is untouched, and a formula this build cannot parse
-    /// is left alone for `grind lint` to find. A cached value is kept, since what the name
-    /// stands for has not changed. Returns how many formulas and other names were rewritten.
-    ///
-    /// Refused when `from` is not defined, when `to` is not a name (§5.11's spelling), and when
-    /// `to` is already another name — merging two would silently drop one definition. Changing
-    /// only the case (`rate` → `Rate`) is allowed, and respells every use.
+    /// Refused when `from` is undefined, when `to` is not a valid name, and when `to` already
+    /// exists. Changing only the case is allowed.
     pub fn rename_name(&self, from: &str, to: &str) -> Result<usize> {
         validate_name(to)?;
         self.mutate(|state| {
@@ -2299,20 +1970,14 @@ impl App {
         })
     }
 
-    /// Write a named expression back into every formula and every other name that uses it,
-    /// and delete it (`doc/dsl.md` §6.5's Inline row — the inverse of extracting one).
+    /// Write a named expression into every formula and name that uses it, and delete it, as one
+    /// undo step (`doc/dsl.md` §6.5). The same substitution as [`App::rename_name`] with the
+    /// definition's tree, bracketed by precedence; cached values are kept. Returns how many were
+    /// rewritten.
     ///
-    /// One [`Action::Batch`], so one undo brings the name and every use of it back. The rewrite
-    /// is `formula::rename::inline_name`, the same AST substitution [`App::rename_name`] uses with
-    /// the definition's tree in place of a new name; the printer brackets it where precedence
-    /// needs it. Cached values are kept, since a name is evaluated as its definition at the
-    /// using cell and the inlined formula is that same tree. Returns how many formulas and other
-    /// names were rewritten.
-    ///
-    /// Refused — rather than leave a `#NAME?` behind — when the name is not defined, when its
-    /// definition does not parse or uses the name itself, and when a formula or name *this
-    /// build cannot parse* spells it: that text cannot be rewritten, and deleting the definition
-    /// would break it. The last check is textual and so errs towards refusing.
+    /// Refused rather than leave a `#NAME?`: when the name is undefined, its definition does not
+    /// parse or uses itself, or a formula or name that will not parse spells it (a textual check,
+    /// erring towards refusing).
     pub fn inline_name(&self, name: &str) -> Result<usize> {
         self.mutate(|state| {
             let doc = &state.doc;
@@ -2402,11 +2067,8 @@ impl App {
         })
     }
 
-    /// Delete a named expression. `false` if there was no such name.
-    ///
-    /// Deleting one a formula still mentions is allowed and turns that formula into
-    /// `#NAME?` at the next recalculation — the same answer LibreOffice gives, and refusing
-    /// would mean a name could never be removed from a document that once used it.
+    /// Delete a named expression; `false` if there was none. Formulas still using it become
+    /// `#NAME?` at the next recalculation, as in LibreOffice.
     pub fn clear_name(&self, name: &str) -> bool {
         self.mutate(|state| {
             if !state.doc.names.contains_key(&name.to_lowercase()) {
@@ -2437,14 +2099,9 @@ impl App {
             .collect()
     }
 
-    /// Set — or with `None`, remove — a sheet's autofilter (§9.4).
-    ///
-    /// One filter per sheet, replaced rather than merged: a second filter over the same
-    /// sheet is not a thing ODF's `table:database-range` can say twice about one range, and
-    /// merging two would be inventing an answer.
-    ///
-    /// Which rows this hides is *not* stored — see [`crate::filter`] — so nothing else has
-    /// to be kept in step, and a value edit changes the hidden rows immediately.
+    /// Set — or with `None`, remove — a sheet's autofilter (§9.4), one per sheet, replaced rather
+    /// than merged. The hidden rows are derived, not stored ([`crate::filter`]), so a value edit
+    /// changes them at once.
     pub fn set_filter(&self, sheet: usize, filter: Option<Filter>) -> Result<()> {
         self.mutate(|state| {
             let inverse = state
@@ -2460,15 +2117,10 @@ impl App {
         })
     }
 
-    /// Merge the rectangle `start..=end` into one cell, drawn with the top-left cell's value
-    /// and look (`table:number-columns-spanned`/`-rows-spanned`, rng:16102).
-    ///
-    /// Every merge it overlaps is taken away first, in the same undo step — the way selecting
-    /// across two merged headings and merging them again means one heading. What the other
-    /// cells hold **stays**, out of sight: ODF's covered cell has a value like any other, and
-    /// unmerging shows it again, which is LibreOffice's own choice and the one that loses
-    /// nothing. Returns whether anything changed — merging a range that is already exactly
-    /// one merge does not; one cell is no merge and is refused.
+    /// Merge the rectangle `start..=end` into one cell drawn with the top-left cell's value and
+    /// look (rng:16102). Merges it overlaps are taken away in the same undo step. The other cells
+    /// keep what they hold, out of sight, as LibreOffice keeps it, and unmerging shows it again.
+    /// Returns whether anything changed; one cell is refused.
     pub fn merge(&self, sheet: usize, start: Pos, end: Pos) -> Result<bool> {
         let (anchor, span) = model::Span::between(start, end);
         if span.is_single() {
@@ -2504,9 +2156,8 @@ impl App {
         })
     }
 
-    /// Take away every merge that overlaps `start..=end`, one undo step for all of them.
-    /// Returns how many there were — zero is not an error, since unmerging a plain cell is
-    /// what the gesture asks for anyway.
+    /// Take away every merge overlapping `start..=end`, as one undo step; returns how many (zero
+    /// is fine).
     pub fn unmerge(&self, sheet: usize, start: Pos, end: Pos) -> Result<usize> {
         let (anchor, span) = model::Span::between(start, end);
         self.mutate(|state| {
@@ -2531,17 +2182,15 @@ impl App {
         Ok(s.merges().map(|(a, span)| (a, span.end(a))).collect())
     }
 
-    /// The merged range `pos` is part of, as its top-left and bottom-right cells — what a
-    /// shell asks to move the cursor onto a merge's top-left cell, and to grow a selection
-    /// over the whole of one.
+    /// The merged range `pos` is part of, as its top-left and bottom-right cells.
     pub fn merge_at(&self, sheet: usize, pos: Pos) -> Result<Option<(Pos, Pos)>> {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
         Ok(s.merge_at(pos).map(|(a, span)| (a, span.end(a))))
     }
 
-    /// Put a checkbox in `pos` — or with `None`, take it away (`doc/ods-format.md` §3.5). One
-    /// undo step. The linked cell is not touched: a new checkbox shows whatever it already holds.
+    /// Put a checkbox in `pos`, or with `None` remove it (`doc/ods-format.md` §3.5), as one undo
+    /// step. The linked cell is not touched.
     pub fn set_checkbox(&self, sheet: usize, pos: Pos, checkbox: Option<Checkbox>) -> Result<()> {
         self.mutate(|state| {
             let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
@@ -2568,9 +2217,8 @@ impl App {
         Ok(s.rules().to_vec())
     }
 
-    /// Replace a sheet's rules, the whole list — one undo step. A condition that is not
-    /// OpenFormula is refused here rather than stored to draw nothing, as a name is
-    /// ([`App::set_name`]); so is a rule with no range.
+    /// Replace a sheet's rules, the whole list, as one undo step. A condition that is not
+    /// OpenFormula, or a rule with no range, is refused.
     pub fn set_rules(&self, sheet: usize, rules: Vec<rule::Rule>) -> Result<()> {
         for r in &rules {
             if r.ranges.is_empty() {
@@ -2594,8 +2242,7 @@ impl App {
         })
     }
 
-    /// Add a rule after every rule the sheet has — the lowest priority, so it draws only where
-    /// none of them holds. Returns its index.
+    /// Add a rule after every rule the sheet has — lowest priority. Returns its index.
     pub fn add_rule(&self, sheet: usize, rule: rule::Rule) -> Result<usize> {
         let mut rules = self.rules(sheet)?;
         rules.push(rule);
@@ -2622,12 +2269,10 @@ impl App {
         Ok(s.checkboxes().map(|(pos, c)| (pos, c.clone())).collect())
     }
 
-    /// Tick or untick the checkbox in `pos`, returning whether it is ticked now.
-    ///
-    /// A linked checkbox's state **is** its linked cell, so ticking one writes `TRUE` or
-    /// `FALSE` there — `1` or `0` where the cell already holds a number, which is how LibreOffice
-    /// stores one — and recalculates — the formula counting the ticks follows, in the same undo
-    /// step. An unlinked one flips its own state.
+    /// Tick or untick the checkbox in `pos`, returning whether it is ticked now. A linked
+    /// checkbox's state is its linked cell: `TRUE`/`FALSE`, or `1`/`0` where the cell holds a
+    /// number as LibreOffice stores one, recalculated in the same undo step. An unlinked one flips
+    /// its own state.
     pub fn toggle_checkbox(&self, sheet: usize, pos: Pos) -> Result<bool> {
         self.mutate(|state| {
             let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
@@ -2647,9 +2292,8 @@ impl App {
                             .ok_or_else(|| Error::BadSheet(format!("no such sheet: {name}")))?,
                         None => sheet,
                     };
-                    // In the cell's own spelling: a document that keeps its ticks as `1`/`0`
-                    // with a boolean format — LibreOffice's way of storing TRUE — gets a
-                    // number back, so a formula summing them still does.
+                    // In the cell's own spelling: ticks kept as `1`/`0` stay numbers, so a sum
+                    // over them still works.
                     let value = match state.doc.sheet(target).map(|s| s.get(link.pos)) {
                         Some(CellValue::Number(_)) => CellValue::Number(f64::from(u8::from(now))),
                         _ => CellValue::Bool(now),
@@ -2681,27 +2325,17 @@ impl App {
         Ok(s.filter().cloned())
     }
 
-    /// The rows the filter hides, in order — what a shell leaves undrawn, and empty when
-    /// there is no filter.
+    /// The rows the filter hides, in order; empty without a filter.
     pub fn hidden_rows(&self, sheet: usize) -> Result<Vec<u32>> {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
         Ok(s.hidden_rows(state.doc.null_date, state.doc.locale.as_ref()))
     }
 
-    /// Format a rectangle as a table (Excel's own feature, read the ODF way): an autofilter,
-    /// alternating row shading, an optional totals row, and an automatically named range, all
-    /// in one [`Action::Batch`] so undo is one step. Returns the name it settled on.
-    ///
-    /// See [`table_format`] for why this is a one-shot composite rather than a persisted
-    /// object: ODF has nothing like xlsx's `ListObject` to persist one as, so the batch is
-    /// ordinary edits — the same ones `set_filter`/`set_style`/`set_formula`/`set_name` make
-    /// one at a time — and there is no "un-table" to match; clearing the effects means
-    /// clearing the filter, restyling the cells and deleting the name, same as it would after
-    /// LibreOffice's own AutoFormat.
-    ///
-    /// Bounded by [`MAX_FORMATTED_CELLS`], the same guard [`App::set_style`] uses, since
-    /// banding costs a style write per cell.
+    /// Format a rectangle as a table: an autofilter, alternating row shading, an optional totals
+    /// row and a named range, as one undo step; returns the name. ODF has no table object, so
+    /// these are ordinary edits ([`table_format`]) and undoing them is clearing each. Bounded by
+    /// [`MAX_FORMATTED_CELLS`].
     pub fn format_table(
         &self,
         sheet: usize,
@@ -2725,9 +2359,8 @@ impl App {
 
     // --- charts ---
 
-    /// Add a chart to a sheet at the given place — `x`/`y`/`width`/`height` are ODF lengths
-    /// (`"2.5cm"`), the same as [`Self::reshape_chart`] takes — resolving the spec's ranges the
-    /// way a formula's own reference resolves ([`chart::parse_range`]). One undo step.
+    /// Add a chart at the given place (`x`/`y`/`width`/`height` are ODF lengths), resolving the
+    /// spec's ranges as a formula's references resolve ([`chart::parse_range`]). One undo step.
     pub fn add_chart(
         &self,
         sheet: usize,
@@ -2766,10 +2399,9 @@ impl App {
         })
     }
 
-    /// The chart a block of cells makes — [`chart::guess`], under one read lock. `shape` is a
-    /// person overruling one of its answers (which way the series run, and whether the first
-    /// row or column names things); `None` lets the cells decide. Nothing is written: the
-    /// [`chart::Spec`] it returns is what [`Self::add_chart`] takes.
+    /// The chart a block of cells makes ([`chart::guess`]). `shape` overrides which way the series
+    /// run and whether the first row or column names things. Nothing is written;
+    /// [`Self::add_chart`] takes the result.
     pub fn suggest_chart(
         &self,
         sheet: usize,
@@ -2802,11 +2434,8 @@ impl App {
         })
     }
 
-    /// Move or resize the chart at `index` — `x`/`y`/`width`/`height` are ODF lengths
-    /// (`"2.5cm"`), the same as [`Self::add_chart`] takes. One undo step however many times a
-    /// shell calls this mid-drag is `App`'s caller's job, not this method's — see
-    /// `grind-sheet-gtk`'s own commit-on-release, which only calls this once the pointer is
-    /// released rather than on every pixel of motion.
+    /// Move or resize the chart at `index` (ODF lengths), one undo step per call — a shell calls
+    /// it once, on release.
     pub fn reshape_chart(
         &self,
         sheet: usize,
@@ -2834,15 +2463,9 @@ impl App {
         })
     }
 
-    /// Replace a chart's axes and its series (colours included) wholesale, one undo step —
-    /// the same "send the whole mutable bundle" shape [`Self::reshape_chart`] uses. A caller
-    /// reads the chart's current state through [`Self::charts`], mutates the one field it
-    /// cares about (an axis' title, tick labels or gridlines, or one series'
-    /// `color`/`point_colors`), and calls this with the rest unchanged.
-    ///
-    /// The series here are **already resolved** — full range-address strings carrying their
-    /// colours, straight out of [`Self::charts`]. To change what a chart *points at*, in the
-    /// vocabulary a user types, use [`Self::edit_chart`] instead.
+    /// Replace a chart's axes and resolved series (colours included) as one undo step: read it
+    /// through [`Self::charts`], change a field, send it back. To change what a chart points at,
+    /// in the ranges a user types, use [`Self::edit_chart`].
     pub fn set_chart_style(
         &self,
         sheet: usize,
@@ -2858,24 +2481,18 @@ impl App {
         self.replace_chart(sheet, index, chart)
     }
 
-    /// Change what a chart *is* — everything a [`chart::Spec`] says — one undo step. Its
-    /// position and size are left alone (they are [`Self::reshape_chart`]'s, and a dialog that
-    /// reopened would otherwise undo a drag).
-    ///
-    /// **A colour a user picked by hand survives an edit** that leaves the series it was
-    /// picked on pointing at the same range: colours are matched back on by range address
-    /// rather than by position, so adding a series above another one does not shuffle the
-    /// colours down. A series whose range *changed* starts again from the default cycle,
-    /// since a colour chosen for the fourth bar of one range means nothing on another.
+    /// Change what a chart is — everything a [`chart::Spec`] says — as one undo step, leaving its
+    /// position and size alone. Hand-picked colours survive on series still pointing at the same
+    /// range (matched by address, not position); a series whose range changed starts from the
+    /// default cycle.
     pub fn edit_chart(&self, sheet: usize, index: usize, spec: &chart::Spec) -> Result<()> {
         let chart = self.charted(sheet, spec, Some(index))?;
         self.replace_chart(sheet, index, chart)
     }
 
-    /// What a spec **would** draw, and the data it would draw it from — nothing written. A
-    /// chart dialog's preview asks this on every change, so what it shows is exactly what
-    /// [`Self::add_chart`] or, given `editing`, [`Self::edit_chart`] would make: the same
-    /// ranges resolved the same way, and an edit's hand-picked colours kept by the same rule.
+    /// What a spec would draw and the data behind it, nothing written — exactly what
+    /// [`Self::add_chart`], or with `editing` [`Self::edit_chart`], would make. A chart dialog's
+    /// preview.
     pub fn preview_chart(
         &self,
         sheet: usize,
@@ -2887,10 +2504,8 @@ impl App {
         Ok((chart, data))
     }
 
-    /// The chart a spec makes — a new one, or the chart at `editing` changed to it, keeping
-    /// its place and every colour picked by hand on a series still pointing at the same range.
-    /// Shared by [`Self::add_chart`], [`Self::edit_chart`] and [`Self::preview_chart`], so a
-    /// preview cannot draw anything the other two would not write.
+    /// The chart a spec makes, new or changed from the chart at `editing`, shared by
+    /// [`Self::add_chart`], [`Self::edit_chart`] and [`Self::preview_chart`].
     fn charted(&self, sheet: usize, spec: &chart::Spec, editing: Option<usize>) -> Result<Chart> {
         let old = editing.map(|index| self.chart(sheet, index)).transpose()?;
         let mut chart = old.clone().unwrap_or_else(|| {
@@ -2915,9 +2530,8 @@ impl App {
         Ok(chart)
     }
 
-    /// Everything a spec says, resolved into `chart` — shared by [`Self::add_chart`] and
-    /// [`Self::edit_chart`], and run **before** the mutation, because resolving a reference
-    /// takes the same lock the mutation does.
+    /// Everything a spec says, resolved into `chart` — before the mutation, since resolving takes
+    /// the same lock.
     fn fill_chart(&self, sheet: usize, spec: &chart::Spec, chart: &mut Chart) -> Result<()> {
         let series: Vec<(&str, Option<&str>)> = spec
             .series
@@ -2941,8 +2555,7 @@ impl App {
         Ok(())
     }
 
-    /// One chart, by index — the read every chart edit starts from, since each of them
-    /// replaces the whole value (`Action::ReplaceChart`).
+    /// One chart, by index.
     fn chart(&self, sheet: usize, index: usize) -> Result<Chart> {
         let state = self.state.read().unwrap();
         let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
@@ -2969,9 +2582,8 @@ impl App {
         })
     }
 
-    /// A chart's ranges as a user types them, turned into the ODF range addresses a chart
-    /// stores — shared by [`Self::add_chart`] and [`Self::edit_chart`], and run **before** the
-    /// mutation, because resolving a reference takes the same lock the mutation does.
+    /// A chart's ranges as a user types them, resolved into the addresses a chart stores — before
+    /// the mutation, since resolving takes the same lock.
     fn resolve_chart_ranges(
         &self,
         sheet: usize,
@@ -3015,12 +2627,9 @@ impl App {
         }
     }
 
-    /// Restore stacks taken from [`App::session`].
-    ///
-    /// Safe against a document loaded separately because an inverse carries the value it
-    /// restores — an action never has to consult the document it was recorded against. An
-    /// entry naming a sheet that no longer exists simply fails to apply, which
-    /// [`App::undo`] already reports as `false`.
+    /// Restore stacks taken from [`App::session`]. Safe against a separately loaded document: an
+    /// inverse carries the value it restores, and one naming a missing sheet fails to apply
+    /// ([`App::undo`] returns `false`).
     pub fn restore_session(&self, session: Session) {
         self.mutate(|state| {
             state.undo = session.undo;
@@ -3029,11 +2638,8 @@ impl App {
     }
 }
 
-/// Whether an edit recalculates the document behind it (doc/sheet-shell.md C3).
-///
-/// An enum rather than a bool because the useful third answer — recalculate only what
-/// depends on the cell that changed — is what `eval.rs`'s `ponytail:` note is about, and it
-/// arrives as a variant rather than as a second parameter.
+/// Whether an edit recalculates the document behind it (`doc/sheet-shell.md` C3). An enum so that
+/// recalculating only the dependents can arrive as a variant.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum RecalcMode {
     /// Leave the rest of the document alone; [`App::stale`] is how a caller finds out.
@@ -3060,22 +2666,20 @@ pub struct EnterOutcome {
     pub kind: Entered,
     /// How many cells were written.
     pub cells: usize,
-    /// The recalculation, when one was asked for. `spoiled > 0` means it was **skipped**
-    /// and `changed` is what recalculating *would* have changed — the number a banner
-    /// reports, and the reason it has to be offered rather than done.
+    /// The recalculation, when asked for. `spoiled > 0` means it was skipped, and `changed` is
+    /// what it would have changed — what a banner offers.
     pub recalc: Option<Recalc>,
-    /// The first number read in a way worth telling the person about — the other decimal sign,
-    /// or a separator that could have meant a thousand ([`reading`]). A shell shows its
-    /// [`Reading::sentence`] once, after the entry.
+    /// The first number read in a way worth telling the person about — the other decimal sign, or
+    /// an ambiguous thousands separator ([`reading`]). A shell shows its [`Reading::sentence`]
+    /// once.
     pub reading: Option<Reading>,
     /// How many cells were read that way, of which `reading` is the first.
     pub readings: usize,
 }
 
 impl EnterOutcome {
-    /// What a shell says after the entry, in a document spelled the `locale` way — the reading's
-    /// sentence, and for a paste how many more cells were read alike — or `None` when every
-    /// number was read the document's own way.
+    /// What a shell says after the entry in a document spelled the `locale` way, or `None` when
+    /// every number was read the document's way.
     pub fn note(&self, locale: Option<&locale::Locale>) -> Option<String> {
         let sentence = self.reading.as_ref()?.sentence(locale);
         Some(match self.readings {
@@ -3086,18 +2690,13 @@ impl EnterOutcome {
     }
 }
 
-/// What one cell displays: its own number format applied, or the general one (§5.2).
-///
-/// One function because a viewport and a list of calculations must not disagree about what
-/// a cell reads as — and **public** for the same reason: `grind-xlsx`'s corpus tests ask what
-/// an imported cell displays, and the one thing they must not do is answer it themselves.
+/// What one cell displays: its number format applied, or the general one (§5.2). Public so
+/// `grind-xlsx`'s tests ask this rather than answering themselves.
 pub fn render(sheet: &Sheet, pos: Pos, null_date: i64) -> String {
     render_in(sheet, pos, null_date, None)
 }
 
-/// [`render`] in a document whose own locale is `locale` ([`Document::locale`]) — what every
-/// view of a document displays with. A format naming a locale keeps it; one naming none, and a
-/// number with no format at all, spell their separators the document's way.
+/// [`render`] in a document whose own locale is `locale` ([`Document::locale`]).
 pub fn render_in(
     sheet: &Sheet,
     pos: Pos,
@@ -3111,13 +2710,8 @@ pub fn render_in(
     }
 }
 
-/// Whether a cell counts as a date or a time — its format if it has one and the format
-/// says so, otherwise the [`model::NumberKind`] the reader left behind (§4.3.3's rule for
-/// a date carrying no style of its own).
-///
-/// An explicit format wins because it is the one the user can see and change; a plain
-/// number a user has *formatted* as a date is one they mean as a date even if the cell
-/// never carried an `office:date-value`.
+/// Whether a cell counts as a date or a time: its format, if it has one, else the
+/// [`model::NumberKind`] the reader left (§4.3.3). The format wins because the user can see it.
 pub(crate) fn date_kind(sheet: &Sheet, pos: Pos) -> Option<model::NumberKind> {
     match sheet.format(pos).map(|f| f.kind) {
         Some(numfmt::Kind::Date) => Some(model::NumberKind::Date),
@@ -3126,16 +2720,8 @@ pub(crate) fn date_kind(sheet: &Sheet, pos: Pos) -> Option<model::NumberKind> {
     }
 }
 
-/// The typing rule: what a string a user typed means (doc/sheet-shell.md C3).
-///
-/// One [`Action::SetFormula`] whatever the answer, because every one of these outcomes also
-/// has to *remove* whatever formula the cell held — typing `5` over `=SUM(A1:A4)` replaces
-/// it, and two actions would leave the formula behind with a new cached value.
-///
-/// A formula's cached value is computed against the document as it stands, which is both
-/// what [`App::set_formula`] does and what pressing Enter in a spreadsheet does.
-/// What kind of thing a value already stored in a cell is — [`App::fill`]'s answer for a
-/// source cell that holds no formula, where [`typed`] has no input text to classify.
+/// What kind of thing a value already stored in a cell is — [`App::fill`]'s answer for a source
+/// cell without a formula, which has no typed text to classify.
 fn entered_kind(value: &CellValue) -> Entered {
     match value {
         CellValue::Empty => Entered::Cleared,
@@ -3145,11 +2731,9 @@ fn entered_kind(value: &CellValue) -> Entered {
     }
 }
 
-/// [`App::find`] under a lock somebody else already holds.
-/// The misspelt words of one cell, as character ranges into what it **displays** — its own
-/// text, found inside a text format's surrounding words (`"Item: "@`) where it has one. Empty for
-/// any cell that is not typed text ([`Sheet::text_cells`]'s rule), and for one whose display does
-/// not contain its text at all.
+/// The misspelt words of one cell, as character ranges into what it displays — its own text found
+/// inside a text format's surrounding words (`"Item: "@`). Empty for a cell that is not typed text
+/// ([`Sheet::text_cells`]), and for one whose display does not contain its text.
 fn misspelt_shown(
     doc: &Document,
     s: &Sheet,
@@ -3177,6 +2761,7 @@ fn misspelt_shown(
         .collect()
 }
 
+/// [`App::find`] under a lock the caller already holds.
 fn hits(doc: &Document, search: &find::Search) -> Result<Vec<find::Hit>> {
     let sheets = match search.sheet {
         Some(sheet) => {
@@ -3216,27 +2801,23 @@ fn hits(doc: &Document, search: &find::Search) -> Result<Vec<find::Hit>> {
     Ok(hits)
 }
 
-/// [`App::input_text`] under a lock somebody else already holds — [`App::find`] and
-/// [`App::replace`] ask it of every cell in a sheet and must not take the lock once per cell.
+/// [`App::input_text`] under a lock the caller already holds, for [`App::find`] and
+/// [`App::replace`], which ask it of every cell.
 fn input_of(doc: &Document, sheet: usize, pos: Pos) -> Result<String> {
     let s = doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
     if let Some(formula) = s.formula(pos) {
-        // A formula that will not parse is shown as it is stored, which is the honest
-        // answer and still editable.
         return Ok(formula::display::to_display(formula).unwrap_or_else(|_| formula.to_owned()));
     }
     Ok(match s.get(pos) {
         CellValue::Empty => String::new(),
         CellValue::Number(n) => match date_kind(s, pos) {
             Some(kind) => numfmt::general(&CellValue::Number(n), Some(kind), doc.null_date),
-            // In the document's own spelling, so what the formula bar puts in front of
-            // somebody is what the typing rule reads back as the same number.
+            // In the document's own spelling, which the typing rule reads back as the same number.
             None => numfmt::spell_number(n, doc.locale.as_ref()),
         },
         CellValue::Bool(true) => "TRUE".to_owned(),
         CellValue::Bool(false) => "FALSE".to_owned(),
-        // The typing rule itself decides whether the `'` is needed, so there is one
-        // rule rather than a copy of it.
+        // The typing rule itself decides whether the `'` is needed.
         CellValue::Text(text) => match typed(doc, sheet, pos, &text).0 {
             Entered::Text => text,
             _ => format!("'{text}"),
@@ -3244,6 +2825,9 @@ fn input_of(doc: &Document, sheet: usize, pos: Pos) -> Result<String> {
     })
 }
 
+/// The typing rule: what a string a user typed means (`doc/sheet-shell.md` C3). One
+/// [`Action::SetFormula`] whatever the answer, so typing `5` over `=SUM(A1:A4)` removes the formula.
+/// A formula's cached value is computed against the document as it stands.
 fn typed(
     doc: &Document,
     sheet: usize,
@@ -3276,8 +2860,7 @@ fn typed_in(
             None,
         )
     };
-    // The `'` rule is load-bearing rather than a convenience: without it the strings `=x`
-    // and `123` cannot be typed into a cell at all.
+    // Without the `'` rule, `=x` and `123` could not be typed as text at all.
     if let Some(text) = input.strip_prefix('\'') {
         return cell(Entered::Text, CellValue::Text(text.to_owned()));
     }
@@ -3296,10 +2879,8 @@ fn typed_in(
             None,
         );
     }
-    // A cell already known to hold a date or a time (by format or by `NumberKind`, see
-    // `date_kind`) accepts its own ISO spelling back — `input_text`'s exact inverse, not a
-    // general "anything that looks like a date is a date" rule (doc/sheet-shell.md C3 defers
-    // that on purpose).
+    // A cell known to hold a date or time (`date_kind`) accepts its own ISO spelling back —
+    // `input_text`'s inverse, not "anything that looks like a date" (`doc/sheet-shell.md` C3).
     if let Some(kind) = doc.sheet(sheet).and_then(|s| date_kind(s, pos)) {
         let parsed = match kind {
             model::NumberKind::Date => formula::date::parse_date(input, doc.null_date),
@@ -3321,11 +2902,9 @@ fn typed_in(
     }
 }
 
-/// Apply an edit and, if asked, the recalculation behind it — as **one** undo entry.
-///
-/// The order matters and is the whole point: the edit lands first, the recalculation is
-/// computed against the document that results, and the inverses are pushed reversed so that
-/// undoing runs the recalculation back before the edit that caused it.
+/// Apply an edit and, if asked, the recalculation behind it, as one undo entry: the edit first,
+/// the recalculation against the result, and the inverses reversed so undo runs the recalculation
+/// back first.
 fn commit(
     state: &mut State,
     sheet: usize,
@@ -3335,14 +2914,9 @@ fn commit(
     commit_after(state, sheet, Vec::new(), edits, mode)
 }
 
-/// [`commit`], with edits that have **already been applied** in front of it.
-///
-/// One caller, [`App::import_csv`], and one reason: the typing rule reads an ISO date only
-/// into a cell whose format already says it holds one, so an import that formats a date
-/// column has to apply that format *before* it asks what the fields mean — and still land the
-/// whole thing in one undo entry. `prior` is those inverses, in application order; the tail of
-/// this function reverses everything, so an undo takes the values back before the formats that
-/// gave them meaning.
+/// [`commit`] with edits already applied in front of it, for [`App::import_csv`], which must
+/// format date columns before the typing rule reads the fields. `prior` is their inverses in
+/// application order; everything is reversed so undo takes the values back before the formats.
 fn commit_after(
     state: &mut State,
     sheet: usize,
@@ -3406,8 +2980,8 @@ fn apply_batch(state: &mut State, sheet: usize, updates: Vec<Action>) -> Result<
     Ok(changed)
 }
 
-/// Whether a checkbox is ticked: its linked cell's value when it has one — `TRUE`, or a number
-/// that is not zero, as a spreadsheet reads a boolean — and its own state when it has none.
+/// Whether a checkbox is ticked: its linked cell's value (`TRUE`, or a non-zero number), else its
+/// own state.
 pub fn checkbox_state(doc: &Document, sheet: usize, checkbox: &Checkbox) -> bool {
     let Some(link) = &checkbox.link else {
         return checkbox.checked;
@@ -3428,22 +3002,14 @@ pub fn checkbox_state(doc: &Document, sheet: usize, checkbox: &Checkbox) -> bool
 pub struct Recalc {
     /// Cells whose stored value the recalculation replaced.
     pub changed: usize,
-    /// Of those, how many held a real value and now hold an error — almost always a
-    /// function this build does not implement (`sheet functions` lists the ones it does).
-    /// Undoing the recalculation is one step, which is the way back.
+    /// Of those, how many held a real value and now hold an error — almost always a function this
+    /// build lacks. Undoing the recalculation is one step.
     pub spoiled: usize,
 }
 
-/// Whether `name` can be this document's sheet `except`'s name — or a new sheet's, with
-/// `except` being `None`.
-///
-/// Two rules, and deliberately no third. A sheet name is `table:name`, whose schema type is
-/// a plain string, so the *characters* are not ours to police: the serialiser already quotes
-/// anything a reference cannot spell bare (`serialize.rs`, `'It''s a sheet'`).
-///
-/// * Empty is refused, because `[.A1]` and `['".A1]` would then be the same reference.
-/// * A duplicate is refused, case-insensitively, because that is how a reference resolves it
-///   (§5.8) — two sheets differing only in case would make `[$data.$A$1]` mean either.
+/// Whether `name` can be sheet `except`'s name, or a new sheet's with `None`. Any characters are
+/// allowed (`table:name` is a plain string, and the serialiser quotes as needed); empty is
+/// refused, and so is a case-insensitive duplicate, since that is how a reference resolves (§5.8).
 fn check_sheet_name(doc: &Document, name: &str, except: Option<usize>) -> Result<()> {
     if name.trim().is_empty() {
         return Err(Error::BadSheet("a sheet needs a name".to_owned()));
@@ -3461,26 +3027,15 @@ fn check_sheet_name(doc: &Document, name: &str, except: Option<usize>) -> Result
     }
 }
 
-/// Whether a string is a name a formula could actually mention (§5.11 `Identifier`).
+/// Whether a string is a name a formula could mention (§5.11 `Identifier`), checked when the name
+/// is defined:
 ///
-/// Checked when a name is *defined*, in the core, because a name that cannot be lexed is
-/// unreachable: the document would carry it and every formula naming it would still say
-/// `#NAME?`. Storing one is therefore never useful, whoever asked.
+/// * it must lex as one [`formula::lex::Token::Name`], which rules out spaces, punctuation, a
+///   leading digit and the empty string, and admits any Unicode letter;
+/// * it must not also read as a cell address (`A1`, `$B$7`, `Q1`), as LibreOffice refuses.
 ///
-/// Two rules, both from the grammar rather than from taste:
-///
-/// * it must lex as a single [`formula::lex::Token::Name`] — which rules out spaces,
-///   punctuation, a leading digit, and the empty string, and admits any Unicode letter
-///   because §5.6's `LetterXML` is [XML1.0]'s Letter production;
-/// * it must not *also* read as a **cell** address. `A1` and `$B$7` are names the grammar
-///   allows and addresses every user and every other spreadsheet's name box reads first, so
-///   one would mean two things at once. LibreOffice refuses them, and refuses `Q1` for the
-///   same reason, which is worth knowing before naming a quarter.
-///
-/// A column or a row alone — `SALES` lexes as `[.SALES]`, a whole column — is *not* refused,
-/// and that is the difference between this and a first guess. OpenFormula always brackets a
-/// reference, so `SUM(SALES)` is unambiguous in the file whatever `SALES` would mean inside
-/// brackets; refusing it would rule out most of the words anyone wants to name a range.
+/// A column or row alone (`SALES` lexes as a whole column) is allowed: OpenFormula brackets every
+/// reference, so `SUM(SALES)` is unambiguous.
 fn validate_name(name: &str) -> Result<()> {
     let refused = |why: &str| {
         Err(Error::Formula(format!(
@@ -3500,9 +3055,8 @@ fn validate_name(name: &str) -> Result<()> {
             return refused("a name is one identifier — a letter or _, then letters, digits or _");
         }
     }
-    // `[.A1]` is how a reference is spelled, so lexing the name inside brackets asks the
-    // same question a reader would, without a second address parser to disagree with the
-    // first. Both axes present is what makes it a *cell* rather than a whole column.
+    // Lexing the name as `[.name]` asks a reader's question with the reader's own lexer; both axes
+    // present makes it a cell.
     if let Ok(tokens) = formula::lex::lex(&format!("[.{name}]"))
         && let [formula::lex::Token::Ref(r)] = tokens.as_slice()
         && r.start.row.is_some()
@@ -3513,11 +3067,9 @@ fn validate_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Every formula cell whose stored value disagrees with a fresh evaluation, as the actions
-/// that would fix them, and how many of those would replace a good value with an error.
-///
-/// One walk, shared by [`App::recalc`] (which applies it) and [`App::stale`] (which counts
-/// it), so "what recalculating would do" and "what recalculating does" cannot drift apart.
+/// Every formula cell whose stored value disagrees with a fresh evaluation, as the actions that
+/// fix them, and how many would replace a good value with an error — one walk for [`App::recalc`]
+/// and [`App::stale`].
 fn recalculated(doc: &Document) -> (Vec<Action>, usize) {
     recalculated_with(doc, |_, _| {})
 }
@@ -3533,15 +3085,9 @@ fn recalculated_with(doc: &Document, progress: impl FnMut(usize, usize)) -> (Vec
     (updates, spoiled)
 }
 
-/// Every formula cell whose computed value differs from its cached one: where it is, what the
-/// formula computes, and whether the difference is *this build's* gap rather than the
-/// document's — `true` when a good value would be replaced by an error, which is what
-/// [`Recalc::spoiled`] counts.
-///
-/// One walk, because two callers ask the same question for different reasons: recalculating
-/// writes the new values, and [`lint::STALE_VALUE`] reports that the old ones are wrong. A
-/// second implementation of "what counts as stale" is exactly the kind of disagreement
-/// `doc/dsl.md` §4.3 exists to catch in *documents*, and it would be worse in the code.
+/// Every formula cell whose computed value differs from its cached one: where, what it computes,
+/// and whether it is this build's gap (a good value replaced by an error, [`Recalc::spoiled`]).
+/// Shared by recalculation and [`lint::STALE_VALUE`], so the two cannot disagree.
 fn differences(
     doc: &Document,
     mut progress: impl FnMut(usize, usize),
@@ -3571,15 +3117,9 @@ fn differences(
     out
 }
 
-/// Every edit a sheet rename implies, besides the rename itself — `doc/dsl.md` §6.5, D10.
-///
-/// Three kinds of thing in a document name a sheet, and a refactoring that reached only the
-/// first would be worse than none at all: a cell's **formula**, a **named expression**'s
-/// definition (which every formula using that name reads through), and a **chart**'s ranges,
-/// which are address strings rather than formulas and so come through `chart::rename_sheet_in_range`.
-///
-/// A separate function from [`App::rename_sheet`] because it takes the document rather than the
-/// lock, which is what makes it testable and what keeps the mutation itself three lines.
+/// Every edit a sheet rename implies besides the rename: each cell's formula, each named
+/// expression's definition, and each chart's ranges (address strings, through
+/// `chart::rename_sheet_in_range`). Takes the document rather than the lock, so it is testable.
 fn references_renamed(doc: &Document, from: &str, to: &str) -> Vec<Action> {
     let mut actions = Vec::new();
     for (index, sheet) in doc.sheets.iter().enumerate() {
@@ -3589,9 +3129,7 @@ fn references_renamed(doc: &Document, from: &str, to: &str) -> Vec<Action> {
                     sheet: index,
                     pos,
                     formula: Some(formula),
-                    // The cached value is untouched: pointing a reference at a renamed sheet
-                    // changes what it is *called* and not what it reads, so nothing about the
-                    // answer has changed and marking the cell stale would be a lie.
+                    // The cached value stands: a renamed reference reads the same cells.
                     value: sheet.get(pos),
                 });
             }
@@ -3689,10 +3227,8 @@ fn rules_rewritten(
     changed.then_some(rules)
 }
 
-/// The cells [`lint::STALE_VALUE`] reports: a disagreement this build can actually settle.
-///
-/// The spoiled ones are dropped here rather than in the rule, because *which* differences are
-/// this engine's fault is a fact about the evaluator and belongs beside it.
+/// The cells [`lint::STALE_VALUE`] reports: the differences this build can settle, the spoiled
+/// ones dropped.
 fn stale_cells(doc: &Document) -> Vec<(usize, Pos, CellValue)> {
     differences(doc, |_, _| {})
         .into_iter()
@@ -3701,9 +3237,8 @@ fn stale_cells(doc: &Document) -> Vec<(usize, Pos, CellValue)> {
         .collect()
 }
 
-/// Whether a cell holds one of §4.6's error names. Errors live in a cell as their name in
-/// text, because that is the only shape [`CellValue`] has for one — see
-/// [`formula::eval::to_cell`].
+/// Whether a cell holds one of §4.6's error names, which is how an error is stored
+/// ([`formula::eval::to_cell`]).
 fn is_error(value: &CellValue) -> bool {
     match value {
         CellValue::Text(s) => formula::value::FormulaError::from_name(s).is_some(),
@@ -3711,14 +3246,11 @@ fn is_error(value: &CellValue) -> bool {
     }
 }
 
-/// Undo history, serialised so it can outlive the process that built it.
-///
-/// The document is *not* part of it: a stateless shell re-reads the file each time, and the
-/// stacks are the only thing that would otherwise be lost.
+/// Undo history, serialised to outlive the process. The document is not part of it: a stateless
+/// shell re-reads the file.
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Session {
-    /// `#[serde(default)]` on both, so a session file written by an older build still loads
-    /// rather than failing a user's next command.
+    /// `#[serde(default)]` on both, so an older session file still loads.
     #[serde(default)]
     pub undo: Vec<Action>,
     #[serde(default)]
@@ -3730,15 +3262,10 @@ pub fn read_file(path: &Path) -> Result<Document> {
     read_bytes(&path.display().to_string(), &std::fs::read(path)?)
 }
 
-/// Read a document from bytes. Paired with [`read_file`] from the start because the
-/// browser has no filesystem, and this is not retrofittable later (doc/plan.md, rule 5).
-///
-/// The form — zip package, flat XML, or the projection (`doc/dsl.md`) — is sniffed from the
-/// bytes, so `name` is only ever a label for diagnostics.
+/// Read a document from bytes, in any form — package, flat XML or projection — sniffed from the
+/// bytes; `name` is only a label.
 pub fn read_bytes(_name: &str, bytes: &[u8]) -> Result<Document> {
-    // The projection is the third physical form, and `grind_core::projection` decides whether
-    // these bytes are one from their first line — never from the file's name, which is the
-    // same rule `Form` and `kind` already follow.
+    // The projection is recognised by its first line.
     if grind_core::projection::is_projection(bytes).is_some() {
         let text =
             std::str::from_utf8(bytes).map_err(|e| grind_core::Error::Projection(e.to_string()))?;
@@ -3752,20 +3279,16 @@ pub fn write_bytes(doc: &Document, form: Form) -> Result<Vec<u8>> {
     odf::write(doc, form)
 }
 
-/// Write a document, choosing the form from the extension — `.ods` the package,
-/// **anything else flat** ([`Form::from_path`], `doc/flat-first.md`).
-///
-/// The only place in the codebase where a file extension decides anything: reading sniffs
-/// the form from the bytes, but writing has to pick one, and the name the user typed is
-/// the only statement of intent available.
+/// Write a document, choosing the form from the extension: `.ods` the package, anything else flat
+/// ([`Form::from_path`], `doc/flat-first.md`). Reading never looks at the name; writing has to
+/// choose.
 pub fn write_file(doc: &Document, path: &Path) -> Result<()> {
     grind_core::atomic::write(path, &write_bytes(doc, Form::from_path(path))?)?;
     Ok(())
 }
 
-/// What `grind-spell` chooses a language through and attaches a dictionary to. The language a
-/// spreadsheet **states** is its own locale's (`Document::locale`, `fo:language` on the default
-/// cell style) — the one setting that already says which language its cells are in.
+/// What `grind-spell` chooses a language through: a spreadsheet states its language in its locale
+/// (`Document::locale`).
 impl grind_core::spell::Spelled for App {
     fn set_lexicon(&self, lexicon: Option<Arc<dyn spell::Lexicon>>) {
         App::set_lexicon(self, lexicon);
