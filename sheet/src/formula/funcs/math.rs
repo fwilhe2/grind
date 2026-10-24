@@ -2,15 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! §6.16 Mathematical Functions and §6.17 Rounding Functions — the Small Group's 24 and 3,
-//! and `QUOTIENT`, `SIGN`, `SUBTOTAL`, `SUMPRODUCT`, `ROUNDUP`, `ROUNDDOWN`, `MROUND`, `CEILING` and `FLOOR` from
-//! beyond it — with Excel's own `CEILING` and `FLOOR` beside the last two, under the names
-//! LibreOffice gives them.
+//! §6.16 Mathematical Functions and §6.17 Rounding Functions — the Small Group's 24 and 3, and
+//! `QUOTIENT`, `SIGN`, `SUBTOTAL`, `SUMPRODUCT`, `ROUNDUP`, `ROUNDDOWN`, `MROUND`, `CEILING` and
+//! `FLOOR` from beyond it, with Excel's `CEILING` and `FLOOR` under LibreOffice's names for them.
 //!
-//! Domain errors mostly need no code: `SQRT(-1)`, `LN(0)` and `POWER(-1;0.5)` all produce a
-//! non-finite double, and [`Value::number`] turns every one of those into `#NUM!` at the
-//! single place results are built. Only the cases where IEEE 754 disagrees with §6 — a
-//! division that must be `#DIV/0!` rather than an infinity — are written out.
+//! Domain errors mostly need no code: a non-finite result becomes `#NUM!` in [`Value::number`].
+//! Only where IEEE 754 disagrees with §6 — a division that must be `#DIV/0!` — is it written out.
 
 use super::super::value::{FormulaError, Value};
 use super::Args;
@@ -81,16 +78,13 @@ fn nullary(args: &Args, value: f64) -> Answer {
     Ok(Value::Number(value))
 }
 
-/// §6.16.60 `SUBTOTAL( Function ; Sequence … )`: one of eleven aggregates over the cells of
-/// the references that are not hidden by the filter — nor, for 101 to 111, by hand — and do
-/// not hold a subtotal of their own ([`Args::counted`]).
+/// §6.16.60 `SUBTOTAL( Function ; Sequence … )`: one of eleven aggregates over the referenced
+/// cells that are not hidden by the filter (nor, for 101 to 111, by hand) and hold no subtotal of
+/// their own ([`Args::counted`]).
 ///
-/// Several references, as Excel and the oracle both accept, though §6.16.60 names one. The
-/// function number is truncated; one outside both bands, an empty one, and a sequence that is
-/// not a reference are `#VALUE!` where the oracle answers `Err:502` (`doc/ods-format.md`
-/// §4.1). Each aggregate is its own function's, over the cells left: text in a reference is
-/// skipped, an error is passed on except by the two counts, and an average of nothing is
-/// `#DIV/0!`.
+/// Several references are accepted, as Excel and the oracle do. The function number is truncated;
+/// one outside both bands, an empty one, or a non-reference sequence is `#VALUE!` where the oracle
+/// answers `Err:502` (`doc/ods-format.md` §4.1).
 fn subtotal(args: &mut Args) -> Answer {
     args.arity(2..)?;
     if args.omitted(0) {
@@ -137,15 +131,10 @@ fn subtotal(args: &mut Args) -> Answer {
     }
 }
 
-/// §6.16.64 `SUMPRODUCT( { ForceArray Array A }+ )`: the arrays multiplied place by place
-/// and the products added.
-///
-/// Every argument is evaluated in array mode (`array.rs`), so `([.A1:.A9]="x")*[.B1:.B9]`
-/// is the column of products it reads as. An element that is not a number is a zero — a
-/// text, an empty cell — and a logical is 1 or 0, as in the oracle. An error anywhere is the
-/// answer, and an argument that is one error is that answer before shapes are compared;
-/// arrays of different shapes are `#VALUE!` ("All matrices shall have the same
-/// dimensions"), and so is an empty argument.
+/// §6.16.64 `SUMPRODUCT( { ForceArray Array A }+ )`: the arrays multiplied place by place and the
+/// products added. Each argument is evaluated in array mode (`array.rs`). A non-number element is
+/// zero and a logical is 1 or 0, as in the oracle; an error anywhere is the answer; different
+/// shapes or an empty argument are `#VALUE!`.
 fn sumproduct(args: &mut Args) -> Answer {
     args.arity(1..)?;
     let mut arrays = Vec::with_capacity(args.len());
@@ -260,20 +249,13 @@ fn scaled(args: &mut Args, f: impl Fn(f64) -> f64) -> Answer {
     Ok(Value::number(f(x * scale) / scale))
 }
 
-/// A value as a spreadsheet *shows* it — rounded to fifteen significant digits, the most a
-/// double reliably carries — for a function about to step it to a whole number.
+/// A value as a spreadsheet shows it — rounded to fifteen significant digits — for a function
+/// about to step it to a whole number. `4.35*100` is `434.99999999999994` and displays as `435`,
+/// and LibreOffice steps the shown value (`doc/ods-format.md` §4.1).
 ///
-/// `4.35*100` is `434.99999999999994` in binary and displays as `435`; truncating the binary
-/// value makes `ROUNDDOWN` answer 434 to a number the user can see is 435. LibreOffice reads
-/// the value to fifteen digits first, which is measured rather than specified
-/// (`doc/ods-format.md` §4.1), and so does every function here that floors, ceils or
-/// truncates a quotient.
-///
-/// Only below 10^11, which is where the measurement is consistent. Above it a double's
-/// noise is in the fifth decimal and the oracle's answer depends on its own binary steps —
-/// `9.5E11·(1−4E−16)` snaps going down and not going up — so nothing written in digits
-/// reproduces it, and a 16-digit integer such as `2^52+1` must not become its 15-digit
-/// neighbour. A value that large is stepped as it is.
+/// Only below 10^11, where the measurement is consistent; above it the oracle's answer depends on
+/// its own binary steps, and a 16-digit integer such as `2^52+1` must not become its 15-digit
+/// neighbour.
 pub fn shown(x: f64) -> f64 {
     if x == 0.0 || !x.is_finite() || x.abs() >= 1e11 {
         return x;
@@ -281,12 +263,9 @@ pub fn shown(x: f64) -> f64 {
     format!("{x:.14e}").parse().unwrap_or(x)
 }
 
-/// §6.17.4 `MROUND(A; B)`: the multiple of `B` nearest `A`, and on a tie "the greater one".
-///
-/// The quotient is read as [`shown`] before the tie is judged, so `MROUND(1.3;0.2)` — whose
-/// quotient is `6.499999999999999` — is the tie it looks like. Neither sign is constrained;
-/// a multiple of zero is zero, as measured. The multiple is read as [`shown`] too: three
-/// times 2.3 is 6.9, not the double below it.
+/// §6.17.4 `MROUND(A; B)`: the multiple of `B` nearest `A`, and on a tie "the greater one". Both
+/// the quotient and the multiple are read as [`shown`], so `MROUND(1.3;0.2)` is the tie it looks
+/// like. A multiple of zero is zero, as measured.
 fn mround(args: &mut Args) -> Answer {
     let (a, b) = two_required(args)?;
     if b == 0.0 {
@@ -305,16 +284,11 @@ fn mround(args: &mut Args) -> Answer {
     Ok(Value::number(shown(k * b)))
 }
 
-/// §6.17.1 `CEILING` and §6.17.3 `FLOOR`: `N` stepped to a multiple of `Significance` by
-/// `step` — the ceiling or the floor of the quotient.
-///
-/// With no `Mode`, or a zero one, the step is taken on the number line, so `CEILING(-2.5)` is
-/// -2. Any other `Mode` steps the magnitude and puts the sign back: `CEILING(-2.5;;1)` is -3
-/// and `FLOOR(-2.5;;1)` is -2. An empty `Significance` is ±1 with `N`'s sign, a zero in
-/// either is a zero answer, and opposite signs are `#NUM!` whatever the Mode — the spec's
-/// constraint, which the oracle enforces too (`doc/ods-format.md` §4.1). That last rule is
-/// where Excel's two-parameter namesakes part company: they round `-2.5` by `2` happily.
-/// The multiple is read as [`shown`], as `MROUND`'s is, so `FLOOR(7.9;2.3)` equals 6.9.
+/// §6.17.1 `CEILING` and §6.17.3 `FLOOR`: `N` stepped to a multiple of `Significance`. With no or
+/// a zero `Mode`, on the number line (`CEILING(-2.5)` is -2); otherwise the magnitude, sign
+/// restored (`CEILING(-2.5;;1)` is -3). An empty `Significance` is ±1 with `N`'s sign, a zero in
+/// either gives zero, and opposite signs are `#NUM!` whatever the Mode, as the spec and the oracle
+/// say. The multiple is read as [`shown`].
 fn multiple(args: &mut Args, step: fn(f64) -> f64) -> Answer {
     args.arity(1..=3)?;
     let n = args.number(0)?;
@@ -341,15 +315,10 @@ fn multiple(args: &mut Args, step: fn(f64) -> f64) -> Answer {
     Ok(Value::number(shown(k * significance)))
 }
 
-/// Excel's `CEILING` and `FLOOR`, which an ODF document carries as `COM.MICROSOFT.CEILING`
-/// and `COM.MICROSOFT.FLOOR` (`doc/xlsx-format.md` §5.1): exactly two parameters, and the
-/// quotient stepped by `step` on the number line *whatever* the signs — which, for two
-/// negatives, is the magnitude stepped the other way, as Excel's documentation puts it.
-///
-/// What it refuses is a positive `N` with a negative `Significance` (`#NUM!`). A zero is a
-/// zero answer, except where `by_zero` says what a zero `Significance` is instead: `FLOOR`
-/// divides by it, `#DIV/0!`, which is Excel's answer where the oracle gives its generic
-/// `Err:502`.
+/// Excel's `CEILING` and `FLOOR`, carried as `COM.MICROSOFT.CEILING` and `COM.MICROSOFT.FLOOR`
+/// (`doc/xlsx-format.md` §5.1): two parameters, the quotient stepped on the number line whatever
+/// the signs. A positive `N` with a negative `Significance` is `#NUM!`; a zero gives zero, except
+/// `by_zero` for a zero `Significance` (`FLOOR`'s `#DIV/0!`).
 fn excel_multiple(args: &mut Args, step: fn(f64) -> f64, by_zero: Option<FormulaError>) -> Answer {
     args.arity(2..=2)?;
     let (n, significance) = (args.number(0)?, args.number(1)?);

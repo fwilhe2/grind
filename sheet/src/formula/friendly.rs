@@ -2,28 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A read-only, IDE-flavoured rendering of a formula: full names instead of abbreviations,
-//! one argument per line once a call stops fitting on one, and each argument labelled with
-//! the parameter it fills — `PresentValue(Rate: 0.05, ...)` rather than `PV(0.05, ...)`.
+//! A read-only, IDE-flavoured rendering of a formula: full names instead of abbreviations, one
+//! argument per line once a call stops fitting, and each argument labelled with its parameter —
+//! `Present Value(Rate: 0.05, …)` rather than `PV(0.05; …)`.
 //!
-//! This is presentation only. [`explain`] never round-trips: the string it returns is not
-//! accepted back by [`super::display::from_display`] or [`super::parse::parse`], and nothing
-//! written to a document is affected — the formula a `.ods` stores stays exactly the
-//! abbreviated, single-line form ODF spells (CLAUDE.md's R1/R6). An editable version of this
-//! view is a separate, later feature: it needs a parameter-label syntax that cannot be
-//! confused with `=` used as a comparison operator inside an argument (`IF(A1=B1, ...)`),
-//! which `explain`'s output does not attempt to be unambiguous about.
+//! Presentation only: nothing here parses back, and the stored formula stays ODF's (R1). An
+//! editable version would need a label syntax that cannot be confused with `=` as a comparison
+//! inside an argument.
 //!
-//! Parameter names come from the catalog's `Syntax:` line, split the same way
-//! `ui_sheet_gtk`'s `signature_markup` splits it: every parameter's declaration is separated by
-//! exactly one `;`, however deeply its optionality brackets it, so a naive split still lines
-//! up one part per parameter. Multi-line layout only ever unfolds a [`Expr::Call`] that is
-//! itself the whole expression or a bare argument of another call — a call buried inside an
-//! arithmetic expression (`1+PV(...)`) prints inline via the ordinary [`Bare`] printer, which
-//! is the one place this module does not attempt full IDE-style reflow. ponytail: expanding
-//! *that* case needs the precedence-aware bracketing `serialize::child`/`binding_power`
-//! already do privately; raise the ceiling by exposing those if operator-nested calls turn
-//! out to need it too.
+//! Parameter names come from the catalog's `Syntax:` line, where each declaration is separated by
+//! exactly one `;`. Only a call that is the whole expression or a bare argument of another call
+//! unfolds; one inside an operator (`1+PV(…)`) prints inline. ponytail: unfolding those needs
+//! `serialize`'s private precedence bracketing exposed.
 
 use super::funcs;
 use super::lex::SyntaxError;
@@ -33,10 +23,8 @@ use super::serialize::Bare;
 /// How wide a call is allowed to stay on one line before it unfolds.
 const WIDTH: usize = 60;
 
-/// The friendly name for an abbreviated function name, e.g. `PV` → `Present Value`.
-///
-/// Ours, not the spec's — §5.6 is under no obligation to be readable, and clean-room rules
-/// don't apply to naming we invented rather than read out of LibreOffice.
+/// The friendly name for an abbreviated function name, e.g. `PV` → `Present Value`. Ours, not the
+/// spec's.
 pub fn alias(name: &str) -> Option<&'static str> {
     ALIASES
         .iter()
@@ -50,17 +38,14 @@ pub fn explain(formula: &str) -> Result<String, SyntaxError> {
     Ok(render(&parse(formula)?, 0, WIDTH))
 }
 
-/// The same rendering, never unfolded — for a place with one line to spend, like a formula
-/// bar. Aliases and labels are the point; the layout is what does not fit there.
+/// The same rendering, never unfolded, for one line such as a formula bar.
 pub fn explain_inline(formula: &str) -> Result<String, SyntaxError> {
     Ok(render(&parse(formula)?, 0, usize::MAX))
 }
 
-/// The friendly spelling of a function's signature: its aliased name, and one label per
-/// parameter in order, with `…` on the last when it repeats.
-///
-/// What a shell's signature hint shows while a call is being typed — the same names
-/// [`explain`] labels the finished formula with, so the hint and the explanation agree.
+/// The friendly spelling of a function's signature: its aliased name and one label per parameter,
+/// `…` on the last when it repeats — the names [`explain`] uses, so a hint and an explanation
+/// agree.
 pub fn signature(name: &str) -> Option<(String, Vec<String>)> {
     let info = funcs::catalog()
         .iter()
@@ -158,9 +143,8 @@ fn renumber(label: &str, pass: usize) -> String {
     }
 }
 
-/// How many parameters `name`'s signature lists, and how many at the end of it repeat as a
-/// group — what a hint needs to know which parameter the tenth argument is. `None` for a
-/// function the catalog does not know.
+/// How many parameters `name`'s signature lists, and how many at its end repeat as a group. `None`
+/// for a function the catalog does not know.
 pub fn shape(name: &str) -> Option<(usize, usize)> {
     let info = funcs::catalog()
         .iter()
@@ -169,13 +153,9 @@ pub fn shape(name: &str) -> Option<(usize, usize)> {
     Some((names.len(), group))
 }
 
-/// The friendly name for a catalog parameter token, e.g. `Pv` → `Present Value`.
-///
-/// A handful of single-letter tokens (`D`, `F`, `T`, …) are reused by the spec for different
-/// things in different functions — `D` is a database in every `D*` function but the date in
-/// `DAY`/`WEEKDAY`/`YEAR`. [`OVERRIDES`] is checked first for exactly those; everything else
-/// is one global, context-free mapping, which is a deliberate simplification: this is a
-/// display convenience, not a second source of truth about what a parameter means.
+/// The friendly name for a catalog parameter token, e.g. `Pv` → `Present Value`. The spec reuses a
+/// few single letters per function (`D` is a database in `D*` functions and a date in `DAY`), so
+/// [`OVERRIDES`] is checked first; everything else is one global mapping.
 fn param_alias(func: &str, raw: &str) -> String {
     if let Some((_, _, alias)) = OVERRIDES
         .iter()
@@ -461,8 +441,6 @@ static PARAM_ALIASES: &[(&str, &str)] = &[
 mod tests {
     use super::*;
 
-    /// A missing alias would fall back to the abbreviated name silently, so the thing worth
-    /// checking is that every catalogued function has one.
     #[test]
     fn every_catalogued_function_has_an_alias() {
         for info in funcs::catalog() {
@@ -540,10 +518,8 @@ mod tests {
         );
     }
 
-    /// A missing entry would fall back silently to the raw catalog token, so the thing worth
-    /// checking is that every token [`signature_params`] can produce across the whole catalog
-    /// is a known key of [`PARAM_ALIASES`] — [`param_alias`]'s own fallback can't tell "no
-    /// entry" apart from "aliased to itself" the way this test can.
+    /// Every token [`signature_params`] can produce is a key of [`PARAM_ALIASES`];
+    /// [`param_alias`]'s fallback cannot tell a missing entry from one aliased to itself.
     #[test]
     fn every_catalogued_parameter_token_has_an_alias() {
         for info in funcs::catalog() {

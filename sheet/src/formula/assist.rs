@@ -2,24 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What a shell needs to help somebody *while they are typing a formula*: which word could be
-//! completed, what to offer for it, and which call the caret is inside.
-//!
-//! All three are questions about **display syntax and a caret offset**, which is why they are
-//! here rather than in a shell. They were `ui_sheet_gtk`'s — `formula_ux::prefix_at`,
-//! `formula_ux::candidates` and `state::call_at` — until the Windows shell wanted the same three
-//! answers, and a second hand-written backwards scan over parentheses and string literals is
-//! exactly the kind of near-copy this project moves into the core instead (the precedent is
-//! `grind_core::search::score`, which came out of `ui_web` when a second shell wanted the same
-//! ranking). Both shells now read one answer, so a signature hint cannot say `SUM`'s second
-//! argument in one window and its third in another.
-//!
-//! Nothing here is a *capability* the CLI is missing (rule 4): what these functions offer comes
-//! entirely from [`funcs::catalog`] and [`friendly::signature`], both of which `grind sheet
-//! functions --long` already prints. What is added is the caret — where the user is — and a caret
-//! is a UI's own state, not a document's.
-//!
-//! Pure, allocating only what it returns, and tested here rather than in any shell.
+//! What a shell needs to help somebody while they are typing a formula: which word could be
+//! completed, what to offer for it, and which call the caret is inside. Questions about display
+//! syntax and a caret offset, answered once for every shell. What is offered comes from
+//! [`funcs::catalog`] and [`friendly::signature`].
 
 use std::ops::Range;
 
@@ -38,22 +24,15 @@ pub struct Candidate {
     pub detail: String,
 }
 
-/// The identifier being typed at `caret`, if it is one an offer could replace.
-///
-/// A run of name characters that starts where a *function* could start — after `=`, `(`, `;` or
-/// an operator — and is not already a call. Pure, and the reason a completion popup has no
-/// opinion of its own about what a word is.
-///
-/// `caret` is a **byte** offset, clamped rather than trusted: a shell converts from whatever its
-/// own control counts in (UTF-16 units, on Windows), and an offset one past the end is a
-/// rounding error rather than a reason to panic.
+/// The identifier being typed at `caret`, if an offer could replace it: a run of name characters
+/// where a function could start (after `=`, `(`, `;` or an operator) that is not already a call.
+/// `caret` is a byte offset, clamped.
 pub fn prefix_at(text: &str, caret: usize) -> Option<Range<usize>> {
     if !text.starts_with('=') {
         return None;
     }
     let caret = caret.min(text.len());
-    // Not a character boundary — a shell that converted from UTF-16 badly, or an offset into the
-    // middle of a multi-byte character. Nothing to complete rather than a panic on the slice.
+    // Not a character boundary: an offset badly converted from UTF-16. Nothing to complete.
     if !text.is_char_boundary(caret) {
         return None;
     }
@@ -66,8 +45,7 @@ pub fn prefix_at(text: &str, caret: usize) -> Option<Range<usize>> {
     if start == 0 {
         return None;
     }
-    // Already a call: `SUM(` is finished business, and so is `A1` — a cell address is not a
-    // function name, and offering to turn one into a call would be wrong twice over.
+    // Already a call (`SUM(`), or a cell address, which is not a function name.
     if text[caret..].starts_with('(') {
         return None;
     }
@@ -75,10 +53,8 @@ pub fn prefix_at(text: &str, caret: usize) -> Option<Range<usize>> {
     "=(;+-*/^&<>:,".contains(before).then_some(start..caret)
 }
 
-/// Everything worth offering for `prefix`: functions first, then the document's own names.
-///
-/// Neither list is written here — the functions are [`funcs::catalog`]'s, so a shell cannot offer
-/// one the evaluator does not have, and the names are the caller's read of `App::names`.
+/// Everything worth offering for `prefix`: [`funcs::catalog`]'s functions first, then the
+/// document's names (the caller's read of `App::names`).
 pub fn candidates(prefix: &str, names: &[String]) -> Vec<Candidate> {
     let upper = prefix.to_uppercase();
     let functions = funcs::catalog()
@@ -100,12 +76,9 @@ pub fn candidates(prefix: &str, names: &[String]) -> Vec<Candidate> {
     functions.chain(named).collect()
 }
 
-/// Which call the caret is inside, and which argument of it — what a signature hint shows.
-///
-/// Scanned backwards over the display text, counting parentheses and skipping string literals,
-/// because the caret is where the user is and the call that matters is the innermost one
-/// containing it. A finished call (`=SUM(1;2)|`) is not one the caret is inside, and a bare
-/// grouping parenthesis is not a call at all.
+/// Which call the caret is inside, and which argument of it — what a signature hint shows. Scanned
+/// backwards over the display text, counting parentheses and skipping string literals. A finished
+/// call (`=SUM(1;2)|`) does not count, nor does a grouping parenthesis.
 pub fn call_at(text: &str, caret: usize) -> Option<(String, usize)> {
     let head: Vec<char> = text[..caret.min(text.len())].chars().collect();
     let mut depth = 0i32;
@@ -140,12 +113,9 @@ pub fn call_at(text: &str, caret: usize) -> Option<(String, usize)> {
     None
 }
 
-/// Whether a reference may be inserted at `caret` — the predicate Point mode is.
-///
-/// A formula, and the last thing before the caret is something a reference can follow: an
-/// operator, a separator, an opening parenthesis, or the `=` itself. `SUM(B2` is *not*
-/// eligible — an arrow there moves on rather than pointing at a second cell, which is what
-/// stops a half-typed reference from being extended by accident.
+/// Whether a reference may be inserted at `caret` — Point mode's predicate: a formula whose last
+/// thing before the caret is an operator, a separator, `(` or the `=`. Not after `SUM(B2`, so an
+/// arrow there moves on rather than extending a half-typed reference.
 pub fn ref_eligible(text: &str, caret: usize) -> bool {
     if !text.starts_with('=') {
         return false;
@@ -158,11 +128,9 @@ pub fn ref_eligible(text: &str, caret: usize) -> bool {
     }
 }
 
-/// F4: the reference to re-spell, and what to spell it as.
-///
-/// Excel's cycle, because everybody's fingers know it: `B2` → `$B$2` → `B$2` → `$B2` → `B2`.
-/// The reference is the one the caret is in or at the end of, found with `display::spans` —
-/// the same scanner that colours them, so what F4 acts on is what the user sees highlighted.
+/// F4: the reference the caret is in or at the end of, and its next spelling in Excel's cycle `B2`
+/// → `$B$2` → `B$2` → `$B2` → `B2`. Found with `display::spans`, the scanner that colours
+/// references.
 pub fn cycle_absolute(text: &str, caret: usize) -> Option<(Range<usize>, String)> {
     let span = display::spans(text).into_iter().find(|span| {
         span.kind == TokenKind::Ref && span.range.start <= caret && caret <= span.range.end
@@ -195,16 +163,9 @@ pub fn cycle_absolute(text: &str, caret: usize) -> Option<(Range<usize>, String)
     Some((span.range, display::reference_text(&reference)))
 }
 
-/// A function's signature split into a head and one part per parameter — the two spellings a
-/// hint can be drawn in, and the only difference between them.
-///
-/// `friendly` picks: [`friendly::signature`]'s plain-English labels (`Sum`, `Number…`), which are
-/// the same names [`friendly::explain`] labels a finished formula with, or the spec's own
-/// `Syntax:` line split on `;`, types and brackets and all. Two spellings of one signature rather
-/// than two signatures, so what a user reads while typing and what they read afterwards agree.
-///
-/// `None` for a name the catalog does not know, which is a shell's cue to show nothing rather
-/// than to invent a signature.
+/// A function's signature split into a head and one part per parameter. `friendly` picks
+/// [`friendly::signature`]'s plain-English labels, the ones [`friendly::explain`] uses, or the
+/// spec's `Syntax:` line split on `;`. `None` for a name the catalog does not know.
 pub fn signature_parts(name: &str, friendly: bool) -> Option<(String, Vec<String>)> {
     if friendly {
         return friendly::signature(name);
@@ -220,13 +181,10 @@ pub fn signature_parts(name: &str, friendly: bool) -> Option<(String, Vec<String
     ))
 }
 
-/// Which part of [`signature_parts`] the `argument`th argument (0-based) falls in — the one a
-/// hint emphasises.
-///
-/// Itself while there is a part of that number; past the end, the repeating tail: `SUM`'s
-/// fifth argument is still `Number…`, and `COUNTIFS`' fifth is the range of its third pair,
-/// since `[ ; Reference R2 ; Criterion C2 ]...` repeats *two* parameters. A signature with
-/// nothing repeating clamps to its last part, and an unknown function hands the index back.
+/// Which part of [`signature_parts`] the `argument`th argument (0-based) falls in. Past the end,
+/// the repeating tail: `SUM`'s fifth argument is still `Number…`, and `COUNTIFS`' fifth is the
+/// range of its third pair. Without a repeating part it clamps to the last; an unknown function
+/// hands the index back.
 pub fn part_for(name: &str, argument: usize) -> usize {
     let Some((len, group)) = friendly::shape(name) else {
         return argument;
@@ -255,23 +213,15 @@ fn is_name_char(c: char) -> bool {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The offer machine and the band — hoisted out of `ui_win32/src/sheet/assist.rs` the day the
-// Mac's cell editor (`doc/macos-shell.md`, M8) would have been its second copy. Which *keys*
-// steer it is each shell's own (a Windows key code, a Mac selector); what a list of offers is,
-// how it narrows, what accepting replaces, and what a band of runs says, are here.
+// The offer list and the band. Which keys steer it is each shell's own; what the offers are, how
+// they narrow, what accepting replaces and what the band says are here.
 // ---------------------------------------------------------------------------------------------
 
-/// How many offers fit on one line before the rest become a count.
-///
-/// Five, and the sixth is `+n`: a band is a line, and a line that scrolls off the window is worse
-/// than one that says how much it is not showing. One more keystroke narrows the list.
+/// How many offers fit on one line; the rest become `+n`.
 pub const MAX_OFFERS: usize = 5;
 
-/// What the assist band is showing, and what a key would do to it.
-///
-/// Recomputed from the editor's text on every keystroke rather than updated in place — the same
-/// "asked for fresh, never stored" shape the view overlays follow, and for the same reason: a
-/// remembered completion goes stale the moment somebody moves the caret with the mouse.
+/// What the assist band is showing, and what a key would do to it. Recomputed from the editor's
+/// text on every keystroke, since a stored completion goes stale when the caret moves by mouse.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Assist {
     /// Everything worth offering for the word being typed. Empty when there is no such word,
@@ -281,29 +231,23 @@ pub struct Assist {
     pub span: Range<usize>,
     /// Which offer is highlighted, and the one Tab accepts.
     pub chosen: usize,
-    /// The call the caret is inside and which argument of it, for the signature hint. Answered
-    /// even while offers are showing, since the two are about different halves of the same line:
-    /// `=SUM(AV|` is both a word to complete and `SUM`'s first argument.
+    /// The call the caret is inside and which argument of it, for the signature hint — answered
+    /// even while offers show: `=SUM(AV|` is both.
     pub call: Option<(String, usize)>,
-    /// The span whose offers Escape dismissed, so they do not reappear on the next keystroke
-    /// inside the same word. Typing on past the end of it, or moving elsewhere, starts a new
-    /// word and offers again — which is what makes Escape "not this one" rather than a mode.
+    /// The span whose offers Escape dismissed, so they do not reappear inside the same word. A new
+    /// word offers again.
     dismissed: Option<Range<usize>>,
 }
 
 impl Assist {
-    /// Read the editor's text at `caret` (a byte offset) and say what to show.
-    ///
-    /// `names` is the document's defined names, which the caller reads from `App::names` — this
-    /// module never touches a document.
+    /// Read the editor's text at `caret` (a byte offset) and say what to show. `names` is the
+    /// caller's read of `App::names`.
     pub fn refresh(&mut self, text: &str, caret: usize, names: &[String]) {
         self.call = call_at(text, caret);
         self.chosen = 0;
         self.offers.clear();
         self.span = 0..0;
         let Some(span) = prefix_at(text, caret) else {
-            // Nothing to complete here: whatever was dismissed is finished business, so Escape
-            // does not have to be remembered past the word it was pressed in.
             self.dismissed = None;
             return;
         };
@@ -313,16 +257,15 @@ impl Assist {
         }
         self.dismissed = None;
         let offers = candidates(&text[span.clone()], names);
-        // A single offer already typed out in full is not an offer — `=SUM|` has nothing left to
-        // complete, and a list showing what is already there is noise over the grid.
+        // A single offer already typed out in full is not an offer.
         if offers.len() == 1 && offers[0].name.eq_ignore_ascii_case(&text[span]) {
             return;
         }
         self.offers = offers;
     }
 
-    /// Whether there is a list to steer, which is what makes Tab and the arrows mean something
-    /// other than what they usually mean while editing.
+    /// Whether there is a list to steer, which gives Tab and the arrows their meaning while
+    /// editing.
     pub fn is_offering(&self) -> bool {
         !self.offers.is_empty()
     }
@@ -384,15 +327,9 @@ impl Piece {
     }
 }
 
-/// The band's whole content, as runs — offers if there are any, otherwise the signature of the
-/// call the caret is in.
-///
-/// `friendly` picks which spelling of a signature is used, and it is the same switch the formula
-/// bar's own friendly view answers to: somebody who reads `Present Value(Rate: 0.05, …)` in the
-/// bar should be offered `Present Value(Rate; …)` while typing, not `PV( Number Rate ; … )`.
-///
-/// Empty when there is nothing to say, which is the caller's cue to take the band's height back
-/// out of the geometry.
+/// The band's content as runs: the offers if there are any, else the signature of the call the
+/// caret is in. `friendly` is the formula bar's own switch, so the hint and the bar agree. Empty
+/// when there is nothing to say.
 pub fn band(assist: &Assist, friendly: bool) -> Vec<Piece> {
     if assist.is_offering() {
         return offers_band(assist);
@@ -420,8 +357,7 @@ fn offers_band(assist: &Assist) -> Vec<Piece> {
     if hidden > 0 {
         pieces.push(Piece::new(format!("   +{hidden}"), Ink::Muted));
     }
-    // The chosen offer's own summary — the one line a vertical list would have shown beside it,
-    // and the reason a band is not simply a poorer popup.
+    // The chosen offer's own summary.
     if let Some(offer) = assist.offers.get(assist.chosen) {
         pieces.push(Piece::new("   \u{00b7}   ", Ink::Muted));
         pieces.push(Piece::new(offer.detail.clone(), Ink::Plain));
@@ -429,10 +365,7 @@ fn offers_band(assist: &Assist) -> Vec<Piece> {
     pieces
 }
 
-/// `Sum(Number…)`, with the argument the caret is in in the accent.
-///
-/// Which part is emphasised is [`part_for`]'s answer — `=SUM(1;2;3;4;5|` is still inside
-/// `Number…`.
+/// `Sum(Number…)`, with the argument the caret is in ([`part_for`]) in the accent.
 fn signature_band(name: &str, argument: usize, friendly: bool) -> Vec<Piece> {
     let Some((head, parts)) = signature_parts(name, friendly) else {
         return Vec::new();
@@ -457,16 +390,10 @@ fn signature_band(name: &str, argument: usize, friendly: bool) -> Vec<Piece> {
     pieces
 }
 
-/// What the formula bar shows for a cell, when the friendly view is on.
-///
-/// [`friendly::explain_inline`] — the aliased, parameter-labelled reading
-/// of a formula, never unfolded, which is exactly what `ui_sheet_gtk`'s formula bar puts in front
-/// of the stored text and what `grind sheet fmt --friendly --inline` prints. `None` for anything
-/// that is not a formula, or a formula this build cannot parse: the bar's own text is the answer
-/// then, since a reading nobody can produce must not blank out the line that can be typed.
-///
-/// It never round-trips and nothing here writes it back — R1 says the document's formula is
-/// ODF's, and this is a reading of one.
+/// What the formula bar shows for a cell when the friendly view is on:
+/// [`friendly::explain_inline`], as `grind sheet fmt --friendly --inline` prints. `None` for
+/// anything that is not a formula or will not parse, and the bar shows its own text. A reading
+/// only; nothing writes it back.
 pub fn friendly_line(text: &str) -> Option<String> {
     if !text.starts_with('=') {
         return None;
@@ -474,11 +401,8 @@ pub fn friendly_line(text: &str) -> Option<String> {
     friendly::explain_inline(text).ok()
 }
 
-/// Every function this build implements, one line each, for the function list — the name, the
-/// plain-English alias, its category, and the spec's own summary.
-///
-/// `grind sheet functions --long` prints the same four columns from the same catalog, which is
-/// rule 4 satisfied by construction rather than by a second list here.
+/// Every function this build implements, one line each: name, plain-English alias, category and
+/// the spec's summary — the four columns of `grind sheet functions --long`.
 pub fn function_lines() -> Vec<String> {
     funcs::catalog()
         .iter()
@@ -493,11 +417,8 @@ pub fn function_lines() -> Vec<String> {
         .collect()
 }
 
-/// What picking row `at` of [`function_lines`] inserts into an edit: `=NAME(`.
-///
-/// The `=` is included because the common case is an empty cell, and a name with no `=` in front
-/// of it is a piece of text rather than a call. A cell that is *already* being edited gets the
-/// call without it — the caller decides, since only it knows whether an edit is open.
+/// What picking row `at` of [`function_lines`] inserts: `=NAME(`, or `NAME(` into an edit already
+/// open.
 pub fn function_insert(at: usize, editing: bool) -> Option<String> {
     let info = funcs::catalog().get(at)?;
     Some(match editing {
@@ -522,8 +443,7 @@ mod tests {
         assert_eq!(prefix_at("=SUM(1;2)", 9), None);
     }
 
-    /// A caret a shell converted badly is nothing to complete, not a panic. `EM_GETSEL` counts
-    /// UTF-16 units and this counts bytes, which is exactly where such an offset comes from.
+    /// A caret badly converted from UTF-16 is nothing to complete, not a panic.
     #[test]
     fn a_caret_off_a_character_boundary_offers_nothing() {
         let text = "=SÜM"; // `Ü` is two bytes, so 3 is inside it
@@ -637,8 +557,8 @@ mod tests {
         assert_eq!(band(&assist, true), Vec::new());
     }
 
-    /// The two halves are answered together: inside `SUM(` *and* typing a word is both a
-    /// completion and an argument, and only one of them can have the band.
+    /// Inside `SUM(` and typing a word is both a completion and an argument; the offers get the
+    /// band.
     #[test]
     fn a_word_inside_a_call_is_both_and_the_offers_win() {
         let assist = read("=SUM(AV", 7);
@@ -753,8 +673,7 @@ mod tests {
         assert_eq!(replacement, "subtotal_2026");
     }
 
-    /// Escape closes the list without ending the edit, and the same word does not offer again —
-    /// otherwise the next keystroke inside it would put the list straight back up.
+    /// Escape closes the list without ending the edit, and the same word does not offer again.
     #[test]
     fn dismissing_lasts_as_long_as_the_word() {
         let mut assist = read("=SU", 3);

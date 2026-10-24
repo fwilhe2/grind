@@ -4,24 +4,14 @@
 
 //! AST → formula text (ODF 1.4 Part 4 §5), as [`Display`](std::fmt::Display).
 //!
-//! Two rules the round-trip rests on:
+//! Parenthesise by precedence, not by memory: an [`Expr::Paren`] the user wrote is kept (§5.5 Note
+//! 3), and every other child is bracketed when it binds looser than its parent, so any tree prints
+//! as itself. Only the forms §5 says to write are written: `StandardNumber` with a leading digit
+//! (§5.3), `;` separators (§5.6), and a range's second sheet omitted when inherited (§5.8), as
+//! LibreOffice spells it.
 //!
-//! **Parenthesise by precedence, not by memory.** An [`Expr::Paren`] the user wrote is kept
-//! (§5.5 Note 3), but a tree that never came from a parse — one the CLI or a reference
-//! rewrite built — still has to print as itself. So every child is bracketed when its
-//! binding power is looser than its parent's, which is what makes `print` total rather than
-//! "correct for ASTs we happen to have parsed".
-//!
-//! **Write only the forms §5 says to write.** Numbers as `StandardNumber` with a leading
-//! digit (§5.3), parameters separated by `;` (§5.6), and the sheet of a range's second end
-//! omitted when it is inherited anyway (§5.8) — which is the spelling LO uses, so a
-//! formula we write back is the formula a user recognises.
-//!
-//! One printer, two spellings. [`Bare`] is the same walk with the brackets left off a
-//! reference — the *display form* a person types and reads (`SUM(B2:B4)`), which
-//! `formula::display` turns back into the canonical one. A second serialiser would be a
-//! second set of precedence rules to keep in step, so the difference is one flag threaded
-//! through this file and nothing else.
+//! [`Bare`] is the same walk with references unbracketed — the display form (`SUM(B2:B4)`) — one
+//! flag rather than a second set of precedence rules.
 
 use std::fmt;
 
@@ -29,11 +19,8 @@ use super::lex::{Axis, CellRef, Op, Reference, column_name};
 use super::parse::{Expr, POSTFIX_BP, PREFIX_BP, infix_bp};
 use super::value::format_number;
 
-/// An expression printed in **display form**: references without their `[…]`.
-///
-/// Everything else is spelled exactly as the canonical form spells it, `;` separators
-/// included, because that is the syntax this project stores and there is deliberately no
-/// translation from another spreadsheet's.
+/// An expression in display form: references without their `[…]`, everything else as the canonical
+/// form spells it.
 pub struct Bare<'a>(pub &'a Expr);
 
 impl fmt::Display for Bare<'_> {
@@ -75,10 +62,9 @@ fn expr(f: &mut fmt::Formatter<'_>, e: &Expr, bare: bool) -> fmt::Result {
             f.write_str(op.text())
         }
         Expr::Binary(op, lhs, rhs) => {
-            // `[Sheet2.C22]:[.C33]` — the range *operator* between two references — is not
-            // the single reference `[Sheet2.C22:.C33]`: the second end there inherits the
-            // first's sheet, and here it does not. Display form spells both `Sheet2.C22:C33`,
-            // so this one keeps its brackets, the same honesty an external reference gets.
+            // The range operator over two references (`[Sheet2.C22]:[.C33]`) keeps its brackets:
+            // display form would spell it like `[Sheet2.C22:.C33]`, where the second end inherits
+            // the sheet.
             let bare = bare && *op != Op::Range;
             let bp = infix_bp(*op);
             child(f, lhs, bp, bare)?;
@@ -142,9 +128,8 @@ impl fmt::Display for Reference {
 }
 
 fn reference(f: &mut fmt::Formatter<'_>, r: &Reference, bare: bool) -> fmt::Result {
-    // An external-source reference keeps its brackets in display form too: nothing
-    // evaluates one, the syntax has no unbracketed spelling for the `'…'#` part, and a
-    // rare construct shown honestly beats one shown wrong.
+    // An external reference keeps its brackets in display form: the `'…'#` part has no unbracketed
+    // spelling.
     let bare = bare && r.source.is_none();
     if !bare {
         f.write_str("[")?;
@@ -220,20 +205,13 @@ pub const INDENT: usize = 4;
 /// than over one, and a deep enough formula would otherwise be broken down to its leaves.
 pub const UNBROKEN: usize = 16;
 
-/// An expression in display form laid over several lines, nesting indented, for a person to
-/// read — the workbench's layout (`doc/formula-workbench.md` §3.4).
+/// An expression in display form laid over several lines for reading (`doc/formula-workbench.md`
+/// §3.4). Still one formula: §5.14 allows line breaks between tokens, so it reads back to the same
+/// tree. Never stored.
 ///
-/// The result is still **one formula**: §5.14 allows whitespace, line breaks included,
-/// between any two tokens, so these lines read back (through `formula::display`) to exactly
-/// the tree they were printed from, and a trace of them gives each line its node. Nothing
-/// here is ever stored; a cell holds the one-line form.
-///
-/// The rule, applied from the outside in: whatever fits in `width` columns at its indent is
-/// printed flat by [`Bare`]. A call that does not fit puts each argument on a line of its
-/// own, one level in, with the closing bracket back out; an operator chain breaks *before*
-/// each operator, so a line that starts with `+` is visibly a continuation; brackets open
-/// and close on lines of their own. A reference range is never broken, and neither is
-/// anything with nothing inside it to break at.
+/// Whatever fits in `width` at its indent is printed flat by [`Bare`]. A call that does not fit
+/// puts each argument on its own line, one level in; an operator chain breaks before each
+/// operator; brackets open and close on lines of their own. A range is never broken.
 pub fn pretty(e: &Expr, width: usize) -> String {
     lines(e, width).join("\n")
 }

@@ -2,11 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! §6.13 Information Functions — the Small Group's, minus `COUNTIF` (which needs §4.11.8
-//! Criterion matching, still unbuilt).
-//!
-//! The `IS*` family is the one place an error must **not** propagate: `ISERROR` exists to
-//! look at one, so these read the value rather than converting it.
+//! §6.13 Information Functions. The `IS*` family is the one place an error must not propagate:
+//! these read the value rather than converting it.
 
 use super::super::eval::Operand;
 use super::super::value::{FormulaError, Value};
@@ -41,13 +38,8 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
     })
 }
 
-/// §6.13.6: how many *numbers*.
-///
-/// The one function in this file that cannot use [`Args::numbers`], and the spec says why
-/// in one sentence: "all other types are ignored. This function does not propagate Error
-/// values." So `COUNT(2;4;6;"eight")` is 3 rather than `#VALUE!`, and an error sitting in
-/// the middle of a range is ignored rather than returned — the opposite of §4.6's default,
-/// which is exactly why it is written out here.
+/// §6.13.6: how many numbers. "This function does not propagate Error values", so it cannot use
+/// [`Args::numbers`]: `COUNT(2;4;6;"eight")` is 3, and an error in a range is ignored.
 fn count(args: &mut Args) -> Answer {
     let mut count = 0usize;
     for i in 0..args.len() {
@@ -108,19 +100,10 @@ fn shape(args: &mut Args, rows: bool) -> Answer {
     Ok(Value::number(size as f64))
 }
 
-/// §6.13.29 `ROW` and §6.13.4 `COLUMN`: **where** rather than how big.
-///
-/// The two functions that are not a pure function of their arguments — with no argument at
-/// all they answer about the cell the formula is *in*, which is why [`Args`] carries `at`.
-/// Given a reference they answer about its top-left corner; §6.13.29 also defines an array
-/// form returning every row of a multi-row reference, and that is out of scope with the rest
-/// of inline arrays (§2.3.2).
-///
-/// **Not Small Group.** §2.3.2 admits `ROWS` and `COLUMNS` and not these, and they are here
-/// by the explicit decision the anti-bloat rule asks for: `fizzbuzz.fods` is an R7 document
-/// whose whole content is `IF(MOD(ROW();15)=0;…)`, so the corpus asked and the answer was
-/// eight lines. Both are 1-based, like every address a user sees and unlike every index in
-/// the core.
+/// §6.13.29 `ROW` and §6.13.4 `COLUMN`: the cell the formula is in, or a reference's top-left
+/// corner, 1-based. The array form for a multi-row reference is out with the rest of inline arrays
+/// (§2.3.2). Beyond the Small Group because `fizzbuzz.fods`, an R7 document, is
+/// `IF(MOD(ROW();15)=0;…)`.
 fn where_am_i(args: &mut Args, rows: bool) -> Answer {
     args.arity(0..=1)?;
     let (row, col) = match args.is_empty() {

@@ -5,20 +5,15 @@
 //! The function library — ODF 1.4 Part 4 §6, one module per category, in the order
 //! `doc/small-group.md` lists them.
 //!
-//! Functions receive their arguments **unevaluated**. `IF` is the reason: §6.15.4 wants the
-//! branch not taken left alone, so `IF([.A1]=0;0;1/[.A1])` cannot divide by zero. Anything
-//! that just wants a number asks [`Args`] for one and never sees the difference.
+//! Functions receive their arguments unevaluated, because `IF` must leave the branch not taken
+//! alone (§6.15.4): `IF([.A1]=0;0;1/[.A1])` cannot divide by zero. Conversions are [`Args`]'s:
+//! [`Args::number`] is §6.3.5 and [`Args::numbers`] §6.3.7, and the asymmetry between them — a
+//! referenced `"7"` is skipped, an argument `"7"` converts — is specified behaviour.
 //!
-//! Conversions are not each function's business either: [`Args::number`] is §6.3.5,
-//! [`Args::numbers`] is §6.3.7, and the asymmetry between them — a referenced `"7"` is
-//! skipped, an argument `"7"` converts — is the specified behaviour rather than an
-//! inconsistency to iron out.
-//!
-//! All 110 of the Small Group are here, and the functions moved in beyond it one decision at
-//! a time (`doc/small-group.md`'s second half, [`beyond_small_group`]), whose measured
-//! expectations are `beyond.rs`. What is left inside them is two named gaps: criteria match
-//! wildcards and never regular expressions (`wildcard.rs` is why), and array formulas are
-//! read as ordinary ones.
+//! All 110 of the Small Group are here, plus the functions moved in beyond it one decision at a
+//! time ([`beyond_small_group`], measured in `beyond.rs`). Two gaps remain: criteria match
+//! wildcards, never regular expressions (`wildcard.rs`), and array formulas are read as ordinary
+//! ones.
 
 use super::eval::{Address, Area, Engine, Operand};
 use super::parse::Expr;
@@ -63,19 +58,15 @@ pub fn call(engine: &mut Engine, name: &str, args: &[Expr], at: Address) -> Valu
     Value::Error(FormulaError::Name)
 }
 
-/// Every function name the evaluator answers to — the scoreboard's denominator, and what
-/// the CLI will list.
+/// Every function name the evaluator answers to.
 pub fn implemented() -> Vec<&'static str> {
     NAMES.to_vec()
 }
 
 pub use catalog::{FuncInfo, catalog, category, parameters, takes_one_value};
 
-/// Every function a formula calls, outermost first, each named once and upper-cased.
-///
-/// The names are what the formula *says*, not what this build implements: a document may
-/// call a function the evaluator does not have, and an explorer that hid those would hide
-/// exactly the ones worth finding. `None` when the formula will not parse.
+/// Every function a formula calls, outermost first, each named once and upper-cased — including
+/// ones this build does not implement. `None` when the formula will not parse.
 pub fn used(formula: &str) -> Option<Vec<String>> {
     let mut names = Vec::new();
     collect(&super::parse::parse(formula).ok()?, &mut names);
@@ -102,23 +93,17 @@ fn collect(expr: &Expr, names: &mut Vec<String>) {
     }
 }
 
-/// How many functions §2.3.2 E) enumerates. The conformance claim's denominator, and the
-/// only number a coverage report may compare against — checked against
-/// `doc/small-group.md` by `nothing_outside_the_small_group_gets_implemented`.
+/// How many functions §2.3.2 E) enumerates — the conformance claim's denominator, checked against
+/// `doc/small-group.md`.
 pub const SMALL_GROUP: usize = 110;
 
-/// The functions implemented **beyond** the Small Group — the plan's one-at-a-time escape
-/// hatch, and the second half of `doc/small-group.md`.
-///
-/// Reported apart from [`implemented`] because "138 of 110" is not a sentence. A caller
-/// saying how much of the Small Group it covers needs the extras counted separately, or the
-/// claim reads as broken arithmetic and stops meaning anything.
+/// The functions implemented beyond the Small Group (`doc/small-group.md`'s second half), reported
+/// apart from [`implemented`] so a coverage claim never reads as more than 110 of 110.
 pub fn beyond_small_group() -> &'static [&'static str] {
     BEYOND
 }
 
-/// Kept in step with `doc/small-group.md`'s second half by the same test that checks the
-/// first, so this cannot quietly grow either.
+/// Held to `doc/small-group.md`'s second half by the same test as the first.
 const BEYOND: &[&str] = &[
     "ADDRESS",
     "AVERAGEIFS",
@@ -329,10 +314,8 @@ impl Args<'_, '_> {
         self.args.is_empty()
     }
 
-    /// Reject a call whose argument count the function does not accept.
-    ///
-    /// `#VALUE!` rather than a parse failure: the formula is well formed, its parameters
-    /// are not (§5.12, "parameter is wrong type").
+    /// Reject a call whose argument count the function does not accept: `#VALUE!`, since the
+    /// formula is well formed and its parameters are not (§5.12).
     pub fn arity(&self, accepted: impl std::ops::RangeBounds<usize>) -> Result<(), FormulaError> {
         if accepted.contains(&self.args.len()) {
             Ok(())
@@ -361,11 +344,8 @@ impl Args<'_, '_> {
         self.value(i).to_number()
     }
 
-    /// §6.3.6 Conversion to Integer, truncating toward zero.
-    ///
-    /// §6.3.6 leaves the rounding to each function and most of the Small Group's
-    /// integer parameters — `LEFT`'s length, `ROUND`'s digits, `CHOOSE`'s index — are
-    /// counts, where truncation is the only reading that cannot overshoot.
+    /// §6.3.6 Conversion to Integer, truncating toward zero: most integer parameters (`LEFT`'s
+    /// length, `ROUND`'s digits, `CHOOSE`'s index) are counts, where truncation cannot overshoot.
     pub fn integer(&mut self, i: usize) -> Result<i64, FormulaError> {
         Ok(self.number(i)?.trunc() as i64)
     }
@@ -380,15 +360,9 @@ impl Args<'_, '_> {
         self.engine.null_year()
     }
 
-    /// §6.3.15 Conversion to DateParam and §6.3.16 Conversion to TimeParam.
-    ///
-    /// One method for both, because both pseudotypes produce the same thing: a serial
-    /// number. §4.3.4 is why — a DateTime "is a Date plus Time", so the two differ only in
-    /// which half the *function* then reads, never in how the argument converts.
-    ///
-    /// Text goes to the ISO parsers first and falls back to §6.3.5's ordinary number
-    /// conversion, which is the "may attempt to convert to a Number in other ways" both
-    /// sections leave open — and is what makes `YEAR("2")` agree with `YEAR(2)`.
+    /// §6.3.15 DateParam and §6.3.16 TimeParam, both a serial number (a DateTime "is a Date plus
+    /// Time", §4.3.4). Text goes to the ISO parsers, then to §6.3.5's number conversion, so
+    /// `YEAR("2")` agrees with `YEAR(2)`.
     pub fn serial(&mut self, i: usize) -> Result<f64, FormulaError> {
         match self.value(i) {
             Value::Text(s) => super::date::parse_date(&s, self.null_date())
@@ -491,11 +465,8 @@ impl Args<'_, '_> {
         matches!(self.args.get(i), None | Some(Expr::Empty))
     }
 
-    /// §6.3.13 Conversion to LogicalSequence, over every argument.
-    ///
-    /// Numbers *are* included: §6.3.13 excludes them only where Logical is a distinguished
-    /// type, and while ours is, LibreOffice's is not — `AND([.A1:.A3])` over a column of 1s
-    /// and 0s is TRUE there, and the oracle wins over the taxonomy.
+    /// §6.3.13 Conversion to LogicalSequence, over every argument. Numbers are included, as in
+    /// LibreOffice: `AND([.A1:.A3])` over 1s and 0s is TRUE there, and the oracle wins.
     pub fn logicals(&mut self) -> Result<Vec<bool>, FormulaError> {
         let mut out = Vec::new();
         for i in 0..self.args.len() {
@@ -541,9 +512,8 @@ mod tests {
     use super::super::value::{FormulaError, Value};
     use crate::model::{CellValue, Document, Pos, Sheet};
 
-    /// A sheet with A1:A4 = 1, "7", <blank>, 3 and B1 = TRUE — one fixture, because most of
-    /// what needs testing here is how a function treats the values it did *not* get a
-    /// number for.
+    /// A sheet with A1:A4 = 1, "7", <blank>, 3 and B1 = TRUE — mostly testing what a function does
+    /// with the values it did not get a number for.
     fn document() -> Document {
         let mut sheet = Sheet::new("Sheet1");
         sheet.set(Pos::new(0, 0), CellValue::Number(1.0));
@@ -710,9 +680,7 @@ mod tests {
         assert_eq!(eval("=ABS()"), Value::Error(FormulaError::Value));
     }
 
-    /// The catalog is what a shell offers a user, so it has to be the same list the
-    /// evaluator answers to — a function missing from it is unreachable from an
-    /// autocomplete, and one that is only in it is a promise nothing keeps.
+    /// The catalog is what a shell offers, so it must name exactly what the evaluator answers to.
     #[test]
     fn the_catalog_names_exactly_what_is_implemented() {
         let mut catalogued: Vec<&str> = super::catalog().iter().map(|f| f.name).collect();
@@ -721,8 +689,6 @@ mod tests {
         implemented.sort_unstable();
         assert_eq!(catalogued, implemented);
 
-        // Extracted from the spec rather than written about it, so each entry has to look
-        // like what it was extracted from.
         for info in super::catalog() {
             assert!(
                 info.signature.starts_with(info.name)
@@ -735,10 +701,7 @@ mod tests {
         }
     }
 
-    /// [`category`] derives the group from the section number rather than storing one per
-    /// entry, so the thing worth checking is that every section prefix this build actually
-    /// uses is one the match arm recognises — an unrecognised one would silently file a
-    /// function under "Other" in a help browser instead of failing a build.
+    /// Every section prefix in use maps to a category, so nothing is silently filed under "Other".
     #[test]
     fn every_catalogued_function_has_a_known_category() {
         for info in super::catalog() {
@@ -752,9 +715,7 @@ mod tests {
         }
     }
 
-    /// The section number is the citation, and a wrong one sends a reader to the wrong
-    /// definition — which is worse than none. `doc/small-group.md` carries the same
-    /// numbers, extracted the same way, so the two are checked against each other.
+    /// The section numbers agree with `doc/small-group.md`'s, extracted the same way.
     #[test]
     fn every_catalogued_section_matches_the_small_group_document() {
         let doc = include_str!("../../../../doc/small-group.md");
@@ -776,17 +737,9 @@ mod tests {
         }
     }
 
-    /// The feature line, checked by a machine rather than by discipline (CLAUDE.md).
-    ///
-    /// `doc/small-group.md` is the 110 functions §2.3.2 E) enumerates, and it is the whole
-    /// scope of the evaluator. A function outside it is bloat by definition — so adding one
-    /// fails here, and moving the line means editing the list on purpose.
-    ///
-    /// The document has a second half, after a `# Beyond the Small Group` heading, for
-    /// functions moved in by the plan's explicit one-at-a-time decision. It is split on that
-    /// heading rather than read as one list, so the §2.3.2 E) extract stays verbatim and
-    /// exactly 110 — an addition cannot be smuggled in by growing the spec's own list, and
-    /// the conformance claim keeps meaning what it says.
+    /// The feature line: the evaluator implements exactly `doc/small-group.md`. Its first half is
+    /// §2.3.2 E)'s 110, kept verbatim; its second, after `# Beyond the Small Group`, is the
+    /// functions moved in by decision. Adding a function means editing that list on purpose.
     #[test]
     fn nothing_outside_the_small_group_gets_implemented() {
         let doc = include_str!("../../../../doc/small-group.md");
@@ -807,9 +760,7 @@ mod tests {
             "the Small Group is {} functions (§2.3.2 E)",
             super::SMALL_GROUP
         );
-        // The escape hatch is a constant *and* a document, and a reader believes whichever
-        // it met first — so they are checked against each other rather than maintained in
-        // parallel and hoped about.
+        // The constant and the document are checked against each other.
         let mut declared = super::beyond_small_group().to_vec();
         let mut documented = extra.clone();
         declared.sort_unstable();
@@ -837,8 +788,6 @@ mod tests {
 
     #[test]
     fn every_listed_name_actually_dispatches() {
-        // `implemented()` is what the scoreboard and the CLI will report; a name in the list
-        // that no category answers to would be a lie told by a constant.
         let document = document();
         for name in super::implemented() {
             let mut engine = Engine::new(&document);

@@ -55,13 +55,9 @@ fn annuity(rate: f64, nper: f64, payment: f64, pv: f64, fv: f64, pay_type: f64) 
     }
 }
 
-/// `(1+Rate)^Nper − 1`, without ever forming `1+Rate`.
-///
-/// That sum is where the digits go: a monthly rate of `0.0199/12` is 0.00166, and adding it
-/// to 1 throws away the bottom three digits of it before `powf` has begun. `ln_1p` and
-/// `exp_m1` are the same expression with neither cancellation, and the difference is visible
-/// at the fifteen significant digits a cached value is compared at — `PMT(0.0199/12;36;25000)`
-/// is `−715.955334437392`, and the naive spelling gets `−715.955334437399`.
+/// `(1+Rate)^Nper − 1` without forming `1+Rate`, which loses a small rate's low digits: `ln_1p`
+/// and `exp_m1` keep them. `PMT(0.0199/12;36;25000)` is `−715.955334437392`; the naive spelling
+/// gets `…399`.
 fn growth(rate: f64, nper: f64) -> f64 {
     (nper * rate.ln_1p()).exp_m1()
 }
@@ -71,12 +67,8 @@ fn series(rate: f64, nper: f64, pay_type: f64) -> f64 {
     (1.0 + rate * pay_type) * growth(rate, nper) / rate
 }
 
-/// The trailing `[ ; Fv = 0 ] [ ; PayType = 0 ]` the five annuity functions share.
-///
-/// §6.12.41 and its siblings define PayType as a flag — "0 if payments are due at the end of
-/// the period; 1 if they are due at the beginning" — and say nothing about any other number.
-/// Reading it as the flag it is, rather than as a coefficient, is what makes `PayType = 2`
-/// the same as `1` instead of an extra period's interest.
+/// The trailing `[ ; Fv = 0 ] [ ; PayType = 0 ]` the five annuity functions share. PayType is a
+/// flag (§6.12.41), so `PayType = 2` is `1`, not an extra period's interest.
 fn tail(args: &mut Args, first: usize) -> Result<(f64, f64), FormulaError> {
     let fv = if args.omitted(first) {
         0.0
@@ -140,15 +132,12 @@ fn payment(rate: f64, nper: f64, pv: f64, fv: f64, pay_type: f64) -> f64 {
     }
 }
 
-/// §6.12.23 `IPMT( Rate ; Period ; Nper ; PV [ ; FV = 0 [ ; Type = 0 ] ] )` and §6.12.37
-/// `PPMT`, which is the rest of the same payment: `PMT − IPMT`.
+/// §6.12.23 `IPMT( Rate ; Period ; Nper ; PV [ ; FV = 0 [ ; Type = 0 ] ] )` and §6.12.37 `PPMT`,
+/// the rest of the same payment (`PMT − IPMT`).
 ///
-/// "The interest payment is the interest rate multiplied by the balance at the beginning of
-/// the period", and the balance after `Period − 1` payments is [`future`]'s, negated. Paid
-/// at the start of each period the first payment comes before any interest is owed, so it
-/// is all principal, and later ones are on a balance one payment further on. A period
-/// outside `1..=Nper` belongs to no loan — `#NUM!`; a fractional one is a balance part-way
-/// through, as measured.
+/// The interest is the rate on the balance at the start of the period: [`future`]'s balance after
+/// `Period − 1` payments, negated. Paid in advance, the first payment is all principal. A period
+/// outside `1..=Nper` is `#NUM!`; a fractional one is a balance part-way through, as measured.
 fn split(args: &mut Args, interest: bool) -> Answer {
     args.arity(4..=6)?;
     let (rate, period, nper, pv) = (
@@ -266,17 +255,12 @@ fn irr(args: &mut Args) -> Answer {
     })?))
 }
 
-/// A rate at which `f` is zero, sought from `guess` and then, failing that, anywhere in the
-/// domain. `scale` is the size of the cash flows involved, which is what makes "`f` is zero"
-/// answerable at all: a residual of one currency unit is a solved equation for a mortgage and
-/// a badly missed one for a ten-unit annuity.
+/// A rate at which `f` is zero, sought from `guess` and then anywhere in the domain. `scale` is
+/// the size of the cash flows, which decides what counts as zero.
 ///
-/// [`secant`] alone would do if every equation had one root. §6.12.24's `Guess` exists because
-/// they do not, so the iteration runs from there first and its answer wins when it is a root —
-/// that is the one that agrees with LibreOffice. Only when it lands on nothing (the annuity
-/// equation's pole at −100% attracts it) does [`scan`] sweep the domain for a sign change.
-///
-/// §6.12.24 permits returning an Error when no root is found, and both halves failing is that.
+/// The secant from `Guess` runs first, and its root wins, as it is the one LibreOffice finds; only
+/// when it lands on nothing (the pole at −100% attracts it) does [`scan`] sweep for a sign change.
+/// Both failing is the Error §6.12.24 permits.
 fn solve(guess: f64, scale: f64, f: impl Fn(f64) -> f64) -> Result<f64, FormulaError> {
     // Half a ULP of the flows themselves is what the arithmetic can distinguish; the margin
     // above it is for the cancellation inside the equation, not for a sloppy answer.
@@ -292,17 +276,12 @@ fn solve(guess: f64, scale: f64, f: impl Fn(f64) -> f64) -> Result<f64, FormulaE
     }
 }
 
-/// The secant method from `guess`, returning the closest it came to a root.
+/// The secant method from `guess`, returning the closest it came to a root. It stops when the step
+/// stops moving rather than when the residual looks small, since rates are compared at fifteen
+/// significant digits.
 ///
-/// The stopping rule is the *step*, not the residual: a rate is compared against
-/// LibreOffice's at fifteen significant digits (loop C's rule, `doc/ods-format.md` §3.4), so
-/// stopping when the residual merely looks small leaves the last four digits wrong. Secant
-/// converges superlinearly, so running it until the iterate stops moving costs a handful of
-/// extra evaluations and buys the whole mantissa.
-///
-/// ponytail: secant rather than Newton, because the derivative of the annuity equation in
-/// `Rate` is an expression nobody needs written twice, and a numerical slope converges just
-/// as well here.
+/// ponytail: secant rather than Newton, to avoid writing the annuity equation's derivative; it
+/// converges as well here.
 fn secant(guess: f64, f: &impl Fn(f64) -> f64) -> f64 {
     let nudge = if guess == 0.0 { 1e-6 } else { guess * 1e-6 };
     let (mut x0, mut x1) = (guess, guess + nudge);
@@ -334,11 +313,8 @@ fn secant(guess: f64, f: &impl Fn(f64) -> f64) -> f64 {
     best.1
 }
 
-/// A root found by sweeping the whole domain for a sign change and bisecting the first one.
-///
-/// The probes are a geometric ladder in `1 + Rate` rather than an even spacing, because the
-/// interesting rates are not evenly spaced: `−1 + 10^−9` and `10000` are both plausible, and
-/// a linear sweep fine enough for the first would take a billion steps to reach the second.
+/// A root found by sweeping the domain for a sign change and bisecting the first one. The probes
+/// form a geometric ladder in `1 + Rate`, since both `−1 + 10^−9` and `10000` are plausible rates.
 fn scan(f: &impl Fn(f64) -> f64) -> Option<f64> {
     let probe = |k: i32| -1.0 + 10f64.powf(f64::from(k) / 10.0);
     let (mut lo, mut y_lo) = (probe(-90), f(probe(-90)));
@@ -397,12 +373,9 @@ fn syd(args: &mut Args) -> Answer {
     ))
 }
 
-/// §6.12.14 `DDB( Cost ; Salvage ; LifeTime ; Period [ ; DeclinationFactor = 2 ] )`.
-///
-/// Transcribed from the section's own pseudocode rather than from the summing description
-/// beside it: the two agree on integer periods, and only this one answers a fractional
-/// `Period`. The `rate ≥ 1` branch is the degenerate case where the whole asset depreciates
-/// in the first period.
+/// §6.12.14 `DDB( Cost ; Salvage ; LifeTime ; Period [ ; DeclinationFactor = 2 ] )`, transcribed
+/// from the section's pseudocode, the only form that answers a fractional `Period`. `rate ≥ 1`
+/// depreciates the whole asset in the first period.
 fn ddb(args: &mut Args) -> Answer {
     args.arity(4..=5)?;
     let (cost, salvage) = (args.number(0)?, args.number(1)?);
@@ -484,10 +457,9 @@ mod tests {
         assert_eq!(eval("=PMT(0.05;0;1000)"), Value::Error(FormulaError::Num));
     }
 
-    /// The mortgage in `tests/data/functions/financial.fods`: 280,000 at 3.75% a year, paid
-    /// back at 2000 a month. The exact answer, from fifty-digit decimal arithmetic over the
-    /// same doubles, is 184.40405884083278…; `1 + Rate` rounded before its logarithm used to
-    /// lose the fourteenth digit (184.40405884083015), where the oracle had it.
+    /// The mortgage in `tests/data/functions/financial.fods`: 280,000 at 3.75% a year, paid back
+    /// at 2000 a month. Fifty-digit arithmetic over the same doubles gives 184.40405884083278…;
+    /// rounding `1 + Rate` before the logarithm loses the fourteenth digit.
     #[test]
     fn nper_keeps_the_digits_a_small_rate_carries() {
         let n = number("=NPER(0.0375/12;-2000;280000)");

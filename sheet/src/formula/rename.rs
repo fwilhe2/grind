@@ -2,23 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Renaming a sheet, in the formulas that name it — `doc/dsl.md` §6.5's first row, D10 — and
-//! the two refactorings of a named expression built on the same walk: renaming one and
-//! inlining one.
+//! Renaming a sheet in the formulas that name it, and renaming or inlining a named expression on
+//! the same walk (`doc/dsl.md` §6.5).
 //!
-//! [`shift`](super::shift) is the sibling: that one moves a reference to a different *cell*,
-//! this one points it at a differently *named* sheet. Both are AST rewrites re-serialised
-//! through the printer that already exists, because a textual substitution over a formula is
-//! wrong in both directions — `Sales` appears inside `SalesTax` and inside `"Sales"`, and a
-//! sheet whose name needs quoting is not spelled the same before and after
-//! (`[$'Old Sheet'.A1]` → `[$New.A1]`).
-//!
-//! **Why this is a refactoring rather than a feature.** `doc/not-doing.md` recorded renaming a
-//! sheet as a known loss: formulas naming it went stale and recalculated to `#REF!`. That is the
-//! row `doc/dsl.md` §6.5 says to do first *because it fixes something that is currently wrong*,
-//! and the shape it takes is the one that section argues for — a core operation returning an
-//! `Action`, so rule 4 puts it on the CLI and rule 2 makes three hundred rewritten formulas one
-//! Ctrl+Z.
+//! [`shift`](super::shift) is the sibling, which moves a reference to another cell. Both are AST
+//! rewrites re-serialised by the printer, because a textual substitution is wrong both ways:
+//! `Sales` appears inside `SalesTax` and `"Sales"`, and a name that needs quoting is spelled
+//! differently after (`[$'Old Sheet'.A1]` → `[$New.A1]`). Each returns an `Action`, so a rename is
+//! one Ctrl+Z.
 
 use super::lex::{CellRef, Reference};
 use super::parse::{Expr, intro, parse};
@@ -41,11 +32,8 @@ fn rename_cellref(cell: &CellRef, from: &str, to: &str) -> CellRef {
     }
 }
 
-/// One reference with `from` renamed to `to`.
-///
-/// Public because a formula is not the only thing in a document that names a sheet: a chart
-/// holds its ranges as address *strings* (`chart::Series::values`), and rewriting one means
-/// parsing it, coming through here, and printing it back the way charts spell theirs.
+/// One reference with `from` renamed to `to`. Public for a chart, which holds its ranges as
+/// address strings (`chart::Series::values`).
 pub fn rename_in_reference(r: &Reference, from: &str, to: &str) -> Reference {
     Reference {
         // An external document's sheets are not this document's, so a reference into one is
@@ -86,15 +74,9 @@ pub fn rename(expr: &Expr, from: &str, to: &str) -> Expr {
     }
 }
 
-/// One stored formula with `from` renamed to `to`, or `None` when nothing changed.
-///
-/// `None` covers three cases a caller treats alike and this function distinguishes on purpose:
-/// the formula does not name that sheet, the formula does not parse — the same honesty
-/// `App::fill` shows a formula it cannot read, since rewriting text it did not understand is how
-/// a refactoring corrupts a document — and the rewrite is the text that was already there.
-///
-/// The **intro is kept**: a document spelling its formulas `of:=` gets them back that way, so
-/// renaming one sheet does not respell every formula in the file (R6).
+/// One stored formula with `from` renamed to `to`, or `None` when nothing changed — including when
+/// the formula does not parse, since rewriting text nobody understood corrupts documents. The
+/// intro (`of:=`) is kept (R6).
 pub fn rename_in_formula(formula: &str, from: &str, to: &str) -> Option<String> {
     let expr = parse(formula).ok()?;
     let renamed = rename(&expr, from, to);
@@ -105,24 +87,16 @@ pub fn rename_in_formula(formula: &str, from: &str, to: &str) -> Option<String> 
     (rewritten != formula).then_some(rewritten)
 }
 
-/// Every use of the named expression `from` in `expr`, spelled `to` instead (§5.11) — the
-/// other half of `doc/dsl.md` §6.5's Rename row, and the same kind of operation as [`rename`]:
-/// an AST substitution re-serialised by the printer, never a textual one. `rate` occurs inside
-/// `rate_2`, inside `"rate"` and as a function name in `RATE(…)`, and only the first of those
-/// four is this node.
-///
-/// Names match case-insensitively, as §5.11 makes them; the new spelling is `to` exactly.
+/// Every use of the named expression `from` in `expr`, spelled `to` instead (§5.11), as an AST
+/// substitution: `rate` inside `rate_2`, inside `"rate"` or as `RATE(…)` is left alone. Names
+/// match case-insensitively; the new spelling is `to` exactly.
 pub fn rename_name(expr: &Expr, from: &str, to: &str) -> Expr {
     substitute_name(expr, from, &Expr::Name(to.to_owned()))
 }
 
-/// Every use of the named expression `name` in `expr`, replaced by the tree `with` — the one
-/// walk under both [`rename_name`] (`with` is the new name) and [`inline_name`] (`with` is
-/// what the name stands for).
-///
-/// No brackets are added here: the printer parenthesises by precedence
-/// ([`super::serialize`]), so `rate*2` with `rate` standing for `0.2+[.A1]` prints as
-/// `(0.2+[.A1])*2` without this function knowing what binds tighter than what.
+/// Every use of the named expression `name` in `expr`, replaced by the tree `with` — the walk
+/// under [`rename_name`] and [`inline_name`]. The printer adds brackets by precedence, so `rate*2`
+/// with `rate` as `0.2+[.A1]` prints `(0.2+[.A1])*2`.
 fn substitute_name(expr: &Expr, name: &str, with: &Expr) -> Expr {
     match expr {
         Expr::Name(n) if n.eq_ignore_ascii_case(name) => with.clone(),
@@ -150,27 +124,21 @@ fn substitute_name(expr: &Expr, name: &str, with: &Expr) -> Expr {
     }
 }
 
-/// Whether `expr` uses the named expression `name` anywhere — the question [`inline_name`]'s
-/// caller asks of a definition before inlining it, since a name that mentions itself cannot be
-/// written out of existence.
+/// Whether `expr` uses the named expression `name` anywhere; a name that mentions itself cannot be
+/// inlined.
 pub fn uses_name(expr: &Expr, name: &str) -> bool {
     substitute_name(expr, name, &Expr::Empty) != *expr
 }
 
-/// Every use of the named expression `name` in `expr`, written out as the tree `definition`
-/// it stands for — `doc/dsl.md` §6.5's Inline row, the inverse of extracting one.
-///
-/// The result means what the original meant **to this evaluator**: a name is evaluated by
-/// parsing its definition and evaluating that tree at the using cell
-/// (`Engine::named`), so a sheet-less `[.A1]` in a definition already resolves against the
-/// using formula's own sheet, and inlined it still does.
+/// Every use of the named expression `name` in `expr`, written out as its `definition`. A name
+/// evaluates its definition at the using cell (`Engine::named`), so a sheetless `[.A1]` in a
+/// definition means the same inlined.
 pub fn inline_name(expr: &Expr, name: &str, definition: &Expr) -> Expr {
     substitute_name(expr, name, definition)
 }
 
-/// [`inline_name`] over one stored formula, keeping its intro, or `None` when the formula does
-/// not use the name — or does not parse, which a caller must tell apart before deleting the
-/// definition (`App::inline_name` refuses rather than leave a `#NAME?` behind).
+/// [`inline_name`] over one stored formula, keeping its intro, or `None` when it does not use the
+/// name or does not parse — which a caller must tell apart before deleting the definition.
 pub fn inline_name_in_formula(formula: &str, name: &str, definition: &Expr) -> Option<String> {
     let expr = parse(formula).ok()?;
     let inlined = inline_name(&expr, name, definition);

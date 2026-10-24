@@ -2,19 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Evaluation: an AST plus a document → a [`Value`] (ODF 1.4 Part 4 §6.4 operators,
-//! §6.3 conversions).
+//! Evaluation: an AST plus a document → a [`Value`] (ODF 1.4 Part 4 §6.4 operators, §6.3
+//! conversions).
 //!
-//! **Recursion is the dependency graph.** A formula that reads a cell holding another
-//! formula evaluates that one first, and a memo keeps each cell to one evaluation — which
-//! is a topological order arrived at by asking rather than by sorting. The plan budgets a
-//! `graph.rs` with dirty propagation and petgraph; that pays for itself when *incremental*
-//! recalculation exists, and nothing needs it yet. A cell already being visited is a
-//! circular reference (§3.5 describes recalculation but leaves cycles to the host's
-//! iterative-calculation settings, which do not exist yet) and yields `#NUM!`.
+//! Recursion is the dependency order: a formula reading another formula's cell evaluates that one
+//! first, and a memo keeps each cell to one evaluation. A cell already being visited is a circular
+//! reference and yields `#NUM!` (§3.5 leaves cycles to iterative-calculation settings, which this
+//! build does not have). [`crate::graph`] answers reverse-dependency questions through
+//! [`Engine::area`], so it cannot disagree with this.
 //!
-//! ponytail: whole-document recalculation, no dirty set, no incremental update. Upgrade to
-//! a real graph when an edit has to repaint a sheet rather than a test having to check one.
+//! ponytail: whole-document recalculation, no dirty set. Upgrade when an edit has to repaint a
+//! sheet faster than a recalculation takes.
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
@@ -26,10 +24,7 @@ use super::lex::{CellRef, Op, Reference};
 use super::parse::{Expr, parse};
 use super::value::{FormulaError, Value};
 
-/// A cell, document-wide.
-///
-/// Ordered so that a map keyed by one iterates in a stable, readable order — sheet by sheet,
-/// then row by row. [`crate::graph`] is what asked for it.
+/// A cell, document-wide, ordered sheet by sheet then row by row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Address {
     pub sheet: usize,
@@ -88,10 +83,8 @@ impl From<FormulaError> for Operand {
     }
 }
 
-/// How deep a chain of formulas may be before we call it a runaway.
-///
-/// A real chain of dependent cells is thousands long at worst, and each frame here is
-/// small; this only exists so that a pathological document cannot take the stack with it.
+/// How deep a chain of formulas may be before it is a runaway — so a pathological document cannot
+/// take the stack with it.
 const MAX_DEPTH: usize = 4096;
 
 pub struct Engine<'a> {
@@ -101,26 +94,22 @@ pub struct Engine<'a> {
     cache: HashMap<Address, Value>,
     visiting: HashSet<Address>,
     depth: usize,
-    /// [`Sheet::cell_extent`] per sheet, asked once. It walks every formula the sheet has, and
-    /// `area` is asked once per reference: a Monte-Carlo workbook with 300,000 formulas and
-    /// twenty thousand `B45:NTQ45`s spent half its recalculation there.
+    /// [`Sheet::cell_extent`] per sheet, asked once: it walks every formula, and a workbook with
+    /// 300,000 formulas and twenty thousand `B45:NTQ45`s spent half its recalculation there.
     extents: std::cell::RefCell<HashMap<usize, (u32, u32)>>,
-    /// Whether a formula cell is worth its *cached* value rather than its formula evaluated
-    /// again — what a cell shows, which is what a conditional-format rule is asked about while
-    /// a sheet is drawn ([`Engine::over_cached`]).
+    /// Whether a formula cell reads as its cached value rather than being evaluated again
+    /// ([`Engine::over_cached`]).
     cached: bool,
-    /// What each node of the formula being traced came to ([`Engine::trace`]); `None`
-    /// whenever nothing is being traced, which is always but for the workbench.
+    /// What each node of the formula being traced came to ([`Engine::trace`]); `None` except in
+    /// the workbench.
     recorder: Option<Recorder>,
 }
 
-/// The operands of one formula's nodes, keyed by the node's address in a tree the caller
-/// keeps alive for the whole evaluation — so no other node can share one, however many
-/// formulas are parsed and dropped while it runs.
+/// The operands of one formula's nodes, keyed by node address in a tree the caller keeps alive for
+/// the whole evaluation.
 struct Recorder {
-    /// The depth the traced formula's own nodes are evaluated at. Another cell's formula
-    /// and a named expression both evaluate one deeper, which is how their nodes are told
-    /// from the traced formula's without a second walk.
+    /// The depth the traced formula's own nodes are evaluated at; another cell's formula or a
+    /// named expression evaluates one deeper.
     depth: usize,
     seen: HashMap<*const Expr, Operand>,
 }
@@ -138,14 +127,10 @@ impl<'a> Engine<'a> {
         }
     }
 
-    /// An engine that sees some cells holding something other than they do — the workbench's
-    /// *what if* (`doc/formula-workbench.md` §3.3).
-    ///
-    /// Seeding the memo is the whole mechanism, and it is honest because of how this engine
-    /// works: it evaluates every formula cell from its formula ([`Engine::new`] never trusts a
-    /// cached value), so a formula reading an overridden cell — directly, or through any chain
-    /// of other formulas — is evaluated against the override. A formula cell can be
-    /// overridden too, which is what "what if this subtotal were 0" means.
+    /// An engine that sees some cells holding something else — the workbench's what-if
+    /// (`doc/formula-workbench.md` §3.3). Seeding the memo is the whole mechanism: every formula
+    /// cell is evaluated from its formula, so anything reading an overridden cell, however
+    /// indirectly, sees the override. A formula cell can be overridden too.
     pub fn with_overlay(doc: &'a Document, overlay: &HashMap<Address, Value>) -> Self {
         let mut engine = Self::new(doc);
         engine
@@ -154,11 +139,10 @@ impl<'a> Engine<'a> {
         engine
     }
 
-    /// An engine that reads every formula cell's cached value instead of evaluating it again:
-    /// a question about what the sheet *shows*, asked while it is drawn. A conditional-format
-    /// rule is evaluated through one (`crate::rule`), so drawing a screenful never recalculates
-    /// the workbook behind it — and a rule agrees with the values on screen even when they are
-    /// stale, which is what LibreOffice's rules do too.
+    /// An engine that reads every formula cell's cached value instead of evaluating it — a
+    /// question about what the sheet shows. Conditional-format rules evaluate through one
+    /// (`crate::rule`), so drawing never recalculates, and a rule agrees with the values on screen
+    /// even when they are stale, as LibreOffice's do.
     pub fn over_cached(doc: &'a Document) -> Self {
         Self {
             cached: true,
@@ -166,8 +150,7 @@ impl<'a> Engine<'a> {
         }
     }
 
-    /// The document's epoch (§3.4 `HOST-NULL-DATE`). A setting rather than a cell, so it is
-    /// read through here instead of handing `funcs` the whole document.
+    /// The document's epoch (§3.4 `HOST-NULL-DATE`).
     pub fn null_date(&self) -> i64 {
         self.doc.null_date
     }
@@ -194,13 +177,10 @@ impl<'a> Engine<'a> {
         value
     }
 
-    /// Whether `SUBTOTAL` counts this cell (§6.16.60): not when its row is hidden by the
-    /// sheet's filter, nor — when `collapsed` asks, for the functions 101 to 111 — when it is
-    /// hidden by hand, nor when its own formula calls `SUBTOTAL`, so a grand total over a
-    /// column of subtotals does not count them twice.
-    ///
-    /// The filter's answer is [`crate::model::Sheet::row_hidden`]'s, the one every renderer draws: the rows
-    /// a person sees hidden are the rows a subtotal steps over.
+    /// Whether `SUBTOTAL` counts this cell (§6.16.60): not when its row is hidden by the filter
+    /// ([`crate::model::Sheet::row_hidden`], what every renderer draws), nor — when `collapsed`
+    /// asks, for functions 101 to 111 — hidden by hand, nor when its own formula calls `SUBTOTAL`,
+    /// so a grand total over subtotals does not count them twice.
     pub fn counted_by_subtotal(&self, at: Address, collapsed: bool) -> bool {
         let Some(sheet) = self.doc.sheet(at.sheet) else {
             return true;
@@ -234,25 +214,18 @@ impl<'a> Engine<'a> {
         };
         self.depth -= 1;
         self.visiting.remove(&at);
-        // §4.7 keeps Empty distinct from zero *as a cell*, but a formula's result is a stored
-        // value and there is no empty value type to store it as — `office:value-type` has
-        // none. §6.3.5 says what an empty cell is worth once something asks for its value, so
-        // `=[.A1]` pointing at nothing is the number 0, and a cell reading *that* sees 0 in
-        // turn rather than a second empty cell.
+        // A formula's result is a stored value, and ODF has no empty value type to store (§4.7),
+        // so an empty result is 0 (§6.3.5): `=[.A1]` over nothing is 0, not a second empty cell.
         if matches!(value, Value::Empty) {
             return Value::Number(0.0);
         }
         value
     }
 
-    /// [`Engine::eval`] over a tree the caller already parsed, keeping what every node of it
-    /// came to — the workbench's trace (`doc/formula-workbench.md` §3.2, `formula::trace`).
-    ///
-    /// A node missing from the map was never evaluated: the branch `IF` did not take, the
-    /// alternative `IFERROR` did not need. That is the difference between a trace and
-    /// evaluating each sub-expression on its own, which would report `#DIV/0!` for a
-    /// division a guard exists to prevent. When a node is evaluated more than once the first
-    /// answer is kept; the same node at the same cell always comes to the same thing.
+    /// [`Engine::eval`] over a tree the caller already parsed, keeping what every node came to —
+    /// the workbench's trace (`doc/formula-workbench.md` §3.2). A node missing from the map was
+    /// never evaluated (the branch `IF` did not take), which is how a trace differs from
+    /// evaluating each sub-expression alone. The first answer for a node is kept.
     pub(crate) fn trace(
         &mut self,
         expr: &Expr,
@@ -313,12 +286,9 @@ impl<'a> Engine<'a> {
         }
     }
 
-    /// §5.11: a named expression stands for whatever it was defined as, evaluated *here* —
-    /// relative references in it are relative to the cell that used the name.
-    ///
-    /// The depth counter is what stops `X` defined as `X+1`: names resolve inside one
-    /// cell's evaluation, so the `visiting` set — which is keyed by cell — never sees the
-    /// loop.
+    /// §5.11: a named expression is evaluated here, its relative references relative to the cell
+    /// that used the name. The depth counter stops `X` defined as `X+1`; `visiting` is keyed by
+    /// cell and never sees that loop.
     fn named(&mut self, name: &str, at: Address) -> Operand {
         let Some(expression) = self.doc.name(name).map(str::to_owned) else {
             // §5.12: an unrecognised name is exactly what #NAME? reports.
@@ -435,13 +405,9 @@ impl<'a> Engine<'a> {
             .collect()
     }
 
-    /// A reference (§5.8) resolved against this document. `None` when the sheet does not
-    /// exist — the caller turns that into `#REF!`.
-    ///
-    /// Public because resolving a reference is a question separate from evaluating one, and
-    /// [`crate::graph`] asks it without evaluating anything. That it is the *same* function
-    /// the evaluator calls is the whole point: an index that resolved references its own way
-    /// would disagree with what the document actually computes.
+    /// A reference (§5.8) resolved against this document; `None` when the sheet does not exist
+    /// (`#REF!`). Public so [`crate::graph`] resolves references with the same function the
+    /// evaluator uses.
     pub fn area(&self, reference: &Reference, at: Address) -> Option<Area> {
         // An external document is not open, so nothing in it can be read (§5.8 Source).
         if reference.source.is_some() {
@@ -452,11 +418,8 @@ impl<'a> Engine<'a> {
         if self.sheet_index(end, at)? != sheet {
             return None; // a cuboid; see the range operator.
         }
-        // The open axis of a whole-column or whole-row reference is bounded by what the
-        // sheet actually uses. Cells past that are empty, and an empty cell contributes
-        // nothing to any Small Group function — so this is the same answer as iterating to
-        // the evaluator's limit, minus a million reads.
-        // Values and formulas only (`Sheet::cell_extent`): a styled blank is still empty.
+        // A whole column or row is bounded by what the sheet uses (values and formulas only,
+        // `Sheet::cell_extent`): cells past it are empty and contribute nothing.
         let extent = || {
             *self.extents.borrow_mut().entry(sheet).or_insert_with(|| {
                 self.doc
@@ -522,13 +485,9 @@ pub fn from_cell(cell: CellValue) -> Value {
     }
 }
 
-/// A computed value on its way back into a cell — the inverse of [`from_cell`], and what a
-/// recalculation stores.
-///
-/// An error becomes its name as text because that is the only shape [`CellValue`] has for
-/// one, and it is also what LibreOffice writes: an error cell carries an empty
-/// `office:string-value` and the error name in `text:p` (doc/ods-format.md §6). Our reader
-/// already takes that display text as the value, so this round-trips.
+/// A computed value on its way back into a cell — the inverse of [`from_cell`]. An error becomes
+/// its name as text, which is what LibreOffice writes (`doc/ods-format.md` §6) and what the reader
+/// takes back.
 pub fn to_cell(value: Value) -> CellValue {
     match value {
         Value::Empty => CellValue::Empty,
@@ -591,19 +550,14 @@ pub(crate) fn scalar_binary(op: Op, left: Value, right: Value) -> Value {
     }
 }
 
-/// §6.4.7 `=`, §6.4.8 `<>` and §6.4.9 the ordered comparisons.
+/// §6.4.7 `=`, §6.4.8 `<>` and §6.4.9 the ordered comparisons, with two host choices:
 ///
-/// Two rules the spec leaves to the host, chosen here and named:
+/// * Text compares case-insensitively (§6.4.7's `HOST-CASE-SENSITIVE`, off in LibreOffice).
+/// * Across types, numbers sort before text and text before logicals (§6.4.9 leaves it
+///   implementation-defined).
 ///
-/// * **Case-insensitive text.** §6.4.7 defers to the `HOST-CASE-SENSITIVE` calculation
-///   setting; LibreOffice's default is off, and matching the oracle beats matching an
-///   opinion.
-/// * **Ordering across types** is "implementation-defined" in §6.4.9. Numbers sort before
-///   text, text before logicals — the order every implementation with an opinion uses.
-///
-/// Empty is not a type here: §4.7 keeps it distinct as a *value*, but a comparison converts
-/// it to whatever the other side is, so `[.A1]=0` and `[.A1]=""` are both true of a blank
-/// cell, as they are everywhere else.
+/// Empty converts to whatever the other side is, so `[.A1]=0` and `[.A1]=""` are both true of a
+/// blank cell.
 fn compare(op: Op, left: &Value, right: &Value) -> Value {
     use std::cmp::Ordering;
     let Some(ordering) = order(left, right) else {
@@ -620,9 +574,8 @@ fn compare(op: Op, left: &Value, right: &Value) -> Value {
     })
 }
 
-/// How two values sort, by the rules `compare` documents. Shared with the lookup functions
-/// (§6.14), which sort by exactly the same order — "Numbers before Text, Text before
-/// Logicals" is §6.14.9's wording for what `rank` encodes.
+/// How two values sort, by `compare`'s rules — also the lookup functions' order (§6.14.9: "Numbers
+/// before Text, Text before Logicals").
 pub fn order(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
     match (coerce_empty(left, right), coerce_empty(right, left)) {
         (Value::Number(a), Value::Number(b)) => a.partial_cmp(&b),
@@ -643,9 +596,8 @@ fn coerce_empty(value: &Value, other: &Value) -> Value {
 }
 
 fn compare_text(a: &str, b: &str) -> std::cmp::Ordering {
-    // ponytail: code-point order after case folding, not locale collation. §6.4.9 allows a
-    // host-defined collation; a real one needs ICU and a locale the document does not carry
-    // yet. Wrong only for accented text ordering, never for equality of ASCII.
+    // ponytail: code-point order after case folding, not locale collation (§6.4.9 allows a host
+    // collation). Wrong only for ordering accented text.
     a.to_lowercase().cmp(&b.to_lowercase())
 }
 

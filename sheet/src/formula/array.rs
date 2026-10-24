@@ -2,21 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! ForceArray (§6.3.4): one parameter's expression evaluated in array mode, for a function
-//! such as `SUMPRODUCT` that declares one.
+//! ForceArray (§6.3.4): one parameter's expression evaluated in array mode, for a function such as
+//! `SUMPRODUCT`.
 //!
-//! **This is not array formulas.** `doc/not-doing.md` keeps those out — a formula whose
-//! *result* is a matrix spilling over a range of cells, `table:number-matrix-*-spanned`, a
-//! second evaluation mode for the whole sheet. What is here stays inside one argument and
-//! ends there: the function reduces the [`Matrix`] to one value before anything else sees
-//! it, so no cell ever holds an array and nothing outside the function changes.
-//!
-//! Within that argument, §3.3 2.2's rules: an operator (other than the reference operators)
-//! is applied element by element, a function given an array where it expects one value is
-//! evaluated once per element ([`super::funcs::takes_one_value`]), and a function whose
-//! parameter is a range — `SUM`'s, `COUNTIF`'s — takes it whole. Shapes combine by §3.3
-//! 2.2.2–2.2.3: a single value is repeated, a single row or column is repeated across the
-//! other axis, and a place one array does not reach is `#N/A`.
+//! Not array formulas, which `doc/not-doing.md` keeps out: the function reduces the [`Matrix`] to
+//! one value, so no cell holds an array. Within the argument, §3.3 2.2's rules apply: operators
+//! work element by element, a function expecting one value is evaluated per element
+//! ([`super::funcs::takes_one_value`]), and a range parameter takes the range whole. A single
+//! value or a single row or column is repeated to fit, and a place an array does not reach is
+//! `#N/A` (§3.3 2.2.2–2.2.3).
 
 use super::eval::{Address, Engine, Operand, percent, prefix, scalar_binary};
 use super::funcs;
@@ -32,9 +26,8 @@ pub struct Matrix {
     cells: Vec<Value>,
 }
 
-/// The most elements one combination may produce. Two references are bounded by the sheet,
-/// but a column times a row is their product, and `[.A:.A]*[.1:.1]` must be an error rather
-/// than an allocation the size of the grid.
+/// The most elements one combination may produce: `[.A:.A]*[.1:.1]` must be an error, not an
+/// allocation the size of the grid.
 const MAX_CELLS: usize = 1 << 24;
 
 impl Matrix {

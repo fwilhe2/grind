@@ -2,12 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! §6.18 Statistical Functions — the eight in the Small Group (`AVERAGEIF`'s matching lives
-//! in `criterion.rs`), and `LARGE`, `SMALL`, `MEDIAN` and `RANK` from beyond it.
-//!
-//! All of them take a NumberSequence, so all of them inherit §6.3.7's filtering: text and
-//! empty cells inside a range are *skipped*, not counted as zero. That is the difference
-//! between `AVERAGE` over a column with a header and a wrong answer.
+//! §6.18 Statistical Functions — the Small Group's eight (`AVERAGEIF` is in `criterion.rs`), and
+//! `LARGE`, `SMALL`, `MEDIAN` and `RANK` from beyond it. All take a NumberSequence, so text and
+//! empty cells in a range are skipped, not counted as zero.
 
 use super::super::value::{FormulaError, Value};
 use super::Args;
@@ -76,11 +73,8 @@ fn moment(args: &mut Args, sample: bool, root: bool) -> Answer {
     moment_of(&args.numbers()?, sample, root)
 }
 
-/// [`moment`] over numbers already in hand.
-///
-/// Two passes rather than the `E[x²] - E[x]²` shortcut: that identity is exact in algebra
-/// and catastrophically inexact in floating point for values with a large mean and a small
-/// spread, which is a normal shape for a spreadsheet column.
+/// [`moment`] over numbers already in hand, in two passes: `E[x²] - E[x]²` is catastrophically
+/// inexact for a large mean and a small spread, a normal spreadsheet column.
 pub(super) fn moment_of(numbers: &[f64], sample: bool, root: bool) -> Answer {
     let n = numbers.len() as f64;
     let divisor = if sample { n - 1.0 } else { n };
@@ -104,12 +98,9 @@ fn ranked(numbers: Vec<f64>) -> Result<Vec<f64>, FormulaError> {
     Ok(numbers)
 }
 
-/// §6.18.40 `LARGE( List ; N )` and §6.18.70 `SMALL( List ; N )`.
-///
-/// The two constraints are not symmetrical — `ROUNDUP(N;0) = N` for `LARGE`,
-/// `ROUNDDOWN(N;0) = N` for `SMALL` — and the oracle applies each as the rounding it names,
-/// so `LARGE(…;1.5)` is the second largest and `SMALL(…;1.9)` the smallest. The array form
-/// of `N` stays out with the rest of arrays.
+/// §6.18.40 `LARGE( List ; N )` and §6.18.70 `SMALL( List ; N )`. Their constraints differ
+/// (`ROUNDUP(N;0) = N` for `LARGE`, `ROUNDDOWN(N;0) = N` for `SMALL`) and the oracle applies each
+/// as named: `LARGE(…;1.5)` is the second largest, `SMALL(…;1.9)` the smallest.
 fn nth(args: &mut Args, largest: bool) -> Answer {
     args.arity(2..=2)?;
     if args.omitted(1) {
@@ -141,12 +132,9 @@ fn median(args: &mut Args) -> Answer {
     }))
 }
 
-/// §6.18.65 `RANK( Value ; Data [ ; Order = 0 ] )`: one plus how many numbers come before
-/// `Value` — larger ones by default, smaller ones for any non-zero `Order` — so equal values
-/// share a rank and the next one skips past them.
-///
-/// "Value shall exist in Data": a value that does not is `#N/A`, compared exactly, while a
-/// `Data` with no numbers in it at all is `#VALUE!` — two different errors, both measured.
+/// §6.18.65 `RANK( Value ; Data [ ; Order = 0 ] )`: one plus how many numbers come before `Value`
+/// (larger by default, smaller for a non-zero `Order`), so equal values share a rank. A value not
+/// in `Data` is `#N/A`, compared exactly; a `Data` with no numbers is `#VALUE!` — both measured.
 fn rank(args: &mut Args) -> Answer {
     args.arity(2..=3)?;
     let value = args.number(0)?;

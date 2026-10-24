@@ -2,36 +2,23 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Serial dates and times — ODF 1.4 Part 4 §4.3.2 Time, §4.3.3 Date, and the epoch that
-//! ties a serial number to a calendar.
+//! Serial dates and times — ODF 1.4 Part 4 §4.3.2 Time, §4.3.3 Date, and the epoch.
 //!
-//! §4.3.3's first sentence is the one the whole module follows: **"Date is a subtype of
-//! Number"**, and a serial date is "the number of days elapsed from a start date called
-//! the epoch". So there is no date *type* here and none in the grid — a date is an `f64`,
-//! a time is the fractional part of one (§4.3.2, "a fraction of a day"), and a calendar
-//! only appears when a function asks for a year or an hour.
+//! "Date is a subtype of Number" (§4.3.3): a date is an `f64` counting days from the epoch and a
+//! time is its fractional part, so there is no date type, and a calendar appears only when a
+//! function asks for a year or an hour.
 //!
-//! The epoch is `HOST-NULL-DATE` (§3.4 item 8), which a document sets with
-//! `table:calculation-settings/table:null-date`. Its default is **1899-12-30** — §4.3.3
-//! Note 3's own recommendation, because an evaluator that treats 1900 as an ordinary
-//! non-leap year (as the Gregorian calendar does, and as this one does) needs that epoch to
-//! agree with serial numbers produced by evaluators carrying the 1900 leap-year bug. It is
-//! also what LibreOffice defaults to and why no corpus file declares a null date at all.
+//! The epoch is `HOST-NULL-DATE` (§3.4 item 8, `table:null-date`), by default 1899-12-30: §4.3.3
+//! Note 3's recommendation for an evaluator that, like this one, treats 1900 as a non-leap year,
+//! and LibreOffice's default.
 //!
-//! Text parsing here is **ISO 8601 only**, deliberately. §6.3.15 defers text→date to
-//! `DATEVALUE`, which is locale-dependent (`HOST-LOCALE`, §3.4 item 9) — and §3.4's Note 2
-//! says in as many words that ISO 8601 text is the interoperable form *because* it does not
-//! depend on locale. A locale-aware parser belongs with number formats in phase 5, where
-//! the document's locale is actually available; guessing one here would make `DAY("01/02/03")`
-//! silently mean different days in different countries.
+//! Text is parsed as ISO 8601 only: text→date via `DATEVALUE` is locale-dependent (§6.3.15), and
+//! §3.4 Note 2 names ISO 8601 as the interoperable form. Guessing a locale would make
+//! `DAY("01/02/03")` mean different days in different countries.
 
-/// Days from 1970-01-01 in the proleptic Gregorian calendar.
-///
-/// Howard Hinnant's `days_from_civil` (*chrono-Compatible Low-Level Date Algorithms*,
-/// public domain) — the standard formulation, exact for every year §4.3.3 asks for
-/// (1904..=9999 at minimum) and for the negative ones the corpus contains
-/// (`office:date-value="-0001-11-25"`). It is written for truncating integer division,
-/// which is what Rust's `/` does, so it ports across unchanged.
+/// Days from 1970-01-01 in the proleptic Gregorian calendar — Howard Hinnant's `days_from_civil`
+/// (public domain), exact for every year §4.3.3 asks for and for the corpus's negative ones
+/// (`-0001-11-25`).
 pub fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = y - i64::from(m <= 2);
     let era = if y >= 0 { y } else { y - 399 } / 400;
@@ -63,22 +50,16 @@ pub const DEFAULT_NULL_DATE: i64 = -25569;
 /// are 2000..=2029.
 pub const DEFAULT_NULL_YEAR: i64 = 1930;
 
-/// The first year §7.4 "Year 1583" requires an evaluator to get right.
-///
-/// Earlier dates are explicitly implementation-defined — §4.3.3 says a four-digit year
-/// before 1582 "may return either an Error or the year number" — and LibreOffice returns
-/// `#VALUE!`, which is what the corpus's `DATE(100;1;1)` pins. The calendar itself is
-/// proleptic and happily goes further back, which is why this bounds `DATE` rather than
-/// [`days_from_civil`]: the reader has to keep loading the corpus's `-0001-11-25` cells.
+/// The first year §7.4 "Year 1583" requires an evaluator to get right. Earlier years are
+/// implementation-defined; LibreOffice returns `#VALUE!` (the corpus's `DATE(100;1;1)`). This
+/// bounds `DATE`, not [`days_from_civil`], since the reader must still load `-0001-11-25`.
 pub const MIN_YEAR: i64 = 1583;
 
 /// Seconds in a day — the denominator of every Time (§4.3.2).
 const DAY: f64 = 86_400.0;
 
-/// A two-digit year as the four-digit one it stands for (§3.4 item 7).
-///
-/// "A year that equals or follows this year" is the whole rule, and only years 0..=99 are
-/// two-digit: `DATE(1899;1;1)` is 1899, not 1999.
+/// A two-digit year as the four-digit one it stands for (§3.4 item 7). Only 0..=99 are two-digit:
+/// `DATE(1899;1;1)` is 1899.
 pub fn expand_year(y: i64, null_year: i64) -> i64 {
     match (0..=99).contains(&y) {
         true => null_year + (y - null_year).rem_euclid(100),
@@ -86,32 +67,22 @@ pub fn expand_year(y: i64, null_year: i64) -> i64 {
     }
 }
 
-/// The calendar date a serial number names, under the epoch `null_date`.
-///
-/// The fractional part is the time of day and plays no part: `floor` rather than `trunc`,
-/// so a negative serial still names the day it falls *in* rather than the one after.
+/// The calendar date a serial number names, under the epoch `null_date`. `floor`, so a negative
+/// serial names the day it falls in.
 pub fn ymd(serial: f64, null_date: i64) -> (i64, i64, i64) {
     civil_from_days(serial.floor() as i64 + null_date)
 }
 
-/// The serial number of a calendar date.
-///
-/// Out-of-range months and days roll over, which §6.10.2 requires of `DATE` — month 0 is
-/// the previous December and day 0 is the last of the previous month. Doing it by
-/// normalising the month and then *adding days* is what makes both fall out for free
-/// instead of needing a table of month lengths.
+/// The serial number of a calendar date. Out-of-range months and days roll over, as §6.10.2
+/// requires of `DATE`: month 0 is the previous December, day 0 the last of the previous month.
 pub fn serial(y: i64, m: i64, d: i64, null_date: i64) -> f64 {
     let (y, m) = (y + (m - 1).div_euclid(12), (m - 1).rem_euclid(12) + 1);
     (days_from_civil(y, m, 1) + d - 1 - null_date) as f64
 }
 
-/// The clock time a serial number names, as whole seconds since midnight (0..86400).
-///
-/// §6.10.17 is explicit that `SECOND` rounds to the nearest second rather than truncating,
-/// and gives `MOD(ROUND(T * 86400); 60)` as the formula. Rounding once here and letting
-/// all three of `HOUR`, `MINUTE` and `SECOND` divide the same total is what keeps them
-/// describing one clock: truncating the hour independently would report 23:59:60 as
-/// hour 23 alongside second 0.
+/// The clock time a serial number names, as whole seconds since midnight (0..86400). Rounded once,
+/// as §6.10.17 says `SECOND` rounds, so `HOUR`, `MINUTE` and `SECOND` all describe one clock and
+/// 23:59:59.6 is not hour 23 with second 0.
 pub fn seconds_of_day(serial: f64) -> i64 {
     let fraction = serial - serial.floor();
     (fraction * DAY).round() as i64 % 86_400
@@ -123,12 +94,8 @@ pub fn weekday(serial: f64, null_date: i64) -> i64 {
     (serial.floor() as i64 + null_date + 4).rem_euclid(7)
 }
 
-/// ISO 8601 date or dateTime text → a serial number (§6.3.15, text via `DATEVALUE`).
-///
-/// Both forms the corpus contains are accepted: `office:date-value` is a plain
-/// `YYYY-MM-DD` in most cells and a full `1899-12-26T12:00:00` in some, and a negative year
-/// carries a leading `-`. A space is accepted where ISO 8601 writes `T`, because a human
-/// typing a datetime into a formula uses one.
+/// ISO 8601 date or dateTime text → a serial number (§6.3.15). Accepts `YYYY-MM-DD`, a full
+/// `1899-12-26T12:00:00`, a leading `-` for a negative year, and a space where ISO writes `T`.
 pub fn parse_date(s: &str, null_date: i64) -> Option<f64> {
     let s = s.trim();
     let (date, clock) = match s.find(['T', ' ']) {
@@ -143,8 +110,7 @@ pub fn parse_date(s: &str, null_date: i64) -> Option<f64> {
     let y: i64 = parts.next()?.parse().ok()?;
     let m: i64 = parts.next()?.parse().ok()?;
     let d: i64 = parts.next()?.parse().ok()?;
-    // A calendar date, not an arithmetic expression: `DATE`'s roll-over is a documented
-    // property of that function (§6.10.2), never of parsing text that claims to be a date.
+    // A date in text does not roll over: that is `DATE`'s property (§6.10.2), not parsing's.
     if parts.next().is_some() || !(1..=12).contains(&m) || !(1..=31).contains(&d) {
         return None;
     }
@@ -156,10 +122,8 @@ pub fn parse_date(s: &str, null_date: i64) -> Option<f64> {
     }
 }
 
-/// Time text → a fraction of a day (§6.3.16, text via `TIMEVALUE`).
-///
-/// Two spellings, because two sources produce them: `office:time-value` holds an
-/// `xsd:duration` (`PT17H20M00S`), and a formula's own text holds a clock (`"17:20:00"`).
+/// Time text → a fraction of a day (§6.3.16): an `xsd:duration` as `office:time-value` holds one
+/// (`PT17H20M00S`), or a clock as a formula's text holds one (`"17:20:00"`).
 pub fn parse_time(s: &str) -> Option<f64> {
     let s = s.trim();
     let (sign, rest) = match s.strip_prefix('-') {
@@ -174,11 +138,8 @@ pub fn parse_time(s: &str) -> Option<f64> {
     }
 }
 
-/// The `PT…H…M…S` body of an `xsd:duration`, in days.
-///
-/// Anything else — a duration carrying days or months, `P1DT6H` — returns `None` and the
-/// caller keeps the original text. That is the reader's tolerance rule (§9): a value we do
-/// not understand costs one cell its type, never the document.
+/// The `PT…H…M…S` body of an `xsd:duration`, in days. Anything else (`P1DT6H`) is `None` and the
+/// cell keeps its text (§9).
 fn parse_duration(s: &str) -> Option<f64> {
     let mut seconds = 0.0;
     let mut digits = String::new();
@@ -198,10 +159,8 @@ fn parse_duration(s: &str) -> Option<f64> {
     digits.is_empty().then_some(seconds / DAY)
 }
 
-/// `HH:MM[:SS[.fff]]` → a fraction of a day.
-///
-/// The colon is required: a bare `"17"` is a number, and letting it mean 17:00 would make
-/// `HOUR("17")` disagree with `HOUR(17)` — which §4.3.2 says is 0, seventeen whole days.
+/// `HH:MM[:SS[.fff]]` → a fraction of a day. The colon is required: `HOUR("17")` must agree with
+/// `HOUR(17)`, which is 0 (§4.3.2).
 fn parse_clock(s: &str) -> Option<f64> {
     let mut parts = s.trim().split(':');
     let h: f64 = parts.next()?.trim().parse().ok()?;
@@ -216,10 +175,8 @@ fn parse_clock(s: &str) -> Option<f64> {
     Some((h * 3600.0 + m * 60.0 + sec) / DAY)
 }
 
-/// `office:date-value` text for a serial number — the writer's half of [`parse_date`].
-///
-/// A serial with a fractional part is a DateTime (§4.3.4, "a Date plus Time") and takes the
-/// combined spelling, which is exactly the rule LibreOffice's own files follow.
+/// `office:date-value` text for a serial number. A fractional serial is a DateTime (§4.3.4) and
+/// takes the combined spelling, as LibreOffice's files do.
 pub fn format_date(serial: f64, null_date: i64) -> String {
     let (y, m, d) = ymd(serial, null_date);
     let date = format!("{y:04}-{m:02}-{d:02}");
@@ -237,34 +194,25 @@ pub fn format_date(serial: f64, null_date: i64) -> String {
     }
 }
 
-/// `office:time-value` text — an `xsd:duration`, the form LibreOffice writes.
-///
-/// A duration is not a clock face and is **not** reduced to one: the corpus holds
-/// `PT33H45M00S`, a cell of 1.40625 days, and wrapping it at 24 hours would lose a day
-/// every time the document was saved. Hours therefore run past 23, which is what
-/// `xsd:duration` is for.
+/// `office:time-value` text — an `xsd:duration`, the form LibreOffice writes. Not wrapped at 24
+/// hours: the corpus holds `PT33H45M00S`, and wrapping would lose a day on every save.
 pub fn format_time(fraction: f64) -> String {
     let sign = if fraction < 0.0 { "-" } else { "" };
     let (h, m, s) = hms(fraction.abs() * DAY);
     format!("{sign}PT{h:02}H{m:02}M{}S", seconds_text(s))
 }
 
-/// A span of seconds split into hours, minutes and seconds that keep their fraction.
-///
-/// Deliberately *not* [`seconds_of_day`]: that one rounds to a whole second because
-/// §6.10.17 says `SECOND` does, and rounding here would quietly drop the `.2` from a
-/// `PT05H35M31.2S` cell every time the document was saved.
+/// A span of seconds split into hours, minutes and seconds that keep their fraction — unlike
+/// [`seconds_of_day`], which rounds, and would drop the `.2` of `PT05H35M31.2S`.
 fn hms(total: f64) -> (i64, i64, f64) {
     let h = (total / 3600.0).floor() as i64;
     let m = ((total - h as f64 * 3600.0) / 60.0).floor() as i64;
     (h, m, total - h as f64 * 3600.0 - m as f64 * 60.0)
 }
 
-/// Seconds as ODF writes them: two integer digits, and a fraction only when there is one.
-///
-/// Nine decimal places before trimming, which is finer than the 15 significant digits
-/// LibreOffice serialises a double to (doc/ods-format.md §3.4) — so the fraction survives
-/// a round trip rather than being the thing that loses it.
+/// Seconds as ODF writes them: two integer digits, and up to nine decimals only when there is a
+/// fraction — finer than LibreOffice's 15 significant digits, so the fraction survives a round
+/// trip.
 fn seconds_text(seconds: f64) -> String {
     let text = format!("{seconds:012.9}");
     match text.split_once('.') {
@@ -280,12 +228,9 @@ fn seconds_text(seconds: f64) -> String {
 
 /// The current instant as a serial number, for `NOW` and `TODAY`.
 ///
-/// ponytail: UTC, not the host's local time. §6.10.16 says "using the current locale", and
-/// `std` has no time zone at all — a correct answer needs either a tz crate or a clock
-/// handed down from the shell. The error is bounded by one time-zone offset, and the two
-/// functions are the only ones in the Small Group that are not a pure function of the
-/// document, so nothing else inherits it. Give `Engine` a clock when a shell has a locale
-/// worth respecting.
+/// ponytail: UTC, not local time (§6.10.16 says the current locale); `std` has no time zone. Off
+/// by at most one zone offset. Give `Engine` a clock from the shell when one has a locale worth
+/// respecting.
 pub fn now(null_date: i64) -> f64 {
     let seconds = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -299,8 +244,7 @@ mod tests {
 
     #[test]
     fn the_default_epoch_is_1899_12_30() {
-        // §4.3.3 Note 3. Every serial number in every other test depends on this constant,
-        // so it is asserted rather than trusted.
+        // §4.3.3 Note 3; every other serial in these tests depends on it.
         assert_eq!(days_from_civil(1899, 12, 30), DEFAULT_NULL_DATE);
         assert_eq!(days_from_civil(1970, 1, 1), 0);
     }
@@ -317,8 +261,8 @@ mod tests {
 
     #[test]
     fn nineteen_hundred_is_not_a_leap_year_and_two_thousand_is() {
-        // The Excel bug this project exists not to inherit. 1900-02-29 does not exist, so
-        // the day after 1900-02-28 is 1900-03-01.
+        // 1900-02-29 does not exist: the day after 1900-02-28 is 1900-03-01 (Excel's bug, not
+        // inherited).
         assert_eq!(
             days_from_civil(1900, 3, 1) - days_from_civil(1900, 2, 28),
             1

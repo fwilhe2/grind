@@ -2,52 +2,36 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Display form — the formula a person types, and the canonical one a document stores.
+//! Display form — the formula a person types — and the canonical one a document stores.
 //!
-//! A document stores `of:=SUM([.B2:.B4])`; a formula bar shows `=SUM(B2:B4)`. The
-//! difference is the brackets around references and nothing else — the `;` separator, the
-//! function names and the operators are the same, because there is deliberately no
-//! translation from another spreadsheet's syntax here (`CLAUDE.md`).
+//! A document stores `of:=SUM([.B2:.B4])`; a formula bar shows `=SUM(B2:B4)`. Only the brackets
+//! around references differ; separators, function names and operators are ODF's, with no
+//! translation from another spreadsheet's syntax.
 //!
-//! Both directions are one code path each, and neither is a second parser:
+//! * [`to_display`] parses and re-serialises through `serialize::Bare`.
+//! * [`from_display`] scans for reference-shaped runs, re-brackets them, and hands the result to
+//!   the lexer and parser to validate, so there is no second grammar.
+//! * [`spans`] is that scanner exposed in byte ranges, so the editor's colouring and the commit
+//!   agree on what a reference is.
 //!
-//! * [`to_display`] parses and re-serialises through `serialize::Bare`, so precedence and
-//!   parenthesisation are the ones the canonical printer already computes.
-//! * [`from_display`] *scans* — it finds the reference-shaped runs, re-brackets them, and
-//!   hands the result to the existing lexer and parser to validate. So a formula that
-//!   would not parse is rejected by the same grammar that reads the file, and the only
-//!   thing this module decides is where a reference starts and stops.
-//! * [`spans`] is that same scanner exposed, in **byte** ranges because Pango attribute
-//!   indices are bytes. The editor's colourer and the committer therefore cannot disagree
-//!   about what a reference is: there is one scanner.
+//! ## Disambiguation
 //!
-//! ## Disambiguation, which is the whole difficulty
+//! Unbracketed, a reference and a name are the same shape. The scanner's rules, in order:
 //!
-//! Unbracketed, a reference and a name are the same shape. The rules, in the order the
-//! scanner applies them:
+//! * an identifier followed by `(` is a function, so `LOG10(` is a call;
+//! * a cell-shaped identifier is a reference, so a bare `LOG10` is a cell (Excel's resolution;
+//!   [`crate::App::set_name`] refuses cell-shaped names);
+//! * a letters-only or digits-only run is a reference only in a range (`B:B`, `2:2`) or with a
+//!   sheet (`Data.B`), so `SALES` is a name;
+//! * any other bare identifier is a name, passed through;
+//! * bare `TRUE`/`FALSE` become `TRUE()`/`FALSE()` (§6.15);
+//! * an already-bracketed `[…]` is passed through verbatim — an external reference, or the range
+//!   operator over two references (`[Sheet2.C22]:[.C33]`, whose second end does not inherit the
+//!   sheet).
 //!
-//! * an identifier immediately followed by `(` is a **function** — so `LOG10(` is a call;
-//! * an identifier that is cell-shaped is a **reference** — so a bare `LOG10` is cell
-//!   LOG10. Excel's exact collision and Excel's resolution. It is unambiguous against
-//!   defined names because [`crate::App::set_name`] already refuses a cell-shaped name;
-//! * a letters-only or digits-only run is a reference only in a range (`B:B`, `2:2`) or
-//!   with a sheet (`Data.B`) — otherwise `SALES` is a name, which is most of the words
-//!   anyone gives a range;
-//! * any other bare identifier is a **name**, passed through untouched;
-//! * bare `TRUE` / `FALSE` become `TRUE()` / `FALSE()`, the functions §6.15 defines;
-//! * an already-bracketed `[…]` is passed through verbatim, which is how the two forms
-//!   [`to_display`] leaves bracketed survive: an external-source reference, and the range
-//!   *operator* applied to two references (`[Sheet2.C22]:[.C33]`, whose second end does
-//!   **not** inherit the first's sheet the way `[Sheet2.C22:.C33]` does).
-//!
-//! Function names keep the case they were typed in, as `sheet set` stores them: §5.6 makes
-//! them case-insensitive, and normalising them would be this module rewriting a document's
-//! formulas for cosmetics.
-//!
-//! One thing display form cannot spell: an **unquoted sheet name that does not start with
-//! a letter**. `2024.A1` reads as a number followed by junk, so the scanner leaves it
-//! alone; `'2024'.A1` works. The canonical printer already quotes any sheet name
-//! containing a `.`, `$` or space, so nothing [`to_display`] writes can hit this.
+//! Function names keep the case they were typed in (§5.6 makes them case-insensitive). An unquoted
+//! sheet name that does not start with a letter cannot be spelled: `2024.A1` reads as a number, so
+//! write `'2024'.A1`; the canonical printer quotes such names.
 
 use std::fmt;
 use std::ops::Range;
@@ -58,11 +42,8 @@ use super::lex::{Reference, SyntaxError};
 use super::parse::{Expr, Shape, parse, parse_spanned};
 use super::serialize::Bare;
 
-/// What a scanned run of display-form text is.
-///
-/// Only the runs that *mean* something are reported; operators, separators, parentheses
-/// and whitespace are the gaps between them, which [`from_display`] copies verbatim and a
-/// colourer leaves in the default colour.
+/// What a scanned run of display-form text is. Operators, separators, parentheses and whitespace
+/// are the gaps between runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenKind {
     /// A reference, bracketed or not (§5.8).
@@ -112,27 +93,19 @@ pub fn to_display(canonical: &str) -> Result<String, SyntaxError> {
     Ok(format!("={}", Bare(&parse(canonical)?)))
 }
 
-/// One reference, in display form — `B2`, `Data.B2:C9`, `$A$1`.
-///
-/// The same printer the whole formula goes through, so a reference a shell writes into an
-/// editor is spelled exactly as the one [`to_display`] would have shown there.
+/// One reference in display form — `B2`, `Data.B2:C9`, `$A$1` — through the same printer as a
+/// whole formula.
 pub fn reference_text(reference: &Reference) -> String {
     Bare(&Expr::Ref(reference.clone())).to_string()
 }
 
-/// What somebody typed into a cell, as the input [`crate::App::enter`] takes.
+/// What somebody typed into a cell, as the input [`crate::App::enter`] takes: a formula converted
+/// from display syntax by [`from_display`], anything else untouched, since what `12`, `'12` and
+/// `TRUE` mean is `App::enter`'s rule.
 ///
-/// The one conversion between the two, and the whole difference: a formula is typed in
-/// **display syntax** (`=SUM(B2:B4)`) and stored in ODF's (`=SUM([.B2:.B4])`), through
-/// [`from_display`]. Everything else passes through untouched, because the typing rule that
-/// decides what `12`, `'12` and `TRUE` mean is `App::enter`'s, and a second copy of it here
-/// would be a second answer.
-///
-/// A formula that will not parse is an `Err` carrying where it broke, and **must not be stored**:
-/// the edit stays open with the caret on the problem, because storing `=SUM(B2` as a piece of
-/// text is how a spreadsheet loses somebody's work. Every shell's Enter comes through here, as
-/// does [`crate::App::replace`]; there were five copies of it until the macOS shell would have
-/// made a sixth (`doc/macos-shell.md`, M1).
+/// A formula that will not parse is an `Err` saying where, and must not be stored: the edit stays
+/// open with the caret on the problem. Every shell's Enter comes through here, as does
+/// [`crate::App::replace`].
 pub fn to_input(text: &str) -> Result<String, DisplayError> {
     match text.starts_with('=') {
         true => from_display(text),
@@ -140,11 +113,7 @@ pub fn to_input(text: &str) -> Result<String, DisplayError> {
     }
 }
 
-/// Display form → canonical: `=SUM(B2:B4)` → `=SUM([.B2:.B4])`.
-///
-/// Validated and normalised by the *existing* lexer and parser, so what comes back is a
-/// formula the file format can hold and the evaluator can read — never a rewrite of text
-/// that happened to look right.
+/// Display form → canonical: `=SUM(B2:B4)` → `=SUM([.B2:.B4])`, validated by the lexer and parser.
 pub fn from_display(text: &str) -> Result<String, DisplayError> {
     let canonical = Canonical::of(text)?;
     let expr = parse(&canonical.out).map_err(|e| canonical.error(text, e))?;
@@ -274,16 +243,10 @@ impl Canonical {
     }
 }
 
-/// Whether a bare word, written into display form, would be read back as a **reference**
-/// rather than as the name it is — the `LOG10` collision, from the other side.
-///
-/// A document written elsewhere may declare a cell-shaped name (`date1`), which
-/// [`crate::App::set_name`] refuses to create precisely because of this. Printing one
-/// unbracketed produces text that means a different thing when it is read back, so anything
-/// that *substitutes* a name into display form has to ask this first — `view::Names` does.
-///
-/// Asked of the scanner rather than of a second rule about what a cell looks like: there is
-/// one scanner, and this is it answering a question about one word.
+/// Whether a bare word in display form would be read back as a reference rather than the name it
+/// is — the `LOG10` collision from the other side. A foreign document may declare a cell-shaped
+/// name (`date1`), so anything substituting a name into display form must ask this first, as
+/// `view::Names` does.
 pub fn reads_as_reference(word: &str) -> bool {
     matches!(
         spans(word).as_slice(),
@@ -291,10 +254,8 @@ pub fn reads_as_reference(word: &str) -> bool {
     )
 }
 
-/// Scan display-form text into the runs that mean something, in byte ranges.
-///
-/// Total: anything it does not recognise is a gap, so a half-typed formula scans without
-/// complaint and an editor can colour what is there.
+/// Scan display-form text into the runs that mean something, in byte ranges. Total: a half-typed
+/// formula scans, and anything unrecognised is a gap.
 pub fn spans(text: &str) -> Vec<Span> {
     let chars: Vec<(usize, char)> = text.char_indices().collect();
     let mut out = Vec::new();
@@ -481,12 +442,8 @@ fn scan_ref(chars: &[(usize, char)], i: usize) -> Option<usize> {
     end
 }
 
-/// Whether a reference really stops at `i`.
-///
-/// `A1B` and `A1.x` are not references with something after them; they are not references,
-/// and stopping mid-identifier is how a scanner silently corrupts a name. The `(` is the
-/// same rule one step out: `$O6:CHOOSE(…)` is a range whose second end is a *call*, so the
-/// range candidate is rejected and the `$O6` on its own is what remains.
+/// Whether a reference really stops at `i`. `A1B` and `A1.x` are not references; and
+/// `$O6:CHOOSE(…)` is `$O6` followed by a range operator and a call, not a range.
 fn ends_here(chars: &[(usize, char)], i: usize) -> bool {
     !matches!(chars.get(i), Some((_, c))
         if c.is_alphanumeric() || *c == '_' || *c == '.' || *c == '(')
@@ -505,8 +462,7 @@ fn scan_end(chars: &[(usize, char)], start: usize) -> Option<(usize, bool)> {
     let mut j = i + usize::from(matches!(chars.get(i), Some((_, '$'))));
     let name_end = match chars.get(j) {
         Some((_, '\'')) => Some(quoted(chars, j, '\'')),
-        // A sheet name that does not start with a letter has to be quoted here — see the
-        // module docs. Unquoted, `2024.A1` is a number and this scanner leaves it alone.
+        // An unquoted sheet name must start with a letter (see the module docs).
         Some((_, c)) if is_name_start(*c) => Some(plain_ident(chars, j)),
         _ => None,
     };

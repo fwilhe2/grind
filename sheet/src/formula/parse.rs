@@ -4,26 +4,20 @@
 
 //! The OpenFormula parser: tokens → AST (ODF 1.4 Part 4 §5).
 //!
-//! A Pratt parser, because §5.5's Table 1 *is* a table of binding powers and this is the
-//! shape that transcribes it without inventing a precedence-climbing hierarchy of
-//! productions. The table's two surprises are both encoded in `PREFIX_BP`: prefix `-`
-//! binds **tighter** than `^` (so `-2^2` is `4`, not `-4`), and `^` is **left**-associative
-//! (so `2^3^2` is `64`, not `512`) — the opposite of both in most languages.
+//! A Pratt parser, transcribing §5.5's Table 1 of binding powers. Its two surprises, both in
+//! `PREFIX_BP`: prefix `-` binds tighter than `^` (`-2^2` is `4`), and `^` is left-associative
+//! (`2^3^2` is `64`).
 //!
-//! Not parsed, deliberately: inline arrays (§5.13) and the automatic-intersection and
-//! quoted-label forms (§5.10). §2.3.2 excludes all three from the Small Group, and each
-//! would need evaluator machinery that does not exist. They fail as syntax errors, which
-//! is a truthful answer.
+//! Not parsed: inline arrays (§5.13) and the automatic-intersection and quoted-label forms
+//! (§5.10), all outside the Small Group (§2.3.2). They fail as syntax errors.
 
 use std::ops::Range;
 
 use super::lex::{Op, Reference, SyntaxError, Token, lex_extents};
 use super::value::FormulaError;
 
-/// An expression (§5.2).
-///
-/// [`Expr::Paren`] is a node rather than a parse artefact because §5.5 Note 3 asks
-/// implementations to keep "unnecessary" parentheses: a user put them there to be read.
+/// An expression (§5.2). [`Expr::Paren`] is a node because §5.5 Note 3 asks for a user's
+/// parentheses to be kept.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Number(f64),
@@ -65,39 +59,28 @@ pub(crate) fn infix_bp(op: Op) -> u8 {
 pub(crate) const POSTFIX_BP: u8 = 60;
 pub(crate) const PREFIX_BP: u8 = 70;
 
-/// How deeply a formula may *nest* — parentheses, calls and prefix signs inside one another.
-///
-/// Every function that walks an expression (the evaluator, the serialiser, the formula bar's
-/// display, renaming, shifting) recurses once per level, so a formula nested deeply enough
-/// takes the stack — and the process, and every unsaved document in it — with it. Measured
-/// before this existed: `((…((1))…))` 3000 deep aborted `grind sheet recalc` in a debug build
-/// on Linux's 8 MB stack, and 10000 deep in a release one — and parsing alone costs a nested
-/// *call* more than 8 KB of stack a level in a debug build (128 of them overflowed 1 MB). Excel
-/// stops at 64 levels of function nesting; no formula a person wrote comes near this.
+/// How deeply a formula may nest — parentheses, calls and signs. Everything that walks an
+/// expression recurses per level, and `((…((1))…))` 3000 deep aborted `grind sheet recalc` on an 8
+/// MB stack in a debug build; a nested call costs over 8 KB of stack per level there. Excel stops
+/// at 64.
 pub const MAX_NESTING: usize = 100;
 
-/// How deep the expression *tree* may be, which a long operator chain grows without nesting
-/// anything: `=[.A1]+[.A2]+…` is as deep as it has terms, since every operator is
-/// left-associative (§5.5). Measured: 10000 terms aborted the same debug build, 3000 did not.
+/// How deep the expression tree may be, which a long operator chain grows without nesting
+/// (`=[.A1]+[.A2]+…`, every operator being left-associative). 10000 terms aborted the same debug
+/// build; 3000 did not.
 pub const MAX_DEPTH: usize = 1024;
 
-/// Parse a `table:formula` attribute value, or anything a user typed.
-///
-/// Handles the namespace prefix documents carry (`of:=SUM(…)`, doc/ods-format.md §4) and
-/// §5.2's optional `=` intro. A second `=` marks "forced recalculation", which is a
-/// property of *when* to evaluate rather than of the expression, and is dropped until
-/// there is a recalculation engine with an opinion about it.
+/// Parse a `table:formula` value or anything a user typed, with or without the namespace prefix
+/// (`of:=`, `doc/ods-format.md` §4) and §5.2's `=` intro. A second `=` (forced recalculation) is
+/// dropped.
 pub fn parse(formula: &str) -> Result<Expr, SyntaxError> {
     parse_with(formula, false).map(|(expr, _)| expr)
 }
 
-/// Where every node of a parsed expression sits in the text — a tree the same shape as the
-/// [`Expr`] beside it, child for child: a call's arguments, the operand of a sign, `%` or
-/// parentheses, and a binary operator's two sides, in that order.
-///
-/// A separate tree rather than a field on `Expr`, because every function in the crate
-/// matches on `Expr` and only a caller that shows a formula *taken apart* — the workbench's
-/// trace (`doc/formula-workbench.md` §3.1) — wants to know where a node is.
+/// Where every node of a parsed expression sits in the text: a tree shaped like the [`Expr`]
+/// beside it — a call's arguments, a sign's, `%`'s or parentheses' operand, and a binary
+/// operator's two sides, in that order. Separate from `Expr` so only the workbench's trace
+/// (`doc/formula-workbench.md` §3.1) pays for it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Shape {
     /// `char` offsets into the formula that was parsed, its intro included. An omitted
@@ -162,12 +145,9 @@ fn shift(e: SyntaxError, by: usize) -> SyntaxError {
     SyntaxError { at: e.at + by, ..e }
 }
 
-/// What a formula says before its expression — `"of:="`, `"="`, `"of:=="`, or nothing.
-///
-/// The complement of `strip_intro`, and public because a *rewriter* has to put back what it
-/// took off: `formula::rename` re-serialises an expression and a document that spells its
-/// formulas `of:=` must keep spelling them that way, or renaming one sheet respells every
-/// formula in the file (R6).
+/// What a formula says before its expression — `"of:="`, `"="`, `"of:=="`, or nothing — so a
+/// rewriter can put it back and renaming one sheet does not respell every formula in the file
+/// (R6).
 pub fn intro(formula: &str) -> &str {
     &formula[..formula.len() - strip_intro(formula).len()]
 }
@@ -253,11 +233,9 @@ impl Parser {
         }
     }
 
-    /// Pratt: parse a prefix, then absorb every operator that binds tighter than `min_bp`.
-    ///
-    /// Each expression comes back with its tree's depth, counted as it is built: a chain
-    /// refused only after it was built would be too deep to *drop* safely, since dropping a
-    /// tree recurses through it as well.
+    /// Pratt: parse a prefix, then absorb every operator that binds tighter than `min_bp`. Depth
+    /// is counted as the tree is built, since a tree too deep to keep is also too deep to drop
+    /// safely.
     fn expr(&mut self, min_bp: u8) -> Result<Parsed, SyntaxError> {
         let start = self.pos;
         let (mut lhs, mut depth, mut shape) = self.prefix()?;
@@ -491,9 +469,8 @@ mod tests {
 
     #[test]
     fn parse_serialize_parse_is_a_fixed_point_for_random_expressions() {
-        // The plan's property test (doc/plan.md, phase 4 step 2). Whitespace and number
-        // spelling are normalised by the first pass, so the *second* pass is where the
-        // fixed point starts: parse(s) == parse(print(parse(s))) for everything below.
+        // Whitespace and number spelling are normalised by the first pass, so the fixed point is
+        // `parse(s) == parse(print(parse(s)))`.
         let mut seed = 0x853C_49E6_748F_EA9Bu64;
         let mut rand = move || {
             seed ^= seed << 13;

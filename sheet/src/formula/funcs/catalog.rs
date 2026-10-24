@@ -3,41 +3,22 @@
 //
 // SPDX-License-Identifier: LicenseRef-OASIS-IPR AND AGPL-3.0-or-later
 
-//! What each function *is*, for a shell that has to offer it to a user.
+//! What each function is, for a shell that has to offer it: extracted from ODF 1.4 Part 4 rather
+//! than written about it. `signature` is the section's `Syntax:` line and `brief` its `Summary:`
+//! line, verbatim, with the section number. Verbatim extraction is why this file carries the OASIS
+//! copyright alongside ours, as `doc/small-group.md` does.
 //!
-//! Autocomplete needs a list, a signature hint needs the parameter names, and both need one
-//! line saying what the function does. All three are in ODF 1.4 Part 4 already, so this is
-//! **extracted from the spec, not written about it**: `signature` is the section's `Syntax:`
-//! line and `brief` its `Summary:` line, verbatim, with the section number that carries the
-//! normative definition. Reading the spec is the only way to be right about `MOD`'s sign or
-//! `VLOOKUP`'s fourth argument, and quoting it means a shell's tooltip cannot drift from
-//! what the evaluator implements.
-//!
-//! Verbatim extraction is why this file carries the OASIS copyright alongside ours, exactly
-//! as `doc/small-group.md` does: the grant for derivative works is conditional on passing
-//! the notice along (`CLAUDE.md`, REUSE).
-//!
-//! **Four of the spec's own `Syntax:` lines are wrong**, and are corrected here with the
-//! erratum noted at the entry — a signature that says `ISERR` under `ISNA` would be a defect
-//! in the tooltip, not fidelity to the source. Three name the wrong function and one never
-//! closes its parenthesis:
+//! Four of the spec's `Syntax:` lines are wrong and are corrected, with the erratum noted at the
+//! entry:
 //!
 //! * §6.13.20 `ISNA` is written `ISERR( Scalar X )`
 //! * §6.20.18 `REPT` is written `T ( Text T ; Integer Count )`
 //! * §6.12.45 `SLN` is written `DDB( Number Cost ; Number Salvage ; Number LifeTime )`
 //! * §6.10.10 `EOMONTH` is written `EOMONTH( DateParam StartDate ; Integer MonthAdd`
 //!
-//! Each was found by the test below rather than by reading, which is the argument for
-//! having it. Nothing else is altered: the parameter names, the optional-argument brackets
-//! and the summaries are the spec's.
-//!
-//! **The `COM.MICROSOFT.` entries are not the spec's**, because Part 4 has no such
-//! functions: their lines are written here in its style, and their section is the chapter
-//! their ODF namesake is in (`doc/small-group.md`'s last section says why).
-//!
-//! Two tests hold it in place: [`catalog`] names exactly what
-//! [`super::implemented`] does, and every section number matches `doc/small-group.md`. The
-//! catalog **documents** — arity checking stays where it is, inside each function.
+//! The `COM.MICROSOFT.` entries are not the spec's: their lines are written in its style, under
+//! their ODF namesake's chapter. Tests hold [`catalog`] to [`super::implemented`] and every
+//! section number to `doc/small-group.md`. Arity checking stays in each function.
 
 /// One function, as a user interface needs it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,8 +34,7 @@ pub struct FuncInfo {
     pub section: &'static str,
 }
 
-/// Every function this build implements, alphabetically — the order an autocomplete list
-/// wants, and the order a person reads.
+/// Every function this build implements, alphabetically.
 pub fn catalog() -> &'static [FuncInfo] {
     CATALOG
 }
@@ -97,15 +77,10 @@ fn parameter(part: &str) -> Option<(String, String)> {
     Some((kind.to_owned(), words.last().unwrap_or(kind).to_owned()))
 }
 
-/// Whether the `index`th argument of a call to `name` is one value rather than a range of
-/// them — what decides, inside a ForceArray parameter, whether an array handed to it is
-/// iterated over (§3.3 2.2: "a non-scalar value is passed to a function argument that
-/// expects a scalar") or taken whole, as `SUM`'s sequence is.
-///
-/// Read off the declared type, so a parameter is one value when every alternative it
-/// accepts is: `Number`, `Text|Number` and `Any` are, `NumberSequence`, `Reference|Array`
-/// and a database's `Criteria` range are not. An argument past the signature is not
-/// iterated either; the function refuses it on its own.
+/// Whether the `index`th argument of a call to `name` is one value rather than a range — which
+/// decides whether an array handed to a ForceArray parameter is iterated over (§3.3 2.2) or taken
+/// whole. One value when every alternative type is: `Number`, `Text|Number`, `Any`; not
+/// `NumberSequence`, `Reference|Array` or `Criteria`.
 pub fn takes_one_value(name: &str, index: usize) -> bool {
     const ONE: &[&str] = &[
         "Any",
@@ -131,13 +106,8 @@ pub fn takes_one_value(name: &str, index: usize) -> bool {
     params[index].0.split('|').all(|kind| ONE.contains(&kind))
 }
 
-/// The function group a shell would file `info` under, e.g. for a help browser.
-///
-/// Derived from `section` rather than stored per entry: Part 4 §6 groups functions by the
-/// second component of their section number (`6.16.61` is `6.16`, Mathematical), and that
-/// grouping is exactly `doc/small-group.md`'s own headings — deriving it is one match arm
-/// instead of a hundred-odd hand-picked fields that could drift from the section already
-/// on hand.
+/// The function group a help browser files `info` under, derived from the section number's second
+/// component (`6.16.61` is `6.16`, Mathematical) — `doc/small-group.md`'s own headings.
 pub fn category(info: &FuncInfo) -> &'static str {
     match info.section.split('.').nth(1) {
         Some("9") => "Database",

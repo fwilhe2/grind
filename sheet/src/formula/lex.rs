@@ -4,18 +4,12 @@
 
 //! The OpenFormula tokenizer (ODF 1.4 Part 4 §5).
 //!
-//! Everything the grammar calls a *terminating rule* — one whose definition mentions no
-//! other rule (§5.14) — is resolved here, including whole references. A reference is
-//! lexical, not syntactic: it always begins with `[`, which §5.8 says exists precisely so
-//! that a cell address can never be confused with a function name, and it ends at the
-//! matching `]`. So the parser deals in [`Token`]s and never looks at a character.
+//! Every terminating rule (§5.14) is resolved here, whole references included: a reference always
+//! begins with `[` (§5.8) and ends at the matching `]`, so the parser deals in [`Token`]s only.
 //!
-//! Whitespace is dropped (§5.14) with one exception that has to survive to the parser:
-//! whitespace may precede a function name but **shall not** separate that name from its
-//! opening parenthesis. That is why an identifier followed *immediately* by `(` lexes as
-//! [`Token::Func`] and any other identifier as [`Token::Name`] — the distinction is
-//! lexical, and reconstructing it later would need the character offsets we just threw
-//! away.
+//! Whitespace is dropped, except that it may not separate a function name from its `(`, so an
+//! identifier followed immediately by `(` lexes as [`Token::Func`] and any other as
+//! [`Token::Name`].
 
 use std::fmt;
 
@@ -44,9 +38,8 @@ fn err<T>(message: impl Into<String>, at: usize) -> Result<T, SyntaxError> {
     })
 }
 
-/// §5.5 Operators. `~` (reference union) is lexed but rejected by the evaluator: §2.3.2 G
-/// excludes it from the Small Group, and a document that uses it deserves a clear error
-/// rather than a parse failure that blames the wrong thing.
+/// §5.5 Operators. `~` (reference union) is lexed so the evaluator can reject it clearly (§2.3.2 G
+/// excludes it from the Small Group).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Op {
     Add,
@@ -120,11 +113,8 @@ pub struct Axis {
     pub absolute: bool,
 }
 
-/// One end of a reference (§5.8).
-///
-/// `col` and `row` are optional because the grammar has whole-column (`[.A:.C]`) and
-/// whole-row (`[.1:.3]`) forms, where the missing axis means "everything the evaluator
-/// supports". Absent `sheet` means the sheet the formula lives on.
+/// One end of a reference (§5.8). A missing `col` or `row` is a whole-column (`[.A:.C]`) or
+/// whole-row (`[.1:.3]`) form; a missing `sheet` is the formula's own sheet.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct CellRef {
     pub sheet: Option<String>,
@@ -133,11 +123,9 @@ pub struct CellRef {
     pub row: Option<Axis>,
 }
 
-/// A constant reference: one cell, or a range when `end` is present (§5.8).
-///
-/// `source` is the optional external-document IRI. Nothing evaluates it — external
-/// documents are out of scope — but it is kept so that parsing and re-serialising a
-/// formula cannot quietly turn a reference into a different one.
+/// A constant reference: one cell, or a range when `end` is present (§5.8). `source` is the
+/// optional external-document IRI, never evaluated but kept so a re-serialised formula names the
+/// same thing.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Reference {
     pub source: Option<String>,
@@ -149,11 +137,8 @@ pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
     Ok(lex_spans(src)?.0)
 }
 
-/// The tokens, and the `char` offset each one starts at.
-///
-/// The offsets exist for one reason: the parser reports failures by *token*, and a caller
-/// that wants to put a caret on the problem needs a position in the text. Keeping them here
-/// rather than in a `Token` field means nothing that merely reads tokens pays for them.
+/// The tokens, and the `char` offset each starts at, so a parse error reported by token can put a
+/// caret in the text.
 pub fn lex_spans(src: &str) -> Result<(Vec<Token>, Vec<usize>), SyntaxError> {
     lex_extents(src).map(|(tokens, starts, _)| (tokens, starts))
 }
@@ -296,9 +281,8 @@ fn is_name_start(c: char) -> bool {
 }
 
 fn is_name_char(c: char) -> bool {
-    // `.` belongs to FunctionName only, which is what makes `COM.MICROSOFT.CUBEMEMBER` one
-    // token (§5.7). A named expression containing a `.` cannot exist, so accepting it here
-    // costs nothing and keeps one scanner instead of two.
+    // `.` belongs to FunctionName only, making `COM.MICROSOFT.CUBEMEMBER` one token (§5.7); no
+    // named expression can contain one, so one scanner serves both.
     c.is_alphanumeric() || c == '_' || c == '.'
 }
 
@@ -386,12 +370,9 @@ fn number(src: &[char], start: usize) -> Result<(f64, usize), SyntaxError> {
     }
 }
 
-/// §5.12: `Error ::= '#' [A-Z0-9]+ ([!?] | ('/' ([A-Z] | ([0-9] [!?]))))`.
-///
-/// Lower case and `_` are accepted beyond that production because implementations write
-/// them (`#getting_data` appears in LO's own fixtures) and §5.12 already says an error name
-/// we do not know becomes one we do. Rejecting the *spelling* of an error would turn a
-/// document that says "this cell is broken" into a document that will not open.
+/// §5.12: `Error ::= '#' [A-Z0-9]+ ([!?] | ('/' ([A-Z] | ([0-9] [!?]))))`, plus lower case and
+/// `_`, which implementations write (`#getting_data` in LibreOffice's fixtures). An unknown error
+/// name still becomes a known one rather than refusing the document.
 fn error_name(src: &[char], start: usize) -> Result<(FormulaError, usize), SyntaxError> {
     let mut i = start + 1;
     while i < src.len() && (src[i].is_ascii_alphanumeric() || src[i] == '/' || src[i] == '_') {
@@ -500,9 +481,8 @@ fn parse_cell_ref(src: &[char], at: usize) -> Result<CellRef, SyntaxError> {
     let mut i = 0;
     let mut sheet = None;
 
-    // A leading `$` can only be the sheet-absolute marker: the grammar puts a `.` before
-    // every cell address, so a sheetless reference starts with that `.` and never with a
-    // `$`. Absolute *column* markers live after the dot.
+    // A leading `$` can only mark the sheet absolute: a sheetless reference starts with `.`, and
+    // column markers follow the dot.
     let mut sheet_absolute = src.first() == Some(&'$');
     if sheet_absolute {
         i += 1;

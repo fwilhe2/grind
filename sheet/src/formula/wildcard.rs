@@ -2,29 +2,19 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! §3.4 item 6, `HOST-USE-WILDCARDS` — "wildcards question mark '?' and asterisk '*' are
-//! used for character-string comparisons and when searching. Wildcards may be escaped with
-//! a tilde '~' character."
+//! §3.4 item 6, `HOST-USE-WILDCARDS`: `?` and `*` in string comparisons and searches, escaped with
+//! `~`. On, as in LibreOffice by default — loop B's largest block of disagreements was
+//! `COUNTIF`/`SUMIF` reading a pattern as a literal. Two neighbouring host properties follow the
+//! oracle too:
 //!
-//! That is the whole syntax the spec gives, and it is host-defined whether it is on at all.
-//! It is on here because LibreOffice has it on by default, and loop B's largest single block
-//! of disagreements was `COUNTIF`/`SUMIF` fixtures reading a pattern as a literal.
+//! * `HOST-SEARCH-CRITERIA-MUST-APPLY-TO-WHOLE-CELL` is true: `"a*"` matches `"abc"`, not
+//!   `"xabc"`.
+//! * `HOST-USE-REGULAR-EXPRESSIONS` is false, and exclusive with wildcards in LibreOffice.
 //!
-//! Two neighbouring host properties are settled the same way — by what the oracle does:
-//!
-//! * `HOST-SEARCH-CRITERIA-MUST-APPLY-TO-WHOLE-CELL` is **true**, LibreOffice's default, so
-//!   `"a*"` matches `"abc"` and not `"xabc"`. A pattern is anchored at both ends; the `*`
-//!   the user wrote is the only one there is.
-//! * `HOST-USE-REGULAR-EXPRESSIONS` is **false**, and mutually exclusive with wildcards in
-//!   LibreOffice's own options. Only one of the two can be the reading of `"a.*"`.
-//!
-//! Case folding matches `eval::compare_text` — `=` is case-insensitive (§6.4.7), so a
-//! pattern that reduces to no wildcards at all has to keep agreeing with plain equality.
+//! Case folding matches `eval::compare_text`, so a pattern without wildcards agrees with `=`.
 
-/// Is this text a *pattern* rather than a literal?
-///
-/// A lone `~` counts, because escaping is part of the language: `"~*"` has no wildcard left
-/// after it is read, and yet it is emphatically not the two-character string `"~*"`.
+/// Is this text a pattern rather than a literal? A lone `~` counts: `"~*"` is not the string
+/// `"~*"`.
 pub fn is_pattern(text: &str) -> bool {
     text.contains(['*', '?', '~'])
 }
@@ -67,9 +57,8 @@ pub fn matches(pattern: &str, text: &str) -> bool {
 }
 
 fn walk(tokens: &[Token], text: &[char]) -> bool {
-    // Greedy walk with one backtrack point: on a mismatch, the most recent `*` eats one more
-    // character and the walk resumes from there. Linear in the common case and quadratic
-    // only when a pattern is mostly stars, which no criterion in the corpus is.
+    // Greedy walk with one backtrack point at the latest `*`: linear in the common case, quadratic
+    // only for a pattern that is mostly stars.
     let (mut p, mut t) = (0usize, 0usize);
     let (mut star, mut eaten) = (None, 0usize);
     while t < text.len() {
@@ -101,12 +90,9 @@ fn walk(tokens: &[Token], text: &[char]) -> bool {
     tokens[p..].iter().all(|token| *token == Token::Star)
 }
 
-/// Where `pattern` first matches a stretch of `text`, searching from character `from` —
-/// `SEARCH`'s question, which is unanchored where [`matches()`] is anchored at both ends.
-///
-/// The leftmost start wins, and at a start the shortest match is as good as any: `SEARCH`
-/// reports a position, never a length. So the pattern is asked to match a *prefix* of what
-/// follows — [`matches()`] with a `*` after it. A position counts characters, not bytes.
+/// Where `pattern` first matches a stretch of `text`, searching from character `from` — `SEARCH`'s
+/// unanchored question: [`matches()`] against a prefix, with a `*` appended. Positions count
+/// characters.
 pub fn find(pattern: &str, text: &str, from: usize) -> Option<usize> {
     let mut open = tokens(pattern);
     open.push(Token::Star);

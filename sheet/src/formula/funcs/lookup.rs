@@ -4,21 +4,17 @@
 
 //! §6.14 Lookup Functions — the Small Group's five, and `ADDRESS` from beyond it.
 //!
-//! `MATCH`, `VLOOKUP` and `HLOOKUP` share one search, described three times in §6.14 with
-//! the same three modes:
+//! `MATCH`, `VLOOKUP` and `HLOOKUP` share one search with three modes:
 //!
 //! * **exact** (`MatchType` 0, `RangeLookup` FALSE) — the first equal value, unsorted data.
-//! * **ascending** (1, TRUE, and the default) — the *largest* value ≤ the search key, and
-//!   from a run of equal values the **last**. Not the first: `MATCH(2;{1;2;2;3};1)` is 3.
-//! * **descending** (-1) — the mirror image, smallest value ≥ the key, last of a run.
+//! * **ascending** (1, TRUE, the default) — the largest value ≤ the key, the last of a run of
+//!   equals: `MATCH(2;{1;2;2;3};1)` is 3.
+//! * **descending** (-1) — the smallest value ≥ the key, last of a run.
 //!
-//! Sorted-mode searches also refuse a cross-type hit: §6.14.9 says a Text key that lands on
-//! a Number is `#N/A` rather than a match, which falls out of comparing the two values'
-//! kinds once the position is found. Without that, every text lookup over a numeric column
-//! would "succeed" on the last row, because §6.4.9 sorts all numbers below all text.
+//! A sorted search refuses a cross-type hit (§6.14.9): a Text key landing on a Number is `#N/A`,
+//! or every text lookup over a numeric column would succeed on the last row.
 //!
-//! ponytail: linear search. §6.14.9 explicitly permits binary search on sorted data; a
-//! lookup table big enough for that to matter is not what makes a spreadsheet slow yet.
+//! ponytail: linear search; §6.14.9 permits binary search on sorted data.
 
 use std::cmp::Ordering;
 
@@ -133,9 +129,7 @@ fn match_(args: &mut Args) -> Answer {
     Ok(Value::number(search(&key, &values, mode)? as f64 + 1.0))
 }
 
-/// §6.14.12 `VLOOKUP` and §6.14.5 `HLOOKUP`, which are the same function transposed:
-/// one searches the first column and returns from a numbered column, the other searches
-/// the first row and returns from a numbered row.
+/// §6.14.12 `VLOOKUP` and §6.14.5 `HLOOKUP`, the same function transposed.
 fn lookup(args: &mut Args, vertical: bool) -> Answer {
     args.arity(3..=4)?;
     let key = args.value(0);
@@ -178,12 +172,9 @@ fn lookup(args: &mut Args, vertical: bool) -> Answer {
 
 /// §6.14.6 `INDEX(DataSource; Row; Column; AreaNumber)`, 1-based and relative to the area.
 ///
-/// ponytail: a 0 or omitted index means "the whole row/column" (§6.14.6), which is a
-/// *reference* result — and a function here can only return a value. So the whole-axis
-/// forms work exactly when they name one cell anyway, which is the common
-/// `INDEX([.A1:.A9];3)` over a single column, and are an error otherwise. Returning
-/// references from functions is what `OFFSET` and `INDIRECT` will need too; build it once,
-/// for all three.
+/// ponytail: a 0 or omitted index means the whole row or column (§6.14.6), a reference result, and
+/// a function here returns only values; so those forms work only when they name one cell. `OFFSET`
+/// and `INDIRECT` need reference results too: build it once for all three.
 fn index(args: &mut Args) -> Answer {
     args.arity(1..=4)?;
     let source = args.area(0).ok_or(FormulaError::Value)?;
@@ -208,15 +199,11 @@ fn index(args: &mut Args) -> Answer {
     Ok(args.value_at(Address::new(source.sheet, pos)))
 }
 
-/// §6.14.2 `ADDRESS( Row ; Column [ ; Abs = 1 [ ; A1Style = TRUE [ ; Sheet ] ] ] )`: a
-/// reference spelled as text, without the brackets — `$C$2`, `R2C[3]`, `Data.$C$2`.
-///
-/// Table 21 is the whole of `Abs`: which of the column and row carry a `$`, or in R1C1 which
-/// are written bare rather than bracketed. The oracle reads 5 to 8 as 1 to 4, and so does
-/// this. A sheet name follows the spec's separators (`.` in A1 style, `!` in R1C1) and is
-/// quoted unless it is a plain word — letters, digits and `_`, not starting with a digit —
-/// which is the oracle's rule, measured (`doc/ods-format.md` §4.1), and what lets the text
-/// be read back as a reference.
+/// §6.14.2 `ADDRESS( Row ; Column [ ; Abs = 1 [ ; A1Style = TRUE [ ; Sheet ] ] ] )`: a reference
+/// spelled as text — `$C$2`, `R2C[3]`, `Data.$C$2`. `Abs` follows Table 21, with 5 to 8 read as 1
+/// to 4 as the oracle does. A sheet name is separated by `.` (A1) or `!` (R1C1) and quoted unless
+/// it is letters, digits and `_` not starting with a digit — the oracle's rule, measured
+/// (`doc/ods-format.md` §4.1).
 fn address(args: &mut Args) -> Answer {
     args.arity(2..=5)?;
     if args.omitted(0) || args.omitted(1) {

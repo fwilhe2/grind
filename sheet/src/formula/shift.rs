@@ -2,13 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Moving a formula to a different cell — a fill or a drag, the way every spreadsheet's
-//! "extend this into the next cell" works.
-//!
-//! A relative axis (`A1`) moves by the offset; an absolute one (`$A$1`, or one half of
-//! `$A1`/`A$1`) does not, which is the entire reason `$` exists (§5.8). A reference that
-//! would move off the sheet becomes `#REF!` — the same error a delete produces, and the
-//! same one this AST already has a place to hold ([`Expr::Error`]).
+//! Moving a formula to a different cell, as a fill or a drag does. A relative axis moves by the
+//! offset and an absolute one does not (§5.8); a reference that would move off the sheet becomes
+//! `#REF!`.
 
 use super::lex::{Axis, CellRef, Reference};
 use super::parse::Expr;

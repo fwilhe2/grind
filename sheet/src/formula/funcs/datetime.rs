@@ -2,22 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! §6.10 Date and Time Functions — the Small Group's 11, and `EOMONTH`, `EDATE`,
-//! `WEEKNUM`, `ISOWEEKNUM`, `NETWORKDAYS` and `WORKDAY` from beyond it.
+//! §6.10 Date and Time Functions — the Small Group's 11, and `EOMONTH`, `EDATE`, `WEEKNUM`,
+//! `ISOWEEKNUM`, `NETWORKDAYS` and `WORKDAY` from beyond it. The calendar arithmetic is
+//! [`super::super::date`]'s; a date is a number (§4.3.3) and a time the fraction of a day
+//! (§4.3.2).
 //!
-//! All the calendar arithmetic lives in [`super::super::date`]; this file is the mapping
-//! from a function name onto it, plus the two pseudotypes §4.11.3 and §4.11.4 define.
-//!
-//! The one thing worth knowing before reading further: a date **is** a number here
-//! (§4.3.3) and a time is the fraction of a day (§4.3.2), so `DAY` and `HOUR` are two ways
-//! of decomposing the same `f64` and `[.A1]+1` on a date is the next day without anything
-//! being taught about calendars.
-//!
-//! ponytail: a formula that *returns* a date — `DATE(…)`, `TODAY()` — has no way to say so,
-//! so `App::recalc` writes its result as a plain float and the cell loses the date spelling
-//! a read-in one keeps (`Sheet::kind`). LibreOffice has the same shape of answer and gets
-//! it from the cell's number format rather than from the function; phase 5 is where that
-//! becomes possible, and doing it before then would mean guessing.
+//! ponytail: a formula that returns a date (`DATE(…)`, `TODAY()`) cannot say so, so `App::recalc`
+//! writes a plain float and the cell loses the date spelling a read-in one keeps (`Sheet::kind`).
+//! LibreOffice takes it from the cell's number format instead.
 
 use std::collections::BTreeSet;
 
@@ -62,15 +54,9 @@ fn nullary(args: &mut Args, f: impl Fn(i64) -> f64) -> Answer {
     Ok(Value::number(f(args.null_date())))
 }
 
-/// §6.10.2 `DATE(Year; Month; Day)`.
-///
-/// "Fractional values are truncated", and out-of-range months and days roll over — both
-/// belong to [`date::serial`], which is also what the reader and the writer use.
-///
-/// The two rules on top of that are both about the *year*, and both are the corpus's:
-/// a two-digit one expands through `HOST-NULL-YEAR` before anything else happens
-/// (`DATE(0;13;31)` is 2001-01-31, so the expansion precedes the month roll-over), and a
-/// year before §7.4's 1583 is `#VALUE!` rather than a proleptic guess.
+/// §6.10.2 `DATE(Year; Month; Day)`. Truncation and roll-over are [`date::serial`]'s. A two-digit
+/// year expands through `HOST-NULL-YEAR` first (`DATE(0;13;31)` is 2001-01-31), and a year before
+/// §7.4's 1583 is `#VALUE!`.
 fn date_from_parts(args: &mut Args) -> Answer {
     args.arity(3..=3)?;
     let (y, m, d) = (args.integer(0)?, args.integer(1)?, args.integer(2)?);
@@ -81,16 +67,10 @@ fn date_from_parts(args: &mut Args) -> Answer {
     Ok(Value::number(date::serial(y, m, d, args.null_date())))
 }
 
-/// §6.10.18 `TIME(Hours; Minutes; Seconds)`.
-///
-/// The three parameters "shall not be limited to the ranges 0..24, 0..59, or 0..60", so
-/// they are summed as written and only the total is reduced — to a clock face rather than
-/// to a count of days. §6.10.18's formula alone would make `TIME(24;0;0)` one whole day;
-/// LibreOffice returns midnight, and `TIME(24;60;1)` in the corpus is 01:00:01, so the
-/// wrap is the observed semantics and the oracle wins.
-///
-/// Reduced in *seconds* rather than in days, which keeps `TIME(25;0;0)` bit-identical to
-/// `TIME(1;0;0)` instead of a rounding step away from it.
+/// §6.10.18 `TIME(Hours; Minutes; Seconds)`. The parameters are not limited to their ranges, so
+/// they are summed and the total wrapped to a clock face: LibreOffice returns midnight for
+/// `TIME(24;0;0)` and the corpus has `TIME(24;60;1)` as 01:00:01, where §6.10.18's formula would
+/// make a whole day. Reduced in seconds, so `TIME(25;0;0)` is bit-identical to `TIME(1;0;0)`.
 fn time_from_parts(args: &mut Args) -> Answer {
     args.arity(3..=3)?;
     let (h, m, s) = (args.number(0)?, args.number(1)?, args.number(2)?);
@@ -110,12 +90,9 @@ fn from_clock(args: &mut Args, f: impl Fn(i64) -> i64) -> Answer {
     Ok(Value::number(f(date::seconds_of_day(serial)) as f64))
 }
 
-/// §6.10.21 `WEEKDAY(D [; Type = 1])`, whose Table 6 is ten columns of one rule.
-///
-/// Every column is "count from some first-day-of-week", so a type picks two things: which
-/// weekday is first, and whether counting starts at 1 or at 0. Type 3 is the only one that
-/// starts at 0, and types 11..=17 name their own first day — 11 is Monday through 17 is
-/// Sunday, which is why `(type - 10) % 7` lands 17 back on Sunday alongside type 1.
+/// §6.10.21 `WEEKDAY(D [; Type = 1])`. Every column of Table 6 counts from a first day of the
+/// week, starting at 1 (or 0, for type 3); types 11..=17 name their first day from Monday to
+/// Sunday, so `(type - 10) % 7` puts 17 on Sunday with type 1.
 fn weekday(args: &mut Args) -> Answer {
     args.arity(1..=2)?;
     let serial = args.serial(0)?;
@@ -135,12 +112,9 @@ fn weekday(args: &mut Args) -> Answer {
     Ok(Value::number(((day - first).rem_euclid(7) + base) as f64))
 }
 
-/// §6.10.10 `EOMONTH( StartDate ; MonthAdd )` and §6.10.9 `EDATE( StartDate ; MonthAdd )`.
-///
-/// Both "first truncate StartDate and MonthAdd, then add MonthAdd number of months"; `EOMONTH`
-/// answers the last day of the month it lands in, `EDATE` the same day of the month, or that
-/// month's last day when it has no such day. [`date::serial`] rolls a day of 0 back to the
-/// last of the month before, which is the whole of the month-length arithmetic.
+/// §6.10.10 `EOMONTH` and §6.10.9 `EDATE`: truncate both arguments, add the months, and take the
+/// month's last day (`EOMONTH`) or the same day, clamped to the month's length (`EDATE`).
+/// [`date::serial`] rolls day 0 back to the end of the month before.
 fn months_on(args: &mut Args, end_of_month: bool) -> Answer {
     args.arity(2..=2)?;
     let start = args.serial(0)?;
@@ -277,8 +251,7 @@ impl Calendar {
     }
 
     /// Working days from `from` to `to`, both counted, `from <= to` — in whole weeks and a
-    /// remainder rather than one day at a time, so a span of centuries costs what a fortnight
-    /// does. Holidays come off afterwards, each once, and only those on a working weekday.
+    /// remainder, then holidays on working weekdays taken off once each.
     fn count(&self, from: i64, to: i64) -> i64 {
         let days = to - from + 1;
         let tail = from + days / 7 * 7;
@@ -314,15 +287,10 @@ fn networkdays(args: &mut Args) -> Answer {
     }))
 }
 
-/// §6.10.23 `WORKDAY( Date ; Offset [ ; [ Holidays ] [ ; Workdays ] ] )`.
-///
-/// `Offset` working days on from `Date`, which is not itself counted — and is the answer,
-/// holiday or weekend or not, when `Offset` is zero. The fourth parameter is the spec's;
-/// LibreOffice 26.8 refuses it, so where the two differ it is because there is nothing on
-/// that side to agree with.
-///
-/// A long offset is jumped in whole weeks while more than a week of working days remains,
-/// and the holidays the jump passed are owed back before the last stretch is walked.
+/// §6.10.23 `WORKDAY( Date ; Offset [ ; [ Holidays ] [ ; Workdays ] ] )`: `Offset` working days on
+/// from `Date`, which is not counted and is the answer when `Offset` is zero. The fourth parameter
+/// follows the spec; LibreOffice 26.8 refuses it. A long offset jumps whole weeks, then owes back
+/// the holidays it passed.
 fn workday(args: &mut Args) -> Answer {
     args.arity(2..=4)?;
     let start = args.serial(0)?.floor() as i64;

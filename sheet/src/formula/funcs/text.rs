@@ -3,13 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! §6.20 Text Functions — the Small Group's 14, and `CONCATENATE` and `SEARCH` from beyond it.
-//!
-//! Positions and lengths count **characters, not bytes**: `LEN("é")` is 1 and `MID` on a
-//! string of emoji must not split one. Every function here works on a `Vec<char>` for that
-//! reason, and `LEFT`/`MID`/`RIGHT` clamp rather than panic, because a spreadsheet asking
-//! for more characters than exist is ordinary, not exceptional.
-//!
-//! Positions are 1-based here — this is the user's coordinate system, not the core's.
+//! Positions and lengths count characters, not bytes, and are 1-based; `LEFT`/`MID`/`RIGHT` clamp
+//! rather than panic.
 
 use super::super::value::{FormulaError, Value};
 use super::super::wildcard;
@@ -216,11 +211,9 @@ fn concatenate(args: &mut Args) -> Answer {
     Ok(Value::Text(out))
 }
 
-/// §6.20.20 `SEARCH( Search ; T [ ; Start = 1 ] )`: `FIND` without case, and with the
-/// wildcards `HOST-USE-WILDCARDS` turns on (`wildcard.rs` is why they are on).
-///
-/// An empty search text is found nowhere, and a start before the first character or past
-/// the last is an error — both measured (`doc/ods-format.md` §4.1), where `FIND` clamps.
+/// §6.20.20 `SEARCH( Search ; T [ ; Start = 1 ] )`: `FIND` without case and with wildcards. An
+/// empty search text is found nowhere, and a start outside the text is an error, where `FIND`
+/// clamps (measured, `doc/ods-format.md` §4.1).
 fn search(args: &mut Args) -> Answer {
     args.arity(2..=3)?;
     let needle = args.text(0)?;

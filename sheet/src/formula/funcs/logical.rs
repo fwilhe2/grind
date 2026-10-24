@@ -39,10 +39,8 @@ fn not(args: &mut Args) -> Answer {
     Ok(Value::Bool(!args.logical(0)?))
 }
 
-/// §6.15.2 `AND` and §6.15.8 `OR`, which differ only in which answer ends the fold.
-///
-/// Not short-circuiting: an error anywhere in the parameters propagates (§4.6), so
-/// `AND(FALSE();1/0)` is `#DIV/0!` rather than `FALSE`.
+/// §6.15.2 `AND` and §6.15.8 `OR`. Not short-circuiting: an error anywhere propagates (§4.6), so
+/// `AND(FALSE();1/0)` is `#DIV/0!`.
 fn fold(args: &mut Args, all: bool) -> Answer {
     args.arity(1..)?;
     let mut result = all;
@@ -64,10 +62,8 @@ fn fold(args: &mut Args, all: bool) -> Answer {
     }
 }
 
-/// §6.15.4, including all seven of its parameter shapes.
-///
-/// Short-circuits by construction: the branch not taken is never evaluated, which is what
-/// makes `IF([.A1]=0;0;1/[.A1])` a working guard rather than a division by zero.
+/// §6.15.4, all seven of its parameter shapes. The branch not taken is never evaluated, which
+/// makes `IF([.A1]=0;0;1/[.A1])` a working guard.
 fn if_(args: &mut Args) -> Answer {
     args.arity(1..=3)?;
     let condition = args.logical(0)?;
@@ -90,10 +86,8 @@ fn if_(args: &mut Args) -> Answer {
     })
 }
 
-/// §6.15.5 `IFERROR` and §6.15.6 `IFNA`, which differ only in which errors they catch.
-///
-/// "X is only computed once", and the alternative not at all unless it is taken — the same
-/// short circuit `IF` has, for the same reason.
+/// §6.15.5 `IFERROR` and §6.15.6 `IFNA`, which differ only in which errors they catch. X is
+/// computed once, and the alternative only when taken.
 fn if_error(args: &mut Args, catches: impl Fn(FormulaError) -> bool) -> Answer {
     args.arity(2..=2)?;
     if args.omitted(0) {

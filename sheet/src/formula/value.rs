@@ -2,12 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The value model, the error set, and Part 4's implicit conversion operators.
-//!
-//! Everything downstream inherits its correctness from this file (doc/plan.md, phase 4),
-//! so every rule below cites the section of ODF 1.4 Part 4 it comes from, and the three
-//! places the spec says "implementation-defined" are named as choices rather than left as
-//! accidents:
+//! The value model, the error set, and Part 4's implicit conversion operators. Every rule cites
+//! its section of ODF 1.4 Part 4, and the choices the spec leaves to the implementation are named:
 //!
 //! | Left open by | Choice | Why |
 //! |---|---|---|
@@ -15,16 +11,12 @@
 //! | §6.3.12 Text → Logical | `TRUE`/`FALSE` only, else `#VALUE!` | same, and locale-free |
 //! | §6.3.14 Number → Text | 15 significant digits, `%G`-style exponent switch | 15 is all LO writes (doc/ods-format.md §3.4) |
 //!
-//! Not here on purpose: comparison and collation belong with the operators (§6.4), and
-//! integer conversion (§6.3.6) is defined *per function* — `INT`, `ROUND` and `TRUNC` all
-//! differ — so it lives with the functions that name a rounding mode.
+//! Comparison and collation are with the operators (§6.4); integer conversion (§6.3.6) differs per
+//! function, so it lives with them.
 
 use std::fmt;
 
-/// An error value (§4.6). The seven names of §5.12 Table 4.
-///
-/// `#N/A` is the only one an evaluator is required to support; the rest are what every
-/// existing implementation uses, so they are the set we read, write and produce.
+/// An error value (§4.6): the seven names of §5.12 Table 4.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FormulaError {
     /// `#NULL!` — an intersection of ranges produced zero cells.
@@ -58,11 +50,8 @@ impl FormulaError {
         }
     }
 
-    /// The inverse of [`FormulaError::name`], for reading.
-    ///
-    /// An error name we do not know is still an error, and §5.12 says to map it onto one we
-    /// support rather than to reject the document — so anything error-shaped that is not in
-    /// the table becomes `#NAME?`. `None` means "not an error name at all".
+    /// The inverse of [`FormulaError::name`], for reading. An unknown error name maps to `#NAME?`
+    /// rather than rejecting the document (§5.12); `None` means not an error name at all.
     pub fn from_name(s: &str) -> Option<Self> {
         const KNOWN: [FormulaError; 7] = [
             FormulaError::Null,
@@ -93,14 +82,9 @@ impl fmt::Display for FormulaError {
 
 /// A value an expression evaluates to.
 ///
-/// [`Empty`](Value::Empty) is the value of an empty cell, and §4.7 is emphatic that it is
-/// neither zero nor the empty string nor an error — it only *converts* to 0, `""` and
-/// `FALSE`. Keeping it a distinct variant is what lets `COUNTBLANK`, `ISBLANK` and the
-/// sequence conversions below tell it apart from a cell someone typed a 0 into.
-///
-/// References are deliberately absent: by the time a value exists, a reference has been
-/// resolved to a cell's value or to a sequence of them. That resolution needs the document,
-/// which this file does not have and does not want.
+/// [`Empty`](Value::Empty) is an empty cell's value, neither zero nor `""` nor an error (§4.7); it
+/// only converts to them, which is how `COUNTBLANK` and the sequence conversions tell it from a
+/// typed 0. References are absent: by the time a value exists, a reference has been resolved.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Empty,
@@ -111,13 +95,8 @@ pub enum Value {
 }
 
 impl Value {
-    /// A number, or `#NUM!` if it is not one.
-    ///
-    /// The one funnel for arithmetic results. Every operator and function returns through
-    /// here, because an infinity or a NaN that escapes into the grid propagates silently
-    /// and is then indistinguishable from a real answer — where `#NUM!` says which cell
-    /// went wrong. §4.3.1 admits only finite numbers; the error set is how a computation
-    /// leaves the number line.
+    /// A number, or `#NUM!` if it is not finite. Every operator and function returns through here,
+    /// so a NaN or an infinity never escapes into the grid (§4.3.1).
     pub fn number(n: f64) -> Self {
         if n.is_finite() {
             Value::Number(n)
@@ -133,10 +112,7 @@ impl Value {
         }
     }
 
-    /// §6.3.5 Conversion to Number.
-    ///
-    /// Empty is 0 — the spec says so for the reference case, and an empty cell is the only
-    /// way an `Empty` reaches a conversion at all.
+    /// §6.3.5 Conversion to Number. Empty is 0.
     pub fn to_number(&self) -> Result<f64, FormulaError> {
         match self {
             Value::Number(n) => Ok(*n),
@@ -205,17 +181,10 @@ impl From<FormulaError> for Value {
     }
 }
 
-/// §6.3.7 Conversion to NumberSequence, the reference case — `SUM(A1:C9)` and every
-/// function shaped like it.
-///
-/// The filter *is* the semantics: text that would parse as a number is skipped, empty cells
-/// are skipped, and — because our `Bool` is a distinguished type (§4.5) — logicals are
-/// skipped too. This is why `SUM(A1:A3)` and `SUM(A1,A2,A3)` legitimately differ when one
-/// of the cells holds `"7"`: a scalar argument goes through [`Value::to_number`] instead.
-///
-/// The spec includes errors *in* the sequence and then has every function propagate them
-/// (§4.6), which is observably the same as stopping at the first one and saves each caller
-/// the check.
+/// §6.3.7 Conversion to NumberSequence, the reference case — `SUM(A1:C9)`. Text (even numeric
+/// text), empty cells and logicals are skipped, which is why `SUM(A1:A3)` and `SUM(A1;A2;A3)`
+/// differ when a cell holds `"7"`: a scalar argument goes through [`Value::to_number`]. The first
+/// error stops the sequence, which is observably the spec's propagation (§4.6).
 pub fn number_sequence<'a>(
     cells: impl IntoIterator<Item = &'a Value>,
 ) -> Result<Vec<f64>, FormulaError> {
@@ -230,21 +199,15 @@ pub fn number_sequence<'a>(
     Ok(out)
 }
 
-/// Text → Number, the strict half of §6.3.5.
-///
-/// Deliberately locale-free: `.` is the decimal separator and there are no group
-/// separators, because a formula's *text* is document content and does not change meaning
-/// when the document crosses a border. (A locale belongs in the number **format** layer,
-/// phase 5, where the user's own typing is parsed.)
+/// Text → Number, the strict half of §6.3.5. Locale-free: `.` is the decimal separator and there
+/// are no group separators, since a formula's text does not change meaning across a border.
 fn parse_number(s: &str) -> Option<f64> {
     let s = s.trim_matches(|c: char| c.is_ascii_whitespace());
     let (s, scale) = match s.strip_suffix('%') {
         Some(rest) => (rest.trim_end(), 0.01),
         None => (s, 1.0),
     };
-    // Rust's parser accepts `inf`, `infinity` and `nan`; none of those is a Number (§4.3.1),
-    // and letting them through would put a non-finite straight into the grid past
-    // `Value::number`'s guard.
+    // Rust's parser accepts `inf` and `nan`, which are not Numbers (§4.3.1).
     if s.is_empty()
         || s.chars()
             .any(|c| c.is_ascii_alphabetic() && c != 'e' && c != 'E')
@@ -257,17 +220,12 @@ fn parse_number(s: &str) -> Option<f64> {
         .map(|n| n * scale)
 }
 
-/// Number → Text (§6.3.14: "transform into Text, with no whitespace").
+/// Number → Text (§6.3.14): 15 significant digits, what LibreOffice writes (`doc/ods-format.md`
+/// §3.4), and C's `%G` switch to exponent form outside `[1e-5, 1e15)`. Rounding first is what
+/// makes `0.1 + 0.2` come back `"0.3"`.
 ///
-/// Two rules, both borrowed rather than invented: 15 significant digits, because that is
-/// what LO writes and what loop C therefore compares (doc/ods-format.md §3.4), and C's
-/// `%G` switch to exponent form outside `[1e-5, 1e15)`, which is what a general-format
-/// display does. Rounding first is the load-bearing half — `0.1 + 0.2` has to come back
-/// `"0.3"`, not `"0.30000000000000004"`.
-///
-/// ponytail: the exponent spelling (`1E+20`) is asserted against the spec's "no whitespace"
-/// and nothing else. Loop B is what will pin it; fix it there when a text function fails,
-/// not by guessing now.
+/// ponytail: the exponent spelling (`1E+20`) is asserted only against "no whitespace"; loop B will
+/// pin it.
 pub fn format_number(n: f64) -> String {
     if n == 0.0 {
         return "0".to_owned(); // also normalises -0.0

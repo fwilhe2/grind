@@ -2,26 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! §6.9 Database Functions — the Small Group's twelve, which are twelve aggregations over
-//! one selection.
+//! §6.9 Database Functions — the Small Group's twelve aggregations over one selection
+//! ([`select`]), each taking a Database, a Field and a Criteria (§6.9.1):
 //!
-//! §6.9.1 says the whole thing: each takes a Database (§4.11.9), a Field (§4.11.10) and a
-//! Criteria (§4.11.11), and then "performs SUM/COUNT/MAX/… on the data records that match".
-//! So there is one [`select`] here and a `match` on what to do with what it found.
-//!
-//! The three parameter types are each a small rule:
-//!
-//! * **Database** — a range whose *first row is field names*. Every row below it is a record.
-//! * **Field** — Text naming a column (matched case-insensitively, §4.11.10's "should"), or
-//!   a **1-based** column number. A selector naming no field is an Error, stated normatively.
-//! * **Criteria** — a range of at least two rows. The first names fields; each row below it
-//!   is a conjunction (every expression in the row must match), and the rows are a
-//!   disjunction. That shape is why `select` is two nested loops and not a filter.
+//! * **Database** (§4.11.9) — a range whose first row is field names; every row below is a record.
+//! * **Field** (§4.11.10) — text naming a column, case-insensitively, or a 1-based column number.
+//!   A selector naming no field is an error.
+//! * **Criteria** (§4.11.11) — at least two rows: the first names fields, each row below is a
+//!   conjunction, and the rows are a disjunction.
 //!
 //! An empty criterion cell constrains nothing. §4.11.11's "a reference to an empty cell is
-//! interpreted as the numeric value 0" reads like the opposite, but it is about a criterion
-//! that *is* a reference — reading it as "this field must be 0" would make every criteria
-//! range select nothing outside its own filled corner, which is not what the shape is for.
+//! interpreted as the numeric value 0" is about a criterion that is a reference; reading it as
+//! "must be 0" would make every criteria range select nothing outside its filled corner.
 
 use crate::model::Pos;
 
@@ -176,9 +168,8 @@ fn selects(
         let mut constraints = 0usize;
         for ccol in criteria.cols.clone() {
             let test = args.value_at(Address::new(criteria.sheet, Pos::new(crow, ccol)));
-            // A criterion cell holding nothing constrains nothing — and a formula that
-            // returned `""` holds nothing too. The criteria range is a *shape*, usually as
-            // wide as the database, so most of its cells are blank by design.
+            // A blank criterion cell, or one whose formula returned `""`, constrains nothing: the
+            // range is a shape, mostly blank by design.
             if test == Value::Empty || test == Value::Text(String::new()) {
                 continue;
             }
@@ -194,9 +185,8 @@ fn selects(
                 break;
             }
         }
-        // A row of the criteria range with nothing in it is not "every record qualifies" — it
-        // is a row of a rectangle drawn wide enough for the fields and left blank, which is
-        // how these ranges are written. It contributes no disjunct at all.
+        // A wholly blank row of the criteria range is not "every record qualifies"; it contributes
+        // no disjunct.
         if constraints == 0 {
             continue;
         }
@@ -205,8 +195,7 @@ fn selects(
             return Ok(true);
         }
     }
-    // ... and a criteria range where *every* row is blank does constrain nothing, so every
-    // record qualifies. That is the same rule, read at the other end.
+    // A criteria range whose every row is blank constrains nothing, so every record qualifies.
     Ok(!constrained)
 }
 

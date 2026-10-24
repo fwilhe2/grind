@@ -2,13 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! §4.11.8 Criterion — the little matching language `COUNTIF`, `SUMIF` and `AVERAGEIF`
-//! share with their several-criteria forms `COUNTIFS`, `SUMIFS` and `AVERAGEIFS`, and the
-//! reason those six live apart from their categories' other functions.
+//! §4.11.8 Criterion — the matching language `COUNTIF`, `SUMIF` and `AVERAGEIF` share with
+//! `COUNTIFS`, `SUMIFS` and `AVERAGEIFS`.
 //!
-//! A criterion is a value, and if it is text it may *begin with a comparator*: `">=3"`
-//! compares, `"apple"` matches. The interesting half is what happens to empty cells, and
-//! §4.11.8 is precise where intuition is not:
+//! A criterion is a value, and text may begin with a comparator: `">=3"` compares, `"apple"`
+//! matches. Empty cells are where §4.11.8 is precise and intuition is not:
 //!
 //! | Criterion | Matches an empty cell? |
 //! |---|---|
@@ -17,9 +15,8 @@
 //! | `"=0"` | **no**, stated outright, even though an empty cell converts to 0 elsewhere |
 //! | `"<>7"` | yes — "any cell content except the value, including empty cells" |
 //!
-//! A text criterion under `=` or `<>` is a **pattern**, not a literal — see [`wildcard`]
-//! for which of §3.4's host properties that settles and why. Regular expressions remain
-//! off; LibreOffice makes the two mutually exclusive and wildcards are its default.
+//! Text under `=` or `<>` is a wildcard pattern ([`wildcard`]); regular expressions are off, as
+//! LibreOffice makes the two exclusive.
 
 use std::cmp::Ordering;
 
@@ -42,12 +39,9 @@ pub enum Mode {
     Average,
 }
 
-/// `COUNTIF`, `SUMIF` and `AVERAGEIF`, which differ only in [`Mode`].
-///
-/// The optional third parameter is the trap worth naming: §6.16.62 says the summed range is
-/// taken *by geometry*, "starting from the top left cell and matching the geometry of R".
-/// Its own extent is ignored — `SUMIF([.A1:.A9];">2";[.C1])` sums nine cells of column C,
-/// not one. Offsetting from `S`'s corner rather than intersecting with it is that rule.
+/// `COUNTIF`, `SUMIF` and `AVERAGEIF`, which differ only in [`Mode`]. The optional summed range is
+/// taken by geometry from its top-left cell (§6.16.62): `SUMIF([.A1:.A9];">2";[.C1])` sums nine
+/// cells of column C.
 pub fn conditional(args: &mut Args, mode: Mode) -> Result<Value, FormulaError> {
     args.arity(if mode == Mode::Count { 2..=2 } else { 2..=3 })?;
     // "Does not accept constant values as the reference parameter" (§6.13.9 Constraints).
@@ -96,12 +90,8 @@ fn finish(mode: Mode, matched: usize, counted: usize, total: f64) -> Result<Valu
     })
 }
 
-/// The `i`th argument read as a criterion.
-///
-/// §4.11.8's opening line: "A reference to an empty cell is interpreted as the numeric value
-/// 0" — so a criterion *cell* that is blank counts zeros, where the literal `""` counts
-/// blanks. The two look identical by the time they are values, which is why the operand is
-/// inspected before it is reduced.
+/// The `i`th argument read as a criterion. A blank criterion cell means 0 (§4.11.8), while the
+/// literal `""` counts blanks, so the operand is inspected before it is reduced.
 fn criterion_at(args: &mut Args, i: usize) -> Criterion {
     match args.operand(i) {
         Operand::Area(_) => match args.value(i) {
@@ -112,13 +102,10 @@ fn criterion_at(args: &mut Args, i: usize) -> Criterion {
     }
 }
 
-/// `COUNTIFS` (§6.13.10), `SUMIFS` (§6.16.63) and `AVERAGEIFS` (§6.18.6): pairs of a range
-/// and its criterion, and a position counts only when every range's cell at it matches.
-///
-/// `SUMIFS` and `AVERAGEIFS` put the range they add up *first*, and unlike `SUMIF`'s third
-/// parameter it is not taken by geometry: "all reference ranges shall have the same
-/// dimension and size, else an Error is returned", the summed one included. A constant where
-/// a range belongs, or a range without its criterion, is `#VALUE!`.
+/// `COUNTIFS` (§6.13.10), `SUMIFS` (§6.16.63) and `AVERAGEIFS` (§6.18.6): a position counts only
+/// when every range's cell at it matches its criterion. Unlike `SUMIF`'s, the summed range comes
+/// first and must match the others in size; a constant where a range belongs, or a range without
+/// its criterion, is `#VALUE!`.
 pub fn several(args: &mut Args, mode: Mode) -> Result<Value, FormulaError> {
     let first = usize::from(mode != Mode::Count);
     if args.len() < first + 2 || !(args.len() - first).is_multiple_of(2) {
@@ -210,11 +197,8 @@ impl Criterion {
             return false;
         }
         if self.operand == Value::Empty {
-            // Blankness, not equality — and a formula that returned `""` is blank for this
-            // one test. §4.11.8's `"="` is "how you count blanks", and a cell displaying
-            // nothing because its formula said `=""` is one; §4.7's distinction between an
-            // empty cell and an empty string is about the *cell*, and no formula result is
-            // ever an empty cell (see `eval::eval`).
+            // Blankness: a formula that returned `""` is blank for this test, since no formula
+            // result is ever an empty cell (`eval::eval`).
             let blank = matches!(cell, Value::Empty) || *cell == Value::Text(String::new());
             return match self.op {
                 Op::Eq => blank,
@@ -235,10 +219,8 @@ impl Criterion {
             let hit = wildcard::matches(pattern, text);
             return if self.op == Op::Eq { hit } else { !hit };
         }
-        // A criterion compares within one type. `">1"` counts numbers above 1, not every
-        // text cell — even though §6.4.9's cross-type order puts all text above all numbers,
-        // which is about *sorting* and would make `COUNTIF` count words as large numbers.
-        // §6.4.7's "if the values differ in type, return FALSE" is the rule that applies.
+        // A criterion compares within one type (§6.4.7): `">1"` counts numbers above 1, not text,
+        // whatever §6.4.9's sort order says.
         let same_kind = matches!(
             (cell, &self.operand),
             (Value::Number(_), Value::Number(_))

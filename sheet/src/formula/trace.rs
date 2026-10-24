@@ -2,13 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A formula taken apart: every sub-expression, where it is in the text, and what it came to
-//! **in place** — the workbench's trace (`doc/formula-workbench.md` §3.2).
-//!
-//! Built from two things that already existed and one that did not: the display-form parse
-//! with node spans ([`display::parse_display`]), the evaluator itself — not a second one, so
-//! a trace cannot disagree with what the cell would compute — and the evaluator's recorder,
-//! which keeps each node's operand as it goes by (`Engine::trace`). Nothing is stored.
+//! A formula taken apart: every sub-expression, where it is in the text, and what it came to in
+//! place — the workbench's trace (`doc/formula-workbench.md` §3.2). Built on
+//! [`display::parse_display`]'s node spans and the evaluator's own recorder (`Engine::trace`), so
+//! a trace cannot disagree with the cell. Nothing is stored.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -84,15 +81,10 @@ impl Trace {
         out
     }
 
-    /// For each line of `text` — the display text that was traced, typically laid out by
-    /// [`display::pretty`] — the outermost node that **starts** on it, or `None` for a line
-    /// that starts none (a closing bracket). So the first line carries the whole formula's
-    /// answer, `ROUND(` the call's, and `+ X` the answer of `X`.
-    ///
-    /// One exception: an operator broken over several lines does not claim its first line,
-    /// because that line shows only its left operand — `ROUND(` over `ROUND(…) & " total"`
-    /// must read as the `ROUND`. Its answer is its parent's to show. The root is exempt: the
-    /// formula's own answer belongs on the line that starts with `=`.
+    /// For each line of `text` (typically [`display::pretty`]'s), the outermost node that starts
+    /// on it, or `None` for a line that starts none (a closing bracket). An operator broken over
+    /// several lines does not claim its first line, which shows only its left operand; the root
+    /// always claims the line with `=`.
     pub fn by_line<'a>(&'a self, text: &str) -> Vec<Option<&'a Node>> {
         let mut starts = Vec::new();
         let mut at = 0;
@@ -118,9 +110,8 @@ impl Trace {
 }
 
 impl CameTo {
-    /// The answer as a formula would spell it, so that text and a number never read alike
-    /// — `"3"` and `3` are the difference `doc/ods-format.md` §4.2 is about. A range is its
-    /// address, with its sheet when that is not `here`; `sheets` are the document's names.
+    /// The answer as a formula would spell it, so text and a number never read alike (`"3"` and
+    /// `3`). A range is its address, sheet-qualified unless it is `here`.
     pub fn spelled(&self, sheets: &[String], here: usize) -> String {
         match self {
             CameTo::Value(Value::Empty) => "empty".to_owned(),
@@ -146,18 +137,16 @@ impl CameTo {
     }
 }
 
-/// Cells that hold something else for one trace — the workbench's *what if*
-/// (`doc/formula-workbench.md` §3.3). Never written anywhere: it lives as long as a shell
-/// keeps it, and the document never hears of it.
+/// Cells that hold something else for one trace — the workbench's what-if
+/// (`doc/formula-workbench.md` §3.3). Never written to the document.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Overlay {
     values: HashMap<Address, Value>,
 }
 
 impl Overlay {
-    /// Hold `value` in a cell, for this overlay only. An empty value is an override too —
-    /// "what if this cell were blank" — rather than the absence of one; [`Overlay::clear`]
-    /// is that.
+    /// Hold `value` in a cell for this overlay only. An empty value is an override too;
+    /// [`Overlay::clear`] removes one.
     pub fn set(&mut self, sheet: usize, pos: Pos, value: Value) {
         self.values.insert(Address::new(sheet, pos), value);
     }
