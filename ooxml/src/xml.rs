@@ -4,36 +4,20 @@
 
 //! The tolerant element walker, and the one place markup compatibility is handled.
 //!
-//! Written for the spreadsheet filter (`grind-xlsx`, where the history of the comments below is)
-//! and hoisted here the day the word processor's filter wanted exactly the same walker: the
-//! container, the namespaces and markup compatibility are the OOXML family's, not Excel's.
+//! `core/src/odf/context.rs`'s property, rebuilt: **a visitor that does not recognise a child
+//! returns [`Handled::No`], and the walker consumes it and everything beneath it**, so unknown
+//! elements, vendor namespaces and future versions are inert by construction. (LibreOffice's own
+//! minimal `.xlsx` declares seven namespaces it never uses, `doc/xlsx-format.md` §1.1.) Rebuilt
+//! rather than borrowed because `context.rs` dispatches on a closed enum of ODF namespaces (R8); a
+//! visitor per element also suits OOXML's shallow trees.
 //!
-//! This is `core/src/odf/context.rs`'s property rebuilt rather than borrowed: **a visitor
-//! that does not recognise a child returns [`Handled::No`], and the walker consumes that
-//! element and everything beneath it.** Unknown elements, whole vendor namespaces, Strict
-//! spellings of things we read and every future version of Excel are therefore inert by
-//! construction rather than by a match arm each. Measured justification: LibreOffice's own
-//! minimal `.xlsx` output declares seven namespaces it makes no use of
-//! (`doc/xlsx-format.md` §1.1).
+//! Two differences from the ODF reader, both because an import regenerates rather than splices:
 //!
-//! **Why rebuilt.** `context.rs` dispatches on `grind_core::odf::names::Ns`, a closed enum of
-//! *ODF* namespace URIs, and R8 keeps it that way — OOXML's namespaces are no more generic
-//! than ODF's. The shape is cheaper here anyway: SpreadsheetML is shallow and regular where
-//! ODF's style tree is deep, so a visitor per element beats a context object per element.
+//! 1. **No spans** — there are no original bytes to splice into.
+//! 2. **Lossy decoding**: a stray byte becomes `U+FFFD` rather than a same-length repair.
 //!
-//! Two deliberate differences from the ODF reader, both consequences of what an import *is*:
-//!
-//! 1. **No spans.** `context.rs` records where each element began so that R6 can splice an
-//!    edit back into the original bytes. An imported document has no original bytes to
-//!    splice — it regenerates, because an import is authoring a document — so there is
-//!    nothing to record.
-//! 2. **Lossy decoding rather than byte-preserving repair.** For the same reason: with no
-//!    spans to keep aligned, a stray byte can become `U+FFFD` instead of having to be
-//!    replaced one-byte-for-one-byte. `repair_utf8`'s constraint does not apply here.
-//!
-//! Entity expansion needs no defence: quick-xml does not resolve external entities and
-//! rejects unknown internal ones, so the billion-laughs class cannot arise. Depth is bounded
-//! by [`MAX_DEPTH`] and a document deeper than that is refused rather than recursed into.
+//! quick-xml resolves no external entities and rejects unknown internal ones, so billion-laughs
+//! cannot arise; depth is capped at [`MAX_DEPTH`].
 
 use std::collections::BTreeSet;
 
@@ -46,11 +30,8 @@ use crate::mce::{self, Alternative};
 use crate::names::{self, Ns, Seen};
 use crate::{Error, Result};
 
-/// Deeper than any spreadsheet and shallower than a stack overflow. SpreadsheetML's own
-/// deepest legitimate path is well under twenty.
-///
-/// Public because it is a property of what this reader will accept rather than an
-/// implementation detail: a caller comparing us against another parser wants the number.
+/// Deeper than any real document (SpreadsheetML's deepest path is under twenty), shallower than a
+/// stack overflow. Public because it is a property of what this reader accepts.
 pub const MAX_DEPTH: usize = 256;
 
 /// A resolved element or attribute name.
@@ -61,11 +42,8 @@ pub struct Name {
 }
 
 impl Name {
-    /// Is this `<local>` in namespace `ns`, in either flavour?
-    ///
-    /// Each filter wraps this in a one-argument method of its own for its main namespace —
-    /// `grind_xlsx`'s `is("c")`, `grind_docx`'s `w("p")` — since nearly every element either
-    /// one reads is in that namespace.
+    /// Is this `<local>` in namespace `ns`, in either flavour? Each filter wraps it for its main
+    /// namespace — `is("c")`, `w("p")`.
     pub fn in_ns(&self, ns: Ns, local: &str) -> bool {
         self.ns == ns && self.local == local
     }
@@ -73,17 +51,16 @@ impl Name {
 
 /// One element's resolved attributes.
 ///
-/// ponytail: owned strings, collected per element, as in `context.rs` and for the same
-/// reason — it costs an allocation per attribute and buys freedom from lifetime plumbing
-/// through every visitor. Revisit only if a profile blames it.
+/// ponytail: owned strings collected per element, as in `context.rs` — an allocation per attribute
+/// for no lifetime plumbing through every visitor. Revisit only if a profile blames it.
 #[derive(Debug, Default)]
 pub struct Attrs {
     items: Vec<(Ns, String, String)>,
 }
 
 impl Attrs {
-    /// An attribute in **no namespace**, which is what almost every SpreadsheetML attribute
-    /// is: `<sheet name="Budget" sheetId="1">` has two of them.
+    /// An attribute in **no namespace**, as almost every SpreadsheetML attribute is: `<sheet
+    /// name="Budget" sheetId="1">`.
     pub fn plain(&self, local: &str) -> Option<&str> {
         self.get(Ns::None, local)
     }
@@ -109,16 +86,14 @@ pub enum Handled {
     /// Recognised. If the visitor did not consume the element's children itself, the walker
     /// does — either way the walker is back where it started before the next sibling.
     Yes,
-    /// Not recognised. The element and its whole subtree are skipped. **This is the
-    /// tolerance property**, and it is the default answer rather than an error.
+    /// Not recognised: the element and its subtree are skipped. The tolerance property, and the
+    /// default answer.
     No,
 }
 
-/// The visitor, as a trait object.
-///
-/// `&mut dyn` rather than a generic parameter on purpose: [`Reader::walk`] recurses (an
-/// `mc:AlternateContent` hands its fallback's children to the *same* visitor), and a generic
-/// would monomorphise into `walk::<&mut F>`, `walk::<&mut &mut F>`, … without end.
+/// The visitor, as a trait object: [`Reader::walk`] recurses (an `mc:AlternateContent` hands its
+/// fallback's children to the same visitor), and a generic would monomorphise `walk::<&mut &mut
+/// F>` without end.
 type Visitor<'a, 'v> = &'v mut dyn FnMut(&mut Reader<'a>, &Name, &Attrs) -> Result<Handled>;
 
 /// One parse event, after namespace resolution.
@@ -138,12 +113,8 @@ pub struct Reader<'a> {
     /// Open elements. The walker's whole bookkeeping is this number.
     depth: usize,
     /// Whether the element most recently opened was self-closed (`<t/>`, `<c r="A11"/>`).
-    ///
-    /// A visitor is handed both kinds through one signature, and [`Reader::children`] and
-    /// [`Reader::text`] must know which they are looking at: an empty element *has* no end
-    /// tag, so walking to one would consume the parent's and every sibling after it. X0 got
-    /// away without this because its one self-closed container (`<sheets/>`) was also the last
-    /// thing in its part; X1's `<t/>`, `<sheetData/>` and `<c r="A11"/>` are not.
+    /// [`Reader::children`] and [`Reader::text`] must know: an empty element has no end tag, and
+    /// walking to one would consume the parent's and every sibling after it.
     empty: bool,
     /// Which flavour's URIs have been seen, for the report.
     pub seen: Seen,
@@ -154,9 +125,8 @@ pub struct Reader<'a> {
 impl<'a> Reader<'a> {
     pub fn new(bytes: &'a [u8]) -> Self {
         let mut inner = NsReader::from_reader(bytes);
-        // Off, so that `xml:space="preserve"` is honoured by default rather than by
-        // detection: 51 of the corpus's 360 workbooks have a shared string that needs it
-        // (`doc/xlsx-format.md` §1.4), and a reader that trims corrupts them silently.
+        // Off, so `xml:space="preserve"` is honoured by default: 51 of LibreOffice's 360 test
+        // workbooks have a shared string that needs it (`doc/xlsx-format.md` §1.4).
         inner.config_mut().trim_text(false);
         Self {
             inner,
@@ -179,10 +149,8 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// Walk the children of the element that was just started, handing each to `visit`.
-    ///
-    /// A visitor may call this again for a child it recognises; one that does not is exactly
-    /// what makes the subtree disappear.
+    /// Walk the children of the element just started, handing each to `visit`; one it does not
+    /// recognise is skipped with its subtree.
     pub fn children<F>(&mut self, mut visit: F) -> Result<()>
     where
         F: FnMut(&mut Reader<'a>, &Name, &Attrs) -> Result<Handled>,
@@ -193,14 +161,10 @@ impl<'a> Reader<'a> {
         self.walk(&mut visit)
     }
 
-    /// This element's string value — all text beneath it, concatenated.
-    ///
-    /// Right for the leaves that want it (`<t>`, `<v>`, `<f>`) and right for `<si>` holding
-    /// rich-text `<r>` runs, which is how "runs flattened" falls out rather than being
-    /// implemented. **Wrong for any element a producer might have pretty-printed**, since
-    /// indentation between children is text too; no real producer indents inside
-    /// `sharedStrings` or `sheetData`, and anything that might be indented is walked with
-    /// [`Reader::children`] instead.
+    /// This element's string value — all text beneath it, concatenated. Right for leaves (`<t>`,
+    /// `<v>`, `<f>`) and for `<si>`'s rich-text runs, which flattens them for free. **Wrong for
+    /// anything a producer might pretty-print**, since indentation is text too; those are walked
+    /// with [`Reader::children`].
     pub fn text(&mut self) -> Result<String> {
         if std::mem::take(&mut self.empty) {
             return Ok(String::new());
@@ -233,19 +197,15 @@ impl<'a> Reader<'a> {
             match self.next()? {
                 Ev::Start(name, attrs) => {
                     if name.ns == Ns::Mce {
-                        // The one place markup compatibility is handled. Doing it here rather
-                        // than in each visitor is the whole design: `mc:AlternateContent` can
-                        // wrap a sparkline group, a slicer, a data validation, a drawing or a
-                        // `sheetPr`, so per-site handling is per-site bugs.
+                        // The one place markup compatibility is handled (see `mce.rs`).
                         if mce::classify(&name.local) == Alternative::Wrapper {
                             self.alternate(&mut *visit)?;
                         }
                     } else {
                         visit(self, &name, &attrs)?;
                     }
-                    // Whatever the visitor did or did not consume, the next sibling starts
-                    // here. A visitor that returns `No` never moved, so this skips the whole
-                    // subtree; one that walked the children itself makes this a no-op.
+                    // The next sibling starts here whatever the visitor consumed: one that
+                    // returned `No` never moved, so this skips the subtree.
                     self.skip_to(base)?;
                 }
                 Ev::Empty(name, attrs) => {
@@ -260,12 +220,9 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// `mc:AlternateContent`: take the first `mc:Choice` whose requirements we meet, and
-    /// otherwise the `mc:Fallback`.
-    ///
-    /// We understand no extension namespace ([`mce::satisfies`]), so in practice the fallback
-    /// is what gets read. The chosen branch's *children* go to the same visitor, so from
-    /// where the caller sits the alternation is not there at all — which is what MCE is for.
+    /// `mc:AlternateContent`: the first `mc:Choice` whose requirements we meet, else the
+    /// `mc:Fallback` — in practice the fallback ([`mce::satisfies`]). The branch's children go to
+    /// the same visitor, so the caller never sees the alternation.
     fn alternate(&mut self, visit: Visitor<'a, '_>) -> Result<()> {
         let base = self.depth;
         let mut taken = false;
@@ -295,9 +252,8 @@ impl<'a> Reader<'a> {
     }
 
     fn next(&mut self) -> Result<Ev> {
-        // Field-by-field, so that the event may borrow `buf` while `inner` stays reachable
-        // for name resolution. The alternative is what `context.rs` does — keep the reader
-        // and the buffer as separate locals — which a struct with a `next` method cannot.
+        // Field by field, so the event may borrow `buf` while `inner` stays reachable for name
+        // resolution.
         let Self {
             inner,
             buf,
@@ -338,13 +294,10 @@ impl<'a> Reader<'a> {
             // Line endings normalised (XML 1.0 §2.11): a workbook written on Windows must
             // not put a stray `\r` into a cell.
             Event::Text(e) => Ev::Text(e.xml10_content().into_owned()),
-            // `&amp;`, `&#10;` — one event each rather than part of the text, and a
-            // *character* of the content rather than markup. An entity this parser cannot
-            // resolve is dropped rather than fatal: without a DTD only the five predefined
-            // ones and numeric references can appear, so anything else is a document naming
-            // something that does not exist, and tolerance says it still loads. This is also
-            // where billion-laughs would have to start, and it cannot: nothing here expands
-            // a definition, because nothing here reads one.
+            // `&amp;`, `&#10;` — an event of its own, and a character of the content. An entity
+            // that cannot be resolved is dropped, not fatal: with no DTD, only the five predefined
+            // ones and numeric references can exist. Nothing here expands a definition, so
+            // billion-laughs cannot start here.
             Event::GeneralRef(r) => Ev::Text(match r.resolve_char_ref() {
                 Ok(Some(c)) => c.to_string(),
                 Ok(None) => quick_xml::escape::resolve_predefined_entity(&r)
@@ -360,10 +313,8 @@ impl<'a> Reader<'a> {
     }
 }
 
-/// Record what a URI says about the file's flavour.
-///
-/// Public because a relationship *type* is Part 1 vocabulary too and votes the same way, and
-/// those are attribute values read in `package.rs` rather than namespaces resolved here.
+/// Record what a URI says about the file's flavour. Public because a relationship type in
+/// `package.rs` votes the same way.
 pub fn note_flavour(seen: &mut Seen, uri: &str) {
     match names::family(uri) {
         Some(names::Flavour::Transitional) => seen.transitional = true,
@@ -387,13 +338,9 @@ fn resolved_name(reader: &NsReader<&[u8]>, e: &BytesStart, seen: &mut Seen) -> N
     }
 }
 
-/// The namespace URI a prefix is bound to *here* — or the prefix itself, if nothing binds it.
-///
-/// This is `mce::must_understand`'s open question from X0, answered: the report carries the
-/// URI, because a prefix is a local alias and a report that prints `x15` tells a bug report
-/// nothing. It can be resolved only while the declaring element is the one being read, which
-/// is exactly when attributes are collected, so this is the one place it can be done. An
-/// unbound prefix is a malformed file and is reported as written rather than dropped.
+/// The namespace URI a prefix is bound to here, or the prefix itself when nothing binds it. A
+/// report needs the URI — `x15` is a local alias — and it can be resolved only while the declaring
+/// element is being read, which is when attributes are collected.
 fn uri_of(reader: &NsReader<&[u8]>, prefix: &str) -> String {
     let probe = format!("{prefix}:_");
     match reader.resolver().resolve_element(QName(&probe)).0 {
@@ -418,8 +365,8 @@ fn collect_attrs(
                 note_flavour(seen, uri.as_ref());
                 Ns::from_uri(uri.as_ref())
             }
-            // An unprefixed attribute is in **no** namespace — not the default one. That is
-            // XML's rule and not a shortcut: it is why `Attrs::plain` exists.
+            // An unprefixed attribute is in **no** namespace, not the default one — XML's rule,
+            // and why `Attrs::plain` exists.
             _ => Ns::None,
         };
         let Ok(value) = attr.normalized_value(XmlVersion::Implicit1_0) else {
@@ -525,8 +472,7 @@ mod tests {
 
     // ---- markup compatibility ----
 
-    /// The fixture `doc/xlsx-import.md`'s verification section asks for: the choice and the
-    /// fallback hold **different** elements, so taking the wrong one is visible.
+    /// The choice and the fallback hold different elements, so taking the wrong one is visible.
     #[test]
     fn the_fallback_is_read_and_the_choice_is_not() {
         let xml = format!(

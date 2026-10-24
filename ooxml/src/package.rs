@@ -2,16 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! OPC — the container (ECMA-376 Part 2), and the hardening a converter needs.
-//!
-//! An `.xlsx` or a `.docx` is a zip whose `_rels/.rels` points at the main part and whose
-//! `[Content_Types].xml` types the parts. **Parts are found by relationship, never by path
-//! convention**: `xl/workbook.xml` is where every producer puts it and nowhere in the spec
-//! promises that.
-//!
-//! This is also the layer that has to assume the file came from a stranger, because a
-//! converter is a program that eats files from strangers. The caps below are the answer, and
-//! they are a test with a hostile fixture rather than a paragraph.
+//! OPC — the container (ECMA-376 Part 2). A zip whose `_rels/.rels` points at the main part and
+//! whose `[Content_Types].xml` types the parts; parts are found by relationship, never by path. A
+//! converter eats strangers' files, so the caps here are tested with hostile fixtures.
 
 use std::collections::BTreeMap;
 use std::io::Cursor;
@@ -22,12 +15,9 @@ use crate::{Error, Result};
 /// The zip local file header. Every OPC package starts with it.
 const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 
-/// The CFB/OLE compound-file signature.
-///
-/// **A password-protected `.xlsx` or `.docx` is not a zip at all**: ECMA-376 Part 2's agile encryption
-/// wraps the whole package in one of these. Telling it from "not a spreadsheet" is what keeps
-/// loop A′ from reporting a failure for a file that is merely locked — the same distinction
-/// `grind_core::Error::Encrypted` already draws for loop A.
+/// The CFB/OLE compound-file signature. A password-protected `.xlsx` or `.docx` is not a zip:
+/// agile encryption wraps the package in one of these, and recognising it is what lets a locked
+/// file be [`Error::Encrypted`] rather than "not a document".
 const CFB_MAGIC: &[u8] = &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
 
 /// No document has this many parts. A file that does is a zip bomb or a mistake.
@@ -52,10 +42,8 @@ pub struct Rel {
 
 pub struct Package<'a> {
     archive: zip::ZipArchive<Cursor<&'a [u8]>>,
-    /// Lower-cased part name to the entry that holds it.
-    ///
-    /// Part names compare case-insensitively (Part 2 §9.1.1.3) and real producers disagree
-    /// about case, so the index is built once rather than guessed at per lookup.
+    /// Lower-cased part name to the entry that holds it: part names compare case-insensitively
+    /// (Part 2 §9.1.1.3) and producers disagree about case.
     index: BTreeMap<String, usize>,
 }
 
@@ -69,11 +57,9 @@ pub fn is_encrypted(bytes: &[u8]) -> bool {
     bytes.starts_with(CFB_MAGIC)
 }
 
-/// Normalise an OPC part name into the form the zip index is keyed by.
-///
-/// Real producers write a leading `/`, backslashes, `.` and `..` segments and percent
-/// encoding, all of which name the same part as the plain form. A target that climbs out of
-/// the package is refused — that is a zip-slip, not a spelling.
+/// Normalise an OPC part name into the form the zip index is keyed by. A leading `/`, backslashes,
+/// `.` and `..` segments and percent encoding all name the plain form; a target climbing out of
+/// the package is a zip-slip and refused.
 pub fn normalise(name: &str) -> Option<String> {
     let mut out: Vec<String> = Vec::new();
     for raw in name.replace('\\', "/").split('/') {
@@ -182,12 +168,9 @@ impl<'a> Package<'a> {
     pub fn part(&mut self, name: &str) -> Option<Vec<u8>> {
         let index = *self.index.get(&normalise(name)?)?;
         let mut file = self.archive.by_index(index).ok()?;
-        // Bounded whatever the header claimed — the claims were checked on opening, and a
-        // header costs nothing to lie in — and never allocated up front from a claim; the
-        // suite's one bounded reader. Not `?`: a corrupt deflate stream is a damaged *part*,
-        // and losing one optional part is not a reason to refuse a workbook. `grind_core`'s
-        // package reader learned the same lesson from loop A, where an `io::Error` claimed the
-        // filesystem had failed.
+        // Bounded whatever the header claimed, and never allocated from a claim. Not `?`: a
+        // corrupt deflate stream is a damaged part, and losing one optional part is no reason to
+        // refuse the file.
         grind_core::odf::package::read_entry(&mut file).ok()
     }
 
@@ -236,9 +219,8 @@ fn parse_rels(bytes: &[u8], base: &str, seen: &mut Seen) -> Vec<Rel> {
         ) else {
             return Ok(Handled::Yes);
         };
-        // A relationship *type* is Part 1 vocabulary and so votes on the flavour, exactly as
-        // a namespace URI does — which is how a Strict workbook whose parts happen not to
-        // have been opened yet is still recognised as one.
+        // A relationship type is Part 1 vocabulary and votes on the flavour like a namespace URI,
+        // so a Strict file is recognised before its parts are opened.
         crate::xml::note_flavour(seen, kind);
         let external = matches!(attrs.plain("TargetMode"), Some("External"));
         // An external target is a URL or another workbook. It is recorded so the report can

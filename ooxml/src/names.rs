@@ -2,27 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Namespace URIs, relationship types, and the flavour they say the file is.
+//! Namespace URIs, relationship types, and the flavour they say the file is —
+//! `core/src/odf/names.rs`'s twin, with its two rules: **dispatch on `(namespace-uri,
+//! local-name)`, never the prefix**, and **an unrecognised URI is a value** ([`Ns::Other`]) that
+//! every lookup misses.
 //!
-//! The `core/src/odf/names.rs` of the OOXML family, and the same two rules: **dispatch on
-//! `(namespace-uri, local-name)` and never on the prefix written in the document**, and **an
-//! unrecognised URI is a value rather than a failure** — it resolves to [`Ns::Other`], every
-//! lookup against it misses, and the element routes down the ignore path in `xml.rs`.
+//! Every Part 1 namespace has two spellings, Transitional and Strict (ISO/IEC 29500); real files
+//! are overwhelmingly Transitional. Both resolve to the same [`Ns`], so nothing downstream
+//! branches on the flavour — the reader only records it for the report. Every URI is measured:
+//! `doc/xlsx-format.md` §1.1–1.2 and `doc/docx-format.md` §1.
 //!
-//! What is different here is that every Part 1 namespace comes in **two** spellings.
-//! ISO/IEC 29500 defines Transitional and Strict, real files are overwhelmingly Transitional,
-//! and the entire difference that reaches a reader is this file (`doc/xlsx-import.md`,
-//! "Transitional, and the real world"; `doc/docx-import.md` says the same of Word). Both families resolve to the same [`Ns`], so nothing
-//! downstream branches on the flavour; the reader only *records* which it saw, because that
-//! is a useful sentence in a report and a useless one in a parser.
-//!
-//! Every URI below is `MEASURED` — see `doc/xlsx-format.md` §1.1 and §1.2, and
-//! `doc/docx-format.md` §1, for the files and the commands.
-//!
-//! **One table for both filters, and that is not R8 bending.** R8 keeps a document type's
-//! vocabulary out of `grind-core`; this crate is not the core, it is the OOXML family's own
-//! container layer, and SpreadsheetML and WordprocessingML share every part of it but their
-//! main namespace — the relationships, the drawing language, OPC and markup compatibility.
+//! One table for both filters: SpreadsheetML and WordprocessingML share everything here but their
+//! main namespace, and this crate is the OOXML family's, not the core (R8).
 
 /// A namespace this filter recognises. Everything else is [`Ns::Other`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -39,18 +30,17 @@ pub enum Ns {
     Picture,
     /// The `r:` attribute namespace: `r:id` on a `<sheet>` names a relationship.
     Relationships,
-    /// The root namespace of a `_rels/*.rels` part. **Part 2 (OPC), so it does not vary
-    /// between the flavours** — measured, not assumed.
+    /// The root namespace of a `_rels/*.rels` part — Part 2 (OPC), so the same in both flavours;
+    /// measured.
     PackageRels,
     /// `[Content_Types].xml`. Part 2 as well, and likewise invariant.
     ContentTypes,
     /// Markup Compatibility and Extensibility — Part 3, invariant, and the reason `mce.rs`
     /// exists.
     Mce,
-    /// DrawingML's main namespace, which is where a theme's colour scheme lives
-    /// (`xl/theme/theme1.xml`, `<a:clrScheme>`) and where a picture's `a:blip` is. Both
-    /// spellings: the Strict one was first measured on Word's Strict documents
-    /// (`doc/docx-format.md` §1.2), which no workbook this project holds had carried.
+    /// DrawingML's main namespace: a theme's colour scheme (`<a:clrScheme>`) and a picture's
+    /// `a:blip`. Both spellings; the Strict one measured on Word's Strict documents
+    /// (`doc/docx-format.md` §1.2).
     Drawing,
     /// VML, the drawing language of Excel before DrawingML, still where a form control lives
     /// (`doc/xlsx-format.md` §4.11): `v:shape`.
@@ -63,11 +53,9 @@ pub enum Ns {
     Other,
 }
 
-/// Which spelling of Part 1 a file uses.
-///
-/// A fact the report states, never a branch the reader takes. `Mixed` is not hypothetical:
-/// `sc/qa/unit/data/xlsx/universal-content-strict.xlsx` carries Strict relationship types
-/// beside Transitional ones in the same `_rels/.rels` (`doc/xlsx-format.md` §1.2).
+/// Which spelling of Part 1 a file uses — a fact the report states, never a branch the reader
+/// takes. `Mixed` is real: `universal-content-strict.xlsx` in LibreOffice's corpus carries Strict
+/// relationship types beside Transitional ones (`doc/xlsx-format.md` §1.2).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Flavour {
     /// What Excel has written by default since 2007, and what every other producer writes.
@@ -92,9 +80,8 @@ impl Seen {
         match (self.transitional, self.strict) {
             (true, true) => Flavour::Mixed,
             (false, true) => Flavour::Strict,
-            // A file that declared neither is Transitional by default rather than by
-            // evidence. It is also a file with no SpreadsheetML in it, which the caller has
-            // already refused for a better reason than this one.
+            // Neither declared: Transitional by default. Such a file has no SpreadsheetML in it,
+            // and the caller has already refused it for that.
             _ => Flavour::Transitional,
         }
     }
@@ -152,11 +139,9 @@ impl Ns {
     }
 }
 
-/// Which flavour a URI is evidence of, if it is evidence of either.
-///
-/// Only Part 1 URIs count. The package and markup-compatibility namespaces are the same in
-/// both, so seeing one says nothing — and treating it as a vote for Transitional would make
-/// every Strict file `Mixed`.
+/// Which flavour a URI is evidence of, if either. Only Part 1 URIs count: the package and
+/// markup-compatibility namespaces are shared, and counting them for Transitional would make every
+/// Strict file `Mixed`.
 pub fn family(uri: &str) -> Option<Flavour> {
     // `starts_with` rather than equality because a relationship *type* extends the
     // relationships namespace with a segment, and both are evidence of the same family.
@@ -169,9 +154,8 @@ pub fn family(uri: &str) -> Option<Flavour> {
     }
 }
 
-/// A relationship's `Type`, which is how a part is found. **Never by path convention** —
-/// `xl/workbook.xml` is where every producer puts the workbook and nowhere in the spec
-/// promises it.
+/// A relationship's `Type`, which is how a part is found — never by path convention, since nothing
+/// in the spec promises `xl/workbook.xml`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RelType {
     OfficeDocument,
@@ -180,17 +164,17 @@ pub enum RelType {
     SharedStrings,
     Styles,
     Theme,
-    /// A worksheet's DrawingML drawing, which is where its charts and pictures hang (X5).
+    /// A worksheet's DrawingML drawing, where its charts and pictures hang.
     Drawing,
     /// A drawing's chart part.
     Chart,
-    /// A worksheet's comments part (X5) — or a Word document's, which shares the type. Its VML
-    /// anchor (`vmlDrawing`) is not a `Drawing`.
+    /// A worksheet's comments part, or a Word document's, which shares the type. Its VML anchor
+    /// (`vmlDrawing`) is not a `Drawing`.
     Comments,
     /// A worksheet's legacy VML drawing: a comment's anchor, and every form control's own
     /// spelling (`controls.rs`).
     VmlDrawing,
-    /// A worksheet's pivot table definition (X5).
+    /// A worksheet's pivot table definition.
     PivotTable,
     /// A worksheet's table definition (`xl/tables/tableN.xml`) — read, because a structured
     /// reference is only a range once the table says which.
@@ -222,11 +206,8 @@ pub enum RelType {
 }
 
 impl RelType {
-    /// Both families, by stripping the family's own prefix and matching what is left.
-    ///
-    /// The prefix is checked rather than the last path segment. Matching only the segment
-    /// would accept `http://example.invalid/relationships/worksheet`, which is a different
-    /// vocabulary wearing a familiar word.
+    /// Both families, by stripping the family's own prefix and matching the rest — not just the
+    /// last segment, which would accept `http://example.invalid/relationships/worksheet`.
     pub fn from_uri(uri: &str) -> RelType {
         let rest = uri
             .strip_prefix(REL_T)
@@ -336,9 +317,8 @@ mod tests {
         }
     }
 
-    /// Measured: `universal-content-strict.xlsx` really carries this, with a lower-case
-    /// `officedocument` and a target of its own (`doc/xlsx-format.md` §1.2). It must come
-    /// back `Other` — unrecognised, therefore ignored — rather than being guessed at.
+    /// `universal-content-strict.xlsx` really carries this, with a lower-case `officedocument`
+    /// (`doc/xlsx-format.md` §1.2): unrecognised, so ignored rather than guessed at.
     #[test]
     fn a_misspelt_type_is_unrecognised_rather_than_guessed() {
         assert_eq!(
