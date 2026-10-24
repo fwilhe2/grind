@@ -5,7 +5,7 @@
     "body": [
       "grind spreadsheet"
     ],
-    "description": "The kind header. A projection declares what it is in its first node, as ODF declares a media type — spreadsheet, text or presentation. Sniffed before the body is parsed, never from the file name."
+    "description": "The kind header. A .grind file states what it is in its first line — spreadsheet or text — and grind reads the kind from here, never from the file name."
   },
   "grind text": {
     "scope": "kdl",
@@ -97,7 +97,7 @@
     "body": [
       "format ${1:B2:C5} ${2|number,percentage,currency,date,time,datetime,boolean,text|}"
     ],
-    "description": "A number format over a range, in the compact form when numfmt::preset builds it — with decimals=, grouping=, symbol= and locale= as its attributes. Display only: a format never touches the value."
+    "description": "A number format over a range, in the compact form for the standard formats — with decimals=, grouping=, symbol= and locale= as its attributes. Display only: a format never touches the value."
   },
   "node: format (spelled out in parts)": {
     "scope": "kdl",
@@ -141,7 +141,7 @@
       "\tkeep ${3:0} ${4:North}",
       "}"
     ],
-    "description": "A database range and the values each of its fields keeps (§9.4). A view of a document rather than its content."
+    "description": "An autofilter: a range and the values each of its columns keeps. Rows holding other values are hidden; the cells themselves are not changed."
   },
   "node: keep": {
     "scope": "kdl",
@@ -303,7 +303,7 @@
     "body": [
       "p \"$1\""
     ],
-    "description": "A text document's paragraph, with its runs as one string. **bold**, _italic_, `code` mean here what they mean while typing in any shell of this suite; [words]{color=#ff4136} is the attribute form for everything the markers cannot say."
+    "description": "A text document's paragraph, with its runs as one string. **bold**, _italic_, `code` mean here what they mean while typing in any grind window; [words]{color=#ff4136} is the attribute form for everything the markers cannot say."
   },
   "node: h": {
     "scope": "kdl",
@@ -329,7 +329,7 @@
       "\tli \"$1\"",
       "}"
     ],
-    "description": "Read only — the authoring spelling for a run of list items, which supplies their depth by nesting. The writer never emits one, because the model is flat."
+    "description": "Read only — a way of writing a run of list items whose nesting supplies their depth. grind never writes one back: it writes each item as an `li` with its depth."
   },
   "node: table": {
     "scope": "kdl",

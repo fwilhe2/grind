@@ -68,9 +68,9 @@ pub enum Template {
     /// A script that builds a spreadsheet out of the data beside it, with its tests
     #[default]
     Generator,
-    /// A spreadsheet written by hand, as a projection
+    /// A spreadsheet written by hand, as a .grind file
     Sheet,
-    /// A text document written by hand, as a projection
+    /// A text document written by hand, as a .grind file
     Text,
     /// The editor and repository files, and no starter
     None,

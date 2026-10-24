@@ -1202,16 +1202,8 @@ struct Cli {
     dry_run: bool,
 }
 
-/// The first level: which application, or a verb that needs no application.
-///
-/// A suite-level verb is one whose answer does not depend on knowing what is *in* the
-/// document — what kind it is, and moving it between the three physical forms. Everything else
-/// belongs to an app, because "set a cell" and "insert a paragraph" are not the same verb with
-/// a different noun (doc/suite.md, "The CLI").
-///
-/// `build` is here for the other reason: it has no document to read at all. A script says which
-/// kind it built, so there is nothing for a `grind sheet build` to know that `grind build` does
-/// not (doc/dsl.md §4).
+/// The first level: an application, or a verb that needs none — one that reads the document's kind
+/// from the file, or `build`, which has no document to read.
 #[derive(Subcommand)]
 enum Top {
     /// Spreadsheets — cells, formulas, sheets, number formats
@@ -1223,8 +1215,9 @@ enum Top {
     /// Text documents — paragraphs, headings, lists, outlines
     ///
     /// Blocks are addressed by position (p12), by an offset within one (p12+40), by a range
-    /// (p12:p20), by a bookmark (#intro) or by outline path (§2.1.3, or s2.1.3). The last two
-    /// survive edits elsewhere in the document, which p12 does not.
+    /// (p12:p20), by a bookmark (#intro) or by outline path (§2.1.3, or s2.1.3). Bookmarks and
+    /// outline paths keep pointing at the same place after edits elsewhere in the document; p12
+    /// does not.
     Text {
         #[command(subcommand)]
         command: TextCommand,
@@ -1232,16 +1225,13 @@ enum Top {
 
     /// What a document is, and what is in it
     ///
-    /// Works on any ODF document: the kind is read out of the file (the package `mimetype`
-    /// entry, or the flat root's `office:mimetype`) rather than guessed from its name.
+    /// Works on any ODF document; the kind is read from the file, not guessed from its name.
     Info { file: PathBuf },
 
-    // The rules are `doc/dsl.md` §4.3's; the help text says what they are for rather than
-    // where they are written down, because a design document is not a user's reference.
     /// Check a document for problems, whatever kind it is
     ///
-    /// The suite-level twin of `grind sheet lint` and `grind text lint`: the kind is read out
-    /// of the file and the right rules run. Exits non-zero when it found an error.
+    /// Runs the spreadsheet or the text document checks, depending on the file. Exits non-zero
+    /// when it finds an error.
     Lint {
         file: PathBuf,
         /// Report the house-style hints too, which are off by default
@@ -1254,65 +1244,61 @@ enum Top {
 
     /// Print any document as its projection, whatever kind it is
     ///
-    /// The suite-level twin of `grind sheet project` and `grind text project`: the kind is
-    /// read out of the file, so a caller that does not know it first gets the plain-text form
-    /// either way. That caller is usually git — with `*.ods diff=grind` in `.gitattributes` and
-    /// `git config diff.grind.textconv "grind project"`, `git diff` shows a changed package as
-    /// the cells and blocks that changed.
+    /// The projection is the document as plain text — what a `.grind` file holds. Useful for `git
+    /// diff`: with `*.ods diff=grind` in `.gitattributes` and `git config diff.grind.textconv
+    /// "grind project"`, a diff of a changed document shows the cells and blocks that changed.
     Project {
         file: PathBuf,
-        /// Print the token map instead: one `kind<TAB>start<TAB>end` line per token
+        /// Print what each stretch of the text is instead: one `kind<TAB>start<TAB>end` line per
+        /// token
         #[arg(long, conflicts_with = "anchors")]
         tokens: bool,
-        /// Print the span map instead: one `address<TAB>line<TAB>start<TAB>end` line per anchor
+        /// Print where each cell or block is instead: one `address<TAB>line<TAB>start<TAB>end`
+        /// line per address
         #[arg(long)]
         anchors: bool,
-        /// With --anchors: the span map of the file as written, not of the projection grind writes
+        /// With --anchors, for a .grind file: positions in the file as written
         ///
-        /// A .grind somebody wrote has comments and alignment of their own, so its lines are
-        /// not the ones `project` prints. This is where each address is in the file itself —
-        /// what an editor needs to find a cell in the text it has open.
+        /// A .grind somebody wrote has its own comments and alignment, so its lines are not the
+        /// ones `project` prints. This gives each address's place in the file itself.
         #[arg(long, requires = "anchors")]
         as_read: bool,
     },
 
-    // `doc/dsl.md` layer 1.
     /// Build a document from a script
     ///
-    /// The script returns a document and `grind build` writes it; it is not a document itself,
-    /// does not open one, and nothing ever writes one. The output's extension picks the form,
-    /// as it does for `convert`, and the *kind* comes from what the script returned rather than
-    /// from the name.
+    /// Runs a Rhai script that returns a document, and writes it. The output's extension picks the
+    /// file format, as for `convert`; whether it is a spreadsheet or a text document comes from
+    /// the script.
     ///
-    /// A script has no filesystem, no network, no clock and no randomness, and is bounded: the
-    /// same source produces the same bytes on every machine, and one that does not terminate is
-    /// an error with a line number. This is the only verb in the suite that runs one.
+    /// A script cannot touch the filesystem (beyond reading JSON data, see --data), the network,
+    /// the clock or randomness, so the same script builds the same file on every machine. One that
+    /// runs too long stops with an error and a line number.
     Build {
         /// The script to run
         script: PathBuf,
-        /// Where to write the document it built — .ods/.fods, .odt/.fodt, or .grind. A script
-        /// that ends with a **map of names to documents** (one letter per recipient) is a
-        /// series, and this is then a directory: `DIR/<name>.<ext>` for each, `fodt` or `fods`
-        /// unless `--as` says otherwise
+        /// Where to write the document: .ods/.fods, .odt/.fodt or .grind. A script that returns a
+        /// map of names to documents (one letter per recipient, say) writes a series, and this is
+        /// then a directory holding `<name>.<ext>` for each — `fodt` or `fods` unless --as says
+        /// otherwise
         #[arg(short, long, value_name = "PATH")]
         out: PathBuf,
-        /// What to write a series as: fodt, odt, fods, ods, grind — or `pdf` for letters, set on
-        /// the bundled fonts only, so the same script writes the same PDFs on any machine
+        /// What to write a series as: fodt, odt, fods, ods, grind — or pdf for text documents, set
+        /// in the bundled fonts only so the PDFs come out the same on any machine
         #[arg(long = "as", value_name = "EXT")]
         series_as: Option<String>,
         /// Directory the script may read data from, instead of its own
         ///
-        /// A script reads JSON and nothing else, from inside this one directory and nowhere
-        /// else: `..` and an absolute path are refused, and so is a symlink pointing out. The
-        /// default is the directory the script itself is in, so `json("prices.json")` means the
-        /// file beside it.
+        /// A script reads JSON files from inside this directory only: `..`, absolute paths and
+        /// symlinks pointing out are refused. By default it is the script's own directory, so
+        /// `json("prices.json")` reads the file beside it.
         #[arg(long, value_name = "DIR")]
         data: Option<PathBuf>,
-        /// Skip the document-wide recalculation at the end
+        /// Skip the recalculation at the end
         ///
-        /// Each formula is answered where it lands, so this only matters for one that reads a
-        /// cell the script fills later — which is then left with the value it had at the time,
-        /// and reported as stale exactly as an edit would be.
+        /// Each formula is calculated where it is written, so this matters only for a formula that
+        /// reads a cell the script fills later: it keeps the value it had then and is reported as
+        /// stale.
         #[arg(long)]
         no_recalc: bool,
     },
@@ -1334,44 +1320,39 @@ enum Top {
 
     /// Print what an editor needs to help you write a script or a projection
     ///
-    /// Every function `grind build` gives a script, with its parameters, its types and its
-    /// documentation, as a Rhai definition file. Redirect it beside your scripts and an editor
-    /// that speaks Rhai offers completion and hover for all of it:
+    /// Every function a script can call, with its parameters, types and documentation, as a Rhai
+    /// definition file. Save it beside your scripts and an editor that understands Rhai offers
+    /// completion and hover:
     ///
     ///   grind definitions > grind.d.rhai
     ///
-    /// Rhai's own standard library is left out: an editor already knows those, and forty
-    /// functions buried in six hundred is not a reference anybody reads.
+    /// Rhai's own standard library is left out; editors already know it.
     Definitions {
         /// Print VS Code snippets instead of a Rhai definition file
         ///
-        /// The same vocabulary, from the same source, in the form an editor reads without a
-        /// language server:
+        /// The same functions, as snippets VS Code offers without a language server:
         ///
         ///   grind definitions --snippets > .vscode/grind.code-snippets
-        ///
-        /// See doc/editor-setup.md for which of the two an editor of yours can use.
         #[arg(long)]
         snippets: bool,
-        /// Print VS Code snippets for the projection's nodes instead — a `.grind`, not a script
+        /// Print VS Code snippets for writing a .grind file instead
         ///
-        /// Every node of both grammars, spreadsheet and text, with its arguments as tab stops:
+        /// Every node of the spreadsheet and text projections, with its arguments as tab stops:
         ///
         ///   grind definitions --projection > .vscode/grind-projection.code-snippets
         ///
-        /// Always snippets, so `--snippets` beside it changes nothing.
+        /// Always snippets, so --snippets beside it changes nothing.
         #[arg(long)]
         projection: bool,
     },
 
     /// Run the language server, for an editor, over stdin and stdout
     ///
-    /// For .grind files: diagnostics on the right line, hover over a cell for its formula and
-    /// what it shows, the value every formula computes shown beside it (never written), go to
+    /// For .grind files: problems on the right line, hover over a cell for its formula and what it
+    /// shows, the value each formula computes shown beside it (never written into the file), go to
     /// a name's definition, and completion of nodes, functions and names. For .rhai scripts:
-    /// completion and hover from the whole vocabulary, and syntax errors as you type — a
-    /// script is compiled, never run. Point an editor's language client at `grind lsp`;
-    /// doc/editor-setup.md says how for each.
+    /// completion and hover for every function, and syntax errors as you type; the script is
+    /// checked, never run. Point your editor's language client at `grind lsp`.
     Lsp,
 
     /// Set up a directory for writing scripts and projections in an editor
@@ -1394,8 +1375,8 @@ enum Top {
         /// The directory to set up, created if missing
         #[arg(default_value = ".")]
         dir: PathBuf,
-        /// The starter to write — `generator` when none is named and the directory is new; none
-        /// when it is named and the directory was set up before
+        /// The starter to write: `generator` by default in a new directory, none in one set up
+        /// before
         #[arg(long, value_enum)]
         template: Option<init::Template>,
         /// Rewrite only the generated vocabulary files — snippets and grind.d.rhai — when this
@@ -1409,9 +1390,8 @@ enum Top {
 
     /// Print the third-party components grind is built from, and their licences
     ///
-    /// Every crate compiled into any of the suite's programs, the fonts it ships and the
-    /// standard library, with each one's licence text as its authors wrote it — the same list
-    /// every window's About shows (doc/third-party.md).
+    /// Every library compiled into grind's programs, the fonts it ships and the Rust standard
+    /// library, each with its licence text — the same list every window's About shows.
     #[command(visible_alias = "licenses")]
     Licences {
         /// One line per component instead: name, version, licence and where it comes from
@@ -1421,9 +1401,9 @@ enum Top {
 
     /// Print your personal dictionary, or add a word to it or remove one
     ///
-    /// The words every spelling check accepts, in every document and every language, kept one
-    /// per line in $XDG_CONFIG_HOME/grind/words — yours, never written into a document
-    /// (doc/spelling.md, decision 5). The same list every window's Personal Dictionary shows.
+    /// The words every spelling check accepts, in every document and language, one per line in
+    /// $XDG_CONFIG_HOME/grind/words. They are yours and never written into a document; every
+    /// window's Personal Dictionary shows the same list.
     #[cfg(feature = "spell")]
     Words {
         /// Add this word
@@ -1434,25 +1414,20 @@ enum Top {
         remove: Option<String>,
     },
 
-    /// Convert between the three physical forms — package, flat file and .grind
+    /// Convert between file formats — package, flat file and .grind
     ///
-    /// The form comes from the output extension: .ods or .odt for the package, .fods or
-    /// .fodt for the flat file, .grind for the projection. Never between document *kinds*: a
-    /// spreadsheet does not become a text document by being written differently.
+    /// The format comes from the output extension: .ods or .odt for the package (a zip), .fods or
+    /// .fodt for one flat XML file, .grind for the projection. A spreadsheet stays a spreadsheet
+    /// and a text document a text document.
     ///
-    /// The projection (.grind) is a form like the other two rather than an export: it is
-    /// bijective with the *model*, for both kinds, so converting out to it and back returns
-    /// the document this build understands. What it does not understand is not in the file —
-    /// but that is true of every conversion here, because the original bytes are kept only
-    /// when the form does not change.
+    /// Converting to a .grind and back gives the same document as far as grind understands it;
+    /// anything grind does not understand is left out of the .grind, as it is from any conversion.
+    /// The original bytes are kept only when the format does not change.
     Convert { file: PathBuf, out: PathBuf },
 }
 
-/// The formats `sheet format` can ask the core for — [`numfmt::preset`]'s vocabulary, with
-/// `general` for "no format at all" and `datetime` for §4.3.4's date-carrying-a-time.
-///
-/// Dates and times are the ISO spellings. A locale-specific one is a `Format` the core can
-/// hold and nothing can yet ask for; see `numfmt`.
+/// The formats `sheet format` offers: `numfmt::preset`'s vocabulary, plus `general` for no format
+/// and `datetime` for a date with a time.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum Style {
     General,
@@ -1466,8 +1441,7 @@ enum Style {
     Text,
 }
 
-/// `fo:text-align`, in the spelling a person uses. ODF's own values are writing-direction
-/// relative — `start` and `end`, not left and right — and this is the translation.
+/// `fo:text-align` in the words a person uses; ODF's own values are `start` and `end`.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum Align {
     Left,
@@ -1483,27 +1457,19 @@ enum VAlign {
     Bottom,
 }
 
-/// `grind text` — the word processor.
-///
-/// Deliberately narrower than `grind sheet`, and `doc/text-core.md` is why: the scope line for
-/// a text document was invented rather than extracted from a normative tier, so every verb
-/// here has to earn its place rather than mirror one that exists for cells.
+/// `grind text`: deliberately narrower than `grind sheet` (`doc/text-core.md`).
 #[derive(Subcommand)]
 enum TextCommand {
     /// Convert a Word document into an ODF text document
     ///
-    /// One way in: reading `.docx` produces an ODF document, and writing Word is
-    /// `doc/not-doing.md` §1 and stays there. Nothing is fetched and no macro runs.
-    ///
-    /// The result is an ordinary document: every other command operates on *that*, which is
-    /// why `grind text view letter.docx` deliberately does not exist. One read path per
-    /// format, chosen explicitly.
+    /// Reads `.docx`; grind does not write Word documents. Nothing is fetched and no macro runs.
+    /// The result is an ordinary ODF document, which every other command then works on.
     #[cfg(feature = "docx")]
     Import {
         /// The Word document to read
         input: PathBuf,
-        /// Where to write the ODF document. The form comes from the extension, flat by
-        /// default (`doc/flat-first.md`).
+        /// Where to write the ODF document: .odt for a package, anything else (.fodt by
+        /// convention) for one flat XML file
         output: PathBuf,
         /// Overwrite the output if it already exists
         #[arg(long)]
@@ -1514,12 +1480,11 @@ enum TextCommand {
         strict: bool,
     },
 
-    // The flat default is `doc/flat-first.md`'s.
     /// Create an empty document
     ///
-    /// The physical form comes from the extension, and flat XML is the default: .ods and .odt
-    /// write a zip, anything else — including a name with no extension at all — writes one XML
-    /// file that git diff can read.
+    /// The file format comes from the extension: .odt writes a zip, .grind the projection, and
+    /// anything else — including a name with no extension — one flat XML file that git diff can
+    /// read.
     New {
         file: PathBuf,
         /// Overwrite the file if it already exists
@@ -1535,27 +1500,21 @@ enum TextCommand {
         /// Prefix each line with its address and kind
         #[arg(long)]
         marks: bool,
-        // `doc/view-modes.md` §3.6.
-        /// Show where each bookmark anchors, inline
+        /// Show where each bookmark sits, inline
         ///
-        /// A bookmark is the named-range analogue and it is otherwise invisible: it
-        /// contributes no characters, so nothing a reader sees says it is there. Not with
-        /// --width: a mark is a position in the block, and wrapping is a separate question
-        /// about lines.
+        /// A bookmark adds no characters, so nothing in the text shows it otherwise. Cannot be
+        /// combined with --width.
         #[arg(long, conflicts_with = "width")]
         names: bool,
-        /// Wrap at this many characters, the way a shell would at its own width
+        /// Wrap at this many characters
         #[arg(long, value_name = "COLUMNS")]
         width: Option<u32>,
     },
 
-    // Answerable here at all only because line layout lives in the core (`doc/text-layout.md`,
-    // Path C).
     /// Move a caret by lines, or to the ends of its line, and print where it lands
     ///
-    /// Down-arrow, Up-arrow, Home and End — from a script. Every one of them is defined in
-    /// terms of a *line*, so every one needs a width; the CLI measures one unit per character,
-    /// which is why `--width 40` means forty characters.
+    /// Down-arrow, Up-arrow, Home and End, from a script. Lines depend on a width, counted here in
+    /// characters: `--width 40` means forty.
     Caret {
         file: PathBuf,
         /// Where the caret is now, e.g. p3+12, #intro+5 or §2.1
@@ -1583,7 +1542,7 @@ enum TextCommand {
 
     /// Replace a block's text, keeping its kind and its style
     ///
-    /// Bookmarks on the block are kept: an anchor is a position, not content.
+    /// Bookmarks on the block are kept.
     Set {
         file: PathBuf,
         /// Block address, e.g. p3, #intro or §2.1
@@ -1595,14 +1554,13 @@ enum TextCommand {
 
     /// Insert text at a caret, without disturbing the rest of the block
     ///
-    /// What typing does. `set` replaces a whole block, which is what a script wants; this is
-    /// what a cursor wants, and the CLI has it because rule 4 says a shell may not have a verb
-    /// the CLI does not. The text takes the formatting of the run at the caret.
+    /// What typing does, where `set` replaces a whole block. The text takes the formatting of the
+    /// text at the caret.
     ///
-    /// `--markdown` reads the notation as it goes: `**bold**` becomes bold and its markers go,
-    /// `*italic*`, `__underline__`, `~~struck~~` and `` `code` `` likewise, `# ` at the front
-    /// of a block makes it a heading and ``` fences a code paragraph. One undo step for the
-    /// whole line, and the same reading every shell does.
+    /// With --markdown, the notation is read as it is typed: `**bold**` becomes bold and its
+    /// markers go, as do `*italic*`, `__underline__`, `~~struck~~` and `` `code` ``; `# ` at the
+    /// front of a block makes it a heading, and ``` fences a code paragraph. One undo step for the
+    /// whole text.
     Type {
         file: PathBuf,
         /// Where it goes, e.g. p3+12 — an address with no offset means the front of its block
@@ -1617,14 +1575,12 @@ enum TextCommand {
 
     /// Insert a table, or print the one at an address
     ///
-    /// A table in a text document is a grid of cells, and a cell holds *blocks* — the same
-    /// paragraphs, headings and lists a body holds (rng:16126), which is why every other verb
-    /// here works inside one unchanged: `p12` is the twelfth block whether it is in a table or
-    /// not. Inserting one puts an empty paragraph in every cell, in a single undo step.
+    /// A cell of a table holds blocks — paragraphs, headings, lists — so every other command works
+    /// inside a table unchanged: `p12` is the twelfth block whether it is in a table or not. A new
+    /// table has an empty paragraph in every cell, inserted in one undo step.
     ///
-    /// What it does not do: column widths, borders and merged cells. The model carries a span
-    /// it reads from a file and writes back, and nothing here creates one
-    /// (`doc/text-core.md`).
+    /// Column widths, borders and merged cells cannot be set; ones a document already has are
+    /// kept.
     Table {
         file: PathBuf,
         /// Where it goes, e.g. p3 — omit to append to the end of the document
@@ -1646,15 +1602,14 @@ enum TextCommand {
         name: Option<String>,
     },
 
-    /// Import CommonMark into the document — the word processor's `import-csv`
+    /// Import Markdown (CommonMark) into the document
     ///
-    /// Read by `pulldown-cmark`: headings, paragraphs, lists (nested), bold, italic,
-    /// strikethrough, `code`, links, fenced code, pipe tables and pictures become what they are
-    /// in the document. A picture is embedded from a `data:` URI or from a relative path beside
-    /// the markdown file — never an absolute path or a URL — and is its alt text when it cannot
-    /// be found. What it has no place for is dropped rather than approximated — rules, raw
-    /// HTML — and an ordered list becomes a bulleted one. One undo entry. `-` reads standard
-    /// input, whose pictures can only be `data:` URIs.
+    /// Headings, paragraphs, nested lists, bold, italic, strikethrough, `code`, links, fenced
+    /// code, pipe tables and pictures become what they are in the document. A picture is embedded
+    /// from a `data:` URI or a relative path beside the Markdown file — never an absolute path or
+    /// a URL — and becomes its alt text when it cannot be found. Rules and raw HTML are dropped,
+    /// and an ordered list becomes a bulleted one. One undo step. `-` reads standard input, whose
+    /// pictures can only be `data:` URIs.
     ImportMd {
         file: PathBuf,
         /// The markdown file, or - for stdin
@@ -1666,16 +1621,15 @@ enum TextCommand {
         after: bool,
     },
 
-    /// Export the document, or a range of it, as CommonMark
+    /// Export the document, or a range of it, as Markdown (CommonMark)
     ///
-    /// Underline, colour, size, bookmarks and a picture's size have no CommonMark spelling and
-    /// are not written. A table's first row becomes its header. Prints to stdout unless `--out`
-    /// names a file.
+    /// Underline, colour, size, bookmarks and picture sizes have no Markdown spelling and are left
+    /// out. A table's first row becomes its header. Prints to stdout unless --out names a file.
     ///
-    /// Each picture is written as a file beside the markdown — `README.md`'s in
-    /// `README.images/`, or `--images-dir` — named for its content, so an unchanged document
-    /// exports to unchanged files. `--inline-images` puts them in the markdown as `data:` URIs
-    /// instead, and is what stdout gets unless `--images-dir` is named.
+    /// Each picture is written as a file beside the Markdown — for `notes.md`, in `notes.images/`,
+    /// or in --images-dir — named for its content, so an unchanged document exports to unchanged
+    /// files. --inline-images puts them in the Markdown as `data:` URIs instead, which is what
+    /// stdout gets unless --images-dir is given.
     ExportMd {
         file: PathBuf,
         /// A block range, e.g. p3:p9 or §2 for a whole section — omit for everything
@@ -1683,7 +1637,7 @@ enum TextCommand {
         /// Write to this file instead of stdout
         #[arg(long)]
         out: Option<PathBuf>,
-        /// Where the pictures go, relative to the markdown file, e.g. doc/img
+        /// Where the pictures go, relative to the Markdown file, e.g. pictures
         #[arg(long, value_name = "DIR", conflicts_with = "inline_images")]
         images_dir: Option<String>,
         /// Put the pictures in the markdown as data: URIs rather than files beside it
@@ -1767,11 +1721,9 @@ enum TextCommand {
 
     /// Insert an image at a caret, from a file on disk
     ///
-    /// One caret position, like a tab: `erase`, `split` and `join` already handle it correctly
-    /// with no change to any of them, because none of them edits *inside* a run that is not
-    /// text. The MIME type is guessed from the file's extension unless `--mime` says otherwise;
-    /// `--width`/`--height` are ODF lengths, e.g. `5cm`, and are optional the way a document's
-    /// own frequently are.
+    /// The image counts as one character position. The MIME type is guessed from the file's
+    /// extension unless --mime gives it; --width and --height are lengths such as `5cm`, and both
+    /// are optional.
     Image {
         file: PathBuf,
         /// Where it goes, e.g. p3+12 — an address with no offset means the front of its block
@@ -1823,25 +1775,25 @@ enum TextCommand {
 
     /// Print the document as its projection — the plain-text form
     ///
-    /// The same text a `.grind` file holds, and the same text a shell's code view shows, from
-    /// the same function. Reading one back needs no verb of its own — the form is sniffed from
-    /// the bytes, so every command here already takes a `.grind`.
+    /// The same text a `.grind` file holds, and what each window's source view shows. Every
+    /// command here also reads a `.grind` file directly.
     Project {
         file: PathBuf,
-        /// Print the token map instead: one `kind<TAB>start<TAB>end` line per token
+        /// Print what each stretch of the text is instead: one `kind<TAB>start<TAB>end` line per
+        /// token
         #[arg(long, conflicts_with = "anchors")]
         tokens: bool,
-        /// Print the span map instead: one `address<TAB>line<TAB>start<TAB>end` line per anchor
+        /// Print where each block is instead: one `address<TAB>line<TAB>start<TAB>end` line per
+        /// address
         ///
-        /// A block answers to every name it can be addressed by, so one line may be several
-        /// rows: p12, #bookmark and §2.1.3 all anchor the same paragraph.
+        /// A block appears once for every way it can be addressed, so one line may be several
+        /// rows: p12, #bookmark and §2.1.3 can all name the same paragraph.
         #[arg(long)]
         anchors: bool,
-        /// With --anchors: the span map of the file as written, not of the projection grind writes
+        /// With --anchors, for a .grind file: positions in the file as written
         ///
-        /// A .grind somebody wrote has comments and alignment of their own, so its lines are
-        /// not the ones `project` prints. This is where each address is in the file itself —
-        /// what an editor needs to find a cell in the text it has open.
+        /// A .grind somebody wrote has its own comments and alignment, so its lines are not the
+        /// ones `project` prints. This gives each address's place in the file itself.
         #[arg(long, requires = "anchors")]
         as_read: bool,
     },
@@ -1874,8 +1826,8 @@ enum TextCommand {
 
     /// Move a range of blocks so that it starts at an address
     ///
-    /// The whole point of §2.1.3 addressing: `grind text move report.fodt §3.2 §1` relocates a
-    /// section, and the section's extent is computed from outline levels.
+    /// With outline addresses this moves whole sections: `grind text move report.fodt §3.2 §1`
+    /// moves section 3.2, however long, to before section 1.
     Move {
         file: PathBuf,
         /// Blocks to move, e.g. p3:p7 — or a heading address, which moves its whole section
@@ -1908,9 +1860,6 @@ enum TextCommand {
     },
 
     /// Print every heading, its level and the address that finds it again
-    ///
-    /// The spreadsheet's `calculations` for prose: a long document hides its shape behind its
-    /// text, and the only way to see it is a list.
     Outline {
         file: PathBuf,
         /// Only headings whose text or address contains this
@@ -1920,11 +1869,10 @@ enum TextCommand {
 
     /// Set how a span of characters looks — bold, italic, a font, a size
     ///
-    /// The *direct* formatting, which is what a toolbar's B and I buttons write. Replaces
-    /// rather than adds, so `grind text format p3` with no options makes that paragraph plain
-    /// again — and `--show` is how a shell reads the current formatting first, which is what
-    /// makes "bold as well" one command after another. Named character styles are untouched:
-    /// they are the document's own vocabulary and `grind text style` is where they live.
+    /// Direct formatting, as a toolbar's B and I buttons apply it. It replaces rather than adds,
+    /// so `grind text format p3` with no options makes that paragraph plain again; use --show
+    /// first to read the current formatting. Named character styles are left alone (see `grind
+    /// text style`).
     Format {
         file: PathBuf,
         /// Characters, e.g. p3+12:p3+20 — or a bare address for a whole block
@@ -1975,14 +1923,11 @@ enum TextCommand {
         remove: bool,
     },
 
-    // `doc/dsl.md` §4.3's rules.
     /// Check the document for problems
     ///
-    /// The word processor's half: a heading level skipped, a link to a bookmark nothing
-    /// declares, a style name the document never declares, and anything a `.grind` of it would
-    /// not carry. Nothing is written.
-    ///
-    /// Exits non-zero when it found an error, so CI can gate on it.
+    /// A skipped heading level, a link to a bookmark that does not exist, a style name the
+    /// document never declares, and anything a `.grind` of it would leave out. Nothing is written.
+    /// Exits non-zero when it finds an error.
     Lint {
         file: PathBuf,
         /// Report the house-style hints too, which are off by default
@@ -1996,10 +1941,8 @@ enum TextCommand {
         rules: bool,
     },
 
-    /// Print every block carrying a style of its own
-    ///
-    /// "Why is this paragraph different?" — answered in one place, which is the thing no
-    /// mainstream word processor does.
+    /// Print every block carrying a style of its own — why one paragraph looks different from the
+    /// others
     Formatting { file: PathBuf },
 
     /// Print every occurrence of some text, with the address of each
@@ -2023,11 +1966,11 @@ enum TextCommand {
 
     /// Print every misspelt word, with its address
     ///
-    /// A word any dictionary knows is right (doc/spelling.md), unless --language names one, which
-    /// is then the only one checked. Otherwise the document's own language — the one it states,
-    /// else the one whose dictionary knows most of its words — is asked first and suggests;
-    /// which it was goes to stderr. Words in your own list ($XDG_CONFIG_HOME/grind/words, one
-    /// per line) are accepted; --add puts one there. Nothing is written to the document.
+    /// A word any of the dictionaries knows is accepted, unless --language names one, which is
+    /// then the only one checked. Suggestions come from the document's own language — the one it
+    /// states, else the one whose dictionary knows most of its words — which is printed to stderr.
+    /// Words in your personal dictionary ($XDG_CONFIG_HOME/grind/words, one per line) are
+    /// accepted; --add puts one there. Nothing is written to the document.
     #[cfg(feature = "spell")]
     Spell {
         #[arg(required_unless_present = "add")]
@@ -2076,8 +2019,8 @@ enum TextCommand {
 
     /// Put a bookmark on a block, list them, or delete one
     ///
-    /// A bookmark is the named-range analogue: an anchor that moves with the text, so #intro
-    /// keeps meaning the same place after an edit above it.
+    /// A bookmark moves with the text, so #intro keeps meaning the same place after an edit above
+    /// it.
     Name {
         file: PathBuf,
         /// The bookmark name; omit to list them all
@@ -2095,21 +2038,17 @@ enum TextCommand {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Convert an Excel workbook into an ODF document
+    /// Convert an Excel workbook into an ODF spreadsheet
     ///
-    /// One way in: reading `.xlsx` and `.xlsm` produces an ODF document, and writing Excel is
-    /// `doc/not-doing.md` §1 and stays there. Nothing is evaluated — Excel's cached values
-    /// are carried verbatim, and recalculating is your decision (`grind sheet recalc`).
-    ///
-    /// The result is an ordinary document: every other command operates on *that*, which is
-    /// why `grind sheet view book.xlsx` deliberately does not exist. One read path per
-    /// format, chosen explicitly.
+    /// Reads `.xlsx` and `.xlsm`; grind does not write Excel files. Nothing is calculated: Excel's
+    /// cached values are kept as they are, and `grind sheet recalc` recalculates when you want it
+    /// to. The result is an ordinary ODF document, which every other command then works on.
     #[cfg(feature = "xlsx")]
     Import {
         /// The workbook to read
         input: PathBuf,
-        /// Where to write the ODF document. The form comes from the extension, flat by
-        /// default (`doc/flat-first.md`).
+        /// Where to write the ODF document: .ods for a package, anything else (.fods by
+        /// convention) for one flat XML file
         output: PathBuf,
         /// Overwrite the output if it already exists
         #[arg(long)]
@@ -2121,12 +2060,11 @@ enum Command {
         strict: bool,
     },
 
-    // The flat default is `doc/flat-first.md`'s.
     /// Create an empty document
     ///
-    /// The physical form comes from the extension, and flat XML is the default: .ods and .odt
-    /// write a zip, .grind writes the projection, and anything else — including a name with no
-    /// extension at all — writes one XML file that git diff can read.
+    /// The file format comes from the extension: .ods writes a zip, .grind the projection, and
+    /// anything else — including a name with no extension — one flat XML file that git diff can
+    /// read.
     New {
         file: PathBuf,
         /// Overwrite the file if it already exists
@@ -2178,13 +2116,11 @@ enum Command {
         raw: bool,
     },
 
-    // The overlays are `doc/view-modes.md`'s.
     /// Print a rectangle of values, tab-separated
     ///
-    /// The three overlay flags print the document's derived answers instead of the
-    /// values: what each cell *is*, what it is *called*, and what computes it. None of them
-    /// changes the document — reading a file this way leaves its bytes alone, which is the
-    /// feature's whole promise. `--format json` carries every column at once.
+    /// --roles, --names and --formulas print something else about each cell instead: what kind of
+    /// cell it is, which name refers to it, and the formula that computes it. None of them changes
+    /// the file. `--format json` carries every column at once.
     View {
         file: PathBuf,
         /// Range to print; defaults to everything the sheet uses
@@ -2209,45 +2145,36 @@ enum Command {
         formulas: bool,
     },
 
-    // `doc/dsl.md` §6.1: this is the CLI twin of a shell's code view, from the same function.
     /// Print the document as its projection — the plain-text form
     ///
-    /// The same text a `.grind` file holds, and the same text a shell's code view shows.
-    /// Reading a `.grind` back needs no verb of its own — the form is sniffed from the bytes,
-    /// so every command here already takes one.
+    /// The same text a `.grind` file holds, and what each window's source view shows. Every
+    /// command here also reads a `.grind` file directly.
     Project {
         file: PathBuf,
-        /// Print the token map instead: one `kind<TAB>start<TAB>end` line per token
+        /// Print what each stretch of the text is instead: one `kind<TAB>start<TAB>end` line per
+        /// token
         ///
-        /// What a shell colours from. Highlighting comes from the writer rather than from a
-        /// highlighter, and this is that map, readable.
+        /// What an editor would colour the text by.
         #[arg(long, conflicts_with = "anchors")]
         tokens: bool,
-        /// Print the span map instead: one `address<TAB>line<TAB>start<TAB>end` line per anchor
-        ///
-        /// Which cell each piece of the text is — the correspondence a split view draws, and
-        /// the thing every later IDE feature is built on.
+        /// Print where each cell is instead: one `address<TAB>line<TAB>start<TAB>end` line per
+        /// address
         #[arg(long)]
         anchors: bool,
-        /// With --anchors: the span map of the file as written, not of the projection grind writes
+        /// With --anchors, for a .grind file: positions in the file as written
         ///
-        /// A .grind somebody wrote has comments and alignment of their own, so its lines are
-        /// not the ones `project` prints. This is where each address is in the file itself —
-        /// what an editor needs to find a cell in the text it has open.
+        /// A .grind somebody wrote has its own comments and alignment, so its lines are not the
+        /// ones `project` prints. This gives each address's place in the file itself.
         #[arg(long, requires = "anchors")]
         as_read: bool,
     },
 
-    // `doc/dsl.md` §4.3's rules.
     /// Check the document for problems
     ///
-    /// The rules are about *documents*, which is why they are here and not in a third-party
-    /// linter: a cached value that disagrees with its formula, a formula naming a sheet that is
-    /// gone or reading a cell that is empty, and — the row that earns the feature — anything a
-    /// `.grind` of this document would not carry, by name and by address. Nothing is written:
-    /// linting a file leaves its bytes exactly as they were.
-    ///
-    /// Exits non-zero when it found an error, so CI can gate on it. Warnings and hints do not.
+    /// A cached value that disagrees with its formula, a formula naming a sheet that is gone or
+    /// reading a cell that is empty, and anything a `.grind` of the document would leave out, each
+    /// with its address. Nothing is written. Exits non-zero when it finds an error; warnings and
+    /// hints do not.
     Lint {
         file: PathBuf,
         /// Report the house-style hints too, which are off by default
@@ -2468,11 +2395,9 @@ enum Command {
 
     /// Set how a cell or range looks
     ///
-    /// Replaces the cell's styling rather than adding to it, so `sheet style A1` with no
-    /// options makes A1 plain again — and `--show` is how a shell reads the current styling
-    /// first, which is what makes "bold as well" one command after another. Fonts are
-    /// deliberately absent: LibreOffice rewrites a font family into a reference nothing here
-    /// can follow yet.
+    /// Replaces the cell's styling rather than adding to it, so `sheet style A1` with no options
+    /// makes A1 plain again; use --show first to read the current styling. The font family cannot
+    /// be set.
     Style {
         file: PathBuf,
         /// Cell address or range, e.g. A1:D1 or Data.B:B
@@ -2522,10 +2447,10 @@ enum Command {
         rotate: Option<String>,
     },
 
-    /// Set the width of a column or a run of columns (§5.4)
+    /// Set the width of a column or a run of columns
     ///
-    /// With no length, prints the width of every sized column in the range — nothing at all
-    /// when they are all at the shell's default, which is what a script tests for.
+    /// With no length, prints the width of every column in the range that has one of its own —
+    /// nothing when all are at the default.
     Width {
         file: PathBuf,
         /// A column or a run of them: B, B:D, or Data.B:D
@@ -2537,9 +2462,9 @@ enum Command {
         clear: bool,
     },
 
-    /// Set the height of a row or a run of rows (§5.4)
+    /// Set the height of a row or a run of rows
     ///
-    /// The twin of `width`, addressed by row number: 3, 3:7, or Data.3:7.
+    /// Like `width`, addressed by row number: 3, 3:7, or Data.3:7.
     Height {
         file: PathBuf,
         /// A row or a run of them: 3, 3:7, or Data.3:7
@@ -2553,23 +2478,21 @@ enum Command {
 
     /// Fit columns to their widest text and give rows back to their content
     ///
-    /// `sheet fit book.ods B:D` makes each column as wide as the widest thing it shows, measured
-    /// in the cell's own face; `sheet fit book.ods 3:7` takes those rows' own heights away, so
-    /// each grows to hold what is in it. With no tracks, every sheet is fitted whole — every
-    /// column in use and every row — which is the windows' *Fit Content to Cells*. One undo step
-    /// per sheet. Measured with the bundled Liberation faces, the metric twins of the fonts a
-    /// spreadsheet is normally set in.
+    /// `sheet fit book.ods B:D` makes each column as wide as the widest thing it shows; `sheet fit
+    /// book.ods 3:7` removes those rows' fixed heights, so each grows to hold what is in it. With
+    /// no columns or rows named, fits every sheet whole — every column in use and every row — like
+    /// the windows' Fit Content to Cells. One undo step per sheet. Text is measured in the
+    /// Liberation fonts grind ships, which match the widths of the usual spreadsheet fonts.
     Fit {
         file: PathBuf,
         /// A column or a run of them (B, B:D, Data.B:D), or a row or a run (3, 3:7, Data.3:7)
         tracks: Option<String>,
     },
 
-    /// Hide — or with `--unhide`, show — a column or a row, or a run of them (§5.4)
+    /// Hide — or with --unhide, show — a column or a row, or a run of them
     ///
-    /// `sheet hide book.ods B:D` hides columns B through D; `sheet hide book.ods 3:7` hides
-    /// rows 3 through 7 — the same spec `width`/`height` take, disambiguated the same way.
-    /// With no track, prints every column and row hidden by hand, across every sheet.
+    /// `sheet hide book.ods B:D` hides columns B through D; `sheet hide book.ods 3:7` hides rows 3
+    /// through 7. With nothing named, prints every column and row hidden by hand, on every sheet.
     Hide {
         file: PathBuf,
         /// A column or a run of them (B, B:D, Data.B:D), or a row or a run (3, 3:7, Data.3:7)
@@ -2662,7 +2585,7 @@ enum Command {
         border: Option<String>,
     },
 
-    /// Define, redefine, rename, inline or delete a named range or expression (§5.11)
+    /// Define, redefine, rename, inline or delete a named range or expression
     ///
     /// With no target, prints what the name stands for. `sheet info` lists them all.
     Name {
@@ -2684,12 +2607,11 @@ enum Command {
         inline: bool,
     },
 
-    /// Filter rows by a set of values per column (§9.4)
+    /// Filter rows by a set of values per column
     ///
-    /// `sheet filter book.ods A1:F12 C=Desk C=Lamp` keeps the rows whose column C holds one
-    /// of those values and hides the rest. A value is matched against the cell's display
-    /// text, exactly; `C=` keeps the empty ones. With no range, prints each sheet's filter
-    /// and the rows it hides.
+    /// `sheet filter book.ods A1:F12 C=Desk C=Lamp` keeps the rows whose column C holds one of
+    /// those values and hides the rest. A value is matched exactly against what the cell displays;
+    /// `C=` keeps the empty ones. With no range, prints each sheet's filter and the rows it hides.
     Filter {
         file: PathBuf,
         /// The filtered range, header row included: A1:F12, or Data.A1:F12. With --clear,
@@ -2705,15 +2627,13 @@ enum Command {
         no_header: bool,
     },
 
-    /// Format a range as a table: autofilter, alternating row shading, an optional totals
-    /// row, and an automatically named range, all in one undo step
+    /// Format a range as a table: autofilter, alternating row shading, an optional totals row, and
+    /// a named range, in one undo step
     ///
-    /// `sheet format-table book.ods A1:D12` bands the range, adds dropdown buttons on row 1,
-    /// and names it `Table1` (or the next unused `TableN`). There is no un-format: this is a
-    /// one-shot composite over the filter, style and name mechanisms `sheet filter`,
-    /// `sheet style` and `sheet name` already expose — ODF has no persisted "table" object to
-    /// undo as a unit, the way LibreOffice's own AutoFormat has none either. Prints the name
-    /// it settled on.
+    /// `sheet format-table book.ods A1:D12` bands the range, adds filter buttons on row 1, and
+    /// names it `Table1` (or the next unused `TableN`), printing the name. The result is an
+    /// ordinary filter, styling and name, so there is no un-format: `sheet filter --clear`, `sheet
+    /// style` and `sheet name --delete` undo the parts, or undo the step.
     FormatTable {
         file: PathBuf,
         /// The table's range, header row included: A1:D12, or Data.A1:D12
@@ -2783,9 +2703,8 @@ enum Command {
         /// Read display form and print the stored form
         #[arg(long, conflicts_with = "friendly")]
         from_display: bool,
-        /// Print a read-only, IDE-flavoured rendering: full function names, one argument
-        /// per line past a width, each argument labelled with its parameter. Never parses
-        /// back — this is not a fourth spelling of the formula, only an explanation of one.
+        /// Print it for reading: full function names, one argument per line once it is too wide,
+        /// each argument labelled with its parameter. For reading only; it cannot be typed back in
         #[arg(long)]
         friendly: bool,
         /// With --friendly, keep it on one line however wide it gets — what a formula bar
@@ -2796,12 +2715,12 @@ enum Command {
 
     /// Print every misspelt word in a text cell, with its cell and where in it the word starts
     ///
-    /// Only typed text is checked — never a number, a date or a formula's result — and a word
-    /// any dictionary knows is right (doc/spelling.md), unless --language names one, which is
-    /// then the only one checked. Otherwise the language the document's own locale states, else
-    /// the one whose dictionary knows most of its words, is asked first and suggests; which it
-    /// was goes to stderr. Words in your own list ($XDG_CONFIG_HOME/grind/words) are
-    /// accepted; --add puts one there. Nothing is written to the document.
+    /// Only typed text is checked — never a number, a date or a formula's result. A word any of
+    /// the dictionaries knows is accepted, unless --language names one, which is then the only one
+    /// checked. Suggestions come from the language the document states, else the one whose
+    /// dictionary knows most of its words, which is printed to stderr. Words in your personal
+    /// dictionary ($XDG_CONFIG_HOME/grind/words) are accepted; --add puts one there. Nothing is
+    /// written to the document.
     #[cfg(feature = "spell")]
     Spell {
         #[arg(required_unless_present = "add")]
@@ -2896,7 +2815,7 @@ enum Command {
         filter: Option<String>,
     },
 
-    /// List the OpenFormula functions this build implements
+    /// List the OpenFormula functions grind implements
     Functions {
         /// Print each one's signature, summary and specification section
         #[arg(long)]
@@ -2906,19 +2825,17 @@ enum Command {
         filter: Option<String>,
     },
 
-    // `doc/chart-format.md` is the scope line these three shapes come from.
     /// Add a chart — bar, line or pie
     ///
-    /// `sheet chart-add book.ods --from A1:C5` charts a table, reading it the way the window's
-    /// Insert Chart does: a first row of text names the series, a first column of text, dates
-    /// or a counting sequence names the categories, and the series run down the columns unless
-    /// the figures are wider than they are tall. Any flag below overrides what that read.
+    /// `sheet chart-add book.ods --from A1:C5` charts a table the way the windows' Insert Chart
+    /// does: a first row of text names the series, a first column of text, dates or a counting
+    /// sequence names the categories, and the series run down the columns unless the figures are
+    /// wider than they are tall. Any flag below overrides what that reading gave.
     ///
-    /// Or say it all: `sheet chart-add book.ods --type bar --categories B3:B9 --series C3:C9`
-    /// adds a bar chart of column C, labelled by column B. Repeat `--series` for more than one
-    /// series (a pie's first is the one drawn); each may carry its own name as
-    /// `range=label-range`, e.g. `C3:C9=C2:C2` — `=` rather than a second `:`, since a range
-    /// already has one.
+    /// Or spell it out: `sheet chart-add book.ods --type bar --categories B3:B9 --series C3:C9`
+    /// adds a bar chart of column C, labelled by column B. Repeat --series for more than one
+    /// series (a pie draws the first); each may carry its own name as `range=label-range`, e.g.
+    /// `C3:C9=C2:C2`.
     ChartAdd {
         file: PathBuf,
         /// A table to chart, read the way Insert Chart reads one; `--series` is then optional
@@ -3105,7 +3022,7 @@ enum Command {
     },
 }
 
-/// The three shapes `sheet chart-add --type` takes — `doc/chart-format.md`'s scope line.
+/// The three shapes `sheet chart-add --type` takes (`doc/chart-format.md`).
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum ChartType {
     Bar,
@@ -3146,9 +3063,8 @@ impl From<ChartType> for grind_sheet::ChartKind {
     }
 }
 
-/// The one directory a script may read data from: `--data`, or the one the script is in, which
-/// is what makes `json("prices.json")` mean the file beside it. The walls around it are
-/// `grind_build::Directory`'s, not this file's (doc/dsl.md §2).
+/// The one directory a script may read data from: `--data`, or the script's own. The walls around
+/// it are `grind_build::Directory`'s.
 fn data_root(script: &Path, data: Option<&Path>) -> Result<grind_build::Directory, String> {
     let root = match data {
         Some(dir) => dir.to_path_buf(),
