@@ -2,28 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Reading Word documents — an import filter that produces an ODF text document.
+//! Reading Word documents — an import filter that produces an ODF text document
+//! (`doc/docx-import.md`; measured facts in `doc/docx-format.md`). `grind-xlsx`'s twin, under the
+//! same rules:
 //!
-//! `doc/docx-import.md` is the plan and is normative; `doc/docx-format.md` holds the facts about
-//! the format that had to be measured. It is `grind-xlsx`'s twin for the other application, and
-//! the same rules hold:
-//!
-//! - **One way in, never out.** Writing `.docx` is `doc/not-doing.md` §1 and stays there.
-//!   Reading is a one-way translation at the edge that produces an ODF document, and everything
-//!   downstream is ODF. No Word vocabulary reaches `grind-text` (R1).
-//! - **The XML form only** — Word 2007 onwards (`.docx`, `.docm`, `.dotx`). Not `.doc`, not
-//!   RTF, not Word 2003 XML. **Transitional** is the target; Strict is a namespace table away
+//! - **One way in, never out.** No Word vocabulary reaches `grind-text` (R1).
+//! - **The XML form only** — Word 2007 onwards (`.docx`, `.docm`, `.dotx`), not `.doc`, RTF or
+//!   Word 2003 XML. Transitional is the target; Strict is a namespace table away
 //!   (`grind_ooxml::names`).
-//! - **The report is part of the output.** What a conversion dropped is as important as what it
-//!   carried; see [`Report`].
+//! - **The report is part of the output** ([`Report`]).
 //!
-//! **What is different from the spreadsheet's filter** is where the translation lands. That one
-//! builds a `grind_sheet::Document` through the model's API, because nearly everything a cell
-//! says has a field there. A word-processing document's look lives in named styles, list
-//! styles, a page and its header — which `grind_text` reads and never writes, carrying them out
-//! of the file a document came from instead. So this filter writes that file: one flat ODF text
-//! document ([`emit`]), which `grind_text` then reads like any other (`doc/docx-import.md`,
-//! "Why ODF and not the model").
+//! Unlike the spreadsheet's filter, this one writes ODF rather than a model: one flat text
+//! document ([`emit`]), which `grind_text` then reads like any other.
 //!
 //! ```no_run
 //! let bytes = std::fs::read("letter.docx")?;
@@ -72,13 +62,10 @@ fn find_part(package: &mut Package, seen: &mut Seen) -> Result<String> {
     }
 }
 
-/// Whether these bytes are an OOXML word-processing document.
-///
-/// Sniffed from content, never from the file name, as `grind_core::kind` is: the zip, the main
-/// part found by relationship, and that part's root being `w:document` — a workbook's main part
-/// is found by the same relationship type, so the last question is the one that tells them
-/// apart. An **encrypted** document answers `false` (it is a CFB container); [`import_bytes`]
-/// says so properly.
+/// Whether these bytes are an OOXML word-processing document, sniffed from content: the zip, the
+/// main part found by relationship, and that part's root being `w:document` — a workbook's main
+/// part has the same relationship type, so the root is what tells them apart. An **encrypted**
+/// document answers `false`; [`import_bytes`] says so properly.
 pub fn sniff(bytes: &[u8]) -> bool {
     if !grind_ooxml::package::is_zip(bytes) {
         return false;
@@ -89,10 +76,8 @@ pub fn sniff(bytes: &[u8]) -> bool {
     find_part(&mut package, &mut Seen::default()).is_ok()
 }
 
-/// Read a Word document into the flat ODF text document that says the same thing, and the
-/// report of what that left out.
-///
-/// The bytes are what [`open`] hands a shell; [`import_bytes`] reads them.
+/// Read a Word document into the flat ODF text document that says the same thing, with the report
+/// of what that left out — the bytes [`open`] hands a shell and [`import_bytes`] reads.
 pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
     let mut report = Report::default();
     let mut seen = Seen::default();
@@ -183,9 +168,8 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
     let body = body::page_breaks(body);
     let sections = std::mem::take(&mut ctx.sections);
 
-    // The page is the first section's; every later one is asked whether it differs.
-    // Every section's page is carried, each distinct one a master page of its own
-    // (`emit::write`); what is counted is what a section says that no page style holds.
+    // Every section's page is carried, each distinct one a master page of its own (`emit::write`);
+    // counted is what a section says that no page style holds.
     for section in &sections {
         if section.columns.is_some() {
             ctx.report.drop_one(Dropped::Columns);
@@ -273,10 +257,8 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
     Ok((odf.into_bytes(), report))
 }
 
-/// Read a Word document.
-///
-/// Never fetches anything, never runs a macro, and never fails on a construct it cannot carry:
-/// what it cannot carry is counted in the [`Report`].
+/// Read a Word document. Never fetches anything, never runs a macro, and never fails on a
+/// construct it cannot carry: that is counted in the [`Report`].
 pub fn import_bytes(bytes: &[u8]) -> Result<(grind_text::Document, Report)> {
     let (odf, report) = convert(bytes)?;
     let document = grind_text::read_bytes("import.fodt", &odf)
@@ -284,19 +266,16 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(grind_text::Document, Report)> {
     Ok((document, report))
 }
 
-/// What a **shell** opens: the document imported as a flat ODF text document, ready for
-/// `App::open_bytes` under [`suggested_name`], with the report beside it — `grind_xlsx::open`'s
-/// shape, so a shell's import is the same few lines for either application.
+/// What a **shell** opens: the document as a flat ODF text document, ready for `App::open_bytes`
+/// under [`suggested_name`], with the report — `grind_xlsx::open`'s shape.
 pub fn open(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
     convert(bytes)
 }
 
-/// The name an imported document goes by until it is saved: `letter.docx` becomes
-/// `letter.fodt`, the flat form `doc/flat-first.md` makes every save dialog's default.
+/// The name an imported document goes by until it is saved: `letter.docx` becomes `letter.fodt`.
 ///
-/// **A shell must never save back to the document's own path.** One way in, never out: an
-/// imported document is a new, unsaved ODF document, and writing ODF into a file called `.docx`
-/// would be the one way this filter could destroy a user's data.
+/// **A shell must never save back to the document's own path**: writing ODF into a file called
+/// `.docx` is the one way this filter could destroy a user's data.
 pub fn suggested_name(document: &str) -> String {
     let stem = match document.rsplit_once('.') {
         Some((stem, ext)) if !stem.is_empty() && !ext.contains(['/', '\\']) => stem,

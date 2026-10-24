@@ -5,13 +5,11 @@
 //! `word/numbering.xml` — what makes a paragraph a list item, and what its label looks like
 //! (§17.9).
 //!
-//! Two levels of indirection, both of which a reader has to follow: a paragraph names a
-//! **`w:num`** by `w:numId`, the `w:num` names a **`w:abstractNum`** that holds up to nine
-//! `w:lvl` definitions, and the `w:num` may override any level (`w:lvlOverride`) or restart its
-//! count (`w:startOverride`). The result here is one [`List`] per `numId`, levels resolved, and
-//! `emit.rs` writes each as one ODF `text:list-style` — so a numbered list arrives *numbered* in
-//! the file a save writes and in what LibreOffice shows, even though the text model itself draws
-//! every list item with a bullet (`grind_text::paint::bullet`).
+//! Two levels of indirection: a paragraph names a **`w:num`** by `w:numId`, which names a
+//! **`w:abstractNum`** holding up to nine `w:lvl` definitions, and the `w:num` may override a
+//! level (`w:lvlOverride`) or restart its count (`w:startOverride`). The result is one [`List`]
+//! per `numId`, levels resolved, which `emit.rs` writes as one `text:list-style` — so a numbered
+//! list arrives numbered, in grind and in LibreOffice.
 
 use std::collections::HashMap;
 

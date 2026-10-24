@@ -2,18 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `word/styles.xml` — the document's named styles and its defaults (§17.7), and the theme's
-//! two fonts (`word/theme/theme1.xml`, §20.1.4.1.18) that a style may name instead of a family.
+//! `word/styles.xml` — the named styles and defaults (§17.7), and the theme's two fonts
+//! (`word/theme/theme1.xml`, §20.1.4.1.18) a style may name instead of a family.
 //!
-//! A Word style becomes an ODF **named** style of the same family — paragraph styles
-//! `style:family="paragraph"`, character styles `text` — with `w:basedOn` as
-//! `style:parent-style-name`. That is ODF's own inheritance (rng:12081), so nothing is
-//! flattened: a document whose headings are all `Heading 1` arrives with a `Heading 1` the reader
-//! resolves, a person can see, and LibreOffice lists. `w:docDefaults` is the
-//! `style:default-style` under every chain, as it is under every chain in Word.
+//! A Word style becomes an ODF **named** style of the same family — paragraph styles `paragraph`,
+//! character styles `text` — with `w:basedOn` as `style:parent-style-name`, ODF's own inheritance
+//! (rng:12081). Nothing is flattened: a document's `Heading 1` arrives as a `Heading 1` the reader
+//! resolves and LibreOffice lists. `w:docDefaults` is the `style:default-style` under every chain.
 //!
-//! Table styles are read for what a table *built* from one needs (its borders, cell margins and
-//! fill), since ODF has no table-style family a text table can name; `tables.rs` applies them.
+//! Table styles are read for what a table built from one needs — borders, cell margins and fill —
+//! since ODF has no table-style family a text table can name; `emit.rs` applies them to each
+//! table.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 

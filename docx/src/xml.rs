@@ -2,10 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The tolerant walker (`grind_ooxml::xml`) plus what is this filter's about it: nearly every
-//! element read is WordprocessingML's, and nearly every value is a `w:val` **in the `w:`
-//! namespace** — unlike SpreadsheetML, whose attributes are unprefixed (`doc/docx-format.md`
-//! §1.4). Asking `attrs.plain("val")` of a Word element finds nothing, which is the one mistake
+//! The tolerant walker (`grind_ooxml::xml`), plus this filter's half: nearly every value is a
+//! `w:val` **in the `w:` namespace**, unlike SpreadsheetML's unprefixed attributes
+//! (`doc/docx-format.md` §1.4). `attrs.plain("val")` on a Word element finds nothing — the mistake
 //! every reader of both vocabularies makes once.
 
 pub use grind_ooxml::xml::*;

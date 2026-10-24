@@ -2,26 +2,21 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The story parts — `word/document.xml`'s body, and every header, footer, footnote and endnote,
-//! which hold the same content (§17.3, `EG_BlockLevelElts`) — read into a small intermediate
-//! form that `emit.rs` writes as ODF.
-//!
-//! The intermediate form exists for two reasons that are both about Word rather than ODF:
+//! The story parts — the body, and every header, footer, footnote and endnote, which hold the same
+//! content (§17.3, `EG_BlockLevelElts`) — read into a small intermediate form that `emit.rs`
+//! writes as ODF. The form exists for two reasons, both Word's:
 //!
 //! 1. **Some facts arrive after the content they change.** A section's `w:sectPr` closes it, so
-//!    whether the *next* paragraph starts a page is known only when the section after it is
-//!    read; a hidden bookmark is kept only if some hyperlink later points at it; and a page
-//!    break in the middle of a run splits the paragraph around it. Each is a pass over this
-//!    form rather than a second pass over XML.
-//! 2. **Word's fields are a state machine that crosses elements.** `w:fldChar begin`, the
-//!    instruction in `w:instrText`, `separate`, the shown result, `end` — spread over runs,
-//!    and a table of contents' over *paragraphs*. [`Ctx`] carries that stack across the whole
-//!    story, so what is shown is decided in one place.
+//!    whether the next paragraph starts a page is known only later; a hidden bookmark is kept only
+//!    if a hyperlink points at it; a page break mid-run splits the paragraph. Each is a pass over
+//!    this form, not over the XML again.
+//! 2. **Word's fields are a state machine across elements**: `w:fldChar begin`, `w:instrText`,
+//!    `separate`, the result, `end` — spread over runs, and a table of contents' over paragraphs.
+//!    [`Ctx`] carries that stack across the story.
 //!
-//! Everything Word wraps content in without changing it — `w:sdt` (a content control),
-//! `w:smartTag`, `w:customXml`, `w:ins`, `w:moveTo`, `w:dir`, `w:bdo` — is read *through*;
-//! everything that hides content — `w:del`, `w:moveFrom` — is skipped. Both are counted when
-//! they are tracked changes.
+//! Wrappers that do not change content — `w:sdt`, `w:smartTag`, `w:customXml`, `w:ins`,
+//! `w:moveTo`, `w:dir`, `w:bdo` — are read through; what hides content — `w:del`, `w:moveFrom` —
+//! is skipped. Both are counted when they are tracked changes.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -394,9 +389,9 @@ pub fn blocks_into(r: &mut Reader, ctx: &mut Ctx, out: &mut Vec<Block>) -> grind
     Ok(())
 }
 
-/// `w:sdt` — a content control: its `w:sdtContent` read in place, the rest ignored. Whether it
-/// was a *control* — a drop-down, a date picker, a checkbox, placeholder text — rather than a
-/// plain wrapper is the answer, since the control is what the text does not keep.
+/// `w:sdt` — a content control: its `w:sdtContent` read in place, the rest ignored. Answers
+/// whether it was a real control (drop-down, date picker, checkbox, placeholder) rather than a
+/// plain wrapper, since the control is what the text loses.
 fn content_of_sdt(
     r: &mut Reader,
     mut inside: impl FnMut(&mut Reader) -> grind_ooxml::Result<()>,

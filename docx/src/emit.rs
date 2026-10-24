@@ -4,20 +4,15 @@
 
 //! The read Word document, written as one flat ODF text document (`.fodt`).
 //!
-//! **Why ODF and not the model** is `doc/docx-import.md`'s first decision, and this file is it.
-//! `grind_xlsx` builds a `grind_sheet::Document` through the model's API and lets the sheet's
-//! writer produce ODF, because nearly everything a workbook says has a field in that model. A
-//! word-processing document is the other way round: its look lives in named styles, automatic
-//! paragraph styles, list styles, a page layout and a master page with a header — all of which
-//! `grind_text` *reads* (for showing and printing) and never *writes*, because a save carries
-//! them out of the file it came from untouched (R6, `doc/odt-format.md`). So the import writes
-//! the file a save would carry them out of. `grind_text::read_bytes` then reads it like any
-//! other ODF document, and an imported document is, from that point on, indistinguishable from
-//! one LibreOffice wrote: the same reader, the same saves, the same guards.
+//! Why ODF and not the model (`doc/docx-import.md`'s first decision): a word-processing document's
+//! look lives in named styles, automatic paragraph styles, list styles, a page layout and a master
+//! page with a header — which `grind_text` reads and never writes, since a save carries them out
+//! of the file it came from (R6). So the import writes that file, and `grind_text::read_bytes`
+//! reads it like any other: from then on an import is indistinguishable from a document
+//! LibreOffice wrote.
 //!
-//! Minimal by intent (R3): one flat document, no `meta`, no `settings`, no font declarations,
-//! and every style written is one some paragraph, run, list or table uses. Deterministic: the
-//! same `.docx` imports to the same bytes, which is what makes an import diffable at all.
+//! Minimal (R3): no `meta`, no `settings`, no font declarations, and only styles something uses.
+//! Deterministic: the same `.docx` imports to the same bytes.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -37,8 +32,6 @@ pub struct Input<'a> {
     pub numbering: &'a Numbering,
     pub body: Vec<Block>,
     pub sections: Vec<Section>,
-    /// The first section's default header and footer, and its first-page pair when
-    /// `w:titlePg` asks for one.
     /// Each section's page and the marginals in effect on it — its own references, or the
     /// section's before it (§17.10.5) — one per entry of `sections`.
     pub pages: Vec<Page>,

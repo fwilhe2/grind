@@ -2,15 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `w:sectPr` — a section's page: its size, its margins, its header and footer, and how it
-//! starts (§17.6).
-//!
-//! A Word document is a sequence of sections, each closed by a `w:sectPr` — inside the last
-//! paragraph's `w:pPr` for every section but the last, whose `w:sectPr` is the body's own last
-//! child. The text model has **one** page ([`grind_text::Document::page`], `doc/pdf-export.md`
-//! P2), so the first section's page becomes the document's, and every later section is two
-//! questions: does it *start* on a new page (a break the model can carry, as a paragraph's
-//! `fo:break-before`), and does its page *differ* (which it cannot, and which is counted).
+//! `w:sectPr` — a section's page: its size, its margins, its header and footer, and how it starts
+//! (§17.6). A Word document is a sequence of sections, each closed by a `w:sectPr` — in the last
+//! paragraph's `w:pPr` for every section but the last, whose `w:sectPr` is the body's last child.
+//! Each distinct page becomes a master page, named by the first block of a section whose page
+//! differs from the one before.
 
 use crate::xml::{Handled, Reader, Word as _, WordAttrs as _};
 

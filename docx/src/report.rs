@@ -2,20 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What the conversion carried, and what it did not — `grind_xlsx::report`'s twin, and for the
-//! same reason: **the report is part of the output.** A converter that lies about what it
-//! dropped is worse than one that refuses, and `--strict` turns any loss into a non-zero exit.
+//! What the conversion carried, and what it did not — `grind_xlsx::report`'s twin: a converter
+//! that lies about its losses is worse than one that refuses, and `--strict` turns any loss into a
+//! non-zero exit.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use grind_ooxml::Flavour;
 
-/// A construct the conversion did not carry.
-///
-/// The admission rule is `grind_xlsx::Dropped`'s: an entry names something the **output** —
-/// the ODF document this filter writes, read by `grind_text` — does not express, never
-/// something this filter has not got to yet. That second kind is `doc/docx-import.md`'s
-/// milestone table.
+/// A construct the conversion did not carry: something the output — the ODF this filter writes,
+/// read by `grind_text` — does not express, never something this filter has not got to yet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Dropped {
     /// A comment whose text the document does not have — its id names nothing in
@@ -126,9 +122,8 @@ impl Report {
         self.dropped.is_empty()
     }
 
-    /// One sentence for a shell's notice bar: what arrived, and the kinds of thing that did
-    /// not, largest first, at most three named — `grind_xlsx::Report::summary`'s shape, so the
-    /// two imports read alike.
+    /// One sentence for a shell's notice bar: what arrived, and the kinds of thing that did not,
+    /// largest first, at most three named — as `grind_xlsx::Report::summary` says it.
     pub fn summary(&self) -> String {
         let plural = |n: usize, one: &str| match n {
             1 => format!("1 {one}"),

@@ -2,30 +2,22 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Word's run and paragraph properties (`w:rPr`, `w:pPr`) as ODF's — **one translation, read
-//! once**, the way `grind_xlsx::styles` turns a cell format into a `CellStyle`.
+//! Word's run and paragraph properties (`w:rPr`, `w:pPr`) as ODF's, translated once. The output is
+//! ODF's own attribute vocabulary (`fo:font-weight` → `bold`, `fo:margin-left` → `36pt`), not a
+//! model type: a property the text model has no field for — a superscript, letter spacing, a
+//! paragraph border — still reaches the file a save writes and what LibreOffice shows.
 //!
-//! The output is not a model type but ODF's own attribute vocabulary: `fo:font-weight` →
-//! `bold`, `fo:margin-left` → `36pt`. That is deliberate and it is the shape of this whole
-//! filter (`doc/docx-import.md`, "Why ODF and not the model"): an imported document is written
-//! as ODF and then read by `grind_text`'s own reader, so a property the text model has no field
-//! for — a superscript, a letter spacing, a paragraph border — still arrives in the file a save
-//! writes and in what LibreOffice shows of it, instead of being lost at the model's edge.
-//!
-//! **Units.** Word measures in twentieths of a point (*twips*, §17.18.105's `ST_TwipsMeasure`),
-//! half-points for a font size, eighths of a point for a border and English Metric Units for a
-//! drawing. All of them divide into points exactly or nearly so, so every length written here is
-//! in `pt` — `708` twips is `35.4pt`, not a rounded centimetre.
+//! **Units.** Word measures in twips (§17.18.105), half-points for a font size, eighths of a point
+//! for a border and EMUs for a drawing. All divide into points exactly or nearly, so every length
+//! here is in `pt` — `708` twips is `35.4pt`.
 
 use std::collections::BTreeMap;
 
 use crate::xml::{Attrs, Handled, Reader, Word as _, WordAttrs as _};
 
-/// ODF style properties, keyed by qualified attribute name — `fo:font-weight` → `bold`.
-///
-/// Ordered so that a style written from it is the same bytes every time (an import of the same
-/// file twice is byte-identical), and hashable so equal formattings pool into one automatic
-/// style.
+/// ODF style properties, keyed by qualified attribute name — `fo:font-weight` → `bold`. Ordered,
+/// so a style is written the same bytes every time; hashable, so equal formattings pool into one
+/// automatic style.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Props(pub BTreeMap<&'static str, String>);
 
