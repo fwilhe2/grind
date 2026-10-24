@@ -2,21 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! "Format as table" (Excel's own feature, read the ODF way): one composite command over a
-//! rectangle, built entirely from constructs the writer already emits —
-//! `table:database-range` ([`crate::filter::Filter`]), per-cell `style:style`
-//! ([`crate::style::CellStyle`]), ordinary aggregate formulas ([`TotalsFunction`]), and a
-//! `table:named-expressions`
-//! entry (`Document::names`).
+//! "Format as table", read the ODF way: one command over a rectangle, built only from what the
+//! writer already emits — a `table:database-range` ([`crate::filter::Filter`]), cell styles,
+//! ordinary aggregate formulas ([`TotalsFunction`]) and a named range.
 //!
-//! There is no new persisted "table" object: ODF has nothing resembling xlsx's `ListObject`,
-//! and inventing one would mean either a synthetic element R2's schema rejects or a heuristic
-//! for recognising it again on read — fragile, and in tension with R1's "no invented schema".
-//! [`plan`] instead produces one [`Action::Batch`] of ordinary edits — the same thing
-//! LibreOffice's own Table ▸ AutoFormat does — so applying it is one undo step and the result
-//! is indistinguishable, once saved, from a document styled and filtered by hand. There is
-//! correspondingly no "un-table" operation: clearing the effects means clearing the filter,
-//! restyling the cells and deleting the name, same as it would after AutoFormat.
+//! ODF has no table object like xlsx's `ListObject`, and inventing one would be an element the
+//! schema rejects or a heuristic on reading. So [`plan`] produces one [`Action::Batch`] of
+//! ordinary edits, like LibreOffice's AutoFormat; once saved it is indistinguishable from
+//! formatting by hand, and there is no un-format.
 
 use std::collections::BTreeMap;
 
@@ -27,24 +20,17 @@ use crate::formula::lex::{Axis, CellRef, Reference};
 use crate::model::{CellValue, Pos, Sheet};
 use crate::style::CellStyle;
 
-/// The shading a table is given. Not [`crate::style::PALETTE`] entries — banding wants tints
-/// paler than any named colour there — but ordinary `#rrggbb` values a shell may restyle
-/// afterwards through [`crate::App::set_style`] like any other cell.
+/// The shading a table is given — tints paler than any [`crate::style::PALETTE`] colour, restyled
+/// afterwards like any other cell.
 const HEADER_BACKGROUND: &str = "#dddddd";
 const BAND_A: &str = "#ffffff";
 const BAND_B: &str = "#f2f2f2";
 const TOTALS_BORDER: &str = "0.5pt solid #000000";
 
-/// Which aggregate a totals row carries — Excel's own totals-row list, every entry of which
-/// happens to be an ODF Small Group function (`doc/small-group.md`), so a totals row is
-/// ordinary formulas a shell has no special reading of.
-///
-/// One function for the whole row rather than one per column: a per-column choice needs a
-/// persisted table object to remember it in, and `table_format`'s own module comment is why
-/// there is none. A column whose aggregate would be an error — `AVERAGE` over a column with no
-/// numbers in it, `STDEV` over a single one — is left blank instead, the same way a text
-/// column already is, since [`CellValue`] has no error variant to cache and a cached value
-/// that lies is exactly what `grind lint`'s `stale-value` rule is for.
+/// Which aggregate a totals row carries — Excel's totals-row list, all Small Group functions
+/// (`doc/small-group.md`). One for the whole row, since a per-column choice needs a table object
+/// to remember it. A column whose aggregate would be an error (`AVERAGE` of no numbers, `STDEV` of
+/// one) is left blank, like a text column, rather than cached as a value that lies.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum TotalsFunction {
     /// `SUM` — the default, and the one whose row is labelled "Total" rather than by name.
@@ -64,9 +50,8 @@ pub enum TotalsFunction {
 }
 
 impl TotalsFunction {
-    /// Every one of them, in the order a shell offers them. The single table a menu, a
-    /// dropdown, a CLI flag and a `:command` argument all read, so no shell can offer a
-    /// function the core cannot write or spell one of them differently.
+    /// Every one, in the order a shell offers them — the one list a menu, a CLI flag and a
+    /// `:command` read.
     pub const ALL: &'static [TotalsFunction] = &[
         TotalsFunction::Sum,
         TotalsFunction::Average,
@@ -120,9 +105,8 @@ impl TotalsFunction {
         }
     }
 
-    /// The word written into the totals row's leftmost cell. "Total" for a sum, because that
-    /// is what a summed row is called in every spreadsheet there has ever been; the function's
-    /// own name for the rest, since a row of averages labelled "Total" is a lie.
+    /// The word in the totals row's leftmost cell: "Total" for a sum, the function's own name
+    /// otherwise.
     pub fn row_label(self) -> &'static str {
         match self {
             TotalsFunction::Sum => "Total",
@@ -131,8 +115,7 @@ impl TotalsFunction {
         }
     }
 
-    /// Every id, comma-separated — what a shell puts in the sentence it says when somebody
-    /// names one that does not exist.
+    /// Every id, comma-separated, for the error naming an unknown one.
     pub fn ids() -> String {
         Self::ALL
             .iter()
@@ -143,17 +126,14 @@ impl TotalsFunction {
 }
 
 impl std::str::FromStr for TotalsFunction {
-    /// A sentence, not an [`crate::Error`]: this parses a word a person typed at a shell, which
-    /// is that shell's own vocabulary rather than anything the document model has an error for.
+    /// A sentence, since this parses a word a person typed.
     type Err = String;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        // An underscore or a space for the hyphen, since a person typing at a `:command` line
-        // will reach for any of the three.
+        // An underscore or a space stands for the hyphen.
         let wanted = s.trim().to_lowercase().replace(['_', ' '], "-");
-        // `COUNTA` is spelled `count` here and `COUNT` is spelled `count-numbers`, which is
-        // Excel's own wording for the pair and the reason the formulas' own names are *not*
-        // accepted as aliases: `COUNT` would then mean the opposite of what it says.
+        // `COUNTA` is `count` and `COUNT` is `count-numbers`, Excel's wording; the function names
+        // are not aliases, since `COUNT` would then mean the opposite.
         if wanted == "counta" {
             return Ok(TotalsFunction::Count);
         }
@@ -174,28 +154,23 @@ impl std::fmt::Display for TotalsFunction {
 /// What a caller chooses when formatting a range as a table.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TableOptions {
-    /// The range's first row is a heading rather than data — `table:contains-header`, and
-    /// whether the header itself is left out of banding.
+    /// The range's first row is a heading — `table:contains-header`, and left out of banding.
     pub header: bool,
-    /// Append a totals row below the range: the chosen aggregate over every column it can
-    /// answer for, blank elsewhere, and the function's own word in the leftmost column.
-    /// `None` appends no row at all.
+    /// Append a totals row: the aggregate under every column it can answer for, blank elsewhere,
+    /// its word in the leftmost column. `None` appends none.
     pub totals: Option<TotalsFunction>,
     /// The named range to create. `None` auto-generates the next unused `TableN`.
     pub name: Option<String>,
 }
 
-/// What [`plan`] computed: the batch to apply, and the name it settled on (so a caller that
-/// left it to auto-generate can report what got picked).
+/// What [`plan`] computed: the batch, and the name it settled on.
 pub struct TablePlan {
     pub actions: Vec<Action>,
     pub name: String,
 }
 
-/// Build the batch of edits "format as table" is. Pure — it reads `sheet` and `names` and
-/// returns actions, applying none of them, so a caller can wrap the result in one mutation
-/// alongside the undo bookkeeping every other multi-cell edit uses (see
-/// [`crate::App::format_table`]).
+/// Build the batch of edits. Pure: it reads `sheet` and `names` and applies nothing
+/// ([`crate::App::format_table`] does).
 pub fn plan(
     sheet_index: usize,
     start: Pos,
@@ -209,8 +184,7 @@ pub fn plan(
     actions.push(Action::SetFilter {
         sheet: sheet_index,
         filter: Some(Box::new(Filter {
-            // The name LibreOffice gives an autofilter nobody named — the same default
-            // `grind sheet filter` uses, so a table's autofilter looks like any other.
+            // LibreOffice's name for an unnamed autofilter, as `grind sheet filter` uses.
             name: "__Anonymous_Sheet_DB__0".to_owned(),
             start,
             end,
@@ -266,9 +240,8 @@ pub fn plan(
             value: CellValue::Text(function.row_label().to_owned()),
         });
         for col in (start.col.saturating_add(1))..=end.col {
-            // No answer means no formula: a column this aggregate cannot summarise (text under
-            // `SUM`, one number under `STDEV`) is left blank rather than given a formula whose
-            // cached value would have to be an error.
+            // A column this aggregate cannot summarise is left blank rather than given a formula
+            // whose cached value would be an error.
             let Some(answer) = summarise(function, sheet, col, first_data_row, end.row) else {
                 continue;
             };
@@ -301,9 +274,7 @@ pub fn plan(
     Ok(TablePlan { actions, name })
 }
 
-/// A cell's current style, with one change applied — `App::set_style` *replaces* a cell's
-/// style, so banding has to read-merge-write to avoid discarding a font or border the cell
-/// already carried.
+/// A cell's current style with one change — read-merge-write, since `App::set_style` replaces.
 fn restyle(sheet: usize, pos: Pos, s: &Sheet, edit: impl FnOnce(&mut CellStyle)) -> Action {
     let mut style = s.style(pos).cloned().unwrap_or_default();
     edit(&mut style);
@@ -314,15 +285,11 @@ fn restyle(sheet: usize, pos: Pos, s: &Sheet, edit: impl FnOnce(&mut CellStyle))
     }
 }
 
-/// The answer the totals row's formula will come to for one column, or `None` when this
-/// aggregate has nothing to say about it.
-///
-/// Computed here rather than by recalculating afterwards because [`plan`] runs with the write
-/// lock held, and [`Action::SetFormula`] carries the cached value with it — `office:value` is
-/// written whether or not anybody recalculates, so a wrong one here is a wrong one in the
-/// file. Each arm mirrors `formula::funcs`' own definition of the function it caches: the
-/// sequence functions skip text and empty cells (§6.3.7), the sample moments divide by n-1 in
-/// two passes, and every case those two would answer with an error is a `None` instead.
+/// The answer a totals formula will come to for one column, or `None` when the aggregate has
+/// nothing to say. Computed here because [`plan`] runs under the write lock and
+/// [`Action::SetFormula`] carries the cached value into the file. Each arm follows
+/// `formula::funcs`: sequences skip text and empty cells (§6.3.7), sample moments divide by n-1 in
+/// two passes, and every error case is `None`.
 fn summarise(
     function: TotalsFunction,
     s: &Sheet,
@@ -357,8 +324,7 @@ fn summarise(
         TotalsFunction::Min => numbers.iter().copied().fold(f64::INFINITY, f64::min),
         TotalsFunction::Max => numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max),
         TotalsFunction::StdDev | TotalsFunction::Var => {
-            // The sample forms need two numbers; one of them is a division by zero, which
-            // there is no cached value for.
+            // The sample forms need two numbers.
             if numbers.len() < 2 {
                 return None;
             }
@@ -373,8 +339,7 @@ fn summarise(
     })
 }
 
-/// A relative, same-sheet reference — what a formula written *in* the table means by its own
-/// column.
+/// A relative, same-sheet reference — what a formula in the table means by its own column.
 fn relative_cell(pos: Pos) -> CellRef {
     CellRef {
         sheet: None,
@@ -390,10 +355,8 @@ fn relative_cell(pos: Pos) -> CellRef {
     }
 }
 
-/// A name's definition: sheet-qualified and absolute on every axis, the way [`crate::a1`]'s
-/// own `as_definition` writes one — reimplemented rather than called because that helper needs
-/// an `&App` to default the sheet, and this runs with the write lock already held (`App`'s
-/// other reads would deadlock against it).
+/// A name's definition, sheet-qualified and absolute like `a1::as_definition` writes one; that
+/// needs an `&App`, and this runs under the write lock.
 fn absolute_reference(sheet_name: &str, start: Pos, end: Pos) -> String {
     let cell = |pos: Pos| CellRef {
         sheet: Some(sheet_name.to_owned()),
@@ -545,8 +508,8 @@ mod tests {
 
     #[test]
     fn every_aggregate_writes_its_own_function_and_caches_its_own_answer() {
-        // Qty is 3, 1, 4 — one worked answer per function, so a wrong cached value cannot pass
-        // for a right one just because the formula text is right.
+        // Qty is 3, 1, 4: one worked answer per function, so a wrong cached value cannot pass on
+        // correct formula text.
         let cases = [
             (TotalsFunction::Sum, "SUM", 8.0),
             (TotalsFunction::Average, "AVERAGE", 8.0 / 3.0),
@@ -570,9 +533,8 @@ mod tests {
 
     #[test]
     fn a_text_column_is_counted_but_never_summed() {
-        // COUNTA is the one aggregate a column of product names has an answer for, and the
-        // label cell is column A, so column B's *text* is not what is being read here — the
-        // product column is A and carries the label instead. Use a column of text beside it.
+        // COUNTA is the one aggregate a text column answers; the label goes in column A, so test a
+        // text column beside it.
         let mut doc = document();
         let s = doc.sheet_mut(0).unwrap();
         s.set(Pos::new(0, 2), CellValue::Text("Note".into()));
@@ -660,8 +622,7 @@ mod tests {
     fn a_function_is_named_the_same_way_everywhere_it_is_named() {
         for function in TotalsFunction::ALL {
             // Every id parses back to itself, and every function it writes is one this build
-            // can evaluate — a totals row calling something outside the Small Group would be
-            // a `#NAME?` the moment anybody recalculated.
+            // evaluates.
             assert_eq!(function.id().parse::<TotalsFunction>(), Ok(*function));
             assert!(crate::formula::funcs::implemented().contains(&function.function()));
             assert!(TotalsFunction::ids().contains(function.id()));

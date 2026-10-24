@@ -4,25 +4,16 @@
 
 //! The autofilter: `table:database-range` and its `table:filter` (ODF 1.4 Part 3 §9.4).
 //!
-//! One filter per sheet, over one rectangle, keeping a **set of values** per column — the
-//! shape `core/tests/data/samples/table.fods` uses and the shape every autofilter dropdown
-//! offers. `table:filter-condition` with `table:operator="="` and a list of
-//! `table:filter-set-item` children *is* that set; a condition spelled any other way (`<`,
-//! `begins-with`, top-10) is read and dropped rather than half-applied, because a filter
-//! that quietly keeps the wrong rows is worse than one that is visibly absent.
+//! One filter per sheet, over one rectangle, keeping a set of values per column — the shape
+//! `sheet/tests/data/samples/table.fods` uses and every dropdown offers: `table:filter-condition`
+//! with `table:operator="="` and `table:filter-set-item` children. Any other condition (`<`,
+//! `begins-with`, top-10) is dropped on reading rather than half-applied.
 //!
-//! **Which rows are hidden is derived, never stored.** A filtered document says so twice —
-//! the conditions here, and `table:visibility="filter"` on each row they exclude — and two
-//! copies of one fact is how they come to disagree. So [`Filter::hides`] answers from the
-//! conditions and the cells, the writer paints the attribute from that answer, and the
-//! reader ignores the attribute it reads. `filter_matches_libreoffice` in
-//! `core/tests/filter.rs` is that decision held to the sample: the rows this computes must
-//! be exactly the rows LibreOffice marked.
-//!
-//! Matching is on the cell's **display text**, the string the dropdown listed, compared
-//! exactly. Not a collation: `doc/not-doing.md` gates sorting on a collation decision this
-//! project has not made, and set membership is the half of "sort and filter" that does not
-//! need one.
+//! Which rows are hidden is derived, never stored. A file says it twice — the conditions, and
+//! `table:visibility="filter"` on each excluded row — so [`Filter::hides`] answers from the
+//! conditions, the writer paints the attribute from that, and the reader ignores it.
+//! `filter_matches_libreoffice` (`sheet/tests/filter.rs`) holds the computed rows to the ones
+//! LibreOffice marked. Matching is exact, on display text: set membership needs no collation.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -30,20 +21,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::{Pos, Sheet};
 
-/// The distinct values a field's column holds, in the order a dropdown lists them — what every
-/// shell's filter popover offers, here so that no two of them order it differently.
-///
-/// Each value is the cell's **display text**, which is what [`Filter::keep`] matches on, and the
-/// values the filter is currently hiding are included, since they are the ones somebody opened
-/// the list to bring back. The heading row is not one of its own values.
-///
-/// **The order is by value where a value has one**: the empty cell first, then numbers — dates
-/// and times among them — from smallest to largest, then everything else in the model's own
-/// code-point order. Ordering the numbers by their display text put `2,250.00 €` before
-/// `220.00 €`, in both windows that had a dropdown; ordering *text* by anything but code points
-/// would be the collation decision `doc/not-doing.md` gates sorting on, so it is not made here.
-///
-/// At most `limit` values, since a column of a hundred thousand distinct ones is not a list.
+/// The distinct values a field's column holds, in the order a dropdown lists them: each cell's
+/// display text (what [`Filter::keep`] matches), including the ones currently hidden, the heading
+/// excluded. The empty cell first, then numbers (dates and times among them) by value, then
+/// everything else in code-point order — numbers by their text put `2,250.00 €` before `220.00 €`,
+/// and text by anything but code points would need a collation. At most `limit` values.
 pub fn offered(cells: &crate::Viewport, filter: &Filter, field: u32, limit: usize) -> Vec<String> {
     let col = filter.column(field);
     let mut seen = BTreeSet::new();
@@ -77,35 +59,31 @@ pub fn offered(cells: &crate::Viewport, filter: &Filter, field: u32, limit: usiz
 /// An autofilter over a rectangle of one sheet.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Filter {
-    /// `table:name`. LibreOffice calls an unnamed autofilter `__Anonymous_Sheet_DB__0`, and
-    /// the name is kept as it was given: it is an identifier in the file, not a label.
+    /// `table:name`, kept as given; LibreOffice calls an unnamed autofilter
+    /// `__Anonymous_Sheet_DB__0`.
     pub name: String,
     /// `table:target-range-address`, header row included, both ends inclusive.
     pub start: Pos,
     pub end: Pos,
-    /// `table:contains-header`. When set, [`Filter::start`]'s row is a heading rather than
-    /// data and is never hidden — which is what the sample shows: `Product` is not one of
-    /// the values its own filter keeps, and LibreOffice leaves that row visible anyway.
+    /// `table:contains-header`: [`Filter::start`]'s row is a heading and never hidden, even though
+    /// its text is not among the values kept.
     pub contains_header: bool,
     /// `table:display-filter-buttons` — whether the dropdown buttons are drawn.
     pub buttons: bool,
-    /// The values each field keeps, by field number: 0 is [`Filter::start`]'s column, 1 the
-    /// one after it (§9.4's `table:field-number`). A field with no entry is unfiltered, and
-    /// an entry holding the empty string keeps empty cells.
+    /// The values each field keeps, by field number from [`Filter::start`]'s column (§9.4's
+    /// `table:field-number`). A field with no entry is unfiltered; the empty string keeps empty
+    /// cells.
     pub keep: BTreeMap<u32, BTreeSet<String>>,
 }
 
-/// The name LibreOffice gives an autofilter nobody named. `grind sheet filter` writes the same
-/// one, so a document does not say which shell made it.
+/// LibreOffice's name for an unnamed autofilter, which `grind sheet filter` writes too.
 pub const ANONYMOUS: &str = "__Anonymous_Sheet_DB__0";
 
 impl Filter {
-    /// The filter *Data ▸ Filter* turns on over a selection `start..=end`: the selection itself,
-    /// or — from a single cell, which is a click and not a range — the used table from that cell
-    /// to the sheet's last used row and column (`used` is [`crate::App::used_extent`]). `Err`
-    /// with the sentence to say when there is no heading *and* a row under it to filter.
-    ///
-    /// Five shells spelled this rule, and the sentence, five times.
+    /// The filter Data ▸ Filter turns on over `start..=end`: the selection, or from a single cell
+    /// the used table from there to the sheet's last used row and column (`used` is
+    /// [`crate::App::used_extent`]). `Err` with the sentence to say when there is no heading with
+    /// a row under it.
     pub fn over_selection(
         start: Pos,
         end: Pos,
@@ -146,13 +124,9 @@ impl Filter {
         }
     }
 
-    /// Whether this row is excluded: it is inside the range, and at least one field's value
-    /// is not among the ones that field keeps. Several conditions are an **and** (§9.4's
-    /// `table:filter-and`), so one failing field is enough.
-    ///
-    /// `locale` is the document's ([`crate::Document::locale`]): a value is matched as it is
-    /// *shown*, and a German document shows `1234,5` — which is also what a German LibreOffice
-    /// saved as the value to keep.
+    /// Whether this row is excluded: inside the range, with at least one field's value not among
+    /// the ones it keeps (conditions are an and, §9.4's `table:filter-and`). Values are matched as
+    /// shown in `locale`, so a German document's `1234,5` matches what a German LibreOffice saved.
     pub fn hides(
         &self,
         sheet: &Sheet,
@@ -175,9 +149,8 @@ impl Filter {
         })
     }
 
-    /// Whether writing to this cell could change which rows are hidden — it sits in a row
-    /// the filter judges, in a column it judges on. The diffable writer (R6) asks, because
-    /// `table:visibility` lives on the row rather than in the cell it would splice.
+    /// Whether writing to this cell could change which rows are hidden. The splicing writer asks,
+    /// because `table:visibility` is on the row.
     pub fn affects(&self, pos: Pos) -> bool {
         pos.row >= self.first_data_row()
             && pos.row <= self.end.row
@@ -185,8 +158,7 @@ impl Filter {
             && self.keep.contains_key(&(pos.col - self.start.col))
     }
 
-    /// Every row this filter hides, in order — what the writer paints
-    /// `table:visibility="filter"` onto and what a shell leaves undrawn.
+    /// Every row this filter hides, in order.
     pub fn hidden_rows(
         &self,
         sheet: &Sheet,
@@ -237,8 +209,7 @@ mod tests {
         assert!(!filter.hides(&sheet, 9, 0, None));
     }
 
-    /// A filter with no conditions is a range with dropdown buttons and nothing chosen —
-    /// `kb/filter.fods` is exactly that, and it must hide nothing at all.
+    /// `kb/filter.fods` has dropdowns and nothing chosen, and must hide nothing.
     #[test]
     fn a_filter_with_no_conditions_hides_nothing() {
         let mut filter = filter(&[]);
@@ -246,9 +217,8 @@ mod tests {
         assert!(filter.hidden_rows(&sheet(), 0, None).is_empty());
     }
 
-    /// An empty cell is a value like any other, spelled `""` — which is how LibreOffice
-    /// writes "(empty)" in the dropdown, and why the sample's totals row survives its own
-    /// filter.
+    /// An empty cell is the value `""`, LibreOffice's "(empty)", so the sample's totals row
+    /// survives its own filter.
     #[test]
     fn the_empty_string_keeps_empty_cells() {
         let mut sheet = sheet();

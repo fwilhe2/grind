@@ -2,25 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! How a typed number is read: in the document's own spelling first, then — where that cannot
-//! be meant — in the other one, and with a [`Reading`] saying so whenever the answer is one a
-//! person might not have expected (`doc/ods-format.md` §5.2, "The document's own language").
+//! How a typed number is read: in the document's own spelling first, then, where that cannot be
+//! meant, the other one, with a [`Reading`] whenever the answer might surprise
+//! (`doc/ods-format.md` §5.2).
 //!
-//! Which sign is the decimal one is the commonest confusion a spreadsheet has, and refusing the
-//! other spelling only moves it: `1.5` typed into a German document used to become the *text*
-//! `1.5`, which sums to nothing. So the rule is to read what can only mean one thing as that
-//! thing, and to say so:
+//! * The document's spelling wins wherever it reads: `1,5` and `1.234,5` in German.
+//! * The other spelling is read where the document's cannot be meant — `1.5`, `3.14159`, `1,234.5`
+//!   in German, `1,5` and `1.234,5` in English — as [`Reading::Other`].
+//! * One separator with exactly three digits after it (`1.234`, `1,234`) is a thousand one way and
+//!   a little over one the other. It is read the document's way, as [`Reading::Ambiguous`].
 //!
-//! * **The document's spelling wins** wherever it reads: `1,5` and `1.234,5` in German.
-//! * **The other spelling is read where the document's cannot be meant** — `1.5`, `3.14159` and
-//!   `1,234.5` in German, `1,5` and `1.234,5` in English — and is a [`Reading::Other`].
-//! * **The one truly ambiguous shape** is one separator with exactly three digits after it
-//!   (`1.234`, `1,234`), which is a thousand in one language and a little over one in the
-//!   other. It is read the document's way, and is a [`Reading::Ambiguous`] — the case where a
-//!   misreading is a factor of a thousand, so it is the one most worth saying out loud.
-//!
-//! `'` before anything keeps it as text, as it always has; that rule is the typing rule's
-//! (`App::enter`), ahead of this one.
+//! A leading `'` keeps text as text, by the typing rule (`App::enter`), ahead of this.
 
 use crate::csv;
 use crate::locale::{self, Locale};
@@ -29,17 +21,15 @@ use crate::numfmt;
 /// A number read in a way the person typing it should be told about.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Reading {
-    /// Read with the separators the document does *not* use, since its own could not mean
-    /// it — `1.5` in a German document is one and a half.
+    /// Read with the separators the document does not use, since its own could not mean it.
     Other { typed: String, value: f64 },
-    /// One separator and three digits after it: read the document's way, though the other way
-    /// would have been a number a thousand times larger or smaller.
+    /// One separator and three digits: read the document's way, though the other way would be a
+    /// thousand times different.
     Ambiguous { typed: String, value: f64 },
 }
 
 impl Reading {
-    /// The sentence every shell shows after the entry — one wording, so six clients cannot
-    /// explain the same reading six ways.
+    /// The sentence every shell shows after the entry.
     pub fn sentence(&self, locale: Option<&Locale>) -> String {
         let (decimal, group) = locale::separators(locale);
         let decimal_name = locale::separator_name(decimal);
@@ -69,17 +59,16 @@ impl Reading {
     }
 }
 
-/// `input` as a number, and what is worth saying about how it was read — `None` when it is not
-/// one at all. `strict` reads the document's own spelling and nothing else, which is what a
-/// value somebody did not type wants (a CSV field, already spelled the ISO way).
+/// `input` as a number, and what is worth saying about how it was read; `None` when it is not one.
+/// `strict` reads only the document's own spelling, for a value nobody typed (a CSV field, spelled
+/// the ISO way).
 pub(crate) fn read(
     input: &str,
     locale: Option<&Locale>,
     strict: bool,
 ) -> Option<(f64, Option<Reading>)> {
     let plain = |n: f64| Some((n, None));
-    // With no locale, every typed number has always been Rust's own reading — `1.5`, `-3`,
-    // `1e5`, `007` — and still is, before anything else is tried.
+    // With no locale, a typed number is Rust's own reading.
     if locale.is_none()
         && let Ok(n) = input.parse::<f64>()
     {
@@ -93,8 +82,8 @@ pub(crate) fn read(
         });
         return Some((n, note));
     }
-    // What the document's spelling refuses is still a number if it has no separator in it the
-    // locale could mean otherwise — `007` and `1e5`.
+    // Without a separator the locale could mean otherwise (`007`, `1e5`), a number is still a
+    // number.
     if !input.contains(['.', ',', ' ', '\u{a0}', '\u{202f}']) {
         return input.parse().ok().map(|n| (n, None));
     }
@@ -117,8 +106,8 @@ pub(crate) fn read(
     ))
 }
 
-/// One point or comma, with one to three digits before it (not a lone `0`, which cannot lead
-/// a group) and exactly three after: `1.234`, `-12,500`.
+/// One point or comma with one to three digits before it (not a lone `0`) and exactly three after:
+/// `1.234`, `-12,500`.
 fn ambiguous(input: &str) -> bool {
     let unsigned = input.strip_prefix(['+', '-']).unwrap_or(input);
     let mut parts = unsigned.split(['.', ',']);

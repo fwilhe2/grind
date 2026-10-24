@@ -3,45 +3,32 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! How big each track on one axis is — column widths or row heights — in whatever unit a shell
-//! draws in.
-//!
-//! Hoisted out of `ui_sheet_gtk/src/geom.rs` and `ui_win32/src/sheet/geom.rs`, which each
-//! carried the same prefix-sum axis, when the macOS shell would have been the third copy
-//! (`doc/macos-shell.md`, M1). It is spreadsheet vocabulary rather than toolkit vocabulary: a
-//! track, a default size, a hidden track as a size of *zero*, and which track an offset falls
-//! in. What unit an offset is in is the one thing a shell decides, which is why
-//! [`Sizes::from_lengths`] takes the conversion from millimetres as a parameter — GDI's 96
-//! pixels to the inch times a monitor's DPI, Pango's pixels times a zoom, CoreGraphics' 72
-//! points to the inch.
+//! draws in. A track has a default size, a hidden track has size zero, and [`Sizes::from_lengths`]
+//! takes the conversion from millimetres from the shell (GDI pixels times DPI, Pango pixels times
+//! zoom, CoreGraphics points).
 
-/// How big each track on one axis is — column widths, or row heights.
-///
-/// One type for both, because the arithmetic is the same and a sheet that got its columns right
-/// and its rows wrong is the bug two copies would produce. A document sizes a handful of tracks
-/// out of sixteen thousand, so the sparse list plus a running total is what makes [`Sizes::at`]
-/// a binary search rather than a walk from column A.
+/// How big each track on one axis is. A document sizes a handful of tracks, so a sparse list with
+/// a running total makes [`Sizes::at`] a binary search.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sizes {
     default: f64,
     count: u32,
     /// Ascending by index, distinct: the tracks the document gave a size of their own.
     sizes: Vec<(u32, f64)>,
-    /// `run[k]` is how much the first `k` entries have displaced everything after them — the
-    /// sum of their sizes *minus* what the default would have been. An offset is then
-    /// `index * default + run[entries before it]`, with no walk over the sheet.
+    /// `run[k]` is how far the first `k` entries displace everything after them — their sizes
+    /// minus the default's. An offset is `index * default + run[entries before it]`.
     run: Vec<f64>,
 }
 
 impl Sizes {
     /// `sizes` is taken in any order; ties keep the last one given.
     pub fn new(default: f64, count: u32, mut sizes: Vec<(u32, f64)>) -> Self {
-        // Reversed first, so that a stable sort leaves the *last* entry given for an index at
-        // the front of its run and `dedup` keeps that one. `with` and `from_lengths` rely on it.
+        // Reversed first, so a stable sort and `dedup` keep the last entry given for an index;
+        // `with` and `from_lengths` rely on it.
         sizes.reverse();
         sizes.sort_by_key(|(i, _)| *i);
         sizes.dedup_by_key(|(i, _)| *i);
-        // A zero is kept: that is a hidden track — a row a filter excludes (§9.4) — and it has
-        // to displace nothing rather than fall back to the default.
+        // A zero is kept: it is a hidden track, which displaces nothing.
         sizes.retain(|(i, size)| *i < count && *size >= 0.0);
         let mut run = Vec::with_capacity(sizes.len() + 1);
         let mut acc = 0.0;
@@ -58,23 +45,15 @@ impl Sizes {
         }
     }
 
-    /// The axis a document describes: its sized tracks as ODF lengths, turned into a shell's
-    /// unit by `unit`, which is handed millimetres.
+    /// The axis a document describes: its sized tracks as ODF lengths, converted by `unit` from
+    /// millimetres — the one place a physical length becomes a device one. An unparseable length
+    /// falls back to the default, not to zero, which would hide the track. `unit` is a function so
+    /// a shell keeps its own order of arithmetic (`ui_win32` scales by DPI after converting to
+    /// 96-dpi pixels, and its frames must be byte-identical).
     ///
-    /// The one place a physical length becomes a device one, so that "columns are as wide as
-    /// the document says" is a property of this function rather than of every caller. A length
-    /// this build cannot parse falls back to the default width rather than to zero, because
-    /// zero means *hidden* and silently hiding a column is worse than mis-sizing one.
-    ///
-    /// `unit` is a function rather than a factor so that a shell keeps its own order of
-    /// arithmetic: `ui_win32` scales by the monitor's DPI *after* converting to 96-dpi pixels,
-    /// and a frame that must come out byte-identical cannot have that reassociated under it.
-    ///
-    /// `hidden` is the tracks the document hides, which is a **separate question from their
-    /// size** — ODF hides a track with `table:visibility="collapse"` (§5.4), not by giving it a
-    /// width of zero, so a hidden column usually still carries a perfectly ordinary
-    /// `style:column-width`. They go on *after* the lengths, so a hidden track is hidden
-    /// whatever size it was given: [`Sizes::new`] keeps the last entry for an index.
+    /// `hidden` are the tracks the document hides with `table:visibility="collapse"` (§5.4) —
+    /// separate from their size, since a hidden column usually has an ordinary width. They go on
+    /// last, so a hidden track is hidden whatever its size.
     pub fn from_lengths(
         default: f64,
         count: u32,
@@ -141,8 +120,7 @@ impl Sizes {
         self.offset_of(self.count)
     }
 
-    /// The same axis at a zoom factor. Every size scales, including the default, so the
-    /// arithmetic above stays in one space and a zoomed grid is not a second layout path.
+    /// The same axis at a zoom factor; every size scales, the default included.
     pub fn scaled(&self, factor: f64) -> Self {
         Self::new(
             self.default * factor,
@@ -161,18 +139,13 @@ impl Sizes {
         Self::new(self.default, self.count, sizes)
     }
 
-    /// Whether this track is a hidden one — zero size, kept explicitly rather than falling back
-    /// to the default (see [`Sizes::new`]).
+    /// Whether this track is hidden — zero size, kept explicitly.
     pub fn is_hidden(&self, index: u32) -> bool {
         self.size_of(index) == 0.0
     }
 
-    /// The maximal contiguous run of hidden tracks containing `index`, half-open — or `None`
-    /// when `index` is not itself hidden.
-    ///
-    /// A linear walk in both directions rather than a binary search either side, because a
-    /// document hides a handful of tracks at a time (§5.4) and this is only asked about a
-    /// track already known to be hidden.
+    /// The maximal run of hidden tracks containing `index`, half-open, or `None` when `index` is
+    /// visible. A linear walk: documents hide a few tracks at a time.
     pub fn hidden_run(&self, index: u32) -> Option<(u32, u32)> {
         if !self.is_hidden(index) {
             return None;
@@ -188,11 +161,8 @@ impl Sizes {
         Some((from, to))
     }
 
-    /// The first track at or after `from` that has any width, or `None` past the end.
-    ///
-    /// Scrolling has to skip hidden tracks or the view stops moving: pressing the scrollbar's
-    /// arrow lands on a zero-width column, which occupies no pixels, and the screen does not
-    /// change while the position number does.
+    /// The first track at or after `from` with any width, or `None` past the end — so scrolling
+    /// does not stall on a hidden column.
     pub fn next_visible(&self, from: u32) -> Option<u32> {
         (from..self.count).find(|i| !self.is_hidden(*i))
     }
@@ -204,16 +174,8 @@ impl Sizes {
             .find(|i| !self.is_hidden(*i))
     }
 
-    /// The nearest track to `index` that is not hidden, looking `forward` first and then the
-    /// other way.
-    ///
-    /// What Down-arrow needs. A hidden track occupies no pixels, so a cursor that lands on one
-    /// is a cursor nobody can see — the selection is real, the status bar reports it, and the
-    /// screen shows nothing at all. Every spreadsheet steps over hidden tracks for exactly this
-    /// reason.
-    ///
-    /// Falls back to `index` itself when every track in both directions is hidden, because
-    /// refusing to move is better than moving nowhere in particular.
+    /// The nearest visible track to `index`, looking `forward` first, then back: a cursor on a
+    /// hidden track cannot be seen. Falls back to `index` when everything is hidden.
     pub fn nearest_visible(&self, index: u32, forward: bool) -> u32 {
         if !self.is_hidden(index) {
             return index;
@@ -226,12 +188,8 @@ impl Sizes {
     }
 
     /// The first track that puts `index` at the far end of a `span`-long view — the least
-    /// scrolling that brings a track into sight from below or from the right.
-    ///
-    /// Walked backwards from `index` rather than forwards from the current position, so that
-    /// jumping to the far corner of a sheet costs a screenful of arithmetic rather than a
-    /// million steps. `index` itself is always the answer's upper bound, which is what makes it
-    /// safe to use as one end of a clamp.
+    /// scrolling that brings it into sight from below or the right. Walked back from `index`, so
+    /// jumping to the far corner costs a screenful of arithmetic.
     pub fn start_showing(&self, index: u32, span: f64) -> u32 {
         let mut used = self.size_of(index);
         let mut at = index;
@@ -246,11 +204,8 @@ impl Sizes {
         at
     }
 
-    /// The first track that can sit at the top (or left) of a `span`-long view without leaving
-    /// blank space after the last one — a scrollbar's maximum position.
-    ///
-    /// Answered by walking back from the end rather than by dividing, because the tracks near
-    /// the end may be any size at all.
+    /// The first track that can start a `span`-long view without blank space after the last one —
+    /// a scrollbar's maximum, walked back from the end.
     pub fn last_start(&self, span: f64) -> u32 {
         let mut used = 0.0;
         let mut index = self.count;
@@ -382,8 +337,7 @@ mod tests {
         assert!((cols.offset_of(1) - 25.0 * PX_PER_MM).abs() < 1e-9);
     }
 
-    /// The unit is the shell's: the same inch is 96 pixels on Windows at 100% and 72 points on
-    /// a Mac (`doc/macos-shell.md` decision 4).
+    /// The unit is the shell's: one inch is 96 pixels on Windows at 100% and 72 points on a Mac.
     #[test]
     fn the_unit_is_whatever_the_shell_says_a_millimetre_is() {
         let lengths = vec![(0, "25.4mm".to_string())];
@@ -401,8 +355,8 @@ mod tests {
         assert_eq!(cols.size_of(0), 80.0);
     }
 
-    /// A column ODF hides carries a perfectly ordinary width, and `table:visibility` is what
-    /// makes it gone. Reading only the widths drew every column of `hidden-rows-cols.fods`.
+    /// A hidden column carries an ordinary width; `table:visibility` hides it
+    /// (`hidden-rows-cols.fods`).
     #[test]
     fn a_hidden_track_is_hidden_whatever_width_it_was_given() {
         let lengths = vec![(1, "2.5cm".to_string())];

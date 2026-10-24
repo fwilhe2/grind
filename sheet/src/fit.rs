@@ -2,20 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Fitting tracks to what is in them — a column as wide as its widest text, a row given back to
-//! its content.
-//!
-//! The measuring is a font question and the core has no font, so a shell hands in its
-//! `Metrics` the way it does for [`crate::autoheight`]; what is decided here is everything
-//! else, so six clients cannot answer it six ways: *which* text a column is measured by (what
-//! each cell displays, in the face its own style names), which columns a selection means (the
-//! ones in use — a whole row selected is sixteen thousand columns and no text past the used
-//! extent), and what writing the answer is ([`App::fit`]: one undo step for the whole gesture,
-//! a row "fitted" by taking its own height away, since a row without one already grows to
-//! hold what is in it).
-//!
-//! Hoisted out of the macOS shell (`ui_mac/src/sheet/resize.rs`) when the CLI wanted the same
-//! answer — rule 4: whatever a window can do, `grind sheet fit` can.
+//! Fitting tracks to what is in them: a column as wide as its widest text, a row given back to its
+//! content. A shell supplies the `Metrics`; this decides which text a column is measured by (each
+//! cell's display, in its own face), which columns a selection means (those in use), and what
+//! writing the answer is ([`App::fit`]: one undo step, a row fitted by removing its own height).
+//! `grind sheet fit` is the CLI's.
 
 use std::ops::Range;
 
@@ -24,10 +15,8 @@ use grind_core::style::TextStyle;
 
 use crate::{App, look};
 
-/// The widest text in `col`, in `metrics`' own unit — each cell's displayed text in the face
-/// its own style sets it in, as `style` turns that into a [`TextStyle`] (normally
-/// [`look::text_style`]; a caller with no family of its own may name one). Zero when the column
-/// holds nothing to show.
+/// The widest text in `col`, in `metrics`' unit: each cell's displayed text in the face `style`
+/// gives it (normally [`look::text_style`]). Zero for a column with nothing to show.
 pub fn widest(
     app: &App,
     sheet: usize,
@@ -56,9 +45,8 @@ pub fn widest_drawn(app: &App, sheet: usize, col: u32, metrics: &dyn Metrics) ->
     widest(app, sheet, col, metrics, &look::text_style)
 }
 
-/// The columns of `cols` worth fitting: those up to the used extent, and never none — a
-/// selection wholly past the used extent still fits its first column, which [`width`] gives
-/// back to the default.
+/// The columns of `cols` worth fitting: those up to the used extent, never none — a selection past
+/// it fits its first column, which [`width`] resets.
 pub fn columns_in_use(app: &App, sheet: usize, cols: Range<u32>) -> Range<u32> {
     let used = app.used_extent(sheet).map_or(0, |(_, cols)| cols);
     cols.start..cols.end.min(used.max(cols.start + 1))
@@ -69,10 +57,9 @@ pub fn all_columns(app: &App, sheet: usize) -> Range<u32> {
     0..app.used_extent(sheet).map_or(0, |(_, cols)| cols)
 }
 
-/// The width a column fits to, as the length a document stores, from its [`widest`] text and
-/// the room `pad` a shell keeps beside it — both in the shell's unit, `mm_per_unit` of a
-/// millimetre each. **An empty column goes back to the default** (`None`), as LibreOffice's
-/// optimal width does, rather than shrinking to a sliver nobody can click.
+/// The width a column fits to, as a stored length, from its [`widest`] text plus `pad`, both in
+/// the shell's unit (`mm_per_unit` millimetres each). An empty column goes back to the default
+/// (`None`), as LibreOffice's optimal width does.
 pub fn width(widest: f64, pad: f64, mm_per_unit: f64) -> Option<String> {
     (widest > 0.0).then(|| crate::style::mm_length((widest + pad) * mm_per_unit))
 }

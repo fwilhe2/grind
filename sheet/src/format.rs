@@ -3,39 +3,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! What a formatting control reads off the active cell, and what it writes over the selection —
-//! the half of a format strip that is not a toolbar.
+//! the part of a format strip that is not a toolbar. A toggle is one field of [`CellStyle`] and a
+//! step one [`numfmt::preset`], so a cell formatted from any shell and one formatted by `grind
+//! sheet style`/`format` with the same arguments are the same document.
 //!
-//! Every shell with a format strip had its own: `ui_win32/src/sheet/format.rs`, the GNOME
-//! window's `formatting.rs` and the browser's tool row, and the Mac's toolbar would have been the
-//! fourth (`doc/macos-shell.md`, M1). They had drifted where it shows. The browser un-bolding the
-//! only bold cell left an empty `style:style` behind, read an `oblique` cell as not italic, and
-//! stepped the decimals of a date — or of a format this build did not write — into a number
-//! format nobody asked for. This is the Windows copy, whose rules were already the GNOME
-//! window's, and it adds nothing to the core's vocabulary: a toggle is one field of
-//! [`CellStyle`], a step is one [`numfmt::preset`], and a cell formatted from any shell and one
-//! formatted by `grind sheet style` / `grind sheet format` with the same arguments are the same
-//! document.
-//!
-//! Three rules carry the weight:
-//!
-//! * **Every read is of the active cell**, which is what every spreadsheet's toolbar shows and
-//!   what makes a toggle over a mixed selection predictable — Bold on a range whose first cell is
-//!   plain makes the whole range bold. The shell does the reading; everything here is handed the
-//!   active cell's style or format.
-//! * **A write is read, change one field, write** ([`restyled`]), because
-//!   [`crate::App::set_style`] replaces rather than merges, deliberately.
-//! * **A style that sets nothing is no style**, so un-bolding the only bold cell leaves no empty
-//!   `style:style` behind.
+//! * Every read is of the active cell, as every spreadsheet's toolbar shows it: Bold over a range
+//!   whose first cell is plain makes the whole range bold.
+//! * A write is read, change one field, write ([`restyled`]), because [`crate::App::set_style`]
+//!   replaces rather than merges.
+//! * A style that sets nothing is no style, so un-bolding the only bold cell leaves no empty
+//!   `style:style`.
 
 use crate::locale::Locale;
 use crate::numfmt::{self, Format, Kind};
 use crate::style::CellStyle;
 
-/// A formatting control that is on or off for a cell — one field of [`CellStyle`] with one value
-/// that means "on".
-///
-/// The three alignments are one field with three answers: turning one on takes the others out,
-/// and turning the one that is on off leaves the cell aligned by its content again.
+/// A formatting control that is on or off for a cell — one field of [`CellStyle`] and the value
+/// meaning "on". The three alignments are one field: turning one on turns the others off, and
+/// turning the active one off leaves the cell aligned by its content.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Toggle {
     Bold,
@@ -63,11 +48,9 @@ impl Toggle {
         Toggle::AlignEnd,
     ];
 
-    /// Whether the control is in for a cell styled `style`.
-    ///
-    /// §16.5's alignment values are relative to the writing direction, which is why `start` and
-    /// `end` are what this build *writes*; `left` and `right` are what other producers write, and
-    /// read the same here. `oblique` reads as italic for the same reason.
+    /// Whether the control is on for a cell styled `style`. ODF's alignments are writing-direction
+    /// relative, so `start`/`end` are written and `left`/`right` read the same; `oblique` reads as
+    /// italic.
     pub fn is_on(self, style: &CellStyle) -> bool {
         let align = style.align.as_deref();
         match self {
@@ -82,11 +65,9 @@ impl Toggle {
         }
     }
 
-    /// The style to write over a cell styled `style` to turn the control `on` or off: the one
-    /// field set or removed, everything else kept, and `None` when nothing is left set — which is
-    /// how the core spells no style.
-    ///
-    /// For a shell whose control already knows its new state, as a GTK toggle button does.
+    /// The style to write over a cell styled `style` to turn the control `on` or off: that one
+    /// field set or removed, everything else kept, `None` when nothing is left — for a control
+    /// that already knows its new state.
     pub fn set(self, style: &CellStyle, on: bool) -> Option<CellStyle> {
         let value = |value: &str| on.then(|| value.to_owned());
         restyled(style, |style| match self {
@@ -107,8 +88,8 @@ impl Toggle {
     }
 }
 
-/// A colour written into one of the two colour fields: `background` picks the fill rather than
-/// the text. `None` is *Automatic* — the attribute removed, so the theme decides again.
+/// A colour written into the text or (with `background`) the fill. `None` is Automatic: the
+/// attribute removed.
 pub fn coloured(style: &CellStyle, background: bool, value: Option<String>) -> Option<CellStyle> {
     restyled(style, |style| match background {
         true => style.background = value,
@@ -116,9 +97,8 @@ pub fn coloured(style: &CellStyle, background: bool, value: Option<String>) -> O
     })
 }
 
-/// The border a *Borders* control draws — LibreOffice's own hairline, in the three-part form ODF
-/// stores (`doc/ods-format.md` §5.4), so a box drawn from any shell is the box a document already
-/// full of them has. Four shells spelled it four times before this.
+/// The border a Borders control draws: LibreOffice's own hairline, in ODF's three-part form
+/// (`doc/ods-format.md` §5.4).
 pub const BORDER: &str = "0.06pt solid #000000";
 
 /// A hairline round the cell (`on`), or every edge taken away — *All Borders* and *No Borders*.
@@ -128,13 +108,11 @@ pub fn bordered(style: &CellStyle, on: bool) -> Option<CellStyle> {
     })
 }
 
-/// One indent level, in millimetres: ten pixels at 96 dpi, the step the oracle writes on the
-/// desktop for Excel's `indent="1"` (`doc/xlsx-format.md` §4.14) — so an indent set from any
-/// window lands on the same levels an imported workbook already uses.
+/// One indent level in millimetres: ten pixels at 96 dpi, what the oracle writes for Excel's
+/// `indent="1"` (`doc/xlsx-format.md` §4.14), so indents match an imported workbook's.
 pub const INDENT_STEP_MM: f64 = 2.645_83;
 
-/// `steps` indent levels as the length a document stores — `0.265cm`, `0.529cm`, …, three
-/// decimals, the spelling the oracle writes.
+/// `steps` indent levels as a stored length — `0.265cm`, `0.529cm`, … — as the oracle spells it.
 pub fn indent_length(steps: i64) -> String {
     let cm = steps as f64 * INDENT_STEP_MM / 10.0;
     let text = format!("{cm:.3}");
@@ -142,16 +120,16 @@ pub fn indent_length(steps: i64) -> String {
     format!("{text}cm")
 }
 
-/// How many indent levels a cell styled `style` is in — its `fo:margin-left` to the nearest
-/// level, so an indent written in some other unit still steps from where it is.
+/// How many indent levels a cell styled `style` is in, to the nearest level, whatever unit its
+/// `fo:margin-left` uses.
 pub fn indent_level(style: &CellStyle) -> i64 {
     style
         .indent_mm()
         .map_or(0, |mm| (mm / INDENT_STEP_MM).round() as i64)
 }
 
-/// *Increase Indent* (`step` 1) or *Decrease Indent* (-1): the cell's indent moved by whole
-/// levels, never below none — and at none the attribute is gone, not written as zero.
+/// Increase Indent (`step` 1) or Decrease Indent (-1), in whole levels and never below none, where
+/// the attribute is removed.
 pub fn indented(style: &CellStyle, step: i8) -> Option<CellStyle> {
     let level = (indent_level(style) + i64::from(step)).max(0);
     restyled(style, |style| {
@@ -159,30 +137,21 @@ pub fn indented(style: &CellStyle, step: i8) -> Option<CellStyle> {
     })
 }
 
-/// Read, change, and hand back what to write — `None` meaning no style at all.
-///
-/// The read-merge-write [`crate::App::set_style`]'s own documentation promises its callers in
-/// place of a merge policy in the core.
+/// Read, change, and hand back what to write — `None` meaning no style.
 pub fn restyled(style: &CellStyle, change: impl FnOnce(&mut CellStyle)) -> Option<CellStyle> {
     let mut style = style.clone();
     change(&mut style);
     (!style.is_plain()).then_some(style)
 }
 
-/// The most decimals the steps go to. Past this a number is not being formatted, it is being
-/// printed at the float's own precision, which *General* already does.
+/// The most decimals the steps go to; beyond it General already prints the float's precision.
 pub const MAX_DECIMALS: u8 = 10;
 
-/// One decimal more (`step > 0`) or fewer over a cell formatted `current` — Excel's *Increase
-/// Decimal* and *Decrease Decimal*.
-///
-/// A cell that already shows a number keeps its kind, grouping, symbol and locale and changes
-/// only its decimal count, clamped to `0..=MAX_DECIMALS`. A cell with **no format** starts from
-/// what it *shows* — `shown` is the number of decimals in its displayed text
-/// ([`decimals_shown`]), so `1.5` becomes `1.50` and `1`, which is what the button means when you
-/// press it over a plain number. A date, a time, a boolean, text or a format this build did not
-/// write has no decimals to step, and answers `None`: nothing to write. `locale` is used only
-/// when the cell has no format to keep one from.
+/// One decimal more (`step > 0`) or fewer over a cell formatted `current` — Increase and Decrease
+/// Decimal. A number keeps its kind, grouping, symbol and locale, its decimals clamped to
+/// `0..=MAX_DECIMALS`. A cell with no format starts from the `shown` decimals of its display
+/// ([`decimals_shown`]), so `1.5` becomes `1.50` or `2`. A date, time, boolean, text or foreign
+/// format answers `None`. `locale` is used only when there is no format to keep one from.
 pub fn stepped(
     current: Option<&Format>,
     step: i8,
@@ -204,11 +173,9 @@ pub fn stepped(
     Some(numfmt::preset(kind, next, grouping, &symbol).in_locale(own_locale(current, locale)))
 }
 
-/// *Group Thousands* over a cell formatted `current` — the thousands separator turned on, or
-/// off when it is on, everything else a person chose kept. A cell with **no format** starts
-/// from what it shows, as [`stepped`] does (`shown` decimals, grouped), so a press over a plain
-/// `12345.5` is `12,345.5`. Anything that is not a number, a percentage or a currency answers
-/// `None`: nothing to group.
+/// Group Thousands over a cell formatted `current`: the separator toggled, everything else kept. A
+/// cell with no format starts from what it shows, as [`stepped`] does. Anything but a number,
+/// percentage or currency answers `None`.
 pub fn grouped(current: Option<&Format>, shown: u8, locale: Option<Locale>) -> Option<Format> {
     let (kind, decimals, grouping, symbol) = match current {
         None => (Kind::Number, shown, false, String::new()),
@@ -228,13 +195,9 @@ pub fn is_grouped(current: Option<&Format>) -> bool {
         .is_some_and(|format| format.preset_params().2)
 }
 
-/// The format a currency choice writes over a cell whose format is `current` — one of
-/// [`numfmt::CURRENCIES`] in every window, one click being the whole request.
-///
-/// A cell that is *already* a currency keeps its own decimals, grouping and locale and only
-/// changes its symbol; anything else gets two decimals, grouped thousands and `locale` — what
-/// the GNOME window's picker writes with its fields untouched. Hoisted out of the Windows grid
-/// (`ui_win32/src/sheet/currency.rs`) when the Mac wanted the same answer.
+/// The format a currency choice ([`numfmt::CURRENCIES`]) writes over a cell formatted `current`. A
+/// currency keeps its decimals, grouping and locale and changes only its symbol; anything else
+/// gets two decimals, grouped, in `locale`.
 pub fn currency(current: Option<&Format>, symbol: &str, locale: Option<Locale>) -> Format {
     match current.filter(|f| f.is_preset()) {
         Some(format) if format.preset_params().0 == Kind::Currency => {
@@ -246,9 +209,8 @@ pub fn currency(current: Option<&Format>, symbol: &str, locale: Option<Locale>) 
     }
 }
 
-/// Which of [`numfmt::CURRENCIES`] a cell is formatted as, by index — the one menu item that
-/// carries a check. `None` for a cell with no currency, and for one whose currency is none of
-/// the three (a document's own `CHF`), which no item may claim.
+/// Which of [`numfmt::CURRENCIES`] a cell is formatted as, by index — the one menu item with a
+/// check. `None` for no currency or another one (a document's `CHF`).
 pub fn currency_chosen(current: Option<&Format>) -> Option<usize> {
     let format = current.filter(|f| f.is_preset())?;
     let (kind, _, _, symbol) = format.preset_params();
@@ -258,10 +220,8 @@ pub fn currency_chosen(current: Option<&Format>) -> Option<usize> {
     numfmt::CURRENCIES.iter().position(|(s, _)| *s == symbol)
 }
 
-/// How many decimals `text` shows, read the way `locale` spells a number — the digits after its
-/// decimal character, up to the first that is not a digit. What [`stepped`] starts a plain cell
-/// from. Zero for text with no decimal character, which is also the answer for a cell that is not
-/// a number at all.
+/// How many decimals `text` shows, read in `locale`'s spelling: the digits after its decimal
+/// character. Zero when there is none.
 pub fn decimals_shown(text: &str, locale: Option<&Locale>) -> u8 {
     let point = locale.map_or('.', Locale::decimal);
     let Some((_, after)) = text.rsplit_once(point) else {
@@ -273,8 +233,7 @@ pub fn decimals_shown(text: &str, locale: Option<&Locale>) -> u8 {
         .min(MAX_DECIMALS)
 }
 
-/// The locale a new format is written in: the one the cell's format already states, else the
-/// caller's fallback — so a step or a change of kind never moves a cell out of its own locale.
+/// The locale a new format is written in: the cell's own format's, else the caller's fallback.
 pub fn own_locale(current: Option<&Format>, fallback: Option<Locale>) -> Option<Locale> {
     match current.and_then(|f| f.locale.clone()) {
         Some(own) => Some(own),
@@ -282,14 +241,9 @@ pub fn own_locale(current: Option<&Format>, fallback: Option<Locale>) -> Option<
     }
 }
 
-/// The number formats a picker offers, each one click: [`numfmt::preset`]'s kinds, plus
-/// *General* for no format at all and *Date and Time*, which is [`numfmt::datetime_preset`].
-///
-/// The same nine, in the same order, as `grind sheet format`'s positional argument and every
-/// shell's picker. What each is *called* is the shell's — the GNOME window writes sentence case
-/// and the Mac and Windows title case — and what each *writes* is this. Hoisted out of
-/// `ui_win32/src/sheet/format.rs` the day the Mac's toolbar would have been its second copy
-/// (`doc/macos-shell.md`, M7).
+/// The number formats a picker offers, each one click: [`numfmt::preset`]'s kinds, plus General
+/// (no format) and Date and Time ([`numfmt::datetime_preset`]) — the same nine, in the same order,
+/// as `grind sheet format`'s argument. What each is called is the shell's; what it writes is this.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Preset {
     General,
@@ -331,7 +285,7 @@ impl Preset {
     }
 
     /// Which preset a cell formatted `format` is — what a picker opens on. `None` for a format
-    /// this build did not write (a document's own `#,##0.0 "kg"`), which no preset may claim.
+    /// this build did not write.
     pub fn of(format: Option<&Format>) -> Option<Preset> {
         let Some(format) = format else {
             return Some(Preset::General);
@@ -348,14 +302,11 @@ impl Preset {
             .find(|preset| preset.kind() == Some(kind))
     }
 
-    /// The format choosing this preset writes over a cell formatted `current` — `None` for
-    /// *General*, which is no format at all.
-    ///
-    /// **One click is the whole request**: there is no dialog of decimals, so a cell that already
-    /// shows a number keeps its own decimals, grouping and locale where the new kind has them,
-    /// and a currency keeps its symbol. Anything else gets what a spreadsheet's own buttons give
-    /// — a number two decimals grouped, a percentage none, a currency two grouped in the default
-    /// currency. `locale` is used only when the cell has no format to keep one from.
+    /// The format this preset writes over a cell formatted `current`; `None` for General. One
+    /// click is the whole request: a number keeps its decimals, grouping and locale where the new
+    /// kind has them, and a currency its symbol. Anything else gets the usual buttons' defaults —
+    /// a number two decimals grouped, a percentage none, a currency two grouped in the default
+    /// currency.
     pub fn format(self, current: Option<&Format>, locale: Option<Locale>) -> Option<Format> {
         if self == Preset::DateTime {
             return Some(numfmt::datetime_preset().in_locale(own_locale(current, locale)));
@@ -377,18 +328,15 @@ impl Preset {
             (Kind::Currency, _) => symbol,
             _ => String::new(),
         };
-        // A percentage keeps the grouping it had, but one arriving from nothing gets none:
-        // `1,250%` is a figure nobody formats on purpose.
+        // A percentage keeps the grouping it had; one from nothing gets none.
         Some(
             numfmt::preset(kind, decimals, grouping, &symbol)
                 .in_locale(own_locale(current, locale)),
         )
     }
 
-    /// What a picker's face says about a cell formatted `format`: `123` for a plain number,
-    /// `%`, the currency's own symbol, `Date`, `Time`, `T/F`, `Abc` — so a glance at a toolbar
-    /// answers "what is this cell" without opening anything. A format this build did not write
-    /// says `Custom`, which is true and is not a guess.
+    /// What a picker's face says about a cell formatted `format`: `123`, `%`, the currency symbol,
+    /// `Date`, `Time`, `T/F`, `Abc`, or `Custom` for a format this build did not write.
     pub fn face(format: Option<&Format>) -> String {
         let preset = match Preset::of(format) {
             None => return "Custom".to_owned(),
@@ -447,8 +395,7 @@ mod tests {
         assert_eq!(written.align.as_deref(), Some("center"));
     }
 
-    /// What other producers write reads the same as what this build writes, so pressing Italic
-    /// on an oblique cell takes it out rather than making it italic.
+    /// Pressing Italic on an oblique cell turns it off.
     #[test]
     fn oblique_is_italic_and_left_is_start() {
         let oblique = CellStyle {

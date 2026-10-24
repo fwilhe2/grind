@@ -2,25 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! View modes: what a document *means*, derived rather than stored.
+//! View modes: what a document means, derived rather than stored (`doc/view-modes.md`).
 //!
-//! `doc/view-modes.md` is normative for this module. Two overlays on top of the values a
-//! shell already draws:
+//! * **Roles** (§4) — every cell has one: an input, a computed value, a label, an unnamed constant
+//!   something computes with.
+//! * **Name anchors** (§3) — where a named expression lives.
 //!
-//! * **Roles** (§4) — every cell has one, and the document already implies which: an input,
-//!   a computed value, a label, an unnamed constant something computes with.
-//! * **Name anchors** (§3) — where a named expression *lives*, so a model does not need a
-//!   label cell beside every constant.
-//!
-//! **Nothing here is ever written to a document** (§1). Not as a cell style, not as
-//! `calcext:`, not as a settings block. A role is a reading of a document rather than a
-//! property of one, and the reason to derive it instead of shipping a palette of named
-//! styles is that a *stored* classification goes stale and a derived one cannot.
-//!
-//! The precedent is `formula::display::spans`, which exposes the reference scanner in byte
-//! ranges precisely so the editor's colourer and its committer cannot disagree about what a
-//! reference is. This is that idea moved from the formula bar to the grid: **one classifier,
-//! in the core; shells that choose colours and nothing else.**
+//! Nothing here is ever written to a document (§1): a stored classification goes stale and a
+//! derived one cannot. One classifier, in the core; shells choose colours and nothing else.
 
 use std::ops::Range;
 
@@ -31,21 +20,12 @@ use crate::formula::serialize::Bare;
 use crate::graph::RefIndex;
 use crate::model::{CellValue, Document, Pos, Sheet};
 
-/// How many formulas must read a literal *by address* before not naming it is a problem —
-/// `doc/view-modes.md` §4.2's "a lone `0.2` that **three formulas** multiply by", with the
-/// bar set at two.
-///
-/// One reader is the ordinary shape of a spreadsheet: a column of data with a column of
-/// formulas beside it, each reading its own row. Setting the bar here rather than at one is
-/// what stops the rule flagging every data table in the corpus, and it errs towards a false
-/// *negative* deliberately — §9's judgement is that an annoying lint gets turned off, and a
-/// lint that is turned off finds nothing at all.
+/// How many formulas must read a literal by address before it counts as an unnamed constant
+/// (§4.2). One reader is an ordinary data column beside its formulas, so the bar is two; it errs
+/// towards false negatives, since an annoying lint gets turned off.
 const MAGIC_READERS: usize = 2;
 
-/// What a cell *is*, as the document already implies it.
-///
-/// **Total and disjoint**: every cell has exactly one, and that is what makes the mode
-/// legible — a wash with gaps in it reads as a bug.
+/// What a cell is, as the document implies it. Total and disjoint: every cell has exactly one.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CellRole {
     /// Nothing there. The one role a shell draws as nothing at all.
@@ -53,33 +33,26 @@ pub enum CellRole {
     Empty,
     /// A literal with a name bound to it — the good case.
     InputNamed,
-    /// A literal no formula singles out. Ordinary data — a table of numbers under a total
-    /// is this, and it is not a problem.
+    /// A literal no formula singles out — ordinary data.
     InputUnnamed,
-    /// A literal **some formula singles out by address**, with no name bound to it: §4.2's
-    /// magic number. The fix is `grind sheet name`, and the hint from Part I is what fixing
-    /// one looks like. Two things do **not** count: being inside a range a `SUM` covers, and
-    /// being one of a line of literals — see `MAGIC_READERS` and `in_a_run`.
+    /// A literal some formula singles out by address, with no name — §4.2's magic number, fixed by
+    /// `grind sheet name`. Being inside a range a `SUM` covers does not count, nor being one of a
+    /// line of literals (`MAGIC_READERS`, `in_a_run`).
     ConstantUnnamed,
     /// A formula whose references are all on its own sheet.
     ComputedLocal,
-    /// A formula reading another sheet — "green" in the financial-modelling convention this
-    /// borrows.
+    /// A formula reading another sheet — "green" in the financial-modelling convention.
     ComputedCrossSheet,
     /// Text: the row and column headings a person writes.
     Label,
     /// A formula that evaluates to an error.
     Error,
-    /// A formula whose cached value disagrees with re-evaluating it — the same disagreement
-    /// [`crate::App::stale`] counts.
+    /// A formula whose cached value disagrees with re-evaluating it ([`crate::App::stale`]).
     Stale,
 }
 
 impl CellRole {
-    /// The role's name, as the CLI prints it and as `--format json` spells it.
-    ///
-    /// Stable, kebab-case, and the one vocabulary every shell shares: a command id, a JSON
-    /// field and a legend row all say the same word.
+    /// The role's name as the CLI prints it and JSON spells it — stable kebab-case.
     pub fn name(self) -> &'static str {
         match self {
             CellRole::Empty => "empty",
@@ -94,19 +67,9 @@ impl CellRole {
         }
     }
 
-    /// One character standing for the role — `doc/view-modes.md` §4.6's second channel.
-    ///
-    /// In the core beside [`CellRole::name`] and for the same reason: this is the role's
-    /// *name in one character*, and four shells inventing four tables would mean the same
-    /// document said different things in different windows. What a shell chooses is where to
-    /// put it and what colour to draw it, which is all a shell should be choosing.
-    ///
-    /// It is not a decoration. A feature whose entire output is colour excludes anyone who
-    /// cannot discriminate colour, and §9's judgement is that such a feature does not get
-    /// fixed later — so the glyph ships with the colours or the mode does not ship. Every
-    /// role's is distinct; `◆` is a named input, `◇` an unnamed one, `!` the constant nobody
-    /// named, `=` a formula, `→` one reading another sheet, `T` a label, `✕` an error and
-    /// `~` a value that disagrees with its own formula.
+    /// One character standing for the role (§4.6), so the mode works without colour: `◆` a named
+    /// input, `◇` an unnamed one, `!` the unnamed constant, `=` a formula, `→` one reading another
+    /// sheet, `T` a label, `✕` an error, `~` a stale value. Every role's is distinct.
     pub fn marker(self) -> &'static str {
         match self {
             CellRole::Empty => "",
@@ -121,22 +84,17 @@ impl CellRole {
         }
     }
 
-    /// What colour this role's marker is drawn in — the financial-modelling convention this
-    /// mode borrows (inputs blue, formulas the ordinary ink, another sheet's a third hue),
-    /// decided once. The colour is a property of the *mode*, not of a toolkit: `ui_sheet_gtk`
-    /// and `ui_win32` each carried this table, and the Mac would have been the third
-    /// (`doc/macos-shell.md`, M8). What a shell decides is only how it resolves the ink and how
-    /// far it lifts a palette colour to be legible on its own ground.
+    /// The colour of this role's marker, after the financial-modelling convention: inputs blue,
+    /// formulas the ordinary ink, another sheet's a third hue. A shell resolves the ink and lifts
+    /// a palette colour to be legible on its ground.
     pub fn hue(self) -> Hue {
         match self {
             CellRole::Empty => Hue::None,
-            // Inputs blue; the named/unnamed split is ours, and it is one hue apart rather
-            // than a different colour — both are inputs.
+            // Inputs blue; named and unnamed are one hue apart.
             CellRole::InputNamed => Hue::Palette("blue"),
             CellRole::InputUnnamed => Hue::Palette("navy"),
             CellRole::ConstantUnnamed => Hue::Palette("orange"),
-            // A computed cell is "black" in every model ever coloured by hand, and black in a
-            // dark theme is the foreground.
+            // A computed cell is black by convention, which in a dark theme is the foreground.
             CellRole::ComputedLocal => Hue::Ink,
             CellRole::ComputedCrossSheet => Hue::Palette("olive"),
             CellRole::Label => Hue::Quiet,
@@ -145,12 +103,9 @@ impl CellRole {
         }
     }
 
-    /// Whether this role is also a **diagnostic** — something wrong rather than something
-    /// true (§4.3).
-    ///
-    /// The distinction is load-bearing for the drawing: roles get the fill or the text
-    /// colour, diagnostics get a mark. If the mode painted both in one channel an ordinary
-    /// model would look like a wall of warnings, and people turn that off in a week.
+    /// Whether this role is a diagnostic — something wrong rather than something true (§4.3).
+    /// Roles get a fill or text colour, diagnostics a mark, so an ordinary model does not look
+    /// like a wall of warnings.
     pub fn is_diagnostic(self) -> bool {
         matches!(
             self,
@@ -158,8 +113,7 @@ impl CellRole {
         )
     }
 
-    /// Every role, in the order this module lists them — what a legend and a totality test
-    /// both walk.
+    /// Every role, in this module's order, for a legend.
     pub const ALL: [CellRole; 9] = [
         CellRole::Empty,
         CellRole::InputNamed,
@@ -186,11 +140,8 @@ pub enum Hue {
     Quiet,
 }
 
-/// Where a named expression lives: a name, and the rectangle it denotes.
-///
-/// Only a name whose expression is a **plain reference** has one. `[.A1]*2` is a computed
-/// name — it denotes no place, the formula bar can still show it, and the grid has nowhere
-/// to put it (§3.1).
+/// Where a named expression lives: a name and the rectangle it denotes. Only a plain reference has
+/// one; `[.A1]*2` denotes no place (§3.1).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NameAnchor {
     /// The name as it was declared, not lower-cased — this is what gets drawn.
@@ -205,30 +156,21 @@ impl NameAnchor {
         self.sheet == at.sheet && self.rows.contains(&at.pos.row) && self.cols.contains(&at.pos.col)
     }
 
-    /// Whether this anchor covers more than one cell — the case a shell draws **once**, at
-    /// the first visible cell, rather than forty-nine times (§3.2).
+    /// Whether this anchor covers more than one cell, drawn once at the first visible cell (§3.2).
     pub fn is_range(&self) -> bool {
         self.rows.len() > 1 || self.cols.len() > 1
     }
 }
 
-/// One document, read for what it means.
-///
-/// Document-wide by nature — *nothing references this cell* cannot be answered inside a
-/// viewport — and therefore built once and cached by [`crate::App`], which throws it away on
-/// every mutation. Rule 1 is about what leaves the core, not about what the core may know.
-///
-/// The cost of building one is a full recalculation (for staleness) plus one walk of the
-/// parsed formulas (for the reference index) — the same cost as [`crate::App::stale`], and
-/// for the same reason: there is no second implementation of what counts as stale.
+/// One document, read for what it means. Document-wide by nature, so built once and cached by
+/// [`crate::App`], which drops it on every mutation. Building one costs what [`crate::App::stale`]
+/// costs, a full recalculation, plus a walk of the parsed formulas.
 #[derive(Clone, Debug, Default)]
 pub struct Analysis {
     refs: RefIndex,
     names: Names,
-    /// The role of every **formula** cell, which is the half that needs evaluating. A
-    /// literal's role is answered from `refs` and the anchors on demand, in
-    /// [`Analysis::role`] — which is what keeps this from being a vector the size of the
-    /// used area.
+    /// The role of every formula cell; a literal's role is answered on demand in
+    /// [`Analysis::role`], so this is not the size of the used area.
     formulas: std::collections::BTreeMap<Address, CellRole>,
 }
 
@@ -261,14 +203,9 @@ impl Analysis {
         }
     }
 
-    /// The role of one cell. `sheet` must be the sheet `at` names — the caller has it in
-    /// hand and this avoids a second lookup per cell of a viewport.
-    ///
-    /// The order of the arms *is* the disjointness rule, so it is worth reading as one:
-    /// a formula's role was decided when the analysis was built; then a name wins over
-    /// everything, because a named cell is the case this whole feature is arguing for;
-    /// then text is a label; then a referenced literal is a magic constant; and everything
-    /// left is ordinary data.
+    /// The role of one cell; `sheet` must be the sheet `at` names. The order of the arms is the
+    /// disjointness rule: a formula's role is decided at build time; then a name wins; then text
+    /// is a label; then a referenced literal is a magic constant; anything left is data.
     pub fn role(&self, sheet: &Sheet, at: Address) -> CellRole {
         if let Some(role) = self.formulas.get(&at) {
             return *role;
@@ -280,18 +217,14 @@ impl Analysis {
         if self.names.at(at).is_some() {
             return CellRole::InputNamed;
         }
-        // A **text** literal is never a magic constant, even when a formula reads it. A sum
-        // whose range overlaps its own column heading references that heading, and calling
-        // it a decision somebody failed to write down is exactly the false positive
-        // `doc/view-modes.md` §9 warns the rule can die of. §4.2's case is a lone `0.2` that
-        // three formulas multiply by, and that is a number.
+        // A text literal is never a magic constant: a sum whose range overlaps its own heading
+        // references the heading, and flagging that is the false positive §9 warns of.
         if matches!(value, CellValue::Text(_)) {
             return CellRole::Label;
         }
-        // §4.2's magic constant, and it takes **both** signals — see `MAGIC_READERS` and
-        // [`in_a_run`]. Read by address from more than one place, and not one of a line of
-        // literals. Either alone flags a whole data table, which `examples/sample-sheet.sh`
-        // demonstrated twice.
+        // A magic constant takes both signals: read by address from more than one place
+        // (`MAGIC_READERS`) and not one of a line of literals ([`in_a_run`]). Either alone flags
+        // whole data tables.
         match self.refs.singled_out_by(at) >= MAGIC_READERS && !in_a_run(sheet, at.pos) {
             true => CellRole::ConstantUnnamed,
             false => CellRole::InputUnnamed,
@@ -323,32 +256,23 @@ impl Analysis {
         &self.names
     }
 
-    /// The reference index this was built on — §4.4's graph, for a caller that wants the
-    /// dependency answers rather than the colours.
+    /// The reference index this was built on (§4.4).
     pub fn refs(&self) -> &RefIndex {
         &self.refs
     }
 }
 
-/// Every named expression in a document that denotes a **place**, resolved — Part I's half
-/// of the analysis, and the whole of what inline names need.
-///
-/// Separate from [`Analysis`] because it is enormously cheaper: this is one parse per
-/// declared name, where an [`Analysis`] recalculates the document. A caller that only wants
-/// to read formulas through their names — the formula bar, and loop B's check of it — pays
-/// for that and nothing else.
+/// Every named expression that denotes a place, resolved — what inline names need. One parse per
+/// name, far cheaper than an [`Analysis`], for the formula bar.
 #[derive(Clone, Debug, Default)]
 pub struct Names {
     anchors: Vec<NameAnchor>,
 }
 
 impl Names {
-    /// **A name anchors only when its expression names a sheet**, and that is §3.5 rather
-    /// than a shortcut. `Document::names` is one flat map, so a sheet-local name is visible
-    /// document-wide (`model.rs`); a hint drawn from an unqualified `[.B2]` would appear on
-    /// *every* sheet's B2, which is worse than no hint at all. Our writer stores a named
-    /// range fully qualified, and so does LibreOffice, so the case this declines is the
-    /// ambiguous one.
+    /// A name anchors only when its expression names a sheet (§3.5): `Document::names` is one flat
+    /// map, so an unqualified `[.B2]` would hint on every sheet's B2. Both writers store named
+    /// ranges fully qualified.
     pub fn build(doc: &Document) -> Self {
         let engine = Engine::new(doc);
         let mut anchors = Vec::new();
@@ -371,10 +295,8 @@ impl Names {
             else {
                 continue;
             };
-            // The far end of a range is written `[$Sheet1.$A$1:.$A$50]` — a bare `.`,
-            // meaning "the sheet this is evaluated on". So it is resolved *as if from* the
-            // sheet the near end named, which is the only reading that makes the range one
-            // rectangle.
+            // The far end of `[$Sheet1.$A$1:.$A$50]` is resolved from the sheet the near end
+            // named.
             let Some(Area { sheet, rows, cols }) =
                 engine.area(reference, Address::new(sheet, Pos::new(0, 0)))
             else {
@@ -417,22 +339,11 @@ impl Names {
             .map(|a| a.name.as_str())
     }
 
-    /// One formula in display form **with its names substituted** — §3.3, and the larger
-    /// half of Part I: `=[.B2]*[.B7]` reads `=tax_rate*subtotal` rather than `=B2*B7`.
-    ///
-    /// The grid hint (§3.2) is the visible half of inline names; this is the useful one,
-    /// because a formula bar is where a person actually asks what a cell computes.
-    ///
-    /// **Not a second grammar, and it must not become one.** `formula::display` already
-    /// parses and re-serialises through the canonical printer; this substitutes into the
-    /// *parsed expression* and hands the result to that same printer. So precedence,
-    /// parenthesisation and every other spelling decision stay in the one place that makes
-    /// them, and the reverse direction already exists — `from_display` resolves a bare
-    /// identifier that is not cell-shaped as a name.
-    ///
-    /// `at` is the cell the formula lives in, and it is not decoration: a reference is
-    /// resolved from where it sits, so `[.B2]` in one row and `[.B2]` in another are
-    /// different cells and only one of them can be `tax_rate`.
+    /// One formula in display form with its names substituted (§3.3): `=[.B2]*[.B7]` reads
+    /// `=tax_rate*subtotal`. Substitutes into the parsed expression and prints with the canonical
+    /// printer, so there is no second grammar, and `from_display` already reads a bare non-cell
+    /// identifier as a name. `at` is the cell the formula is in: relative references resolve from
+    /// there.
     pub fn display(
         &self,
         doc: &Document,
@@ -443,23 +354,15 @@ impl Names {
         Ok(format!("={}", Bare(&self.substitute(doc, at, &expr))))
     }
 
-    /// The same substitution, stopping at the expression — every reference that denotes
-    /// exactly what a name denotes replaced by [`Expr::Name`].
-    ///
-    /// Exposed beside [`Names::display`] because the *check* needs it: loop B asserts that
-    /// display form re-parses to the expression it was printed from, and with names on, the
-    /// expression it must come back to is this one rather than the original.
+    /// The same substitution, stopping at the expression; exposed because loop B checks that
+    /// display form with names re-parses to this.
     pub fn substitute(&self, doc: &Document, at: Address, expr: &Expr) -> Expr {
         self.rewrite(&Engine::new(doc), at, expr)
     }
 
-    /// The name denoting exactly this reference, resolved from `at`.
-    ///
-    /// **Area equality, not text equality**, and that is the whole of it. A name is stored
-    /// fully qualified and absolute (`[$Rates.$A$1]`) while the formula reading it says
-    /// `[Rates.A1]`, so comparing the two spellings would find almost nothing; resolving
-    /// both through [`Engine::area`] — the function the evaluator itself calls — finds them
-    /// whenever they mean the same rectangle, which is the question being asked.
+    /// The name denoting exactly this reference, resolved from `at`: by area, through
+    /// [`Engine::area`], since `[$Rates.$A$1]` and `[Rates.A1]` are different text for the same
+    /// cell.
     pub fn of(&self, doc: &Document, at: Address, reference: &Reference) -> Option<&str> {
         self.resolve(&Engine::new(doc), at, reference)
     }
@@ -477,12 +380,8 @@ impl Names {
             },
             Expr::Prefix(op, operand) => Expr::Prefix(*op, recur(operand)),
             Expr::Postfix(op, operand) => Expr::Postfix(*op, recur(operand)),
-            // The **range operator** is left alone, for the reason display form already
-            // keeps its operands bracketed: `[Sheet2.C22]:[.C33]` is not one reference, and
-            // unbracketed a bare word either side of a `:` scans as a *reference* rather
-            // than a name (`display`'s disambiguation rules). Substituting there would
-            // print something that does not read back, which is the one outcome §3.3
-            // forbids.
+            // The range operator is left alone: display form keeps its operands bracketed, and a
+            // bare word beside `:` would read back as a reference.
             Expr::Binary(Op::Range, lhs, rhs) => Expr::Binary(Op::Range, lhs.clone(), rhs.clone()),
             Expr::Binary(op, lhs, rhs) => Expr::Binary(*op, recur(lhs), recur(rhs)),
             Expr::Paren(inner) => Expr::Paren(recur(inner)),
@@ -491,8 +390,7 @@ impl Names {
     }
 
     fn resolve(&self, engine: &Engine, at: Address, reference: &Reference) -> Option<&str> {
-        // An external-source reference denotes a document nothing here has open, so no name
-        // in *this* document can be standing for it.
+        // An external reference denotes a document nothing here has open.
         if reference.source.is_some() {
             return None;
         }
@@ -503,32 +401,18 @@ impl Names {
                 a.sheet == sheet
                     && a.rows == rows
                     && a.cols == cols
-                    // A **cell-shaped name** is never substituted, and the corpus is what
-                    // found this: `date1` printed bare reads back as cell DATE1, so the
-                    // reading would mean something the formula does not. `App::set_name`
-                    // refuses to create such a name for the same reason, which keeps this
-                    // to documents written elsewhere. The *grid* hint still draws it —
-                    // nothing re-parses a hint (§3.2).
+                    // A cell-shaped name is never substituted: `date1` printed bare reads back as
+                    // cell DATE1. The grid hint still draws it, since nothing re-parses a hint.
                     && !crate::formula::display::reads_as_reference(&a.name)
             })
             .map(|a| a.name.as_str())
     }
 }
 
-/// Whether a cell is one of a **line of literals** — three or more in its column or in its
-/// row — which is what a table of data looks like and what a parameter does not.
-///
-/// The second half of §4.2, and the reason it is needed is worth writing down, because it
-/// was found rather than designed. The sample document has a column of actuals with two
-/// formula columns beside it, each reading its own row's cell by address; every actual is
-/// therefore a literal, unnamed, and singled out by two formulas — the whole of the first
-/// rule — and the mode painted the entire column as decisions nobody wrote down. What makes
-/// `0.2` a parameter is that it stands on its own. Three is the shortest line that is
-/// unambiguously a table rather than a coincidence, and the scan stops at two cells each way
-/// so this stays a handful of lookups per cell.
-///
-/// A formula cell breaks a run: a column of literals under a heading and above a total is a
-/// run of literals, not a run of anything else.
+/// Whether a cell is one of a line of literals — three or more in its column or row — which is
+/// what a data table looks like and a parameter does not. Without this, a column of actuals read
+/// by two formula columns beside it was painted as unnamed constants. The scan stops two cells
+/// each way, and a formula cell breaks a run.
 fn in_a_run(sheet: &Sheet, pos: Pos) -> bool {
     let kind = |pos: Pos| match sheet.formula(pos).is_some() {
         true => None,
@@ -561,10 +445,8 @@ fn in_a_run(sheet: &Sheet, pos: Pos) -> bool {
     1 + up + down >= 3 || 1 + left + right >= 3
 }
 
-/// Which overlays a read should compute (`doc/view-modes.md` §2).
-///
-/// Requested rather than always computed: a shell that draws neither pays for neither, and
-/// the CLI asks for exactly what it prints.
+/// Which overlays a read should compute (`doc/view-modes.md` §2), so a shell drawing neither pays
+/// for neither.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Overlays {
     pub roles: bool,
@@ -651,10 +533,8 @@ mod tests {
             .collect()
     }
 
-    /// §4.6 and §9: the mode must be usable with no colour discrimination at all, so every
-    /// role a reader can see needs its **own** glyph. A duplicate is a role that becomes
-    /// invisible to somebody, which is exactly what a "ship the colours now, the markers
-    /// later" plan produces.
+    /// §4.6 and §9: every visible role has its own glyph, so none disappears for a reader without
+    /// colour.
     #[test]
     fn every_role_a_reader_can_see_has_a_marker_of_its_own() {
         let mut seen: Vec<&str> = Vec::new();
@@ -793,8 +673,7 @@ mod tests {
 
     #[test]
     fn the_analysis_is_rebuilt_after_a_mutation_rather_than_remembered() {
-        // §9's one real risk: a cache with an invalidation rule. The rule is trivial —
-        // invalidate in `mutate`, where observers are already notified — and this is it.
+        // The cache is dropped in `mutate`.
         let app = App::new();
         app.enter(0, cell_of("A1"), "0.2", RecalcMode::No).unwrap();
         assert_eq!(roles(&app, 0, &["A1"]), ["input-unnamed"]);

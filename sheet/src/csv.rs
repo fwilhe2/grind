@@ -2,62 +2,25 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! CSV and TSV — the one non-ODF format this suite reads and writes.
+//! CSV and TSV — the one non-ODF format this suite reads and writes (`doc/not-doing.md` §2).
 //!
-//! `doc/not-doing.md` §2 makes it the single exception to "nothing but ODF, for writing", and
-//! gives the reason: it carries no semantics to get wrong. That is true of the *format* and
-//! not of the job, because a CSV file says nothing about what its fields mean. Everything
-//! interesting here is in the two places where that gap has to be crossed.
+//! This module does not own the typing rule. Importing decides what a person would have typed to
+//! mean each field ([`input`]), and [`crate::App::import_csv`] hands that to the rule a keystroke
+//! and a paste use, so a field means nothing in a CSV it could not mean in a cell.
 //!
-//! **There is one typing rule, and this module does not own it.** Importing does not decide
-//! what a field *means*; it decides what a person would have **typed** to mean it, and
-//! [`crate::App::import_csv`] hands that string to the rule a keystroke, a paste and a
-//! projection all come through. So `TRUE` is a logical here because it is one when typed, and
-//! a field cannot acquire a meaning in a CSV that it could not have in a cell. [`input`] is
-//! that translation and is the whole of it.
+//! [`parse`] never fails — an unterminated quote, a stray quote, ragged rows, CRLF, a lone CR, a
+//! byte-order mark and blank lines all have a defined reading — and [`write()`] emits the
+//! conservative form. TSV is `Dialect::TAB`, not a second format.
 //!
-//! **Tolerance on the way in, strictness on the way out**, which is this project's rule for
-//! ODF (`doc/ods-format.md` §8) applied to a format with far less of a specification. RFC 4180
-//! describes a fraction of what real files contain, so [`parse`] never fails: an unterminated
-//! quote, a stray quote inside a bare field, ragged rows, CRLF, a lone CR, a byte-order mark
-//! and blank lines in the middle all have a defined reading below. [`write()`] emits the
-//! conservative form every reader accepts.
-//!
-//! **TSV is not a second format.** The delimiter is a field of [`Dialect`], so tab-separated
-//! is `Dialect::TAB` and a German export is `Dialect::SEMICOLON`. Anything else with a single
-//! separator character is [`Dialect::new`].
-//!
-//! Dates are the one place where a field cannot become what it is without help, because the
-//! typing rule reads an ISO date only into a cell already formatted as one — deliberately, so
-//! that nothing acquires a date by looking like one. [`Import::dates`] supplies exactly that
-//! precondition and nothing else: [`dated`] says which fields are ISO dates, the import
-//! formats those cells, and the ordinary rule does the reading. **ISO only**, which is the
-//! second half of the same refusal — see [`dated`].
-//!
-//! What this deliberately does not do, each because it would be a second rule rather than a
-//! wider one:
-//!
-//! * **Per-column types.** LibreOffice's import dialog has a type per column; this has one
-//!   rule for every field, plus [`Import::text`] for the whole file and [`Import::dates`] for
-//!   the one type that cannot be reached any other way. A column that needs something else is
-//!   a `grind sheet format` away *after* the import, which is where a display decision belongs.
-//! * **A quoted field meaning text.** Some readers take `"007"` as text on the strength of the
-//!   quotes; far more tools quote every field they write, and then a whole file of numbers
-//!   arrives as strings. The leading-zero rule below covers what quoting was being used for
-//!   here, without depending on how the file was written.
-//! * **Encodings other than UTF-8.** [`parse`] takes `&str`, so deciding what the bytes are is
-//!   the caller's, and every caller here refuses to guess: a file that is not UTF-8 is an
-//!   error naming `iconv` rather than a document full of mojibake. A BOM is stripped because
-//!   it is UTF-8 that Excel marked, not a different encoding.
+//! Dates need help: the typing rule reads an ISO date only into a cell formatted as one, so
+//! [`Import::dates`] formats the cells [`dated`] picks out, ISO only. Not done, each being a
+//! second rule: per-column types (format after importing), quotes meaning text (the leading-zero
+//! rule covers it), and encodings other than UTF-8 (refused, naming `iconv`).
 
 use crate::locale::{self, Locale};
 
-/// How a file spells its rows: which character separates fields, and which quotes them.
-///
-/// Two characters, because that is all a dialect is once the record separator is "whatever
-/// the file uses" ([`parse`] takes all three spellings) and the escape is RFC 4180's doubled
-/// quote. Anything beyond this — a backslash escape, a comment character, a fixed record
-/// length — is a different format wearing a `.csv` extension.
+/// How a file spells its rows: which character separates fields and which quotes them. Records end
+/// however the file ends them, and the escape is RFC 4180's doubled quote.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Dialect {
     pub delimiter: char,
@@ -70,8 +33,7 @@ impl Dialect {
         delimiter: ',',
         quote: '"',
     };
-    /// What `.csv` means where the decimal separator is a comma — the field separator has to
-    /// move out of the way, and Excel and LibreOffice both move it here.
+    /// What `.csv` means where the decimal separator is a comma.
     pub const SEMICOLON: Dialect = Dialect {
         delimiter: ';',
         quote: '"',
@@ -89,17 +51,9 @@ impl Dialect {
         }
     }
 
-    /// Guess the delimiter from the file itself.
-    ///
-    /// The signal that actually separates the candidates is **consistency**: a real delimiter
-    /// cuts every record into the same number of fields, and a character that merely occurs in
-    /// the text does not. So each candidate is tried against a sample of the file — parsed
-    /// properly, quotes and all, because a comma inside a quoted field must not count — and
-    /// the one that yields a rectangle wins, more columns breaking a tie.
-    ///
-    /// Genuinely ambiguous input (`a;b,c` is two fields either way) resolves to the earliest
-    /// candidate, which is the comma. A caller who knows better passes `--delimiter`, and that
-    /// is what it is for.
+    /// Guess the delimiter from the file: each candidate is parsed against a sample, quotes and
+    /// all, and the one that cuts every record into the same number of fields wins, more columns
+    /// breaking a tie. Ambiguous input resolves to the comma; `--delimiter` overrides.
     pub fn sniff(text: &str) -> Dialect {
         const CANDIDATES: [char; 4] = [',', ';', '\t', '|'];
         // Enough records to see a shape, few enough to stay cheap on a large file. Cut at a
@@ -129,15 +83,9 @@ impl Dialect {
         best.1
     }
 
-    /// The dialect a file *name* asks for — `.tsv` and `.tab` are tab-separated, everything
-    /// else is a comma.
-    ///
-    /// **For writing, where [`sniff`](Dialect::sniff) has nothing to read yet.** A save dialog
-    /// has no flags on it, so the one thing it can carry is the name the user typed into it,
-    /// and that is the same shape `Form::from_path` gives a document: the extension is how a
-    /// person says which of two forms they meant. Importing does not use this and must not —
-    /// there the *content* is available, and a `.csv` written by a German Excel is
-    /// semicolon-separated whatever it is called.
+    /// The dialect a file name asks for, for writing, where there is nothing to sniff: `.tsv` and
+    /// `.tab` are tab-separated, everything else comma. Importing never uses this — a German
+    /// Excel's `.csv` is semicolon-separated whatever it is called.
     pub fn for_name(name: &str) -> Dialect {
         let extension = name
             .rsplit_once('.')
@@ -149,33 +97,18 @@ impl Dialect {
     }
 }
 
-/// What [`decode`] says when the bytes are not UTF-8, without a subject in front of it.
-///
-/// The caller puts the file's name there, because only the caller knows what to call it — a
-/// path on the CLI, a picked file's own name in a browser. It is a constant rather than four
-/// similar sentences for the same reason `view::CellRole::marker` is one: a rule that is stated
-/// in every client is a rule that is stated differently in every client.
+/// What [`decode`] says when the bytes are not UTF-8; the caller puts the file's name in front.
 pub const NOT_UTF8: &str = "not UTF-8 — convert it first, e.g. iconv -f windows-1252 -t utf-8";
 
-/// A file's bytes as text, or [`NOT_UTF8`].
-///
-/// **The encoding rule, in one place** (`doc/not-doing.md`, "CSV encodings"). Guessing is the
-/// alternative and a wrong guess is silent: every cell of the import is mojibake and nothing
-/// says so. A byte-order mark is left alone here and stripped by [`parse`], because it is UTF-8
-/// that Excel marked rather than a different encoding.
-///
-/// Takes the `Vec` a caller already has — `std::fs::read` on three shells, a browser's own
-/// `ArrayBuffer` on the fourth — so nothing is copied to be checked.
+/// A file's bytes as text, or [`NOT_UTF8`] — never a guessed encoding (`doc/not-doing.md`, "CSV
+/// encodings"). A byte-order mark is left for [`parse`] to strip.
 pub fn decode(bytes: Vec<u8>) -> Result<String, &'static str> {
     String::from_utf8(bytes).map_err(|_| NOT_UTF8)
 }
 
-/// Whether a file *name* is a delimited file — `.csv`, `.tsv` or `.tab`, in any case.
-///
-/// **The one question here a name answers**, and only because the bytes cannot: plain text has
-/// no signature, so nothing in a CSV says it is one. A caller asks it *last* — after the bytes
-/// have been asked whether they are an ODF document or a workbook — so a name never overrules
-/// content that does say what it is.
+/// Whether a file name is a delimited file — `.csv`, `.tsv` or `.tab`, in any case. Plain text has
+/// no signature, so a caller asks this only after the bytes have said they are neither ODF nor a
+/// workbook.
 pub fn is_delimited_name(name: &str) -> bool {
     let file = name.rsplit(['/', '\\']).next().unwrap_or(name);
     matches!(
@@ -187,9 +120,8 @@ pub fn is_delimited_name(name: &str) -> bool {
 /// A delimited file opened as a document of its own: what [`open`] hands a shell.
 #[derive(Debug)]
 pub struct Opened {
-    /// The name it now goes by — `data.csv` becomes `data.fods`, beside it when `name` was a
-    /// path. A shell opens it with **no path**, so Save asks where the ODF document goes and can
-    /// never write it over the CSV it came from.
+    /// The name it now goes by — `data.csv` becomes `data.fods`. A shell opens it with no path, so
+    /// Save can never write it over the CSV.
     pub name: String,
     /// Flat ODF, for [`crate::App::open_bytes`].
     pub odf: Vec<u8>,
@@ -198,16 +130,10 @@ pub struct Opened {
 }
 
 /// Open a delimited file as a new spreadsheet — what a double-click on `data.csv` means, as
-/// opposed to *Import CSV*, which puts the fields into a document already open.
-///
-/// `None` when `name` is not a delimited file ([`is_delimited_name`]), so a caller tries this
-/// after ODF and Excel and passes anything else on unchanged. Otherwise the fields land at `A1`
-/// of one sheet named after the file, read exactly as a window's *Import CSV* reads them
-/// ([`Import::sniffed`]: the delimiter from the content, ISO dates as dates, nothing else
-/// guessed), and come back as flat ODF under an ODF name — the shape `grind_xlsx::open` gives
-/// a workbook, so every shell adds one branch beside that one. What the file *is* is still
-/// decided by the content: a `.csv` that is not UTF-8 is refused with [`NOT_UTF8`] rather than
-/// guessed at.
+/// opposed to importing into an open document. `None` when `name` is not a delimited file. The
+/// fields land at `A1` of one sheet named after the file, read with [`Import::sniffed`], and come
+/// back as flat ODF under an ODF name, as `grind_xlsx::open` returns a workbook. Not UTF-8 is
+/// [`NOT_UTF8`].
 pub fn open(name: &str, bytes: &[u8]) -> Option<Result<Opened, String>> {
     if !is_delimited_name(name) {
         return None;
@@ -231,8 +157,8 @@ fn open_delimited(name: &str, bytes: &[u8]) -> Result<Opened, String> {
 
     let file = name.rsplit(['/', '\\']).next().unwrap_or(name);
     let stem = file.rsplit_once('.').map_or(file, |(stem, _)| stem);
-    // LibreOffice names the sheet after the file too. A stem that is not a valid sheet name
-    // (one with `[` in it, say) keeps `Sheet1` rather than failing the open.
+    // LibreOffice names the sheet after the file too; a stem that is no valid sheet name keeps
+    // `Sheet1`.
     let _ = app.rename_sheet(0, stem);
     let odf = app.save_bytes(crate::Form::Flat).map_err(|e| fail(&e))?;
 
@@ -260,31 +186,23 @@ fn open_delimited(name: &str, bytes: &[u8]) -> Result<Opened, String> {
     })
 }
 
-/// Read a delimited file into rows of fields. Never fails; see the module's tolerance rule.
+/// Read a delimited file into rows of fields. Never fails. The readings that are decisions:
 ///
-/// The readings that are decisions rather than obligations:
-///
-/// * A quote **opens a quoted field only where a field starts**, so `12"` and `a"b` keep the
-///   quote as a character. This is what makes a bare field holding an inch mark survive.
-/// * Text after a closing quote is appended (`"a"b` is `ab`) and an unterminated quote runs to
-///   the end of the input. Both are malformed; refusing them would fail a whole import over
-///   one field, which is the opposite of what a tolerant reader is for.
-/// * `\r\n`, `\n` and a lone `\r` all end a record, so a file written on any of the three
-///   platforms reads.
-/// * A blank line is a record of one empty field rather than nothing, because dropping it
-///   would shift every row after it up one and silently misalign the import.
-/// * A final record separator ends the file rather than starting an empty record — `a\n` is
-///   one row, not two.
+/// * A quote opens a quoted field only where a field starts, so `12"` keeps its inch mark.
+/// * Text after a closing quote is appended (`"a"b` is `ab`), and an unterminated quote runs to
+///   the end.
+/// * `\r\n`, `\n` and a lone `\r` all end a record.
+/// * A blank line is a record of one empty field, so later rows do not shift up.
+/// * A final record separator ends the file: `a\n` is one row.
 pub fn parse(text: &str, dialect: &Dialect) -> Vec<Vec<String>> {
-    // Excel marks its UTF-8 exports with one. It is an encoding signature and never content,
-    // and left in place it would make the first header cell mysteriously not match its name.
+    // Excel's UTF-8 signature; left in, the first header would not match its name.
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
 
     let mut rows: Vec<Vec<String>> = Vec::new();
     let mut row: Vec<String> = Vec::new();
     let mut field = String::new();
-    // Whether anything at all has been read since the last record ended. This is what tells a
-    // trailing newline from a trailing empty row.
+    // Whether anything was read since the last record ended — a trailing newline versus a trailing
+    // empty row.
     let mut started = false;
     let mut chars = text.chars().peekable();
 
@@ -329,23 +247,17 @@ pub fn parse(text: &str, dialect: &Dialect) -> Vec<Vec<String>> {
     rows
 }
 
-/// How a document leaves as delimited text.
-///
-/// [`Export::formulas`] is the odd one out and says so here rather than in a second struct:
-/// the other fields decide how a field is *spelled*, and that one decides which text the
-/// document hands over in the first place ([`crate::App::export_csv`] reads it, [`write()`] does
-/// not).
+/// How a document leaves as delimited text. [`Export::formulas`] decides which text is handed over
+/// ([`crate::App::export_csv`] reads it); the rest decide how a field is spelled ([`write()`]).
 #[derive(Clone, Debug)]
 pub struct Export {
     pub dialect: Dialect,
-    /// Quote every field, not only the ones that would otherwise be misread. Some readers
-    /// treat a quoted field as text, so this is how a column of part numbers survives one.
+    /// Quote every field, not only the ones that need it — some readers take a quoted field as
+    /// text.
     pub quote_all: bool,
-    /// End records with `\r\n`. RFC 4180 asks for it and Windows tools expect it; a Unix
-    /// pipeline does not, which is why it is not the default.
+    /// End records with `\r\n`, as RFC 4180 asks and Windows tools expect.
     pub crlf: bool,
-    /// Begin with a UTF-8 byte-order mark. Excel needs it to read a UTF-8 file as UTF-8;
-    /// almost nothing else wants it.
+    /// Begin with a UTF-8 byte-order mark, which Excel needs.
     pub bom: bool,
     /// Write the formula where a cell has one, instead of the value it computed.
     pub formulas: bool,
@@ -363,12 +275,9 @@ impl Default for Export {
     }
 }
 
-/// Write rows as delimited text — the strict half.
-///
-/// A field is quoted when leaving it bare would change what a reader sees: it holds the
-/// delimiter, a quote, a line break, or leading or trailing whitespace that a trimming reader
-/// would eat. Everything else goes out as it is, so the file stays diffable and a human can
-/// read it, which is the same argument `doc/flat-first.md` makes about documents.
+/// Write rows as delimited text. A field is quoted only when leaving it bare would change what a
+/// reader sees: it holds the delimiter, a quote, a line break, or leading or trailing whitespace.
+/// Everything else stays readable and diffable.
 pub fn write(rows: &[Vec<String>], options: &Export) -> String {
     let newline = match options.crlf {
         true => "\r\n",
@@ -412,23 +321,17 @@ fn needs_quoting(field: &str, dialect: &Dialect) -> bool {
 #[derive(Clone, Debug)]
 pub struct Import {
     pub dialect: Dialect,
-    /// Which characters spell a number. `1.234,50` is a number in `de-DE` and three fields'
-    /// worth of punctuation without it — and it is the reason a semicolon file exists at all.
+    /// Which characters spell a number: `1.234,50` is a number in `de-DE`.
     pub locale: Option<Locale>,
-    /// Store every field as text, guessing nothing. The escape hatch for a file whose columns
-    /// are identifiers rather than quantities.
+    /// Store every field as text, guessing nothing.
     pub text: bool,
-    /// Let a field starting with `=` become a formula.
-    ///
-    /// **Off by default**, which is LibreOffice's default too. A CSV has no formulas, so a
-    /// leading `=` is text somebody exported — and treating it as a formula is how a
-    /// spreadsheet ends up evaluating a string that arrived from outside.
+    /// Let a field starting with `=` become a formula — off by default, as in LibreOffice, since a
+    /// CSV has no formulas and evaluating text from outside is a risk.
     pub formulas: bool,
-    /// Read an **ISO** date, datetime or clock time as one, and format the cell it lands in
-    /// so it stays one. See [`dated`] for what counts and what deliberately does not.
+    /// Read an ISO date, datetime or time as one, formatting its cell so it stays one ([`dated`]).
     pub dates: bool,
-    /// Drop leading and trailing whitespace from every field. RFC 4180 says the space in
-    /// `a, b` is part of the field, and hand-written files mean it as padding.
+    /// Drop leading and trailing whitespace from every field; RFC 4180 counts the space in `a, b`
+    /// as part of the field.
     pub trim: bool,
 }
 
@@ -446,21 +349,10 @@ impl Default for Import {
 }
 
 impl Import {
-    /// The options a **window** imports with, having asked nothing.
-    ///
-    /// A command line carries seven flags and a file picker carries none, so the shells settle
-    /// the two questions that cannot be skipped from what they have: the delimiter comes from
-    /// the file's own content ([`Dialect::sniff`]), and where the fields land comes from the
-    /// selection. Everything else is the default — except [`Import::dates`], which is **on**:
-    /// it is the one flag a person importing a file would always pass, and it is the one that
-    /// cannot misread anything, since [`dated`] reads ISO spellings only and leaves
-    /// `15/03/2026` as the text it cannot resolve.
-    ///
-    /// `text`, `formulas`, `locale` and `trim` stay off, each because it changes what a field
-    /// *means* in a way no window asked about: a whole file forced to text, a `=` arriving
-    /// from outside becoming a formula, a second set of number separators, and padding that
-    /// RFC 4180 says is part of the field. `grind sheet import-csv` has all four (R9), and
-    /// that is the answer for a file that needs one.
+    /// The options a window imports with, having asked nothing: the delimiter sniffed from the
+    /// content ([`Dialect::sniff`]), and [`Import::dates`] on, since [`dated`] reads only ISO
+    /// spellings and cannot misread `15/03/2026`. `text`, `formulas`, `locale` and `trim` stay
+    /// off; each changes what a field means, and `grind sheet import-csv` offers all four.
     pub fn sniffed(text: &str) -> Import {
         Import {
             dialect: Dialect::sniff(text),
@@ -471,12 +363,10 @@ impl Import {
 }
 
 impl Import {
-    /// These options with a person's words laid over them — what a window with no flags takes
-    /// instead of seven checkboxes: `delimiter=semicolon locale=de-DE text trim`. A bare word
-    /// switches an option on, `no-dates` switches `dates` (on by default in a window) off, and
-    /// `delimiter=` takes a name (`comma`, `semicolon`, `tab`, `pipe`, `space`) or one character,
-    /// the way `grind sheet import-csv --delimiter` does. `Err` names the word it did not
-    /// understand, so a typo is a sentence rather than a silently ignored option.
+    /// These options with a person's words laid over them: `delimiter=semicolon locale=de-DE text
+    /// trim`. A bare word turns an option on, `no-dates` turns dates off, and `delimiter=` takes
+    /// `comma`, `semicolon`, `tab`, `pipe`, `space` or one character. `Err` names the word it did
+    /// not understand.
     pub fn amended(mut self, words: &str) -> std::result::Result<Import, String> {
         for word in words.split_whitespace() {
             match word.split_once('=') {
@@ -517,19 +407,10 @@ impl Import {
     }
 }
 
-/// The format a field needs to be read as a date, a datetime or a time — or `None`, which is
-/// every other field.
-///
-/// **ISO 8601 only, with a four-digit year.** `15/03/2026` and `03/15/2026` are the same eight
-/// characters meaning two different days, and nothing in the file says which; a spreadsheet
-/// that resolves that by guessing is the reason "date column" and "corrupted" go together in
-/// so many bug reports. This one does not resolve it, so those fields stay text and stay
-/// exactly what the file said.
-///
-/// The parsers are [`crate::formula::date`]'s — the evaluator's own, and the ones the typing
-/// rule's date branch uses — so this decides *which cells are dates* and never what a date
-/// means. The four-digit year is the one extra condition: `1-2-3` is a valid ISO date and is
-/// far more often a part number.
+/// The format a field needs to be read as a date, datetime or time, or `None`. ISO 8601 only, with
+/// a four-digit year: `15/03/2026` and `03/15/2026` mean different days and the file does not say
+/// which, so those stay text; `1-2-3` is more often a part number. The parsers are
+/// [`crate::formula::date`]'s.
 pub fn dated(field: &str, null_date: i64) -> Option<crate::numfmt::Format> {
     use crate::numfmt::{Kind, datetime_preset, preset};
 
@@ -543,41 +424,28 @@ pub fn dated(field: &str, null_date: i64) -> Option<crate::numfmt::Format> {
             false => preset(Kind::Date, 0, false, ""),
         });
     }
-    // A clock, and only a clock: `parse_time` also reads the `PT17H20M00S` duration ODF writes
-    // into an attribute, which is not something anybody exports into a column.
+    // A clock only: `parse_time` also reads ODF's `PT17H20M00S`, which nobody exports into a
+    // column.
     if field.contains(':') && crate::formula::date::parse_time(field).is_some() {
         return Some(preset(Kind::Time, 0, false, ""));
     }
     None
 }
 
-/// One field, as the string a person would have **typed** to put it in a cell.
+/// One field, as the string a person would have typed to put it in a cell, for
+/// [`crate::App::enter`]'s rule (`'` forces text, `=` is a formula, else a number, logical or
+/// text). Forced to text, since each is a way a file loses data:
 ///
-/// The whole of this module's contribution to meaning, and it is deliberately a translation
-/// into an existing vocabulary rather than a second one: what comes back goes to
-/// [`crate::App::enter`]'s rule, where a leading `'` forces text, a leading `=` is a formula
-/// and everything else is a number, a logical or text, in that order.
-///
-/// Four things get forced to text that the typing rule alone would read as numbers, and each
-/// is a way a real file loses data:
-///
-/// * **`007`** — a postcode, an order number, a product code. A leading zero that survives to
-///   the file was put there on purpose, and a number cannot carry one.
-/// * **`NaN`, `inf`, `Infinity`** — Rust reads all three as floating-point values, and a
-///   column of names containing *Nan* is far more common in a CSV than a column of
-///   quantities containing a quiet NaN.
-/// * **`1,5`** where the locale says otherwise, and **`1.234,50`** where it says exactly this
-///   — number recognition runs on the locale's own separators rather than on Rust's, so a
-///   German file is read as German rather than as broken English.
-/// * **A field beginning with `'`** — which the typing rule would strip. It comes back
-///   doubled, so the apostrophe stays in the cell.
+/// * `007` — a leading zero someone meant.
+/// * `NaN`, `inf`, `Infinity` — names far more often than numbers.
+/// * A number in the wrong locale: numbers are recognised by the locale's own separators.
+/// * A leading `'`, doubled so it stays in the cell.
 pub fn input(field: &str, options: &Import) -> String {
     let field = match options.trim {
         true => field.trim(),
         false => field,
     };
-    // An empty field clears its cell. Not `'`-forced text, which would leave an empty string
-    // sitting in a cell that reads as blank and sorts and counts as neither.
+    // An empty field clears its cell rather than storing an empty string.
     if field.is_empty() {
         return String::new();
     }
@@ -586,18 +454,15 @@ pub fn input(field: &str, options: &Import) -> String {
         return as_text();
     }
     if field.starts_with('=') {
-        // A CSV carries **display** form — it came out of somebody's formula bar, and that is
-        // what this exports too — while the typing rule takes the canonical spelling the file
-        // format holds. One conversion, by the existing parser and printer rather than by
-        // rewriting text that looks right.
+        // A CSV carries display form; the typing rule takes the canonical spelling, converted by
+        // the parser and printer.
         return match options
             .formulas
             .then(|| crate::formula::display::from_display(field))
         {
             Some(Ok(canonical)) => canonical,
-            // Asked for, and not a formula this build can read. Keeping the characters as text
-            // loses nothing and says so on the screen; storing it would make a cell whose only
-            // possible value is an error.
+            // A formula this build cannot read stays text rather than a cell that can only be an
+            // error.
             _ => as_text(),
         };
     }
@@ -605,25 +470,17 @@ pub fn input(field: &str, options: &Import) -> String {
     if let Some(number) = number(field, decimal, group) {
         return number;
     }
-    // Anything Rust would read as a number and this would not is text, and the gap between the
-    // two is the point rather than an oversight — see this function's own list.
+    // Anything Rust reads as a number and this does not is text, deliberately.
     match field.parse::<f64>().is_ok() {
         true => as_text(),
         false => field.to_owned(),
     }
 }
 
-/// A field as a number, in the canonical spelling the typing rule reads, or `None` if it is
-/// not one.
-///
-/// Stricter than [`f64::from_str`] in the ways that matter for a file somebody exported, and
-/// looser in the one way that matters for a file somebody exported *in another language*.
-/// The grouping check is the fussy part and has to be: `1,234` is a number and `1,2,3` is
-/// three fields that ended up in one, so the positions are checked rather than the separator
-/// merely being deleted.
+/// A field as a number in the canonical spelling the typing rule reads, or `None`. Separators are
+/// checked by position: `1,234` is a number and `1,2,3` is not.
 pub(crate) fn number(field: &str, decimal: char, group: char) -> Option<String> {
-    // A no-break space groups in French and Russian, and a file written by hand — or by a tool
-    // that normalised its whitespace — has a plain one. Both mean the same digit group.
+    // A no-break space groups in French and Russian; a plain one means the same.
     let owned;
     let field = match group == '\u{a0}' && field.contains([' ', '\u{202f}']) {
         true => {
@@ -637,8 +494,7 @@ pub(crate) fn number(field: &str, decimal: char, group: char) -> Option<String> 
         true => field.split_at(1),
         false => ("", field),
     };
-    // Split the exponent off first, so the separators are looked for in the mantissa only:
-    // `1e5` is a number and `1e5,000` is not.
+    // Split off the exponent first: `1e5` is a number, `1e5,000` is not.
     let (mantissa, exponent) = match rest.split_once(['e', 'E']) {
         Some((mantissa, exponent)) => (mantissa, Some(exponent)),
         None => (rest, None),
@@ -674,8 +530,7 @@ pub(crate) fn number(field: &str, decimal: char, group: char) -> Option<String> 
     if whole.is_empty() && fraction.is_none_or(str::is_empty) {
         return None;
     }
-    // The leading-zero rule, and the reason this function exists at all: `007` is text, `0`
-    // and `0.5` are numbers.
+    // `007` is text; `0` and `0.5` are numbers.
     if whole.len() > 1 && whole.starts_with('0') {
         return None;
     }
@@ -699,8 +554,7 @@ pub(crate) fn number(field: &str, decimal: char, group: char) -> Option<String> 
         out.push('e');
         out.push_str(exponent);
     }
-    // It exists to be read back by the typing rule, so it has to parse — a subnormal or an
-    // overflow spelled out in digits would not, and that is a text field.
+    // It must read back as a finite number, or it is text.
     out.parse::<f64>().ok().filter(|n| n.is_finite())?;
     Some(out)
 }
@@ -946,11 +800,8 @@ mod tests {
         assert_eq!(input("1.234,50", &de), "1234.50");
         assert_eq!(input("0,5", &de), "0.5");
         assert_eq!(input("-1.000", &de), "-1000");
-        // In German that stop is a grouping separator in the wrong place, so it is not a
-        // number at all. It comes back as *text*, which is the whole argument for reading a
-        // file in one convention: the English number 1.5 silently becoming the German 15 is
-        // the corruption this refuses, and a visibly text cell is how a person finds out that
-        // `--locale` was the wrong call.
+        // In German the stop is a misplaced grouping separator, so this is text: a visible text
+        // cell rather than 1.5 silently read as 15.
         assert_eq!(input("1.5", &de), "'1.5");
         assert_eq!(input("12.34", &de), "'12.34");
         // English keeps its own answer, and its own grouping.
@@ -1045,8 +896,7 @@ mod tests {
         assert_eq!(Dialect::for_name("DATA.TSV"), Dialect::TAB);
         assert_eq!(Dialect::for_name("data.tab"), Dialect::TAB);
         assert_eq!(Dialect::for_name("data.csv"), Dialect::COMMA);
-        // Anything else, a name with no extension included, is the format the verb is called
-        // after rather than an error: a save dialog has already accepted the name by then.
+        // Anything else, including no extension, is a comma.
         assert_eq!(Dialect::for_name("data"), Dialect::COMMA);
         assert_eq!(Dialect::for_name("notes.txt"), Dialect::COMMA);
     }

@@ -2,25 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The spreadsheet's lint rules — `doc/dsl.md` §4.3, D6.
+//! The spreadsheet's lint rules (`doc/dsl.md` §4.3); [`grind_core::lint`] holds what a diagnostic
+//! is (R8).
 //!
-//! The twin of `grind_text::lint`, and the same argument: the interesting rules are about
-//! documents rather than about scripts, so they live with the document type whose vocabulary
-//! they are written in. [`grind_core::lint`] holds only what a diagnostic *is* (R8).
-//!
-//! **Nothing here has a second opinion.** Every rule is asked through the machinery that
-//! already answers its question — [`crate::graph::RefIndex`] for what a formula reads (which
-//! resolves through `Engine::area`, the evaluator's own function), and `recalculated` for
-//! whether a cached value is still true, which is what [`crate::App::stale`] counts. A linter
-//! that resolved references its own way would disagree with the document's behaviour on
-//! exactly the cases worth reporting.
-//!
-//! Addresses are `a1`'s, sheet-qualified, so every one of them is a string a user can type
-//! back at `grind sheet get`.
+//! Each rule asks the machinery that already answers its question: [`crate::graph::RefIndex`] for
+//! what a formula reads (through `Engine::area`), and `recalculated` for whether a cached value is
+//! still true, as [`crate::App::stale`] counts it. Addresses are `a1`'s, so each can be typed back
+//! at `grind sheet get`.
 
-/// The vocabulary a diagnostic is made of, re-exported so a shell reaches it through the
-/// application crate it already depends on — the same ergonomics `grind_sheet::odf` offers for
-/// the generic reader modules. The types are `grind_core`'s and there is no second definition.
+/// The diagnostic vocabulary, `grind_core`'s, under this crate's path.
 pub use grind_core::lint::{Diagnostic, Options, Report, Rule, Severity};
 
 use grind_core::style::PALETTE;
@@ -34,71 +24,53 @@ use crate::model::{Document, Pos};
 use crate::spell::Lexicon;
 use crate::style::CellStyle;
 
-/// A cell whose cached value is not what its formula computes.
-///
-/// Loop B's check, pointed at one document. The two are separate claims about the same cell —
-/// it says `SUM(B2:B4)` and it says `1500` — and ODF has no dirty bit, so every reader
-/// including LibreOffice shows the stale one until something recalculates.
-///
-/// **Only where this build can evaluate the formula.** A cell that would recalculate to an
-/// error it does not currently hold is this engine's gap rather than the document's, and is the
-/// `spoiled` count [`crate::App::recalc`] already reports; calling it a stale value would be
-/// blaming a document for a function we have not implemented.
+/// A cell whose cached value is not what its formula computes; ODF has no dirty bit, so every
+/// reader shows the stale one until something recalculates. Only where this build can evaluate the
+/// formula: one that would recalculate to an error is this engine's gap ([`crate::App::recalc`]'s
+/// `spoiled`), not the document's.
 pub const STALE_VALUE: Rule = Rule {
     id: "stale-value",
     severity: Severity::Warning,
     what: "a cell whose cached value disagrees with its formula",
 };
 
-/// A formula naming a sheet the document does not have.
-///
-/// What deleting a sheet leaves behind (`doc/not-doing.md` §3, and the first row of §6.5's
-/// refactoring table). An error: the cell reads `#REF!` the moment anything recalculates.
+/// A formula naming a sheet the document does not have — what deleting a sheet leaves behind. An
+/// error: it reads `#REF!` at the next recalculation.
 pub const MISSING_SHEET: Rule = Rule {
     id: "missing-sheet",
     severity: Severity::Error,
     what: "a formula referencing a sheet that does not exist",
 };
 
-/// A formula reading a named, single cell that holds nothing.
-///
-/// **Single-cell references only.** An empty cell inside `SUM([.B2:.B99])` is ordinary — a
-/// range is written for the data it will hold — and reporting each one would bury every other
-/// rule. A formula that names one cell and finds it empty is the typo case: a column shifted,
-/// a row deleted, a reference pointing one cell past the data.
+/// A formula reading a named single cell that holds nothing. Single-cell references only: an empty
+/// cell inside a range is ordinary, and a reference finding one empty cell is the typo case — a
+/// shifted column, a deleted row.
 pub const EMPTY_REFERENCE: Rule = Rule {
     id: "empty-reference",
     severity: Severity::Warning,
     what: "a formula reading a cell that is empty",
 };
 
-/// A colour that is not one of `grind_core::style::PALETTE`'s. `grind_text::lint::OFF_PALETTE`
-/// is the same rule for prose, and the same reasoning: a default a shell offers, never a limit,
-/// so a hint and off unless asked for.
+/// A colour that is not one of `grind_core::style::PALETTE`'s — a hint, off unless asked for,
+/// since the palette is a default and never a limit.
 pub const OFF_PALETTE: Rule = Rule {
     id: "off-palette",
     severity: Severity::Hint,
     what: "a colour outside the default palette",
 };
 
-/// Something in the document the projection cannot spell — charts, for this application
-/// (`doc/projection-sheet.md`'s one named gap).
-///
-/// The bijectivity guard as a diagnostic: converting this document to a `.grind` and back
-/// would return everything except what this rule lists, by name and by address.
+/// Something the projection cannot spell — charts (`doc/projection-sheet.md`'s one gap) — so
+/// converting to a `.grind` and back would lose exactly what this lists.
 pub const UNSPELLABLE: Rule = Rule {
     id: "unspellable",
     severity: Severity::Warning,
     what: "a construct the projection cannot spell",
 };
 
-/// A word in a text cell the spelling dictionary does not know (`doc/spelling.md`, "In a
-/// spreadsheet") — `grind_text::lint::MISSPELT`'s twin, under the same id.
-///
-/// Runs only when there *is* a dictionary — [`lint_with`] with a lexicon, which is what
-/// [`crate::App::lint`] does once a shell or the CLI has attached one — so spelling turned off
-/// is this rule silent. Only typed text is checked: a number, a date and a formula's result
-/// have no words somebody wrote. A warning, and never a reason for `grind lint` to fail a build.
+/// A word in a text cell the dictionary does not know (`doc/spelling.md`), under
+/// `grind_text::lint::MISSPELT`'s id. Runs only with a dictionary attached ([`lint_with`]), so
+/// turning spelling off silences it. Only typed text is checked. A warning, never a reason for
+/// `grind lint` to fail.
 pub const MISSPELT: Rule = Rule {
     id: "misspelt",
     severity: Severity::Warning,
@@ -115,8 +87,8 @@ pub const RULES: [Rule; 6] = [
     MISSPELT,
 ];
 
-/// Check a document against every rule `options` wants — every rule but [`MISSPELT`], which
-/// needs a dictionary ([`lint_with`]).
+/// Check a document against every rule `options` wants — all but [`MISSPELT`], which needs a
+/// dictionary ([`lint_with`]).
 pub fn lint(doc: &Document, options: &Options) -> Report {
     lint_with(doc, options, None)
 }
@@ -157,11 +129,8 @@ fn at(doc: &Document, address: Address) -> String {
 fn stale_values(doc: &Document, report: &mut Report) {
     for (sheet, pos, computed) in crate::stale_cells(doc) {
         let previous = doc.sheets[sheet].get(pos);
-        // **No answer is not a wrong answer.** A formula cell with no cached value is how a
-        // document written by hand looks — `doc/dsl.md` §3.4, and `cell B5 "=SUM([.B2:.B4])"`
-        // is the *normal* spelling in a projection — so reporting one would make the feature's
-        // own documents fail their own linter. `grind sheet recalc` fills them in; nothing
-        // about the document contradicts itself until it does.
+        // No cached value is not a wrong one: a hand-written document (`cell B5
+        // "=SUM([.B2:.B4])"`) has none until `grind sheet recalc`.
         if previous.is_empty() {
             continue;
         }
@@ -180,8 +149,8 @@ fn stale_values(doc: &Document, report: &mut Report) {
     }
 }
 
-/// A cell value as a diagnostic spells it — short, and quoted when it is text, so that an
-/// empty cell and an empty string do not read the same.
+/// A cell value as a diagnostic spells it — quoted when text, so an empty cell and an empty string
+/// differ.
 fn shown(value: &crate::CellValue) -> String {
     use crate::CellValue::*;
     match value {
@@ -194,16 +163,16 @@ fn shown(value: &crate::CellValue) -> String {
 
 fn missing_sheets(doc: &Document, report: &mut Report) {
     for (index, sheet) in doc.sheets.iter().enumerate() {
-        // A conditional-format rule's condition is a formula too, reported at its base cell —
-        // the cell it is written from (`doc/conditional-format.md`).
+        // A rule's condition is a formula too, reported at its base cell
+        // (`doc/conditional-format.md`).
         let conditions = sheet
             .rules()
             .iter()
             .map(|rule| (rule.base, rule.condition.as_str()));
         for (pos, formula) in sheet.formulas().chain(conditions) {
             let Ok(expr) = parse(formula) else {
-                // A formula that will not parse reads nothing this can name, which is the
-                // same answer `graph::RefIndex::build` gives it and for the same reason.
+                // A formula that will not parse reads nothing nameable, as in
+                // `graph::RefIndex::build`.
                 continue;
             };
             let mut named = Vec::new();
@@ -228,12 +197,9 @@ fn missing_sheets(doc: &Document, report: &mut Report) {
     }
 }
 
-/// Every sheet name a formula's references mention, deduplicated in the order they appear.
-///
-/// Deliberately not `Engine::area`: that answers `None` for a missing sheet and for four other
-/// reasons besides — an external document, a cuboid, an unresolvable name — and the diagnostic
-/// has to say *which* sheet. So the names are read off the syntax, and whether one exists is
-/// asked the way `Engine::sheet_index` asks it, case-insensitively (§5.11).
+/// Every sheet name a formula's references mention, deduplicated in order — read off the syntax,
+/// since `Engine::area`'s `None` has several causes and the diagnostic must name the sheet.
+/// Existence is checked case-insensitively (§5.11).
 fn sheet_names(expr: &Expr, out: &mut Vec<String>) {
     let mut take = |cell: &CellRef| {
         if let Some(name) = &cell.sheet
@@ -276,9 +242,7 @@ fn empty_references(doc: &Document, report: &mut Report) {
             let Some(sheet) = doc.sheets.get(area.sheet) else {
                 continue;
             };
-            // A cell holding a formula is not empty even before anything is computed: it has a
-            // value in waiting, and `doc/dsl.md` §3.4 makes writing one without its answer the
-            // normal way to author a projection.
+            // A formula cell is not empty before it is computed.
             if !sheet.get(pos).is_empty() || sheet.formula(pos).is_some() {
                 continue;
             }
@@ -313,11 +277,8 @@ fn off_palette(doc: &Document, report: &mut Report) {
     }
 }
 
-/// The colours a cell style sets that the palette does not have — the text colour and the
-/// background, not the borders: a border's colour arrives inside `"0.5pt solid #000000"`, and
-/// what a person picks there is a *line* rather than a colour from a swatch.
-///
-/// `transparent` is ODF's word for no background at all rather than a colour.
+/// The colours a cell style sets that the palette lacks — text and background, not borders, whose
+/// colour is part of a line. `transparent` is no background.
 fn colours(style: &CellStyle) -> Vec<&str> {
     [style.color.as_deref(), style.background.as_deref()]
         .into_iter()
@@ -336,9 +297,8 @@ fn unspellable(doc: &Document, report: &mut Report) {
         for (index, chart) in sheet.charts().iter().enumerate() {
             if !report.push(Diagnostic::new(
                 &UNSPELLABLE,
-                // A chart is anchored to a point on the sheet rather than to a cell, so the
-                // address is the sheet and the position is in the message — the one rule here
-                // whose subject `a1` has no spelling for.
+                // A chart is anchored to a point, not a cell, so the address is the sheet and the
+                // position is in the message.
                 sheet.name.clone(),
                 format!(
                     "chart {} ({}) at {},{} has no projection node, so a .grind of this document would not carry it",
@@ -442,9 +402,8 @@ mod tests {
 
     #[test]
     fn a_function_this_build_does_not_have_is_not_the_documents_fault() {
-        // `BESSELJ` is Part 4 and outside the Small Group, so recalculating would replace a
-        // perfectly good cached value with `#NAME?`. That is this engine's gap, not a stale
-        // value, and `App::recalc` already counts it as `spoiled`.
+        // `BESSELJ` is outside the Small Group: recalculating would give `#NAME?`, the engine's
+        // gap, counted as `spoiled`.
         let mut doc = doc(&[]);
         doc.sheets[0].set_formula(Pos::new(0, 0), "=BESSELJ(1;1)".to_owned());
         doc.sheets[0].set(Pos::new(0, 0), CellValue::Number(0.44).clone());
@@ -460,8 +419,7 @@ mod tests {
         assert_eq!(report.diagnostics[0].at, "Report.A1");
         assert!(report.diagnostics[0].message.contains("Gone"));
 
-        // Case is not a difference: §5.11 matches names case-insensitively, and the lint asks
-        // the question the same way the evaluator does.
+        // Case is no difference (§5.11).
         doc.sheets[1].set_formula(Pos::new(0, 0), "=[dATA.A1]".to_owned());
         assert!(lint(&doc, &quiet()).is_empty());
     }
@@ -478,9 +436,8 @@ mod tests {
 
     #[test]
     fn a_cell_holding_a_formula_and_no_answer_yet_is_not_empty() {
-        // What a hand-written projection looks like (`doc/dsl.md` §3.4): every formula, no
-        // cached values. Calling each of those references empty would make the feature's own
-        // documents fail their own linter.
+        // A hand-written projection has formulas and no cached values; none of those references is
+        // empty.
         let mut doc = doc(&[("A1", "2")]);
         doc.sheets[0].set_formula(Pos::new(1, 0), "=[.A1]*2".to_owned());
         doc.sheets[0].set_formula(Pos::new(2, 0), "=[.A2]*2".to_owned());

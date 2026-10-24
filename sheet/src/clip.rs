@@ -2,36 +2,21 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The codec between a rectangle of cells and the tab-separated text a clipboard carries.
-//!
-//! TSV is the shape every other spreadsheet reads, so a rectangle copied in one shell has to
-//! look the same as one copied in another, and both have to round-trip through Excel and
-//! LibreOffice Calc. There were four copies of this — `ui_win32/src/sheet/clip.rs`,
-//! `ui_sheet_gtk/src/grid.rs`, `ui_web/src/sheet/mod.rs` and `ui_tui/src/sheet/app.rs` — and
-//! they had already drifted: the browser's and the terminal's never turned a pasted formula
-//! from display syntax back into ODF's, so `=A1*2` copied and pasted there came back as
-//! `#NAME?`. Hoisted when the macOS shell would have been the fifth (`doc/macos-shell.md`, M1).
-//!
-//! What a clipboard *is* stays a shell's: `CF_UNICODETEXT`, a `gdk::Clipboard`, the browser's
-//! `navigator.clipboard`, a vi register, an `NSPasteboard`. This is only the text.
+//! The codec between a rectangle of cells and the tab-separated text a clipboard carries — the
+//! shape every spreadsheet reads, so a copy round-trips through Excel and LibreOffice Calc. What a
+//! clipboard is (`CF_UNICODETEXT`, a `gdk::Clipboard`, `navigator.clipboard`, a vi register, an
+//! `NSPasteboard`) stays a shell's.
 
 use crate::formula::display;
 use crate::{App, Pos, Result};
 
-/// Every cell in a rectangle, tab-separated, one line per row joined by `eol`, read through
-/// `get`.
+/// Every cell in a rectangle, tab-separated, one row per line joined by `eol` (`"\r\n"` on
+/// Windows), read through `get`. For a copy `get` is [`App::input_text`] — the raw number or the
+/// formula in display form, which pastes back exactly — and for a copy of values
+/// [`App::value_text`]. A cell `get` cannot read is empty.
 ///
-/// `get` is [`App::input_text`] for a copy — the raw number or the formula in display form
-/// rather than what the cell *displays*: pasted back it reproduces the cells exactly, and pasted
-/// into another spreadsheet `1234.5` is a number where `1,234.50 €` is a guess about that
-/// program's locale — and [`App::value_text`] for a copy of values, the one place that guess is
-/// exactly the point. A cell `get` cannot read is empty.
-///
-/// `eol` is the platform's: Windows' clipboard convention is `"\r\n"`, everybody else's `"\n"`.
-///
-/// ponytail: a cell holding a tab or a newline has them replaced with a space, so the rectangle
-/// survives. The upgrade is quoting, here and nowhere else — a shell with a private dialect of
-/// TSV is exactly what this module exists to prevent.
+/// ponytail: tabs and newlines inside a cell become spaces; quoting, here and nowhere else, is the
+/// upgrade.
 pub fn rect_text(
     app: &App,
     sheet: usize,
@@ -55,12 +40,9 @@ pub fn rect_text(
         .join(eol)
 }
 
-/// Clipboard text back to the rows [`App::enter_range`] wants — display syntax back to
-/// canonical, cell by cell, the same step a single typed cell goes through.
-///
-/// A formula that will not parse is passed through as typed, which `enter_range` then stores
-/// verbatim rather than losing. `\r\n` and `\n` read alike, and a trailing line ending (which
-/// every spreadsheet puts after the last row) is not an extra empty row.
+/// Clipboard text back to the rows [`App::enter_range`] wants, display syntax converted to
+/// canonical cell by cell. A formula that will not parse passes through as typed. `\r\n` and `\n`
+/// read alike, and a trailing line ending is not an extra row.
 pub fn parse_rows(text: &str) -> Vec<Vec<String>> {
     text.lines()
         .map(|line| {
@@ -110,8 +92,8 @@ mod tests {
         );
     }
 
-    /// The bug the hoist fixed in two shells: a formula copied comes back a formula, not
-    /// `#NAME?`, because display syntax is turned back into ODF's on the way in.
+    /// A copied formula pastes back as a formula, not `#NAME?`: display syntax is converted on the
+    /// way in.
     #[test]
     fn a_pasted_formula_is_a_formula_again() {
         let app = sample();

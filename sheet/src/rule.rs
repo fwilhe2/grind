@@ -2,22 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Conditional formatting's one rule type — `doc/conditional-format.md`, normative.
+//! Conditional formatting's one rule type (`doc/conditional-format.md`, normative): while a
+//! formula is true at a cell, a [`CellStyle`] is drawn over the cell's own. A [`Rule`] is an
+//! OpenFormula condition, the ranges it covers, the cell its relative references are written from,
+//! and the style. A sheet keeps them in order, and the first that holds at a cell is drawn
+//! (`doc/ods-format.md` §3.6, measured).
 //!
-//! *This formula is true here, so draw the cell this way.* A [`Rule`] is a condition in
-//! OpenFormula's own syntax, a set of ranges it applies to, the cell its relative references
-//! are written from, and the [`CellStyle`] it draws **over** a cell's own while it holds. A
-//! sheet keeps an ordered list of them, and the first that holds at a cell is the one drawn
-//! (`doc/ods-format.md` §3.6, Q4, measured).
-//!
-//! **Nothing here is ever stored about a cell.** Whether a rule holds is derived as the sheet
-//! is drawn ([`applied`]), the way `doc/view-modes.md` derives a role, so the answer cannot go
-//! stale and no shell evaluates a formula of its own.
-//!
-//! The file's spelling is ODF's standard one: a `style:map` with `is-true-formula(…)` and a
-//! `style:base-cell-address` on every cell style of every cell in the range, applying a named
-//! style from `office:styles` (`doc/ods-format.md` §3.6). LibreOffice's `calcext:` copy is
-//! never needed to read a rule, and never written.
+//! Whether a rule holds is derived as the sheet is drawn ([`applied`]), never stored. On file it
+//! is ODF's `style:map` with `is-true-formula(…)` and `style:base-cell-address` on every cell
+//! style in the range, applying a named style from `office:styles`; LibreOffice's `calcext:` copy
+//! is neither needed nor written.
 
 use serde::{Deserialize, Serialize};
 
@@ -27,14 +21,9 @@ use crate::formula::shift::shift;
 use crate::model::{Document, Pos};
 use crate::style::CellStyle;
 
-/// One rule: while `condition` holds at a cell of `ranges`, `style` is drawn over the cell's
-/// own.
-///
-/// **Several ranges, one base**, which is the shape both formats give a rule: Excel's `sqref`
-/// is a list of ranges with one formula, and ODF's `style:base-cell-address` is one cell
-/// however many ranges carry the map. A rule over ten ranges is one rule, as it was to whoever
-/// wrote it, and `condition` is written from `base` and moved to each cell from there — the
-/// way a fill moves a formula ([`shift`]).
+/// One rule: while `condition` holds at a cell of `ranges`, `style` is drawn over the cell's own.
+/// Several ranges and one base, the shape both Excel's `sqref` and ODF's `style:base-cell-address`
+/// give a rule; `condition` is written from `base` and moved to each cell like a fill ([`shift`]).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rule {
     /// The cells it applies to, each range top-left and bottom-right inclusive.
@@ -48,8 +37,7 @@ pub struct Rule {
 }
 
 impl Rule {
-    /// A rule over one range, written from its top-left cell — what a person means by "this
-    /// range, this condition".
+    /// A rule over one range, written from its top-left cell.
     pub fn over(start: Pos, end: Pos, condition: impl Into<String>, style: CellStyle) -> Self {
         Rule {
             ranges: vec![(start, end)],
@@ -73,8 +61,8 @@ impl Rule {
         })
     }
 
-    /// The condition as it reads at `pos`: parsed, and every relative reference moved by the
-    /// distance from [`Rule::base`]. `None` when it does not parse — such a rule never holds.
+    /// The condition as it reads at `pos`: parsed, with relative references moved from
+    /// [`Rule::base`]. `None` when it does not parse, and then it never holds.
     pub fn condition_at(&self, pos: Pos) -> Option<Expr> {
         let expr = parse(&self.condition).ok()?;
         Some(self.moved(&expr, pos))
@@ -89,9 +77,8 @@ impl Rule {
         }
     }
 
-    /// Whether the condition holds at `pos` of `sheet`, asked of `engine`. A value that is not
-    /// a logical is converted the way §6.3.6 converts one, and an error — or a condition that
-    /// does not parse — is false: a rule that cannot be evaluated draws nothing.
+    /// Whether the condition holds at `pos` of `sheet`. A non-logical value is converted as §6.3.6
+    /// says; an error, or a condition that will not parse, is false.
     pub fn holds(&self, engine: &mut Engine, sheet: usize, pos: Pos) -> bool {
         let Some(expr) = self.condition_at(pos) else {
             return false;
@@ -105,10 +92,9 @@ fn within(pos: Pos, start: Pos, end: Pos) -> bool {
     (start.row..=end.row).contains(&pos.row) && (start.col..=end.col).contains(&pos.col)
 }
 
-/// The style the first rule holding at `pos` draws, if any rule covering it holds.
-///
-/// `engine` is the caller's so that a screenful of cells shares one cache; it should be
-/// [`Engine::over_cached`], since a rule is about what the sheet shows.
+/// The style the first rule holding at `pos` draws, if any. `engine` is the caller's so a
+/// screenful shares one cache; it should be [`Engine::over_cached`], since a rule is about what
+/// the sheet shows.
 pub fn applied<'d>(
     doc: &'d Document,
     engine: &mut Engine,
@@ -123,8 +109,8 @@ pub fn applied<'d>(
         .map(|rule| &rule.style)
 }
 
-/// A rule's condition as ODF spells it on a `style:map` — `is-true-formula(…)`, the one
-/// spelling this build writes (`doc/ods-format.md` §3.6).
+/// A rule's condition as written on a `style:map`: `is-true-formula(…)` (`doc/ods-format.md`
+/// §3.6).
 pub fn odf_condition(condition: &str) -> String {
     format!("is-true-formula({})", strip_intro(condition))
 }
@@ -135,15 +121,11 @@ fn strip_intro(condition: &str) -> &str {
     c.strip_prefix('=').unwrap_or(c)
 }
 
-/// A `style:condition` read off a cell style's `style:map` → the model's condition, written
-/// from `base`.
-///
-/// `is-true-formula(…)` is the rule itself. The value comparisons — `cell-content()>5`,
-/// `cell-content-is-between(1,5)` — are each a formula about the cell, so they are read *as*
-/// one, with the cell spelled as a relative reference to `base` (`doc/conditional-format.md`
-/// §1: the model has no second vocabulary for what the first can say). Anything else —
-/// `cell-content-is-whole-number()`, a condition this build cannot name — is `None`, and the
-/// file's own map is kept where a save does not touch it.
+/// A `style:condition` read off a `style:map`, as the model's condition written from `base`.
+/// `is-true-formula(…)` is the rule itself; value comparisons (`cell-content()>5`,
+/// `cell-content-is-between(1,5)`) are read as formulas about the cell, relative to `base`
+/// (`doc/conditional-format.md` §1). Anything else is `None`, and the file's map is kept where a
+/// save does not touch it.
 pub fn from_odf_condition(condition: &str, base: Pos) -> Option<String> {
     let condition = condition.trim();
     if let Some(inner) = call(condition, "is-true-formula") {
@@ -177,10 +159,9 @@ pub fn from_odf_condition(condition: &str, base: Pos) -> Option<String> {
     Some(format!("{me}{op}{value}"))
 }
 
-/// An order of `n` rules honouring every `(a, b)` in `before` — `a` is tried before `b` — and
-/// otherwise the order they are numbered in. What a file states is the order of the maps on each
-/// cell style, a partial order, and this is the one total order a reader can derive from it. A
-/// cycle (two styles disagreeing) is broken by numbering, which is all a reader can do.
+/// An order of `n` rules honouring every `(a, b)` in `before` (`a` first), otherwise their
+/// numbering. A file states the maps' order per cell style, a partial order; a cycle is broken by
+/// numbering.
 pub fn priority(n: usize, before: &[(usize, usize)]) -> Vec<usize> {
     let mut pending: Vec<usize> = vec![0; n];
     for (_, b) in before {
@@ -204,9 +185,8 @@ pub fn priority(n: usize, before: &[(usize, usize)]) -> Vec<usize> {
     order
 }
 
-/// Rectangles of cells — in the order they were met — joined where they can be: side by side
-/// on the same rows, then one above the other on the same columns. What a file spells as one
-/// run of cells per row comes back as the range somebody chose.
+/// Rectangles of cells joined where they can be — side by side on the same rows, then stacked on
+/// the same columns — so one run per row in a file comes back as the range somebody chose.
 pub fn rectangles(mut rects: Vec<(Pos, Pos)>) -> Vec<(Pos, Pos)> {
     let join = |rects: &mut Vec<(Pos, Pos)>, beside: fn(&(Pos, Pos), &(Pos, Pos)) -> bool| {
         let mut out: Vec<(Pos, Pos)> = Vec::with_capacity(rects.len());
@@ -227,8 +207,7 @@ pub fn rectangles(mut rects: Vec<(Pos, Pos)>) -> Vec<(Pos, Pos)> {
             && a.1.row == b.1.row
             && (b.0.col <= a.1.col.saturating_add(1) && a.0.col <= b.1.col.saturating_add(1))
     });
-    // Same columns, touching rows — repeated until nothing more joins, since a join can make a
-    // rectangle that now touches one already passed.
+    // Repeated until nothing joins, since a join can make a rectangle touch one already passed.
     loop {
         let before = rects.len();
         join(&mut rects, |a, b| {
@@ -244,18 +223,13 @@ pub fn rectangles(mut rects: Vec<(Pos, Pos)>) -> Vec<(Pos, Pos)> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Editing a rule from a window — the half every shell's dialog is a face for.
-//
-// Five shells grew a rule editor at once, and each would otherwise have had its own idea of what
-// "light red fill" writes, how `=B2>0` becomes ODF, and how a rule reads in a list. So the
-// choices are data here and a shell decides only where to put them (`doc/conditional-format.md`
-// §4). The CLI keeps its own flags, which can say more than any of these looks; a rule written
-// by one is read by the other like any other rule.
+// Editing a rule from a window: what "light red fill" writes, how `=B2>0` becomes ODF, and how a
+// rule reads in a list, so every shell's dialog agrees (`doc/conditional-format.md` §4). The CLI's
+// flags can say more; either reads the other's rules.
 // ---------------------------------------------------------------------------------------------
 
-/// What a rule draws, as a window offers it: one choice from a short list rather than a dialog of
-/// every [`CellStyle`] property. The three fills carry a text colour with them, chosen to read on
-/// that fill, since a rule drawn over a cell must stay legible whatever the cell's own colour was.
+/// What a rule draws, as a window offers it: one choice from a short list. Each fill carries a
+/// text colour that reads on it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Look {
     RedFill,
@@ -350,10 +324,9 @@ impl Look {
     }
 }
 
-/// A condition as somebody typed it — display syntax, `=B2>0` or just `B2>0`, written from the
-/// range's top-left cell — as the ODF a [`Rule`] stores, `[.B2]>0`. The same conversion a cell's
-/// formula goes through ([`crate::formula::display::from_display`]), so a condition that would not
-/// parse as a cell's formula is refused with the same message and the same offset.
+/// A condition as somebody typed it — display syntax, `=B2>0` or `B2>0`, written from the range's
+/// top-left cell — as the ODF a [`Rule`] stores (`[.B2]>0`), through
+/// [`crate::formula::display::from_display`], with the same errors a cell's formula gets.
 pub fn condition_from_display(text: &str) -> Result<String, crate::formula::display::DisplayError> {
     let text = text.trim();
     let body = text.strip_prefix('=').unwrap_or(text);
@@ -361,8 +334,8 @@ pub fn condition_from_display(text: &str) -> Result<String, crate::formula::disp
     Ok(odf.strip_prefix('=').unwrap_or(&odf).to_owned())
 }
 
-/// A rule's condition as a window shows it: display syntax with its `=`. A condition that does
-/// not parse — read from a file this build cannot read all of — is shown as it is stored.
+/// A rule's condition as a window shows it, display syntax with its `=`; one that will not parse
+/// is shown as stored.
 pub fn condition_to_display(rule: &Rule) -> String {
     crate::formula::display::to_display(strip_intro(&rule.condition))
         .unwrap_or_else(|_| rule.condition.clone())
@@ -410,8 +383,7 @@ pub fn look_text(style: &CellStyle) -> String {
     }
 }
 
-/// One rule as one line of a list: `B2:B9   =B2>0   Light red fill`, tab-separated so a shell
-/// that lays it out in columns can split it and one that cannot shows it as it is.
+/// One rule as one tab-separated line: `B2:B9   =B2>0   Light red fill`.
 pub fn summary(rule: &Rule) -> String {
     format!(
         "{}\t{}\t{}",
@@ -421,11 +393,10 @@ pub fn summary(rule: &Rule) -> String {
     )
 }
 
-/// A rule from what a dialog's fields hold, added after every rule the sheet has: `ranges` as
-/// A1 text (`B2:B9`, or several split by spaces, commas or semicolons — on `sheet` unless one
-/// names its own), a condition in display syntax written from the first range's top-left cell,
-/// and a look. Returns the sheet the rule went on and its index there; the `Err` is a sentence
-/// a dialog can show as it stands.
+/// A rule from a dialog's fields, added after the sheet's others: `ranges` as A1 text (several
+/// split by spaces, commas or semicolons; on `sheet` unless one names its own), a condition in
+/// display syntax from the first range's top-left cell, and a look. Returns the sheet and the
+/// rule's index; the `Err` is a sentence a dialog can show.
 pub fn add_from_input(
     app: &crate::App,
     sheet: usize,
@@ -467,8 +438,8 @@ pub fn add_from_input(
         .map_err(|e| e.to_string())
 }
 
-/// What a new rule's condition field starts with: the selection's top-left cell compared with
-/// nothing yet, so the one thing left to type is what it is compared with.
+/// What a new rule's condition field starts with: the selection's top-left cell, so only the
+/// comparison is left to type.
 pub fn condition_hint(start: Pos) -> String {
     format!("={}>", crate::a1::format(None, start))
 }

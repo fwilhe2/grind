@@ -2,11 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Actions: the only way the document changes, and the whole of undo/redo.
-//!
-//! Applying an action returns its inverse. That is the entire mechanism — the undo stack
-//! is a stack of inverses, redo is the same trick run the other way, and no shell ever
-//! implements history of its own (doc/plan.md, rule 2).
+//! Actions: the only way the document changes, and the whole of undo/redo. Applying an action
+//! returns its inverse; the undo stack is a stack of inverses, and no shell implements history of
+//! its own.
 
 use std::collections::BTreeSet;
 
@@ -24,38 +22,31 @@ pub enum Action {
         pos: Pos,
         value: CellValue,
     },
-    /// A formula and its cached value, which move together — doc/ods-format.md §4: a formula
-    /// written without a cached value renders blank in LibreOffice until something
-    /// recalculates it, so the two are never set apart.
-    ///
-    /// `formula: None` clears the formula and leaves an ordinary value cell behind, which is
-    /// what the inverse of "set a formula on an empty cell" has to be.
+    /// A formula and its cached value, set together: a formula without a cached value renders
+    /// blank in LibreOffice (`doc/ods-format.md` §4). `formula: None` leaves a plain value cell,
+    /// the inverse of setting a formula on one.
     SetFormula {
         sheet: usize,
         pos: Pos,
         formula: Option<String>,
         value: CellValue,
     },
-    /// A cell's number format, `None` being ODF's General — the absence of a data style
-    /// (doc/ods-format.md §5.2). Display only: no value moves, which is why this is its own
-    /// action rather than a field of [`Action::SetCell`].
+    /// A cell's number format, `None` being General (`doc/ods-format.md` §5.2). Display only: no
+    /// value moves.
     SetFormat {
         sheet: usize,
         pos: Pos,
         format: Option<Box<Format>>,
     },
-    /// A cell's styling (doc/ods-format.md §5.1). Display only, like [`Action::SetFormat`],
-    /// and separate from it because one may change without the other.
+    /// A cell's styling (`doc/ods-format.md` §5.1), separate from its format since one changes
+    /// without the other.
     SetStyle {
         sheet: usize,
         pos: Pos,
         style: Option<Box<CellStyle>>,
     },
-    /// A column's `style:column-width`, `None` returning it to the default (§5.4).
-    ///
-    /// A track rather than a cell, so it has no [`Pos`] — and its own action rather than a
-    /// flag on [`Action::SetStyle`] because a column's width and a cell's look are two
-    /// different `style:style` families.
+    /// A column's `style:column-width`, `None` back to the default (§5.4) — its own action since a
+    /// column style is a different `style:style` family from a cell's.
     SetColWidth {
         sheet: usize,
         col: u32,
@@ -79,63 +70,51 @@ pub enum Action {
         row: u32,
         hidden: bool,
     },
-    /// A sheet's autofilter (§9.4), `None` removing it. Boxed because it is much the
-    /// largest variant here and every other one would grow to match.
+    /// A sheet's autofilter (§9.4), `None` removing it. Boxed, as much the largest variant.
     SetFilter {
         sheet: usize,
         filter: Option<Box<crate::filter::Filter>>,
     },
-    /// A merged range starting at `anchor` (rng:16102), `None` taking the merge there away.
-    ///
-    /// The one action here whose precondition is about *other* entries: the merge must not
-    /// overlap another, so `App::merge` takes the overlapping ones away first, in the same
-    /// batch and so the same undo step.
+    /// A merged range starting at `anchor` (rng:16102), `None` removing it. It must not overlap
+    /// another, so `App::merge` removes overlapping ones first in the same batch.
     SetMerge {
         sheet: usize,
         anchor: Pos,
         span: Option<crate::model::Span>,
     },
-    /// A checkbox drawn in `pos` (`doc/ods-format.md` §3.5), `None` taking it away. Ticking a
-    /// *linked* one is not this: it is the linked cell's value, an ordinary [`Action::SetCell`].
+    /// A checkbox drawn in `pos` (`doc/ods-format.md` §3.5), `None` removing it. Ticking a linked
+    /// one is a [`Action::SetCell`] on the linked cell.
     SetCheckbox {
         sheet: usize,
         pos: Pos,
         checkbox: Option<Box<crate::model::Checkbox>>,
     },
-    /// A sheet's conditional-format rules, the whole list replaced (`doc/conditional-format.md`
-    /// §2): reordering, inserting and editing a rule each change what its neighbours mean, so
-    /// one action carries all of them, as a chart's does.
+    /// A sheet's conditional-format rules, the whole list (`doc/conditional-format.md` §2):
+    /// changing one rule changes what its neighbours mean.
     SetRules {
         sheet: usize,
         rules: Vec<crate::rule::Rule>,
     },
-    /// A named expression (§5.11), `None` deleting it.
-    ///
-    /// Document-level rather than per-cell, which is the one thing that makes it unlike
-    /// every other action here — see [`Document::names`] for why the key is lower-cased and
-    /// why a named *range* is stored as the reference it stands for.
+    /// A named expression (§5.11), `None` deleting it — document-level. See [`Document::names`]
+    /// for its key and spelling.
     SetName {
         name: String,
         expression: Option<String>,
     },
-    /// The document's own locale ([`Document::locale`]), `None` taking it away. Document-level,
-    /// like a name: it changes how every unmarked number in the document is spelled at once.
+    /// The document's own locale ([`Document::locale`]), `None` removing it; it changes how every
+    /// unmarked number is spelled.
     SetLocale {
         locale: Option<grind_core::locale::Locale>,
     },
-    /// Insert a sheet at `index`, carrying everything on it.
-    ///
-    /// A whole [`Sheet`] rather than a name because this is the inverse of
-    /// [`Action::RemoveSheet`], and undoing a deletion has to bring the cells back.
+    /// Insert a sheet at `index`, carrying everything on it — the inverse of
+    /// [`Action::RemoveSheet`].
     InsertSheet { index: usize, sheet: Box<Sheet> },
     /// Remove the sheet at `index`, cells and all.
     RemoveSheet { index: usize },
-    /// Rename the sheet at `index` (`table:name`).
-    ///
-    /// Formulas naming the old sheet are **not** rewritten — see [`crate::App::rename_sheet`].
+    /// Rename the sheet at `index` (`table:name`). References to it are rewritten by separate
+    /// actions ([`crate::App::rename_sheet`]).
     RenameSheet { index: usize, name: String },
-    /// Insert a chart at `index` in a sheet's list (`table:shapes`'s own order) — `index` is
-    /// the list's length to append, the way `App::add_chart` uses this.
+    /// Insert a chart at `index` in a sheet's list; the list's length appends.
     InsertChart {
         sheet: usize,
         index: usize,
@@ -143,10 +122,8 @@ pub enum Action {
     },
     /// Remove the chart at `index` on a sheet.
     RemoveChart { sheet: usize, index: usize },
-    /// Move or resize the chart at `index` — `draw:frame`'s own `svg:x`/`svg:y`/`svg:width`/
-    /// `svg:height`, replaced wholesale rather than per-field because a drag commits all four
-    /// at once and there is no case where only one of them changes without the others being
-    /// resent unchanged.
+    /// Move or resize the chart at `index` — `svg:x`/`svg:y`/`svg:width`/`svg:height` together, as
+    /// a drag commits them.
     ReshapeChart {
         sheet: usize,
         index: usize,
@@ -155,28 +132,21 @@ pub enum Action {
         width: String,
         height: String,
     },
-    /// Replace the chart at `index` with another one wholesale — one undo step, whatever
-    /// single field a caller actually changed. Everything a chart carries except its position
-    /// is edited through this: its kind, its ranges, its colours and its axes, each of which
-    /// can invalidate another (changing a series' range changes how many points it has to
-    /// colour), so replacing the whole value is the only shape that cannot leave one behind.
-    /// Position is [`Action::ReshapeChart`]'s, because a drag sends it hundreds of times and
-    /// has nothing else to say. See `App::set_chart_style` and `App::edit_chart`.
+    /// Replace the chart at `index` wholesale, one undo step: its kind, ranges, colours and axes,
+    /// which depend on each other (a series' range decides how many points it colours). Position
+    /// is [`Action::ReshapeChart`]'s.
     ReplaceChart {
         sheet: usize,
         index: usize,
         chart: Box<Chart>,
     },
-    /// Many changes, one undo step. Recalculation is why this exists: a user who types
-    /// `recalc` and then `undo` means the whole recalculation, not its last cell.
+    /// Many changes, one undo step — a whole recalculation, a paste.
     Batch(Vec<Action>),
 }
 
 impl Document {
-    /// Apply `action`, returning the action that undoes it.
-    ///
-    /// Returns `None` if the action names a sheet that does not exist, so a bad index from
-    /// a shell is an error rather than a panic.
+    /// Apply `action`, returning the action that undoes it, or `None` if it names a sheet that
+    /// does not exist.
     #[must_use]
     pub fn apply(&mut self, action: Action) -> Option<Action> {
         self.note(&action);
@@ -340,11 +310,9 @@ impl Document {
             Action::SetLocale { locale } => Some(Action::SetLocale {
                 locale: std::mem::replace(&mut self.locale, locale),
             }),
-            // The three that move sheets rather than cells. They shift every later index,
-            // which the undo stack survives for one reason: it is strictly ordered, so an
-            // older entry is only ever applied *after* this one has been undone and the
-            // index space it was recorded in is back. That is also why sheet handles are not
-            // needed here, and the note is the whole argument against introducing them.
+            // These shift every later sheet index. The undo stack survives it because it is
+            // strictly ordered: an older entry is applied only after this one is undone and its
+            // indices are back.
             Action::InsertSheet { index, sheet } => {
                 if index > self.sheets.len() {
                     return None;
@@ -427,10 +395,9 @@ impl Document {
             // Applied in order, undone in the opposite order — two cells written in
             // sequence do not commute, so the inverse of `[a, b]` is `[b⁻¹, a⁻¹]`.
             Action::Batch(actions) => {
-                // Checked before anything is written: bailing out halfway would leave the
-                // document mutated *and* return no inverse, so there would be no way back.
-                // A session file restored against a document with fewer sheets is the path
-                // that gets here.
+                // Checked before writing anything: half a batch applied would mutate the document
+                // with no inverse to undo it. A session restored against a document with fewer
+                // sheets gets here.
                 if !actions.iter().all(|a| self.addressable(a)) {
                     return None;
                 }
@@ -444,42 +411,32 @@ impl Document {
         }
     }
 
-    /// Record what this action touches, for R6's splicing writer (`odf::source`).
-    ///
-    /// Here rather than in each arm because every action carries the address it writes to,
-    /// and because this must run whether or not the action turns out to be addressable — a
-    /// batch that is rejected has changed nothing, and a batch that is applied has recorded
-    /// everything before the first write.
+    /// Record what this action touches, for the splicing writer (`odf::source`). Runs whether or
+    /// not the action is addressable: a rejected batch changed nothing, and an applied one
+    /// recorded everything before its first write.
     fn note(&mut self, action: &Action) {
         self.touch(action);
         match action {
             Action::SetCell { sheet, pos, .. } | Action::SetFormula { sheet, pos, .. } => {
                 self.edits.cells.insert((*sheet, *pos));
             }
-            // A format or a style is a `style:style` the source file does not have, so it
-            // cannot be spliced into one. Sticky, and it still records the cell so a
-            // document that later regenerates is not depending on which flag was set first.
+            // A format or a style is a `style:style` the source file lacks, so it cannot be
+            // spliced; still record the cell.
             Action::SetFormat { sheet, pos, .. } | Action::SetStyle { sheet, pos, .. } => {
                 self.edits.cells.insert((*sheet, *pos));
                 self.edits.only_values = false;
             }
-            // Not a cell at all: `table:named-expressions` is its own element, somewhere
-            // R6's splicing writer does not touch. Left unsaid, a new name would be dropped
-            // on the next save — the document's bytes would come back with the cells edited
-            // and the name gone.
-            // Not a cell either: a track style lives in `office:automatic-styles` and is
-            // named from a `<table:table-column>`, neither of which the splice touches.
+            // A track style lives in `office:automatic-styles` and is named from a
+            // `<table:table-column>`, neither of which the splice touches.
             Action::SetColWidth { .. } | Action::SetRowHeight { .. } => {
                 self.edits.only_values = false
             }
-            // Not a cell either, and for the same reason: `table:visibility="collapse"` is
-            // an attribute on the row/column element itself, not something a cell splice
-            // touches.
+            // `table:visibility="collapse"` is on the row or column element, not in a cell.
             Action::SetColHidden { .. } | Action::SetRowHidden { .. } => {
                 self.edits.only_values = false
             }
-            // Not a cell either: `table:database-ranges` is its own element, and the
-            // `table:visibility` it implies sits on rows rather than cells.
+            // `table:database-ranges` is its own element, and the visibility it implies is on
+            // rows.
             Action::SetFilter { .. } => self.edits.only_values = false,
             // A merge is an attribute on one cell element and the element kind of every other
             // it takes in — the rows it spans are rewritten (`Provenance::merges`).
@@ -489,6 +446,8 @@ impl Document {
                 self.edits.cells.insert((*sheet, *pos));
                 self.edits.only_values = false;
             }
+            // `table:named-expressions` is its own element, which the splice does not touch; a new
+            // name would be lost on the next save without this.
             Action::SetName { .. } => {
                 self.edits.only_values = false;
                 self.edits.names = true;
@@ -499,9 +458,8 @@ impl Document {
             // The default cell style is not a splice site: it lives in `office:styles`, which
             // the regenerating writer writes fresh.
             Action::SetLocale { .. } => self.edits.only_values = false,
-            // Not a cell either, and worse: adding or removing a sheet shifts every later
-            // index, so the `(sheet, pos)` keys already in `cells` would name the wrong
-            // sheet. Regenerating is what makes that harmless — the splice map is never
+            // Adding or removing a sheet shifts later indices, so the `(sheet, pos)` keys in
+            // `cells` would name the wrong sheet; regenerating means the splice map is not
             // consulted again.
             Action::InsertSheet { .. }
             | Action::RemoveSheet { .. }
@@ -517,12 +475,10 @@ impl Document {
         }
     }
 
-    /// Record on the sheet itself what this action touches (`model::Provenance`), so a save
-    /// that regenerates it rewrites exactly that and keeps the rest of the file's own table.
-    ///
-    /// Noted before the action applies, so inside a batch a sheet that is about to be inserted
-    /// may be noted on whichever sheet holds its index now — over-reporting, which is safe —
-    /// and is noted again, correctly, when its own action applies.
+    /// Record on the sheet itself what this action touches (`model::Provenance`), so a
+    /// regenerating save rewrites exactly that. Noted before the action applies, so inside a batch
+    /// an about-to-be-inserted sheet may be noted on whatever sheet holds its index now —
+    /// over-reporting, which is safe — and is noted correctly when it applies.
     fn touch(&mut self, action: &Action) {
         fn sheet(doc: &mut Document, index: usize) -> Option<&mut crate::model::Provenance> {
             doc.sheets.get_mut(index).map(|s| &mut s.origin)
@@ -676,9 +632,8 @@ mod tests {
         }
     }
 
-    /// Two writes to the *same* cell in one batch: the inverse only restores the original if
-    /// it undoes them in the opposite order. Writing them to different cells would pass
-    /// whether or not the reversal is there, which is why they overlap.
+    /// Two writes to the same cell in one batch: only undoing them in reverse order restores the
+    /// original.
     #[test]
     fn a_batch_undoes_in_the_opposite_order() {
         let mut doc = Document::default();
@@ -695,8 +650,7 @@ mod tests {
         assert_eq!(doc.sheet(0).unwrap().get(Pos::new(1, 0)), CellValue::Empty);
     }
 
-    /// A batch that cannot be applied in full must not be applied at all — a half-applied
-    /// batch returns no inverse, so there would be no way back.
+    /// A batch that cannot be applied in full is not applied at all.
     #[test]
     fn a_batch_naming_a_missing_sheet_writes_nothing() {
         let mut doc = Document::default();

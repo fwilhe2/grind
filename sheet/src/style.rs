@@ -2,30 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Cell styling — the `style:style` of family `table-cell` (doc/ods-format.md §5.1). **\[ODS\]**
+//! Cell styling — the `style:style` of family `table-cell` (`doc/ods-format.md` §5.1). **\[ODS\]**
+//! A number format says how a value is spelled; this says how the cell looks. The two share one
+//! `style:style` and are pooled together. The pieces — font weight, lengths, colours, borders —
+//! are `grind_core::style`'s; this is which of them a cell carries, verbatim.
 //!
-//! The other half of §5: a number format says how a *value* is spelled, this says how the
-//! cell looks around it. The two travel together on one `style:style` and are pooled
-//! together, which is why the writer keys its pool on the pair.
-//!
-//! **The pieces a cell style is made of are not spreadsheet-specific and do not live here.**
-//! `fo:font-weight`, an ODF length, a `#rrggbb` colour and a three-part border are the same
-//! constructs a paragraph style and a text span style are built from, so they are
-//! `grind_core::style` and are re-exported below. What is here is the one thing that is
-//! genuinely about cells: which of those pieces a cell carries.
-//!
-//! **The values are ODF's own, kept verbatim** — see `grind_core::style` for why, and for
-//! where validation lives instead.
-//!
-//! Two things are deliberately not carried, both because LibreOffice does not give them
-//! back as written (§5.4, measured):
-//!
-//! * **`fo:font-family`**, which LO replaces with a `style:font-name` pointing into
-//!   `office:font-face-decls` — a second vocabulary, and one nothing can use until text is
-//!   drawn.
-//! * **Border widths are re-quantised** on the way through: `0.5pt` comes back `0.51pt`.
-//!   The string is kept as the document wrote it, and loop C compares widths numerically
-//!   rather than pretending the round trip is exact.
+//! Not carried, because LibreOffice does not give them back as written (§5.4, measured):
+//! `fo:font-family`, which it replaces with a `style:font-name` reference. Border widths are
+//! re-quantised (`0.5pt` comes back `0.51pt`), so loop C compares them numerically.
 
 use serde::{Deserialize, Serialize};
 
@@ -34,9 +18,8 @@ pub use grind_core::style::{
     EDGES, PALETTE, border, border_parts, color, length_mm, mm_length, palette,
 };
 
-/// How one cell looks. Every field is an ODF attribute value, and `None` means the
-/// attribute is absent — which is not the same as a value of `"none"`, the spelling ODF
-/// uses for "explicitly no border".
+/// How one cell looks. Every field is an ODF attribute value; `None` means absent, which differs
+/// from ODF's `"none"`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CellStyle {
     /// `fo:font-weight` — `normal`, `bold`, or a hundreds number.
@@ -69,9 +52,8 @@ pub struct CellStyle {
     #[serde(default)]
     pub rotation: Option<String>,
     /// `fo:border-{left,right,top,bottom}`, in [`EDGES`] order. The `fo:border` shorthand is
-    /// expanded into all four on the way in and collapsed back when they agree, because
-    /// that is what the shorthand *means* — keeping it as a fifth field would make two
-    /// spellings of one style unequal, and the pool would emit both.
+    /// expanded into all four on reading and collapsed back when they agree, so two spellings of
+    /// one style are equal.
     pub borders: [Option<String>; 4],
 }
 
@@ -90,8 +72,7 @@ impl CellStyle {
             .then_some(first)
     }
 
-    /// Whether the text is underlined: ODF's `none` is an explicit absence, and every other
-    /// value is some kind of line.
+    /// Whether the text is underlined: anything but `none`.
     pub fn is_underlined(&self) -> bool {
         !matches!(self.underline.as_deref(), None | Some("none"))
     }
@@ -130,10 +111,8 @@ impl CellStyle {
         self.borders = [value.clone(), value.clone(), value.clone(), value];
     }
 
-    /// This style drawn over `under`, property by property: what this one sets wins, and what
-    /// it leaves unset is `under`'s — how a conditional-format rule's style is applied to a cell
-    /// (`doc/conditional-format.md` §1), so a rule that sets only a background leaves the
-    /// cell's bold alone.
+    /// This style drawn over `under`: what this one sets wins, the rest is `under`'s — how a
+    /// conditional-format rule's style is applied (`doc/conditional-format.md` §1).
     pub fn over(&self, under: Option<&CellStyle>) -> CellStyle {
         let Some(under) = under else {
             return self.clone();

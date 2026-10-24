@@ -2,20 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! How a cell's text is set in its box, as far as the document and the value decide it — where
-//! it sits across and down, and whether it is bold or italic.
-//!
-//! **Rules about documents, not about a toolkit**, which is why they are here: "a number is
-//! right-aligned unless the document says otherwise" is the kind of thing that quietly differs
-//! between shells when each one re-decides it in its own painting code, and it had. The GNOME
-//! window centred a boolean and an error, as `doc/sheet-shell.md` says a grid does; the Windows
-//! pane right-aligned a boolean and left an error on the left. The macOS shell would have been
-//! the third copy (`doc/macos-shell.md`, M1), so the rule the phase-9 plan wrote down is the one
-//! every shell now draws.
-//!
-//! What a *colour* looks like is not here: the document's colour is an ODF value every shell
-//! parses into its own colour type, and what it looks like on a dark page is
-//! `grind_core::color`'s.
+//! How a cell's text is set in its box, as far as the document and the value decide: where it sits
+//! across and down, and whether it is bold or italic — so no shell decides it in its painting
+//! code. Colour is `grind_core::color`'s.
 
 use crate::formula::value::FormulaError;
 use crate::model::CellValue;
@@ -30,8 +19,7 @@ pub enum Align {
     Right,
 }
 
-/// Where a cell's text sits down its box. Middle unless the cell says otherwise — which is what
-/// `style:vertical-align="automatic"` means for a value.
+/// Where a cell's text sits down its box.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum VAlign {
     Top,
@@ -40,16 +28,10 @@ pub enum VAlign {
     Bottom,
 }
 
-/// Where a value's type puts it, when the document does not say: **numbers right, text left, a
-/// boolean or an error centred** (`doc/sheet-shell.md`).
-///
-/// The convention carries information. A column of figures lines up on its digits, and a number
-/// that reads as text is visibly left-aligned, which is how somebody spots the import that went
-/// wrong. Errors are centred as LibreOffice and Excel both draw them.
-///
-/// An error is a value spelled as **one of the error names**, exactly. `FormulaError::from_name`
-/// reads anything that starts with `#` as an error, which is right for a document's value and
-/// wrong for a label: the GNOME window centred `# of items`.
+/// Where a value's type puts it when the document does not say: numbers right, text left, a
+/// boolean or an error centred (`doc/sheet-shell.md`), so a column of figures lines up and a
+/// number read as text shows. An error is a value spelled exactly as one of the error names — `#
+/// of items` is text.
 pub fn by_type(value: &CellValue) -> Align {
     match value {
         CellValue::Number(_) => Align::Right,
@@ -59,17 +41,14 @@ pub fn by_type(value: &CellValue) -> Align {
     }
 }
 
-/// Whether `text` is an error's own name — `#DIV/0!`, `#N/A` — rather than text that happens to
-/// start with `#`.
+/// Whether `text` is an error's own name (`#DIV/0!`, `#N/A`) rather than text starting with `#`.
 fn is_error(text: &str) -> bool {
     FormulaError::from_name(text).is_some_and(|error| error.name().eq_ignore_ascii_case(text))
 }
 
-/// `fo:text-align` as a left-to-right grid draws it (§16.5 — the model keeps the ODF spelling
-/// verbatim). `start` and `end` are relative to the writing direction, and this suite is
-/// left-to-right by decision (`doc/text-layout.md`); `left` and `right` are what other producers
-/// write. Anything else — `justify`, which means nothing for one line in a cell, or a value from
-/// a newer ODF — is `None`, so the value's own rule applies rather than a guess (R5).
+/// `fo:text-align` as a left-to-right grid draws it: `start`/`end` and the `left`/`right` other
+/// producers write. Anything else — `justify`, or a value from a newer ODF — is `None`, and the
+/// value's own rule applies (R5).
 pub fn by_style(value: &str) -> Option<Align> {
     match value {
         "start" | "left" => Some(Align::Left),
@@ -79,8 +58,7 @@ pub fn by_style(value: &str) -> Option<Align> {
     }
 }
 
-/// Where a cell's text sits across its box: what the style says, else what the value's type
-/// says.
+/// Where a cell's text sits across its box: the style's alignment, else the value type's.
 pub fn align(value: &CellValue, style: Option<&CellStyle>) -> Align {
     style
         .and_then(|style| style.align.as_deref())
@@ -88,9 +66,8 @@ pub fn align(value: &CellValue, style: Option<&CellStyle>) -> Align {
         .unwrap_or_else(|| by_type(value))
 }
 
-/// Where a cell's text sits down its box: `style:vertical-align`'s `top` and `middle`, and the
-/// bottom for everything else — `automatic`, no value at all, and a value from a newer ODF —
-/// which is where LibreOffice puts it (`doc/ods-format.md` §5.1).
+/// Where a cell's text sits down its box: `style:vertical-align`'s `top` and `middle`, else the
+/// bottom, where LibreOffice puts it (`doc/ods-format.md` §5.1).
 pub fn valign(style: Option<&CellStyle>) -> VAlign {
     match style.and_then(|style| style.vertical_align.as_deref()) {
         Some("top") => VAlign::Top,
@@ -99,8 +76,7 @@ pub fn valign(style: Option<&CellStyle>) -> VAlign {
     }
 }
 
-/// Whether a cell's text is set bold: `fo:font-weight` is `bold`, `normal`, or a hundreds number,
-/// and 600 and up is bold everywhere else, so it is bold here.
+/// Whether a cell's text is bold: `fo:font-weight` of `bold`, or 600 and up.
 pub fn is_bold(style: Option<&CellStyle>) -> bool {
     bold_weight(style.and_then(|style| style.font_weight.as_deref()))
 }
@@ -110,8 +86,7 @@ pub fn is_italic(style: Option<&CellStyle>) -> bool {
     italic_style(style.and_then(|style| style.font_style.as_deref()))
 }
 
-/// [`is_bold`]'s rule over the raw `fo:font-weight`, for a shell resolving a font from a
-/// [`grind_core::style::TextStyle`] rather than from a cell.
+/// [`is_bold`]'s rule over a raw `fo:font-weight`.
 pub fn bold_weight(weight: Option<&str>) -> bool {
     match weight {
         Some("bold") => true,
@@ -131,17 +106,13 @@ pub fn wraps(style: Option<&CellStyle>) -> bool {
 }
 
 /// The size a cell that names none is set in, in points — `style:default-style`'s `fo:font-size`
-/// in every document LibreOffice writes, and what a spreadsheet has meant by "no size given"
-/// since long before ODF.
+/// in every document LibreOffice writes.
 pub const DEFAULT_FONT_PT: f64 = 10.0;
 
-/// A cell's `fo:font-size` as a multiple of [`DEFAULT_FONT_PT`], or `None` when it names no size
-/// this build reads (a percentage, a length in another unit).
-///
-/// **A multiple, not an absolute**, because a shell draws its default cell in its own UI font at
-/// its own size, and a cell the document made twice as large has to come out twice as large as
-/// *that* — which an absolute 20pt would not, beside a 13pt system font. One parse for drawing
-/// and measuring alike, so a cell cannot be drawn at one size and measured at another.
+/// A cell's `fo:font-size` as a multiple of [`DEFAULT_FONT_PT`], or `None` for a size not read (a
+/// percentage, another unit). A multiple, because a shell draws its default cell in its own UI
+/// font, and a cell made twice as large must be twice that. Drawing and measuring share this, so a
+/// cell is never drawn at one size and measured at another.
 pub fn font_scale(font_size: Option<&str>) -> Option<f64> {
     font_size
         .and_then(|size| size.strip_suffix("pt"))
@@ -150,9 +121,8 @@ pub fn font_scale(font_size: Option<&str>) -> Option<f64> {
         .map(|points| points / DEFAULT_FONT_PT)
 }
 
-/// The four properties of a cell's style that change how *wide* its text is, as the text style
-/// `grind_core::layout` measures with. No family: the model does not carry one for a cell
-/// (LibreOffice rewrites it into a font-face reference).
+/// The four style properties that change how wide a cell's text is, for `grind_core::layout`. No
+/// family: cells do not carry one.
 pub fn text_style(style: Option<&CellStyle>) -> grind_core::style::TextStyle {
     grind_core::style::TextStyle {
         font_family: None,
@@ -162,27 +132,20 @@ pub fn text_style(style: Option<&CellStyle>) -> grind_core::style::TextStyle {
     }
 }
 
-/// One filled rectangle of a border — `(x, y, width, height)` in whatever unit the cell was
-/// given in, and the colour to fill it.
+/// One filled rectangle of a border — `(x, y, width, height)` in the cell's unit, and its colour.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Stroke {
     pub rect: (f64, f64, f64, f64),
     pub color: Rgb,
 }
 
-/// A cell's own borders as rectangles to fill, each centred on the grid line it stands on — so a
-/// cell's right border and its neighbour's left one are the same line, and either covers the
-/// hairline under it.
+/// A cell's own borders as rectangles, each centred on its grid line, so a cell's right border and
+/// its neighbour's left one coincide. A border is ODF's three parts ([`border_parts`]), at least
+/// one device pixel (`hairline`) thick, in the document's colour lifted for a dark page
+/// (`color::document_ink`), and `double` as two lines with a gap. `none`, `hidden` and unreadable
+/// borders draw nothing (R5). `cell` is `(x, y, w, h)`.
 ///
-/// A border is ODF's three parts (`0.5pt solid #000000`, [`border_parts`]): never thinner than
-/// one device pixel (`hairline`), in the document's colour lifted to read on a dark page
-/// (`color::document_ink`), and `double` as two thin lines with a gap. `none`, `hidden` and a
-/// border this build cannot read draw nothing — R5's tolerance. `cell` is `(x, y, w, h)`.
-///
-/// Hoisted out of the macOS shell when the Windows grid wanted borders too; both draw these.
-///
-/// ponytail: `dashed` and `dotted` are drawn solid. The trigger is a document whose dashes are
-/// what distinguishes two of its tables; a dash is a run of fills along the edge.
+/// ponytail: `dashed` and `dotted` are drawn solid until a document needs the difference.
 pub fn border_strokes(
     cell: (f64, f64, f64, f64),
     style: &CellStyle,

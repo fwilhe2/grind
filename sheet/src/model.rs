@@ -2,10 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The document model: values, addresses, sheets, and the document itself.
-//!
-//! Positions are **0-based** everywhere in the core. Only the CLI is 1-based, and
-//! it converts in exactly one place (doc/plan.md, phase 6).
+//! The document model: values, addresses, sheets, and the document itself. Positions are 0-based;
+//! `a1.rs` is the only conversion.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -15,12 +13,8 @@ use crate::grid::Column;
 use crate::numfmt::Format;
 use crate::style::CellStyle;
 
-/// A cell's value.
-///
-/// Deliberately has no formula variant: a formula's *value* is one of these, and the
-/// formula text is a separate concern that arrives with the reader in phase 2. No
-/// error variant yet either — the OpenFormula error set is normative and belongs
-/// with the evaluator in phase 4 (doc/small-group.md), not invented here.
+/// A cell's value. A formula's source is a side table on [`Sheet`], and an error is stored as its
+/// name in text ([`crate::formula::eval::to_cell`]).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum CellValue {
     #[default]
@@ -54,21 +48,14 @@ impl From<bool> for CellValue {
     }
 }
 
-/// The Number subtype a cell was written as — §4.3.2 Time and §4.3.3 Date.
+/// The Number subtype a cell was written as — §4.3.2 Time and §4.3.3 Date — so the writer spells a
+/// date back as a date rather than a bare serial. The value is an ordinary number either way, and
+/// the display is [`Sheet::format`]'s (§5.2); a date with no format gets the ISO default on
+/// writing, so LibreOffice does not invent a locale one.
 ///
-/// Both are Numbers and live in the grid as one, which is what makes date arithmetic work
-/// at all. This records only how the cell *spelled* that number, so the writer can put it
-/// back the way it found it instead of turning every date in a document into a bare serial.
-///
-/// This is the value *type*, not the display: how the cell is spelled out is
-/// [`Sheet::format`]'s business (§5.2), and the two are independent — a date with no format
-/// is a real cell, and the writer gives it the ISO default so LibreOffice does not invent a
-/// locale one.
-///
-/// ponytail: a date that a *formula* computes has no kind, because the evaluator's `Value`
-/// carries no Date subtype — so `=DATE(2026;8;16)` displays as its serial until the cell is
-/// given a format. Part 4 §4.3.3 makes the subtype part of the value model, which is where
-/// the fix belongs.
+/// ponytail: a date a formula computes has no kind, because the evaluator's `Value` has no Date
+/// subtype, so `=DATE(2026;8;16)` shows its serial until formatted. Part 4 §4.3.3 puts the subtype
+/// in the value model, where the fix belongs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NumberKind {
     Date,
@@ -88,12 +75,8 @@ impl Pos {
     }
 }
 
-/// A `BTreeMap` keyed by [`Pos`], written as a list of pairs.
-///
-/// JSON has string keys and nothing else, so `serde_json` refuses a struct key outright —
-/// and a session file is JSON. One helper on the four side tables rather than a string
-/// spelling of `Pos`, because `Pos` is a *value* in every other action and respelling it
-/// there would change a format for the sake of this one.
+/// A `BTreeMap` keyed by [`Pos`], written as a list of pairs, since JSON (the session file) has
+/// only string keys.
 mod pairs {
     use super::Pos;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -113,28 +96,22 @@ mod pairs {
     }
 }
 
-/// Where a sheet came from and what has been done to it since — the bookkeeping a [`Sheet`]
-/// carries for a save that writes it back into the table it was read from.
-///
-/// Kept **on the sheet** rather than beside the document, because a sheet moves: deleting one
-/// and undoing the deletion brings it back inside an action, at an index that may differ, and
-/// what was touched before it left has to come back with it — a row taken for untouched would
-/// be written as the file's old bytes, silently undoing the edit. Over-reporting is always
-/// safe (a touched cell is rewritten from the model); under-reporting never is.
-///
-/// Equal to every other `Provenance`, so a sheet's equality is about its content alone: a sheet
-/// read from a `.fods` and the same sheet read from its projection are the same sheet.
+/// Where a sheet came from and what has been done to it since, for a save that writes it back into
+/// the table it was read from. Kept on the sheet, because deleting and undeleting a sheet moves it
+/// and its touched rows must move with it. Over-reporting is safe (a touched cell is rewritten
+/// from the model); under-reporting is not. Every `Provenance` is equal to every other, so sheet
+/// equality is about content alone.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Provenance {
     /// Which `table:table` of the file the sheet was read from.
     pub table: Option<usize>,
     /// Cells whose value, formula, format or style has been written since.
     pub cells: BTreeSet<Pos>,
-    /// Of those, the ones whose format or style was written — whose `table:style-name` a save
-    /// has to replace rather than keep.
+    /// Of those, the ones whose format or style was written, whose `table:style-name` a save
+    /// replaces.
     pub looks: BTreeSet<Pos>,
-    /// And the ones whose value or formula was written. A cell only restyled keeps the file's
-    /// own element — a hyperlink, rich text, an annotation inside it — with a new style name.
+    /// The ones whose value or formula was written. A cell only restyled keeps the file's own
+    /// element (a hyperlink, rich text, an annotation) with a new style name.
     pub values: BTreeSet<Pos>,
     /// Rows whose height or hidden flag has changed since.
     pub rows: BTreeSet<u32>,
@@ -144,16 +121,15 @@ pub struct Provenance {
     pub charts: bool,
     /// Whether the filter has changed since — which moves `table:visibility` on any row.
     pub filter: bool,
-    /// Rows a merge was added to or taken from since — written again whole, since a merge
-    /// changes which of their elements are cells and which are covered.
+    /// Rows a merge was added to or taken from, written again whole.
     #[serde(default)]
     pub merges: BTreeSet<u32>,
-    /// Whether a checkbox has been added, changed or taken away — which rewrites the sheet's
+    /// Whether a checkbox was added, changed or removed, which rewrites the sheet's
     /// `office:forms`.
     #[serde(default)]
     pub checkboxes: bool,
-    /// Whether the conditional-format rules have changed — which makes LibreOffice's own
-    /// `calcext:conditional-formats` copy of them stale.
+    /// Whether the conditional-format rules changed, which makes LibreOffice's
+    /// `calcext:conditional-formats` copy stale.
     #[serde(default)]
     pub rules: bool,
 }
@@ -164,109 +140,71 @@ impl PartialEq for Provenance {
     }
 }
 
-/// One sheet: a sparse set of columns.
+/// One sheet: a sparse set of columns, so `used_cols` is the real extent rather than a high-water
+/// mark. Serialisable because [`crate::Action::InsertSheet`] carries a whole one for undo, and the
+/// undo stack can be saved (`--session`).
 ///
-/// Columns past the last used one simply do not exist, and trailing empty columns are
-/// dropped on write, so `used_cols` is always the real extent rather than a high-water
-/// mark.
-///
-/// Serialisable because [`crate::Action::InsertSheet`] carries a whole one: undoing a sheet
-/// deletion has to bring its cells back, and the undo stack outlives the process when a
-/// shell passes `--session`.
-///
-/// ponytail: that puts a deleted sheet's every cell into the session file. Fine for the
-/// sheets a person deletes by hand; if a session file ever gets embarrassing, keep the
-/// removed sheet in a side arena and let the action carry a handle.
+/// ponytail: that puts a deleted sheet's every cell into the session file; keep removed sheets in
+/// a side arena if that ever matters.
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Sheet {
     pub name: String,
     cols: Vec<Column>,
-    /// Formula source text, kept verbatim beside the cached value.
-    ///
-    /// A side table rather than a cell variant, because a formula's *value* is an ordinary
-    /// [`CellValue`] and only its source is extra. Phase 4 replaces the string with a
-    /// parsed AST; until then carrying it means a re-save does not silently drop every
-    /// formula in the document.
+    /// Formula source text, kept verbatim beside the cached value, which is an ordinary
+    /// [`CellValue`].
     #[serde(with = "pairs")]
     formulas: BTreeMap<Pos, String>,
-    /// Which cells hold a date or a time rather than a plain number — see [`NumberKind`].
-    /// A side table for the same reason `formulas` is one: the *value* is an ordinary
-    /// [`CellValue::Number`] and only its spelling is extra.
+    /// Which cells hold a date or a time rather than a plain number ([`NumberKind`]).
     #[serde(with = "pairs")]
     kinds: BTreeMap<Pos, NumberKind>,
-    /// How each cell is *displayed* (doc/ods-format.md §5.2). A third side table, and the
-    /// same argument: a number format changes nothing about the value.
+    /// How each cell is displayed (`doc/ods-format.md` §5.2).
     ///
-    /// ponytail: one [`Format`] per formatted cell rather than an index into a document-wide
-    /// pool, so a column formatted top to bottom holds a thousand equal clones. Pooling
-    /// happens on write, where it is required anyway (§5.3); intern here when a profile
-    /// blames the clones.
+    /// ponytail: one [`Format`] clone per formatted cell rather than an index into a pool; pooling
+    /// happens on write (§5.3). Intern here when a profile blames the clones.
     #[serde(with = "pairs")]
     formats: BTreeMap<Pos, Format>,
-    /// How each cell *looks* (§5.1) — the other half of its `style:style`. A fourth side
-    /// table, and the same ponytail as `formats`: one clone per styled cell, pooled only on
-    /// the way out.
+    /// How each cell looks (§5.1), with `formats`' ponytail.
     #[serde(with = "pairs")]
     styles: BTreeMap<Pos, CellStyle>,
-    /// `style:column-width` per column, as the document spelled it (`"2.258cm"`).
-    ///
-    /// The string is ODF's, for `style.rs`'s reason: one parser in one place
-    /// ([`crate::style::length_mm`]) and a document keeps what it came with. Keyed by column
-    /// rather than by [`Pos`], so an ordinary `BTreeMap` serialises.
-    ///
-    /// Sparse, and bounded on the way in: a `table:number-columns-repeated="16368"` run is
-    /// the sheet's *background* width rather than per-column layout, and materialising it
-    /// would be sixteen thousand equal strings — see `odf::read`'s `MAX_TRACK_RUN`.
+    /// `style:column-width` per column as the document spelled it (`"2.258cm"`), parsed only by
+    /// [`crate::style::length_mm`]. Sparse, and bounded on reading by `MAX_TRACK_RUN`: a long
+    /// repeated run is the sheet's background width, not layout.
     #[serde(default)]
     col_widths: BTreeMap<u32, String>,
     /// `style:row-height` per row — the twin of `col_widths`, same rules.
     #[serde(default)]
     row_heights: BTreeMap<u32, String>,
-    /// Columns hidden by hand (`table:visibility="collapse"`, §5.4) — a column has no
-    /// filter, so this is the only way one goes dark.
+    /// Columns hidden by hand (`table:visibility="collapse"`, §5.4); a column has no filter.
     #[serde(default)]
     hidden_cols: BTreeSet<u32>,
-    /// Rows hidden by hand, the row twin of `hidden_cols`. Kept apart from
-    /// [`Sheet::hidden_rows`], which answers a different question — what the *filter*
-    /// currently hides — so the two stay distinguishable instead of being merged into one
-    /// set that can no longer say which reason applied.
+    /// Rows hidden by hand — kept apart from what the filter hides ([`Sheet::hidden_rows`]), so
+    /// each reason stays known.
     #[serde(default)]
     manually_hidden_rows: BTreeSet<u32>,
-    /// The sheet's autofilter, if it has one (`table:database-range`, §9.4).
-    ///
-    /// One per sheet rather than the list ODF allows: a second database range over the same
-    /// sheet is a data source or a second autofilter, and neither is something this build
-    /// can act on. Which rows it hides is *not* stored — see [`crate::filter`].
+    /// The sheet's autofilter (`table:database-range`, §9.4), one per sheet. The rows it hides are
+    /// derived, not stored ([`crate::filter`]).
     #[serde(default)]
     filter: Option<crate::filter::Filter>,
-    /// The sheet's charts (`table:shapes`, rng:15678), in document order — `doc/chart-format.md`
-    /// is the model these hold.
+    /// The sheet's charts (`table:shapes`, rng:15678) in document order (`doc/chart-format.md`).
     #[serde(default)]
     charts: Vec<crate::chart::Chart>,
-    /// Merged ranges — `table:number-columns-spanned`/`table:number-rows-spanned` on the
-    /// top-left cell (rng:16102), keyed by that cell. See [`Span`].
-    ///
-    /// **The covered cells hold nothing here.** ODF lets a `table:covered-table-cell` carry a
-    /// value, which LibreOffice keeps out of sight; this build reads past it, the way it always
-    /// has, so a merge is its anchor's value drawn over the whole area. No two merges overlap:
-    /// [`Sheet::set_merge`] is the only way one is added and it is told only about one that
-    /// does not.
+    /// Merged ranges — `table:number-columns-spanned`/`table:number-rows-spanned` on the top-left
+    /// cell (rng:16102), keyed by that cell ([`Span`]). A covered cell keeps its own value and
+    /// style, as LibreOffice keeps them, and is simply not drawn. No two merges overlap:
+    /// [`Sheet::set_merge`] is only told about one that does not.
     #[serde(default, with = "pairs")]
     merges: BTreeMap<Pos, Span>,
-    /// Checkboxes, keyed by the cell each one is drawn in — `office:forms`' `form:checkbox` and
-    /// the `draw:control` in its cell (`doc/ods-format.md` §3.5). The one form control this
-    /// model carries; see [`Checkbox`].
+    /// Checkboxes, keyed by the cell each is drawn in (`doc/ods-format.md` §3.5) — the one form
+    /// control this model carries ([`Checkbox`]).
     #[serde(default, with = "pairs")]
     checkboxes: BTreeMap<Pos, Checkbox>,
-    /// Conditional-format rules, in priority order — the first that holds at a cell is the one
-    /// drawn (`doc/conditional-format.md`, [`crate::rule`]). Whether one holds is never stored.
+    /// Conditional-format rules in priority order: the first that holds at a cell is drawn
+    /// (`doc/conditional-format.md`, [`crate::rule`]).
     #[serde(default)]
     rules: Vec<crate::rule::Rule>,
-    /// Which `table:table` of the file this sheet was read from, when it was — a save that
-    /// regenerates this sheet writes it *into that element*, keeping every row nobody touched
-    /// and every attribute and child the model does not read (`odf::write`). Bookkeeping, not
-    /// content: it is never written, never projected, and two sheets that differ only here are
-    /// equal ([`Provenance`]).
+    /// Which `table:table` of the file this sheet was read from, so a regenerating save writes
+    /// into that element and keeps what nobody touched (`odf::write`). Bookkeeping: never written,
+    /// never projected, and ignored by equality ([`Provenance`]).
     #[serde(default)]
     pub(crate) origin: Provenance,
 }
@@ -293,9 +231,9 @@ impl Sheet {
         }
     }
 
-    /// The row a point `offset_mm` below the top of `row` falls in — where a control whose
-    /// anchor names one cell but whose offset carries it into the next is actually drawn
-    /// (`doc/ods-format.md` §3.5). A row with no height of its own is [`DEFAULT_ROW_MM`] tall.
+    /// The row a point `offset_mm` below the top of `row` falls in — where a control whose offset
+    /// carries it past its anchor cell is drawn (`doc/ods-format.md` §3.5). A row with no height
+    /// is [`DEFAULT_ROW_MM`] tall.
     pub fn row_holding(&self, mut row: u32, mut offset_mm: f64) -> u32 {
         let height = |row: u32| {
             self.row_height(row)
@@ -303,8 +241,6 @@ impl Sheet {
                 .filter(|mm| *mm > 0.0)
                 .unwrap_or(DEFAULT_ROW_MM)
         };
-        // Bounded: a control is a few rows tall, and an absurd offset is not a reason to walk a
-        // million rows.
         for _ in 0..1_000 {
             let h = height(row);
             if offset_mm < h || row + 1 >= crate::MAX_ROWS {
@@ -321,8 +257,8 @@ impl Sheet {
         &self.rules
     }
 
-    /// Replace the whole list — the one way the rules change, since reordering one changes what
-    /// every other means ([`crate::Action::SetRules`]).
+    /// Replace the whole list, since reordering one rule changes what the others mean
+    /// ([`crate::Action::SetRules`]).
     pub fn set_rules(&mut self, rules: Vec<crate::rule::Rule>) {
         self.rules = rules;
     }
@@ -350,12 +286,9 @@ impl Sheet {
         self.merges.iter().map(|(pos, span)| (*pos, *span))
     }
 
-    /// The merge `pos` is part of — as its top-left cell or as one it covers — with that
-    /// merge's top-left cell.
-    ///
-    /// A scan rather than an index: a sheet holds a handful of merges, and a lookup table
-    /// keyed by every covered cell would be the one structure here whose size is the merges'
-    /// *area*. Only anchors at or before `pos` in row-major order can reach it.
+    /// The merge `pos` is part of, as its top-left or a covered cell, with that merge's top-left
+    /// cell. A scan: a sheet has a handful of merges, and only anchors at or before `pos` can
+    /// reach it.
     pub fn merge_at(&self, pos: Pos) -> Option<(Pos, Span)> {
         self.merges
             .range(..=pos)
@@ -369,11 +302,9 @@ impl Sheet {
         self.merge_at(pos).is_some_and(|(anchor, _)| anchor != pos)
     }
 
-    /// Merge the range that starts at `anchor`, or (with `None`) take the merge there away.
-    ///
-    /// A span of one cell is no merge and is stored as none, so "unmerged" has one spelling.
-    /// The caller has already taken away every merge the new one overlaps
-    /// ([`Sheet::merges_within`]); one that did not would draw two cells over each other.
+    /// Merge the range starting at `anchor`, or with `None` remove the merge there. A one-cell
+    /// span is stored as none. The caller has already removed any merge the new one overlaps
+    /// ([`Sheet::merges_within`]).
     pub fn set_merge(&mut self, anchor: Pos, span: Option<Span>) {
         match span.filter(|span| !span.is_single()) {
             Some(span) => self.merges.insert(anchor, span),
@@ -404,15 +335,14 @@ impl Sheet {
         (index < self.charts.len()).then(|| self.charts.remove(index))
     }
 
-    /// Insert `chart` back at `index` — undoing [`Self::remove_chart`], which is why this
-    /// takes the index rather than only appending.
+    /// Insert `chart` back at `index`, undoing [`Self::remove_chart`].
     pub(crate) fn insert_chart(&mut self, index: usize, chart: crate::chart::Chart) {
         let index = index.min(self.charts.len());
         self.charts.insert(index, chart);
     }
 
-    /// The chart at `index`, for [`Action::ReshapeChart`](crate::action::Action::ReshapeChart)
-    /// to mutate its position and size in place — a drag's own commit, not an add/remove.
+    /// The chart at `index`, for [`Action::ReshapeChart`](crate::action::Action::ReshapeChart) to
+    /// change its position and size in place.
     pub(crate) fn chart_mut(&mut self, index: usize) -> Option<&mut crate::chart::Chart> {
         self.charts.get_mut(index)
     }
@@ -422,18 +352,13 @@ impl Sheet {
         self.filter.as_ref()
     }
 
-    /// Set or (with `None`) remove it. Replaces rather than merges, like every other
-    /// setter here: a filter is one value, and a shell that is changing one field of it
-    /// reads, edits and writes it back.
+    /// Set or, with `None`, remove it — replaced rather than merged.
     pub fn set_filter(&mut self, filter: Option<crate::filter::Filter>) {
         self.filter = filter;
     }
 
-    /// Every row the filter hides, in order — empty when there is no filter.
-    ///
-    /// `null_date` and `locale` because matching is on what a cell *displays*, and a date cell
-    /// cannot be rendered without the epoch (Part 4 §3.4) nor a number without the document's
-    /// separators.
+    /// Every row the filter hides, in order; empty without a filter. Matching is on what a cell
+    /// displays, which needs the epoch and the document's locale.
     pub fn hidden_rows(
         &self,
         null_date: i64,
@@ -445,8 +370,7 @@ impl Sheet {
             .unwrap_or_default()
     }
 
-    /// Whether one row is hidden by the filter — the per-row question a writer and a
-    /// renderer both ask, without building the whole list.
+    /// Whether one row is hidden by the filter, without building the whole list.
     pub fn row_hidden(
         &self,
         row: u32,
@@ -467,8 +391,7 @@ impl Sheet {
         self.row_heights.get(&row).map(String::as_str)
     }
 
-    /// Set or (with `None`) clear a column's width. An empty string clears too, so a shell
-    /// cannot store a width that no length parses.
+    /// Set or, with `None`, clear a column's width; an empty string clears too.
     pub fn set_col_width(&mut self, col: u32, width: Option<String>) {
         match width {
             Some(w) => self.col_widths.insert(col, w),
@@ -511,8 +434,7 @@ impl Sheet {
         self.hidden_cols.iter().copied()
     }
 
-    /// Whether this row is hidden by hand — distinct from [`Sheet::row_hidden`], which is
-    /// the filter's answer to a related but separate question.
+    /// Whether this row is hidden by hand, as distinct from [`Sheet::row_hidden`]'s filter answer.
     pub fn row_manually_hidden(&self, row: u32) -> bool {
         self.manually_hidden_rows.contains(&row)
     }
@@ -574,8 +496,7 @@ impl Sheet {
         self.formats.insert(pos, format);
     }
 
-    /// Back to the plain spelling of the value — ODF's "General", which is the absence of a
-    /// data style rather than a style of its own.
+    /// Back to the plain spelling of the value — ODF's "General", which is no data style at all.
     pub fn clear_format(&mut self, pos: Pos) {
         self.formats.remove(&pos);
     }
@@ -585,8 +506,7 @@ impl Sheet {
         self.styles.get(&pos)
     }
 
-    /// A style that sets nothing is stored as no style at all, so "plain" has one spelling
-    /// and the writer never emits an empty `style:style`.
+    /// A style that sets nothing is stored as none, so "plain" has one spelling.
     pub fn set_style(&mut self, pos: Pos, style: CellStyle) {
         match style.is_plain() {
             true => self.styles.remove(&pos),
@@ -629,21 +549,11 @@ impl Sheet {
         }
     }
 
-    /// One past the last row holding **anything** — a value, a formula, a date, a number
-    /// format or a cell style.
-    ///
-    /// **Not just the values, and that was a silent data loss.** `odf::write` emits the
-    /// rectangle this describes and nothing outside it, so a formula, a style or a format on a
-    /// cell past the last *value* was dropped on save. Reachable three ways: `grind sheet style
-    /// book.fods A5 --bold` on an empty A5, a `.fods` whose author styled an empty cell (R5 says
-    /// those files load), and — the one that found it — a projection written by hand, where
-    /// `cell B5 "=SUM([.B2:.B4])"` with no cached value is the *normal* way to say it
-    /// (`doc/dsl.md` §3.4: a spreadsheet you can write without doing the arithmetic).
-    ///
-    /// The four side tables are the four things a cell can carry besides its value, so the
-    /// extent is their union with the value store's. Each is a `BTreeMap<Pos, _>` ordered by
-    /// row then column, so the last key is the last row for free; the column needs a scan, and
-    /// these maps hold one entry per *styled* cell rather than one per cell.
+    /// One past the last row holding anything — a value, a formula, a date kind, a number format
+    /// or a cell style. `odf::write` emits exactly this rectangle, so a narrower answer would drop
+    /// a style or a formula past the last value on save (a styled blank, or a hand-written `cell
+    /// B5 "=SUM(…)"` with no cached value). Each side table is ordered by row, so its last key
+    /// gives its last row.
     pub fn used_rows(&self) -> u32 {
         let values = self.cols.iter().map(Column::len).max().unwrap_or(0);
         let extra = self
@@ -672,17 +582,10 @@ impl Sheet {
         (self.cols.len() as u32).max(extra)
     }
 
-    /// One past the last row and column holding a **value or a formula** — the extent that
-    /// matters to evaluation, and the one `Engine::area` bounds an open reference (`A:A`) by.
-    ///
-    /// Narrower than [`Sheet::used_rows`]/[`Sheet::used_cols`] on purpose. Those are what the
-    /// *writer* needs, and count a style, a format or a date kind on an empty cell; an empty
-    /// cell contributes nothing to any Small Group function however it looks, so bounding
-    /// `A:A` by a bordered blank far below the data made every whole-column reference read
-    /// thousands of cells that could not change its answer. Measured when the ODF reader
-    /// started keeping styled blanks: `sc/qa/unit/data`'s `fdo67682-2.ods` has 94,868 of them
-    /// past its data, and its recalculation went from 1.8 to 8.3 seconds until evaluation
-    /// stopped counting them.
+    /// One past the last row and column holding a value or a formula — what `Engine::area` bounds
+    /// an open reference (`A:A`) by. Narrower than [`Sheet::used_rows`] because a styled blank
+    /// contributes nothing to a function: `fdo67682-2.ods` has 94,868 of them past its data, and
+    /// counting them took its recalculation from 1.8 to 8.3 seconds.
     pub fn cell_extent(&self) -> (u32, u32) {
         let values = self.cols.iter().map(Column::len).max().unwrap_or(0);
         let rows = self
@@ -701,10 +604,8 @@ impl Sheet {
         (rows, cols)
     }
 
-    /// Every cell holding **typed text** — a text value and no formula — in reading order, row
-    /// by row: what spelling checks (`doc/spelling.md`). A formula's result is the formula's,
-    /// not prose somebody typed, and is never checked. One step per occupied cell, so a sparse
-    /// sheet costs what it holds rather than its rectangle ([`Sheet::rows_carrying`]'s reason).
+    /// Every cell holding typed text — a text value and no formula — in reading order: what
+    /// spelling checks (`doc/spelling.md`). One step per occupied cell.
     pub fn text_cells(&self) -> Vec<(Pos, String)> {
         let mut out = Vec::new();
         for (col, column) in self.cols.iter().enumerate() {
@@ -723,16 +624,10 @@ impl Sheet {
         out
     }
 
-    /// Every row holding **anything** — [`Sheet::used_rows`]'s five things — as sorted,
-    /// disjoint ranges.
-    ///
-    /// The writer asks this instead of looking at every cell of every row, and that was not a
-    /// micro-optimisation: a sheet with one cell at `A1` and one at `XFD1048576` has a used
-    /// rectangle of seventeen billion cells, and asking each whether it is blank never finished.
-    /// The first document to have that shape was an imported one (`scale/wide-and-sparse.xlsx`
-    /// in `grind-xlsx`'s corpus), but nothing about it is Excel's — a projection written by
-    /// hand says the same thing in two lines. This costs one step per value *block* and one per
-    /// side-table entry, which is the size of what the sheet holds rather than of where it is.
+    /// Every row holding anything ([`Sheet::used_rows`]'s rule) as sorted, disjoint ranges. The
+    /// writer asks this rather than every cell: a sheet with cells at `A1` and `XFD1048576` has a
+    /// used rectangle of seventeen billion cells. One step per value block and per side-table
+    /// entry.
     pub fn rows_carrying(&self) -> Vec<std::ops::Range<u32>> {
         let mut ranges: Vec<std::ops::Range<u32>> = self
             .cols
@@ -753,8 +648,8 @@ impl Sheet {
                 self.merges()
                     .map(|(anchor, span)| anchor.row..span.end(anchor).row + 1),
             )
-            // A blank a rule covers is written to carry it — inside the rectangle the rest of
-            // the sheet already spans ([`Sheet::ruled`]).
+            // A blank a rule covers is written to carry it, inside the rectangle the rest of the
+            // sheet spans ([`Sheet::ruled`]).
             .chain(self.ruled_rows())
             .collect();
         ranges.sort_unstable_by_key(|range| range.start);
@@ -768,14 +663,12 @@ impl Sheet {
         merged
     }
 
-    /// Whether a rule covers `pos` *and* it lies inside the rectangle the sheet's content
-    /// spans — the cells a save spells to carry a rule (`doc/conditional-format.md`).
+    /// Whether a rule covers `pos` and it lies inside the rectangle the sheet's content spans —
+    /// the cells a save spells to carry a rule (`doc/conditional-format.md`).
     ///
-    /// ponytail: a rule is written on the cells of [`Sheet::used_rows`] × [`Sheet::used_cols`]
-    /// and nowhere past them, so a fill a rule draws on a blank row *below everything else*
-    /// does not survive a save — which is what keeps `A1:A1048576`, Excel's spelling of "this
-    /// column", from becoming a million written rows. Rules do not widen the extent for the
-    /// same reason. The upgrade is a rule on a column's `table:default-cell-style-name`.
+    /// ponytail: a rule drawn on blank rows below everything else does not survive a save, which
+    /// keeps `A1:A1048576` from becoming a million rows. The upgrade is a rule on a column's
+    /// `table:default-cell-style-name`.
     pub fn ruled(&self, pos: Pos) -> bool {
         !self.rules.is_empty()
             && pos.row < self.used_rows()
@@ -797,8 +690,7 @@ impl Sheet {
             .collect()
     }
 
-    /// The last `Pos` of each cell-keyed side table, which is its last *row* — a `BTreeMap<Pos,
-    /// _>` orders by row and then by column.
+    /// The last `Pos` of each cell-keyed side table, which is its last row.
     fn side_tables(&self) -> impl Iterator<Item = Option<Pos>> {
         [
             self.formulas.keys().next_back().copied(),
@@ -814,16 +706,13 @@ impl Sheet {
     }
 }
 
-/// A row's height when it states none, in millimetres: `0.452cm`, the height LibreOffice writes
-/// for an ordinary row of its default 10pt font (measured in every R7 sample it wrote).
+/// A row's height when it states none: `0.452cm`, what LibreOffice writes for its default 10pt
+/// font.
 pub const DEFAULT_ROW_MM: f64 = 4.52;
 
-/// A checkbox drawn in a cell: ODF's `form:checkbox`, cut down to what a checklist is
-/// (`doc/ods-format.md` §3.5).
-///
-/// **Its state is a cell's value** when it is linked to one, which is how every spreadsheet
-/// that has them uses them: ticking writes `TRUE` into the linked cell, and a formula counting
-/// the ticks reads that. `checked` is only its own state, for a checkbox linked to nothing.
+/// A checkbox drawn in a cell: ODF's `form:checkbox`, cut down to a checklist (`doc/ods-format.md`
+/// §3.5). Linked, its state is the linked cell's value — ticking writes `TRUE` — and `checked` is
+/// its own state only when it is linked to nothing.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Checkbox {
     /// `form:linked-cell` — the cell whose value it shows and sets.
@@ -866,8 +755,7 @@ impl Link {
     }
 }
 
-/// How far a merged range reaches from its top-left cell — `table:number-columns-spanned` and
-/// `table:number-rows-spanned` (rng:16102), each at least one.
+/// How far a merged range reaches from its top-left cell (rng:16102), each at least one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Span {
     pub cols: u32,
@@ -909,83 +797,50 @@ impl Span {
 #[derive(Debug, Clone)]
 pub struct Document {
     pub sheets: Vec<Sheet>,
-    /// `table:named-expressions` — a name to the formula text it stands for (§5.11).
+    /// `table:named-expressions` — a name to the formula text it stands for (§5.11), keyed
+    /// lower-case since names match case-insensitively. A named range is stored as its reference
+    /// (`[$Sheet1.$A$1]`), so one lookup serves both.
     ///
-    /// Keyed lower-case because §5.11 makes names case-*consistent*: they match
-    /// case-insensitively and may not differ only in case. The value is always a formula
-    /// expression, so a named **range** is stored as the reference it is — `[$Sheet1.$A$1]`
-    /// rather than the bare address ODF writes — and one lookup path serves both forms.
-    ///
-    /// ponytail: one flat map, so a sheet-local name is visible document-wide. §5.11 only
-    /// *requires* global names, and a document with two sheet-local names that collide is
-    /// the case this gets wrong. Split the map by sheet when one turns up.
+    /// ponytail: one flat map, so a sheet-local name is visible document-wide; two colliding
+    /// sheet-local names are what this gets wrong.
     pub names: BTreeMap<String, String>,
-    /// `HOST-NULL-DATE` (Part 4 §3.4 item 8): the epoch every serial date is counted from,
-    /// as days from 1970-01-01. Set by `table:calculation-settings/table:null-date`.
-    ///
-    /// A document-wide setting rather than a per-sheet one because the spec makes it one —
-    /// two sheets of the same document cannot disagree about what the number 0 means.
+    /// `HOST-NULL-DATE` (Part 4 §3.4 item 8): the epoch, as days from 1970-01-01, from
+    /// `table:null-date`. Document-wide, as the spec says.
     pub null_date: i64,
-    /// `HOST-NULL-YEAR` (Part 4 §3.4 item 7): "each two-digit year value is interpreted as
-    /// a year that equals or follows this year". Set by `table:null-year`, which a document
-    /// in the corpus really does put at 1919 — hence a setting rather than a constant.
+    /// `HOST-NULL-YEAR` (Part 4 §3.4 item 7), from `table:null-year` — a corpus document sets
+    /// 1919.
     pub null_year: i64,
-    /// The document's own locale — `fo:language`/`fo:country` on the default cell style
-    /// (`doc/ods-format.md` §5.2, "The document's own language"). `None` is a document that
-    /// states none.
-    ///
-    /// **What it decides is how the document spells numbers**: the separators of every number
-    /// shown through a format with no locale of its own or through no format at all, and how a
-    /// number typed into it is read (`1,5` is one and a half in a German document). A format
-    /// that names a locale keeps it; this is the fallback, not an override.
-    ///
-    /// LibreOffice renders those same numbers by the locale of whichever machine opens the
-    /// file (measured, same section), so this is the one place the two read a document
-    /// differently — deliberately: the document's own statement is the one that does not change
-    /// with the desktop it is opened on.
+    /// The document's own locale: `fo:language`/`fo:country` on the default cell style
+    /// (`doc/ods-format.md` §5.2), or `None`. It decides the separators of every number shown
+    /// without a locale of its own, and how typed numbers are read; a format naming a locale keeps
+    /// it. LibreOffice uses the opening machine's locale instead (measured), so this is
+    /// deliberately where the two differ.
     pub locale: Option<grind_core::locale::Locale>,
-    /// The bytes this document was read from, when it was read from any (doc/plan.md R6).
-    ///
-    /// `None` for a document built in memory, which is every document `sheet new` makes —
-    /// there is no file to preserve, so the writer generates one. Boxed because it is the
-    /// only large-and-usually-absent field on a `Document`, and an `Option<Box<_>>` keeps
-    /// the common case a pointer.
+    /// The bytes this document was read from, if any (R6). Boxed: large and usually absent.
     pub source: Option<Box<crate::odf::source::Source>>,
-    /// The **projection** this document was read from, when it was read from one (`doc/dsl.md`
-    /// §3.1, D5).
-    ///
-    /// A second slot rather than a variant of the first, because the two retain different
-    /// things: [`crate::odf::source::Source`] keeps XML elements and the attributes of them
-    /// this crate does not model, and `grind_core::projection::Source` keeps a map from
-    /// address to byte range. A document has at most one of them — it was read from one file —
-    /// and which one is decided by the form those bytes were.
+    /// The projection this document was read from, if it was one (`doc/dsl.md` §3.1). A second
+    /// slot because the two keep different things — XML elements beside
+    /// [`crate::odf::source::Source`], an address-to-range map here — and a document has at most
+    /// one.
     pub projection_source: Option<Box<grind_core::projection::Source>>,
     /// What has changed since. See [`Edits`].
     pub edits: Edits,
 }
 
-/// What has been changed since the document was read, which is what decides whether saving
-/// can splice (doc/plan.md R6) or has to regenerate.
+/// What has changed since the document was read, which decides whether saving can splice (R6).
+/// Filled in by [`Document::apply`], the only way a document changes.
 ///
-/// Filled in by [`Document::apply`], which is the only way a document changes — that is what
-/// makes tracking this one insert rather than a diffing pass.
-///
-/// ponytail: an undone edit stays in `cells`, so undoing a change and saving rewrites that
-/// cell in our spelling rather than restoring the file's. The result is correct and the diff
-/// is one element instead of none. Comparing against the value read would fix it and needs a
-/// snapshot of the document to compare *to*; not worth a second copy of the grid.
+/// ponytail: an undone edit stays in `cells`, so saving rewrites that cell in our spelling:
+/// correct, one element of diff instead of none.
 #[derive(Clone, Debug)]
 pub struct Edits {
     /// Every `(sheet, position)` written to.
     pub cells: std::collections::BTreeSet<(usize, Pos)>,
-    /// Whether every edit so far was a value or a formula.
-    ///
-    /// A number format or a cell style needs a `style:style` that the original file does not
-    /// contain, so it cannot be spliced into it — see `odf::source`. False is sticky: once a
-    /// document has had a format changed, saving it regenerates.
+    /// Whether every edit so far was a value or a formula; a format or a style needs a new
+    /// `style:style`, so false is sticky and the save regenerates.
     pub only_values: bool,
-    /// Whether a named expression has been added, changed or removed — which is what makes a
-    /// regenerating save write `table:named-expressions` rather than keep the file's.
+    /// Whether a named expression was added, changed or removed, so a regenerating save writes
+    /// `table:named-expressions`.
     pub names: bool,
 }
 
@@ -999,8 +854,8 @@ impl Default for Edits {
     }
 }
 
-/// One empty sheet — what a *user* gets. A reader builds its sheets from the file instead,
-/// and a document that declares none stays empty.
+/// One empty sheet, for a new document. A reader builds its sheets from the file, and a file
+/// declaring none stays empty.
 impl Default for Document {
     fn default() -> Self {
         Self {

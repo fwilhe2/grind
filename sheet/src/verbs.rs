@@ -2,16 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What the grid's structural verbs act on, read off the selection — portable, and tested here.
-//!
-//! Hoisted out of the macOS shell, where it was written, when the Windows grid wanted the same
-//! answers: every one of them is a decision about *over what*, and four shells deciding it four
-//! ways is how a fill came to copy one cell over a whole rectangle.
-//!
-//! Fill Down and Fill Right (⌘D, ⌘R, Excel for Mac's keys), hiding and showing tracks, a track's
-//! size, and a defined name's target are each one core call — `App::fill`,
-//! `set_row_hidden`/`set_col_hidden`, `set_row_height`/`set_col_width`, `set_name` through
-//! `a1::definition` — and the only decision a shell makes is *over what*. That is this file.
+//! What the grid's structural verbs act on, read off the selection: Fill Down and Fill Right,
+//! hiding and showing tracks, a track's size, and a defined name's target are each one core call,
+//! and the only decision is over what.
 
 use std::ops::Range;
 
@@ -32,8 +25,8 @@ pub fn cols(selection: Selection) -> Range<u32> {
     start.col..end.col + 1
 }
 
-/// The address a name defined over the selection points at — `Sheet1.B2:C9`, sheet-qualified so
-/// the name means the same place from every sheet — for `a1::definition` to turn into ODF.
+/// The address a name defined over the selection points at — `Sheet1.B2:C9`, sheet-qualified so it
+/// means the same place from every sheet.
 pub fn name_target(sheet: &str, selection: Selection) -> String {
     let (start, end) = selection.rect();
     let one = crate::a1::format(Some(sheet), start);
@@ -43,12 +36,10 @@ pub fn name_target(sheet: &str, selection: Selection) -> String {
     }
 }
 
-/// *Formula to Value*: every formula in `start..=end` dropped, each cell keeping the value it last
-/// computed (`App::clear_formula`). Returns how many formulas it dropped.
+/// Formula to Value: every formula in `start..=end` dropped, each cell keeping its last value
+/// (`App::clear_formula`). Returns how many.
 ///
-/// ponytail: one undo step per formula — the core has no range form, and the trigger is a person
-/// converting a large block. The macOS shell wrote the loop; the Windows grid and the browser
-/// wanted it too.
+/// ponytail: one undo step per formula; the core has no range form yet.
 pub fn formulas_to_values(app: &App, sheet: usize, start: Pos, end: Pos) -> crate::Result<usize> {
     let mut dropped = 0;
     for row in start.row..=end.row {
@@ -68,9 +59,8 @@ pub const CHART_WIDTH: &str = "12cm";
 pub const CHART_HEIGHT: &str = "7.5cm";
 pub const CHART_MARGIN_MM: f64 = 6.0;
 
-/// What *Insert Chart* would make of a guess: the guessed spec — of `kind` when somebody chose one,
-/// else of the kind the cells want — with the legend a new chart of that kind gets. One place, so
-/// [`insert_chart`] and [`preview_insert_chart`] cannot disagree.
+/// What Insert Chart makes of a guess: the guessed spec, of `kind` if one was chosen, with a new
+/// chart's legend — shared by [`insert_chart`] and [`preview_insert_chart`].
 fn insert_spec(guessed: &crate::chart::Guess, kind: Option<crate::ChartKind>) -> crate::ChartSpec {
     let spec = crate::ChartSpec {
         kind: kind.unwrap_or(guessed.spec.kind),
@@ -82,9 +72,8 @@ fn insert_spec(guessed: &crate::chart::Guess, kind: Option<crate::ChartKind>) ->
     }
 }
 
-/// *Insert Chart*, **without inserting** — the chart [`insert_chart`] would make of this selection
-/// and the data it would draw (`App::preview_chart`), so a shell with no dialog can show the
-/// picture before it is committed to. `kind` is [`insert_chart`]'s. Nothing is written.
+/// Insert Chart without inserting: the chart [`insert_chart`] would make and its data
+/// (`App::preview_chart`). Nothing is written.
 pub fn preview_insert_chart(
     app: &App,
     sheet: usize,
@@ -96,13 +85,10 @@ pub fn preview_insert_chart(
     app.preview_chart(sheet, &insert_spec(&guessed, kind), None)
 }
 
-/// *Insert Chart*: a chart of the table the selection means (`App::suggest_chart` — which way the
-/// series run, what names them, what kind the cells want), placed beside it at the GNOME
-/// window's size. One undo step. `kind` is the kind somebody chose — the GNOME dialog's three
-/// buttons, every other window's *Insert ▸ Bar/Line/Pie Chart* — and `None` the one the cells
-/// want. `place` is the shell's own geometry: given the column just right of the table and its
-/// first row, it answers that corner's `(x, y)` in millimetres from the sheet's origin — the one
-/// thing a shell knows and the core does not. Answers the new chart's index.
+/// Insert Chart: a chart of the table the selection means (`App::suggest_chart`), placed beside
+/// it, as one undo step. `kind` is the kind chosen, `None` the one the cells want. `place`
+/// answers, from the shell's geometry, the `(x, y)` in millimetres of the column right of the
+/// table at its first row. Returns the new chart's index.
 pub fn insert_chart(
     app: &App,
     sheet: usize,
@@ -125,15 +111,13 @@ pub fn insert_chart(
     Ok(app.charts(sheet)?.len().saturating_sub(1))
 }
 
-/// Restyle the chart at `index` on `sheet` from a person's words — `line`, `bar` or `pie`;
-/// `title=Quarterly sales` (to the end of the line) or `no-title`; `legend=top|bottom|start|end`
-/// or `legend=none`; `width=12cm` and `height=8cm` — everything else about it kept
-/// (`ChartSpec::of`, then `App::edit_chart`, then `App::reshape_chart` for a size). What a window
-/// with no chart dialog asks in place of one. Answers the sentence to say, or why it could not.
+/// Restyle the chart at `index` from a person's words — `line`, `bar`, `pie`; `title=Quarterly
+/// sales` (to the end of the line) or `no-title`; `legend=top|bottom|start|end|none`;
+/// `width=12cm`, `height=8cm` — keeping everything else. For a window with no chart dialog.
+/// Returns the sentence to say, or why not.
 ///
-/// ponytail: words for the look *and* a size are two undo steps, since `edit_chart` and
-/// `reshape_chart` are two actions; the trigger is somebody minding the second ⌘Z, and the
-/// upgrade is one `Action::Batch` of both.
+/// ponytail: a look and a size together are two undo steps (`edit_chart`, `reshape_chart`); one
+/// `Action::Batch` is the upgrade.
 pub fn restyle_chart(
     app: &App,
     sheet: usize,
@@ -206,10 +190,8 @@ pub fn restyle_chart(
     Ok("The chart is changed.".to_owned())
 }
 
-/// The chart at `index` on `sheet` turned into a `kind` — everything else about it kept, one undo
-/// step (`ChartSpec::of`, then `App::edit_chart`). What a chart's own menu offers as three items,
-/// where the GNOME dialog has three buttons. Answers the sentence to say, or why it could not;
-/// a chart already of that kind is left alone and says so.
+/// The chart at `index` turned into a `kind`, everything else kept, one undo step. Returns the
+/// sentence to say; a chart already of that kind is left alone and says so.
 pub fn set_chart_kind(
     app: &App,
     sheet: usize,
@@ -239,10 +221,9 @@ pub fn set_chart_kind(
 pub const CHART_WORDS: &str =
     "bar, line, pie, title=…, no-title, legend=top|bottom|start|end|none, width=12cm, height=8cm";
 
-/// *Move the last chart here* — the chart at `index` with its top-left corner at the active
-/// cell's, its size kept, one undo step (`App::reshape_chart`). `place` is [`insert_chart`]'s:
-/// the shell's own answer to where a column and a row begin, in millimetres. What a window that
-/// does not hit-test a chart offers in place of dragging one.
+/// Move the chart at `index` so its top-left corner is at the active cell's, keeping its size, one
+/// undo step (`App::reshape_chart`). `place` is [`insert_chart`]'s. For a window that does not
+/// hit-test charts.
 pub fn move_chart(
     app: &App,
     sheet: usize,
@@ -272,10 +253,8 @@ pub fn move_chart(
     ))
 }
 
-/// What a formula typed in display syntax — with or without its `=` — comes to at `at`, spelled
-/// for a sentence, or why it could not be worked out. Nothing is stored and no undo step is made
-/// (`App::preview`, `grind sheet eval`'s call): relative references are relative to `at`, the
-/// active cell, as they would be typed into it.
+/// What a formula typed in display syntax (with or without `=`) comes to at `at`, as a sentence,
+/// or why it could not be worked out. Nothing is stored (`App::preview`).
 pub fn evaluated(app: &App, sheet: usize, at: Pos, typed: &str) -> Result<String, String> {
     let typed = typed.trim();
     let written = match typed.starts_with('=') {
@@ -301,8 +280,7 @@ pub fn evaluated(app: &App, sheet: usize, at: Pos, typed: &str) -> Result<String
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NotATag;
 
-/// A locale as somebody types one into Document Locale… — a tag (`de-DE`, `fr`) or nothing at
-/// all, which is no locale of the document's own. `Err` for anything that is not a tag.
+/// A locale as typed into Document Locale… — a tag (`de-DE`, `fr`), or nothing for none.
 pub fn locale(typed: &str) -> Result<Option<Locale>, NotATag> {
     match typed.trim() {
         "" => Ok(None),
@@ -310,16 +288,14 @@ pub fn locale(typed: &str) -> Result<Option<Locale>, NotATag> {
     }
 }
 
-/// A name's definition as Redefine… shows it to be edited: display syntax, `=` and all, so a
-/// range reads `=$Sheet1.$A$1:$B$3` and an expression `=SUM($Sheet1.$A$1:$A$9)`. A definition
-/// this build cannot print is shown as stored.
+/// A name's definition in display syntax for editing — `=$Sheet1.$A$1:$B$3`,
+/// `=SUM($Sheet1.$A$1:$A$9)` — or as stored when it cannot be printed.
 pub fn shown_definition(expression: &str) -> String {
     display::to_display(&format!("={expression}")).unwrap_or_else(|_| expression.to_owned())
 }
 
-/// What somebody typed into Redefine… or Define Name… as the expression `App::set_name` stores:
-/// a formula in display syntax when it starts `=`, and otherwise an address or a range
-/// (`crate::a1::definition`, the CLI's reading).
+/// What was typed into Redefine… or Define Name… as the expression `App::set_name` stores: a
+/// formula when it starts `=`, otherwise an address (`crate::a1::definition`).
 pub fn definition(app: &App, typed: &str) -> Result<String, String> {
     let typed = typed.trim();
     match typed.starts_with('=') {

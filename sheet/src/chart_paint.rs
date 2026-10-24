@@ -2,17 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A chart, as a list of [`Mark`]s — portable, so where every bar, point, slice and label goes is
-//! tested on any host and a shell only puts it down.
-//!
-//! Hoisted out of the macOS shell when the Windows grid wanted charts: it is the fourth renderer
-//! of `doc/chart-format.md`'s shapes, after the GNOME shell's `snapshot()`, the browser's SVG and
-//! the writer's own `chart:` XML. It draws from [`ChartData`] and [`Chart`] as those do, scales
-//! the plot against [`axis_ticks`] rather than the tallest bar, sweeps a pie with [`pie_slices`]
-//! so it runs the same way round, and colours every mark with [`effective_color`]. Unlike the
-//! browser's, text is *measured*, through the same `Metrics` the grid's cells are, so a legend or
-//! a tick label is placed on its real width. Coordinates are the caller's unit, whatever its
-//! frame is in.
+//! A chart as a list of [`Mark`]s, so where every bar, point, slice and label goes is tested on
+//! any host and a shell only draws them. Scaled against [`axis_ticks`], pies swept by
+//! [`pie_slices`], colours from [`effective_color`], and text measured through the grid's
+//! `Metrics`. Coordinates are the caller's unit.
 
 use grind_core::color::{self, Rgb};
 use grind_core::layout::Metrics;
@@ -46,8 +39,7 @@ impl Rect {
     }
 }
 
-/// The colours a chart is drawn in: the shell's theme, which is what the document's own colours
-/// are lifted against on a dark page.
+/// The shell's theme colours, which the document's colours are lifted against on a dark page.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Colours {
     /// The ground under the chart.
@@ -101,16 +93,15 @@ const INSET: f64 = 8.0;
 const GROUP_GAP: f64 = 0.2;
 /// The gap between a tick label and the plot, and between an axis title and its tick labels.
 const TICK_GAP: f64 = 4.0;
-/// A legend swatch's side, the gap to its words, the gap between two entries in a row, and the
-/// gap between the legend and the plot — the GTK painter's own spacing.
+/// A legend swatch's side, the gap to its words, between two entries in a row, and between the
+/// legend and the plot.
 const SWATCH: f64 = 10.0;
 const SWATCH_GAP: f64 = 6.0;
 const ENTRY_GAP: f64 = 14.0;
 const LEGEND_GAP: f64 = 10.0;
 /// A line series' stroke, in points.
 const LINE_W: f64 = 2.0;
-/// How many straight segments a whole turn of a pie's rim is drawn with — enough that no corner
-/// shows at any size a chart frame comes in.
+/// How many straight segments a whole turn of a pie's rim is drawn with.
 const SEGMENTS_PER_TURN: f64 = 120.0;
 
 /// Tick labels, the legend and the axis titles: the grid's face, a little smaller.
@@ -187,8 +178,8 @@ impl Painter<'_> {
         self.ops.push(Mark::Fill { rect, color });
     }
 
-    /// A mark's colour: the document's own, as `effective_color` resolves it — legible on a dark
-    /// page by the core's rule — or the accent when it names no colour this build can read.
+    /// A mark's colour: the document's ([`effective_color`]) made legible on a dark page, or the
+    /// accent when it names nothing readable.
     fn mark(&self, series: usize, point: Option<usize>) -> Rgb {
         let own = color::parse(&effective_color(self.chart, series, point));
         match own {
@@ -214,9 +205,8 @@ impl Painter<'_> {
         }
     }
 
-    /// The title and the legend take their bands first — the GTK painter's order — and what is
-    /// left is the plot's. A legend that would take more than its share of a small chart is left
-    /// off, which is that painter's rule too.
+    /// The title and the legend take their bands first, and the plot gets what is left. A legend
+    /// that would take more than its share of a small chart is left off.
     fn dress(&mut self, frame: Rect) -> Rect {
         let mut rest = frame;
         if let Some(title) = self.chart.title.clone() {
@@ -313,9 +303,8 @@ impl Painter<'_> {
         let mut left = INSET;
         let mut top = INSET;
         if y_axis.label.is_some() {
-            // ponytail: the value axis' title sits above the axis, set level, rather than
-            // turned along it as the GTK window and the browser turn theirs — `Mark::Text` draws
-            // level text only. The trigger is a user reading a long title squeezed into the band.
+            // ponytail: the value axis' title sits above the axis, level, rather than turned along
+            // it — `Mark::Text` is level only.
             top += tick_h + TICK_GAP;
         }
         if y_axis.tick_labels {
@@ -356,8 +345,7 @@ impl Painter<'_> {
             }
         }
         if x_axis.tick_labels {
-            // A label that would overlap the one before it is dropped rather than drawn over it —
-            // the GTK painter's rule, here on measured widths.
+            // A label that would overlap the one before it is dropped.
             let mut drawn_to = f64::NEG_INFINITY;
             for (i, x) in category_x(self.data, plot).into_iter().enumerate() {
                 let Some(label) = self.data.categories.get(i).filter(|t| !t.is_empty()) else {
@@ -464,8 +452,8 @@ impl Painter<'_> {
         }
     }
 
-    /// Every slice as [`pie_slices`] sweeps it, a fan of straight segments round its rim, with a
-    /// line of the page's own ground between two slices so neighbours of one colour still part.
+    /// Every slice as [`pie_slices`] sweeps it, a fan of segments round its rim, with a line of
+    /// page ground between slices so same-coloured neighbours part.
     fn pie(&mut self, plot: Rect) {
         let (cx, cy) = (plot.x + plot.w / 2.0, plot.y + plot.h / 2.0);
         let r = (plot.w.min(plot.h) / 2.0).max(1.0);
@@ -488,8 +476,8 @@ impl Painter<'_> {
     }
 }
 
-/// What a legend names and which mark's colour it shows: a series each for a bar or a line, a
-/// slice each for a pie — `(series, point)` as [`effective_color`] takes them.
+/// What a legend names and whose colour it shows: one series each for a bar or line, one slice
+/// each for a pie.
 fn legend_items(chart: &Chart, data: &ChartData) -> Vec<(String, (usize, Option<usize>))> {
     match data.kind {
         ChartKind::Pie => pie_slices(data, chart.clockwise)
@@ -519,8 +507,7 @@ fn legend_items(chart: &Chart, data: &ChartData) -> Vec<(String, (usize, Option<
     }
 }
 
-/// A pie has no axes, so nothing an axis carries costs it any of its circle — the rule both other
-/// painters apply, stated in each because it is about the picture.
+/// A pie has no axes, so axis settings cost its circle nothing.
 fn axes(chart: &Chart, data: &ChartData) -> (ChartAxis, ChartAxis) {
     match data.kind {
         ChartKind::Pie => (ChartAxis::bare(), ChartAxis::bare()),
@@ -551,8 +538,7 @@ fn value_y(value: f64, ticks: &Ticks, plot: Rect) -> f64 {
     plot.bottom() - (value.max(0.0) / ticks.max()) * plot.h
 }
 
-/// Where each category's tick sits: the middle of its band, a line's point as much as a bar
-/// group — so the first category's name stays off the value axis' zero.
+/// Each category's tick, at the middle of its band, so the first name stays off the value axis.
 fn category_x(data: &ChartData, plot: Rect) -> Vec<f64> {
     let count = category_count(data);
     if count == 0 {

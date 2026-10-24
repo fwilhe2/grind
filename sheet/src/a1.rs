@@ -2,31 +2,21 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Addressing — **the only 0↔1 conversion in the workspace**, and the module every shell
-//! addresses cells through.
+//! Addressing — the only 0↔1 conversion in the spreadsheet, and the module every shell addresses
+//! cells through.
 //!
-//! An address as a person writes one is ODF reference syntax without the brackets: `A1`,
-//! `$B$7`, `A1:D20`, `Data.B2`, `'Q3 Actuals'.A1:.C9`. It is not parsed here. [`parse`]
-//! wraps the string in `[…]` and hands it to the formula lexer, so a shell and a formula
-//! cannot disagree about what an address means, and whole-column forms (`A:A`) work because
-//! §5.8 already describes them.
-//!
-//! The inbound 1-based/0-based conversion is therefore not here either: `lex::Axis` is
-//! already 0-based, so that half lives in the lexer where every caller shares it. The
-//! outbound `+ 1` in [`format()`] is the only index arithmetic outside the lexer, and lives
-//! here rather than in a shell — a second shell doing its own would be a second chance to
-//! be off by one.
+//! An address as a person writes it is ODF reference syntax without brackets: `A1`, `$B$7`,
+//! `A1:D20`, `Data.B2`, `'Q3 Actuals'.A1:.C9`. [`parse`] wraps it in `[…]` and hands it to the
+//! formula lexer, so a shell and a formula cannot disagree about an address, and `A:A` works
+//! because §5.8 defines it. `lex::Axis` is already 0-based; the outbound `+ 1` in [`format()`] is
+//! the one index arithmetic here.
 
 use crate::formula::lex::{self, Reference, Token};
 use crate::{App, Error, Pos, Result};
 
-/// A user's address as a reference.
-///
-/// The one piece of syntax a shell adds is the leading `.`: ODF writes a same-sheet
-/// reference as `[.A1]`, and asking a user to type the dot would be noise. Each end of a
-/// range gets its own, since `[.A1:.B2]` is the ODF form — but only when that end does not
-/// already name a sheet, so `Data.B2:C3` becomes `[Data.B2:.C3]` and §5.8's rule that the
-/// second end inherits the first's sheet does the rest.
+/// A user's address as a reference. Each end gets the leading `.` a same-sheet ODF reference
+/// needs, unless it names a sheet, so `Data.B2:C3` becomes `[Data.B2:.C3]` and the second end
+/// inherits the sheet (§5.8).
 pub fn parse(addr: &str) -> Result<Reference> {
     if addr.trim().is_empty() {
         return Err(Error::Formula("empty address".to_owned()));
@@ -34,8 +24,7 @@ pub fn parse(addr: &str) -> Result<Reference> {
     let bracketed: Vec<String> = split_range(addr)
         .into_iter()
         .map(|part| match sheet_dot(&part) {
-            // Already names a sheet: keep the name exactly as typed, since only the cell
-            // half has a case rule.
+            // A sheet name is kept as typed; only the cell is case-folded.
             Some(dot) => format!("{}{}", &part[..=dot], part[dot + 1..].to_uppercase()),
             None => format!(".{}", part.to_uppercase()),
         })
@@ -45,13 +34,8 @@ pub fn parse(addr: &str) -> Result<Reference> {
 }
 
 /// A reference already spelled the way the lexer wants it — `[Sheet1.B3:Sheet1.B9]` — with no
-/// case-folding or quote-splitting, because the caller's own address already is one.
-///
-/// The tail of [`parse`], pulled out for `chart`'s `table:cell-range-address`
-/// (`doc/chart-format.md`): ODF's own grammar for that attribute (rng:382) is the same
-/// `sheet-name.COLROW[:sheet-name.COLROW]` shape a formula reference already is, just without
-/// the `[…]` a *user's* typed address needs and a document's own attribute never has, so one
-/// wrap-and-lex is every caller this format has.
+/// case-folding or quote-splitting. For a chart's `table:cell-range-address` (rng:382), which has
+/// a formula reference's shape without the brackets.
 pub fn parse_bracketed(source: &str) -> Result<Reference> {
     let tokens = lex::lex(source).map_err(|e| Error::Formula(e.to_string()))?;
     match tokens.as_slice() {
@@ -80,11 +64,8 @@ fn split_range(addr: &str) -> Vec<String> {
     parts
 }
 
-/// Where the sheet name of this end stops, if it has one: the last `.` outside quotes.
-///
-/// Everything after it is the cell, and only the cell may be case-folded — §5.8 spells a
-/// column `[A-Z]+`, so `data.b2` has to reach the lexer as `data.B2`, but a sheet called
-/// `data` is not the same string as `DATA` and must survive untouched.
+/// Where the sheet name of this end stops: the last `.` outside quotes. Only the cell after it is
+/// case-folded (§5.8 spells a column `[A-Z]+`); a sheet called `data` is not `DATA`.
 fn sheet_dot(part: &str) -> Option<usize> {
     let mut quoted = false;
     let mut last = None;
@@ -98,29 +79,19 @@ fn sheet_dot(part: &str) -> Option<usize> {
     last
 }
 
-/// The sheet a reference names, and the inclusive cell range it covers.
+/// The sheet a reference names, and the inclusive cell range it covers. A missing axis is a whole
+/// column or row (§5.8), clamped to the used extent as the evaluator does.
 ///
-/// A missing axis is a whole column or row (§5.8) and is clamped to the sheet's used extent
-/// — the same bound the evaluator uses, and the reason `view A:A` reads what is there
-/// instead of a million empty rows.
-///
-/// A reference past the end of the sheet is refused here rather than in the lexer, which
-/// has to keep parsing whatever a foreign file says (R5). This is the only place an address
-/// becomes a place, so it is the one place that can ask whether the place exists — and it
-/// has to ask, because the grammar reads a bare word as a whole column: `SALES` is
-/// `[.SALES]`, column 8708380, and a shell handed that scrolls off the end of the world.
+/// A reference past the end of the sheet is refused here rather than in the lexer, which must
+/// parse whatever a foreign file says (R5). It must be asked: a bare word is a whole column, and
+/// `SALES` is column 8708380.
 pub fn resolve(app: &App, reference: &Reference) -> Result<(usize, Pos, Pos)> {
     resolve_in(app, 0, reference)
 }
 
-/// [`resolve`], for a caller that already knows which sheet an unqualified address means.
-///
-/// The only difference is the default: `resolve` reads `B2:B7` as the *first* sheet's, because
-/// that is what a user typing an address at a command line means. A caller holding a sheet of
-/// its own — a generator filling in one sheet of several (`grind_build`), a dialog opened on
-/// the sheet in front of somebody — means that one, and would otherwise have to re-implement
-/// the whole-column clamp to say so. A reference that names a sheet still wins: `data.B2` is
-/// `data`'s cell wherever it is read from.
+/// [`resolve`] for a caller that knows which sheet an unqualified address means — a generator
+/// filling one sheet of several, a dialog on the sheet in front of somebody. `resolve` reads
+/// `B2:B7` as the first sheet's; a reference naming a sheet wins either way.
 pub fn resolve_in(app: &App, sheet: usize, reference: &Reference) -> Result<(usize, Pos, Pos)> {
     let sheet = match reference.start.sheet.as_deref() {
         Some(name) => sheet_index(app, Some(name))?,
@@ -163,9 +134,7 @@ fn axis(a: &Option<lex::Axis>, whole: u32) -> u32 {
     a.map_or(whole, |a| a.index)
 }
 
-/// A sheet by name, for the commands that address one directly rather than through a cell
-/// reference. Same lookup, so `sheet rename data …` and `sheet set data.A1 …` cannot
-/// disagree about which sheet `data` is.
+/// A sheet by name, through the same lookup as a cell reference.
 pub fn sheet(app: &App, name: &str) -> Result<usize> {
     sheet_index(app, Some(name))
 }
@@ -192,15 +161,10 @@ pub fn format(sheet: Option<&str>, pos: Pos) -> String {
     }
 }
 
-/// A reference as a *name* has to be written: sheet-qualified and absolute on every axis.
-///
-/// Both halves matter, and neither is decoration. A named range with no sheet resolves
-/// against whichever sheet the formula that mentions it sits on, so `total` would mean a
-/// different range read from a second sheet; and a relative one shifts with the formula's
-/// own position, so `SUM(total)` two rows down would sum two rows down. §5.11 names are
-/// document-level, and this is what LibreOffice writes.
-///
-/// The sheet defaults to the first, which is what a user typing a bare `B2:B9` means.
+/// A reference as a name has to be written: sheet-qualified and absolute on every axis. Without a
+/// sheet, a name would resolve against whichever sheet uses it; relative, it would shift with the
+/// formula. §5.11 names are document-level, and LibreOffice writes them so. An unqualified address
+/// means the first sheet.
 pub fn as_definition(app: &App, reference: &Reference) -> Result<String> {
     if reference.source.is_some() {
         return Err(Error::Formula(
@@ -224,20 +188,13 @@ pub fn as_definition(app: &App, reference: &Reference) -> Result<String> {
     Ok(out.to_string())
 }
 
-/// What a user typed where a name's *definition* goes, as an expression [`App::set_name`]
-/// takes.
-///
-/// A leading `=` means a formula and everything else is an address, which is `set`'s rule
-/// and therefore the one already in the user's hands. A named range and a named expression
-/// are one thing in the model, so this is the only place the two spellings differ — and it
-/// lives here rather than in a command so that a dialog and a command line cannot disagree
-/// about what `B2:B4` defines.
+/// What a user typed for a name's definition, as an expression [`App::set_name`] takes: a leading
+/// `=` means a formula, anything else an address — `set`'s rule.
 pub fn definition(app: &App, target: &str) -> Result<String> {
     let target = target.trim();
     match target.strip_prefix('=') {
         Some(formula) => Ok(formula.to_owned()),
-        // Brackets tolerated on the way in: a definition read back out of a document wears
-        // them, and retyping what was shown has to work.
+        // Brackets are accepted, so a definition shown as stored can be typed back.
         None => {
             let bare = target
                 .strip_prefix('[')
@@ -248,13 +205,9 @@ pub fn definition(app: &App, target: &str) -> Result<String> {
     }
 }
 
-/// The reference covering a rectangle — what a shell builds when a user *points* at cells
-/// rather than typing an address.
-///
-/// Relative on every axis, because that is what pointing means: the formula is being
-/// written where it will live, and a reference typed by hand is relative unless a `$` says
-/// otherwise. [`crate::formula::display::reference_text`] prints it the way a formula bar
-/// shows it.
+/// The reference covering a rectangle a user pointed at: relative on every axis, as a typed
+/// reference is unless it has a `$`. [`crate::formula::display::reference_text`] prints it as a
+/// formula bar shows it.
 pub fn reference(sheet: Option<&str>, start: Pos, end: Pos) -> Reference {
     let cell = |pos: Pos| lex::CellRef {
         sheet: sheet.map(str::to_owned),
@@ -334,8 +287,7 @@ mod tests {
         assert!(at("'Q3: Actuals'.A1").end.is_none());
     }
 
-    /// §5.8 spells a column `[A-Z]+`, but nobody types that way at a shell. Only the cell
-    /// half is folded — a sheet name is a name.
+    /// Only the cell half is case-folded; a sheet name is a name.
     #[test]
     fn the_cell_may_be_typed_in_lower_case_but_the_sheet_keeps_its_own() {
         assert_eq!(at("b2"), at("B2"));
@@ -359,9 +311,7 @@ mod tests {
         }
     }
 
-    /// A bare word is a whole column to the grammar, so `SALES` parses — but column 8708380
-    /// is not a place on a sheet, and a shell told to go there scrolls into nothing. The
-    /// parse still succeeds, because tolerance on the way in is the reader's rule too.
+    /// `SALES` parses as a whole column, but column 8708380 is not on the sheet.
     #[test]
     fn a_reference_past_the_end_of_the_sheet_resolves_to_nothing() {
         let app = App::new();
@@ -387,9 +337,8 @@ mod tests {
         assert_eq!(format(Some("Data"), Pos::new(1, 1)), "Data.B2");
     }
 
-    /// The name box and `sheet name` share this rule: `=` means a formula, anything else an
-    /// address that gets sheet-qualified and made absolute — a bracketed definition read
-    /// back out of a document is accepted as-is, since retyping what was shown must work.
+    /// `=` means a formula, anything else an address made sheet-qualified and absolute; a
+    /// bracketed definition is accepted as it is.
     #[test]
     fn a_leading_equals_is_a_formula_and_everything_else_an_address() {
         let app = App::new();

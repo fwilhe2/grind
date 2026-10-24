@@ -2,25 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Spelling in a spreadsheet (`doc/spelling.md`, "In a spreadsheet") — which cells are prose,
-//! and where a misspelling is.
-//!
-//! What a word is and which words are checked at all is `grind_core::spell`'s, the same rules
-//! the word processor underlines by, re-exported here. What is the spreadsheet's own is **which
-//! cells**: a cell holding text somebody typed — a heading, a label, a note — and nothing else.
-//! A number, a date and a boolean have no words; a formula's result is what the formula
-//! computed, and underlining `#N/A`'s neighbour or a `CONCATENATE` would be underlining the
-//! data rather than the writing. So a text cell with a formula behind it is never checked.
+//! Spelling in a spreadsheet (`doc/spelling.md`): what a word is is `grind_core::spell`'s,
+//! re-exported; which cells are prose is this: text somebody typed — a heading, a label, a note.
+//! Numbers, dates and booleans have no words, and a formula's result is data, so a text cell with
+//! a formula is never checked.
 
 pub use grind_core::spell::{GUESS_SAMPLE, Lexicon, normalise};
 
 use crate::a1;
 use crate::model::{Document, Pos, Sheet};
 
-/// One word a [`Lexicon`] does not know, and the cell it is in.
-///
-/// `offset` and `len` count characters into the cell's own text — what [`crate::App::input_text`]
-/// shows for a text cell, and what [`crate::App::correct`] takes back.
+/// One word a [`Lexicon`] does not know, and its cell. `offset` and `len` count characters into
+/// the cell's text, as [`crate::App::input_text`] shows it and [`crate::App::correct`] takes it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Misspelling {
     pub sheet: usize,
@@ -37,15 +30,14 @@ impl Misspelling {
     }
 }
 
-/// The words of `text` that `lexicon` does not know, as `(range, word)` in characters. A cell
-/// has nothing in it the way a paragraph has a link or a run of code, so nothing is skipped
-/// beyond what `grind_core::spell` already skips — a URL, an address, a path, an identifier.
+/// The words of `text` that `lexicon` does not know, as `(range, word)` in characters, beyond what
+/// `grind_core::spell` skips.
 pub fn unknown(text: &str, lexicon: &dyn Lexicon) -> Vec<(std::ops::Range<usize>, String)> {
     grind_core::spell::unknown(text, &[], lexicon)
 }
 
-/// Every misspelt word on one sheet, in reading order — or only in the cells from `within`'s
-/// first corner to its second, inclusive.
+/// Every misspelt word on one sheet in reading order, or only within `within`'s corners,
+/// inclusive.
 pub fn check_sheet(
     sheet: usize,
     s: &Sheet,
@@ -74,8 +66,8 @@ pub fn check_sheet(
         .collect()
 }
 
-/// The first [`GUESS_SAMPLE`] checkable words of the document, sheet by sheet in reading order —
-/// what a guess at its language reads.
+/// The first [`GUESS_SAMPLE`] checkable words, sheet by sheet in reading order, for a guess at the
+/// language.
 pub fn sample(doc: &Document) -> Vec<String> {
     let mut out = Vec::new();
     for s in &doc.sheets {

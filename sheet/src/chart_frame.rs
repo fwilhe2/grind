@@ -2,22 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **Handling a chart on the grid** — selecting it, moving it, resizing it from any edge and
-//! deleting it — as one behaviour every window shares (`doc/chart-handling.md`).
+//! Handling a chart on the grid — selecting, moving, resizing from any edge, deleting — the same
+//! in every window (`doc/chart-handling.md`).
 //!
-//! The person this suite is for hates how this feels in LibreOffice, and the cure is the same
-//! rules everywhere, decided once: a click **selects** a chart, and a selected chart is
-//! unmistakable — an accent outline and **eight square handles** that stay drawn while it is
-//! selected, not only while the pointer happens to be over a corner. Its body moves it, any
-//! handle resizes it with the opposite edge held still, Shift on a corner keeps its proportions,
-//! the arrow keys nudge it, Delete and Backspace delete it, Escape lets go of it. Nothing is
-//! written while a drag is in progress; the frame the drag has reached is drawn, and the release
-//! is one `App::reshape_chart` — one undo step.
-//!
-//! Everything here is arithmetic in the shell's own unit (pixels, points — whatever the shell
-//! draws in), with no toolkit in it, so the GNOME window, the browser, Windows and the Mac
-//! answer "which handle is under the pointer" and "where does this drag put the chart" with the
-//! same function rather than four that drift.
+//! A click selects a chart, and a selected chart wears an accent outline and eight handles for as
+//! long as it is selected. Its body moves it, a handle resizes it with the opposite edge held
+//! still, Shift on a corner keeps its proportions, arrows nudge it, Delete and Backspace delete
+//! it, Escape lets go. Nothing is written during a drag; the release is one `App::reshape_chart`.
+//! All arithmetic is in the shell's unit, with no toolkit.
 
 /// A chart's frame in the shell's own unit: its top-left corner and its size.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -74,8 +66,7 @@ impl Grip {
         Grip::West,
     ];
 
-    /// Which edges a drag of this grip moves: (left, top, right, bottom). The body moves all four
-    /// together; a handle moves only its own.
+    /// Which edges a drag of this grip moves: (left, top, right, bottom).
     fn edges(self) -> (bool, bool, bool, bool) {
         match self {
             Grip::Body => (true, true, true, true),
@@ -98,8 +89,7 @@ impl Grip {
         )
     }
 
-    /// The pointer this grip shows, in CSS's cursor names — which GTK takes as they are and the
-    /// Windows and Mac shells map to their own (`IDC_SIZENWSE`, `NSCursor`'s frame-resize).
+    /// The pointer this grip shows, as a CSS cursor name, which each shell maps to its own.
     pub fn cursor(self) -> &'static str {
         match self {
             Grip::Body => "move",
@@ -127,30 +117,25 @@ impl Grip {
     }
 }
 
-/// How big a handle is drawn, in CSS pixels at 1× — big enough to see at a glance and to hit
-/// without aiming, which LibreOffice's are not. A shell scales it to its own unit and DPI.
+/// How big a handle is drawn, in CSS pixels at 1×; a shell scales it.
 pub const HANDLE: f64 = 9.0;
 
-/// How far beyond its drawn square a handle still answers the pointer, in the same unit — a
-/// handle is easier to grab than to see, never harder.
+/// How far past its square a handle still answers the pointer.
 pub const HANDLE_SLOP: f64 = 4.0;
 
-/// The smallest a resize makes a chart, in CSS pixels at 1× — small enough not to fight a
-/// deliberate shrink, large enough that its own handles never overlap into nonsense.
+/// The smallest a resize makes a chart, in CSS pixels at 1× — large enough that its handles never
+/// overlap.
 pub const MIN_SIZE: f64 = 32.0;
 
-/// How far an arrow key nudges a selected chart, and how far Shift+arrow does — CSS pixels at
-/// 1×. A small step for placing it exactly, a large one for getting it somewhere.
+/// How far an arrow key nudges a selected chart (Shift+arrow: further), in CSS pixels at 1×.
 pub const NUDGE: f64 = 2.0;
 pub const NUDGE_LARGE: f64 = 20.0;
 
-/// Below this much movement, in CSS pixels at 1×, a press and release on a chart is a click —
-/// it selects — rather than a move.
+/// Below this movement, in CSS pixels at 1×, a press and release is a click that selects.
 pub const CLICK_SLOP: f64 = 4.0;
 
-/// Every handle's square on a selected chart drawn at `frame`, `size` across — what a shell
-/// fills (the page colour) and outlines (the accent), each centred on its edge or corner so half
-/// of it sits outside the chart, where it reads as a handle rather than as part of the picture.
+/// Every handle's square on a chart at `frame`, `size` across, centred on its edge or corner so
+/// half of it sits outside the chart.
 pub fn handles(frame: &Frame, size: f64) -> [(Grip, Frame); 8] {
     Grip::HANDLES.map(|grip| {
         let (cx, cy) = grip.centre(frame);
@@ -161,9 +146,9 @@ pub fn handles(frame: &Frame, size: f64) -> [(Grip, Frame); 8] {
     })
 }
 
-/// What the point `(x, y)` has of a chart at `frame`: one of its handles when the chart is
-/// `selected` (an unselected chart shows none, so has none to grab), its body when inside it, or
-/// nothing. `size` and `slop` are [`HANDLE`] and [`HANDLE_SLOP`] in the shell's unit.
+/// What the point `(x, y)` has of a chart at `frame`: a handle when `selected`, its body when
+/// inside it, or nothing. `size` and `slop` are [`HANDLE`] and [`HANDLE_SLOP`] in the shell's
+/// unit.
 pub fn grip_at(
     frame: &Frame,
     selected: bool,
@@ -174,8 +159,7 @@ pub fn grip_at(
 ) -> Option<Grip> {
     if selected {
         let reach = size / 2.0 + slop;
-        // Corners first: where a corner and an edge handle overlap on a small chart, the corner
-        // is the more useful of the two.
+        // Corners first: where a corner and an edge handle overlap, the corner is more useful.
         let mut order = Grip::HANDLES;
         order.sort_by_key(|grip| !grip.is_corner());
         for grip in order {
@@ -188,9 +172,8 @@ pub fn grip_at(
     frame.contains(x, y).then_some(Grip::Body)
 }
 
-/// Which of several charts the point has, topmost first — the last in the document's order is
-/// drawn on top, so it answers first — with the grip. `selected` is the index of the selected
-/// chart, whose handles reach outside its frame and so are asked before anything else.
+/// Which of several charts the point has, topmost (last in document order) first, with the grip.
+/// The `selected` chart is asked first, since its handles reach outside its frame.
 pub fn hit(
     frames: &[Option<Frame>],
     selected: Option<usize>,
@@ -212,12 +195,10 @@ pub fn hit(
     })
 }
 
-/// Where a drag of `grip` by `(dx, dy)` puts a chart that started at `start`.
-///
-/// The body moves the whole frame. A handle moves its own edges and holds the opposite ones
-/// still, never letting the chart shrink below `min` — the edge being dragged stops, the far
-/// one does not move to make room. With `keep_ratio` (Shift) a corner keeps the chart's
-/// proportions, following whichever of the two axes the pointer moved further along.
+/// Where a drag of `grip` by `(dx, dy)` puts a chart that started at `start`. The body moves the
+/// frame; a handle moves its own edges, never shrinking the chart below `min` (the dragged edge
+/// stops). With `keep_ratio` a corner keeps the proportions, following the axis the pointer moved
+/// further along.
 pub fn dragged(start: &Frame, grip: Grip, dx: f64, dy: f64, min: f64, keep_ratio: bool) -> Frame {
     if grip == Grip::Body {
         return Frame::new(start.x + dx, start.y + dy, start.w, start.h);
@@ -287,14 +268,13 @@ pub fn nudge(dx: i8, dy: i8, large: bool) -> Key {
     Key::Nudge(f64::from(dx) * step, f64::from(dy) * step)
 }
 
-/// A frame no further left or up than the sheet's own corner — a chart nudged or dragged past
-/// A1 stops there, since ODF's `svg:x` and `svg:y` are offsets from it.
+/// A frame no further left or up than the sheet's corner, since `svg:x`/`svg:y` are offsets from
+/// it.
 pub fn kept_on_sheet(frame: Frame) -> Frame {
     Frame::new(frame.x.max(0.0), frame.y.max(0.0), frame.w, frame.h)
 }
 
-/// The sentence a deletion says, in every window: it names how to get the chart back, because a
-/// key that deletes is only safe when the way back is obvious.
+/// The sentence a deletion says, naming how to get the chart back.
 pub fn deleted_sentence(undo_key: &str) -> String {
     format!("Chart deleted — {undo_key} brings it back")
 }

@@ -2,29 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The reference index: which cells each formula reads, and its transpose.
+//! The reference index: which cells each formula reads, and its transpose — the reverse-dependency
+//! questions view modes ask (`doc/view-modes.md` §4.4): is this constant referenced, does anything
+//! read this cell, what is downstream of an edit.
 //!
-//! `doc/view-modes.md` §4.4 is why this exists. *Is this constant referenced by anything?*,
-//! *does anything read this cell?* and *what is downstream of my edit?* are all **reverse
-//! dependency** questions, and until now nothing here could answer one: `formula/eval.rs`
-//! recurses over the dependency graph rather than sorting it, and `doc/plan.md`'s `graph.rs`
-//! was in the plan and unbuilt on purpose. View modes are the use that pays for it.
+//! A forward index from one walk of the parsed formulas, and its transpose. No cycle detection,
+//! ordering or incremental maintenance; the evaluator does not use it. References resolve through
+//! [`Engine::area`], the evaluator's own function, so the index cannot disagree with it about a
+//! name, a whole column or a missing sheet.
 //!
-//! **Scope, deliberately small.** A forward index of which areas each formula reads is one
-//! walk of the ASTs the parser already produces; the reverse index is its transpose. There
-//! is no cycle detection here, no topological order and no incremental maintenance — the
-//! evaluator keeps doing exactly what it does, and this is built beside it rather than
-//! underneath it.
-//!
-//! **It resolves references through [`Engine::area`]**, the same function the evaluator
-//! calls. An index that resolved them its own way would be a second opinion about what a
-//! document reads, and the two would drift on precisely the cases that matter: a name, a
-//! whole-column reference, a sheet that does not exist.
-//!
-//! ponytail: built on demand and thrown away, so a caller that wants it per keystroke
-//! re-walks every formula in the document. The upgrade is invalidating only what is
-//! downstream of an edit, which is what this structure is *for* — but it needs an owner with
-//! a lifetime, and view modes' first cut deliberately has none.
+//! ponytail: built on demand and discarded, so asking per keystroke re-walks every formula.
+//! Invalidating only what is downstream of an edit needs an owner with a lifetime.
 
 use std::collections::BTreeMap;
 
@@ -33,25 +21,17 @@ use crate::formula::lex::Op;
 use crate::formula::parse::{Expr, parse};
 use crate::model::Document;
 
-/// How deep a chain of named expressions may nest before the walk gives up.
-///
-/// A name defined in terms of itself is the case this exists for. The evaluator handles it
-/// with the same kind of counter (`MAX_DEPTH`), and here it need only be large enough for
-/// any name a person writes.
+/// How deep a chain of named expressions may nest before the walk gives up — for a name defined in
+/// terms of itself.
 const MAX_NAME_DEPTH: usize = 64;
 
-/// How many `(cell, formula reading it)` pairs the reverse index will hold.
-///
-/// The forward index is bounded by the number of formulas; the reverse one is bounded by
-/// the number of *cells* they read, and `=SUM([.A:.A])` in a thousand columns is a million
-/// pairs on its own. Past this the index stops recording and says so
-/// ([`RefIndex::truncated`]) rather than growing without limit or lying about it.
+/// How many `(cell, formula reading it)` pairs the reverse index holds. `=SUM([.A:.A])` in a
+/// thousand columns is a million pairs alone; past this the index stops and says so
+/// ([`RefIndex::truncated`]).
 pub const MAX_EDGES: usize = 1 << 20;
 
-/// Which cells every formula in a document reads, and which formulas read every cell.
-///
-/// Built by [`RefIndex::build`] from a document, and valid only for the document it was
-/// built from — nothing here is maintained across an edit.
+/// Which cells every formula in a document reads, and which formulas read every cell — valid only
+/// for the document it was built from.
 #[derive(Clone, Debug, Default)]
 pub struct RefIndex {
     /// Every formula cell that reads anything → the areas it reads, deduplicated, in the
@@ -60,14 +40,11 @@ pub struct RefIndex {
     /// Every cell read by at least one formula → the formula cells reading it, in address
     /// order.
     read_by: BTreeMap<Address, Vec<Address>>,
-    /// How many distinct formulas read each cell **on its own** — through a single-cell
-    /// reference rather than by falling inside a range. See
-    /// [`RefIndex::singled_out_by`], which is the distinction `doc/view-modes.md` §4.2
-    /// turns on.
+    /// How many distinct formulas read each cell on its own — through a single-cell reference
+    /// rather than a range ([`RefIndex::singled_out_by`], `doc/view-modes.md` §4.2).
     read_singly: BTreeMap<Address, usize>,
-    /// Every cell a conditional-format rule's condition reads at some cell it covers
-    /// (`doc/conditional-format.md` §2) — kept apart from `read_by`, whose readers are formula
-    /// cells, since a rule is not one.
+    /// Every cell a conditional-format rule's condition reads at a cell it covers
+    /// (`doc/conditional-format.md` §2), apart from `read_by` since a rule is not a formula cell.
     read_by_rules: std::collections::BTreeSet<Address>,
     truncated: bool,
 }
@@ -82,9 +59,8 @@ impl RefIndex {
             for (pos, formula) in cells.formulas() {
                 let at = Address::new(sheet, pos);
                 let Ok(expr) = parse(formula) else {
-                    // A formula that is not OpenFormula reads nothing this can name. The
-                    // evaluator answers `#NAME?` for the same input, so agreeing with it
-                    // means recording no reads rather than guessing at the text.
+                    // A formula that will not parse reads nothing nameable; the evaluator answers
+                    // `#NAME?` for it.
                     continue;
                 };
                 let mut areas = Vec::new();
@@ -94,8 +70,8 @@ impl RefIndex {
                 }
                 for area in &areas {
                     if area.rows.len() == 1 && area.cols.len() == 1 {
-                        // Areas are deduplicated per formula, so this counts *formulas*
-                        // rather than mentions: `=[.C2]+[.C2]` is one reader.
+                        // Areas are deduplicated per formula, so this counts formulas:
+                        // `=[.C2]+[.C2]` is one reader.
                         for cell in area.cells() {
                             *index.read_singly.entry(cell).or_default() += 1;
                         }
@@ -106,8 +82,8 @@ impl RefIndex {
                             break;
                         }
                         let readers = index.read_by.entry(cell).or_default();
-                        // One formula's areas are appended together, so a cell this formula
-                        // reads twice — `[.A1]+[.A1:.B2]` — has `at` last already.
+                        // One formula's areas are appended together, so a cell it reads twice
+                        // already has `at` last.
                         if readers.last() != Some(&at) {
                             readers.push(at);
                             edges += 1;
@@ -119,8 +95,8 @@ impl RefIndex {
                 }
                 index.reads.insert(at, areas);
             }
-            // What each rule reads, moved to every cell it covers. A relative `[.$E5]` reads
-            // a different row on each, which is the column a checklist hides its ticks in.
+            // What each rule reads, moved to every cell it covers: a relative `[.$E5]` reads a
+            // different row on each.
             for rule in cells.rules() {
                 let Ok(expr) = parse(&rule.condition) else {
                     continue;
@@ -161,8 +137,8 @@ impl RefIndex {
         index
     }
 
-    /// The areas the formula in `at` reads. Empty for a cell holding no formula, for one
-    /// whose formula reads nothing (`=1+1`), and for one whose formula does not parse.
+    /// The areas the formula in `at` reads; empty for no formula, a formula reading nothing
+    /// (`=1+1`), or one that will not parse.
     pub fn reads(&self, at: Address) -> &[Area] {
         self.reads.get(&at).map_or(&[], Vec::as_slice)
     }
@@ -172,8 +148,7 @@ impl RefIndex {
         self.read_by.get(&at).map_or(&[], Vec::as_slice)
     }
 
-    /// Whether any formula — or any conditional-format rule — reads this cell, by any
-    /// reference at all.
+    /// Whether any formula or conditional-format rule reads this cell.
     pub fn is_referenced(&self, at: Address) -> bool {
         self.read_by.contains_key(&at) || self.read_by_rules.contains(&at)
     }
@@ -183,17 +158,11 @@ impl RefIndex {
         self.read_by_rules.contains(&at)
     }
 
-    /// How many distinct formulas single this cell out — read it through a **one-cell**
-    /// reference rather than by covering it with a range.
-    ///
-    /// `doc/view-modes.md` §4.2 is stated in exactly these terms — *a lone `0.2` that three
-    /// formulas multiply by* — and both halves of it are load-bearing, which
-    /// `examples/sample-sheet.sh` proved twice over. Counting every reference at all made
-    /// each of the six actuals under `=SUM([.C2:.C7])` a magic constant; counting single-cell
-    /// references but not *how many* still caught each actual, because the difference column
-    /// beside it reads its own row's cell by address. A column of data is read once, by the
-    /// formula next to it. A parameter is read from several places, which is what makes not
-    /// naming it a problem.
+    /// How many distinct formulas single this cell out — read it through a one-cell reference
+    /// rather than a range. §4.2's "a lone `0.2` that three formulas multiply by" needs both
+    /// halves: counting range coverage flagged every value under a `SUM`, and counting any single
+    /// reader flagged every value read by the formula beside it. A parameter is read from several
+    /// places.
     pub fn singled_out_by(&self, at: Address) -> usize {
         self.read_singly.get(&at).copied().unwrap_or(0)
     }
@@ -203,19 +172,15 @@ impl RefIndex {
         self.reads.keys().copied()
     }
 
-    /// Whether the reverse index hit [`MAX_EDGES`] and stopped recording.
-    ///
-    /// A caller that must not report *nothing reads this cell* wrongly has to check it: past
-    /// the cap, [`RefIndex::is_referenced`] can be false for a cell that really is read.
+    /// Whether the reverse index hit [`MAX_EDGES`] and stopped; past it
+    /// [`RefIndex::is_referenced`] can be false for a cell that is read.
     pub fn truncated(&self) -> bool {
         self.truncated
     }
 }
 
-/// Collect the areas an expression reads into `out`, deduplicated.
-///
-/// A subtree that *is* a reference is taken whole and not descended into — see [`area_of`],
-/// which is where `[.A1]:[.B2]` becomes the rectangle it denotes rather than its two corners.
+/// Collect the areas an expression reads into `out`, deduplicated. A reference subtree is taken
+/// whole ([`area_of`]), so `[.A1]:[.B2]` is the rectangle it denotes.
 fn collect(
     doc: &Document,
     engine: &Engine<'_>,
@@ -243,10 +208,8 @@ fn collect(
             collect(doc, engine, lhs, at, depth, out);
             collect(doc, engine, rhs, at, depth, out);
         }
-        // A name that is not a plain reference — `[.A1]*2` — denotes no place, and its
-        // *body* is what reads cells. Resolving it here is what the evaluator does too
-        // (§5.11: evaluated at the cell that used the name, which is why `at` is passed on
-        // unchanged).
+        // A name that is not a plain reference denotes no place; its body reads the cells,
+        // evaluated at the using cell (§5.11), so `at` is passed on.
         Expr::Name(name) if depth < MAX_NAME_DEPTH => {
             if let Some(expression) = doc.name(name).map(str::to_owned)
                 && let Ok(parsed) = parse(&expression)
@@ -263,12 +226,9 @@ fn collect(
     }
 }
 
-/// The area a reference-valued expression denotes, when it is one.
-///
-/// The two reference operators are here rather than in [`collect`] because they do not read
-/// their operands: §6.4.11's `[.A1]:[.B2]` reads the whole rectangle — B1 and A2 included,
-/// and neither appears anywhere in the text — and §6.4.12's `!` reads only the overlap.
-/// Treating either as "whatever its two sides mention" would be wrong in both directions.
+/// The area a reference-valued expression denotes, when it is one. The reference operators do not
+/// read their operands: §6.4.11's `[.A1]:[.B2]` reads the whole rectangle, B1 and A2 included, and
+/// §6.4.12's `!` only the overlap.
 fn area_of(
     doc: &Document,
     engine: &Engine<'_>,
@@ -321,8 +281,7 @@ mod tests {
             for (row, col, text) in *cells {
                 let pos = Pos::new(*row, *col);
                 match text.starts_with('=') {
-                    // A formula cell still needs a value, or `used_rows` does not count it
-                    // and a whole-column reference stops short of it.
+                    // A formula cell needs a value, or `used_rows` does not count it.
                     true => {
                         sheet.set(pos, CellValue::Number(0.0));
                         sheet.set_formula(pos, (*text).to_owned());
@@ -340,9 +299,7 @@ mod tests {
         document
     }
 
-    /// `at(0, "A3")`. `a1::parse` needs an `App` to resolve a sheet name against, and these
-    /// tests have a bare `Document` — so the two lines of arithmetic are spelled here rather
-    /// than a whole application being built to avoid them.
+    /// `at(0, "A3")`, without an `App` for `a1::parse` to resolve against.
     fn at(sheet: usize, cell: &str) -> Address {
         let split = cell.find(|c: char| c.is_ascii_digit()).unwrap();
         let col = cell[..split]
@@ -354,8 +311,7 @@ mod tests {
         )
     }
 
-    /// Which cells an address reads, spelled as sorted `Sheet!A1` strings — the shape an
-    /// assertion can be read out of.
+    /// Which cells an address reads, as sorted `Sheet!A1` strings.
     fn reads(index: &RefIndex, cell: Address) -> Vec<String> {
         let mut cells: Vec<String> = index
             .reads(cell)
@@ -404,8 +360,7 @@ mod tests {
 
     #[test]
     fn the_range_operator_reads_the_rectangle_rather_than_its_corners() {
-        // §6.4.11. B1 and A2 appear nowhere in the text and are read all the same — the one
-        // case a walk that only collected `Expr::Ref` nodes would get wrong.
+        // §6.4.11: B1 and A2 appear nowhere in the text and are read all the same.
         let d = doc(
             &[(
                 "Sheet1",
@@ -425,8 +380,7 @@ mod tests {
 
     #[test]
     fn the_intersection_operator_reads_only_the_overlap() {
-        // §6.4.12, and the mirror of the case above: reading either operand whole would
-        // report cells the formula never touches.
+        // §6.4.12: reading either operand whole would report cells the formula never touches.
         let d = doc(
             &[(
                 "Sheet1",
@@ -481,8 +435,8 @@ mod tests {
 
     #[test]
     fn a_whole_column_reference_stops_at_what_the_sheet_uses() {
-        // The evaluator bounds the open axis by `cell_extent`, so the index does too — this is
-        // the reason it resolves through `Engine::area` rather than reading the text.
+        // The evaluator bounds the open axis by `cell_extent`, and so does the index, through
+        // `Engine::area`.
         let d = doc(
             &[(
                 "Sheet1",

@@ -2,18 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where a motion moves the selection — the spreadsheet's navigation rules, as pure functions.
-//!
-//! Hoisted out of `ui_sheet_gtk/src/keymap.rs` and `ui_win32/src/sheet/keymap.rs`, whose
-//! vocabularies were kept identical for this day (the Windows copy's `ponytail:` named "a
-//! **third** copy" as the trigger, and the macOS shell was it — `doc/macos-shell.md`, M1).
-//! Navigation over a used extent is spreadsheet vocabulary rather than toolkit vocabulary, so
-//! what stays in a shell is only which *key* means which [`Motion`]: a `gdk::Key`, a
-//! virtual-key code or an AppKit selector.
-//!
-//! The selection is **presentation state**: an anchor and an active cell, and nothing else. The
-//! document is never told about it — a range reaches `App` as two positions when something is
-//! actually *done* to it.
+//! Where a motion moves the selection — the spreadsheet's navigation rules, as pure functions. A
+//! shell decides only which key means which [`Motion`]. The selection is presentation state, an
+//! anchor and an active cell; the document only sees two positions when something is done to a
+//! range.
 
 use crate::tracks::Sizes;
 use crate::{App, MAX_COLS, MAX_ROWS, Pos};
@@ -68,8 +60,8 @@ impl Selection {
         }
     }
 
-    /// The selection as an inclusive rectangle, top-left first — the order every `App` method
-    /// taking two positions wants.
+    /// The selection as an inclusive rectangle, top-left first, as `App` methods take two
+    /// positions.
     pub fn rect(&self) -> (Pos, Pos) {
         (
             Pos::new(
@@ -98,8 +90,8 @@ impl Selection {
         u64::from(end.row - start.row + 1) * u64::from(end.col - start.col + 1)
     }
 
-    /// Every row of one column, with the active cell at the top so that revealing it scrolls
-    /// to the head of the column rather than to row 1048576.
+    /// Every row of one column, with the active cell at the top so revealing it scrolls to the
+    /// head of the column.
     pub fn whole_col(col: u32) -> Self {
         Self {
             anchor: Pos::new(MAX_ROWS - 1, col),
@@ -135,11 +127,8 @@ impl Extent {
     }
 }
 
-/// Apply a motion, returning the selection it produces.
-///
-/// `occupied` answers "does this cell hold anything", and is a closure because the answer comes
-/// from the document: a shell backs it with `App::get` or viewport-sized reads, and a test backs
-/// it with a set. That is what keeps the *rule* here and the *reads* there.
+/// Apply a motion, returning the selection it produces. `occupied` answers whether a cell holds
+/// anything — from the document in a shell, from a set in a test.
 pub fn moved(
     selection: Selection,
     motion: Motion,
@@ -168,17 +157,10 @@ pub fn moved(
 }
 
 /// The rectangle an operation over `selection` acts on — a format, a style, a copy — when the
-/// sheet uses rows `0..used.0` and columns `0..used.1`.
-///
-/// **Only a whole row or column is cut** to the part of the sheet in use: a column selected from
-/// its header is a million rows, and a format costs an entry per cell and a copy a line per row,
-/// so a click on a header followed by `€` or ⌘C would otherwise be refused or put a million lines
-/// on the clipboard. A rectangle somebody dragged out past the last value is a request for
-/// exactly those cells, which may be about to be filled, and is left as it is. An empty sheet
-/// still acts on the cell the row or column starts at, rather than on nothing.
-///
-/// The Windows pane's rule, hoisted when the macOS shell's Copy would have been a third answer;
-/// the GNOME window used to cut every rectangle, dragged or not.
+/// sheet uses rows `0..used.0` and columns `0..used.1`. Only a whole row or column is cut to the
+/// part in use, so a header click followed by `€` or a copy does not mean a million rows. A
+/// dragged rectangle past the last value is left as it is; an empty sheet still acts on the first
+/// cell of the row or column.
 pub fn target(selection: Selection, used: (u32, u32)) -> (Pos, Pos) {
     let (start, end) = selection.rect();
     let (rows, cols) = used;
@@ -193,16 +175,12 @@ pub fn target(selection: Selection, used: (u32, u32)) -> (Pos, Pos) {
     (start, Pos::new(row, col))
 }
 
-/// The fills *Fill Down* (`down`) or *Fill Right* makes over `selection`: for each column, its top
-/// cell copied down the rest; for each row, its leftmost cell copied across. `(source, start,
-/// end)`, the shape [`App::fill`] takes. Nothing for a selection one cell deep along the fill —
-/// this never reads a cell that was not selected, which is the promise "it fills what I picked"
-/// makes.
+/// The fills Fill Down (`down`) or Fill Right makes over `selection`: each column's top cell
+/// copied down the rest, or each row's leftmost across, as `(source, start, end)` for
+/// [`App::fill`]. Nothing outside the selection is read.
 ///
-/// ponytail: a fill over several lines is one `App::fill` — and so one undo step — per line. The
-/// upgrade is a multi-source fill in the core; nothing needs it until a wide block is common.
-///
-/// The macOS shell's rule, hoisted when the browser and the Windows grid wanted a Ctrl+D too.
+/// ponytail: one `App::fill`, so one undo step, per line; a multi-source fill in the core is the
+/// upgrade.
 pub fn fills(selection: Selection, down: bool) -> Vec<(Pos, Pos, Pos)> {
     let (start, end) = selection.rect();
     fill_lines(start, end, down)
@@ -233,20 +211,16 @@ pub fn fill_lines(start: Pos, end: Pos, down: bool) -> Vec<(Pos, Pos, Pos)> {
     }
 }
 
-/// Whether a cell of `sheet` holds anything — what [`moved`]'s `occupied` asks, answered by the
-/// document. One read per probe, which is what every shell did with its own copy of this.
+/// Whether a cell of `sheet` holds anything, for [`moved`]'s `occupied`.
 ///
-/// ponytail: a data edge across a sparse million-row sheet is a million point reads. The fix is
-/// a used-extent walk in the core, not a cache in a shell.
+/// ponytail: a data edge across a sparse million-row sheet is a million point reads; the fix is a
+/// used-extent walk in the core.
 pub fn occupied(app: &App, sheet: usize) -> impl Fn(Pos) -> bool + '_ {
     move |pos| app.get(sheet, pos).is_ok_and(|value| !value.is_empty())
 }
 
-/// Select All: everything `sheet` uses, **with the active cell at A1**, so the view goes home
-/// rather than to the far corner. An empty sheet selects the one cell it has.
-///
-/// The GNOME window put the active cell at the far corner and the Windows pane at A1, and the
-/// macOS shell would have been a third answer; this is the Windows one, which said why.
+/// Select All: everything `sheet` uses, with the active cell at A1 so the view goes home. An empty
+/// sheet selects its one cell.
 pub fn all(app: &App, sheet: usize) -> Selection {
     let (rows, cols) = app.used_extent(sheet).unwrap_or((0, 0));
     Selection {
@@ -255,29 +229,19 @@ pub fn all(app: &App, sheet: usize) -> Selection {
     }
 }
 
-/// Move the active cell off any hidden track it landed on, in the direction it was travelling.
-///
-/// [`moved`] works in cell coordinates and knows nothing about widths, which is right — the rule
-/// for where Ctrl+Down stops has nothing to do with pixels. But a hidden row occupies none, so a
-/// cursor that lands on one is invisible: a shell that draws a hidden track as *gone* has a
-/// cursor parked on nothing as that decision's sharp edge. Every spreadsheet steps over them,
-/// and this is where it happens.
-///
-/// The **anchor is left alone**. A selection's corner may perfectly well sit on a hidden track —
-/// the rectangle it describes is still the rectangle the user dragged out, and moving the corner
-/// would silently change what a later operation covers.
+/// Move the active cell off any hidden track it landed on, in the direction it was travelling: a
+/// hidden track has no width, so a cursor on it is invisible. The anchor stays where it is, since
+/// moving it would change what the selection covers.
 pub fn onto_visible(selection: Selection, motion: Motion, rows: &Sizes, cols: &Sizes) -> Selection {
     let (row_forward, col_forward) = match motion {
         Motion::By(dir) | Motion::Page(dir) | Motion::Edge(dir) => match dir {
-            // On the axis being travelled, keep going the way the key pointed. On the other, the
-            // cell did not move, so the direction only matters if it was already hidden — and
-            // forwards is as good an answer as any.
+            // Keep going the way the key pointed on the axis travelled; on the other, forwards.
             Dir::Up => (false, true),
             Dir::Left => (true, false),
             Dir::Down | Dir::Right => (true, true),
         },
-        // Home and Ctrl+Home arrive from the right, so they carry on leftwards past a hidden
-        // column A; End and Ctrl+End arrive from the left and carry on rightwards.
+        // Home and Ctrl+Home carry on leftwards past a hidden column A; End and Ctrl+End
+        // rightwards.
         Motion::RowStart | Motion::SheetStart => (true, true),
         Motion::RowEnd | Motion::SheetEnd => (false, false),
     };
@@ -295,17 +259,13 @@ pub fn onto_visible(selection: Selection, motion: Motion, rows: &Sizes, cols: &S
     }
 }
 
-/// The merge holding a cell, as its top-left and bottom-right cells — what [`through_merges`]
-/// and [`onto_merge`] ask, answered by the document. A shell drawing from a viewport may answer
-/// it from `Viewport::merge_at` instead; a test answers it from a list.
+/// The merge holding a cell, as its top-left and bottom-right cells, from the document.
 pub fn merges(app: &App, sheet: usize) -> impl Fn(Pos) -> Option<(Pos, Pos)> + '_ {
     move |pos| app.merge_at(sheet, pos).ok().flatten()
 }
 
-/// Land a plain selection on a merge's top-left cell when it is anywhere inside one — what a
-/// click on the covered part of a merge means. A merge is one cell, and the cell an edit lands
-/// in is its top-left. An extended selection is left alone: its corners are the rectangle the
-/// user dragged out.
+/// Land a plain selection on a merge's top-left cell when it is inside one — what a click on a
+/// covered cell means. An extended selection is left alone.
 pub fn onto_merge(selection: Selection, merge_at: &dyn Fn(Pos) -> Option<(Pos, Pos)>) -> Selection {
     match merge_at(selection.active) {
         Some((anchor, _)) if selection.is_single() => Selection::at(anchor),
@@ -313,13 +273,10 @@ pub fn onto_merge(selection: Selection, merge_at: &dyn Fn(Pos) -> Option<(Pos, P
     }
 }
 
-/// [`moved`]'s result with merges taken into account, given the selection it moved from.
-///
-/// One step out of a merge leaves from its far edge rather than into its own covered cells, so
-/// Right from a heading across `B2:D2` lands on `E2` and not on `C2`. Wherever the motion lands
-/// inside a merge, it lands on the merge's top-left cell ([`onto_merge`]). An extended selection
-/// is left alone — growing a rectangle to take in every merge it touches is a gap
-/// (`doc/not-doing.md` §3), and its corners are still exactly where the keys put them.
+/// [`moved`]'s result with merges taken into account: one step out of a merge leaves from its far
+/// edge (Right from `B2:D2` lands on `E2`), and a landing inside a merge goes to its top-left
+/// cell. An extended selection is left alone; growing it to whole merges is a gap
+/// (`doc/not-doing.md` §3).
 pub fn through_merges(
     before: Selection,
     after: Selection,
@@ -362,13 +319,8 @@ fn step(from: Pos, dir: Dir, by: u32) -> Pos {
     }
 }
 
-/// Ctrl+arrow: the far end of a run of cells, or the first cell across a gap.
-///
-/// The rule every spreadsheet has: from a cell whose neighbour is occupied, go to the last cell
-/// of that run; from one whose neighbour is empty, go to the next occupied cell. The stop is the
-/// **used extent** rather than row 1048576, so Ctrl+Down in an empty column lands on the last
-/// row that has anything rather than a million rows into blank space — the same bound a
-/// scrollbar uses.
+/// Ctrl+arrow: from a cell whose neighbour is occupied, the last cell of that run; otherwise the
+/// next occupied cell. The stop is the used extent, not row 1048576.
 fn data_edge(from: Pos, dir: Dir, extent: Extent, occupied: &dyn Fn(Pos) -> bool) -> Pos {
     let (limit, index, at): (u32, u32, &dyn Fn(u32) -> Pos) = match dir {
         Dir::Left | Dir::Right => (extent.cols, from.col, &|c| Pos::new(from.row, c)),
@@ -578,8 +530,7 @@ mod tests {
         assert_eq!(go(Pos::new(3, 0), Motion::Page(Dir::Up), &occupied).row, 0);
     }
 
-    /// The sheet's far corner is a `u32` away, and stepping past it must clamp rather than
-    /// wrap — a `PageDown` from the last row is the shortest way to find out.
+    /// Stepping past the far corner clamps rather than wraps.
     #[test]
     fn the_far_corner_clamps_rather_than_wrapping() {
         let occupied = sheet(&[]);
@@ -595,8 +546,7 @@ mod tests {
         assert_eq!(right.active, Pos::new(MAX_ROWS - 1, MAX_COLS - 1));
     }
 
-    /// An empty sheet has a used extent of `(0, 0)`, and every motion has to survive it —
-    /// `last_row()` of nothing is a subtraction that would underflow.
+    /// An empty sheet's extent is `(0, 0)`, and every motion must survive it.
     #[test]
     fn an_empty_sheet_navigates_without_underflowing() {
         let occupied = sheet(&[]);
@@ -622,10 +572,8 @@ mod tests {
         }
     }
 
-    /// The bug this exists for, found by *running* the shell rather than by reading it: two
-    /// presses of Down through the sample document's hidden rows put the cursor on row 5, which
-    /// is hidden, and the screen showed no cursor at all while the status bar cheerfully
-    /// reported one.
+    /// Two presses of Down through the sample document's hidden rows must not leave the cursor on
+    /// hidden row 5.
     #[test]
     fn a_cursor_never_stops_on_a_track_that_is_not_drawn() {
         let rows = Sizes::new(20.0, 20, vec![(1, 0.0), (4, 0.0), (5, 0.0), (6, 0.0)]);
@@ -646,8 +594,7 @@ mod tests {
         assert_eq!(to.active, Pos::new(0, 0));
     }
 
-    /// The anchor is the corner the user put down and stays there, hidden or not — moving it
-    /// would change what the selection covers behind their back.
+    /// The anchor stays where the user put it, hidden or not.
     #[test]
     fn stepping_over_a_hidden_track_never_moves_the_anchor() {
         let rows = Sizes::new(20.0, 20, vec![(4, 0.0)]);

@@ -2,16 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What a selection adds up to — the Sum, Count and Average a status bar shows.
-//!
-//! Hoisted out of `ui_sheet_gtk/src/chrome.rs`, `ui_win32/src/sheet/status.rs` and
-//! `ui_tui/src/sheet/app.rs`, whose `ponytail:` named a fourth caller as the trigger; the macOS
-//! shell was it (`doc/macos-shell.md`, M1).
-//!
-//! The aggregates go through [`App::preview`] over generated formulas — `SUM`, `COUNTA` and
-//! `AVERAGE` — rather than through a summing loop, so what a status bar says and what a cell
-//! holding `=SUM(…)` would say cannot differ. A shell reaching the same numbers from the command
-//! line types those formulas into `grind sheet eval`, which is the same call.
+//! What a selection adds up to — the Sum, Count and Average a status bar shows. Computed through
+//! [`App::preview`] over generated `SUM`, `COUNTA` and `AVERAGE` formulas, so the status bar and a
+//! cell holding `=SUM(…)` cannot differ; `grind sheet eval` reaches the same numbers.
 
 use crate::model::CellValue;
 use crate::{App, Pos, a1};
@@ -19,24 +12,19 @@ use crate::{App, Pos, a1};
 /// What a range holding something adds up to.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Summary {
-    /// How many cells hold anything — `COUNTA`, because a status bar's Count is non-empty rather
-    /// than numeric.
+    /// How many cells hold anything — `COUNTA`, since a status bar's Count is non-empty cells.
     pub count: f64,
-    /// `SUM` and `AVERAGE`, together or not at all: the sum and average of no numbers are not
-    /// zero, they are nothing, and `AVERAGE` says so with `#DIV/0!`.
+    /// `SUM` and `AVERAGE`, together or not at all: no numbers have no average (`#DIV/0!`).
     pub totals: Option<(f64, f64)>,
 }
 
-/// What the rectangle `start`..=`end` of `sheet` adds up to, or `None` when it holds nothing.
-///
-/// Clamped to the used extent first: a whole-column selection — which is what clicking a header
-/// gives — must not ask the evaluator to walk a million empty rows.
+/// What the rectangle `start..=end` of `sheet` adds up to, or `None` when it holds nothing.
+/// Clamped to the used extent first, since a header click selects a million rows.
 pub fn summarise(app: &App, sheet: usize, start: Pos, end: Pos) -> Option<Summary> {
     let (rows, cols) = app.used_extent(sheet).ok()?;
     let (start, end) = clamp(start, end, rows, cols)?;
     let range = format!("[.{}:.{}]", a1::format(None, start), a1::format(None, end));
-    // Evaluated at a cell one past the used extent: a formula is evaluated *as if* it sat
-    // somewhere, and anywhere inside the range would be a circular reference.
+    // Evaluated as if one past the used extent; inside the range would be a circular reference.
     let at = Pos::new(rows, 0);
     let of = |formula: String| match app.preview(sheet, at, &formula) {
         Ok(CellValue::Number(n)) => Some(n),
@@ -51,11 +39,8 @@ pub fn summarise(app: &App, sheet: usize, start: Pos, end: Pos) -> Option<Summar
 }
 
 /// `B2:C4  ·  Sum 21215.51  ·  Count 6  ·  Average 3535.9`, or the address alone for a range
-/// that holds nothing — the status bar's sentence, in every shell with room for the whole words.
-///
-/// The numbers are spelled the document's way ([`App::display_number`]), so a German document's
-/// sum reads `21215,51`, as its cells do. Whether a *single* cell gets a sentence at all is a
-/// shell's decision, not this function's: most leave it to the name box.
+/// holding nothing, with numbers spelled the document's way ([`App::display_number`]). Whether one
+/// cell gets a sentence is the shell's decision.
 pub fn status_text(app: &App, sheet: usize, start: Pos, end: Pos) -> String {
     let address = format!("{}:{}", a1::format(None, start), a1::format(None, end));
     let Some(summary) = summarise(app, sheet, start, end) else {
@@ -72,11 +57,8 @@ pub fn status_text(app: &App, sheet: usize, start: Pos, end: Pos) -> String {
     parts.join("  \u{00b7}  ")
 }
 
-/// The rectangle `start`..=`end` cut down to what the sheet actually uses, or `None` when the two
-/// do not overlap at all.
-///
-/// The part with an off-by-one in it: `rows` and `cols` are *one past* the last used track, and a
-/// sheet that uses nothing gives zero for both.
+/// The rectangle `start..=end` cut to what the sheet uses, or `None` when they do not overlap.
+/// `rows` and `cols` are one past the last used track; an empty sheet gives zero for both.
 pub fn clamp(start: Pos, end: Pos, rows: u32, cols: u32) -> Option<(Pos, Pos)> {
     if rows == 0 || cols == 0 || start.row >= rows || start.col >= cols {
         return None;
@@ -115,8 +97,7 @@ mod tests {
         );
     }
 
-    /// The aggregates come from the evaluator, so a range holding text counts it and does not
-    /// sum it — `COUNTA` is non-empty, `SUM` ignores text.
+    /// A label is counted (`COUNTA`) and not summed.
     #[test]
     fn a_label_is_counted_and_not_summed() {
         let app = book();
@@ -157,8 +138,7 @@ mod tests {
         assert_eq!(summarise(&app, 0, Pos::new(6, 4), Pos::new(8, 5)), None);
     }
 
-    /// Clicking a column header selects a million rows; the address is honest and the range
-    /// handed to the evaluator is the used extent's.
+    /// A header click selects a million rows; the evaluator gets the used extent.
     #[test]
     fn a_whole_column_selection_is_clamped_to_what_is_used() {
         let app = book();

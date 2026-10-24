@@ -2,29 +2,19 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The column store: run-length blocks of homogeneous type.
+//! The column store: run-length blocks of homogeneous type. A column is mostly empty, and where it
+//! is not, long runs share one type, so it is a sequence of typed blocks: `Empty(1_000_000)` costs
+//! four bytes and a million numbers one `Vec<f64>`.
 //!
-//! A spreadsheet column is mostly empty, and where it is not, long runs share one type.
-//! Storing it as `Vec<Cell>` pays per-cell for both facts; storing it as
-//! `HashMap<(row, col), Cell>` pays a hash and a scattered allocation for every cell and
-//! makes any range read a sort. This stores a column as a sequence of typed blocks —
-//! `Empty(1_000_000)` costs four bytes, and a million numbers cost one `Vec<f64>`.
+//! LibreOffice Calc arrived at the same design (`mdds::mtv::soa::multi_type_vector`, observed at
+//! `sc/inc/mtvelements.hxx:141-153` and `sc/inc/column.hxx:164`); this was reached independently,
+//! with no LibreOffice code (see CONTRIBUTING.md).
 //!
-//! The design is the one LibreOffice Calc arrived at (`mdds::mtv::soa::multi_type_vector`,
-//! observed at `sc/inc/mtvelements.hxx:141-153` and `sc/inc/column.hxx:164`), reached
-//! independently here from the same constraints — not a port, and no LibreOffice code is
-//! involved. See CONTRIBUTING.md.
+//! ponytail: text and bool share one `Other` block; splitting it is a one-variant change if a
+//! profile asks.
 //!
-//! Two deliberate simplifications relative to that design, both local to this file:
-//!
-//! ponytail: text and bool share one `Other` block instead of getting a typed block each.
-//! The two wins that matter are empty runs and dense numeric runs; splitting `Other` is a
-//! one-variant change if a profile ever asks for it.
-//!
-//! ponytail: block lookup is a linear scan over blocks, not an offset index with binary
-//! search. Block count is small for any realistic column (it is runs, not cells), and a
-//! parallel offsets vector would be duplicated state to keep in sync. If a pathological
-//! column — alternating types every row — ever shows up, add the index inside `find`.
+//! ponytail: block lookup is a linear scan over blocks; add an offset index inside `find` if a
+//! column that alternates types every row ever shows up.
 
 use crate::model::CellValue;
 
@@ -44,9 +34,7 @@ fn kind_of(v: &CellValue) -> Kind {
     }
 }
 
-/// Serialised only as part of a whole [`crate::Sheet`], which is what
-/// [`crate::Action::InsertSheet`] carries so that undoing a sheet deletion brings the cells
-/// back — see `model.rs`.
+/// Serialised only inside a whole [`crate::Sheet`], for undoing a sheet deletion.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 enum Block {
     Empty(u32),
@@ -119,8 +107,7 @@ pub struct Column {
 }
 
 impl Column {
-    /// One past the last row holding a value. Trailing empties are never stored, so this
-    /// is the real extent rather than a high-water mark.
+    /// One past the last row holding a value; trailing empties are never stored.
     pub fn len(&self) -> u32 {
         self.blocks.iter().map(Block::len).sum()
     }
@@ -129,11 +116,8 @@ impl Column {
         self.blocks.is_empty()
     }
 
-    /// The rows holding a value, as ranges — one per non-empty block, in order.
-    ///
-    /// What a caller wanting "which rows are not blank" should ask instead of calling
-    /// [`Column::get`] down the column: this costs one step per *block*, and an empty run of a
-    /// million rows is one block.
+    /// The rows holding a value, one range per non-empty block, in order — one step per block,
+    /// where a million empty rows are one block.
     pub fn occupied(&self) -> impl Iterator<Item = std::ops::Range<u32>> + '_ {
         let mut at = 0;
         self.blocks.iter().filter_map(move |block| {
@@ -152,8 +136,7 @@ impl Column {
 
     pub fn set(&mut self, row: u32, value: CellValue) {
         let Some((bi, off)) = self.find(row) else {
-            // Past the end. Clearing an already-absent cell writes nothing; otherwise pad
-            // with one empty run and append.
+            // Past the end: clearing writes nothing; otherwise pad with one empty run and append.
             if value.is_empty() {
                 return;
             }
@@ -204,11 +187,8 @@ impl Column {
         None
     }
 
-    /// Restore the invariants: no zero-length blocks, no two adjacent blocks of the same
-    /// kind, no trailing empty run.
-    ///
-    /// Cheap exactly when the structure is healthy — a column of a million numbers is one
-    /// block, so this is O(1) there.
+    /// Restore the invariants: no zero-length blocks, no two adjacent blocks of the same kind, no
+    /// trailing empty run. O(1) on a healthy column.
     fn normalize(&mut self) {
         self.blocks.retain(|b| b.len() > 0);
         let mut i = 0;
@@ -230,8 +210,7 @@ impl Column {
 mod tests {
     use super::*;
 
-    /// Everything `normalize` promises. Any operation that leaves these false is a bug in
-    /// the store, whatever the cell values happen to read back as.
+    /// Everything `normalize` promises.
     #[track_caller]
     fn check(c: &Column) {
         assert!(
@@ -404,8 +383,8 @@ mod tests {
         check(&c);
     }
 
-    /// Hammer the store with a deterministic pseudo-random write sequence and check both
-    /// the invariants and the values against a dumb reference model after every step.
+    /// A deterministic pseudo-random write sequence, checking the invariants and the values
+    /// against a reference model after every step.
     #[test]
     fn random_writes_agree_with_a_dumb_reference_model() {
         const ROWS: u32 = 40;

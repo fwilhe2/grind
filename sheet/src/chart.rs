@@ -2,23 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A chart: bar, line or pie, holding ranges rather than values — `doc/chart-format.md` is the
-//! clean-room spec this model is built against, citing the schema by line.
-//!
-//! **A chart is embedded as its own ODF document** (`draw:frame`/`draw:object`, rng:5088/5539),
-//! not a spreadsheet element in its own right — this model is the slice of that second
-//! document this build reads and writes, not a second document type of its own. It holds
-//! ranges rather than values on purpose: a chart tracks the cells it was built from, the way a
-//! formula does, so editing the data it points at moves the chart without this build ever
-//! being told to.
+//! A chart: bar, line or pie (`doc/chart-format.md`). In ODF a chart is an embedded document of
+//! its own (`draw:frame`/`draw:object`, rng:5088/5539); this is the part of it that is read and
+//! written. It holds ranges rather than values, so editing the data moves the chart.
 
 use serde::{Deserialize, Serialize};
 
 use crate::{App, CellValue, Pos, Result, a1};
 
-/// Which of the three shapes this build knows — `doc/chart-format.md`'s scope line. Each is a
-/// `chart:class` token, verified against a real `soffice` build rather than guessed (the schema
-/// itself leaves the attribute a free `namespacedToken`, rng:487-489).
+/// The three shapes drawn (`doc/chart-format.md`), each a `chart:class` token checked against
+/// `soffice` (the schema leaves the attribute free, rng:487-489).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChartKind {
     Bar,
@@ -27,12 +20,10 @@ pub enum ChartKind {
 }
 
 impl ChartKind {
-    /// Every kind, in the order a picker offers them — the GNOME dialog's buttons and every other
-    /// window's menu items alike.
+    /// Every kind, in the order a picker offers them.
     pub const ALL: [ChartKind; 3] = [ChartKind::Bar, ChartKind::Line, ChartKind::Pie];
 
-    /// The kind's name as a control shows it — `Bar`, `Line`, `Pie` — one spelling for every
-    /// window.
+    /// The kind's name as a control shows it — `Bar`, `Line`, `Pie`.
     pub fn name(self) -> &'static str {
         match self {
             ChartKind::Bar => "Bar",
@@ -46,14 +37,12 @@ impl ChartKind {
         match self {
             ChartKind::Bar => "chart:bar",
             ChartKind::Line => "chart:line",
-            // ODF's own name for a pie chart — the one surprising token of the three,
-            // `doc/chart-format.md` has the measurement.
+            // ODF's name for a pie chart (`doc/chart-format.md`).
             ChartKind::Pie => "chart:circle",
         }
     }
 
-    /// The kind a `chart:class` names, tolerantly: anything this build does not draw is
-    /// `None` rather than an error, the same §9 tolerance every other unrecognised value gets.
+    /// The kind a `chart:class` names; anything not drawn here is `None` (§9).
     pub fn from_class(class: &str) -> Option<Self> {
         match class {
             "chart:bar" => Some(ChartKind::Bar),
@@ -64,52 +53,39 @@ impl ChartKind {
     }
 }
 
-/// One `chart:series` (rng:857) — a range of values, and optionally a range naming it
-/// (`chart:label-cell-address`). Both are ODF range-address strings, kept verbatim the way
-/// `col_widths` keeps `"2.258cm"`: resolved against the live sheet only when something reads
-/// this chart's data, not parsed on the way in.
+/// One `chart:series` (rng:857): a range of values and optionally one naming it
+/// (`chart:label-cell-address`), both address strings kept verbatim and resolved only when the
+/// chart's data is read.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Series {
     pub values: String,
     pub label: Option<String>,
-    /// A user-assigned override for this whole series' colour — consulted for
-    /// [`ChartKind::Bar`] and [`ChartKind::Line`], an ODF colour (`"#rrggbb"`). `None` means
-    /// "use the default cycle" — see [`effective_color`].
+    /// This series' colour (`"#rrggbb"`), for a bar or line; `None` is the default cycle
+    /// ([`effective_color`]).
     #[serde(default)]
     pub color: Option<String>,
-    /// Per-point overrides, sparse by position within this series' own `values` range — one
-    /// bar of a [`ChartKind::Bar`] series, or one slice of a [`ChartKind::Pie`]. A missing
-    /// index, or `None` at one, means "no override": the series' colour for a bar, the default
-    /// cycle at that position for a slice — see [`effective_color`].
+    /// Per-point overrides by position in the series — one bar, or one pie slice. A missing or
+    /// `None` entry is no override ([`effective_color`]).
     #[serde(default)]
     pub point_colors: Vec<Option<String>>,
 }
 
-/// One axis of a chart — everything this build carries about the x or the y one, which is
-/// three things: a title, whether its tick labels are drawn, and whether it rules gridlines
-/// across the plot. Each is a distinct element or attribute in ODF, cited on its own field.
-///
-/// This is not the chart's own title or its legend, which are [`Chart::title`] and
-/// [`Chart::legend`] — an axis' own title is a different element.
+/// One axis of a chart: its title, whether its tick labels are drawn, and whether it rules
+/// gridlines. The chart's own title and legend are [`Chart::title`] and [`Chart::legend`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Axis {
-    /// This axis' own `chart:title` (rng:422-434), plain text. A different element from
-    /// `chart:chart`'s own title ([`Chart::title`]), though the two share a definition.
+    /// This axis' own `chart:title` (rng:422-434), plain text.
     pub label: Option<String>,
-    /// Whether the tick labels along this axis are drawn — the categories on x, the value
-    /// scale on y. `chart:display-label` (rng:10069), a `style:chart-properties` attribute on
-    /// the axis' own style rather than an attribute of the axis element itself.
+    /// Whether the tick labels are drawn — categories on x, the value scale on y:
+    /// `chart:display-label` (rng:10069), on the axis' style rather than the axis element.
     pub tick_labels: bool,
-    /// Whether this axis rules major gridlines across the plot —
-    /// `chart:grid chart:class="major"` (rng:672-693), an element inside `chart:axis`.
+    /// Whether this axis rules major gridlines: `chart:grid chart:class="major"` (rng:672-693).
     pub gridlines: bool,
 }
 
 impl Default for Axis {
-    /// What a **new** axis is: tick labels on, no gridlines, no title. A product decision —
-    /// a chart somebody just made should be readable without having to be told to be — and
-    /// deliberately *not* what an axis a file says nothing about reads as, which is
-    /// [`Axis::bare`].
+    /// A new axis: tick labels on, no gridlines, no title. An axis a file says nothing about is
+    /// [`Axis::bare`] instead.
     fn default() -> Self {
         Axis {
             label: None,
@@ -120,14 +96,10 @@ impl Default for Axis {
 }
 
 impl Axis {
-    /// An axis carrying nothing at all — no title, no tick labels, no gridlines.
-    ///
-    /// **This, not [`Axis::default`], is how an axis a file says nothing about reads.** The
-    /// schema states no default for `chart:display-label` (rng:10069 is a bare optional
-    /// boolean), so the oracle decides: LibreOffice draws no tick labels for an axis whose
-    /// style omits it, measured in `doc/chart-format.md`. A chart LibreOffice writes always
-    /// states the attribute either way, and so does this build's writer, so the case this
-    /// default covers is a file neither of them wrote.
+    /// An axis carrying nothing: how an axis a file says nothing about reads. The schema gives
+    /// `chart:display-label` no default (rng:10069), and LibreOffice draws no tick labels when it
+    /// is absent (measured, `doc/chart-format.md`). Both writers always state it, so this covers
+    /// files neither wrote.
     pub fn bare() -> Self {
         Axis {
             label: None,
@@ -142,12 +114,9 @@ impl Axis {
     }
 }
 
-/// Where a chart's legend sits — `chart:legend-position` (rng:700-707), in ODF's own
-/// writing-direction words: `End` is the right-hand side of a left-to-right chart.
-///
-/// The schema's four corner positions (`top-start` and so on, rng:718-725) read as the edge
-/// they are on, and a legend that states no position at all reads as `End`, where LibreOffice
-/// puts one (`doc/chart-format.md`, The chart's own title and legend).
+/// Where a chart's legend sits — `chart:legend-position` (rng:700-707), in ODF's writing-direction
+/// words: `End` is the right of a left-to-right chart. The corner positions (rng:718-725) read as
+/// the edge they are on, and no position reads as `End`, as LibreOffice places one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Legend {
     Start,
@@ -170,8 +139,7 @@ impl Legend {
         }
     }
 
-    /// The position a `chart:legend-position` token names — the corners by the edge they are
-    /// on, and anything else unrecognised as `End` (§9's tolerance: a legend is still a legend).
+    /// The position a `chart:legend-position` token names; unrecognised is `End` (§9).
     pub fn from_token(token: &str) -> Self {
         match token {
             "start" => Legend::Start,
@@ -182,18 +150,15 @@ impl Legend {
     }
 }
 
-/// A chart, as this build models it — `doc/chart-format.md`'s scope line is the whole of what
-/// is missing: no subtitle, no footer, one categories range and one values range per series.
-/// The chart's own title and legend are in scope, and so are an axis' own title, tick labels
-/// and gridlines — see [`Axis`].
+/// A chart, as modelled: no subtitle or footer, one categories range and one values range per
+/// series (`doc/chart-format.md`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Chart {
     pub kind: ChartKind,
     /// `chart:categories`' own range (rng:454) — the axis labels, shared by every series.
     pub categories: Option<String>,
     pub series: Vec<Series>,
-    /// `draw:frame`'s own `svg:x`/`svg:y`/`svg:width`/`svg:height` (rng:1722, rng:1778), ODF
-    /// lengths kept verbatim like every other one in this codebase.
+    /// `draw:frame`'s `svg:x`/`svg:y`/`svg:width`/`svg:height` (rng:1722, rng:1778), verbatim.
     pub x: String,
     pub y: String,
     pub width: String,
@@ -204,19 +169,14 @@ pub struct Chart {
     /// The value axis.
     #[serde(default)]
     pub y_axis: Axis,
-    /// Which way a [`ChartKind::Pie`]'s slices run from twelve o'clock — the y (angle) axis'
-    /// `chart:reverse-direction` (rng:10064), `true` meaning clockwise. Meaningless for a bar
-    /// or a line, whose axes this build never reverses.
-    ///
-    /// A **new** chart is clockwise, the direction a clock and a reader both go; a pie a file
-    /// says nothing about reads as counter-clockwise, because that is how LibreOffice draws the
-    /// same bytes (`doc/chart-format.md`, Direction, has the measurement). Absent from a
-    /// serialised chart older than the field, it reads as `true` — the way this build drew
-    /// every pie before it had one.
+    /// Which way a pie's slices run from twelve o'clock — the angle axis'
+    /// `chart:reverse-direction` (rng:10064), `true` meaning clockwise; meaningless for a bar or
+    /// line. A new chart is clockwise; a pie a file says nothing about reads counter-clockwise, as
+    /// LibreOffice draws it (`doc/chart-format.md`, Direction). A serialised chart without the
+    /// field reads as `true`.
     #[serde(default = "clockwise_by_default")]
     pub clockwise: bool,
-    /// The chart's own `chart:title` (rng:466, rng:934) — plain text, and a different element
-    /// from an axis' own title ([`Axis::label`]), though the two share a definition.
+    /// The chart's own `chart:title` (rng:466, rng:934), plain text.
     #[serde(default)]
     pub title: Option<String>,
     /// The chart's `chart:legend` (rng:475, rng:694), and where it sits; `None` is no legend.
@@ -248,16 +208,11 @@ impl Chart {
     }
 }
 
-/// What a chart **is**, in the vocabulary a person types — everything [`crate::App::add_chart`]
-/// and [`crate::App::edit_chart`] take, and exactly what [`guess`] produces, so a suggestion is
-/// something that can be inserted as it stands.
-///
-/// Ranges are typed ranges (`A2:A5`, or `Data.A2:A5` for another sheet) and resolved by
-/// [`parse_range`] against the sheet the chart is on; a chart's own stored, fully qualified
-/// ranges (`Sheet1.A2:Sheet1.A5`) are typed ranges too, which is what lets [`Spec::of`] hand an
-/// existing chart back to a dialog to be edited. A series is its values and, optionally, the
-/// cell naming it — `chart-add --series`'s `RANGE[=LABEL]`. Where the chart *sits* is not here:
-/// that is [`crate::App::reshape_chart`]'s, and an edit leaves it alone.
+/// What a chart is, in the words a person types — what [`crate::App::add_chart`] and
+/// [`crate::App::edit_chart`] take and [`guess`] produces. Ranges are typed ranges (`A2:A5`,
+/// `Data.A2:A5`) resolved by [`parse_range`] against the chart's sheet; a stored range is one too,
+/// so [`Spec::of`] can hand an existing chart to a dialog. A series is `RANGE[=LABEL]`. Position
+/// is not here ([`crate::App::reshape_chart`]).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Spec {
     pub kind: ChartKind,
@@ -265,8 +220,7 @@ pub struct Spec {
     pub series: Vec<(String, Option<String>)>,
     pub x_axis: Axis,
     pub y_axis: Axis,
-    /// A pie's direction ([`Chart::clockwise`]); carried whatever the kind, so turning a pie
-    /// into a bar and back does not lose it.
+    /// A pie's direction, kept whatever the kind so a pie turned into a bar and back keeps it.
     pub clockwise: bool,
     /// The chart's own title ([`Chart::title`]).
     pub title: Option<String>,
@@ -289,9 +243,9 @@ impl Spec {
         }
     }
 
-    /// The legend a chart of this spec gets when nobody said: one when there is more than one
-    /// thing to tell apart — two or more series, or a pie's slices — and none for a single bar
-    /// or line series, whose one colour the title already names.
+    /// The legend a chart gets when nobody said: one when there is more than one thing to tell
+    /// apart (two series, or a pie's slices), none for a single bar or line series, which the
+    /// title names.
     pub fn default_legend(&self) -> Option<Legend> {
         (self.kind == ChartKind::Pie || self.series.len() > 1).then_some(Legend::End)
     }
@@ -327,8 +281,8 @@ pub struct Shape {
     pub label_column: bool,
 }
 
-/// What [`guess`] read: the block (a single cell grows into the table around it), the
-/// [`Shape`] it read that block as, and the chart that makes.
+/// What [`guess`] read: the block (one cell grows into its table), the [`Shape`] it read it as,
+/// and the chart that makes.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Guess {
     pub start: Pos,
@@ -337,25 +291,18 @@ pub struct Guess {
     pub spec: Spec,
 }
 
-/// A chart of a block of cells, guessed from what the cells hold — **the one place this guess is
-/// made**, so the GNOME window, the CLI's `chart-add --from` and any other shell read the same
-/// table the same way. The shell used to guess on its own, always taking each column as a
-/// series, which turned a table with months across its top on its side.
+/// A chart of a block of cells, guessed from what they hold, for every shell and `chart-add
+/// --from`:
 ///
-/// - **One cell** grows into the block around it — every row and column touching a non-empty
-///   cell, the way a person means "this table" by clicking in it.
-/// - **Labels.** A first row of text over numbers names things; so does a first column of text,
-///   of dates, or of a counting sequence (`2021, 2022, 2023` or `1, 2, 3` — a column that counts
-///   rather than measures, since a year charted as a bar is nobody's intent).
-/// - **Orientation.** What is left once the labels are taken is the values. They run in columns
-///   unless that block is wider than it is tall — twelve months across and two rows of figures
-///   is two series of twelve, not twelve series of two.
-/// - **Kind.** A line when the categories are dates or times, since that is what a line is *for*;
-///   a bar otherwise. A pie is never guessed: whether parts make a whole is not something the
-///   cells say.
+/// - One cell grows into the block around it — every row and column touching a non-empty cell.
+/// - A first row of text over numbers names the series; a first column of text, dates or a
+///   counting sequence (`2021, 2022, 2023`) names the categories.
+/// - The values run in columns unless the block is wider than it is tall: twelve months across and
+///   two rows of figures is two series of twelve.
+/// - A line when the categories are dates or times, else a bar. Never a pie: the cells cannot say
+///   whether parts make a whole.
 ///
-/// `shape`, when given, replaces the three answers about the block and the rest follows from it
-/// — how a dialog lets a person say "no, the series are the rows".
+/// `shape`, when given, replaces the answers about the block.
 pub fn guess(
     sheet: &crate::Sheet,
     start: Pos,
@@ -377,8 +324,8 @@ pub fn guess(
         false => format!("{}:{}", a1::format(None, from), a1::format(None, to)),
     };
     let mut spec = Spec::new(ChartKind::Bar);
-    // Nothing to chart: the labels took the whole block, or what is left holds no figure —
-    // an empty spec, which a dialog can say so about, rather than a bar chart of zeros.
+    // Nothing to chart — the labels took the block, or nothing left is a number: an empty spec,
+    // which a dialog can report.
     let figures = (body.row..=end.row).any(|row| {
         (body.col..=end.col).any(|col| {
             let pos = Pos::new(row, col);
@@ -436,8 +383,7 @@ pub fn guess(
             }
         }
     }
-    // One series needs no legend, and is what the chart is *of*: its name is the title. More
-    // than one is what a legend is for.
+    // One series needs no legend, and its name is the chart's title.
     if let [(_, Some(label))] = spec.series.as_slice() {
         let pos = a1::parse(label).ok().and_then(|reference| {
             Some(Pos::new(
@@ -459,8 +405,8 @@ pub fn guess(
     }
 }
 
-/// The block around one cell: grown a row or a column at a time while the line just outside it
-/// — corners included — holds anything, and never past what the sheet uses.
+/// The block around one cell: grown a row or column at a time while the line just outside it,
+/// corners included, holds anything, never past what the sheet uses.
 fn region(sheet: &crate::Sheet, at: Pos) -> (Pos, Pos) {
     let (rows, cols) = (sheet.used_rows(), sheet.used_cols());
     if rows == 0 || cols == 0 || at.row >= rows || at.col >= cols {
@@ -529,9 +475,8 @@ fn read_shape(sheet: &crate::Sheet, start: Pos, end: Pos) -> Shape {
     }
 }
 
-/// Whether a run of cells is a **counting sequence** — whole numbers with one constant step, at
-/// least three of them: `2021, 2022, 2023`, or `1, 2, 3`. A column like that labels the rows
-/// beside it rather than being a measurement of its own.
+/// Whether a run of cells is a counting sequence — at least three whole numbers with one constant
+/// step (`2021, 2022, 2023`) — which labels rows rather than measuring anything.
 fn counts(cells: &[CellValue]) -> bool {
     let numbers: Option<Vec<f64>> = cells
         .iter()
@@ -550,18 +495,10 @@ fn counts(cells: &[CellValue]) -> bool {
     step != 0.0 && numbers.windows(2).all(|pair| pair[1] - pair[0] == step)
 }
 
-/// The colour a mark actually gets: a bar, a pie slice, or a line — the single place the
-/// writer and every shell's painter both resolve this, so they can never disagree.
-///
-/// **A colour is a series** (`doc/chart-format.md`, Colour): a [`ChartKind::Bar`] or
-/// [`ChartKind::Line`] series is one colour — [`Series::color`], else the default cycle at the
-/// series' own position — so two series side by side are two colours a legend can name. A bar
-/// may still carry an override of its own in [`Series::point_colors`], consulted when `point`
-/// is `Some`; `None` asks for the series' colour, which is what a legend's swatch shows.
-///
-/// A [`ChartKind::Pie`] has one series and its slices are what a reader tells apart, so it
-/// colours per slice: an override, else the default cycle at that slice's position. `point`
-/// must be `Some` for a pie.
+/// The colour a mark gets — the one place the writer and every shell's painter resolve it. A bar
+/// or line series is one colour ([`Series::color`], else the default cycle at its position), so a
+/// legend can name it; a bar may override it per point when `point` is `Some`. A pie colours per
+/// slice: an override, else the cycle at the slice's position; `point` must be `Some`.
 pub fn effective_color(chart: &Chart, series: usize, point: Option<usize>) -> String {
     let s = &chart.series[series];
     let own = |point: usize| s.point_colors.get(point).cloned().flatten();
@@ -585,14 +522,9 @@ fn series_own_color(chart: &Chart, series: usize) -> String {
         .unwrap_or_else(|| series_color(series).to_owned())
 }
 
-/// A user-typed range (`B3:B9`, or `Data.B3:B9` for another sheet), turned into the ODF
-/// range-address string a chart stores (`Sheet1.B3:Sheet1.B9`) — `a1::parse`'s own grammar,
-/// resolved against the live sheet the way a formula's own reference is, so a chart's ranges
-/// are checked the same way anything else typed into this program is.
-///
-/// Defaults to `sheet` rather than to the first sheet: a chart *on* a sheet whose own ranges
-/// name no sheet means that one, unlike [`a1::as_definition`]'s named-range rule, which a
-/// formula anywhere in the document can reference and so has no "this sheet" to default to.
+/// A typed range (`B3:B9`, `Data.B3:B9`) as the address string a chart stores
+/// (`Sheet1.B3:Sheet1.B9`), through `a1::parse` and resolved like a formula's reference. An
+/// unqualified range means `sheet`, the chart's own.
 pub fn parse_range(app: &App, sheet: usize, addr: &str) -> Result<String> {
     let mut reference = a1::parse(addr)?;
     let name = app.sheet_name(sheet)?;
@@ -613,17 +545,9 @@ pub fn parse_range(app: &App, sheet: usize, addr: &str) -> Result<String> {
     ))
 }
 
-/// One stored range with a sheet renamed — `doc/dsl.md` §6.5's first row reaching the charts.
-///
-/// A chart holds its ranges as address strings rather than as parsed references, so renaming a
-/// sheet has to come back through the parser: the string is read the way [`resolve_range`] reads
-/// it, the sheet locator is replaced by `formula::rename`, and both ends are printed the way
-/// [`parse_range`] prints them — fully qualified, which is the spelling every chart in this
-/// build already holds.
-///
-/// `None` when nothing changed, when the range will not parse, and when an end is missing an
-/// axis (a whole-column range, which nothing here produces): a chart whose range this build
-/// cannot re-spell keeps the one it has rather than being handed a guess.
+/// One stored range with a sheet renamed (`doc/dsl.md` §6.5): read as [`resolve_range`] reads it,
+/// the sheet replaced by `formula::rename`, printed as [`parse_range`] prints. `None` when nothing
+/// changed, when it will not parse, or when an end lacks an axis.
 pub(crate) fn rename_sheet_in_range(addr: &str, from: &str, to: &str) -> Option<String> {
     let reference = a1::parse_bracketed(&format!("[{addr}]")).ok()?;
     let renamed = crate::formula::rename::rename_in_reference(&reference, from, to);
@@ -636,39 +560,29 @@ pub(crate) fn rename_sheet_in_range(addr: &str, from: &str, to: &str) -> Option<
         Some(a1::format(cell.sheet.as_deref(), pos))
     };
     let (start, stop) = (spell(&renamed.start)?, spell(&end)?);
-    // A one-cell address — `chart:label-cell-address` — stays one cell rather than becoming a
-    // range of itself.
+    // A one-cell label address stays one cell.
     Some(match renamed.end.is_some() {
         true => format!("{start}:{stop}"),
         false => start,
     })
 }
 
-/// The colours a chart this build **regenerates** assigns to its series (bar, line — one per
-/// series) or its data points (pie — one per slice, since a pie has no axis to share a colour
-/// down). [`grind_core::style::PALETTE`] minus the neutrals (`black`, `white`, `gray`,
-/// `silver`), which read as "no data" rather than as a colour — the aesthetic this feature
-/// exists for, `doc/chart-format.md` has LibreOffice's own defaults it replaces.
-///
-/// A chart this build only *read* keeps whatever colours the file already had; this table is
-/// consulted only when this build's own writer is the one drawing the style.
+/// The colours a regenerated chart assigns: one per series for a bar or line, one per slice for a
+/// pie. [`grind_core::style::PALETTE`] without its neutrals, which read as "no data". A chart that
+/// was only read keeps its file's colours.
 pub const SERIES_COLORS: [&str; 12] = [
     "blue", "green", "orange", "red", "purple", "teal", "maroon", "olive", "fuchsia", "navy",
     "aqua", "yellow",
 ];
 
-/// The `n`th colour a regenerated chart assigns, cycling past the end of the table rather than
-/// running out — a pie with more slices than colours repeats rather than draws one with none.
+/// The `n`th colour a regenerated chart assigns, cycling past the end of the table.
 pub fn series_color(n: usize) -> &'static str {
     let name = SERIES_COLORS[n % SERIES_COLORS.len()];
     crate::style::palette(name).expect("every name in SERIES_COLORS is in PALETTE")
 }
 
-/// The value axis' own scale: where its ticks sit, and how to spell one. Computed from the
-/// data rather than stored, and computed **here** rather than in a shell, so that a chart
-/// drawn by two different shells is drawn against the same axis — the same reason line layout
-/// lives in `grind-core` (`doc/text-layout.md`, Path C) rather than in each window that draws
-/// text.
+/// The value axis' scale: where its ticks sit and how to spell one, computed from the data here so
+/// every shell draws the same axis.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ticks {
     /// The distance between two ticks — 1, 2 or 5 times a power of ten.
@@ -678,27 +592,22 @@ pub struct Ticks {
 }
 
 impl Ticks {
-    /// The top of the axis: the last tick, which is at or above the largest value plotted.
-    /// **This, not the data's own maximum, is what a plot is scaled against** — an axis
-    /// rounded up to a tick is what makes a gridline meet the top of the plot instead of
-    /// floating just below it.
+    /// The top of the axis: the last tick, at or above the largest value. A plot is scaled against
+    /// this, so the top gridline meets the top of the plot.
     pub fn max(&self) -> f64 {
         self.values.last().copied().unwrap_or(1.0)
     }
 
-    /// One tick, spelled for an axis. Rounded to the decimals [`Ticks::step`] actually needs,
-    /// so a step of `0.1` reads `0.3` rather than the `0.30000000000000004` a binary float
-    /// would otherwise print.
+    /// One tick spelled for an axis, rounded to the decimals [`Ticks::step`] needs (`0.3`, not
+    /// `0.30000000000000004`).
     pub fn label(&self, value: f64) -> String {
         let decimals = (-self.step.log10().floor()).clamp(0.0, 6.0) as usize;
         format!("{value:.decimals$}")
     }
 }
 
-/// The ticks a value axis running from zero to `max` gets — a step of 1, 2 or 5 times a power
-/// of ten, chosen as the smallest that keeps the count near `TICK_TARGET`. The "nice
-/// numbers" rule, which is a presentation decision this build makes once rather than one each
-/// shell makes differently.
+/// The ticks of a value axis from zero to `max`: a step of 1, 2 or 5 times a power of ten, the
+/// smallest keeping the count near `TICK_TARGET`.
 pub fn axis_ticks(max: f64) -> Ticks {
     if !max.is_finite() || max <= 0.0 {
         return Ticks {
@@ -723,18 +632,13 @@ pub fn axis_ticks(max: f64) -> Ticks {
     }
 }
 
-/// How many intervals [`axis_ticks`] aims for. Five is the count that reads as a scale without
-/// becoming a ladder — the number of gridlines a reader can count without counting.
+/// How many intervals [`axis_ticks`] aims for.
 const TICK_TARGET: f64 = 5.0;
 
-/// One pie slice's arc, in **screen** radians — `0` at three o'clock, a positive angle running
-/// clockwise, which is what a y-down drawing surface (GTK's snapshot, an SVG) calls positive.
-///
-/// `sweep` is signed: positive for a [`Chart::clockwise`] pie, negative for one that runs the
-/// other way, so a shell drawing a fan steps `start + sweep × t` and one drawing an arc reads
-/// its direction off the sign. `point` is the slice's position in the series — the index a
-/// colour ([`effective_color`]) and a category name are looked up by — which is not the
-/// slice's own index, since a zero or negative value takes up no slice at all.
+/// One pie slice's arc in screen radians — 0 at three o'clock, positive clockwise on a y-down
+/// surface. `sweep` is signed by the pie's direction. `point` is the slice's position in the
+/// series, for its colour and category, which differs from the slice's own index since a
+/// non-positive value takes no slice.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Slice {
     pub point: usize,
@@ -742,17 +646,12 @@ pub struct Slice {
     pub sweep: f64,
 }
 
-/// Where a pie's first slice starts: twelve o'clock, in [`Slice`]'s screen radians. Both
-/// directions start there — LibreOffice's counter-clockwise pie as much as a clockwise one
-/// (`doc/chart-format.md`, Direction).
+/// Where a pie's first slice starts, in either direction: twelve o'clock (`doc/chart-format.md`,
+/// Direction).
 const TWELVE: f64 = -std::f64::consts::FRAC_PI_2;
 
-/// A pie's slices, in order — its first series' values, each non-positive one taking no slice
-/// (a pie of signed data has no reading), computed **here** rather than in each shell for the
-/// reason [`axis_ticks`] is: two shells sweeping the same pie two ways is two different charts,
-/// which is exactly the bug `doc/chart-format.md`'s Direction section was written about.
-///
-/// Empty when there is nothing to draw — no series, or a total of zero.
+/// A pie's slices, in order, from its first series' values; a non-positive value takes no slice.
+/// Computed here so every shell draws the same pie. Empty when there is nothing to draw.
 pub fn pie_slices(data: &ChartData, clockwise: bool) -> Vec<Slice> {
     let Some((_, values)) = data.series.first() else {
         return Vec::new();
@@ -783,11 +682,9 @@ pub fn pie_slices(data: &ChartData, clockwise: bool) -> Vec<Slice> {
     slices
 }
 
-/// Which slice a screen angle falls in (`atan2(dy, dx)` from the pie's centre, in
-/// [`Slice`]'s radians) — the hit-test twin of [`pie_slices`], sharing its arithmetic so a
-/// click and the picture cannot disagree about which slice a point is in. `None` when the pie
-/// has no slices; whether the point is inside the *circle* is the caller's question, since only
-/// the caller knows the radius.
+/// Which slice a screen angle (`atan2(dy, dx)` from the centre) falls in, sharing [`pie_slices`]'
+/// arithmetic. `None` for a pie without slices; whether the point is inside the circle is the
+/// caller's question.
 pub fn pie_slice_at(data: &ChartData, clockwise: bool, angle: f64) -> Option<usize> {
     let slices = pie_slices(data, clockwise);
     // How far round from twelve o'clock the point is, travelling the way this pie runs.
@@ -807,18 +704,14 @@ pub fn pie_slice_at(data: &ChartData, clockwise: bool, angle: f64) -> Option<usi
     slices.last().map(|slice| slice.point)
 }
 
-/// A stored range, read back to the place it names — the reverse of [`parse_range`], used
-/// whenever a chart's own ranges are resolved rather than typed: reading a chart back out to
-/// list or draw it.
+/// A stored range read back to the place it names — the reverse of [`parse_range`].
 pub fn resolve_range(app: &App, addr: &str) -> Result<(usize, crate::Pos, crate::Pos)> {
     a1::resolve(app, &a1::parse_bracketed(&format!("[{addr}]"))?)
 }
 
-/// A chart's data, resolved against the live sheet — what a shell draws from, never the
-/// ranges themselves. Categories are their displayed text; a series is its label (empty if it
-/// named none) and its values, coerced the way an empty or textual cell coerces into a chart's
-/// axis: a number as itself, anything else as `0.0` — a chart draws a bar of nothing rather
-/// than refusing the whole picture over one cell that is not a number.
+/// A chart's data, resolved against the sheet — what a shell draws from. Categories are their
+/// displayed text; a series is its label (empty if none) and its values, a non-number counting as
+/// `0.0`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChartData {
     pub kind: ChartKind,
@@ -906,9 +799,8 @@ mod tests {
         }
     }
 
-    /// `doc/chart-format.md`, Colour: a colour is a series. Two series side by side are two
-    /// colours, and every bar of one of them is the same colour — the opposite of the rule
-    /// bars used to follow, which made Sales and Costs in one group indistinguishable.
+    /// `doc/chart-format.md`, Colour: two series side by side are two colours, and every bar of
+    /// one is the same colour.
     #[test]
     fn a_bar_colours_per_series_so_two_series_are_two_colours() {
         let mut chart = Chart::new(
@@ -1000,9 +892,7 @@ mod tests {
         assert_eq!(guessed.spec.title, None);
     }
 
-    /// The bug this function exists for: months across the top are the categories, and each
-    /// row of figures is a series — where the shell's old guess made "Sales" and "Costs" the
-    /// x axis and five unlabelled bars of each.
+    /// Months across the top are the categories, and each row of figures is a series.
     #[test]
     fn a_table_across_the_page_is_a_series_per_row() {
         let guessed = guess(&table(ACROSS), Pos::new(0, 0), Pos::new(2, 5), None, 0);
@@ -1127,9 +1017,8 @@ mod tests {
         }
     }
 
-    /// A point a little clockwise of twelve is in the first slice of a clockwise pie and in the
-    /// *last* slice of a counter-clockwise one — the picture LibreOffice drew of a file that
-    /// said nothing, and the reason the direction is a field at all.
+    /// A point just clockwise of twelve is in the first slice of a clockwise pie and the last of a
+    /// counter-clockwise one.
     #[test]
     fn a_hit_just_right_of_twelve_depends_on_which_way_the_pie_runs() {
         let data = pie_of(&[1.0, 1.0, 1.0, 1.0]);

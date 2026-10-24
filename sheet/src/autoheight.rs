@@ -2,31 +2,23 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Row auto-height (L3): the rows a sheet should grow to hold what is in them.
-//!
-//! A row with no height of its own is as tall as its tallest cell *wants* to be — a cell that
-//! wraps onto more lines, or one set in a larger face — measured by `grind_core::layout::wrap`,
-//! the breaker that also draws the wrapped lines, so a row is never sized by one engine and drawn
-//! by another. Hoisted out of the macOS shell when the Windows grid wanted wrapped cells: the
-//! GNOME window has its own copy over Pango (`measure_rows`), and this is the one for the shells
-//! that have a `Metrics` and a grid of `Sizes`.
+//! Row auto-height: the rows a sheet should grow to hold what is in them. A row with no height of
+//! its own is as tall as its tallest cell wants — one that wraps, or one in a larger face —
+//! measured by `grind_core::layout::wrap`, the breaker that also draws the lines. The GNOME window
+//! measures with Pango (`measure_rows`); this is for the shells with a `Metrics` and `Sizes`.
 
 use grind_core::layout::{Fragment, Metrics, wrap};
 
 use crate::{App, look};
 
-/// How much sheet is measured for natural row heights. A row above the view still displaces the
-/// ones below it, so the pass cannot be limited to what is on screen — past this much document
-/// every row keeps its height, the GNOME window's bound.
+/// How much sheet is measured for natural row heights; rows above the view still displace those
+/// below, so the pass cannot be limited to the screen. Past this every row keeps its height.
 pub const MAX_CELLS: u64 = 200_000;
 
-/// The rows to grow, and to what: for each, the tallest of its cells that wraps or names a font
-/// size, plus `row_pad`, when that is taller than `row_h`. A cell with no style is never laid
-/// out, which is what keeps this a cheap pass over a sheet where nine cells in ten are plain.
-///
-/// `col_width` is the shell's own width of a column in its unit, `pad_x` the room a cell keeps
-/// either side of its text, and `metrics` measures in that same unit. Rows hidden or sized by the
-/// document are the caller's to put back over the answer.
+/// The rows to grow, and to what: each one's tallest cell that wraps or names a font size, plus
+/// `row_pad`, when taller than `row_h`. Plain cells are never laid out. `col_width`, `pad_x` and
+/// `metrics` are in the shell's unit. Rows hidden or sized by the document are the caller's to put
+/// back.
 pub fn grown_rows(
     app: &App,
     sheet: usize,
@@ -60,8 +52,7 @@ pub fn grown_rows(
                 continue;
             };
             let text_style = look::text_style(Some(style));
-            // A width of zero is `wrap`'s own "do not wrap": one line per hard break, which is
-            // what a cell here only for its larger face wants.
+            // Width zero is `wrap`'s "do not wrap", for a cell here only for its larger face.
             let width = match wrapping {
                 true => (col_width(col) - 2.0 * pad_x).max(1.0) as f32,
                 false => 0.0,

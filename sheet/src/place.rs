@@ -2,14 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where a selection is, said the way a name box and a status bar say it, and where a place a
-//! person types points — the two read-outs of a selection, and the name box's other half.
-//!
-//! Spelled word for word in `ui_sheet_gtk/src/chrome.rs` and `ui_win32/src/sheet/status.rs`, and
-//! the macOS shell's name box would have been the third copy (`doc/macos-shell.md`, M3; hoisted
-//! in M1's spirit). Everything here resolves through [`crate::a1`], so what the name box means
-//! by `Data.B2:C9` is what a formula means by it — there is no second address parser in the
-//! workspace.
+//! Where a selection is, as a name box and a status bar say it, and where a typed place points —
+//! the name box's other half. Everything resolves through [`crate::a1`].
 
 use crate::nav::Selection;
 use crate::{App, a1, summary};
@@ -19,9 +13,9 @@ pub fn name_box(app: &App, sheet: usize, selection: Selection) -> String {
     name_of(app, sheet, selection).unwrap_or_else(|| a1::format(None, selection.active))
 }
 
-/// What the status bar says about a selection: **nothing for one cell** — the name box is
-/// already saying where it is, and every other spreadsheet stays quiet about it — and otherwise
-/// [`summary::status_text`]'s sentence, `B2:C4 · Sum 21215.51 · Count 6 · Average 3535.9`.
+/// What the status bar says about a selection: nothing for one cell (the name box says where it
+/// is), otherwise [`summary::status_text`]'s sentence, `B2:C4 · Sum 21215.51 · Count 6 · Average
+/// 3535.9`.
 pub fn status(app: &App, sheet: usize, selection: Selection) -> String {
     if selection.is_single() {
         return String::new();
@@ -30,9 +24,8 @@ pub fn status(app: &App, sheet: usize, selection: Selection) -> String {
     summary::status_text(app, sheet, start, end)
 }
 
-/// [`status`], then how the document spells a number (`locale::badge`, `1.234,5 · de-DE`) — the
-/// read-out a status bar with one string to fill shows, so which sign is the decimal one is
-/// always in view. A bar with room for two pieces shows the badge on its own instead.
+/// [`status`], then how the document spells a number (`locale::badge`, `1.234,5 · de-DE`), for a
+/// status bar with one string.
 pub fn status_and_numbers(app: &App, sheet: usize, selection: Selection) -> String {
     let badge = crate::locale::badge(app.locale().as_ref());
     match status(app, sheet, selection) {
@@ -41,11 +34,8 @@ pub fn status_and_numbers(app: &App, sheet: usize, selection: Selection) -> Stri
     }
 }
 
-/// The defined name covering *exactly* this selection, if there is one.
-///
-/// Exactly, not overlapping: a name is a handle on one range, and offering it for a selection
-/// that merely sits inside would put a word in the box that, typed back, would move the
-/// selection somewhere else.
+/// The defined name covering exactly this selection, if any. Exactly: a name inside which the
+/// selection merely sits would move the selection if typed back.
 fn name_of(app: &App, sheet: usize, selection: Selection) -> Option<String> {
     let want = selection.rect();
     app.names().into_iter().find_map(|(name, expression)| {
@@ -55,12 +45,9 @@ fn name_of(app: &App, sheet: usize, selection: Selection) -> Option<String> {
     })
 }
 
-/// The formula bar's reading of the active cell through the names it uses — `=tax_rate*subtotal`
-/// where `shown` (what the bar would show otherwise) is `=B2*B7` — or `None` when there is no
-/// reading worth swapping in: no formula, or one identical to `shown` (no name in it).
-///
-/// `App::named_formula` plus the comparison every shell would otherwise write for itself.
-/// Presentation only: a shell that lets the cell be edited edits `shown`.
+/// The formula bar's reading of the active cell through its names — `=tax_rate*subtotal` where
+/// `shown` is `=B2*B7` — or `None` when there is no formula or no name in it. For showing only; an
+/// edit edits `shown`.
 pub fn named_reading(app: &App, sheet: usize, at: crate::Pos, shown: &str) -> Option<String> {
     app.named_formula(sheet, at)
         .ok()
@@ -68,17 +55,14 @@ pub fn named_reading(app: &App, sheet: usize, at: crate::Pos, shown: &str) -> Op
         .filter(|reading| reading != shown)
 }
 
-/// Where a typed address or name points, as a selection — the other half of the name box.
-///
-/// `None` means "this is not a place on this sheet", and a shell's answer to that is to put the
-/// old text back rather than to move anywhere.
+/// Where a typed address or name points, as a selection; `None` when it is not a place on this
+/// sheet, and a shell puts the old text back.
 pub fn locate(app: &App, sheet: usize, text: &str) -> Option<Selection> {
     let text = text.trim();
     if text.is_empty() {
         return None;
     }
-    // A defined name first: it is document-level, and a name that is also an address is refused
-    // by the core when it is defined, so this cannot shadow a cell.
+    // A defined name first; a name that is also an address is refused when defined.
     let expression = app
         .names()
         .into_iter()
@@ -86,38 +70,31 @@ pub fn locate(app: &App, sheet: usize, text: &str) -> Option<Selection> {
         .map(|(_, expression)| expression);
     let reference = match &expression {
         Some(expression) => a1::parse(strip_brackets(expression)).ok()?,
-        // A bare word is a *whole column* to the grammar — `foo` is `[.FOO]`, column 4460 — and
-        // taking that literally means no three-letter word can ever be a name, since every one
-        // of them is a column up to `XFD`. A name box wants the other reading: `A1` and
-        // `Data.B2` are places, `A:A` and `3:3` are the whole column and the whole row, and
-        // `foo` is a name.
+        // A bare word is a whole column to the grammar (`foo` is column 4460), which would leave
+        // no three-letter word as a name. A name box reads `A1` and `Data.B2` as places, `A:A` and
+        // `3:3` as a whole column or row, and `foo` as a name.
         None => match a1::parse(text).ok()? {
             reference if text.contains(':') || is_a_cell(&reference) => reference,
             _ => return None,
         },
     };
     let (found, start, end) = a1::resolve(app, &reference).ok()?;
-    // Going to another sheet is the sheet tabs' job, not the name box's, so a name living
-    // elsewhere is refused rather than silently landing on the wrong sheet.
-    //
-    // The active cell is the range's *start*: going to a range means looking at the top of it,
-    // and the active cell is what a grid scrolls into view.
+    // A name on another sheet is refused rather than landing on the wrong sheet. The active cell
+    // is the range's start, which the grid scrolls into view.
     (found == sheet).then_some(Selection {
         anchor: end,
         active: start,
     })
 }
 
-/// Whether a reference names both axes at both ends — the difference between `A1` (a place)
-/// and `A` (a whole column, and therefore a word).
+/// Whether a reference names both axes at both ends: `A1` is a place, `A` a word.
 fn is_a_cell(reference: &crate::formula::lex::Reference) -> bool {
     std::iter::once(&reference.start)
         .chain(reference.end.as_ref())
         .all(|end| end.row.is_some() && end.col.is_some())
 }
 
-/// A stored definition without ODF's brackets — `[$Sheet1.$A$1]` is how a reference is written
-/// in a file, and `a1::parse` takes the address a person types.
+/// A stored definition without ODF's brackets, for `a1::parse`.
 fn strip_brackets(expression: &str) -> &str {
     expression
         .strip_prefix('[')
@@ -143,9 +120,7 @@ mod tests {
         app
     }
 
-    /// Define a name over an address, in the sheet-qualified absolute spelling a definition has
-    /// to have (§5.11) — `a1::as_definition`'s, so the test cannot disagree with the core about
-    /// how a name is written.
+    /// Define a name over an address in the spelling a definition needs (`a1::as_definition`).
     fn name(app: &App, name: &str, address: &str) {
         let reference = a1::parse(address).unwrap();
         let definition = a1::as_definition(app, &reference).unwrap();
@@ -166,8 +141,7 @@ mod tests {
         assert!(status(&app, 0, from((1, 1), (3, 1))).contains("Sum 60"));
     }
 
-    /// Clicking a column header selects a million rows. Reading them would walk the whole sheet,
-    /// so the range handed to the evaluator is the used extent's, and the address stays honest.
+    /// A column header selects a million rows; the evaluator gets the used extent's range.
     #[test]
     fn a_whole_column_selection_is_clamped_to_what_is_used() {
         let text = status(&book(), 0, Selection::whole_col(1));
@@ -201,9 +175,7 @@ mod tests {
         assert_eq!(range.rect(), (Pos::new(1, 1), Pos::new(3, 2)));
     }
 
-    /// The ambiguity the box exists to resolve: a word is a name, an address is a place, and a
-    /// whole column has to be asked for as a range. Without the last rule every word up to `XFD`
-    /// would silently be a column instead of a name.
+    /// A word is a name, an address a place, and a whole column must be asked for as a range.
     #[test]
     fn a_word_is_a_name_and_a_column_has_to_be_asked_for_as_a_range() {
         let app = book();

@@ -2,19 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Find and replace over cells — what a match *is*, with no document in sight.
+//! Find and replace over cells — what a match is, with no document in sight.
 //!
-//! A cell is searched through its **input text** ([`crate::App::input_text`]): the formula in
-//! display form, a date in its ISO spelling, a number in the document's own. That is the
-//! choice `grind-tui`'s `:find` already made, and for its reason — searching for `SUM` should
-//! find `=SUM(B2:B9)`, and searching for `2026` should find the date somebody typed rather than
-//! only the cells whose format happens to spell the year. It is also what makes replace honest:
-//! the replaced text goes back in through the typing rule exactly as if it had been typed, so a
-//! replace can never put something in a cell that typing could not.
+//! A cell is searched through its input text ([`crate::App::input_text`]): a formula in display
+//! form, a date in ISO, a number in the document's own spelling. So `SUM` finds `=SUM(B2:B9)` and
+//! `2026` finds a typed date, and a replace goes back through the typing rule, so it can put
+//! nothing in a cell typing could not.
 //!
-//! Case is folded a character at a time, each to its first lowercase character, the rule
-//! `grind_text::App::find_ignoring_case` uses — so a hit is always as many characters as the
-//! needle, and `ß` does not match `SS`.
+//! Case is folded one character at a time to its first lowercase character, as
+//! `grind_text::App::find_ignoring_case` does, so a hit is as many characters as the needle and
+//! `ß` does not match `SS`.
 
 use std::ops::Range;
 
@@ -26,14 +23,13 @@ pub struct Search {
     pub needle: String,
     /// `Total` does not find `total`. Off by default: nobody searching a spreadsheet means it.
     pub match_case: bool,
-    /// The needle must be the cell's *whole* input text, not a piece of it — how `0` finds the
-    /// cells holding zero rather than every number with a nought in it.
+    /// The needle must be the cell's whole input text — so `0` finds the zeros, not every number
+    /// with a nought in it.
     pub whole_cell: bool,
     /// One sheet, or `None` for every sheet in the document.
     pub sheet: Option<usize>,
-    /// Only the cells inside this rectangle, both corners included, on whichever sheets are
-    /// searched — how a find bar replaces the one cell it is on, and how a replace stays
-    /// inside a selection. `None` is the whole of each sheet.
+    /// Only the cells inside this rectangle, corners included, on whichever sheets are searched —
+    /// how a replace stays inside a selection. `None` is the whole sheet.
     pub range: Option<(Pos, Pos)>,
 }
 
@@ -46,8 +42,8 @@ impl Search {
         }
     }
 
-    /// The byte ranges of `haystack` this search matches, left to right, never overlapping.
-    /// Empty for an empty needle, which matches nothing rather than everything.
+    /// The byte ranges of `haystack` this search matches, left to right, never overlapping. An
+    /// empty needle matches nothing.
     pub fn occurrences(&self, haystack: &str) -> Vec<Range<usize>> {
         if self.needle.is_empty() {
             return Vec::new();
@@ -104,9 +100,9 @@ impl Search {
     }
 }
 
-/// Which way a step through the hits goes. `Here` is "the first hit at or after where I am",
-/// which is what typing a needle wants — the hit under the cursor stays put as the needle
-/// grows; `Next` and `Previous` are Enter and Shift+Enter, F3 and Shift+F3, `n` and `N`.
+/// Which way a step through the hits goes. `Here` is the first hit at or after the cursor, so the
+/// hit under it stays as the needle grows; `Next` and `Previous` are Enter and Shift+Enter, F3 and
+/// Shift+F3, `n` and `N`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Towards {
     Here,
@@ -114,11 +110,8 @@ pub enum Towards {
     Previous,
 }
 
-/// Which of `hits` a step from `at` lands on, wrapping at either end — `None` only when there
-/// are none. `hits` is `(sheet, cell)` in the order [`crate::App::find`] reports them.
-///
-/// Here rather than in a shell because two find bars asked it, and "where does Shift+Enter
-/// go from a cell that is not a hit" is a question a second copy answers differently.
+/// Which of `hits` a step from `at` lands on, wrapping at either end; `None` only when there are
+/// none. `hits` is `(sheet, cell)` in [`crate::App::find`]'s order.
 pub fn step(hits: &[(usize, Pos)], at: (usize, Pos), towards: Towards) -> Option<usize> {
     let key = |(sheet, pos): (usize, Pos)| (sheet, pos.row, pos.col);
     let at = key(at);
@@ -157,9 +150,8 @@ impl Hit {
 pub struct Replaced {
     /// How many cells were rewritten.
     pub cells: usize,
-    /// Cells that matched but whose replaced text is a formula that will not parse — left
-    /// exactly as they were rather than turned into text or into a formula nobody can read,
-    /// with the reason, so a shell can say which and why.
+    /// Cells whose replaced text would be a formula that does not parse, left as they were, with
+    /// the reason.
     pub refused: Vec<(Hit, String)>,
     /// The recalculation, when one was asked for; [`crate::EnterOutcome::recalc`]'s meaning.
     pub recalc: Option<crate::Recalc>,
