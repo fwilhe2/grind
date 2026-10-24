@@ -2,26 +2,19 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Putting a picture in a document — the half of *Insert Picture* that is not a file dialog.
+//! Putting a picture in a document — the half of Insert Picture that is not a file dialog. A
+//! picture goes in a paragraph of its own below the caret's block, since an image mid-sentence
+//! draws only as the placeholder character; an already empty block is used as it is.
 //!
-//! Hoisted out of the macOS shell when the browser wanted the same and the GNOME and Windows
-//! windows each already had a copy. A picture goes in a **paragraph of its own**, below the
-//! caret's block rather than at the caret: an image sitting mid-sentence still draws as the
-//! placeholder character everywhere in this suite (nothing lays inline content out around one
-//! yet), and an Insert Picture whose result is `\u{fffc}` would be a bug report. A block that is
-//! *already* empty is used as it stands, so pressing Return and then inserting does what it looks
-//! like.
-//!
-//! The other half is **alternative text** — what a screen reader says in a picture's place and
-//! what Markdown writes as `![alt]`. [`at`] is which picture a caret means, [`set_alt`] writes
-//! it, and [`advice`] is the one note a dialog shows under the field: one answer for six
-//! clients, rather than a dialog in each with its own idea of where the picture is.
+//! The other half is alternative text — what a screen reader says and Markdown writes as `![alt]`:
+//! [`at`] is which picture a caret means, [`set_alt`] writes it, and [`advice`] is the one note
+//! every dialog shows under the field.
 
 use crate::{App, BlockKind, BlockView, Caret, ImageView, Result};
 
-/// The MIME type of a picture's bytes, read from their signature rather than a file's name —
-/// the way `grind_core::kind` reads a document's — or `None` for bytes that are no picture this
-/// build knows. The list is what `NSImage` reads and an ODF consumer can be expected to.
+/// The MIME type of a picture's bytes, from their signature rather than a name, or `None` for
+/// bytes that are no picture known here — the formats `NSImage` reads and an ODF consumer can be
+/// expected to.
 pub fn mime(bytes: &[u8]) -> Option<&'static str> {
     let at = |offset: usize, magic: &[u8]| bytes.get(offset..offset + magic.len()) == Some(magic);
     Some(match () {
@@ -37,8 +30,8 @@ pub fn mime(bytes: &[u8]) -> Option<&'static str> {
     })
 }
 
-/// Whether some bytes are an SVG document: text whose first element is `svg`, after any XML
-/// declaration, comment or doctype.
+/// Whether some bytes are an SVG document: text whose first element, after any XML declaration,
+/// comment or doctype, is `svg`.
 fn svg(bytes: &[u8]) -> bool {
     let head = String::from_utf8_lossy(&bytes[..bytes.len().min(1024)]);
     let mut rest = head.trim_start_matches('\u{feff}').trim_start();
@@ -51,9 +44,9 @@ fn svg(bytes: &[u8]) -> bool {
     rest.starts_with("<svg")
 }
 
-/// Insert `data` (of type `mime`) below the caret's block — or in it, when it is empty — and
-/// answer the block it landed in. The caret belongs at offset 1 of that block afterwards, past
-/// the picture, so the next thing typed is a caption.
+/// Insert `data` (of type `mime`) below the caret's block, or in it when it is empty, returning
+/// the block it landed in. The caret belongs at offset 1 afterwards, so the next thing typed is a
+/// caption.
 pub fn insert_below(app: &App, block: usize, mime: &str, data: Vec<u8>) -> Result<usize> {
     let empty = app.input_text(block).is_ok_and(|text| text.is_empty());
     let at = match empty {
@@ -76,12 +69,9 @@ pub fn insert_below(app: &App, block: usize, mime: &str, data: Vec<u8>) -> Resul
     Ok(at)
 }
 
-/// The picture a caret in `block` means, and the offset it sits at — what *Alt Text…* edits.
-///
-/// The one just after the caret, else the one just before it (the pair Delete and Backspace
-/// would take), else — when the block *is* a picture, as [`crate::picture_of`] reads one — that
-/// picture, wherever the caret is in its caption. A picture elsewhere in a long paragraph is
-/// deliberately not found from across the paragraph: which of three it was would be a guess.
+/// The picture a caret in `block` means, and its offset — what Alt Text… edits: the one just after
+/// the caret, else just before it, else, when the block is a picture ([`crate::picture_of`]), that
+/// one. A picture elsewhere in a long paragraph is not guessed at.
 pub fn at(block: &BlockView, offset: usize) -> Option<(usize, &ImageView)> {
     let image = |start: usize| {
         block
@@ -96,20 +86,17 @@ pub fn at(block: &BlockView, offset: usize) -> Option<(usize, &ImageView)> {
         .or_else(|| crate::picture_of(block).and_then(|_| image(0)))
 }
 
-/// Give the picture at `at` its alternative text, each half trimmed and an empty one removed —
-/// a field left blank in a dialog means *none*, not a title of three spaces.
+/// Give the picture at `at` its alternative text, each half trimmed and a blank one removed.
 pub fn set_alt(app: &App, at: Caret, title: &str, description: &str) -> Result<()> {
     let keep = |s: &str| Some(s.trim().to_owned()).filter(|s| !s.is_empty());
     app.set_image_alt(at, keep(title), keep(description))
 }
 
-/// About this long a screen reader's user hears a short text before wanting the point; past it,
-/// [`advice`] suggests the description. A convention (WebAIM's, among others), not a limit:
-/// nothing is refused for being longer.
+/// About how long a short text can be before [`advice`] suggests the description (WebAIM's
+/// convention); nothing longer is refused.
 pub const SHORT: usize = 150;
 
-/// One sentence of advice about a short alternative text as it is typed, or `None` when there
-/// is nothing to say. Shown under the field by every dialog, so the six say the same thing.
+/// One sentence of advice about a short alternative text as it is typed, or `None`.
 pub fn advice(title: &str) -> Option<&'static str> {
     let title = title.trim();
     let lower = title.to_lowercase();

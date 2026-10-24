@@ -2,17 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The ODT content model: one context per element we care about. **\[ODT\]**
-//!
-//! Structure per `doc/odt-format.md` §§2–3. Everything not named here is handled by
-//! `grind_core::odf::context::Ignore` without a line of code — which is why the ten of
-//! `text-content`'s sixteen alternatives outside the scope line (`doc/text-core.md`) cost
-//! nothing at all: not a match arm, not a skip list. That is §8's whole design, arriving
-//! unchanged in a second document type, and it is the return on S1.
-//!
-//! Contexts never talk to each other. A child is told where it lives when it is created, and
-//! all mutation flows through the shared [`Builder`] — the same rule `grind_sheet::odf::read`
-//! follows, so there is no child-to-parent channel to get wrong and no downcasting.
+//! The ODT content model: one context per element read (`doc/odt-format.md` §§2–3). **\[ODT\]**
+//! Everything else falls to `grind_core::odf::context::Ignore`, so the `text-content` alternatives
+//! outside the scope line (`doc/text-core.md`) cost no code. Contexts never talk to each other;
+//! all mutation goes through the shared [`Builder`].
 
 use std::collections::HashMap;
 
@@ -23,111 +16,82 @@ use grind_core::odf::xml::element_extent;
 use crate::model::{Block, BlockId, BlockKind, Document, Run};
 use crate::style::{self, CharStyle};
 
-/// How deeply a list may nest before we stop counting.
-///
-/// §9's rule applied to a different axis: never trust the file's structure to be sane. A
-/// crafted document nesting `text:list` ten thousand deep is otherwise a depth counter that
-/// overflows a `u32`. The context stack itself is already bounded by `MAX_DEPTH`, so this only
-/// has to keep the *number* honest.
+/// How deeply a list may nest before the count stops — so a crafted ten-thousand-deep `text:list`
+/// cannot overflow it (§9); the context stack is bounded separately.
 const MAX_LIST_DEPTH: u32 = 64;
 
-/// How many `style:style` definitions a document may contribute before we stop collecting.
-///
-/// The same rule [`MAX_LIST_DEPTH`] follows on a different axis: never trust the file to be
-/// sane. A crafted document declaring a million one-attribute styles is otherwise a map that
-/// grows without bound while nothing in the body ever refers to any of them. Far above what a
-/// real document reaches — a two-hundred-page Writer file lands in the low thousands.
+/// How many `style:style` definitions a document may contribute before collecting stops, so a
+/// million declared styles cannot grow a map without bound. Far above a real document's few
+/// thousand.
 const MAX_STYLES: usize = 100_000;
 
 /// Everything the contexts share: the document under construction, and the style stack.
 pub struct Builder {
     pub doc: Document,
-    /// The **named** `text:style-name`s currently open, outermost first.
-    ///
-    /// `text:span` nests and the model is flat, so this is the composition
-    /// `doc/text-core.md` describes: a run takes the whole stack, joined, rather than the
-    /// innermost name. Lossy for the names, lossless for the rendering.
-    ///
-    /// A span whose name is an *automatic* style contributes an entry here too, so that the
-    /// stack stays parallel with [`Builder::props`] and popping is symmetric — but its entry is
-    /// the automatic style's `style:parent-style-name`, or nothing. The generated name itself
-    /// never survives, because it means nothing outside the file that generated it
-    /// ([`crate::style`]).
+    /// The named `text:style-name`s currently open, outermost first — composed into a run's name,
+    /// since `text:span` nests and the model is flat (`doc/text-core.md`). An automatic style's
+    /// span pushes its parent's name, or nothing, so the stack stays parallel with
+    /// [`Builder::props`]; its generated name never survives ([`crate::style`]).
     spans: Vec<Option<String>>,
-    /// The direct formatting of each open span, in the same order — one entry per entry of
-    /// [`Builder::spans`], already composed with everything outside it, so the innermost is
-    /// what a run takes.
+    /// The direct formatting of each open span, parallel to [`Builder::spans`] and already
+    /// composed with everything outside it.
     props: Vec<CharStyle>,
-    /// Every `style:style` of family `text` this document declares, by name.
-    ///
-    /// Populated before the body, because ODF puts `office:font-face-decls`,
-    /// `office:styles` and `office:automatic-styles` ahead of `office:body` in both physical
-    /// forms — so a single pass has every definition in hand by the time a span refers to one.
+    /// Every `style:style` of family `text`, by name — collected before the body, which ODF always
+    /// puts after the style sections.
     styles: HashMap<String, TextFamily>,
-    /// `office:font-face-decls`: a `style:name` to the family it stands for. The indirection
-    /// LibreOffice writes instead of `fo:font-family`, resolved on the way in so that the model
-    /// carries the fact rather than the reference.
+    /// `office:font-face-decls`: a `style:name` to its family, resolved on reading so the model
+    /// carries the family rather than the reference.
     fonts: HashMap<String, String>,
-    /// The `xlink:href` of the `text:a` currently open, if any. Not a stack: the schema gives
-    /// `text:a` `paragraph-content` rather than `paragraph-content-or-hyperlink`
-    /// (rng:16453), so a hyperlink cannot nest inside a hyperlink.
+    /// The `xlink:href` of the open `text:a`, if any. One slot: `text:a` holds
+    /// `paragraph-content`, so links cannot nest (rng:16453).
     href: Option<String>,
     /// How deep in `text:list` elements we are. 0 outside any list.
     list_depth: u32,
-    /// The `text:list` elements open right now, outermost first — where each starts and its
-    /// attributes — recorded against every block read inside them (`Source::lists`).
+    /// The `text:list` elements open now, outermost first, with where each starts and its
+    /// attributes (`Source::lists`).
     open_lists: Vec<(usize, String)>,
-    /// The tables currently open, outermost first — each with the row number the next
-    /// `table:table-row` in it will take. A stack, because `table-table-cell-content` admits
-    /// `table:table` (rng:16126) and a table inside a cell counts its own rows.
+    /// The tables open now, outermost first, each with the row number its next `table:table-row`
+    /// takes.
     tables: Vec<OpenTable>,
     /// How many tables have been opened, for naming one the document did not name.
     next_table: u32,
-    /// The `table:table-cell` currently open, if any — every block opened while this is set is
-    /// a block *in* that cell (`crate::model::Cell`). Not a stack: `TableCell` keeps the one it
-    /// displaced and puts it back, which is what makes a table inside a cell read as its own
-    /// table rather than as part of the outer one.
+    /// The `table:table-cell` open now, if any; every block opened meanwhile is in that cell
+    /// (`crate::model::Cell`). A cell of a nested table leaves it as it is, so the inner table's
+    /// paragraphs belong to the outer cell ([`TableCell`]).
     cell: Option<crate::model::Cell>,
-    /// The image being assembled out of the `draw:frame`(s) currently open, if any — see
-    /// [`PendingImage`].
+    /// The image being assembled from the open `draw:frame`(s) ([`PendingImage`]).
     image: Option<PendingImage>,
-    /// How many `draw:frame` are open right now. LibreOffice wraps a resizable frame's image
-    /// in a second, inner frame (through a `draw:text-box`), so this is what tells the
-    /// outermost one's `end` from the inner one's — only the outermost emits a [`Run::Image`].
+    /// How many `draw:frame` are open. LibreOffice wraps a resizable image in an inner frame
+    /// (through a `draw:text-box`); only the outermost frame's end emits a [`Run::Image`].
     frame_depth: u32,
-    /// The original bytes, kept only when they are a package — a zip has parts outside
-    /// `content.xml` (`Pictures/foo.jpg`) that a `draw:image`'s `xlink:href` may point at, and
-    /// resolving one means going back to the archive it came from.
+    /// The original bytes when they are a package, for a `draw:image`'s `xlink:href` into
+    /// `Pictures/`.
     package: Option<Vec<u8>>,
-    /// Every `style:page-layout` read so far, by name. In `office:automatic-styles` of
-    /// `styles.xml` in a package and of the one document in the flat form.
+    /// Every `style:page-layout` read so far, by name.
     page_layouts: HashMap<String, grind_core::page::PageGeometry>,
-    /// Every paragraph style read so far, and whether it was automatic — an automatic one belongs
-    /// to its part, so `styles.xml`'s are forgotten before `content.xml` is read, as
-    /// [`Builder::styles`]' are.
+    /// Every paragraph style read so far, and whether it was automatic; `styles.xml`'s automatic
+    /// ones are forgotten before `content.xml` is read, like [`Builder::styles`]'.
     paragraph_styles: HashMap<String, (bool, crate::paragraph::ParagraphStyle)>,
     /// Every `text:list-style`, by name, and whether it is an automatic one.
     list_styles: HashMap<String, (bool, crate::numbering::ListStyle)>,
     /// The levels of the `text:list-style` being read.
     list_levels: std::collections::BTreeMap<u32, crate::numbering::Level>,
     /// The lists open around the block being read, innermost last: the list style in effect and
-    /// the numbering chain the list counts in (`crate::numbering::ListMark`).
+    /// the numbering chain it counts in (`crate::numbering::ListMark`).
     list_frames: Vec<(Option<String>, usize)>,
-    /// The chains handed out, the last top-level one of each style, and each `xml:id`'s — what
-    /// `text:continue-numbering` and `text:continue-list` continue.
+    /// The numbering chains handed out, the last top-level chain of each style, and each
+    /// `xml:id`'s — what `text:continue-numbering` and `text:continue-list` continue.
     chains: usize,
     chain_of_style: HashMap<Option<String>, usize>,
     chain_of_id: HashMap<String, usize>,
-    /// The list item being read: its `text:start-value`, whether it is a `text:list-header`,
-    /// and whether its first block is still to come.
+    /// The list item being read: its `text:start-value`, whether it is a `text:list-header`, and
+    /// whether its first block is still to come.
     item: Option<(Option<u32>, bool, bool)>,
     /// The `style:tab-stops` of the paragraph style being read ([`TabStopsDef`]).
     tab_stops: Option<Vec<crate::paragraph::TabStop>>,
-    /// Every `style:master-page` read so far: its name and the page layout it names, in
-    /// document order, so "the first one" means what the file said first.
+    /// Every `style:master-page` read so far — its name and page layout — in document order.
     master_pages: Vec<(String, String)>,
-    /// Each master page's `style:next-style-name`: the master the page after one of its own is
-    /// set on.
+    /// Each master page's `style:next-style-name`.
     master_next: HashMap<String, String>,
     /// Each master page's header and footer paragraphs, by its name.
     master_marginals: HashMap<String, Marginals>,
@@ -150,10 +114,10 @@ pub struct Builder {
     cell_styles: HashMap<String, (bool, crate::table_look::CellLook)>,
     /// Every table-column style's width in millimetres, and whether it was automatic.
     column_styles: HashMap<String, (bool, Option<f64>)>,
-    /// Each table's look as read, by name: its column styles in order, its heading rows and the
-    /// style each cell names — resolved once every style is known.
     /// The level indents of the list or outline style being read.
     list_indents: std::collections::BTreeMap<u32, crate::numbering::LevelIndent>,
+    /// Each table's look as read, by name — its column styles, heading rows and each cell's
+    /// style — resolved once every style is known.
     table_pending: HashMap<String, PendingLook>,
 }
 
@@ -182,8 +146,8 @@ struct Marginals {
 struct OpenTable {
     name: String,
     row: u32,
-    /// Whether this table is recorded in [`super::source::Source::tables`]: a top-level table
-    /// read from a file. A nested one is flattened into its cell (`TableCell`) and is not.
+    /// Whether this table is recorded in [`super::source::Source::tables`]: a top-level table read
+    /// from a file.
     recorded: bool,
     /// Where its start tag ends, until the first row says where the column declarations do.
     columns_from: Option<usize>,
@@ -191,31 +155,27 @@ struct OpenTable {
     before: usize,
 }
 
-/// One `draw:frame` (rng:5089) being read, gathered from however many of them turn out to be
-/// nested around the actual `draw:image` — LibreOffice always wraps one in a second frame for
-/// resizing, and this build does not distinguish that from a document that only had one.
+/// One `draw:frame` (rng:5089) being read, gathered across however many frames are nested around
+/// the `draw:image`; LibreOffice always wraps one in a second for resizing.
 #[derive(Default)]
 struct PendingImage {
     /// `draw:mime-type` off the `draw:image` itself.
     mime: Option<String>,
     /// The bytes, once `office:binary-data` has been read out and decoded.
     data: Option<Vec<u8>>,
-    /// `svg:width` / `svg:height` off whichever frame had them first — outermost preferred,
-    /// since that is the size a person actually sees.
+    /// `svg:width` / `svg:height` from the first frame that has them, outermost preferred.
     width: Option<String>,
     height: Option<String>,
-    /// `text:anchor-type` off the outermost frame — where the picture is anchored, which is
-    /// what decides whether it sits in the sentence or at the top of the paragraph.
+    /// `text:anchor-type` from the outermost frame — whether the picture sits in the sentence or
+    /// at the top of the paragraph.
     anchor: Option<String>,
-    /// `svg:title` / `svg:desc` off whichever frame had them first — LibreOffice puts them on
-    /// the frame holding the picture, which is the inner one when it wrapped a caption.
+    /// `svg:title` / `svg:desc` from the first frame that has them — the inner one when
+    /// LibreOffice wrapped a caption.
     title: Option<String>,
     description: Option<String>,
-    /// The plain text of the frame's own caption paragraph (`text:p text:style-name="Figure"`
-    /// or whatever a document called it) — everything [`TextBoxSearch`] sees that is not the
-    /// nested resizing frame itself. Not a separate run until the outermost frame closes, so
-    /// it lands *after* the image rather than before it however the caption's text nodes and
-    /// its sequence field arrive.
+    /// The plain text of the frame's own caption paragraph — everything [`TextBoxSearch`] sees
+    /// except the nested frame. Emitted when the outermost frame closes, so it lands after the
+    /// image whatever order its parts arrive in.
     caption: String,
     /// The outermost frame's start tag in the source, for [`super::source::Source::frames`].
     start: Option<std::ops::Range<usize>>,
@@ -223,8 +183,8 @@ struct PendingImage {
 
 /// One `style:style` of family `text`, as the document declared it.
 struct TextFamily {
-    /// Whether it came from `office:automatic-styles`. Automatic means generated, which is why
-    /// it may be resolved away and a named one may not — [`crate::style`] makes the argument.
+    /// Whether it came from `office:automatic-styles`: an automatic style may be resolved away, a
+    /// named one may not ([`crate::style`]).
     automatic: bool,
     parent: Option<String>,
     props: CharStyle,
@@ -235,10 +195,8 @@ struct TextFamily {
 impl Builder {
     pub fn new() -> Self {
         Builder {
-            // Blocks come from the file. A document that declares none stays empty rather than
-            // inheriting the empty paragraph a *new* document gets — `Document::default`'s own
-            // comment is the other half of this, and `sheet/src/odf/read.rs` says the same thing
-            // about `Sheet1`.
+            // Blocks come from the file; a document declaring none stays empty
+            // (`Document::default` is for new documents).
             doc: Document::empty(),
             spans: Vec::new(),
             props: Vec::new(),
@@ -281,9 +239,6 @@ impl Builder {
         }
     }
 
-    /// Settle [`Document::page`] once every part has been read: the master page called
-    /// `Standard` (what Writer applies when nothing says otherwise), or the first one there is,
-    /// and the page layout it names. A master page naming a layout nobody declared is no page.
     /// Resolve every table's look against the cell and column styles, once every part is read.
     pub fn settle_table_looks(&mut self) {
         for (name, pending) in std::mem::take(&mut self.table_pending) {
@@ -322,12 +277,14 @@ impl Builder {
             .collect();
     }
 
-    /// Called once the paragraph styles are settled, since the first paragraph's style decides
-    /// which master page starts the document.
+    /// Settle [`Document::page`] once every part is read: the master page called `Standard`, or
+    /// the first there is, and its page layout; a layout nobody declared is no page. Called after
+    /// the paragraph styles settle, since the first paragraph's style decides which master starts
+    /// the document.
     pub fn settle_page(&mut self) {
         let named = |name: &str| self.master_pages.iter().find(|(m, _)| m == name);
-        // The master the first paragraph's style names, if any — Writer's *First Page* — and the
-        // one the pages after it are set on: its `next-style-name`, else itself.
+        // The master the first paragraph's style names (Writer's First Page), and the one later
+        // pages are set on: its `next-style-name`, else itself.
         let first = self
             .doc
             .blocks
@@ -388,9 +345,8 @@ impl Builder {
             .filter(|first| rest.as_ref().is_some_and(|rest| rest.0 != first.0))
             .map(|first| marginals_of(&first));
 
-        // Every master page, by name, so a paragraph that starts a page on a master of its own
-        // anywhere in the document — a letter in a series — gets that one's page, header and
-        // footer rather than only the first page's (`crate::model::Master`).
+        // Every master page by name, so a paragraph that starts a page on its own master anywhere
+        // — a letter in a series — gets its page, header and footer (`crate::model::Master`).
         self.doc.rest_master = rest.as_ref().map(|(name, _)| name.clone());
         let masters: Vec<(String, crate::model::Master)> = self
             .master_pages
@@ -416,39 +372,33 @@ impl Builder {
         self.doc.masters = masters.into_iter().collect();
     }
 
-    /// Record the package this document is being read from, so a `draw:image`'s `xlink:href`
-    /// can later be resolved against it. Called from `odf::read` before parsing starts.
+    /// Record the package being read, for resolving `xlink:href`s. Called before parsing.
     pub fn set_package(&mut self, bytes: Vec<u8>) {
         self.package = Some(bytes);
     }
 
-    /// A part of the package this document was read from, by path — `None` for the flat form
-    /// (nothing to resolve against) and for anything the archive does not actually hold.
+    /// A part of the package by path; `None` for the flat form and for a missing part.
     fn resolve_part(&self, path: &str) -> Option<Vec<u8>> {
         super::package::part(self.package.as_deref()?, path)
     }
 
-    /// Open a `text:span`, resolving its style name into a name the model keeps and the
-    /// formatting the model applies.
-    ///
-    /// The one place `doc/text-core.md`'s line between a *generated* style and a *named* one is
-    /// drawn. A name nothing declares is kept as a name: an unknown style is a fact about the
-    /// document, and inventing formatting for it would be worse than carrying it inert.
+    /// Open a `text:span`, resolving its style into a name the model keeps and formatting it
+    /// applies — where `doc/text-core.md`'s line between generated and named styles is drawn. An
+    /// undeclared name is kept as a name rather than given invented formatting.
     fn open_span(&mut self, name: Option<&str>) {
         let mut props = self.props.last().cloned().unwrap_or_default();
         let kept = match name.and_then(|name| self.styles.get(name).map(|s| (name, s))) {
             Some((name, style)) if style.automatic => {
                 props.layer(&style.props);
-                // Where the formatting came from, when that style says more than the fields
-                // do — so restyling this run later starts from it ([`CharStyle::origin`]).
+                // Where the formatting came from, when that style says more than the fields, so a
+                // restyle starts from it ([`CharStyle::origin`]).
                 if style.extras {
                     props.origin = crate::style::Origin::new(name);
                 }
                 style.parent.clone()
             }
-            // A declared *named* style: its properties are the document's own vocabulary and
-            // stay behind the name. Nothing is layered, which is what keeps `Emphasis` a
-            // structural fact rather than an italic that has forgotten why.
+            // A declared named style stays behind its name, so `Emphasis` is a structural fact
+            // rather than an italic that forgot why.
             Some((name, _)) => Some(name.to_owned()),
             None => name.map(str::to_owned),
         };
@@ -468,12 +418,12 @@ impl Builder {
         }
     }
 
-    /// Drop every automatic style read so far — called after `styles.xml`, whose automatic
-    /// styles only that part can refer to.
+    /// Drop every automatic style read so far — after `styles.xml`, whose automatic styles only
+    /// that part can name.
     pub fn forget_automatic_styles(&mut self) {
-        // A header's or footer's paragraphs are the one thing that names `styles.xml`'s own
-        // automatic styles (`MP1`, centred and set in the letterhead's face), and `content.xml`
-        // may reuse those names for something else: each is kept under a name no file spells.
+        // A header's or footer's paragraphs name `styles.xml`'s automatic styles (`MP1`), which
+        // `content.xml` may reuse for something else, so each is kept under a name no file can
+        // spell.
         for paragraphs in self
             .master_marginals
             .values_mut()
@@ -501,12 +451,9 @@ impl Builder {
         self.styles.retain(|_, style| !style.automatic);
     }
 
-    /// Hand the automatic character styles to the source, so that a formatting edit can splice
-    /// by reusing a name the file already spells (`super::source::TextStyle`).
-    ///
-    /// Called once, after parsing: a `HashMap` has no order and a splice needs a stable one, so
-    /// the list is sorted by name rather than left to iteration order — two saves of the same
-    /// document must produce the same bytes.
+    /// Hand the automatic character styles to the source, so a formatting edit can splice by
+    /// reusing a name the file spells (`super::source::TextStyle`). Sorted by name, so two saves
+    /// of one document are the same bytes.
     pub fn publish_styles(&mut self) {
         let mut styles: Vec<super::source::TextStyle> = self
             .styles
@@ -537,14 +484,12 @@ impl Builder {
         }
     }
 
-    /// Start a block and make it current, returning its id so the caller can record where it
-    /// sat in the file (R6).
+    /// Start a block and make it current, returning its id for recording where it sat (R6).
     fn open(&mut self, kind: BlockKind, style: Option<String>) -> BlockId {
         let id = self.doc.next_id();
         let mut block = Block::new(id, kind);
         block.style = style;
-        // Where it sits in a table, if a `table:table-cell` is open around it. The second axis
-        // of the flat sequence, and the only line in this function that knows tables exist.
+        // Its table cell, if one is open around it.
         block.cell = self.cell.clone();
         block.generated = self.generating;
         block.section = self.section;
@@ -583,8 +528,8 @@ impl Builder {
         id
     }
 
-    /// Remember where a picture's outermost frame is, so a regenerated paragraph can write the
-    /// file's own frame back rather than one rebuilt from the four things the model reads.
+    /// Remember where a picture's outermost frame is, so a regenerated paragraph writes the file's
+    /// own frame back.
     fn record_frame(&mut self, image: &Run, start_tag: Option<std::ops::Range<usize>>) {
         let (Some(key), Some(start_tag)) = (super::source::image_key(image), start_tag) else {
             return;
@@ -597,11 +542,8 @@ impl Builder {
         }
     }
 
-    /// R6: remember where this block's element is, so a later save can replace it in place.
-    ///
-    /// Recorded only for the flat form — a package is a zip and has no diff to preserve — and
-    /// only when the extent actually resolves. A block with no span simply cannot be spliced,
-    /// which the writer treats as "regenerate" rather than as an error.
+    /// R6: remember where this block's element is, so a save can replace it in place. A block
+    /// whose extent does not resolve cannot be spliced, and the writer regenerates.
     fn record(&mut self, id: BlockId, start_tag: std::ops::Range<usize>) {
         let Some(source) = self.doc.source.as_deref() else {
             return;
@@ -643,8 +585,8 @@ impl Builder {
         }
     }
 
-    /// The column declarations of the table being read end where `at` begins — called by its
-    /// first row, or its first header-row group.
+    /// The column declarations of the table being read end where `at` begins — called by its first
+    /// row or header-row group.
     fn columns_end(&mut self, at: usize) {
         let Some(table) = self.tables.last_mut() else {
             return;
@@ -666,8 +608,8 @@ impl Builder {
         }
     }
 
-    /// Hand the start tag at `span`, in its open form, to the table being read — when that
-    /// table is recorded and the tag is spelled with the prefixes a writer can safely change.
+    /// Hand the start tag at `span` to the table being read, when that table is recorded and the
+    /// tag's prefixes are ones a writer can change.
     fn record_table(
         &mut self,
         mut with: impl FnMut(&mut super::source::TableSource, &str),
@@ -699,12 +641,11 @@ impl Builder {
         }
     }
 
-    /// Remember an element of `office:text` the model does not read, and which block it came
-    /// after (`super::source::Sibling`).
+    /// Remember an element of `office:text` the model does not read, and the block it followed
+    /// (`super::source::Sibling`).
     fn record_sibling(&mut self, start_tag: std::ops::Range<usize>) {
-        // Inside a section an unread element is carried with the section's own bytes when the
-        // section is untouched, and a section rebuilt without it is refused by the save's loss
-        // check — kept twice, it would be written twice.
+        // Inside a section an unread element travels with the section's own bytes; kept twice, it
+        // would be written twice.
         if self.section.is_some() {
             return;
         }
@@ -719,10 +660,8 @@ impl Builder {
         }
     }
 
-    /// Append text to the block being read, with whatever styling is open.
-    ///
-    /// Merges into the previous run when the styling matches, so a paragraph split across
-    /// several `Event::Text`s by an entity reference is one run rather than three.
+    /// Append text to the block being read with the open styling, merging into the previous run
+    /// when the styling matches, so text split by an entity reference is one run.
     fn push_text(&mut self, text: &str) {
         if text.is_empty() {
             return;
@@ -732,9 +671,8 @@ impl Builder {
         let props = self.props.last().cloned().unwrap_or_default();
         let href = self.href.clone();
         let Some(block) = self.doc.blocks.last_mut() else {
-            // Character data outside any block. Real files have it — it is the indentation
-            // between elements — and `Context::text` already defaults to a no-op, so this only
-            // fires for a document whose structure we did not follow. Dropping it is §9.
+            // Character data outside any block — indentation between elements, or structure not
+            // followed — is dropped (§9).
             return;
         };
         if let Some(Run::Text {
@@ -758,10 +696,9 @@ impl Builder {
         });
     }
 
-    /// The element whose start tag is at `start`, as a [`Run::Kept`] showing `text` — or, where
-    /// there are no bytes to keep it from, just the text, which is what was read before kept
-    /// runs existed. A kept element showing nothing is a zero-width run, a position like a
-    /// bookmark.
+    /// The element whose start tag is at `start`, as a [`Run::Kept`] showing `text`, or just the
+    /// text when there are no bytes to keep. A kept element showing nothing is zero-width, a
+    /// position like a bookmark.
     fn keep(&mut self, start: std::ops::Range<usize>, text: &str) {
         let xml = self
             .doc
@@ -807,9 +744,8 @@ impl Context<Builder> for Root {
                 Some(Box::new(Root))
             }
             (Ns::Office, "body") => Some(Box::new(Body)),
-            // Both style containers, and the flag is the whole difference between them:
-            // automatic styles are generated and may be resolved into direct formatting,
-            // named ones are the document's vocabulary and keep their names.
+            // Automatic styles are generated and may be resolved into direct formatting; named
+            // ones keep their names.
             (Ns::Office, "automatic-styles") => Some(Box::new(Styles { automatic: true })),
             (Ns::Office, "styles") => Some(Box::new(Styles { automatic: false })),
             (Ns::Office, "font-face-decls") => Some(Box::new(FontFaces)),
@@ -819,11 +755,8 @@ impl Context<Builder> for Root {
     }
 }
 
-/// `office:font-face-decls` — `style:font-name` to a real family (§5.2 of the spreadsheet's
-/// notes, and the reason `grind_sheet::style::CellStyle` deliberately carries no font at all).
-///
-/// Resolved here so that the model holds `"Georgia"` rather than `"F1"`, which is what makes a
-/// font reachable from a shell without teaching every shell about a second vocabulary.
+/// `office:font-face-decls` — `style:font-name` to a real family, so the model holds `"Georgia"`
+/// rather than `"F1"`.
 struct FontFaces;
 
 impl Context<Builder> for FontFaces {
@@ -831,8 +764,7 @@ impl Context<Builder> for FontFaces {
         if name.is(Ns::Style, "font-face")
             && let Some(declared) = attrs.get(Ns::Style, "name")
         {
-            // `svg:font-family` is where ODF puts it; `fo:font-family` appears in files from
-            // producers that treated the two as interchangeable, and reading both costs a line.
+            // `svg:font-family` is ODF's place; some producers write `fo:font-family`.
             if let Some(family) = attrs
                 .get(Ns::Svg, "font-family")
                 .or_else(|| attrs.get(Ns::Fo, "font-family"))
@@ -851,13 +783,12 @@ impl Context<Builder> for FontFaces {
     }
 }
 
-/// The prefix a header's or footer's own automatic paragraph style is kept under once
-/// `styles.xml` is read ([`Builder::forget_automatic_styles`]). A style name is an `NCName`, so no
-/// file can spell one starting with a space.
+/// The prefix a header's or footer's own automatic paragraph style is kept under once `styles.xml`
+/// is read ([`Builder::forget_automatic_styles`]); no `NCName` starts with a space.
 const MARGINAL_STYLE: &str = " styles.xml ";
 
-/// `office:master-styles` — only each `style:master-page`'s name and the page layout it names.
-/// Its headers and footers are read into [`crate::marginal`], for printing.
+/// `office:master-styles`: each `style:master-page`'s name and page layout, and its headers and
+/// footers into [`crate::marginal`], for printing.
 struct MasterStyles;
 
 impl Context<Builder> for MasterStyles {
@@ -882,7 +813,7 @@ impl Context<Builder> for MasterStyles {
 }
 
 /// One `style:master-page`: its header and footer (`crate::marginal`). The first-page and
-/// left-page variants are an `Ignore` subtree, named in that module.
+/// left-page variants are ignored.
 struct MasterPage {
     name: String,
 }
@@ -906,9 +837,8 @@ impl Context<Builder> for MasterPage {
 struct MarginalText {
     master: String,
     header: bool,
-    /// Whether this is the header or footer itself rather than a `text:section` inside one —
-    /// LibreOffice wraps a header in a section whenever someone put one there, and its
-    /// paragraphs are the header's all the same (`tdf116848.odt`).
+    /// Whether this is the header or footer itself rather than a `text:section` inside one;
+    /// LibreOffice wraps a header in a section when one was put there (`tdf116848.odt`).
     top: bool,
 }
 
@@ -958,8 +888,8 @@ impl Context<Builder> for MarginalInline {
         let paragraph = b.marginal.as_mut()?;
         match (name.ns, name.local.as_str()) {
             (Ns::Text, "span" | "a") => return Some(Box::new(MarginalInline { closes: false })),
-            // A line drawn on the page — a fold mark, a rule — is the master's, not the
-            // paragraph's: its ends are `svg:` lengths from the page's corner.
+            // A line on the page — a fold mark, a rule — is the master's, its ends `svg:` lengths
+            // from the corner.
             (Ns::Draw, "line") => {
                 let at = |local: &str| {
                     attrs
@@ -990,9 +920,8 @@ impl Context<Builder> for MarginalInline {
                 let count = attrs.count(Ns::Text, "c", 1000) as usize;
                 paragraph.push_text(&" ".repeat(count));
             }
-            // Any other field — the file's name, a date, the chapter — shows its cached text,
-            // on paper as in the body. A note's body is not the header's text, and nothing
-            // outside `text:` is text at all.
+            // Any other field — file name, date, chapter — shows its cached text. A note's body is
+            // not the header's text, and nothing outside `text:` is text.
             (Ns::Text, local) if !matches!(local, "note" | "ruby-text") => {
                 return Some(Box::new(MarginalInline { closes: false }));
             }
@@ -1038,8 +967,8 @@ impl Context<Builder> for GraphicStyleDef {
     }
 }
 
-/// A `table-cell` or `table-column` style: a cell's fill, borders, padding and vertical
-/// alignment, or a column's width (`crate::table_look`).
+/// A `table-cell` or `table-column` style: a cell's fill, borders, padding and vertical alignment,
+/// or a column's width (`crate::table_look`).
 struct TableStyleDef {
     name: String,
     column: bool,
@@ -1126,7 +1055,7 @@ enum ParagraphTarget {
 }
 
 /// A paragraph style — named, automatic or the default — read for the properties a page needs
-/// (`crate::paragraph`). Everything else in it is an `Ignore` subtree, as before.
+/// (`crate::paragraph`).
 struct ParagraphStyleDef {
     target: ParagraphTarget,
     props: crate::paragraph::ParagraphProps,
@@ -1153,8 +1082,8 @@ impl Context<Builder> for ParagraphStyleDef {
             props.page_number = attrs.get(Ns::Style, "page-number").map(str::to_owned);
             return Some(Box::new(TabStopsDef));
         } else if name.is(Ns::Style, "text-properties") {
-            // The family the way a run's is read: the font-face indirection first, resolved to
-            // the family it stands for, and the XSL-FO quoting taken off.
+            // The family as a run's is read: the font-face reference resolved, the XSL-FO quoting
+            // removed.
             props.font_family = attrs
                 .get(Ns::Style, "font-name")
                 .and_then(|face| b.fonts.get(face).cloned())
@@ -1192,9 +1121,8 @@ impl Context<Builder> for ParagraphStyleDef {
     }
 }
 
-/// A paragraph style's `style:paragraph-properties`, for its one child read: `style:tab-stops`,
-/// whose stops are handed to the style through [`Builder::tab_stops`] — a child has no channel
-/// back to its parent.
+/// A paragraph style's `style:paragraph-properties`, for `style:tab-stops`, handed over through
+/// [`Builder::tab_stops`].
 struct TabStopsDef;
 
 impl Context<Builder> for TabStopsDef {
@@ -1208,8 +1136,8 @@ impl Context<Builder> for TabStopsDef {
                 (b.tab_stops.as_mut(), attrs.get(Ns::Style, "position"))
             && stops.len() < MAX_STYLES
         {
-            // The leader's character, where its text states one, else the one its style draws;
-            // a space or `none` is no leader.
+            // The leader character its text states, else its style's; a space or `none` is no
+            // leader.
             let leader = attrs
                 .get(Ns::Style, "leader-text")
                 .filter(|t| !t.trim().is_empty())
@@ -1291,16 +1219,10 @@ impl Context<Builder> for PageLayout {
     }
 }
 
-/// `office:automatic-styles` or `office:styles` — the `style:style` declarations.
-///
-/// Only family `text` is *collected*. A paragraph or table style is a `None` here and therefore
-/// an `Ignore` subtree, exactly as any other unmodelled element is: the block's own
-/// `text:style-name` is kept verbatim and never resolved (`doc/text-core.md` gates that).
-///
-/// Its **name** is recorded whatever the family, into [`Document::styles`]. That is a different
-/// question from what the style contains — *does this name refer to anything the document
-/// declares?* — and a paragraph style is exactly the case that makes it worth asking, since a
-/// block's `text:style-name` is one (`doc/dsl.md` §4.3, `undeclared-style`).
+/// `office:automatic-styles` or `office:styles` — the `style:style` declarations: text styles for
+/// runs, paragraph styles ([`ParagraphStyleDef`]), and table cell and column styles
+/// ([`TableStyleDef`]). Every name, whatever the family, goes into [`Document::styles`] for
+/// `undeclared-style` (`doc/dsl.md` §4.3).
 struct Styles {
     automatic: bool,
 }
@@ -1388,8 +1310,8 @@ impl Context<Builder> for Styles {
     }
 }
 
-/// One `text:list-style` (rng:17558): what each level's items wear (`crate::numbering`) — or,
-/// with `outline`, the document's `text:outline-style` (rng:17530), whose levels are numbers.
+/// One `text:list-style` (rng:17558): what each level's items wear (`crate::numbering`) — or, with
+/// `outline`, the `text:outline-style` (rng:17530), whose levels are numbers.
 struct ListStyleDef {
     name: String,
     automatic: bool,
@@ -1448,8 +1370,8 @@ impl Context<Builder> for ListStyleDef {
     }
 }
 
-/// Inside one list level: `style:list-level-properties` and, in it, the
-/// `style:list-level-label-alignment` that places the label and the text (rng:13281).
+/// Inside one list level: `style:list-level-properties` and its
+/// `style:list-level-label-alignment`, which places the label and the text (rng:13281).
 struct LevelProps {
     level: u32,
 }
@@ -1492,8 +1414,8 @@ impl Context<Builder> for TextStyleDef {
             self.extras = true;
             return None;
         }
-        // `style:font-name` is LibreOffice's spelling and `fo:font-family` the schema's plain
-        // one; a document may use either and this build stores the family in both cases.
+        // `style:font-name` is LibreOffice's spelling and `fo:font-family` the schema's; either
+        // gives the family.
         let family = attrs
             .get(Ns::Fo, "font-family")
             .map(style::unquote_family)
@@ -1517,8 +1439,8 @@ impl Context<Builder> for TextStyleDef {
             background: attrs.get(Ns::Fo, "background-color").map(str::to_owned),
             origin: Default::default(),
         };
-        // Anything else on the element is something this model does not read — superscript,
-        // a language, letter spacing — and makes the style one a restyle must build *from*.
+        // Anything else on the element (superscript, a language, letter spacing) is unread, and
+        // makes the style one a restyle must build from.
         const READ: [(Ns, &str); 9] = [
             (Ns::Fo, "font-family"),
             (Ns::Style, "font-name"),
@@ -1557,23 +1479,20 @@ struct Body;
 
 impl Context<Builder> for Body {
     fn start_child(&mut self, name: &Name, _a: &Attrs, _b: &mut Builder) -> Option<Ctx> {
-        // `office:text`, not `text:text` — the body element is in the *office* namespace
-        // (rng:7693), and it is the one place in this reader where the prefix a person reads
-        // and the namespace the element is in do not spell the same word.
+        // `office:text`, not `text:text`: the body is in the office namespace (rng:7693).
         name.is(Ns::Office, "text").then(|| Box::new(Text) as Ctx)
     }
 }
 
-/// `office:text` — the body. Its content is a **flat** sequence (`doc/odt-format.md` §2), so
-/// this context and [`ListItem`] both dispatch the same block set.
+/// `office:text` — the body, a flat sequence (`doc/odt-format.md` §2); it and [`ListItem`]
+/// dispatch the same blocks.
 struct Text;
 
 impl Context<Builder> for Text {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         let child = block_child(name, attrs, b);
-        // Something the model has no block for — the prelude's `text:sequence-decls`, a
-        // section, a table of contents. Its bytes are kept with the block it followed, so a
-        // save that regenerates the body puts it back where it was.
+        // Something the model has no block for — `text:sequence-decls`, a section, a table of
+        // contents — kept with the block it followed, so a regenerated body puts it back.
         if child.is_none() {
             b.record_sibling(attrs.span());
         }
@@ -1581,11 +1500,9 @@ impl Context<Builder> for Text {
     }
 }
 
-/// The blocks that may appear in a body or inside a list item.
-///
-/// One function rather than two identical match arms, because `text-list-item-content` admits
-/// the same things `office-text-content-main` does. Everything outside `doc/text-core.md`'s
-/// scope line simply returns `None` and is swallowed whole.
+/// The blocks that may appear in a body or a list item (`text-list-item-content` admits what
+/// `office-text-content-main` does). Anything outside `doc/text-core.md`'s scope returns `None`
+/// and is swallowed.
 fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
     let style = attrs.get(Ns::Text, "style-name").map(str::to_owned);
     match (name.ns, name.local.as_str()) {
@@ -1595,25 +1512,24 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
                 depth => BlockKind::ListItem { depth },
             };
             let id = b.open(kind, style);
-            // An index's entry has no place in the file a splice could write it back to: the
-            // index element is kept whole instead (`Builder::generating`).
+            // An index's entry has no place a splice could write it back to; the index element is
+            // kept whole (`Builder::generating`).
             if !b.generating {
                 b.record(id, attrs.span());
             }
             Some(Box::new(Paragraph))
         }
         (Ns::Text, "h") => {
-            // `text:outline-level` is required and unbounded (rng:6867), so a level of 9 is a
-            // document to load rather than an error. Missing or unparseable means 1: a heading
-            // that says it is a heading is one, whatever else it fails to say.
+            // `text:outline-level` is required and unbounded (rng:6867); missing or unparseable
+            // means 1.
             let level = attrs
                 .get(Ns::Text, "outline-level")
                 .and_then(|v| v.trim().parse::<u32>().ok())
                 .filter(|n| *n > 0)
                 .unwrap_or(1);
             let id = b.open(BlockKind::Heading { level }, style);
-            // What the outline's numbering needs of a heading beyond its level: whether it is
-            // left out of it, and a number of its own (`crate::numbering`).
+            // What the outline's numbering needs beyond the level: whether it is left out, and a
+            // number of its own (`crate::numbering`).
             let header = attrs.get(Ns::Text, "is-list-header") == Some("true");
             let start = attrs
                 .get(Ns::Text, "start-value")
@@ -1630,8 +1546,8 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
                     },
                 );
             }
-            // An index's entry has no place in the file a splice could write it back to: the
-            // index element is kept whole instead (`Builder::generating`).
+            // An index's entry has no place a splice could write it back to; the index element is
+            // kept whole (`Builder::generating`).
             if !b.generating {
                 b.record(id, attrs.span());
             }
@@ -1640,7 +1556,7 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         (Ns::Text, "list") => {
             let before = b.open_lists.len();
             // The style in effect is the list's own or its enclosing list's; a top-level list
-            // starts a numbering of its own unless it says it continues one.
+            // starts its own numbering unless it says it continues one.
             let frames = b.list_frames.len();
             let style = attrs
                 .get(Ns::Text, "style-name")
@@ -1680,18 +1596,15 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
             }
             Some(Box::new(List::new(before, frames)))
         }
-        // `table:table` is one of `text-content`'s own alternatives (rng:16938), which is why
-        // it belongs here beside the paragraph and not somewhere special: in a text document a
-        // table is a *block*, and its cells hold blocks in turn.
+        // `table:table` is one of `text-content`'s alternatives (rng:16938): in a text document a
+        // table is a block, and its cells hold blocks.
         (Ns::Table, "table") => Some(Box::new(Table::open(
             attrs.get(Ns::Table, "name"),
             attrs.span(),
             b,
         ))),
-        // A section (rng:16697) holds the document's own text: its blocks are read in place,
-        // so they are shown and a splice edits them inside it. What a section *is* — its own
-        // columns, a protected range — is not modelled, and a regenerate that would drop the
-        // wrapper is refused by the save's loss check.
+        // A section (rng:16697): its blocks are read in place, shown and spliced inside it. A
+        // regenerate that would drop the wrapper is refused by the save's loss check.
         (Ns::Text, "section") => {
             let start = b
                 .doc
@@ -1723,9 +1636,9 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
             });
             Some(Box::new(SectionText { parent }))
         }
-        // An index (rng:17154 onwards): the element is kept whole, as any element the model has
-        // no block for is, and the entries its `text:index-body` last generated are read as
-        // blocks marked generated — shown, never written as blocks.
+        // An index (rng:17154 on): the element is kept whole, and the entries its
+        // `text:index-body` last generated are read as generated blocks — shown, never written as
+        // blocks.
         (Ns::Text, local) if INDEXES.contains(&local) => {
             b.record_sibling(attrs.span());
             Some(Box::new(Index))
@@ -1734,8 +1647,8 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
     }
 }
 
-/// A section's content: the body's own blocks, with the section put back as the innermost one
-/// when it closes.
+/// A section's content: the body's blocks, with the section restored as the innermost when it
+/// closes.
 struct SectionText {
     parent: Option<usize>,
 }
@@ -1778,8 +1691,7 @@ impl Context<Builder> for Index {
     }
 }
 
-/// One generated entry: the paragraph it is, read as any paragraph is, with the flag lowered
-/// when it closes.
+/// One generated entry, read as any paragraph is, the flag lowered when it closes.
 struct Generated(Option<Ctx>);
 
 impl Context<Builder> for Generated {
@@ -1801,19 +1713,14 @@ impl Context<Builder> for Generated {
     }
 }
 
-/// `table:table` (rng:15939) in a text document.
-///
-/// Its columns are skipped — `table:table-column` carries a width and a style, both of which
-/// live in the table style this model does not carry (`crate::model::Cell`) — so what is read
-/// is the rows, and the extent is derived from the cells that turn up in them.
-///
-/// The name and the running row number live on [`Builder::tables`] rather than in this context,
-/// because the rows of one table can arrive through three different containers
-/// (`table:table-header-rows` and the two group elements) and all of them have to keep counting
-/// from where the last one stopped.
+/// `table:table` (rng:15939) in a text document: its rows and cells give the blocks their
+/// coordinates, and the extent is derived from them. Its column declarations and styles are
+/// recorded for its look ([`crate::table_look`]) and for writing it back
+/// ([`super::source::TableSource`]). The name and row counter live on [`Builder::tables`], since
+/// rows arrive through three containers (`table:table-header-rows` and the two groups).
 struct Table {
-    /// Whether this context is the `table:table` itself, rather than one of the row containers
-    /// inside it — which is to say, whether its `end` is the one that closes the table.
+    /// Whether this context is the `table:table` itself rather than a row container inside it —
+    /// whether its `end` closes the table.
     owns: bool,
     /// Whether its rows are the table's heading (`table:table-header-rows`).
     header: bool,
@@ -1821,10 +1728,8 @@ struct Table {
 
 impl Table {
     fn open(name: Option<&str>, span: std::ops::Range<usize>, b: &mut Builder) -> Self {
-        // A table with no `table:name` is legal — the attribute is optional (rng:15970) — and
-        // still has to be told from the table after it, since the model folds a table out of
-        // the blocks that name it. So one is generated, from a counter that makes it unique
-        // within this document.
+        // `table:name` is optional (rng:15970), but the model tells tables apart by name, so a
+        // unique one is generated.
         let name = match name.map(str::trim).filter(|name| !name.is_empty()) {
             Some(name) => name.to_owned(),
             None => {
@@ -1866,9 +1771,8 @@ impl Table {
         }
     }
 
-    /// A container of rows that is not the table — a header-row group, or one of the two
-    /// grouping elements. It shares the table's name and its row counter, and closing it
-    /// closes nothing.
+    /// A container of rows that is not the table — a header-row group or a grouping element —
+    /// sharing the table's name and row counter.
     fn group(header: bool) -> Self {
         Table {
             owns: false,
@@ -1880,10 +1784,8 @@ impl Table {
 impl Context<Builder> for Table {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         match (name.ns, name.local.as_str()) {
-            // The three containers that hold rows without being the table: a header-row group
-            // and the two grouping elements. Reading them as row containers is one arm and
-            // keeps a header row's cells, which are ordinary cells with a style this model does
-            // not carry anyway.
+            // The three row containers that are not the table, read as one: a header row's cells
+            // are ordinary cells.
             (Ns::Table, "table-header-rows") => {
                 b.columns_end(attrs.span().start);
                 Some(Box::new(Table::group(true)))
@@ -1933,9 +1835,8 @@ impl Context<Builder> for Table {
     }
 
     fn end(&mut self, b: &mut Builder) {
-        // One pop per push, and `Table::open` is the only constructor that pushes: a row
-        // container's `end` runs while the table around it is still open, so popping there
-        // would close a table that has rows left to read.
+        // One pop per push, and only `Table::open` pushes: a row container's `end` runs while its
+        // table is still open.
         if self.owns
             && let Some(table) = b.tables.pop()
             && table.recorded
@@ -1954,12 +1855,8 @@ impl Context<Builder> for Table {
     }
 }
 
-/// The largest repeat or span this reader will honour.
-///
-/// `MAX_LIST_DEPTH`'s rule on the table axis: `table:number-columns-repeated` is a
-/// `positiveInteger` with no ceiling, and a document claiming a million columns is a
-/// memory-exhaustion vector rather than an intent. The same clamp `Attrs::count` already takes
-/// for `text:s`.
+/// The largest repeat or span honoured: `table:number-columns-repeated` is an unbounded
+/// `positiveInteger`, and a million columns is a memory-exhaustion vector.
 const MAX_TABLE_SPAN: u32 = 1024;
 
 /// `table:table-row` (rng:16223) — the cells of one row, numbered as they arrive.
@@ -1998,8 +1895,8 @@ impl Context<Builder> for Row {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         let covered = match (name.ns, name.local.as_str()) {
             (Ns::Table, "table-cell") => false,
-            // A position covered by a span above or to the left of it (rng:14298). It carries
-            // no content of its own and its only job here is to move the column on.
+            // A position covered by a span above or to the left (rng:14298): no content, it only
+            // moves the column on.
             (Ns::Table, "covered-table-cell") => true,
             _ => return None,
         };
@@ -2043,17 +1940,14 @@ impl Context<Builder> for Row {
     }
 
     fn end(&mut self, b: &mut Builder) {
-        // `table:number-rows-repeated` **expanded**, for `text:s`'s reason
-        // (`doc/odt-format.md` §3.3): a repeat is run-length encoding, and a model that stored
-        // the count instead of the rows would make every reader of it repeat this arithmetic.
-        // Bounded by `MAX_TABLE_SPAN`, since the attribute is an unbounded `positiveInteger`.
+        // `table:number-rows-repeated` expanded, as `text:s` is (`doc/odt-format.md` §3.3),
+        // bounded by `MAX_TABLE_SPAN`.
         repeat_blocks(b, self.before, self.repeated, |cell, copy| cell.row += copy);
     }
 }
 
-/// Copy the blocks added since `before` once per extra repeat, moving each copy's cell by
-/// `shift` — the expansion `table:number-rows-repeated` and `table:number-columns-repeated`
-/// both need, in one place because they are the same operation on two axes.
+/// Copy the blocks added since `before` once per extra repeat, each copy's cell moved by `shift` —
+/// for row and column repeats alike.
 fn repeat_blocks(
     b: &mut Builder,
     before: usize,
@@ -2077,24 +1971,19 @@ fn repeat_blocks(
     }
 }
 
-/// `table:table-cell` (rng:16052), whose content is `zeroOrMore text-content` (rng:16126) —
-/// **the same production as the body**, which is why this dispatches through `block_child` and
-/// a cell may hold a heading or a list as readily as a paragraph.
+/// `table:table-cell` (rng:16052), whose content is `zeroOrMore text-content` (rng:16126), the
+/// body's own production, so a cell may hold a heading or a list.
 struct TableCell {
-    /// How many blocks the document had before this cell opened, so that an empty cell can be
-    /// told from one that read something.
+    /// How many blocks the document had before this cell opened, to tell an empty cell.
     before: usize,
     /// The cell this one is nested inside, restored on the way out.
     outer: Option<crate::model::Cell>,
     /// `table:number-columns-repeated`, expanded on the way out the way a row's is.
     repeated: u32,
-    /// Whether this cell is the one blocks are attributed to. False for a cell of a **nested**
-    /// table: `table-table-cell-content` admits `table:table` (rng:16126), and this model has
-    /// one coordinate per block rather than a path, so the inner table's paragraphs are read as
-    /// paragraphs of the cell that holds it. Lossy for the inner table's *structure* and
-    /// lossless for its text — the `text:list` trade again (`crate::model::Cell`), and the
-    /// alternative was worse: a nested table splits the outer table's block run in two, and a
-    /// flat model cannot then say which of the two is which.
+    /// Whether this cell is the one blocks are attributed to. False in a nested table: the model
+    /// has one coordinate per block, so the inner table's paragraphs belong to the outer cell —
+    /// its text kept, its structure not, since a nested table would split the outer one's block
+    /// run.
     owns: bool,
 }
 
@@ -2120,18 +2009,13 @@ impl Context<Builder> for TableCell {
     }
 
     fn end(&mut self, b: &mut Builder) {
-        // **An empty cell still gets a paragraph**, which is a measured decision rather than a
-        // convenience: LibreOffice materialises one for `<table:table-cell/>` on every save
-        // (`doc/odt-format.md` §5b), so a model that left the cell blockless would gain a block
-        // on the first round trip and fail loop C. Normalising here makes reading idempotent
-        // instead — and gives a shell somewhere to put the caret, which is the same thing seen
-        // from the other end.
+        // An empty cell gets a paragraph: LibreOffice writes one into `<table:table-cell/>` on
+        // every save (`doc/odt-format.md` §5b), so reading stays idempotent across loop C, and a
+        // caret has somewhere to go.
         if self.owns && b.doc.blocks.len() == self.before {
             b.open(BlockKind::Paragraph, None);
         }
-        // The columns this one element stands for, expanded — `Row::end`'s twin on the other
-        // axis, and the reason a repeated empty cell comes back as the cells it meant rather
-        // than as a gap in the coordinates.
+        // The columns this element stands for, expanded, as `Row::end` does rows.
         if self.owns {
             repeat_blocks(b, self.before, self.repeated, |cell, copy| {
                 cell.column += copy
@@ -2143,12 +2027,10 @@ impl Context<Builder> for TableCell {
 
 /// `text:list` — nests through its items, never through itself (rng:17494).
 struct List {
-    /// Whether this element actually incremented the depth. A list past [`MAX_LIST_DEPTH`]
-    /// still reads its items; it just stops making the number bigger, and has to remember not
-    /// to decrement on the way out.
+    /// Whether this element incremented the depth; past [`MAX_LIST_DEPTH`] its items still read,
+    /// and it must not decrement on the way out.
     counted: bool,
-    /// How many entries [`Builder::open_lists`] had before this one, so its `end` restores
-    /// exactly that.
+    /// How many entries [`Builder::open_lists`] had before this one, restored at its `end`.
     open: usize,
     /// And how many [`Builder::list_frames`].
     frames: usize,
@@ -2166,11 +2048,10 @@ impl List {
 
 impl Context<Builder> for List {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
-        // Depth is incremented when the first item opens rather than when the list does, so
-        // that an empty `text:list` costs nothing.
+        // Depth goes up when the first item opens, so an empty `text:list` costs nothing.
         match (name.ns, name.local.as_str()) {
-            // `text:list-header` holds the same content as an item and is not a numbered one;
-            // read as an item, because the distinction is numbering, which is out of scope.
+            // `text:list-header` holds an item's content without a number; read as an item, with
+            // the difference kept for numbering.
             (Ns::Text, local @ ("list-item" | "list-header")) => {
                 b.item = Some((
                     attrs
@@ -2219,8 +2100,7 @@ impl Context<Builder> for Paragraph {
     }
 }
 
-/// `paragraph-content` (rng:8405) — the inline model, shared by paragraphs, spans and
-/// hyperlinks.
+/// `paragraph-content` (rng:8405) — the inline model shared by paragraphs, spans and hyperlinks.
 fn inline_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
     match (name.ns, name.local.as_str()) {
         (Ns::Text, "span") => {
@@ -2233,11 +2113,8 @@ fn inline_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
             Some(Box::new(Hyperlink))
         }
         (Ns::Text, "s") => {
-            // ODF's run-length encoding of spaces (rng:8408). Expanded here and re-encoded on
-            // write, exactly as `table:number-columns-repeated` is — a correctness trap rather
-            // than an optimisation, and `Attrs::count` already has this shape. Clamped for the
-            // same reason it is there: a document claiming four billion spaces is a
-            // memory-exhaustion vector, not an intent.
+            // ODF's run-length encoding of spaces (rng:8408), expanded here and re-encoded on
+            // writing; clamped, since four billion spaces is a memory-exhaustion vector.
             let count = attrs.count(Ns::Text, "c", 4096);
             b.push_text(&" ".repeat(count as usize));
             None
@@ -2259,28 +2136,25 @@ fn inline_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
             None
         }
         (Ns::Draw, "frame") => Some(open_frame(attrs, b)),
-        // A field's text is its cached value (rng:8549 onwards) — what Writer last computed and
-        // what a reader of the page sees. Read as text so "Figure 1." shows its 1; the element
-        // itself is not modelled, so an edit that would regenerate the paragraph and flatten
-        // the field is refused by the save's loss check rather than written.
-        // A comment (`office:annotation`, rng:7787) and the end of the range it covers: kept
-        // whole, showing nothing — a margin note is not text of the paragraph.
-        // A tracked change's marks (rng:9170): where an insertion starts and ends, and where a
-        // deletion was. The change itself is in `text:tracked-changes`, carried with the body.
+        // A tracked change's marks (rng:9170) and a comment with the end of its range
+        // (`office:annotation`, rng:7787): kept whole, showing nothing. The change itself is in
+        // `text:tracked-changes`, carried with the body.
         (Ns::Text, "change" | "change-start" | "change-end")
         | (Ns::Office, "annotation" | "annotation-end") => Some(Box::new(FieldText {
             start: attrs.span(),
             text: String::new(),
             silent: true,
         })),
+        // A field's text is its cached value (rng:8549 on), so "Figure 1." shows its 1; the element
+        // is kept, and an edit that would flatten it is refused at save.
         (Ns::Text, local) if FIELDS.contains(&local) => Some(Box::new(FieldText {
             start: attrs.span(),
             text: String::new(),
             silent: false,
         })),
-        // A footnote or endnote: its citation is shown where it stands, and its paragraphs are
-        // read beside the blocks (`crate::marginal::Note`). The element itself is not modelled,
-        // so an edit that would regenerate the paragraph and lose it is refused at save.
+        // A footnote or endnote: its citation shows where it stands and its paragraphs are read
+        // beside the blocks (`crate::marginal::Note`); the element is kept, so an edit that would
+        // lose it is refused at save.
         (Ns::Text, "note") => {
             let block = b.doc.blocks.last()?;
             let note = crate::marginal::Note {
@@ -2300,9 +2174,8 @@ fn inline_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
     }
 }
 
-/// The text fields whose cached value is shown (rng:8549–9116): every field that carries one as
-/// character content. `text:page-number` and `text:page-count` included — in the body they are
-/// rare, and their cached value is all a continuous view has.
+/// The text fields whose cached value is shown (rng:8549–9116): every field carrying one as
+/// character content, `text:page-number` and `text:page-count` included.
 pub(crate) const FIELDS: &[&str] = &[
     "sequence",
     "sequence-ref",
@@ -2426,8 +2299,8 @@ impl Context<Builder> for NoteBody {
     }
 }
 
-/// A field: its character content, the cached value, shown where it stands — and the element
-/// kept whole ([`Run::Kept`]), so an edit beside it writes the field back rather than its text.
+/// A field: its cached value shown where it stands, and the element kept whole ([`Run::Kept`]), so
+/// an edit beside it writes the field back.
 struct FieldText {
     start: std::ops::Range<usize>,
     text: String,
@@ -2447,9 +2320,8 @@ impl Context<Builder> for FieldText {
     }
 }
 
-/// Open a `draw:frame`, whether it is the outermost one or one LibreOffice nested inside it
-/// (through a `draw:text-box`) purely for resizing. Only the first frame's size is kept unless
-/// it did not say, and only the outermost frame's [`Frame::end`] turns any of this into a run.
+/// Open a `draw:frame`, outermost or one LibreOffice nested inside for resizing. The first frame's
+/// size is kept unless it gave none, and only the outermost [`Frame::end`] makes a run.
 fn open_frame(attrs: &Attrs, b: &mut Builder) -> Ctx {
     let outermost = b.frame_depth == 0;
     let pending = b.image.get_or_insert_with(PendingImage::default);
@@ -2469,9 +2341,8 @@ fn open_frame(attrs: &Attrs, b: &mut Builder) -> Ctx {
     Box::new(Frame)
 }
 
-/// `draw:frame` (rng:5089) — a picture, and the only content of one this build reads.
-/// Everything else a frame can hold (`draw:object`, `draw:applet`, a plain shape) is out of
-/// scope and inert, exactly like any other unmodelled element.
+/// `draw:frame` (rng:5089) — a picture; anything else a frame holds (`draw:object`, a shape) is
+/// inert.
 struct Frame;
 
 impl Context<Builder> for Frame {
@@ -2480,12 +2351,9 @@ impl Context<Builder> for Frame {
             (Ns::Draw, "frame") => Some(open_frame(attrs, b)),
             (Ns::Draw, "image") => {
                 let mime = attrs.get(Ns::Draw, "mime-type").map(str::to_owned);
-                // `common-draw-data-attlist` (rng:1621) vs. `office-binary-data` (rng:5383):
-                // the schema's own choice between a reference and inline bytes. A package
-                // form's picture is usually the first — `Pictures/foo.jpg`, resolved against
-                // the archive this document was opened from — so it is fetched eagerly, before
-                // `b.image` is borrowed, rather than waiting on a child element that never
-                // comes.
+                // `xlink:href` (rng:1621) or inline `office:binary-data` (rng:5383). A package's
+                // picture is usually the first, resolved against the archive here, before
+                // `b.image` is borrowed.
                 let href = attrs.get(Ns::Xlink, "href").map(str::to_owned);
                 let resolved = href.as_deref().and_then(|href| b.resolve_part(href));
                 if let Some(pending) = &mut b.image {
@@ -2499,9 +2367,7 @@ impl Context<Builder> for Frame {
                     None => Some(Box::new(ImageData)),
                 }
             }
-            // The frame's own caption text, read for its plain text alone — its own styling
-            // and its sequence field's structure are out of scope, exactly like everywhere
-            // else a run only keeps text (`doc/text-core.md`).
+            // The caption's plain text only (`doc/text-core.md`).
             (Ns::Draw, "text-box") => Some(Box::new(TextBoxSearch)),
             (Ns::Svg, "title") => Some(Box::new(AltText::default())),
             (Ns::Svg, "desc") => Some(Box::new(AltText {
@@ -2514,8 +2380,8 @@ impl Context<Builder> for Frame {
 
     fn end(&mut self, b: &mut Builder) {
         b.frame_depth = b.frame_depth.saturating_sub(1);
-        // Only the outermost frame's close turns what was gathered into a run — an inner one
-        // closing first would otherwise emit a second, empty image from what is left.
+        // Only the outermost frame's close makes a run, or an inner one closing first would emit
+        // an empty image.
         if b.frame_depth == 0
             && let Some(pending) = b.image.take()
             && let Some(data) = pending.data
@@ -2535,8 +2401,7 @@ impl Context<Builder> for Frame {
             };
             b.record_frame(&image, pending.start);
             b.push_run(image);
-            // After the image, never before it — whatever order its text nodes and its
-            // sequence field arrived in while the text-box was still open.
+            // The caption after the image, whatever order its parts arrived in.
             if !pending.caption.is_empty() {
                 b.push_run(Run::plain(pending.caption));
             }
@@ -2544,8 +2409,7 @@ impl Context<Builder> for Frame {
     }
 }
 
-/// `svg:title` or `svg:desc` on a frame (rng:1756) — plain text, kept by the first frame that
-/// says it.
+/// `svg:title` or `svg:desc` on a frame (rng:1756), kept from the first frame that has it.
 #[derive(Default)]
 struct AltText {
     long: bool,
@@ -2570,11 +2434,9 @@ impl Context<Builder> for AltText {
     }
 }
 
-/// `draw:text-box` — a frame's caption. Modelled enough to find an image LibreOffice nests
-/// inside one *and* to keep the caption's own plain text (`text:p`/`text:h`'s character data,
-/// plus a `text:sequence` field's computed value, rng:8655's `<rng:text/>`) — everything else
-/// the caption paragraph could carry (its own styling, a hyperlink) is out of scope the same
-/// way it would be anywhere else a run keeps only text.
+/// `draw:text-box` — a frame's caption: read to find an image LibreOffice nests inside it and to
+/// keep the caption's plain text (character data, and a `text:sequence`'s computed value,
+/// rng:8655).
 struct TextBoxSearch;
 
 impl Context<Builder> for TextBoxSearch {
@@ -2593,9 +2455,8 @@ impl Context<Builder> for TextBoxSearch {
     }
 }
 
-/// `draw:image` (rng:5380) — its own attributes are read by [`Frame::start_child`], which also
-/// resolves an `xlink:href` reference eagerly. This context is only reached when there was
-/// none, so it has to find the `office:binary-data` (rng:7681) inline instead.
+/// `draw:image` (rng:5380), reached only when [`Frame::start_child`] found no `xlink:href`, so it
+/// looks for inline `office:binary-data` (rng:7681).
 struct ImageData;
 
 impl Context<Builder> for ImageData {
@@ -2605,9 +2466,7 @@ impl Context<Builder> for ImageData {
     }
 }
 
-/// `office:binary-data` — base64, wrapped across many lines by every writer that produces it,
-/// this one included. Whitespace is not part of the alphabet, so it is stripped before
-/// decoding rather than tripping the decoder over a document being pretty-printed.
+/// `office:binary-data`: base64 wrapped across lines; whitespace is stripped before decoding.
 #[derive(Default)]
 struct BinaryData {
     base64: String,
@@ -2646,8 +2505,7 @@ impl Context<Builder> for Span {
     }
 }
 
-/// `text:a` — a hyperlink. Cannot nest inside itself per the schema, so the href is one slot
-/// rather than a stack.
+/// `text:a` — a hyperlink, which cannot nest.
 struct Hyperlink;
 
 impl Context<Builder> for Hyperlink {

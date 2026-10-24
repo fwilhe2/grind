@@ -2,14 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Spelling in a text document (`doc/spelling.md`) — where a block's words are, which of its
-//! runs are not prose, and the address a misspelling is reported at.
-//!
-//! What a word is and which words are checked at all is `grind_core::spell`'s, shared with the
-//! spreadsheet, and re-exported here so this crate's callers reach it by the paths they always
-//! used. What only a word processor has is a *run*: a link's text and a run set in a monospace
-//! face (`` `code` ``) are not prose, and neither is a field or a footnote kept as the text it
-//! shows.
+//! Spelling in a text document (`doc/spelling.md`): where a block's words are, which runs are not
+//! prose, and where a misspelling is reported. What a word is is `grind_core::spell`'s,
+//! re-exported. Not prose: a link's text, a monospace run (`` `code` ``), a field or a footnote.
 
 use std::ops::Range;
 
@@ -20,10 +15,8 @@ pub use grind_core::spell::{
 use crate::model::{Block, Run};
 use crate::style::CharStyle;
 
-/// One word a [`Lexicon`] does not know, where it is.
-///
-/// `offset` and `len` count characters, as every offset in `loc.rs` does, so `p12+40` is where it
-/// starts and a shell selects `[offset, offset + len)` to replace it.
+/// One word a [`Lexicon`] does not know, and where. `offset` and `len` count characters, so
+/// `p12+40` is where it starts and a shell selects `[offset, offset + len)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Misspelling {
     pub block: usize,
@@ -38,8 +31,7 @@ impl Misspelling {
         format!("{}+{}", crate::loc::format(self.block), self.offset)
     }
 
-    /// Where the word starts — what [`crate::find::step`] steps between, so "the next
-    /// misspelling" wraps the way "the next match" does.
+    /// Where the word starts, for [`crate::find::step`] to step between.
     pub fn caret(&self) -> crate::Caret {
         crate::Caret {
             block: self.block,
@@ -47,15 +39,14 @@ impl Misspelling {
         }
     }
 
-    /// Whether this is the word somebody is still typing: the caret at its end. Every shell
-    /// leaves that one alone while nothing is selected, as every word processor waits.
+    /// Whether this is the word being typed — the caret at its end — which every shell leaves
+    /// alone while nothing is selected.
     pub fn being_typed(&self, caret: crate::Caret) -> bool {
         caret.block == self.block && caret.offset == self.offset + self.len
     }
 }
 
-/// Whether a run of text is set as something other than prose: a link's text, or a run in a
-/// monospace face — what the `` `code` `` notation types, or a family that says it is one.
+/// Whether a run is set as something other than prose: a link's text, or a monospace run.
 fn prose_run(props: &CharStyle, href: Option<&str>) -> bool {
     if href.is_some() {
         return false;
@@ -71,8 +62,8 @@ fn prose_run(props: &CharStyle, href: Option<&str>) -> bool {
         || family.contains("consol"))
 }
 
-/// The character ranges of `block` that are not prose: every run that [`prose_run`] refuses, and
-/// every run that is not text at all (a field, a footnote kept as the text it shows).
+/// The character ranges of `block` that are not prose: runs [`prose_run`] refuses, and runs that
+/// are not text (a field, a footnote).
 fn skipped(block: &Block) -> Vec<Range<usize>> {
     let mut out = Vec::new();
     let mut at = 0;
@@ -91,8 +82,8 @@ fn skipped(block: &Block) -> Vec<Range<usize>> {
     out
 }
 
-/// Every word of one block that should be checked, as `(range, word)` — the core's
-/// [`grind_core::spell::candidates`], less the block's own non-prose runs.
+/// Every word of one block to check, as `(range, word)` — [`grind_core::spell::candidates`] less
+/// the block's non-prose runs.
 pub fn candidates(block: &Block) -> Vec<(Range<usize>, String)> {
     grind_core::spell::candidates(&block.text(), &skipped(block))
 }
@@ -111,8 +102,7 @@ pub fn check_block(block: &Block, index: usize, lexicon: &dyn Lexicon) -> Vec<Mi
         .collect()
 }
 
-/// The first [`GUESS_SAMPLE`] checkable words of `blocks` — what a guess at the language reads
-/// (`grind_core::spell::guess`).
+/// The first [`GUESS_SAMPLE`] checkable words of `blocks`, for a guess at the language.
 pub fn sample<'a>(blocks: impl IntoIterator<Item = &'a Block>) -> Vec<String> {
     blocks
         .into_iter()

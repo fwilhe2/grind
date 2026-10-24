@@ -3,20 +3,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! Where a caret goes that is not a question about lines: one character on, one word on, the end
-//! of the document, and which caret a click on the page lands on.
+//! of the document, and which caret a click lands on. The vertical motions are [`App::caret_line`]
+//! and [`App::caret_line_bounds`].
 //!
-//! The vertical motions are [`App::caret_line`] and [`App::caret_line_bounds`] — defined by line
-//! layout, and so the core's since `doc/text-layout.md` decided it. These are the horizontal
-//! half, which is about characters and blocks, and which every shell had written for itself:
-//! stepping one character off the end of a block onto the next was in `grind-tui`, `grind-web`,
-//! `grind-text-gtk` and `grind-win32`, four copies of the same twenty lines, and hit-testing a
-//! click through a [`Flow`] was in both windows that stack one. The macOS shell would have been
-//! the fifth (`doc/macos-shell.md`, M6), which is where they stopped being copies.
-//!
-//! What is **not** here is the Windows pane's word motion. Ctrl+Right on Windows stops at the
-//! start of the next word and ⌥→ on a Mac at the end of this one, and each shell honours its
-//! platform's rule — [`word`] is the one the GNOME window and the Mac share, over
-//! [`crate::word`]'s idea of what a word is, which *is* the same everywhere.
+//! Word motion differs by platform — Ctrl+Right on Windows stops at the start of the next word, ⌥→
+//! on a Mac at the end of this one — so each shell keeps its platform's rule; [`word`] is the
+//! GNOME window's and the Mac's, over [`crate::word`]'s definition of a word.
 
 use grind_core::layout::Layout;
 
@@ -46,8 +38,7 @@ pub fn end(app: &App) -> Caret {
 }
 
 /// One character left (`delta` negative) or right from `at`, rolling onto the neighbouring block
-/// at either end — a document is one flow, not a list of boxes, which is the rule
-/// [`App::caret_line`] follows too. At either end of the document it stays where it is.
+/// at either end, and staying put at the ends of the document.
 pub fn step(app: &App, at: Caret, delta: i32) -> Caret {
     let mut caret = at;
     if delta > 0 {
@@ -70,10 +61,8 @@ pub fn step(app: &App, at: Caret, delta: i32) -> Caret {
     caret
 }
 
-/// One word right (`delta` positive) or left from `at`: the far edge of a word in this block —
-/// its end going right, its start going left — or, with no word left in that direction, the end
-/// of this block, and then the near end of the next, which is where a further press goes on
-/// from. [`crate::word`] owns what a word is.
+/// One word right (`delta` positive) or left: the far edge of a word in this block — its end going
+/// right, its start going left — or the end of this block, then the near end of the next.
 pub fn word(app: &App, at: Caret, delta: i32) -> Caret {
     let text = app.input_text(at.block).unwrap_or_default();
     let len = text.chars().count();
@@ -93,15 +82,11 @@ pub fn word(app: &App, at: Caret, delta: i32) -> Caret {
     }
 }
 
-/// Which caret a point on the page lands on: `x` from the text column's left edge and `y` from
-/// the document's top, both in the unit `flow` was stacked in. `layout_of` lays one block out in
-/// the face and at the measure it was drawn at — the shell's own [`crate::Faces`], asked the same
-/// way a motion asks it, so that a click and a Down-arrow cannot disagree about where an offset
-/// is.
-///
-/// **Nearest, never nothing** — [`Flow::at`]'s rule carried down to the offset: a click in the
-/// margin beside a line lands at that line's near end, and one below the last block on its last
-/// line. `None` only for a document with nothing laid out.
+/// Which caret a point lands on: `x` from the text column's left edge, `y` from the document's
+/// top, in the unit `flow` was stacked in. `layout_of` lays a block out as it was drawn, through
+/// the shell's [`crate::Faces`], so a click and Down-arrow agree. The nearest, never nothing
+/// ([`Flow::at`]): beside a line lands at its near end, below the last block on its last line.
+/// `None` only when nothing is laid out.
 pub fn hit(
     flow: &Flow,
     x: f64,
@@ -171,8 +156,7 @@ mod tests {
         assert_eq!(block_len(&app, 9), 0, "no such block");
     }
 
-    /// Right to the end of a word, left to the start of one; then the block's own end, then the
-    /// next block — the GNOME window's rule and the Mac's.
+    /// Right to a word's end, left to its start; then the block's end, then the next block.
     #[test]
     fn a_word_step_goes_to_the_far_edge_then_the_block_edge_then_across() {
         let app = app(&["one two.", "three"]);
@@ -190,8 +174,8 @@ mod tests {
         assert_eq!(word(&app, START, -1), START);
     }
 
-    /// Hit-testing is the flow's block, then the layout's line, then the line's offset — and a
-    /// point outside every block still lands somewhere.
+    /// The flow's block, then the line, then the offset — and a point outside every block lands
+    /// somewhere.
     #[test]
     fn a_click_lands_on_the_nearest_caret() {
         let app = app(&["the cat sat on the mat", "end"]);

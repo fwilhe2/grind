@@ -2,14 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Projecting a text document. **\[ODT\]**
-//!
-//! One pass over the block sequence, one node per block. There is no tree to walk because
-//! there is no tree: `model.rs`'s body is flat (rng:16938), and this file is the second place
-//! that decision pays — the ODF writer folds depths back into `text:list` nesting, and this one
-//! does not have to fold anything at all.
-//!
-//! What a line looks like is [`super::inline`]'s business; what a *block* looks like is here.
+//! Projecting a text document: one pass, one node per block, nothing to fold except tables. What a
+//! line's text looks like is [`super::inline`]'s.
 
 use grind_core::DocumentKind;
 use grind_core::projection::{Emitter, Projection};
@@ -26,15 +20,13 @@ pub fn project(doc: &Document) -> Projection {
     let mut index = 0;
     while index < doc.blocks.len() {
         match doc.blocks[index].cell {
-            // An index's generated entries are not the document's text, and a projection has no
-            // index to put them back in: left out, a named gap (`doc/projection-text.md`).
+            // An index's generated entries are left out, a named gap (`doc/projection-text.md`).
             None if doc.blocks[index].generated => index += 1,
             None => {
                 write_block(&mut out, doc, index, &doc.blocks[index]);
                 index += 1;
             }
-            // A table is the one place this file *does* fold something, and it folds the same
-            // run `odf::write` does — `Document::table`, asked rather than repeated.
+            // A table folds the same run `odf::write` does — `Document::table`.
             Some(_) => {
                 let range = doc.table(index).unwrap_or(index..index + 1);
                 write_table(&mut out, doc, range.clone());
@@ -45,13 +37,9 @@ pub fn project(doc: &Document) -> Projection {
     out.finish()
 }
 
-/// One `table` node: rows of cells, each holding its own blocks.
-///
-/// **Nesting, where the model has coordinates.** A row's position is where it sits and a cell's
-/// is how many columns came before it, exactly as `list { li }` supplies a depth by nesting —
-/// so a hand-written table needs no numbers at all and a merged cell moves the ones after it
-/// along by saying `span=`. The cells are emitted in row-major order rather than in block
-/// order, which is the order both readers produce them in and the only order a grid reads in.
+/// One `table` node: rows of cells, each holding its blocks. A row's position and a cell's
+/// preceding columns give the coordinates, so a hand-written table needs no numbers, and a merged
+/// cell moves later ones along with `span=`. Cells are written row by row.
 fn write_table(out: &mut Emitter, doc: &Document, range: std::ops::Range<usize>) {
     let Some(name) = doc.blocks[range.start]
         .cell
@@ -76,9 +64,8 @@ fn write_table(out: &mut Emitter, doc: &Document, range: std::ops::Range<usize>)
                     .is_some_and(|c| c.row == row && c.column == column)
             });
             let Some(at) = at else {
-                // A position no block names: either covered by a span — in which case the
-                // `span=` that covers it already moved the column counter on when it was read
-                // back — or a hole, which is an empty cell either way.
+                // A position no block names: covered by a span (whose `span=` moves the reader's
+                // counter past it) or a hole, written as an empty cell either way.
                 if !covered(doc, range.clone(), row, column) {
                     out.begin("cell");
                     out.end();
@@ -120,9 +107,7 @@ fn write_table(out: &mut Emitter, doc: &Document, range: std::ops::Range<usize>)
     out.close();
 }
 
-/// Whether a cell's span reaches over this position — the same question `odf::write` asks, and
-/// asked here because a covered position gets no node at all: the `span=` that covers it is
-/// what moves the reader's column counter past it.
+/// Whether a cell's span reaches over this position, which then gets no node.
 fn covered(doc: &Document, range: std::ops::Range<usize>, row: u32, column: u32) -> bool {
     doc.blocks[range]
         .iter()
@@ -137,22 +122,12 @@ fn covered(doc: &Document, range: std::ops::Range<usize>, row: u32, column: u32)
         })
 }
 
-/// The projection this document was read from, with the edited blocks put back in place.
-///
-/// R6 for the third form (D5). `None` means *not applicable, regenerate* and never *failed*, and
-/// the two conditions are the same two `odf::write::splice` has, for the same reasons — the
-/// sequence must not have moved, and every edited block must sit somewhere the file actually
-/// spelled.
-///
-/// **A block is one node, so a block is one patch.** That is the whole of why the text side
-/// needs no equivalent of the spreadsheet's shape check: a paragraph whose runs, level or style
-/// changed is still a paragraph node, and re-emitting it is re-emitting one line. The one thing
-/// a re-emitted node loses is an image, which this writer has no spelling for either way
-/// (`doc/projection-text.md`), so splicing and regenerating drop exactly the same thing.
+/// The projection this document was read from, with edited blocks put back in place (R6). `None`
+/// means regenerate: the sequence moved, or an edited block sits nowhere the file spelled. A block
+/// is one node, so an edit is one patch; an image is dropped either way, having no spelling.
 pub fn splice(doc: &Document) -> Option<String> {
     let source = doc.projection_source.as_deref()?;
-    // The block sequence moved, so `p12` in the file and `p12` in the model are not the same
-    // paragraph any more — and `p12` is the address every site is keyed by.
+    // The sequence moved, so `p12` in the file is no longer `p12` in the model.
     if doc.edits.structural {
         return None;
     }
@@ -187,10 +162,8 @@ fn write_block(out: &mut Emitter, doc: &Document, index: usize, block: &Block) {
         }
     }
 
-    // An image has no spelling yet (`doc/projection-text.md` names the gap), so it is dropped
-    // and the prose around it is not. Doing that here rather than inside `inline::write` keeps
-    // that module's answer honest: it says "I cannot spell these runs", and the decision about
-    // what to do next is the writer's.
+    // An image has no spelling (`doc/projection-text.md`), so it is dropped and the prose around
+    // it kept; deciding that is the writer's, not `inline::write`'s.
     let spelled = inline::write(&block.runs).or_else(|| {
         let without: Vec<Run> = block
             .runs
@@ -207,14 +180,13 @@ fn write_block(out: &mut Emitter, doc: &Document, index: usize, block: &Block) {
         }
     }
 
-    // The block's own `text:style-name`, kept as a name — `doc/text-core.md`'s line between a
-    // style that is resolved and one that is carried.
+    // The block's own `text:style-name`, kept as a name.
     if let Some(style) = &block.style {
         out.prop("style", style.as_str());
     }
 
-    // Every address this block answers to, so a code view's go-to box and the CLI's `--anchors`
-    // speak `loc.rs`'s whole vocabulary rather than the one spelling this writer found easiest.
+    // Every address this block answers to, so a go-to box and `--anchors` speak `loc.rs`'s whole
+    // vocabulary.
     out.anchor(loc::format(index));
     if let Some(path) = loc::outline_path(doc, index) {
         out.anchor(loc::format_outline(&path));

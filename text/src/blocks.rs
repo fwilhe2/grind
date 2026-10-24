@@ -2,23 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Moving and deleting whole paragraphs from a caret — the half of *Move Up*, *Move Down* and
-//! *Delete Paragraph* that is not a menu.
-//!
-//! [`App::move_blocks`] and [`App::delete`] take addresses; a window has a caret and a
-//! selection, and needs three decisions on top of them: which blocks the verb means (every one
-//! the selection touches), where a move lands (past the neighbour, and nowhere at either end),
-//! and that a document keeps at least one paragraph. The macOS shell wrote them; the browser,
-//! the Windows pane and the GNOME window wanted the same, and a block in a table moves like any
-//! other (the model is flat).
+//! Moving and deleting whole paragraphs from a caret — Move Up, Move Down and Delete Paragraph
+//! without the menu. [`App::move_blocks`] and [`App::delete`] take addresses; this decides which
+//! blocks a selection means (every one it touches), where a move lands (past the neighbour,
+//! nowhere at either end), and that a document keeps at least one paragraph. Table blocks move
+//! like any other.
 
 use std::ops::RangeInclusive;
 
 use crate::App;
 
-/// Move blocks `first..=last` one place up or down, as one `App::move_blocks` and so one undo
-/// step. The caller moves its caret and anchor by one block the same way. `Err` is a sentence,
-/// at the top or the bottom where there is nowhere to go.
+/// Move blocks `first..=last` one place up or down, as one undo step; the caller moves its caret
+/// and anchor along. `Err` is a sentence, at the top or bottom.
 pub fn shift(app: &App, blocks: RangeInclusive<usize>, up: bool) -> Result<(), String> {
     let (first, last) = (*blocks.start(), *blocks.end());
     let to = match up {
@@ -31,9 +26,8 @@ pub fn shift(app: &App, blocks: RangeInclusive<usize>, up: bool) -> Result<(), S
         .map_err(|error| error.to_string())
 }
 
-/// Delete blocks `first..=last` in one `App::delete`, and answer the block the caret belongs at
-/// afterwards — the one that followed them, or the last there is. `Err` when they are every block
-/// there is, since a document always has somewhere for a caret to be.
+/// Delete blocks `first..=last` and return where the caret belongs — the block that followed, or
+/// the last. `Err` when they are every block, since a document needs somewhere for a caret.
 pub fn remove(app: &App, blocks: RangeInclusive<usize>) -> Result<usize, String> {
     let (first, last) = (*blocks.start(), *blocks.end());
     if first == 0 && last + 1 >= app.block_count() {

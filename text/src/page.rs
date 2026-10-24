@@ -2,30 +2,22 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Breaking a document into pages — pure arithmetic over the flow (`doc/pdf-export.md` P4).
+//! Breaking a document into pages — pure arithmetic over the flow (`doc/pdf-export.md`). Pages are
+//! derived for an export or a preview and thrown away; the editor stays one continuous column.
 //!
-//! **Pages are derived, never stored.** This runs when somebody exports or previews, and its
-//! answer is thrown away afterwards, the way `doc/view-modes.md`'s roles are: a stored page
-//! would go stale on the next keystroke and a derived one cannot. The editor stays a
-//! continuous column in every shell.
+//! Built on [`flow::lay_out`], so the spacing rules exist once: the flow is walked top to bottom
+//! and each page takes what fits, splitting a paragraph between lines and never a table row. The
+//! unit is the caller's (the PDF uses points). Three rules:
 //!
-//! **Built on [`flow::lay_out`], not beside it.** The flow already decides where every block
-//! sits down an endless page — the gaps, a heading's space above, a table's grid — and those
-//! rules must not exist twice. What this adds is the cut: the flow is walked top to bottom and
-//! each page takes as much of it as fits, splitting a paragraph *between lines* and never a
-//! table row. The unit is the caller's, as everywhere in layout; the PDF uses points.
+//! * *orphans*: a split paragraph leaves at least this many lines at the foot of the page, or
+//!   moves whole;
+//! * *widows*: and carries at least this many to the next;
+//! * a heading is kept with what follows it.
 //!
-//! **Three rules, and only three**, each a typographer's rather than a guess about LibreOffice:
+//! Space above a block at the top of a page is dropped.
 //!
-//! * *orphans* — a paragraph split across pages leaves at least this many lines at the bottom
-//!   of the first page, or it moves whole;
-//! * *widows* — and carries at least this many to the top of the next;
-//! * a **heading is kept with what follows it**, so no page ends on a heading.
-//!
-//! Space above a block that lands at the top of a page is dropped, since nothing above it is
-//! there to be spaced from. A row taller than a whole page overflows it rather than being split
-//! (ponytail: splitting a row by lines is `doc/pdf-export.md` §5's named case, and no document in
-//! hand needs it yet).
+//! ponytail: a row taller than a page overflows rather than splitting by lines
+//! (`doc/pdf-export.md` §5).
 
 use std::ops::Range;
 
@@ -42,9 +34,8 @@ pub struct Rules {
 }
 
 impl Default for Rules {
-    /// Two and two: the typographer's usual minimum, and what Writer writes on a new document's
-    /// default paragraph style. A caller printing a real document passes that document's own
-    /// instead — `grind_print` does, and none where it states none (`doc/odt-format.md` §5c).
+    /// Two and two, the usual minimum and Writer's default. A real document passes its own
+    /// (`grind_print` does, and none where it states none, `doc/odt-format.md` §5c).
     fn default() -> Self {
         Rules {
             orphans: 2,
@@ -53,17 +44,16 @@ impl Default for Rules {
     }
 }
 
-/// What a document's own paragraph style says about where pages break around a block
-/// (`fo:break-before`, `fo:break-after`, `fo:keep-with-next`; rng:2073, rng:2110) — asked of the
-/// [`Faces`] through [`Faces::breaks`], so a screen, which answers nothing, is unaffected.
+/// What a document's paragraph style says about page breaks around a block (`fo:break-before`,
+/// `fo:break-after`, `fo:keep-with-next`; rng:2073, rng:2110), asked through [`Faces::breaks`]; a
+/// screen answers nothing.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Breaks {
     /// `fo:break-before="page"`: the block starts a page.
     pub page_before: bool,
     /// `fo:break-after="page"`: the block ends one.
     pub page_after: bool,
-    /// `fo:keep-with-next`: `Some` when the style says, overriding the rule that keeps a
-    /// heading, and only a heading, with what follows it.
+    /// `fo:keep-with-next`, overriding the rule that keeps only a heading with what follows.
     pub keep_with_next: Option<bool>,
 }
 
@@ -80,8 +70,8 @@ pub struct Piece {
     pub left: f64,
     /// The measure its lines were broken at.
     pub width: f64,
-    /// Whether this is a table's heading row repeated at the top of a page the table continues
-    /// on: drawn again, and no part of the reading order.
+    /// Whether this is a table's heading row repeated at the top of a continuing page: drawn
+    /// again, not part of the reading order.
     pub repeat: bool,
 }
 
@@ -97,24 +87,21 @@ pub struct Page {
     pub restart: Option<u32>,
 }
 
-/// A kind of page, as far as cutting the document into pages is concerned: how tall its text
-/// area is, and which kind the page after it is. A master page, once its header and footer have
-/// taken their share of the sheet (`grind-print`).
+/// A kind of page for cutting purposes: its text area's height and the kind of page after it — a
+/// master page after its header and footer take their share (`grind-print`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Slot {
     pub height: f64,
     pub next: usize,
 }
 
-/// Where a block starts a page of its own kind: the [`Slot`] it is set on, and the number the
-/// page is counted as when it restarts the numbering.
+/// Where a block starts a page of its own kind: its [`Slot`], and the number it restarts counting
+/// at, if any.
 pub type Starts = std::collections::HashMap<usize, (usize, Option<u32>)>;
 
-/// Break the document into pages whose text area is `column` wide and `height` tall.
-///
-/// `faces` and `picture` are [`flow::lay_out`]'s, and the same answers must reach both, which is
-/// why they are taken here rather than a finished flow: the cut needs each block's lines, and
-/// those come from the same faces the flow was measured with.
+/// Break the document into pages with a text area `column` wide and `height` tall. `faces` and
+/// `picture` are [`flow::lay_out`]'s, since the cut needs each block's lines measured the same
+/// way.
 pub fn paginate(
     app: &App,
     faces: &dyn Faces,
@@ -135,9 +122,8 @@ pub fn paginate(
     )
 }
 
-/// [`paginate`], with the first page's text area `heights.0` tall and every other page's
-/// `heights.1` — a first page set on a master page of its own, whose header or footer takes a
-/// different share of it (`Document::first_page`).
+/// [`paginate`] with the first page's text area `heights.0` tall and the rest `heights.1` — a
+/// first page on its own master (`Document::first_page`).
 pub fn paginate_first(
     app: &App,
     faces: &dyn Faces,
@@ -166,10 +152,9 @@ pub fn paginate_first(
     )
 }
 
-/// [`paginate`] over several kinds of page: the document's first page is set on `slots[start]`,
-/// each page after on the `next` of the one before — and a block in `starts` begins a new page
-/// set on its own, wherever it is. A series of letters on one letterhead is that: every letter
-/// opens on the first-page master, and runs on to the continuation one.
+/// [`paginate`] over several kinds of page: the first on `slots[start]`, each next on the previous
+/// one's `next`, and a block in `starts` beginning a new page on its own slot — how a series of
+/// letters on one letterhead paginates.
 #[allow(clippy::too_many_arguments)]
 pub fn paginate_slots(
     app: &App,
@@ -181,8 +166,7 @@ pub fn paginate_slots(
     rules: Rules,
     picture: &dyn Fn(&BlockView, f64) -> Option<f64>,
 ) -> Vec<Page> {
-    // The flow's own idea of where everything sits, from a top of zero: a page has its own top
-    // margin, which is the page's business rather than the flow's.
+    // The flow from a top of zero; the page's own top margin is the page's business.
     let spacing = Spacing {
         top: 0.0,
         ..*spacing
@@ -215,8 +199,8 @@ pub fn paginate_slots(
                 breaks,
                 notes,
             } => {
-                // A block that opens a page on a master of its own: a new page unless this one
-                // is empty already, and then set on that master.
+                // A block opening a page on its own master: a new page unless this one is empty,
+                // set on that master.
                 if let Some(&(slot_of, restart)) = starts.get(&slot.index) {
                     if !cut.fresh() {
                         cut.turn(lines.first().map_or(slot.top, |line| line.top));
@@ -245,8 +229,8 @@ pub fn paginate_slots(
                 table,
                 header,
             } => {
-                // The heading rows of the table in hand, kept to repeat on every page it
-                // continues on; a table's first non-heading row closes the list.
+                // The table's heading rows, kept to repeat on every page it continues on; its
+                // first non-heading row ends the list.
                 if heading.first().is_some_and(|&(t, _)| t != table.as_str()) {
                     heading.clear();
                 }
@@ -298,8 +282,7 @@ impl Line {
     }
 }
 
-/// What the cut walks: a block, which may split between its lines, or a table row, which may
-/// not split at all.
+/// What the cut walks: a block, which may split between lines, or a table row, which may not.
 enum Unit {
     Block {
         slot: flow::Slot,
@@ -331,8 +314,8 @@ impl Unit {
         }
     }
 
-    /// Where the part of this unit a heading above it must stay with ends: its first
-    /// `orphans` lines, or the whole row.
+    /// Where the part of this unit a heading above it must stay with ends: its first `orphans`
+    /// lines, or the whole row.
     fn lead(&self, orphans: usize) -> f64 {
         match self {
             Unit::Block { lines, .. } => lines
@@ -352,8 +335,8 @@ fn units(
     picture: &dyn Fn(&BlockView, f64) -> Option<f64>,
     pad: f64,
 ) -> Vec<Unit> {
-    // A block's lines in the flow's coordinates. A picture, or a block the core could not lay
-    // out, is one line as tall as its slot — the flow already decided how tall that is.
+    // A block's lines in flow coordinates; a picture or an unlaid-out block is one line as tall as
+    // its slot.
     let lines_of = |slot: &flow::Slot, view: &BlockView| -> Vec<Line> {
         let whole = vec![Line {
             top: slot.top,
@@ -383,8 +366,7 @@ fn units(
     };
 
     let mut out: Vec<Unit> = Vec::new();
-    // The table and row the last unit was, when it was a row — consecutive blocks in the same
-    // row of the same table are one unit.
+    // The table and row of the last unit, so consecutive blocks of one row are one unit.
     let mut row: Option<(String, u32)> = None;
     for slot in laid.slots() {
         let Some(view) = viewport.get(slot.index) else {
@@ -438,10 +420,8 @@ fn units(
             }
         }
     }
-    // A row's cells are the boxes that start where it does, and a cell's box reaches the row's
-    // full height, so the row is at least as tall as its tallest box.
-    // Found by the first block each holds, since a cell's own padding or centring puts its text
-    // anywhere in it.
+    // A row is at least as tall as its tallest cell box; a cell is found by its first block, since
+    // padding or centring puts its text anywhere in it.
     for unit in &mut out {
         if let Unit::Row {
             slots,
@@ -479,8 +459,8 @@ impl Cut<'_> {
         self.pages.last_mut().expect("there is always a page")
     }
 
-    /// Whether nothing is on the current page yet — the one case where something too big for a
-    /// page goes on it anyway, because the next page would be no different.
+    /// Whether nothing is on the current page yet — when something too big goes on anyway, since
+    /// the next page would be no different.
     fn fresh(&self) -> bool {
         self.pages.last().is_none_or(|page| page.pieces.is_empty())
     }
@@ -513,10 +493,9 @@ impl Cut<'_> {
         self.page_height() - self.reserved
     }
 
-    /// Place a row's blocks and cells on the current page, its flow coordinates taken from
-    /// `origin` — the page's own for a row in its place, the heading's first row for a heading
-    /// repeated at the top. `repeat` marks a repeated heading, which is no part of the reading
-    /// order.
+    /// Place a row's blocks and cells on the current page, flow coordinates taken from `origin`
+    /// (the page's for a row in place, the heading's first row for a repeat). `repeat` marks a
+    /// repeated heading.
     fn place_row(
         &mut self,
         slots: &[(flow::Slot, usize)],
@@ -546,8 +525,8 @@ impl Cut<'_> {
         let mut start = 0;
         while start < lines.len() {
             let remaining = lines.len() - start;
-            // The block's footnotes go on the page its first line does, so that page is
-            // shorter by their room for the block's own lines too.
+            // A block's footnotes go on its first line's page, shortening that page for its lines
+            // too.
             let extra = if start == 0 { notes } else { 0.0 };
             let room = self.room() - extra;
             let fits = lines[start..]
@@ -603,8 +582,7 @@ mod tests {
         cell_pad: 0.0,
     };
 
-    /// Under `Fixed` at a measure of 10, `"xxxxxxxx "` is one line, so a paragraph of `n` of
-    /// them is `n` lines tall.
+    /// At `Fixed` and a measure of 10, `"xxxxxxxx "` is one line, so `n` of them are `n` lines.
     fn lines(n: usize) -> String {
         "xxxxxxxx ".repeat(n)
     }
@@ -687,8 +665,8 @@ mod tests {
 
     #[test]
     fn a_single_first_line_is_not_left_alone_at_the_foot_of_a_page() {
-        // Four lines, then one more line fits of a three-line paragraph: an orphan, so the
-        // whole paragraph moves.
+        // Four lines, then one line of a three-line paragraph would fit: an orphan, so the
+        // paragraph moves whole.
         let app = doc(&[para(4), para(3)]);
         assert_eq!(
             shape(&cut(&app, 5.0, &TIGHT)),
@@ -710,8 +688,8 @@ mod tests {
     #[test]
     fn space_above_a_block_is_dropped_at_the_top_of_a_page() {
         let spaced = Spacing { gap: 1.0, ..TIGHT };
-        // Three lines, a gap, then three lines that fit only one line: the second paragraph
-        // moves, and starts at the very top rather than one gap down.
+        // Three lines, a gap, then room for one line of three: the second paragraph moves,
+        // starting at the very top.
         let app = doc(&[para(3), para(3)]);
         let pages = cut(&app, 5.0, &spaced);
         assert_eq!(shape(&pages), vec![vec![(0, 0..3)], vec![(1, 0..3)]]);
@@ -736,8 +714,8 @@ mod tests {
 
     #[test]
     fn a_table_row_is_never_split_and_its_cells_go_with_it() {
-        // A four-line paragraph, then a two-by-two table of one-line cells: the first row fits
-        // as the fifth line, the second goes to the next page whole with its two cells.
+        // Four lines, then a two-by-two table of one-line cells: the first row fits, the second
+        // moves whole.
         let app = doc(&[para(4)]);
         app.insert_table(1, 2, 2, Some("T".into())).unwrap();
         for index in 1..5 {
@@ -767,8 +745,7 @@ mod tests {
         assert_eq!(pages[1].pieces[0].top, 0.0);
     }
 
-    /// A face that answers [`Faces::breaks`] for some blocks and leaves the rest to the
-    /// paginator's own rules.
+    /// A face that answers [`Faces::breaks`] for some blocks.
     struct Breaking(HashMap<usize, Breaks>);
 
     impl Faces for Breaking {
@@ -910,8 +887,8 @@ mod tests {
 
     #[test]
     fn a_footnote_takes_its_room_from_the_page_its_citation_starts_on() {
-        // Five units a page. Block 0 is two lines; block 1 is one line citing a two-unit note:
-        // it fits (2 + 1 + 2 = 5), and block 2's two lines then do not.
+        // Five units a page: block 0 two lines, block 1 one line citing a two-unit note (2 + 1 + 2
+        // = 5), and block 2's two lines then do not fit.
         let app = doc(&[para(2), para(1), para(2)]);
         let pages = paginate(
             &app,

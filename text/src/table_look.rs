@@ -2,31 +2,26 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What a table looks like — its column widths, its cells' styles and which of its rows are its
-//! heading — **read for showing and printing, never written** (`doc/pdf-export.md`).
+//! What a table looks like — its column widths, its cells' styles and its heading rows — read for
+//! showing and printing, never written (`doc/pdf-export.md`): a side table by table name beside
+//! the model's blocks, while a save carries the file's own table styles out (R6).
 //!
-//! The model's table is its blocks and their cells' coordinates (`crate::model::Cell`), and that
-//! is unchanged: this is a side table by table name, the way [`crate::Document::page`] is beside
-//! the blocks. A save carries the file's own `table:style-name`s and `table:table-column`s out as
-//! it always has (R6), so nothing here needs writing to survive.
-//!
-//! Sources: `style:table-column-properties`' `style:column-width` (rng:13627),
-//! `style:table-cell-properties`' `fo:background-color`, `fo:border`/`fo:border-*`,
-//! `fo:padding`/`fo:padding-*`, `style:border-line-width`/`style:border-line-width-*` and
-//! `style:vertical-align` (rng:13710), and `table:table-header-rows` (rng:13931). Where a border
-//! is drawn and how much room it takes is Writer's, measured: `doc/odt-format.md` §5c fact 18.
+//! Read from `style:table-column-properties`' `style:column-width` (rng:13627),
+//! `style:table-cell-properties`' `fo:background-color`, borders, padding,
+//! `style:border-line-width*` and `style:vertical-align` (rng:13710), and
+//! `table:table-header-rows` (rng:13931). Where a border is drawn and what room it takes is
+//! Writer's, measured (`doc/odt-format.md` §5c fact 18).
 
 use std::collections::{BTreeSet, HashMap};
 
-/// One cell's style: its fill, its four borders (top, right, bottom, left — ODF's three-part
-/// `"0.5pt solid #000000"`, verbatim), its padding in millimetres in the same order, and its
-/// vertical alignment.
+/// One cell's style: its fill, four borders (top, right, bottom, left; ODF's three-part form
+/// verbatim), padding in millimetres in the same order, and vertical alignment.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CellLook {
     pub background: Option<String>,
     pub border: [Option<String>; 4],
-    /// A `double` border's three widths in millimetres, side by side as `border` — ODF's
-    /// `style:border-line-width`: the inner line, the gap and the outer line.
+    /// A `double` border's three widths in millimetres per side — `style:border-line-width`: inner
+    /// line, gap, outer line.
     pub line_widths: [Option<[f64; 3]>; 4],
     pub padding: [f64; 4],
     pub vertical_align: Option<String>,
@@ -37,8 +32,8 @@ pub struct CellLook {
 pub struct TableLook {
     /// Each column's width in millimetres, where its column style states one.
     pub columns: Vec<Option<f64>>,
-    /// The rows inside `table:table-header-rows`, which repeat at the top of every page the
-    /// table continues on.
+    /// The rows inside `table:table-header-rows`, repeated at the top of every page the table
+    /// continues on.
     pub header_rows: BTreeSet<u32>,
     /// Each styled cell's look, by `(row, column)`.
     pub cells: HashMap<(u32, u32), CellLook>,
@@ -52,9 +47,8 @@ pub const RIGHT: usize = 1;
 pub const BOTTOM: usize = 2;
 pub const LEFT: usize = 3;
 
-/// One side of a cell's border as Writer draws it, in points: the band it occupies and the lines
-/// in that band, each `(offset, width)` measured **from the band's outside edge** — the edge away
-/// from the cell's content.
+/// One side of a cell's border as Writer draws it, in points: the band it occupies and its lines,
+/// each `(offset, width)` from the band's outside edge.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Edge {
     pub color: String,
@@ -63,14 +57,10 @@ pub struct Edge {
 }
 
 impl CellLook {
-    /// `side`'s border, or `None` where it draws nothing (`none`, a width of zero, or a
-    /// spelling that is not ODF's three parts).
-    ///
-    /// A `double` border is as thick as its three `border-line-width`s together, not its stated
-    /// width, and its two lines go on the outside in an order that depends on the side: across
-    /// the top and bottom the *outer* width is outermost, down the left and right the *inner*
-    /// one is (§5c fact 18, measured with unequal widths). A `double` with no widths stated is
-    /// three equal thirds.
+    /// `side`'s border, or `None` where nothing is drawn (`none`, zero width, or not ODF's three
+    /// parts). A `double` border is as thick as its three widths together; across the top and
+    /// bottom the outer width is outermost, down the sides the inner one is (§5c fact 18,
+    /// measured). A `double` with no widths is three equal thirds.
     pub fn edge(&self, side: usize) -> Option<Edge> {
         let border = self.border.get(side)?.as_deref()?;
         let (width, style, color) = grind_core::style::border_parts(border)?;
@@ -110,9 +100,8 @@ impl TableLook {
         self.cells.get(&(row, column))
     }
 
-    /// How much room the border across the top of `row` takes, in points: the thicker of that
-    /// row's own top border and the bottom border of the row above it — Writer draws one band
-    /// between two rows, not two (§5c fact 18).
+    /// The room the border across the top of `row` takes, in points: the thicker of its top border
+    /// and the row above's bottom one — Writer draws one band between rows (§5c fact 18).
     pub fn band_above(&self, row: u32, column: u32) -> f64 {
         let thickness = |look: Option<&CellLook>, side| {
             look.and_then(|look| look.edge(side))
@@ -125,9 +114,8 @@ impl TableLook {
         own.max(above)
     }
 
-    /// How much room the border under `row` takes inside it, in points: its bottom border's
-    /// thickness on the table's last row, and nothing on any other, whose bottom border is the
-    /// next row's [`band_above`](Self::band_above).
+    /// The room the border under `row` takes inside it, in points: its bottom border on the
+    /// table's last row, nothing elsewhere (the next row's [`band_above`](Self::band_above)).
     pub fn band_below(&self, row: u32, column: u32) -> f64 {
         if row + 1 != self.rows {
             return 0.0;

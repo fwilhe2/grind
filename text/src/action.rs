@@ -2,28 +2,19 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Every change to a text document, and its inverse. **\[ODT\]**
-//!
-//! `doc/plan.md` rule 2: **undo/redo lives in the core.** [`Document::apply`] returns the
-//! action that undoes it, and that is the whole mechanism — shells never implement history,
-//! and neither does a second document type invent a second one.
-//!
-//! The shape is `grind_sheet::action`'s, and deliberately so. What differs is that a block
-//! action carries an **index**, and indices move: inserting a block shifts every later one. So
-//! an inverse is only valid against the document that produced it, applied in order — which is
-//! exactly the guarantee an undo stack already gives.
+//! Every change to a text document, and its inverse. [`Document::apply`] returns the action that
+//! undoes it (rule 2). A block action carries an index, and indices move with insertions, so an
+//! inverse is valid only applied in order against the document that produced it — what an undo
+//! stack guarantees.
 
 use crate::model::{Block, Document};
 
-/// One change. Every variant carries what it needs to be undone without consulting the
-/// document, so a stack of inverses survives being written to disk and read back.
+/// One change, carrying what it needs to be undone without the document, so a stack of inverses
+/// survives being saved.
 #[derive(Clone, Debug)]
 pub enum Action {
-    /// Replace a block wholesale — its kind, its style and its runs.
-    ///
-    /// One action rather than separate content/style/kind edits, for the reason
-    /// `grind_sheet`'s `SetFormula` is one: a paragraph that becomes a heading and gains text
-    /// in the same keystroke must undo in one step, and two actions would get the order wrong.
+    /// Replace a block wholesale — kind, style and runs — so a paragraph that becomes a heading
+    /// and gains text in one keystroke undoes in one step.
     SetBlock { index: usize, block: Box<Block> },
     /// Insert a block, shifting everything at or after `index` down.
     InsertBlock { index: usize, block: Box<Block> },
@@ -34,19 +25,15 @@ pub enum Action {
 }
 
 impl Document {
-    /// Apply an action, returning the action that undoes it.
-    ///
-    /// `None` means the action did not apply — an index past the end, usually because an
-    /// inverse was replayed against a document it was not recorded from. Never a panic: a
-    /// stale undo entry is a thing that happens, and `App::undo` reports it as "nothing
-    /// happened" rather than taking the process down.
+    /// Apply an action, returning its inverse, or `None` when it does not apply (an index past the
+    /// end, from replaying an inverse against another document). `App::undo` reports that as
+    /// nothing happening.
     pub fn apply(&mut self, action: Action) -> Option<Action> {
         let inverse = match action {
             Action::SetBlock { index, block } => {
                 let old = self.blocks.get(index)?.clone();
-                // R6: this block's element can be replaced in place. Both ids are recorded —
-                // an edit that also changes the id has retired the old element and created a
-                // new one, and the writer needs to know about both.
+                // R6: this block's element can be replaced in place. Both ids are recorded, since
+                // an edit changing the id retires the old element.
                 self.edits.blocks.insert(old.id);
                 self.edits.blocks.insert(block.id);
                 self.blocks[index] = *block;
@@ -59,8 +46,7 @@ impl Document {
                 if index > self.blocks.len() {
                     return None;
                 }
-                // The sequence moved, so the file's structure and the model's no longer
-                // correspond — see `odf::source::Edits::structural`.
+                // The sequence moved (`odf::source::Edits::structural`).
                 self.edits.structural = true;
                 self.blocks.insert(index, *block);
                 Action::RemoveBlock { index }
@@ -77,9 +63,8 @@ impl Document {
                 }
             }
             Action::Batch(actions) => {
-                // Undoing a batch means undoing its parts **in reverse**: the second edit was
-                // made against the document the first produced. Getting this backwards is the
-                // classic command-pattern bug and it only shows up when two edits overlap.
+                // A batch undoes in reverse: each edit was made against what the one before
+                // produced.
                 let mut inverses = Vec::with_capacity(actions.len());
                 for action in actions {
                     inverses.push(self.apply(action)?);
@@ -88,8 +73,7 @@ impl Document {
                 Action::Batch(inverses)
             }
         };
-        // A bookmark may have moved, gone or arrived. Rebuilt rather than tracked, because two
-        // copies of one fact disagree eventually.
+        // A bookmark may have moved, gone or arrived; rebuilt rather than tracked.
         self.reindex_bookmarks();
         Some(inverse)
     }
@@ -121,8 +105,7 @@ mod tests {
         doc
     }
 
-    /// The property the whole mechanism rests on: apply the inverse and you are back where you
-    /// started, for every variant.
+    /// Applying the inverse returns to the start, for every variant.
     #[test]
     fn every_action_round_trips_through_its_inverse() {
         let before = doc(&["a", "b", "c"]);
@@ -163,8 +146,7 @@ mod tests {
 
     #[test]
     fn a_batch_undoes_its_parts_in_reverse() {
-        // Two removals of the *same* index: the second only means what it means because the
-        // first already happened. Undoing them forwards would put them back swapped.
+        // Two removals of the same index: undoing them forwards would swap them.
         let mut d = doc(&["a", "b", "c"]);
         let inverse = d
             .apply(Action::Batch(vec![

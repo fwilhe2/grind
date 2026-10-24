@@ -2,27 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Which word a position is in — what a double-click selects — and where the next one ends,
-//! which is what Ctrl+Right moves to.
+//! Which word a position is in — what a double-click selects — and where the next one ends, for
+//! Ctrl+Right.
 //!
-//! Here rather than in a shell for the reason `format.rs` is: four shells each deciding where a
-//! word ends is four answers, and a person who double-clicks `don't` in one window and gets a
-//! different selection in another has learned that the suite is four programs.
-//!
-//! **The rule is deliberately small.** A word is a run of characters that are alphanumeric or
-//! an underscore, joined across a single apostrophe between two of them (`don't`, `l'eau`); a
-//! run of whitespace is one unit, so a double-click between two words selects the gap rather
-//! than nothing; and anything else — punctuation, a symbol — is a unit of one character. That is
-//! not UAX #29, which would need a segmentation table this crate does not carry, and it is the
-//! same answer for every script `char::is_alphanumeric` knows, which is the Latin, Cyrillic,
-//! Greek and CJK a document here is likely to hold. The ceiling is a script written without
-//! spaces between words (Thai), where the whole run is one "word".
+//! A word is a run of alphanumerics or underscores, joined across a single apostrophe between two
+//! of them (`don't`, `l'eau`); a run of whitespace is one unit, so a double-click between words
+//! selects the gap; anything else is a unit of one character. Not UAX #29, which needs a
+//! segmentation table: the same answer for every script `char::is_alphanumeric` knows. A script
+//! written without spaces (Thai) is one word per run.
 
-/// The `[start, end)` character range of the unit containing the character at `offset` in
-/// `text` — or the one just before it, when `offset` is at the end, since a click past the last
-/// letter of a line means that word.
-///
-/// An empty `text` answers `(0, 0)`.
+/// The `[start, end)` character range of the unit containing the character at `offset`, or the one
+/// before it when `offset` is at the end. `(0, 0)` for empty text.
 pub fn around(text: &str, offset: usize) -> (usize, usize) {
     let chars: Vec<char> = text.chars().collect();
     if chars.is_empty() {
@@ -45,10 +35,8 @@ pub fn around(text: &str, offset: usize) -> (usize, usize) {
     (start, end)
 }
 
-/// Where Ctrl+Right lands from `offset`: the end of the word the caret is in or the next one,
-/// with whatever is between skipped. `None` when there is no word left in `text` — the caller's
-/// cue to go on to the next block, since a word motion crosses a paragraph boundary the way a
-/// character motion does.
+/// Where Ctrl+Right lands from `offset`: the end of the current or next word. `None` when no word
+/// is left, the cue to go on to the next block.
 pub fn next_end(text: &str, offset: usize) -> Option<usize> {
     let chars: Vec<char> = text.chars().collect();
     let mut at = offset.min(chars.len());
@@ -64,8 +52,8 @@ pub fn next_end(text: &str, offset: usize) -> Option<usize> {
     Some(at)
 }
 
-/// Where Ctrl+Left lands from `offset`: the start of the word the caret is in or the one before
-/// it. `None` when there is no word before the caret — go to the previous block.
+/// Where Ctrl+Left lands from `offset`: the start of the current or previous word. `None` when
+/// none is left — go to the previous block.
 pub fn previous_start(text: &str, offset: usize) -> Option<usize> {
     let chars: Vec<char> = text.chars().collect();
     let mut at = offset.min(chars.len());
@@ -144,8 +132,8 @@ mod tests {
         assert_eq!(around("", 3), (0, 0));
     }
 
-    /// Ctrl+Right and Ctrl+Left, the way a GNOME text field moves: to the end of a word going
-    /// forward, to its start going back, punctuation and spaces skipped, `don't` one word.
+    /// Ctrl+Right and Ctrl+Left as a GNOME text field moves: to a word's end forward, its start
+    /// back, `don't` one word.
     #[test]
     fn a_word_motion_stops_at_the_far_edge_of_each_word() {
         let text = "Don't panic, it's fine.";

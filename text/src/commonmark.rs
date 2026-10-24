@@ -2,36 +2,24 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! CommonMark in and out — the word processor's `csv.rs`.
+//! CommonMark in and out — the word processor's `csv.rs`. Not [`crate::markdown`], which is a
+//! typing notation (where `__` is underline): this is a file format following CommonMark, so
+//! `__x__` is bold and underline has no spelling.
 //!
-//! **Not [`crate::markdown`].** That module is a *typing* notation (`**bold**` while you write,
-//! with `__` meaning underline); this one is a *file format*, and it follows CommonMark rather
-//! than that notation, so `__x__` is bold here and underline has no spelling at all.
+//! Reading is `pulldown-cmark`'s, mapped onto the block model; writing is a fold over the model.
+//! One way each, with named losses rather than approximations:
 //!
-//! **Reading** is `pulldown-cmark` (MIT), so nothing here parses markdown: this file maps its
-//! events onto the block model. **Writing** is ours, since the model is the source and a
-//! serializer is a fold over it.
+//! * **In:** a block quote is its paragraphs; an ordered list becomes a bulleted one; a rule and
+//!   raw HTML are dropped; a soft break is a space. A fenced block is a run of [`PREFORMATTED`]
+//!   paragraphs, one per line, as typing ``` makes. A picture comes in when its bytes can be had
+//!   (a `data:` URI, or what the caller's [`Resolve`] finds) and is its alt text otherwise.
+//! * **Out:** underline, colour, highlight, size, bookmarks, picture sizes and table spans are
+//!   dropped; a list item is always `- `, and a table's first row is its header.
 //!
-//! Like CSV it is one way each, with a named loss in each direction rather than an
-//! approximation:
-//!
-//! * **In:** a block quote is its paragraphs, unquoted; an ordered list is a bulleted one (the
-//!   model has no numbering); a rule and raw HTML are dropped; a soft line break is a space. A
-//!   fenced block is a run of paragraphs in the [`PREFORMATTED`] style, one per line — the shape
-//!   `` ``` `` already makes when typed. A picture comes in when its bytes can be had (a
-//!   `data:` URI, or whatever the caller's [`Resolve`] finds) and is its alt text otherwise.
-//! * **Out:** underline, colour, highlight, size, a bookmark, a picture's size and a table's
-//!   spans have no CommonMark spelling and are dropped; a list item is always `- `, and a
-//!   table's first row is its header, since a pipe table has to have one.
-//!
-//! **Pictures are the one thing markdown cannot hold**, so an export is a text *and* some files
-//! ([`Exported`]): each picture beside the markdown, named for its bytes, or — [`Pictures::Inline`]
-//! — a `data:` URI inside it. Files are the default because the commonest renderer of all,
-//! GitHub's, does not show a `data:` URI, and base64 makes a diff unreadable. This is not the
-//! projection's sidecar, which `doc/projection-text.md` turned down: a projection is a
-//! [`crate::Form`], bytes in and bytes out with no path, where a markdown export is lossy and one
-//! way, like CSV, and its bytes twin is [`Exported`] itself. `![alt "long"]` carries the
-//! picture's `svg:title` and `svg:desc`, so the alternative text comes back.
+//! An export is text plus files ([`Exported`]): each picture beside the Markdown, named for its
+//! bytes, or with [`Pictures::Inline`] a `data:` URI inside it. Files are the default because
+//! GitHub does not show `data:` URIs and base64 makes diffs unreadable. `![alt "long"]` carries
+//! `svg:title` and `svg:desc`, so alternative text comes back.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -42,10 +30,8 @@ use crate::markdown::{MONOSPACE, PREFORMATTED};
 use crate::model::{Block, BlockKind, Cell, Document, Run};
 use crate::style::CharStyle;
 
-/// Whether a file *name* is a markdown file — `.md`, `.markdown` or `.mdown`, in any case.
-///
-/// The one question a name answers, for `csv::is_delimited_name`'s reason: plain text has no
-/// signature. Asked only after the bytes have said they are not an ODF document.
+/// Whether a file name is a Markdown file — `.md`, `.markdown` or `.mdown`, in any case. Plain
+/// text has no signature, so this is asked only after the bytes said they are not ODF.
 pub fn is_markdown_name(name: &str) -> bool {
     let file = name.rsplit(['/', '\\']).next().unwrap_or(name);
     matches!(
@@ -54,12 +40,12 @@ pub fn is_markdown_name(name: &str) -> bool {
     )
 }
 
-/// A markdown file opened as a document of its own: what [`open`] hands a shell. The twin of
-/// `grind_sheet::csv::Opened`.
+/// A Markdown file opened as a document of its own, what [`open`] hands a shell —
+/// `grind_sheet::csv::Opened`'s twin.
 #[derive(Debug)]
 pub struct Opened {
-    /// `notes.md` becomes `notes.fodt`. Opened with **no path**, so Save asks where the ODF
-    /// document goes and can never write it over the markdown it came from.
+    /// `notes.md` becomes `notes.fodt`. Opened with no path, so Save can never write it over the
+    /// Markdown.
     pub name: String,
     /// Flat ODF, for [`crate::App::open_bytes`].
     pub odf: Vec<u8>,
@@ -67,10 +53,9 @@ pub struct Opened {
     pub summary: String,
 }
 
-/// Open a markdown file as a new text document, its pictures found through `resolve`
-/// ([`beside`] for a file on disk, [`nowhere`] for one with no directory). `None` when `name`
-/// is not one ([`is_markdown_name`]), so a caller tries this after ODF and passes anything else
-/// on.
+/// Open a Markdown file as a new text document, its pictures found through `resolve` ([`beside`]
+/// for a file on disk, [`nowhere`] otherwise). `None` when `name` is not Markdown
+/// ([`is_markdown_name`]).
 pub fn open(name: &str, bytes: &[u8], resolve: &Resolve<'_>) -> Option<Result<Opened, String>> {
     is_markdown_name(name).then(|| open_markdown(name, bytes, resolve))
 }
@@ -110,12 +95,9 @@ fn options() -> Options {
     Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH
 }
 
-/// Markdown as blocks. `doc` mints their ids and names their tables, and is otherwise left
-/// alone — so this serves both a new document and an import into one that has blocks already.
-///
-/// A picture comes in when its bytes can be had: a `data:` URI always, anything else when
-/// `resolve` hands back the bytes of the (percent-decoded) path it names — [`beside`] is the one
-/// that reads files. One that cannot be had, or whose bytes are no picture, is its alt text.
+/// Markdown as blocks. `doc` mints their ids and names their tables and is otherwise untouched, so
+/// this serves a new document and an import alike. A picture comes in from a `data:` URI, or when
+/// `resolve` returns the bytes of the (percent-decoded) path; otherwise it is its alt text.
 pub fn parse(markdown: &str, doc: &mut Document, resolve: &Resolve<'_>) -> Vec<Block> {
     let mut reader = Reader {
         doc,
@@ -162,9 +144,8 @@ pub fn nowhere(_: &str) -> Option<Vec<u8>> {
     None
 }
 
-/// The resolver for a markdown file at `markdown`: a **relative** path is read from beside it,
-/// and anything else — an absolute path, a URL — is not read at all, so opening a markdown file
-/// cannot reach for the network or for a file somewhere it did not put one.
+/// The resolver for a Markdown file at `markdown`: a relative path is read from beside it, and an
+/// absolute path or a URL is not read at all.
 pub fn beside(markdown: &std::path::Path) -> impl Fn(&str) -> Option<Vec<u8>> + use<> {
     let dir = markdown
         .parent()
@@ -487,22 +468,19 @@ fn percent_decode(text: &str) -> String {
 // Writing
 // ---------------------------------------------------------------------------
 
-/// Where an export's pictures go. Markdown holds text, so a picture is either a file of its own
-/// beside it or a `data:` URI inside it — and which is a choice about where the markdown will
-/// be read, not about the document.
+/// Where an export's pictures go: files beside the Markdown, or `data:` URIs inside it — a choice
+/// about where it will be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Pictures {
-    /// Each picture a file in this directory, relative to the markdown — `![alt](dir/img-….png)`.
-    /// The default, because a renderer that shows a `data:` URI is the exception (GitHub's does
-    /// not) and a diff of base64 is unreadable.
+    /// Each picture a file in this directory, relative to the Markdown — `![alt](dir/img-….png)`.
+    /// The default.
     Files { dir: String },
     /// Each picture inside the markdown as a `data:` URI: one file, nothing beside it.
     Inline,
 }
 
 impl Pictures {
-    /// The directory a markdown file's pictures go in when nobody names one: `README.md`'s are
-    /// `README.images`.
+    /// The directory a Markdown file's pictures go in by default: `notes.md`'s are `notes.images`.
     pub fn beside(markdown_name: &str) -> Self {
         let file = markdown_name
             .rsplit(['/', '\\'])
@@ -515,16 +493,16 @@ impl Pictures {
     }
 }
 
-/// A picture an export wrote a reference to and the caller has to write: its bytes at `path`,
-/// relative to the markdown.
+/// A picture the export refers to and the caller writes: its bytes at `path`, relative to the
+/// Markdown.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Picture {
     pub path: String,
     pub data: Vec<u8>,
 }
 
-/// An export: the markdown, and the pictures it names ([`Pictures::Files`]). Empty for
-/// [`Pictures::Inline`], whose pictures are in the text.
+/// An export: the Markdown and the pictures it names ([`Pictures::Files`]); empty for
+/// [`Pictures::Inline`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Exported {
     pub markdown: String,
@@ -532,9 +510,7 @@ pub struct Exported {
 }
 
 impl Exported {
-    /// Write the markdown to `path` and each picture beside it — the half of an export a shell
-    /// with a filesystem does not want to own, and the same in each of them. Answers the
-    /// sentence to show.
+    /// Write the Markdown to `path` and each picture beside it. Returns the sentence to show.
     pub fn save(&self, path: &std::path::Path) -> Result<String, String> {
         let base = path.parent().unwrap_or(std::path::Path::new(""));
         if !base.as_os_str().is_empty() {
@@ -578,9 +554,8 @@ struct Out<'a> {
 }
 
 impl Out<'_> {
-    /// Where the markdown points for this picture. A file is named for its **content**, so the
-    /// same picture exported twice is the same file — one picture used twice is one file, and
-    /// re-exporting an unchanged document changes nothing a diff would show.
+    /// Where the Markdown points for this picture. Named for its content, so one picture used
+    /// twice is one file and an unchanged document re-exports to unchanged files.
     fn target(&mut self, mime: &str, data: &[u8]) -> String {
         use base64::Engine as _;
         match self.mode {
@@ -606,8 +581,7 @@ impl Out<'_> {
     }
 }
 
-/// FNV-1a, 64 bits: a name that is the same on every machine and every build, which
-/// `DefaultHasher` does not promise.
+/// FNV-1a, 64 bits: stable across machines and builds, which `DefaultHasher` does not promise.
 fn fnv(data: &[u8]) -> u64 {
     data.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
         (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
@@ -629,8 +603,8 @@ fn extension(mime: &str) -> &str {
     }
 }
 
-/// The document as CommonMark in one string, its pictures inside it as `data:` URIs —
-/// [`export`] with [`Pictures::Inline`].
+/// The document as CommonMark in one string, pictures as `data:` URIs — [`export`] with
+/// [`Pictures::Inline`].
 pub fn write(blocks: &[Block]) -> String {
     export(blocks, &Pictures::Inline).markdown
 }
@@ -796,8 +770,7 @@ fn inline(runs: &[Run], pictures: &mut Out) -> String {
                 }
                 out.push(')');
             }
-            // A footnote's mark or a field's value is what the reader sees, so it is what
-            // markdown says.
+            // A footnote's mark or a field's value is what the reader sees.
             Run::Kept { text, .. } => out.push_str(&span(text, &CharStyle::default(), None)),
         }
     }

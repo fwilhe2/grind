@@ -2,19 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What a formatting bar can ask for, as a pure change to a [`CharStyle`].
-//!
-//! Built for `grind-text-gtk`'s formatting bar and hoisted here the day a second shell
-//! (`grind-win32`) wanted the same answers — the same move `sheet/src/formula/assist.rs` made
-//! for the sheet's autocomplete. [`Change`] is the whole vocabulary of "what a control does" as
-//! a value rather than eight closures, so it is answerable — and answered, by `apply`'s own
-//! test — with no display of any kind, and two shells writing through it can never disagree
-//! about what Bold means.
-//!
-//! [`here`] and [`apply`] are the other half of a bar — *where* a change is read from and
-//! written to — hoisted the day the Mac's toolbar would have been the fourth copy of them
-//! (`doc/macos-shell.md`, M7): `ui_text_gtk`, `ui_web` and `ui_win32` each had a `style_here`
-//! and a write that held the style for the next character when nothing was selected.
+//! What a formatting bar can ask for, as a pure change to a [`CharStyle`]. [`Change`] is the whole
+//! vocabulary of what a control does, as a value, so every shell's Bold means the same. [`here`]
+//! and [`apply`] are the other half: where a change is read from and written to, holding the style
+//! for the next character when nothing is selected.
 
 use crate::markdown::{Emphasis, MONOSPACE};
 use crate::style::CharStyle;
@@ -27,11 +18,10 @@ pub enum Change {
     Italic(bool),
     Underline(bool),
     Strike(bool),
-    /// The monospace family, which is what the `` `code` `` notation sets — a *family* and not
-    /// a fifth boolean, because that is what the document stores ([`crate::markdown`]).
+    /// The monospace family the `` `code` `` notation sets — a family, as the document stores it
+    /// ([`crate::markdown`]).
     Code(bool),
-    /// `fo:font-family`, verbatim. `None` clears it, which is what "the document's own font"
-    /// means: the attribute is absent rather than set to a name.
+    /// `fo:font-family`, verbatim; `None` removes it, leaving the document's own font.
     Family(Option<String>),
     /// `fo:font-size`, an ODF length such as `14pt`.
     Size(Option<String>),
@@ -42,10 +32,8 @@ pub enum Change {
 }
 
 impl Change {
-    /// Lay this change over what the selection already agrees about.
-    ///
-    /// Everything but [`Change::Clear`] touches exactly one property and leaves the other seven
-    /// alone, which is what makes italicising a bold run leave it bold.
+    /// Lay this change over what the selection agrees about. Everything but [`Change::Clear`]
+    /// touches one property, so italicising a bold run leaves it bold.
     pub fn apply(&self, style: &mut CharStyle) {
         match self {
             Change::Bold(on) => style.set_bold(*on),
@@ -65,8 +53,8 @@ impl Change {
 }
 
 impl Change {
-    /// What pressing a toggle asks for over `style` — the selection's agreed formatting, or
-    /// [`here`]'s: the emphasis on, unless every character already has it.
+    /// What pressing a toggle asks for over `style` (the selection's agreed formatting, or
+    /// [`here`]'s): the emphasis on, unless every character already has it.
     pub fn toggle(emphasis: Emphasis, style: &CharStyle) -> Change {
         let on = !has(style, emphasis);
         match emphasis {
@@ -90,13 +78,10 @@ pub fn has(style: &CharStyle, emphasis: Emphasis) -> bool {
     }
 }
 
-/// What a formatting bar shows, and what its controls change: the formatting the `selection`
-/// agrees about ([`App::char_style`]); with nothing selected, the style `pending` for the next
-/// character typed — which a control or a closed markdown span left — and otherwise what the
-/// character before the `caret` carries, which is what the next keystroke would produce.
-///
-/// A document has no style *at* an empty caret, only on either side of it, and the one already
-/// typed is the one a bar showing the current state means.
+/// What a formatting bar shows and its controls change: the formatting the `selection` agrees
+/// about ([`App::char_style`]); with nothing selected, the style `pending` for the next character
+/// (left by a control or a closed Markdown span), else what the character before `caret` carries,
+/// which the next keystroke would produce.
 pub fn here(
     app: &App,
     selection: Option<(Caret, Caret)>,
@@ -113,21 +98,19 @@ pub fn here(
 }
 
 /// Where a bar's change landed.
-// One is returned per click on a control, and every shell matches it by value; boxing the
-// formatting would cost each of them a dereference to save bytes nobody keeps.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Landed {
     /// Written over the selection — one undo step.
     Written,
-    /// Nothing was selected, so nothing was written: this is the style the next character typed
-    /// at the caret takes, for the shell to hold as the `resume` [`App::type_markdown`] carries.
-    /// Bold, then type, is bold in every word processor, and moving the caret forgets it.
+    /// Nothing was selected, so nothing was written: the style the next character at the caret
+    /// takes, for the shell to hold as [`App::type_markdown`]'s `resume`. Moving the caret forgets
+    /// it.
     Pending(CharStyle),
 }
 
-/// One control of a bar, applied: `change` laid over what [`here`] reads, and written over the
-/// selection — or, with none, handed back as [`Landed::Pending`].
+/// One control applied: `change` over what [`here`] reads, written over the selection — or, with
+/// none, returned as [`Landed::Pending`].
 pub fn apply(
     app: &App,
     selection: Option<(Caret, Caret)>,
@@ -138,8 +121,8 @@ pub fn apply(
     apply_all(app, selection, caret, pending, std::slice::from_ref(change))
 }
 
-/// Several changes as one — what a font panel's single answer is, when it changed a size and a
-/// weight at once — laid over [`here`] in order and written once, so they are one undo step.
+/// Several changes as one — a font panel's single answer changing a size and a weight — laid over
+/// [`here`] in order and written once, one undo step.
 pub fn apply_all(
     app: &App,
     selection: Option<(Caret, Caret)>,
@@ -159,22 +142,16 @@ pub fn apply_all(
     }
 }
 
-/// The sizes a drop-down or picker offers, in points.
-///
-/// A word processor's usual ladder. It is a **default and not a limit**, the same stance
-/// `grind_core::style::PALETTE` takes for colours: `grind text format --size 13pt` writes one
-/// that is not on this list, the document keeps it verbatim, and [`sizes`] puts it in the list
-/// for as long as it is selected.
+/// The sizes a picker offers, in points — a default, not a limit: `grind text format --size 13pt`
+/// is kept verbatim, and [`sizes`] lists it while selected.
 pub const SIZES: [u32; 12] = [8, 9, 10, 11, 12, 14, 16, 18, 24, 32, 48, 72];
 
-/// What "no value set at all" is called in a picker. Not a size and not a family: the attribute
-/// is absent and the block's own face decides, which is a different thing from setting the same
-/// value the face happens to have.
+/// What no value at all is called in a picker: the attribute absent and the block's own face
+/// deciding.
 pub const DEFAULT: &str = "Default";
 
-/// The sizes as a document spells them — `"11pt"` — with the document's own size first when it
-/// is not one of them, so a selection at `13pt` has something to be selected, and [`DEFAULT`]
-/// first of all.
+/// The sizes as a document spells them (`"11pt"`), with [`DEFAULT`] first and the document's own
+/// size next when it is not among them.
 pub fn sizes(current: Option<&str>) -> Vec<String> {
     let mut out: Vec<String> = SIZES.iter().map(|pt| format!("{pt}pt")).collect();
     if let Some(current) = current
@@ -253,8 +230,8 @@ mod tests {
         assert_eq!(toggled, Change::Bold(false), "a second press takes it off");
     }
 
-    /// With nothing selected nothing is written, and what comes back is what to type next: the
-    /// character before the caret's formatting, or what was already pending, with the change.
+    /// With nothing selected nothing is written; the change waits, over the formatting before the
+    /// caret or what was pending.
     #[test]
     fn with_nothing_selected_a_change_waits_for_the_next_character() {
         let app = app("bold then");

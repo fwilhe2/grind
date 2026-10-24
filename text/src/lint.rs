@@ -2,23 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The word processor's lint rules — `doc/dsl.md` §4.3, D6.
-//!
-//! *No third-party linter knows what a heading is.* That sentence is the whole argument for
-//! this module: the interesting rules are about **documents**, and a document's vocabulary is
-//! this crate's. [`grind_core::lint`] holds what a diagnostic *is* and nothing else (R8).
-//!
-//! Every rule is in [`RULES`] with an id, and [`RULES`] is checked against §4.3's table by
-//! `cli/tests/lint.rs` — a rule the document does not name fails the build, which is D6's
-//! exit criterion ("every rule named in a table and covered by a test") made mechanical, the
-//! way `doc/small-group.md` is for the function list.
-//!
-//! Addresses are `loc.rs`'s, so every one of them is a string a user can type straight back at
-//! `grind text get`.
+//! The word processor's lint rules (`doc/dsl.md` §4.3); [`grind_core::lint`] holds what a
+//! diagnostic is (R8). [`RULES`] is checked against §4.3's table by `cli/tests/lint.rs`. Addresses
+//! are `loc.rs`'s, so each can be typed back at `grind text get`.
 
-/// The vocabulary a diagnostic is made of, re-exported so a shell reaches it through the
-/// application crate it already depends on — the same ergonomics `grind_sheet::odf` offers for
-/// the generic reader modules. The types are `grind_core`'s and there is no second definition.
+/// The diagnostic vocabulary, `grind_core`'s, under this crate's path.
 pub use grind_core::lint::{Diagnostic, Options, Report, Rule, Severity};
 
 use grind_core::style::PALETTE;
@@ -28,67 +16,49 @@ use crate::model::{Block, Document, Run};
 use crate::spell::{self, Lexicon};
 use crate::style::CharStyle;
 
-/// A heading whose level is more than one past the heading before it — 1 → 3.
-///
-/// Only *after* a first heading, which sets the baseline. A document whose first heading is a
-/// level 2 is a fragment of a larger one as often as it is a mistake, and a rule that fires on
-/// every chapter file of a book is a rule people turn off.
+/// A heading more than one level past the heading before it (1 → 3). Only after a first heading: a
+/// document starting at level 2 is as often a chapter file as a mistake.
 pub const HEADING_SKIP: Rule = Rule {
     id: "heading-skip",
     severity: Severity::Warning,
     what: "a heading level skipped — 1 followed by 3",
 };
 
-/// A link to `#name` where no `text:bookmark` of that name exists.
-///
-/// An error rather than a warning: the reader sees a link, clicks it, and nothing happens.
+/// A link to `#name` where no `text:bookmark` of that name exists. An error: the link does
+/// nothing.
 pub const UNKNOWN_BOOKMARK: Rule = Rule {
     id: "unknown-bookmark",
     severity: Severity::Error,
     what: "a bookmark referenced and never declared",
 };
 
-/// A `text:style-name` naming a style the document does not declare.
-///
-/// `doc/text-core.md`'s known loss, made visible: this build carries style *names* and not
-/// style *definitions*, so a document it has written declares none at all and every name in it
-/// is reported. That is the honest reading — the file really does refer to something it does
-/// not define — and it is the diagnostic that says so out loud rather than in a doc comment.
+/// A `text:style-name` naming a style the document does not declare. A document this build created
+/// declares no styles, so every name in it is reported — the file does refer to something it does
+/// not define.
 pub const UNDECLARED_STYLE: Rule = Rule {
     id: "undeclared-style",
     severity: Severity::Warning,
     what: "a style name used and never declared",
 };
 
-/// A colour that is not one of `grind_core::style::PALETTE`'s.
-///
-/// A hint, and off unless asked for, because [`PALETTE`] is a default a shell offers and never
-/// a limit — §4.3 says exactly that, and this rule is only useful to somebody who has decided
-/// their document should keep to it.
+/// A colour that is not one of `grind_core::style::PALETTE`'s — a hint, off unless asked for,
+/// since the palette is a default and never a limit.
 pub const OFF_PALETTE: Rule = Rule {
     id: "off-palette",
     severity: Severity::Hint,
     what: "a colour outside the default palette",
 };
 
-/// Something in the document that the projection cannot spell.
-///
-/// The bijectivity guard as a diagnostic, and the row that earns the feature: opening a
-/// document and being *told*, by name, what a `.grind` of it would not carry. For this
-/// application that is images and nothing else (`doc/projection-text.md`), so the rule has one
-/// producer today and the day a second gap appears it gains a second.
+/// Something the projection cannot spell — images (`doc/projection-text.md`) — so converting to a
+/// `.grind` would lose exactly what this lists.
 pub const UNSPELLABLE: Rule = Rule {
     id: "unspellable",
     severity: Severity::Warning,
     what: "a construct the projection cannot spell",
 };
 
-/// A word the spelling dictionary does not know (`doc/spelling.md`).
-///
-/// Runs only when there *is* a dictionary — [`lint_with`] with a lexicon, which is what
-/// [`crate::App::lint`] does once a shell or the CLI has attached one — so a build with no
-/// dictionaries in it has this rule and never fires it. A warning: a misspelling is worth
-/// seeing and never a reason for `grind lint` to fail a build.
+/// A word the dictionary does not know (`doc/spelling.md`). Runs only with a dictionary attached
+/// ([`lint_with`]). A warning, never a reason for `grind lint` to fail.
 pub const MISSPELT: Rule = Rule {
     id: "misspelt",
     severity: Severity::Warning,
@@ -105,8 +75,8 @@ pub const RULES: [Rule; 6] = [
     MISSPELT,
 ];
 
-/// Check a document against every rule `options` wants — every rule but [`MISSPELT`], which
-/// needs a dictionary ([`lint_with`]).
+/// Check a document against every rule `options` wants — all but [`MISSPELT`], which needs a
+/// dictionary ([`lint_with`]).
 pub fn lint(doc: &Document, options: &Options) -> Report {
     lint_with(doc, options, None)
 }
@@ -138,10 +108,7 @@ pub fn lint_with(doc: &Document, options: &Options, lexicon: Option<&dyn Lexicon
     report
 }
 
-/// `p12` — the address of a block, which is what every rule here reports against.
-///
-/// `loc::format` is the one 0↔1 conversion, so this is a call rather than an arithmetic
-/// expression however tempting `index + 1` looks.
+/// `p12` — the address of a block, through `loc::format`, the one 0↔1 conversion.
 fn at(index: usize) -> String {
     loc::format(index)
 }
@@ -191,12 +158,9 @@ fn unknown_bookmarks(doc: &Document, report: &mut Report) {
     }
 }
 
-/// The bookmark an `xlink:href` points at, when it points inside this document.
-///
-/// `#intro` is the plain form; LibreOffice writes `#intro|outline` and `#intro|region` to say
-/// what kind of target it expects, and the part after the bar is not part of the name. An
-/// `href` naming another document — `other.odt#intro`, `https://…` — is somebody else's
-/// business and answers `None`.
+/// The bookmark an `xlink:href` points at inside this document. LibreOffice writes
+/// `#intro|outline` and `#intro|region`, and the part after the bar is not the name. A link into
+/// another document answers `None`.
 fn internal_target(href: &str) -> Option<&str> {
     let target = href.strip_prefix('#')?;
     let target = target.split('|').next().unwrap_or(target);
@@ -220,9 +184,8 @@ fn undeclared_styles(doc: &Document, report: &mut Report) {
     }
 }
 
-/// Every style name a block mentions — its own, and each of its runs'. Deduplicated in
-/// document order, because a paragraph in one style with forty runs in another is two
-/// diagnostics rather than forty-one.
+/// Every style name a block mentions — its own and its runs' — deduplicated in document order, so
+/// forty runs in one style are one diagnostic.
 fn used_styles(block: &Block) -> Vec<&str> {
     let mut names: Vec<&str> = Vec::new();
     let runs = block.runs.iter().map(|run| match run {
@@ -239,12 +202,9 @@ fn used_styles(block: &Block) -> Vec<&str> {
     names
 }
 
-/// Whether the document declares this style name.
-///
-/// A run's name may be a *composition* — `text:span` nests and the model is flat, so reading
-/// joins the open names with a space (`doc/text-core.md`). So the whole string is tried first,
-/// and only then its whitespace-separated pieces: a declared `"List Paragraph"` is one name
-/// with a space in it, and splitting first would call it two undeclared ones.
+/// Whether the document declares this style name. A run's name may be a composition of nested
+/// spans joined with spaces, so the whole string is tried before its pieces: `"List Paragraph"` is
+/// one name.
 fn declares(doc: &Document, name: &str) -> bool {
     doc.styles.contains(name)
         || (name.split_whitespace().count() > 1
@@ -270,10 +230,7 @@ fn off_palette(doc: &Document, report: &mut Report) {
     }
 }
 
-/// The colours a character style sets that the palette does not have.
-///
-/// `transparent` is ODF's own word for *no* background rather than a colour, so it is not one
-/// this rule has an opinion about.
+/// The colours a character style sets that the palette lacks; `transparent` is no background.
 fn colours(props: &CharStyle) -> Vec<&str> {
     [props.color.as_deref(), props.background.as_deref()]
         .into_iter()
@@ -335,8 +292,7 @@ mod tests {
     use crate::model::{BlockId, BlockKind};
 
     fn empty() -> Document {
-        // The *empty* one: these tests append exactly the blocks they mean to check, and a
-        // new document's own paragraph would shift every index by one.
+        // Empty: a new document's own paragraph would shift every index.
         Document::empty()
     }
 
@@ -428,8 +384,7 @@ mod tests {
             "a name with a space in it is one name, not two"
         );
 
-        // A composed run style — `text:span` inside `text:span` — is every open name joined,
-        // and is declared when each part is.
+        // A composed run style is declared when each part is.
         doc.blocks[index].runs = vec![Run::Text {
             text: "x".to_owned(),
             style: Some("Emphasis Strong".to_owned()),

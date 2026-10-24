@@ -2,26 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What a laid-out line is drawn as — the decisions a painter makes before any pixel, which are
-//! the same in every shell that sets a page with its own ink.
-//!
-//! [`pieces`] cuts a line at every run boundary, [`drawable`] cuts a piece around the two
-//! characters that are in the model and never drawn, [`covered`] and [`band`] say where a
-//! selection's wash goes on one line, and [`bullet`] what marks a list item. Only putting the
-//! pixels down is a shell's.
-//!
-//! These were the Windows pane's (`ui_win32/src/text/draw.rs`), with the selection band a second
-//! time in the GNOME window, and the bullet a third time in the terminal. The macOS page would
-//! have copied all of it (`doc/macos-shell.md`, M6). Two things had drifted:
-//!
-//! * the GNOME window drew the same bullet at every depth, where the other two cycled — and they
-//!   cycled through different third marks;
-//! * the soft-break bug — a selection's band on every line but its last collapsing to nothing,
-//!   because [`Layout::x_at`] puts an offset at a break on the *later* line — had been found by a
-//!   screenshot in each desktop window separately, and fixed twice. [`band`] is the one fix.
-//!
-//! The browser draws a line as `<span>`s and cuts it at the caret and every bookmark as well
-//! (`ui_web/src/text/runs.rs`), so it keeps its own cutter; the terminal draws cells.
+//! What a laid-out line is drawn as — the painter's decisions before any pixel, the same in every
+//! shell that draws its own page. [`pieces`] cuts a line at run boundaries, [`drawable`] cuts a
+//! piece around the characters that are measured but never drawn, [`covered`] and [`band`] place a
+//! selection's wash on one line, and [`bullet`] marks a list item. The browser cuts lines into
+//! `<span>`s itself (`ui_web/src/text/runs.rs`) and the terminal draws cells.
 
 use grind_core::layout::{Layout, Line};
 
@@ -31,18 +16,15 @@ use crate::{Caret, RunView};
 /// One run of uniform formatting, clipped to a line.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Piece<'a> {
-    /// Where it starts, in characters from the beginning of the **block** — the unit every
-    /// `grind_core::layout` offset is in, so it can be handed straight to [`Layout::x_at`].
+    /// Where it starts, in characters from the start of the block — the unit [`Layout::x_at`]
+    /// takes.
     pub start: usize,
     pub text: &'a str,
     pub props: &'a CharStyle,
 }
 
-/// Cut `from..to` characters of a block into the runs it crosses.
-///
-/// The pieces are in order, none is empty, and together they are exactly the block's characters
-/// in that range — which is what lets a painter walk a line once, placing each piece at the x the
-/// core measured for its first character.
+/// Cut `from..to` characters of a block into the runs it crosses: in order, none empty, together
+/// exactly the block's characters in that range.
 pub fn pieces(runs: &[RunView], from: usize, to: usize) -> Vec<Piece<'_>> {
     let mut out = Vec::new();
     for run in runs {
@@ -51,8 +33,7 @@ pub fn pieces(runs: &[RunView], from: usize, to: usize) -> Vec<Piece<'_>> {
         if start >= end {
             continue;
         }
-        // A `RunView`'s offsets are in characters and a `&str`'s are in bytes; this is the one
-        // place a painter's two units meet.
+        // `RunView` offsets are characters and `&str` offsets bytes; this is where they meet.
         let mut indices = run.text.char_indices().map(|(byte, _)| byte);
         let head = indices
             .by_ref()
@@ -65,21 +46,16 @@ pub fn pieces(runs: &[RunView], from: usize, to: usize) -> Vec<Piece<'_>> {
         out.push(Piece {
             start,
             text: &run.text[head..tail],
-            // What it looks like — its named style under its direct formatting — since that
-            // is what a painter draws (`RunView::shown`).
+            // What it looks like — its named style under its direct formatting (`RunView::shown`).
             props: &run.shown,
         });
     }
     out
 }
 
-/// One piece's text split at the two characters that are **in the model and never drawn**, each
-/// segment with the character offset it starts at.
-///
-/// A `text:tab` and a `text:line-break` are each one character with an advance of its own, and a
-/// font would draw its glyph for U+0009 and U+000A — a box. So the drawing is cut around them and
-/// each side is placed at the offset the **core** measured rather than wherever the pen ended
-/// up. Empty segments are dropped, which is what makes two of them in a row cost nothing.
+/// One piece's text split at the characters that are in the model and never drawn — `text:tab` and
+/// `text:line-break`, which a font would draw as a box — each segment with its starting offset, so
+/// each side is placed where the core measured it. Empty segments are dropped.
 pub fn drawable(start: usize, text: &str) -> Vec<(usize, &str)> {
     let mut out = Vec::new();
     let mut at = start;
@@ -93,11 +69,8 @@ pub fn drawable(start: usize, text: &str) -> Vec<(usize, &str)> {
     out
 }
 
-/// The part of `block` a selection from `from` to `to` (in document order) covers, as two
-/// offsets into that block — `None` when the selection is empty or the block is outside it.
-///
-/// A block the selection runs *through* is covered to `usize::MAX`, which [`band`] clips against
-/// each line — cheaper and less error-prone than carrying "the whole block" as a third case.
+/// The part of `block` a selection from `from` to `to` covers, as two offsets into it, or `None`.
+/// A block the selection runs through is covered to `usize::MAX`, which [`band`] clips per line.
 pub fn covered(block: usize, from: Caret, to: Caret) -> Option<(usize, usize)> {
     if from == to || block < from.block || block > to.block {
         return None;
@@ -113,14 +86,10 @@ pub fn covered(block: usize, from: Caret, to: Caret) -> Option<(usize, usize)> {
     Some((start, end))
 }
 
-/// Where the wash for `start..end` (a block's [`covered`] offsets) goes on `line`: its left and
-/// right x, from the line's own left edge — or `None` when the line holds none of it.
-///
-/// **The far end of a line is the line's own width**, not [`Layout::x_at`]: at a break an offset
-/// belongs to two lines, and `x_at` resolves it to the later one, because that is where a caret
-/// walking off a wrapped line should appear. Asked for this line's end it answers from the next
-/// line's left margin, and a two-line selection's first line came out unwashed — found by a
-/// screenshot in each desktop window, one at a time.
+/// Where the wash for `start..end` goes on `line`, as left and right x from the line's own left
+/// edge, or `None`. The far end is the line's own width, not [`Layout::x_at`], which resolves an
+/// offset at a break to the later line and would leave the first line of a two-line selection
+/// unwashed.
 pub fn band(layout: &Layout, line: &Line, start: usize, end: usize) -> Option<(f32, f32)> {
     let from = start.max(line.start);
     let to = end.min(line.end);
@@ -134,14 +103,10 @@ pub fn band(layout: &Layout, line: &Line, start: usize, end: usize) -> Option<(f
     Some((layout.x_at(from), right))
 }
 
-/// What marks a list item at `depth`: •, ◦, ▪, and round again — what every word processor
-/// does, and what a document with a six-deep list needs.
-///
-/// The mark is **drawn and never stored**, and it is the fallback: an item whose list states a
-/// style wears that style's number or bullet (`crate::numbering`, `BlockView::mark`), and this
-/// is the page saying "there is a list item here" for one whose list states none. A list this
-/// build opens is written with a list style drawing these same marks (`Lgrind1`, `odf::write`),
-/// so LibreOffice shows it as every window here does.
+/// What marks a list item at `depth`: •, ◦, ▪, and round again. Drawn, never stored, and only a
+/// fallback for a list whose style states nothing (`crate::numbering`, `BlockView::mark`). Lists
+/// this build opens are written with a list style drawing the same marks (`Lgrind1`,
+/// `odf::write`).
 pub fn bullet(depth: u32) -> &'static str {
     const MARKS: [&str; 3] = ["\u{2022}", "\u{25e6}", "\u{25aa}"];
     MARKS[(depth.max(1) as usize - 1) % MARKS.len()]
@@ -191,8 +156,7 @@ mod tests {
         assert!(cut[1].props.is_bold());
     }
 
-    /// A line in the middle of a long run gets the slice of it that is on the line, with the
-    /// offset it really has in the block — which is what `Layout::x_at` is indexed by.
+    /// A line in the middle of a long run gets its slice, with its real offset in the block.
     #[test]
     fn a_run_is_clipped_to_the_line_and_keeps_its_own_offsets() {
         let runs = [run(0, "abcdefghij", false)];
@@ -208,8 +172,7 @@ mod tests {
         assert_eq!(pieces(&runs, 3, 6).len(), 1);
     }
 
-    /// The offsets are characters and the slicing is bytes — the one place a document in any
-    /// language but English would break.
+    /// Offsets are characters and slicing is bytes.
     #[test]
     fn a_run_is_cut_by_characters_and_not_by_bytes() {
         let runs = [run(0, "héllo wörld", false)];
@@ -217,9 +180,8 @@ mod tests {
         assert_eq!(pieces(&runs, 6, 11)[0].text, "wörld");
     }
 
-    /// A tab and a line break are measured and never drawn, so the drawing is cut around them —
-    /// and each side keeps the offset the core measured it at. Found by running the Windows
-    /// pane: both came out as the font's missing-glyph box.
+    /// A tab and a line break cut the drawing and keep their measured offsets, rather than drawing
+    /// a missing-glyph box.
     #[test]
     fn a_tab_and_a_break_cut_the_drawing_and_keep_the_offsets() {
         assert_eq!(drawable(0, "name\tvalue"), vec![(0, "name"), (5, "value")]);
@@ -256,8 +218,7 @@ mod tests {
         assert_eq!(band(&layout, &line, 20, 30), None, "past the line");
     }
 
-    /// The bug found twice: a selection across a soft break washes every line to its own width,
-    /// not to where the next line starts.
+    /// A selection across a soft break washes each line to its own width.
     #[test]
     fn a_band_reaching_a_break_ends_at_that_lines_own_width() {
         let layout = laid_out("aaa bbb ccc ddd", 8.0);
@@ -287,8 +248,7 @@ mod tests {
         assert_ne!(bullet(1), bullet(2));
         assert_ne!(bullet(2), bullet(3));
         assert_eq!(bullet(1), bullet(4), "three marks, then round again");
-        // Depth is 1-based in the model, and a document claiming zero must not index past the
-        // start of the table.
+        // Depth is 1-based; a document claiming zero must not index before the table.
         assert_eq!(bullet(0), bullet(1));
     }
 }

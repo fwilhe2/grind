@@ -2,15 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Addressing a place in a text document — the `grind_sheet::a1` of this crate.
-//!
-//! **The only 0↔1 conversion in `grind-text`.** A shell never does its own index arithmetic,
-//! for the same reason no shell does its own cell arithmetic: one conversion in one file is
-//! testable, and two are eventually inconsistent.
-//!
-//! The spreadsheet got a gift here that this crate does not: A1 notation is normative,
-//! universally understood, and already specified. Text has no such thing, so the vocabulary
-//! below is **invented**, and is written down rather than left implicit:
+//! Addressing a place in a text document — the `grind_sheet::a1` of this crate, and its only 0↔1
+//! conversion. Text has no normative notation, so this one is invented:
 //!
 //! | Spelling | Means |
 //! |---|---|
@@ -20,33 +13,16 @@
 //! | `§2.1.3` | outline path — chapter 2, section 1, subsection 3 |
 //! | `…+40` | character offset 40 into whichever of those it follows |
 //!
-//! The middle two are the interesting ones. `p12` is what a machine uses and is invalidated by
-//! every insertion above it; `#intro` and `§2.1.3` are what a *person* or a *script* uses and
-//! survive editing elsewhere in the document. `grind text set report.fodt §3.2 "…"` still
-//! works next week, which is a capability the CLI has and no word processor's UI does.
-//!
-//! **The offset is its own axis**, which is why it is a field of [`Loc`] rather than a variant:
-//! `§3.2+0` and `#intro+5` are as good addresses as `p12+40`, and they are the ones worth
-//! having, because a caret pinned to a block number is invalidated by the same insertion that
-//! `#intro` was invented to survive. `grind text type report.fodt '#intro+0' 'NOTE: '` means
-//! the same thing next week; `p12+0` does not.
-//!
-//! An offset makes an address a **caret** — a place *between* characters, not a character —
-//! which is why `+0` is the front of the block and `+<len>` is the back of it, and why an
-//! offset past the end clamps instead of failing. [`resolve_caret`] is where one becomes a
-//! [`Caret`].
-//!
-//! `§` is accepted as `s` too, because it is not on most keyboards.
+//! `p12` is invalidated by any insertion above it; `#intro` and `§2.1.3` survive edits elsewhere,
+//! so `grind text set report.fodt §3.2 "…"` still works next week. The offset is its own axis
+//! ([`Loc`]), so `#intro+5` and `§3.2+0` are addresses too. An offset makes an address a caret, a
+//! place between characters: `+0` is the front of the block, `+<len>` the back, and past the end
+//! clamps ([`resolve_caret`]). `s` is accepted for `§`.
 
 use crate::model::{Block, BlockKind, Document};
 
-/// A place in the document: a block, and a character offset within it. **A caret.**
-///
-/// What an address with an offset names once it has been resolved, and what a shell holds as
-/// its cursor. Ordered by document position, so `from <= to` is the whole check a range needs.
-///
-/// Both numbers are 0-based, like everything inside this crate; [`format_offset`] is where they
-/// become the `p12+40` a person types.
+/// A place in the document: a block and a character offset in it — a caret, what a shell holds as
+/// its cursor. Ordered by document position. Both 0-based; [`format_offset`] spells `p12+40`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Caret {
     pub block: usize,
@@ -56,7 +32,7 @@ pub struct Caret {
 /// What an address points *at*, before any offset into it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Target {
-    /// `p12` — a block by position, **0-based here**, 1-based in the spelling.
+    /// `p12` — a block by position, 0-based here, 1-based in the spelling.
     Block(usize),
     /// `#intro` — a bookmark by name.
     Bookmark(String),
@@ -64,21 +40,14 @@ pub enum Target {
     Outline(Vec<u32>),
 }
 
-/// Where something is, before it has been resolved against a document.
-///
-/// Two independent parts on purpose. *Which block* has three spellings with very different
-/// lifetimes; *how far into it* is one number that means the same thing after all three. Making
-/// the offset a field rather than folding it into the block spelling is what lets `#intro+5`
-/// exist, and `#intro+5` is the address a script actually wants.
+/// Where something is, before resolving: which block (three spellings with very different
+/// lifetimes) and how far into it, as a separate field so `#intro+5` exists.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Loc {
     pub target: Target,
-    /// A character offset into the block, when the address carried one.
-    ///
-    /// `None` is not "0": it is *unspecified*, and the two resolvers read it differently —
-    /// [`resolve_caret`] takes it as the front of the block, [`resolve_caret_range`] takes it
-    /// as the front at the start of a range and the **back** at the end of one, so that a bare
-    /// `p3` covers the whole of p3.
+    /// A character offset into the block, if given. `None` is unspecified, not 0:
+    /// [`resolve_caret`] takes it as the front, [`resolve_caret_range`] as the front at a range's
+    /// start and the back at its end, so a bare `p3` covers all of p3.
     pub offset: Option<usize>,
 }
 
@@ -119,13 +88,8 @@ pub fn parse(text: &str) -> Result<Loc, ParseError> {
     })
 }
 
-/// Peel a trailing `+<digits>` off an address.
-///
-/// **Only digits count.** A bookmark name is arbitrary text out of somebody's document, so
-/// `#a+b` has to stay the bookmark named `a+b` rather than becoming a parse error — the rule is
-/// that a `+` followed by a number is an offset and every other `+` is part of the name. The
-/// one thing this costs is a bookmark whose name genuinely ends in `+12`, which is not
-/// addressable and is written down here rather than discovered.
+/// Peel a trailing `+<digits>` off an address. Only digits: a bookmark name is arbitrary text, so
+/// `#a+b` names `a+b`. A bookmark whose name ends in `+12` is therefore not addressable.
 fn split_offset(text: &str) -> (&str, Option<usize>) {
     match text.rsplit_once('+') {
         Some((head, tail)) if !head.is_empty() => match tail.parse::<usize>() {
@@ -193,7 +157,7 @@ pub fn parse_range(text: &str) -> Result<Range, ParseError> {
     }
 }
 
-/// A block index back as the `p12` a person types. **The 0→1 conversion.**
+/// A block index back as the `p12` a person types — the 0→1 conversion.
 pub fn format(index: usize) -> String {
     format!("p{}", index + 1)
 }
@@ -209,10 +173,8 @@ pub fn format_outline(path: &[u32]) -> String {
     format!("\u{a7}{}", parts.join("."))
 }
 
-/// Resolve a location to a block index, against the document it names.
-///
-/// The whole reason `#intro` and `§2.1.3` are worth having: they are resolved *now*, against
-/// the document as it currently is, so an edit somewhere else does not invalidate them.
+/// Resolve a location to a block index against the document as it is now, which is why `#intro`
+/// and `§2.1.3` survive edits elsewhere.
 pub fn resolve(doc: &Document, loc: &Loc) -> Result<usize, ParseError> {
     match &loc.target {
         Target::Block(index) => {
@@ -238,16 +200,10 @@ pub fn resolve(doc: &Document, loc: &Loc) -> Result<usize, ParseError> {
     }
 }
 
-/// Walk the outline counting headings at each level, and return the block the path names.
-///
-/// Written as a walk rather than a lookup because the document stores no outline — it is
-/// implied by `text:outline-level` on a flat sequence (`doc/odt-format.md` §2), so the
-/// numbering has to be *computed* the same way a reader's eye computes it.
-///
-/// A level that is skipped — a level-3 heading directly under a level-1 — does not shift the
-/// count of the level it skipped, which is what LibreOffice's own outline pane shows and the
-/// only reading under which `§2.1` keeps meaning the same thing when an unrelated section is
-/// edited.
+/// Walk the outline counting headings at each level and return the block the path names —
+/// computed, since the outline is implied by `text:outline-level` (`doc/odt-format.md` §2). A
+/// skipped level (a level-3 heading under a level-1) does not shift the count of the level
+/// skipped, as LibreOffice's outline shows it.
 fn outline_index(doc: &Document, path: &[u32]) -> Option<usize> {
     if path.is_empty() {
         return None;
@@ -256,8 +212,7 @@ fn outline_index(doc: &Document, path: &[u32]) -> Option<usize> {
     let mut counters: Vec<u32> = Vec::new();
     for (index, level) in doc.outline() {
         let depth = level as usize;
-        // Entering a deeper level starts its count; returning to a shallower one discards
-        // everything below.
+        // A deeper level starts its count; a shallower one discards everything below.
         if depth > counters.len() {
             counters.resize(depth, 0);
         } else {
@@ -272,10 +227,8 @@ fn outline_index(doc: &Document, path: &[u32]) -> Option<usize> {
     None
 }
 
-/// The outline path of the heading at `index`, or `None` if it is not a heading.
-///
-/// The inverse of the walk above, and the reason `grind text outline` can print an address a
-/// user can type straight back in.
+/// The outline path of the heading at `index`, or `None` — the inverse of the walk, so `grind text
+/// outline` prints typeable addresses.
 pub fn outline_path(doc: &Document, index: usize) -> Option<Vec<u32>> {
     let mut counters: Vec<u32> = Vec::new();
     for (i, level) in doc.outline() {
@@ -307,16 +260,9 @@ pub fn resolve_range(doc: &Document, range: &Range) -> Result<std::ops::Range<us
     Ok(start..end + 1)
 }
 
-/// Resolve a location to a [`Caret`] — a block **and an offset within it**.
-///
-/// An address with no offset of its own — `p12`, `#intro`, `§2.1.3` — names the *start* of its
-/// block, which is what "insert here" means for an address that does not say otherwise.
-///
-/// **An offset past the end of the block is clamped to it** rather than refused. A caret is a
-/// place in a document that can shrink underneath it — a script computes `p3+40` from `grind
-/// text find`, something deletes half of p3, and the address is now past the end without being
-/// wrong about anything. Clamping puts the caret at the end of the text, which is where a
-/// person watching would expect it.
+/// Resolve a location to a [`Caret`]. An address without an offset names the start of its block.
+/// An offset past the end is clamped: a document can shrink under an address computed earlier, and
+/// the end of the text is where a person would expect the caret.
 pub fn resolve_caret(doc: &Document, loc: &Loc) -> Result<Caret, ParseError> {
     let block = resolve(doc, loc)?;
     let len = doc.block(block).map_or(0, Block::len);
@@ -326,15 +272,10 @@ pub fn resolve_caret(doc: &Document, loc: &Loc) -> Result<Caret, ParseError> {
     })
 }
 
-/// Resolve a range of *characters* — what `grind text erase` takes.
-///
-/// The one place this differs from [`resolve_range`], and it is deliberate: an end that carries
-/// no offset means **the end of its block** rather than the start. So `p3` is all of p3's text,
-/// `p3+12:p3+20` is eight characters of it, and `p3:p5` is everything from the front of p3 to
-/// the back of p5. Every spelling then means the span a person would point at.
-///
-/// A block range is a different question and keeps its own resolver — `p3:p5` there is three
-/// whole blocks, and a heading address there is its whole section.
+/// Resolve a range of characters, as `grind text erase` takes it: an end without an offset means
+/// the end of its block, so `p3` is all of p3, `p3+12:p3+20` eight characters, and `p3:p5` front
+/// of p3 to back of p5. [`resolve_range`] is the block-range question, where `p3:p5` is three
+/// blocks.
 pub fn resolve_caret_range(doc: &Document, range: &Range) -> Result<(Caret, Caret), ParseError> {
     let start = resolve_caret(doc, &range.start)?;
     let block = resolve(doc, &range.end)?;
@@ -401,9 +342,7 @@ mod tests {
         assert!(parse("p0").is_err());
     }
 
-    /// The offset is its own axis, so it composes with **every** spelling — which is the point
-    /// of the restructure: a caret address that only works on `p12` is invalidated by the same
-    /// insertion `#intro` exists to survive.
+    /// The offset composes with every way of naming a block.
     #[test]
     fn an_offset_composes_with_every_way_of_naming_a_block() {
         assert_eq!(
@@ -414,8 +353,7 @@ mod tests {
             parse("\u{a7}2.1+0"),
             loc(Target::Outline(vec![2, 1]), Some(0))
         );
-        // A `+` that is not followed by a number is part of the name, because a bookmark name
-        // is arbitrary text out of somebody's document.
+        // A `+` not followed by a number is part of the name.
         assert_eq!(parse("#a+b"), loc(Target::Bookmark("a+b".to_owned()), None));
         // And an offset is still refused where the rest of the address is nonsense.
         assert!(parse("+3").is_err());
@@ -444,8 +382,7 @@ mod tests {
             want,
             "the address that survives an edit above"
         );
-        // §1 is the heading; its section's body is not addressable this way, which is correct —
-        // an outline path names a heading, and +4 is four characters into that heading.
+        // `§1` names the heading, so `+4` is four characters into the heading.
         assert_eq!(
             caret("\u{a7}1+4"),
             Caret {
@@ -556,8 +493,7 @@ mod tests {
                 offset: 3
             }
         );
-        // Clamped, not refused: the document can shrink under an address that was right when
-        // it was written.
+        // Clamped, not refused: the document can shrink under an address.
         assert_eq!(
             caret("p2+99"),
             Caret {
@@ -571,8 +507,7 @@ mod tests {
     fn a_character_range_with_no_offsets_is_the_whole_block() {
         let d = doc(&[(0, "hello"), (0, "world")]);
         let span = |s: &str| resolve_caret_range(&d, &parse_range(s).unwrap()).unwrap();
-        // The difference from `resolve_range`, and the reason it is a second function: the end
-        // means the *end* of its block, so a bare address covers the text a person points at.
+        // Unlike `resolve_range`, a bare end means the end of its block.
         assert_eq!(
             span("p1"),
             (

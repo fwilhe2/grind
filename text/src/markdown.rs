@@ -2,57 +2,29 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Markdown-shaped typing: what `**bold**` and `# ` mean while you write them.
+//! Markdown-shaped typing: what `**bold**` and `# ` mean while you write them — a notation for
+//! edits, not a document format; the model stays ODF. [`crate::App::type_markdown`] is the edit,
+//! and this decides what one means, in the core so every shell reads `**` the same way.
+//! `[label](target)` sets a run's link ([`linked`]).
 //!
-//! **A notation, not a document format.** This build's model is ODF and stays ODF; what is
-//! here is the shape of an *edit* — somebody typing `**bold**` means the four characters to go
-//! away and the two words between them to be bold. [`crate::App::type_markdown`] is the edit,
-//! and this module is the reading that decides what one means.
+//! Never a display convention: a document is drawn with the shell's own bold and italic, since
+//! markers on screen would be characters the layout never measured. Pure functions over a block's
+//! text.
 //!
-//! **In the core rather than in a shell**, for the reason `doc/text-layout.md` gives about
-//! line breaking: three shells recognising `**` three ways would be three editors. A terminal
-//! has no formatting toolbar and this is its whole answer to one; a window has both, and both
-//! set the same property on the same run.
-//!
-//! `[label](target)` is the one notation that is not an emphasis: it sets a run's *link*
-//! ([`linked`]), the label keeping whatever formatting it was typed in.
-//!
-//! Nothing here is a *display* convention. A document is drawn with the shell's own bold and
-//! italic, never as source with markers in it — markers on screen would be characters the
-//! layout engine never measured, and every caret after one would sit in the wrong column.
-//!
-//! Pure functions over a block's text, so all of it unit-tests with no document at all.
-//!
-//! **One divergence from markdown, named**: `__x__` is *underline* here, where markdown reads
-//! it as a second spelling of bold. ODF has underline and this build already spells bold
-//! `**x**`, so the alternative was leaving a property of the model unreachable to spare a
-//! notation nobody types twice. `_x_` alone means nothing at all, deliberately —
-//! `snake_case` is not emphasis.
+//! One divergence from Markdown: `__x__` is underline here, not a second bold, so ODF's underline
+//! is reachable. `_x_` alone means nothing, so `snake_case` is not emphasis.
 
-// The report that `` `code` `` and ``` "do not work in any of the three text shells" was
-// worked suspect by suspect, and **each of the three was real and is addressed** — none of them
-// here, which is what the note that used to sit in this place predicted. `grind-web` dropped a
-// dead key entirely, so on a German, French or Spanish layout the backtick never reached the
-// document (`ui_web/src/text/keymap.rs` now refuses both halves of a composition and takes the
-// text from `compositionend`). `grind-text-gtk` neither measured nor drew a family, so the file
-// changed and the window did not; both halves moved together, because drawing a family that was
-// not measured drifts the caret through the run (`ui_text_gtk/src/metrics.rs`). `grind-tui`
-// showed it with `Modifier::DIM` and that is now a *decision* with its reasons written beside
-// it, plus `pre` in the gutter for the block half, which no terminal can ignore.
+// TODO: `` `code` `` and ``` were reported not to work in any text shell. Each shell's cause was
+// real and is fixed: `grind-web` dropped dead keys (`ui_web/src/text/keymap.rs` now takes text
+// from `compositionend`), `grind-text-gtk` neither measured nor drew a family
+// (`ui_text_gtk/src/metrics.rs`), and `grind-tui` shows code with `Modifier::DIM` and `pre` in the
+// gutter. None of it has been typed on a real keyboard on the reporter's layout — the tests use
+// constructed composition events, not dead keys — so ask the reporter before calling this closed.
 //
-// TODO: **none of that has been typed on a real keyboard on the reporter's layout**, which is
-// the half the original note said was missing and it is still missing. The new checks are
-// synthetic in exactly the way the old ones were — a constructed `CompositionEvent` is not a
-// dead key — so they prove the code path and not the keyboard. Ask the reporter before calling
-// this closed.
-//
-// TODO: and one that is nobody's shell: **LibreOffice may not resolve `monospace`.** Measured —
-// a round trip through `soffice --convert-to` keeps `fo:font-family="monospace"` verbatim but
-// declares no `style:font-face` for it, unlike every real family in the document. Whether it
-// *renders* monospace there is unchecked; if not, the value wants a real face ahead of the
-// generic, and `doc/odt-format.md`'s XSL-FO quoting rule applies to a list. Separately, a
-// fenced block is a style **name** with no definition, which `text/src/lib.rs`'s own header
-// already says does not survive LibreOffice.
+// TODO: LibreOffice may not resolve `monospace`. Measured: `soffice --convert-to` keeps
+// `fo:font-family="monospace"` but declares no `style:font-face` for it. Whether it renders
+// monospace there is unchecked; if not, put a real face ahead of the generic (XSL-FO list quoting
+// applies). A fenced block's `Preformatted Text` is also a style name with no definition here.
 
 use crate::BlockKind;
 use crate::style::CharStyle;
@@ -64,23 +36,16 @@ pub enum Emphasis {
     Italic,
     Underline,
     Strike,
-    /// `` `code` `` — a monospace family on the run.
-    ///
-    /// The odd one out, and the only one that is not a switch: the other four set a property
-    /// that is on or off, and this sets a *family*, which is a name a document chose. Turning
-    /// it off is therefore "no family of my own" rather than a second value.
+    /// `` `code` `` — a monospace family on the run. Not a switch: it sets a family, so turning it
+    /// off is "no family of my own".
     Code,
 }
 
-/// What `` `code` `` sets a run's family to.
-///
-/// A generic family rather than the name of a font: which monospace face a reader has is
-/// theirs to know, and `fo:font-family` is a CSS-shaped list where a generic is a legitimate
-/// entry (`doc/odt-format.md`'s rule that values are kept verbatim applies either way).
+/// What `` `code` `` sets a run's family to: the generic, since which monospace face a reader has
+/// is theirs.
 pub const MONOSPACE: &str = "monospace";
 
-/// The named paragraph style a fenced block gets — ODF's own name for a code paragraph, and
-/// the one LibreOffice writes, so a fence here opens as a code block there.
+/// The named paragraph style a fenced block gets — ODF's code paragraph, as LibreOffice writes it.
 pub const PREFORMATTED: &str = "Preformatted Text";
 
 impl Emphasis {
@@ -97,8 +62,8 @@ impl Emphasis {
         style
     }
 
-    /// How this emphasis is written — what the status line offers, and what the visual-mode
-    /// keys are named after.
+    /// How this emphasis is written — what the status line offers and the visual-mode keys are
+    /// named after.
     pub fn markers(self) -> &'static str {
         match self {
             Emphasis::Bold => "**",
@@ -118,14 +83,13 @@ pub struct Emphasised {
     /// Where the content between the markers starts and ends.
     pub start: usize,
     pub end: usize,
-    /// Where the closing marker ends — the caret's own position, since the last character of
-    /// it is what was just typed.
+    /// Where the closing marker ends: the caret, since its last character was just typed.
     pub close: usize,
     pub emphasis: Emphasis,
 }
 
-/// Every notation, longest marker first: `**` has to be tried before `*`, or `**x**` would be
-/// read as an italic `*x` the moment its third marker landed.
+/// Every notation, longest marker first, or `**x**` would read as an italic `*x` at its third
+/// marker.
 const NOTATION: [(&str, Emphasis); 5] = [
     ("**", Emphasis::Bold),
     ("__", Emphasis::Underline),
@@ -134,19 +98,13 @@ const NOTATION: [(&str, Emphasis); 5] = [
     ("`", Emphasis::Code),
 ];
 
-/// What the character just typed at `caret` completed, if it completed anything.
+/// What the character just typed at `caret` completed, if anything. `text` is the block as it now
+/// is, markers and all. Ordinary prose is left alone:
 ///
-/// `text` is the block as it now is, markers and all — this runs *after* the character is in
-/// the document, so what it describes is a span to erase and re-format rather than something
-/// to predict.
-///
-/// The rules that keep ordinary prose out of it:
-///
-/// - the content between the markers is not empty, and neither end of it is a space —
-///   `** **` and `* x *` are not emphasis;
-/// - the content holds no marker character of its own, so `2*3*4` is arithmetic;
-/// - the opening marker starts a word — it is at the beginning of the block or follows a
-///   space or an opening bracket — so `snake_case` and `a*b` are left alone.
+/// - the content is not empty and does not begin or end with a space (`** **`, `* x *`);
+/// - it holds no marker character of its own (`2*3*4`);
+/// - the opening marker starts a word — at the block's start or after a space or opening bracket
+///   (`snake_case`, `a*b`).
 pub fn emphasised(text: &str, caret: usize) -> Option<Emphasised> {
     let chars: Vec<char> = text.chars().collect();
     if caret > chars.len() {
@@ -155,8 +113,7 @@ pub fn emphasised(text: &str, caret: usize) -> Option<Emphasised> {
     for (markers, emphasis) in NOTATION {
         let width = markers.chars().count();
         let marker = markers.chars().next()?;
-        // The closing marker has to be what was just typed, sitting immediately behind the
-        // caret.
+        // The closing marker must be what was just typed, right behind the caret.
         if caret < width * 2 || chars[caret - width..caret].iter().any(|c| *c != marker) {
             continue;
         }
@@ -188,10 +145,8 @@ pub fn emphasised(text: &str, caret: usize) -> Option<Emphasised> {
     None
 }
 
-/// Where the opening run of `width` copies of `marker` begins, searching back from `end`.
-///
-/// Requires *exactly* that many: a `***` is not the opening of a `**`, which is what keeps
-/// `**x**` from matching as an italic with a stray asterisk in it.
+/// Where the opening run of exactly `width` copies of `marker` begins, searching back from `end`:
+/// `***` does not open a `**`.
 fn opening(chars: &[char], end: usize, marker: char, width: usize) -> Option<usize> {
     let mut at = end;
     while at >= width {
@@ -228,13 +183,9 @@ pub struct Linked {
     pub href: String,
 }
 
-/// What the `)` just typed at `caret` completed, if it was the end of a markdown **link**.
-///
-/// The same shape as [`emphasised`] and the same kind of rules for keeping prose out of it:
-/// the label is not blank and holds no bracket of its own; the target is not empty and holds
-/// no whitespace and no parenthesis, so `(see [1](2) above)` closes the link at the first `)`
-/// rather than the second; and `![alt](src)` is markdown's *image*, which this notation does
-/// not insert, so it is left as typed.
+/// What the `)` just typed at `caret` completed, if it ended a Markdown link. The label is not
+/// blank and holds no bracket; the target is not empty and holds no whitespace or parenthesis, so
+/// `(see [1](2) above)` closes at the first `)`. `![alt](src)`, an image, is left as typed.
 pub fn linked(text: &str, caret: usize) -> Option<Linked> {
     let chars: Vec<char> = text.chars().collect();
     if caret > chars.len() || caret == 0 || chars[caret - 1] != ')' {
@@ -281,27 +232,18 @@ pub fn linked(text: &str, caret: usize) -> Option<Linked> {
     })
 }
 
-/// Whether the three backticks just typed are a **fence** — a block whose whole text is
-/// ``` and nothing else.
-///
-/// Markdown fences a run of lines between two of them. A block model has no run of lines to
-/// fence, so the rule here is the one that fits it: a fence *toggles* whether the block it is
-/// in is preformatted, and Enter inside a preformatted block opens another one — so a code
-/// region is a run of preformatted paragraphs, and the closing fence is what ends it.
-///
-/// Requiring the whole block to be the fence keeps it unambiguous: ``` mid-sentence is three
-/// backticks, and two of them have already been read as an empty `` `` `` by [`emphasised`].
+/// Whether the three backticks just typed are a fence: a block whose whole text is ```. A fence
+/// toggles whether its block is preformatted, and Enter in a preformatted block makes another, so
+/// a code region is a run of preformatted paragraphs ended by the closing fence. ``` mid-sentence
+/// is three backticks.
 pub fn is_fence(text: &str, caret: usize) -> bool {
     let chars: Vec<char> = text.chars().collect();
     caret == chars.len() && chars.len() == 3 && chars.iter().all(|c| *c == '`')
 }
 
-/// The block kind a line-opening prefix asks for — `# `, `## `, `- ` — and how many characters
-/// of it to take back out.
-///
-/// The other half of the same idea: markdown's *block* notation, recognised when its trailing
-/// space lands. `#` up to six deep, which is the outline this build carries
-/// (`doc/text-core.md`); `-` and `*` both open a list item, as both do in markdown.
+/// The block kind a line-opening prefix asks for — `# ` up to six deep (`doc/text-core.md`), `- `
+/// or `* ` for a list item — and how many characters to remove, recognised when its trailing space
+/// lands.
 pub fn block_prefix(text: &str, caret: usize) -> Option<(usize, BlockKind)> {
     let chars: Vec<char> = text.chars().collect();
     // Only at the very start of a block, and only as the space lands: `a # b` is prose.
@@ -378,8 +320,7 @@ mod tests {
         }
     }
 
-    /// The ordering rule: `**` is tried before `*`, so a bold's third marker does not read as
-    /// an italic with an asterisk inside it.
+    /// `**` is tried before `*`, so a bold's third marker does not read as an italic.
     #[test]
     fn a_bold_is_not_read_as_an_italic_halfway_through() {
         assert_eq!(typing("**bold*"), None, "three markers is not a pair yet");

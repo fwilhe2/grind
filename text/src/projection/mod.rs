@@ -2,16 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The projection of a **text document** — `doc/dsl.md` layer 0, milestone D2. **\[ODT\]**
+//! The projection of a text document — `doc/dsl.md` layer 0. **\[ODT\]**
 //!
-//! A third physical form beside the package and the flat one: the same document, spelled as
-//! plain text a person writes in any editor. The container is `grind_core::projection` (the KDL
-//! syntax, the kind header, the token and span maps); what is here is the only part that knows
-//! what a paragraph is — this crate's node vocabulary, the inline notation, and the reader and
-//! writer over them. §3.2 is why that is a module beside `odf/` rather than a crate of its own,
-//! and `core/tests/generic.rs` is that rule made mechanical.
-//!
-//! ## The grammar
+//! The same document as plain text: `grind_core::projection` is the container, and this is the
+//! text node vocabulary, the inline notation, and their reader and writer.
+//! `doc/projection-text.md` is the full grammar.
 //!
 //! ```kdl
 //! grind text
@@ -26,39 +21,20 @@
 //! p "name\tvalue\nsecond line" style="Preformatted Text"
 //! ```
 //!
-//! **The body is flat, and so is this.** `model.rs` records the schema fact the whole crate is
-//! shaped by — a `text:h` does not contain the paragraphs under it (rng:16938) — and the
-//! projection keeps that shape: one node per block, a heading's level and a list item's depth
-//! as numbers rather than as nesting. `doc/dsl.md` §3.5 sketched a `list { li … }` wrapper; the
-//! reader still takes one, because somebody hand-writing a list will type it, but the writer
-//! never emits one. Tolerance on the way in, strictness on the way out.
+//! The body is flat, and so is this: one node per block, a heading's level and a list item's depth
+//! as numbers (rng:16938). The reader also takes a `list { li … }` wrapper, which a person writing
+//! by hand will type; the writer never emits one. Interior spaces, `\t` and `\n` are KDL's own
+//! string rules: `text:s`, `text:tab`, `text:line-break`.
 //!
-//! Three things fall straight out of KDL's string rules that would otherwise each be a
-//! decision: interior spaces are `text:s` (KDL does not collapse whitespace and XML does), `\t`
-//! is `text:tab`, and `\n` is `text:line-break` — visibly different from a new *block*, which
-//! is a new node.
-//!
-//! ## What it does not carry yet
-//!
-//! **Images — the one named gap**, and loop F excludes them by name exactly as it excludes the
-//! spreadsheet's charts. Not an oversight: `doc/dsl.md` §3.8 answers this one with a *sidecar
-//! directory* holding the bytes beside the file, and D4 has since made the projection a
-//! [`grind_core::Form`], which is reached through `write_bytes`/`read_bytes` — **bytes, no
-//! path**. Rule 5 is that every `*_file` has a `*_bytes` twin, and `grind-web` has no
-//! filesystem at all, so a form that only works when there is a directory to put things next to
-//! is not a form this project can have. The sidecar is a design question D2 reopens rather than
-//! one it implements, and it is written up in `doc/projection-text.md`.
-//!
-//! Also absent, and absent from the *model* rather than from the projection: paragraph-level
-//! properties, style definitions, footnotes, fields, tables. `doc/text-core.md` is the scope
-//! line, and `text/tests/projection_scope.rs` holds this vocabulary against it.
+//! Images are not projected — loop F's one named gap, as charts are for spreadsheets — because
+//! their bytes would need a sidecar directory, and a form must work as bytes alone (rule 5;
+//! `doc/projection-text.md`). Footnotes and fields are spelled as the text they show.
 
 pub mod inline;
 pub mod read;
 pub mod write;
 
-/// The generic container, re-exported so this crate's projection reader and writer reach it by
-/// one path — the same ergonomics `odf::mod` provides for `context`, `names` and `package`.
+/// `grind_core::projection`'s container types, under this crate's path.
 pub use grind_core::projection::{Anchor, Emitter, Projection, Token, TokenKind};
 
 use crate::Result;
@@ -74,10 +50,8 @@ pub fn read(text: &str) -> Result<Document> {
     read::read(text)
 }
 
-/// The bytes a `.grind` is saved as — the file it came from with the edited blocks put back when
-/// that is possible (R6, D5), and a fresh projection when it is not.
-///
-/// The one door out, so that no caller can save a projection *without* R6.
+/// The bytes a `.grind` is saved as: the file it came from with edited blocks put back when
+/// possible (R6), a fresh projection otherwise. The one door out.
 pub fn save(doc: &Document) -> Vec<u8> {
     match write::splice(doc) {
         Some(text) => text.into_bytes(),

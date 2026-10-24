@@ -3,16 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! A page's header and footer — the master page's `style:header` and `style:footer` (rng:11962,
-//! rng:10844) — **read for printing and never written** (`doc/pdf-export.md` P8).
+//! rng:10844) — read for printing and never written (`doc/pdf-export.md`); the envelope carries
+//! `office:master-styles` out byte for byte. A paragraph is kept as text, with `text:page-number`
+//! and `text:page-count` (rng:8696, rng:8751) as fields filled per page (`doc/odt-format.md` §5c,
+//! fact 9).
 //!
-//! The envelope already carries `office:master-styles` out of a file byte for byte, so nothing
-//! here is a model to edit: it is what a printed page needs to draw the same header Writer does
-//! (`doc/odt-format.md` §5c, fact 9). A paragraph is kept as text and the two fields that need a
-//! page to have a value — `text:page-number` and `text:page-count` (rng:8696, rng:8751) — whose
-//! cached text in the file is dropped, since on paper it is the page's own.
-//!
-//! What is not kept, named: character formatting inside a header, pictures and tables in one,
-//! and the first-page and left-page variants (`style:header-first`, `style:header-left`).
+//! Not kept: character formatting, pictures and tables in a header, and the first-page and
+//! left-page variants (`style:header-first`, `style:header-left`).
 
 /// One piece of a header or footer paragraph.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,9 +51,9 @@ impl Paragraph {
     }
 }
 
-/// A header or a footer: its paragraphs, and the room its page layout gives it in millimetres —
-/// the least height it takes (`fo:min-height`) and the space between it and the body
-/// (`fo:margin-bottom` for a header, `fo:margin-top` for a footer).
+/// A header or footer: its paragraphs and the room its page layout gives it, in millimetres —
+/// `fo:min-height`, and the space to the body (`fo:margin-bottom` for a header, `fo:margin-top`
+/// for a footer).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Marginal {
     pub paragraphs: Vec<Paragraph>,
@@ -64,9 +61,9 @@ pub struct Marginal {
     pub spacing: f64,
 }
 
-/// A footnote or an endnote (`text:note`, rng:8465): where it is cited, its citation's text,
-/// and its paragraphs — read beside the blocks for a printed page to set at its foot, and never
-/// written (the paragraph holding one keeps it, and an edit that would lose it is refused).
+/// A footnote or endnote (`text:note`, rng:8465): where it is cited, the citation's text and its
+/// paragraphs, read for a printed page to set at its foot. Never written; the paragraph holding
+/// one keeps it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Note {
     /// The block the citation stands in, and the character offset its text starts at.
@@ -116,12 +113,9 @@ mod tests {
 }
 
 /// A straight line drawn on every page set on a master page — a `draw:line` in its header or
-/// footer (rng:11962's paragraphs may hold one): the fold and punch marks of a DIN 5008 letter,
-/// a rule under a letterhead. Read for printing and never written.
-///
-/// Coordinates are millimetres **from the page's top-left corner**, as `svg:x1…y2` say them for
-/// a shape anchored to the page; the stroke is the graphic style's, or half a point of black when
-/// the file names none.
+/// footer: a DIN 5008 letter's fold and punch marks, a rule under a letterhead. Read for printing.
+/// Coordinates are millimetres from the page's top-left corner (`svg:x1…y2`); the stroke is the
+/// graphic style's, or half a point of black.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Line {
     pub from: (f64, f64),

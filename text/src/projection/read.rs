@@ -2,20 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Reading a projection back into a text document. **\[ODT\]**
+//! Reading a projection back into a text document. **\[ODT\]** Not tolerant the way `odf::read`
+//! is: an unknown node is a typo, reported with its offset. Lenient where a person types:
 //!
-//! The twin of `odf::read` and, exactly as on the spreadsheet's side, **not** tolerant in the
-//! same way: `odf::read` ignores what it does not recognise because R5 says other people's
-//! files have to load, and a projection is a format this project writes, so an unknown node is
-//! a typo in something a person hand-wrote and saying so with an offset is the kindness.
-//!
-//! Where it *is* lenient is where a human is typing:
-//!
-//! * `li "item"` with no depth is depth 1, which is what a list item usually is;
-//! * a `list { … }` block is accepted and its items take their depth from how deep the nesting
-//!   is — the second spelling of the same state, the way `at`/`row` and `cell` are two
-//!   spellings on the sheet's side. The writer emits the flat form, because the model is flat
-//!   and a depth is a number rather than a shape (`model.rs`, rng:16938).
+//! * `li "item"` with no depth is depth 1;
+//! * a `list { … }` block is accepted, its items' depth taken from the nesting — a second spelling
+//!   of the same state; the writer emits the flat form.
 
 use grind_core::projection::kdl::{KdlDocument, KdlNode, KdlValue};
 use grind_core::projection::{Shape, Source, node_span};
@@ -23,18 +15,15 @@ use grind_core::projection::{Shape, Source, node_span};
 use crate::model::{Block, BlockKind, Cell, Document};
 use crate::{Error, Result, loc};
 
-/// Read a projection.
-///
-/// The `Source` built alongside is R6 for this form (D5): the text as it came in, and where every
-/// block sits in it, so that typing into one paragraph rewrites one line and leaves the comments,
-/// the blank lines and the `list` nesting somebody wrote by hand alone.
+/// Read a projection, with a `Source` beside it: the text, and where every block sits, so typing
+/// into a paragraph rewrites one line and keeps comments, blank lines and hand-written `list`
+/// nesting.
 pub fn read(text: &str) -> Result<Document> {
     let (kind, body) = grind_core::projection::parse(text)?;
     if kind != grind_core::DocumentKind::Text {
         return Err(grind_core::Error::UnsupportedKind(Some(kind)));
     }
-    // Empty rather than new: every block comes from the projection, including none of them
-    // (see `Document::empty`).
+    // Every block comes from the projection, including none (`Document::empty`).
     let mut doc = Document::empty();
     let mut source = Source::new(text);
     blocks(&mut doc, body.nodes(), 0, None, &mut source)?;
@@ -43,9 +32,8 @@ pub fn read(text: &str) -> Result<Document> {
     Ok(doc)
 }
 
-/// One level of nodes. `depth` is how many `list` blocks are open around them, which is zero
-/// everywhere except inside the authoring spelling; `cell` is the table cell they are in, which
-/// is `None` everywhere except inside a `table`.
+/// One level of nodes. `depth` is how many `list` blocks are open around them; `cell` is the table
+/// cell they are in, if any.
 fn blocks(
     doc: &mut Document,
     nodes: &[KdlNode],
@@ -60,8 +48,7 @@ fn blocks(
                 level: number(node, 0)?,
             },
             "li" => BlockKind::ListItem {
-                // Its own depth if it states one; otherwise how deep the nesting is, and 1 for a
-                // `li` that is neither in a list nor numbered.
+                // Its own depth if stated, else the nesting depth, and 1 for a bare `li`.
                 depth: number(node, 0).unwrap_or(depth.max(1)),
             },
             "list" => {
@@ -75,11 +62,8 @@ fn blocks(
             other => return Err(unknown(node, other)),
         };
 
-        // The whole node, not just its string: a block *is* one node, so everything an edit can
-        // change about it — its text, its level, its style name — is inside this span, and the
-        // `kdl` span stops before the indentation and the newline. One block is one line, so one
-        // keystroke is one line of `git diff`, which is the property `text/src/odf/source.rs`
-        // already gives a `.fodt` and D5 gives the third form.
+        // The whole node: everything an edit can change about a block is in it, and `kdl`'s span
+        // excludes indentation and newline, so one keystroke is one line of diff.
         source.record(loc::format(doc.blocks.len()), node_span(node), Shape::Node);
 
         let id = doc.next_id();
@@ -96,15 +80,10 @@ fn blocks(
     Ok(())
 }
 
-/// One `table` node: rows of cells, whose coordinates come from where they sit.
-///
-/// The authoring shape, and the only one: a row is a row because of its position and a cell is
-/// in column *n* because *n* columns came before it — `list { li }`'s trick on two axes. A
-/// `span=` moves the counter on by that many columns, which is how the positions a merged cell
-/// covers get no node of their own and still exist.
-///
-/// A table with no name gets one from its position, because a name is a table's identity in
-/// this model (`model::Cell`) and two unnamed tables in a row would otherwise be one table.
+/// One `table` node: rows of cells whose coordinates come from where they sit — a row by position,
+/// a cell's column by how many came before it. A `span=` moves the counter on, so covered
+/// positions need no node. A table with no name gets one from its position, since a name is its
+/// identity (`model::Cell`).
 fn table(doc: &mut Document, node: &KdlNode, source: &mut Source) -> Result<()> {
     let name = match node
         .entries()
@@ -115,11 +94,8 @@ fn table(doc: &mut Document, node: &KdlNode, source: &mut Source) -> Result<()> 
         Some(name) => name.to_owned(),
         None => format!("Table{}", doc.blocks.len() + 1),
     };
-    // The positions a `rows=` span reaches into. A column span moves the counter along inside
-    // its own row and needs no memory; a *row* span reaches into rows that have not been read
-    // yet, so the positions it covers are remembered until they are stepped over. Without this
-    // every cell after a vertically merged one shifts one column left, which is what loop F
-    // found in fifteen corpus documents the day this comparison started looking at cells.
+    // The positions a `rows=` span reaches into, remembered until stepped over — otherwise every
+    // cell after a vertically merged one shifts left a column.
     let mut covered: std::collections::BTreeSet<(u32, u32)> = std::collections::BTreeSet::new();
     for (row, child) in children(node).iter().enumerate() {
         let row = row as u32;
@@ -167,8 +143,7 @@ fn table(doc: &mut Document, node: &KdlNode, source: &mut Source) -> Result<()> 
     Ok(())
 }
 
-/// A `span=` or `rows=` property: how many columns or rows this cell covers. One when it does
-/// not say, which is what a cell that covers only itself is.
+/// A `span=` or `rows=` property: how many columns or rows this cell covers; one when unstated.
 fn span(node: &KdlNode, name: &str) -> Result<u32> {
     match node.get(name) {
         None => Ok(1),
@@ -180,12 +155,8 @@ fn span(node: &KdlNode, name: &str) -> Result<u32> {
     }
 }
 
-/// The block's text: its last string argument, and **whether it was written raw**.
-///
-/// The one place in this project where how a value was *spelled* carries meaning rather than
-/// only how it reads — `#"…"#` turns the inline notation off (`doc/dsl.md` §3.5). `kdl-rs`
-/// keeps the original representation beside the decoded value, which is the same property R6
-/// is built on and the reason that crate was chosen.
+/// The block's text — its last string argument — and whether it was written raw: `#"…"#` turns the
+/// notation off (`doc/dsl.md` §3.5), and `kdl-rs` keeps each value's original spelling.
 fn string_of(node: &KdlNode) -> Option<(String, bool)> {
     let entry = node.entries().iter().rfind(|e| e.name().is_none())?;
     let text = entry.value().as_string()?;

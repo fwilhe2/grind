@@ -2,27 +2,21 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! List numbering, **read for showing and never authored** — `crate::paragraph`'s rule, for
-//! `text:list-style` (rng:17558).
+//! List numbering, read for showing and never authored, for `text:list-style` (rng:17558). The
+//! model keeps a list as blocks with a depth; this derives the label a reader sees — `1.`, `2.a)`,
+//! `(iv)`, the style's bullet — from the list styles, which list each item belongs to, and item
+//! order. Never stored, so inserting an item renumbers the rest.
 //!
-//! The model flattens a list into blocks with a depth (`doc/text-core.md`), and that stays the
-//! model: nothing here is written back, and a save keeps a list's style because the writer keeps
-//! its element. What this adds is the label a reader of the page sees in front of an item — `1.`,
-//! `2.a)`, `(iv)`, the style's own bullet — derived from three things read with the document:
-//! the list styles, which list each item belongs to, and the order of the items. A label is
-//! never stored, so it cannot go stale: insert an item and every number after it moves.
+//! As LibreOffice does it (measured, `doc/odt-format.md` §5c, fact 15): the level's prefix, the
+//! numbers of the levels `text:display-levels` asks for each in its own format joined by `.`, then
+//! the suffix; a `text:list-header` neither counts nor shows one; each top-level `text:list`
+//! restarts unless it says `text:continue-numbering` or `text:continue-list`; `text:start-value`
+//! on an item sets its number and on a level its first; a list naming no style shows no mark.
 //!
-//! **What LibreOffice does, measured** (`doc/odt-format.md` §5c, fact 15): an item's label is
-//! its level's prefix, then the numbers of the levels `text:display-levels` asks for — each in
-//! its own level's format, joined by `.` — then the level's suffix; a `text:list-header` neither
-//! counts nor shows one; every top-level `text:list` starts again unless it says
-//! `text:continue-numbering` or `text:continue-list`; `text:start-value` on an item sets its
-//! number and on a level its first; and a list naming no style shows no mark at all.
-//!
-//! **Headings are numbered the same way**, by the document's one `text:outline-style`
-//! (rng:17530, [`crate::Document::outline_style`]) — `1`, `1.1`, `2.1.1` — counted across the
-//! whole document level by level, a `text:is-list-header` heading neither counting nor showing
-//! one, and a level whose format is empty showing nothing (§5c fact 20).
+//! Headings are numbered the same way by the document's `text:outline-style` (rng:17530,
+//! [`crate::Document::outline_style`]) — `1`, `1.1`, `2.1.1` — counted level by level across the
+//! document, an `is-list-header` heading neither counting nor showing one, and an empty format
+//! showing nothing (§5c fact 20).
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -36,9 +30,9 @@ pub struct ListStyle {
     pub indents: BTreeMap<u32, LevelIndent>,
 }
 
-/// One level's `style:list-level-label-alignment` (rng:13281), ODF's values verbatim: the
-/// paragraph's left margin and first-line indent while it is at this level, the tab stop its
-/// label is followed by, and what follows the label — `listtab`, `space` or `nothing`.
+/// One level's `style:list-level-label-alignment` (rng:13281), verbatim: the paragraph's left
+/// margin and first-line indent at this level, the tab stop after the label, and what follows the
+/// label — `listtab`, `space` or `nothing`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LevelIndent {
     pub margin_left: Option<String>,
@@ -62,21 +56,20 @@ pub enum Level {
         display: u32,
         /// `text:start-value`: the level's first number.
         start: u32,
-        /// `loext:num-list-format`, LibreOffice's template for the whole label — `%1%.%2%.` —
-        /// which, where a level has one, Writer shows instead of the prefix, the numbers
-        /// `display` asks for and the suffix (`doc/odt-format.md` §5c fact 21).
+        /// `loext:num-list-format`, LibreOffice's template for the whole label (`%1%.%2%.`), which
+        /// Writer shows instead of prefix, numbers and suffix where a level has one
+        /// (`doc/odt-format.md` §5c fact 21).
         template: Option<String>,
     },
 }
 
-/// Which list a list item's block belongs to, as the reader found it — what a label is derived
-/// from, and never written.
+/// Which list a list item's block belongs to, as read — what its label is derived from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ListMark {
     /// The list style in effect: the `text:list`'s own, or the nearest enclosing one's.
     pub style: Option<String>,
-    /// Which numbering this item counts in: one per top-level `text:list`, shared by a list that
-    /// continues another.
+    /// Which numbering this item counts in: one per top-level `text:list`, shared by a list
+    /// continuing another.
     pub chain: usize,
     /// The item's own `text:start-value`.
     pub start: Option<u32>,
@@ -87,7 +80,7 @@ pub struct ListMark {
 }
 
 /// `n` in a `style:num-format`: arabic, lower or upper letters (`z` then `aa`), lower or upper
-/// roman. Anything else is arabic, and an empty format shows no number.
+/// roman. Anything else is arabic; an empty format shows no number.
 pub fn number(n: u32, format: &str) -> String {
     match format {
         "" => String::new(),
@@ -137,9 +130,8 @@ fn roman(mut n: u32) -> String {
     out
 }
 
-/// A bullet character as it should be drawn: a symbol font's private-use code point — Word's
-/// `` from Symbol, which a document carries over from Windows — is no glyph in any other
-/// face, so it is drawn as the plain bullet it stands for.
+/// A bullet as drawable: a symbol font's private-use code point (Word's `` from Symbol) is no
+/// glyph in other faces, so it is drawn as the plain bullet it stands for.
 fn drawable(bullet: &str) -> String {
     match bullet.chars().next() {
         None => "\u{2022}".to_owned(),
@@ -148,14 +140,11 @@ fn drawable(bullet: &str) -> String {
     }
 }
 
-/// Every list item's label among the first `upto` blocks, by index. An **empty** label is a
-/// header or an item's second paragraph, which wear nothing; `None` is a block that is not a
-/// list item, or one whose list states no style to say what it wears — a shell then draws its
-/// own bullet (`crate::paint::bullet`), which is what a list made before this build wrote one
-/// with a style of its own (`Lgrind1`, `odf::write`) looks like.
-///
-/// An item added by editing has no [`ListMark`] of its own; it takes the one of the item before
-/// it at its depth, so pressing Enter in a numbered list numbers the new item.
+/// Every list item's label among the first `upto` blocks, by index. Empty for a header or an
+/// item's second paragraph; `None` for a block that is not a list item, or whose list states no
+/// style, where a shell draws its own bullet (`crate::paint::bullet`). An item added by editing
+/// takes the [`ListMark`] of the item before it at its depth, so Enter in a numbered list numbers
+/// the new item.
 pub fn labels(doc: &Document, upto: usize) -> Vec<Option<String>> {
     let mut out = Vec::with_capacity(upto.min(doc.blocks.len()));
     // Per chain, the current number of each level from 1 (`None` where none has been seen).
@@ -215,7 +204,7 @@ pub fn labels(doc: &Document, upto: usize) -> Vec<Option<String>> {
 }
 
 /// Count one item at `level` in `chain` — its own `start`, else one past the last at its level,
-/// else its level's first — and answer its label. Every level below it starts again.
+/// else the level's first — and return its label. Every deeper level restarts.
 fn count(
     style: &ListStyle,
     chain: &mut Vec<Option<u32>>,
@@ -281,8 +270,8 @@ fn compose(style: &ListStyle, chain: &[Option<u32>], level: usize) -> String {
     }
 }
 
-/// `loext:num-list-format`'s template with every `%N%` replaced by `level(N)`, and everything
-/// else — a `%` that opens no level number included — kept as it is.
+/// `loext:num-list-format`'s template with every `%N%` replaced by `level(N)`; anything else, a
+/// stray `%` included, kept.
 fn fill(template: &str, level: impl Fn(usize) -> String) -> String {
     let mut out = String::new();
     let mut rest = template;

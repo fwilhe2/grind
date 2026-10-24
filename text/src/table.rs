@@ -2,15 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where a shell puts a table — the half of *Insert Table* that is not a dialog.
-//!
-//! [`App::insert_table`] does exactly what `grind text table` says: it inserts a table at an
-//! index and nothing else. A window needs two decisions on top, and the GNOME window had them
-//! to itself until the browser and the Windows pane wanted the same verb: **below** the caret's
-//! block (and below the whole table when the caret is already in one — inserting at `block + 1`
-//! would cut that table in two), and **never last**, since a document must not *end* with a
-//! table: there would be nowhere to type after it, and LibreOffice appends a paragraph to any
-//! document that does (`doc/odt-format.md` §5b).
+//! Where a shell puts a table — the half of Insert Table that is not a dialog: below the caret's
+//! block (below the whole table when the caret is in one, or it would be cut in two), and never
+//! last — a document ending with a table has nowhere to type after it, and LibreOffice appends a
+//! paragraph to one (`doc/odt-format.md` §5b).
 
 use crate::{App, BlockKind, Result};
 
@@ -25,10 +20,8 @@ pub fn parse_size(answer: &str) -> Option<(u32, u32)> {
         .then_some((rows, columns))
 }
 
-/// Insert a `rows` × `columns` table below the block at `block`, and return the index of its
-/// first cell — where the caret belongs afterwards. When the table would end the document an
-/// empty paragraph follows it, as a second action and so a second undo step, which is the honest
-/// cost of the core's own verb doing exactly what it says.
+/// Insert a `rows` × `columns` table below the block at `block`, returning its first cell's index.
+/// When it would end the document an empty paragraph follows, as a second undo step.
 pub fn insert_below(app: &App, block: usize, rows: u32, columns: u32) -> Result<usize> {
     let count = app.block_count();
     let at = match app.table(block) {

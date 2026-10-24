@@ -2,21 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A paragraph's runs as one string, and back. **\[ODT\]**
+//! A paragraph's runs as one string, and back (`doc/dsl.md` §3.6). **\[ODT\]**
 //!
-//! `doc/dsl.md` §3.6, and the milestone's own risk note (§10): *"`markdown.rs` becomes
-//! bidirectional… this is where the projection actually touches existing code, and it is the
-//! piece to prototype first."* This is that piece.
-//!
-//! **It is a module beside `markdown.rs` rather than more of it, and the split is the point.**
-//! `markdown.rs` answers one question — *what did the character just typed complete?* — over a
-//! block the user is editing, and its own header is emphatic that it is a notation for
-//! **typing** and never for showing. Parsing a whole string and printing one back are two
-//! different questions with different failure modes, and folding them into that module would
-//! blur a contract three shells depend on. What must not exist twice is the **table** — which
-//! marker means bold — and it does not: [`Emphasis::markers`] and [`Emphasis::style`] are read
-//! from there and nothing here restates them. A fourth spelling of `**` would be exactly the
-//! failure `doc/tui-shell.md` and `doc/text-core.md` argue against.
+//! Beside `markdown.rs` rather than in it: that module answers what a character just typed
+//! completed, for typing only; parsing and printing whole strings are different questions. The
+//! marker table is shared, read from [`Emphasis::markers`] and [`Emphasis::style`].
 //!
 //! ## The grammar
 //!
@@ -30,41 +20,30 @@
 //! \*  \[  \\                         a literal marker character
 //! ```
 //!
-//! Tab and line break are not notation at all: a `\t` in the KDL string **is** a `text:tab` and
-//! a `\n` **is** a `text:line-break`, which is `doc/dsl.md` §3.5's table and is free — KDL
-//! escapes them on the way out and decodes them on the way in, so neither this module nor the
-//! reader spells them.
+//! A `\t` in the KDL string is a `text:tab` and a `\n` a `text:line-break`; KDL escapes them, so
+//! no notation is needed (§3.5).
 //!
 //! ## Three rules that make it total
 //!
-//! **One emphasis per marker pair, and nothing nested inside one.** A run carrying *two*
-//! emphases — bold and italic together — is written `[x]{bold=#true italic=#true}` rather than
-//! `***x***`. That is not a limitation of the notation, it is a refusal to implement
-//! CommonMark's delimiter-run algorithm: `***x***` is ambiguous without one, and a file format
-//! whose meaning depends on a heuristic is a file format that loses documents. Marker content
-//! is literal text and the parser never recurses, so every string has exactly one reading.
-//!
-//! **The writer escapes, so the reader may be simple.** Anything that could open a construct
-//! is written `\`-escaped when it is meant literally, which means a marker the reader *sees*
-//! is a marker somebody meant. A hand-written file gets markdown's ordinary behaviour — an
-//! unclosed `*` is just an asterisk, because a marker with no partner is literal.
-//!
-//! **A raw KDL string turns the notation off entirely** (§3.5). `#"a literal ** stays"#` is how
-//! a paragraph *about* markdown is written, and the writer reaches for it when a block is plain
-//! text that would otherwise be a thicket of backslashes. That is the one place the projection
-//! reads meaning out of how a string was *spelled*, and it is why [`read`] takes a `raw` flag.
+//! * One emphasis per marker pair, nothing nested: bold and italic together is `[x]{bold=#true
+//!   italic=#true}`, never `***x***`, which needs CommonMark's delimiter-run heuristic to read.
+//!   Marker content is literal and the parser never recurses, so every string has one reading.
+//! * The writer escapes, so the reader may be simple: a marker the reader sees was meant. An
+//!   unclosed `*` in a hand-written file is an asterisk.
+//! * A raw KDL string turns the notation off (§3.5): `#"a literal ** stays"#`. The writer uses it
+//!   for plain text that would otherwise need many backslashes, which is why [`read`] takes a
+//!   `raw` flag.
 
 use crate::markdown::Emphasis;
 use crate::model::Run;
 use crate::style::CharStyle;
 
-/// Every character the notation can begin with. Not the escape set: `_` alone is nothing at
-/// all and `{` only matters before a `#`, so [`escape`] looks ahead rather than escaping every
-/// one of these on sight. This list is what decides a string is *worth* writing raw.
+/// Every character the notation can begin with, which decides whether a string is worth writing
+/// raw. Not the escape set: [`escape`] looks ahead, since `_` alone and `{` without `#` open
+/// nothing.
 const SPECIAL: [char; 7] = ['\\', '*', '_', '~', '`', '[', '{'];
 
-/// The emphases, longest marker first — `**` has to be tried before `*`, exactly as
-/// `markdown.rs`'s own `NOTATION` does and for the same reason.
+/// The emphases, longest marker first, so `**` is tried before `*`.
 const BY_LENGTH: [Emphasis; 5] = [
     Emphasis::Bold,
     Emphasis::Underline,
@@ -76,20 +55,16 @@ const BY_LENGTH: [Emphasis; 5] = [
 /// A block's runs as one string, plus whether it should be written as a **raw** KDL string.
 pub struct Inline {
     pub text: String,
-    /// True when the string carries no notation at all and holds a character that would
-    /// otherwise need escaping — `#"…"#` is both prettier and more honest there.
+    /// True when the string carries no notation and holds a character that would otherwise need
+    /// escaping.
     pub raw: bool,
 }
 
-/// Spell a block's runs as one string.
-///
-/// `None` when a run has no spelling — today only [`Run::Image`], which is the text
-/// projection's one named gap (`doc/projection-text.md`). Returning an `Option` rather than
-/// dropping it silently is what lets the writer say so.
+/// Spell a block's runs as one string, or `None` when a run has no spelling — an image, the text
+/// projection's named gap (`doc/projection-text.md`).
 pub fn write(runs: &[Run]) -> Option<Inline> {
-    // A kept element — a footnote, a field — is spelled as the text it shows, which is what
-    // this notation has always said of one; the element itself is the projection's second named
-    // gap (`doc/projection-text.md`), and loop F compares it as that text.
+    // A kept element (a footnote, a field) is spelled as the text it shows; the element itself is
+    // a named gap (`doc/projection-text.md`).
     let shown: Vec<Run>;
     let runs = if runs.iter().any(|r| matches!(r, Run::Kept { .. })) {
         shown = runs
@@ -104,8 +79,7 @@ pub fn write(runs: &[Run]) -> Option<Inline> {
         runs
     };
     let mut text = String::new();
-    // A raw string is only on offer while every run is unformatted prose; one `**bold**`
-    // anywhere in the block and the whole string needs the notation switched on.
+    // A raw string is possible only while every run is unformatted.
     let mut plain = true;
     for run in runs {
         match run {
@@ -139,8 +113,7 @@ pub fn write(runs: &[Run]) -> Option<Inline> {
                         text.push_str(&escape(body, Some(']')));
                         text.push(']');
                         match (href, style.is_none() && props.is_plain()) {
-                            // The `(url)` shorthand exists for the run that is *only* a link,
-                            // which is what a link usually is.
+                            // The `(url)` shorthand, for a run that is only a link.
                             (Some(url), true) => {
                                 text.push('(');
                                 text.push_str(&escape(url, Some(')')));
@@ -153,13 +126,9 @@ pub fn write(runs: &[Run]) -> Option<Inline> {
             }
         }
     }
-    // A newline inside a raw string would make it one of KDL's multi-line strings, whose
-    // dedenting rules are a second thing to be right about; a tab inside one is invisible in
-    // the file. Both are better as the escapes KDL already has.
-    //
-    // `plain` means every run went through `Spelling::Plain`, so the only backslashes in
-    // `text` are ones `escape` added and `unescape` takes exactly those back out — which is
-    // what makes the raw form *the same characters*, which is its whole appeal.
+    // Not raw with a newline (a KDL multi-line string, with its own dedenting) or a tab (invisible
+    // in the file). `plain` means every backslash in `text` is one `escape` added and `unescape`
+    // removes, so the raw form is the same characters.
     let raw = plain
         && text.contains(SPECIAL)
         && !text.contains(['\n', '\t'])
@@ -171,11 +140,8 @@ pub fn write(runs: &[Run]) -> Option<Inline> {
     Some(Inline { text, raw })
 }
 
-/// Read a string back into runs.
-///
-/// `raw` is what the KDL string's own spelling said (`#"…"#`): the notation is off, every
-/// character is itself, and only tab and line break — which are ODF elements rather than
-/// notation — still become their own runs.
+/// Read a string back into runs. With `raw` (the KDL string was `#"…"#`) the notation is off, and
+/// only tab and line break become runs of their own.
 pub fn read(text: &str, raw: bool) -> Vec<Run> {
     let chars: Vec<char> = text.chars().collect();
     let mut runs = Vec::new();
@@ -250,9 +216,9 @@ enum Spelling {
     Attributes,
 }
 
-/// A run carrying **exactly one** emphasis and nothing else gets markers; anything else that is
-/// not plain gets the attribute form. The comparison is against `markdown.rs`'s own
-/// `Emphasis::style()`, so "bold" here means precisely what typing `**bold**` produces.
+/// A run with exactly one emphasis and nothing else gets markers; anything else not plain gets
+/// attributes. Compared against `Emphasis::style()`, so "bold" means what typing `**bold**`
+/// produces.
 fn spelling(style: Option<&str>, props: &CharStyle, href: Option<&str>) -> Spelling {
     if style.is_some() || href.is_some() {
         return Spelling::Attributes;
@@ -266,9 +232,8 @@ fn spelling(style: Option<&str>, props: &CharStyle, href: Option<&str>) -> Spell
     }
 }
 
-/// The `{…}` attribute list. Every property spelled out, ODF values verbatim — with the four
-/// switches written `#true` when they carry the value the notation would have produced, so the
-/// common case stays short and an unusual one (`weight="600"`) is still expressible.
+/// The `{…}` attribute list: every property, ODF values verbatim, the four switches as `#true`
+/// when they hold the notation's value.
 fn attributes(out: &mut String, style: Option<&str>, props: &CharStyle, href: Option<&str>) {
     out.push('{');
     let mut first = true;
@@ -327,8 +292,7 @@ fn attributes(out: &mut String, style: Option<&str>, props: &CharStyle, href: Op
     out.push('}');
 }
 
-/// One of the four switch-shaped properties: `bold=#true` when it holds its canonical value,
-/// `weight="600"` when it holds anything else.
+/// A switch-shaped property: `bold=#true` for its canonical value, `weight="600"` otherwise.
 fn switch(
     put: &mut impl FnMut(&str, &str, bool),
     switch: &str,
@@ -425,12 +389,9 @@ fn marked(chars: &[char], at: usize) -> Option<(Run, usize)> {
     None
 }
 
-/// Everything up to the next unescaped `end`, **still escaped**, and where that `end` is.
-///
-/// Raw rather than decoded on purpose. An attribute list has escapes of its own (`\"` inside a
-/// quoted value) that a decode here would eat before [`pairs`] ever saw them — one decode pass
-/// cannot serve two layers. So this one only *skips* escapes while scanning, and each caller
-/// decodes what it took: [`unescape`] for a body, [`pairs`] for a list.
+/// Everything up to the next unescaped `end`, still escaped, and where that `end` is. An attribute
+/// list has escapes of its own (`\"`), so this only skips escapes and each caller decodes:
+/// [`unescape`] a body, [`pairs`] a list.
 fn until(chars: &[char], from: usize, end: char) -> Option<(String, usize)> {
     let mut out = String::new();
     let mut at = from;
@@ -451,8 +412,7 @@ fn until(chars: &[char], from: usize, end: char) -> Option<(String, usize)> {
     None
 }
 
-/// `\x` becomes `x`, everywhere. The inverse of [`escape`], and total: the escape is one
-/// character standing for the next one, with no vocabulary of its own to get out of step.
+/// `\x` becomes `x`, everywhere — [`escape`]'s inverse.
 fn unescape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars();
@@ -488,17 +448,15 @@ fn parse_attributes(list: &str) -> (Option<String>, CharStyle, Option<String>) {
             "background" => props.background = Some(value),
             "style" => style = Some(value),
             "href" => href = Some(value),
-            // An attribute this build has no property for is dropped, which is the same
-            // tolerance §8's XML reader has and the same cost: it is not in the model, so it
-            // is not in the file the next save writes.
+            // An attribute with no property is dropped, as the XML reader drops unknown ones.
             _ => {}
         }
     }
     (style, props, href)
 }
 
-/// Split an attribute list into pairs. Hand-rolled rather than KDL's, because this lives
-/// *inside* a KDL string and has already been through its unescaping once.
+/// Split an attribute list into pairs, by hand: this is inside a KDL string already unescaped
+/// once.
 fn pairs(list: &str) -> Vec<(String, String)> {
     let chars: Vec<char> = list.chars().collect();
     let mut out = Vec::new();
@@ -543,11 +501,8 @@ fn pairs(list: &str) -> Vec<(String, String)> {
     out
 }
 
-/// An attribute value: bare when it can be, quoted when it must.
-///
-/// `}` is escaped inside the quotes as well as inside the bare form, because the attribute list
-/// is found by scanning to the first unescaped `}` before anything looks at the quotes —
-/// [`until`] runs before [`pairs`] does, and it decodes the escape on the way through.
+/// An attribute value, bare when it can be and quoted when it must. `}` is escaped inside quotes
+/// too, since [`until`] finds the list's end before [`pairs`] looks at quotes.
 fn quote(value: &str) -> String {
     if !value.is_empty() && !value.contains([' ', '"', '\\', '}', '=']) {
         return value.to_owned();
@@ -567,17 +522,10 @@ fn quote(value: &str) -> String {
     out
 }
 
-/// Backslash every character that would open a construct **here** — the same lookahead the
-/// reader uses, from the other side.
-///
-/// Escaping all seven of [`SPECIAL`] on sight would be simpler and would spell `snake_case` as
-/// `snake\_case`, which is a format nobody wants to read. `_` and `~` open nothing unless
-/// doubled and `{` opens nothing unless a `#` follows, so those three are escaped only where
-/// they would actually mean something. `*` is escaped always, because one of them *is* italic.
-///
-/// `also` is the closer of whatever bracket this text is going inside, if any: `]` inside a
-/// `[…]` body, `)` inside a link's URL. Outside one it is `None`, because a stray `]` in prose
-/// closes nothing and escaping it would be noise.
+/// Backslash every character that would open a construct here, with the reader's lookahead: `_`,
+/// `~` and `{` only where they would mean something (not in `snake_case`), `*` always. `also` is
+/// the closer of the bracket this text goes inside — `]` in a `[…]` body, `)` in a URL — or `None`
+/// in prose.
 fn escape(text: &str, also: Option<char>) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
@@ -616,8 +564,7 @@ mod tests {
         }
     }
 
-    /// The property the whole module exists for, stated once: whatever the runs are, spelling
-    /// them and reading them back is the identity.
+    /// Spelling runs and reading them back is the identity.
     fn round_trip(runs: Vec<Run>) {
         let inline = write(&runs).expect("spellable");
         assert_eq!(
@@ -651,8 +598,7 @@ mod tests {
         }
     }
 
-    /// The refusal that makes the parser total: two emphases at once are attributes, never
-    /// `***x***`.
+    /// Two emphases at once are attributes, never `***x***`.
     #[test]
     fn two_emphases_are_written_out_rather_than_nested() {
         let mut props = Emphasis::Bold.style();
@@ -678,8 +624,7 @@ mod tests {
         round_trip(vec![styled("x", props)]);
     }
 
-    /// A value outside the notation's vocabulary still has a spelling — the switch becomes its
-    /// named property rather than the property becoming unreachable.
+    /// A value outside the notation's vocabulary is written as its property.
     #[test]
     fn an_unusual_weight_keeps_its_own_value() {
         let props = CharStyle {
@@ -812,8 +757,7 @@ mod tests {
         );
     }
 
-    /// The gap, asserted rather than assumed: an image has no spelling, and the writer says so
-    /// instead of dropping it where nobody can see.
+    /// An image has no spelling, and the writer says so.
     #[test]
     fn an_image_has_no_spelling_yet() {
         let runs = vec![

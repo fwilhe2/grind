@@ -2,50 +2,32 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Character formatting — the `style:style` of family `text` (doc/text-core.md). **\[ODT\]**
+//! Character formatting — the `style:style` of family `text` (`doc/text-core.md`). **\[ODT\]** The
+//! pieces are `grind_core::style`'s; this is which of them a run of text carries, ODF values
+//! verbatim (`bold`, `12pt`), interpreted by readers such as [`CharStyle::is_bold`] rather than
+//! normalised.
 //!
-//! `grind_sheet::style::CellStyle`'s counterpart, and the same split: the pieces a character
-//! style is made of — `fo:font-weight`, an ODF length, a `#rrggbb` colour — are not a document
-//! type's vocabulary and live in `grind_core::style`. What is here is the one thing that is
-//! genuinely about a *run of text*: which of those pieces it carries.
+//! Two things arrive as a `text:style-name` and are treated differently:
 //!
-//! **The values are ODF's own, kept verbatim.** `bold` stays the string `"bold"` and `12pt`
-//! stays `"12pt"`, because a model that normalises them has to choose a canonical spelling and
-//! then every document that chose another one round-trips differently. The convenience readers
-//! below ([`CharStyle::is_bold`] and friends) interpret without storing an interpretation.
+//! * **Automatic styles** are how every producer spells direct formatting — LibreOffice writes
+//!   bold mid-sentence as a generated `T3`. The name means nothing outside the file, so it is
+//!   resolved onto the run and forgotten, which is what makes "select this and press Ctrl+B"
+//!   expressible.
+//! * **Named styles** (`Emphasis`, `Source_20_Text`) are the document's vocabulary and keep their
+//!   name: resolving `Emphasis` into italic would throw the structure away. They are read for
+//!   showing ([`crate::paragraph::shown`]) and never written.
 //!
-//! ## What this closes, and what it deliberately does not
-//!
-//! `doc/text-core.md` gates *style definitions* — reading `office:styles` and writing it back —
-//! and this is **not** that gate opening. The split it draws is between two different things
-//! that both arrive as a `text:style-name`:
-//!
-//! * **Automatic styles** (`office:automatic-styles`) are how every ODF producer spells
-//!   *direct* formatting: LibreOffice writes bold-in-the-middle-of-a-sentence as a generated
-//!   `T3` whose whole content is `fo:font-weight="bold"`. The name is a serialisation detail
-//!   with no meaning outside the file, so this build resolves it to properties on the run and
-//!   forgets the name — which is what makes "select this and press Ctrl+B" expressible at all.
-//! * **Named styles** (`office:styles`, usually `styles.xml`) are the document's own
-//!   vocabulary — `Emphasis`, `Source_20_Text`. Those keep their name and are *not* resolved,
-//!   because the name is the meaning, and a UI that turned `Emphasis` into
-//!   `fo:font-style="italic"` would have thrown the document's structure away to draw it.
-//!
-//! So a [`crate::model::Run`] carries both: a name this build does not interpret, and the
-//! formatting it does. See `crate::odf::read` for where the line is drawn on the way in and
-//! `crate::odf::write` for the pool that puts the names back.
+//! A [`crate::model::Run`] carries both. `crate::odf::read` draws the line on the way in,
+//! `crate::odf::write`'s pool puts the names back.
 
 use grind_core::style::TextStyle;
 
-/// How one run of text looks. Every field is an ODF attribute value, and `None` means the
-/// attribute is absent — which is not the same as `Some("none")`, the spelling ODF uses for
-/// "explicitly not underlined".
-///
-/// The property set is `doc/text-core.md`'s "text family" row, unchanged and complete.
+/// How one run of text looks — `doc/text-core.md`'s text-family properties. Every field is an ODF
+/// attribute value; `None` is absent, unlike `Some("none")`, ODF's "explicitly not underlined".
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct CharStyle {
-    /// `fo:font-family` — the family name, quoted exactly as the document spells it. A
-    /// `style:font-name` pointing into `office:font-face-decls` is resolved to this on read,
-    /// because the indirection is a container detail and the family is the fact.
+    /// `fo:font-family`, the family name. A `style:font-name` reference into
+    /// `office:font-face-decls` is resolved to this on reading.
     pub font_family: Option<String>,
     /// `fo:font-size` — a length, e.g. `12pt`, or a percentage.
     pub font_size: Option<String>,
@@ -61,21 +43,16 @@ pub struct CharStyle {
     pub color: Option<String>,
     /// `fo:background-color` — `#rrggbb` or `transparent`. Text highlighting.
     pub background: Option<String>,
-    /// The automatic style this formatting was read from, when that style says something the
-    /// fields above do not — superscript, a language, letter spacing. **Not formatting**, and
-    /// equal to every other [`Origin`]: what it is for is a save, which builds a restyled
-    /// run's new style from that one rather than from these fields alone, so what the model
-    /// never read is not lost (`grind_core::odf::envelope::patch_style`).
+    /// The automatic style this formatting was read from, when it says what the fields do not —
+    /// superscript, a language, letter spacing. Not formatting, and equal to every other
+    /// [`Origin`]; a save builds a restyled run's new style from it, so what the model never read
+    /// survives (`grind_core::odf::envelope::patch_style`).
     pub origin: Origin,
 }
 
-/// Where a run's formatting came from, for a save's sake — see [`CharStyle::origin`].
-///
-/// Equal to every other, so comparing two documents, two runs or two formattings is about what
-/// they *say* (loop C and loop F compare exactly that, and LibreOffice renames every style it
-/// writes). [`CharStyle::same`] is the comparison that does see it, for the two places that must:
-/// joining runs and pooling styles, where a superscript run and a plain one that look alike to
-/// the model must stay apart.
+/// Where a run's formatting came from, for a save ([`CharStyle::origin`]). Equal to every other,
+/// so comparisons are about what formatting says; [`CharStyle::same`] sees it, for joining runs
+/// and pooling styles, where a superscript run and a plain one must stay apart.
 #[derive(Clone, Debug, Default)]
 pub struct Origin(Option<std::sync::Arc<str>>);
 
@@ -103,16 +80,14 @@ impl std::hash::Hash for Origin {
 }
 
 impl CharStyle {
-    /// Nothing set at all — formatting worth neither writing nor pooling.
-    ///
-    /// About what the formatting *says*, so a run whose only distinction is where it was read
-    /// from ([`Origin`]) is plain here; a writer asks [`CharStyle::needs_style`] instead.
+    /// Nothing set at all. About what the formatting says, so a run distinguished only by its
+    /// [`Origin`] is plain; a writer asks [`CharStyle::needs_style`].
     pub fn is_plain(&self) -> bool {
         *self == CharStyle::default()
     }
 
-    /// Whether writing this formatting takes a style — anything set, or an [`Origin`] whose
-    /// style says what the fields cannot (a superscript with nothing else on it).
+    /// Whether writing this formatting takes a style: anything set, or an [`Origin`] whose style
+    /// says more (a superscript alone).
     pub fn needs_style(&self) -> bool {
         !self.is_plain() || self.origin.name().is_some()
     }
@@ -122,11 +97,9 @@ impl CharStyle {
         self == other && self.origin.name() == other.origin.name()
     }
 
-    /// The attributes that turn `base`'s properties into these: each field that differs, set or
-    /// removed, and nothing else — so a restyle built on the old style's element
-    /// (`envelope::patch_style`) keeps the file's own spelling of everything it did not change.
-    /// A changed family also drops `style:font-name`, the reference into the font declarations
-    /// the reader resolved it from, which would otherwise win over the new one.
+    /// The attributes that turn `base`'s properties into these — each differing field set or
+    /// removed, nothing else — so a restyle built on the old element keeps the file's own spelling
+    /// of the rest. A changed family also drops `style:font-name`, which would otherwise win.
     pub fn patch_against(&self, base: &CharStyle) -> Vec<(String, Option<String>)> {
         let mut out = Vec::new();
         for ((name, new), (_, old)) in self.pairs().into_iter().zip(base.pairs()) {
@@ -145,11 +118,7 @@ impl CharStyle {
         out
     }
 
-    /// The metrics half, for `grind_core::layout`.
-    ///
-    /// Four of the eight fields change how *wide* text is; the other four change how it looks.
-    /// A layout engine has no use for a colour, and `grind_core::style::TextStyle` says so by
-    /// not having one — this is the projection that keeps that true.
+    /// The four fields that change how wide text is, for `grind_core::layout`.
     pub fn metrics(&self) -> TextStyle {
         TextStyle {
             font_family: self.font_family.clone(),
@@ -159,11 +128,8 @@ impl CharStyle {
         }
     }
 
-    /// Layer `other` over `self`: every property `other` sets wins, and the rest are kept.
-    ///
-    /// What nesting means. `<span T1><span T2>x</span></span>` gives `x` both styles with the
-    /// inner one winning, which is CSS's rule and ODF's, and it is why reading can flatten the
-    /// tree (`doc/text-core.md`) without losing how the text renders.
+    /// Layer `other` over `self`: what `other` sets wins. What nested spans mean, inner winning,
+    /// which is why reading can flatten them (`doc/text-core.md`).
     pub fn layer(&mut self, other: &CharStyle) {
         let fields: [(&mut Option<String>, &Option<String>); 8] = [
             (&mut self.font_family, &other.font_family),
@@ -182,11 +148,8 @@ impl CharStyle {
         }
     }
 
-    /// Whatever `self` and `other` agree about, and nothing else.
-    ///
-    /// What a toolbar shows over a selection that is not uniform: a range that is bold
-    /// throughout reads as bold, and one that is half bold reads as neither, which is what
-    /// every word processor does and the only answer that makes a toggle predictable.
+    /// What `self` and `other` agree about, and nothing else — so a half-bold selection reads as
+    /// not bold.
     pub fn common(&self, other: &CharStyle) -> CharStyle {
         fn agreed(a: &Option<String>, b: &Option<String>) -> Option<String> {
             (a == b).then(|| a.clone()).flatten()
@@ -205,11 +168,8 @@ impl CharStyle {
         }
     }
 
-    /// Whether this run reads as bold.
-    ///
-    /// `fo:font-weight` is `normal`, `bold`, or a hundreds number, and CSS's threshold for
-    /// "bold" is 600 — interpreted here rather than stored, so the document's own spelling
-    /// survives a round trip whichever one it chose.
+    /// Whether this run reads as bold: `fo:font-weight` of `bold` or 600 and up, interpreted
+    /// rather than stored.
     pub fn is_bold(&self) -> bool {
         match self.font_weight.as_deref() {
             None | Some("normal") => false,
@@ -222,8 +182,7 @@ impl CharStyle {
         self.font_weight = on.then(|| "bold".to_owned());
     }
 
-    /// Whether this run reads as italic. `oblique` counts: it is a slanted face by another
-    /// name, and no UI this project will build distinguishes them.
+    /// Whether this run reads as italic; `oblique` counts.
     pub fn is_italic(&self) -> bool {
         matches!(self.font_style.as_deref(), Some("italic" | "oblique"))
     }
@@ -248,10 +207,7 @@ impl CharStyle {
         self.line_through = on.then(|| "solid".to_owned());
     }
 
-    /// The `style:text-properties` attributes, ready to drop into a start tag.
-    ///
-    /// In one place because the writer emits them and nothing else may — a second speller would
-    /// be a second chance to disagree with the reader about which attribute holds what.
+    /// The `style:text-properties` attributes, ready for a start tag — the one speller of them.
     pub fn attributes(&self) -> String {
         use std::fmt::Write as _;
         let mut out = String::new();
@@ -266,8 +222,7 @@ impl CharStyle {
         out
     }
 
-    /// Every property as the attribute that carries it. The single ordered list this module's
-    /// reader and writer both work from.
+    /// Every property as the attribute carrying it — the one list the reader and writer both use.
     fn pairs(&self) -> [(&'static str, Option<&str>); 8] {
         [
             ("fo:font-family", self.font_family.as_deref()),
@@ -285,23 +240,15 @@ impl CharStyle {
     }
 }
 
-/// Whether a `*-style` attribute names a line that is actually drawn. ODF's `none` is an
-/// explicit absence and every other value is some kind of line.
+/// Whether a `*-style` attribute names a drawn line: anything but `none`.
 fn is_line(value: &Option<String>) -> bool {
     !matches!(value.as_deref(), None | Some("none"))
 }
 
-/// A font family with XSL-FO's quoting taken off, if it had any.
-///
-/// **The one value in this module that is not kept verbatim, and it has to be.**
-/// `fo:font-family` is an XSL-FO font list, so a name containing a space is written
-/// `'Liberation Serif'` — the quotes are the *list's* syntax and not part of the family's name.
-/// Keeping them would make `font_family == Some("Georgia")` false for a document that wrote
-/// `'Georgia'`, and would hand a shell a name no font system resolves. The same trade `text:s`
-/// gets: decode on the way in, re-encode on the way out (`quote_family`, private to this module).
-///
-/// A value with a comma in it is a *list* of families and is left exactly as it was: picking
-/// one of them would be this build choosing a font, which is a renderer's business.
+/// A font family with XSL-FO's quoting removed. `fo:font-family` is a font list, so `'Liberation
+/// Serif'`'s quotes are list syntax, not the name; keeping them would hand a shell a name no font
+/// system resolves. Decoded on reading and re-encoded on writing (`quote_family`), as `text:s` is.
+/// A value with a comma is a list and is left as it is.
 pub fn unquote_family(value: &str) -> String {
     let trimmed = value.trim();
     if trimmed.contains(',') {
@@ -318,10 +265,7 @@ pub fn unquote_family(value: &str) -> String {
     value.to_owned()
 }
 
-/// The inverse: quote a family whose name would not survive as a bare XSL-FO token.
-///
-/// LibreOffice writes `'Liberation Serif'` and reads a bare `Liberation Serif` as one family
-/// anyway, so this is about producing what the format says rather than about being understood.
+/// Quote a family whose name would not survive as a bare XSL-FO token, as LibreOffice writes it.
 fn quote_family(value: &str) -> String {
     let needs = !value.contains(',')
         && value.contains(char::is_whitespace)
@@ -332,14 +276,9 @@ fn quote_family(value: &str) -> String {
     }
 }
 
-/// A style's name as its author wrote it — `Text_20_body` is *Text body*.
-///
-/// ODF spells a style name that is not an XML name with each awkward character as `_xx_`, the
-/// character's code in hex (`style:display-name` carries the readable one, which a document need
-/// not have). That is a file format's spelling and not something to show a person, so every
-/// shell's status bar reads a name through this — one decoding, rather than one per window.
-/// Only ASCII is decoded, since that is all a two-digit code can say; an underscore that is not
-/// part of one is kept.
+/// A style's name as its author wrote it — `Text_20_body` is *Text body*. ODF spells a character
+/// that is not allowed in an XML name as `_xx_` in hex; every shell's status bar reads names
+/// through this. Only ASCII codes are decoded; other underscores stay.
 pub fn readable_name(name: &str) -> String {
     let mut out = String::new();
     let mut rest = name;
@@ -407,8 +346,7 @@ mod tests {
         assert!(!style.is_bold());
     }
 
-    /// `Some("none")` and `None` are different attributes and the same rendering — the
-    /// distinction ODF makes and this model keeps.
+    /// `Some("none")` and `None` are different attributes and the same rendering.
     #[test]
     fn an_explicit_none_is_not_a_line_and_is_still_a_value() {
         let mut style = CharStyle {
@@ -479,10 +417,8 @@ mod tests {
         assert!(style.is_plain(), "off means absent, not \"normal\"");
     }
 
-    /// XSL-FO's quotes are the font *list*'s syntax, not part of a family's name — and a
-    /// measured fact about the oracle: LibreOffice writes `'Liberation Serif'` for what it was
-    /// given as `Liberation Serif`, so a model that kept the quotes would fail loop C for a
-    /// difference that is not one.
+    /// XSL-FO's quotes are not part of a family's name, and LibreOffice writes `'Liberation
+    /// Serif'` for `Liberation Serif`, so keeping them would fail loop C over nothing.
     #[test]
     fn a_font_family_loses_its_quoting_and_gets_it_back() {
         assert_eq!(unquote_family("'Liberation Serif'"), "Liberation Serif");
@@ -499,9 +435,7 @@ mod tests {
             }
             .attributes()
         };
-        // The apostrophes are XML-escaped on the way into the attribute, which is what
-        // LibreOffice writes too — `svg:font-family="&apos;Liberation Sans&apos;"` is verbatim
-        // out of a Writer document.
+        // Apostrophes XML-escaped in the attribute, as a Writer document has them.
         assert_eq!(
             quoted("Liberation Serif"),
             format!(" fo:font-family=\"{}\"", esc("'Liberation Serif'"))
@@ -510,8 +444,7 @@ mod tests {
         assert_eq!(quoted(list), format!(" fo:font-family=\"{}\"", esc(list)));
     }
 
-    /// The projection into the layout engine's vocabulary carries the four properties that
-    /// change how wide text is, and drops the four that do not.
+    /// Only the four metric properties reach the layout engine.
     #[test]
     fn only_the_metric_properties_reach_the_layout_engine() {
         let style = CharStyle {

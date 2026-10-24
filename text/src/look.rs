@@ -2,41 +2,22 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Which face a block is set in — how much bigger than the body, bold or italic, monospace or
-//! not. `grind_sheet::look`'s twin for a page.
-//!
-//! **The face is decided per block, by kind and style name, and not by the document**: a run's
-//! *direct* formatting reaches layout as a [`crate::CharStyle`], but a heading's size is a
-//! paragraph **style** and style definitions are not read (`doc/text-core.md`). So every shell
-//! that draws a page has to choose a face for a heading itself, and a heading laid out in one
-//! face and drawn in another would put every caret in the wrong place — which is why the choice
-//! reaches layout through the shell's [`crate::Faces`] and must be *one* choice.
-//!
-//! It was three: the GNOME window, the browser pane and the Windows pane each carried the same
-//! six heading scales, and each its own reading of which name wins. The macOS page would have
-//! been the fourth (`doc/macos-shell.md`, M6). They had drifted twice, and both are settled here:
-//!
-//! * the browser set a `Title` at 2.2 times the body where both desktop windows set it at 2.4;
-//! * the browser set a heading deeper than six levels in the **body** face, where the other two
-//!   set it as the sixth level — which is what all three said they did.
-//!
-//! What stays a shell's: the body size itself, in its own unit, and which family "monospace"
-//! is — a generic that fontconfig and a browser resolve and GDI does not, so the Windows pane
-//! names Consolas and the Mac its own.
+//! Which face a block is set in on screen — how much bigger than the body, bold or italic,
+//! monospace or not — decided by kind and style name; `grind_sheet::look`'s twin. A run's direct
+//! formatting reaches layout as a [`crate::CharStyle`]; a heading's size is chosen here, once, and
+//! reaches layout through the shell's [`crate::Faces`], so drawing and caret motion agree. A
+//! printed page takes the document's own paragraph styles instead ([`crate::paragraph`]). The body
+//! size and what "monospace" resolves to stay the shell's — GDI has no generic, so the Windows
+//! pane names Consolas.
 
 use crate::BlockKind;
 
-/// How much bigger than the body each heading level is, from level 1.
-///
-/// Six levels because that is where `doc/text-core.md` stops authoring, and flat after level
-/// four because a level-6 heading barely larger than the paragraph under it is exactly what a
-/// level-6 heading should look like.
+/// How much bigger than the body each heading level is, from level 1: six levels, where authoring
+/// stops (`doc/text-core.md`), flattening past level four.
 pub const HEADING_SCALE: [f64; 6] = [1.8, 1.5, 1.3, 1.15, 1.05, 1.0];
 
-/// `Title` and `Subtitle`: the two named paragraph styles LibreOffice's own blank document
-/// offers, and the only two given a face of their own. Larger than any heading, since a
-/// document's title sits above its outline rather than in it. Everything else in
-/// `office:styles` is a name this build keeps and does not interpret.
+/// `Title` and `Subtitle`, LibreOffice's blank document's two display styles and the only named
+/// styles with a face of their own: larger than any heading, since a title sits above the outline.
 pub const TITLE_SCALE: f64 = 2.4;
 pub const SUBTITLE_SCALE: f64 = 1.3;
 
@@ -67,11 +48,9 @@ impl Role {
         Role::Code,
     ];
 
-    /// The face of one block. **A named style wins over the block's own kind**: `Title` and
-    /// `Subtitle` are paragraphs whose only signal is the name, and a code fence is a paragraph
-    /// style and nothing else. A heading deeper than six levels is set as the sixth rather than
-    /// refused — the reader is tolerant (R5), so a level-9 heading loads, and a shell that
-    /// panicked on one would undo that.
+    /// The face of one block. A named style wins over the block's kind: `Title`, `Subtitle` and a
+    /// code fence are paragraphs whose only signal is the name. A heading deeper than six is set
+    /// as the sixth.
     pub fn of(kind: &BlockKind, style: Option<&str>) -> Role {
         match (style, kind) {
             (Some("Title"), _) => Role::Title,
@@ -136,8 +115,7 @@ mod tests {
         );
     }
 
-    /// Deeper than six is the sixth, and a heading claiming level 0 is the first — neither is
-    /// the body, which is where the browser used to put a level-7 heading.
+    /// Deeper than six is the sixth, and level 0 is the first — never the body.
     #[test]
     fn a_heading_past_the_last_level_is_set_as_the_last() {
         for level in [7, 9, 200] {

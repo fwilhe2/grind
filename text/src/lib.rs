@@ -76,9 +76,7 @@ pub fn implemented() -> Vec<&'static str> {
         "text:a",
         "text:bookmark",
         "draw:frame",
-        // Tables. The one part of this list whose elements are the *spreadsheet's* vocabulary
-        // as well — a text table's rows and cells are spelled exactly as a sheet's are, and
-        // that is the schema's doing rather than a shortcut: `table:table` is one of
+        // Tables: rows and cells are spelled as a spreadsheet's, because `table:table` is one of
         // `text-content`'s own alternatives (rng:16938).
         "table:table",
         "table:table-column",
@@ -88,16 +86,10 @@ pub fn implemented() -> Vec<&'static str> {
     ]
 }
 
-/// Read a `.odt` (package), `.fodt` (flat) or `.grind` (projection) document from bytes.
-///
-/// Paired with [`read_file`] from the start because the browser has no filesystem, and this
-/// is not retrofittable later (doc/plan.md, rule 5).
-///
-/// The form is sniffed from the bytes, so `name` is only ever a label for diagnostics.
+/// Read a `.odt` (package), `.fodt` (flat) or `.grind` (projection) document from bytes, sniffing
+/// the form; `name` is only a label.
 pub fn read_bytes(_name: &str, bytes: &[u8]) -> Result<Document> {
-    // The projection is the third physical form, and `grind_core::projection` decides whether
-    // these bytes are one from their first line — never from the file's name, which is the
-    // same rule `Form` and `kind` already follow.
+    // The projection is recognised by its first line.
     if grind_core::projection::is_projection(bytes).is_some() {
         let text = std::str::from_utf8(bytes).map_err(|e| Error::Projection(e.to_string()))?;
         return projection::read(text);
@@ -114,19 +106,16 @@ pub fn write_bytes(doc: &Document, form: Form) -> Result<Vec<u8>> {
     odf::write(doc, form)
 }
 
-/// Write a document, choosing the form from the extension — `.odt` the package,
-/// **anything else flat** ([`Form::from_path`], `doc/flat-first.md`).
+/// Write a document, choosing the form from the extension: `.odt` the package, anything else flat
+/// ([`Form::from_path`], `doc/flat-first.md`).
 pub fn write_file(doc: &Document, path: &Path) -> Result<()> {
     grind_core::atomic::write(path, &write_bytes(doc, Form::from_path(path))?)?;
     Ok(())
 }
 
-/// Read a document, refusing one that is not a text document.
-///
-/// The reader is tolerant by construction (§8), so handing it a spreadsheet produces an empty
-/// text document rather than an error — which is exactly wrong for a user who opened the
-/// wrong file. [`kind`](fn@kind) is checked first, and the error names the app that does
-/// open it.
+/// Read a document, refusing one that is not a text document: the tolerant reader would hand a
+/// spreadsheet back as an empty text document, so [`kind`](fn@kind) is checked first and the error
+/// names the app that opens it.
 pub fn open_bytes(name: &str, bytes: &[u8]) -> Result<Document> {
     match kind(bytes) {
         Some(DocumentKind::Text) => read_bytes(name, bytes),
@@ -134,12 +123,8 @@ pub fn open_bytes(name: &str, bytes: &[u8]) -> Result<Document> {
     }
 }
 
-/// A window onto the document — what a renderer draws, and the only way a shell reads blocks.
-///
-/// `doc/plan.md` rule 1, applied to a second document type: **no getter hands out the whole
-/// document.** The spreadsheet's reason was that a million rows do not fit; the reason here is
-/// the same one underneath — a shell that could take the whole `Vec<Block>` would keep its own
-/// copy, and then there would be two documents.
+/// A window onto the document — what a renderer draws, and the only way a shell reads blocks. No
+/// getter hands out the whole document, or a shell would keep its own copy.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Viewport {
     pub blocks: Range<usize>,
@@ -157,50 +142,31 @@ pub struct BlockView {
     pub style: Option<String>,
     /// The block's plain text.
     pub text: String,
-    /// The block's content split into runs of uniform formatting, in order — the same pieces
-    /// [`App::layout_block`] measures, so a shell that draws bold text can walk both together.
-    ///
-    /// Present here rather than behind a getter of its own because **reads go through
-    /// `get_viewport`** (`doc/plan.md` rule 1): a shell drawing a paragraph needs its text and
-    /// how that text is formatted at the same moment, and two calls would be two moments.
+    /// The block's content as runs of uniform formatting, in order — the pieces
+    /// [`App::layout_block`] measures — carried here so text and formatting are read in one call.
     pub runs: Vec<RunView>,
-    /// Whether anything about this block is *directly* formatted rather than inherited from
-    /// its named style — what `grind text formatting` lists.
+    /// Whether anything about this block is directly formatted rather than inherited from its
+    /// named style — what `grind text formatting` lists.
     pub styled: bool,
-    /// The bookmarks anchored inside this block, as (character offset, name), in order —
-    /// `doc/view-modes.md` §3.6, the word processor's half of inline names.
-    ///
-    /// A bookmark is the exact analogue of a named range and it is **invisible**: a
-    /// zero-width `Run` that contributes no characters, so nothing a reader sees says it is
-    /// there. This is what an overlay draws, and it is carried here for the reason every
-    /// other field is — a shell drawing a paragraph needs its text and its anchors at the
-    /// same moment, and two calls would be two moments.
-    ///
-    /// Always filled, with no flag to ask for it, and that is the difference from the
-    /// spreadsheet's overlays rather than an inconsistency: a role costs a document-wide
-    /// analysis and this costs a walk of the block's own runs, which the line above already
-    /// does.
+    /// The bookmarks anchored inside this block, as (character offset, name), in order
+    /// (`doc/view-modes.md` §3.6). A bookmark contributes no characters, so this is what an
+    /// overlay draws. Always filled: it costs a walk of the block's runs.
     pub marks: Vec<(usize, String)>,
-    /// Whether it is an index's generated entry rather than the document's own text
-    /// ([`Block::generated`]) — shown, and not to be edited.
+    /// Whether this is an index's generated entry rather than the document's own text
+    /// ([`Block::generated`]) — shown, not edited.
     pub generated: bool,
-    /// Where this block sits in a table, when it is in one (`model::Cell`) — the second axis of
-    /// the flat sequence, carried here for the reason every other field is: a shell drawing a
-    /// grid needs the block's text and its coordinate at the same moment, and two calls would
-    /// be two moments.
+    /// Where this block sits in a table, if it is in one (`model::Cell`).
     pub cell: Option<model::Cell>,
-    /// What a list item wears in front of it — `1.`, `2.a)`, the style's own bullet — derived
-    /// from its list's style and its place in the list (`numbering::labels`), never stored; and
-    /// a heading's number from the outline style ([`BlockView::number`]).
-    /// Empty for a list header or an item's second paragraph, which wear nothing; `None` where
-    /// the list states no style, and a shell draws its own bullet (`paint::bullet`) — see
-    /// [`BlockView::mark`], which is that choice made once.
+    /// What a list item wears in front of it — `1.`, `2.a)`, the style's bullet — derived from its
+    /// list's style and place (`numbering::labels`), never stored; a heading's number is
+    /// [`BlockView::number`]. Empty for a list header or an item's second paragraph; `None` where
+    /// the list states no style and a shell draws its own bullet ([`BlockView::mark`]).
     pub label: Option<String>,
 }
 
 impl BlockView {
-    /// What to draw in front of this block: its list label, or a shell's own bullet for a list
-    /// item whose list states no style, or nothing (`None`).
+    /// What to draw in front of this block: its list label, a shell's bullet for a list item whose
+    /// list states no style, or nothing.
     pub fn mark(&self) -> Option<&str> {
         let BlockKind::ListItem { depth } = self.kind else {
             return None;
@@ -212,8 +178,7 @@ impl BlockView {
         }
     }
 
-    /// A heading's number from the document's outline style — `1`, `2.1.3` — or `None` for a
-    /// heading it numbers nothing for and for every other block.
+    /// A heading's number from the outline style — `1`, `2.1.3` — or `None`.
     pub fn number(&self) -> Option<&str> {
         match self.kind {
             BlockKind::Heading { .. } => self.label.as_deref().filter(|label| !label.is_empty()),
@@ -221,18 +186,15 @@ impl BlockView {
         }
     }
 
-    /// A heading the outline leaves out of its numbering (`text:is-list-header`), which sits at
-    /// its level's left margin with no label.
+    /// A heading the outline leaves unnumbered (`text:is-list-header`), at its level's left margin
+    /// with no label.
     pub fn unnumbered(&self) -> bool {
         matches!(self.kind, BlockKind::Heading { .. }) && self.label.as_deref() == Some("")
     }
 }
 
-/// One run of uniformly formatted characters, as a reader sees it.
-///
-/// A projection of [`model::Run`] and not the run itself: a tab and a line break are one
-/// character each here, so the offsets a shell counts are the offsets a [`Caret`] counts, and a
-/// bookmark contributes nothing at all because it is a position rather than content.
+/// One run of uniformly formatted characters, as a reader sees it. A tab and a line break are one
+/// character each, so offsets here are [`Caret`] offsets, and a bookmark contributes nothing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunView {
     /// Where this run starts, in characters from the beginning of the block.
@@ -241,22 +203,19 @@ pub struct RunView {
     pub text: String,
     /// The direct character formatting on it.
     pub props: CharStyle,
-    /// What it looks like: its named character style's formatting, down that style's chain,
-    /// with [`RunView::props`] over it (`paragraph::shown`). What a painter draws and a layout
-    /// measures; `props` is what a toolbar reads and writes, since a name is not formatting
-    /// somebody applied.
+    /// What it looks like: its named character style's formatting down that style's chain, with
+    /// [`RunView::props`] over it (`paragraph::shown`) — what a painter draws and a layout
+    /// measures. `props` is what a toolbar reads and writes.
     pub shown: CharStyle,
-    /// The named character style it carries, which this build does not interpret
-    /// ([`crate::style`]).
+    /// The named character style it carries ([`crate::style`]).
     pub style: Option<String>,
     /// `xlink:href`, when the run is inside a link.
     pub href: Option<String>,
-    /// The image this run is, if it is one — `Some` only for a [`Run::Image`], and what a
-    /// shell that wants to draw an actual picture rather than the placeholder character reads.
+    /// The image this run is — `Some` only for a [`Run::Image`] — for a shell that draws the
+    /// picture rather than the placeholder character.
     ///
-    /// ponytail: clones the bytes on every [`App::get_viewport`] call, the same trade every
-    /// other field here already makes for text. Worth a cache keyed by identity rather than
-    /// content if a profile ever blames a document with many large images; nothing has yet.
+    /// ponytail: clones the bytes on every [`App::get_viewport`]; a cache keyed by identity, if a
+    /// document with many large images ever needs it.
     pub image: Option<ImageView>,
 }
 
@@ -272,8 +231,7 @@ impl RunView {
 pub struct ImageView {
     pub mime: String,
     pub data: Vec<u8>,
-    /// `svg:width` / `svg:height`, ODF lengths kept verbatim (`"5cm"`) and optional, exactly
-    /// as a document's own frequently are.
+    /// `svg:width` / `svg:height`, ODF lengths kept verbatim (`"5cm"`), optional.
     pub width: Option<String>,
     pub height: Option<String>,
     /// Its alternative text, short and long (`svg:title`, `svg:desc`) — [`App::set_image_alt`].
@@ -281,16 +239,10 @@ pub struct ImageView {
     pub description: Option<String>,
 }
 
-/// Whether a block is a picture, optionally followed by its caption's plain text — the shape
-/// [`App::insert_image`] produces into an empty paragraph (no caption) and the shape a real ODF
-/// frame reads as (an image run, then the caption paragraph's own text, `doc/odt-format.md`'s
-/// "An inserted image is a frame inside a frame"). A shell draws both as a picture rather than
-/// the placeholder character [`RunView::text`] carries for an image everywhere else — an image
-/// sitting mid-sentence with other text around it still draws as `\u{fffc}`, which is the gap
-/// `doc/text-shell.md` names.
-///
-/// Built for `ui_text_gtk/src/view.rs` and hoisted here the day `grind-win32` wanted the same
-/// answer, the same move `format::Change` and `indent_kind` already made.
+/// Whether a block is a picture, optionally followed by its caption's text — the shape
+/// [`App::insert_image`] makes in an empty paragraph, and how an ODF frame-inside-a-frame reads
+/// (`doc/odt-format.md`). A shell draws it as a picture; an image mid-sentence still draws as
+/// `\u{fffc}` (`doc/text-shell.md`).
 pub fn picture_of(block: &BlockView) -> Option<(&ImageView, Option<&str>)> {
     match block.runs.as_slice() {
         [run] => run.image.as_ref().map(|image| (image, None)),
@@ -327,8 +279,8 @@ pub struct Table {
     pub name: String,
     /// The blocks it is made of: the maximal run of consecutive blocks naming it.
     pub blocks: Range<usize>,
-    /// Counting every position a span covers, so a two-column table with one merged cell is
-    /// still two columns wide.
+    /// Counting every position a span covers, so a two-column table with a merged cell is still
+    /// two columns wide.
     pub rows: u32,
     pub columns: u32,
 }
@@ -338,15 +290,15 @@ pub struct Table {
 pub struct Heading {
     pub index: usize,
     pub level: u32,
-    /// The outline path — `[2, 1, 3]` for §2.1.3. Computed, because the document stores no
-    /// outline (`doc/odt-format.md` §2).
+    /// The outline path — `[2, 1, 3]` for §2.1.3 — computed, since the document stores no outline
+    /// (`doc/odt-format.md` §2).
     pub path: Vec<u32>,
     pub text: String,
 }
 
 impl Heading {
-    /// The address a user can type back in — `§2.1.3`, which survives edits elsewhere in the
-    /// document where `p12` would not.
+    /// The address a user can type back — `§2.1.3`, which survives edits elsewhere where `p12`
+    /// would not.
     pub fn address(&self) -> String {
         loc::format_outline(&self.path)
     }
@@ -368,12 +320,8 @@ impl Match {
     }
 }
 
-/// A `table:name` no table in this document already has.
-///
-/// `Table1`, `Table2`, … — LibreOffice's own spelling, so a document this build makes and one
-/// Writer makes read alike. Uniqueness matters more here than it looks: a table *is* the run of
-/// blocks naming it, so two tables sharing a name and sitting next to each other would be one
-/// table.
+/// A `table:name` no table here has: `Table1`, `Table2`, …, as LibreOffice names them. A table is
+/// the run of blocks naming it, so two adjacent tables sharing a name would be one.
 fn unused_table_name(doc: &Document) -> String {
     let taken: std::collections::BTreeSet<&str> = doc
         .blocks
@@ -396,10 +344,7 @@ pub struct Counts {
 }
 
 impl Counts {
-    /// How many minutes the document takes to read, rounded up — what a blog's "3 min read"
-    /// says. At 230 words a minute, a common figure for silent reading of prose in English; an
-    /// estimate rather than a measurement, so it is one number for every shell rather than a
-    /// constant each picks for itself. An empty document takes no time at all.
+    /// How many minutes the document takes to read, rounded up, at 230 words a minute.
     pub fn reading_minutes(&self) -> usize {
         self.words.div_ceil(230)
     }
@@ -411,43 +356,37 @@ impl Counts {
 /// Called while [`App`] holds its read lock, so an implementation must not call back into it;
 /// that is why it is given the block's kind and style name rather than the block.
 pub trait Faces {
-    /// The measure and the metrics for the block at `index`.
-    ///
-    /// `width` is in whatever unit the returned provider answers in, and zero or less means do
-    /// not wrap — the same contract [`App::layout_block`] has, because it is the same width.
+    /// The measure and the metrics for the block at `index`. `width` is in the provider's unit;
+    /// zero or less means do not wrap, as for [`App::layout_block`].
     fn of(&self, index: usize, kind: &BlockKind, style: Option<&str>) -> (f32, &dyn Metrics);
 
-    /// The space above and below the block at `index`, when its own paragraph style decides it:
-    /// added to its neighbours' rather than collapsed, and applied above the first block too
-    /// ([`flow::Flow::push_spaced`]). `None`, the default, is a screen's own spacing — what every
-    /// shell wants; a printed page answers from the document's styles (`doc/pdf-export.md` P5).
+    /// The space above and below the block at `index` when its paragraph style decides it — added
+    /// to its neighbours', and above the first block too ([`flow::Flow::push_spaced`]). `None`,
+    /// the default, is a screen's own spacing; a printed page answers from the styles.
     fn spacing(&self, _index: usize) -> Option<flow::Space> {
         None
     }
 
-    /// What the block at `index`'s own style says about page breaks around it
-    /// ([`page::Breaks`]). `None`, the default, leaves the paginator's own rules: a heading keeps
-    /// with what follows it and nothing breaks a page early.
+    /// What the block at `index`'s style says about page breaks around it ([`page::Breaks`]).
+    /// `None` leaves the paginator's rules: a heading keeps with what follows.
     fn breaks(&self, _index: usize) -> Option<page::Breaks> {
         None
     }
 
-    /// How far the block at `index`'s first line starts in from its others, in the face's unit
-    /// (`fo:text-indent`); zero, the default, for every screen.
+    /// How far the block's first line starts in from its others (`fo:text-indent`), in the face's
+    /// unit; zero on screen.
     fn first_indent(&self, _index: usize) -> f32 {
         0.0
     }
 
-    /// Where the block at `index`'s tab characters go, in the face's unit (`style:tab-stops`,
-    /// `doc/odt-format.md` §5c fact 13). No stops, the default, leaves a tab as wide as the
-    /// face's own metrics make it — what every screen draws.
+    /// Where the block's tab characters go (`style:tab-stops`, `doc/odt-format.md` §5c fact 13),
+    /// in the face's unit. No stops, the default, leaves a tab as wide as the metrics make it.
     fn tabs(&self, _index: usize) -> layout::Tabs {
         layout::Tabs::default()
     }
 
-    /// The table named `table`'s own column widths, one per column in the face's unit, `None`
-    /// for a column that states none. `None` altogether, the default, is equal shares — what
-    /// every screen draws, since no screen reads a table's look yet.
+    /// The table named `table`'s column widths, one per column in the face's unit, `None` for a
+    /// column stating none. `None` altogether, the default, is equal shares.
     fn columns(&self, _table: &str) -> Option<Vec<Option<f64>>> {
         None
     }
@@ -462,25 +401,21 @@ pub trait Faces {
         false
     }
 
-    /// How much room the footnotes cited in the block at `index` take at the foot of the page
-    /// the block starts on, in the face's unit — zero, the default, on every screen.
+    /// How much room the footnotes cited in the block take at the foot of its page, in the face's
+    /// unit; zero on screen.
     fn footnote_room(&self, _index: usize) -> f64 {
         0.0
     }
 
-    /// Whether `row` of the table named `table` is one of its heading rows, which a printed page
-    /// repeats at the top of every page the table continues on.
+    /// Whether `row` of the table named `table` is a heading row, which a printed page repeats on
+    /// every page the table continues on.
     fn header_row(&self, _table: &str, _row: u32) -> bool {
         false
     }
 }
 
-/// Every block set alike: one width, one provider.
-///
-/// What the CLI measures with (`grind_text::Fixed` at `--width`) and what a shell whose unit is
-/// a character cell wants, since a terminal has one font at one size. Named rather than
-/// implied by an overload, so that a caller reaching for it is *saying* the document is set in
-/// one face rather than forgetting that it might not be.
+/// Every block set alike: one width, one provider — what the CLI (`Fixed` at `--width`) and a
+/// terminal want.
 pub struct Uniform<'a> {
     width: f32,
     metrics: &'a dyn Metrics,
@@ -505,18 +440,14 @@ struct State {
     redo: Vec<Action>,
 }
 
-/// The word processor. Shells hold an `Arc<App>` and call these methods.
-///
-/// Every method takes `&self`; the lock lives inside, so one `App` can be shared between a UI
-/// thread and background work without the shell thinking about it — the same contract
-/// `grind_sheet::App` offers, because a shell should not have to learn two.
+/// The word processor. Shells hold an `Arc<App>` and call these methods; every method takes
+/// `&self` and the lock lives inside, as in `grind_sheet::App`.
 #[derive(Default)]
 pub struct App {
     state: RwLock<State>,
     observer: RwLock<Option<Arc<dyn Observer>>>,
-    /// The dictionary spelling is checked against, when a shell or the CLI has handed one in
-    /// ([`App::set_lexicon`]). Beside the document rather than in it: which language a person
-    /// checks in is a choice about the session, and nothing here is ever written.
+    /// The dictionary spelling is checked against ([`App::set_lexicon`]), beside the document
+    /// rather than in it.
     lexicon: RwLock<Option<Arc<dyn spell::Lexicon>>>,
 }
 
@@ -529,11 +460,8 @@ impl App {
         *self.observer.write().unwrap() = Some(observer);
     }
 
-    /// Mutate, then notify — **with the write lock already released**.
-    ///
-    /// An observer calls straight back in to re-read what changed, so notifying while still
-    /// holding the lock deadlocks it. There is a test named for that deadlock, and this helper
-    /// exists so no method has to remember.
+    /// Mutate, then notify with the write lock released: an observer calls straight back in to
+    /// re-read.
     fn mutate<R>(&self, f: impl FnOnce(&mut State) -> R) -> R {
         let result = {
             let mut state = self.state.write().unwrap();
@@ -559,8 +487,8 @@ impl App {
 
     // --- documents ---
 
-    /// Replace the document. History is dropped: an undo across a file boundary would apply an
-    /// action addressed to a document that no longer exists.
+    /// Replace the document. History is dropped: an undo would apply to a document that no longer
+    /// exists.
     pub fn open_bytes(&self, name: &str, bytes: &[u8]) -> Result<()> {
         let doc = open_bytes(name, bytes)?;
         self.mutate(|state| {
@@ -575,9 +503,8 @@ impl App {
         self.open_bytes(&path.display().to_string(), &std::fs::read(path)?)
     }
 
-    /// Serialise the current document. Paired with [`App::save_file`] because the browser has
-    /// no filesystem (doc/plan.md rule 5), and this is why the app never exposes its
-    /// `Document`: saving is an operation, not a getter.
+    /// Serialise the current document. The browser has no filesystem (rule 5), and saving is an
+    /// operation, never a getter for the document.
     pub fn save_bytes(&self, form: Form) -> Result<Vec<u8>> {
         write_bytes(&self.state.read().unwrap().doc, form)
     }
@@ -588,10 +515,8 @@ impl App {
 
     // --- reading ---
 
-    /// Read a run of blocks. The only way a shell reads content.
-    ///
-    /// Asking past the end is normal rather than an error — a reader may scroll into blank
-    /// space — and comes back short.
+    /// Read a run of blocks — the only way a shell reads content. Asking past the end comes back
+    /// short.
     pub fn get_viewport(&self, blocks: Range<usize>) -> Viewport {
         let state = self.state.read().unwrap();
         let end = blocks.end.min(state.doc.blocks.len());
@@ -620,31 +545,17 @@ impl App {
         }
     }
 
-    /// The document as its **projection** — plain text, with the token and span maps beside it
-    /// (`doc/dsl.md` §3, D2).
-    ///
-    /// Two things at once, exactly as the spreadsheet's twin is: it is what a `.grind` file
-    /// holds, and it is what a code view shows of a document nobody has saved (§6). A shell
-    /// reads it, colours it from [`projection::Projection::tokens`], and asks
-    /// [`projection::Projection::address_at`] which block the caret is in — and here that
-    /// answers in `loc.rs`'s whole vocabulary, because a block is `p12` *and* `#intro` *and*
-    /// `§2.1.3` and the span map carries all three.
-    ///
-    /// **Nothing here writes to the document.** A projection is a view of a model, not a second
-    /// copy of one.
+    /// The document as its projection — plain text, with the token and span maps beside it
+    /// (`doc/dsl.md` §3): what a `.grind` file holds and what a source view shows. A block is
+    /// `p12`, `#intro` and `§2.1.3` at once, and the span map carries all three. Nothing is
+    /// written.
     pub fn project(&self) -> projection::Projection {
         projection::project(&self.state.read().unwrap().doc)
     }
 
-    /// Where each address is in the projection this document was **read from** — the file as
-    /// somebody wrote it, comments and alignment included — in file order. Empty for a document
-    /// that was not read from a `.grind`.
-    ///
-    /// [`App::project`]'s span map describes the projection this build would write; this one
-    /// describes the file on disk, which is the one an editor has open. It is what a language
-    /// server hovers over and puts inline values against (`doc/init.md` I5). After an edit
-    /// nobody has saved it still describes the file as read, for the same reason a lint
-    /// finding's location does.
+    /// Where each address is in the projection this document was read from — the file as written —
+    /// in file order; empty unless it was read from a `.grind`. What a language server hovers
+    /// over; after an unsaved edit it still describes the file on disk.
     pub fn source_anchors(&self) -> Vec<grind_core::projection::Anchor> {
         self.state
             .read()
@@ -683,35 +594,28 @@ impl App {
         loc::resolve_range(&state.doc, range).map_err(|e| Error::Xml(e.to_string()))
     }
 
-    /// Resolve an address to a [`Caret`] — a block *and* an offset within it, which is what
-    /// `p12+40` names and what the caret-level edits take.
+    /// Resolve an address to a [`Caret`] — a block and an offset in it, as `p12+40` names.
     pub fn resolve_caret(&self, at: &Loc) -> Result<Caret> {
         let state = self.state.read().unwrap();
         loc::resolve_caret(&state.doc, at).map_err(|e| Error::Xml(e.to_string()))
     }
 
-    /// Resolve a range of *characters*, as [`App::erase`] takes it. An end with no offset of
-    /// its own means the end of its block, so a bare `p3` is all of p3's text.
+    /// Resolve a range of characters, as [`App::erase`] takes it. An end without an offset means
+    /// the end of its block, so `p3` is all of p3's text.
     pub fn resolve_caret_range(&self, range: &loc::Range) -> Result<(Caret, Caret)> {
         let state = self.state.read().unwrap();
         loc::resolve_caret_range(&state.doc, range).map_err(|e| Error::Xml(e.to_string()))
     }
 
-    /// The blocks belonging to the heading at `index` — itself, plus everything up to the next
-    /// heading at the same level or higher. `None` if it is not a heading.
-    ///
-    /// Computed rather than stored, because the body has no such container
-    /// (`doc/odt-format.md` §2). This is what lets `grind text move report.fodt §3.2 §1` mean
-    /// "move that section" rather than "move that one line".
+    /// The blocks belonging to the heading at `index`: itself and everything up to the next
+    /// heading at the same level or higher; `None` if it is not a heading. Computed, since the
+    /// body has no such container (`doc/odt-format.md` §2), so `grind text move report.fodt §3.2
+    /// §1` moves a section.
     pub fn section(&self, index: usize) -> Option<Range<usize>> {
         self.state.read().unwrap().doc.section(index)
     }
 
-    /// Every heading, with its computed outline path — the document's structure.
-    ///
-    /// `grind_sheet::App::calculations`'s counterpart: a spreadsheet hides its formulas behind
-    /// their results, and a long document hides its shape behind its prose. The only way to
-    /// see either is a list.
+    /// Every heading, with its computed outline path.
     pub fn outline(&self) -> Vec<Heading> {
         let state = self.state.read().unwrap();
         state
@@ -728,10 +632,8 @@ impl App {
             .collect()
     }
 
-    /// Every block carrying direct formatting or a named style of its own.
-    ///
-    /// **The differentiator** (`doc/suite.md`). Every shared document raises the question "why
-    /// is this paragraph different?", and no mainstream word processor answers it in one place.
+    /// Every block carrying direct formatting or a named style of its own — the answer to "why is
+    /// this paragraph different?" (`doc/suite.md`).
     pub fn formatting(&self) -> Vec<BlockView> {
         self.get_viewport(0..self.block_count())
             .iter()
@@ -749,8 +651,7 @@ impl App {
         let mut hits = Vec::new();
         for (index, block) in state.doc.blocks.iter().enumerate() {
             let text = block.text();
-            // Byte offsets from `match_indices`, characters in the address — a `p12+40` counts
-            // what a person counts, and `loc` is 0-based inside.
+            // `match_indices` gives bytes; addresses count characters.
             for (at, _) in text.match_indices(needle) {
                 hits.push(Match {
                     index,
@@ -762,13 +663,8 @@ impl App {
         hits
     }
 
-    /// [`App::find`], ignoring case — what a find bar means by default, since a person typing
-    /// `appendix` is looking for *Appendix* as well.
-    ///
-    /// Folded a character at a time (each to its first lowercase character), so a hit is always
-    /// exactly as many characters as the needle and its address and length still count what a
-    /// person counts. That is simple case folding: `ß` does not match `SS`, which full folding
-    /// would need a table this crate does not carry to say.
+    /// [`App::find`], ignoring case. Folded one character at a time to its first lowercase
+    /// character, so a hit is as many characters as the needle; `ß` does not match `SS`.
     pub fn find_ignoring_case(&self, needle: &str) -> Vec<Match> {
         let fold = |c: char| c.to_lowercase().next().unwrap_or(c);
         let needle: Vec<char> = needle.chars().map(fold).collect();
@@ -814,19 +710,10 @@ impl App {
         counts
     }
 
-    /// Check the document against [`lint`]'s rules — `doc/dsl.md` §4.3, D6.
-    ///
-    /// A read, so it takes the read lock and hands back a plain value like every other one
-    /// here: nothing is stored, nothing is marked, and linting a document leaves its bytes
-    /// exactly as they were. `grind text lint` is the CLI twin, and a shell that wants
-    /// squiggles turns each address into a byte range through the projection's span map (§6.2)
-    /// rather than by inventing a second addressing.
-    ///
-    /// With a [`spell::Lexicon`] attached ([`App::set_lexicon`]) the `misspelt` rule runs too, so
-    /// every problems pane lists the words the dictionary does not know with no code of its own.
-    ///
-    /// A document read from a `.grind` gets each finding's line and column in that file too
-    /// ([`grind_core::lint::Report::locate_in`]), which is what lets an editor jump to it.
+    /// Check the document against [`lint`]'s rules (`doc/dsl.md` §4.3). A read: nothing is stored.
+    /// With a [`spell::Lexicon`] attached the `misspelt` rule runs too. A document read from a
+    /// `.grind` gets each finding's line and column in that file
+    /// ([`grind_core::lint::Report::locate_in`]).
     pub fn lint(&self, options: &grind_core::lint::Options) -> grind_core::lint::Report {
         let lexicon = self.lexicon.read().unwrap().clone();
         let state = self.state.read().unwrap();
@@ -839,12 +726,9 @@ impl App {
 
     // --- spelling (`doc/spelling.md`) ---
 
-    /// Check spelling against `lexicon` from now on, or with `None` stop checking.
-    ///
-    /// Observers are **not** told: the document has not changed, and an observer's one signal
-    /// means it has — a shell that marks itself modified on every notification would call a
-    /// freshly opened file unsaved. The caller that attaches a lexicon redraws its own
-    /// underlines.
+    /// Check spelling against `lexicon` from now on, or with `None` stop. Observers are not told,
+    /// since the document has not changed and a shell would mark a freshly opened file modified;
+    /// the caller redraws.
     pub fn set_lexicon(&self, lexicon: Option<Arc<dyn spell::Lexicon>>) {
         *self.lexicon.write().unwrap() = lexicon;
     }
@@ -856,10 +740,9 @@ impl App {
         lexicon.as_ref().map(|l| l.language().to_owned())
     }
 
-    /// The language the document **states**: `fo:language` and `fo:country` of its `Standard`
-    /// paragraph style, which inherits the default paragraph style's — where LibreOffice keeps
-    /// the language a document was written in. `de-DE`, `en`, or `None` when it states none, as
-    /// nothing this build writes does. `zxx` is ODF's "no language" and comes back as itself.
+    /// The language the document states: `fo:language`/`fo:country` of its `Standard` paragraph
+    /// style, inheriting the default paragraph style's, where LibreOffice keeps it. `de-DE`, `en`,
+    /// or `None`; `zxx`, ODF's "no language", comes back as itself.
     pub fn language(&self) -> Option<String> {
         let state = self.state.read().unwrap();
         let props = paragraph::resolve(
@@ -876,8 +759,7 @@ impl App {
         )
     }
 
-    /// Every misspelt word in `blocks`, in document order — empty when no lexicon is attached.
-    /// What a shell underlines: it asks for the blocks it is about to draw.
+    /// Every misspelt word in `blocks`, in document order; empty without a lexicon.
     pub fn misspellings(&self, blocks: Range<usize>) -> Vec<spell::Misspelling> {
         let Some(lexicon) = self.lexicon.read().unwrap().clone() else {
             return Vec::new();
@@ -892,19 +774,15 @@ impl App {
             .collect()
     }
 
-    /// What `word` might have been, best first — empty when no lexicon is attached. Slow next to
-    /// [`App::misspellings`] (tens of milliseconds), so it is asked one word at a time.
+    /// What `word` might have been, best first; empty without a lexicon. Tens of milliseconds, so
+    /// one word at a time.
     pub fn suggest(&self, word: &str) -> Vec<String> {
         let lexicon = self.lexicon.read().unwrap().clone();
         lexicon.map_or_else(Vec::new, |l| l.suggest(&spell::normalise(word)))
     }
 
-    /// Replace the `word` at `at` with `with` — what picking a suggestion does — in one undo
-    /// step, keeping the formatting the word's first character had.
-    ///
-    /// The word is named rather than only measured so that a correction aimed at a document
-    /// that has changed since the misspelling was found is refused instead of overwriting
-    /// whatever now sits there.
+    /// Replace the `word` at `at` with `with`, as one undo step, keeping the formatting of the
+    /// word's first character. Refused if `word` is no longer there.
     pub fn correct(&self, at: Caret, word: &str, with: &str) -> Result<()> {
         self.mutate(|state| {
             let mut block = block_at(state, at.block)?;
@@ -964,9 +842,8 @@ impl App {
             .collect()
     }
 
-    /// The page this document says it is set on, or `None` when it states none — in which case
-    /// whoever prints it uses A4 (`doc/pdf-export.md`, decision 7). Read from the master page
-    /// and never written ([`Document::page`]).
+    /// The page this document says it is set on, or `None` — in which case printing uses A4
+    /// (`doc/pdf-export.md`, decision 7). Read from the master page, never written.
     pub fn page(&self) -> Option<grind_core::page::PageGeometry> {
         self.state.read().unwrap().doc.page
     }
@@ -996,9 +873,9 @@ impl App {
         self.state.read().unwrap().doc.first_page.clone()
     }
 
-    /// One master page by name — its page, header and footer, and the master after it
-    /// ([`model::Master`]) — and the name of the master the body's pages are set on. What a
-    /// printer asks for each time a paragraph says it starts a page on a master of its own.
+    /// One master page by name — its page, header, footer and next master ([`model::Master`]) —
+    /// and the name of the body's master, for a paragraph that starts a page on a master of its
+    /// own.
     pub fn master(&self, name: &str) -> Option<model::Master> {
         self.state.read().unwrap().doc.masters.get(name).cloned()
     }
@@ -1008,8 +885,8 @@ impl App {
         self.state.read().unwrap().doc.rest_master.clone()
     }
 
-    /// A paragraph style resolved by name, as [`App::paragraph`] resolves a block's — what a
-    /// header paragraph, which is no block, is laid out by.
+    /// A paragraph style resolved by name, as [`App::paragraph`] resolves a block's — for a header
+    /// paragraph, which is no block.
     pub fn resolve_style(&self, name: Option<&str>) -> paragraph::Resolved {
         let state = self.state.read().unwrap();
         paragraph::Resolved {
@@ -1046,12 +923,11 @@ impl App {
             .cloned()
     }
 
-    /// Where the block at `index`'s label and text go, as its list level states it
-    /// ([`numbering::LevelIndent`]): a heading's outline level ([`Document::outline_style`]), a
-    /// list item's level of its own list's style. `None` for any other block, or where the
-    /// style places nothing. The level's left margin and first-line indent give way to the
-    /// paragraph's **direct** ones — those its own automatic style states — and to nothing a
-    /// named style says (`doc/odt-format.md` §5c facts 20 and 22).
+    /// Where the block at `index`'s label and text go, as its list level states
+    /// ([`numbering::LevelIndent`]): a heading's outline level, a list item's level of its list's
+    /// style. `None` otherwise, or where nothing is placed. The level's margin and first-line
+    /// indent give way to the paragraph's direct ones, never to a named style's
+    /// (`doc/odt-format.md` §5c facts 20 and 22).
     pub fn level_indent(&self, index: usize) -> Option<numbering::LevelIndent> {
         let state = self.state.read().unwrap();
         let doc = &state.doc;
@@ -1086,9 +962,8 @@ impl App {
         self.state.read().unwrap().doc.font_generics.clone()
     }
 
-    /// The block at `index`'s paragraph style, resolved down its chain to the default style —
-    /// what a page lays it out by (`paragraph::resolve`, `doc/pdf-export.md` P5). `None` for no
-    /// such block.
+    /// The block at `index`'s paragraph style, resolved down its chain to the default style
+    /// ([`paragraph::resolve`]); `None` for no such block.
     pub fn paragraph(&self, index: usize) -> Option<paragraph::Resolved> {
         let state = self.state.read().unwrap();
         let block = state.doc.block(index)?;
@@ -1105,25 +980,13 @@ impl App {
 
     // --- layout ---
     //
-    // `doc/text-layout.md`, decided: the engine is `grind_core::layout` and these four methods
-    // are how a shell reaches it. Every one of them exists because the operation it names is
-    // defined in terms of a *line* — and a line is an output of layout, not a thing in the
-    // document, so leaving them to the shells would have been three implementations that
-    // disagree. The shell brings the faces and nothing about a font is stored here.
-    //
-    // The three caret operations take a [`Faces`] rather than one width and one provider,
-    // because a motion by line may end in a block set differently from the one it started in.
-    // [`App::layout_block`] keeps the pair: its caller has already named the one block it
-    // wants, and answering "how wide is *this* block" is the question the CLI's `--width` asks.
+    // The engine is `grind_core::layout` (`doc/text-layout.md`); these methods are each defined in
+    // terms of a line, so they are here rather than in each shell. The caret operations take
+    // [`Faces`], since a motion by line may end in a block set differently from where it started;
+    // [`App::layout_block`] takes one width and provider for one named block.
 
-    /// Break one block into lines at `width`, in whatever unit `metrics` answers in.
-    ///
-    /// The result is a plain value carrying the x of every caret position, so a shell paints
-    /// from it and throws it away — the same contract [`App::get_viewport`] offers for content.
-    /// A `width` of zero or less means do not wrap.
-    ///
-    /// One named block, so the caller has already chosen its face; anything that may *move*
-    /// between blocks takes a [`Faces`] instead and looks each one up as it arrives.
+    /// Break one block into lines at `width`, in `metrics`' unit; zero or less means do not wrap.
+    /// A plain value with the x of every caret position, for painting and discarding.
     pub fn layout_block(&self, index: usize, width: f32, metrics: &dyn Metrics) -> Result<Layout> {
         let state = self.state.read().unwrap();
         let block = state
@@ -1133,8 +996,8 @@ impl App {
         Ok(lay_out(block, width, metrics, &state.doc.char_styles))
     }
 
-    /// [`App::layout_block`] with the first line `first` further in and breaking that much
-    /// shorter — `fo:text-indent`, which only a printed page honours (`doc/pdf-export.md` P5).
+    /// [`App::layout_block`] with the first line `first` further in and breaking that much shorter
+    /// (`fo:text-indent`), for a printed page.
     pub fn layout_block_indented(
         &self,
         index: usize,
@@ -1169,18 +1032,12 @@ impl App {
         ))
     }
 
-    /// One block laid out as if `text` had been typed at `at` — an **input method's
-    /// composition**, set in the line it will land in before it has landed. **Nothing is
-    /// written**: a composition is the state of an input method between keystrokes (dead keys,
-    /// press-and-hold accents, a CJK conversion), and becomes a document edit only when the
-    /// input method commits it, as one `type_markdown`.
-    ///
-    /// Here rather than in a shell because it is line layout (`doc/text-layout.md`, Path C): the
-    /// composed text takes the formatting the character typed at `at` would — `resume` when a
-    /// markdown span left one pending, otherwise [`App::insert_text`]'s rule — and a line that
-    /// the composition pushes past the measure breaks where the committed text will. The offsets
-    /// in the answer count the composed characters, so the caret inside a composition is
-    /// `at.offset` plus its own position in `text`.
+    /// One block laid out as if `text` had been typed at `at` — an input method's composition,
+    /// before it commits. Nothing is written; on commit it becomes one `type_markdown`. The
+    /// composed text takes the formatting typing there would (`resume`, else
+    /// [`App::insert_text`]'s rule), and breaks where the committed text will. Offsets count the
+    /// composed characters, so the caret inside the composition is `at.offset` plus its position
+    /// in `text`.
     pub fn layout_composing(
         &self,
         at: Caret,
@@ -1210,17 +1067,10 @@ impl App {
         Ok(lay_out(&block, width, metrics, &state.doc.char_styles))
     }
 
-    /// The x of a caret within its line — what a shell remembers as the **goal column** while
-    /// the user holds Down, so that walking through a short line and out the other side comes
-    /// back to the column it started in.
-    ///
-    /// Passed back into [`App::caret_line`] rather than stored, because it is a property of a
-    /// *run of keystrokes* and not of the document.
-    ///
-    /// Measured through the same [`Faces`] the move itself uses, so the goal column and the
-    /// line it is applied to are in one unit. That is what makes a goal column survive a change
-    /// of face: a heading and the paragraph under it are set in different fonts but on the same
-    /// screen, and x is the screen's.
+    /// The x of a caret within its line — the goal column a shell keeps while Down is held, so
+    /// walking through a short line returns to the starting column. Passed back into
+    /// [`App::caret_line`] rather than stored, and measured through the same [`Faces`], so it
+    /// survives a change of face: x is the screen's.
     pub fn caret_x(&self, at: Caret, faces: &dyn Faces) -> Result<f32> {
         let state = self.state.read().unwrap();
         let block = state
@@ -1230,19 +1080,10 @@ impl App {
         Ok(set_out(block, at.block, faces, &state.doc.char_styles).x_at(at.offset))
     }
 
-    /// Move a caret `delta` lines — **the Down and Up arrows**, and Page Down with a bigger
-    /// number.
-    ///
-    /// Crosses block boundaries: down from the last line of a paragraph lands on the first line
-    /// of the next, which is the behaviour that makes a document one flow rather than a list of
-    /// boxes. At the very top or bottom it stops rather than erroring, because a caret that
-    /// cannot move is not a failure — it is the end of the document.
-    ///
-    /// **The block it arrives in is measured in its own face**, which is why this takes a
-    /// [`Faces`] rather than a width and a provider: Down out of a heading is the one motion
-    /// where the two blocks are set differently by construction, and measuring the paragraph
-    /// below with the heading's font put the caret several characters from where the click
-    /// would have.
+    /// Move a caret `delta` lines — Down and Up, and Page Down with a bigger number. Crosses block
+    /// boundaries, and stops rather than erroring at the top or bottom of the document. The block
+    /// it arrives in is measured in its own face ([`Faces`]): Down out of a heading lands in a
+    /// paragraph set in another font.
     pub fn caret_line(
         &self,
         at: Caret,
@@ -1270,8 +1111,7 @@ impl App {
                 offset = next;
                 continue;
             }
-            // Off the end of this block's lines: carry into the neighbour, landing on the line
-            // nearest the one we left.
+            // Off this block's lines: carry into the neighbour, on the line nearest the one left.
             let next = match step > 0 {
                 true if block + 1 < blocks => block + 1,
                 false if block > 0 => block - 1,
@@ -1294,11 +1134,7 @@ impl App {
         Ok(Caret { block, offset })
     }
 
-    /// The two ends of the caret's own line — **Home and End**.
-    ///
-    /// On a wrapped line these are the *visual* ends, not the paragraph's, which is the whole
-    /// difference between a text editor and a `set_text` front end. Returned as a pair because
-    /// they are one layout apart and a shell asking for one usually wants the other.
+    /// The two ends of the caret's own visual line — Home and End — as a pair.
     pub fn caret_line_bounds(&self, at: Caret, faces: &dyn Faces) -> Result<(Caret, Caret)> {
         let state = self.state.read().unwrap();
         let block = state
@@ -1325,8 +1161,7 @@ impl App {
     pub fn set_text(&self, index: usize, text: &str) -> Result<()> {
         self.mutate(|state| {
             let mut block = block_at(state, index)?;
-            // Bookmarks are anchors rather than content, so retyping a paragraph keeps them —
-            // losing an anchor because its sentence was rewritten would make `#intro` useless.
+            // Bookmarks are anchors, not content, so retyping a paragraph keeps them.
             block.runs.retain(|r| matches!(r, Run::Bookmark { .. }));
             if !text.is_empty() {
                 block.runs.push(Run::plain(text));
@@ -1341,23 +1176,13 @@ impl App {
         })
     }
 
-    /// Insert text at a caret — **what typing does.**
+    /// Insert text at a caret — what typing does. One of the caret-level edits a continuous-flow
+    /// editor is built from ([`App::erase`], [`App::split_block`], [`App::join_block`]);
+    /// [`App::set_text`] replaces a whole block, as a script does.
     ///
-    /// The first of the four caret-level edits (`insert_text`, [`App::erase`],
-    /// [`App::split_block`], [`App::join_block`]) that a continuous-flow editor is built out of.
-    /// [`App::set_text`] replaces a whole block, which is what a *script* does; these four are
-    /// what a *cursor* does, and they are in the core rather than in a shell because the
-    /// terminal, GTK and web shells would otherwise each write their own and disagree
-    /// (`doc/suite.md` S7).
-    ///
-    /// The inserted text takes the style of **the run at the caret, preferring the one to its
-    /// left** — typing at the end of a bold word continues in bold, which is what every editor
-    /// does and what a person expects. At the front of a block there is nothing to the left,
-    /// so the run to the right decides.
-    ///
-    /// A **hyperlink** is the exception, and is carried only *inside* one: text typed at either
-    /// edge of a link is not part of it, which is what every word processor does — a sentence
-    /// typed on after a link is not more link. The same rule [`App::char_style`] reads by.
+    /// The text takes the style of the run at the caret, preferring the one to its left, so typing
+    /// at the end of a bold word continues bold. A hyperlink is carried only inside one: text
+    /// typed at a link's edge is not part of it ([`App::char_style`] reads by the same rule).
     pub fn insert_text(&self, at: Caret, text: &str) -> Result<()> {
         if text.is_empty() {
             return Ok(());
@@ -1386,23 +1211,15 @@ impl App {
         })
     }
 
-    /// Type text at a caret, reading the **markdown-shaped notation** as each character lands
-    /// ([`crate::markdown`]) — `**bold**` becomes bold and its four markers go, `` `code` ``
-    /// becomes monospace, `# ` makes the block a heading, ``` fences a code block.
+    /// Type text at a caret, reading the markdown-shaped notation as each character lands
+    /// ([`crate::markdown`]): `**bold**` becomes bold and its markers go, `` `code` `` becomes
+    /// monospace, `# ` makes a heading, ``` fences a code block. Opt-in: [`App::insert_text`]
+    /// keeps asterisks as asterisks. One action, so one undo takes back the whole of `**bold**`.
     ///
-    /// [`App::insert_text`]'s opinionated sibling, and opt-in for exactly that reason: a shell
-    /// that wants asterisks to stay asterisks calls the other one. It is here rather than in a
-    /// shell for the reason `doc/text-layout.md` gives about line breaking — three shells
-    /// recognising `**` three ways would be three editors — and it is *one* action, so one
-    /// press of undo takes back the whole of `**bold**` rather than the style, then the
-    /// markers, then the characters.
-    ///
-    /// **`resume` is what makes the notation end where it says it does.** After a closing
-    /// marker the caret sits at the end of the run just formatted, and the next character
-    /// typed there would join it — `say **this** and` would carry on bold. The returned
-    /// [`Typed::resume`] carries the formatting the span had *before* it was emphasised; hand
-    /// it back on the next call and the notation stops where its marker did. A shell typing a
-    /// whole string in one call never sees this: it is handled between the characters.
+    /// `resume` ends the notation where its marker does: after a closing marker the next character
+    /// would join the formatted run, so [`Typed::resume`] carries the formatting from before the
+    /// span. Hand it back on the next call; a whole string typed in one call handles this between
+    /// its characters.
     pub fn type_markdown(
         &self,
         at: Caret,
@@ -1422,8 +1239,8 @@ impl App {
             for c in text.chars() {
                 let mut buffer = [0u8; 4];
                 let typed = c.encode_utf8(&mut buffer);
-                // The character itself, in whatever the caret is set in — or in what the last
-                // completed span said to go back to.
+                // The character itself, in the caret's formatting or in what the last completed
+                // span went back to.
                 let (mut runs, tail) = model::split_runs(&block.runs, caret);
                 let (style, props, href) = match resume.take() {
                     Some(props) => (None, props, None),
@@ -1460,15 +1277,10 @@ impl App {
         })
     }
 
-    /// Insert an image at a caret — a fifth caret-level edit, alongside `insert_text`, for the
-    /// one kind of content that is not text (`doc/text-core.md`'s `draw:frame` row).
-    ///
-    /// One [`Run::Image`], occupying exactly one caret position the way a tab does, so
-    /// `erase`, `split_block` and Backspace already handle it correctly with no change to any
-    /// of them: it is removed, carried across a split, or backspaced over as a whole, never a
-    /// character at a time. `mime` is a MIME type (`image/jpeg`, `image/png`, …); `width` and
-    /// `height` are ODF lengths (`"5cm"`), kept verbatim and optional, exactly as a document's
-    /// own would be.
+    /// Insert an image at a caret (`doc/text-core.md`'s `draw:frame` row): one [`Run::Image`]
+    /// occupying one caret position, like a tab, so erasing, splitting and Backspace treat it as a
+    /// whole. `mime` is a MIME type; `width` and `height` are optional ODF lengths (`"5cm"`),
+    /// verbatim.
     pub fn insert_image(
         &self,
         at: Caret,
@@ -1486,9 +1298,8 @@ impl App {
                 data,
                 width,
                 height,
-                // An image this build inserts is anchored to its paragraph, which is what a
-                // picture on a line of its own is. A document's own anchor is kept verbatim
-                // instead (`Run::Image::anchor`).
+                // An inserted image is anchored to its paragraph; a document's own anchor is kept
+                // verbatim (`Run::Image::anchor`).
                 anchor: None,
                 title: None,
                 description: None,
@@ -1506,10 +1317,9 @@ impl App {
         })
     }
 
-    /// Give the picture just after `at` its alternative text — `title` the short one a screen
+    /// Give the picture just after `at` its alternative text: `title` the short one a screen
     /// reader says and Markdown writes as `![title]`, `description` the long one (`svg:title`,
-    /// `svg:desc`). `None` removes either. An error when the character after the caret is not a
-    /// picture, rather than a search for the nearest one.
+    /// `svg:desc`). `None` removes either. An error when the next character is not a picture.
     pub fn set_image_alt(
         &self,
         at: Caret,
@@ -1549,22 +1359,14 @@ impl App {
         })
     }
 
-    /// Erase the characters between two carets — **what a selection and a Delete key do.**
+    /// Erase the characters between two carets — what Delete over a selection does. Erasing from
+    /// the middle of p3 to the middle of p5 leaves one block with p3's kind and style, as one undo
+    /// step.
     ///
-    /// Crossing a block boundary is the interesting case and the reason this is one method
-    /// rather than three: erasing from the middle of p3 to the middle of p5 leaves *one* block,
-    /// keeping p3's kind and style, and it is one [`Action::Batch`] and therefore one undo step.
-    /// A shell doing it as "erase, erase, delete, join" would get four, and the fourth Ctrl+Z
-    /// would be the one that surprised somebody.
-    ///
-    /// **Bookmarks inside the erased span survive, collapsed to the caret** — the same stance
-    /// [`App::set_text`] takes, because an anchor is a position rather than content and losing
-    /// `#intro` by rewriting the sentence around it would make the address useless. A block that
-    /// ceases to exist entirely does take its anchors with it, exactly as [`App::delete`] does:
-    /// there is no longer a position for them to be at.
-    ///
-    /// Returns the number of characters removed, counting each block boundary that closed up as
-    /// one — the same arithmetic [`Document::text`] uses when it joins blocks with a newline.
+    /// Bookmarks inside the span survive, collapsed to the caret, as [`App::set_text`] keeps them;
+    /// a block removed entirely takes its anchors with it, as [`App::delete`] does. Returns the
+    /// characters removed, each closed block boundary counting one, as [`Document::text`] counts
+    /// it.
     pub fn erase(&self, from: Caret, to: Caret) -> Result<usize> {
         self.mutate(|state| {
             if to < from {
@@ -1591,8 +1393,8 @@ impl App {
                 runs.extend(tail);
             } else {
                 let (cut, tail) = model::split_runs(&last.runs, end);
-                // The tail of the first block, the whole of everything between, the head of the
-                // last, and one for each newline that closed up.
+                // The first block's tail, everything between, the last block's head, and one per
+                // closed boundary.
                 removed = (first.len() - start)
                     + state.doc.blocks[from.block + 1..to.block]
                         .iter()
@@ -1620,14 +1422,9 @@ impl App {
         })
     }
 
-    /// Split a block at a caret — **what the Return key does.**
-    ///
-    /// The second half keeps the first's kind and style, so Return inside a list item makes
-    /// another list item at the same depth and Return inside a paragraph makes another
-    /// paragraph. **One exception: a heading split at its very end becomes a body paragraph**,
-    /// because a heading followed by an empty heading is never what anybody meant, and every
-    /// word processor there has ever been does this. Splitting a heading in the *middle* does
-    /// make two headings, which is how a title gets divided.
+    /// Split a block at a caret — what Return does. The second half keeps the first's kind and
+    /// style, so Return in a list item makes another item at the same depth. A heading split at
+    /// its very end leaves a body paragraph behind it; split in the middle, it makes two headings.
     pub fn split_block(&self, at: Caret) -> Result<()> {
         self.mutate(|state| {
             let mut block = block_at(state, at.block)?;
@@ -1639,18 +1436,14 @@ impl App {
             let id = state.doc.next_id();
             let mut second = Block::new(id, block.kind.clone());
             second.style = block.style.clone();
-            // And the cell it is in, if any: Return inside a table cell makes a second block
-            // **in that cell**, not a paragraph after the table. A table is the run of
-            // consecutive blocks naming it (`model::Cell`), so a half that forgot its cell
-            // would cut the table in two at the caret.
+            // And its table cell: Return inside a cell makes a second block in that cell, or the
+            // table would be cut in two at the caret (`model::Cell`).
             second.cell = block.cell.clone();
             second.runs = tail;
             if second.is_empty() && matches!(block.kind, BlockKind::Heading { .. }) {
                 second.kind = BlockKind::Paragraph;
-                // Only the kind and the style change here; the cell stays, because a heading
-                // ending a cell still leaves the next paragraph inside that cell.
-                // The heading's style went with the heading; a body paragraph wearing
-                // `Heading_20_1` would look like a heading and not be one.
+                // Only the kind and style change; the cell stays. A body paragraph wearing
+                // `Heading_20_1` would look like a heading without being one.
                 second.style = None;
             }
             block.runs = head;
@@ -1671,12 +1464,9 @@ impl App {
         })
     }
 
-    /// Join a block with the one after it — **what Backspace at the front of a block does.**
-    ///
-    /// [`App::split_block`]'s inverse in effect though not in mechanism, and the survivor is
-    /// the *first* block: its kind and style win, which is why backspacing at the front of a
-    /// paragraph that follows a heading pulls the text up into the heading rather than
-    /// demoting the heading.
+    /// Join a block with the one after it — Backspace at the front of a block. The first block's
+    /// kind and style survive, so backspacing at the front of a paragraph after a heading pulls
+    /// the text into the heading.
     pub fn join_block(&self, index: usize) -> Result<()> {
         self.mutate(|state| {
             let mut block = block_at(state, index)?;
@@ -1685,11 +1475,9 @@ impl App {
                 .block(index + 1)
                 .cloned()
                 .ok_or_else(|| Error::Xml(format!("nothing follows {}", loc::format(index))))?;
-            // Never across a table cell's edge, in either direction: the survivor's cell would
-            // swallow the other's text and leave a position in the table that names no block,
-            // which a save writes as an empty cell — one block more than the document has.
-            // Backspace at the front of a cell is a no-op in every word processor for the
-            // same reason.
+            // Never across a table cell's edge: the survivor's cell would swallow the other's text
+            // and leave a cell with no block, which a save writes as an empty cell. Backspace at
+            // the front of a cell does nothing in every word processor.
             let same_cell = match (&block.cell, &next.cell) {
                 (None, None) => true,
                 (Some(a), Some(b)) => a.is_same(b),
@@ -1716,21 +1504,10 @@ impl App {
         })
     }
 
-    /// Insert a table before `index` — `rows` by `columns`, every cell holding one empty
-    /// paragraph. `index == block_count()` appends.
-    ///
-    /// **One `Action::Batch`, so it is one Ctrl+Z**, which is the whole reason this is a method
-    /// rather than a shell looping over [`App::insert`]: a five-by-three table undone one cell
-    /// at a time is fifteen keystrokes of surprise.
-    ///
-    /// A cell gets an empty paragraph rather than nothing, because that is what a cell always
-    /// has once it has been through a file: the ODF reader materialises one and so does
-    /// LibreOffice (`doc/odt-format.md` §5b), and a cell with no block in it is a cell a caret
-    /// cannot be put in.
-    ///
-    /// `name` is the table's `table:name`, which is its identity in this model
-    /// ([`model::Cell`]); one is generated when the caller has no opinion, unique among the
-    /// tables the document already has.
+    /// Insert a table before `index` — `rows` by `columns`, each cell holding one empty paragraph
+    /// — as one undo step; `index == block_count()` appends. A cell always has a block once it has
+    /// been through a file (`doc/odt-format.md` §5b), and a cell without one cannot hold a caret.
+    /// `name` is the table's `table:name`, its identity ([`model::Cell`]), generated when `None`.
     pub fn insert_table(
         &self,
         index: usize,
@@ -1769,9 +1546,9 @@ impl App {
         })
     }
 
-    /// Insert markdown's blocks before block `index` ([`commonmark`]) — the word processor's
-    /// `import_csv`, its pictures found through `resolve` ([`commonmark::beside`],
-    /// [`commonmark::nowhere`]). One undo step; answers how many blocks it added.
+    /// Insert Markdown's blocks before block `index` ([`commonmark`]), its pictures found through
+    /// `resolve` ([`commonmark::beside`], [`commonmark::nowhere`]). One undo step; returns how
+    /// many blocks it added.
     pub fn import_markdown(
         &self,
         index: usize,
@@ -1803,8 +1580,8 @@ impl App {
         })
     }
 
-    /// The blocks in `range` as CommonMark ([`commonmark::export`]) — `export_csv`'s twin —
-    /// and the pictures it names, which the caller writes where `pictures` said they would be.
+    /// The blocks in `range` as CommonMark ([`commonmark::export`]), and the pictures it names,
+    /// for the caller to write where `pictures` said.
     pub fn export_markdown(
         &self,
         range: Range<usize>,
@@ -1819,12 +1596,8 @@ impl App {
         Ok(commonmark::export(blocks, pictures))
     }
 
-    /// The table the block at `index` is in: where it starts and ends, how big it is, and what
-    /// it is called. `None` for a block that is not in a table.
-    ///
-    /// What a shell needs to draw a grid, and the reason it is a method rather than arithmetic
-    /// in four shells: the extent is derived from the cells (`Document::table_extent`), and four
-    /// derivations of one fact disagree eventually.
+    /// The table the block at `index` is in — where it starts and ends, its size, its name — or
+    /// `None`, derived from the cells (`Document::table_extent`).
     pub fn table(&self, index: usize) -> Option<Table> {
         let state = self.state.read().unwrap();
         let blocks = state.doc.table(index)?;
@@ -1845,8 +1618,8 @@ impl App {
             if !text.is_empty() {
                 block.runs.push(Run::plain(text));
             }
-            // Inside a section when both neighbours are — between two paragraphs of a section
-            // is in it, and a regenerate would otherwise split the section in two around it.
+            // Inside a section when both neighbours are, or a regenerate would split the section
+            // around it.
             let section = |at: Option<usize>| at.and_then(|i| state.doc.blocks.get(i)?.section);
             let before = section(index.checked_sub(1));
             if before.is_some() && before == section(Some(index)) {
@@ -1868,8 +1641,7 @@ impl App {
             if blocks.end > state.doc.blocks.len() {
                 return Err(Error::Xml("that range runs past the end".to_owned()));
             }
-            // Removing from the front repeatedly: each removal shifts the rest down, so the
-            // same index removes the next one.
+            // Removing at the same index repeatedly: each removal shifts the rest down.
             let removed = blocks.len();
             let batch = (0..removed)
                 .map(|_| Action::RemoveBlock {
@@ -1881,10 +1653,8 @@ impl App {
         })
     }
 
-    /// Change what kind of block this is — paragraph to heading and back.
-    ///
-    /// The outline is implied by nothing else (`doc/odt-format.md` §2), so this *is* how a
-    /// document gets its structure.
+    /// Change what kind of block this is — paragraph, heading or list item. The outline is implied
+    /// by nothing else (`doc/odt-format.md` §2).
     pub fn set_kind(&self, index: usize, kind: BlockKind) -> Result<()> {
         self.mutate(|state| {
             let mut block = block_at(state, index)?;
@@ -1899,17 +1669,10 @@ impl App {
         })
     }
 
-    /// The character formatting over a span — **what a toolbar shows.**
-    ///
-    /// Whatever every character between the two carets agrees about, and nothing else: a range
-    /// that is bold throughout reads as bold, and one that is half bold reads as neither. That
-    /// is what makes a toggle button predictable over a mixed selection, and it is decided here
-    /// rather than in a shell so that three shells cannot decide it three ways.
-    ///
-    /// An **empty** span — the two carets equal, which is what a bare cursor is — reports the
-    /// formatting of the run at the caret, **preferring the one to its left**. The same rule
-    /// [`App::insert_text`] uses to decide what typed text looks like, and necessarily so: the
-    /// toolbar has to show what the next keystroke will produce.
+    /// The character formatting over a span — what a toolbar shows: whatever every character
+    /// between the carets agrees about, so half-bold reads as not bold. An empty span reports the
+    /// run at the caret, preferring the one to its left — [`App::insert_text`]'s rule, so the
+    /// toolbar shows what the next keystroke produces.
     pub fn char_style(&self, from: Caret, to: Caret) -> Result<CharStyle> {
         let state = self.state.read().unwrap();
         if to < from {
@@ -1937,16 +1700,10 @@ impl App {
         Ok(common.unwrap_or_default())
     }
 
-    /// Replace the character formatting of every character between two carets — **bold,
-    /// italic, a font, a size.**
-    ///
-    /// **Replaces rather than adds**, which is `grind_sheet::App::set_style`'s contract and is
-    /// what makes a toolbar a read, one field and a write: an empty [`CharStyle`] is "plain
-    /// again". Named character styles are untouched, because they are the document's own
-    /// vocabulary and this method is about direct formatting ([`crate::style`]).
-    ///
-    /// One [`Action::Batch`], so formatting a section is one Ctrl+Z. Returns how many blocks
-    /// changed.
+    /// Replace the character formatting of every character between two carets — bold, italic,
+    /// font, size — as one undo step; returns how many blocks changed. It replaces rather than
+    /// adds, as `grind_sheet::App::set_style` does: an empty [`CharStyle`] is plain again. Named
+    /// character styles are untouched ([`crate::style`]).
     pub fn set_char_style(&self, from: Caret, to: Caret, style: &CharStyle) -> Result<usize> {
         self.mutate(|state| {
             if to < from {
@@ -1978,13 +1735,9 @@ impl App {
         })
     }
 
-    /// The hyperlink every character between two carets agrees about — `None` when any of them
-    /// is unlinked or two links disagree. What a link button reads before it writes, the way
-    /// [`App::char_style`] is what a Bold button reads.
-    ///
-    /// An **empty** span asks about the link the caret *touches*: [`App::link_at`]'s, so a
-    /// caret resting at the end of a link reads as on it — which is where it is after a click
-    /// on the link's last letter, and where "edit this link" has to find it.
+    /// The hyperlink every character between two carets agrees about, or `None`. An empty span
+    /// asks about the link the caret touches ([`App::link_at`]), so a caret at a link's end reads
+    /// as on it.
     pub fn link(&self, from: Caret, to: Caret) -> Result<Option<String>> {
         if to < from {
             return Err(Error::Xml("that range runs backwards".to_owned()));
@@ -2020,10 +1773,9 @@ impl App {
         Ok(common.flatten())
     }
 
-    /// The whole link at a caret — where it starts and ends, and its target — or `None` when
-    /// the caret touches no link. The character to the caret's **left** decides first and the
-    /// one to its right second, so a caret at the end of a link and one at its start both find
-    /// it. Within one block: a link never spans a paragraph (`text:a` is inline, rng:16453).
+    /// The whole link at a caret — its extent and target — or `None`. The character to the left
+    /// decides first, then the right, so a caret at either end finds it. A link never spans
+    /// paragraphs (`text:a` is inline, rng:16453).
     pub fn link_at(&self, at: Caret) -> Result<Option<Link>> {
         let state = self.state.read().unwrap();
         let block = state
@@ -2051,8 +1803,8 @@ impl App {
             return Ok(None);
         };
         let href = spans[found].2;
-        // A link is every adjacent run with the same target, whatever formatting it wears —
-        // `[a **bold** word](url)` is three runs and one link.
+        // A link is every adjacent run with the same target: `[a **bold** word](url)` is three
+        // runs and one link.
         let mut first = found;
         while first > 0 && spans[first - 1].2 == href {
             first -= 1;
@@ -2074,11 +1826,9 @@ impl App {
         }))
     }
 
-    /// Link every character between two carets to `href` — a URL, or `#name` for a bookmark
-    /// in this document — or with `None`, unlink them. Formatting is untouched, so a link can
-    /// be bold and stays bold unlinked. One [`Action::Batch`], one Ctrl+Z; returns how many
-    /// blocks changed. An empty `href` is refused rather than written: ODF's `xlink:href` is
-    /// required on a `text:a` (rng:16453) and an empty one points nowhere.
+    /// Link every character between two carets to `href` — a URL, or `#name` for a bookmark — or
+    /// with `None` unlink them, as one undo step; formatting is untouched. Returns how many blocks
+    /// changed. An empty `href` is refused: `xlink:href` is required on `text:a` (rng:16453).
     pub fn set_link(&self, from: Caret, to: Caret, href: Option<&str>) -> Result<usize> {
         if href.is_some_and(|href| href.trim().is_empty()) {
             return Err(Error::Xml("a link needs somewhere to point".to_owned()));
@@ -2139,11 +1889,8 @@ impl App {
         })
     }
 
-    /// Move a run of blocks so that it starts at `to`. What "move section 3.2" is.
-    ///
-    /// `to` is an index in the document **as it is now**, before the move. Moving a range into
-    /// itself is refused rather than silently doing nothing, because it is always a mistake at
-    /// the call site.
+    /// Move a run of blocks so it starts at `to`, an index in the document before the move. Moving
+    /// a range into itself is refused.
     pub fn move_blocks(&self, blocks: Range<usize>, to: usize) -> Result<usize> {
         self.mutate(|state| {
             if blocks.end > state.doc.blocks.len() || to > state.doc.blocks.len() {
@@ -2161,8 +1908,7 @@ impl App {
                     index: blocks.start,
                 })
                 .collect();
-            // After the removals every index at or past the range has shifted down by its
-            // length, so the destination has too.
+            // After the removals, indices past the range have shifted down by its length.
             let landing = match to > blocks.start {
                 true => to - count,
                 false => to,
@@ -2211,15 +1957,12 @@ impl App {
         })
     }
 
-    /// Put a bookmark on a block, or with `None` remove one by name.
-    ///
-    /// The named-range analogue: an anchor that moves with the text, so `#intro` keeps meaning
-    /// the same place after an edit somewhere else.
+    /// Put a bookmark on a block, or with `None` remove one by name. It moves with the text, so
+    /// `#intro` keeps naming the same place.
     pub fn set_bookmark(&self, name: &str, index: Option<usize>) -> Result<bool> {
         self.mutate(|state| {
             let mut batch = Vec::new();
-            // Remove any existing anchor of this name first, so setting one twice moves it
-            // rather than leaving two.
+            // Remove an existing anchor of this name first, so setting one twice moves it.
             for i in 0..state.doc.blocks.len() {
                 let mut block = block_at(state, i)?;
                 let before = block.runs.len();
@@ -2236,8 +1979,8 @@ impl App {
             let existed = !batch.is_empty();
             if let Some(index) = index {
                 let mut block = block_at(state, index)?;
-                // A block already in the batch has to be edited from the batch's version, not
-                // the document's, or the removal above would be undone by this insertion.
+                // A block already in the batch is edited from the batch's version, or this
+                // insertion would undo the removal above.
                 if let Some(Action::SetBlock { block: pending, .. }) = batch
                     .iter()
                     .find(|a| matches!(a, Action::SetBlock { index: i, .. } if *i == index))
@@ -2308,13 +2051,6 @@ impl App {
     }
 }
 
-/// The style and hyperlink newly typed text should take, given the runs on either side of the
-/// caret.
-///
-/// **Prefer the left.** Typing continues what you just typed, so the run before the caret
-/// decides; at the front of a block there is nothing before it and the run after decides
-/// instead. A caret next to a tab, a break or a bookmark carries no formatting of its own, so
-/// the search is for the nearest *text* run and stops at the first thing that is not one.
 /// One hyperlink, whole — what [`App::link_at`] finds around a caret.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Link {
@@ -2331,8 +2067,8 @@ fn run_href(run: &Run) -> Option<&str> {
     }
 }
 
-/// What [`App::type_markdown`] did: where the caret ended up, and what the *next* character
-/// typed there must be set in.
+/// What [`App::type_markdown`] did: where the caret ended up, and what the next character typed
+/// there must be set in.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Typed {
     pub caret: Caret,
@@ -2340,17 +2076,13 @@ pub struct Typed {
     pub resume: Option<CharStyle>,
 }
 
-/// Read the notation off a block that has just had a character typed into it, and apply
-/// whatever it completed — in memory, so the whole of `**bold**` is one `SetBlock` and one
-/// undo step.
-///
-/// Returns the formatting the next character typed at the caret must be given, `None` when
-/// nothing completed.
+/// Read the notation off a block just typed into and apply whatever it completed, in memory, so
+/// `**bold**` is one `SetBlock` and one undo step. Returns the formatting the next character
+/// needs, `None` when nothing completed.
 fn apply_notation(block: &mut Block, caret: &mut usize) -> Option<CharStyle> {
     let text = block.text();
 
-    // A fence toggles the block between preformatted and plain, and takes its own three
-    // markers back out.
+    // A fence toggles the block between preformatted and plain, and removes its three markers.
     if markdown::is_fence(&text, *caret) {
         block.runs = without(block, 0, *caret);
         *caret = 0;
@@ -2369,9 +2101,9 @@ fn apply_notation(block: &mut Block, caret: &mut usize) -> Option<CharStyle> {
         return None;
     }
 
-    // `[label](target)` — the markers go and the label is linked, keeping its formatting. The
-    // character after it is typed outside the link by `link_around`'s own rule, so it needs no
-    // `resume`; the label's formatting is handed back regardless, which is what ends a span.
+    // `[label](target)`: the markers go and the label is linked, keeping its formatting. The next
+    // character is typed outside the link by `link_around`'s rule; the label's formatting is
+    // handed back regardless, which ends a span.
     if let Some(found) = markdown::linked(&text, *caret) {
         let before = props_at(block, found.open);
         block.runs = without(block, found.end, found.close);
@@ -2385,11 +2117,10 @@ fn apply_notation(block: &mut Block, caret: &mut usize) -> Option<CharStyle> {
     }
 
     let found = markdown::emphasised(&text, *caret)?;
-    // What the span was set in before it was emphasised — read from the opening marker, which
-    // was typed in the formatting around it and is about to be deleted.
+    // The span's formatting before emphasis, read from the opening marker, which was typed in the
+    // surrounding formatting.
     let before = props_at(block, found.open);
-    // The closing marker first: taking the opening one out would move everything after it, and
-    // these offsets were measured before either went.
+    // The closing marker first: removing the opening one would shift these offsets.
     block.runs = without(block, found.end, found.close);
     block.runs = without(block, found.open, found.start);
     let end = found.open + (found.end - found.start);
@@ -2409,13 +2140,16 @@ fn without(block: &Block, from: usize, to: usize) -> Vec<Run> {
     head
 }
 
-/// The direct formatting of the run covering `offset` — what a character typed there would
-/// have inherited, which is what the text after a closing marker has to go back to.
+/// The direct formatting of the run covering `offset` — what text after a closing marker goes back
+/// to.
 fn props_at(block: &Block, offset: usize) -> CharStyle {
     let (head, tail) = model::split_runs(&block.runs, offset);
     caret_formatting(&head, &tail).1
 }
 
+/// The style and hyperlink newly typed text takes, from the runs either side of the caret: the
+/// run before decides, or at the front of a block the run after. A tab, a break or a bookmark
+/// carries no formatting, so the search is for the nearest text run, stopping at anything else.
 fn caret_formatting(head: &[Run], tail: &[Run]) -> (Option<String>, CharStyle, Option<String>) {
     let neighbour = head.last().or_else(|| tail.first());
     match neighbour {
@@ -2428,8 +2162,8 @@ fn caret_formatting(head: &[Run], tail: &[Run]) -> (Option<String>, CharStyle, O
     }
 }
 
-/// The link a caret is strictly *inside* — the same target on both sides of it — or `None` at
-/// either edge of one, or outside one. What typed text joins ([`App::insert_text`]).
+/// The link a caret is strictly inside — the same target on both sides — or `None`. What typed
+/// text joins ([`App::insert_text`]).
 fn link_around<'a>(head: &'a [Run], tail: &[Run]) -> Option<&'a str> {
     let href = |run: Option<&Run>| match run {
         Some(Run::Text { href, .. }) => href.clone(),
@@ -2442,9 +2176,8 @@ fn link_around<'a>(head: &'a [Run], tail: &[Run]) -> Option<&'a str> {
     (href(tail.first()).as_deref() == Some(left)).then_some(left)
 }
 
-/// This block's runs with `start..end` linked to `href` — or with `None`, unlinked — or `None`
-/// when that changes nothing. [`restyled`]'s twin: the same cut at both ends, one field
-/// rewritten in the middle, so a link inside a sentence is exactly the characters asked for.
+/// This block's runs with `start..end` linked to `href` (or unlinked), or `None` when nothing
+/// changes — [`restyled`]'s twin.
 fn relinked(block: &Block, start: usize, end: usize, href: Option<&str>) -> Option<Vec<Run>> {
     let len = block.len();
     let (start, end) = (start.min(len), end.min(len));
@@ -2472,35 +2205,20 @@ fn relinked(block: &Block, start: usize, end: usize, href: Option<&str>) -> Opti
     Some(runs)
 }
 
-/// Break one block into lines **in the face that block is set in** — [`lay_out`] with the
-/// width and the provider looked up rather than passed in.
-///
-/// One function so that every caret operation asks the same question the same way. The
-/// alternative — each of them doing its own lookup — is how a motion ends up measuring one
-/// block with another's font, which is exactly the bug [`Faces`] exists to close.
+/// Break one block into lines in the face that block is set in — [`lay_out`] with the width and
+/// provider looked up in `faces`, so every caret operation asks the same way.
 fn set_out(block: &Block, index: usize, faces: &dyn Faces, named: &Named) -> Layout {
     let (width, metrics) = faces.of(index, &block.kind, block.style.as_deref());
     lay_out(block, width, metrics, named)
 }
 
-/// Break one block into lines.
-///
-/// The whole of this crate's contribution to layout: turn runs into [`layout::Fragment`]s and
-/// hand them over. One fragment per run, so the character offsets a [`Caret`] counts and the
-/// ones the layout reports are the same numbers — a bookmark contributes an empty fragment and
-/// therefore no offset, exactly as it contributes no text.
-///
-/// **Each run measures with its own direct formatting**, projected into the four properties
-/// that change how wide text is (`crate::style::CharStyle::metrics`). So a bold word is
-/// measured bold and the caret lands where the ink does — which only became true when runs
-/// started carrying properties rather than a style *name*, and is the reason they do.
-///
-/// A run carrying only a **named** character style still measures with the default, because
-/// this build does not read style definitions (`doc/text-core.md`). The seam is unchanged: when
-/// definitions arrive, they are resolved into the same `TextStyle` and nothing here moves.
 /// The named character styles a layout measures runs by ([`paragraph::shown`]).
 type Named = std::collections::HashMap<String, paragraph::NamedChar>;
 
+/// Break one block into lines: runs become [`layout::Fragment`]s, one per run, so caret offsets
+/// and layout offsets are the same numbers (a bookmark is an empty fragment). Each run measures
+/// with what it looks like — its named character style under its direct formatting
+/// ([`paragraph::shown`]) — so a bold word is measured bold.
 fn lay_out(block: &Block, width: f32, metrics: &dyn Metrics, named: &Named) -> Layout {
     lay_out_indented(block, width, metrics, 0.0, &layout::Tabs::default(), named)
 }
@@ -2534,12 +2252,8 @@ fn lay_out_indented(
             style,
         })
         .collect();
-    // An empty paragraph is still one line tall, and the only way to say how tall that is
-    // is to hand the provider a fragment to answer about: `wrap` takes its height from the
-    // fragments it was given, so with none it has nothing to ask and falls back to one unit.
-    // Invisible where a unit *is* a line — the CLI's `Fixed`, a terminal cell — and the
-    // difference between an empty paragraph and a one-pixel gap in a shell that draws
-    // pixels.
+    // An empty paragraph is still one line tall, and `wrap` takes its height from its fragments,
+    // so it gets an empty one to ask about.
     if fragments.is_empty() {
         fragments.push(layout::Fragment {
             text: "",
@@ -2549,15 +2263,12 @@ fn lay_out_indented(
     layout::wrap_tabbed(&fragments, width, metrics, first, tabs)
 }
 
-/// The formatting of every run that `start..end` touches, in order.
-///
-/// An **empty** range reports one formatting rather than none: the run at the caret, preferring
-/// the one to its left, which is [`caret_formatting`]'s rule and has to be the same rule.
+/// The formatting of every run `start..end` touches, in order. An empty range reports one: the run
+/// at the caret, preferring the left, as [`caret_formatting`] decides.
 fn spanned(block: &Block, start: usize, end: usize) -> Vec<CharStyle> {
     if start == end {
-        // Cut where the caret is and ask the same question `insert_text` asks, through the
-        // same primitive — two spellings of "the run at the caret" would eventually disagree,
-        // and the disagreement would be a toolbar lying about the next keystroke.
+        // Cut at the caret and ask what `insert_text` asks, through the same primitive, so the
+        // toolbar never disagrees with the next keystroke.
         let (head, tail) = model::split_runs(&block.runs, start);
         let (_, props, _) = caret_formatting(&head, &tail);
         return vec![props];
@@ -2577,12 +2288,9 @@ fn spanned(block: &Block, start: usize, end: usize) -> Vec<CharStyle> {
     out
 }
 
-/// This block's runs with `start..end` restyled, or `None` when that changes nothing.
-///
-/// Built on [`model::split_runs`] twice, which is the same surgery every caret edit is: cut at
-/// both ends, rewrite the middle, put the three back together. A run half inside the span is
-/// split by construction, so a bold word inside a plain sentence is exactly the characters that
-/// were asked for.
+/// This block's runs with `start..end` restyled, or `None` when nothing changes:
+/// [`model::split_runs`] at both ends, the middle rewritten, so a run half inside the span is
+/// split.
 fn restyled(block: &Block, start: usize, end: usize, style: &CharStyle) -> Option<Vec<Run>> {
     let len = block.len();
     let (start, end) = (start.min(len), end.min(len));
@@ -2612,14 +2320,8 @@ fn restyled(block: &Block, start: usize, end: usize, style: &CharStyle) -> Optio
     Some(runs)
 }
 
-/// One block's runs, as a reader sees them.
-///
-/// Bookmarks are dropped rather than carried as empty runs: they contribute no characters, and
-/// a shell walking runs alongside a [`Layout`] would otherwise have to know to skip them.
-/// Where each bookmark in a block sits, in characters from its start — [`BlockView::marks`].
-///
-/// The offsets are counted the way [`run_views`] counts them and the way a [`Caret`] does, so
-/// a mark's offset is an offset a shell can already put a caret at.
+/// Where each bookmark in a block sits, in characters from its start ([`BlockView::marks`]),
+/// counted as [`run_views`] and a [`Caret`] count.
 fn marks(block: &Block) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     let mut at = 0usize;
@@ -2632,6 +2334,7 @@ fn marks(block: &Block) -> Vec<(usize, String)> {
     out
 }
 
+/// One block's runs as a reader sees them. Bookmarks are dropped: they contribute no characters.
 fn run_views(
     block: &Block,
     named: &std::collections::HashMap<String, paragraph::NamedChar>,
@@ -2690,8 +2393,8 @@ fn block_at(state: &State, index: usize) -> Result<Block> {
         .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(index))))
 }
 
-/// What `grind-spell` chooses a language through and attaches a dictionary to — each method the
-/// inherent one of the same name, and [`spell::sample`] for the guess.
+/// What `grind-spell` chooses a language through: each method the inherent one, and
+/// [`spell::sample`] for the guess.
 impl grind_core::spell::Spelled for App {
     fn set_lexicon(&self, lexicon: Option<Arc<dyn spell::Lexicon>>) {
         App::set_lexicon(self, lexicon);
@@ -2828,16 +2531,14 @@ mod tests {
 
     #[test]
     fn text_s_is_expanded_because_xml_would_otherwise_lose_the_spaces() {
-        // rng:8408 — ODF's run-length encoding of spaces. The trap that
-        // table:number-columns-repeated is, wearing different clothes.
+        // rng:8408 — ODF's run-length encoding of spaces.
         let doc = read(r#"<text:p>a<text:s text:c="4"/>b<text:s/>c</text:p>"#);
         assert_eq!(doc.blocks[0].text(), "a    b c");
     }
 
     #[test]
     fn a_repeat_count_is_clamped_rather_than_believed() {
-        // §9: never trust the file's number. Four billion spaces is a memory-exhaustion
-        // vector, not an intent.
+        // §9: four billion spaces is a memory-exhaustion vector, not an intent.
         let doc = read(r#"<text:p><text:s text:c="4000000000"/></text:p>"#);
         assert!(doc.blocks[0].len() <= 4096);
     }
@@ -2914,8 +2615,8 @@ mod tests {
 
     #[test]
     fn everything_outside_the_scope_line_is_inert_rather_than_an_error() {
-        // §8's whole design, arriving unchanged in a second document type. None of these cost
-        // a line of code in the reader, and the paragraphs around them still read.
+        // §8's design in a second document type: none of these cost reader code, and the
+        // paragraphs around them still read.
         let doc = read(
             r#"<text:p>before</text:p>
                <text:section text:name="s"><text:p>inside a section</text:p></text:section>
@@ -2946,8 +2647,7 @@ mod tests {
 
     #[test]
     fn the_prefix_carries_no_meaning() {
-        // §8.1: dispatch is on the URI. The same document under different prefixes reads the
-        // same, and this is the second document type proving it.
+        // §8.1: dispatch is on the URI, so different prefixes read the same.
         let odd = r#"<?xml version="1.0" encoding="UTF-8"?>
 <ns0:document xmlns:ns0="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
   xmlns:zz="urn:oasis:names:tc:opendocument:xmlns:text:1.0"

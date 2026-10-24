@@ -2,47 +2,25 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where each block sits down a page, and a table's blocks on its grid — pure arithmetic.
+//! Where each block sits down a page, and a table's blocks on its grid — pure arithmetic, above
+//! line layout (which is `grind_core::layout`'s, through [`App::layout_block`]): each block's box,
+//! where a cell's blocks go, which blocks are on screen, which one a click landed in, and how far
+//! to scroll to keep the caret in view.
 //!
-//! **This is not line layout.** Breaking a paragraph into lines is `grind_core::layout`'s job
-//! and reaches every shell through [`App::layout_block`] (`doc/text-layout.md`, Path C). What is
-//! here is the stacking above it: how tall each block's box is, where it starts, where a table
-//! cell's blocks go, which blocks are on screen, which one a click landed in, and how far to
-//! scroll to keep the caret in view.
-//!
-//! It was two copies, `ui_text_gtk` (`geom.rs`, with its table layout in `view.rs`) and
-//! `ui_win32/src/text/geom.rs`, whose `ponytail:` named a third copy as the trigger. The macOS
-//! shell is that copy (`doc/macos-shell.md`, M1). The two had drifted in three ways, and each
-//! is settled here for every shell at once:
-//!
-//! * the GNOME window left **two** gaps above a table and one below it; a table now sits one
-//!   gap under what came before it, collapsed the way every other block's space is;
-//! * only the Windows pane indented a list item **inside a table cell**, so the GNOME window's
-//!   bullet had nowhere to go but onto the cell's rule;
-//! * only the GNOME window gave `Title` and `Subtitle` a heading's **space above**, though
-//!   both give them a heading's face ([`Spacing::above`]).
-//!
-//! What stays a shell's: its numbers ([`Spacing`], in its own unit and already scaled to its
-//! screen), its fonts (the [`Faces`] it hands in), and what a picture decodes to (the hook
-//! [`lay_out`] takes, since decoding needs an OS decoder this crate must not depend on). The
-//! browser stacks its blocks with the DOM and the terminal by whole rows, so neither calls this.
+//! A shell supplies its numbers ([`Spacing`], in its own unit and scale), its fonts ([`Faces`]),
+//! and what a picture decodes to (a hook on [`lay_out`], since decoding needs an OS decoder). The
+//! browser stacks blocks with the DOM and the terminal by whole rows, so neither calls this.
 
 use std::collections::HashMap;
 use std::ops::Range;
 
 use crate::{App, BlockKind, BlockView, Cell, Faces, Table, Viewport};
 
-/// How a shell sets its page, in its own unit and already scaled to its screen — everything
-/// about the stacking that is a decision rather than a measurement.
-///
-/// A value rather than constants here, because every one of them is the shell's: the GNOME
-/// window's margin is not the Windows pane's, and the Windows pane's numbers change with the
-/// monitor it is on. What is *not* a field is the rule each one is used by, which is this
-/// module's and the same in every shell.
+/// How a shell sets its page, in its own unit and scaled to its screen — the decisions, as values;
+/// the rules they feed are this module's.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Spacing {
-    /// From the top of the document to the first block's text — the page's own margin, which
-    /// scrolls away with the text rather than framing it.
+    /// From the document's top to the first block's text — a margin that scrolls with the text.
     pub top: f64,
     /// Under every block, and between two blocks in one table cell.
     pub gap: f64,
@@ -55,8 +33,7 @@ pub struct Spacing {
 }
 
 impl Spacing {
-    /// How far a block's text is indented: one step per level of a list, and nothing for
-    /// anything else.
+    /// How far a block's text is indented: one step per list level, nothing otherwise.
     pub fn indent_of(&self, kind: &BlockKind) -> f64 {
         match kind {
             BlockKind::ListItem { depth } => f64::from(*depth) * self.indent,
@@ -64,11 +41,9 @@ impl Spacing {
         }
     }
 
-    /// The space above a block, before it is collapsed against the gap under the one above.
-    ///
-    /// A heading gets [`Spacing::heading`], and so does a paragraph in the `Title` or
-    /// `Subtitle` style: those are paragraphs by kind, but every shell that draws them gives
-    /// them a heading's face, and display type with no room above it reads as a mistake.
+    /// The space above a block, before collapsing against the gap under the one above. A heading
+    /// gets [`Spacing::heading`], as does a `Title` or `Subtitle` paragraph, which every shell
+    /// sets in a heading's face.
     pub fn above(&self, kind: &BlockKind, style: Option<&str>) -> f64 {
         match (kind, style) {
             (BlockKind::Heading { .. }, _) | (_, Some("Title" | "Subtitle")) => self.heading,
@@ -76,21 +51,17 @@ impl Spacing {
         }
     }
 
-    /// The measure a block **outside** a table is set at, in a column `column` wide: the column
-    /// less its indent, and never less than one unit.
-    ///
-    /// The indent comes out of the column rather than being drawn into the margin, so a list
-    /// item is measured narrower than a paragraph. A shell's [`Faces`] answers exactly this, or
-    /// a wrapped list item breaks its lines in one place and draws them in another; a block in a
-    /// table is set at its cell's width instead ([`across`]).
+    /// The measure a block outside a table is set at in a column `column` wide: the column less
+    /// its indent, at least one unit. A shell's [`Faces`] must answer exactly this, or a list item
+    /// breaks lines in one place and draws them in another; a block in a table is set at its
+    /// cell's width ([`across`]).
     pub fn measure(&self, kind: &BlockKind, column: f64) -> f64 {
         (column - self.indent_of(kind)).max(1.0)
     }
 }
 
-/// The room a document's own paragraph style gives a block ([`Faces::spacing`]): the space
-/// above and below it, added to its neighbours' (`doc/odt-format.md` §5c, fact 5), and how far
-/// its text starts in from the column's left edge.
+/// The room a document's own paragraph style gives a block ([`Faces::spacing`]): space above and
+/// below, added to its neighbours' (`doc/odt-format.md` §5c, fact 5), and its left indent.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Space {
     pub above: f64,
@@ -106,14 +77,12 @@ pub struct Slot {
     pub top: f64,
     /// The height of its lines — not counting the gap under it.
     pub height: f64,
-    /// How far its text starts from the column's left edge: a list's indent for an ordinary
-    /// block, and a table cell's own left edge plus its padding for a block in one.
+    /// How far its text starts from the column's left edge: a list's indent, or a cell's left edge
+    /// plus its padding.
     pub indent: f64,
-    /// How wide the block was laid out — the measure its lines were broken at.
-    ///
-    /// Carried rather than derived from `indent`, because a block in a table is set at its
-    /// *cell's* width and nothing about the block itself says so. A picture is fitted to it, a
-    /// click is measured against it, and a caret operation asks the core with it.
+    /// The measure its lines were broken at — carried because a block in a table is set at its
+    /// cell's width. A picture is fitted to it, a click measured against it, and a caret operation
+    /// asks the core with it.
     pub width: f64,
 }
 
@@ -123,20 +92,16 @@ impl Slot {
     }
 }
 
-/// One table cell's box — what the grid's rules are drawn round, in document coordinates with
-/// `left` measured from the column's left edge, as [`Slot::indent`] is.
-///
-/// Presentation only, and derived: a cell *is* its blocks ([`Cell`]), and this is the rectangle
-/// they were laid out inside. Kept beside the slots because a rule is drawn once per cell rather
-/// than once per block, and a cell may hold several.
+/// One table cell's box, for drawing its rules: document coordinates, `left` from the column's
+/// left edge as [`Slot::indent`] is. Derived from the blocks laid out in it; kept because a rule
+/// is drawn once per cell.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CellBox {
     pub top: f64,
     pub left: f64,
     pub width: f64,
     pub height: f64,
-    /// The first block in the cell, by index — how a painter finds which cell this is, and so
-    /// its style ([`crate::table_look`]).
+    /// The cell's first block, by index — how a painter finds its style ([`crate::table_look`]).
     pub first: usize,
 }
 
@@ -150,23 +115,23 @@ impl CellBox {
     }
 }
 
-/// Every block, stacked — and a table's blocks placed on its grid. Built fresh whenever the
-/// document, the width or the scale changes.
+/// Every block stacked, and a table's blocks on its grid. Built fresh whenever the document, the
+/// width or the scale changes.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Flow {
     slots: Vec<Slot>,
     cells: Vec<CellBox>,
     height: f64,
-    /// The space under the last block, which `height` already includes — what the next block's
-    /// space above is collapsed against ([`Flow::push`]) or added to ([`Flow::push_spaced`]).
+    /// The space under the last block, included in `height`, which the next block's space above
+    /// collapses against ([`Flow::push`]) or adds to ([`Flow::push_spaced`]).
     pending: f64,
     /// The text column's width, which is what an ordinary block is measured at.
     measure: f64,
 }
 
 impl Flow {
-    /// An empty flow whose first block starts `top` below the document's top, set across a
-    /// column `measure` wide.
+    /// An empty flow whose first block starts `top` below the document's top, across a column
+    /// `measure` wide.
     pub fn new(top: f64, measure: f64) -> Self {
         Flow {
             slots: Vec::new(),
@@ -177,11 +142,8 @@ impl Flow {
         }
     }
 
-    /// Add a block below the ones already in, with the space that goes above and below it.
-    ///
-    /// `space_before` is collapsed against the gap the previous block already left, the way
-    /// every typesetting system collapses adjacent margins — otherwise a heading after a
-    /// paragraph gets both gaps and floats.
+    /// Add a block below the others with the space above and below it. `space_before` collapses
+    /// against the gap already left, so a heading after a paragraph does not get both.
     pub fn push(&mut self, index: usize, height: f64, indent: f64, space_before: f64, gap: f64) {
         let top = match self.slots.is_empty() {
             // Nothing above the first block for its own space to sit under.
@@ -199,13 +161,9 @@ impl Flow {
         self.pending = gap;
     }
 
-    /// Add a block with the space a document's own paragraph style puts above and below it —
-    /// **added** to the space under the block before, never collapsed against it, and applied
-    /// above the very first block too, which is what Writer does (`doc/odt-format.md` §5c, facts
-    /// 5 and 6). What a printed page wants; a screen keeps [`Flow::push`]'s collapsing.
-    ///
-    /// `width` is the measure the block was laid out at, which its face decided — a style's side
-    /// margins make it narrower than the column less its indent.
+    /// Add a block with a document style's space above and below it, added to the space before
+    /// rather than collapsed, and above the first block too, as Writer does (`doc/odt-format.md`
+    /// §5c, facts 5 and 6) — for a printed page. `width` is the measure its face set it at.
     pub fn push_spaced(
         &mut self,
         index: usize,
@@ -226,13 +184,8 @@ impl Flow {
         self.pending = space.below;
     }
 
-    /// Put a block at an exact box rather than under the last one — what a table needs, since
-    /// its cells are placed by coordinate and not by what came before them.
-    ///
-    /// Deliberately not [`Flow::push`] with more arguments: stacking and placing are different
-    /// operations, and a `push` that sometimes ignored the running height would be the kind of
-    /// function whose callers each believe something different about it. [`Flow::advance`] is
-    /// how the running height catches up afterwards.
+    /// Put a block at an exact box rather than under the last one, as a table's cells are placed
+    /// by coordinate. [`Flow::advance`] catches the running height up afterwards.
     pub fn place(&mut self, index: usize, top: f64, height: f64, left: f64, width: f64) {
         self.slots.push(Slot {
             index,
@@ -248,8 +201,8 @@ impl Flow {
         self.cells.push(cell);
     }
 
-    /// Move the running height to `to` — where the next stacked block starts — of which the
-    /// last `pending` is space under what was placed, for the next block to collapse against.
+    /// Move the running height to `to`, of which the last `pending` is space under what was
+    /// placed, for the next block to collapse against.
     pub fn advance(&mut self, to: f64, pending: f64) {
         self.height = self.height.max(to);
         self.pending = pending;
@@ -279,12 +232,7 @@ impl Flow {
         self.height
     }
 
-    /// The slot for the block at `index` — looked up **by the block it is for**, not by its
-    /// position in the list.
-    ///
-    /// The two are the same number for anything either reader produced, since a table's blocks
-    /// are placed cell by cell in the order they appear, but that is not something this module
-    /// should assume about a model built by hand.
+    /// The slot for the block at `index`, looked up by block rather than by position in the list.
     pub fn slot(&self, index: usize) -> Option<&Slot> {
         match self.slots.binary_search_by_key(&index, |slot| slot.index) {
             Ok(at) => self.slots.get(at),
@@ -292,14 +240,10 @@ impl Flow {
         }
     }
 
-    /// The blocks that intersect `top..bottom` — what a paint reads and nothing else.
-    ///
-    /// A contiguous slice because the flow is in document order, which is what lets a shell hand
-    /// its ends straight to [`App::get_viewport`] (architecture rule 1). Found by a scan from
-    /// either end rather than a binary search, because a table breaks the one property a binary
-    /// search needs: the second block of a tall cell sits *below* the first block of the cell
-    /// beside it, so the tops are no longer in order. The slice may therefore hold a block of the
-    /// same table that is just off screen, which costs a layout and draws nothing.
+    /// The blocks intersecting `top..bottom`, as a contiguous slice in document order, so a shell
+    /// hands its ends to [`App::get_viewport`]. A scan from either end, not a binary search: in a
+    /// table the second block of a tall cell sits below the first block beside it. The slice may
+    /// include a just-off-screen block of the same table.
     pub fn visible(&self, top: f64, bottom: f64) -> &[Slot] {
         let first = self.slots.iter().position(|slot| slot.bottom() >= top);
         let last = self.slots.iter().rposition(|slot| slot.top < bottom);
@@ -309,17 +253,9 @@ impl Flow {
         }
     }
 
-    /// Which block a click at `(x, y)` landed in, `x` measured from the column's left edge.
-    ///
-    /// **Nearest, never nothing**: a click in the gap between two paragraphs, or below the last
-    /// one, is a click in the closest block — a document has no "outside", and a caret that
-    /// refuses to move because the pointer was two pixels low is a bug nobody can see the cause
-    /// of.
-    ///
-    /// Vertical distance dominates, and horizontal distance only settles a tie. That is the
-    /// whole of what a table needs: the cells of one row share a band of the page, so the answer
-    /// inside a table is "which column", and everywhere else there is exactly one block at a
-    /// given height and `x` never gets a vote.
+    /// Which block a click at `(x, y)` landed in, `x` from the column's left edge — the nearest,
+    /// never none, since a document has no outside. Vertical distance dominates and horizontal
+    /// only breaks ties, which picks the column inside a table.
     pub fn at(&self, x: f64, y: f64) -> Option<usize> {
         let mut best: Option<(&Slot, (f64, f64))> = None;
         for slot in &self.slots {
@@ -342,10 +278,8 @@ impl Flow {
         best.map(|(slot, _)| slot.index)
     }
 
-    /// Where the scroll has to be for `target` — one line's top and height — to be on screen.
-    ///
-    /// Moves the least it can: a caret already in view leaves the page exactly where it is,
-    /// which is the difference between reading a document and having it jump under you.
+    /// Where the scroll must be for `target` (a line's top and height) to be on screen, moving as
+    /// little as possible.
     pub fn follow(&self, scroll: f64, page: f64, target: (f64, f64)) -> f64 {
         let (top, height) = target;
         let scroll = match scroll {
@@ -362,13 +296,9 @@ impl Flow {
     }
 }
 
-/// Where a block in a table cell sits across the column, and how wide it is set — the one fact
-/// about a table that the *caret* needs as well as the painter.
-///
-/// A cell's text is broken into lines at the cell's own width, so a click and a Down-arrow have
-/// to ask the core with that same width or the caret lands where the ink is not. That is why
-/// [`across`] is computed once per reflow and read by the shell's [`Faces`], which is what every
-/// motion measures through — and why [`lay_out`] places a cell's blocks with the same function.
+/// Where a block in a table cell sits across the column, and how wide it is set. The caret needs
+/// this too: a cell's lines are broken at its width, so [`across`] is computed once per reflow,
+/// read by the shell's [`Faces`], and used by [`lay_out`] as well.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Across {
     /// From the column's left edge to where the text starts.
@@ -376,12 +306,9 @@ pub struct Across {
     pub width: f64,
 }
 
-/// A cell's own box across a column `column` wide: its left edge and its width.
-///
-/// **The columns are equal shares**, and that is a decision with a reason: the model carries no
-/// column widths ([`Cell`] — a table's own style is not read), so there is nothing to honour,
-/// and equal shares is the answer that never overflows the measure. A merged cell takes the
-/// width of every column it spans, which is what makes it look merged rather than misaligned.
+/// A cell's box across a column `column` wide: its left edge and width, in equal shares of the
+/// columns (the answer that never overflows the measure). A merged cell takes every column it
+/// spans.
 pub fn cell_x(cell: &Cell, columns: u32, column: f64) -> (f64, f64) {
     let share = column / f64::from(columns.max(1));
     (
@@ -390,10 +317,9 @@ pub fn cell_x(cell: &Cell, columns: u32, column: f64) -> (f64, f64) {
     )
 }
 
-/// [`cell_x`] for a table whose columns state their own widths (`widths`, one per column, `None`
-/// where a column states none): a column that states nothing shares what the stated ones leave,
-/// and a table wider than the column is scaled down to fit it, since a printed page has no
-/// sideways scroll.
+/// [`cell_x`] for a table whose columns state widths (`widths`, `None` where a column states
+/// none): unstated columns share what is left, and a table wider than the column is scaled to fit,
+/// since paper has no sideways scroll.
 pub fn cell_x_with(cell: &Cell, columns: u32, column: f64, widths: &[Option<f64>]) -> (f64, f64) {
     let count = columns.max(1) as usize;
     let stated: f64 = widths.iter().take(count).flatten().sum();
@@ -420,8 +346,8 @@ pub fn cell_x_with(cell: &Cell, columns: u32, column: f64, widths: &[Option<f64>
     (left, width)
 }
 
-/// Where a cell of a table sits across the column, by the table's own widths when its face
-/// states them ([`Faces::columns`]) and in equal shares otherwise.
+/// Where a cell sits across the column: by the table's widths when its face states them
+/// ([`Faces::columns`]), else equal shares.
 fn place_cell(
     faces: &dyn Faces,
     table: &str,
@@ -442,9 +368,8 @@ fn padding(faces: &dyn Faces, cell: &Cell, spacing: &Spacing) -> [f64; 4] {
         .unwrap_or([spacing.cell_pad; 4])
 }
 
-/// Where one block sits inside a cell whose box starts at `left` and is `width` wide: inside
-/// the padding, and a list item further in by its own indent, so that its bullet has somewhere
-/// to go that is still inside the cell.
+/// Where one block sits in a cell starting at `left`, `width` wide: inside the padding, a list
+/// item further in by its indent, so its bullet stays inside the cell.
 fn in_cell(kind: &BlockKind, left: f64, width: f64, spacing: &Spacing, pad: [f64; 4]) -> Across {
     let indent = spacing.indent_of(kind);
     Across {
@@ -462,18 +387,15 @@ impl Faces for Plain {
     }
 }
 
-/// Every block that is in a table cell, by block index, with where it sits across a column
-/// `column` wide. Blocks outside a table are not in the map: they are set at
-/// [`Spacing::measure`], which a shell's [`Faces`] answers without asking.
-///
-/// Built before the shell's `Faces` and handed to it, because `Faces::of` is called while `App`
-/// holds its read lock and so may not ask the document which cell a block is in.
+/// Every block in a table cell, by index, with where it sits across a column `column` wide; other
+/// blocks use [`Spacing::measure`]. Built before the shell's `Faces`, since `Faces::of` runs under
+/// `App`'s read lock and cannot ask which cell a block is in.
 pub fn across(app: &App, column: f64, spacing: &Spacing) -> HashMap<usize, Across> {
     across_with(app, column, spacing, &Plain)
 }
 
-/// [`across`] with a table's own column widths and cell padding, as `looks` states them
-/// ([`Faces::columns`], [`Faces::cell_pad`]) — what a printed page lays a table out by.
+/// [`across`] with a table's own column widths and cell padding ([`Faces::columns`],
+/// [`Faces::cell_pad`]), for a printed page.
 pub fn across_with(
     app: &App,
     column: f64,
@@ -509,22 +431,14 @@ pub fn across_with(
     out
 }
 
-/// Measure every block of a document and stack them, laying a table out as a grid.
+/// Measure every block and stack them, laying tables out as grids. A block's height is its
+/// `Layout::height()` at the width `faces` gives — a cell's, from [`across`] — the same measure
+/// and metrics caret operations use, so drawing and Down-arrow agree. A block the core cannot lay
+/// out takes no room (R5).
 ///
-/// Each block's height is `Layout::height()` and nothing else: nothing here decides how tall a
-/// paragraph is, it asks, at the width the `faces` says — which for a block in a table is its
-/// cell's, from the [`across`] map the shell built alongside. The measure and the metrics come
-/// from the same place the *caret* operations get them, which is the whole point of asking
-/// through [`Faces`]: a block laid out one way for drawing and another for Down-arrow is a caret
-/// in the wrong place. A block the core cannot lay out at all takes no room rather than stopping
-/// the document — R5's tolerance, carried up into the page.
-///
-/// `picture` is the one exception, and it is a hook rather than a special case: a block that is
-/// a picture ([`crate::picture_of`]) is not measured as text at all. Its height comes from the
-/// image's own decoded pixels, fitted to the width, and decoding needs a platform decoder.
-/// `picture(view, width)` answers `Some(height)` when `view` is a picture the caller could
-/// decode and size, and `None` otherwise, in which case the text height is used — so a caller
-/// with no decoder passes `&|_, _| None`.
+/// `picture` measures a block that is a picture ([`crate::picture_of`]) from its decoded pixels
+/// fitted to the width: `Some(height)` when the caller could decode it, `None` to use the text
+/// height. A caller with no decoder passes `&|_, _| None`.
 pub fn lay_out(
     app: &App,
     faces: &dyn Faces,
@@ -558,9 +472,8 @@ pub fn lay_out(
             index += 1;
             continue;
         };
-        // A table is laid out as a grid rather than stacked, and its blocks are placed rather
-        // than pushed. `App::table` is the same fold the writer and the projection use, asked of
-        // the core so that four callers cannot answer it four ways.
+        // A table is laid out as a grid, its blocks placed rather than pushed, using
+        // `App::table`'s fold.
         if view.cell.is_some()
             && let Some(table) = app.table(index)
         {
@@ -594,9 +507,7 @@ struct CellRun<'a> {
     blocks: Vec<usize>,
 }
 
-/// Every cell of a table, in the order its first block appears. Built from the blocks
-/// themselves — a cell *is* its blocks — rather than asked for, since the viewport already has
-/// every one of them.
+/// Every cell of a table, in the order its first block appears, built from the blocks.
 fn cell_runs(viewport: &Viewport, blocks: Range<usize>) -> Vec<CellRun<'_>> {
     let mut out: Vec<CellRun> = Vec::new();
     for index in blocks {
@@ -617,13 +528,9 @@ fn cell_runs(viewport: &Viewport, blocks: Range<usize>) -> Vec<CellRun<'_>> {
     out
 }
 
-/// One table, as a grid: equal columns across the measure, each row as tall as its tallest
-/// cell, each cell's blocks stacked inside it.
-///
-/// Two passes, because a cell cannot be positioned until its row's height is known and a row's
-/// height is the tallest cell in it. A cell that spans rows contributes its share to each row it
-/// covers — the honest approximation, since which of the covered rows should grow is a question
-/// only a full table layout answers.
+/// One table as a grid: columns across the measure, each row as tall as its tallest cell, each
+/// cell's blocks stacked inside. Two passes, since a cell's position needs its row's height. A
+/// cell spanning rows contributes a share to each.
 fn lay_out_table(
     flow: &mut Flow,
     viewport: &Viewport,
@@ -634,8 +541,8 @@ fn lay_out_table(
     height_of: &dyn Fn(usize, &BlockView) -> (f64, f64),
 ) {
     let gap = spacing.gap;
-    // The same gap above a table a paragraph would leave, collapsed the same way: the running
-    // height already ends one gap below whatever came before.
+    // The same gap above a table a paragraph would leave: the running height already ends one gap
+    // below what came before.
     let top = flow.height();
     let rows = table.rows.max(1) as usize;
     let cells = cell_runs(viewport, table.blocks.clone());
@@ -646,9 +553,9 @@ fn lay_out_table(
         .flat_map(|run| run.blocks.iter().copied())
         .filter_map(|index| Some((index, height_of(index, viewport.get(index)?))))
         .collect();
-    // What goes above and below a block in a cell: its face's own spacing where it states one,
-    // added as Writer adds it — above the first block and below the last as well
-    // (`doc/odt-format.md` §5c fact 18) — and the shell's gap between blocks otherwise.
+    // Space above and below a block in a cell: its face's own spacing when stated, added as Writer
+    // adds it, above the first and below the last block too (`doc/odt-format.md` §5c fact 18);
+    // otherwise the shell's gap.
     let room = |index: usize| -> (f64, f64) {
         faces
             .spacing(index)
@@ -716,8 +623,7 @@ fn lay_out_table(
             height,
             first: run.blocks.first().copied().unwrap_or(0),
         });
-        // A cell whose face centres it vertically puts its text halfway down what the row
-        // leaves it.
+        // A cell whose face centres it vertically puts its text halfway down the room left.
         let slack = (height - text(run) - pad[0] - pad[2]).max(0.0);
         let centred = faces.cell_centred(&run.cell.table, run.cell.row, run.cell.column);
         let mut at = cell_top + pad[0] + if centred { slack / 2.0 } else { 0.0 };
@@ -726,8 +632,7 @@ fn lay_out_table(
                 continue;
             };
             let place = in_cell(&view.kind, left, width, spacing, pad);
-            // The width the lines were really broken at, which is the `Faces`' answer — the same
-            // as `place.width` in any shell whose `Faces` reads [`across`].
+            // The width the lines were broken at — the `Faces`' answer.
             let (block_height, measure) =
                 measured.get(&index).copied().unwrap_or((0.0, place.width));
             let (above, below) = room(index);
@@ -736,8 +641,8 @@ fn lay_out_table(
             at += above + block_height + below;
         }
     }
-    // A screen leaves its gap under a table; a face that spaces blocks the way a document does
-    // leaves none, since Writer puts the next paragraph straight under the table's bottom edge.
+    // A screen leaves its gap under a table; a face spacing blocks as a document does leaves none,
+    // as Writer does.
     let after = match table
         .blocks
         .clone()
@@ -764,8 +669,7 @@ mod tests {
         cell_pad: 6.0,
     };
 
-    /// `lay_out`'s picture hook, answering "not a picture" for every block — what a caller with
-    /// no image decoder passes, and what every test here that is not about pictures wants.
+    /// `lay_out`'s picture hook answering "not a picture" for every block.
     fn no_pictures(_: &BlockView, _: f64) -> Option<f64> {
         None
     }
@@ -785,8 +689,7 @@ mod tests {
         assert_eq!(flow.slot(0).unwrap().top, 0.0);
         assert_eq!(flow.slot(1).unwrap().top, 20.0);
         assert_eq!(flow.slot(2).unwrap().top, 40.0);
-        // 40 to the last block's top, 10 of text, and the gap under it — a document ends a
-        // line short of its own bottom margin otherwise.
+        // 40 to the last block's top, 10 of text, and the gap under it.
         assert_eq!(flow.height(), 60.0);
     }
 
@@ -798,8 +701,7 @@ mod tests {
         flow.push(1, 20.0, 0.0, 18.0, 10.0);
         assert_eq!(flow.slot(1).unwrap().top, 28.0, "20 + (18 - 10)");
 
-        // And the first block never floats: nothing is above it for its space to sit under,
-        // so it starts exactly at the page's own top margin.
+        // The first block starts exactly at the page's top margin.
         let mut alone = Flow::new(30.0, 100.0);
         alone.push(0, 20.0, 0.0, 18.0, 10.0);
         assert_eq!(alone.slot(0).unwrap().top, 30.0);
@@ -891,8 +793,8 @@ mod tests {
         app
     }
 
-    /// The `Faces` a shell builds, minus the fonts: a block in a table is set at its cell's
-    /// width from the [`across`] map, everything else at [`Spacing::measure`].
+    /// The `Faces` a shell builds, without fonts: a block in a table at its cell's width from
+    /// [`across`], others at [`Spacing::measure`].
     struct InCells {
         column: f64,
         across: HashMap<usize, Across>,
@@ -908,8 +810,8 @@ mod tests {
         }
     }
 
-    /// Every block one unit tall at `Fixed`, with the spacing a paper face asks for: two above
-    /// and three below each, except block 1, which keeps the screen's collapsed rule.
+    /// Every block one unit tall at `Fixed`, with paper spacing: two above and three below, except
+    /// block 1, which keeps the screen's collapsing.
     struct Spaced;
 
     impl Faces for Spaced {
@@ -941,10 +843,9 @@ mod tests {
         };
         let flow = lay_out(&app, &Spaced, 100.0, &tight, &no_pictures);
         let tops: Vec<f64> = flow.slots().iter().map(|s| s.top).collect();
-        // Block 0: the page's top, plus its own two above. Block 1 states nothing, so it sits
-        // under block 0's three below, collapsed with the gap the screen would leave. Block 2
-        // adds its two above to block 1's gap below — added, as Writer adds them
-        // (`doc/odt-format.md` §5c, fact 5).
+        // Block 0: the top plus its two above. Block 1 states nothing, so it sits under block 0's
+        // three below, collapsed with the screen's gap. Block 2 adds its two above to block 1's
+        // gap (`doc/odt-format.md` §5c, fact 5).
         assert_eq!(tops, vec![12.0, 16.0, 20.0]);
         assert_eq!(
             flow.height(),
@@ -1010,10 +911,8 @@ mod tests {
         lay_out(app, &faces, column, &SPACING, &no_pictures)
     }
 
-    /// The stacking takes its heights from the core and measures nothing itself, so it breaks
-    /// the same text in the same places `grind text view --width` does when both are given
-    /// [`Fixed`] (`doc/text-layout.md`, Path C) — the property the Windows shell's W5 exit
-    /// criterion was, held here now for every shell.
+    /// The stacking takes its heights from the core, so with [`Fixed`] it breaks lines where
+    /// `grind text view --width` does.
     #[test]
     fn the_page_breaks_lines_where_the_cli_does() {
         let app = document();
@@ -1032,14 +931,12 @@ mod tests {
                 slot.index
             );
         }
-        // And the paragraph really is the one that wrapped, or the test would be asserting
-        // nothing at all.
+        // And the paragraph really wrapped, or the test asserts nothing.
         let lines = app.layout_block(1, 30.0, &Fixed).unwrap();
         assert!(lines.lines().len() > 1, "the fixture has to wrap");
     }
 
-    /// The picture hook's answer wins over the text layout entirely — a decoded image is never
-    /// also measured as if its placeholder character were a line of text.
+    /// A decoded picture is never also measured as its placeholder's line of text.
     #[test]
     fn a_picture_is_measured_by_the_hook_and_not_as_text() {
         let app = document();
@@ -1065,12 +962,8 @@ mod tests {
         assert_eq!(flow.slot(2).unwrap().indent, SPACING.indent);
     }
 
-    /// A document with **no blocks at all** has nothing to stack and must not be a special case
-    /// anywhere above.
-    ///
-    /// Written out of `Document::empty` and read back, because `App::new()` is no longer such a
-    /// document: a *new* one is one empty paragraph, so that a caret has somewhere to be. A file
-    /// with an empty `office:text` still is one, and this is that case.
+    /// A document with no blocks at all has nothing to stack. Read from `Document::empty`, since a
+    /// new `App` has one empty paragraph.
     #[test]
     fn a_document_with_no_blocks_measures_to_its_own_margin() {
         let app = App::new();
@@ -1084,8 +977,7 @@ mod tests {
         assert_eq!(flow.limit(500.0), 0.0, "nothing to scroll");
     }
 
-    /// And the document **New** actually opens: one empty paragraph, with a slot for it, because
-    /// the first keystroke lands in a block or it fails.
+    /// A new document has one empty paragraph with a slot, so the first keystroke lands somewhere.
     #[test]
     fn a_new_document_has_one_block_to_type_into() {
         let app = App::new();
@@ -1098,8 +990,7 @@ mod tests {
 
     const COLUMN: f64 = 300.0;
 
-    /// A paragraph, an empty two-by-three table, and a paragraph — `Insert Table…`'s own result,
-    /// between two blocks of text.
+    /// A paragraph, an empty two-by-three table, and a paragraph — `Insert Table…`'s result.
     fn with_a_table() -> App {
         let app = App::new();
         app.insert(0, BlockKind::Paragraph, "Before").unwrap();
@@ -1117,8 +1008,8 @@ mod tests {
         app
     }
 
-    /// An empty table's six cells are a grid, not six paragraphs stacked: a row's cells share a
-    /// top, the columns are equal shares of the measure, and the table is two rows tall.
+    /// An empty table's six cells form a grid: a row's cells share a top, the columns are equal
+    /// shares, and it is two rows tall.
     #[test]
     fn a_table_is_laid_out_as_a_grid_rather_than_stacked() {
         let app = with_a_table();
@@ -1151,14 +1042,12 @@ mod tests {
         assert!(after.top >= boxes[5].bottom(), "and the next one under it");
         assert_eq!(after.indent, 0.0, "back to the full column");
         assert_eq!(after.width, COLUMN);
-        // Two rows of one line each plus their padding, where six stacked blocks were six lines
-        // and five gaps.
+        // Two rows of one line each plus padding.
         let table_h = boxes[5].bottom() - boxes[0].top;
         assert_eq!(table_h, 2.0 * (1.0 + 2.0 * pad));
     }
 
-    /// A table is spaced like any other block: one gap under what came before it and one gap
-    /// over what comes after — the GNOME window used to leave two above.
+    /// A table is one gap from what comes before it and one from what follows.
     #[test]
     fn a_table_sits_one_gap_from_its_neighbours() {
         let flow = laid_out(&with_a_table(), COLUMN);
@@ -1168,8 +1057,7 @@ mod tests {
         assert_eq!(after.top - boxes[5].bottom(), SPACING.gap, "below");
     }
 
-    /// The width the caret measures a cell at and the width it was laid out at are one answer —
-    /// the property that keeps a Down-arrow inside a cell landing where the ink is.
+    /// The width the caret measures a cell at is the width it was laid out at.
     #[test]
     fn the_caret_and_the_page_agree_on_a_cells_measure() {
         let app = with_a_table();
@@ -1197,8 +1085,8 @@ mod tests {
         assert_eq!(flow.at(share + 10.0, second), Some(5));
     }
 
-    /// A cell holding two paragraphs makes its whole row taller, and its neighbours' text stays
-    /// at the row's top rather than sliding down beside the second paragraph.
+    /// A cell with two paragraphs makes its row taller, and its neighbours' text stays at the
+    /// row's top.
     #[test]
     fn a_cell_with_two_blocks_grows_its_row() {
         let app = with_a_table();
@@ -1236,8 +1124,7 @@ mod tests {
         assert!(seen.contains(&2), "{seen:?}");
     }
 
-    /// A merged cell is as wide as the columns it spans — the one table shape only a file can
-    /// produce today, so it is asked of the arithmetic directly.
+    /// A merged cell is as wide as the columns it spans.
     #[test]
     fn a_merged_cell_spans_the_columns_it_covers() {
         let mut merged = Cell::new("T", 0, 1);
@@ -1247,8 +1134,7 @@ mod tests {
         assert_eq!(cell_x(&plain, 0, 400.0), (0.0, 400.0), "never / 0");
     }
 
-    /// A list item in a cell keeps its indent inside the cell, so its bullet is drawn in the
-    /// cell and not over the rule or in the neighbour.
+    /// A list item in a cell keeps its indent inside the cell.
     #[test]
     fn a_list_item_in_a_cell_is_indented_inside_it() {
         let item = in_cell(

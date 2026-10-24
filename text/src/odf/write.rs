@@ -2,28 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Serialising a text document back to ODF. **\[ODT\]**
+//! Serialising a text document back to ODF. **\[ODT\]** Packaging, the manifest and escaping are
+//! `grind-core`'s; this is the `office:text` content model. Both forms share one content writer,
+//! differing only in the root element and whether `office:mimetype` is on it. Minimal (§1.4, R3):
+//! a namespace is declared only if the document uses it, so a new document is a handful of lines.
 //!
-//! The package layout, the manifest, the ODF version and XML escaping are the same for every
-//! document type and live in `grind-core` (§1.1, §1.3) — this file is only the `office:text`
-//! content model. The two physical forms share one content writer and differ in exactly two
-//! places: the root element name and whether `office:mimetype` sits on it.
-//!
-//! **Minimal by intent (§1.4, R3):** no `styles.xml`, no `meta.xml`, no `settings.xml`, and a
-//! namespace is declared only if the document actually uses it. A new text document is a
-//! handful of lines rather than the several hundred a full office suite writes.
-//!
-//! Two things this writer has to get right that a naive one does not:
-//!
-//! * **Whitespace is re-encoded as elements.** XML character data is whitespace, and an ODF
-//!   consumer collapses a run of it to one space — so a paragraph written with its spaces,
-//!   tabs and newlines literal comes back with all three gone. `doc/odt-format.md` §3.3 calls
-//!   this the `table:number-columns-repeated` trap in a new costume, and it is: the reader
-//!   expands, the writer re-encodes into `text:s`, `text:tab` and `text:line-break`, and
-//!   neither half is optional.
-//! * **A list is reconstructed from block depths.** The model flattens `text:list` into the
-//!   block sequence (`crate::model::BlockKind`), so writing folds the depths back into nesting
-//!   — opening an element where the depth rises and closing where it falls.
+//! * Whitespace is re-encoded as elements: a consumer collapses whitespace in character data, so
+//!   the writer turns spaces, tabs and newlines into `text:s`, `text:tab` and `text:line-break`
+//!   (`doc/odt-format.md` §3.3).
+//! * Lists are rebuilt from block depths, opening an element where the depth rises and closing
+//!   where it falls.
 
 use std::fmt::Write as _;
 
@@ -38,23 +26,16 @@ use crate::style::CharStyle;
 
 pub use grind_core::Form;
 
-/// The media type, byte for byte. Sniffed by readers at a fixed offset in the package form
-/// (§1.1), so it is not somewhere to be creative.
+/// The media type, byte for byte; readers sniff it at a fixed offset in a package (§1.1).
 pub const MIMETYPE: &str = "application/vnd.oasis.opendocument.text";
 
 pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
-    // The third form is not XML at all, so it leaves before any of this file runs
-    // (`doc/dsl.md` §9, D2). It is here rather than one layer up because `write_bytes` is
-    // the one door out of the crate, and a form that only *some* callers knew to handle
-    // would be a form that escapes through the others.
+    // The projection is not XML; it leaves here, at the crate's one door out (`doc/dsl.md` §9).
     if form == Form::Projection {
         return Ok(crate::projection::save(doc));
     }
-    // A save into the *other* form of the file this document came from is a save into its own
-    // form — with every guard that has — moved across by `forms::convert`, which carries every
-    // part and refuses what the other form has no place for. Starting from nothing instead used
-    // to drop the page layout, the named styles and every element the model does not read, with
-    // no error at all.
+    // A save into the other form of the file this document came from is a save into its own form,
+    // with every guard, moved across by `forms::convert`, which carries every part.
     if let Some(source) = doc.source.as_deref()
         && source.form != form
         && source.form != Form::Projection
@@ -67,11 +48,9 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
     // The file this document came from, when it is being saved in the same form.
     let source = doc.source.as_deref().filter(|source| source.form == form);
 
-    // R6 first: a document that came from a file and has only had block *contents* edited goes
-    // back as that file with those elements replaced. Otherwise the body regenerates — and is
-    // **merged into the original** (`envelope::merge`), so the styles, master pages, metadata
-    // and settings the model does not own are carried rather than dropped. Saving never makes
-    // an existing file worse.
+    // R6 first: a document whose blocks were only edited in place goes back as its file with those
+    // elements replaced. Otherwise the body regenerates and is merged into the original
+    // (`envelope::merge`), keeping what the model does not own.
     let content = match splice(doc, form) {
         Some(spliced) => spliced,
         None => {
@@ -81,15 +60,14 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
             let generated = content(doc, form, source, &reserved);
             match source.and_then(|source| envelope::merge(&source.bytes, generated.as_bytes())) {
                 Some(merged) => merged,
-                // An original too broken to merge into: write a whole document of our own,
-                // every style declared, rather than one leaning on declarations it lost.
+                // An original too broken to merge into: write a whole document of our own, every
+                // style declared.
                 None => content(doc, form, None, &reserved).into_bytes(),
             }
         }
     };
-    // Whatever touched somebody's file is checked before it can replace it: a save that fails
-    // leaves the original on disk, and one that writes something unreadable — or that drops
-    // what the model never read — does not.
+    // Check whatever touched somebody's file before it replaces it: unreadable output, or output
+    // that drops what the model never read, is refused.
     if let Some(source) = source {
         envelope::check_against(&source.bytes, &content)?;
         let lost = envelope::losses(&source.bytes, &content, &owned).unwrap_or_default();
@@ -102,18 +80,17 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
         (Form::Package, None) => write_package(MIMETYPE, &String::from_utf8_lossy(&content))?,
         _ => content,
     };
-    // The bytes that will actually be written, package and all: a picture's `xlink:href`
-    // names a part of the package, and a bare `content.xml` has no part to resolve it in.
+    // Check the bytes that will be written, package and all: a picture's `xlink:href` names a
+    // package part.
     if source.is_some() {
         verify(doc, &bytes)?;
     }
     Ok(bytes)
 }
 
-/// **The edits themselves, checked**: what is about to replace somebody's file is read back and
-/// every block's kind, table cell and text compared with the document being saved. A splice
-/// that kept the file's bytes where it should have written the model's would otherwise be a
-/// save that quietly undid an edit — the one failure worse than a refused save.
+/// What is about to replace somebody's file, read back, with every block's kind, table cell and
+/// text compared with the document — so a splice that kept the file's bytes where it should have
+/// written the model's cannot quietly undo an edit.
 fn verify(doc: &Document, content: &[u8]) -> Result<()> {
     let refuse = |why: String| -> Result<()> {
         Err(grind_core::Error::Xml(format!(
@@ -144,9 +121,8 @@ fn verify(doc: &Document, content: &[u8]) -> Result<()> {
 }
 
 /// Whether a body key ([`envelope::body_vocabulary`]) is this writer's to change: an element of
-/// `doc/text-core.md`'s scope line, or an attribute the model carries or the writer puts back
-/// (`Origin`, a spliced block's kept attributes). A count of anything else going down is
-/// content the model never saw, and the save is refused rather than allowed to drop it.
+/// `doc/text-core.md`'s scope line, or an attribute the model carries or puts back (`Origin`, a
+/// spliced block's kept attributes). Anything else going down refuses the save.
 fn owned(key: &str) -> bool {
     let (element, attribute) = match key.split_once('@') {
         Some((element, attribute)) => (element, Some(attribute)),
@@ -164,8 +140,8 @@ fn owned(key: &str) -> bool {
         || is(OFFICE, &["binary-data", "text"])
         || is(TABLE, &["table", "table-column", "table-row", "table-cell"])
         || is(TABLE, &["covered-table-cell"]);
-    // A footnote or a field is a run the model keeps whole (`Run::Kept`) and writes back as the
-    // file's own bytes, so one that is gone is gone by an edit — the person erased it.
+    // A footnote or field is kept whole (`Run::Kept`) and written back as the file's bytes, so one
+    // that is gone was erased.
     let kept = is(TEXT, &["note", "note-citation", "note-body"])
         || is(TEXT, super::read::FIELDS)
         || is(OFFICE, &["annotation", "annotation-end"])
@@ -183,9 +159,8 @@ fn owned(key: &str) -> bool {
     }
     let attr = |uri: &str, local: &str| attribute == name(uri, local);
     match () {
-        // A block's own element: what the model writes, and every other attribute is put back
-        // verbatim — from the file's bytes for a block nobody edited, from its kept attributes
-        // for one somebody did.
+        // A block's own element: the model writes it, and its other attributes are put back
+        // verbatim.
         _ if is(TEXT, &["p", "h"]) => true,
         // A list opens with the attributes its `text:list` had in the file (`Origin::list`).
         _ if is(TEXT, &["list", "list-item", "list-header"]) => true,
@@ -222,11 +197,8 @@ const DUBLIN_CORE: &str = "http://purl.org/dc/elements/1.1/";
 /// LibreOffice's own namespace for editing-session bookkeeping (`officeooo:rsid`).
 const OFFICEOOO: &str = "http://openoffice.org/2009/office";
 
-/// The file this document was read from, with the edited blocks put back in place.
-///
-/// `None` means "not applicable, regenerate" — never "failed". Every condition below is a
-/// documented boundary of the trick rather than an error, and `odf::source` says why each one
-/// is where it is.
+/// The file this document was read from, with the edited blocks put back in place. `None` means
+/// regenerate, never failure; `odf::source` explains each boundary.
 fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
     let source = doc.source.as_deref()?;
     // Saving as the other form is a conversion, not an edit.
@@ -237,16 +209,9 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
     if doc.edits.structural {
         return None;
     }
-    // A document that never carried an image never declared `draw:`/`svg:` either, and
-    // splicing patches individual block elements without ever touching the root tag that
-    // would have to carry the declaration — so an image appearing for the first time forces a
-    // regenerate, the same way a style name the file has no room for does, just below. A
-    // document read *with* an image already has the declaration on its own root, so this only
-    // ever fires for one a person just added.
-    //
-    // `svg:` is the same question asked separately: a picture inserted with no size needed no
-    // `svg:` attribute, so a file can declare `draw:` and not `svg:`, and its first size or
-    // alternative text would then name a prefix nothing binds.
+    // A document that never had an image never declared `draw:`, and a splice never touches the
+    // root tag, so a first image regenerates — as does a first size or alternative text in a file
+    // declaring `draw:` but not `svg:`.
     let declares = |uri: &str| source.bytes.windows(uri.len()).any(|w| w == uri.as_bytes());
     let images = || doc.blocks.iter().flat_map(|b| b.runs.iter());
     if images().any(|r| matches!(r, Run::Image { .. })) && !declares(DRAW) {
@@ -259,10 +224,8 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
     {
         return None;
     }
-    // The same for a link: `xlink:` is declared only by a document that links to something,
-    // so the first link typed into one that never did must regenerate too, or the spliced
-    // `text:a` names a prefix nothing binds — a `grind text new` document refused its first
-    // link for exactly this reason.
+    // Likewise `xlink:` for a document's first link, or the spliced `text:a` would name an unbound
+    // prefix.
     if doc
         .blocks
         .iter()
@@ -276,12 +239,10 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
         return None;
     }
 
-    // Every character style the *edited* blocks need, under the name this file gives it. A
-    // formatting the file has no name for cannot be spliced, because the declaration would have
-    // to go somewhere these patches do not reach. Only the edited ones: a block nobody touched
-    // goes back as its own bytes and names whatever it named, so a run whose resolved
-    // formatting has no exact twin among the file's automatic styles must not turn an
-    // untouched save into a regenerate (`sw/qa`'s `tdf97879.odt` did).
+    // Every character style the edited blocks need, under the name this file gives it; a
+    // formatting the file has no name for cannot be spliced. Only the edited blocks: an untouched
+    // block goes back as its own bytes, so a run without an exact twin among the file's automatic
+    // styles must not turn an untouched save into a regenerate (`tdf97879.odt`).
     let pool = Pool::spliced(
         doc.blocks
             .iter()
@@ -291,9 +252,8 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
             .filter(|props| props.needs_style()),
         source,
     )?;
-    // A formatting the file has no style for is declared at the end of its own automatic
-    // styles — the one splice site outside the body, found by structure rather than kept as
-    // an offset — so a click on Bold stays a splice rather than a regenerate of everything.
+    // A formatting the file has no style for is declared at the end of its own automatic styles —
+    // the one splice site outside the body — so a click on Bold stays a splice.
     let mut patches: Vec<(std::ops::Range<usize>, String)> = Vec::new();
     let mut declarations = pool.declarations();
     if opens_lists(doc, Some(source))
@@ -306,16 +266,15 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
         patches.push((at..at, declarations));
     }
 
-    // Which elements have to be rewritten. Every edited block must sit in one the file
-    // actually spelled — one that does not means regenerating, because a document half in its
-    // original bytes and half not would lose the other half silently.
+    // The elements to rewrite. An edited block in no element the file spelled means regenerating
+    // rather than a document half in its original bytes.
     for block in &doc.blocks {
         if !doc.edits.blocks.contains(&block.id) {
             continue;
         }
         let at = source.blocks.get(&block.id)?;
-        // A block that moved into or out of a list, to another depth, or into another table
-        // cell needs elements around it the splice does not touch: regenerate instead.
+        // A block that moved into or out of a list, to another depth or into another cell needs
+        // surrounding elements the splice does not touch.
         let depth = match block.kind {
             BlockKind::ListItem { depth } => depth,
             _ => 0,
@@ -330,14 +289,12 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
             return None;
         }
         let mut out = String::new();
-        // No indentation: the bytes before the element are still the file's own, so the
-        // element goes back exactly where it started.
+        // No indentation: the bytes before the element are the file's own.
         paragraph(&mut out, block, String::new(), &at.keep, &pool);
         patches.push((at.range.clone(), out.trim_end().to_owned()));
     }
-    // An edited block whose id the source knows but which no longer appears — a `SetBlock` that
-    // replaced the id — would leave a stale element behind. `structural` catches the sequence
-    // changing; this catches the identity changing without it.
+    // An edited block whose id no longer appears (a `SetBlock` that replaced the id) would leave a
+    // stale element; `structural` catches sequence changes and this catches identity changes.
     if doc
         .edits
         .blocks
@@ -347,9 +304,8 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
         return None;
     }
 
-    // In file order, so the untouched stretches between are copied without seeking back.
-    // Elements do not overlap by construction — they are siblings — but a corrupted span would
-    // produce tangled bytes rather than an error, so refuse instead of trusting it.
+    // In file order. Siblings never overlap, but a corrupt span would tangle bytes, so it is
+    // refused.
     patches.sort_by_key(|(range, _)| range.start);
     if patches.windows(2).any(|w| w[0].0.end > w[1].0.start) {
         return None;
@@ -369,15 +325,12 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
 /// Which namespaces a document's content actually needs (§1.4).
 struct Used {
     xlink: bool,
-    /// `style:` and `fo:`, which arrive together: the only thing this writer puts in either is
-    /// a `style:style` full of `fo:` properties, so one flag covers both.
+    /// `style:` and `fo:`, which arrive together: everything written in either is a `style:style`
+    /// of `fo:` properties.
     styles: bool,
-    /// `draw:` and `svg:`, which arrive together for the same reason — the only thing either
-    /// namespace carries here is one image's frame and its size.
+    /// `draw:` and `svg:`, which arrive together: an image's frame and its size.
     image: bool,
-    /// `table:`, in a document that has a table in it. The one namespace this writer shares
-    /// with the spreadsheet, and it is the same vocabulary — a text table's rows and cells are
-    /// spelled exactly as a sheet's are (`doc/text-core.md`).
+    /// `table:`, in a document with a table — the spreadsheet's vocabulary (`doc/text-core.md`).
     table: bool,
 }
 
@@ -393,44 +346,32 @@ impl Used {
     }
 }
 
-/// The character styles a document's runs need, each under the name it will be written with.
-///
-/// ODF has no way to put formatting on a run directly: `fo:font-weight` lives on a
-/// `style:style`, and a `text:span` refers to it by name. So writing direct formatting means
-/// **inventing names**, and this is where they are invented — `grind_sheet::odf::write`'s cell
-/// style pool, for prose, and pooling for the same reason: two runs that are bold in the same
-/// way must share one declaration, or a document of a thousand bold words carries a thousand
-/// identical styles.
-///
-/// A style here **never inherits**. A run that also carries a named style gets a span for the
-/// name wrapped around the span for the formatting, rather than an automatic style whose parent
-/// is the name — see [`crate::odf::source::Source::style_named`] for what that keeps true.
+/// The character styles a document's runs need, each under the name it is written with. ODF puts
+/// formatting on a `style:style` named from a `text:span`, so direct formatting means inventing
+/// names, pooled so a thousand bold words share one declaration. A style here never inherits: a
+/// run with a named style gets a span for the name around the span for the formatting
+/// ([`crate::odf::source::Source::style_named`]).
 #[derive(Default)]
 struct Pool {
     /// Formatting to the name it is written under, in the order names were handed out.
     entries: Vec<(CharStyle, String)>,
-    /// Names taken from the file this document was read from, whose declaration is already
-    /// there and is left exactly as the file spells it rather than re-declared.
+    /// Names the file already declares, whose declarations are left as the file spells them.
     declared: std::collections::HashSet<String>,
-    /// The file's own picture frames, by what each read as ([`super::source::Source::frames`]),
-    /// and whether one has been written yet — each is handed out once, so two identical
-    /// pictures do not both come back under the first one's `draw:name`.
+    /// The file's own picture frames by what each read as ([`super::source::Source::frames`]),
+    /// each handed out once so two identical pictures do not share one `draw:name`.
     frames: Vec<(u64, String)>,
     used: std::cell::RefCell<Vec<bool>>,
-    /// A new style built from the one its run was read from, by name: that style's element,
-    /// renamed, with only the properties that changed rewritten — so superscript, a language
-    /// or letter spacing the model never read survive a click on Bold.
+    /// New styles built from the one their run was read from, by name: that element renamed with
+    /// only the changed properties rewritten, so unread superscript, language or letter spacing
+    /// survive Bold.
     patched: std::collections::HashMap<String, String>,
 }
 
 impl Pool {
-    /// Every distinct formatting in the document, named `T1`, `T2`, … in the order it first
-    /// appears — so that saving one document twice produces the same bytes.
-    ///
-    /// Regenerating a document read from a file, a formatting the file already declares keeps
-    /// the file's name for it, and a new one never takes a name in `reserved` — the file's own
-    /// automatic styles, which survive the save beside these (`envelope::merge`) and may be
-    /// named from outside the body.
+    /// Every distinct formatting in the document, named `T1`, `T2`, … in order of first
+    /// appearance, so one document saves to the same bytes twice. Written for a file it came from,
+    /// a formatting the file declares keeps its name, and a new one never takes a name in
+    /// `reserved` — the file's automatic styles, which survive beside these (`envelope::merge`).
     fn of(
         doc: &Document,
         source: Option<&super::source::Source>,
@@ -442,8 +383,8 @@ impl Pool {
             if pool.name(props).is_some() {
                 continue;
             }
-            // Formatting read from a style that says more than the model does: its own name
-            // while what the model reads of it is unchanged, and a style built from it when not.
+            // Formatting read from a style that says more than the model: its own name while the
+            // model's part is unchanged, else a style built from it.
             if let Some(base) = source.and_then(|source| source.base_of(props)) {
                 if base.props == *props {
                     pool.declared.insert(base.name.clone());
@@ -505,7 +446,7 @@ impl Pool {
     }
 
     /// The file's own `draw:frame` for this image run, if the file spelled one that read as
-    /// exactly this picture and it has not been written already.
+    /// exactly this picture and it has not been written yet.
     fn frame(&self, run: &Run) -> Option<&str> {
         let key = super::source::image_key(run)?;
         let mut used = self.used.borrow_mut();
@@ -518,14 +459,9 @@ impl Pool {
         Some(&self.frames[at].1)
     }
 
-    /// The same pool built entirely out of names `source` already declares — `None` when the
-    /// document needs a formatting the file has no name for, which is a regenerate.
-    ///
-    /// Splicing replaces block elements and nothing else, so a name it refers to has to already
-    /// be in the bytes around them. Rather than splicing a second site inside
-    /// `office:automatic-styles` — a *second* fragile offset, for an edit that is rare — the
-    /// writer takes the honest fallback the spreadsheet takes for a cell style the file has no
-    /// entry for.
+    /// The pool built only from names `source` declares, or `None` when the document needs a
+    /// formatting the file has no name for. A splice replaces block elements only, so the names it
+    /// uses must already be in the file.
     fn spliced<'a>(
         needed: impl Iterator<Item = &'a CharStyle>,
         source: &super::source::Source,
@@ -577,8 +513,8 @@ impl Pool {
         Some(pool)
     }
 
-    /// Every style this pool declares that the file does not, as `style:style` elements — what
-    /// a splice inserts into the file's own `office:automatic-styles`.
+    /// Every style this pool declares that the file does not, as `style:style` elements for a
+    /// splice to insert into the file's `office:automatic-styles`.
     fn declarations(&self) -> String {
         let mut out = String::new();
         for (props, name) in &self.entries {
@@ -613,10 +549,9 @@ impl Pool {
     }
 }
 
-/// `base`'s element in the file, renamed `name`, with what differs between its properties and
-/// `props` rewritten (`envelope::patch_style`). `None` when the file spells `style:` or `fo:`
-/// with prefixes of its own, or the element cannot be found — and the run gets a style of this
-/// writer's own, as every run did before.
+/// `base`'s element in the file, renamed `name`, with what differs from `props` rewritten
+/// (`envelope::patch_style`). `None` when the file spells `style:` or `fo:` with other prefixes or
+/// the element is missing, and the run gets a style of its own.
 fn based(
     source: &super::source::Source,
     base: &super::source::TextStyle,
@@ -659,8 +594,8 @@ fn content(
         // The projection never reaches here — `write` refuses it before there is any XML.
         Form::Flat | Form::Projection => "office:document",
     };
-    // An index's generated entries are never written as blocks: the index element they came
-    // from is carried whole, as every element the model has no block for is.
+    // An index's generated entries are never written as blocks; the index element is carried
+    // whole.
     let without;
     let doc = match doc.blocks.iter().any(|block| block.generated) {
         true => {
@@ -711,13 +646,13 @@ fn content(
     out
 }
 
-/// The list style a list this writer opens is given — a list the file already had keeps its own
-/// attributes (`Origin::list`). Without one, LibreOffice draws a list with no mark at all
-/// (`doc/odt-format.md` §5c fact 15), which is how every list made here used to look there.
+/// The list style a list this writer opens is given; a list from the file keeps its own
+/// (`Origin::list`). Without one LibreOffice draws no mark at all (`doc/odt-format.md` §5c fact
+/// 15).
 const BULLETS: &str = "Lgrind1";
 
-/// [`BULLETS`]'s declaration: the marks every window here draws (`grind_text::paint::bullet`),
-/// level by level, a quarter inch further in each time, in LibreOffice's label-alignment form.
+/// [`BULLETS`]'s declaration: the marks every window draws (`grind_text::paint::bullet`), a
+/// quarter inch further in per level, in LibreOffice's label-alignment form.
 fn bullets_declaration() -> String {
     let mut out = format!("<text:list-style style:name=\"{BULLETS}\">");
     for level in 1..=10u32 {
@@ -737,8 +672,7 @@ fn bullets_declaration() -> String {
     out
 }
 
-/// Whether a list in `doc` is one this writer opens — none of the file's — and so needs
-/// [`BULLETS`].
+/// Whether `doc` has a list this writer opens, needing [`BULLETS`].
 fn opens_lists(doc: &Document, source: Option<&super::source::Source>) -> bool {
     doc.blocks.iter().any(|block| {
         matches!(block.kind, BlockKind::ListItem { .. })
@@ -749,10 +683,8 @@ fn opens_lists(doc: &Document, source: Option<&super::source::Source>) -> bool {
     })
 }
 
-/// The `office:automatic-styles` block — one `style:style` per distinct run formatting.
-///
-/// Ahead of `office:body`, which the schema requires and a single-pass reader depends on: a
-/// span refers to a name, and the name has to be declared by the time it does.
+/// The `office:automatic-styles` block — one `style:style` per distinct run formatting — ahead of
+/// `office:body`, so a name is declared before a span uses it.
 fn automatic_styles(out: &mut String, pool: &Pool, bullets: bool) {
     if !bullets
         && pool
@@ -785,16 +717,13 @@ fn automatic_styles(out: &mut String, pool: &Pool, bullets: bool) {
     out.push_str(" </office:automatic-styles>\n");
 }
 
-/// The body: runs of ordinary blocks, and the tables between them.
-///
-/// **Two folds, one flat sequence.** A `text:list` is reconstructed from block depths and a
-/// `table:table` from the cell coordinates the blocks carry (`crate::model::Cell`) — both are
-/// the same trade the model makes on purpose, and both are a walk rather than a traversal.
-/// Tables are the outer one because a cell holds blocks and a list item does not hold a table
-/// in this model.
+/// The body: runs of ordinary blocks and the tables between them. Two folds over one flat
+/// sequence: `text:list` from block depths and `table:table` from cell coordinates
+/// (`crate::model::Cell`). Tables are the outer fold, since a cell holds blocks and a list item
+/// holds no table.
 fn body(out: &mut String, doc: &Document, pool: &Pool, origin: Option<&Origin>) {
-    // What the file had in its body that the model has no block for, by the index of the block
-    // it now follows — `None` for ahead of every block.
+    // What the file had in its body without a block, by the index of the block it now follows
+    // (`None` for before every block).
     let placed = origin
         .map(|origin| origin.placements(doc))
         .unwrap_or_default();
@@ -805,8 +734,8 @@ fn body(out: &mut String, doc: &Document, pool: &Pool, origin: Option<&Origin>) 
     };
     carry(out, None);
 
-    // The sections open in the output, outermost first: each unit below is wrapped in its
-    // first block's sections, closing and opening only what differs from the unit before.
+    // The sections open in the output, outermost first; each unit is wrapped in its first block's
+    // sections, closing and opening only the difference.
     let mut open: Vec<usize> = Vec::new();
     let mut index = 0;
     while index < doc.blocks.len() {
@@ -816,8 +745,7 @@ fn body(out: &mut String, doc: &Document, pool: &Pool, origin: Option<&Origin>) 
             open.pop();
             let _ = writeln!(out, "{}</text:section>", pad(3, origin));
         }
-        // An untouched section — every block it held, in order, none edited — goes back as the
-        // file's own bytes, so one edit elsewhere stays one line of diff.
+        // An untouched section goes back as the file's own bytes.
         if let (Some(&outer), Some(origin)) = (wanted.get(keep), origin)
             && let Some(bytes) = untouched_section(doc, outer, index, origin)
         {
@@ -840,8 +768,8 @@ fn body(out: &mut String, doc: &Document, pool: &Pool, origin: Option<&Origin>) 
                     .iter()
                     .position(|block| block.cell.is_some() || block.section != here)
                     .map_or(doc.blocks.len(), |offset| index + offset);
-                // A kept element after one of these blocks ends the run there, so that a list
-                // it followed closes before it, as it did in the file.
+                // A kept element after one of these blocks ends the run, so a list it followed
+                // closes before it as in the file.
                 if let Some(at) = (index..end).find(|i| placed.contains_key(&Some(*i))) {
                     end = at + 1;
                 }
@@ -850,11 +778,9 @@ fn body(out: &mut String, doc: &Document, pool: &Pool, origin: Option<&Origin>) 
                 index = end;
             }
             Some(_) => {
-                // The maximal run naming this table — the model's own fold, asked of the
-                // model rather than repeated here.
+                // The maximal run naming this table, asked of the model.
                 let range = doc.table(index).unwrap_or(index..index + 1);
-                // An untouched table — every block it held, in order, none edited — goes back
-                // as the file's own bytes, so an edit elsewhere is not a rewrite of it.
+                // An untouched table goes back as the file's own bytes.
                 match origin.and_then(|origin| untouched_table(doc, range.clone(), origin)) {
                     Some(bytes) => {
                         let _ = writeln!(out, "{}{bytes}", pad(3, origin));
@@ -928,26 +854,21 @@ fn section_path(doc: &Document, section: Option<usize>) -> Vec<usize> {
     path
 }
 
-/// The file a regenerated body is being written for, and what has changed since it was read.
-///
-/// A body regenerates because its block *sequence* changed — and that says nothing about the
-/// blocks themselves. One that was not edited is written as the file's own bytes, which keeps
-/// whatever the model never read inside it (a footnote, a field, a vendor's attribute); one that
-/// was keeps its unmodelled attributes; a list opens with the attributes its `text:list` had;
-/// and every element of the body the model has no block for is put back after the block it
-/// followed. What is left for the model to write is only what it changed.
+/// The file a regenerated body is written for, and what changed since. An unedited block is
+/// written as the file's own bytes, keeping what the model never read in it; an edited one keeps
+/// its unmodelled attributes; a list opens with its `text:list`'s attributes; and every body
+/// element without a block goes back after the block it followed.
 struct Origin<'a> {
     source: &'a super::source::Source,
     edited: &'a std::collections::BTreeSet<crate::model::BlockId>,
-    /// Which list item each list block was read in (`crate::numbering::ListMark`): whether it
-    /// was a header, an item's later paragraph, or an item with a start value of its own — what
-    /// the fold writes back rather than an item per block.
+    /// Which list item each list block was read in (`crate::numbering::ListMark`) — a header, an
+    /// item's later paragraph, an item with its own start value — so the fold writes those back.
     marks: &'a crate::numbering::Marks,
-    /// The original lists already opened once, by where they start — a second opening (the
-    /// same list, split by an edit) must not repeat its `xml:id`.
+    /// Original lists already opened, by where they start: a second opening (the same list split
+    /// by an edit) must not repeat its `xml:id`.
     opened: std::cell::RefCell<std::collections::HashSet<usize>>,
-    /// How much deeper (or shallower) than this writer's own the file indents a block of its
-    /// body — measured off the first element of the body it kept.
+    /// How much deeper or shallower than this writer the file indents its body, measured off the
+    /// first kept element.
     shift: isize,
 }
 
@@ -1002,8 +923,8 @@ impl<'a> Origin<'a> {
             .map_or("", |at| at.keep.as_str())
     }
 
-    /// How many levels of list `a` and `b` share in the file — `u32::MAX` when either was not in
-    /// it, since a block an edit made continues the list it was made in.
+    /// How many levels of list `a` and `b` share in the file; `u32::MAX` when either was not in
+    /// it, since a new block continues the list it was made in.
     fn shared_lists(&self, a: &Block, b: &Block) -> u32 {
         match (self.source.lists.get(&a.id), self.source.lists.get(&b.id)) {
             (Some(a), Some(b)) => a.iter().zip(b).take_while(|(x, y)| x.0 == y.0).count() as u32,
@@ -1011,8 +932,7 @@ impl<'a> Origin<'a> {
         }
     }
 
-    /// Whether `block`'s outermost list is none of the file's — one this writer opens, and
-    /// gives [`BULLETS`].
+    /// Whether `block`'s outermost list is one this writer opens, needing [`BULLETS`].
     fn new_list(&self, block: &Block) -> bool {
         self.source
             .lists
@@ -1037,9 +957,8 @@ impl<'a> Origin<'a> {
         super::source::attributes(format!("<x{attributes}>").as_bytes(), &["xml:id"])
     }
 
-    /// Every kept element of the body, by the index of the block it now follows: the block it
-    /// followed in the file, or — when that one is gone — the nearest earlier block of the
-    /// file's that is still here.
+    /// Every kept body element, by the index of the block it now follows: the one it followed in
+    /// the file, or the nearest earlier surviving one.
     fn placements(&self, doc: &Document) -> std::collections::HashMap<Option<usize>, Vec<&'a str>> {
         let index: std::collections::HashMap<crate::model::BlockId, usize> = doc
             .blocks
@@ -1080,11 +999,9 @@ impl<'a> Origin<'a> {
     }
 }
 
-/// One `table:table` (rng:15939), from the blocks of its cells.
-///
-/// The rectangle comes from the coordinates: a position no block names is written as an empty
-/// cell, and a position covered by a span is written as `table:covered-table-cell` (rng:14298),
-/// which is what keeps a merged table the same shape after a regenerate.
+/// One `table:table` (rng:15939) from its cells' blocks. A position no block names is an empty
+/// cell, and one covered by a span is `table:covered-table-cell` (rng:14298), so a merged table
+/// keeps its shape.
 fn table(
     out: &mut String,
     doc: &Document,
@@ -1098,8 +1015,8 @@ fn table(
     };
     let (rows, columns) = doc.table_extent(range.clone());
     let blocks_in = &doc.blocks[range];
-    // How the file spelled this table, when it came from one: its start tag, its columns, its
-    // rows and its cells keep their own attributes — the styles that make it look like itself.
+    // How the file spelled this table: its start tag, columns, rows and cells keep their own
+    // attributes and styles.
     let recorded = origin.and_then(|origin| origin.source.tables.get(&name));
 
     match recorded {
@@ -1120,9 +1037,7 @@ fn table(
             let _ = writeln!(out, "{}{}", pad(4, origin), recorded.columns);
         }
         None => {
-            // At least one `table:table-column` is required — `table-columns-and-groups` is
-            // a `oneOrMore` (rng:14200) — so a table with no columns at all still declares
-            // one, and R2 (everything written validates) is why that is not a detail.
+            // At least one `table:table-column` is required (`oneOrMore`, rng:14200).
             let repeat = match columns.max(1) {
                 1 => String::new(),
                 n => format!(" table:number-columns-repeated=\"{n}\""),
@@ -1131,8 +1046,8 @@ fn table(
         }
     }
     let header = |row: u32| recorded.is_some_and(|r| r.header_rows.contains(&row));
-    // A recorded cell's start tag with the spans the model says now, and no repeat — the model
-    // has expanded every repeat into cells of their own.
+    // A recorded cell's start tag with the model's spans and no repeat, since the model expanded
+    // every repeat.
     let cell_tag = |row: u32, column: u32, element: &str, spans: Option<&crate::model::Cell>| {
         let tag = recorded
             .and_then(|r| r.cells.get(&(row, column)))
@@ -1188,10 +1103,8 @@ fn table(
                         .cloned()
                         .collect();
                     if content.iter().all(Block::is_empty) && content.len() <= 1 {
-                        // An empty cell, written the way the schema's shortest form allows.
-                        // Reading it back makes one empty paragraph again — the normalisation
-                        // `TableCell::end` performs, and the same one LibreOffice performs
-                        // (`doc/odt-format.md` §5b), so the two agree.
+                        // An empty cell in the schema's shortest form; read back it is one empty
+                        // paragraph, as LibreOffice reads it (`doc/odt-format.md` §5b).
                         let _ = writeln!(out, "{}{open}/>", pad(5, origin));
                     } else {
                         let _ = writeln!(out, "{}{open}>", pad(5, origin));
@@ -1200,16 +1113,14 @@ fn table(
                     }
                     column += 1;
                 }
-                // Nothing names this position. Either a cell above or to the left covers it —
-                // in which case ODF wants the covered element, and a reader counts it as a
-                // column — or the model simply has a gap, which is an empty cell.
+                // Nothing names this position: covered by a span above or to the left (the covered
+                // element, counted as a column), or a gap (an empty cell).
                 None => {
                     let element = match covered(blocks_in, row, column) {
                         true => "table:covered-table-cell",
                         false => "table:table-cell",
                     };
-                    // A position no block names is written as the file had it when it had it —
-                    // a covered cell with no span reaching it is still the file's own spelling.
+                    // A position no block names is written as the file had it, when it had it.
                     let element = recorded
                         .and_then(|r| r.cells.get(&(row, column)))
                         .map(|tag| {
@@ -1234,8 +1145,7 @@ fn table(
     let _ = writeln!(out, "{}</table:table>", pad(3, origin));
 }
 
-/// `table:number-columns-spanned` / `table:number-rows-spanned` (rng:16102), written only where
-/// they say something — a span of one is the default and LibreOffice drops it too.
+/// `table:number-columns-spanned` / `table:number-rows-spanned` (rng:16102), only when not one.
 fn span_attributes(cell: &crate::model::Cell) -> String {
     let mut out = String::new();
     if cell.columns_spanned > 1 {
@@ -1263,22 +1173,18 @@ fn covered(blocks: &[Block], row: u32, column: u32) -> bool {
     })
 }
 
-/// A sequence of blocks, with `text:list` nesting folded back in from their depths.
-///
-/// `extra` is how much further in this sequence sits than the body does — three levels inside a
-/// table cell, nothing at the top. The fold itself is the same either way, which is the point
-/// of it being one function: a list inside a cell nests exactly as a list in the body does.
+/// A sequence of blocks with `text:list` nesting folded back in from their depths. `extra` is how
+/// much deeper than the body it sits — three levels in a table cell — so a list in a cell nests as
+/// one in the body.
 fn blocks(out: &mut String, list: &[Block], extra: u32, pool: &Pool, origin: Option<&Origin>) {
-    // How many `text:list` elements are currently open. The model is flat and the file is
-    // not, so this counter *is* the reconstruction: a depth rise opens elements, a fall closes
-    // them, and the end of the sequence closes whatever is left.
+    // How many `text:list` elements are open: a depth rise opens, a fall closes, and the end
+    // closes the rest.
     let mut open = 0u32;
     // Where a block outside any list sits: three levels into the body, `extra` more in a cell.
     let base = 3 + extra;
 
     let mut previous: Option<&Block> = None;
-    // The item element open at each list level, and whether the last thing written opened one,
-    // so the block that follows belongs inside it.
+    // The item element open at each level, and whether the last thing written opened one.
     let mut items: Vec<&'static str> = Vec::new();
     let mut fresh = false;
     // The item a block opens: a header as a header, a start value kept, as the file had them.
@@ -1299,9 +1205,8 @@ fn blocks(out: &mut String, list: &[Block], extra: u32, pool: &Pool, origin: Opt
             BlockKind::ListItem { depth } => depth,
             _ => 0,
         };
-        // Two items the file held in different lists stay in different lists: lists that
-        // follow one another with nothing between them are still several elements, each with
-        // its own style and numbering, and folding by depth alone merged them into the first.
+        // Items the file held in different lists stay in different lists, even when nothing
+        // separates them.
         let shared = match (origin, previous) {
             (Some(origin), Some(previous)) => origin.shared_lists(previous, block),
             _ => u32::MAX,
@@ -1315,11 +1220,8 @@ fn blocks(out: &mut String, list: &[Block], extra: u32, pool: &Pool, origin: Opt
             fresh = false;
         }
 
-        // Close deeper lists, then open shallower ones, so a jump of two levels is two
-        // elements rather than a malformed one.
-        // A tree, one level per element: a list at `base`, its items one deeper, what they hold
-        // one deeper again — the shape LibreOffice indents a list in, so a regenerated list in
-        // its file lines up with the one it replaced.
+        // Close deeper lists, then open shallower ones, one element per level, indented as
+        // LibreOffice indents a list.
         while open > depth {
             open -= 1;
             let name = items.pop().unwrap_or("text:list-item");
@@ -1328,8 +1230,8 @@ fn blocks(out: &mut String, list: &[Block], extra: u32, pool: &Pool, origin: Opt
             fresh = false;
         }
         while open < depth {
-            // A list the file had opens with its own attributes; one this writer opens, with
-            // the list style that gives it its marks.
+            // A list the file had opens with its own attributes; a new one with the list style
+            // that gives it marks.
             let attributes = match origin {
                 Some(origin) if !(open == 0 && origin.new_list(block)) => origin.list(block, open),
                 _ if open == 0 => format!(" text:style-name=\"{BULLETS}\""),
@@ -1353,8 +1255,8 @@ fn blocks(out: &mut String, list: &[Block], extra: u32, pool: &Pool, origin: Opt
             fresh = true;
             open += 1;
         }
-        // A sibling item at the same depth closes the previous item and opens a new one —
-        // unless this block is that item's later paragraph, which stays inside it.
+        // A sibling at the same depth closes the previous item and opens another, unless it is
+        // that item's later paragraph.
         let later = origin
             .and_then(|origin| origin.marks.get(&block.id))
             .is_some_and(|mark| !mark.first);
@@ -1391,20 +1293,15 @@ fn blocks(out: &mut String, list: &[Block], extra: u32, pool: &Pool, origin: Opt
     }
 }
 
-/// `depth + 1` spaces — moved to wherever the file being regenerated indents its body, so a new
-/// paragraph in a LibreOffice document sits at LibreOffice's depth and an Enter is two lines of
-/// diff rather than every line of the body.
+/// `depth + 1` spaces, shifted to the file's own body indentation, so an Enter in a LibreOffice
+/// document is two lines of diff.
 fn pad(depth: u32, origin: Option<&Origin>) -> String {
     let shift = origin.map_or(0, |origin| origin.shift);
     " ".repeat((depth as isize + 1 + shift).max(0) as usize)
 }
 
-/// One `text:p` or `text:h`.
-///
-/// `keep` is the original element's unmanaged attributes when this is a splice — everything
-/// the file said that the model does not carry (`text:class-names`, `xml:id`, a vendor's own),
-/// put back verbatim so that replacing an element does not quietly drop half of it. Empty when
-/// regenerating, because then there is no original to keep anything from.
+/// One `text:p` or `text:h`. `keep` is the original element's unmanaged attributes when splicing
+/// (`text:class-names`, `xml:id`, a vendor's own), put back verbatim; empty when regenerating.
 fn paragraph(out: &mut String, block: &Block, indent: String, keep: &str, pool: &Pool) {
     let (tag, extra) = match block.kind {
         BlockKind::Heading { level } => ("text:h", format!(" text:outline-level=\"{level}\"")),
@@ -1414,8 +1311,7 @@ fn paragraph(out: &mut String, block: &Block, indent: String, keep: &str, pool: 
         Some(name) => format!(" text:style-name=\"{}\"", esc(name)),
         None => String::new(),
     };
-    // An empty paragraph is a real thing — it is how a document spaces itself — and is written
-    // self-closed rather than skipped.
+    // An empty paragraph spaces a document, and is written self-closed.
     if block.runs.is_empty() {
         let _ = writeln!(out, "{indent}<{tag}{style}{extra}{keep}/>");
         return;
@@ -1435,13 +1331,9 @@ fn run(out: &mut String, run: &Run, pool: &Pool) {
             props,
             href,
         } => {
-            // Three nested wrappers, outermost first: the link, the document's own style name,
-            // and this build's generated one for the direct formatting. Reading composed the
-            // style names into one string, so writing emits one span for them — see
-            // `doc/text-core.md`'s flattening decision, and what it costs.
-            //
-            // The generated span goes *inside* the named one rather than inheriting from it,
-            // which is what keeps a round trip from composing a name into itself
+            // Three wrappers, outermost first: the link, the document's style name, and the
+            // generated style for the direct formatting — inside the named one rather than
+            // inheriting from it, so a round trip never composes a name into itself
             // (`crate::odf::source::Source::style_named`).
             if let Some(href) = href {
                 let _ = write!(out, "<text:a xlink:href=\"{}\">", esc(href));
@@ -1491,17 +1383,10 @@ fn run(out: &mut String, run: &Run, pool: &Pool) {
     }
 }
 
-/// One `draw:frame` holding a `draw:image` — always the flat shape (no `draw:text-box`
-/// wrapper), regardless of what a document this build read might have nested it in. R3's rule
-/// applied to a new element: minimal boilerplate over reproducing a producer's own habits, and
-/// R6 means this only fires for an image a person actually inserted or a paragraph a person
-/// actually edited — everything else splices its source bytes back verbatim, wrapper and all.
-///
-/// **The anchor is the document's own**, and that is not boilerplate: a frame written without
-/// `text:anchor-type` takes ODF's default of `paragraph`, which moves an `as-char` picture from
-/// where it was typed to the top of its paragraph. Loop C caught exactly that, in a corpus
-/// document whose image sat at the end of a list item and came back at the front. `paragraph`
-/// is still the default for an image this build inserts, which has no anchor of its own.
+/// One `draw:frame` holding a `draw:image`, always the flat shape (R3): an unedited paragraph
+/// splices its own frame back, wrapper and all. The anchor is the document's own, since without
+/// `text:anchor-type` an `as-char` picture would move to the top of its paragraph (loop C found
+/// it); an inserted image gets `paragraph`.
 fn image(
     out: &mut String,
     mime: &str,
@@ -1536,32 +1421,17 @@ fn image(
     out.push_str("</draw:frame>");
 }
 
-/// Character data, with every piece of significant whitespace written as the element ODF has
-/// for it.
+/// Character data with every significant whitespace written as ODF's element for it: a consumer
+/// collapses character-data whitespace, so runs of spaces become `text:s` with a count (rng:8408),
+/// tabs `text:tab`, newlines `text:line-break`.
 ///
-/// **The whole reason this function exists**: XML character data is whitespace, and an ODF
-/// consumer collapses a run of it to one space. So `a    b`, a tab and a newline written
-/// literally all read back as a single space, and the text the user typed is gone. ODF's
-/// answers are `text:s` with a count (rng:8408), `text:tab` and `text:line-break`, and this is
-/// where a paragraph's text is translated into them.
-///
-/// The convention every implementation follows for spaces is that the *first* of a run stays
-/// literal and the rest become the element, which keeps ordinary prose — where runs are one
-/// space long — entirely free of markup. A space with no character data in front of it inside
-/// this run has nothing to anchor it, so the whole run is encoded instead; that covers a
-/// leading space and a space following a `text:tab`, both of which a reader would otherwise
-/// trim.
-///
-/// `\r` and `\r\n` both become one `text:line-break`, and so read back as `\n`. That is not
-/// this writer choosing: XML line-ending normalisation says a parser hands `\n` back for either
-/// (XML 1.0 §2.11), so writing anything else would only be a lie about what a reader will see.
-///
-/// Loop C is what turned the tab and the line break from theory into code — the model has had
-/// [`Run::Tab`] and [`Run::Break`] since S4, but a tab *character* inside a [`Run::Text`] was
-/// written literally, and LibreOffice handed it back as a space.
+/// The first space of a run stays literal, so ordinary prose has no markup. A space with nothing
+/// written before it in this run — at the start, or after a `text:tab` — would be trimmed, so its
+/// whole run is encoded. `\r` and `\r\n` become one `text:line-break`, which reads back as `\n`
+/// (XML 1.0 §2.11).
 fn characters(out: &mut String, text: &str) {
-    // Whether literal character data has been written since the last element. A space needs
-    // something in front of it to survive; markup does not count.
+    // Whether character data has been written since the last element; a space needs something in
+    // front of it.
     let mut anchored = false;
     let mut rest = text;
 

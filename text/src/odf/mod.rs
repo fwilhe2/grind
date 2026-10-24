@@ -2,15 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Reading and writing ODF **text documents**. **\[ODT\]**
-//!
-//! The generic half — packaging, namespace resolution, the element-context stack — lives in
-//! `grind-core` and is re-exported below, so `read` reaches it as `super::context` and
-//! `super::names` the way `grind_sheet::odf` does. What is left here is the only part that
-//! knows what a paragraph is.
-//!
-//! R6's retain-and-splice is not here yet: this writer regenerates, which is always correct
-//! and is what the spreadsheet did until phase 8.
+//! Reading and writing ODF text documents. **\[ODT\]** The text content model, on `grind-core`'s
+//! generic modules, re-exported below; `source` keeps the file a document came from for splicing.
 
 pub mod read;
 pub mod source;
@@ -27,32 +20,28 @@ use grind_core::Result;
 pub fn read(bytes: &[u8]) -> Result<Document> {
     let content = package::content_xml(bytes)?;
     let mut builder = read::Builder::new();
-    // Kept so a `draw:image`'s `xlink:href` can be resolved against the archive it came from —
-    // a package stores a picture as its own part rather than inline `office:binary-data`.
+    // Kept so a `draw:image`'s `xlink:href` resolves against the archive: a package stores a
+    // picture as its own part.
     if package::is_package(bytes) {
         builder.set_package(bytes.to_vec());
     }
-    // R6, and the rule above it: saving never makes an existing file worse. The source is
-    // installed *before* parsing, because the block contexts record their spans into it as
-    // they go. For a package its bytes are `content.xml` — the part a splice edits — and the
-    // whole archive rides along, so a save keeps every other entry (`envelope::repackage`).
+    // Installed before parsing, since the block contexts record their spans into it. For a package
+    // its bytes are `content.xml`, and the archive rides along (`envelope::repackage`).
     let mut source = source::Source::new(form_of(bytes), content.clone());
     if package::is_package(bytes) {
         source.package = Some(bytes.to_vec());
     }
     builder.doc.source = Some(Box::new(source));
-    // `styles.xml` first, so a named style defined there is already known when a paragraph in
-    // `content.xml` references it. A part that will not parse costs the styles it carried and
-    // not the document — §9 tolerance, one level up.
+    // `styles.xml` first, so a named style defined there is known when a paragraph references it.
+    // A part that will not parse costs its styles, not the document.
     if let Some(styles) = package::styles_xml(bytes) {
         let _ = context::parse(
             std::io::Cursor::new(styles),
             Box::new(read::Root),
             &mut builder,
         );
-        // An automatic style belongs to the part that declares it (rng's `office:automatic-
-        // styles` is per part), so nothing in `content.xml` can name one of `styles.xml`'s —
-        // and a writer reusing one of those names for a run would point at nothing.
+        // An automatic style belongs to the part declaring it, so nothing in `content.xml` can
+        // name one of `styles.xml`'s, and reusing one of those names would point at nothing.
         builder.forget_automatic_styles();
     }
     context::parse(

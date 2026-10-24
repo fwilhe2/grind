@@ -2,19 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Paragraph styles, **resolved for layout and never authored** (`doc/pdf-export.md` P5).
+//! Paragraph styles, resolved for layout and never written (`doc/pdf-export.md`). A printed page
+//! must look the way the document says, and in a Writer document that lives in the style chain —
+//! `P1` (automatic) → `Standard` → the default paragraph style — so the properties a page needs
+//! are read verbatim and [`resolve`] walks the chain. A save keeps the styles because the envelope
+//! carries `office:styles` untouched.
 //!
-//! `doc/text-core.md` keeps a named style as a name and never interprets it, and for *writing*
-//! that is unchanged: nothing here is ever written back, and a document saved after being read
-//! keeps its styles because R6 carries `office:styles` out untouched. What changed is that the
-//! printed page has to look the way the document says, and in a Writer document almost all of
-//! that lives in the style chain — `P1` (automatic) → `Standard` → the default paragraph style —
-//! rather than on the paragraph. So the properties a page needs are read, verbatim, and
-//! [`resolve`] walks the chain.
-//!
-//! **Inheritance is ODF's** (`style:parent-style-name`, rng:12081): a property a style does not
-//! state is its parent's, and the default style (`style:default-style`, rng:12049) is under every
-//! chain. The one property that is not simply inherited is a **percentage font size**, which is a
+//! Inheritance is ODF's (`style:parent-style-name`, rng:12081): an unstated property is the
+//! parent's, with the default style (rng:12049) under every chain. A percentage font size is a
 //! share of the parent's resolved size — `130%` of a 14 pt `Heading` is 18.2 pt.
 
 use std::collections::HashMap;
@@ -23,8 +18,8 @@ use grind_core::style::length_mm;
 
 use crate::style::CharStyle;
 
-/// The properties of a paragraph style that decide how its text is laid out on a page — ODF
-/// values kept verbatim, as every style property in this suite is.
+/// The properties of a paragraph style that decide how its text is laid out on a page, ODF values
+/// verbatim.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ParagraphProps {
     // `style:paragraph-properties`
@@ -40,16 +35,15 @@ pub struct ParagraphProps {
     pub keep_with_next: Option<String>,
     pub widows: Option<String>,
     pub orphans: Option<String>,
-    /// `style:master-page-name` on the style itself: the master page a paragraph in this style
-    /// starts. Empty in the file is none.
+    /// `style:master-page-name` on the style: the master page a paragraph in it starts. Empty is
+    /// none.
     pub master_page: Option<String>,
-    /// `style:page-number` on the style: `auto` or the number the page it starts is counted as.
-    /// A number restarts the page numbering there (`doc/pdf-export.md`, *Master pages*).
+    /// `style:page-number` on the style: `auto`, or the number the page it starts restarts the
+    /// counting at (`doc/pdf-export.md`).
     pub page_number: Option<String>,
     /// `style:tab-stop-distance` — the interval between the default tab stops.
     pub tab_stop_distance: Option<String>,
-    /// `style:tab-stops` — the paragraph's own stops, in order. A style that states its own
-    /// replaces its parent's whole, as a set rather than stop by stop.
+    /// `style:tab-stops`, in order. A style stating its own replaces its parent's set whole.
     pub tab_stops: Option<Vec<TabStop>>,
     // `style:text-properties` — the four that change how wide text is
     pub font_family: Option<String>,
@@ -58,15 +52,15 @@ pub struct ParagraphProps {
     pub font_style: Option<String>,
     /// `fo:color`: the ink of the paragraph's text where a run states none.
     pub color: Option<String>,
-    /// `fo:language` and `fo:country` — the language the text is written in, which is what
-    /// spelling is checked against (`doc/spelling.md`). Read, never written.
+    /// `fo:language` and `fo:country`: the language spelling is checked against
+    /// (`doc/spelling.md`).
     pub language: Option<String>,
     pub country: Option<String>,
 }
 
 impl ParagraphProps {
-    /// Every property `over` states replaces this one's — except a percentage size, which is a
-    /// share of the size already here.
+    /// Every property `over` states replaces this one's, except a percentage size, a share of the
+    /// size here.
     fn layer(&mut self, over: &ParagraphProps) {
         let size = match (over.font_size.as_deref(), self.font_size.as_deref()) {
             (Some(child), Some(base)) if child.trim().ends_with('%') => {
@@ -130,8 +124,8 @@ pub struct TabStop {
 }
 
 impl ParagraphProps {
-    /// Where this paragraph's tabs go, in points (`doc/odt-format.md` §5c fact 13): its own
-    /// stops, then the default interval. A stop or interval this cannot read is left out.
+    /// Where this paragraph's tabs go, in points (`doc/odt-format.md` §5c fact 13): its own stops,
+    /// then the default interval; unreadable ones are left out.
     pub fn tabs(&self) -> grind_core::layout::Tabs {
         use grind_core::layout::{TabAlign, Tabs};
         let points = |length: &str| length_mm(length).map(|mm| (mm * 72.0 / 25.4) as f32);
@@ -171,8 +165,8 @@ impl ParagraphProps {
     }
 }
 
-/// `percent` (`"130%"`) of `base` (`"14pt"`, or any ODF length), as points — `None` when either
-/// is not a number this can read.
+/// `percent` (`"130%"`) of `base` (`"14pt"` or any ODF length) as points, or `None` when either is
+/// unreadable.
 fn relative_size(percent: &str, base: &str) -> Option<String> {
     let share = percent
         .trim()
@@ -186,9 +180,8 @@ fn relative_size(percent: &str, base: &str) -> Option<String> {
     Some(format!("{rounded}pt"))
 }
 
-/// A block's paragraph style, resolved: its properties, and whether the style it names is one
-/// the document declares at all — a page lays out a block whose style the document defines by
-/// that style, and one whose style it does not (or which names none) by the screen's own faces.
+/// A block's paragraph style, resolved, and whether the document declares the style it names: a
+/// page sets a block in a declared style by that style, and otherwise by the screen's faces.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Resolved {
     pub props: ParagraphProps,
@@ -200,22 +193,21 @@ pub struct Resolved {
 pub struct ParagraphStyle {
     pub parent: Option<String>,
     pub props: ParagraphProps,
-    /// Declared in `office:automatic-styles` — a paragraph's direct formatting, whose indents
-    /// outrank its list level's where a named style's do not (`doc/odt-format.md` §5c fact 22).
+    /// Declared in `office:automatic-styles` — direct formatting, whose indents outrank its list
+    /// level's where a named style's do not (`doc/odt-format.md` §5c fact 22).
     pub automatic: bool,
 }
 
 /// One named character style (`style:style style:family="text"` in `office:styles`): what it
-/// formats, and the style it inherits the rest from — read for showing and never written.
+/// formats and the style it inherits from. Read for showing, never written.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NamedChar {
     pub parent: Option<String>,
     pub props: CharStyle,
 }
 
-/// What a run looks like: the named character styles it carries (`names`, outermost first,
-/// space-separated as the model keeps them), each down its own chain, and the run's direct
-/// formatting over all of them.
+/// What a run looks like: its named character styles (`names`, outermost first, space-separated),
+/// each down its chain, with the run's direct formatting over them.
 pub fn shown(
     styles: &HashMap<String, NamedChar>,
     names: Option<&str>,
@@ -244,14 +236,12 @@ pub fn shown(
     out
 }
 
-/// How deep a chain is followed before it is taken to be a cycle — far past anything Writer
-/// writes (its deepest is four), and short enough that a document naming each style as the
-/// other's parent costs nothing.
+/// How deep a chain is followed before it counts as a cycle — far past Writer's deepest, four.
 const MAX_DEPTH: usize = 32;
 
-/// The properties of a paragraph styled `name`: the default style's, then each style of the
-/// chain from its root down to `name` layered over them. A name nothing declares, or a chain
-/// that loops, stops where it stops — R5's tolerance rather than an error.
+/// The properties of a paragraph styled `name`: the default style's, then each style from the
+/// chain's root down to `name` laid over them. An undeclared name or a looping chain stops where
+/// it stops (R5).
 pub fn resolve(
     styles: &HashMap<String, ParagraphStyle>,
     default: &ParagraphProps,

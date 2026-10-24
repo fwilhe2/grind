@@ -2,20 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Walking the hits of a find — the half of "find in a document" that is not a text box.
-//!
-//! The spreadsheet's twin is `grind_sheet::find::step`, hoisted out of its shells for the same
-//! reason: the GNOME window's find bar had its own copy, and the second window to want one (the
-//! Windows pane, the browser) would have written a third, and the three would then disagree about
-//! where Shift+F3 goes from a caret that is not on a hit.
-//!
-//! **It ignores case**, through [`App::find_ignoring_case`] and not a second matcher: a person
-//! typing `appendix` is looking for *Appendix*. [`App::replace`] stays exact, since it writes.
+//! Walking the hits of a find — the half of find that is not a text box,
+//! `grind_sheet::find::step`'s twin. Case is ignored, through [`App::find_ignoring_case`];
+//! [`App::replace`] stays exact, since it writes.
 
 use crate::{App, Caret};
 
-/// Which way a step goes: `Here` is "the first hit at or after where I am", which is what typing
-/// into a find box wants — the hit under the selection stays selected as the word grows.
+/// Which way a step goes: `Here` is the first hit at or after the caret, so the selected hit stays
+/// as the word grows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Towards {
     Here,
@@ -23,8 +17,8 @@ pub enum Towards {
     Previous,
 }
 
-/// Where every occurrence of `needle` starts, in document order. Asked for again at every step
-/// by every shell, since the document may have been edited between two presses of Enter.
+/// Where every occurrence of `needle` starts, in document order — asked again at every step, since
+/// the document may have changed.
 pub fn hits(app: &App, needle: &str) -> Vec<Caret> {
     app.find_ignoring_case(needle)
         .into_iter()
@@ -35,8 +29,7 @@ pub fn hits(app: &App, needle: &str) -> Vec<Caret> {
         .collect()
 }
 
-/// The far end of a hit that starts at `from` — a hit is exactly as many characters as the
-/// needle ([`App::find_ignoring_case`] folds a character at a time).
+/// The far end of a hit starting at `from`: exactly as many characters as the needle.
 pub fn end_of(from: Caret, needle: &str) -> Caret {
     Caret {
         block: from.block,
@@ -44,8 +37,8 @@ pub fn end_of(from: Caret, needle: &str) -> Caret {
     }
 }
 
-/// Which of `hits` (in document order) a step from `at` lands on, wrapping at either end.
-/// `None` only when there are none.
+/// Which of `hits` (in document order) a step from `at` lands on, wrapping; `None` only when there
+/// are none.
 pub fn step(hits: &[Caret], at: Caret, towards: Towards) -> Option<usize> {
     if hits.is_empty() {
         return None;
