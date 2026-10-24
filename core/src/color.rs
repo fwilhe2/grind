@@ -2,17 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **\[GENERIC\]** Colour arithmetic every shell draws with — WCAG's contrast, the hue-keeping
-//! lightness moves a theme needs, and ODF's *automatic* ink — in one place, because two shells
-//! answering "can this be read on that" two ways is two different documents on screen.
-//!
-//! It came out of `ui_win32/src/theme.rs` the day the GNOME window needed the same answers, the
-//! way `search::score` came out of `ui_web` and `formula::assist` out of `ui_sheet_gtk`. A colour
-//! here is three bytes, `(r, g, b)`: a shell keeps its own type for its toolkit (GDI wants its
-//! components the other way round, GTK wants floats), and converts at its edge.
-//!
-//! None of this is ever written into a document. It decides how a document's colours are
-//! *shown* against a theme, which is a reading, not an edit.
+//! **\[GENERIC\]** Colour arithmetic every shell draws with — WCAG contrast, hue-keeping lightness
+//! moves, and ODF's automatic ink — so that no two shells disagree about what can be read on what.
+//! A colour is `(r, g, b)`; each shell converts at its edge. Nothing here is written into a
+//! document.
 
 /// A colour as three bytes, red, green, blue.
 pub type Rgb = (u8, u8, u8);
@@ -102,13 +95,10 @@ pub fn from_hsl(h: f64, s: f64, l: f64) -> Rgb {
     (byte(r), byte(g), byte(b))
 }
 
-/// The ink for text the document did **not** give a colour to, on a ground the document *did*
-/// choose — ODF's *automatic* colour, resolved: the theme's own `ink` wherever that reads, and
-/// black or white, whichever reads better, where it does not.
-///
-/// The last clause is what "automatic" means, and without it a dark theme draws its near-white
-/// text on the pale grey heading row a document chose for itself and the row is unreadable —
-/// which is how both the Windows shell and the GNOME window first drew one.
+/// The ink for text the document did not colour, on a ground the document did choose — ODF's
+/// automatic colour: the theme's `ink` where it reads, else black or white, whichever reads
+/// better. Without the fallback, a dark theme's near-white text on a document's pale heading row
+/// is unreadable.
 pub fn automatic_ink(ground: Rgb, ink: Rgb) -> Rgb {
     if contrast(ink, ground) >= TEXT {
         return ink;
@@ -120,22 +110,12 @@ pub fn automatic_ink(ground: Rgb, ink: Rgb) -> Rgb {
     }
 }
 
-/// The ink for text the document may or may not have coloured, over a fill it may or may not
-/// have chosen, on a page drawn with `ink` on `page` — every shell's rule for a cell's or a
-/// run's text, in one place:
+/// The ink for a cell's or a run's text, drawn with `ink` on `page`:
 ///
-/// - **No colour of its own, no fill**: the page's own `ink`.
-/// - **No colour of its own, on a fill of its own**: ODF's *automatic* colour on that fill
-///   ([`automatic_ink`]).
-/// - **A colour of its own on the page, when the page is `dark`**: lifted along its own hue until
-///   it reads ([`legible`]) — a navy word chosen for white paper is invisible on a dark page, and
-///   a lighter navy is still the document's navy.
-/// - **Anything else** is the document's decision about its own paper, and is drawn as it is.
-///
-/// The GNOME window, the Windows pane and the browser each spelled this, and the macOS shell
-/// would have been the fourth (`doc/macos-shell.md`). `dark` is the shell's own judgement of its
-/// page, because each already makes it — from a theme's mode, a stylesheet's scheme or a
-/// palette's background.
+/// - No colour of its own, no fill: `ink`.
+/// - No colour of its own, on a fill of its own: [`automatic_ink`] on that fill.
+/// - A colour of its own on a `dark` page: lifted along its own hue until it reads ([`legible`]).
+/// - Anything else: the document's colour, as it is.
 pub fn document_ink(own: Option<Rgb>, fill: Option<Rgb>, page: Rgb, ink: Rgb, dark: bool) -> Rgb {
     match (own, fill) {
         (None, None) => ink,
@@ -146,12 +126,8 @@ pub fn document_ink(own: Option<Rgb>, fill: Option<Rgb>, page: Rgb, ink: Rgb, da
 }
 
 /// `color`, moved along its own hue — lighter on a dark ground, darker on a light one — until it
-/// reaches `floor` against `ground`; `color` itself when it already does.
-///
-/// Lightness rather than a blend towards white or black: a blend desaturates, and a navy that
-/// turns grey on a dark sheet has stopped being the colour the document chose. When no lightness
-/// on that hue reads — a saturated yellow on white — the nearest there is comes back, and the
-/// extreme of the axis always clears the text floor on any ground a theme uses.
+/// reaches `floor` against `ground`. Lightness rather than a blend towards white or black, which
+/// would desaturate it. When no lightness on that hue reads, the nearest comes back.
 pub fn legible(color: Rgb, ground: Rgb, floor: f64) -> Rgb {
     if contrast(color, ground) >= floor {
         return color;
@@ -241,8 +217,7 @@ mod tests {
         }
     }
 
-    /// The theme's ink where it reads; black or white where the document's own fill makes it
-    /// not — white text on a silver heading row is the case that started this.
+    /// The theme's ink where it reads; black or white where the document's own fill makes it not.
     #[test]
     fn automatic_ink_reads_on_whatever_ground_the_document_chose() {
         let light_ink = (0xee, 0xee, 0xee);

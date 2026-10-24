@@ -4,23 +4,11 @@
 
 //! ODF plumbing shared by every document type. **\[GENERIC\]**
 //!
-//! This crate is `doc/suite.md`'s **R8** made a compilation unit: *no document type's
-//! vocabulary appears in the shared crate.* Nothing here knows what a cell, a sheet, a
-//! paragraph or a heading is. What it knows is the container (`odf::package`), the namespace
-//! vocabulary (`odf::names`), the tolerant reading architecture (`odf::context`), the
-//! styling primitives every family of style is built from (`style`), and how to tell one
-//! document type from another before parsing it (`kind`). `lint` is the same split once more:
-//! what a *diagnostic* is lives here, and every rule that could produce one lives with the
-//! document type it is about (`doc/dsl.md` §4.3).
-//!
-//! `doc/ods-format.md` marked these sections `[GENERIC]` from the beginning and §10 predicted
-//! this split; extracting them was a move rather than a redesign. Each document type builds on
-//! it with a crate of its own — `grind-sheet`, `grind-text` — that owns a model, a reader, a
-//! writer and an `App`. What is *not* here is a trait over those `App`s; `observer.rs` says
-//! why, and what has to exist before one can be written honestly.
-//!
-//! **R8 is checked, not promised**: this crate's `Cargo.toml` names no document-type crate, and
-//! `tests/generic.rs` fails the build if body vocabulary appears in these sources.
+//! No document type's vocabulary appears here (R8): the container, namespaces, the tolerant
+//! reading architecture, style primitives, telling document types apart, line layout, the
+//! projection container and what a diagnostic is. `grind-sheet` and `grind-text` each add a model,
+//! a reader, a writer and an `App`. There is no trait over those `App`s yet; `observer.rs` says
+//! why. `tests/generic.rs` checks R8.
 
 use std::fmt;
 
@@ -45,13 +33,8 @@ pub use kind::{DocumentKind, kind};
 pub use observer::Observer;
 pub use odf::Form;
 
-/// What can go wrong with an ODF document, whatever kind of document it is.
-///
-/// Deliberately short. Anything a *spreadsheet* or a *text document* can be wrong about — no
-/// such sheet, a formula that will not parse, a range too large to format — belongs to that
-/// document type's own error enum, which wraps this one (R8). `grind_sheet::Error::Odf` is the
-/// worked example, and `?` does the conversion, so the split costs a `From` impl rather than a
-/// rewrite of every call site.
+/// What can go wrong with an ODF document, whatever kind of document it is. Each document type's
+/// own error enum wraps this one (R8).
 #[derive(Debug)]
 pub enum Error {
     /// The XML would not parse at all. Per doc/ods-format.md §8.2 this is the *structural*
@@ -62,19 +45,13 @@ pub enum Error {
     /// Password-protected. The document is fine; we have no key. Distinct from [`Error::Xml`]
     /// so callers can tell "cannot open" from "will not parse".
     Encrypted,
-    /// A projection (`doc/dsl.md` layer 0) that will not parse, or that does not declare what
-    /// kind of document it is. Distinct from [`Error::Xml`] because a projection is a *third*
-    /// physical form beside the package and the flat one, and "line 12, column 4" is a
-    /// different apology from "this zip has no content.xml".
+    /// A projection (`doc/dsl.md` layer 0) that will not parse, or that does not declare its kind.
     Projection(String),
-    /// A document whose kind this build has no reader for — a presentation, say — or bytes
-    /// that are not an ODF document at all. Carries what `kind` made of it, because "this is a
-    /// presentation" and "this is not a document" want different words in front of a user.
+    /// A document whose kind this build has no reader for, or bytes that are not an ODF document
+    /// at all — carrying what `kind` made of it, since the two want different words for a user.
     UnsupportedKind(Option<DocumentKind>),
-    /// **A save that would make the file worse, refused.** Saving over a document must never
-    /// drop what this build cannot carry (`odf::envelope`), so a save that would is an error
-    /// rather than a smaller file: the document on disk is left exactly as it was. Carries
-    /// what would have gone, already spelled for a person (`2 × text:note`).
+    /// A save that would make the file worse, refused: the document on disk is left as it was.
+    /// Carries what would have gone, spelled for a person (`2 × text:note`).
     WouldLose(Vec<String>),
     Io(std::io::Error),
 }

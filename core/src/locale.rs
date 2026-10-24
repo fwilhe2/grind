@@ -4,28 +4,18 @@
 
 //! Locale — `number:language` and `number:country`, and the two characters they decide.
 //!
-//! A number format carries its own locale (doc/ods-format.md §5.2), and it is not
-//! decoration: `1234.5` displays as `1,234.50` in `en-US` and `1.234,50` in `de-DE` from the
-//! *same* `number:number` element. Everything else about the format is already explicit, so
-//! this is a very small module by design — the separators, and nothing else.
+//! A number format carries its own locale (`doc/ods-format.md` §5.2): `1234.5` displays as
+//! `1,234.50` in `en-US` and `1.234,50` in `de-DE` from the same element. Language and country are
+//! kept verbatim, so an unknown locale survives a round trip and falls back to the default
+//! separators.
 //!
-//! **The language and country are kept verbatim, as the document spells them.** They are
-//! BCP 47 subtags in ODF and they go back out unchanged, so a locale this build has never
-//! heard of survives a round trip and merely falls back to the default separators.
+//! ponytail: one table from the decimal-separator convention rather than CLDR. Right for the
+//! common European and Anglophone cases, wrong in the details (Swiss apostrophe grouping, Indian
+//! lakh grouping, the narrow no-break space). The upgrade is CLDR or `icu`, which nothing else
+//! here needs.
 //!
-//! ponytail: one table, three groups, from the decimal-separator convention rather than from
-//! CLDR. It gets the common European and Anglophone cases right and will be wrong in the
-//! details — Switzerland's apostrophe grouping, India's lakh digit grouping, the narrow
-//! no-break space several standards bodies now prefer to French's plain space. The upgrade
-//! is a real CLDR table (or `icu`), and the reason not to have one yet is that nothing here
-//! needs collation, plurals or calendars — the rest of a locale library — and a dependency
-//! that large for two characters is the trade this project exists not to make.
-//!
-//! Not here either, and named where it belongs: **text→number conversion stays ISO-only**
-//! (`formula::value`). Part 4 §6.3.6 makes it `HOST-LOCALE`-dependent, so LibreOffice reads
-//! `"0,005"` as a number in a German document and this build does not. That one is a phase 4
-//! conformance item, not a formatting one: it needs the locale threaded into the evaluator's
-//! value model, where nothing carries a document today.
+//! Text→number conversion in formulas stays ISO-only (`formula::value`): Part 4 §6.3.6 makes it
+//! host-locale dependent, which needs a locale in the evaluator's value model.
 
 use serde::{Deserialize, Serialize};
 
@@ -51,11 +41,8 @@ const SPACE_GROUPING: [&str; 11] = [
     "fr", "cs", "fi", "hu", "lv", "nb", "nn", "no", "pl", "ru", "sv",
 ];
 
-/// The locales a picker offers, by the name a person knows them by — **exactly the ones whose
-/// separators this module gets right**, which is why Switzerland, Portugal and India are not
-/// here (the apostrophe, the space and the lakh: `ponytail:` above). Sorted by name, which is
-/// the order a list is read in. A locale not in it is still a locale — a document may state any
-/// — and a picker shows it by its tag.
+/// The locales a picker offers, by name — exactly the ones whose separators this module gets right
+/// (hence no Switzerland, Portugal or India). A document may still state any locale.
 pub const KNOWN: [(&str, &str); 29] = [
     ("zh-CN", "Chinese (China)"),
     ("cs-CZ", "Czech (Czechia)"),
@@ -103,9 +90,8 @@ impl Locale {
             None => (tag, ""),
         };
         let ok = |s: &str| s.chars().all(|c| c.is_ascii_alphabetic());
-        // `none` is ODF's own word for "no country" (`fo:country`, XSL-FO's), and stays as it is
-        // spelled: upper-casing it would make a document read from a file and the same document
-        // read back from its projection two different locales (`tdf160368.ods`, loop F).
+        // `none` is ODF's word for no country and stays as spelled, or a file and its projection
+        // would be two locales (`tdf160368.ods`, loop F).
         let country = match country.eq_ignore_ascii_case("none") {
             true => "none".to_owned(),
             false => country.to_uppercase(),
@@ -174,11 +160,9 @@ pub fn from_posix(value: &str) -> Option<Locale> {
     }
 }
 
-/// The desktop's own locale for numbers: `LC_ALL`, then `LC_NUMERIC`, then `LANG` — POSIX's own
-/// order of precedence, the first one set winning. What a window gives a **new** document, so a
-/// spreadsheet started on a German desktop speaks German (`doc/ods-format.md` §5.2); a command
-/// line's new document states none unless told, since a script's output should not depend on
-/// whose shell ran it.
+/// The desktop's locale for numbers: `LC_ALL`, then `LC_NUMERIC`, then `LANG`. What a window gives
+/// a new document (`doc/ods-format.md` §5.2); the CLI states none unless told, so a script's
+/// output does not depend on whose shell ran it.
 pub fn from_desktop() -> Option<Locale> {
     ["LC_ALL", "LC_NUMERIC", "LANG"]
         .into_iter()
@@ -187,17 +171,10 @@ pub fn from_desktop() -> Option<Locale> {
         .and_then(|value| from_posix(&value))
 }
 
-/// `$XDG_CONFIG_HOME/grind/locale` (or `~/.config/grind/locale`), a bare BCP 47 tag such as
-/// `de-DE` and nothing else — the one setting here doesn't need a config file format.
+/// `$XDG_CONFIG_HOME/grind/locale` (or `~/.config/grind/locale`): a bare BCP 47 tag such as
+/// `de-DE`. The old `sheet/locale` path is read when the new one is absent.
 ///
-/// `sheet/locale` is read as a fallback, because the suite rename moved a path that was
-/// already on people's disks and silently forgetting a setting is a worse greeting than four
-/// lines of code. It is a fallback rather than an alias: the new path wins outright, so
-/// writing the new one is how you stop reading the old one.
-///
-/// ponytail: the fallback has no expiry. It should go once there has been a release under the
-/// new name for long enough that nobody is carrying the old path forward — and the honest
-/// trigger is a release, which this project has not had yet.
+/// ponytail: drop that fallback once there has been a release under the new name.
 fn from_config_file() -> Option<Locale> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(std::path::PathBuf::from)
@@ -218,9 +195,8 @@ pub fn separators(locale: Option<&Locale>) -> (char, char) {
     locale.map_or(DEFAULT, |l| (l.decimal(), l.group()))
 }
 
-/// One number spelled with `locale`'s separators — `1.234,5`, `1,234.5`, `1 234,5` — which is
-/// the quickest way to say both at once: a shell's status bar shows it so nobody has to wonder
-/// which sign is the decimal one.
+/// One number spelled with `locale`'s separators — `1.234,5`, `1,234.5`, `1 234,5` — which shows
+/// both at once.
 pub fn sample(locale: Option<&Locale>) -> String {
     let (decimal, group) = separators(locale);
     format!("1{group}234{decimal}5")

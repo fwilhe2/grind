@@ -2,26 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **Offsets into a string in UTF-16 code units, and back to UTF-8 bytes.**
+//! Offsets into a string in UTF-16 code units, and back to UTF-8 bytes.
 //!
-//! Every string in this suite is Rust's, so every offset the core hands out or takes — a parse
-//! error's position, a completion's span, a formula-bar caret — is a **byte** offset into UTF-8.
-//! Two platforms' text controls count something else: Win32's `EM_GETSEL`/`EM_SETSEL` count
-//! `WCHAR`s and AppKit's `NSRange` counts `unichar`s, both UTF-16 code units. `ä` is two bytes
-//! and one unit, and an emoji four bytes and two units, so a shell that passed one where the
-//! other was meant would put the caret in the wrong place on the first non-ASCII formula.
-//!
-//! `ui_win32/src/sheet/state.rs` wrote the conversion first; the macOS shell would have been the
-//! second copy (`doc/macos-shell.md`, M1). It is here rather than in `grind-sheet` because
-//! nothing about it is a spreadsheet's, and the word processor's shells ask the same question of
-//! a block's text.
+//! Every offset the core hands out or takes is a byte offset into UTF-8. Win32's `EM_GETSEL` and
+//! AppKit's `NSRange` count UTF-16 code units instead: `ä` is two bytes and one unit, an emoji
+//! four bytes and two units.
 
-/// How many UTF-16 code units come before `byte` in `text` — where a caret goes in a control
-/// that counts units, for a byte offset the core reported.
-///
-/// A byte past the end is the end, and one that falls *inside* a character is that character's
-/// own start: an offset from the core is a hint about where to look (a parse error's position,
-/// say), not an invariant worth a panic, and there is no place inside a character for a caret.
+/// How many UTF-16 code units come before `byte` in `text`. A byte past the end is the end, and
+/// one inside a character is that character's start.
 pub fn units_before(text: &str, byte: usize) -> usize {
     text.char_indices()
         .take_while(|&(at, c)| at + c.len_utf8() <= byte)
@@ -29,12 +17,8 @@ pub fn units_before(text: &str, byte: usize) -> usize {
         .sum()
 }
 
-/// The byte offset of the place `units` UTF-16 code units into `text` — where a control's caret
-/// is, as the core counts it.
-///
-/// A unit past the end is the end, and one that falls *inside* a surrogate pair lands on the
-/// character it is half of rather than between its bytes, for the same reason
-/// [`units_before`] snaps: a caret is a place in text, and a character has no inside.
+/// The byte offset of the place `units` UTF-16 code units into `text`. A unit past the end is the
+/// end, and one inside a surrogate pair is that character's start.
 pub fn byte_of(text: &str, units: usize) -> usize {
     let mut seen = 0;
     for (byte, c) in text.char_indices() {
@@ -65,8 +49,7 @@ mod tests {
         assert_eq!(units_before("", 4), 0);
     }
 
-    /// The case the Windows copy got wrong: a byte in the middle of a character counted the
-    /// whole string, which put the caret at the end of the formula rather than on the problem.
+    /// A byte in the middle of a character is that character's start, not the end of the string.
     #[test]
     fn a_byte_inside_a_character_is_that_characters_start() {
         assert_eq!(units_before("=ä+1", 2), 1, "the second byte of `ä`");

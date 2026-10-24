@@ -4,21 +4,11 @@
 
 //! The element-context stack. **\[GENERIC\]**
 //!
-//! A streaming parser driving a stack of per-element context objects, dispatched by
-//! resolved `(namespace, local-name)` (doc/ods-format.md §8). This is the whole reason the
-//! reader tolerates messy documents, and it is a property of the shape rather than a
-//! feature bolted on:
-//!
-//! **A context that does not recognise a child returns `None`, and the driver pushes
-//! [`Ignore`] — whose callbacks all do nothing — for that element and everything beneath
-//! it.** Unknown elements, unknown attributes, whole foreign vendor namespaces and
-//! newer-ODF features are therefore inert by construction. Nothing has to detect junk.
-//!
-//! The second half falls out the same way: `text` defaults to a no-op, so the indentation
-//! whitespace between elements that every pretty-printer emits is discarded without a
-//! special pass. Only contexts that deliberately override `text` — paragraphs — collect it.
-//!
-//! Nothing here is spreadsheet-specific; §10 reuses it unchanged for text documents.
+//! A streaming parser driving a stack of per-element contexts, dispatched by resolved `(namespace,
+//! local-name)` (`doc/ods-format.md` §8). A context that does not recognise a child returns
+//! `None`, and the driver pushes [`Ignore`] for that element and its whole subtree, so unknown
+//! elements, attributes and vendor namespaces are inert by construction. `text` defaults to a
+//! no-op as well, so the whitespace between elements is discarded without a special pass.
 
 use std::io::BufRead;
 
@@ -32,9 +22,9 @@ use crate::{Error, Result};
 
 /// Resolved attributes of one element.
 ///
-/// ponytail: collected into a `Vec` of owned strings per element rather than borrowed from
-/// the parse buffer. Costs an allocation per attribute; buys freedom from lifetime
-/// plumbing through every context. Revisit only if a profile blames it.
+/// ponytail: owned strings per element rather than borrowed from the parse buffer — an allocation
+/// per attribute, in exchange for no lifetimes through every context. Revisit only if a profile
+/// blames it.
 #[derive(Debug, Default)]
 pub struct Attrs {
     items: Vec<(Name, String)>,
@@ -42,17 +32,9 @@ pub struct Attrs {
 }
 
 impl Attrs {
-    /// Where this element's start tag sits in the bytes being parsed.
-    ///
-    /// Here rather than as a `Context` parameter because [`Attrs`] is already built per
-    /// element and handed to `start_child`: adding a field costs one struct, adding an
-    /// argument would touch every context in the reader for the sake of the one that wants
-    /// it. That one is the cell (doc/plan.md R6) — knowing where a cell *was* is what lets
-    /// the writer put a new one back in its place and leave the rest of the file alone.
-    ///
-    /// For an `Event::Empty` — `<table:table-cell/>`, by far the most common cell — this is
-    /// the whole element. For an `Event::Start` it is the start tag only, so a caller that
-    /// needs the element's full extent has to close it itself.
+    /// Where this element's start tag sits in the bytes being parsed, so a writer can splice a
+    /// cell back into its place (R6). For an `Event::Empty` this is the whole element; for an
+    /// `Event::Start`, the start tag only.
     pub fn span(&self) -> std::ops::Range<usize> {
         self.span.clone()
     }
@@ -70,23 +52,17 @@ impl Attrs {
             .map(|(_, v)| v.as_str())
     }
 
-    /// First of several accepted spellings of the same idea.
-    ///
-    /// Real ecosystems split on a namespace for one concept — cell value-type is written
-    /// both `office:value-type` and `calcext:value-type`, and LibreOffice handles both with
-    /// the same code (§9). Resolving by meaning across a small alias set beats rejecting
-    /// the document.
+    /// First of several accepted spellings of the same idea — a value type is written both
+    /// `office:value-type` and `calcext:value-type` (§9).
     pub fn get_any(&self, candidates: &[(Ns, &str)]) -> Option<&str> {
         candidates
             .iter()
             .find_map(|(ns, local)| self.get(*ns, local))
     }
 
-    /// A count attribute, e.g. `table:number-columns-repeated`.
-    ///
-    /// Never trust the file's number (§9): missing or unparseable means 1, and anything
-    /// larger than `limit` is clamped. A document claiming 4 000 000 000 repeats is
-    /// otherwise a one-line memory-exhaustion vector.
+    /// A count attribute such as `table:number-columns-repeated`. Missing or unparseable is 1, and
+    /// anything over `limit` is clamped: a file claiming 4 000 000 000 repeats would otherwise
+    /// exhaust memory (§9).
     pub fn count(&self, ns: Ns, local: &str, limit: u32) -> u32 {
         self.get(ns, local)
             .and_then(|s| s.trim().parse::<i64>().ok())
@@ -159,19 +135,10 @@ fn resolved_name<R: BufRead>(reader: &NsReader<R>, e: &BytesStart) -> Name {
     Name::new(ns, local.as_ref())
 }
 
-/// Replace every byte that is not part of a valid UTF-8 sequence with `?`, **one byte for one
-/// byte**.
-///
-/// §9 tolerance, at the one layer below the element stack that cannot express it: a parser
-/// working in `str` refuses a document with a stray byte in it outright, and there is no
-/// context to hand an `Ignore` to. A corpus file does hold one (loop A's
-/// `sw/qa/extras/layout/data/ofz64109-1.fodt`, a fuzzer's output), and losing the whole
-/// document over one byte is exactly the intolerance the reader exists to avoid.
-///
-/// Length-preserving is the requirement, not an optimisation: `Attrs::span` indexes into the
-/// caller's *original* bytes for R6, so a repair that changed any offset would splice edits
-/// into the wrong place. `U+FFFD` is three bytes and therefore not an option; `?` is one, and
-/// is not markup.
+/// Replace every byte that is not part of valid UTF-8 with `?`, one byte for one byte, so a
+/// document with a stray byte (a fuzzer's corpus file, `ofz64109-1.fodt`) still loads.
+/// Length-preserving because [`Attrs::span`] indexes into the original bytes; `U+FFFD` is three
+/// bytes.
 fn repair_utf8(bytes: &mut [u8]) {
     let mut at = 0;
     while let Err(e) = std::str::from_utf8(&bytes[at..]) {
@@ -262,13 +229,8 @@ pub fn parse<R: BufRead, S>(mut input: R, root: Box<dyn Context<S>>, sink: &mut 
                         .text(&text, sink);
                 }
             }
-            // `&amp;`, `&quot;`, `&#10;` — one event each, and a *character* of the
-            // document's content rather than markup, so it is handed to the same `text`
-            // callback and lands between the two text runs it sits between.
-            //
-            // An entity this parser cannot resolve is dropped, not fatal: only the five
-            // predefined ones and numeric references can appear without a DTD, and §9's
-            // tolerance says a document naming something else still loads.
+            // `&amp;`, `&#10;` — each a character of the content, handed to the same `text`
+            // callback. An entity this parser cannot resolve is dropped rather than fatal (§9).
             Event::GeneralRef(r) => {
                 let resolved = match r.resolve_char_ref() {
                     Ok(Some(c)) => Some(c.to_string()),

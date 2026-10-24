@@ -4,17 +4,10 @@
 
 //! Writing a file so that a crash leaves either the old one or the new one, never half of one.
 //!
-//! `std::fs::write` truncates the target and then fills it, so a crash, a full disk or a killed
-//! process between the two destroys the user's document — the one thing an editor must not do.
-//! [`write()`] writes a sibling temporary file, flushes it to disk and renames it over the target;
-//! a rename within one directory is atomic on every platform this suite runs on.
-//!
-//! What it deliberately keeps of the file it replaces: its **permissions**, and its *identity*
-//! when the path is a symlink (the link's target is replaced, not the link). What it cannot keep
-//! is ownership, extended attributes, and a hard link's sharing — the new file is a new inode.
-//! Where a rename is impossible — the directory is not writable by this user but the file is, or
-//! the path names something that is not a regular file (`/dev/stdout`, a pipe) — it falls back
-//! to writing in place, which is exactly what every save did before this existed.
+//! [`write()`] writes a sibling temporary file, syncs it and renames it over the target, keeping
+//! the target's permissions and, for a symlink, replacing the link's target. Ownership, extended
+//! attributes and hard links are not kept. Where a rename is impossible — an unwritable directory,
+//! or a path that is not a regular file (`/dev/stdout`, a pipe) — it writes in place.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};

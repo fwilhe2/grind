@@ -5,35 +5,23 @@
 //! Moving a whole document between ODF's two physical forms without losing anything.
 //! **\[GENERIC\]**
 //!
-//! A document type's writer regenerates only what its model owns, and carries the rest of the
-//! file it came from through a save by splicing into that file's own bytes (`envelope`). That
-//! works when the save is in the form the file was read in. Saving a `.fodt` as an `.odt` — or
-//! an `.ods` as a `.fods` — used to *start from nothing*, and so dropped the page layout, the
-//! named styles, the metadata and, worse, every footnote, field and frame the model does not
-//! read, with no error at all.
+//! A save into the other form is a save into the document's own form first, with all its guards,
+//! and then [`convert`], which moves every part across and refuses (`Error::WouldLose`) rather
+//! than drops what the other form has no place for.
 //!
-//! Now a save into the other form is a save into the document's **own** form first, with every
-//! guard that has (`WouldLose`, the read-back), and then [`convert`] — which moves every part
-//! across rather than reinterpreting any of them, and **refuses** (`Error::WouldLose`) rather
-//! than drops whatever the other form has no place for.
-//!
-//! * **Flat to package** splits `office:document`'s parts into `content.xml`, `styles.xml`,
-//!   `meta.xml` and `settings.xml` (§3.1–§3.4). Automatic styles go into both of the first two,
-//!   because each part's styles are its own and either may be pointed at; a picture's
-//!   `office:binary-data` stays where it is, which a package allows. An embedded document
-//!   (`draw:object` holding an `office:document`, a chart) becomes its own `Object N/`
-//!   sub-document, since LibreOffice drops one written inline in a package
+//! * **Flat to package** splits `office:document` into `content.xml`, `styles.xml`, `meta.xml` and
+//!   `settings.xml` (§3.1–§3.4). Automatic styles go into both of the first two, since either may
+//!   point at them; `office:binary-data` stays where it is; an embedded document becomes its own
+//!   `Object N/` sub-document, since LibreOffice drops one written inline in a package
 //!   (`doc/chart-format.md`).
-//! * **Package to flat** is the same in reverse, and has the more to refuse: every picture a
-//!   part points at is inlined as `office:binary-data`, every embedded document as a nested
-//!   `office:document`, and what a flat file has no place for — an entry nothing points at,
-//!   two declarations of one automatic style that disagree, a prefix bound two ways — is a
-//!   refusal naming it. Only what is a cache of something else is let go: thumbnails, the
-//!   user-interface configuration, a picture standing in for an embedded document, and a
-//!   `manifest.rdf` that says nothing but which parts the package has.
+//! * **Package to flat** inlines every picture as `office:binary-data` and every embedded document
+//!   as a nested `office:document`, and refuses what a flat file has no place for: an entry
+//!   nothing points at, two disagreeing declarations of one automatic style, a prefix bound two
+//!   ways. Only caches are let go: thumbnails, the UI configuration, a picture standing in for an
+//!   embedded document, and a `manifest.rdf` that only lists the parts.
 //!
-//! The only vocabulary here is the envelope's (`office:`), `xlink:href`, and the local names
-//! of the elements a picture can hang off — never a document type's (R8).
+//! The only vocabulary here is the envelope's (`office:`), `xlink:href` and the elements a picture
+//! can hang off (R8).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Cursor, Write};

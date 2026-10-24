@@ -2,30 +2,19 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What a diagnostic *is*. **\[GENERIC\]**
+//! What a diagnostic is. **\[GENERIC\]**
 //!
-//! `doc/dsl.md` §4.3, D6. The rules themselves are per application and live there — no
-//! third-party linter knows what a heading is, and neither does this crate (R8). What is shared
-//! is the shape of an answer: a rule id, how loud it is, the address it is about, and a
-//! sentence. One shape, so a shell that draws a squiggle under a line, `--format json`, and the
-//! plain text a terminal gets are three renderings of one list rather than three vocabularies.
-//!
-//! **An address is a string here on purpose.** `Sheet1.B12` and `p12` are the two applications'
-//! own spellings and both are already the thing a person types back at the CLI; teaching this
-//! module either of them would put body vocabulary in the shared crate. The projection's span
-//! map turns one into a byte range when a code view wants to underline it (§6, D9), and that is
-//! the only place the string is interpreted.
+//! `doc/dsl.md` §4.3. The rules live with each application (R8); what is shared is the shape of an
+//! answer — a rule id, a severity, an address and a sentence — so a shell's squiggle, `--format
+//! json` and a terminal's text render one list. The address is the application's own spelling
+//! (`Sheet1.B12`, `p12`), a string here.
 
 use std::fmt;
 
 use crate::projection::{Location, Source};
 
-/// How loud a diagnostic is.
-///
-/// Three levels rather than two, because the third is what makes the palette rule bearable:
-/// a document is *wrong* when it names a bookmark that does not exist and merely *unlike this
-/// build's defaults* when it uses a colour the shell would not have offered. Rolling those
-/// together would mean either losing the second or shouting it.
+/// How loud a diagnostic is. Three levels, so that a dangling bookmark (wrong) and a colour off
+/// the shell's palette (merely unlike the defaults) need not be the same.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
@@ -53,12 +42,8 @@ impl fmt::Display for Severity {
     }
 }
 
-/// One rule, as data.
-///
-/// Named rather than anonymous so that a rule can be turned off by id, listed by `grind lint
-/// --rules`, and — the part that makes D6's exit criterion mechanical — checked against the
-/// table in `doc/dsl.md` §4.3 by a test. A rule the document does not name fails the build, and
-/// so does a row naming a rule no crate implements.
+/// One rule, as data: turned off by id, listed by `grind lint --rules`, and held to the table in
+/// `doc/dsl.md` §4.3 by a test in both directions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rule {
     /// Kebab-case, unique across both applications: it is what a user types after `--off` and
@@ -80,9 +65,8 @@ pub struct Diagnostic {
     pub at: String,
     /// What is wrong, as a sentence fragment a shell can put after the address.
     pub message: String,
-    /// Where [`Diagnostic::at`] is in the file, when the document was read from a projection
-    /// that spelled it — filled by [`Report::locate_in`], never by a rule. Left out of the JSON
-    /// when there is none, so a `.fods` linted reports exactly what it always did.
+    /// Where [`Diagnostic::at`] is in the file, when the document was read from a projection that
+    /// spelled it. Filled by [`Report::locate_in`], never by a rule.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<Location>,
 }
@@ -100,9 +84,8 @@ impl Diagnostic {
 }
 
 impl fmt::Display for Diagnostic {
-    /// `Sheet1.B12: warning: reads the empty cell Sheet1.C4 [empty-reference]`, which is the
-    /// shape every compiler in the world prints and therefore the one an editor's error parser
-    /// already understands.
+    /// `Sheet1.B12: warning: reads the empty cell Sheet1.C4 [empty-reference]` — the shape an
+    /// editor's error parser already understands.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if !self.at.is_empty() {
             write!(f, "{}: ", self.at)?;
@@ -111,12 +94,7 @@ impl fmt::Display for Diagnostic {
     }
 }
 
-/// What to check.
-///
-/// Deliberately not a list of enabled rules: the common cases are *all of them* and *all of
-/// them plus the house-style hints*, and a set of ids is the thing a caller reaches for only
-/// when it wants to silence one. `off` is that escape hatch and stays a plain list of ids so
-/// nothing has to enumerate the rules to build one.
+/// What to check: every rule, optionally the house-style hints, less the ids in `off`.
 #[derive(Clone, Debug, Default)]
 pub struct Options {
     /// Report [`Severity::Hint`] rules too. Off by default (`doc/dsl.md` §4.3).
@@ -134,20 +112,15 @@ impl Options {
     }
 }
 
-/// How many findings one lint will report before it stops looking.
-///
-/// A rule that fires once per cell fires a million times on a corpus document, and a list that
-/// long is neither read by a person nor useful to a shell. The cap is the same decision
-/// `graph::MAX_EDGES` makes and is reported the same way — [`Report::truncated`], rather than a
-/// silently short list.
+/// How many findings one lint will report before it stops looking; reaching it sets
+/// [`Report::truncated`] rather than returning a silently short list.
 pub const MAX_DIAGNOSTICS: usize = 1000;
 
 /// A lint's whole answer: what it found, and whether it stopped early.
 #[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct Report {
     pub diagnostics: Vec<Diagnostic>,
-    /// Whether [`MAX_DIAGNOSTICS`] was reached and looking stopped. A caller that says "clean"
-    /// must check it: past the cap, an empty *remainder* is not the same as nothing left.
+    /// Whether [`MAX_DIAGNOSTICS`] was reached. A caller that says "clean" must check it.
     pub truncated: bool,
 }
 
@@ -171,12 +144,7 @@ impl Report {
     }
 
     /// Give every finding the line and column its address has in `source`, the projection the
-    /// document was read from.
-    ///
-    /// The rules report addresses and nothing else, which is what keeps them from knowing what a
-    /// file is; this is the one step that does, applied after them. A finding whose address the
-    /// file never spelled — a cell inside a `style` range, the document as a whole — keeps no
-    /// location rather than borrowing a neighbour's.
+    /// document was read from. An address the file never spelled gets no location.
     pub fn locate_in(&mut self, source: &Source) {
         for diagnostic in &mut self.diagnostics {
             diagnostic.location = source.locate(&diagnostic.at);

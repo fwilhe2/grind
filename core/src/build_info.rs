@@ -2,9 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The commit, tree cleanliness and build date `core/build.rs` stamps in, formatted once so
-//! every shell's `--version`/about dialog reads the same fact rather than each computing its
-//! own.
+//! The commit, tree cleanliness and build date `core/build.rs` stamps in, formatted once for every
+//! shell's `--version` and About.
 
 /// The commit `HEAD` pointed at when this binary was built, `"unknown"` outside a git
 /// checkout (a source tarball, say).
@@ -16,8 +15,7 @@ pub const TREE: &str = env!("GRIND_BUILD_TREE");
 /// UTC build timestamp, `YYYY-MM-DDTHH:MM:SSZ`.
 pub const DATE: &str = env!("GRIND_BUILD_DATE");
 
-/// `version` is the caller's own (`CARGO_PKG_VERSION`), since every shell is its own crate
-/// and this one built `grind-core`, not them. For a caller (clap) that already prints its
+/// `version` is the caller's own `CARGO_PKG_VERSION`. For a caller such as clap that prints its
 /// own `name version` header; see [`describe`] for a standalone one.
 pub fn describe_version(version: &str) -> String {
     let profile = if cfg!(debug_assertions) {

@@ -2,26 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **Ranking a list of words against something a person is typing.**
-//!
-//! One function, and it is here for the reason everything else in this crate is: two shells
-//! need it and a second copy would rank the same query two ways. `ui_web`'s command palette
-//! wrote it first (`doc/web-shell.md`); `ui_sheet_gtk`'s wanted the same behaviour a letter at
-//! a time (`doc/sheet-shell.md`, "Four surfaces"), and a palette that puts *Bold* first in one
-//! window and third in another is a palette nobody learns.
-//!
-//! R8 is satisfied by construction: this knows about `str` and nothing about documents. It is
-//! not a search over a document's *content* — that would need to know what content is — but
-//! over a list of short labels a shell already has in its hand.
+//! Ranking a list of short labels against something a person is typing — the command palettes in
+//! the browser and the GNOME window share it, so a query ranks the same in both.
 
-/// How well `needle` matches `haystack`, and where — a subsequence match, case-insensitive,
-/// scoring a letter that starts a word above one in the middle of one and a run of adjacent
-/// letters above a scattering. `None` when a letter of the needle is not there at all.
-///
-/// Positions are in `char`s, because that is what a palette slices its title by.
-///
-/// The rank is deliberately simple and deliberately **stable**: a palette whose first row moves
-/// around as a fourth letter is typed is a palette nobody trusts to press Enter on.
+/// How well `needle` matches `haystack`, and where: a case-insensitive subsequence match that
+/// scores a letter starting a word above one inside a word, and adjacent letters above scattered
+/// ones. Positions are in `char`s. `None` when a letter of the needle is missing. Deliberately
+/// stable, so the first row does not jump as more is typed.
 pub fn score(haystack: &str, needle: &str) -> Option<(i32, Vec<usize>)> {
     let hay: Vec<char> = haystack.chars().flat_map(char::to_lowercase).collect();
     // Word starts, computed once: the beginning, and any letter after a space or a hyphen.
@@ -83,17 +70,14 @@ mod tests {
         assert_eq!(hits, vec![0, 1, 6, 7]);
     }
 
-    /// Positions are `char`s and not bytes, because a palette slices its title by `char`s —
-    /// the one way this function can be right and still make a caller panic.
+    /// Positions are `char`s, not bytes, because a palette slices its title by `char`s.
     #[test]
     fn positions_count_characters_rather_than_bytes() {
         let (_, hits) = score("Größe ändern", "än").unwrap();
         assert_eq!(hits, vec![6, 7]);
     }
 
-    /// An empty needle matches everything, and matches it identically — so a palette with
-    /// nothing typed in it must not use this to order its rows. Both shells show a declared
-    /// list until the first keystroke, and this is why.
+    /// An empty needle matches everything identically, so a palette must not use it to order rows.
     #[test]
     fn an_empty_needle_says_nothing_about_order() {
         let (a, hits) = score("Bold", "").unwrap();

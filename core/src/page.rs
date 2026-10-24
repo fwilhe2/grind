@@ -2,21 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The size of a page and where its text goes. **\[GENERIC\]**
+//! The size of a page and where its text goes (`doc/pdf-export.md`). **\[GENERIC\]**
 //!
-//! `doc/pdf-export.md` is normative here. A page is a `style:page-layout` (rng:12213), whose
-//! `style:page-layout-properties` (rng:12248) carry `fo:page-width` and `fo:page-height`
-//! (rng:12255, rng:12260) and four margins. Both document types have one, which is why this is
-//! the core's: nothing here mentions a paragraph or a cell (R8).
+//! A `style:page-layout` (rng:12213) and its `style:page-layout-properties` (rng:12248): page
+//! width, height and four margins. Pagination is not here; it needs each document type's own
+//! vocabulary.
 //!
-//! **What this is not.** There is no pagination here. Breaking a document into pages needs its
-//! own vocabulary (a heading kept with what follows it, a table row never split), so it lives
-//! with the document type. This module answers only "how big, and how far in".
-//!
-//! **Paper is ISO 216.** When a document states no page, the answer is [`PageGeometry::a4`],
-//! never a size chosen by locale (`doc/pdf-export.md` §8, decision 7). A document that *says*
-//! US Letter is still read as US Letter: its own geometry always wins, and we only refuse to
-//! *choose* one.
+//! Paper is ISO 216: a document that states no page gets [`PageGeometry::a4`], never a size chosen
+//! by locale. A document that says US Letter is still read as US Letter.
 
 use crate::style::length_mm;
 
@@ -46,11 +39,9 @@ impl PageGeometry {
         PageGeometry::iso_a(4).expect("A4 is in the series")
     }
 
-    /// ISO 216's A series, `A0` through `A10`, portrait, with 2 cm margins.
-    ///
-    /// Derived rather than tabled: A0 is 841 × 1189 mm (one square metre), and each next size
-    /// halves the longer side, rounding down to a whole millimetre. That rule is the standard's
-    /// own, and it is what makes A5 148 mm wide rather than 148.5.
+    /// ISO 216's A series, `A0` through `A10`, portrait, with 2 cm margins — derived as the
+    /// standard defines it: A0 is 841 × 1189 mm, and each next size halves the longer side,
+    /// rounded down to a whole millimetre.
     pub fn iso_a(n: u8) -> Option<Self> {
         if n > 10 {
             return None;
@@ -69,10 +60,7 @@ impl PageGeometry {
         })
     }
 
-    /// A paper name as a person types it — `a4`, `A3`, `a4-landscape` — and nothing else.
-    ///
-    /// Only the A series: the point of the decision is that this program never offers a US
-    /// size, so it does not parse one either.
+    /// A paper name as a person types it — `a4`, `A3`, `a4-landscape`. Only the A series.
     pub fn paper(name: &str) -> Option<Self> {
         let name = name.trim().to_ascii_lowercase();
         let (size, landscape) = match name.strip_suffix("-landscape") {
@@ -95,14 +83,12 @@ impl PageGeometry {
         }
     }
 
-    /// Read from `style:page-layout-properties`. `get` answers an `fo:` attribute by its local
-    /// name, which keeps this module free of the reader's types.
+    /// Read from `style:page-layout-properties`, through `get`, which answers an `fo:` attribute
+    /// by its local name.
     ///
-    /// A size that is missing or unreadable falls back to A4's, side by side, so a layout that
-    /// states only margins still has a page. A **margin** that is missing is zero: that is
-    /// XSL-FO's initial value, which ODF takes over, and a layout that bothered to exist and
-    /// said nothing about a margin meant none. `fo:margin` is the shorthand for all four, and a
-    /// side stated on its own wins over it.
+    /// A missing or unreadable size falls back to A4's, side by side. A missing margin is zero,
+    /// XSL-FO's initial value. `fo:margin` sets all four, and a side stated on its own wins over
+    /// it.
     pub fn from_properties<'a>(get: impl Fn(&str) -> Option<&'a str>) -> Self {
         let a4 = PageGeometry::a4();
         let length = |name: &str| get(name).and_then(length_mm).filter(|mm| *mm >= 0.0);

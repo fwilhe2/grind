@@ -4,19 +4,9 @@
 
 //! Which kind of document a pile of bytes is. **\[GENERIC\]**
 //!
-//! One ODF reader per document type, chosen explicitly — so something has to choose, and it
-//! has to do so *before* parsing, because handing a spreadsheet to the text reader produces
-//! an empty document rather than an error (§8's default-ignore architecture is tolerant by
-//! construction, which is exactly wrong for this one question).
-//!
-//! Every caller of this is a place a user meets the wrong file: `grind info`, a shell's Open
-//! dialog, the terminal shell picking a mode, and the cross-app handoff banner that offers to
-//! launch the sibling application. None of them can afford to guess.
-//!
-//! **Sniffed from content, never from the file name** — the same rule
-//! [`crate::odf::package::is_package`] follows, and for the same reason: `.fods` content turns
-//! up under `.xml`, and an extension is a hint from a filesystem rather than a fact about the
-//! data.
+//! Decided before parsing, because the readers are tolerant by construction and handing a
+//! spreadsheet to the text reader produces an empty document rather than an error. Sniffed from
+//! content, never from the file name: `.fods` content turns up under `.xml`.
 
 use std::io::Read;
 
@@ -27,11 +17,8 @@ use quick_xml::name::ResolveResult;
 use crate::odf::names::Ns;
 use crate::odf::package::is_package;
 
-/// A document type this suite has a reader for.
-///
-/// `Presentation` is deliberately present and deliberately unhandled elsewhere: recognising
-/// one is how a shell says *"that is a presentation, and this build does not open those"*
-/// rather than failing to parse it. Naming it here costs a variant and buys an honest error.
+/// A document type this suite has a reader for — and `Presentation`, recognised so a shell can say
+/// it does not open those rather than fail to parse one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DocumentKind {
     Spreadsheet,
@@ -39,13 +26,9 @@ pub enum DocumentKind {
     Presentation,
 }
 
-/// The media type, byte for byte (doc/ods-format.md §10).
-///
-/// These are the strings that appear **inside** a document — the `mimetype` package entry and
-/// the flat root's `office:mimetype`. They are *not* the `-flat-xml` suffixed spellings: §1.2
-/// records that those are LibreOffice's internal type-detection labels and are never written
-/// into a file. The suffixed forms belong in a `.desktop` file's `MimeType=` line and nowhere
-/// near this module.
+/// The media type, byte for byte (`doc/ods-format.md` §10), as it appears inside a document. Not
+/// the `-flat-xml` spellings, which are LibreOffice's type-detection labels and belong only in a
+/// `.desktop` file (§1.2).
 pub const SPREADSHEET: &str = "application/vnd.oasis.opendocument.spreadsheet";
 pub const TEXT: &str = "application/vnd.oasis.opendocument.text";
 pub const PRESENTATION: &str = "application/vnd.oasis.opendocument.presentation";
@@ -100,16 +83,9 @@ impl DocumentKind {
     }
 }
 
-/// What a shell opens, when a person named a kind (`--sheet`, `--text`) **and** a file.
-///
-/// **The file decides**: its bytes are what the reader will parse, and opening a spreadsheet as
-/// a text document shows an empty one rather than an error (see this module's first
-/// paragraph). So the flag only gets to agree, and disagreeing is an error naming both kinds
-/// rather than an override — `shown` is the file as the person will recognise it.
-///
-/// Every shell that takes both on its command line asks this: `ui_tui`, `ui_win32` and
-/// `ui_mac` each had a copy until the third one pulled the trigger (`doc/macos-shell.md`, M1).
-/// It is the rule, and not the read, so it is testable without a filesystem.
+/// What a shell opens when a person named a kind (`--sheet`, `--text`) and a file. The file
+/// decides; a flag that disagrees is an error naming both kinds, with `shown` the file as the
+/// person will recognise it.
 pub fn reconcile(
     asked: Option<DocumentKind>,
     found: DocumentKind,
@@ -125,44 +101,28 @@ pub fn reconcile(
     }
 }
 
-/// How many XML events to look at before giving up on the flat form.
-///
-/// The root element carries `office:mimetype` and is the first event, so one would nearly
-/// always do. The budget exists for the fragment case — a bare `content.xml`, which has no
-/// `office:mimetype` at all and must be identified by its body element instead, sitting behind
-/// `office:meta`, `office:settings`, `office:styles` and `office:automatic-styles`. Those are
-/// bounded prologue, not content, so a small budget covers every conforming document while
-/// keeping this a sniff rather than a parse of a 50 MB file.
+/// How many XML events to look at before giving up on the flat form. The root's `office:mimetype`
+/// is the first event, but a bare `content.xml` has none and is identified by its body element,
+/// behind the bounded prologue of meta, settings and styles.
 const MAX_EVENTS: usize = 4096;
 
-/// What kind of document these bytes are, or `None` if nothing here says.
-///
-/// `None` is a real answer and not a failure: a truncated file, a zip that is not ODF, or XML
-/// that declares no media type and reaches no body element. Callers turn it into their own
-/// diagnostic, because "this is not an ODF document" reads differently in an Open dialog than
-/// it does on stderr.
+/// What kind of document these bytes are, or `None` if nothing here says — a truncated file, a zip
+/// that is not ODF, or XML with no media type and no body element. Callers word their own
+/// diagnostic.
 pub fn kind(bytes: &[u8]) -> Option<DocumentKind> {
     if is_package(bytes) {
         return package_kind(bytes);
     }
-    // The projection is the third physical form (`doc/dsl.md` §3), and it is asked first
-    // because it is the cheapest question: one line, no parse. It also cannot be confused
-    // with the other two — `grind spreadsheet` is not XML and not a zip — so the order is
-    // about speed rather than about precedence.
+    // The projection first: one line and no parse, and it cannot be confused with XML or a zip.
     if let Some(kind) = crate::projection::is_projection(bytes) {
         return Some(kind);
     }
     flat_kind(bytes)
 }
 
-/// The package form: the `mimetype` entry, which §1.1 requires to be first, stored, and the
-/// media type byte for byte.
-///
-/// Read through the zip directory rather than at the fixed offset every reader sniffs. The
-/// offset is faster and is what §1.1 describes, but it is only correct for a *conforming*
-/// package, and R5 says other people's files have to work. A document whose `mimetype` entry
-/// is missing or unreadable falls back to `content.xml`'s root, which is what actually decides
-/// how the document is parsed.
+/// The package form: the `mimetype` entry, read through the zip directory rather than at §1.1's
+/// fixed offset so that a non-conforming package still works (R5). A missing or unreadable
+/// `mimetype` falls back to `content.xml`'s root.
 fn package_kind(bytes: &[u8]) -> Option<DocumentKind> {
     let mut archive = crate::odf::package::archive(bytes).ok()?;
     if let Ok(entry) = archive.by_name("mimetype") {

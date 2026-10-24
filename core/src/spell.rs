@@ -3,36 +3,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! Spelling's generic half (`doc/spelling.md`): what a word is, which words are worth asking a
-//! dictionary about, and the [`Lexicon`] a dictionary is handed in through.
+//! dictionary about, and the [`Lexicon`] a dictionary is handed in through, as `layout::Metrics`
+//! is. Each application decides where its words are and how a misspelling is addressed (R8);
+//! `grind-spell` holds the dictionaries.
 //!
-//! Hoisted out of `grind_text::spell` the day the spreadsheet wanted the same answers, the way
-//! `search::score` came out of a shell: a word in a cell is a word in a paragraph, and two
-//! applications deciding differently what `ODF` or `e.g.` is would underline different things in
-//! the same suite. What stays with each application is where its words *are* — a paragraph's
-//! runs, some of them a link or code; a sheet's text cells — and the address a misspelling is
-//! reported at (R8).
-//!
-//! **No dictionary lives here.** A [`Lexicon`] is handed in, the way a `layout::Metrics` is: this
-//! crate decides *what a word is* and *which ones are checked*, and `grind-spell` decides whether
-//! a word is spelled right. That keeps the word lists out of every build that only reads
-//! documents.
-//!
-//! **What is checked is deliberately narrower than "every word".** A spell checker earns its
-//! place by being believed, and it stops being believed the third time it underlines `ODF`. So a
-//! word is skipped when it is plainly not prose: it has a digit in it, it is all capitals (an
-//! acronym), it has a capital inside it (`OpenDocument`, `iPhone`, an identifier), it is one
-//! letter long, or it sits in a chunk with `://`, `@`, `/`, `\`, `_` or `=` in it, which is a
-//! URL, an address, a path or a piece of code. Each of those is a named rule in [`checkable`]
-//! and [`prose_chunk`], with a test.
+//! A word is skipped when it is plainly not prose: it has a digit, is all capitals, has a capital
+//! inside it (`OpenDocument`, `iPhone`), is one letter long, or sits in a chunk containing `://`,
+//! `@`, `/`, `\`, `_` or `=`. Each rule is in [`checkable`] or [`prose_chunk`], with a test.
 
 use std::ops::Range;
 use std::sync::Arc;
 
-/// A dictionary: whether a word is spelled right, and what it might have been instead.
-///
-/// `Send + Sync` because an application's `App` holds one behind its lock and a shell shares the
-/// `App` between threads. Implemented by `grind-spell` over Hunspell dictionaries, and by a plain
-/// word list in tests.
+/// A dictionary: whether a word is spelled right, and what it might have been instead. `Send +
+/// Sync` because an `App` holds one behind its lock.
 pub trait Lexicon: Send + Sync {
     /// Whether `word` is spelled right. Asked for every word [`words`] finds, so it must be cheap.
     fn knows(&self, word: &str) -> bool;
@@ -43,9 +26,8 @@ pub trait Lexicon: Send + Sync {
     fn language(&self) -> &str;
 }
 
-/// A document spelling can be checked in — each application's `App`. What `grind-spell` needs
-/// to choose a language for one and attach a dictionary to it, without knowing which kind of
-/// document it is (R8 in the other direction: the dictionaries crate names no application).
+/// A document spelling can be checked in — each application's `App` — so `grind-spell` can choose
+/// a language and attach a dictionary without knowing the document type.
 pub trait Spelled: Send + Sync {
     /// Check spelling against `lexicon` from now on, or with `None` stop checking.
     fn set_lexicon(&self, lexicon: Option<Arc<dyn Lexicon>>);
@@ -119,8 +101,7 @@ pub fn words(text: &str) -> Vec<Range<usize>> {
     out
 }
 
-/// Whether a word is one a dictionary should be asked about at all — the "plainly not prose"
-/// rules from the module's own documentation.
+/// Whether a word is one a dictionary should be asked about at all.
 pub fn checkable(word: &str) -> bool {
     let letters = word.chars().filter(|c| c.is_alphabetic()).count();
     if letters < 2 || word.chars().any(|c| c.is_numeric()) {

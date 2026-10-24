@@ -4,58 +4,33 @@
 
 //! The projection a document was read from, kept so that saving can edit it. **\[GENERIC\]**
 //!
-//! This is R6 (`doc/plan.md`) applied to the third physical form, and `doc/dsl.md` §3.1 promised
-//! it before either projection existed: *"a `.grind` file will have comments, blank lines and
-//! hand-chosen alignment in it, none of which exist in the ODF model. They survive an edit for
-//! exactly the reason `office:settings` survives an edit to a `.fods`: the writer never
-//! regenerates what nobody touched."*
+//! R6 for the third physical form (`doc/dsl.md` §3.1): retain the bytes, remember where each
+//! address sat in them, and splice the ones that changed, so comments, blank lines and alignment
+//! survive. The reader already computes an address for every node it walks, and `kdl` hands over
+//! the spans.
 //!
-//! **The same trick as `odf/source.rs`, and deliberately so.** Retain the bytes, remember where
-//! each address sat in them, and splice the ones that changed. What is different is how cheap
-//! the map is to build: the projection *reader* already computes an address for every node it
-//! walks — that is what makes the format bijective — so recording one more span per address is
-//! bookkeeping rather than a second pass. `kdl` hands over the spans, which is the same property
-//! that makes it formatting-preserving.
+//! Not `kdl`'s mutation API: in `kdl 6.7.1`, setting an entry's value leaves the printed output
+//! unchanged, and clearing its format to force a reprint loses the whitespace around it
+//! (`doc/dsl.md` §3.1). Values are spelled by [`super::emit::repr`], shared with the writer.
 //!
-//! **Not `kdl`'s own mutation API, though it was the obvious route.** Probed against `kdl 6.7.1`:
-//! setting an entry's value leaves the printed output *unchanged*, because a parsed entry retains
-//! the text it was spelled as and that text wins; clearing the format to force a reprint also
-//! clears the whitespace around the value, so `row "North"  4200` loses its hand alignment. A
-//! byte splice at the span `kdl` reports keeps both, needs no second document model in memory,
-//! and is the machinery this project has already built twice. What `kdl` is still the authority
-//! on is where the spans *are* and how a value is spelled — [`super::emit::repr`] is the one
-//! function that answers the second, shared with the writer so the two cannot disagree.
+//! Each of these regenerates the whole document rather than splicing:
 //!
-//! **Three honest boundaries**, each of which regenerates rather than failing:
+//! * an address the file did not spell (a cell that was empty, a block appended);
+//! * an edit that changes a site's [`Shape`] (a plain number that becomes a formula);
+//! * a save to another form.
 //!
-//! * **An address the file did not spell has no site.** A cell that was empty and now is not,
-//!   a block appended at the end — there is no span to splice into, so the document is written
-//!   out whole. A half-spliced file would be worse than a large diff.
-//! * **A site has a shape.** A value in a grid row can only be replaced by a value; a node can
-//!   only be replaced by a node. An edit that changes which of the two an address needs — a
-//!   plain number that becomes a formula — is a structural change and regenerates.
-//! * **Only the projection.** A `.grind` read and saved as a `.fods` is a conversion, and the
-//!   form the bytes came from is not the form they are going to.
-//!
-//! *ponytail:* one `String` key per address, so a projection of a hundred thousand cells carries
-//! a hundred thousand small allocations beside the text. `odf/source.rs` avoids that by keying
-//! per *row* and scanning a short list; the same shape would work here and needs a row concept,
-//! which is the application's. The ceiling is a document nobody hand-writes, which is the only
-//! kind this form is for — and it is a size question rather than a correctness one, so it waits
-//! for a document that actually hurts.
+//! *ponytail:* one `String` key per address, so a hundred thousand cells carry a hundred thousand
+//! small allocations. `odf/source.rs` keys per row instead; the same would work here with the
+//! application's row concept, and waits for a document that hurts.
 
 use std::collections::HashMap;
 use std::ops::Range;
 
 use kdl::{KdlEntry, KdlNode};
 
-/// Where a node sits in the text it was parsed from — its name through its closing brace, with
-/// the indentation before it and the newline after it left out.
-///
-/// A `Range<usize>` rather than the `miette::SourceSpan` `kdl` hands back, because every other
-/// span in this workspace is a range and one spelling is enough. Here rather than in an
-/// application for a smaller reason that matters as much: converting it there would make
-/// `miette` a direct dependency of both application crates to name one type.
+/// Where a node sits in the text it was parsed from — its name through its closing brace, without
+/// the indentation before it and the newline after it. A range rather than `kdl`'s
+/// `miette::SourceSpan`, so the applications need not depend on `miette`.
 pub fn node_span(node: &KdlNode) -> Range<usize> {
     let span = node.span();
     span.offset()..span.offset() + span.len()
@@ -67,12 +42,8 @@ pub fn entry_span(entry: &KdlEntry) -> Range<usize> {
     span.offset()..span.offset() + span.len()
 }
 
-/// What a site can be replaced by, which is what it already is.
-///
-/// KDL's vocabulary rather than any document type's (R8): whether an address is projected as a
-/// whole node or as one value on somebody else's node is a question about the *syntax*, and both
-/// applications answer it — a spreadsheet's grid row holds one cell per value, and a paragraph's
-/// text is one value on the node that is the paragraph.
+/// What a site can be replaced by, which is what it already is: a whole node, or one value on a
+/// node (a grid row's cell, a paragraph's text).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Shape {
     /// The span is a whole node, indentation and terminator excluded. A replacement is a node.
@@ -89,13 +60,9 @@ pub struct Site {
     pub shape: Shape,
 }
 
-/// Where a stretch of a file is, numbered the way an editor's gutter numbers it.
-///
-/// Lines and columns from 1, and a column counted in **characters** (Unicode scalar values)
-/// rather than bytes: that is what a compiler-style `file:line:col` means to VS Code's problem
-/// matcher, to Vim's quickfix list and to Emacs' compilation mode, and a byte column would put
-/// the mark in the wrong place on any line with an `é` before it. A language server wants UTF-16
-/// columns instead; it converts from the span, which is why the span is not thrown away.
+/// Where a stretch of a file is, as an editor's gutter numbers it: lines and columns from 1,
+/// columns in characters rather than bytes, which is what `file:line:col` means to VS Code, Vim
+/// and Emacs. A language server converts to UTF-16 from the span.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Location {
     pub line: usize,
@@ -105,11 +72,8 @@ pub struct Location {
 }
 
 impl Location {
-    /// The location of `span` in `text`.
-    ///
-    /// Counts from the start each time, so one call is linear in the file: right for a lint
-    /// report, which is capped at `lint::MAX_DIAGNOSTICS`, and wrong for anything that asks per
-    /// keystroke — that wants a line index built once.
+    /// The location of `span` in `text`. Linear in the file per call: fine for a capped lint
+    /// report, not for anything per keystroke.
     pub fn of(text: &str, span: Range<usize>) -> Self {
         let point = |offset: usize| {
             let before = &text[..offset];
@@ -130,11 +94,8 @@ impl Location {
     }
 }
 
-/// The text a document was read from, and where its addresses are in it.
-///
-/// The address is a `String` for [`super::Anchor`]'s reason and no other: `Sheet1.B5` and `p12`
-/// are two applications' spellings of a place, this crate is not allowed to know either, and
-/// carrying one is all a splice needs — the app hands back the same string it recorded.
+/// The text a document was read from, and where its addresses are in it (addresses are strings for
+/// [`super::Anchor`]'s reason).
 #[derive(Clone, Debug, Default)]
 pub struct Source {
     text: String,
@@ -149,13 +110,9 @@ impl Source {
         }
     }
 
-    /// Note that `address` is projected by this stretch of the text.
-    ///
-    /// Recorded once per address: an address that appears twice keeps the **first** span, because
-    /// a reader that has already built the model from the earlier one is describing the state the
-    /// later one would overwrite. In practice neither projection spells an address twice, and a
-    /// hand-written file that does is exactly the case where regenerating is the safer answer —
-    /// which is what a splice of the wrong site would quietly avoid.
+    /// Note that `address` is projected by this stretch of the text. An address recorded twice
+    /// keeps its first span; a hand-written file that spells one twice regenerates rather than
+    /// splicing the wrong site.
     pub fn record(&mut self, address: impl Into<String>, span: Range<usize>, shape: Shape) {
         self.sites
             .entry(address.into())
@@ -172,24 +129,16 @@ impl Source {
         self.sites.get(address)
     }
 
-    /// Where an address is, as a line and column in the text as it was read — what turns a lint
-    /// finding at `Sheet1.B5` into one an editor can jump to.
-    ///
-    /// `None` for an address the file did not spell, as for [`Source::site`]. The text is the
-    /// file *as read*: after an edit nobody has saved, a location still names the place in the
-    /// file on disk, which is the one an editor showing that file wants.
+    /// Where an address is, as a line and column in the text as read — after an unsaved edit,
+    /// still the place in the file on disk. `None` for an address the file did not spell.
     pub fn locate(&self, address: &str) -> Option<Location> {
         self.site(address)
             .map(|site| Location::of(&self.text, site.span.clone()))
     }
 
-    /// Every address the file spelled and where — the span map of the file **as read**, in
-    /// order through the file.
-    ///
-    /// [`super::Projection::anchors`]'s twin for the other text: that one is where each address
-    /// sits in a projection this build *writes*, this one where it sits in the one somebody
-    /// wrote, comments and alignment included. An editor working on the file wants this one —
-    /// a language server's hover, its inline values, and the line a lint finding is on.
+    /// Every address the file spelled and where, in file order — [`super::Projection::anchors`]
+    /// for the file somebody wrote rather than the one this crate writes. What a language server's
+    /// hover and inline values use.
     pub fn anchors(&self) -> Vec<super::Anchor> {
         let mut anchors: Vec<super::Anchor> = self
             .sites
@@ -205,8 +154,7 @@ impl Source {
         anchors
     }
 
-    /// How many addresses were recorded — what a test asserts a reader did not quietly stop
-    /// doing.
+    /// How many addresses were recorded.
     pub fn len(&self) -> usize {
         self.sites.len()
     }
@@ -215,12 +163,8 @@ impl Source {
         self.sites.is_empty()
     }
 
-    /// The text with each range replaced, or `None` if the patches do not describe one file.
-    ///
-    /// `None` is *refuse and regenerate*, never an error: overlapping ranges would produce
-    /// tangled bytes rather than a diagnostic, and a range past the end means the map and the
-    /// text have come apart. Both are impossible by construction — sites are siblings in one
-    /// parse — and both are cheap to check, which is the trade `odf::write::splice` already made.
+    /// The text with each range replaced, or `None` — refuse and regenerate — if the ranges
+    /// overlap or run past the end, which would mean the map and the text have come apart.
     pub fn splice(&self, mut patches: Vec<(Range<usize>, String)>) -> Option<String> {
         patches.sort_by_key(|(range, _)| range.start);
         if patches.windows(2).any(|w| w[0].0.end > w[1].0.start) {

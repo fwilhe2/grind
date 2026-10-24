@@ -4,17 +4,10 @@
 
 //! Writing a projection, and recording what was written. **\[GENERIC\]**
 //!
-//! An application's projection writer drives this and nothing else — it decides *what* nodes a
-//! document is spelled as, and this decides how a node reaches the page. The split is the same
-//! one `odf::write` and `odf::names` have, and it buys the two maps for free: the writer is
-//! already saying "this is a node name, that is a cell's value", so [`Emitter`] writes both the
-//! byte and the fact.
-//!
-//! **Values are formatted by [`kdl::KdlValue`]'s own `Display`, never by hand.** The reader is
-//! `kdl`'s parser, so the writer has to be `kdl`'s printer or the two eventually disagree about
-//! one string in one corpus document. That is also where the format's one pleasant surprise
-//! comes from: a string that is already a bare identifier is emitted bare, so `row North 4200`
-//! is what a sheet of names and numbers actually looks like, and it parses back as a string.
+//! An application's projection writer decides what nodes a document is spelled as; [`Emitter`]
+//! writes them and records the token and span maps as it goes. Values are printed by
+//! [`kdl::KdlValue`]'s own `Display`, never by hand, so the writer cannot disagree with `kdl`'s
+//! parser.
 
 use std::ops::Range;
 
@@ -30,19 +23,12 @@ const INDENT: &str = "    ";
 /// anchors, so that [`Emitter::close`] can finish the span the whole block covers.
 struct Frame {
     start: usize,
-    /// Every address this node is. Usually one — a cell is a cell — and sometimes several: a
-    /// heading is `p12` *and* `§2.1.3`, and both are addresses `loc.rs` resolves, so a span map
-    /// that could only hold one would answer half the go-to box's questions.
+    /// Every address this node is: usually one, but a heading is `p12` and `§2.1.3` at once.
     anchors: Vec<String>,
 }
 
-/// Builds a [`Projection`]: text, tokens and anchors in one pass.
-///
-/// The shape is a cursor rather than a tree builder, because a writer walking a document is
-/// already a cursor: [`Emitter::begin`] starts a line, arguments and properties go on it, and
-/// [`Emitter::end`] or [`Emitter::open`] finishes it. A tree would mean building a second copy
-/// of the document in memory to serialise it, which is what `odf::write` deliberately does not
-/// do either.
+/// Builds a [`Projection`]: text, tokens and anchors in one pass. [`Emitter::begin`] starts a
+/// line, arguments and properties go on it, and [`Emitter::end`] or [`Emitter::open`] finishes it.
 #[derive(Default)]
 pub struct Emitter {
     text: String,
@@ -97,26 +83,16 @@ impl Emitter {
         });
     }
 
-    /// Tie the node being written to an address (`doc/dsl.md` §6.2).
-    ///
-    /// The span is settled when the node ends: a leaf anchors its own line, and a node with
-    /// children anchors the whole block, which is what makes *click the sheet, highlight the
-    /// sheet* work at the same time as *click the cell, highlight the line*.
-    ///
-    /// Called more than once, a node is more than one address. That is not a spreadsheet's
-    /// shape — a cell is `B5` and nothing else — but it is a text document's: `p12`, `#intro`
-    /// and `§2.1.3` can all name the same paragraph, and `loc.rs` resolves all three.
+    /// Tie the node being written to an address (`doc/dsl.md` §6.2). A leaf anchors its own line
+    /// and a node with children its whole block. Called more than once, a node is more than one
+    /// address.
     pub fn anchor(&mut self, address: impl Into<String>) {
         if let Some(line) = self.line.as_mut() {
             line.anchors.push(address.into());
         }
     }
 
-    /// Tie the argument just written to an address of its own.
-    ///
-    /// [`Emitter::anchor`] covers a node; this covers one *value* on it, which is what a grid
-    /// row needs — a row of twelve cells is one line and twelve places, and a code view that
-    /// could only say "row 7" would be the coarser half of §6.2's promise.
+    /// Tie the argument just written to an address of its own — one cell of a grid row.
     pub fn anchor_last(&mut self, address: impl Into<String>) {
         if let Some(token) = self.tokens.last() {
             self.anchors.push(Anchor {
@@ -135,11 +111,8 @@ impl Emitter {
         self.token(kind_of(&value), start);
     }
 
-    /// An argument that is a bare word rather than data — a kind name, a range, an address.
-    ///
-    /// The same bytes a string argument would produce when it happens to be a bare identifier,
-    /// and a different *token*: `sheet Sales` and `format B2:C5 currency` both read as strings,
-    /// but only one of them is a value somebody typed into a cell.
+    /// An argument that is a bare word rather than data — a kind name, a range, an address. Same
+    /// bytes as a string argument, different token.
     pub fn arg_word(&mut self, word: &str) {
         self.space();
         let start = self.text.len();
@@ -148,16 +121,9 @@ impl Emitter {
         self.token(TokenKind::Keyword, start);
     }
 
-    /// An argument that is always **quoted**, whatever is in it.
-    ///
-    /// [`Emitter::arg`] prints through `KdlValue`, which drops the quotes whenever a string
-    /// happens to be a bare identifier — excellent for `row North 4200`, and wrong for a
-    /// paragraph, since KDL's bare identifiers admit `*` and a paragraph beginning `**bold**`
-    /// would go to the page naked. Prose is a string and looks like one.
-    ///
-    /// Still `KdlValue`'s printer, per this module's rule: a value it decides to quote is taken
-    /// as it comes, and one it prints bare is *by definition* free of anything an escape covers,
-    /// so putting quotes round it is the whole of the difference.
+    /// An argument that is always quoted. [`Emitter::arg`] drops the quotes from a bare
+    /// identifier, which KDL lets contain `*`, so a paragraph starting `**bold**` would go to the
+    /// page unquoted.
     pub fn arg_string(&mut self, text: &str) {
         self.space();
         let start = self.text.len();
@@ -174,18 +140,11 @@ impl Emitter {
         self.token(TokenKind::Text, start);
     }
 
-    /// An argument as one of KDL's **raw** strings — `#"…"#`, where no escape means anything.
-    ///
-    /// A container-level feature (it is KDL's, not any document type's), and one an application
-    /// reaches for when its own notation would otherwise fill a line with backslashes:
-    /// `doc/dsl.md` §3.5's paragraph *about* markdown. The caller is responsible for the string
-    /// being one a raw form can hold — no `"#` in it — which is why this is `_raw` rather than
-    /// something that decides for itself.
+    /// An argument as a KDL raw string (`#"…"#`), for notation that would otherwise fill a line
+    /// with backslashes. The caller ensures it contains no `"#`.
     pub fn arg_raw(&mut self, text: &str) {
-        // A raw string has no escapes by definition, so a code point KDL will not accept
-        // literally cannot be in one — the request falls back to the quoted form, which can
-        // spell it. Deciding that here rather than at the call site is the point: which
-        // characters KDL admits is the container's business and no document type's.
+        // A code point KDL refuses literally cannot be in a raw string; fall back to the quoted
+        // form, which can escape it.
         if text.chars().any(is_disallowed) {
             return self.arg_string(text);
         }
@@ -285,26 +244,15 @@ impl Emitter {
     }
 }
 
-/// How a value is spelled in a projection — the one function that answers it.
-///
-/// `KdlValue`'s own `Display`, per this module's rule, with the escaping the container has to add
-/// on top — the code points KDL will not see literally. It is public because the *splice* needs
-/// the same answer as the writer: `source.rs` replaces one value in the retained text, and a
-/// value spelled two ways by two functions is a bijection that holds until the first file that
-/// exercises the difference.
+/// How a value is spelled in a projection: `KdlValue`'s `Display` plus the escapes the container
+/// adds. Public because `source.rs` splices values and must spell them the same way.
 pub fn repr(value: &KdlValue) -> String {
     escape_disallowed(&value.to_string())
 }
 
-/// The code points KDL refuses to see *literally* in a document — the C0 controls it does not
-/// have an escape for, the Unicode direction controls, and the byte-order mark
-/// (`disallowed-literal-code-points`, and the reason for it is Trojan Source).
-///
-/// This exists because `kdl`'s own printer emits them raw, so its output does not always parse:
-/// one document in LibreOffice's Writer corpus carries a U+200E, and projecting it produced a
-/// file `kdl` itself rejected. Escaping them here is the narrowest possible fix and keeps this
-/// module's rule intact — the printer still decides how a string is spelled, and this only
-/// rewrites the characters it may not leave standing.
+/// The code points KDL refuses to see literally: C0 controls without an escape, the Unicode
+/// direction controls and the byte-order mark (`disallowed-literal-code-points`). `kdl`'s own
+/// printer emits them raw, and a U+200E in a corpus document produced a file `kdl` rejected.
 fn is_disallowed(c: char) -> bool {
     matches!(c,
         '\u{0000}'..='\u{0008}'
@@ -341,10 +289,8 @@ fn kind_of(value: &KdlValue) -> TokenKind {
 }
 
 impl DocumentKind {
-    /// The one word a projection header spells this kind as (`doc/dsl.md` §3.3).
-    ///
-    /// Not [`DocumentKind::label`], which is prose for a banner and says "text document". This
-    /// is an identifier in a file format and has to stay exactly as short as it is.
+    /// The one word a projection header spells this kind as (`doc/dsl.md` §3.3) — an identifier,
+    /// unlike [`DocumentKind::label`].
     pub fn label_word(self) -> &'static str {
         match self {
             DocumentKind::Spreadsheet => "spreadsheet",
@@ -440,9 +386,7 @@ mod tests {
         assert_eq!(comments, ["// Q3 forecast."]);
     }
 
-    /// **D9's floor.** Whatever a shell does with the pieces of a line, concatenating them has to
-    /// give the line back — otherwise a code view silently drops a brace or an indent and nobody
-    /// notices until a screenshot.
+    /// Concatenating a line's pieces gives the line back, or a code view drops a brace.
     #[test]
     fn every_piece_of_every_line_puts_the_line_back_together() {
         let projection = sample();

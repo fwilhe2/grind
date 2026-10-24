@@ -2,16 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Reading and writing OpenDocument — the part that is the same for every document type.
-//! **\[GENERIC\]**
-//!
-//! `doc/ods-format.md` marks its own sections `[GENERIC]` or `[ODS]`, and this module is the
-//! first set: §1 (packaging, both physical forms), §8 (the reading architecture) and §8.1
-//! (name resolution). None of it knows what a cell or a paragraph is.
-//!
-//! What each document type adds is a `read` and a `write` of its own, driven by
-//! [`context::parse`] over contexts it defines — `grind_sheet::odf` is the worked example, and
-//! §10 is the note that said this would happen.
+//! Reading and writing OpenDocument — the part that is the same for every document type: packaging
+//! in both forms, the reading architecture and name resolution (`doc/ods-format.md` §1, §8, §8.1).
+//! **\[GENERIC\]** Each document type adds its own `read` and `write`, driven by
+//! [`context::parse`].
 
 pub mod context;
 pub mod envelope;
@@ -22,18 +16,11 @@ pub mod xml;
 
 use std::path::Path;
 
-/// Which physical form a document takes (doc/ods-format.md §1).
+/// Which physical form a document takes (`doc/ods-format.md` §1). Reading sniffs the form from the
+/// bytes; writing has to choose one.
 ///
-/// Reading sniffs the form from the bytes, because an extension is a hint from a filesystem
-/// rather than a fact about the data. Writing has to *choose* one, so this is the only place
-/// the distinction is an input rather than an observation.
-///
-/// **Three forms, not two.** The projection (`doc/dsl.md` §9) is the third, and it is a peer
-/// of the other two rather than an export: it is bijective with the model, so a document
-/// written as one and read back is the same document. That is exactly what the other two
-/// promise, and it is why it belongs in this enum instead of in a `grind export` verb — every
-/// caller that already asks "which form?" gets the answer without knowing the projection
-/// exists.
+/// The projection (`doc/dsl.md` §9) is the third form and a peer of the other two: it is bijective
+/// with the model, so every caller that asks "which form?" gets it for free.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Form {
     /// A zip package — `.ods`, `.odt` (§1.1).
@@ -41,26 +28,12 @@ pub enum Form {
     /// One flat XML file — `.fods`, `.fodt` (§1.2).
     Flat,
     /// The projection — `.grind`, KDL rather than XML (`doc/dsl.md`).
-    ///
-    /// Whether an application *has* one is per document type: the spreadsheet does, and the
-    /// word processor's is D2. Writing this form from a crate that has no projection is an
-    /// error naming the gap, not a silent fall back to XML — a caller that asked for a
-    /// `.grind` and got flat XML under that name has been lied to.
     Projection,
 }
 
 impl Form {
-    /// The form a path's extension asks for — **and the flat form when it asks for nothing.**
-    ///
-    /// A hint from a filesystem is the right input *here* and the wrong one for reading: a
-    /// caller writing to `report.fodt` has said which form it wants, whereas a caller reading
-    /// `report.xml` has said nothing at all.
-    ///
-    /// The default is the decision in `doc/flat-first.md`, and it is a product decision rather
-    /// than a technical one: **in doubt, write the form that diffs.** `.ods` and `.odt` still
-    /// mean the package, because naming one is not doubt — but a path with no extension, or one
-    /// nothing here recognises, gets flat XML. A zip in a repository is one opaque blob per
-    /// commit; the same document flat is a file review can read.
+    /// The form a path's extension asks for, and the flat form when it asks for nothing: in doubt,
+    /// write the form that diffs (`doc/flat-first.md`). `.ods` and `.odt` still mean the package.
     pub fn from_path(path: &Path) -> Form {
         match path.extension().and_then(|e| e.to_str()) {
             // The package extensions, named exhaustively. Everything else — including no
@@ -80,10 +53,8 @@ impl Form {
         }
     }
 
-    /// The extension a *new* document of this kind should be saved under.
-    ///
-    /// One place, so that a shell offering "Save As" and the CLI creating a file cannot disagree
-    /// about what an unnamed document is called (`doc/flat-first.md`).
+    /// The extension a new document of this kind is saved under, so a shell's Save As and the CLI
+    /// agree (`doc/flat-first.md`).
     pub fn extension(self, kind: crate::DocumentKind) -> &'static str {
         use crate::DocumentKind::{Presentation, Spreadsheet, Text};
         match (self, kind) {

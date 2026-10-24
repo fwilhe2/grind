@@ -26,13 +26,9 @@ pub const MAX_PART_BYTES: u64 = 512 * 1024 * 1024;
 /// Every part together, decompressed — what a zip bomb's amplification is measured against.
 pub const MAX_TOTAL_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
-/// Open a package, refusing one whose own directory already says it is a bomb: more parts
-/// than [`MAX_PARTS`], or sizes claimed past [`MAX_PART_BYTES`] or [`MAX_TOTAL_BYTES`].
-///
-/// A claim is only a claim — the header that says how big a part is costs nothing to write —
-/// so this is the cheap half, and [`read_entry`] is the half that holds whatever a header
-/// said. Loop A found the reason for both: a 375-byte `.ods` whose `content.xml` claimed 4 GB
-/// aborted the process, because the reader trusted the claim with `Vec::with_capacity`.
+/// Open a package, refusing one whose own directory says it is a bomb: more parts than
+/// [`MAX_PARTS`], or sizes claimed past [`MAX_PART_BYTES`] or [`MAX_TOTAL_BYTES`]. A claim is only
+/// a claim; [`read_entry`] enforces the limits on what actually arrives.
 pub fn archive(bytes: &[u8]) -> Result<zip::ZipArchive<Cursor<&[u8]>>> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
         .map_err(|e| Error::Package(format!("not a readable ODF package: {e}")))?;
@@ -64,10 +60,9 @@ pub fn archive(bytes: &[u8]) -> Result<zip::ZipArchive<Cursor<&[u8]>>> {
     Ok(archive)
 }
 
-/// One entry's bytes, read to the end — but never more than [`MAX_PART_BYTES`] whatever its
-/// header claimed, never allocated up front from that claim, and an allocation that fails an
-/// error rather than an abort. Every decompression of a package part in the suite goes through
-/// here.
+/// One entry's bytes, but never more than [`MAX_PART_BYTES`] whatever its header claimed, never
+/// allocated from that claim, and an allocation failure is an error rather than an abort. Every
+/// decompression of a package part goes through here.
 pub fn read_entry(entry: &mut impl Read) -> std::io::Result<Vec<u8>> {
     read_bounded(entry, MAX_PART_BYTES)
 }
@@ -93,21 +88,17 @@ fn read_bounded(entry: &mut impl Read, limit: u64) -> std::io::Result<Vec<u8>> {
     }
 }
 
-/// Is this the package form rather than the flat form?
-///
-/// Sniffed from the bytes, not the file extension: `.fods` content turns up under `.xml`,
-/// and an extension is a hint from a filesystem rather than a fact about the data.
+/// Is this the package form rather than the flat form? Sniffed from the bytes, never the
+/// extension.
 pub fn is_package(bytes: &[u8]) -> bool {
     bytes.starts_with(ZIP_MAGIC)
 }
 
 /// Extract `content.xml` from a document in either form.
 ///
-/// Known gap: §9 describes LibreOffice falling back to a brute-force scan for local file
-/// headers when a zip's central directory is unusable. Not implemented — the `zip` crate
-/// handles well-formed archives, and a corrupt-archive recovery path belongs with the
-/// explicit repair mode of §8.2 rather than being smeared into the normal read. If loop A
-/// ever fails on a corpus file for this reason, that is the trigger to build it.
+/// Known gap: LibreOffice falls back to a brute-force scan for local file headers when a zip's
+/// central directory is unusable (§9). That belongs with the explicit repair mode of §8.2, and
+/// waits for a corpus file that needs it.
 pub fn content_xml(bytes: &[u8]) -> Result<Vec<u8>> {
     if !is_package(bytes) {
         return Ok(bytes.to_vec());
@@ -122,31 +113,20 @@ pub fn content_xml(bytes: &[u8]) -> Result<Vec<u8>> {
     let mut file = archive
         .by_name("content.xml")
         .map_err(|e| Error::Package(format!("no content.xml in package: {e}")))?;
-    // **Not `?`.** Decompressing a zip entry reports a corrupt one — a bad CRC-32, a truncated
-    // deflate stream — as an `io::Error`, and letting that convert into [`Error::Io`] would say
-    // "the filesystem failed" about a file that was read from disk perfectly and is simply
-    // damaged inside. Loop A found this: a fuzzer's corrupt `.odt` came back as `io: Invalid
-    // checksum`, which is true of no filesystem anywhere.
+    // Not `?`: a corrupt entry (bad CRC, truncated deflate) arrives as an `io::Error`, and
+    // converting it to [`Error::Io`] would blame the filesystem for a damaged file.
     read_entry(&mut file)
         .map_err(|e| Error::Package(format!("content.xml will not decompress: {e}")))
 }
 
-/// `styles.xml`, if the package has one.
-///
-/// Separate from [`content_xml`] because it is optional in a way content is not: the flat
-/// form has no such part at all (its `office:styles` sits in the one file), and a package
-/// written minimally — ours is — leaves it out. A document referencing a style that lived
-/// only there loses the style, never the document, so every failure here is `None`.
+/// `styles.xml`, if the package has one. Optional, so every failure is `None`: a style that lived
+/// only there is lost, never the document.
 pub fn styles_xml(bytes: &[u8]) -> Option<Vec<u8>> {
     part(bytes, "styles.xml")
 }
 
-/// Any other part of a package, by its path inside the zip — `Pictures/foo.jpg`, the target of
-/// a `draw:image`'s `xlink:href` (rng:1626), being the reason this exists rather than only
-/// [`content_xml`] and [`styles_xml`]. `None` for the flat form (there is no separate part to
-/// fetch — everything is already in the one file a caller has) and for anything the zip does
-/// not actually hold, on the same "lose the picture, not the document" principle as
-/// [`styles_xml`].
+/// Any other part of a package by its path, such as `Pictures/foo.jpg`. `None` for the flat form
+/// and for a part the zip does not hold.
 pub fn part(bytes: &[u8], path: &str) -> Option<Vec<u8>> {
     if !is_package(bytes) {
         return None;
@@ -156,11 +136,8 @@ pub fn part(bytes: &[u8], path: &str) -> Option<Vec<u8>> {
     read_entry(&mut file).ok()
 }
 
-/// Does the manifest declare any part as encrypted?
-///
-/// Worth detecting up front. A password-protected document's `content.xml` is ciphertext,
-/// so without this the reader reports a bogus XML syntax error for a file that is
-/// perfectly well formed and simply not ours to open. Absence of a key is not corruption.
+/// Does the manifest declare any part as encrypted? Without this, a password-protected document
+/// reports a bogus XML syntax error.
 fn is_encrypted<R: std::io::Read + std::io::Seek>(archive: &mut zip::ZipArchive<R>) -> bool {
     let Ok(mut manifest) = archive.by_name("META-INF/manifest.xml") else {
         return false;
@@ -178,14 +155,10 @@ fn is_encrypted<R: std::io::Read + std::io::Seek>(archive: &mut zip::ZipArchive<
 /// declares it in the manifest and each content part declares it again on its root.
 pub const VERSION: &str = "1.4";
 
-/// A document inside the package — an embedded object's own document: a directory of its own,
-/// holding a `content.xml` rooted at `office:document-content`, and declared in the manifest by
-/// a directory entry that carries its media type. **\[GENERIC\]** — what kind of document it
-/// is, and what it says, are the caller's business; a spreadsheet's charts are the one caller.
-///
-/// This is how LibreOffice writes an embedded chart in a package (`Object 1/content.xml`,
-/// `doc/chart-format.md`), and the only way it *reads* one there: an inline `office:document`
-/// inside a package's `draw:object` is valid ODF, and LibreOffice drops it on load.
+/// A document inside the package — an embedded object's own directory with a `content.xml` rooted
+/// at `office:document-content`, declared in the manifest with its media type. This is how
+/// LibreOffice writes an embedded chart in a package, and the only way it reads one there: it
+/// drops an inline `office:document` inside a package's `draw:object` (`doc/chart-format.md`).
 pub struct SubDocument {
     /// The directory, with no leading `./` and no trailing `/` — `Object 1`.
     pub directory: String,
@@ -230,10 +203,8 @@ pub fn subdocument_entries(sub: &SubDocument) -> [String; 2] {
     ]
 }
 
-/// `META-INF/manifest.xml` for a minimal package: the document itself and `content.xml`.
-///
-/// Minimal by intent (§1.4) — a manifest lists what the package *holds*, and this writer holds
-/// two entries. Listing a `styles.xml` that is not there would be a lie a reader acts on.
+/// `META-INF/manifest.xml` for a minimal package: the document itself and `content.xml`, and
+/// nothing the package does not hold (§1.4).
 pub fn manifest(mimetype: &str) -> String {
     manifest_with(mimetype, false, &[])
 }
@@ -267,11 +238,8 @@ fn manifest_with(mimetype: &str, styles: bool, subdocuments: &[SubDocument]) -> 
     )
 }
 
-/// Wrap a `content.xml` as a package (§1.1). **\[GENERIC\]** — the only thing that varies
-/// between document types is the media type string.
-///
-/// `mimetype` goes first, **stored uncompressed**, raw bytes, no trailing newline: readers
-/// sniff it at a fixed offset before parsing any XML, so this is not somewhere to be creative.
+/// Wrap a `content.xml` as a package (§1.1). `mimetype` goes first, stored uncompressed, with no
+/// trailing newline: readers sniff it at a fixed offset.
 pub fn write_package(mimetype: &str, content: &str) -> Result<Vec<u8>> {
     write_package_with(mimetype, content, None, &[])
 }
@@ -350,9 +318,8 @@ mod tests {
         bytes
     }
 
-    /// The audit's 375-byte `.ods`: its `content.xml` claimed 4 GB, the reader believed it
-    /// with `Vec::with_capacity`, and the allocation aborted the process — every window with
-    /// unsaved work in it gone on File ▸ Open.
+    /// A part's header may claim gigabytes; trusting it with `Vec::with_capacity` aborts the
+    /// process.
     #[test]
     fn a_part_claiming_gigabytes_is_an_error_not_an_abort() {
         let bytes = lying(0xFFFF_FFF0);
@@ -374,10 +341,8 @@ mod tests {
         assert_eq!(read_bounded(&mut small, 1 << 20).unwrap(), b"<x/>");
     }
 
-    /// §1.1's fixed-offset contract, which is the whole reason `mimetype` is written the way
-    /// it is: a reader identifies the document *without unzipping anything*, so the entry has
-    /// to be first, stored, and carry no extra field. Get any of the three wrong and the file
-    /// is still a valid zip that nothing recognises.
+    /// §1.1's fixed-offset contract: `mimetype` first, stored, with no extra field, or the file is
+    /// a valid zip nothing recognises.
     #[test]
     fn the_package_starts_with_an_uncompressed_mimetype_entry() {
         const MEDIA: &str = "application/vnd.oasis.opendocument.text";

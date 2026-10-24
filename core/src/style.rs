@@ -4,37 +4,21 @@
 
 //! The styling vocabulary every document type is made of. **\[GENERIC\]**
 //!
-//! ODF builds a cell style, a paragraph style and a text span style out of the *same* pieces:
-//! XSL-FO properties (`fo:font-weight`, `fo:color`, `fo:border-left`), ODF lengths, and
-//! `#rrggbb` colours. What differs per document type is which pieces a style carries and what
-//! element it hangs off — so the pieces live here and the structs live with their document
-//! type (`grind_sheet::style::CellStyle` is the worked example).
+//! A cell style, a paragraph style and a text style are built from the same pieces — XSL-FO
+//! properties, ODF lengths, `#rrggbb` colours — so the pieces live here and each document type's
+//! style struct lives with it.
 //!
-//! **The values are ODF's own, kept verbatim.** `fo:font-weight` is `"bold"`, a border is
-//! `"0.5pt solid #000000"`, a colour is `"#ffff00"` — these are XSL-FO strings, and parsing
-//! them into a typed model would buy nothing until something *renders* them. What matters is
-//! that a document keeps what it came with, and a string does that exactly. When a renderer
-//! needs a colour as three bytes, it parses one string in one place.
-//!
-//! Validation therefore lives at the edge that has a user, not here: a CLI takes an enum for
-//! alignment and checks a colour's syntax, and a *document's* value is whatever the document
-//! said, because rejecting it would lose the element rather than the attribute.
+//! Values are ODF's own, kept verbatim as strings, so a document keeps what it came with; a
+//! renderer that needs a number parses one string in one place. Validation lives where a user
+//! types ([`color`], [`border`]): a document's value is whatever it said, since rejecting it would
+//! lose the element.
 
 /// Which edge a border is on. The array order of a style's four border slots.
 pub const EDGES: [&str; 4] = ["left", "right", "top", "bottom"];
 
-/// The colours a shell offers by default, and the names a person may spell them by — the
-/// palette at <https://clrs.cc/>.
-///
-/// A **default, never a limit**: ODF takes any `#rrggbb`, a style keeps whatever the document
-/// said, and a shell may still ask for a colour that is not here. What this fixes is the two
-/// places a colour is *chosen* rather than read — a GUI's swatches and a CLI's `--color` — so
-/// that a document coloured from one shell and one coloured from another do not need a second
-/// table to agree.
-///
-/// The hexes are held against a real document rather than against this comment:
-/// `sheet/tests/data/samples/custom-colors.fods` is this palette as LibreOffice wrote it, with
-/// each colour's name in the cell it fills, and a test reads it back.
+/// The colours a shell offers by default, and the names a person may spell them by
+/// (<https://clrs.cc/>). A default, never a limit: any `#rrggbb` is accepted.
+/// `sheet/tests/data/samples/custom-colors.fods` holds the hexes to what LibreOffice wrote.
 pub const PALETTE: [(&str, &str); 17] = [
     ("navy", "#001f3f"),
     ("blue", "#0074d9"),
@@ -65,18 +49,9 @@ pub fn palette(name: &str) -> Option<&'static str> {
         .map(|(_, hex)| *hex)
 }
 
-/// A colour as a *person* spelled it, resolved to what ODF stores.
-///
-/// A [`PALETTE`] name first, so `--color navy`, a GUI's navy swatch and a generator's
-/// `style().color("navy")` all write the same attribute; a `#rrggbb` or `transparent` is kept
-/// as it is; anything else is an error naming what was allowed.
-///
-/// **This is where a user's typing enters, which is not where a document's value does.** The
-/// module comment above is the rule: a colour read out of a file is whatever the file said and
-/// is never checked, because rejecting it would lose the element rather than the attribute. So
-/// this is deliberately not called by any reader — only by the surfaces where somebody
-/// *chooses* a colour, and it lives here so that those surfaces cannot disagree about what
-/// `navy` is.
+/// A colour as a person spelled it, resolved to what ODF stores: a [`PALETTE`] name, a `#rrggbb`
+/// or `transparent`, else an error naming what is allowed. Called only where somebody chooses a
+/// colour, never by a reader.
 pub fn color(value: &str) -> Result<String, String> {
     if let Some(hex) = palette(value) {
         return Ok(hex.to_owned());
@@ -116,12 +91,9 @@ pub fn border(value: &str) -> Result<String, String> {
     }
 }
 
-/// A border as its three parts — width in points, line style, colour.
-///
-/// Not how a border is *stored*: this exists because LibreOffice re-quantises the width
-/// (doc/ods-format.md §5.4), so anything comparing two borders across a round trip has to
-/// compare the number rather than the text. `None` for anything that is not the three-part
-/// form, including ODF's `"none"`.
+/// A border as its three parts — width in points, line style, colour — for comparing borders
+/// across a LibreOffice round trip, which re-quantises the width (`doc/ods-format.md` §5.4).
+/// `None` for anything else, including `"none"`.
 pub fn border_parts(border: &str) -> Option<(f64, &str, &str)> {
     let mut fields = border.split_whitespace();
     let width = fields.next()?;
@@ -131,16 +103,9 @@ pub fn border_parts(border: &str) -> Option<(f64, &str, &str)> {
     Some((points, style, color))
 }
 
-/// An ODF length (`"2.258cm"`, `"0.889in"`, `"64pt"`) in millimetres.
-///
-/// The one parser, in one place — a column width, a row height, a page margin and a paragraph
-/// indent are all stored as the strings the document wrote, and everything that has to
-/// *measure* one comes through here: a renderer laying out a grid, and loop C comparing a
-/// width across a round trip that respells `2.258cm` as `22.58mm`.
-///
-/// `None` for anything that is not a number and one of §18's units. `px` is deliberately
-/// absent: ODF allows it, but a pixel has no defined size in a document, and nothing in the
-/// corpus writes one.
+/// An ODF length (`"2.258cm"`, `"0.889in"`, `"64pt"`) in millimetres — the one parser everything
+/// that measures a stored length goes through. `None` for anything that is not a number and one of
+/// §18's units; `px` has no defined size in a document and is not accepted.
 pub fn length_mm(length: &str) -> Option<f64> {
     let length = length.trim();
     let digits = length.trim_end_matches(|c: char| c.is_ascii_alphabetic());
@@ -155,9 +120,7 @@ pub fn length_mm(length: &str) -> Option<f64> {
     Some(digits.parse::<f64>().ok()? * per_mm)
 }
 
-/// A measurement back as an ODF length. Millimetres, three decimals — enough that a
-/// round trip through LibreOffice's own `cm` spelling stays inside loop C's tolerance, and
-/// short enough not to write `12.000000000000002mm`.
+/// A measurement back as an ODF length: millimetres, three decimals.
 pub fn mm_length(mm: f64) -> String {
     format!("{:.3}mm", mm)
 }
@@ -198,19 +161,10 @@ mod tests {
     }
 }
 
-/// The text properties that decide how *wide* a piece of text is.
-///
-/// The metrics half of a character style, and nothing else: no colour, no underline, no
-/// background — those change how text looks and not how much room it takes, so a layout engine
-/// has no use for them. Values are ODF's own and verbatim, exactly as everywhere else in this
-/// module; the shell's [`crate::layout::Metrics`] implementation is what turns
-/// `Some("10.5pt")` into a number, because only it knows what unit it is answering in.
-///
-/// Deliberately **not** a document type's style struct. `grind_sheet::style::CellStyle` carries
-/// these four fields among a dozen others and can hand one of these out; a text run's character
-/// style will do the same once style *definitions* are read (`doc/text-core.md` — until then a
-/// run measures with the default, which is the one honest thing to do with a style name whose
-/// properties nobody has looked up).
+/// The text properties that decide how wide a piece of text is — no colour, underline or
+/// background, which change how text looks but not the room it takes. Values are ODF's own; a
+/// shell's [`crate::layout::Metrics`] turns them into numbers. `CellStyle` and `CharStyle` each
+/// hand one out.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TextStyle {
     /// `fo:font-family`, or `style:font-name` resolved through `office:font-face-decls`.

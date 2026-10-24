@@ -4,12 +4,9 @@
 
 //! Namespace URIs and name resolution. **\[GENERIC\]**
 //!
-//! Dispatch keys on `(namespace-uri, local-name)`, never on the prefix written in the
-//! document (doc/ods-format.md §8.1). Prefixes in the wild vary — `office:`, `ns0:`, a
-//! default `xmlns` with no prefix at all — and they can be redeclared on any element, so
-//! they carry no meaning. An unrecognised URI is not an error; it resolves to [`Ns::Other`]
-//! and every lookup against it simply misses, which routes the element down the
-//! ignore-path in `context.rs`.
+//! Dispatch keys on `(namespace-uri, local-name)`, never the prefix (`doc/ods-format.md` §8.1):
+//! prefixes vary and can be redeclared on any element. An unrecognised URI resolves to
+//! [`Ns::Other`], which every lookup misses, routing the element to `Ignore`.
 
 /// A namespace we recognise. Everything else is [`Ns::Other`] — a value, not a failure.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -39,9 +36,7 @@ pub enum Ns {
     /// `loext:num-list-format` is the label Writer actually shows, where ODF's own attributes
     /// cannot spell it (`doc/odt-format.md` §5c fact 21).
     Loext,
-    /// `draw:` — `draw:frame`, `draw:image`, and everything else a drawing shape is made of.
-    /// Only the two above are resolved by anything today; the rest route to `Ignore` like any
-    /// other unrecognised content.
+    /// `draw:` — `draw:frame`, `draw:image`, and the rest of a drawing shape.
     Draw,
     /// `chart:` — `chart:chart`, `chart:series`, `chart:axis` and the rest of a chart's own
     /// embedded document (`grind_sheet::chart`, `doc/chart-format.md`).

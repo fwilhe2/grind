@@ -4,29 +4,18 @@
 
 //! Carrying what the model does not own through a save that regenerates. **\[GENERIC\]**
 //!
-//! **The rule this module exists for: saving never makes an existing ODF file worse.** A
-//! document type's writer regenerates the parts its model owns — the body, and the automatic
-//! styles the body points at — whenever an edit cannot be spliced into the original bytes (a
-//! new paragraph, a changed cell style). Before this module, regenerating meant writing a
-//! *fresh* document, so one press of Enter in a LibreOffice document threw away its
-//! `office:styles`, its master pages (page size, margins, headers, footers), its font
-//! declarations, `office:meta` and `office:settings` — and in a package `styles.xml`,
-//! `meta.xml`, `settings.xml` and every other entry besides.
+//! Saving never makes an existing ODF file worse. When an edit cannot be spliced, a writer
+//! regenerates the parts its model owns, and this module merges them into the file they came from:
 //!
-//! Now a regenerate is **merged into the file it came from**:
+//! * [`merge`] keeps the original's prolog, root start tag and every top-level part verbatim, and
+//!   takes from the generated document only `office:body` and the children of
+//!   `office:automatic-styles`, `office:styles` and `office:font-face-decls`, declaring any
+//!   namespace they need.
+//! * [`repackage`] does the same for a zip: every original entry survives, `content.xml` is the
+//!   merged content, and the manifest keeps the original's entries.
 //!
-//! * [`merge`] keeps the original document's prolog, its root start tag and every top-level
-//!   part verbatim, and takes from the generated document only `office:body` (which replaces
-//!   the original's) and the children of `office:automatic-styles`, `office:styles` and
-//!   `office:font-face-decls` (which join the original's). Any namespace the generated parts
-//!   use and the original root does not declare is added to it.
-//! * [`repackage`] does the same one level up: every entry of the original zip survives,
-//!   `content.xml` is the merged content, and the manifest keeps the original's entries.
-//!
-//! This is not a model of the parts it carries — nothing here understands a master page. It is
-//! the same retain-and-splice trick `odf::source` plays per cell or per paragraph, played per
-//! top-level part, which is why it can stay generic: the only vocabulary it knows is the
-//! document envelope (`office:`) and a style's identity (`style:name`, `style:family`).
+//! Nothing here understands a master page; the only vocabulary it knows is the document envelope
+//! (`office:`) and a style's identity (`style:name`, `style:family`).
 
 use std::collections::{BTreeMap, HashSet};
 use std::io::{Cursor, Write};
@@ -241,9 +230,8 @@ pub(crate) fn qname(tag: &[u8]) -> &[u8] {
     &rest[..end]
 }
 
-/// `element`, with `extra` declarations put on its own start tag. Used only when a prefix the
-/// generated part uses is bound to something else on the original root, which no real
-/// document does — but "no real document does" is not a reason to write a wrong one.
+/// `element`, with `extra` declarations put on its own start tag — for a prefix the generated part
+/// uses that the original root binds to something else.
 fn declared(element: &[u8], extra: &str) -> Vec<u8> {
     if extra.is_empty() {
         return element.to_vec();
@@ -590,15 +578,11 @@ pub type PropertyPatch<'a> = (&'a str, Vec<(String, Option<String>)>);
 
 /// A `style:style` element rebuilt for a new name with only some of its properties changed:
 /// `attributes` set or removed on its own start tag, and each of `properties` on the property
-/// element it names — added, in the place `order` gives it among its siblings, when the
-/// style had none and something is to be set on it, and left out when it would come out empty.
-/// **Every other byte is the element's own**: its parent style, the properties no model reads,
-/// its `style:map`s, a vendor's attributes.
+/// element it names — added in the place `order` gives it when missing, and left out when it would
+/// come out empty. Every other byte is the element's own: its parent style, the properties no
+/// model reads, its `style:map`s, a vendor's attributes.
 ///
-/// The whole of "restyling never loses what the model does not read": a writer that changes a
-/// cell's background or a run's weight hands this the old style's element and the properties it
-/// owns, and gets back a style that differs from the old one in exactly those. `None` when the
-/// element cannot be read, and the caller writes a style of its own instead.
+/// `None` when the element cannot be read, and the caller writes a style of its own instead.
 pub fn patch_style(
     element: &str,
     attributes: &[(&str, Option<&str>)],
@@ -670,8 +654,6 @@ pub fn patch_style(
         match children.iter().find(|(name, _, _)| name == child) {
             Some((_, _, whole)) => {
                 let patched = set_attributes(&element[whole.clone()], &changes);
-                // A property element left with nothing to say goes, rather than staying as an
-                // empty declaration of nothing.
                 let bare = format!("<{child}/>");
                 let open = format!("<{child}></{child}>");
                 let replacement = match patched.trim() == bare || patched.trim() == open {
@@ -742,11 +724,9 @@ pub fn patch_style(
     Some(out)
 }
 
-/// **The last thing before bytes reach a file**: is this well-formed XML whose every element
-/// and attribute prefix is bound? A writer that merges or splices into somebody's document
-/// calls this on the result and refuses to write when it fails — a save that errors leaves the
-/// file on disk exactly as it was, and a save that writes a file nothing can open is the worst
-/// way there is to make a document worse.
+/// Is this well-formed XML whose every element and attribute prefix is bound? A writer that merges
+/// or splices into somebody's document calls this on the result and refuses to write when it
+/// fails, leaving the file on disk as it was.
 pub fn check(document: &[u8]) -> Result<()> {
     let bad = |why: String| {
         Err(Error::Xml(format!(
@@ -816,22 +796,15 @@ pub fn check_against(original: &[u8], output: &[u8]) -> Result<()> {
     }
 }
 
-/// Every element and every attribute inside `office:body`, counted — keyed by namespace URI
-/// rather than by prefix (`{uri}local` for an element, `{uri}element@{uri}attribute` for an
-/// attribute), so that two documents spelling one namespace with two prefixes still agree.
-///
-/// What a save is held to. A writer knows which of these keys it *owns* — the ones its model
-/// carries and regenerates, whose counts may move with any edit — and [`losses`] says which of
-/// the rest went down. Those are content the model never saw, and a save that drops them makes
-/// the file worse. `None` when the document cannot be read at all.
+/// Every element and attribute inside `office:body`, counted and keyed by namespace URI rather
+/// than prefix (`{uri}local`, `{uri}element@{uri}attribute`). A writer knows which keys it owns;
+/// [`losses`] reports which of the rest went down. `None` when the document cannot be read.
 pub fn body_vocabulary(document: &[u8]) -> Option<BTreeMap<String, usize>> {
     vocabulary_within(document, None, false)
 }
 
-/// [`body_vocabulary`] for the whole document — every part, the styles, master pages, metadata
-/// and settings as well as the body; everything but the root. What a conversion between the
-/// two forms (`odf::forms`) is held to: the same document, every element and attribute of it
-/// counted the same, whichever form it is in.
+/// [`body_vocabulary`] for the whole document below the root — what a conversion between the two
+/// forms (`odf::forms`) is held to.
 pub fn document_vocabulary(document: &[u8]) -> Option<BTreeMap<String, usize>> {
     vocabulary_within(document, None, true)
 }

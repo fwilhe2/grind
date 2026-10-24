@@ -4,86 +4,49 @@
 
 //! Breaking styled text into lines. **\[GENERIC\]**
 //!
-//! `doc/text-layout.md` is normative here, and the argument that put this file in `grind-core`
-//! rather than in a shell is worth repeating, because it is the project's own architecture rule
-//! meeting the one thing the core cannot know:
+//! `doc/text-layout.md` is normative. Down-arrow, Home, End, click-to-caret and selection extents
+//! are all defined in terms of a line, so line layout lives here rather than in each shell: where
+//! a line may break (UAX #14), how lines are filled, and every caret operation on a line. Font
+//! measurement is the shell's, through [`Metrics`].
 //!
-//! > Down-arrow, Home, End, Page Down, click-to-caret and selection extents are every one of
-//! > them defined in terms of **a line**. A line is not a thing in the ODF document — it is an
-//! > output of layout. So if layout lives in the shell, so does that half of the editing model,
-//! > three times over, in three shells that will disagree about where the cursor goes. That is
-//! > not a rendering difference. It is the program behaving differently depending on which
-//! > window you opened it in.
-//!
-//! So the core owns everything about layout that is **not a font question**: where a line may
-//! break (UAX #14), how lines are filled, and every caret operation that mentions one. It owns
-//! none of the font question, and asks the shell through [`Metrics`].
-//!
-//! **Two applications, one engine.** The input is a flat sequence of `(text, TextStyle)`
-//! [`Fragment`]s, which mentions no document type's vocabulary — a paragraph's runs produce
-//! one, and so does a wrapped spreadsheet cell. That is what keeps this R8-clean and what makes
-//! the abstraction real rather than invented for a single caller.
-//!
-//! **What this is not.** There is no page here: no page box, no widows or orphans, no headers,
-//! no footnote placement. Pagination is gated in `doc/not-doing.md` §2 behind loop D, and
-//! nothing in this module moves that line. And layout is **left-to-right only** — bidi is an
-//! explicit exclusion with its own gate, not an oversight (`doc/text-layout.md`, decision 1).
+//! The input is a flat sequence of [`Fragment`]s, which a paragraph's runs and a wrapped
+//! spreadsheet cell both produce. There are no pages here, and layout is left-to-right only
+//! (`doc/text-layout.md`, decision 1).
 
 use unicode_linebreak::{BreakOpportunity, linebreaks};
 
 use crate::style::TextStyle;
 
-/// How wide is a piece of text, and how tall is a line of it?
+/// How wide is a piece of text, and how tall is a line of it? Implemented with Pango, the
+/// browser's canvas, terminal cells, GDI, CoreText, and [`Fixed`].
 ///
-/// The two things the core cannot know, and therefore the entire surface between a layout and
-/// the shell drawing it. Implementations: Pango in GTK, the browser in the web shell,
-/// character cells in the terminal, [`Fixed`] in the CLI and in every test.
-///
-/// **The unit is the caller's own, and the core never converts.** Cells, Pango units, CSS
-/// pixels — it does not matter, as long as the `width` handed to [`wrap`] is in the same one.
-/// A core that invented a unit would need to know a DPI, which is a display's business.
+/// The unit is the caller's own and the core never converts: the `width` handed to [`wrap`] just
+/// has to be in the same one.
 pub trait Metrics {
-    /// The cumulative advance after each character of `text`, appended to `out`.
+    /// The cumulative advance after each character of `text`, appended to `out`: exactly
+    /// `text.chars().count()` values, never decreasing, the last being the width of the whole
+    /// string.
     ///
-    /// Exactly `text.chars().count()` values, each the width of `text` up to and including that
-    /// character, so the last is the width of the whole string. Never negative, never
-    /// decreasing.
-    ///
-    /// **Cumulative, and in one call, on purpose.** `advance("a") + advance("b")` is not
-    /// `advance("ab")` once kerning and ligatures are involved, so a per-character trait would
-    /// be quietly wrong and a prefix-measuring one quietly slow. Handing the provider the whole
-    /// string lets it shape once and answer everything, and it leaves the resulting [`Layout`]
-    /// **metric-free**: every caret x is already in it, so hit-testing and caret movement are
-    /// array lookups with no font in sight.
-    ///
-    /// What that still cannot see is kerning *across* two fragments — which is a boundary
-    /// between two different character styles, where kerning is arguably wrong anyway.
+    /// Cumulative and in one call because `advance("a") + advance("b")` is not `advance("ab")`
+    /// once kerning and ligatures are involved. It also leaves the resulting [`Layout`]
+    /// metric-free: hit-testing and caret movement are array lookups.
     fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>);
 
     /// The height of one line set in `style`, in the same unit.
     fn line_height(&self, style: &TextStyle) -> f32;
 
-    /// How far below a line's top its baseline sits, for text set in `style`.
-    ///
-    /// Only something that places glyphs itself needs this — the PDF (`doc/pdf-export.md`),
-    /// whose text is positioned on a baseline. A toolkit that draws a run from the top of its
-    /// box works its baseline out on its own, so the shells keep the default: four fifths of
-    /// the line, which is close for most Latin faces and never matters to them.
+    /// How far below a line's top its baseline sits, for text set in `style`. Only something that
+    /// places glyphs itself needs it (the PDF); the default is four fifths of the line.
     fn ascent(&self, style: &TextStyle) -> f32 {
         self.line_height(style) * 0.8
     }
 }
 
-/// One character wide per character, one unit tall.
+/// One character wide per character, one unit tall: what the CLI measures with (`grind text view
+/// --width 72`) and what tests use, since it makes line breaking exactly assertable.
 ///
-/// What the CLI measures with, so that `grind text view --width 72` is a real answer and every
-/// line operation is reachable without a display (`doc/plan.md` rule 4). Also what every test
-/// in the workspace uses, because a synthetic provider makes line breaking *exactly* assertable
-/// — a test can say "this breaks after 12 characters" and mean it.
-///
-/// **Not good enough for a terminal**, and deliberately not trying to be: a CJK ideograph
-/// occupies two cells and a combining mark none, which is `unicode-width`'s job. A terminal
-/// shell implements [`Metrics`] itself and the core stays free of that table.
+/// Not right for a terminal, where an ideograph takes two cells and a combining mark none; a
+/// terminal shell implements [`Metrics`] itself.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Fixed;
 
@@ -100,10 +63,6 @@ impl Metrics for Fixed {
 }
 
 /// A run of text that shares one set of metrics.
-///
-/// The unit of input, and the seam that keeps this module generic: a text document builds these
-/// from a paragraph's runs, a spreadsheet from a cell's display text, and neither vocabulary
-/// appears here.
 #[derive(Clone, Copy, Debug)]
 pub struct Fragment<'a> {
     pub text: &'a str,
@@ -140,11 +99,8 @@ impl Line {
     }
 }
 
-/// The result of breaking one paragraph's worth of fragments at a width.
-///
-/// A **plain value**: it carries the x of every caret position, so nothing below needs
-/// [`Metrics`] again. A shell can hold one, query it while painting and throw it away, which is
-/// the same contract `App::get_viewport` offers for content.
+/// The result of breaking one paragraph's worth of fragments at a width. It carries the x of every
+/// caret position, so nothing below needs [`Metrics`] again.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Layout {
     lines: Vec<Line>,
@@ -223,11 +179,8 @@ impl Layout {
         }
     }
 
-    /// The caret offset nearest to `x` on `line` — hit-testing a click.
-    ///
-    /// Nearest rather than "the character containing x", because a caret goes *between*
-    /// characters: clicking the right half of a letter puts the cursor after it, which is the
-    /// behaviour every editor has and the reason this rounds rather than truncates.
+    /// The caret offset nearest to `x` on `line` — hit-testing a click. Rounds rather than
+    /// truncates: a click on the right half of a letter puts the caret after it.
     pub fn offset_at(&self, line: usize, x: f32) -> usize {
         let Some(line) = self.lines.get(line) else {
             return self.len();
@@ -246,15 +199,12 @@ impl Layout {
         best
     }
 
-    /// Move a caret `delta` lines, keeping as close to `goal_x` as the target line allows.
+    /// Move a caret `delta` lines, keeping as close to `goal_x` as the target line allows. `None`
+    /// when the move would leave the layout, the caller's cue to carry on into the neighbouring
+    /// block.
     ///
-    /// `None` when the move would leave the layout — the caller's cue to carry on into the
-    /// previous or next block, which is what makes Down-arrow work across a paragraph boundary.
-    ///
-    /// `goal_x` is the caller's to remember. Walking down through a short line and out the
-    /// other side should return to the column you started in, and that is a property of a *run*
-    /// of keystrokes rather than of the document — so it is passed in rather than stored, and
-    /// a shell keeps it until the caret moves horizontally.
+    /// `goal_x` is the caller's to remember, so that walking down through a short line returns to
+    /// the starting column; a shell keeps it until the caret moves horizontally.
     pub fn step(&self, offset: usize, delta: isize, goal_x: f32) -> Option<usize> {
         let from = self.line_at(offset) as isize;
         let to = from.checked_add(delta)?;
@@ -265,27 +215,14 @@ impl Layout {
     }
 }
 
-/// Break `fragments` into lines no wider than `width`.
-///
-/// Greedy: fill a line until the next break opportunity would overflow it, then start another.
-/// Not Knuth–Plass — even paragraph-at-once justification is a typesetting refinement, and this
-/// is what a text editor does because it is what makes the line under the cursor stop moving
-/// while you type in it.
-///
-/// A `width` of zero or less means **do not wrap**: one line per mandatory break, which is what
-/// a CLI printing a document without `--width` wants and what a shell measuring intrinsic width
-/// asks for.
-///
-/// Break opportunities come from UAX #14 (`unicode-linebreak`), so this splits at the places
-/// Unicode says a line may end rather than at ASCII spaces — which is the difference between
-/// wrapping prose and wrapping English prose.
+/// Break `fragments` into lines no wider than `width`, greedily, at UAX #14 break opportunities. A
+/// `width` of zero or less means do not wrap: one line per mandatory break.
 pub fn wrap(fragments: &[Fragment<'_>], width: f32, metrics: &dyn Metrics) -> Layout {
     wrap_indented(fragments, width, metrics, 0.0)
 }
 
-/// [`wrap`], with the first line starting `first` further in than the others and breaking that
-/// much shorter — `fo:text-indent` (`doc/odt-format.md` §5c, fact 11). Negative hangs: the first
-/// line starts further out and has that much more room. Only a printed page asks for it today.
+/// [`wrap`], with the first line starting `first` further in and breaking that much shorter
+/// (`fo:text-indent`, `doc/odt-format.md` §5c fact 11). A negative indent hangs.
 pub fn wrap_indented(
     fragments: &[Fragment<'_>],
     width: f32,
@@ -384,9 +321,8 @@ pub fn wrap_tabbed(
         ascents.push(metrics.ascent(fragment.style));
     }
     let len = xs.len() - 1;
-    // A line is as tall as the tallest thing that could be on it. Per-line height would need
-    // the breaks first, and mixed font sizes inside one paragraph are rare enough that the
-    // simpler rule is the honest trade — named here rather than discovered.
+    // A line is as tall as the tallest fragment in the paragraph. Per-line height would need the
+    // breaks first, and mixed sizes within one paragraph are rare.
     let height = heights.iter().copied().fold(0.0_f32, f32::max).max(1.0);
     // An empty paragraph has no fragment to ask, and still has a line to sit on.
     let baseline = match ascents.iter().copied().reduce(f32::max) {
@@ -416,8 +352,6 @@ pub fn wrap_tabbed(
         *top += height;
     };
 
-    // The characters, and each one's own advance, for placing tabs — only when there is a tab
-    // to place, so a paragraph without one is measured exactly as it always was.
     let chars: Vec<char> = text.chars().collect();
     let text_chars = &chars;
     let tabbed = !tabs.is_empty() && chars.contains(&'\t');
@@ -512,8 +446,6 @@ pub fn wrap_tabbed(
         {
             push(start, end, &mut top, &mut lines);
             start = end;
-            // `last_fit` is deliberately not cleared here: every branch below assigns it, and
-            // clearing it first would be a store nothing reads.
         }
 
         if opportunity == BreakOpportunity::Mandatory {
@@ -878,9 +810,8 @@ mod tests {
         );
     }
 
-    /// Bidi is an explicit exclusion (`doc/text-layout.md`, decision 1). This test does not
-    /// assert that RTL looks right — it asserts that it does not *crash* or lose characters,
-    /// which is the whole of what is promised.
+    /// Bidi is excluded (`doc/text-layout.md`, decision 1); this asserts only that RTL text does
+    /// not crash or lose characters.
     #[test]
     fn right_to_left_text_lays_out_left_to_right_without_losing_anything() {
         let text = "\u{5e9}\u{5dc}\u{5d5}\u{5dd} world";
