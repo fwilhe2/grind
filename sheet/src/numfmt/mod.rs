@@ -2,29 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Number formats — ODF 1.4 Part 3 §16.27, and doc/ods-format.md §5.2. **\[ODS\]**
+//! Number formats — ODF 1.4 Part 3 §16.27, and `doc/ods-format.md` §5.2. **\[ODS\]**
 //!
-//! A number format is *display only*. The cell's value is the value (§5.2: "the number
-//! style only controls display"), and nothing here ever changes it — which is why a
-//! formatted cell still sums, compares and round-trips as the number it is.
+//! Display only: the cell's value is the value, so a formatted cell still sums, compares and
+//! round-trips as its number. A format is the spec's own shape, an ordered sequence of literal and
+//! value-bearing pieces, and there is no format-code string (`"#,##0.00"`, Excel's spelling)
+//! anywhere in the core. No XML here: `odf::read` builds these and `odf::write` puts them back.
 //!
-//! The model is the spec's own shape: a `number:*-style` is an **ordered sequence of
-//! pieces**, literal text and value-bearing elements interleaved, and rendering is a walk
-//! over that sequence. There is deliberately no format-code string (`"#,##0.00"`) anywhere
-//! in the core — that spelling is Excel's, ODF has no such attribute, and inventing one
-//! here would mean a translation layer in the one place this project exists not to have
-//! one. A shell that wants to *show* a code can build it from the parts.
-//!
-//! No XML in this module: `odf::read` builds these from elements and `odf::write` puts
-//! them back, so the format vocabulary has exactly one consumer on each side.
-//!
-//! Two things are deliberately not modelled, each named where it would go:
-//!
-//! * **Month and weekday names are English**, whatever the format's locale says. The
-//!   separators a locale decides live in `locale.rs`; a name table is a different order of
-//!   thing and wants CLDR, which is a dependency for two characters' worth of benefit.
-//! * `number:truncate-on-overflow="false"` — a duration longer than a day. Hours wrap at 24,
-//!   which is the attribute's default.
+//! Not modelled: month and weekday names are English whatever the locale (a name table wants
+//! CLDR), and `number:truncate-on-overflow="false"` — hours wrap at 24, the attribute's default.
 
 use serde::{Deserialize, Serialize};
 
@@ -33,10 +19,8 @@ use crate::formula::value::format_number;
 use crate::locale::{self, Locale};
 use crate::model::CellValue;
 
-/// Which `number:*-style` element this is.
-///
-/// Not decoration: the family decides how the *value* reaches the parts. A percentage style
-/// renders 0.5 as `50`, and the `%` is an ordinary text part beside it.
+/// Which `number:*-style` element this is. The family decides how the value reaches the parts: a
+/// percentage style renders 0.5 as `50`, with `%` an ordinary text part.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Kind {
     Number,
@@ -48,13 +32,10 @@ pub enum Kind {
     Text,
 }
 
-/// One `number:embedded-text`: text placed among a number's digits (rng:7242).
-///
-/// `position` is ODF's own count, measured (`doc/ods-format.md` §5.2): zero or more is how many
-/// **integer** digits stand to the text's right — `0` puts it just before the decimal separator,
-/// and one past the leading digit puts it in front — and a negative one reaches into the
-/// decimals, `-p` standing after `p - 1` of them (LibreOffice's extension; the schema's type is
-/// a plain integer).
+/// One `number:embedded-text`: text placed among a number's digits (rng:7242). `position` is ODF's
+/// count, measured (`doc/ods-format.md` §5.2): zero or more is how many integer digits stand to
+/// its right, and a negative one reaches into the decimals, `-p` standing after `p - 1` of them
+/// (LibreOffice's extension).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Embedded {
     pub position: i32,
@@ -130,15 +111,12 @@ pub enum Op {
     Ne,
 }
 
-/// One `style:map`: a condition and the format to use when it holds (§5.1).
-///
-/// This is how ODF spells a two-branch format — the red negative currency, the "show a dash
-/// for zero" — and the reason there is no sign or zero handling anywhere else in a format.
+/// One `style:map`: a condition and the format to use when it holds (§5.1) — how ODF spells a
+/// two-branch format such as a red negative or a dash for zero.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Map {
     pub op: Op,
-    /// The value compared against, as text, so `Format` stays `Eq` and `Hash` — a bit
-    /// pattern is not a sensible map key and this is only ever parsed and printed back.
+    /// The value compared against, as text, so `Format` stays `Eq` and `Hash`.
     pub value: String,
     pub format: Format,
 }
@@ -188,10 +166,8 @@ impl Op {
     }
 }
 
-/// `style:condition="value()>=0"` as an operator and the text of its operand.
-///
-/// Anything else is `None` and the map is dropped: §16.3 allows conditions this does not
-/// model, and a condition we cannot evaluate must not silently become one we can.
+/// `style:condition="value()>=0"` as an operator and its operand's text. Anything else is `None`
+/// and the map is dropped, rather than evaluating a condition this does not model.
 pub fn parse_condition(condition: &str) -> Option<(Op, String)> {
     let rest = condition.trim().strip_prefix("value()")?.trim_start();
     let (text, op) = Op::SPELLINGS
@@ -212,9 +188,9 @@ pub struct Format {
     /// `style:map` branches, in document order — the first whose condition holds wins.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub maps: Vec<Map>,
-    /// `fo:color` on the style's own `style:text-properties` — the colour a value shown
-    /// through this format is drawn in, over the cell's own (`doc/ods-format.md` §5.2: the
-    /// red of a red negative is a property of the *branch*, not of the cell). `#rrggbb`.
+    /// `fo:color` on the style's own `style:text-properties`: the colour a value is drawn in
+    /// through this format, over the cell's own — the red of a red negative belongs to the branch
+    /// (`doc/ods-format.md` §5.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
 }
@@ -256,10 +232,9 @@ impl Format {
         }
     }
 
-    /// The colour `value` is drawn in through this format, when the format says one: the
-    /// branch's own for a number a `style:map` sends elsewhere — one level, as [`Format::render`]
-    /// follows — and this style's otherwise. A text value is drawn in a text format's colour
-    /// only, since a number format's sections are about numbers.
+    /// The colour `value` is drawn in through this format, if it says one: the branch's own for a
+    /// number a `style:map` sends elsewhere, this style's otherwise. A text value takes only a
+    /// text format's colour.
     pub fn color_of(&self, value: &CellValue) -> Option<&str> {
         match value {
             CellValue::Number(n) => match self.branch(*n) {
@@ -282,13 +257,9 @@ impl Format {
         self.parts.push(part);
     }
 
-    /// The [`preset`] arguments that come closest to this format — its kind, the digits and
-    /// grouping of its first `number:number`, and its currency symbol.
-    ///
-    /// What a format *picker* shows as its current state, and in the core because both a GUI
-    /// and `sheet format --show` ask it: two shells deriving "how many decimals is this"
-    /// separately would eventually answer differently about the same cell. A format with no
-    /// numeric part — a date, a boolean — has no digits, and says so as `(0, false)`.
+    /// The [`preset`] arguments closest to this format — its kind, its first `number:number`'s
+    /// digits and grouping, its currency symbol — which a format picker and `sheet format --show`
+    /// both show. A format with no numeric part reports `(0, false)`.
     pub fn preset_params(&self) -> (Kind, u8, bool, String) {
         let (decimals, grouping) = self
             .parts
@@ -311,19 +282,15 @@ impl Format {
         (self.kind, decimals, grouping, symbol)
     }
 
-    /// Whether [`preset`] — or [`datetime_preset`] — built from [`Format::preset_params`]
-    /// *is* this format.
-    ///
-    /// False for a format a document brought that this vocabulary cannot spell: `DD.MM.YYYY`,
-    /// a two-branch currency, a `number:min-decimal-places` short of its decimals. A picker
-    /// showing such a format has to say so rather than offer parameters that would silently
-    /// replace it with something else.
+    /// Whether [`preset`] (or [`datetime_preset`]) built from [`Format::preset_params`] is this
+    /// format. False for a document's format the vocabulary cannot spell (`DD.MM.YYYY`, a
+    /// two-branch currency), which a picker must show as such rather than offer parameters that
+    /// would replace it.
     pub fn is_preset(&self) -> bool {
         let (kind, decimals, grouping, symbol) = self.preset_params();
         let same = |built: Format| built.in_locale(self.locale.clone()) == *self;
-        // `1,234.50 $` is what this build wrote for a dollar before [`symbol_leads`]: still one
-        // of its own, so a picker offers it rather than calling it foreign — and re-applying it
-        // writes the leading form.
+        // A dollar written after the amount is how older saves spelled it; still one of ours, and
+        // re-applying it writes the leading form.
         let written_trailing = || {
             let mut old = preset(kind, decimals, grouping, &symbol);
             if let Some(Part::Number { .. }) = old.parts.get(1) {
@@ -341,24 +308,20 @@ impl Format {
         self.parts.contains(&Part::AmPm)
     }
 
-    /// The branch that applies to `n` — the first `style:map` whose condition holds.
-    ///
-    /// One level deep on purpose: a branch of a branch is not something LibreOffice writes,
-    /// and following it would need a cycle guard for a case that does not exist.
+    /// The branch that applies to `n` — the first `style:map` whose condition holds, one level
+    /// deep, as LibreOffice writes them.
     fn branch(&self, n: f64) -> Option<&Map> {
         self.maps.iter().find(|map| map.holds(n))
     }
 
-    /// The display text for `value`. Never fails: a format that does not fit the value it
-    /// meets falls back to the value's plain spelling, because a cell whose style says
-    /// `date` and whose value is a string is a real document, not an error.
+    /// The display text for `value`. Never fails: a format that does not fit its value falls back
+    /// to the value's plain spelling, since a `date` style on a string is a real document.
     pub fn render(&self, value: &CellValue, null_date: i64) -> String {
         self.render_as(value, null_date, false, None)
     }
 
-    /// [`Format::render`] in a document whose own locale is `fallback` — which is what a format
-    /// with no locale of its own spells its separators with ([`crate::Document::locale`]). A
-    /// format that names a locale keeps it.
+    /// [`Format::render`] in a document whose locale is `fallback`, which a format with no locale
+    /// of its own uses ([`crate::Document::locale`]).
     pub fn render_in(
         &self,
         value: &CellValue,
@@ -368,18 +331,14 @@ impl Format {
         self.render_as(value, null_date, false, fallback)
     }
 
-    /// [`Format::render`], plus whether this format was reached through a **negative**
-    /// `style:map` — one whose condition says on its own that the value is not positive.
+    /// [`Format::render`], plus whether this format was reached through a negative `style:map` —
+    /// one whose condition says on its own that the value is not positive. Such a branch supplies
+    /// no sign; it spells its own `-`, brackets, or nothing.
     ///
-    /// Such a branch supplies no sign: `value()<0` has already said so, and the branch spells
-    /// whatever it wants to show in its place — a literal `-`, a pair of brackets, or nothing
-    /// at all. Measured rather than assumed (`doc/ods-format.md` §5.2): converting Excel's
-    /// `#,##0.00;[Red](#,##0.00);"—"`, LibreOffice writes the *zero* section as the style and
-    /// maps `value()>0` and `value()<0` onto the other two, and renders −1234.5 through the
-    /// second of them as `(1,234.50)`. A renderer that also prepended the minus would write
-    /// `-(1,234.50)`. A branch reached by any other condition keeps its sign, which is the
-    /// same measurement the other way round: `[<50][Red]0;[>500][Blue]0;[Green]0` renders
-    /// −50 as `-50`, because `value()<50` does not say the value is negative.
+    /// Measured (`doc/ods-format.md` §5.2): LibreOffice converts Excel's
+    /// `#,##0.00;[Red](#,##0.00);"—"` with the zero section as the style and maps to the other
+    /// two, and renders −1234.5 as `(1,234.50)`, not `-(1,234.50)`. A branch reached by any other
+    /// condition keeps its sign: `[<50][Red]0;[>500][Blue]0;[Green]0` renders −50 as `-50`.
     fn render_as(
         &self,
         value: &CellValue,
@@ -428,11 +387,9 @@ impl Format {
             Kind::Percentage => n * 100.0,
             _ => n,
         };
-        // The minus is supplied here only for a format that decides the sign itself: one
-        // with no branches, reached directly. A style with a `style:map` spells its own sign
-        // — §5.1's red-negative currency carries a literal `-` in the negative branch — and
-        // adding one on top renders `--19.99`; a style reached *as* a branch has had its sign
-        // decided by the condition that chose it (see [`Format::render_as`]).
+        // The minus is supplied only by a format with no branches, reached directly. A style with
+        // a `style:map` spells its own sign (§5.1's red-negative currency has a literal `-`), and
+        // one reached as a branch had its sign decided by its condition ([`Format::render_as`]).
         let mut out = String::new();
         let signed = !branch && self.maps.is_empty() && sign_carrying(&self.parts);
         if scaled < 0.0 && signed && !matches!(self.kind, Kind::Date | Kind::Time | Kind::Boolean) {
@@ -499,17 +456,10 @@ impl Format {
                     out.push_str(&pad(seconds.div_euclid(60).rem_euclid(60), *long));
                 }
                 Part::Seconds { long, decimals } => {
-                    // The same total `Hours` and `Minutes` divide. `date::seconds_of_day`
-                    // rounds once precisely so that all three describe one clock, and
-                    // recomputing the remainder here broke that: a datetime whose float sits a
-                    // hair under the minute — `2026-04-01T09:15:00` parsed and stored is
-                    // 46113.385416666664 — has an exact remainder of 59.99999979 seconds, so
-                    // the hour and minute rounded up to 09:15 while the second printed 60.
-                    //
-                    // Only the whole-second case is answered from the shared total. A format
-                    // asking for fractional seconds keeps the unrounded remainder, because
-                    // that is the digit it exists to show; no preset builds one, so this
-                    // branch is reachable only from a format a document brought with it.
+                    // Whole seconds come from the same rounded total as the hours and minutes
+                    // (`date::seconds_of_day`), or `09:15:00` stored as 46113.385416666664 prints
+                    // its seconds as 60. A format asking for fractional seconds keeps the
+                    // unrounded remainder, the digit it exists to show.
                     let s = match decimals {
                         0 => seconds.rem_euclid(60) as f64,
                         _ => {
@@ -534,11 +484,9 @@ impl Format {
                     true => "TRUE",
                     false => "FALSE",
                 }),
-                // §16.27.28's text content is *the cell's own text*, and a number has one:
-                // a cell holding 1234.5678 under a `number:text-style` shows 1234.5678, not
-                // nothing. Measured against the oracle's rendering of a cell formatted `@`
-                // (`doc/ods-format.md` §5.2) — a text style is what Excel's fourth section
-                // becomes, and a number can land under one.
+                // §16.27.28's text content is the cell's own text, and a number has one: 1234.5678
+                // under a `number:text-style` shows 1234.5678, as the oracle renders a cell
+                // formatted `@` (`doc/ods-format.md` §5.2).
                 Part::Content => match value {
                     CellValue::Text(s) => out.push_str(s),
                     other => out.push_str(&general(other, None, null_date)),
@@ -549,11 +497,8 @@ impl Format {
     }
 }
 
-/// Whether a format leaves its sign to the renderer.
-///
-/// A style that already opens with a literal `-` is spelling the sign itself, which is what
-/// the negative branch of a two-branch format looks like when it is reached directly — a
-/// document may name one on a cell without any map pointing at it.
+/// Whether a format leaves its sign to the renderer: not when it opens with a literal `-`, as a
+/// negative branch named directly on a cell does.
 fn sign_carrying(parts: &[Part]) -> bool {
     !matches!(parts.first(), Some(Part::Text(text)) if text.starts_with('-'))
 }
@@ -626,10 +571,7 @@ fn digits(
     (decimal_point, thousands): (char, char),
 ) -> String {
     let decimals = decimals.max(min_decimals);
-    // Rounded before formatting, not by the formatter: Rust's `{:.2}` rounds half to *even*
-    // and a spreadsheet rounds half away from zero, so 2.5 at zero decimals is 3 here and
-    // would be 2 there. The scale is bounded because a style asking for more decimals than
-    // a double carries has nothing left to round anyway.
+    // Rounded before formatting: `{:.2}` rounds half to even, a spreadsheet half away from zero.
     let scale = 10f64.powi(i32::from(decimals));
     let n = match scale.is_finite() && scale > 0.0 {
         true => (n * scale).round() / scale,
@@ -662,24 +604,17 @@ fn digits(
     }
 }
 
-/// The currency a format gets when nobody named one: the euro, by the project's decision.
-///
-/// One constant, so `grind sheet format … currency`, every shell's currency button and a
-/// generator's `format("currency")` agree on it — a shell that picked its own default (as two
-/// did, with `¤`) is a document that looks different depending on where it was formatted.
+/// The currency a format gets when nobody named one: the euro, by the project's decision — one
+/// constant for the CLI, every shell's currency button and the generator.
 pub const DEFAULT_CURRENCY: &str = "€";
 
-/// The currencies a shell offers **one click away**, most common first, as (symbol, name).
-///
-/// A picker's quick choices, not a limit: any symbol is still a currency `preset` builds, and a
-/// document's own is shown and kept. The list is short on purpose — `€`, `$` and `£` are the
-/// three nobody should have to type, and a fourth button is a question every user has to read.
+/// The currencies a shell offers one click away, most common first, as (symbol, name). Quick
+/// choices, not a limit.
 pub const CURRENCIES: [(&str, &str); 3] =
     [("€", "Euro"), ("$", "US dollar"), ("£", "Pound sterling")];
 
-/// The currency a *word* names — `eur`/`euro`, `usd`/`dollar`, `gbp`/`pound`, or one of the
-/// three symbols themselves — for a shell whose user types rather than clicks. Case is ignored;
-/// anything else is `None`, and the caller says so rather than guessing a symbol.
+/// The currency a word names — `eur`/`euro`, `usd`/`dollar`, `gbp`/`pound`, or a symbol — ignoring
+/// case; anything else is `None`.
 pub fn currency_named(word: &str) -> Option<&'static str> {
     match word.to_lowercase().as_str() {
         "€" | "eur" | "euro" | "euros" => Some("€"),
@@ -689,26 +624,17 @@ pub fn currency_named(word: &str) -> Option<&'static str> {
     }
 }
 
-/// Whether a currency symbol is written **before** the amount — `$1,234.50`, `£1,234.50` —
-/// rather than after it with a no-break space, `1,234.50 €`, which is how the euro is written
-/// across most of the countries that use it and how every other symbol is spelled here.
+/// Whether a currency symbol goes before the amount (`$1,234.50`, `£1,234.50`) rather than after
+/// it with a no-break space (`1,234.50 €`), as every other symbol is spelled here.
 pub fn symbol_leads(symbol: &str) -> bool {
     matches!(symbol, "$" | "£")
 }
 
-/// Build one of the formats a shell can ask for by name.
-///
-/// The whole of the "set a format" vocabulary, and it lives here rather than in a shell for
-/// the usual reason: a GUI's format picker and `sheet format` must produce the same
-/// `Format`, or a document formatted from one displays differently in the other.
-///
-/// Dates and times are the **ISO** spellings, for `date.rs`'s reason: the alternative is a
-/// locale, `HOST-LOCALE` has no home in the core yet, and guessing one puts `01/02/03` in a
-/// file that means different days in different countries. A caller that wants `DD.MM.YYYY`
-/// builds the parts, which is three lines and exactly as expressive as ODF is.
+/// Build one of the formats a shell can ask for by name — the whole "set a format" vocabulary, so
+/// a GUI's picker and `sheet format` produce the same `Format`. Dates and times are ISO, which
+/// reads the same in every locale; a caller wanting `DD.MM.YYYY` builds the parts.
 pub fn preset(kind: Kind, decimals: u8, grouping: bool, symbol: &str) -> Format {
-    // A user asking for two decimals means two, always — `min_decimals` short of `decimals`
-    // is the "up to" form, which is a different request and not one a preset can guess.
+    // Two decimals means two, always; `min_decimals` short of `decimals` is the "up to" form.
     let number = Part::Number {
         decimals,
         min_decimals: decimals,
@@ -772,11 +698,8 @@ fn trailing_currency(number: Part, symbol: &str) -> Vec<Part> {
     ]
 }
 
-/// The ISO date-and-time format — [`preset`]'s `Date` with a clock after it.
-///
-/// A separate call rather than an eighth `Kind`, because §4.3.4's DateTime is a Date whose
-/// value carries a fraction and not a family of its own: the *style* differs, the value type
-/// does not.
+/// The ISO date-and-time format: [`preset`]'s `Date` with a clock after it. A DateTime is a Date
+/// whose value carries a fraction (§4.3.4), so the style differs and the kind does not.
 pub fn datetime_preset() -> Format {
     let mut format = preset(Kind::Date, 0, false, "");
     format.push(Part::Text(" ".into()));
@@ -784,11 +707,8 @@ pub fn datetime_preset() -> Format {
     format
 }
 
-/// The display text for a cell that carries no format of its own.
-///
-/// This is where "a date prints as a date" comes from without any style in the document:
-/// the value type is enough (§4.3.3), and the spelling is the ISO one the reader accepts,
-/// so what a shell shows can always be typed back in.
+/// The display text for a cell with no format of its own. A date prints as a date from its value
+/// type alone (§4.3.3), in the ISO spelling the reader accepts back.
 pub fn general(
     value: &CellValue,
     kind: Option<crate::model::NumberKind>,
@@ -797,9 +717,8 @@ pub fn general(
     general_in(value, kind, null_date, None)
 }
 
-/// [`general`] in a document whose own locale is `locale`: a number is spelled with its decimal
-/// separator ([`spell_number`]). Dates and times stay ISO — `doc/sheet-shell.md` C3's reason, that
-/// ISO is the one spelling that reads back unambiguously in every locale.
+/// [`general`] in a document whose locale is `locale`: numbers take its decimal separator
+/// ([`spell_number`]); dates and times stay ISO.
 pub fn general_in(
     value: &CellValue,
     kind: Option<crate::model::NumberKind>,
@@ -810,9 +729,7 @@ pub fn general_in(
         (CellValue::Number(n), Some(crate::model::NumberKind::Date)) => {
             let (y, m, d) = date::ymd(*n, null_date);
             let day = format!("{y:04}-{m:02}-{d:02}");
-            // §4.3.4: a Date carrying a fraction is a DateTime, and showing only its date
-            // half hides half the value. A space rather than `T` — this is a display, not
-            // the `office:date-value` serialisation.
+            // A Date with a fraction is a DateTime (§4.3.4); shown with a space rather than `T`.
             match n.fract() == 0.0 {
                 true => day,
                 false => format!("{day} {}", clock(*n)),
@@ -828,12 +745,9 @@ pub fn general_in(
     }
 }
 
-/// A number with no format, spelled in `locale` — [`format_number`]'s shortest round-trip
-/// spelling, with the locale's decimal separator where that has a `.`. No grouping: a number with
-/// no format has none in any locale, and `1234,5` reads back as exactly one number.
-///
-/// The one spelling a cell's plain number is shown with *and* put in front of somebody editing
-/// it (`App::input_text`), so what is shown is what can be typed back.
+/// A number with no format, spelled in `locale`: [`format_number`]'s shortest round-trip spelling
+/// with the locale's decimal separator, and no grouping. Both shown and put in front of somebody
+/// editing it (`App::input_text`), so what is shown can be typed back.
 pub fn spell_number(n: f64, locale: Option<&Locale>) -> String {
     let plain = format_number(n);
     match locale::separators(locale).0 {
@@ -853,15 +767,11 @@ fn clock(serial: f64) -> String {
     )
 }
 
-/// The shorter spellings of a number shown in the **General format** — a plain number with no
-/// format of its own — that a shell tries, in order, when [`spell_number`]'s does not fit its
-/// column (`doc/ods-format.md` §5.2, measured): one decimal fewer each time, rounded, and then
-/// scientific notation with five decimals down to none, which is what a whole part too wide for
-/// the column comes to. The first that fits is drawn; when none does, [`overflow`]'s hashes are.
-///
-/// Only the General format narrows. A number whose format states its decimals means them, and
-/// LibreOffice draws `###` rather than fewer of them — so this is asked only of a plain number
-/// ([`crate::Viewport::narrower`] knows which those are).
+/// The shorter spellings a shell tries, in order, when [`spell_number`]'s does not fit the column
+/// (`doc/ods-format.md` §5.2, measured): one decimal fewer each time, rounded, then scientific
+/// notation from five decimals down to none. When none fits, [`overflow`]'s hashes are drawn. Only
+/// a number in the General format narrows; one whose format states its decimals shows `###`
+/// instead ([`crate::Viewport::narrower`]).
 pub fn narrower(n: f64, locale: Option<&Locale>) -> Vec<String> {
     let decimal = locale::separators(locale).0;
     let spell = |text: String| match decimal {
@@ -914,8 +824,7 @@ pub fn narrower(n: f64, locale: Option<&Locale>) -> Vec<String> {
     out
 }
 
-/// `n` rounded to `keep` decimals, half away from zero — a spreadsheet's rounding, where Rust's
-/// own formatter rounds half to even (`digits` has the same note).
+/// `n` rounded to `keep` decimals, half away from zero.
 fn round_away(n: f64, keep: usize) -> f64 {
     let scale = 10f64.powi(keep as i32);
     match scale.is_finite() {
@@ -932,20 +841,13 @@ fn trim_fraction(text: &str) -> &str {
     }
 }
 
-/// What a **number that does not fit its column** is drawn as — every shell's answer, in one
-/// place: as many `#` as the room holds, and never part of the number.
+/// What a number that does not fit its column is drawn as, in every shell: as many `#` as the room
+/// holds, never part of the number. A cut number is a different value (`2026-08-1`, `3,710.00`
+/// without its currency); `###` is what LibreOffice and Excel draw. Text is not covered: a word
+/// cut short is still the start of the right word.
 ///
-/// Any part of a number is a different value. `2026-08-16` cut to `2026-08-1` is the first of
-/// August, `3,710.00 €` cut to `3,710.00` has lost its currency, and `12,345` cut from the left is
-/// `2,345`; an ellipsis at least says something is missing but still shows a magnitude that may be
-/// wrong. `###` is what LibreOffice and Excel draw, and the one spelling nobody reads as a value —
-/// widening the column shows it. Text is not covered: a word cut short, with an ellipsis, is still
-/// the start of the right word.
-///
-/// `room` and `hash` are in whatever unit the shell measures in — pixels, Pango units, terminal
-/// cells — and `hash` is how wide one `#` is in the cell's own font. At least one, so a column too
-/// narrow for even that still says it is too narrow, and never so many that a pathological width
-/// builds a huge string.
+/// `room` and `hash` (one `#`'s width in the cell's font) are in the shell's own unit. At least
+/// one `#`, and bounded for a pathological width.
 pub fn overflow(room: f64, hash: f64) -> String {
     let count = match hash > 0.0 && room.is_finite() {
         true => (room / hash).floor().clamp(1.0, 256.0) as usize,
@@ -1098,11 +1000,9 @@ mod tests {
         assert_eq!(render(&f, (35.0 * 60.0 + 31.25) / 86_400.0), "31.2");
     }
 
-    /// A cell whose value does not fit its style is a real document, not a bug: the value
-    /// still has to reach the user.
-    /// §5.1's two-branch format: the base style is the *negative* one, carrying its own
-    /// literal minus, and a `style:map` switches to the plain one for everything else. The
-    /// bug this pins is `--19.99` — a renderer that also supplies the sign.
+    /// §5.1's two-branch format: the base style is the negative one, with its own literal minus,
+    /// and a `style:map` switches to the plain one otherwise. A renderer that also supplied the
+    /// sign would print `--19.99`.
     #[test]
     fn a_style_map_picks_the_branch_and_the_branch_spells_its_own_sign() {
         let plain = number(2, 2, false);
@@ -1138,14 +1038,10 @@ mod tests {
         assert_eq!(render(&bare, -5.0), "-5");
     }
 
-    /// The three-branch shape, which is the one that proves a *negative* branch does not sign:
-    /// the base is the **zero** style and both the positive and the negative one are reached
-    /// through a map, so the negative branch's brackets are all the sign there is.
-    ///
-    /// LibreOffice's own spelling of Excel's `#,##0.00;[Red](#,##0.00);"—"`, read out of its
-    /// conversion of `xlsx/tests/data/corpus/numfmt/sections.xlsx` and rendered by converting
-    /// that to CSV, on 2026-09-20 (`doc/ods-format.md` §5.2). The bug it pins is
-    /// `-(1,234.50)`.
+    /// The three-branch shape: the base is the zero style and both other branches are reached
+    /// through maps, so the negative branch's brackets are all the sign there is. LibreOffice's
+    /// conversion of `xlsx/tests/data/corpus/numfmt/sections.xlsx`, rendered to CSV
+    /// (`doc/ods-format.md` §5.2); a renderer that signed it would print `-(1,234.50)`.
     #[test]
     fn a_negative_branch_supplies_no_sign_of_its_own() {
         let mut bracketed = Format::new(Kind::Number);
@@ -1177,9 +1073,8 @@ mod tests {
         assert_eq!(render(&zero, 0.0), "—");
     }
 
-    /// The same measurement the other way round: a branch whose condition is not about the
-    /// sign keeps it. `[<50][Red]0;[>500][Blue]0;[Green]0` converted and rendered shows −50
-    /// as `-50` — `value()<50` says nothing about zero, so the minus is information.
+    /// A branch whose condition is not about the sign keeps it:
+    /// `[<50][Red]0;[>500][Blue]0;[Green]0` shows −50 as `-50`.
     #[test]
     fn a_branch_reached_by_any_other_condition_keeps_its_sign() {
         let mut format = number(0, 0, false);
@@ -1257,7 +1152,7 @@ mod tests {
         assert_eq!(currency_named("£"), Some("£"));
         assert_eq!(currency_named("chf"), None);
         assert_eq!(CURRENCIES[0].0, DEFAULT_CURRENCY);
-        // A dollar this build wrote *after* the amount before is still one of its own.
+        // A dollar written after the amount is still one of ours.
         let mut old = preset(Kind::Currency, 2, true, "$");
         let number = old.parts[1].clone();
         old.parts = trailing_currency(number, "$");

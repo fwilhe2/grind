@@ -4,16 +4,9 @@
 
 //! Projecting a spreadsheet: `Document` → text, tokens and anchors. **\[ODS\]**
 //!
-//! The twin of `odf::write`, and the same shape — walk the model once, emit as you go, pool
-//! nothing that does not need pooling. What it adds is the two maps, and those cost nothing
-//! because [`Emitter`] takes them as a side effect of being told what each thing *is*
-//! (`doc/dsl.md` §6.1: syntax highlighting comes from the writer, not from a highlighter).
-//!
-//! One decision runs through the whole file: **a cell is projected in a grid when it is only a
-//! value, and on a line of its own when it is more than one.** A grid is what makes a
-//! spreadsheet readable as text; a formula, a date or a time needs a property beside it and a
-//! grid has nowhere to put one. So the grid holds plain values, the holes it leaves are
-//! `#null`, and everything else follows as a `cell`.
+//! A cell is projected in a grid when it is only a value, and as a `cell` node of its own when it
+//! is more: a formula, a date or a time needs a property, and a grid has nowhere to put one. The
+//! grid's holes are `#null`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -28,18 +21,10 @@ use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
 use crate::numfmt::{self, Format, Kind, Part};
 use crate::style::{CellStyle, EDGES};
 
-/// The projection this document was read from, with the edited cells put back in place.
-///
-/// R6 for the third form (D5). `None` means *not applicable, regenerate* and never *failed* —
-/// every condition below is one of the boundaries `grind_core::projection::source` writes down,
-/// and regenerating is always correct because it is what saving a `.grind` did before this
-/// existed.
-///
-/// What is **not** here, and is in `odf::write::splice`, is the autofilter check: a value edit
-/// there can change which rows a filter hides, and `table:visibility` lives on the row element
-/// rather than in the cell being spliced. A projection has no such derived state — `tracks`
-/// writes the rows a *person* hid and nothing a filter implies — so a cell's value is the only
-/// thing its site spells.
+/// The projection this document was read from, with the edited cells put back in place (R6).
+/// `None` means regenerate, never failure; `grind_core::projection::source` lists the boundaries.
+/// Unlike `odf::write::splice` there is no autofilter check: a projection writes no filter-derived
+/// row state.
 pub fn splice(doc: &Document) -> Option<String> {
     let source = doc.projection_source.as_deref()?;
     // A style, a format, a track, a name, a sheet added or renamed: all of them are somewhere a
@@ -56,23 +41,17 @@ pub fn splice(doc: &Document) -> Option<String> {
     source.splice(patches)
 }
 
-/// What goes into a site, or `None` when the cell no longer fits the shape the file spelled it
-/// in.
-///
-/// This is the second boundary, and the case that makes it necessary is ordinary: a cell holding
-/// `4200` sits in a grid row, and typing `=B1*2` into it turns it into something a grid cannot
-/// hold. Writing the formula over the value would produce a file that reads back as the *string*
-/// `=B1*2` in a grid — bijectivity lost, silently. So the shapes have to agree, and when they do
-/// not the document regenerates and the cell moves to a `cell` node of its own.
+/// What goes into a site, or `None` when the cell no longer fits the shape the file spelled it in
+/// — typing `=B1*2` over a grid value needs a `cell` node, and writing it into the grid would read
+/// back as text.
 fn replacement(sheet: &Sheet, pos: Pos, shape: grind_core::projection::Shape) -> Option<String> {
     use grind_core::projection::Shape;
     let needs_a_node = sheet.formula(pos).is_some() || sheet.kind(pos).is_some();
     match shape {
         Shape::Value => {
             let value = sheet.get(pos);
-            // An emptied cell is a hole, and a hole is `#null` — which the reader treats as *no
-            // cell here*, so the grid would come back one cell short of what the model says.
-            // Structural, therefore, and regenerated.
+            // An emptied cell is a `#null` hole, which reads back as no cell: structural, so
+            // regenerated.
             (!needs_a_node && !value.is_empty())
                 .then(|| grind_core::projection::emit::repr(&value_of(&value)))
         }
@@ -161,11 +140,8 @@ fn settings(out: &mut Emitter, doc: &Document) {
 
 // --- a sheet ---
 
-/// `col` and `row` — a column's width, a row's height, and whether either is hidden by hand.
-///
-/// One node per track that has anything to say, addressed **1-based** like every other address
-/// in the format: `a1.rs` is the only 0↔1 conversion in the workspace and this is a user's
-/// spelling of a place, so it converts here and by that rule.
+/// `col` and `row` — a column's width, a row's height, and whether either is hidden by hand — one
+/// node per track with anything to say, numbered from 1.
 fn tracks(out: &mut Emitter, sheet: &Sheet) {
     let hidden_cols: BTreeSet<u32> = sheet.hidden_cols().collect();
     let widths: BTreeMap<u32, &str> = sheet.col_widths().collect();
@@ -226,8 +202,7 @@ fn grid(out: &mut Emitter, sheet: &Sheet) {
         out.blank();
         out.begin("at");
         out.arg_word(&a1::format(None, start));
-        // Deliberately unanchored: a band covers a *region*, and a region has no address. Its
-        // rows and their cells anchor themselves, which is every place there is to point at.
+        // A band covers a region, which has no address; its cells anchor themselves.
         out.open();
         for (row, cells) in band.drain(..) {
             out.begin("row");
@@ -243,10 +218,8 @@ fn grid(out: &mut Emitter, sheet: &Sheet) {
                         // its own.
                         out.anchor_last(address(sheet, Pos::new(row, col)));
                     }
-                    // A hole is where a cell the grid cannot hold *would* be, and that cell
-                    // has a `cell` node below with its real address on it. Anchoring the hole
-                    // as well would give one address two spans, and the narrower — this one —
-                    // would win.
+                    // A hole's cell has its own `cell` node; anchoring the hole too would give one
+                    // address two spans.
                     None => out.arg(KdlValue::Null),
                 }
             }
@@ -316,8 +289,7 @@ fn needs_a_node(sheet: &Sheet) -> BTreeSet<Pos> {
         .collect()
 }
 
-/// One `cell` node. Its own function because D5's splice emits exactly one of these into the
-/// retained text, and a second spelling of a node is a second grammar (`emit`'s rule).
+/// One `cell` node — also what the splice emits, so there is one spelling of it.
 fn cell_node(out: &mut Emitter, sheet: &Sheet, pos: Pos) {
     out.begin("cell");
     out.arg_word(&a1::format(None, pos));
@@ -359,12 +331,8 @@ fn styles(out: &mut Emitter, sheet: &Sheet) {
     }
 }
 
-/// A cell style's ODF values, with the two spellings a person actually writes.
-///
-/// `bold=#true` and `italic=#true` are sugar for the two values that account for very nearly
-/// every styled cell there has ever been; anything else keeps ODF's own word
-/// (`weight="600"`, `slant="oblique"`), because R1 says the format's semantics are the product
-/// and a projection that could not spell one would not be bijective.
+/// A cell style's ODF values. `bold=#true` and `italic=#true` are sugar for the common values;
+/// anything else keeps ODF's own word (`weight="600"`), so every style can be spelled.
 fn style_props(out: &mut Emitter, style: &CellStyle) {
     match style.font_weight.as_deref() {
         Some("bold") => out.prop("bold", true),
@@ -430,15 +398,9 @@ fn formats(out: &mut Emitter, sheet: &Sheet) {
     }
 }
 
-/// A format, compactly when `numfmt::preset` can build it and part by part when it cannot.
-///
-/// Ends the node itself — the parts form opens a block and the preset form does not, and which
-/// it is is precisely the question this function answers.
-///
-/// `parts_only` is what a `style:map` branch asks for. A branch is read back out of its block,
-/// so it has to *have* one even when its format happens to be a preset: the compact spelling
-/// would leave a `map` node with no children and the reader would build an empty format from
-/// it. One flag rather than two functions, because everything else about the two is identical.
+/// A format, compactly when `numfmt::preset` can build it and part by part otherwise; ends the
+/// node itself. `parts_only` is for a `style:map` branch, which is read back from its block and so
+/// must have one even when it is a preset.
 fn format_body(out: &mut Emitter, format: &Format, parts_only: bool) {
     let (kind, decimals, grouping, symbol) = format.preset_params();
     let same = |built: Format| {
@@ -678,11 +640,8 @@ fn filter(out: &mut Emitter, sheet: &Sheet) {
 
 // --- the small shared pieces ---
 
-/// A cell's value as a KDL one.
-///
-/// A whole number is written as an integer, which is what the file would look like if a person
-/// had typed it — and it reads back as the same `f64`, since the projection only ever writes
-/// one it can spell exactly.
+/// A cell's value as a KDL value; a whole number is written as an integer, which reads back as the
+/// same `f64`.
 fn value_of(value: &CellValue) -> KdlValue {
     match value {
         CellValue::Empty => KdlValue::Null,
@@ -692,10 +651,8 @@ fn value_of(value: &CellValue) -> KdlValue {
     }
 }
 
-/// The integer spelling when it is exact, the float spelling otherwise.
-///
-/// `2^53` is where an `f64` stops holding every integer, and past it an integer spelling would
-/// be a different number on the way back.
+/// The integer spelling when exact, the float spelling otherwise (`2^53` is where integers stop
+/// being exact).
 fn number(n: f64) -> KdlValue {
     const EXACT: f64 = 9_007_199_254_740_992.0;
     match n.is_finite() && n.fract() == 0.0 && n.abs() < EXACT {
@@ -718,12 +675,8 @@ fn range(start: Pos, end: Pos) -> String {
     }
 }
 
-/// A set of cells as the rectangles that cover it, each cell in exactly one.
-///
-/// Horizontal runs first, then a vertical merge of runs that span the same columns on
-/// consecutive rows — which is the shape a styled block actually has, and cheap. It is not a
-/// minimal cover and does not need to be: every cell is covered exactly once whatever the
-/// packing, so the only thing at stake is how many lines the file has.
+/// A set of cells as rectangles covering each cell exactly once: horizontal runs, then runs over
+/// the same columns merged down consecutive rows. Not minimal, which costs only lines.
 fn rectangles(cells: &BTreeSet<Pos>) -> Vec<(Pos, Pos)> {
     // `Pos` orders by row then column, so consecutive entries of one row arrive in order.
     let mut runs: Vec<(u32, u32, u32)> = Vec::new(); // (row, first col, last col)

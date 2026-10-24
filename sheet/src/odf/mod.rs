@@ -2,25 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Reading and writing ODF **spreadsheets**. **\[ODS\]**
-//!
-//! The generic half — packaging, namespace resolution, the element-context stack — lives in
-//! `grind-core` and is re-exported below, so `read` and `write` reach it as `super::context`
-//! and `super::names` exactly as they did when it was one crate. What is left here is the only
-//! part that knows what a sheet is: the ODS content model (§3), formulas (§4), and the
-//! spreadsheet half of styles (§5).
-//!
-//! `grind-text` builds on the same three generic modules with contexts of its own, which is
-//! what §10 said would happen.
+//! Reading and writing ODF spreadsheets. **\[ODS\]** The ODS content model (§3), formulas (§4) and
+//! the spreadsheet half of styles (§5), on `grind-core`'s generic modules, re-exported below.
 
 pub mod read;
 pub mod source;
 pub mod write;
 
-/// The generic modules, re-exported so this crate's readers and writers reach them by the
-/// paths they always used. The crate boundary is the real seam — `grind-core` compiles with no
-/// knowledge of spreadsheets and R8's test enforces it — and these aliases are ergonomics on
-/// this side of it, not a hole in it.
+/// `grind-core`'s generic modules, under the paths this crate's reader and writer use.
 pub use grind_core::odf::{Form, context, names, package};
 
 use crate::Result;
@@ -36,19 +25,16 @@ pub fn read(bytes: &[u8]) -> Result<Document> {
     if package::is_package(bytes) {
         builder.set_package(bytes.to_vec());
     }
-    // R6, and the rule above it: saving never makes an existing file worse. The source is
-    // installed *before* parsing, because the cell contexts record their spans into it as they
-    // go. For a package its bytes are `content.xml` — the part a splice edits — and the whole
-    // archive rides along, so a save keeps every other entry (`envelope::repackage`).
+    // Installed before parsing, because the cell contexts record their spans into it. For a
+    // package its bytes are `content.xml`, and the whole archive rides along
+    // (`envelope::repackage`).
     let mut source = source::Source::new(form_of(bytes), content.clone());
     if package::is_package(bytes) {
         source.package = Some(bytes.to_vec());
     }
     builder.doc.source = Some(Box::new(source));
-    // `styles.xml` first, so a named style defined there is already known when a cell in
-    // `content.xml` references it (doc/ods-format.md §5.1). It holds no cells, so nothing
-    // else about the document depends on the order. A part that will not parse costs the
-    // styles it carried and not the document — §9 tolerance, one level up.
+    // `styles.xml` first, so a named style defined there is known when a cell references it
+    // (`doc/ods-format.md` §5.1). A part that will not parse costs its styles, not the document.
     if let Some(styles) = package::styles_xml(bytes) {
         let _ = context::parse(
             std::io::Cursor::new(styles),

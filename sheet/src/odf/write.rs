@@ -2,18 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Serialising a document back to ODF. **\[ODS\]**, with `package` below it **\[GENERIC\]**.
+//! Serialising a document back to ODF. **\[ODS\]**
 //!
-//! Templates from doc/ods-format.md §7; the package layout from §1.1/§1.3. The two forms
-//! share one content writer and differ in exactly two places — the root element name and
-//! whether `office:mimetype` sits on it (§7.3) — so there is no second serialiser to keep
-//! in step.
-//!
-//! The output is deliberately minimal (§1.4): no `styles.xml`, no `meta.xml` and no
-//! `settings.xml`, because there is nothing yet to put in them. `office:automatic-styles`
-//! is written when — and only when — some cell carries a number format, and it holds
-//! exactly the formats in use: §5.3's pooling rule is not an optimisation here, it is the
-//! only construct ODF has for saying a cell looks a certain way.
+//! Templates from `doc/ods-format.md` §7, the package layout from §1.1/§1.3. Both forms share one
+//! content writer and differ only in the root element name and whether `office:mimetype` sits on
+//! it (§7.3). The output is minimal (§1.4): `office:automatic-styles` holds exactly the formats
+//! and styles in use, pooled (§5.3), and `styles.xml` exists only when there is a common style to
+//! hold.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -22,9 +17,6 @@ use std::sync::LazyLock;
 use super::names::{
     CALCEXT, CHART, DRAW, FO, FORM, NUMBER, OFFICE, STYLE, SVG, TABLE, TEXT, XLINK,
 };
-// Packaging, the manifest, the ODF version and XML escaping are the same for every document
-// type (§1.1, §1.3), so they live in `grind-core` and are reached here by the names this
-// file always used.
 use crate::chart::Axis;
 use crate::formula::date;
 use crate::model::{CellValue, Document, NumberKind, Pos, Sheet};
@@ -35,27 +27,18 @@ use grind_core::odf::envelope;
 use grind_core::odf::package::{self, SubDocument, VERSION, write_package_with};
 use grind_core::odf::xml::esc;
 
-/// The media type, byte for byte. Sniffed by readers at a fixed offset in the package
-/// form (§1.1), so it is not somewhere to be creative.
+/// The media type, byte for byte; readers sniff it at a fixed offset in the package (§1.1).
 pub const MIMETYPE: &str = "application/vnd.oasis.opendocument.spreadsheet";
 
-/// Which physical form to write. Generic to every document type, so it lives in `grind-core`
-/// (§1) and is re-exported here for the callers that always spelled it `write::Form`.
 pub use grind_core::Form;
 
 pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
-    // The third form is not XML at all, so it leaves before any of this file runs
-    // (`doc/dsl.md` §9). It is here rather than one layer up because `write_bytes` is the
-    // one door out of the crate, and a form that only *some* callers knew to handle would
-    // be a form that escapes through the others.
+    // The projection is not XML; it leaves here, at the crate's one door out (`doc/dsl.md` §9).
     if form == Form::Projection {
         return Ok(crate::projection::save(doc));
     }
-    // A save into the *other* form of the file this document came from is a save into its own
-    // form — with every guard that has — moved across by `forms::convert`, which carries every
-    // part and refuses what the other form has no place for. Starting from nothing instead used
-    // to drop the page layout, the named styles and every element the model does not read, with
-    // no error at all.
+    // A save into the other form of the file this document came from is a save into its own form,
+    // with every guard, moved across by `forms::convert`, which carries every part.
     if let Some(source) = doc.source.as_deref()
         && source.form != form
         && source.form != Form::Projection
@@ -68,14 +51,11 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
     // The file this document came from, when it is being saved in the same form.
     let source = doc.source.as_deref().filter(|source| source.form == form);
 
-    // R6 first: a document that came from a file and has only had cells edited goes back as
-    // that file with those cells replaced. Otherwise the content regenerates — and is **merged
-    // into the original** (`envelope::merge`), so the styles, master pages, metadata and
-    // settings the model does not own are carried rather than dropped. Saving never makes an
-    // existing file worse.
+    // R6 first: a document that has only had cells edited goes back as its file with those cells
+    // replaced. Otherwise the content regenerates and is merged into the original
+    // (`envelope::merge`), keeping what the model does not own.
     if let Some(spliced) = splice(doc, form) {
-        // Whatever touched somebody's file is checked before it can replace it: a save that
-        // fails leaves the original on disk, and one that writes something unreadable does not.
+        // Check whatever touched somebody's file before it replaces it.
         if let Some(source) = source {
             envelope::check_against(&source.bytes, &spliced)?;
             let allowed = overwritten(doc, source);
@@ -112,9 +92,8 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
             None => generated.into_bytes(),
         };
 
-    // Whatever touched somebody's file is checked before it can replace it: a save that fails
-    // leaves the original on disk, and one that writes something unreadable — or that drops
-    // what the model never read — does not.
+    // Check whatever touched somebody's file before it replaces it: unreadable output, or output
+    // that drops what the model never read, is refused.
     if let Some(source) = source {
         envelope::check_against(&source.bytes, &content)?;
         // A sheet somebody deleted takes its contents with it — that is the edit, not a loss.
@@ -197,10 +176,9 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
     }
 }
 
-/// The paragraphs of every cell somebody typed a new value into: the text that value replaced —
-/// a hyperlink or a run of bold in it included — is the edit, not a loss, exactly as typing over
-/// such a cell in LibreOffice replaces it. An annotation beside the paragraphs is not text the
-/// value replaced, and is not in these ranges.
+/// The paragraphs of every cell that got a new value: the text it replaced, a hyperlink or bold
+/// run included, is the edit, not a loss — as typing over a cell in LibreOffice replaces it. An
+/// annotation beside the paragraphs is not included.
 fn overwritten(doc: &Document, source: &super::source::Source) -> Vec<std::ops::Range<usize>> {
     let bytes = &source.bytes;
     let mut out = Vec::new();
@@ -293,12 +271,10 @@ fn children_named(
     out
 }
 
-/// **The edits themselves, checked**: what is about to replace somebody's file is read back and
-/// every sheet's name, and every cell's value and formula, compared with the document being
-/// saved. A splice that kept the file's bytes where it should have written the model's would
-/// otherwise be a save that quietly undid an edit — the one failure worse than a refused save.
-/// Styles are not compared: a cell written into a column with a default style of its own reads
-/// back with it, which is the file's meaning and not a lost edit.
+/// What is about to replace somebody's file, read back, with every sheet's name and every cell's
+/// value and formula compared with the document — so a splice that kept the file's bytes where it
+/// should have written the model's cannot quietly undo an edit. Styles are not compared: a cell in
+/// a column with a default style reads back with it, which is the file's meaning.
 fn verify(doc: &Document, content: &[u8]) -> Result<()> {
     let refuse = |why: String| -> Result<()> {
         Err(grind_core::Error::Xml(format!(
@@ -358,11 +334,10 @@ fn verify(doc: &Document, content: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Whether a body key ([`envelope::body_vocabulary`]) is this writer's to change: what it
-/// writes from the model when it rewrites a row, the column declarations, a sheet's charts, the
-/// names or the filters. A count of anything else going down — an annotation, rich
-/// text in a cell, a validation, a header-row group — is content the model never saw, and the
-/// save is refused rather than allowed to drop it.
+/// Whether a body key ([`envelope::body_vocabulary`]) is this writer's to change: what it writes
+/// from the model when it rewrites a row, the column declarations, a sheet's charts, the names or
+/// the filters. A count of anything else going down — an annotation, rich text, a validation, a
+/// header-row group — refuses the save.
 fn owned(key: &str) -> bool {
     let (element, attribute) = match key.split_once('@') {
         Some((element, attribute)) => (element, Some(attribute)),
@@ -403,10 +378,8 @@ fn owned(key: &str) -> bool {
             TABLE,
             &["named-expressions", "named-expression", "named-range"],
         )
-        // `filter-or` is the shape LibreOffice saves a one-column filter in, which the reader
-        // takes as the set of values it is. A filter this model could not read (an `or`
-        // across columns, an operator other than `=`) is replaced when the filter is changed,
-        // like any other condition it cannot hold; an untouched one is spliced, as it was.
+        // `filter-or` is how LibreOffice saves a one-column filter. A filter the model could not
+        // read is replaced only when the filter is changed; an untouched one is spliced.
         || is(
             TABLE,
             &["database-ranges", "database-range", "filter", "filter-and", "filter-or"],
@@ -483,11 +456,9 @@ fn owned(key: &str) -> bool {
     }
 }
 
-/// The document's locale written into the default cell style a file *already has*, where it
-/// differs from what the file said (`Source::locale`). Only `fo:language` and `fo:country`
-/// change; every other property of that style is the file's own. A file with no default cell
-/// style gets the generated one through [`envelope::merge`] instead, so there is nothing here
-/// for it to do.
+/// The document's locale written into the default cell style the file already has, where it
+/// differs (`Source::locale`): only `fo:language` and `fo:country` change. A file without one gets
+/// the generated style through [`envelope::merge`].
 fn patch_locale(bytes: Vec<u8>, doc: &Document, source: Option<&super::source::Source>) -> Vec<u8> {
     let Some(source) = source else { return bytes };
     if source.locale == doc.locale {
@@ -541,11 +512,8 @@ fn patch_locale(bytes: Vec<u8>, doc: &Document, source: Option<&super::source::S
         .into_bytes()
 }
 
-/// The file this document was read from, with the edited cells put back in place.
-///
-/// `None` means "not applicable, regenerate" — never "failed". Every condition below is a
-/// documented boundary of the trick rather than an error, and `odf::source` says why each
-/// one is where it is.
+/// The file this document was read from, with the edited cells put back in place. `None` means
+/// regenerate, never failure; `odf::source` explains each boundary.
 fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
     let source = doc.source.as_deref()?;
     // Saving as the other form is a conversion, not an edit.
@@ -562,12 +530,9 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
         return None;
     }
 
-    // Which elements have to be rewritten. Every edited cell must sit in one the file
-    // actually spelled — one that does not means regenerating, because a document half in
-    // its original bytes and half not would lose the other half silently.
-    //
-    // Keyed by element rather than by cell: several edited cells can share one repeated
-    // element, and rewriting it once from the sheet covers all of them.
+    // The elements to rewrite, keyed by element since several edited cells may share one repeated
+    // element. An edited cell in no element the file spelled means regenerating rather than a
+    // document half in its original bytes.
     let mut targets: BTreeMap<usize, (usize, u32, &super::source::Cell)> = BTreeMap::new();
     for (i, pos) in &doc.edits.cells {
         let at = source.covering(*i, pos.row, pos.col)?;
@@ -575,9 +540,8 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
         targets.insert(at.range.start, (*i, pos.row, at));
     }
 
-    // In file order, so the untouched stretches between are copied without seeking back.
-    // Elements do not overlap by construction — they are siblings — but a corrupted span
-    // would produce tangled bytes rather than an error, so refuse instead of trusting it.
+    // In file order. Siblings never overlap, but a corrupt span would tangle bytes, so it is
+    // refused rather than trusted.
     let mut patches = Vec::with_capacity(targets.len());
     for (i, row, at) in targets.into_values() {
         let sheet = doc.sheet(i)?;
@@ -601,17 +565,10 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// One source element, re-emitted from the sheet's current contents.
-///
-/// Usually one cell in and one cell out. The interesting case is the repeated element: a
-/// `table:number-columns-repeated="5"` covering five empty cells, with a value now written
-/// into the middle one, comes back as *three* elements — the run before, the changed cell,
-/// the run after — which is still a one-line diff, and is what keeps R6 true for the
-/// overwhelmingly common case of writing into a cell that had no value.
-///
-/// Runs are re-formed by looking at the sheet, so a value written into a repeated run and
-/// then cleared again collapses the run back. A formula never joins a run: it is
-/// position-dependent, and repeating one would move it.
+/// One source element, re-emitted from the sheet's current contents — usually one cell in and one
+/// out. A repeated element with a value written into its middle comes back as three: the run
+/// before, the cell, the run after. Runs are re-formed from the sheet, so clearing the value
+/// collapses the run again; a formula never joins a run, since repeating it would move it.
 fn rewrite(
     sheet: &Sheet,
     row: u32,
@@ -645,9 +602,8 @@ fn rewrite(
             (effective(sheet, pos), sheet.style(pos), None, None),
             null_date,
             repeat,
-            // The element's own unmanaged attributes, verbatim — its style name, its merge
-            // spans. They applied to every column it covered, so every piece it splits into
-            // keeps them.
+            // The element's own unmanaged attributes (style name, merge spans) applied to every
+            // column it covered, so every piece keeps them.
             &at.keep,
         );
         out.push_str(&with_control_text(
@@ -659,9 +615,8 @@ fn rewrite(
     out
 }
 
-/// The `content.xml` payload, which in the flat form is the whole document (§7.1–7.3) — and,
-/// in the package form, the charts' own documents, which live beside it there
-/// ([`Objects`]).
+/// The `content.xml` payload — the whole document in the flat form (§7.1–7.3), and in the package
+/// form also the charts' own documents beside it ([`Objects`]).
 fn content(
     doc: &Document,
     form: Form,
@@ -675,8 +630,8 @@ fn content(
         Form::Flat | Form::Projection => "office:document",
     };
 
-    // Written for the file the document came from, the pool holds only what this save writes
-    // itself (everything else is the file's own bytes), under names the file does not use.
+    // Written into the file it came from, the pool holds only what this save writes itself, under
+    // names the file does not use.
     let plans = origin.map(|source| plan(doc, source));
     let scopes: Option<Vec<Scope>> = plans
         .as_ref()
@@ -693,12 +648,9 @@ fn content(
         out,
         "<{root} xmlns:office=\"{OFFICE}\" xmlns:table=\"{TABLE}\" xmlns:text=\"{TEXT}\""
     );
-    // The style namespaces appear only in a document that has styles (§1.4), and the two
-    // that only a *cell* style uses only when one does. A chart's own `style:style
-    // style:family="chart"` needs the same prefix even when no cell in the sheet is styled at
-    // all, or `style:` would go undeclared.
-    // The flat form's `office:styles` holds the document's locale, on the default cell style,
-    // which needs both `style:` and `fo:` even in a document with no cell styled at all.
+    // The style namespaces only in a document that has styles (§1.4), and the cell-only ones only
+    // when a cell uses one. A chart's `style:family="chart"` styles need `style:` regardless, and
+    // the flat form's locale on the default cell style needs `style:` and `fo:`.
     let common = (form == Form::Flat).then(|| common_styles(doc)).flatten();
     if !pool.is_empty() || doc.sheets.iter().any(|s| !s.charts().is_empty()) || common.is_some() {
         let _ = write!(out, " xmlns:style=\"{STYLE}\"");
@@ -768,9 +720,8 @@ fn content(
     (out, objects.documents)
 }
 
-/// `table:calculation-settings` for the epoch, and only when it is not the default — writing
-/// the default would be correct but LibreOffice omits it, and matching that keeps our output
-/// diffable against a file it wrote. First in the body, which is where the schema puts it.
+/// `table:calculation-settings` for the epoch, only when it is not the default, as LibreOffice
+/// writes it; first in the body, as the schema says.
 fn calculation_settings(doc: &Document) -> String {
     if doc.null_date == date::DEFAULT_NULL_DATE && doc.null_year == date::DEFAULT_NULL_YEAR {
         return String::new();
@@ -786,12 +737,10 @@ fn calculation_settings(doc: &Document) -> String {
     )
 }
 
-/// §5.11, and *after* the tables: the schema's `office-spreadsheet-content-epilogue` (line 8263)
-/// is where `table-functions` sits, and `table:named-expressions` is its first member.
-/// LibreOffice reads them in either position, so loop C cannot see this — only the RELAX NG
-/// schema can, which is what `kb.rs` validates against. Every name is written as
-/// `table:named-expression`, since the reader stores a named range as the reference it stands
-/// for and the two forms are interchangeable on the way out.
+/// §5.11, after the tables: `table-functions` is in the schema's
+/// `office-spreadsheet-content-epilogue` (line 8263). LibreOffice reads either position, so only
+/// `kb.rs`'s schema validation sees this. Every name is written as `table:named-expression`; the
+/// reader stores a named range as its reference.
 fn named_expressions(doc: &Document) -> String {
     if doc.names.is_empty() {
         return String::new();
@@ -809,27 +758,21 @@ fn named_expressions(doc: &Document) -> String {
     out
 }
 
-// --- writing a sheet back into the table it was read from -----------------------------------
+// --- writing a sheet back into the table it was read from ---
 //
-// A regenerating save of a document read from a file is a splice over the file's own
-// `office:spreadsheet`: every table nobody touched is its own bytes, and a table somebody did is
-// its own bytes with patches — the rows that changed, the columns if a width did, the charts if
-// one did, the start tag if the sheet was renamed. Everything the model does not read (a merge,
-// an annotation, a validation, a header-row group, a vendor's attribute) lives in the bytes that
-// are not patched, which is how saving never makes the file worse. What a patch cannot carry is
-// caught by `losses` and refused.
+// A regenerating save of a document read from a file is a splice over its own
+// `office:spreadsheet`: an untouched table is its own bytes, a touched one its own bytes with
+// patches (changed rows, columns if a width changed, charts if one did, the start tag if renamed).
+// What a patch cannot carry is caught by `losses` and refused.
 
 /// What a save does with one row element of the file.
 enum RowFix {
     /// Its own bytes.
     Keep,
-    /// Its own bytes, split around the rows it stands for that changed — a repeated element is
-    /// split the way a repeated cell is, into copies of itself before and after and one patched
-    /// copy per changed row — each changed row with these cells rewritten and, maybe, a new
-    /// start tag.
+    /// Its own bytes, split around the changed rows it stands for — copies of itself before and
+    /// after, and one patched copy per changed row.
     Patch(BTreeMap<u32, RowPatch>),
-    /// Written again from the model: a run of rows whose visibility the filter now splits in
-    /// ways too many to copy, which the guard then judges.
+    /// Written again from the model: a run of rows the filter now splits too many ways to copy.
     Rewrite,
 }
 
@@ -944,9 +887,9 @@ fn plan(doc: &Document, source: &super::source::Source) -> Vec<Plan> {
                     patches.entry(*row).or_default().height = true;
                     scope.heights.insert(*row);
                 }
-                // A merge added or taken away: which of the row's elements are cells and which
-                // are covered changed. A covered cell past what the file's row spells is
-                // written from the model, so the pool needs the look of every merged cell.
+                // A merge added or removed changes which of the row's elements are cells and which
+                // covered. A covered cell past the file's row is written from the model, so the
+                // pool needs every merged cell's look.
                 for row in p.merges.range(span.clone()) {
                     patches.entry(*row).or_default().merges = true;
                     for (anchor, merge) in sheet.merges() {
@@ -1334,14 +1277,11 @@ fn patched_table(
     apply(bytes, t.range.clone(), patches)
 }
 
-/// The patches a save makes to a sheet's `office:forms` when its checkboxes changed — R6 for
-/// form controls (`doc/ods-format.md` §3.5).
-///
-/// A checkbox the file has **keeps its own element and identifier**, LibreOffice's properties
-/// and all, with only the attributes the model owns set again where they differ — and its cell
-/// keeps the `draw:control` pointing at it, even when that cell is written again for its value
-/// (`file_control`). A checkbox taken away loses its element; a new one is written fresh, inside
-/// the file's first `form:form`. Every other control in the file is left exactly where it was.
+/// The patches to a sheet's `office:forms` when its checkboxes changed (`doc/ods-format.md` §3.5).
+/// A checkbox the file has keeps its element and identifier, with only the model's attributes set
+/// where they differ, and its cell keeps the `draw:control` pointing at it (`file_control`). A
+/// removed checkbox loses its element; a new one goes into the file's first `form:form`. Other
+/// controls stay where they are.
 fn patched_forms(
     sheet: &Sheet,
     t: &super::source::Table,
@@ -1369,9 +1309,8 @@ fn patched_forms(
         }
         return patches;
     };
-    // The file's own: gone with a checkbox taken away, and otherwise its own element with what
-    // the model says set on its start tag — a link respelled after a rename, a new label —
-    // and nothing at all where it already says it.
+    // The file's own, removed with a checkbox taken away, otherwise patched only where it differs
+    // from the model.
     for (pos, (id, _)) in &t.checkboxes {
         let Some(range) = t.checkbox_elements.get(id) else {
             continue;
@@ -1430,10 +1369,8 @@ fn patched_forms(
     patches
 }
 
-/// One row element of the file, split around its changed rows: copies of the element for the
-/// untouched runs (its `table:number-rows-repeated` set to each run's length), and one copy per
-/// changed row with that row's start tag and cells patched. An element standing for one row is
-/// the degenerate case — one patched copy.
+/// One row element of the file, split around its changed rows: copies for the untouched runs
+/// (`table:number-rows-repeated` set to each run's length) and one patched copy per changed row.
 #[allow(clippy::too_many_arguments)]
 fn split_row(
     sheet: &Sheet,
@@ -1653,12 +1590,10 @@ enum Merging {
     Covered,
 }
 
-/// One cell element of a row a merge was added to or taken from, as the elements it now is:
-/// split into runs of columns that are alike — plain, covered, or one merge's top-left cell —
-/// each a copy of the file's element under the right name, with its repeat count and its spans
-/// set. Content, style and every other attribute stay the file's. A column whose value or look
-/// was written this session is its own run, written the way [`rewrite_cells`] and [`restyle`]
-/// write one.
+/// One cell element of a row a merge was added to or taken from, split into runs of alike columns
+/// — plain, covered, or a merge's top-left — each a copy of the file's element under the right
+/// name with its repeat and spans set. A column whose value or look was written this session is
+/// its own run ([`rewrite_cells`], [`restyle`]).
 #[allow(clippy::too_many_arguments)]
 fn remerge(
     sheet: &Sheet,
@@ -1873,10 +1808,8 @@ fn restyle(
     out
 }
 
-/// The cell elements of a row element, read out of its own bytes — what the reader records only
-/// for a row standing for itself (`source::Source::rows`).
 /// One cell element of a row, read out of its bytes: [`super::source::Cell`] plus whether it is
-/// the covered half of a merge — which holds a position and a style but no value of its own.
+/// the covered half of a merge.
 struct Scanned {
     cell: super::source::Cell,
     covered: bool,
@@ -1893,6 +1826,8 @@ fn scan_cells(bytes: &[u8], e: &super::source::RowElement) -> (Vec<super::source
     )
 }
 
+/// The cell elements of a row element, read out of its own bytes — what the reader records only
+/// for a row standing for itself (`source::Source::rows`).
 fn scan_all_cells(bytes: &[u8], e: &super::source::RowElement) -> (Vec<Scanned>, u32) {
     let mut cells = Vec::new();
     let end = bytes[e.range.clone()]
@@ -1959,9 +1894,8 @@ fn unescape(value: &str) -> String {
         .replace("&amp;", "&")
 }
 
-/// One cell element of the file, rewritten from the sheet — [`rewrite`] for a save that may
-/// also have changed a cell's look: a cell whose format or style was written takes the pool's
-/// style in place of the file's, and every other cell the element covers keeps the file's.
+/// [`rewrite`] for a save that may also have changed a cell's look: a cell whose format or style
+/// was written takes the pool's style, the others the file's.
 fn rewrite_cells(
     sheet: &Sheet,
     row: u32,
@@ -2011,10 +1945,8 @@ fn rewrite_cells(
     out
 }
 
-/// `office:styles` — which this writer fills with exactly one thing, the document's locale on
-/// the default cell style (`doc/ods-format.md` §5.2, "The document's own language"), and only
-/// when the document has one (R3). `None` otherwise, so a document with no locale writes no
-/// element for it at all.
+/// `office:styles`, holding only the document's locale on the default cell style
+/// (`doc/ods-format.md` §5.2). `None` when the document states no locale (R3).
 fn common_styles(doc: &Document) -> Option<String> {
     let mut inner = String::new();
     if let Some(locale) = doc.locale.as_ref() {
@@ -2058,11 +1990,9 @@ fn common_styles_part(doc: &Document) -> Option<String> {
     ))
 }
 
-/// `table:database-ranges` (§9.4): every sheet's autofilter, as a range plus one
-/// set-of-values condition per filtered field.
-///
-/// `table:filter-condition` needs a `table:value` even when the set-items carry the values,
-/// so it gets the first of them — which is also what LibreOffice writes.
+/// `table:database-ranges` (§9.4): every sheet's autofilter, as a range plus one set-of-values
+/// condition per filtered field. `table:filter-condition` needs a `table:value` even with
+/// set-items, so it gets the first, as LibreOffice writes.
 fn database_ranges(out: &mut String, doc: &Document) {
     let filters: Vec<_> = doc
         .sheets
@@ -2074,9 +2004,8 @@ fn database_ranges(out: &mut String, doc: &Document) {
     }
     out.push_str("   <table:database-ranges>\n");
     for (sheet, filter) in filters {
-        // The reference serialiser, minus its brackets: `table:target-range-address` is the
-        // bracketless spelling of the same thing, dots and sheet-name quoting included, and
-        // the display form is not it (it drops the second end's dot).
+        // `table:target-range-address` is the bracketless reference spelling, not the display form
+        // (which drops the second end's dot).
         let address = crate::a1::reference(Some(&sheet.name), filter.start, filter.end)
             .to_string()
             .trim_matches(['[', ']'])
@@ -2116,13 +2045,9 @@ fn database_ranges(out: &mut String, doc: &Document) {
     out.push_str("   </table:database-ranges>\n");
 }
 
-/// The format a date cell gets when the document gives it none.
-///
-/// Not decoration: LibreOffice *requires* a date cell to display through a date style and
-/// invents one from its own locale when a file omits it, so a document written without one
-/// comes back with `M/D/YY` bolted on and the round trip is no longer an identity. Writing
-/// the ISO spelling instead makes the file say what it means, in the one form that reads
-/// the same in every locale (§3.4 Note 2).
+/// The format a date cell gets when the document gives it none. LibreOffice requires a date cell
+/// to have a date style and invents one from its locale otherwise (`M/D/YY`), breaking the round
+/// trip; ISO reads the same in every locale (§3.4 Note 2).
 static DATE_DEFAULT: LazyLock<Format> = LazyLock::new(|| numfmt::preset(Kind::Date, 0, false, ""));
 
 /// A date that carries a time is a DateTime (§4.3.4) and needs a style that shows both,
@@ -2148,17 +2073,14 @@ fn effective(sheet: &Sheet, pos: Pos) -> Option<&Format> {
     }
 }
 
-/// How one cell is written: its number format and its styling, which travel together on a
-/// single `style:style` and are therefore pooled together (§5.3). A cell with neither gets
-/// no `table:style-name` at all.
+/// How one cell is written — pooled as one `style:style` (§5.3); a cell with nothing gets no
+/// `table:style-name`:
 ///
-/// The third member is the cell's *base*, an index into [`Pool::bases`]: the style a restyled
-/// cell had in the file, which its new style is built from so that what the model does not
-/// read on it survives (`envelope::patch_style`). Part of the identity, since two cells that
-/// now look the same but had different styles in the file carry different unread properties.
-///
-/// The fourth is the conditional-format maps the cell's style carries, an index into
-/// [`Pool::maps`] — which rules cover the cell, in priority order (`crate::rule`).
+/// * its number format and its styling;
+/// * its base, an index into [`Pool::bases`]: the style a restyled cell had in the file, which the
+///   new one is built from (`envelope::patch_style`) so its unread properties survive — part of
+///   the identity for that reason;
+/// * its conditional-format maps, an index into [`Pool::maps`] (`crate::rule`).
 type Look<'a> = (
     Option<&'a Format>,
     Option<&'a CellStyle>,
@@ -2166,19 +2088,14 @@ type Look<'a> = (
     Option<usize>,
 );
 
-/// Every distinct format and every distinct look in the document, in first-seen order.
-///
-/// Two pools, because the file has two vocabularies: format *i* is a `number:*-style` named
-/// `N{i}`, look *i* is a `table-cell` `style:style` named `ce{i}` that points at one and
-/// carries the properties. Every cell that shares a look shares its name.
+/// Every distinct format and look in the document, in first-seen order: format *i* is the
+/// `number:*-style` `N{i}`, look *i* the `table-cell` `style:style` `ce{i}` that points at one.
 struct Pool<'a> {
     formats: Vec<&'a Format>,
     index: HashMap<&'a Format, usize>,
     looks: Vec<Look<'a>>,
     look_index: HashMap<Look<'a>, usize>,
-    /// The distinct column widths and row heights (§5.4), pooled the same way and for the
-    /// same reason: a track's size is reachable only through a `style:style` of family
-    /// `table-column`/`table-row`, named `co{i}`/`ro{i}` here.
+    /// The distinct column widths and row heights (§5.4), pooled the same way as `co{i}`/`ro{i}`.
     cols: Vec<&'a str>,
     col_index: HashMap<&'a str, usize>,
     rows: Vec<&'a str>,
@@ -2195,9 +2112,8 @@ struct Pool<'a> {
     /// one that cell's style carries.
     maps: Vec<String>,
     map_index: HashMap<&'a str, HashMap<Vec<usize>, usize>>,
-    /// Where each family's numbering starts — `ce`, `co`, `ro` and `N` — so that a pool written
-    /// into a file that already declares `ce1`…`ce9` starts at `ce10` and never takes a name the
-    /// file uses (`envelope::merge` keeps the file's own automatic styles beside these).
+    /// Where each family's numbering starts (`ce`, `co`, `ro`, `N`), so a pool written into a file
+    /// that declares `ce1`…`ce9` starts at `ce10`.
     offsets: [usize; 4],
 }
 
@@ -2453,9 +2369,9 @@ impl<'a> Pool<'a> {
             let maps = maps
                 .and_then(|m| self.maps.get(m))
                 .map_or("", String::as_str);
-            // A restyled cell's style is its old one, renamed, with only what the model owns
-            // rewritten — so a rotation, a protection flag, a parent style or a conditional
-            // `style:map` the model never read is carried rather than dropped.
+            // A restyled cell's style is its old one renamed, with only what the model owns
+            // rewritten, so a rotation, a protection flag, a parent or an unread `style:map`
+            // survives.
             if let Some(base) = base {
                 let name = self.ce(i);
                 let patched = self
@@ -2502,9 +2418,8 @@ impl<'a> Pool<'a> {
                 }
             }
         }
-        // §5.4. `style:use-optimal-column-width` is deliberately not written: the size here
-        // is one somebody chose, and claiming it was derived would invite a reader to
-        // re-derive it from text this program never measured.
+        // §5.4. `style:use-optimal-column-width` is not written: the size was chosen, not derived
+        // from text.
         for (i, width) in self.cols.iter().enumerate() {
             let _ = writeln!(
                 out,
@@ -2535,10 +2450,9 @@ const PROPERTY_ORDER: [&str; 3] = [
     "style:text-properties",
 ];
 
-/// Every attribute [`properties`] writes, set to `style`'s value or removed — the whole of what
-/// a cell style's properties mean *to the model*, and so exactly what a restyle may change on
-/// the style it is built from. Must name every attribute `properties` does, or a property set
-/// on the old style and cleared in the model would survive the clearing.
+/// Every attribute [`properties`] writes, set to `style`'s value or removed — exactly what a
+/// restyle may change. Must name every attribute `properties` does, or a cleared property would
+/// survive on the old style.
 fn owned_properties(style: Option<&CellStyle>) -> Vec<envelope::PropertyPatch<'static>> {
     let value = |v: Option<&Option<String>>| v.and_then(|v| v.clone());
     let s = style;
@@ -2603,10 +2517,7 @@ fn owned_properties(style: Option<&CellStyle>) -> Vec<envelope::PropertyPatch<'s
     ]
 }
 
-/// The property children of a cell style (§5.1), in the order the schema declares them.
-///
-/// Every value goes out exactly as it came in. LibreOffice will re-quantise a border width
-/// and rewrite a font reference (§5.4) — that is its normalisation, not ours to anticipate.
+/// The property children of a cell style (§5.1), in schema order, every value as it came in.
 fn properties(style: &CellStyle) -> String {
     let mut out = String::new();
     let attr = |out: &mut String, name: &str, value: &Option<String>| {
@@ -2777,9 +2688,8 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
             Part::Content => out.push_str("<number:text-content/>"),
         }
     }
-    // The branches last, which is where the schema puts them, and by the name the pool gave
-    // the target — a map whose target is not pooled cannot happen, since `Pool::add` walks
-    // them, but a missing one is skipped rather than written as a dangling reference.
+    // The branches last, as the schema puts them, under the names the pool gave their targets; a
+    // missing one is skipped rather than left dangling.
     for map in &format.maps {
         let Some(target) = pool.index.get(&map.format) else {
             continue;
@@ -2795,10 +2705,9 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
     out
 }
 
-/// `table:shapes` (rng:15678) — every chart on this sheet, regenerated fresh from the model
-/// every time: `doc/chart-format.md` explains why this build does not try to splice a chart's
-/// own document the way a cell splices, and assigns [`crate::chart::series_color`] rather than
-/// reproducing whatever colours the chart was last saved with.
+/// `table:shapes` (rng:15678) — every chart on this sheet, regenerated from the model each time,
+/// with colours from [`crate::chart::series_color`] (`doc/chart-format.md` explains why charts are
+/// not spliced).
 fn write_shapes(out: &mut String, sheet: &Sheet, objects: &mut Objects) {
     if sheet.charts().is_empty() {
         return;
@@ -2810,15 +2719,10 @@ fn write_shapes(out: &mut String, sheet: &Sheet, objects: &mut Objects) {
     out.push_str("    </table:shapes>\n");
 }
 
-/// Where a chart's own document goes, which is the one thing the two physical forms disagree
-/// about (`doc/chart-format.md`, The two places a chart's own document can live).
-///
-/// **Flat: inline**, an `office:document` right inside `draw:object`. **Package: a
-/// sub-document** beside `content.xml` — `Object 1/content.xml`, which `draw:object` points at
-/// by `xlink:href`. The schema allows either in either form (rng:5541-5545), and this writer
-/// used to write the inline shape into packages too, on the strength of that; measured
-/// (LibreOffice 26.8.0.3, loop C), LibreOffice **drops every inline chart it finds in a
-/// package**, so an `.ods` this build wrote came back with no charts at all.
+/// Where a chart's own document goes: inline (`office:document` inside `draw:object`) in the flat
+/// form, and a sub-document (`Object 1/content.xml`, pointed at by `xlink:href`) in a package. The
+/// schema allows either (rng:5541-5545), but LibreOffice drops an inline chart in a package
+/// (measured, LibreOffice 26.8.0.3, `doc/chart-format.md`).
 struct Objects {
     form: Form,
     documents: Vec<SubDocument>,
@@ -2847,22 +2751,16 @@ impl Objects {
     }
 }
 
-/// One chart, as the flat form's own inline shape (`doc/chart-format.md`) — valid ODF
-/// regardless of the outer document's physical form, and always the simpler of the two
-/// `draw:object` may hold (R3).
+/// One chart, written in the flat form's inline shape and placed by [`Objects`].
 fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Objects) {
     use crate::chart::ChartKind;
-    // Every `style:style style:family="chart"` this chart's document needs, one
-    // [`crate::chart::effective_color`] each. Built before anything is written, so the
-    // automatic-styles section — which the schema puts ahead of the body — never has to
-    // forward-reference a name the body decides on later.
+    // Every `style:family="chart"` style this chart needs, built before writing because the schema
+    // puts automatic styles ahead of the body.
     //
-    // **Every series names a style of its own, whatever its kind** (`doc/chart-format.md`,
-    // Colour): LibreOffice ignores a data point's style under a series that names none, which
-    // is how every bar and slice this build wrote used to come out in its default palette. A
-    // bar or a line colours per series; a pie's series style carries its first slice's colour
-    // and each slice is a data point of its own; a bar's data points are written only where a
-    // bar carries an override ([`bar_points`]).
+    // Every series names a style of its own (`doc/chart-format.md`, Colour): LibreOffice ignores a
+    // data point's style under a series that names none. Bars and lines colour per series; a pie's
+    // series style carries its first slice's colour and each slice is a data point; a bar's data
+    // points are written only for overrides ([`bar_points`]).
     let mut styles: Vec<(String, String)> = Vec::new();
     for (n, series) in chart.series.iter().enumerate() {
         let own = match chart.kind {
@@ -2890,19 +2788,10 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Obje
             ChartKind::Line => {}
         }
     }
-    // Each axis needs a style of its own to carry `chart:display-label` — a
-    // `style:chart-properties` attribute, not an attribute of `chart:axis` itself.
-    //
-    // **Always written, on both axes, whichever way it goes** (`doc/chart-format.md` has the
-    // measurement): LibreOffice's own importer reads an *absent* `chart:display-label` as
-    // `false`, so leaving the attribute off when tick labels are shown would hand out a chart
-    // that draws differently there than it does here. A chart LibreOffice itself writes states
-    // it explicitly too, which is the same conclusion reached from the other direction.
-    //
-    // A pie's y axis is its angle axis, and its style states `chart:reverse-direction` for the
-    // same reason: LibreOffice draws a pie whose file says nothing counter-clockwise
-    // (`doc/chart-format.md`, Direction), so leaving it off would draw a clockwise pie the
-    // other way round there.
+    // Each axis gets a style carrying `chart:display-label`, always stated: LibreOffice reads an
+    // absent one as `false` (`doc/chart-format.md`). A pie's y axis also states
+    // `chart:reverse-direction`, since LibreOffice draws a pie that says nothing
+    // counter-clockwise.
     let direction = match chart.kind {
         ChartKind::Pie => format!(" chart:reverse-direction=\"{}\"", chart.clockwise),
         ChartKind::Bar | ChartKind::Line => String::new(),
@@ -2952,9 +2841,8 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Obje
         esc(&chart.height),
         chart.kind.class()
     );
-    // The schema's order: title, (subtitle, footer), legend, then the plot area (rng:462-485).
-    // No position on either — both are optional (rng:1722-1733), and LibreOffice lays out a
-    // title and a legend that say nothing about where they sit.
+    // The schema's order: title, (subtitle, footer), legend, then the plot area (rng:462-485),
+    // with no positions (rng:1722-1733).
     if let Some(title) = &chart.title {
         let _ = writeln!(
             out,
@@ -3108,14 +2996,9 @@ fn bar_points(series: &crate::chart::Series, count: usize) -> Vec<PointRun> {
     runs
 }
 
-/// One `chart:axis` (rng:423): categories (x only, `None` for y), and whatever the [`Axis`]
-/// itself carries — self-closed when all of that is empty, the same as the y axis always used
-/// to be before it could carry anything.
-///
-/// Child order is the schema's, not this build's taste: `chart:title`, then
-/// `chart:categories`, then any `chart:grid` (rng:422-434). Tick labels are *not* here —
-/// `chart:display-label` lives on the axis' own style, written by [`write_chart`] and
-/// referenced by the `chart:style-name` below.
+/// One `chart:axis` (rng:423): its categories (x only) and whatever the [`Axis`] carries,
+/// self-closed when that is nothing. Children in schema order: `chart:title`, `chart:categories`,
+/// `chart:grid` (rng:422-434). Tick labels live on the axis' style, written by [`write_chart`].
 fn write_axis(out: &mut String, dimension: &str, categories: Option<&str>, axis: &Axis) {
     let style = format!(" chart:style-name=\"gch{dimension}\"");
     if categories.is_none() && axis.label.is_none() && !axis.gridlines {
@@ -3151,11 +3034,8 @@ fn write_axis(out: &mut String, dimension: &str, categories: Option<&str>, axis:
 
 const CHART_MIMETYPE: &str = "application/vnd.oasis.opendocument.chart";
 
-/// How many cells a chart's own range spans — the only reason this build parses one back out:
-/// a pie's per-slice colouring needs one `chart:data-point` per cell, and a bar or line
-/// series' `chart:data-point chart:repeated`  needs the same count for R2 validity (the
-/// schema does not require it to add up, but a reader that draws one dot per data point
-/// should see as many as the range actually has).
+/// How many cells a chart's range spans: a pie needs one `chart:data-point` per cell, and a
+/// series' `chart:data-point chart:repeated` should match the range's count.
 fn cell_count(range: &str) -> usize {
     let Ok(reference) = crate::a1::parse_bracketed(&format!("[{range}]")) else {
         return 1;
@@ -3183,9 +3063,7 @@ fn table(
     let rows = cols_or_rows_extent(sheet, null_date, locale);
 
     let _ = writeln!(out, "   <table:table table:name=\"{}\">", esc(&sheet.name));
-    // The form controls first (rng:15958), then the shapes — both before the columns, which is
-    // where the schema puts them (rng:15961, ahead of rng:15963-15964's
-    // `table-columns-and-groups`/`table-rows-and-groups`).
+    // Form controls (rng:15958), then shapes, both before the columns (rng:15961).
     write_forms(out, sheet);
     write_shapes(out, sheet, objects);
     write_columns(out, sheet, pool, None);
@@ -3199,12 +3077,10 @@ fn table(
     out.push_str("   </table:table>\n");
 }
 
-/// The column declarations: both the column block and the row block are mandatory, even for an
-/// all-empty sheet (§3.2), which is why everything here has a `.max(1)` behind it. Neighbouring
-/// columns of equal width, hidden state and default cell style are one declaration, which is
-/// what the reader's repeat handling reads back and what keeps a sheet's declarations to a
-/// handful. `defaults` is the file's own `table:default-cell-style-name` per column, when the
-/// sheet is being written back into the table it was read from — the model does not carry it.
+/// The column declarations. Both the column and row blocks are mandatory even for an empty sheet
+/// (§3.2), hence the `.max(1)`s. Neighbouring columns of equal width, hidden state and default
+/// cell style are one declaration. `defaults` is the file's own `table:default-cell-style-name`
+/// per column, when writing back into the table the sheet was read from.
 fn write_columns(
     out: &mut String,
     sheet: &Sheet,
@@ -3257,10 +3133,9 @@ fn write_columns(
     }
 }
 
-/// What the filter hides, written out as `table:visibility="filter"` (§9.4). Derived here rather
-/// than stored, so the attribute cannot drift from the conditions — see [`crate::filter`]. Rows
-/// hidden by hand are stored, and write `"collapse"` instead — LibreOffice keeps the two
-/// spellings apart, and a row that is both wins `"collapse"`, the more structural of the two.
+/// What the filter hides, written as `table:visibility="filter"` (§9.4) and derived rather than
+/// stored ([`crate::filter`]). Rows hidden by hand write `"collapse"`, which wins when a row is
+/// both.
 struct Visibility {
     filtered: BTreeSet<u32>,
     manual: BTreeSet<u32>,
@@ -3302,8 +3177,8 @@ fn write_rows(
     visibility: &Visibility,
 ) {
     let cols = sheet.used_cols().max(1);
-    // Which rows carry anything, asked once of the sheet's sparse storage rather than of every
-    // cell in the used rectangle — see `Sheet::rows_carrying` for the sheet that never finished.
+    // Which rows carry anything, asked once of the sparse storage (`Sheet::rows_carrying`) rather
+    // than of every cell in the used rectangle.
     let carrying = sheet.rows_carrying();
     let is_blank = |row: u32| {
         let i = carrying.partition_point(|range| range.end <= row);
@@ -3313,11 +3188,8 @@ fn write_rows(
     let mut row = range.start;
     while row < range.end {
         let height = sheet.row_height(row);
-        // Interior blank rows collapse into one repeated row (§3.3) — the main file-size
-        // lever, and the difference between a 20-row sheet and 20 rows plus a megabyte of
-        // nothing after one stray edit at row 50 000. A row of a different height stops the
-        // run, or the height would spread down the sheet.
-        // A hidden row stops the run too, for the same reason a differently sized one does.
+        // Interior blank rows collapse into one repeated row (§3.3). A row of a different height
+        // or visibility stops the run, or that would spread down the sheet.
         let blank = (row..range.end)
             .take_while(|r| {
                 is_blank(*r)
@@ -3365,20 +3237,10 @@ fn last_index(indices: impl Iterator<Item = u32>) -> u32 {
     indices.map(|i| i.saturating_add(1)).max().unwrap_or(0)
 }
 
-/// Whether a cell carries anything the file has to spell.
-///
-/// **Five things, not two.** It used to be a value or a formula, and a cell holding only a
-/// number format or a cell style was therefore "blank" — dropped as a blank row when its
-/// whole row was, and cut off by `write_row`'s trailing-cell trim when it was at the end of one.
-/// `Sheet::used_rows` has the same story and the same three ways in; a hand-written projection
-/// is the one that found it, because `cell B5 "=SUM([.B2:.B4])"` with no cached value is the
-/// *normal* way to write a spreadsheet you have not done the arithmetic for.
-///
-/// `Sheet::rows_carrying` is the same five questions asked row-wise of the sparse storage, and
-/// `rows_carrying_is_carries_asked_row_by_row` holds the two to one answer.
-///
-/// A sixth since merges: every cell a merge takes in is spelled, the covered ones as
-/// `table:covered-table-cell`, or the merge would reach past what the row says it has.
+/// Whether a cell carries anything the file has to spell: a value, a formula, a date or time
+/// spelling, a number format or a cell style — or a place in a merge, written as
+/// `table:covered-table-cell`. `Sheet::rows_carrying` asks the same row-wise;
+/// `rows_carrying_is_carries_asked_row_by_row` holds them together.
 fn carries(sheet: &Sheet, pos: Pos) -> bool {
     !sheet.get(pos).is_empty()
         || sheet.formula(pos).is_some()
@@ -3444,13 +3306,10 @@ fn map_elements(sheet: &Sheet, rules: &[usize]) -> String {
     out
 }
 
-/// The name a rule's style is declared under in `office:styles`: derived from what it *says*,
-/// so two rules drawing the same thing share one, and a file that already declares the name —
-/// one this writer wrote before — declares the same style under it. That matters because
-/// `envelope::merge` keeps a file's own common style over a generated one of the same name.
-///
-/// A common style rather than an automatic one because LibreOffice draws nothing for a map
-/// naming an automatic style (`doc/ods-format.md` §3.6, measured).
+/// The name a rule's style is declared under in `office:styles`, derived from what it says, so
+/// equal rules share one and a file this writer wrote before declares the same style under it
+/// (`envelope::merge` keeps the file's own). A common style, since LibreOffice draws nothing for a
+/// map naming an automatic one (`doc/ods-format.md` §3.6, measured).
 fn rule_style_name(style: &CellStyle) -> String {
     // FNV-1a, spelled out here because `std`'s hasher is not promised to be stable across
     // builds, and this name ends up in files.
@@ -3462,10 +3321,8 @@ fn rule_style_name(style: &CellStyle) -> String {
     format!("Rule{hash:016x}")
 }
 
-/// A cell style element — one of the file's own, patched — with every conditional-format map
-/// the model reads taken out and `maps` put in their place, at the end, where the schema puts
-/// a `style:map` (rng:12119). A map the model cannot read stays: it is the file's, and nobody
-/// changed it.
+/// A cell style element of the file's, with every conditional-format map the model reads replaced
+/// by `maps`, at the end where the schema puts them (rng:12119). Maps the model cannot read stay.
 fn with_maps(element: &str, maps: &str) -> String {
     let mut out = String::with_capacity(element.len() + maps.len());
     let mut rest = element;
@@ -3500,11 +3357,10 @@ fn with_maps(element: &str, maps: &str) -> String {
     }
 }
 
-/// The patches a save makes to LibreOffice's own copy of a sheet's conditional formats once the
-/// rules have changed: every `calcext:conditional-format` whose conditions are all of the kinds
-/// the model reads from the standard spelling is taken out — the `style:map`s now say what they
-/// said, and a stale copy would be what LibreOffice reads first. One holding anything else (a
-/// colour scale, a data bar, a condition the model cannot read) is left exactly as it was.
+/// The patches to LibreOffice's own copy of a sheet's conditional formats once the rules changed:
+/// every `calcext:conditional-format` made only of kinds the model reads is removed, since the
+/// `style:map`s now say it and LibreOffice would read the stale copy first. Anything else (a
+/// colour scale, a data bar) stays.
 fn patched_conditional_formats(
     t: &super::source::Table,
     bytes: &[u8],
@@ -3589,10 +3445,8 @@ fn write_row(
         pool.row_attr(sheet.row_height(row)),
         visibility
     );
-    // Trailing empty cells are simply not written: unmentioned is the same as empty
-    // (§3.3), and the row is known non-blank so at least one cell survives. "Empty" is
-    // `carries` — a cell whose only content is a style still has to be spelled, or the style
-    // is what the trim throws away.
+    // Trailing empty cells are not written: unmentioned is empty (§3.3). Empty means not
+    // [`carries`], so a style-only cell is still spelled.
     let last = (0..cols)
         .rposition(|col| carries(sheet, Pos::new(row, col)))
         .map_or(0, |c| c as u32);
@@ -3637,10 +3491,8 @@ fn write_row(
             Some((_, span)) => spanned(span),
             None => String::new(),
         };
-        // Only blank runs are compressed. Repeating a *valued* cell would need the formula
-        // to repeat with it, and a formula is position-dependent — a correctness trap for
-        // bytes nobody is short of. A run of blanks sharing one format compresses like any
-        // other; one that does not share it stops the run, or the format would spread.
+        // Only blank runs are compressed; a repeated formula would move. A run of blanks stops
+        // where the format changes.
         let alone = merge.is_some() || sheet.checkbox(pos).is_some();
         let repeat = if value.is_empty() && formula.is_none() && !alone {
             (col..=last)
@@ -3699,15 +3551,12 @@ fn cell(
             let _ = write!(out, "<table:table-cell{attrs}/>");
         }
         CellValue::Number(n) => {
-            // The reader maps a non-finite `office:value` to zero (§9); agreeing here keeps
-            // read(write(d)) == d for every document the reader can produce, and xsd:double's
-            // `INF`/`NaN` spellings are not worth the interop risk for a value no ODF
-            // document should be carrying in the first place.
+            // The reader maps a non-finite `office:value` to zero (§9), so the writer does too and
+            // `read(write(d)) == d`.
             let n = if n.is_finite() { *n } else { 0.0 };
-            // A date and a time are Numbers (§4.3.3, §4.3.2) that were *written* as a
-            // calendar date or a clock, and go back out the way they came in. The kind is
-            // consulted only here, so a cell whose date was overwritten with text or a
-            // boolean cannot carry a stale one out — no side table to keep in step.
+            // A date or time is a Number written as a calendar date or a clock, and goes back out
+            // that way. The kind is consulted only here, so a cell overwritten with text cannot
+            // carry a stale one.
             let typed = match kind {
                 Some(NumberKind::Date) => format!(
                     "office:value-type=\"date\" office:date-value=\"{}\"",
@@ -3726,10 +3575,8 @@ fn cell(
             display(out, &attrs, &typed, value, format, null_date);
         }
         CellValue::Text(s) => {
-            // Carried as paragraphs rather than `office:string-value`, which is what LO
-            // itself writes and — the load-bearing reason — is the only form that survives
-            // a newline. XML normalises a literal newline in an attribute value to a space,
-            // so a multi-line string in `office:string-value` comes back mangled.
+            // Paragraphs rather than `office:string-value`, as LibreOffice writes: an attribute
+            // value normalises a newline to a space.
             let _ = write!(
                 out,
                 "<table:table-cell{attrs} office:value-type=\"string\">"
@@ -3746,12 +3593,9 @@ fn cell(
     }
 }
 
-/// A typed cell, with the `text:p` its format renders when it has one.
-///
-/// The display text is redundant to us — the value and the style say everything — and is
-/// written anyway because §7.2's template writes it and because a reader that does not
-/// implement number formats shows *something* rather than a blank cell. It is never the
-/// value: every branch here carries a typed `office:*-value` attribute beside it.
+/// A typed cell, with the `text:p` its format renders. Redundant to us, but §7.2's template writes
+/// it and a reader without number formats then shows something; the typed `office:*-value` beside
+/// it is the value.
 fn display(
     out: &mut String,
     attrs: &str,
@@ -3781,10 +3625,9 @@ fn covered_element(cell: &str) -> String {
     }
 }
 
-/// The identifier this writer gives the checkbox drawn in `pos` of `sheet`: stable, so one
-/// document writes the same bytes twice, and unique across the document's sheets, since an
-/// `xml:id` is document-wide and two sheets have the same addresses. A checkbox a save copies
-/// from the file keeps the file's own identifier (`patched_forms`).
+/// The identifier this writer gives the checkbox drawn in `pos`: stable across saves, and unique
+/// across sheets since an `xml:id` is document-wide. A checkbox copied from the file keeps the
+/// file's identifier.
 fn checkbox_id(sheet: &Sheet, pos: Pos) -> String {
     // FNV-1a over the sheet's name: a name is unique in a document, and a short stable hash of
     // it is an NCName fragment where the name itself may not be.
@@ -3850,10 +3693,9 @@ fn with_control(cell: String, sheet: &Sheet, pos: Pos) -> String {
     with_control_text(cell, control)
 }
 
-/// The `draw:control` a cell **from the file** is written with when a save rewrites it. A
-/// checkbox the file already had keeps the file's own shape, verbatim — the file's
-/// `office:forms` keeps its element and its identifier too (`patched_forms`), and the two have
-/// to name one. Only a new one is this writer's (`checkbox_id`), in both places.
+/// The `draw:control` a cell from the file is written with when a save rewrites it: an existing
+/// checkbox keeps the file's shape verbatim, matching the identifier `patched_forms` kept; only a
+/// new one gets this writer's (`checkbox_id`).
 fn file_control(
     sheet: &Sheet,
     pos: Pos,
@@ -3920,14 +3762,9 @@ fn count(n: u32, axis: &str) -> String {
     }
 }
 
-/// One line of cell text as the body of a `text:p`.
-///
-/// Whitespace inside a `text:p` is **collapsed** by any conforming reader, which is the
-/// entire reason `text:s` and `text:tab` exist. Writing `"a    b"` literally gets it back
-/// as `"a b"`, and a leading or trailing space vanishes outright — so runs of spaces, and
-/// any space at either end, are written as an explicit `text:s`. A single interior space
-/// survives collapsing untouched and stays literal, which keeps ordinary prose readable in
-/// the output.
+/// One line of cell text as the body of a `text:p`. A conforming reader collapses whitespace in
+/// `text:p`, so runs of spaces and spaces at either end are written as `text:s`; a single interior
+/// space stays literal.
 fn paragraph(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut rest = line;
@@ -3975,9 +3812,8 @@ mod tests {
         );
     }
 
-    /// The used rectangle here is the whole grid — seventeen billion cells — and a writer that
-    /// asked each one whether it was blank never finished. Four cells in, four cells out, and
-    /// the rows between are two repeats.
+    /// The used rectangle is the whole grid, seventeen billion cells: four cells in must be four
+    /// cells out, with two repeats between.
     #[test]
     fn the_far_corners_of_the_grid_are_four_cells_not_the_rectangle_between() {
         let mut doc = Document::default();
@@ -3999,9 +3835,7 @@ mod tests {
         );
     }
 
-    /// `Sheet::rows_carrying` and [`carries`] are one rule spelled twice — once row-wise over
-    /// the sparse storage, once per cell — and a row the two disagreed about would be written
-    /// blank with something in it, or the reverse.
+    /// `Sheet::rows_carrying` and [`carries`] are one rule spelled twice, and must agree.
     #[test]
     fn rows_carrying_is_carries_asked_row_by_row() {
         let mut doc = Document::default();
@@ -4169,9 +4003,7 @@ mod tests {
         f
     }
 
-    /// §5.3: one style per distinct format, however many cells wear it. Two cells sharing a
-    /// format must share a name — pooling that silently reindexes is worse than none, since
-    /// the second cell then displays through the *other* format in the document.
+    /// §5.3: one style per distinct format, and two cells sharing a format share a name.
     #[test]
     fn identical_formats_pool_into_one_style_and_different_ones_do_not() {
         let mut doc = Document::default();

@@ -4,16 +4,10 @@
 
 //! Reading a projection back into a spreadsheet. **\[ODS\]**
 //!
-//! The twin of `odf::read`, and **not** tolerant in the same way. `odf::read` ignores what it
-//! does not recognise because R5 says other people's files have to load; a projection is a
-//! format *this project writes*, so an unknown node is a typo in something a person hand-wrote
-//! and saying so with a line number is the kindness. That is `doc/dsl.md`'s "strictness on the
-//! way out" pointed the other way round: the tolerance a projection offers is in accepting two
-//! spellings of the same state (`at`/`row` beside `cell`), not in swallowing a third.
-//!
-//! Where it *is* lenient is where a human is typing: a missing property takes ODF's own
-//! default, `"=SUM(…)"` in the value position is understood as a formula, and a range spelled
-//! as one cell covers one cell.
+//! Not tolerant the way `odf::read` is: a projection is a format this project writes, so an
+//! unknown node is a typo in something a person wrote, and is reported with its line. The leniency
+//! is where a person types: a missing property takes ODF's default, `"=SUM(…)"` in the value
+//! position is a formula, and a range of one cell is one cell.
 
 use grind_core::projection::kdl::{KdlDocument, KdlNode, KdlValue};
 use grind_core::projection::{Shape, Source, entry_span, node_span};
@@ -23,13 +17,9 @@ use crate::numfmt::{self, Format, Kind, Map, Op, Part};
 use crate::style::CellStyle;
 use crate::{Error, Result, a1, filter, formula, locale, style};
 
-/// Read a projection.
-///
-/// The `Source` built alongside is R6 for this form (D5, `grind_core::projection::source`): the
-/// text as it came in, and where every cell sits in it, so that saving one edited cell rewrites
-/// one value and leaves the comments, the blank lines and the hand alignment alone. It costs one
-/// `record` per cell in the two places that read one, because the reader is already computing
-/// the address — which is the argument for building the map here rather than in a second pass.
+/// Read a projection, with a `Source` beside it (`grind_core::projection::source`): the text and
+/// where every cell sits in it, so saving one edited cell rewrites one value and keeps comments,
+/// blank lines and alignment.
 pub fn read(text: &str) -> Result<Document> {
     let (kind, body) = grind_core::projection::parse(text)?;
     if kind != grind_core::DocumentKind::Spreadsheet {
@@ -68,9 +58,7 @@ pub fn read(text: &str) -> Result<Document> {
             other => return Err(unknown(node, other, "a document")),
         }
     }
-    // A document with no sheets is not one ODF can express, and every reader in this crate
-    // hands back something openable. `Document::default` has the one empty sheet a *user*
-    // gets, so an empty projection opens as a new document rather than as a broken one.
+    // No sheets is not a document ODF can express; an empty projection opens as a new document.
     if doc.sheets.is_empty() {
         doc.sheets.push(Sheet::new("Sheet1"));
     }
@@ -218,12 +206,8 @@ fn at_block(sheet: &mut Sheet, node: &KdlNode, source: &mut Source) -> Result<()
             // the cell between its neighbours has nothing in it.
             if !matches!(entry.value(), KdlValue::Null) {
                 sheet.set(pos, value(entry.value()));
-                // A grid row is one line and a dozen splice sites: writing 4300 over 4200
-                // changes those four bytes and nothing else on the line, which is what makes
-                // `git diff` on a `.grind` read like a spreadsheet edit rather than a rewrite.
-                // The hole is deliberately not a site — there is nothing there to replace, and
-                // a cell that appears where one was is a structural change (D5's second
-                // boundary, `grind_core::projection::source`).
+                // Each grid value is its own splice site, so writing 4300 over 4200 changes four
+                // bytes. A hole is not a site: a cell appearing there is structural.
                 source.record(mark(sheet, pos), entry_span(entry), Shape::Value);
             }
         }
@@ -234,17 +218,14 @@ fn at_block(sheet: &mut Sheet, node: &KdlNode, source: &mut Source) -> Result<()
 /// `cell B5 15400 formula="of:=SUM(…)" date=#true` — one cell that carries more than a value.
 fn cell(sheet: &mut Sheet, node: &KdlNode, source: &mut Source) -> Result<()> {
     let pos = position(node, 0)?;
-    // The whole node, because everything about this cell is on it: editing the formula rewrites
-    // one line, and the `kdl` span stops before the indentation and the newline, so what is
-    // spliced in is exactly what the writer would emit for a node at the left margin.
+    // The whole node: everything about this cell is on it, and `kdl`'s span excludes indentation
+    // and the newline.
     source.record(mark(sheet, pos), node_span(node), Shape::Node);
     let mut formula = string_prop(node, "formula");
     if let Some(entry) = argument(node, 1) {
         match entry {
-            // The authoring shorthand (`doc/dsl.md` §3.4): a string in the value position that
-            // starts with `=` is the formula. Normalised to ODF's own spelling on the way in,
-            // so a hand-written file and its re-projection differ by this string and nothing
-            // else.
+            // The authoring shorthand (`doc/dsl.md` §3.4): a value string starting with `=` is the
+            // formula, given ODF's prefix on the way in.
             KdlValue::String(text) if text.starts_with('=') && formula.is_none() => {
                 formula = Some(format!("of:{text}"));
             }
@@ -509,10 +490,7 @@ fn autofilter(node: &KdlNode) -> Result<filter::Filter> {
 
 // --- values, addresses and the small readers ---
 
-/// A KDL value as a cell value.
-///
-/// Every KDL number becomes a `Number`, integer spelling or not: §4.3.1 has one numeric type
-/// and the spelling is the file's business rather than the model's.
+/// A KDL value as a cell value. Every KDL number is a `Number`, integer spelling or not (§4.3.1).
 fn value(value: &KdlValue) -> CellValue {
     match value {
         KdlValue::String(text) => CellValue::Text(text.clone()),
@@ -593,8 +571,7 @@ fn children(node: &KdlNode) -> &[KdlNode] {
     node.children().map_or(&[], KdlDocument::nodes)
 }
 
-/// A 1-based track number as the 0-based index the core uses — `a1.rs`'s rule, for the one
-/// address in this format that is a bare number rather than a name.
+/// A 1-based track number as the core's 0-based index.
 fn track_index(node: &KdlNode) -> Result<u32> {
     let n = integer(node, 0)?;
     u32::try_from(n - 1).map_err(|_| at(node, "a row or column is numbered from 1".to_owned()))
@@ -656,10 +633,7 @@ fn ymd(node: &KdlNode) -> Result<(i64, i64, i64)> {
 
 // --- diagnostics ---
 
-/// A complaint about a node, with where it is.
-///
-/// `kdl` gives every node a span, so a projection's errors can point at a line the way a
-/// compiler's do — which is most of what makes a hand-written format usable at all.
+/// A complaint about a node, with its line and column.
 fn at(node: &KdlNode, message: String) -> Error {
     Error::Odf(grind_core::Error::Projection(format!(
         "`{}` at offset {}: {message}",

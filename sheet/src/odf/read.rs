@@ -2,14 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The ODS content model: one context per element we care about. **\[ODS\]**
-//!
-//! Structure per doc/ods-format.md §3. Everything not named here is handled by
-//! `context::Ignore` without a line of code, which is the point of §8.
-//!
-//! Contexts never talk to each other. A child is told where it lives when it is created,
-//! and all mutation flows through the shared [`Builder`] — so there is no child-to-parent
-//! channel to get wrong, and no downcasting.
+//! The ODS content model: one context per element read (`doc/ods-format.md` §3). **\[ODS\]**
+//! Everything else falls to `context::Ignore`. Contexts never talk to each other; all mutation
+//! goes through the shared [`Builder`].
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -27,15 +22,9 @@ use super::source;
 /// The sheet limits, which are also the clamp for every repeat count (§9).
 use crate::{MAX_COLS, MAX_ROWS};
 
-/// Ceiling on cells actually written, across the whole document.
-///
-/// §9 says to clamp repeat counts to the sheet limits, and that is necessary but not
-/// sufficient: clamping bounds each *count* while the cost is their *product*. A row that
-/// repeats 1 048 576 times holding a cell that repeats 16 384 times is entirely legal by
-/// both clamps and asks for seventeen billion writes. So the budget bounds the work
-/// itself. Only non-empty cells are counted — the trailing empty run that bounds a sheet's
-/// extent is free — which puts the ceiling far above any real spreadsheet while still
-/// making a hostile or generator-broken file terminate.
+/// Ceiling on non-empty cells written across the whole document. Clamping each repeat count (§9)
+/// bounds the counts but not their product: a row repeated 1 048 576 times holding a cell repeated
+/// 16 384 times is legal under both clamps and asks for seventeen billion writes.
 const MAX_MATERIALISED_CELLS: u64 = 4_000_000;
 
 /// How long a run of equally sized columns or rows is still *layout* rather than the
@@ -56,9 +45,8 @@ pub struct Builder {
     /// `table:number-rows-repeated` of the row being read. One element there stands for many
     /// rows, so none of its cells can be spliced — see [`crate::odf::source`].
     row_repeat: u32,
-    /// Where each cell element of the row being read sits in the file (R6), in column order.
-    /// Beside `row_cells` rather than inside it because there is one entry per *element*
-    /// and `row_cells` has one per address.
+    /// Where each cell element of the row being read sits in the file (R6) — one entry per
+    /// element, where `row_cells` has one per address.
     row_spans: Vec<super::source::Cell>,
     /// Text accumulated by the paragraph contexts under the current cell.
     text: String,
@@ -73,17 +61,15 @@ pub struct Builder {
     cell_styles: HashMap<String, String>,
     /// The same styles' own properties: fonts, colours, borders, alignment.
     style_props: HashMap<String, CellStyle>,
-    /// Each `table-cell` style's `style:parent-style-name`. A style's look is its parent's
-    /// with its own properties laid over it (§5.1) — LibreOffice's own *Heading 1* is
-    /// *Heading*'s bold and centring at another size — so every lookup walks this chain.
+    /// Each `table-cell` style's `style:parent-style-name`. A style's look is its parent's with
+    /// its own properties laid over it (§5.1), so every lookup walks this chain.
     style_parents: HashMap<String, String>,
     /// The properties a style sets to their *nothing* spelling — `fo:border="none"`, a zero
     /// rotation — which the model stores as an absent value and which must still override a
     /// parent that sets one.
     style_resets: HashMap<String, Resets>,
-    /// The parts of the `number:*-style` currently being read, and the text its literal
-    /// pieces are collecting. Both live here rather than in the context, because a child
-    /// element has no channel back to its parent — the parent takes these at its `end`.
+    /// The parts of the `number:*-style` being read, and the text its literal pieces collect —
+    /// here because a child has no channel back to its parent, which takes these at its `end`.
     parts: Vec<Part>,
     style_text: String,
     /// `style:map` branches whose target has only been *named* so far — the style that owns
@@ -93,16 +79,13 @@ pub struct Builder {
     /// Each `table-cell` style's conditional-format `style:map`s, in order — `(condition,
     /// applied style, base cell address)`, verbatim (`doc/ods-format.md` §3.6).
     cell_maps: HashMap<String, Vec<(String, String, String)>>,
-    /// The cells of the current sheet whose style carries a map, as rectangles by style name —
-    /// `[first row, end row, first column, end column)` — and the order those styles were
-    /// first met in. A rectangle rather than a cell because a repeated row or cell stands for
-    /// many, and a rule over a whole column is a million of them.
+    /// The cells of the current sheet whose style carries a map, as rectangles `[first row, end
+    /// row, first column, end column)` by style name, and the order those styles were first met —
+    /// rectangles, since a rule over a whole column is a million cells.
     rule_rects: HashMap<String, Vec<[u32; 4]>>,
     rule_styles: Vec<String>,
-    /// `table:default-cell-style-name` per column of the current sheet, and for the current
-    /// row. A cell's own `table:style-name` wins over the row's, which wins over the
-    /// column's — the resolution order §5.1's indirection implies and the reason a
-    /// whole-column format is not lost.
+    /// `table:default-cell-style-name` per column of the current sheet, and for the current row. A
+    /// cell's own style wins over the row's, which wins over the column's (§5.1).
     col_styles: Vec<Option<String>>,
     row_style: Option<String>,
     /// Next column to be claimed by a `table:table-column` declaration.
@@ -114,9 +97,8 @@ pub struct Builder {
     /// `style:row-height` of the row being read, applied when the row ends because
     /// `table:number-rows-repeated` decides how many rows it is for.
     row_size: Option<String>,
-    /// `table:visibility="collapse"` on the row being read — a person hid it by hand,
-    /// as opposed to `"filter"`, which this build treats as the filter's business and
-    /// re-derives rather than trusts (see [`crate::filter`]).
+    /// `table:visibility="collapse"` on the row being read: hidden by hand. `"filter"` is the
+    /// filter's, which [`crate::filter`] re-derives rather than trusts.
     row_hidden: bool,
 
     // --- the autofilter (§9.4) ---
@@ -141,21 +123,18 @@ pub struct Builder {
     /// because a control's offset can carry it into the next row, whose height is not known
     /// yet (`Sheet::row_holding`).
     placed: Vec<(Pos, f64, String, crate::model::Checkbox)>,
-    /// The original bytes, kept only when they are a package — a chart's own document may be
-    /// a separate part (`Object 1/content.xml`) an `xlink:href` points at rather than embedded
-    /// inline, and resolving one means going back to the archive it came from.
+    /// The original bytes when they are a package, for resolving a chart's `xlink:href` to its own
+    /// part (`Object 1/content.xml`).
     package: Option<Vec<u8>>,
-    /// The package directories of the charts read into the model (`Object 1`, …). A save that
-    /// regenerates writes those charts again under names of its own, so these are what it
-    /// replaces — and every other directory in the package is left alone.
+    /// The package directories of the charts read into the model (`Object 1`, …), which a
+    /// regenerating save replaces; every other directory stays.
     pub chart_parts: Vec<String>,
 }
 
-/// One chart (`draw:frame`/`draw:object`) being read, gathered as its pieces arrive: position
-/// from the frame's own attributes, everything else from however its document is reached
-/// (`doc/chart-format.md`'s two shapes). Turned into a [`crate::chart::Chart`] only when
-/// `draw:frame` closes, and dropped silently if a required piece never showed up — the same
-/// §9 tolerance as any other element this build cannot make sense of.
+/// One chart (`draw:frame`/`draw:object`) being read: position from the frame, everything else
+/// from its own document, however that is reached (`doc/chart-format.md`). Becomes a
+/// [`crate::chart::Chart`] when `draw:frame` closes, or is dropped if a required piece never
+/// arrived (§9).
 struct PendingChart {
     kind: Option<crate::chart::ChartKind>,
     categories: Option<String>,
@@ -166,19 +145,15 @@ struct PendingChart {
     height: Option<String>,
     x_axis: crate::chart::Axis,
     y_axis: crate::chart::Axis,
-    /// Every `style:style style:family="chart"` this chart's own
-    /// `office:automatic-styles` declares, name → `draw:fill-color` — collected before
-    /// `chart:plot-area` is reached (the schema puts automatic-styles ahead of the body,
-    /// `write.rs`'s own comment relies on the same ordering) so a `chart:series`/
-    /// `chart:data-point`'s own `chart:style-name` can be resolved by the time it is seen.
+    /// The chart's own `style:family="chart"` styles, name → `draw:fill-color`, collected before
+    /// `chart:plot-area` (the schema puts automatic styles first) so a series' or data point's
+    /// `chart:style-name` resolves when seen.
     styles: HashMap<String, String>,
-    /// The same table for the other half of a chart style this build reads: name →
-    /// `chart:display-label`, which an *axis'* own `chart:style-name` resolves against.
-    /// Separate from `styles` because the two properties live on different elements
-    /// (`style:graphic-properties` and `style:chart-properties`) and no style carries both.
+    /// Name → `chart:display-label`, which an axis' `chart:style-name` resolves against. A
+    /// separate table because it lives on `style:chart-properties`, not
+    /// `style:graphic-properties`.
     display_labels: HashMap<String, bool>,
-    /// And the third: name → `chart:reverse-direction` (rng:10064), the other half of an axis'
-    /// `style:chart-properties` this build reads — a pie's direction (`doc/chart-format.md`,
+    /// Name → `chart:reverse-direction` (rng:10064): a pie's direction (`doc/chart-format.md`,
     /// Direction).
     reverse_directions: HashMap<String, bool>,
     /// What the y axis' own style said about its direction, if anything — `None` being "said
@@ -201,9 +176,8 @@ impl Default for PendingChart {
             y: None,
             width: None,
             height: None,
-            // `Axis::bare`, deliberately, rather than `Axis::default` — an axis a *file* says
-            // nothing about is not an axis a *user* said nothing about, and the two defaults
-            // differ. `crate::chart::Axis::bare` has the measurement that decides it.
+            // `Axis::bare`, not `Axis::default`: an axis a file says nothing about differs from
+            // one a user said nothing about (see `crate::chart::Axis::bare`).
             x_axis: crate::chart::Axis::bare(),
             y_axis: crate::chart::Axis::bare(),
             styles: HashMap::new(),
@@ -217,8 +191,7 @@ impl Default for PendingChart {
     }
 }
 
-/// One cell of the buffered row. A struct rather than a tuple since the day it grew a
-/// fourth member.
+/// One cell of the buffered row.
 struct RowCell {
     col: u32,
     value: CellValue,
@@ -231,8 +204,8 @@ struct RowCell {
 impl Builder {
     pub fn new() -> Self {
         Self {
-            // Sheets come from the file. A document that declares none stays empty rather
-            // than inheriting the default "Sheet1" a new document gets.
+            // Sheets come from the file: a document declaring none stays empty rather than getting
+            // "Sheet1".
             doc: Document {
                 sheets: Vec::new(),
                 names: Default::default(),
@@ -305,10 +278,9 @@ impl Builder {
         self.col_decl = 0;
     }
 
-    /// The number format a cell displays through, following §5.1's indirection: the cell
-    /// style names a data style, and the data style is the format. A style that names none,
-    /// or names one the document does not define, simply leaves the cell unformatted —
-    /// tolerance again (§9), and the reason this returns an `Option` rather than a result.
+    /// The number format a cell displays through, by §5.1's indirection: the cell style names a
+    /// data style. A style naming none, or one the document does not define, leaves the cell
+    /// unformatted (§9).
     fn resolve_format(&self, cell_style: Option<&str>, col: u32) -> Option<Format> {
         let style = self.style_name(cell_style, col)?;
         // The nearest style in the parent chain that names a data style decides it.
@@ -319,8 +291,7 @@ impl Builder {
         self.number_styles.get(data_style).cloned()
     }
 
-    /// The cell's own styling, through the same chain — one lookup, two answers, because a
-    /// `style:style` carries both.
+    /// The cell's own styling, through the same chain.
     fn resolve_style(&self, cell_style: Option<&str>, col: u32) -> Option<CellStyle> {
         let style = self.style_name(cell_style, col)?;
         self.inherited(style)
@@ -356,20 +327,19 @@ impl Builder {
         (!look.is_plain()).then_some(look)
     }
 
-    /// Which `style:style` applies: the cell's own, else the row's default, else the
-    /// column's. The column default is consulted last, and only for cells that exist, so a
-    /// styled column costs entries for its cells rather than for its million rows.
+    /// Which `style:style` applies: the cell's own, else the row's default, else the column's —
+    /// consulted only for cells that exist, so a styled column costs its cells, not its million
+    /// rows.
     fn style_name<'a>(&'a self, cell_style: Option<&'a str>, col: u32) -> Option<&'a str> {
         cell_style
             .or(self.row_style.as_deref())
             .or_else(|| self.col_styles.get(col as usize)?.as_deref())
     }
 
-    /// Attach every `style:map` collected in this section to the style that declared it.
-    ///
-    /// Deferred to the end of the section because a map may name a style declared after it,
-    /// and resolved against a *snapshot* so a branch never gains branches of its own — one
-    /// level is what LibreOffice writes and all that [`Format::render`] follows.
+    /// Attach every `style:map` collected in this section to the style that declared it — at the
+    /// section's end, since a map may name a later style, and against a snapshot so a branch never
+    /// gains branches of its own (one level is what LibreOffice writes and [`Format::render`]
+    /// follows).
     fn resolve_maps(&mut self) {
         let targets = self.number_styles.clone();
         for (owner, op, value, target) in std::mem::take(&mut self.pending_maps) {
@@ -413,12 +383,10 @@ impl Builder {
         rects.push([rows.start, rows.end, cols.start, cols.end]);
     }
 
-    /// The current sheet's rules, out of the cells that carried a map (`doc/ods-format.md`
-    /// §3.6): one rule per distinct (condition, applied style, base cell) — the identity
-    /// LibreOffice reads a rule back by — over every cell whose style named it.
-    ///
-    /// The order is each style's own map order, which is the priority on those cells; rules
-    /// that never share a cell are in the order their first cell was met.
+    /// The current sheet's rules, out of the cells that carried a map (`doc/ods-format.md` §3.6):
+    /// one rule per distinct (condition, applied style, base cell), LibreOffice's identity for
+    /// one, over every cell whose style named it. Ordered by each style's map order, then by first
+    /// cell met.
     fn finish_rules(&mut self) {
         let rects = std::mem::take(&mut self.rule_rects);
         let styles = std::mem::take(&mut self.rule_styles);
@@ -521,22 +489,12 @@ impl Builder {
         self.col_decl = end;
     }
 
-    /// Write the buffered row `repeat` times, then advance the row cursor.
+    /// `table:number-columns-spanned`/`table:number-rows-spanned` on the cell starting at `col` of
+    /// the row being read (rng:16102) — a merge, anchored there.
     ///
-    /// The empty case is the one that matters for speed *and* for not falling over: a
-    /// trailing `<table:table-row table:number-rows-repeated="1048576">` holding one empty
-    /// cell is how a sheet's extent is conventionally bounded (§3.3), and it is in most
-    /// real files. With no cells buffered there is nothing to replay, so it costs one
-    /// addition rather than a million iterations.
-    /// `table:number-columns-spanned`/`table:number-rows-spanned` on the cell starting at `col`
-    /// of the row being read (rng:16102) — a merge, anchored there.
-    ///
-    /// Tolerant the way the rest of this reader is: a span reaching past the sheet is cut at
-    /// its edge, and one overlapping a merge already read takes that one's place, since two
-    /// cells drawn over each other is not something a model can hold. A row repeated with a
-    /// merge one row tall in it is that merge on every row it stands for, under the same bound
-    /// as a repeated row's height; a taller one cannot repeat without overlapping itself, so
-    /// it is anchored on the first.
+    /// A span past the sheet is cut at its edge, and one overlapping an earlier merge replaces it.
+    /// A repeated row holding a one-row merge repeats the merge, under a repeated row's bound; a
+    /// taller merge is anchored on the first row only.
     fn merge(&mut self, col: u32, attrs: &Attrs) {
         let cols = attrs.count(Ns::Table, "number-columns-spanned", MAX_COLS);
         let rows = attrs.count(Ns::Table, "number-rows-spanned", MAX_ROWS);
@@ -568,10 +526,11 @@ impl Builder {
         }
     }
 
+    /// Write the buffered row `repeat` times, then advance the row cursor. A trailing
+    /// `<table:table-row table:number-rows-repeated="1048576">` with one empty cell bounds most
+    /// real sheets (§3.3); with nothing buffered it costs one addition, not a million iterations.
     fn finish_row(&mut self, repeat: u32) {
-        // R6: hand this row's cell elements to the source, but only when the row stands for
-        // itself. A repeated row's one element covers many addresses, and splitting *that*
-        // means emitting whole rows — which is no longer a small diff, which was the point.
+        // R6: hand this row's cell elements to the source only when the row stands for itself.
         let spans = std::mem::take(&mut self.row_spans);
         if repeat == 1
             && !spans.is_empty()
@@ -580,8 +539,7 @@ impl Builder {
             source.rows.insert((self.sheet, self.row), spans);
         }
 
-        // A height (or a hidden flag) applies to the row whether or not it holds anything —
-        // an empty row a document made tall, or hid, is still tall, or hidden.
+        // A height or hidden flag applies whether or not the row holds anything.
         let height = self.row_size.take();
         let hidden = std::mem::take(&mut self.row_hidden);
         if (height.is_some() || hidden)
@@ -611,9 +569,8 @@ impl Builder {
             return;
         };
 
-        // How many copies of this row we can afford. The cursor still advances by the full
-        // repeat below, so cells after a truncated run keep their correct addresses — a
-        // budget must never silently shift the rest of the sheet sideways.
+        // How many copies of this row the budget allows. The cursor still advances by the full
+        // repeat, so the rest of the sheet keeps its addresses.
         let per_row = self.row_cells.len() as u64;
         let affordable = (self.budget / per_row.max(1)).min(u64::from(repeat)) as u32;
 
@@ -656,18 +613,15 @@ impl Default for Builder {
 
 type Ctx = Box<dyn Context<Builder>>;
 
-/// The document root.
-///
-/// Accepts `office:document` (flat form) and `office:document-content` (the `content.xml`
-/// of a package) identically — below the root the two are the same model (§1.2).
+/// The document root: `office:document` (flat) and `office:document-content` (a package's
+/// `content.xml`) alike (§1.2).
 pub struct Root;
 
 impl Context<Builder> for Root {
     fn start_child(&mut self, name: &Name, _a: &Attrs, _b: &mut Builder) -> Option<Ctx> {
         match (name.ns, name.local.as_str()) {
-            // `office:document-styles` is the root of a package's `styles.xml`, which is
-            // parsed with this same context stack — the named styles a cell references may
-            // live there rather than in `content.xml` (§1.1).
+            // `office:document-styles` is a package's `styles.xml` root, read with the same stack
+            // (§1.1).
             (Ns::Office, "document" | "document-content" | "document-styles") => {
                 Some(Box::new(Root))
             }
@@ -792,9 +746,9 @@ impl Context<Builder> for NamedExpressions {
         {
             names.push(key.to_lowercase());
         }
-        // A named *range* carries a bare cell-range address; a named *expression* carries a
-        // formula. Storing the range as the reference it stands for — brackets and all —
-        // means the evaluator has one kind of thing to parse rather than two.
+        // A named range carries a bare cell-range address and a named expression a formula;
+        // storing the range as its bracketed reference gives the evaluator one kind of thing to
+        // parse.
         let expression = if name.is(Ns::Table, "named-range") {
             attrs
                 .get(Ns::Table, "cell-range-address")
@@ -811,9 +765,9 @@ impl Context<Builder> for NamedExpressions {
     }
 }
 
-/// `office:forms` and the `form:form`s in it: every `form:checkbox`, by its identifier, into
-/// [`Builder::controls`] for the cells that draw one (`doc/ods-format.md` §3.5). Every other
-/// control is read past — kept in the file by R6, not in the model.
+/// `office:forms` and its `form:form`s: every `form:checkbox`, by identifier, into
+/// [`Builder::controls`] (`doc/ods-format.md` §3.5). Other controls are kept in the file by R6,
+/// not in the model.
 struct Forms;
 
 impl Context<Builder> for Forms {
@@ -891,9 +845,8 @@ impl Context<Builder> for Shapes {
     }
 }
 
-/// `draw:frame` (rng:5088) — a chart's position, and the only content of one this build reads.
-/// A shape that is not a chart (a plain picture, a text box) leaves [`Builder::pending_chart`]
-/// with no [`crate::chart::ChartKind`] and is silently dropped when it closes.
+/// `draw:frame` (rng:5088) — a chart's position. A frame that is not a chart (a picture, a text
+/// box) gets no [`crate::chart::ChartKind`] and is dropped when it closes.
 struct Frame;
 
 impl Context<Builder> for Frame {
@@ -901,10 +854,8 @@ impl Context<Builder> for Frame {
         if !name.is(Ns::Draw, "object") {
             return None;
         }
-        // `common-draw-data-attlist` (rng:1621) vs. an inline `office:document` (rng:5541-
-        // 5545) — the schema's own choice, and the one the package form actually takes:
-        // the chart's own document is a separate part (`Object 1/content.xml`) this frame
-        // only points at.
+        // A package points at the chart's own part (`Object 1/content.xml`, rng:1621); the flat
+        // form embeds an `office:document` inline (rng:5541).
         match attrs.get(Ns::Xlink, "href") {
             Some(href) => {
                 let directory = href.trim_start_matches("./").trim_end_matches('/');
@@ -962,10 +913,9 @@ impl Context<Builder> for Frame {
             height,
             x_axis: pending.x_axis,
             y_axis: pending.y_axis,
-            // A pie runs the way its file says, and a file that says nothing is LibreOffice's
-            // counter-clockwise (`doc/chart-format.md`, Direction). A bar or line has no
-            // direction this build reads, so it keeps a new chart's — which is what it becomes
-            // if somebody turns it into a pie.
+            // A pie runs as its file says, and a file that says nothing is LibreOffice's
+            // counter-clockwise (`doc/chart-format.md`, Direction). A bar or line keeps a new
+            // chart's direction.
             clockwise: match kind {
                 crate::chart::ChartKind::Pie => pending.y_reversed == Some(true),
                 _ => true,
@@ -1001,10 +951,8 @@ impl Context<Builder> for DrawObject {
     }
 }
 
-/// The chart's own document's `office:body` — what [`DrawObject`] reaches one level down from
-/// `office:document`, and, for the package form, what [`ChartPartFile`] reaches one level down
-/// from `office:document-content`. Both physical forms put `office:body` in the same place
-/// relative to their own root, so this one context serves both.
+/// The chart document's `office:body`, one level below its root in both forms — reached from
+/// [`DrawObject`] (flat) and [`ChartPartFile`] (package).
 struct ChartPartRoot;
 
 impl Context<Builder> for ChartPartRoot {
@@ -1031,10 +979,8 @@ impl Context<Builder> for ChartAutomaticStyles {
     }
 }
 
-/// One `style:style style:family="chart"` — two properties are read back out of it: a mark's
-/// `style:graphic-properties`' own `draw:fill-color` (rng:10941), and an axis'
-/// `style:chart-properties`' own `chart:display-label` (rng:10069). Everything else in a chart
-/// style is read past, the same as any other unmodelled property.
+/// One `style:style style:family="chart"`: a mark's `draw:fill-color` (rng:10941) and an axis'
+/// `chart:display-label` (rng:10069) are read; the rest is read past.
 struct ChartStyleStyle {
     name: String,
 }
@@ -1075,11 +1021,8 @@ impl Context<Builder> for OfficeBody {
     }
 }
 
-/// The **root** of the standalone parse `Frame::start_child` runs over a package's own chart
-/// part (`Object 1/content.xml`) — its file starts at `office:document-content` rather than at
-/// `office:document`, since it is a *part* rather than a whole physical document; this is the
-/// one level [`DrawObject`] does not need, because there the wrapper already arrived as an
-/// ordinary child in the middle of the outer document's own stream.
+/// The root of the standalone parse over a package's chart part (`Object 1/content.xml`), which
+/// starts at `office:document-content`.
 struct ChartPartFile;
 
 impl Context<Builder> for ChartPartFile {
@@ -1107,9 +1050,8 @@ impl Context<Builder> for OfficeChart {
     }
 }
 
-/// `chart:chart` (rng:463) — a title, subtitle, footer and legend may all sit here, then
-/// `chart:plot-area`. The title and the legend are read (`doc/chart-format.md`, The chart's own
-/// title and legend); a subtitle and a footer are read past.
+/// `chart:chart` (rng:463): the title and legend are read (`doc/chart-format.md`); a subtitle and
+/// a footer are read past.
 struct ChartChart;
 
 impl Context<Builder> for ChartChart {
@@ -1166,10 +1108,8 @@ impl Context<Builder> for ChartPlotArea {
                     Some("y") => AxisDim::Y,
                     _ => return None,
                 };
-                // The axis' own style says whether its tick labels are drawn. An axis with no
-                // style, or one whose style says nothing about it, keeps
-                // `crate::chart::Axis::default`'s answer — see that impl for why absent means
-                // shown.
+                // The axis' own style says whether its tick labels are drawn; saying nothing keeps
+                // `crate::chart::Axis::default`'s answer.
                 if let Some(display) = attrs
                     .get(Ns::Chart, "style-name")
                     .and_then(|name| b.pending_chart.as_ref()?.display_labels.get(name).copied())
@@ -1198,11 +1138,10 @@ impl Context<Builder> for ChartPlotArea {
                     let pending = b.pending_chart.as_ref()?;
                     (pending.series.len(), pending.kind)
                 };
-                // A bar or a line is one colour per series, carried on the series element's
-                // own style (`doc/chart-format.md`, Colour); a pie's colours are its slices',
-                // read below from each `chart:data-point`. A colour identical to the default
-                // cycle at this position is treated as unset, so an unmodified chart keeps
-                // re-cycling — see [`crate::chart::effective_color`].
+                // A bar or line has one colour per series, on the series' own style
+                // (`doc/chart-format.md`, Colour); a pie's are its slices', read from each
+                // `chart:data-point`. A colour equal to the default cycle at its position counts
+                // as unset ([`crate::chart::effective_color`]).
                 let own = series_style.as_deref().and_then(|name| {
                     let pending = b.pending_chart.as_ref()?;
                     pending.styles.get(name).cloned()
@@ -1214,11 +1153,10 @@ impl Context<Builder> for ChartPlotArea {
                         .map(str::to_owned),
                     _ => None,
                 };
-                // What a data point's colour is compared against to tell an override from an
-                // untouched default. A pie's slice, and a bar under a series that names no
-                // style of its own, cycle per point: the second is how this build wrote bars
-                // before a colour was a series, and a file it wrote then must not come back
-                // with every bar's old default mistaken for a colour somebody picked.
+                // What a data point's colour is compared against to tell an override from a
+                // default. A pie's slices, and a bar under a series naming no style, cycle per
+                // point — the latter is how bars were written before colours belonged to series,
+                // and such a file must not read every old default as a chosen colour.
                 let points = match (kind, &own) {
                     (Some(crate::chart::ChartKind::Pie), _)
                     | (Some(crate::chart::ChartKind::Bar), None) => PointDefault::Cycle,
@@ -1247,9 +1185,9 @@ impl Context<Builder> for ChartPlotArea {
     }
 }
 
-/// One of `chart:series`' own `chart:data-point` children (rng:552) — colour only, read into
-/// [`crate::chart::Series::point_colors`] for `Bar`/`Pie`, comparing each to what that point
-/// would have been anyway ([`PointDefault`]) so an unmodified chart keeps re-cycling.
+/// A `chart:series`' `chart:data-point` children (rng:552) — colour only, into
+/// [`crate::chart::Series::point_colors`] for `Bar`/`Pie`, each compared with its
+/// [`PointDefault`].
 struct ChartSeries {
     series_index: usize,
     point: usize,
@@ -1333,9 +1271,8 @@ impl Context<Builder> for ChartAxis {
                 None
             }
             (Ns::Chart, "title", _) => Some(Box::new(ChartAxisTitle { dim: self.dim }) as Ctx),
-            // A minor grid is read as a grid: this build draws one set of gridlines
-            // (`doc/chart-format.md`), so an axis carrying either kind carries gridlines, and
-            // a save writes the major one back.
+            // A minor grid is read as a grid: one set of gridlines is drawn, and a save writes the
+            // major one.
             (Ns::Chart, "grid", _) => {
                 if let Some(pending) = &mut b.pending_chart {
                     self.dim.axis(pending).gridlines = true;
@@ -1375,12 +1312,9 @@ impl Context<Builder> for ChartAxisTitle {
     }
 }
 
-/// `table:calculation-settings`, for the one setting that changes what a stored number
-/// *means*: `table:null-date`, the epoch (Part 4 §3.4 item 8).
-///
-/// The schema puts this element before the tables, so the epoch is always known by the
-/// time a cell needs it. Everything else in here — iteration, case sensitivity, wildcards —
-/// is left to `Ignore` until something depends on it.
+/// `table:calculation-settings`, for `table:null-date`, the epoch (Part 4 §3.4 item 8). The schema
+/// puts it before the tables. The rest (iteration, case sensitivity, wildcards) stays in the file,
+/// unread.
 struct CalculationSettings;
 
 impl Context<Builder> for CalculationSettings {
@@ -1397,11 +1331,8 @@ impl Context<Builder> for CalculationSettings {
     }
 }
 
-/// `table:database-ranges` (§9.4) — the autofilters, one per sheet at most.
-///
-/// The range is addressed by name (`Sheet1.A1:Sheet1.F12`), so it is parsed with
-/// [`crate::a1`] and matched to a sheet here; the schema puts this element *after* the
-/// tables, so every sheet it can name already exists.
+/// `table:database-ranges` (§9.4) — the autofilters, one per sheet at most, addressed by name
+/// (`Sheet1.A1:Sheet1.F12`) and parsed with [`crate::a1`]. The schema puts it after the tables.
 struct DatabaseRanges;
 
 impl Context<Builder> for DatabaseRanges {
@@ -1439,9 +1370,8 @@ struct DatabaseRange;
 
 impl Context<Builder> for DatabaseRange {
     fn start_child(&mut self, name: &Name, _a: &Attrs, _b: &mut Builder) -> Option<Ctx> {
-        // `table:filter` and `table:filter-and` are both just wrappers around the
-        // conditions this model keeps; `table:filter-or` is one only when all its conditions
-        // name one column ([`FilterOr`]).
+        // `table:filter` and `table:filter-and` only wrap the conditions; `table:filter-or` counts
+        // only when all its conditions name one column ([`FilterOr`]).
         name.is(Ns::Table, "filter")
             .then(|| Box::new(FilterAnd) as Ctx)
     }
@@ -1471,9 +1401,8 @@ impl Context<Builder> for FilterAnd {
                 if attrs.get(Ns::Table, "operator") != Some("=") {
                     return None;
                 }
-                // A `data-type` outside ODF's own namespace is LibreOffice's filter by
-                // *colour* (`doc/ods-format.md` §6): its `table:value` is `#e8f2a1`, which no
-                // cell displays, so read as a set of values it would hide every row.
+                // A `data-type` outside ODF's namespace is LibreOffice's filter by colour
+                // (`doc/ods-format.md` §6): read as a value set, `#e8f2a1` would hide every row.
                 if attrs
                     .names()
                     .any(|n| n.ns != Ns::Table && n.local == "data-type")
@@ -1523,12 +1452,10 @@ impl Context<Builder> for FilterCondition {
     }
 }
 
-/// `table:filter-or`. LibreOffice saves a one-column autofilter as an `or` of one condition,
-/// so an `or` cannot simply be ignored; and an `or` of values in one column is a set of
-/// values, which is the model. One across columns keeps a row *either* admits, which no set
-/// per column can say — so it is dropped whole, as is one holding anything this reader does
-/// not take (another operator, a nested `and`), since dropping one branch of an `or` would
-/// hide rows the file shows.
+/// `table:filter-or`. LibreOffice saves a one-column autofilter as an `or` of one condition, and
+/// an `or` of values in one column is a set of values. One across columns, or holding anything
+/// else (another operator, a nested `and`), is dropped whole: dropping one branch would hide rows
+/// the file shows.
 struct FilterOr {
     readable: bool,
 }
@@ -1568,8 +1495,8 @@ struct Table {
 }
 
 impl Context<Builder> for Table {
-    /// The checkboxes, each in the row its middle falls in, now that every row's height is
-    /// known. Two in one cell is a file that drew them on top of each other: the first stays.
+    /// Place the checkboxes, each in the row its middle falls in, now that every row's height is
+    /// known. Of two in one cell, the first stays.
     fn end(&mut self, b: &mut Builder) {
         if !self.top {
             return;
@@ -1611,9 +1538,8 @@ impl Context<Builder> for Table {
                     .get(Ns::Table, "style-name")
                     .and_then(|name| b.track_sizes.get(name))
                     .cloned();
-                // Only `"collapse"` means hidden by hand — `"filter"` is the filter's own
-                // spelling of a fact this build recomputes rather than trusts (see
-                // [`crate::filter`]), so it is read here and then ignored.
+                // Only `"collapse"` is hidden by hand; `"filter"` is recomputed by
+                // [`crate::filter`].
                 b.row_hidden = attrs.get(Ns::Table, "visibility") == Some("collapse");
                 let repeat = attrs.count(Ns::Table, "number-rows-repeated", MAX_ROWS);
                 b.row_repeat = repeat;
@@ -1680,21 +1606,17 @@ impl Context<Builder> for Row {
         b.col = b.col.saturating_add(repeat).min(MAX_COLS);
         b.text.clear();
 
-        // A covered cell is the hidden half of a merge (rng:14298). It has the same content
-        // model as any other cell, and what it holds is read the same way: LibreOffice keeps a
-        // value there out of sight rather than throwing it away, and so does this model — it is
-        // simply not drawn. Only a cell that is not covered can anchor a merge.
+        // A covered cell is the hidden half of a merge (rng:14298). Its content is read like any
+        // other — LibreOffice keeps it, out of sight — but only an uncovered cell anchors a merge.
         if !covered {
             b.merge(start, attrs);
         }
         b.note_rule_cells(attrs.get(Ns::Table, "style-name"), start, repeat);
 
-        // R6: where this element sits, so a later save can replace it in place. Recorded for
-        // a repeated cell too — that element is split rather than skipped — but not inside a
-        // repeated row, where one element stands for many rows. `Attrs::span` is the whole
-        // element for the `<table:table-cell/>` form and the start tag for the other, which
-        // `Cell::end` finishes. Never for a covered cell, which a value splice would turn into
-        // an ordinary one: a value written there rewrites its row from the model instead.
+        // R6: where this element sits, for a splice — a repeated cell too (it is split), but not
+        // inside a repeated row, and never a covered cell, which a value splice would uncover.
+        // `Attrs::span` is the whole `<table:table-cell/>` or just the start tag, which
+        // `Cell::end` finishes.
         let span = (!covered && b.row_repeat == 1 && b.doc.source.is_some()).then(|| attrs.span());
 
         Some(Box::new(Cell {
@@ -1795,17 +1717,12 @@ impl Table {
     }
 }
 
-/// Where a cell element ends, given the span of its start tag.
+/// Where a cell element ends, given its start tag's span — the whole element for
+/// `<table:table-cell/>`, otherwise found by scanning for the close tag.
 ///
-/// `Attrs::span` covers the whole element for `<table:table-cell/>` — the common form, and
-/// the one that arrives as a single `Event::Empty` — and only the start tag for a cell with
-/// children, because `Context::end` is told nothing about position. Rather than widen that
-/// trait for one caller, scan forward for the close tag.
-///
-/// A `table:table-cell` may legally contain a whole subtable, and therefore other cells; a
-/// naive scan would then stop at the *inner* close tag and splice a fragment. So an opening
-/// `<table:table-cell` before the close means this cell is simply not replaceable, which
-/// costs a rare document its small diff and cannot cost it correctness.
+/// A cell may contain a subtable and so other cells, so an opening `<table:table-cell` before the
+/// close makes the cell unreplaceable: a rare document loses its small diff, never its
+/// correctness.
 fn cell_extent(bytes: &[u8], start_tag: std::ops::Range<usize>) -> Option<std::ops::Range<usize>> {
     const OPEN: &[u8] = b"<table:table-cell";
     const CLOSE: &[u8] = b"</table:table-cell>";
@@ -1837,25 +1754,16 @@ struct Cell {
     style: Option<String>,
     /// `calcext:value-type="error"` — the formula's cached result is an error.
     cached_error: bool,
-    /// Whether a `text:p` has already been seen, so the *second* one starts a new line.
-    ///
-    /// Counting paragraphs rather than testing whether the accumulated text is empty:
-    /// otherwise `<text:p/><text:p/>` — a cell holding one blank line — collapses to the
-    /// empty string, and every leading or doubled newline is silently eaten.
+    /// Whether a `text:p` has been seen, so the second starts a new line — counted, so
+    /// `<text:p/><text:p/>` is one blank line rather than nothing.
     saw_paragraph: bool,
 }
 
 impl Cell {
-    /// Resolve the cell's value from its attributes and its display text.
-    ///
-    /// Tolerance per §9: every failure degrades to a safe default and is scoped to this
-    /// cell. A malformed number is 0, not a rejected document; an absent `office:value` for
-    /// a numeric type falls back to the paragraph text; and a cell with no value-type at
-    /// all but some text is a string, which is the ODF rule that display text *is* the
-    /// value when no explicit one is given.
-    ///
-    /// The second half of the answer is the cell's [`NumberKind`], which is `Some` exactly
-    /// when a date or a time was successfully converted — see the `date`/`time` arms.
+    /// Resolve the cell's value from its attributes and its display text, every failure scoped to
+    /// this cell (§9): a malformed number is 0, a numeric type without `office:value` falls back
+    /// to the text, and a cell with no value type but some text is a string. The [`NumberKind`] is
+    /// `Some` exactly when a date or time converted.
     fn resolve(&self, text: &str, null_date: i64) -> (CellValue, Option<NumberKind>) {
         let number = |raw: &Option<String>| -> CellValue {
             raw.as_deref()
@@ -1871,14 +1779,8 @@ impl Cell {
                 let raw = self.boolean_value.as_deref().unwrap_or(text).trim();
                 CellValue::Bool(raw.eq_ignore_ascii_case("true") || raw == "1")
             }
-            // A date and a time *are* Numbers — Part 4 §4.3.3 and §4.3.2 — counted from
-            // `null_date`, so this is a conversion into the model's one numeric type and
-            // not a second one. The kind rides alongside purely so the writer can spell the
-            // cell back out as the date it was.
-            //
-            // Unparseable keeps the ISO text, which is the §9 rule: a value we cannot read
-            // costs its cell a type, never the document. A `date` cell whose serial we do
-            // have is never text again, so date arithmetic works on real files.
+            // A date or time is a Number (Part 4 §4.3.3, §4.3.2) counted from `null_date`; the
+            // kind lets the writer spell it back as a date. Unparseable keeps the ISO text (§9).
             Some("date") => {
                 let parsed = self
                     .date_value
@@ -1899,11 +1801,9 @@ impl Cell {
                 }
             }
             Some("string" | "error") => {
-                // Part 4 §4.6 stores an error result as a string — but LO writes the *empty*
-                // string into `office:string-value` and leaves the error name in the display
-                // text, flagging the cell with `calcext:value-type="error"`
-                // (doc/ods-format.md §6). Trusting the attribute there turns every cached
-                // error into an empty cell, so for those the paragraph is the value.
+                // LibreOffice writes an error result as an empty `office:string-value` with the
+                // name in the display text and `calcext:value-type="error"` (`doc/ods-format.md`
+                // §6), so for those the paragraph is the value.
                 if self.cached_error {
                     return (CellValue::Text(text.to_owned()), None);
                 }
@@ -1926,9 +1826,8 @@ impl Cell {
 
 impl Context<Builder> for Cell {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
-        // A form control drawn in this cell: a checkbox when it names one `office:forms`
-        // declared. Only for a cell standing for itself — a repeated one would be one control
-        // drawn in many cells, which no file means.
+        // A checkbox drawn in this cell, when it names one `office:forms` declared — only for a
+        // cell standing for itself.
         if name.is(Ns::Draw, "control") {
             if self.repeat == 1
                 && b.row_repeat == 1
@@ -1963,13 +1862,10 @@ impl Context<Builder> for Cell {
         let text = std::mem::take(&mut b.text);
         let (value, kind) = self.resolve(&text, b.doc.null_date);
 
-        // Phase 4 parses this. Until then it is carried verbatim so a re-save does not
-        // silently drop every formula in the document (§9).
         let formula = self.formula.clone();
 
-        // R6: the element's full extent, resolved here because only now is it closed. Every
-        // cell element the row has is recorded, empty ones included — writing a value into a
-        // cell the file spells `<table:table-cell/>` is the case R6 is named for.
+        // R6: the element's full extent, known now that it is closed. Empty cells are recorded too
+        // — writing a value into `<table:table-cell/>` is the case R6 is named for.
         if let Some((range, keep)) =
             self.span
                 .take()
@@ -1986,31 +1882,12 @@ impl Context<Builder> for Cell {
             });
         }
 
-        // An empty cell is kept only when it carries a style **of its own** — `grind sheet
-        // style book.fods A5 --bold` on a blank, a bordered empty cell in a table — and only
-        // under two bounds, the column repeat and the row repeat, each `MAX_TRACK_RUN`.
-        //
-        // This used to drop every styled blank, and the reason was measured rather than
-        // assumed. Keeping a style for *every* empty cell took `corpus_eval` from 77 seconds to
-        // over twelve minutes, and instrumenting this branch over the 888 spreadsheets in
-        // `sc/qa/unit/data` found where the cost was, split by which style reached the blank:
-        //
-        // | reached by | elements | addresses |
-        // |---|---|---|
-        // | the cell's **own** `table:style-name` | 131,443 | 49,802,241 (106,726 of them single) |
-        // | a **row** default | 0 | 0 |
-        // | a **column** default | 103,324 | **125,887,678,033** |
-        //
-        // The explosion is entirely the column default — one element inheriting a column's
-        // style and repeating across a sheet, 17.2 billion addresses in
-        // `ods/value-in-column-2000.ods` alone — and a cell's own style is cheap once separated
-        // out: 1,113,459 addresses across the whole corpus under these bounds, 86,685 in the
-        // worst document. So a column default on a blank is **still dropped**: carrying it
-        // needs a per-column side table (`style:default-cell-style-name`, the way `col_widths`
-        // is one) rather than a style per address, and that table owes the writer and the
-        // projection a spelling of their own. Re-measured with this change: loop A 2.9 → 3.7
-        // seconds, and loop B's evaluation unchanged once an open reference stopped counting
-        // styled blanks as part of the sheet (`Sheet::cell_extent`, `doc/ods-format.md` §5.1).
+        // An empty cell is kept only when it carries a style of its own, within the column and row
+        // repeat bounds (`MAX_TRACK_RUN`). A column default on a blank is still dropped: over
+        // `sc/qa/unit/data` blanks reached by their own style are about 1.1 million addresses, but
+        // those reached by a column default are 125.9 billion (17.2 billion in
+        // `ods/value-in-column-2000.ods` alone). Carrying column defaults needs a per-column side
+        // table, with its own writer and projection spelling.
         let own_style =
             self.style.is_some() && self.repeat <= MAX_TRACK_RUN && b.row_repeat <= MAX_TRACK_RUN;
         if value.is_empty() && formula.is_none() && !own_style {
@@ -2043,10 +1920,8 @@ impl Context<Builder> for Cell {
 
 // --- styles (§5) -----------------------------------------------------------------------
 
-/// `style:default-style style:family="table-cell"` — the one thing read off it is the
-/// document's locale, `fo:language`/`fo:country` on its text properties, kept verbatim like
-/// every other locale here ([`grind_core::locale`]). The rest of it — its font size above all,
-/// which is the ponytail on [`Styles`] — is still read past.
+/// `style:default-style style:family="table-cell"`: only the document's locale is read
+/// (`fo:language`/`fo:country`, verbatim). Its font size is read past — see [`Styles`].
 struct DefaultCellStyle;
 
 impl Context<Builder> for DefaultCellStyle {
@@ -2063,25 +1938,15 @@ impl Context<Builder> for DefaultCellStyle {
     }
 }
 
-/// `office:automatic-styles` and `office:styles`.
+/// `office:automatic-styles` and `office:styles`. Read: a `number:*-style` (a format), a
+/// `table-cell` `style:style` (the link to a format and the cell's look), and a
+/// `table-column`/`table-row` style's size (§5.4). Everything else is dropped rather than
+/// half-kept.
 ///
-/// Three things in here are read: a `number:*-style`, which *is* a format; a `table-cell`
-/// `style:style`, which carries both the link to a format and the cell's own look; and a
-/// `table-column`/`table-row` one, of which only the size is kept (§5.4). Everything else a
-/// style carries falls down the ignore path and is dropped rather than half-kept.
-///
-/// ponytail: `style:default-style style:family="table-cell"` is mostly dropped — only its
-/// locale is read ([`DefaultCellStyle`]) — and what is dropped is the one thing a *shell*
-/// notices. Every document LibreOffice writes puts
-/// `fo:font-size="10pt"` there and then says `10pt` again on each cell it styled, so a
-/// reader that keeps only the second half hands out a document in two sizes: the styled
-/// cells carry a size, the rest carry none and get whatever the shell's own font is.
-/// `ui_sheet_gtk/src/grid.rs`'s `font` covers for it by drawing a cell's size as a multiple
-/// of that same 10pt rather than as an absolute, which is right for every document written
-/// so far and wrong for one whose default is not 10pt. The upgrade is to read the default
-/// here — but a style read and never written is a round-trip loss (loop C) and a `Document`
-/// field with no projection node (loop F, `doc/projection-sheet.md`), so it costs a writer
-/// and a grammar row as well as this branch.
+/// ponytail: the default cell style's `fo:font-size="10pt"` is dropped, though LibreOffice states
+/// it there and again on each styled cell, so unstyled cells carry no size and get the shell's
+/// font. `ui_sheet_gtk` draws sizes relative to 10pt to cover for it, wrong for a document whose
+/// default differs. Reading it costs a writer and a projection node too (loops C and F).
 struct Styles;
 
 impl Context<Builder> for Styles {
@@ -2151,18 +2016,14 @@ impl Context<Builder> for Styles {
     }
 }
 
-/// The property children of a `table-cell` `style:style` (§5.1).
-///
-/// Each one is written straight into the style being built rather than accumulated and
-/// handed back, for the usual reason: a child has no channel to its parent, and the
-/// [`Builder`] is the channel.
+/// The property children of a `table-cell` `style:style` (§5.1), written straight into the style
+/// being built through the [`Builder`].
 struct CellStyleProps {
     name: String,
 }
 
-/// The properties one `table-cell` style sets to the spelling of *nothing* — `none`, `0` —
-/// which [`CellStyle`] stores as absent, and which still override what a parent style sets
-/// (`Builder::inherited`).
+/// The properties a style sets to the spelling of nothing (`none`, `0`), stored as absent but
+/// still overriding a parent ([`Builder::inherited`]).
 #[derive(Clone, Copy, Debug, Default)]
 struct Resets {
     borders: [bool; 4],
@@ -2170,9 +2031,8 @@ struct Resets {
     underline: bool,
     line_through: bool,
     indent: bool,
-    /// `style:use-window-font-color="true"` with no `fo:color`: ODF's *automatic* text colour,
-    /// stated — LibreOffice writes it on a cell whose font names no colour, under a parent
-    /// style whose colour must not show through.
+    /// `style:use-window-font-color="true"` without `fo:color`: ODF's automatic text colour,
+    /// stated, so a parent's colour does not show through.
     color: bool,
 }
 
@@ -2243,9 +2103,8 @@ impl Context<Builder> for CellStyleProps {
                         style.borders[i] = Some(value);
                     }
                 }
-                // ODF spells "explicitly no border" as `none`; the model spells it as an
-                // absent attribute, and keeping both would make two equal styles unequal.
-                // The `none` is remembered beside it, since it still hides a parent's line.
+                // ODF's explicit `none` is an absent attribute in the model, so equal styles stay
+                // equal; it is remembered beside it because it still hides a parent's line.
                 let mut cleared = [false; 4];
                 for (edge, cleared) in style.borders.iter_mut().zip(&mut cleared) {
                     if edge.as_deref() == Some("none") {
@@ -2292,8 +2151,8 @@ impl Context<Builder> for CellStyleProps {
     }
 
     fn end(&mut self, b: &mut Builder) {
-        // A style that sets nothing is no style: keeping it would have every cell in a
-        // LibreOffice document carrying an empty one.
+        // A style that sets nothing is no style; otherwise every cell in a LibreOffice document
+        // would carry an empty one.
         if b.style_props
             .get(&self.name)
             .is_some_and(CellStyle::is_plain)
@@ -2303,14 +2162,9 @@ impl Context<Builder> for CellStyleProps {
     }
 }
 
-/// The property child of a `table-column` or `table-row` `style:style` (§5.4).
-///
-/// One property each is kept — `style:column-width`, `style:row-height` — verbatim, for the
-/// reason every other ODF length is kept verbatim (`style.rs`).
-/// `style:use-optimal-column-width`/`-row-height` is deliberately dropped: it says the size
-/// was *derived* from the content, and re-deriving it means measuring text, which the core
-/// cannot do. The explicit size travels beside it in every file that sets it, so the layout
-/// survives either way.
+/// The property child of a `table-column` or `table-row` `style:style` (§5.4):
+/// `style:column-width` or `style:row-height`, verbatim. `style:use-optimal-*` is dropped —
+/// re-deriving a size needs text measurement — and the explicit size beside it carries the layout.
 struct TrackStyleProps {
     name: String,
 }
@@ -2479,9 +2333,8 @@ impl Context<Builder> for StyleText {
 
     fn end(&mut self, b: &mut Builder) {
         let text = std::mem::take(&mut b.style_text);
-        // An empty `number:text` says nothing, and keeping it would make a format's identity
-        // depend on whether the writer spelled the element `<number:text/>` or left it out —
-        // which is exactly the difference that stops a format round-tripping.
+        // An empty `number:text` says nothing; keeping it would make a format's identity depend on
+        // whether it was written at all.
         if text.is_empty() && !self.currency {
             return;
         }
@@ -2494,14 +2347,10 @@ impl Context<Builder> for StyleText {
 
 /// `text:p` and the runs beneath it — the only contexts that collect character data.
 struct Paragraph {
-    /// Whether character data follows ODF's white-space rule (§6.1.2 of Part 3: a run of
-    /// spaces, tabs and line ends is one space, and none opens a paragraph) — or is taken
-    /// verbatim, as a *cell's* always has been, since no writer in the corpus pretty-prints a
-    /// cell's paragraph and every cell test depends on the characters as they stand.
-    ///
-    /// A chart's titles are where the rule bites: LibreOffice pretty-prints a chart document,
-    /// so its axis title arrives as `<text:p>⏎␠␠␠␠<text:span>Euro</text:span></text:p>`, and read
-    /// verbatim it came back from loop C as `"\n               Euro"`.
+    /// Whether character data follows ODF's white-space rule (Part 3 §6.1.2: a run of whitespace
+    /// is one space, none opening a paragraph) or is taken verbatim, as a cell's always is. Chart
+    /// titles need the rule: LibreOffice pretty-prints a chart document, and read verbatim an axis
+    /// title came back as `"\n               Euro"`.
     collapse: bool,
 }
 
@@ -2517,10 +2366,8 @@ impl Context<Builder> for Paragraph {
             (Ns::Text, "span" | "a") => Some(Box::new(Paragraph {
                 collapse: self.collapse,
             })),
-            // `text:s` carries a *count*: ODF collapses runs of whitespace in `text:p`, so
-            // "a    b" is written as one literal space plus `<text:s text:c="3"/>`.
-            // Ignoring the count silently turns every multi-space string into a
-            // single-space one.
+            // `text:s` carries a count: `"a    b"` is written as one space plus `<text:s
+            // text:c="3"/>`.
             (Ns::Text, "s") => {
                 let n = attrs.count(Ns::Text, "c", MAX_COLS);
                 for _ in 0..n {

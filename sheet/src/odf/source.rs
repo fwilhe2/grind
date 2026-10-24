@@ -2,50 +2,27 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The file a document came from, kept so that saving can edit it instead of replacing it.
+//! The file a document came from, kept so that saving can edit it instead of replacing it (R6):
+//! editing one number should be one line of `git diff`.
 //!
-//! This is R6 (doc/plan.md): *writing must change as little of the XML as possible*.
-//! Regenerating from the model is right for a document this program authored and wrong for
-//! one it opened — the diff is the whole file, and what the model does not carry in the body
-//! goes with it. Editing one number should be one line of `git diff`, the way it is in the
-//! `.fods` repositories this format is good for.
+//! The reader keeps the bytes and where each cell's element sat in them; the writer serialises the
+//! cells that changed into those exact ranges, and every other byte is the file's own. A repeated
+//! cell (`table:number-columns-repeated`) is split into the run before, the changed cell and the
+//! run after ([`Cell::cols`]), still a one-element diff.
 //!
-//! **Retain and splice, not a fuller model.** Carrying every unknown element as a shadow
-//! tree would grow the model to the size of ODF, which is the trade this project exists not
-//! to make. Instead the reader keeps the bytes it read and remembers where each cell's
-//! element sat in them; the writer serialises the cells that changed and drops them into
-//! those exact ranges. Every other byte — indentation included — is the file that came in.
+//! * A repeated row is not split cell by cell; rows are recorded only where
+//!   `table:number-rows-repeated` is absent or 1.
+//! * Only values and formulas splice per cell. Formats, styles, track sizes, charts, names and
+//!   sheets splice a row at a time into the file's own table (`odf::write`'s `plan`): untouched
+//!   rows keep their bytes, a repeated row is split around the changed ones, and the table's start
+//!   tag, columns and charts are rewritten only when they changed. [`Table`] holds the ranges;
+//!   `model::Provenance` on each sheet says what changed.
+//! * A package splices its `content.xml` ([`Source::bytes`]) and rebuilds the archive from its own
+//!   entries ([`Source::package`]).
 //!
-//! **A repeated cell is split rather than skipped.** `table:number-columns-repeated` is not
-//! an edge case in files LibreOffice writes — a row of five empty cells is one element, and
-//! so is the trailing run of sixteen thousand — so treating one as unspliceable would leave
-//! R6 true only for cells that already had a value. Writing into one re-emits *that element*
-//! as the run before, the changed cell, and the run after, which is still a one-element diff.
-//! [`Cell::cols`] is what makes that possible: the element knows which addresses it stands
-//! for.
-//!
-//! Three things are deliberately *not* here, each an honest boundary of the trick rather
-//! than a corner cut:
-//!
-//! * **A repeated *row* is not split.** One element there stands for many rows rather than
-//!   many columns, so splitting means emitting whole rows and the diff stops being small —
-//!   which is the entire point. Rows are recorded only where `table:number-rows-repeated` is
-//!   absent or 1.
-//! * **Only values and formulas splice cell by cell.** Anything else — a format or a style, a
-//!   row's height, a column's width, a chart, a name, a sheet added or removed — is spliced *a
-//!   row at a time* into the file's own table instead (`odf::write`'s `plan`): untouched rows
-//!   are their own bytes, a repeated row is split around the rows that changed, a restyled cell
-//!   keeps its own element with a new style name, and the table's start tag, its columns and
-//!   its charts are rewritten only when they changed. [`Table`] is where all of that sits;
-//!   `model::Provenance`, on each sheet, is what changed.
-//! * **A package splices its `content.xml`.** [`Source::bytes`] is that part and
-//!   [`Source::package`] the archive around it, rebuilt from its own entries on save.
-//!
-//! Every part outside `office:body` is the file's own either way
-//! (`grind_core::odf::envelope::merge`). **Saving never makes an existing file worse**: what a
-//! save still cannot carry — a chart regenerated after a rename — makes it an
-//! `Error::WouldLose` rather than a smaller file, and every save is read back and compared with
-//! the document before it replaces anything.
+//! Everything outside `office:body` is the file's own (`grind_core::odf::envelope::merge`). What a
+//! save still cannot carry is an `Error::WouldLose`, and every save is read back and compared
+//! before it replaces anything.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -55,27 +32,21 @@ use super::write::Form;
 /// The bytes a document was read from, plus where its cells are in them.
 #[derive(Clone, Debug)]
 pub struct Source {
-    /// Which physical form those bytes are. Splicing is refused for any other, so a
-    /// `.fods` opened and saved as `.ods` regenerates rather than producing a zip full of
-    /// flat XML.
+    /// Which physical form those bytes are. Splicing is refused for any other, so a `.fods` saved
+    /// as `.ods` regenerates.
     pub form: Form,
     /// The file exactly as it was read. For the flat form this is also `content.xml`, which
     /// is why the ranges below index straight into it.
     pub bytes: Vec<u8>,
-    /// The cell elements of each `(sheet, row)`, in column order.
-    ///
-    /// Per row rather than per cell because of the repeated element: keying by address would
-    /// mean sixteen thousand identical entries for one trailing `<table:table-cell
-    /// table:number-columns-repeated="16384"/>`, which is in most real files and in every
-    /// row of some. A row's elements are few, so finding the one covering a column is a scan
-    /// over a short list.
+    /// The cell elements of each `(sheet, row)`, in column order — per row, since keying by
+    /// address would mean sixteen thousand entries for one trailing repeated cell.
     pub rows: HashMap<(usize, u32), Vec<Cell>>,
     /// The whole archive, when the document came from a package — [`Source::bytes`] is then
     /// its `content.xml`. Every other entry is written back from here on save
     /// (`grind_core::odf::envelope::repackage`).
     pub package: Option<Vec<u8>>,
-    /// The document's locale as the file stated it, so a save knows whether the default cell
-    /// style the file already has needs its language changed — and leaves it alone otherwise.
+    /// The document's locale as the file stated it, so a save changes the default cell style's
+    /// language only when it changed.
     pub locale: Option<crate::locale::Locale>,
     /// The package directories holding the charts the model read (`Object 1`, …): what a
     /// regenerating save replaces, every other directory being kept.
@@ -87,10 +58,9 @@ pub struct Source {
     /// prelude ahead of the first table and the epilogue after the last, carried verbatim
     /// unless the model owns and changed them.
     pub parts: Vec<Part>,
-    /// `null-date` and `null-year` as the file stated them, so `table:calculation-settings` —
-    /// which also says whether criteria take wildcards, whether search is case-sensitive and
-    /// a dozen other things the evaluator assumes — goes back as the file's own unless the
-    /// epoch changed.
+    /// `null-date` and `null-year` as the file stated them, so `table:calculation-settings`
+    /// (wildcards, case sensitivity and more) goes back as the file's own unless the epoch
+    /// changed.
     pub epoch: (i64, i64),
     /// The content of `office:spreadsheet` — between its start tag and its end tag.
     pub body: Option<Range<usize>>,
@@ -185,31 +155,19 @@ pub struct Cell {
     /// The columns it stands for — one column, or the run a
     /// `table:number-columns-repeated` covers.
     pub cols: Range<u32>,
-    /// Every attribute of the original element that the writer does **not** produce itself,
-    /// spelled exactly as the file spelled it, ready to drop into a start tag.
-    ///
-    /// The load-bearing detail of the whole splice, and the reason it is the *attributes*
-    /// rather than just the style name. `table:style-name="ce7"` has to survive because that
-    /// style lives in a part of the document nothing here models — our pool would emit `ce0`
-    /// and point the cell at a style the file does not contain. But so does
-    /// `table:number-columns-spanned`: writing a number into a merged cell and silently
-    /// un-merging it is a worse bug than a large diff, and it is what re-deriving the whole
-    /// start tag does. See [`kept_attributes`] for what is dropped and why.
+    /// Every attribute of the original element the writer does not produce itself, spelled as the
+    /// file spelled it. `table:style-name="ce7"` must survive because the style lives in a part
+    /// nothing here models, and `table:number-columns-spanned` because writing a number must not
+    /// un-merge a cell. See [`kept_attributes`].
     pub keep: String,
 }
 
-/// The attributes of a cell's start tag, minus the ones the writer produces from the model.
+/// The attributes of a cell's start tag minus the ones the writer produces from the model, sliced
+/// verbatim rather than re-serialised (which would respell them in our prefixes).
 ///
-/// Verbatim, by slicing rather than by re-serialising: `Attrs` resolves prefixes to
-/// namespaces, so rebuilding from it would spell a document's own attributes in *our*
-/// prefixes and turn a one-element diff back into a whole-file one.
-///
-/// Two groups are dropped. The first is what the writer always emits — the value, its type,
-/// the formula, the repeat count — which would otherwise appear twice and make the element
-/// ill-formed. The second is what *describes* that value and is no longer true once it
-/// changes: `office:currency`, and the `calcext:` mirror of the value type that LibreOffice
-/// writes (R4 — allowed, but not something to carry forward onto a value it no longer
-/// matches).
+/// Dropped: what the writer always emits (value, type, formula, repeat count), and what describes
+/// a value that is no longer true once it changes (`office:currency`, LibreOffice's `calcext:`
+/// mirror of the value type).
 pub fn kept_attributes(start_tag: &[u8]) -> String {
     attributes(start_tag, &DROP)
 }

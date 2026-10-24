@@ -2,25 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The projection of a **spreadsheet** — `doc/dsl.md` layer 0. **\[ODS\]**
+//! The projection of a spreadsheet — `doc/dsl.md` layer 0, a `.grind` file. **\[ODS\]**
 //!
-//! A third physical form beside the package and the flat one: the same document, spelled as
-//! plain text a person writes in any editor. The container is `grind_core::projection` (the
-//! KDL syntax, the kind header, the token and span maps); what is here is the only part that
-//! knows what a sheet is — this crate's node vocabulary, and the reader and writer over it.
-//! §3.2 is why that is a module beside `odf/` rather than a crate of its own.
-//!
-//! **The bijection is the whole promise.** Read a projection, write it back, and nothing has
-//! moved; project a document, read it back, and it is the same model. `sheet/tests/loop_f.rs`
-//! is that claim held against every document the corpus has. The layer-1 generator — a script
-//! that *computes* a document — deliberately does not round-trip and is not here (§1).
-//!
-//! ## The grammar
+//! The same document as plain text: `grind_core::projection` is the container, and this is the
+//! spreadsheet's node vocabulary with its reader and writer. Reading a projection and writing it
+//! back moves nothing, and projecting a document and reading it back gives the same model
+//! (`sheet/tests/loop_f.rs`). `doc/projection-sheet.md` is the full grammar.
 //!
 //! ```kdl
 //! grind spreadsheet
 //!
-//! // Comments survive an edit; see R6.
+//! // Comments survive an edit.
 //! null-date "1899-12-30"          // only when it is not the default
 //! null-year 1930                  // likewise
 //! name "tax_rate" "[$Sales.$B$1]" // table:named-expressions (§5.11)
@@ -46,45 +38,22 @@
 //! }
 //! ```
 //!
-//! Four things about the shape, each of them a decision rather than an accident:
+//! * `at`/`row` and `cell` are two spellings of the same state (§3.4): the writer puts plain
+//!   values in a grid and anything more in a `cell`, and the reader takes both — which is why loop
+//!   F compares models, never bytes.
+//! * A formula is stored verbatim, `of:` and all. The reader also takes a bare `"=SUM(…)"` in the
+//!   value position and adds the prefix.
+//! * A range is a bare identifier (`B1:C1`), so a style or format is stated once over its span.
+//! * A number format that is not one of `numfmt::preset`'s spells its parts (§3.8), never an Excel
+//!   format code.
 //!
-//! * **`at`/`row` and `cell` are two spellings of the same state** (§3.4). The reader takes
-//!   both; the writer emits a grid for the cells that are only values and a `cell` for the
-//!   ones that carry more. Tolerance on the way in, strictness on the way out — this
-//!   project's rule, applied to its own format. It is also why loop F compares *models* and
-//!   never bytes.
-//! * **A formula is stored verbatim**, `of:` prefix and all, because that is what the document
-//!   holds and R1 says ODF's spelling is the product. As an authoring convenience the reader
-//!   also takes a bare `"=SUM([.B2:.B4])"` in the value position and supplies the prefix —
-//!   which is a *normalisation*, so a hand-written file and its re-projection differ by that
-//!   one string and by nothing else.
-//! * **A range is a bare identifier** (`B1:C1`), so a style or a format is stated once over the
-//!   span it covers rather than once per cell — both how a person thinks and how the ODF
-//!   writer pools them anyway.
-//! * **A number format spells its parts** when it is not one of `numfmt::preset`'s (§3.8).
-//!   `numfmt::Format` is an ordered sequence of `Part`s and not a format string, deliberately
-//!   (`doc/ods-format.md` §5.2), so the projection spells the parts rather than inventing
-//!   Excel's `#,##0.00`. `Format::is_preset` already draws exactly this line for the GTK
-//!   format picker, and this is its second caller.
-//!
-//! ## What it does not carry yet
-//!
-//! Named gaps, in the sense loop F counts: a document using one of these projects with the
-//! construct **dropped**, and the loop's excused list says so by name rather than the ratchet
-//! quietly absorbing it.
-//!
-//! * **Charts** (`doc/chart-format.md`). Expressible, verbose, and nobody hand-writes one —
-//!   §3.8 puts them in for bijectivity rather than for authoring, and they are not in yet.
-//! * **The `office:settings` and style *definitions*** a `.fods` carries and R6 preserves.
-//!   Converting *to* a projection drops what the projection has no node for, exactly as
-//!   regenerating does today (§9). `grind lint` is the milestone that says which, by name,
-//!   before it happens.
+//! Charts are not projected (loop F's one named gap for spreadsheets), nor are `office:settings`
+//! and style definitions: converting to a projection drops them.
 
 pub mod read;
 pub mod write;
 
-/// The generic container, re-exported so this crate's projection reader and writer reach it by
-/// one path — the same ergonomics `odf::mod` provides for `context`, `names` and `package`.
+/// `grind_core::projection`'s container types, under this crate's path.
 pub use grind_core::projection::{Anchor, Emitter, Projection, Token, TokenKind};
 
 use crate::Result;
@@ -95,13 +64,9 @@ pub fn project(doc: &Document) -> Projection {
     write::project(doc)
 }
 
-/// The bytes a `.grind` is saved as — the file it came from with the edited cells put back when
-/// that is possible (R6, D5), and a fresh projection when it is not.
-///
-/// The one door out, so that no caller can save a projection *without* R6: `odf::write` reaches
-/// this and nothing reaches [`project`] to make a file. That is the same shape `odf::write`
-/// already has — splice first, regenerate otherwise — and the reason it is here rather than in
-/// the two places that write bytes.
+/// The bytes a `.grind` is saved as: the file it came from with the edited cells put back when
+/// possible (R6), a fresh projection otherwise. The one door out, so no caller saves a projection
+/// without splicing.
 pub fn save(doc: &Document) -> Vec<u8> {
     match write::splice(doc) {
         Some(text) => text.into_bytes(),
