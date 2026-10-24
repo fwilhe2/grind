@@ -87,8 +87,7 @@ pub struct Filter {
     /// data and is never hidden — which is what the sample shows: `Product` is not one of
     /// the values its own filter keeps, and LibreOffice leaves that row visible anyway.
     pub contains_header: bool,
-    /// `table:display-filter-buttons` — whether the dropdown buttons are drawn. Carried so a
-    /// round trip does not silently turn them off; nothing in this build draws one yet.
+    /// `table:display-filter-buttons` — whether the dropdown buttons are drawn.
     pub buttons: bool,
     /// The values each field keeps, by field number: 0 is [`Filter::start`]'s column, 1 the
     /// one after it (§9.4's `table:field-number`). A field with no entry is unfiltered, and

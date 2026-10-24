@@ -4,46 +4,17 @@
 
 //! ODF word processor core. **\[ODT\]**
 //!
-//! The second document type of the suite (`doc/suite.md`, phase 10). It builds on
-//! `grind-core` exactly as `grind-sheet` does — same packaging, same namespace resolution,
-//! same tolerant element-context stack — and adds the one thing that is its own: the
-//! `office:text` content model.
+//! The `office:text` content model on top of `grind-core`'s packaging and tolerant reader.
+//! `doc/odt-format.md` is the clean-room notes (its §5 is unverified and may not be
+//! implemented) and `doc/text-core.md` the scope line, which [`implemented`] is checked
+//! against by `tests/scope.rs`.
 //!
-//! Two documents are normative here and are worth reading before the code:
+//! Line layout is `grind_core::layout`'s (`doc/text-layout.md`): a shell supplies font metrics
+//! through [`Metrics`], and through [`Faces`] which of them each block is set in. [`flow`]
+//! stacks the laid-out blocks down a continuous page.
 //!
-//! * **`doc/odt-format.md`** — the clean-room notes. Every structural claim cites
-//!   `doc/OpenDocument-v1.4-schema.rng` by line, and §5 is a list of things about LibreOffice
-//!   that are **not yet verified** and may not be implemented until they are.
-//! * **`doc/text-core.md`** — the scope line. Unlike `doc/small-group.md` it was *invented*
-//!   rather than extracted, because ODF defines no evaluator tier for text — which is exactly
-//!   why [`implemented`] is checked against it by `tests/scope.rs` rather than trusted.
-//!
-//! **Where this build is.** S4–S7: the model, addressing, the reader, the writer in both forms
-//! with R6 splicing (a `.fodt` lives in git the way a `.fods` does), loop C green both
-//! directions, the `App` the CLI drives, and the caret-level edits a continuous-flow editor is
-//! made of — [`App::insert_text`], [`App::erase`], [`App::split_block`], [`App::join_block`].
-//!
-//! **Layout lives in `grind_core::layout`** and this crate drives it — `doc/text-layout.md`,
-//! decided on Path C. Line breaking, and every caret operation defined in terms of a line, are
-//! in the core so that three shells cannot disagree about where Down-arrow goes; the shell
-//! supplies font metrics through [`Metrics`] and nothing else — plus, through [`Faces`], which
-//! of them each block is set in, because a heading and the paragraph under it are not the same
-//! font and a motion by line crosses between them. Pagination is still gated, and layout is
-//! left-to-right only by explicit decision. The stacking above the lines — where each block
-//! sits down a continuous page, and a table's on its grid — is [`flow`], for the same reason.
-//!
-//! **Character formatting is direct formatting** ([`style`]). A run carries the properties an
-//! `office:automatic-styles` entry set on it — bold, italic, a family, a size, a colour — and
-//! [`App::set_char_style`] writes them back as a generated `style:style` that LibreOffice reads
-//! (loop C compares it, in the "out" direction, character by character). What a run does *not*
-//! carry is what a **named** style means: `Emphasis` stays a name, because the name is the
-//! document's own vocabulary and resolving it would throw structure away to draw it.
-//!
-//! **What it does not have.** A session, so no `undo` across CLI invocations; tables,
-//! footnotes and fields; style *definitions*, so a style **name** this build writes does not
-//! survive LibreOffice, and a run carrying only one measures with the default; paragraph-level
-//! properties, which is why LibreOffice hoisting a uniform paragraph's font out of its runs
-//! reads here as formatting lost; pages.
+//! A run carries **direct** formatting only ([`style`]): an automatic style is resolved onto
+//! the run, a named style such as `Emphasis` stays a name.
 
 pub mod action;
 pub mod blocks;
@@ -86,16 +57,10 @@ use std::ops::Range;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
-/// Every element of the ODF text content model this build understands.
+/// Every element of the ODF text content model this crate understands.
 ///
-/// The mechanical half of `doc/text-core.md`, and the anti-bloat rule made checkable: adding
-/// an element to the reader without adding it to that document fails the build, and so does
-/// listing one there that nothing implements (`tests/scope.rs`).
-///
-/// This is `grind_sheet::formula::funcs::implemented()`'s counterpart, and it matters more:
-/// the spreadsheet's scope line could be *extracted* from a normative tier, so drifting from
-/// it would contradict a specification. Text has no such tier, so the only thing between this
-/// list and a wish list is the test.
+/// `tests/scope.rs` holds it to `doc/text-core.md` in both directions, so an element cannot be
+/// read without being in the scope line, nor listed there without being read.
 pub fn implemented() -> Vec<&'static str> {
     vec![
         // Block level
@@ -440,27 +405,11 @@ impl Counts {
     }
 }
 
-/// Which measure and which [`Metrics`] each block is set in — **the lookup a motion that
-/// crosses a block boundary needs.**
+/// Which measure and which [`Metrics`] each block is set in, asked per block as a caret motion
+/// reaches it — Down-arrow out of a heading lands in a block set in a different face.
 ///
-/// Down-arrow out of a heading lands in the paragraph below it, and that paragraph is set in a
-/// different face: a smaller font, and (for a list item) a narrower measure, because the indent
-/// comes out of the column. A motion handed *one* width and *one* provider therefore measures
-/// the block it arrives in with the face of the block it left — invisible in the middle of a
-/// line and wrong by a few characters at either end. So the caret operations ask for each
-/// block's face **as they reach it** rather than being told once, which is what makes them
-/// right across a boundary rather than only within one block.
-///
-/// **The block is described rather than handed over**, and that is not a convenience: [`App`]
-/// holds its read lock for the whole motion, so an implementation that called back into
-/// [`App::get_viewport`] to find out what it was being asked about would be re-entering a lock
-/// it is already inside. Kind and named style are what every shell keys a face off anyway —
-/// `Title` and `Subtitle` are paragraphs whose only signal is the name, which is why the style
-/// is here beside the kind — so they are what is passed.
-///
-/// This lives in `grind-text` rather than beside [`Metrics`] in `grind_core::layout` because a
-/// *block* is the word processor's own vocabulary and R8 keeps that out of the core. The core's
-/// half of the seam is unchanged: it still asks only how wide a piece of text is.
+/// Called while [`App`] holds its read lock, so an implementation must not call back into it;
+/// that is why it is given the block's kind and style name rather than the block.
 pub trait Faces {
     /// The measure and the metrics for the block at `index`.
     ///

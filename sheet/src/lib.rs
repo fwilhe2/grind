@@ -4,15 +4,9 @@
 
 //! ODF spreadsheet core.
 //!
-//! All state and all logic live here. Every front-end — CLI, TUI, desktop, browser — is a
-//! renderer and an event forwarder that owns nothing (doc/plan.md). Reads go through
-//! [`App::get_viewport`]; the column store exists so that this is the only sane way to
-//! read, and a whole-document getter would quietly make it pointless.
-//!
-//! Phase 1: the model, the column store, actions and undo/redo. Phase 2 adds the reader,
-//! which is why [`read_file`] exists and fails.
-//!
-//! See `doc/ods-format.md` for the format, `doc/plan.md` for phase order.
+//! All state and all logic live here; every front-end is a renderer and an event forwarder
+//! that owns nothing. Reads go through [`App::get_viewport`] — no getter hands out the whole
+//! document. `doc/ods-format.md` is the clean-room notes on the format.
 
 use std::fmt;
 use std::ops::Range;

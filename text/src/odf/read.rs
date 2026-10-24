@@ -857,7 +857,7 @@ impl Context<Builder> for FontFaces {
 const MARGINAL_STYLE: &str = " styles.xml ";
 
 /// `office:master-styles` — only each `style:master-page`'s name and the page layout it names.
-/// Its headers and footers are content this build does not model yet (`doc/pdf-export.md` P8).
+/// Its headers and footers are read into [`crate::marginal`], for printing.
 struct MasterStyles;
 
 impl Context<Builder> for MasterStyles {
