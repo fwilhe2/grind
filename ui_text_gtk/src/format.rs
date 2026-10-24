@@ -2,36 +2,20 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The formatting bar — every property of a *run* this window can read and write.
+//! The formatting bar — every property of a *run* this window can read and write. A control
+//! belongs here when it **reads and writes a property of the selection** (`doc/sheet-shell.md`'s
+//! test), so `CharStyle`'s eight fields and the caret block's *kind* bound it; a verb goes in the
+//! menu. The kind comes first, as the control a writer reaches for most — *make this a heading* —
+//! and what the outline, the addresses (`§2.1`) and the look are built from.
 //!
-//! `ui_sheet_gtk/src/formatting.rs`'s counterpart, one document type over, and it earns its
-//! place by the same admission test `doc/sheet-shell.md` sets for that shell's format bar: a
-//! control belongs here when it **reads and writes a property of the selection**, and nowhere
-//! else. `CharStyle`'s eight fields and the caret's block *kind* are therefore the whole bound
-//! of this file — there is no room here for a verb, and a verb that wants a home goes in the
-//! menu.
+//! **With nothing selected the bar still works**: a control pressed at a bare caret sets the style
+//! the next character typed carries (`Ui::apply_char_style`).
 //!
-//! The kind is the one control that is not a `CharStyle` field, and it is first on the bar
-//! because it is the one a writer reaches for most: *make this a heading*. It lived in a
-//! submenu of the primary menu, three clicks away and invisible, while the bar beside it showed
-//! the font size — and a heading is what a document's outline, its addresses (`§2.1`) and its
-//! look are all built from.
-//!
-//! **With nothing selected the bar still works**: a control pressed at a bare caret sets the
-//! style the *next character typed* will carry, as every word processor does, rather than
-//! greying out and leaving Bold-then-type silently unbold. See `Ui::apply_char_style`.
-//!
-//! **Every control reads the document and writes the document, and keeps nothing.** The toggles
-//! show what [`grind_text::App::char_style`] says the selection agrees about and write through
-//! `set_char_style`; the two swatches and the two drop-downs do exactly the same with the four
-//! properties that carry a value rather than a boolean. No widget here holds an opinion about
-//! what is bold — there is one such fact and it is in the document.
-//!
-//! What is testable without a display lives in [`grind_text::format::Change`], the whole
-//! vocabulary of the bar as a pure function over a `CharStyle`, and in
-//! [`grind_text::format::sizes`] — hoisted into `grind-text` itself the day `grind-win32`
-//! wanted the same answers, the way `sheet/src/formula/assist.rs` was. The widgets around them
-//! need GTK and are exercised by `view.rs`'s one widget harness.
+//! **Every control reads and writes the document, and keeps nothing**: toggles show what
+//! [`grind_text::App::char_style`] says the selection agrees about and write through
+//! `set_char_style`, and the swatches and drop-downs do the same with the four valued properties.
+//! The pure half is [`grind_text::format::Change`] and [`grind_text::format::sizes`]; the widgets
+//! are exercised by `view.rs`'s harness.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -44,12 +28,9 @@ use grind_text::CharStyle;
 pub use grind_text::format::{Change, DEFAULT, sizes};
 use gtk::{gdk, glib, pango};
 
-/// The Monospace toggle's icon.
-///
-/// Adwaita has no `code-symbolic`, and an icon name the theme has never heard of draws as the
-/// missing-image placeholder rather than failing — which is a bug you only find by looking at a
-/// screenshot, and this one was found exactly that way. The terminal icon is in Adwaita's own
-/// set and reads as "fixed width" to anybody who would reach for this button.
+/// The Monospace toggle's icon. Adwaita has no `code-symbolic`, and an unknown icon name draws as
+/// the missing-image placeholder rather than failing; the terminal icon is in Adwaita's set and
+/// reads as "fixed width".
 const CODE_ICON: &str = "utilities-terminal-symbolic";
 
 /// The block kinds the bar's first control offers, each with the `win.` action that applies it
@@ -102,10 +83,9 @@ pub struct Bar {
     sizes: gtk::StringList,
     color: Rc<Swatch>,
     highlight: Rc<Swatch>,
-    /// Guards [`Bar::show`]'s own writes from being read back as a click — without it,
-    /// painting the bar's state would immediately rewrite the document it is reporting on.
-    /// The same latch `Ui` keeps for the same reason, and it is here as well as there because
-    /// a drop-down's `selected` notification arrives from inside `set_selected`.
+    /// Guards [`Bar::show`]'s own writes from being read back as a click, which would rewrite the
+    /// document the bar is reporting on — needed here too because a drop-down's `selected`
+    /// notification arrives from inside `set_selected`.
     updating: Cell<bool>,
     /// Where a control's [`Change`] goes. Empty until [`Bar::connect`] fills it in, because
     /// the bar is built before the window that writes through it exists — and a control
@@ -117,10 +97,9 @@ impl Bar {
     /// Build the bar. Nothing is wired to a document until [`Bar::connect`]; `context` is the
     /// view's own Pango context, which is where the list of font families comes from.
     pub fn new(context: &pango::Context) -> Rc<Self> {
-        // The four booleans plus Code, linked into one group the way a toolbar's related
-        // toggles are. Code is one of them rather than off with the family drop-down because
-        // it is a toggle in the notation and a toggle to the hand: `` `ls -l` `` typed and
-        // this button pressed have to be the same edit.
+        // The four booleans plus Code, linked into one group. Code is a toggle rather than part of
+        // the family drop-down because it is one in the notation: `` `ls -l` `` typed and this
+        // button pressed are the same edit.
         let toggles: Vec<Toggle> = vec![
             (toggle("format-text-bold-symbolic", "Bold"), Change::Bold),
             (
@@ -317,10 +296,8 @@ impl Bar {
 }
 
 /// One colour button: the run's colour on its face, [`PALETTE`] as the choices, *Automatic* to
-/// take the attribute off again, and a dialog behind *Custom…*.
-///
-/// The palette lives in the core so that `grind text format --color navy` and this button's
-/// navy swatch write the same attribute; it is a default a shell offers, never a limit.
+/// remove the attribute, and *Custom…* for a dialog. The palette is the core's, so `grind text
+/// format --color navy` writes the same attribute; a default, never a limit.
 struct Swatch {
     button: gtk::MenuButton,
     /// The colour drawn on the button's face. A `Cell` because the draw function reads it on
@@ -476,10 +453,8 @@ fn area(shown: Rc<Cell<Option<gdk::RGBA>>>, width: i32, height: i32) -> gtk::Dra
     area
 }
 
-/// Every font family Pango knows about, sorted — what the drop-down offers.
-///
-/// Asked of the widget's own context rather than of a fresh one: a bare `pango::Context` has no
-/// font map, and the list a document is drawn from has to be the list it is chosen from.
+/// Every font family Pango knows, sorted — asked of the widget's own context, since a bare
+/// `pango::Context` has no font map and the list chosen from must be the one drawn from.
 fn installed_families(context: &pango::Context) -> Vec<String> {
     let mut names: Vec<String> = context
         .list_families()
@@ -572,9 +547,6 @@ fn capitalised(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // `Change`'s own vocabulary and `sizes`' ladder are specified and tested in
-    // `grind_text::format` now, which is where they are defined.
 
     #[test]
     fn a_colour_round_trips_through_the_dialogs_own_spelling() {

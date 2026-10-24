@@ -2,16 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Alt Text… — a picture's alternative text, in a libadwaita dialog.
-//!
-//! The picture is shown at the top, because alt text is written *looking at* what it describes;
-//! under it an entry row for the short text a screen reader says (`svg:title`, and Markdown's
-//! `![alt]`), the one sentence of advice `grind_text::picture::advice` gives every client as it is
-//! typed, and a box for the long description (`svg:desc`). An `adw::Dialog` rather than an
-//! `adw::AlertDialog`, since it carries a picture and a multi-line field, and it becomes a bottom
-//! sheet by itself on a narrow window. Which picture is grind_text's answer
-//! (`picture::at`), and the write is `picture::set_alt` — the same pair `grind text alt` and
-//! the five other clients reach.
+//! Alt Text… — a picture's alternative text, in a libadwaita dialog. The picture at the top, since
+//! alt text is written looking at what it describes; under it the short text a screen reader says
+//! (`svg:title`, Markdown's `![alt]`) with `grind_text::picture::advice` as it is typed, and a box
+//! for the long description (`svg:desc`). An `adw::Dialog`, not an `AlertDialog`, as it holds a
+//! picture and a multi-line field; it becomes a bottom sheet on a narrow window. Which picture is
+//! `picture::at`'s answer and the write is `picture::set_alt`, as `grind text alt` does.
 
 use std::rc::Rc;
 use std::sync::Arc;

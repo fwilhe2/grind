@@ -2,21 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The find bar — Ctrl+F, the `grind text find -i` of this window.
+//! The find bar — Ctrl+F. A `gtk::SearchBar` under the format bar, as every GNOME editor finds: it
+//! searches as typed, Enter and Shift+Enter (or Ctrl+G and Shift+Ctrl+G) walk the hits, and Escape
+//! returns the keyboard to the document with the last hit still selected, so typing replaces it.
 //!
-//! A `gtk::SearchBar` under the format bar, the way every GNOME editor finds: it slides in, it
-//! searches as it is typed, Enter and Shift+Enter (or Ctrl+G and Shift+Ctrl+G, which the entry
-//! already answers) walk the hits, and Escape puts the keyboard back in the document with the
-//! hit it stopped on still selected — so typing over a found word replaces it, which is what
-//! most people opened the bar to do.
-//!
-//! **It ignores case**, which is `App::find_ignoring_case` and not a second matcher here: a
-//! person typing `appendix` is looking for *Appendix*, and a bar that says "No results" for it
-//! is a bar that has taught them it does not work.
-//!
-//! The hits are asked for again at every step rather than kept, because the document may have
-//! been edited between two presses of Enter and a stale list selects the wrong characters.
-//! [`step`] is the part that decides which hit is next, and it is pure.
+//! **It ignores case** (`App::find_ignoring_case`): somebody typing `appendix` is looking for
+//! *Appendix*. The hits are asked for again at every step, since the document may have changed
+//! between two presses of Enter; [`step`] decides which is next, and is pure.
 
 use std::rc::Rc;
 use std::sync::Arc;
@@ -67,10 +59,8 @@ impl Find {
         row.append(&entry);
         row.append(&count);
         row.append(&arrows);
-        // The second row: what to put there, and the one button that writes. `App::replace` is
-        // every occurrence in one undo step and exact in case, so "Replace All" is its whole
-        // vocabulary here — a single-hit replace would be a second code path for the one verb
-        // every other client also has only as the whole-document one.
+        // The second row: the replacement, and the one button that writes. `App::replace` is every
+        // occurrence, exact in case, in one undo step, so "Replace All" is the whole vocabulary.
         let with = gtk::Entry::builder()
             .placeholder_text("Replace with")
             .hexpand(true)

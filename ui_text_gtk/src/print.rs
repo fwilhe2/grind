@@ -2,17 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Export PDF…, Print… and Print Preview (`doc/pdf-export.md` §3–§4).
-//!
-//! **The core makes the PDF, and this window only hands it on.** Export writes
-//! `grind_print::export`'s bytes; Print gives the same bytes to `gtk::PrintDialog`, which prints
-//! a file as it is rather than asking this window to draw pages a second time through cairo; and
-//! the preview shows `grind_print::raster`'s pixels of the very display list the PDF is written
-//! from. So what the preview shows, what the file holds and what the printer puts down are one
-//! typesetting, not three.
-//!
-//! The arithmetic is portable and tested here with no display: the name a PDF is offered under,
-//! a page's label, and the zoom steps.
+//! Export PDF…, Print… and Print Preview (`doc/pdf-export.md`). **The core makes the PDF, and this
+//! window hands it on**: Export writes `grind_print::export`'s bytes, Print gives the same bytes
+//! to `gtk::PrintDialog`, and the preview shows `grind_print::raster`'s pixels of the display list
+//! the PDF is written from — one typesetting, not three. The portable arithmetic (the offered
+//! name, a page's label, the zoom steps) is tested without a display.
 
 use std::cell::Cell;
 use std::rc::Rc;

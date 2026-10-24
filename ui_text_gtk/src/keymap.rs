@@ -2,21 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Which key means what, as a pure function. **No GTK types.**
+//! Which key means what, as a pure function with **no GTK types**: the widget turns a `gdk::Key`
+//! into [`Key`], so every navigation and editing decision tests with no display.
 //!
-//! The widget turns a `gdk::Key` into [`Key`] and hands it over, so every navigation and
-//! editing decision unit-tests with no display — the rule `ui_sheet_gtk/src/keymap.rs` follows and
-//! the reason both shells' keyboards are testable at all.
+//! **Nothing here does arithmetic**: Down-arrow means the next *line*, a line is an output of
+//! layout, and the answer is `grind_text::App::caret_line`'s (`doc/text-layout.md`). This file
+//! names the question.
 //!
-//! **Nothing here does arithmetic**, which is the difference from the spreadsheet's map and
-//! the whole point of `doc/text-layout.md`: Down-arrow means "the next *line*", a line is an
-//! output of layout, and the answer comes from `grind_text::App::caret_line`. This file names
-//! the question. `ui_tui/src/text/keymap.rs` names the same ones in vi's spelling — two
-//! keyboards over one editing model, which is what stops the shells from disagreeing.
-//!
-//! Typed characters are **not** here. They arrive through the input method rather than as
-//! keys, so that dead keys, compose sequences and IME candidate windows work; a shell that
-//! turns keyvals into text has quietly decided only ASCII exists.
+//! Typed characters are not here: they arrive through the input method, so dead keys, compose
+//! sequences and IME candidate windows work.
 
 /// A key, as this shell cares about it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,12 +71,8 @@ pub enum Action {
     EraseWord(i32),
     /// Enter — a new block, split at the caret.
     Split,
-    /// Tab and Shift+Tab: one step deeper into a list, or one step out of it.
-    ///
-    /// A *structural* motion rather than a character, which is what a word processor's Tab at
-    /// the front of a block has always meant. The widget decides what a block that is not a
-    /// list item does with it — see `Doc::indent_or_tab`, where it becomes a `text:tab` in the
-    /// text instead.
+    /// Tab and Shift+Tab: one step deeper into a list, or out of it — structural at the front of a
+    /// block. A block that is not a list item gets a `text:tab` instead (`Doc::indent_or_tab`).
     Indent(i32),
 }
 

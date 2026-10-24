@@ -2,29 +2,22 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The document view: a custom widget that draws blocks and a caret, and owns neither.
+//! The document view: a custom widget that draws blocks and a caret, and owns neither. Every paint
+//! asks [`App::get_viewport`] for the blocks on screen and [`App::layout_block`] for their lines,
+//! draws them and throws both away; the only state is presentation — the caret, and the column it
+//! keeps while moving by lines.
 //!
-//! `ui_sheet_gtk/src/grid.rs`'s counterpart, one document type over. Every paint asks
-//! [`App::get_viewport`] for the blocks that fall on screen and [`App::layout_block`] for
-//! their lines, draws them, and throws both away (doc/plan.md rule 1). The only state here is
-//! presentation: where the caret is, and what column it is trying to keep while moving by
-//! lines.
+//! **Not `GtkTextView`**, whose `GtkTextBuffer` would be a second copy of the document with its
+//! own undo stack and no notion of a `text:h`.
 //!
-//! **Not `GtkTextView`.** That widget owns a `GtkTextBuffer`, which is a second copy of the
-//! document with its own undo stack, its own idea of what a paragraph is and no notion of a
-//! `text:h` — rule 1's trap in its most tempting form. A widget drawing in `snapshot()` from
-//! the core's own layout is more code once and keeps one document.
-//!
-//! **Where the editing model is, and is not.** Every motion is answered by the core:
-//! Down-arrow is [`App::caret_line`], Home and End are [`App::caret_line_bounds`], a click is
-//! [`grind_core::layout::Layout::offset_at`], typing is [`App::insert_text`], Enter is
-//! [`App::split_block`], Backspace at the front of a block is what [`App::erase`] across a
-//! boundary already does. This file decides *which* question to ask and where to draw the
-//! answer — exactly the division `ui_tui/src/text/app.rs` makes, in a different unit, which
-//! is what `doc/text-layout.md` chose Path C for.
+//! Every motion is the core's: Down-arrow is [`App::caret_line`], Home and End
+//! [`App::caret_line_bounds`], a click [`grind_core::layout::Layout::offset_at`], typing
+//! [`App::insert_text`], Enter [`App::split_block`], Backspace at a block's front [`App::erase`]
+//! across the boundary. This file decides which question to ask and where to draw the answer
+//! (`doc/text-layout.md`).
 //!
 //! Typing goes through `GtkIMMulticontext`, so dead keys, compose sequences and input methods
-//! work. [`crate::keymap`] never sees a printable character.
+//! work; [`crate::keymap`] never sees a printable character.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -59,10 +52,8 @@ impl Doc {
         self.queue_draw();
     }
 
-    /// The document changed: forget everything measured from it and repaint.
-    ///
-    /// Called from the observer, so it covers this widget's own edits too — they reach the
-    /// core the same way anything else does (doc/plan.md rule 3).
+    /// The document changed: forget everything measured from it and repaint. Called from the
+    /// observer, so it covers this widget's own edits too (rule 3).
     pub fn invalidate(&self) {
         self.imp().flow.replace(None);
         self.imp().clamp_caret();
@@ -197,12 +188,8 @@ impl Doc {
         self.imp().indent(by)
     }
 
-    /// Put the selection on the system clipboard. `false` when there is nothing selected.
-    ///
-    /// **Plain text, deliberately.** The clipboard this writes is the one every other
-    /// application reads, and a run's `CharStyle` has no spelling in `text/plain` — the same
-    /// answer `grind-web` gives, and the reason both shells' Copy is one line of arithmetic
-    /// rather than a serialiser.
+    /// Put the selection on the system clipboard; `false` when nothing is selected. Plain text: a
+    /// run's `CharStyle` has no spelling in `text/plain`.
     pub fn copy(&self) -> bool {
         let Some(text) = self.imp().selected_text() else {
             return false;
@@ -220,10 +207,8 @@ impl Doc {
         true
     }
 
-    /// Read the clipboard and put its text in at the caret, replacing the selection.
-    ///
-    /// Asynchronous because a clipboard read is: the bytes may be coming from another process
-    /// that has not been asked for them yet, and GTK will not block for them.
+    /// Read the clipboard and put its text in at the caret, replacing the selection —
+    /// asynchronously, since the bytes may come from another process.
     pub fn paste(&self) {
         self.clipboard().read_text_async(
             gtk::gio::Cancellable::NONE,
@@ -244,10 +229,8 @@ impl Doc {
 /// and past the first few they are rarely the word that was meant.
 pub const SUGGESTIONS: usize = 6;
 
-/// The spelling section that leads the right-click menu over a misspelt word
-/// (`doc/spelling.md`): what it might have been — each one `spell.correct` with the word as its
-/// target — then Ignore All and Add to Dictionary. A free function for the reason
-/// [`context_menu_model`] is.
+/// The spelling section leading the right-click menu over a misspelt word: the suggestions, each
+/// `spell.correct` with the word as its target, then Ignore All and Add to Dictionary.
 pub fn spelling_menu_model(suggestions: &[String]) -> gtk::gio::Menu {
     let model = gtk::gio::Menu::new();
     let offered = gtk::gio::Menu::new();
@@ -268,17 +251,14 @@ pub fn spelling_menu_model(suggestions: &[String]) -> gtk::gio::Menu {
     model
 }
 
-/// The right-click menu on the page: what to do with the text under the pointer.
-///
-/// The clipboard, and nothing about the document as a whole — that is the primary menu's, the
-/// same split `doc/sheet-shell.md`'s "Four surfaces" draws for the spreadsheet. A free function
-/// returning the model so a test can walk it without a display.
 /// A picture's bytes decoded for painting — what the page draws, and what the Alt Text dialog
-/// shows at its top.
+/// shows.
 pub fn texture(image: &grind_text::ImageView) -> Option<gtk::gdk::Texture> {
     imp::texture_of(image)
 }
 
+/// The right-click menu on the page: the clipboard, and nothing about the document as a whole,
+/// which is the primary menu's. A free function so a test can walk it without a display.
 pub fn context_menu_model() -> gtk::gio::Menu {
     let model = gtk::gio::Menu::new();
     let clipboard = gtk::gio::Menu::new();
@@ -343,18 +323,15 @@ mod imp {
         pub resume: RefCell<Option<grind_text::CharStyle>>,
         /// Every block's box, cached against the width it was measured at.
         ///
-        /// ponytail: rebuilt from scratch whenever the document or the width changes, which
-        /// lays out every block in the document rather than the ones that changed. Bounded by
-        /// the document rather than by the screen, unlike everything else in this file; the
-        /// upgrade path is a per-`BlockId` cache, and the reason not to have one yet is that
-        /// it needs an invalidation rule the core does not hand out.
+        /// ponytail: rebuilt whole whenever the document or the width changes, laying out every
+        /// block rather than the changed ones — bounded by the document, not the screen. The
+        /// upgrade is a per-`BlockId` cache, which needs an invalidation rule the core does not
+        /// hand out.
         pub flow: RefCell<Option<Placed>>,
         pub faces: RefCell<Option<Rc<Faces>>>,
         pub palette: Cell<Option<Palette>>,
-        /// Whether the bookmark anchors are drawn — `doc/view-modes.md` §3.6. Presentation
-        /// state like the caret beside it: a view mode is a **reading** of the document and
-        /// never a change to it, so turning it off puts the page back exactly and there is
-        /// nothing to save, undo or confirm.
+        /// Whether bookmark anchors are drawn (`doc/view-modes.md` §3.6) — a reading of the
+        /// document, so turning it off puts the page back with nothing to save or undo.
         pub names: Cell<bool>,
         pub hadjustment: RefCell<Option<gtk::Adjustment>>,
         pub vadjustment: RefCell<Option<gtk::Adjustment>>,
@@ -365,13 +342,12 @@ mod imp {
         /// Told a link's target when it is followed — Ctrl+click on one.
         pub on_link: RefCell<Vec<NoticeHook>>,
         pub on_moved: RefCell<Vec<MovedHook>>,
-        /// The last press — its time, where it was, and how many presses in a row it made — so
-        /// a second press on the same spot is a double-click. Counted here rather than by a
-        /// second gesture, because the drag that plants the caret and a click gesture that
-        /// selects a word would both answer the same press, in an order GTK does not promise.
+        /// The last press — its time, where, and how many in a row — so a second press on the same
+        /// spot is a double-click. Counted here rather than by a second gesture, since the drag
+        /// planting the caret and a click gesture would both answer one press in an order GTK does
+        /// not promise.
         pub presses: Cell<Option<(u32, f64, f64, u8)>>,
-        /// The right-click menu, built once, parented on this widget and unparented in
-        /// `dispose` — `ui_sheet_gtk`'s cell menu, for the same reason.
+        /// The right-click menu, built once, parented on this widget and unparented in `dispose`.
         pub menu: std::cell::OnceCell<gtk::PopoverMenu>,
         /// The dictionary the window attached to the `App`, kept here too so Ignore All and Add
         /// to Dictionary can teach it a word (`doc/spelling.md`). `None` draws no underlines.
@@ -431,9 +407,8 @@ mod imp {
     }
 
     impl ObjectImpl for Doc {
-        // The four properties `GtkScrollable` requires, overridden by hand for the reason
-        // `ui_sheet_gtk/src/grid.rs` gives: the `Properties` derive's spelling has churned between
-        // gtk4-rs releases and this shape does not move.
+        // The four properties `GtkScrollable` requires, overridden by hand: the `Properties`
+        // derive's spelling has churned between gtk4-rs releases.
         fn properties() -> &'static [glib::ParamSpec] {
             static PROPERTIES: std::sync::OnceLock<Vec<glib::ParamSpec>> =
                 std::sync::OnceLock::new();
@@ -588,9 +563,8 @@ mod imp {
                 true
             });
 
-            // The right-click menu. A secondary press outside the selection moves the caret
-            // there first, the way `ui_sheet_gtk`'s cell menu moves the selection: the menu
-            // acts on what is under the pointer, and after this that is what is selected.
+            // The right-click menu. A secondary press outside the selection moves the caret there
+            // first, so the menu acts on what is under the pointer.
             let menu = gtk::PopoverMenu::from_model(Some(&super::context_menu_model()));
             menu.set_parent(&*widget);
             menu.set_has_arrow(false);
@@ -722,10 +696,8 @@ mod imp {
                 let x = left + slot.indent;
                 let y = slot.top - scroll;
 
-                // A block that is a picture — optionally with its caption's text — is drawn as
-                // one rather than as the placeholder character `Run::Image::text()` returns
-                // everywhere else. `doc/text-shell.md` has the rest of what a run that is not
-                // text still cannot do (sit mid-sentence and lay out correctly, in particular).
+                // A picture block, optionally with its caption's text, is drawn as one rather than
+                // as the placeholder character `Run::Image::text()` returns elsewhere.
                 if let Some((image, caption)) = picture_of(block) {
                     let Some(texture) = texture_of(image) else {
                         continue;
@@ -760,11 +732,10 @@ mod imp {
                 };
 
                 if let Some(mark) = block.mark() {
-                    // A list's mark is drawn rather than inserted: the character is not in the
-                    // document, and putting one there would make it a character the caret
-                    // could sit inside and a `p12+0` that means something else. Its number or
-                    // its style's bullet (`BlockView::mark`), the same in every window; a
-                    // label wider than a bullet ends where the bullet's room does.
+                    // A list's mark is drawn, not inserted: a character in the document would be
+                    // one the caret could sit inside. Its number or its style's bullet
+                    // (`BlockView::mark`); a label wider than a bullet ends where the bullet's
+                    // room does.
                     let layout = face.draw(mark);
                     let wide = f64::from(layout.pixel_size().0);
                     draw_at(
@@ -844,12 +815,10 @@ mod imp {
                     }
                 }
 
-                // `doc/view-modes.md` §3.6: a bookmark is the named-range analogue and it
-                // contributes no characters, which makes it the one part of a text document
-                // a reader cannot see at all. This window can say *exactly* where one is —
-                // it already has `x_at` for the caret — so the anchor gets a tick at its own
-                // offset and the name is written at the end of the line it falls on, where
-                // there is room for a word and where it cannot push the text along.
+                // A bookmark contributes no characters, so it is the one part of a text document a
+                // reader cannot see (`doc/view-modes.md` §3.6). The anchor gets a tick at its own
+                // offset (`x_at`), and the name is written at the end of its line, where it cannot
+                // push the text along.
                 if self.names.get() {
                     for (at, name) in &block.marks {
                         let line = layout.lines()[layout.line_at(*at)];
@@ -1012,15 +981,12 @@ mod imp {
                 .unwrap_or_else(|| geom::SPACING.measure(kind, column))
         }
 
-        /// How each block is set — this window's [`grind_text::Faces`], which is what every
-        /// motion by line is asked through.
-        ///
-        /// Rebuilt per question rather than kept, because both halves of it change under the
-        /// window: the faces on a theme change, the column on a resize.
+        /// How each block is set — this window's [`grind_text::Faces`], which every motion by line
+        /// asks through. Rebuilt per question: the faces change with the theme, the column with a
+        /// resize.
         fn column(&self) -> Column {
-            // The cached measures answer the width of a block inside a table cell, which no
-            // rule about the block's own kind can. Cloned rather than rebuilt: a motion asks per
-            // block, and rebuilding them per question would lay the document out once per
+            // The cached measures give a table cell's width, which no rule about a block's kind
+            // can. Cloned rather than rebuilt, or the document would be laid out once per
             // keystroke.
             let placed = self.placed(f64::from(self.obj().width()));
             Column {
@@ -1052,11 +1018,9 @@ mod imp {
                 Action::EraseBack => self.erase_back(),
                 Action::EraseForward => self.erase_forward(),
                 Action::EraseWord(delta) => self.erase_word(delta),
-                // Tab is structural where there is structure to change and a `text:tab`
-                // otherwise, which is the rule every word processor's Tab follows: it nests a
-                // list item, it indents a block from its front, and in the middle of a
-                // sentence it is a tab. Shift+Tab with nothing to un-nest does nothing rather
-                // than typing anything — there is no such character.
+                // Tab is structural where there is structure to change — it nests a list item, it
+                // indents a block from its front — and a `text:tab` mid-sentence. Shift+Tab with
+                // nothing to un-nest does nothing.
                 Action::Indent(by) => {
                     if !self.indent(by) && by > 0 {
                         self.type_text("\t");
@@ -1066,13 +1030,9 @@ mod imp {
             glib::Propagation::Stop
         }
 
-        /// Change the caret block's list depth, or make a list item out of a block the caret
-        /// is at the front of. `false` when neither applied, which is what leaves Tab free to
+        /// Change the caret block's list depth, or make a list item of a block the caret is at the
+        /// front of ([`grind_text::indent_kind`]). `false` when neither applied, leaving Tab to
         /// mean a tab character.
-        ///
-        /// The rule itself is [`grind_text::indent_kind`] now — hoisted out of this file the
-        /// day `grind-win32` wanted the same answer, so a list nests the same way in both
-        /// windows.
         pub fn indent(&self, by: i32) -> bool {
             let Some(app) = self.app() else { return false };
             let index = self.caret.get().block;
@@ -1184,12 +1144,10 @@ mod imp {
             })
         }
 
-        /// The press that starts either a click or a drag — there is no telling which yet,
-        /// so both are seeded the same way. Shift extends the selection from wherever the
-        /// caret already was, the way Shift+arrow does; a plain press starts a fresh one
-        /// anchored here, which is what turns a subsequent [`Doc::drag_to`] into a mouse
-        /// selection and costs nothing when the button just comes back up in place — a
-        /// selection of zero characters is [`Doc::selection`]'s "no selection" case.
+        /// The press that starts a click or a drag — no telling which yet, so both are seeded
+        /// alike. Shift extends the selection from the caret, as Shift+arrow does; a plain press
+        /// anchors a fresh one here, which [`Doc::drag_to`] grows and which costs nothing when the
+        /// button comes back up in place (an empty selection is [`Doc::selection`]'s none).
         pub fn click(&self, x: f64, y: f64, shift: bool) {
             let Some(caret) = self.caret_at(x, y) else {
                 return;
@@ -1387,10 +1345,8 @@ mod imp {
 
         // --- selection ---
 
-        /// The selected range, normalised to document order. `None` covers both "nothing was
-        /// ever selected" and "the anchor and the caret are back on top of each other" —
-        /// a Shift+Right immediately followed by Shift+Left collapses a selection the same
-        /// way letting go of Shift does, and every reader of this treats them alike.
+        /// The selected range in document order. `None` both when nothing was selected and when
+        /// the anchor and caret coincide again.
         pub fn selection(&self) -> Option<(Caret, Caret)> {
             let anchor = self.anchor.get()?;
             let caret = self.caret.get();
@@ -1422,12 +1378,9 @@ mod imp {
             Some(out)
         }
 
-        /// Text in, at the caret, replacing the selection. A newline splits a block, which is
-        /// what pasting two paragraphs has to mean in a model whose blocks are the paragraphs.
-        ///
-        /// Pasted text is **not** read as markdown ([`Doc::type_text`] is): text arriving from
-        /// a clipboard is text, and turning somebody's asterisks into bold is this program
-        /// editing what it was handed. `grind-web` draws the same line in the same place.
+        /// Text in at the caret, replacing the selection; a newline splits a block, as pasting two
+        /// paragraphs must. Pasted text is **not** read as markdown, unlike [`Doc::type_text`]:
+        /// turning somebody's asterisks into bold would be editing what it was handed.
         pub fn paste_text(&self, text: &str) {
             let Some(app) = self.app() else { return };
             let mut caret = self.consume_selection(&app);
@@ -1458,11 +1411,9 @@ mod imp {
         /// what typing a character, or Enter, over a selection does in every editor. Returns
         /// the caret unchanged when there is nothing selected.
         fn consume_selection(&self, app: &App) -> Caret {
-            // The anchor goes whether or not it made a selection. A click plants one *at* the
-            // caret, so that a drag has somewhere to grow from, and an edit that left it there
-            // turned the character it just typed into a selection — the next keystroke then
-            // replaced it, and clicking and typing `xy` wrote `y`. Found by a screenshot, and
-            // pinned by `a_click_then_two_keystrokes_types_both`.
+            // The anchor goes whether or not it made a selection: a click plants one at the caret
+            // for a drag to grow from, and left there it would turn the next character typed into
+            // a selection the one after replaces (`a_click_then_two_keystrokes_types_both`).
             let selection = self.selection();
             self.anchor.set(None);
             let Some((from, to)) = selection else {
@@ -1477,14 +1428,10 @@ mod imp {
             }
         }
 
-        /// A typed character, read as **markdown-shaped notation** as it lands
-        /// (`grind_text::markdown`): `**bold**` becomes bold and its markers go, `# ` makes
-        /// the block a heading, ``` fences a code paragraph.
-        ///
-        /// The reading is `App::type_markdown`'s, so this window, the browser, the terminal
-        /// and the CLI agree about what `**` means — and it is one action, so one Ctrl+Z takes
-        /// back the whole of `**bold**`. The toolbar is still the other way to say it, over a
-        /// selection; this is the way that needs no pointer.
+        /// A typed character, read as markdown-shaped notation as it lands
+        /// (`grind_text::markdown`): `**bold**` becomes bold and its markers go, `# ` makes a
+        /// heading, ``` fences a code paragraph. One `App::type_markdown` action, so one Ctrl+Z
+        /// takes back the whole of `**bold**`.
         pub fn type_text(&self, text: &str) {
             let Some(app) = self.app() else { return };
             // A document with no blocks at all has nowhere to put a character, and the first
@@ -1603,18 +1550,16 @@ mod imp {
 
         // --- the caret ---
 
-        /// The one place the caret changes: keep it inside the document, scroll it into
-        /// view, tell the listeners, repaint.
-        /// Put the caret somewhere, and forget any style it was holding for the next
-        /// character — a pending Bold pressed with nothing selected belongs to *where* it was
-        /// pressed, and clicking elsewhere is changing one's mind. Typing is the one move that
-        /// keeps it, and it goes through [`Doc::place_caret`] to say so.
+        /// Put the caret somewhere, and forget any style it was holding for the next character: a
+        /// pending Bold belongs to where it was pressed. Typing keeps it, through
+        /// [`Doc::place_caret`].
         pub fn move_caret(&self, caret: Caret, clear_goal: bool) {
             self.resume.replace(None);
             self.place_caret(caret, clear_goal);
         }
 
-        /// [`Doc::move_caret`] without forgetting the pending style.
+        /// The one place the caret changes: keep it inside the document, scroll it into view,
+        /// tell the listeners, repaint. [`Doc::move_caret`] without forgetting the pending style.
         fn place_caret(&self, caret: Caret, clear_goal: bool) {
             self.caret.set(caret);
             if clear_goal {
@@ -1678,9 +1623,8 @@ mod imp {
             );
         }
 
-        /// The a11y floor (`doc/sheet-shell.md`, M9): a custom-drawn document has no other way
-        /// to tell assistive technology that the caret moved, so every move speaks the
-        /// block's address and its text.
+        /// The accessibility floor: a custom-drawn document has no other way to tell assistive
+        /// technology the caret moved, so every move speaks the block's address and text.
         fn announce(&self) {
             let Some(app) = self.app() else { return };
             let caret = self.caret.get();
@@ -1703,33 +1647,28 @@ mod imp {
         }
     }
 
-    /// Whether a block is a picture, optionally followed by its caption's plain text.
-    ///
-    /// `grind_text::picture_of`'s own doc comment has the rest; this is a re-export under this
-    /// module's own name because it started here and `grind-win32` wanted the same answer.
+    /// Whether a block is a picture, optionally followed by its caption's plain text
+    /// (`grind_text::picture_of`).
     pub(super) fn picture_of(
         block: &grind_text::BlockView,
     ) -> Option<(&grind_text::ImageView, Option<&str>)> {
         grind_text::picture_of(block)
     }
 
-    /// Decode an embedded image's bytes into something [`gtk::Snapshot`] can paint. `None` for
-    /// anything gdk-pixbuf has no loader for — a corrupt file, a format nobody installed —
-    /// which is not a reason to refuse the rest of the document (§9's tolerance, over a
-    /// picture instead of an XML element).
+    /// Decode an embedded image's bytes into something [`gtk::Snapshot`] paints. `None` for
+    /// anything gdk-pixbuf has no loader for, which is no reason to refuse the rest of the
+    /// document.
     ///
-    /// ponytail: decodes on every repaint rather than caching the texture, so a document with
-    /// a large image pays for it on every cursor blink. Worth a cache keyed by `BlockId`,
-    /// invalidated the way `Doc::flow` already is, once a document with more than one real
-    /// image makes the cost visible.
+    /// ponytail: decoded on every repaint, so a large image costs on every caret blink. Worth a
+    /// cache keyed by `BlockId`, invalidated as `Doc::flow` is, once a document with real images
+    /// makes the cost visible.
     pub(super) fn texture_of(image: &grind_text::ImageView) -> Option<gtk::gdk::Texture> {
         gtk::gdk::Texture::from_bytes(&glib::Bytes::from(&image.data)).ok()
     }
 
-    /// How big to draw a texture: fit inside the column, keeping its aspect ratio, and never
-    /// larger than its own pixels. ODF's own `svg:width`/`svg:height` are not used for this —
-    /// turning a length like `13.229cm` into device pixels needs a resolution this shell does
-    /// not otherwise track, and "fit the column" is the same default a simple viewer takes.
+    /// How big to draw a texture: fit the column, keep the aspect ratio, never larger than its
+    /// pixels. ODF's `svg:width`/`svg:height` are not used: a length needs a resolution this shell
+    /// does not track.
     pub(super) fn image_size(texture: &gtk::gdk::Texture, column: f64) -> (f64, f64) {
         let (w, h) = (
             f64::from(texture.width()).max(1.0),
@@ -1749,22 +1688,16 @@ mod imp {
         f64::from(face.draw_wrapped(text, width).pixel_size().1)
     }
 
-    /// The measure and the face of **every** block — this shell's [`grind_text::Faces`].
-    ///
-    /// Both halves are this window's own arithmetic and neither is uniform: a heading is set
-    /// larger than the paragraph under it, and a list item's indent comes out of the column, so
-    /// it is measured narrower. That is why the core asks per block rather than being handed
-    /// one width and one provider for a whole motion — Down-arrow out of a heading used to
-    /// measure the paragraph below it with the heading's font, and landed a few characters from
-    /// where a click on the same spot would have.
+    /// The measure and face of every block — this shell's [`grind_text::Faces`]. Neither is
+    /// uniform: a heading is set larger than the paragraph under it, and a list item's indent
+    /// narrows it, which is why the core asks per block.
     pub(super) struct Column {
         faces: Rc<Faces>,
         /// The text column's width in pixels, before any indent comes out of it.
         column: f64,
-        /// Where every block in a table cell sits across the column
-        /// (`grind_text::flow::across`) — the only thing that knows a block is in a cell and
-        /// therefore measured narrower than the column. The flow was built through this same
-        /// `Faces`, so a caret motion and the paint cannot disagree about a cell's width.
+        /// Where every block in a table cell sits across the column (`grind_text::flow::across`) —
+        /// what knows a block is in a cell and measured narrower. The flow was built through this
+        /// same `Faces`, so a motion and the paint agree on a cell's width.
         across: Rc<HashMap<usize, Across>>,
     }
 
@@ -1882,11 +1815,9 @@ mod imp {
     }
 }
 
-/// Resolve an address a user typed — `p12`, `#intro`, `§2.1.3` — against the document as it
-/// now is.
-///
-/// The addressing no word processor's UI offers, and the reason this shell has a "Go to"
-/// entry at all: `#intro` and `§2.1` survive edits above them where a line number does not.
+/// Resolve a typed address — `p12`, `#intro`, `§2.1.3` — against the document as it is. `#intro`
+/// and `§2.1` survive edits above them where a line number does not, which is why this window has
+/// a Go to box.
 pub fn caret_of(app: &App, address: &str) -> Result<Caret, String> {
     let loc = grind_text::loc::parse(address).map_err(|error| error.to_string())?;
     app.resolve_caret(&loc).map_err(|error| error.to_string())
@@ -1899,22 +1830,13 @@ mod tests {
     use grind_text::BlockKind;
     use imp::{caption_height, image_size, picture_of, texture_of};
 
-    /// **Every case that needs a widget, in one test, on one thread — on purpose.**
+    /// **Every case that needs a widget, in one test, on one thread — on purpose.** GTK may be
+    /// initialised once and used only from that thread, and the test harness gives every `#[test]`
+    /// a thread of its own, even at `--test-threads=1`. So the cases are plain functions with this
+    /// one entry point, each naming itself as it starts.
     ///
-    /// GTK may be initialised exactly once, and only ever used from the thread that did it.
-    /// Rust's test harness gives every `#[test]` a thread of its own — *even at
-    /// `--test-threads=1`* — so seven `#[test]`s over a widget is one that runs and six that
-    /// panic with "Attempted to initialize GTK from two different threads". That is a property
-    /// of the harness rather than of anything here, and it is what turned the `gtk` CI job red.
-    ///
-    /// So the cases below are ordinary functions and this is their only entry point. Each
-    /// names itself as it starts, because a panic inside one would otherwise only say which
-    /// *test* failed, and there is now exactly one.
-    ///
-    /// **Where there is no display it skips**, which is where CI runs
-    /// (`.github/workflows/gtk.yml` installs the GTK packages and no compositor, on purpose).
-    /// Everything decidable without a display is in `geom.rs`, `keymap.rs` and `imp`'s own
-    /// tests, and runs unconditionally.
+    /// **With no display it skips**, as in CI (`gtk.yml` installs GTK but no compositor).
+    /// Everything decidable without one is in `geom.rs`, `keymap.rs` and `imp`'s own tests.
     #[test]
     fn the_widget() {
         if gtk::init().is_err() {
@@ -2020,14 +1942,9 @@ mod tests {
         ),
     ];
 
-    /// **D6** (`doc/dsl.md` §4.3). The findings dialog, built against a document that really has
-    /// one — a heading level skipped, which is the word processor's own first rule.
-    ///
-    /// It is here for `the_code_view_shows_the_projection`'s reason: every widget call in
-    /// `lint.rs` — the builders, `add_prefix`, `connect_activated` — needs a display and the one
-    /// thread GTK was initialised on, and a table of pure functions cannot catch a dialog that
-    /// panics on its first row. `ui_sheet_gtk/src/lint.rs` is the same file with `a1` where this
-    /// one has `loc`, so this covers the shape of both.
+    /// The findings dialog, built against a document with a finding — a skipped heading level.
+    /// Here because every widget call in `lint.rs` needs the GTK thread, and pure tests cannot
+    /// catch a dialog that panics on its first row.
     fn the_problems_dialog_builds() {
         let app = Arc::new(App::new());
         app.insert(0, BlockKind::Heading { level: 1 }, "One")
@@ -2050,14 +1967,9 @@ mod tests {
         assert!(dialog.child().is_some(), "it has content to show");
     }
 
-    /// **D9** (`doc/dsl.md` §6). The other page of the window: the buffer holds the projection
-    /// exactly, every token carries the tag the *writer* named it with, and the marked line is
-    /// the one the cursor reports back.
-    ///
-    /// It is here rather than in `code.rs` because it needs a `gtk::TextView`, and a widget
-    /// needs the one thread that initialised GTK — which is what this whole harness exists for.
-    /// `ui_sheet_gtk/src/code.rs` is the same file with a different address vocabulary, so this
-    /// covers the shared half of both.
+    /// The other page of the window: the buffer holds the projection exactly, every token carries
+    /// the tag the writer named it with, and the marked line is the one the cursor reports. Here
+    /// because it needs a `gtk::TextView` and the GTK thread.
     fn the_code_view_shows_the_projection() {
         let app = Arc::new(App::new());
         app.insert(0, BlockKind::Heading { level: 1 }, "Addresses")
@@ -2092,10 +2004,8 @@ mod tests {
         crate::code::go_to(&view, 0);
         assert_eq!(crate::code::line_at_cursor(&view), 0);
 
-        // **The hang this split fixes.** `mark` is called from the handler that runs *because*
-        // the cursor moved, so it must not move the cursor — a `place_cursor` there makes GTK
-        // deliver the notify again and the window stops answering. Measured rather than
-        // asserted in a comment: marking a different line leaves the cursor where it was.
+        // `mark` must not move the cursor — it runs from the handler the cursor's move fired — so
+        // marking a different line leaves the cursor where it was.
         crate::code::mark(&view, line);
         assert_eq!(
             crate::code::line_at_cursor(&view),
@@ -2108,9 +2018,8 @@ mod tests {
     /// [`the_widget`], which has already decided there is a display to build one on.
     fn shell(paragraphs: &[&str]) -> (Doc, Arc<App>) {
         let app = Arc::new(App::new());
-        // The **first** paragraph is typed into the one a new document already has rather than
-        // inserted in front of it: `grind_text::Document::default` is one empty paragraph, not
-        // zero blocks, because a caret has to have somewhere to be.
+        // The first paragraph goes into the one a new document already has (`Document::default`),
+        // not in front of it.
         for (index, text) in paragraphs.iter().enumerate() {
             match index {
                 0 => app.set_text(0, text).expect("sets"),
@@ -2269,10 +2178,8 @@ mod tests {
         assert_eq!(text(&app), "read the spec todayhttps://z");
     }
 
-    /// Enter at the bottom of the window keeps the caret on screen, as every word processor
-    /// does. Reported from writing a README: the view stayed put and the caret went under the
-    /// fold, because the edit's caret move followed a layout without the new line in it, and
-    /// the scrollbar's range was still the shorter document's.
+    /// Enter at the bottom of the window keeps the caret on screen: the caret move must follow a
+    /// layout with the new line in it, and the scrollbar's range the longer document.
     fn enter_on_the_last_line_scrolls_the_new_one_into_view() {
         let (doc, app) = shell(&["first"]);
         let adjustment = gtk::Adjustment::default();
@@ -2417,10 +2324,9 @@ mod tests {
         (left + f64::from(layout.x_at(offset)), slot.top + 1.0)
     }
 
-    /// The bug a screenshot found: a click plants the selection's anchor at the caret so a drag
-    /// has somewhere to grow from, and typing used to leave it there — so the first character
-    /// typed became a selection and the second replaced it. Clicking and typing `xy` wrote `y`,
-    /// and two Backspaces after a click erased one character each side of it.
+    /// A click plants the selection's anchor at the caret for a drag to grow from; typing must
+    /// clear it, or clicking and typing `xy` writes `y`, and two Backspaces after a click erase a
+    /// character each side.
     fn a_click_then_two_keystrokes_types_both() {
         let (doc, app) = shell(&["hello world"]);
         let imp = doc.imp();
@@ -2592,11 +2498,9 @@ mod tests {
         96, 130,
     ];
 
-    /// A picture followed by its caption's text is still drawn as a picture — not the
-    /// placeholder character a run of plain text next to an image draws everywhere else — with
-    /// the flow reserving room under it for the caption, wrapped to the column. This is the
-    /// real shape `doc/odt-format.md`'s "An inserted image is a frame inside a frame" reads,
-    /// and the bug this pins is the caption vanishing rather than the picture.
+    /// A picture followed by its caption's text is drawn as a picture, with the flow reserving
+    /// room under it for the caption wrapped to the column — the shape `doc/odt-format.md`'s "An
+    /// inserted image is a frame inside a frame" reads. The caption must not vanish.
     fn a_picture_with_a_caption_reserves_room_for_both() {
         let (doc, app) = shell(&[""]);
         app.insert_image(
@@ -2687,9 +2591,8 @@ mod tests {
         );
     }
 
-    /// The test S9 exists for, and the GTK half of `doc/text-layout.md`'s payoff: Down is
-    /// not "the next block", it is the next *line*, and the answer comes from the core —
-    /// measured in pixels through Pango here and in cells in the terminal.
+    /// Down is the next *line*, not the next block — the core's answer, measured in pixels through
+    /// Pango.
     fn down_moves_by_a_wrapped_line_not_by_a_block() {
         let long = "the cat sat on the mat and then it slept for a very long time indeed \
                     while the rain kept on falling outside the window all afternoon";
@@ -2742,12 +2645,9 @@ mod tests {
         assert_eq!(bold.text, "this");
     }
 
-    /// Both halves of the backtick notation, in the *window* — which is the half that was
-    /// reported broken (`text/src/markdown.rs`). The file was already right, so nothing here
-    /// asserts about the document: what it asserts is that this shell **measures** a monospace
-    /// run in a monospace face and puts the same family on the attributes it **draws** with.
-    /// Either alone would be a bug — a family drawn but not measured drifts the caret through
-    /// the run, and one measured but not drawn is invisible.
+    /// A monospace run is **measured** in a monospace face and **drawn** with the same family.
+    /// Either alone is a bug: drawn but not measured drifts the caret through the run, measured
+    /// but not drawn is invisible.
     fn code_is_measured_and_drawn_in_a_monospace_face() {
         use crate::metrics::run_attributes;
         use grind_core::style::TextStyle;
@@ -2822,10 +2722,8 @@ mod tests {
         );
     }
 
-    /// The gap `doc/text-shell.md` used to name for this shell alone: a document that coloured
-    /// a word drew it in the theme's own ink, and a size was neither measured nor drawn. All
-    /// three reach the attribute list now, and the size reaches the *height* with them — the
-    /// half that made honouring it a real change rather than one attribute.
+    /// A run's colour, highlight and size all reach the attribute list, and the size reaches the
+    /// line's height too.
     fn a_runs_colour_highlight_and_size_are_drawn() {
         use crate::metrics::run_attributes;
         use grind_core::style::TextStyle;
@@ -2932,10 +2830,8 @@ mod tests {
         assert_eq!(kind(), BlockKind::Paragraph);
     }
 
-    /// The gap this shell used to be alone in having: neither a system clipboard nor a
-    /// register. What is checked here is the two halves either side of `gdk::Clipboard` — a
-    /// selection as plain text, and plain text back into blocks — because the clipboard itself
-    /// is asynchronous and belongs to a display server rather than to this program.
+    /// The two halves either side of `gdk::Clipboard` — a selection as plain text, and plain text
+    /// back into blocks; the clipboard itself is asynchronous and the display server's.
     fn the_clipboards_two_halves_are_plain_text_and_blocks() {
         let (doc, app) = shell(&["first line", "second line"]);
         let imp = doc.imp();

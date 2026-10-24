@@ -2,49 +2,26 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Font metrics, through Pango — this shell's whole contribution to layout.
-//!
-//! `doc/text-layout.md` decided (Path C) that line breaking lives in `grind_core::layout` and
-//! that a shell supplies only [`Metrics`]: how wide is this text, and how tall is a line of
-//! it. `ui_tui/src/text/mod.rs` answers in terminal cells in about twenty lines; this answers
-//! in pixels through a real shaping engine, and that is the pair the decision was made for.
-//! **If the two disagreed about anything but the numbers, the abstraction would be wrong.**
-//!
-//! Two things are worth knowing about the implementation:
+//! Font metrics, through Pango — this shell's whole contribution to layout. Line breaking is
+//! `grind_core::layout`'s; a shell supplies [`Metrics`] — how wide is this text, how tall a line
+//! of it (`doc/text-layout.md`).
 //!
 //! * **Cumulative advances come from `pango::LayoutLine::index_to_x`**, not from measuring
-//!   prefixes. Pango shapes the whole string once and can then answer the trailing edge of
-//!   every cluster from that one pass, which is exactly the contract [`Metrics::advances`]
-//!   asks for — and the reason it asks for it: `advance("a") + advance("b")` is not
-//!   `advance("ab")` once kerning is involved.
-//! * **A line break inside a fragment is measured as nothing.** `Run::Break` is a character
-//!   in the model and reaches here as `\n`; handing it to Pango would make a second Pango
-//!   line whose x coordinates start over. The core breaks the line there anyway, so the
-//!   caret sitting on it belongs at the end of the text before it.
-//! * **A fragment is measured in its own formatting.** `grind_text::lay_out` projects each
-//!   run's `CharStyle` into the [`TextStyle`] it hands the provider per fragment, so the
-//!   family, the weight and the slant arrive here — and are applied to the measuring layout
-//!   as Pango attributes rather than ignored. [`run_attributes`] puts the same three on the
-//!   *drawing* layout, from the same runs. That pairing is the point: a family drawn but not
-//!   measured drifts the caret through the run, which is what a `` `code` `` run did before
-//!   either half existed.
+//!   prefixes: Pango shapes the string once and answers every cluster's trailing edge from that
+//!   pass, and `advance("a") + advance("b")` is not `advance("ab")` once kerning applies.
+//! * **A line break inside a fragment measures as nothing.** `Run::Break` reaches here as `\n`,
+//!   and handing it to Pango would start a second line whose x restarts; the core breaks there
+//!   anyway.
+//! * **A fragment is measured in its own formatting**: the family, weight, slant and size
+//!   `grind_text::lay_out` projects into its [`TextStyle`] become Pango attributes on the
+//!   measuring layout, and [`run_attributes`] puts the same ones on the drawing layout from the
+//!   same runs, so the caret goes where the ink does. A size moves width, height
+//!   ([`Metrics::line_height`]) and drawing together through [`size_units`]; one it cannot read
+//!   (`cm`) is left alone.
 //!
-//! **The face is chosen per block, by the shell.** A run's *direct* formatting reaches the
-//! core, but a block's does not: a heading and a `Title` are a paragraph **style**, and style
-//! definitions are not read (`doc/text-core.md`) — so a heading laid out in the body font and
-//! drawn in a larger one would put every caret in the wrong place. The shell knows the block's
-//! kind and its style name, so it hands the core a provider already set to that block's font.
-//! The core neither knows nor needs to: it does arithmetic in whatever unit it is answered in.
-//!
-//! **A fragment's `fo:font-size` is honoured now, in all three places at once.** It used to be
-//! the one property this file measured nothing of, and the reason was real: a line's height is
-//! [`Metrics::line_height`]'s answer per fragment and `layout::wrap` takes the tallest, so a
-//! size honoured in the width and not in the height would measure a big word wide on a line too
-//! short to hold it. The answer was never to draw it — it was to move all three together, which
-//! is what [`size_units`] now does: the same parse feeds the attribute a fragment is *measured*
-//! with, the height it reports, and the attribute the run is *drawn* with. A size this shell
-//! cannot read (a length in `cm`, say) is left alone rather than guessed at, exactly as
-//! `ui_sheet_gtk`'s `scale_of` leaves one alone.
+//! **The face is chosen per block, by the shell**: a heading's or a `Title`'s look is the block's,
+//! decided by kind and style name (`grind_text::look`), so the shell hands the core a provider
+//! already set to that block's font.
 
 use libadwaita::gtk;
 
@@ -54,18 +31,13 @@ use grind_text::style::CharStyle;
 use grind_text::{BlockKind, Metrics, RunView};
 use gtk::pango;
 
-/// One block-level face: a font, and a Pango layout kept to measure with.
-///
-/// The layout is reused rather than created per call — one per face for the life of the
-/// widget's style — because `pango::Layout::new` allocates and `advances` is called once per
-/// run per repaint.
+/// One block-level face: a font, and a Pango layout kept to measure with — reused, since
+/// `pango::Layout::new` allocates and `advances` runs once per run per repaint.
 pub struct Face {
     layout: pango::Layout,
-    /// A second layout, for drawing.
-    ///
-    /// Deliberately not the measuring one: a paint sets text on it once per visible line
-    /// while the same face is being asked to measure the next block, and one layout serving
-    /// both would have its text replaced underneath the caller.
+    /// A second layout, for drawing: a paint sets text on it per line while the same face measures
+    /// the next block, and one layout serving both would have its text replaced underneath the
+    /// caller.
     drawing: pango::Layout,
     /// Ascent plus descent, in pixels. Measured once: it is a property of the font, and
     /// asking Pango per line would be a font-metrics lookup per line of the document.
@@ -136,11 +108,9 @@ impl Face {
         &self.drawing
     }
 
-    /// The cumulative advance after each character of one Pango line, appended to `out`.
-    ///
-    /// `attrs` is the fragment's own formatting, and is set on the measuring layout for this
-    /// call alone — it must be cleared for the next fragment, or a bold word would go on
-    /// measuring bold to the end of the paragraph.
+    /// The cumulative advance after each character of one Pango line, appended to `out`. `attrs`
+    /// is set on the measuring layout for this call alone and cleared after, or a bold word would
+    /// measure bold to the end of the paragraph.
     fn measure(
         &self,
         text: &str,
@@ -180,15 +150,10 @@ impl Metrics for Face {
         }
     }
 
-    /// The block face's own height, scaled by whatever size the fragment set.
-    ///
-    /// A monospace run in a paragraph of prose is measured in a monospace face and drawn in
-    /// one, and sits on a line as tall as the paragraph's — a family changes the width of text
-    /// and not, to any degree worth a font-metrics lookup per fragment, its height. A **size**
-    /// does, and `layout::wrap` takes the tallest fragment's answer for the whole block, so a
-    /// 24pt word in a body paragraph makes room for itself instead of overprinting the line
-    /// above. Scaled from this face's own measured height rather than looked up, because the
-    /// ratio is what changes and the ascent-to-descent proportion of one family does not.
+    /// The block face's own height, scaled by the fragment's size. A family barely changes a
+    /// line's height; a **size** does, and `layout::wrap` takes the tallest fragment's answer, so
+    /// a 24pt word makes room for itself. Scaled from the face's measured height, since the
+    /// ascent-to-descent proportion of one family does not change.
     fn line_height(&self, style: &TextStyle) -> f32 {
         match size_units(style.font_size.as_deref(), self.size) {
             Some(size) => (self.height * f64::from(size) / f64::from(self.size)) as f32,
@@ -197,15 +162,9 @@ impl Metrics for Face {
     }
 }
 
-/// A run's `fo:font-size` in Pango units, resolved against the face it sits in.
-///
-/// Two spellings, which are the two ODF allows for this attribute and the two anything writes:
-/// a length in points (`14pt`), which is absolute, and a percentage (`120%`), which is relative
-/// to the surrounding style — here the block's own face, since that is what the surrounding
-/// style resolves to on screen. **Anything else is `None`** — a length in `cm` or `in` is a
-/// unit this shell has no resolution for, and guessing at one would move the caret away from
-/// the ink. The same stance `ui_sheet_gtk`'s `scale_of` takes, in the unit this shell measures
-/// in rather than that one's.
+/// A run's `fo:font-size` in Pango units, against the face it sits in: a point length (`14pt`) or
+/// a percentage of the block's face (`120%`). **Anything else is `None`** — a `cm` size has no
+/// resolution here, and guessing would move the caret from the ink.
 pub fn size_units(font_size: Option<&str>, base: i32) -> Option<i32> {
     let value = font_size?.trim();
     if let Some(points) = value
@@ -220,23 +179,14 @@ pub fn size_units(font_size: Option<&str>, base: i32) -> Option<i32> {
     (percent > 0.0).then(|| (f64::from(base) * percent / 100.0) as i32)
 }
 
-/// An ODF colour — `#rrggbb`, or one of the names GDK already knows — as Pango's three
-/// channels. `transparent` is not a colour a run of text can be painted in and answers `None`,
-/// which is what leaves a highlight of it undrawn rather than painted black.
-/// The page a run is drawn on and the theme's own ink for it — what a colour the document chose
-/// has to be read against.
+/// The page a run is drawn on and the theme's ink for it — what a document's colour is read
+/// against. Nothing decided here is written; the arithmetic is [`grind_core::color`]'s.
 ///
-/// **A document's colours meet the theme here, and nothing it decides is written.** The rule is
-/// `ui_sheet_gtk`'s `theme::ink`, one document type over, over the same arithmetic
-/// ([`grind_core::color`]):
-///
-/// - **No colour of its own and no highlight**: nothing is emitted, and the line's own ink — the
-///   theme's — is what it is drawn in.
-/// - **No colour of its own, on a highlight**: ODF's *automatic* colour, which is the theme's ink
-///   where that reads on the highlight and black or white where it does not.
-/// - **A colour of its own on the page, in a dark theme**: lifted along its own hue until it
-///   reads ([`grind_core::color::legible`]). The screenshot that made this a rule was a navy
-///   italic word, invisible on the dark page.
+/// - **No colour and no highlight**: nothing emitted; the line's own ink, the theme's.
+/// - **No colour, on a highlight**: ODF's automatic colour — the theme's ink where it reads on the
+///   highlight, else black or white.
+/// - **A colour on the page, in a dark theme**: lifted along its hue until it reads
+///   ([`grind_core::color::legible`]), so a navy word stays visible.
 /// - **Anything else** is the document's decision about its own paper, drawn as it is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Paper {
@@ -277,6 +227,8 @@ impl Paper {
     }
 }
 
+/// An ODF colour — `#rrggbb`, or a name GDK knows — as Pango's three channels. `transparent`
+/// answers `None`, which leaves a highlight of it undrawn rather than black.
 fn channels(value: Option<&str>) -> Option<(u16, u16, u16)> {
     let value = value?;
     if value.eq_ignore_ascii_case("transparent") {
@@ -291,13 +243,9 @@ fn channels(value: Option<&str>) -> Option<(u16, u16, u16)> {
     ))
 }
 
-/// One fragment's formatting as Pango attributes over the whole of it, or `None` where it has
-/// none — which is most fragments, and the reason this allocates nothing for them.
-///
-/// The mirror image of [`run_attributes`]: that one builds the attributes a line is *drawn*
-/// with from the block's runs, this one the attributes a fragment is *measured* with from the
-/// [`TextStyle`] the core projected out of the same run. Four properties, both sides — the
-/// four that change how *wide* text is, which is exactly what `TextStyle` carries.
+/// One fragment's formatting as Pango attributes over the whole of it, or `None` — most fragments,
+/// so nothing is allocated for them. [`run_attributes`]'s mirror: the four properties that change
+/// how wide text is, which `TextStyle` carries.
 fn fragment_attributes(style: &TextStyle, base: i32) -> Option<pango::AttrList> {
     // Whether `fo:font-weight: 600` reads as bold is a question `CharStyle` already answers,
     // and it is asked rather than restated: two readings of ODF's own vocabulary in one
@@ -331,19 +279,15 @@ fn fragment_attributes(style: &TextStyle, base: i32) -> Option<pango::AttrList> 
     Some(attrs)
 }
 
-/// The faces a document is set in: one for body text, one per heading level.
-///
-/// Rebuilt whenever the widget's style changes, which is what makes a theme's font size
-/// change re-wrap the document instead of clipping it.
+/// The faces a document is set in: one for body text, one per heading level — rebuilt on a style
+/// change, so a theme's font size re-wraps the document.
 pub struct Faces {
     body: Face,
     headings: Vec<Face>,
     title: Face,
     subtitle: Face,
-    /// A fenced code block (`grind_text::markdown::PREFORMATTED`). A *face* and not a drawing
-    /// trick, because the same object is what measures the block: a monospace paragraph drawn
-    /// in one font and measured in another breaks its lines in the wrong places. `ui_web`'s
-    /// `Faces` carries the same field for the same reason.
+    /// A fenced code block's face (`grind_text::markdown::PREFORMATTED`) — a face, not a drawing
+    /// trick, since the same object measures the block.
     code: Face,
 }
 
@@ -374,11 +318,8 @@ impl Faces {
             .collect();
         let title = face(Role::Title);
         let subtitle = face(Role::Subtitle);
-        // The *generic* family, spelled the way the document spells it
-        // (`grind_text::markdown::MONOSPACE`) — which monospace face a reader has is theirs to
-        // know, and Pango resolves the generic through fontconfig exactly as the document
-        // intends. At the body's own size, because a code block is a paragraph and not a
-        // heading.
+        // The generic family as the document spells it (`grind_text::markdown::MONOSPACE`),
+        // resolved by fontconfig to the reader's monospace face, at the body's size.
         let code = {
             let mut font = base.clone();
             font.set_size(size);
@@ -411,23 +352,15 @@ impl Faces {
     }
 }
 
-/// Every drawable property of a block's runs, as Pango attributes over one line of `text` —
-/// the toolbar's other half, and the drawing half of the pair [`fragment_attributes`] measures
-/// with. `App::layout_block` hands each run's [`grind_text::CharStyle`] to the provider as a
-/// [`TextStyle`] (`lay_out`), that function turns the four *metric* properties into the
-/// attributes the run is measured with, and this one turns all eight into the attributes it is
-/// drawn with. Underline, strikethrough, colour and highlight are in this list and not in that
-/// one because they change how text looks and not how wide it is, which is the same split
-/// `TextStyle` itself makes.
+/// Every drawable property of a block's runs as Pango attributes over one line of `text` — the
+/// drawing half of the pair [`fragment_attributes`] measures with. That one carries the four
+/// metric properties; this all eight, since underline, strikethrough, colour and highlight change
+/// the look but not the width.
 ///
-/// `base` is the block face's own size in Pango units, which is what a run's `fo:font-size`
-/// resolves against when the document spelled it as a percentage — the same argument
-/// [`Metrics::line_height`] passes, so the size drawn is the size measured.
-///
-/// `line_start`/`line_end` are character offsets into the whole block, matching
-/// [`grind_core::layout::Line::start`]/`end` and [`RunView::start`]/`end`; `text` is that same
-/// range already sliced out, which is what a Pango attribute's byte offsets are measured
-/// against.
+/// `base` is the block face's size in Pango units, which a percentage `fo:font-size` resolves
+/// against, as [`Metrics::line_height`] does. `line_start`/`line_end` are character offsets into
+/// the block ([`grind_core::layout::Line`], [`RunView`]); `text` is that range, which Pango's byte
+/// offsets count from.
 pub fn run_attributes(
     runs: &[RunView],
     line_start: usize,
@@ -458,10 +391,8 @@ pub fn run_attributes(
             attr.set_end_index(e);
             attrs.insert(attr);
         };
-        // The family, which is what `` `code` `` sets. Safe to draw because it is now also
-        // *measured*: `fragment_attributes` puts the same family on the measuring layout from
-        // the same run's `TextStyle`, so the caret goes where the ink does. Drawing one
-        // without the other is the drift this pair exists to prevent.
+        // The family, which `` `code` `` sets — drawn here and measured by `fragment_attributes`
+        // from the same run, so the caret goes where the ink does.
         if let Some(family) = run.shown.font_family.as_deref() {
             mark(pango::AttrString::new_family(family).into());
         }
@@ -471,15 +402,13 @@ pub fn run_attributes(
         if let Some(size) = size_units(run.shown.font_size.as_deref(), base) {
             mark(pango::AttrSize::new(size).into());
         }
-        // The two colours. Neither changes how wide anything is, so neither has a measuring
-        // twin. The ink is [`Paper::ink`]'s — the spreadsheet window's rule, so a navy word
-        // chosen on white paper is still readable on a dark page, and a yellow highlight does
-        // not carry the dark theme's white text across it.
+        // The two colours, neither changing width. The ink is [`Paper::ink`]'s, so a navy word
+        // stays readable on a dark page and a yellow highlight does not carry the dark theme's
+        // white text.
         let own = paper.ink(run.shown.color.as_deref(), run.shown.background.as_deref());
-        // A link looks like one: underlined, and in the accent unless it chose a colour of its
-        // own. Drawing only — `href` changes nothing about how wide a run is, so nothing here
-        // needs a measuring twin. Underline is the one cue that survives a colour-blind reader
-        // and a document whose links are all coloured already.
+        // A link looks like one: underlined, and in the accent unless it chose a colour. The
+        // underline is the cue that survives colour blindness and documents whose links are all
+        // coloured.
         let link = match (&run.href, own) {
             (Some(_), None) => {
                 let wide = |c: u8| u16::from(c) * 257;

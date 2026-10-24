@@ -2,20 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Every colour the document view draws, resolved from the running theme in one place.
+//! Every colour the document view draws, resolved from the running theme in one place. **Nothing
+//! here is a literal**: a custom-drawn widget that picks its own colours stays white in a dark
+//! theme. Rebuilt on every style change.
 //!
-//! `ui_sheet_gtk/src/theme.rs`'s rule, unchanged and worth repeating: **nothing here is a
-//! literal.** A custom-drawn widget has to pick its own colours, and the failure mode is a
-//! page that stays white in a dark theme. The whole palette is rebuilt whenever the style
-//! changes.
-//!
-//! `lookup_color` is deprecated in GTK 4.10 and has no replacement — there is no other way to
-//! read a named theme colour, and the alternative is hardcoding one. It is called exactly
-//! here, with fallbacks that make a missing name harmless.
-//!
-//! Smaller than the spreadsheet's palette, because a page of prose has fewer parts than a
-//! grid: paper, ink, a dimmed ink for the furniture a document did not ask for, and the
-//! accent the caret is drawn in.
+//! `lookup_color` is deprecated in GTK 4.10 with no replacement, and is the only way to read a
+//! named theme colour; it is called here alone, with fallbacks. A page has fewer parts than a
+//! grid: paper, ink, a dimmed ink for furniture, the caret's accent and a table's rules.
 
 use libadwaita::gtk;
 use libadwaita::prelude::*;
@@ -37,10 +30,8 @@ pub struct Palette {
     pub accent: gdk::RGBA,
     /// The band behind selected text.
     pub selection: gdk::RGBA,
-    /// A table's rules. Quieter than the text and stronger than the furniture — a grid a reader
-    /// can see the shape of without it competing with what is written in it. Derived from the
-    /// theme's own ink like everything else here, because a literal is what makes a page stay
-    /// white in a dark theme.
+    /// A table's rules: quieter than the text, stronger than the furniture, derived from the
+    /// theme's ink.
     pub rule: gdk::RGBA,
     /// A misspelt word's wavy underline — the theme's own error colour, the red libadwaita
     /// uses for a field that will not take what was typed.
@@ -83,15 +74,11 @@ impl Palette {
     }
 }
 
-/// Whether an announcement from `widget` reaches anybody.
-///
-/// Two ways it does not, and both used to cost something. GTK's fallback accessibility context —
-/// the one it uses when there is no AT-SPI bus, as in a container, a VM or a minimal session —
-/// has no `announce` hook, and `gtk_accessible_announce` calls it anyway: a jump to address zero
-/// on every move (measured on GTK 4.18 under Xvfb, with and without a session bus). And with
-/// `GTK_A11Y=none` there is **no context at all**: `gtk_accessible_get_at_context` returns NULL,
-/// which the generated binding asserts against, so the first click in the window aborted it. The
-/// raw call is made here because it is the one spelling that can say "none".
+/// Whether an announcement from `widget` reaches anybody. GTK's fallback accessibility context —
+/// used with no AT-SPI bus, as in a container, a VM or a minimal session — has no `announce` hook
+/// and `gtk_accessible_announce` calls it anyway, a jump to address zero (measured on GTK 4.18
+/// under Xvfb). With `GTK_A11Y=none` there is no context at all, which the generated binding
+/// asserts against. The raw call is the one spelling that can say "none".
 pub fn heard(widget: &impl IsA<gtk::Accessible>) -> bool {
     use gtk::glib::translate::{ToGlibPtr, from_glib_full};
     // SAFETY: the call is transfer-full and documented to return NULL when accessibility is off;

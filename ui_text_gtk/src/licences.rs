@@ -3,16 +3,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! **Every third-party licence, built only when somebody asks for one** (`doc/third-party.md`).
+//! libadwaita builds every Legal section of the About dialog as `GtkLabel`s when the page opens,
+//! and three hundred sections of 700 KB took the window down. So the page holds one section — an
+//! index, a line per component — and a link to a dialog of its own, where a component's text goes
+//! into a `GtkTextView` only when its row is activated.
 //!
-//! The About dialog's Legal page used to carry one section per component, and libadwaita builds
-//! every one of them as a `GtkLabel` the moment the page opens: three hundred-odd labels and
-//! some 700 KB of licence text laid out at once, which took the window down. So the page now
-//! holds one section — the index, a line per component — and a link to a dialog of its own,
-//! where a component's text is put into a `GtkTextView` when its row is activated and not
-//! before.
-//!
-//! `ui_sheet_gtk/src/licences.rs` is this file, word for word, for `lint.rs`'s reason: there is
-//! no crate a widget both GTK shells could share.
+//! `ui_sheet_gtk/src/licences.rs` is a copy of this, for `code.rs`'s reason.
 
 use libadwaita as adw;
 use libadwaita::gtk;

@@ -2,23 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `grind-text-gtk` — the GNOME shell for the word processor, and phase 10's S9.
+//! `grind-text-gtk` — the GNOME shell for the word processor. A renderer and an event forwarder
+//! that owns nothing: all state is in `grind-text`'s [`App`]; this crate holds a window, a view
+//! that draws what [`App::get_viewport`] and [`App::layout_block`] return, and the controls around
+//! it. What it does and does not do is `doc/text-shell.md`.
 //!
-//! A renderer and an event forwarder that owns nothing (doc/plan.md rule 1). All state is in
-//! `grind-text`'s [`App`]; this crate holds a window, a view that draws whatever
-//! [`App::get_viewport`] and [`App::layout_block`] return, and the keys around it.
-//!
-//! **A second binary, not a mode.** `doc/suite.md` settled that: a `.desktop` file's
-//! `MimeType=` is how a desktop associates an application with a file type, and one entry
-//! claiming both spreadsheets and text documents is what makes "Open With" useless. So this
-//! is `io.github.fwilhe2.Text` beside `io.github.fwilhe2.Sheet`, and opening a spreadsheet
-//! here offers to hand it over rather than failing obscurely.
-//!
-//! **What this milestone is.** A *minimal* shell: it opens, draws, navigates by line, edits
-//! at the caret, saves, and undoes. What it does not do is written down in `doc/text-shell.md`
-//! rather than discovered — most of all that there is no selection, no styling UI and no
-//! `grind-ui` crate yet, since `doc/suite.md` puts that extraction *on evidence* and one
-//! minimal shell is not yet evidence of which seam to cut.
+//! **A second binary, not a mode**: a `.desktop` file's `MimeType=` is how a desktop associates an
+//! application with a file type, and one entry claiming both spreadsheets and text documents makes
+//! "Open With" useless. So this is `io.github.fwilhe2.Text` beside `io.github.fwilhe2.Sheet`, and
+//! opening a spreadsheet here offers to hand it over.
 
 mod alt;
 mod code;
@@ -66,19 +58,16 @@ type Handler = fn(&Rc<Ui>);
 fn main() -> ExitCode {
     let app = Arc::new(App::new());
 
-    // One optional document, and `--render-to <png>`, which draws one frame, writes it and
-    // exits — the same assertable output `grind-sheet-gtk` grew for the same reason: a
-    // custom-drawn widget has no other one. Either order, because a flag that only works
-    // last is a flag somebody will report as broken.
+    // One optional document, and `--render-to <png>`, which draws one frame, writes it and exits —
+    // a custom-drawn widget's assertable output. Either order.
     let mut path: Option<PathBuf> = None;
     let mut render_to: Option<PathBuf> = None;
     // `--overlay names` turns `doc/view-modes.md` §3.6's bookmark anchors on for that frame,
     // so the mode is assertable the same way the rest of this widget is. Not a user feature
     // either — the window's own menu item is.
     let mut names = false;
-    // `--preview` opens Print Preview over the document, and with `--render-to` it is the
-    // preview window that is drawn — the same kind of assertable output for the page's own
-    // window (`doc/pdf-export.md` P6).
+    // `--preview` opens Print Preview over the document; with `--render-to` the preview window is
+    // what is drawn.
     let mut preview = false;
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
@@ -182,10 +171,8 @@ struct Ui {
     goto: gtk::MenuButton,
     undo: gtk::Button,
     redo: gtk::Button,
-    /// The formatting bar — every property of a *run* this window can read and write
-    /// (`crate::format`). Each control reads as the selection agrees it is, and both reading
-    /// and writing go through the same `App` the rest of this file does
-    /// (`App::char_style`/`set_char_style`) — no toolbar has its own idea of what bold means.
+    /// The formatting bar (`crate::format`), reading and writing through
+    /// `App::char_style`/`set_char_style`.
     format: Rc<format::Bar>,
     /// Ctrl+F (`find.rs`).
     find: Rc<find::Find>,
@@ -195,16 +182,12 @@ struct Ui {
     /// painting the projection would immediately move the caret it is reporting on. The
     /// formatting bar keeps its own latch for the same reason, in `format.rs`.
     updating: Cell<bool>,
-    /// The two pages of the window: the document, and its projection (`doc/dsl.md` §6, D9).
+    /// The two pages of the window: the document, and its projection.
     stack: gtk::Stack,
     source: gtk::TextView,
-    /// The code view line the caret's block is on, as last marked.
-    ///
-    /// `updating` is not enough on its own: GTK does not always deliver
-    /// `notify::cursor-position` inside the call that caused it, so a handler that answers by
-    /// touching the cursor is a loop the latch never sees the re-entry of. This makes the
-    /// handler *idempotent* instead — the same line twice does nothing — which holds however the
-    /// signal is scheduled.
+    /// The code view line the caret's block is on, as last marked. `updating` is not enough: GTK
+    /// does not always deliver `notify::cursor-position` inside the call that caused it, so the
+    /// handler is made idempotent instead — the same line twice does nothing.
     marked: Cell<Option<usize>>,
     path: RefCell<Option<PathBuf>>,
     /// The document a banner is offering to hand to the spreadsheet.
@@ -233,11 +216,9 @@ impl Ui {
             .child(&doc)
             .build();
 
-        // The code view, on the other page of a stack (`doc/dsl.md` §6.1: "a `GtkTextView` in a
-        // `GtkStack`, with the stack switcher as the Delphi tab"). A stack rather than a paned
-        // split: §6.2 is right that a split is what a person eventually wants, and it is also a
-        // second viewport to keep in step. What pays for itself first is the correspondence, and
-        // one page at a time carries it.
+        // The code view, on the other page of a stack. A stack rather than a paned split: a split
+        // is what a person eventually wants, but it is a second viewport to keep in step, and one
+        // page at a time carries the correspondence.
         let source = code::build();
         let source_scroller = gtk::ScrolledWindow::builder()
             .hexpand(true)
@@ -294,10 +275,7 @@ impl Ui {
             .build();
         header.pack_end(&menu);
 
-        // The formatting toolbar — a second top bar rather than crowded into the header, the
-        // way a spreadsheet's format strip sits under its own header (`ui_sheet_gtk`). Every
-        // control there writes through `App::set_char_style`, so a run it touches survives a
-        // LibreOffice round-trip the same way typing does (R6). It is connected to the document
+        // The formatting bar, a second top bar under the header. It is connected to the document
         // in `wire`, because the `Ui` it writes through does not exist yet.
         let format = format::Bar::new(&doc.pango_context());
         let find = find::Find::new(app, &doc);
@@ -495,9 +473,8 @@ impl Ui {
         self.window.add_action(&names);
         application.set_accels_for_action("win.show-names", &["<Control><Shift>n"]);
 
-        // `doc/dsl.md` §6, D9 — the document as its projection, on the other page of the stack.
-        // Stateful like `show-names` and for the same reason: it is a *reading* of the document,
-        // it writes nothing, and the same item turns it off.
+        // The document as its projection, on the other page of the stack. Stateful like
+        // `show-names`: a reading that writes nothing, turned off by the same item.
         let source = gio::SimpleAction::new_stateful("show-source", None, &false.to_variant());
         source.connect_activate(glib::clone!(
             #[strong(rename_to = ui)]
@@ -559,7 +536,7 @@ impl Ui {
         ));
     }
 
-    // --- the code view (doc/dsl.md §6, D9) ---
+    // --- the code view ---
 
     /// Switch between the document and its source.
     fn show_source(self: &Rc<Self>, on: bool) {
@@ -578,11 +555,9 @@ impl Ui {
         }
     }
 
-    /// Paint the projection, with the caret's own block marked.
-    ///
-    /// `updating` is raised for the same reason the toolbar raises it: placing the cursor in the
-    /// buffer fires `cursor-position`, and answering that by moving the document's caret would
-    /// be the view rewriting the thing it is reporting on.
+    /// Paint the projection with the caret's block marked. `updating` is raised because placing
+    /// the buffer's cursor fires `cursor-position`, and moving the document's caret in answer
+    /// would be the view rewriting what it reports on.
     fn fill_source(self: &Rc<Self>) {
         let projection = self.app.project();
         let line = projection.line_of(&grind_text::loc::format(self.doc.caret().block));
@@ -592,10 +567,8 @@ impl Ui {
         self.updating.set(false);
     }
 
-    /// The source's cursor moved: put the document's caret in the block that line projects.
-    ///
-    /// The span map may hand back `p12`, `#intro` or `§2.1.3`, and `loc::parse` takes all three,
-    /// so this needs no vocabulary of its own — `loc.rs` earning its keep again.
+    /// The source's cursor moved: put the document's caret in the block that line projects. The
+    /// span map hands back `p12`, `#intro` or `§2.1.3`, all of which `loc::parse` takes.
     fn source_moved(self: &Rc<Self>) {
         if self.updating.get() || self.stack.visible_child_name().as_deref() != Some("source") {
             return;
@@ -650,9 +623,8 @@ impl Ui {
             }
             None => String::new(),
         };
-        // In words, for a reader: what kind of paragraph this is and how long the document
-        // is. The caret's address (`p14+11`) used to lead the line; it is the go-to box's
-        // now, shown there when the box opens, which is where an address is for typing.
+        // In words, for a reader: what kind of paragraph this is and how long the document is. The
+        // caret's address is the go-to box's, shown when it opens.
         let words = match (counts.words, counts.reading_minutes()) {
             (_, 0) => "0 words".to_owned(),
             (1, minutes) => format!("1 word  ·  {minutes} min read"),
@@ -771,10 +743,9 @@ impl Ui {
         );
     }
 
-    /// File ▸ Save and Export Markdown — Save, then the whole document as CommonMark beside
-    /// it under the same stem (`README.fodt` → `README.md`), overwriting what is there. One
-    /// key for somebody who writes in ODF and publishes Markdown; the CLI's twin is `grind
-    /// text export-md`. A document with no path yet asks for one first, as Save does.
+    /// File ▸ Save and Export Markdown — Save, then the whole document as CommonMark beside it
+    /// under the same stem (`notes.fodt` → `notes.md`), overwriting what is there; `grind text
+    /// export-md` from the CLI. A document with no path asks for one first.
     fn save_and_export_markdown(self: &Rc<Self>) {
         self.markdown_twin.set(true);
         self.save();
@@ -1059,9 +1030,8 @@ impl Ui {
         dialog.present(Some(&self.window));
     }
 
-    /// `grind text lint` with a list in front of it (`doc/dsl.md` §4.3, D6). The jump is this
-    /// window's own — an address goes through `view::caret_of`, which is `loc::parse` plus the
-    /// core's resolution, exactly as the outline dialog and the go-to box already do.
+    /// `grind text lint` with a list in front of it. A jump goes through `view::caret_of`, as the
+    /// outline dialog and the go-to box do.
     fn lint(self: &Rc<Self>) {
         lint::present(
             &self.window,
@@ -1092,18 +1062,15 @@ impl Ui {
         ));
     }
 
-    /// Make the caret's block this kind, wearing this named paragraph style — the window's
-    /// `grind text kind` and `grind text style` in one gesture.
+    /// Make the caret's block this kind, wearing this named paragraph style — `grind text kind`
+    /// and `grind text style` in one gesture.
     ///
-    /// **The style is only ever taken off when this window put it on.** `Title` and `Subtitle`
-    /// are the two names this shell knows how to apply and draw, so choosing Paragraph after
-    /// one of them clears it; a document's own `Quotations` is a name this build keeps and does
-    /// not interpret (`doc/text-core.md`), and a menu item that silently threw one away would
-    /// be this window deciding it knows better than the document.
+    /// **The style is only taken off when this window put it on**: `Title` and `Subtitle` are the
+    /// names it applies, so choosing Paragraph after one clears it; a document's own `Quotations`
+    /// is kept, not thrown away by a menu item.
     ///
-    /// Two calls where the block needs both changed, and therefore two undo steps in that one
-    /// case. Named rather than hidden: the core's edits are `set_kind` and `set_style`, and a
-    /// third that batched them would be a method the CLI has no verb for (rule 4).
+    /// Two calls where both change, and so two undo steps in that case: a third core method
+    /// batching them would have no CLI verb (rule 4).
     fn set_kind(self: &Rc<Self>, kind: BlockKind, style: Option<&str>) {
         let index = self.doc.caret().block;
         let viewport = self.app.get_viewport(index..index + 1);
@@ -1254,12 +1221,9 @@ impl Ui {
         );
     }
 
-    /// Insert a table below the caret's block — the window's `grind text table`.
-    ///
-    /// Two spin buttons and nothing else: a table's *size* is the only thing this build can
-    /// author about one, since the model carries no column widths or borders
-    /// (`doc/text-core.md`), and a dialog offering what the document cannot keep would be a
-    /// dialog that lies.
+    /// Insert a table below the caret's block — `grind text table`. Two spin buttons and nothing
+    /// else: a table's size is all this window authors about one, since a table's own style is
+    /// read from a file and never written.
     fn insert_table(self: &Rc<Self>) {
         let rows = gtk::SpinButton::with_range(1.0, 64.0, 1.0);
         rows.set_value(3.0);
@@ -1315,15 +1279,10 @@ impl Ui {
         self.doc.grab_focus();
     }
 
-    /// Insert a picture at the caret — the window's `grind text image`.
-    ///
-    /// The picture goes in a **paragraph of its own**, below the caret's block, rather than at
-    /// the caret itself. That is a shell decision and it is the one that makes the result
-    /// visible: an image sitting mid-sentence still draws as the placeholder character
-    /// everywhere in this suite (`doc/text-shell.md`), because nothing lays inline content out
-    /// around one yet, and a menu item whose result is `\u{fffc}` would be a bug report. A
-    /// block that is *already* empty is used as it stands, so pressing Return and then inserting
-    /// does what it looks like.
+    /// Insert a picture — `grind text image` — in a **paragraph of its own** below the caret's
+    /// block (`grind_text::picture`), since a picture mid-sentence draws as the placeholder
+    /// character (`doc/text-shell.md`). An already empty block is used as it is, so Return and
+    /// then Insert does what it looks like.
     fn insert_image(self: &Rc<Self>) {
         let dialog = gtk::FileDialog::builder()
             .title("Insert Picture")
@@ -1431,14 +1390,13 @@ impl Ui {
         )
     }
 
-    /// One control of the formatting bar, applied to the current selection. The [`format::
-    /// Change`] sets the one property that control owns, on top of what the selection already
-    /// agrees about, so toggling Italic on a bold-and-italic run leaves the bold alone.
+    /// One control of the formatting bar, applied to the selection. The [`format::Change`] sets
+    /// the one property its control owns on top of what the selection agrees about, so Italic on a
+    /// bold-italic run leaves the bold.
     ///
-    /// With nothing selected it changes nothing in the document: it sets the style the next
-    /// character typed at the caret will carry (`Doc::set_pending`) — Bold, then type, is bold
-    /// — and forgets it if the caret moves first. The bar used to be insensitive there, which
-    /// looked broken at rest and turned the most common way of asking for bold into nothing.
+    /// With nothing selected the document is untouched: it sets the style the next character typed
+    /// at the caret carries (`Doc::set_pending`) — Bold, then type, is bold — forgotten if the
+    /// caret moves first.
     fn apply_char_style(self: &Rc<Self>, change: format::Change) {
         let landed = grind_text::format::apply(
             &self.app,
@@ -1572,8 +1530,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("shortcuts", &["<Control>question"][..], |ui| ui.shortcuts()),
         ("outline", &["<Control><Shift>o"][..], |ui| ui.outline()),
         ("words", &[][..], |ui| ui.word_count()),
-        // F8, the "next problem" key, and the same one `grind-sheet-gtk` uses — one suite, one
-        // key for one job (`doc/dsl.md` §4.3, D6).
+        // F8, the same key as `grind-sheet-gtk`'s.
         ("lint", &["F8"][..], |ui| ui.lint()),
         ("personal-dictionary", &[][..], |ui| {
             let again = ui.clone();
@@ -1643,11 +1600,9 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
     ]
 }
 
-/// Every key this window answers, in the groups a reader looks for them in.
-///
-/// Written out rather than read from [`actions`], because half of what a person wants to know
-/// is not an action at all — Ctrl+Left, Tab, `**bold**` — and the action table has no titles.
-/// What keeps the two in step is `every_declared_accelerator_is_in_the_shortcuts_window`.
+/// Every key this window answers, in the groups a reader looks for them in. Written out rather
+/// than read from [`actions`], since half of it is no action — Ctrl+Left, Tab, `**bold**`;
+/// `every_declared_accelerator_is_in_the_shortcuts_window` keeps the two in step.
 type ShortcutGroup = (&'static str, Vec<(&'static str, &'static str)>);
 fn shortcut_rows() -> Vec<ShortcutGroup> {
     vec![
@@ -1740,10 +1695,9 @@ fn primary_menu() -> gio::Menu {
     paper.append(Some("Print…"), Some("win.print"));
     menu.append_section(None, &paper);
 
-    // **The document and the window, and nothing about the selection** — the HIG's rule for a
-    // primary menu, which the spreadsheet's already keeps (`doc/sheet-shell.md`, "Four
-    // surfaces"). The clipboard went to the page's own right-click menu, and the block kinds
-    // to the format bar's first control, where each shows what the caret is in.
+    // **The document and the window, nothing about the selection** — the HIG's rule for a primary
+    // menu (`doc/sheet-shell.md`, "Four surfaces"). The clipboard is on the page's right-click
+    // menu, the block kinds on the format bar.
     let insert = gio::Menu::new();
     insert.append(Some("Insert Picture…"), Some("win.image"));
     insert.append(Some("Picture Alt Text…"), Some("win.alt-text"));
@@ -1832,9 +1786,8 @@ fn text_filters() -> gio::ListStore {
     filter.set_name(Some("OpenDocument Text"));
     filter.add_pattern("*.fodt");
     filter.add_pattern("*.odt");
-    // The third physical form (`doc/dsl.md` D2/D4). The window needed no other change to open
-    // one — `App::open_bytes` sniffs it — but a file a dialog filters out is a file the user
-    // cannot reach, so the pattern is not optional.
+    // `App::open_bytes` sniffs a projection, but a file a dialog filters out cannot be reached, so
+    // the pattern is needed.
     filter.add_pattern("*.grind");
 
     // A markdown file opens as a document of its own (`open_path`), so Open has to reach one.
@@ -1871,13 +1824,9 @@ fn markdown_filters() -> gio::ListStore {
     filters
 }
 
-/// Saving is the other case: the question *does* have an answer there, and `doc/flat-first.md`
-/// is that answer. Three filters rather than one, flat first, so the default selection writes
-/// the form that diffs and choosing another is one deliberate click away.
-///
-/// The projection is last on purpose. It diffs better than flat XML does, but it is this
-/// project's own spelling and nothing else reads it, whereas both ODF forms are a format other
-/// software opens — so it is offered rather than defaulted to.
+/// Saving does have an answer (`doc/flat-first.md`): three filters, flat first, so the default
+/// writes the form that diffs. The projection is last: it diffs better still, but nothing else
+/// reads it, whereas both ODF forms open in other software.
 fn text_save_filters() -> gio::ListStore {
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     for (name, pattern) in [
@@ -1923,14 +1872,12 @@ fn remember_recent(path: &Path) {
     gtk::RecentManager::default().add_item(&gio::File::for_path(path).uri());
 }
 
-/// Read `path` into `app`. `Ok(Some(summary))` when it was a markdown file — imported as a new,
-/// unsaved document under an ODF name, so there is no path for Save to write it back over, and
-/// the sentence is the notice every shell shows (`grind_text::commonmark::open`). `Ok(None)` for
-/// an ODF document, which keeps its path.
+/// Read `path` into `app`. `Ok(Some(summary))` for a markdown or Word file, imported as a new,
+/// unsaved document under an ODF name — no path for Save to write back over — with the notice
+/// every shell shows. `Ok(None)` for an ODF document, which keeps its path.
 fn open_path(app: &App, path: &Path) -> Result<Option<String>, String> {
     let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
-    // A Word document is imported the way a markdown file is: a new, unsaved document under
-    // its ODF name (`doc/docx-import.md`, DX6), so Save cannot write ODF over the `.docx`.
+    // A Word document is imported like a markdown file, so Save cannot write ODF over the `.docx`.
     #[cfg(feature = "docx")]
     if grind_docx::sniff(&bytes) {
         let (odf, report) = grind_docx::open(&bytes).map_err(|error| error.to_string())?;
@@ -1973,13 +1920,11 @@ fn document_name(path: Option<&Path>) -> String {
     )
 }
 
-/// Whether a file is a spreadsheet, decided from its bytes rather than its name — which is
-/// what `grind_core::kind` is for, and it answers before any parsing. An Excel workbook is one
-/// too (X6): `grind-sheet-gtk` imports it, so the handoff reaches it the same way. So is a CSV
-/// or TSV, which that window opens as a document of its own — known by its name alone, and
-/// only once the bytes have said they are neither ODF nor a workbook, since plain text has no
-/// signature. The extension list is `grind_sheet::csv::is_delimited_name`'s, restated because
-/// this crate must not depend on `grind-sheet`.
+/// Whether a file is a spreadsheet, from its bytes (`grind_core::kind`). An Excel workbook is one
+/// too, as `grind-sheet-gtk` imports it, and so is a CSV or TSV — known by name only once the
+/// bytes say they are neither ODF nor a workbook, since plain text has no signature. The extension
+/// list restates `grind_sheet::csv::is_delimited_name`, since this crate must not depend on
+/// `grind-sheet`.
 fn is_spreadsheet(path: &Path) -> bool {
     let Ok(bytes) = std::fs::read(path) else {
         return false;
@@ -2011,12 +1956,10 @@ fn describe_kind(kind: &BlockKind, style: Option<&str>) -> String {
     }
 }
 
-/// What the Save As dialog puts in its name field for a document with no path yet.
-///
-/// `doc/flat-first.md`: an unnamed document gets the flat extension, so the one keystroke a
-/// user is most likely *not* to change writes a file that diffs. A document that already has a
-/// path keeps its own name and therefore its own form — this build never converts a document
-/// behind somebody's back.
+/// What Save As puts in its name field for a document with no path: the flat extension
+/// (`doc/flat-first.md`), so the keystroke most likely left alone writes a file that diffs. A
+/// document with a path keeps its own name and form; nothing converts a document behind somebody's
+/// back.
 fn save_name(path: Option<&Path>) -> String {
     match path {
         Some(_) => document_name(path),

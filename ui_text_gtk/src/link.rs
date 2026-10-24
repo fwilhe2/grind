@@ -2,13 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Insert ▸ Link… (Ctrl+K) — one entry in a popover at the caret.
-//!
-//! What it links is decided when it opens, in the order a word processor decides it: the
-//! selection if there is one; otherwise the whole link the caret is on, so the same key edits
-//! an existing link; otherwise nothing, and the target typed is inserted as its own text and
-//! linked. Every write is `App::set_link` — this file has no idea of what a link is that the
-//! document does not share, and `grind text link` is the same edit from the command line.
+//! Insert ▸ Link… (Ctrl+K) — one entry in a popover at the caret. What it links is decided as it
+//! opens: the selection; otherwise the whole link the caret is on, so the same key edits one;
+//! otherwise the target typed is inserted as its own text and linked. Every write is
+//! `App::set_link`, as `grind text link` does.
 
 use std::cell::Cell;
 use std::rc::Rc;

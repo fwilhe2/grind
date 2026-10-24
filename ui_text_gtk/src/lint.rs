@@ -2,19 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **What the document says about itself** — `grind text lint` with a list in front of it
-//! (`doc/dsl.md` §4.3, D6).
-//!
-//! `ui_sheet_gtk/src/lint.rs` is this file with `a1` where this one has `loc`, and the two are
-//! copies for `code.rs`'s reason: there is no crate a widget both GTK shells could use, since
-//! `grind-core` may not hold GTK types and neither application crate may depend on the other
-//! (R8). The `ponytail` there is this one — a `grind-gtk` crate when a third GTK shell or a
-//! third copy appears.
-//!
-//! What is *not* copied is anything about the rules. A diagnostic arrives with its severity, its
-//! message and an address `loc::parse` takes, so this file decides an icon, a subtitle and a
-//! jump — and a shell that got all three wrong still could not make the linter disagree with
-//! `grind lint`.
+//! **What the document says about itself** — `grind text lint` with a list in front of it.
+//! `ui_sheet_gtk/src/lint.rs` is a copy with `a1` where this has `loc`, for `code.rs`'s reason.
+//! Nothing about the rules is here: a diagnostic arrives with its severity, message and an address
+//! `loc::parse` takes, and this file decides an icon, a subtitle and a jump.
 
 use std::rc::Rc;
 use std::sync::Arc;
@@ -86,12 +77,8 @@ pub fn present(
     dialog(app, go_to).present(Some(window));
 }
 
-/// Build it, without showing it.
-///
-/// Split from [`present`] so the widget harness can build one: `view.rs`'s `the_widget` is the
-/// one place in this crate that has a display and the thread GTK was initialised on, and a
-/// dialog that panics on its first `add_prefix` is exactly the failure a table of pure functions
-/// cannot catch.
+/// Build it, without showing it — split from [`present`] so `view.rs`'s widget harness can build
+/// one, since a dialog that panics on its first `add_prefix` is what pure tests cannot catch.
 pub fn dialog(app: &Arc<App>, go_to: impl Fn(&str) + Clone + 'static) -> adw::Dialog {
     let hints = gtk::ToggleButton::builder()
         .label("Hints")
