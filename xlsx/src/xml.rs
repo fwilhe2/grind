@@ -2,9 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The tolerant walker — `grind_ooxml::xml`, where it moved when `grind-docx` wanted it too —
-//! plus the one thing about it that is this filter's: nearly every element it reads is
-//! SpreadsheetML's, so `name.is("c")` asks exactly that.
+//! The tolerant walker, `grind_ooxml::xml`, with `name.is("c")` for SpreadsheetML — the namespace
+//! of nearly every element this filter reads.
 
 pub use grind_ooxml::xml::*;
 

@@ -2,11 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `xl/worksheets/*.xml` — rows, cells, and their values.
-//!
-//! `<c r="B2" t="…" s="12"><v>…</v></c>`, with `t` defaulting to `n`. The mapping onto
-//! `CellValue` is `doc/xlsx-import.md` Part II §2's table, which is ECMA-376 §18.18.11's
-//! `ST_CellType`:
+//! `xl/worksheets/*.xml` — rows, cells, and their values. `<c r="B2" t="…" s="12"><v>…</v></c>`,
+//! with `t` defaulting to `n`; the mapping is ECMA-376 §18.18.11's `ST_CellType`:
 //!
 //! | `t` | holds | becomes |
 //! |---|---|---|
@@ -18,35 +15,24 @@
 //! | `e` | `#DIV/0!` … | `Text`, the error's name — how the evaluator stores one already |
 //! | `d` | an ISO 8601 date | `Number`, date kind |
 //!
-//! **A formula cell carries both**: Excel's cached value, which is the one a reader of the
-//! document sees until something recalculates, and the expression, translated by
-//! [`crate::formula`]. A cell whose formula falls in one of that module's named classes keeps
-//! the value and loses the formula, and is counted.
+//! **A formula cell carries both** Excel's cached value and the expression ([`crate::formula`]);
+//! one whose formula is refused keeps the value, and is counted.
 //!
-//! **Shared formulas** (`<f t="shared" ref="B2:B10" si="0">A2*2</f>`, with the rest of the group
-//! carrying `<f t="shared" si="0"/>`) are resolved once the whole sheet has been read rather
-//! than as they arrive, because a group's master is not always above its followers —
-//! `formulas/shared-groups.xlsx` has one at F2 whose follower is F1. The shift itself is
-//! `grind_sheet::formula::shift`, the core function a fill already uses: §5.8's relative
-//! references are ODF's semantics, not Excel's, and a reference that leaves the sheet becomes
-//! `#REF!` exactly as it does when a row is deleted.
+//! **Shared formulas** (`<f t="shared" ref="B2:B10" si="0">A2*2</f>`, followers carrying `<f
+//! t="shared" si="0"/>`) are resolved after the whole sheet is read, since a master need not be
+//! above its followers (`formulas/shared-groups.xlsx`: master F2, follower F1). The shift is
+//! `grind_sheet::formula::shift`, the one a fill uses; a reference leaving the sheet becomes
+//! `#REF!`.
 //!
-//! Position is **implicit** when `r` is absent — the next row, the next column — because the
-//! spec allows it and Apache POI and SheetJS both write it (`realworld/implicit-refs.xlsx`).
-//! An explicit `r` moves the counter, so a row that mixes the two resumes from the last
-//! explicit address rather than from the number of cells seen. `dimension` and `spans` are
-//! claims and are never read.
+//! Position is **implicit** when `r` is absent — the next row, the next column — as Apache POI and
+//! SheetJS write it; an explicit `r` moves the counter. `dimension` and `spans` are claims and
+//! never read.
 //!
-//! **Geometry (X4).** `<cols>` and each `<row>` carry widths, heights and hidden-ness, which
-//! the model holds per track. A row height is points and is carried verbatim; a column width
-//! is counted in characters and is converted through [`col_width`]. A `<col>` element covers
-//! a *range*, and one running to the sheet's last column is the sheet's background rather than
-//! sixteen thousand columns of layout: it is carried over the columns the sheet uses and no
-//! further, which is `grind_sheet::MAX_TRACK_RUN`'s rule for an ODF column run. The sheet's
-//! stated default width (`<sheetFormatPr defaultColWidth>`) is carried the same way, onto the
-//! used columns no `<col>` mentions — the model has no sheet default to put it in. What has no
-//! home — an outline's grouping, frozen panes, a size of zero — is counted as an
-//! [`Appearance`].
+//! **Geometry.** A row height is points, carried verbatim; a column width is characters, converted
+//! by [`col_width`]. A `<col>` run to the sheet's last column is the sheet's background and is
+//! carried over the used columns only (`grind_sheet::MAX_TRACK_RUN`'s rule), as is `<sheetFormatPr
+//! defaultColWidth>`, since the model has no sheet default. An outline, frozen panes or a zero
+//! size is an [`Appearance`].
 
 use std::collections::HashMap;
 
@@ -64,13 +50,10 @@ use crate::strings::{self, Item};
 use crate::styles::{Appearance, Styles};
 use crate::xml::{Handled, Reader, Spreadsheet as _};
 
-/// Cells one import will materialise, across every sheet — the same number `odf/read.rs`
-/// bounds itself by, for the same reason. An `.xlsx` cannot *amplify* the way a repeated ODF
-/// row can, since each cell costs bytes in the file, but a 512 MB `sheet1.xml` is still a
-/// file somebody sent, and the model's memory is not the place to find out how big it was.
-///
-/// Four million is eight `scale/large-sheet.xlsx`es. A cell past it is counted in
-/// [`Report::over_budget`] rather than carried, and the conversion is not lossless.
+/// Cells one import will materialise, across every sheet — the bound `odf/read.rs` uses. An
+/// `.xlsx` cannot amplify the way a repeated ODF row can, but a 512 MB `sheet1.xml` is still a
+/// file somebody sent. Eight `scale/large-sheet.xlsx`es; a cell past it is counted in
+/// [`Report::over_budget`].
 pub const MAX_CELLS: usize = 4_000_000;
 
 /// What every sheet in one workbook reads its cells against.
@@ -82,7 +65,7 @@ pub struct Context<'a> {
     pub date_1904: bool,
     /// The document's null date, for `t="d"`'s ISO spelling.
     pub null_date: i64,
-    /// Which names are sheet-local where (X5): a formula naming one on that sheet is refused.
+    /// Which names are sheet-local where: a formula naming one on that sheet is refused.
     pub names: &'a crate::workbook::Names,
     /// Sheets renamed on the way in, `(from, to)`; every formula follows them.
     pub renames: &'a [(String, String)],
@@ -92,13 +75,10 @@ pub struct Context<'a> {
     pub sheet_names: &'a [String],
 }
 
-/// Read one worksheet part into `sheet`.
-///
-/// Returns the reader's flavour evidence and `mc:MustUnderstand` findings through `report` and
-/// `seen`, because a worksheet is where they usually are: `realworld/mixed-flavour.xlsx` is a
-/// Transitional workbook with a Strict worksheet, and X0, which opened no worksheet, could not
-/// see it. An XML error partway through keeps every cell read before it — tolerance on the way
-/// in — and is otherwise silent, since there is no `Dropped` for "the rest of a broken part".
+/// Read one worksheet part into `sheet`. Flavour evidence and `mc:MustUnderstand` findings come
+/// back through `report` and `seen`, since a Transitional workbook can hold a Strict worksheet
+/// (`realworld/mixed-flavour.xlsx`). An XML error partway keeps every cell read before it,
+/// silently — there is no `Dropped` for "the rest of a broken part".
 pub fn read(
     bytes: &[u8],
     context: &Context<'_>,
@@ -196,15 +176,11 @@ fn count(reader: &mut Reader<'_>, local: &str) -> crate::Result<usize> {
     Ok(n)
 }
 
-/// `<mergeCells>` (ECMA-376 Part 1, `CT_MergeCells`): each `<mergeCell ref="B2:D2"/>` the model's merge over that
-/// range. Excel keeps the value in the top-left cell, which is where the model's merge reads it
-/// from; whatever the other cells hold — a style for the border round the merge, usually — is
-/// carried with them, out of sight, as ODF's covered cells carry it.
-///
-/// What a merge cannot be is counted rather than guessed at: a reference that is not a range,
-/// or a range overlapping one already read, which Excel refuses to open and the model cannot
-/// draw. A one-cell "merge" — legal, and written by real producers — is no merge at all and
-/// is neither carried nor counted.
+/// `<mergeCells>`: each `<mergeCell ref="B2:D2"/>` the model's merge over that range. Excel keeps
+/// the value in the top-left cell, where the model's merge reads it; the others' contents (usually
+/// a border's style) are carried out of sight, as ODF's covered cells are. A non-range or one
+/// overlapping an earlier merge is counted; a one-cell merge is no merge, neither carried nor
+/// counted.
 fn merges(reader: &mut Reader<'_>, sheet: &mut Sheet, report: &mut Report) -> crate::Result<()> {
     reader.children(|_, name, attrs| {
         if !name.is("mergeCell") {
@@ -233,14 +209,11 @@ fn merges(reader: &mut Reader<'_>, sheet: &mut Sheet, report: &mut Report) -> cr
     Ok(())
 }
 
-/// `<autoFilter ref="A1:C9">` and its `<filterColumn>`s, as the model's filter.
-///
-/// The model's vocabulary is a **set of values per column** (`grind_sheet::filter`), which is
-/// exactly `<filters><filter val="…"/>` — Excel's dropdown checkboxes, matched on the displayed
-/// text as both sides do. A blank checkbox is `blank="1"`, the empty string in the set. Every
-/// other criterion — a custom comparison, a top-ten rule, a dynamic date band, a colour, a
-/// date group — is left out of the filter and counted as `Appearance::FilterCriterion`, one
-/// per column: a filter that quietly kept the wrong rows would be worse than a visible gap.
+/// `<autoFilter ref="A1:C9">` and its `<filterColumn>`s, as the model's filter. The model's
+/// vocabulary is a set of values per column, exactly `<filters><filter val="…"/>` matched on
+/// displayed text; `blank="1"` is the empty string. Any other criterion is left out and counted as
+/// `Appearance::FilterCriterion` per column — a filter quietly keeping the wrong rows would be
+/// worse than a visible gap.
 fn autofilter(
     reader: &mut Reader<'_>,
     attrs: &crate::xml::Attrs,
@@ -303,14 +276,10 @@ fn autofilter(
     Ok(Some(filter))
 }
 
-/// Put the filter on the sheet, and un-hide the rows **it** hides.
-///
-/// Excel writes `hidden="1"` on every row a filter excludes, which the geometry pass carried
-/// as rows hidden by hand. The model derives filtered rows from the filter instead (and two
-/// copies of one fact is how they come to disagree — `grind_sheet::filter`), so a row the
-/// carried filter accounts for is left to it. A row it does not account for — excluded by a
-/// criterion this build could not carry, or hidden by hand as well — stays hidden by hand, so
-/// the sheet shows what Excel showed.
+/// Put the filter on the sheet, and un-hide the rows **it** hides. Excel writes `hidden="1"` on
+/// every filtered row, which the geometry pass carried as hidden by hand; the model derives
+/// filtered rows from the filter, so those are left to it. A row the carried filter does not
+/// account for stays hidden by hand, so the sheet shows what Excel showed.
 fn apply_filter(sheet: &mut Sheet, filter: grind_sheet::Filter, null_date: i64) {
     sheet.set_filter(Some(filter));
     for row in sheet.hidden_rows(null_date, None) {
@@ -318,18 +287,14 @@ fn apply_filter(sheet: &mut Sheet, filter: grind_sheet::Filter, null_date: i64) 
     }
 }
 
-/// ECMA-376 §18.3.1.13's unit for a column width: the **maximum digit width** of the
-/// workbook's default font, in pixels at 96 dpi. Seven is Calibri 11's — the spec's own worked
-/// example, and Excel's default font since 2007.
+/// ECMA-376 §18.3.1.13's unit for a column width: the maximum digit width of the default font, in
+/// pixels at 96 dpi. Seven is Calibri 11's — the spec's worked example, Excel's default since
+/// 2007.
 ///
-/// ponytail: one constant for every workbook, because this crate has no font metrics — the
-/// core measures text only through a shell's `Metrics`. A workbook whose default font is not
-/// Calibri 11 gets its widths in the wrong unit, proportionally: a 10pt Arial workbook is a
-/// few percent off. The oracle does not have this problem and has a worse one: it measures
-/// the digit in whatever font *the converting machine* substitutes, so its widths are a fact
-/// about that machine (`doc/xlsx-format.md` §4.5, and loop D's divergence). The upgrade is a
-/// measured table of digit widths by family and size, keyed on the default font's `<name>` and
-/// `<sz>`.
+/// ponytail: one constant for every workbook, since this crate has no font metrics; a 10pt Arial
+/// workbook is a few percent off. The oracle measures in whatever font the converting machine
+/// substitutes, so its widths are a fact about that machine (`doc/xlsx-format.md` §4.5). The
+/// upgrade is a measured table of digit widths keyed on the default font's `<name>` and `<sz>`.
 pub const DIGIT_PX: f64 = 7.0;
 
 /// A column width in characters, as the ODF length the model stores: `width × DIGIT_PX`
@@ -707,8 +672,8 @@ fn take_formula(
     }
 }
 
-/// The formula, in ODF's own syntax, and the functions it names — or its refusal, when it
-/// names a name that is sheet-local here (X5). Renamed sheets are followed first.
+/// The formula in ODF syntax and the functions it names — or its refusal, when it names a name
+/// sheet-local here. Renamed sheets are followed first.
 fn store_formula(
     sheet: &mut Sheet,
     at: Pos,
@@ -835,8 +800,8 @@ fn store(
     look(sheet, at, raw.s, context, report);
 }
 
-/// Put the cell's style on it, and count whatever it could not carry (X4). Translated once,
-/// when the styles part was read; cloned here, as [`format`] clones a number format.
+/// Put the cell's style on it and count what it could not carry — translated once with the styles
+/// part, cloned here.
 fn look(sheet: &mut Sheet, at: Pos, s: usize, context: &Context<'_>, report: &mut Report) {
     let Some(look) = context.styles.look(s) else {
         return;
@@ -856,12 +821,9 @@ fn look(sheet: &mut Sheet, at: Pos, s: usize, context: &Context<'_>, report: &mu
     }
 }
 
-/// Put the cell's number format on it, and count whatever its code could not say (X3).
-///
-/// The translation happened once, when the styles part was read; this clones it. A format
-/// whose code carries a piece that would **misstate** the number is not there to clone — the
-/// cell displays its plain value instead — and either way the loss is counted per cell, since
-/// what a person wants to know is how much of the document reads differently.
+/// Put the cell's number format on it and count what its code could not say — translated once with
+/// the styles part, cloned here. A format that would misstate the number is not there to clone,
+/// and the cell shows its plain value; either way the loss is counted per cell.
 fn format(sheet: &mut Sheet, at: Pos, s: usize, context: &Context<'_>, report: &mut Report) {
     if let Some(format) = context.styles.format(s) {
         report.formatted += 1;
@@ -872,10 +834,8 @@ fn format(sheet: &mut Sheet, at: Pos, s: usize, context: &Context<'_>, report: &
     }
 }
 
-/// `<v>` as a number. `xsd:double`'s spellings — exponents, a leading `+` — plus the one real
-/// producers add, surrounding whitespace. Not a finite number is not a number: `INF` and `NaN`
-/// are `xsd:double` lexical forms that no cell can hold, and they are carried as the text the
-/// file wrote rather than as a value this model would then refuse to write.
+/// `<v>` as a number: `xsd:double`'s spellings plus surrounding whitespace. `INF` and `NaN` are
+/// `xsd:double` forms no cell can hold, carried as the text the file wrote.
 fn number(v: &str) -> Option<f64> {
     v.trim().parse::<f64>().ok().filter(|n| n.is_finite())
 }
@@ -1187,8 +1147,7 @@ mod tests {
         assert_eq!(report.refused[&Refusal::Intersection], 1);
     }
 
-    /// A name this build cannot evaluate is reported and the formula is carried anyway —
-    /// which is the difference between a fact about this build and a conversion loss.
+    /// A name grind cannot evaluate is reported and the formula carried anyway.
     #[test]
     fn an_unimplemented_function_is_named_rather_than_refused() {
         let (sheet, report) = sheet_of(

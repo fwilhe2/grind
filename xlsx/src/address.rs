@@ -3,26 +3,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! Excel's spelling of a cell address — `B2`, `XFD1048576` — as a 0-based [`Pos`].
-//!
-//! `grind_sheet::a1` is the workspace's one 0↔1 conversion for **ODF's** spelling, and it gets
-//! there by wrapping the address in `[…]` and lexing it as a formula reference. This is the
-//! same arithmetic for **Excel's** spelling, which is this crate's business rather than that
-//! one's (R1: nothing Excel-shaped in `grind-sheet`), and which is asked half a million times
-//! by `scale/large-sheet.xlsx` — once per `<c r="…">` — where a format-and-lex per cell would be
-//! the most expensive thing the importer does. X2's formula lexer is the second caller.
-//!
-//! The two cannot disagree about what `B2` means: a test holds this function to `a1::parse`
-//! over every boundary the grid has.
+//! `grind_sheet::a1` converts ODF's spelling by lexing it as a reference; this is the same
+//! arithmetic for Excel's, kept here (R1) and cheap, since it runs once per `<c r="…">` — half a
+//! million times for `scale/large-sheet.xlsx`. A test holds it to `a1::parse` over every boundary
+//! of the grid.
 
 use grind_sheet::model::Pos;
 use grind_sheet::{MAX_COLS, MAX_ROWS};
 
-/// `B2` → row 1, column 1. `None` for anything that is not a plain relative address inside
-/// the grid — a `$`, a sheet name, a range, lower-case letters past the spec, or a position
-/// past `XFD1048576`.
-///
-/// Lower-case letters are accepted: ECMA-376's `ST_CellRef` is upper-case, and a producer that
-/// writes `b2` means B2 rather than nothing.
+/// `B2` → row 1, column 1. `None` for anything that is not a plain relative address inside the
+/// grid — a `$`, a sheet name, a range, or a position past `XFD1048576`. Lower case is accepted:
+/// `ST_CellRef` is upper-case, but a producer writing `b2` means B2.
 pub fn cell(r: &str) -> Option<Pos> {
     let split = r.find(|c: char| !c.is_ascii_alphabetic())?;
     let (letters, digits) = r.split_at(split);

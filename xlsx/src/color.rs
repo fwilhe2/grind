@@ -11,18 +11,13 @@
 //! <color auto="1"/>                   the system's ink: no colour to carry
 //! ```
 //!
-//! **Only `rgb` is self-contained.** An index needs a 64-entry table, a theme slot needs the
-//! theme part, and a tint needs arithmetic in HSL space. `doc/xlsx-format.md` §4.1 and §4.2
-//! hold the measurements this module is built from: the palette was read back from the oracle
-//! one index per cell rather than transcribed, and the theme's slot order is the one place the
-//! obvious reading is wrong.
+//! Only `rgb` is self-contained: an index needs a 64-entry table, a theme slot the theme part, a
+//! tint arithmetic in HSL. The measurements are in `doc/xlsx-format.md` §4.1 and §4.2.
 //!
-//! **Automatic is an answer, not a failure.** `auto="1"`, index 64 and index 65 name the
-//! system's foreground and background — ODF's *automatic* colour, which the model spells as
-//! no colour at all. Writing `#000000` in its place would be a fixed black on a dark theme,
-//! which is the bug `ui_win32`'s `theme::automatic_ink` exists to avoid. What cannot be
-//! resolved — a theme slot with no theme to look it up in — is [`Resolved::Unknown`], and
-//! the caller counts it.
+//! **Automatic is an answer, not a failure.** `auto="1"` and indices 64 and 65 name the system's
+//! foreground and background — ODF's automatic colour, spelled as no colour at all; `#000000`
+//! would be fixed black on a dark theme. A theme slot with no theme to look it up in is
+//! [`Resolved::Unknown`], and the caller counts it.
 
 use crate::xml::{Attrs, Handled, Reader, Spreadsheet as _};
 
@@ -153,7 +148,7 @@ pub const PALETTE: [[u8; 3]; 64] = [
 pub struct Palette {
     pub indexed: Vec<[u8; 3]>,
     /// In **`theme` attribute order**, which is not the scheme's document order — see
-    /// [`crate::theme`]. Empty when the workbook has no theme part this build can read.
+    /// [`crate::theme`]. Empty when the workbook has no readable theme part.
     pub theme: Vec<[u8; 3]>,
 }
 
@@ -251,16 +246,14 @@ pub fn hex([r, g, b]: [u8; 3]) -> String {
     format!("#{r:02x}{g:02x}{b:02x}")
 }
 
-/// ECMA-376's tint (§18.8.19, `tint`): the colour's **HSL luminance** moved toward black by
-/// the fraction below zero, or toward white by the fraction above it. Hue and saturation are
-/// untouched — which is why tinting each channel by the same fraction, the common shortcut, is
-/// wrong for every colour that is not a grey.
+/// ECMA-376's tint (§18.8.19): the colour's **HSL luminance** moved toward black by a negative
+/// fraction or toward white by a positive one, hue and saturation untouched — tinting each channel
+/// alike is wrong for every colour but grey.
 ///
-/// Computed in floating point and rounded half up per channel. Against the oracle's own
-/// conversion of 75 tinted theme colours (`doc/xlsx-format.md` §4.2) this agrees exactly on
-/// 69 and is one step off in a channel or two on the other six: the oracle quantises somewhere
-/// the specification does not say to, and loop D names that difference rather than this
-/// module imitating it — the integer HLS routines tried agree on far fewer.
+/// Floating point, rounded half up per channel. Against the oracle's conversion of 75 tinted theme
+/// colours (`doc/xlsx-format.md` §4.2) it agrees exactly on 69 and is one step off in a channel on
+/// six: the oracle quantises where the spec does not say to, and loop D names that rather than
+/// this imitating it.
 pub fn tint(rgb: [u8; 3], tint: f64) -> [u8; 3] {
     if tint == 0.0 {
         return rgb;

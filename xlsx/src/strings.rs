@@ -2,15 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `xl/sharedStrings.xml` — the string table a `t="s"` cell indexes into.
-//!
-//! Found by relationship, and **optional**: SheetJS writes every string inline by default,
-//! and a reader that reaches for this part before asking whether the workbook has one fails
-//! on all of them (`values/inline-strings.xlsx`).
-//!
-//! `count` and `uniqueCount` are claims and are never read (`doc/xlsx-import.md`,
-//! "Transitional, and the real world" §3): the table is exactly as long as the `<si>`
-//! elements it holds, and `realworld/lying-counts.xlsx` gets both numbers wrong at once.
+//! `xl/sharedStrings.xml` — the table a `t="s"` cell indexes into. Found by relationship, and
+//! **optional**: SheetJS writes every string inline (`values/inline-strings.xlsx`). `count` and
+//! `uniqueCount` are claims and never read; `realworld/lying-counts.xlsx` gets both wrong.
 
 use crate::xml::{Handled, Reader, Spreadsheet as _};
 
@@ -19,10 +13,9 @@ use crate::xml::{Handled, Reader, Spreadsheet as _};
 pub struct Item {
     /// The runs, flattened. Whitespace is content and is never trimmed.
     pub text: String,
-    /// Whether flattening lost something: more than one run, so formatting *within* the cell
-    /// that the model has no home for. One run with an `rPr` is not counted — it carries
-    /// nothing the flattened string loses that the cell's own style cannot, and the corpus's
-    /// `values/rich-text.xlsx` makes exactly that argument with its B2.
+    /// Whether flattening lost something: more than one run, so formatting within the cell. One
+    /// run with an `rPr` loses nothing the cell's own style cannot carry (`values/rich-text.xlsx`
+    /// B2).
     pub rich: bool,
 }
 
@@ -44,12 +37,9 @@ pub fn read(bytes: &[u8]) -> Vec<Item> {
     out
 }
 
-/// The children of one `<si>` or `<is>` — the same content model (`CT_Rst`, §18.4.13), so an
-/// inline string is read by this function too.
-///
-/// `<t>` is the plain case and `<r><t>` the rich one. **`<rPh>` is not text**: it is a
-/// phonetic reading — furigana over Japanese — and it has a `<t>` of its own, which a reader
-/// that concatenated every text node would splice into the middle of the string.
+/// The children of one `<si>` or `<is>` — the same content model (`CT_Rst`, §18.4.13). **`<rPh>`
+/// is not text**: a phonetic reading (furigana) with a `<t>` of its own, which concatenating every
+/// text node would splice into the string.
 pub fn item(reader: &mut Reader<'_>) -> crate::Result<Item> {
     let mut text = String::new();
     let mut runs = 0usize;

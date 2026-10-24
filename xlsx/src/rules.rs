@@ -10,21 +10,18 @@
 //! [`grind_sheet::rule::Rule`] over both ranges, written from the top-left of the whole `sqref`
 //! (measured), drawing the `dxf`'s partial style.
 //!
-//! **Every rule that has a formula is one.** `expression` is the formula itself; `containsText`,
-//! `beginsWith`, `containsBlanks`, `containsErrors`, `timePeriod` and their negations each carry
-//! the formula that decides them, which is the rule — `doc/conditional-format.md` §1 keeps no
-//! second vocabulary for what a formula can already say. `cellIs` compares the cell itself, so
-//! it is *written* as one: `[.B1]>5`, with the cell a relative reference to the base.
+//! **Every rule with a formula is one**: `expression` is the formula; `containsText`,
+//! `beginsWith`, `containsBlanks`, `containsErrors`, `timePeriod` and their negations carry the
+//! formula that decides them; `cellIs` is written as one, `[.B1]>5`, relative to the base.
 //!
-//! What is left — a colour scale, a data bar, an icon set, top-N, above-average, duplicate and
-//! unique values — is a second rule engine, and is counted as `Dropped::ConditionalFormat`; so
-//! is a rule whose formula this filter cannot translate, or whose `dxf` draws nothing the model
-//! can hold. A piece of a `dxf` the model has no slot for is an [`Appearance`](crate::styles::Appearance), once per rule.
+//! The rest — colour scales, data bars, icon sets, top-N, above-average, duplicates — is a second
+//! rule engine and counted as `Dropped::ConditionalFormat`, as is a rule whose formula will not
+//! translate or whose `dxf` draws nothing the model holds. A piece of a `dxf` with no slot is an
+//! [`Appearance`](crate::styles::Appearance), once per rule.
 //!
-//! **Priority** is `priority`, lowest first, across the whole sheet. Excel draws every true
-//! rule with the higher winning a property both set; the model and LibreOffice draw only the
-//! first true one. That divergence is the format's and is written down (§4.12) rather than
-//! approximated.
+//! **Priority** is `priority`, lowest first, across the sheet. Excel draws every true rule, the
+//! higher winning a shared property; the model and LibreOffice draw only the first true one — the
+//! format's divergence, written down (§4.12) rather than approximated.
 
 use grind_sheet::formula::parse::{Expr, parse};
 use grind_sheet::model::{Pos, Sheet};

@@ -2,38 +2,25 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `xl/styles.xml` — every cell format, translated once: its **number format** (X3) and its
-//! **look** (X4), which is a `grind_sheet::style::CellStyle` plus whatever that could not hold.
+//! `xl/styles.xml` — every cell format, translated once: its number format and its look, a
+//! `grind_sheet::style::CellStyle` plus what that could not hold. A cell's `s="12"` indexes
+//! `<cellXfs>`, whose `<xf>` names a `numFmtId`, `fontId`, `fillId` and `borderId` and may carry
+//! an `<alignment>`. Read before the sheets, since a serial is not a date until its format is
+//! known.
 //!
-//! A cell's `s="12"` indexes `<cellXfs>`, whose twelfth `<xf>` names a `numFmtId`, a `fontId`,
-//! a `fillId` and a `borderId`, and may carry an `<alignment>`. Styles are read **before**
-//! sheets — the same order `odf/read.rs` reads `styles.xml` before `content.xml` — because a
-//! serial cannot be corrected, or given its date kind, until its format is known. Each `<xf>`
-//! is translated **once** and every cell that names it clones the result.
-//!
-//! **What a cell format means, decided:**
-//!
-//! - **The cell format's own ids are the ones in effect**, whatever its `applyFont` /
-//!   `applyFill` / … flags say — `doc/xlsx-format.md` §3.3 and §4.4. The oracle measures the
-//!   same way (`styles/named-styles.xlsx` A5 sets `applyFont="0"` and is drawn in its own
-//!   bold, not its named style's heading font), and it is the reading that makes a
-//!   `<cellXfs>` entry mean one thing. An id the entry leaves out comes from the named style
-//!   it points at through `xfId`.
-//! - **The workbook's default cell format is the document's default, and is not written onto
-//!   every cell.** The cell format at index 0 is what a cell with no `s` gets; a property equal
-//!   to its — a size, a colour, an alignment — is the absence of one, which is what ODF's
-//!   automatic styles mean too, and writing `11pt` onto a million cells would make a million
-//!   styles to say nothing. The cost is named in `grind_sheet::odf::read`'s ponytail on
-//!   `style:default-style`: the model has no document default, so a shell draws those
-//!   properties as its own — Excel's bottom alignment included, where the GNOME grid centres.
-//! - **What the model has no property for is counted, never approximated** — [`Appearance`],
-//!   one class per piece, surfacing per cell in `Report::appearance_lost` the way
-//!   `Report::formats_lost` counts a number format. A pattern fill is not a background of its
-//!   foreground colour, and a diagonal is not a border: the oracle approximates both, and
+//! - **The cell format's own ids are in effect**, whatever its `applyFont`/`applyFill` flags say
+//!   (`doc/xlsx-format.md` §3.3, §4.4) — as the oracle draws it (`styles/named-styles.xlsx` A5).
+//!   An id it leaves out comes from the named style its `xfId` names.
+//! - **The default cell format is the document's default, written onto no cell**: a property equal
+//!   to index 0's is the absence of one, as in ODF's automatic styles. The model has no document
+//!   default (`grind_sheet::odf::read`'s ponytail on `style:default-style`), so a shell draws
+//!   those as its own — Excel's bottom alignment included.
+//! - **What the model has no property for is counted, never approximated** ([`Appearance`]): a
+//!   pattern fill is not a background, a diagonal not a border. The oracle approximates both, and
 //!   loop D says so.
 //!
-//! The mapping tables — which border style is which width, which alignment is which ODF
-//! value — are the oracle's own conversion read back, `doc/xlsx-format.md` §4.
+//! The mapping tables — border widths, alignment values — are the oracle's conversion read back
+//! (`doc/xlsx-format.md` §4).
 
 use std::collections::BTreeMap;
 
@@ -46,17 +33,10 @@ use crate::names::Ns;
 use crate::numfmt::{self, Translation, Unspellable};
 use crate::xml::{Attrs, Handled, Reader, Spreadsheet as _};
 
-/// A piece of how the workbook **looks** that the model has no slot for.
-///
-/// `numfmt::Unspellable`'s sibling and `Dropped`'s admission rule: every variant names
-/// something a `grind_sheet` document *cannot express*, not something this filter has not got
-/// to. Counted per **cell** for the cell pieces, per **track** for [`Appearance::ZeroSize`],
-/// and once per **sheet** for the three sheet-wide ones, which say so.
-///
-/// Two style losses are not here, because the report named them before this enum existed and
-/// the corpus asks for them by that name: a font **family** is `Dropped::FontFamily` — the
-/// model refuses one deliberately (`grind_sheet::style`, §5.4) — and a theme colour with no
-/// theme to resolve it is `Dropped::ThemeColor`.
+/// A piece of the workbook's look the model cannot express — counted per **cell**, per **track**
+/// for [`Appearance::ZeroSize`], once per **sheet** for the three sheet-wide ones. A font family
+/// is `Dropped::FontFamily` and an unresolvable theme colour `Dropped::ThemeColor` instead: the
+/// report and the corpus named those first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Appearance {
     /// `<u val="double"/>` or `doubleAccounting`. The underline is carried, single:
@@ -114,10 +94,9 @@ pub enum Appearance {
     /// rule, a dynamic date band, a colour. The rows Excel hid for it stay hidden; the rule
     /// that hid them is gone. Per filtered column.
     FilterCriterion,
-    /// A sheet default width derived from `baseColWidth` with no `defaultColWidth` stated
-    /// beside it — arithmetic this build has not measured — or a hidden or author-sized
-    /// `<col>` run to the sheet's edge, which is carried only as far as the sheet's content
-    /// goes. The model has no sheet default for a column. Per sheet.
+    /// A sheet default width derived from `baseColWidth` with no `defaultColWidth` beside it —
+    /// arithmetic not measured — or a hidden or author-sized `<col>` run to the sheet's edge,
+    /// carried only as far as the content. Per sheet.
     SheetDefaultWidth,
     /// A number format a conditional-format rule's `dxf` applies while it holds. The rule is
     /// carried and draws what else it says; its style is a `CellStyle`, which holds no format
@@ -316,12 +295,9 @@ struct Part {
     indexed: Option<Vec<[u8; 3]>>,
 }
 
-/// Read the styles part, with the theme's colour scheme (`theme::read`, in `theme` attribute
-/// order; empty for a workbook with no theme).
-///
-/// Never fails: a styles part that will not parse leaves every cell a plain number with no
-/// look, which loses date kinds and looks and nothing else — and losing one part is not a
-/// reason to refuse a workbook (`package.rs`'s rule).
+/// Read the styles part, with the theme's colour scheme in `theme` attribute order. Never fails: a
+/// styles part that will not parse leaves every cell a plain number with no look, and losing one
+/// part is no reason to refuse a workbook.
 pub fn read(bytes: &[u8], theme: &[[u8; 3]]) -> Styles {
     let mut reader = Reader::new(bytes);
     if !matches!(reader.root(), Ok(Some((ref root, _))) if root.is("styleSheet")) {
@@ -448,10 +424,8 @@ impl Part {
                 &palette,
             ));
         }
-        // The default cell format *is* the document's default: whatever it says, every cell
-        // that says the same carries nothing. `sample.xlsx`'s named style puts
-        // `vertical="bottom"` on every cell, which would otherwise be a style on every cell
-        // saying what the workbook's own default already says.
+        // The default cell format is the document's default: a cell saying the same carries
+        // nothing. (`sample.xlsx`'s named style puts `vertical="bottom"` on every cell.)
         let base = looks
             .first()
             .and_then(|look: &Look| look.style.clone())

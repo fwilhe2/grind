@@ -2,22 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Reading Excel workbooks — an import filter that produces an ODF document.
+//! Reading Excel workbooks — an import filter that produces an ODF document (`doc/xlsx-import.md`;
+//! the measured facts are in `doc/xlsx-format.md`).
 //!
-//! `doc/xlsx-import.md` is the plan and is normative; `doc/xlsx-format.md` holds the facts
-//! about the format that had to be measured. The short version:
-//!
-//! - **One way in, never out.** Writing `.xlsx` is `doc/not-doing.md` §1 and stays there.
-//!   Reading is a one-way translation at the edge that produces a `grind_sheet::Document`,
-//!   and everything downstream is ODF. No Excel vocabulary reaches `grind-sheet` (R1).
-//! - **The XML form only** — Office 2007 onwards. Not `.xls`, not `.xlsb`, not
-//!   SpreadsheetML 2003. **Transitional** is the target, because that is what every real
-//!   producer writes; Strict is recognised by a namespace table rather than by a fork.
-//! - **Nothing is evaluated.** Excel's cached values are authoritative and are carried
-//!   verbatim. Recalculating an imported document is the user's decision, exactly as it is
-//!   for any other document.
-//! - **The report is part of the output.** What a conversion dropped is as important as what
-//!   it carried; see [`Report`].
+//! - **One way in, never out.** Reading produces a `grind_sheet::Document` and everything
+//!   downstream is ODF; no Excel vocabulary reaches `grind-sheet` (R1).
+//! - **The XML form only**, Office 2007 onwards: not `.xls`, `.xlsb` or SpreadsheetML 2003.
+//!   Transitional is the target, as every real producer writes it; Strict is recognised by a
+//!   namespace table, not a fork.
+//! - **Nothing is evaluated.** Excel's cached values are carried verbatim; recalculating is the
+//!   user's decision.
+//! - **The report is part of the output** ([`Report`]): what was dropped matters as much as what
+//!   was carried.
 //!
 //! ```no_run
 //! let bytes = std::fs::read("book.xlsx")?;
@@ -26,21 +22,11 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! **State of the build: phase 11 is done, X0 through X6.** The seam (X0) — the package, the flavour and markup
-//! compatibility machinery, the workbook's sheet list — every cell's **value** (X1): shared and
-//! inline strings, all seven cell types, and the two date systems with the 1900 leap-year
-//! rule — every cell's **formula** (X2), translated into OpenFormula by [`formula`], with
-//! shared groups resolved through the core's own `formula::shift` — and every cell's **number
-//! format** (X3), parsed out of Excel's code string by [`numfmt`] into the model's ordered parts,
-//! with the sections becoming a style and its `style:map` branches. What no `Part` can spell is
-//! named, counted and *not approximated*. And every cell's **look** (X4) — font, fill, border
-//! and alignment, through [`styles`], [`color`] and [`theme`] — with every column's width, row's
-//! height and track's hidden-ness; what the model has no slot for is an [`Appearance`], counted
-//! the same way. And the document level (X5): defined names, sheet names LibreOffice would not
-//! keep, autofilters, and every construct beside the cells — merges, charts, comments, pivot
-//! tables, rules — counted by kind ([`parts`]). And every shell opens a workbook (X6) through
-//! [`open`], [`suggested_name`] and [`Report::summary`]: a new, unsaved ODF document that nothing
-//! can save back over the workbook.
+//! Values and the two date systems ([`dates`]), formulas ([`formula`]), number formats
+//! ([`numfmt`]), the look ([`styles`], [`color`], [`theme`]) with track sizes, and the document
+//! level — names, sheet names, autofilters, merges, rules, and the parts beside a sheet
+//! ([`parts`]). What the model cannot hold is a named class, counted and never approximated. A
+//! shell opens a workbook through [`open`], [`suggested_name`] and [`Report::summary`].
 
 use std::path::Path;
 
@@ -73,14 +59,9 @@ pub use styles::Appearance;
 
 pub use grind_ooxml::{Error, Result};
 
-/// Whether these bytes are an OOXML spreadsheet.
-///
-/// Sniffed from content, never from the file name, as `grind_core::kind` is: an extension is
-/// a hint from a filesystem rather than a fact about the data.
-///
-/// An **encrypted** workbook answers `false` here — it is a CFB container, and nothing in it
-/// can be read without a key. [`import_bytes`] tells the two apart properly, which is the
-/// call to make when the answer decides what to say to a person.
+/// Whether these bytes are an OOXML spreadsheet, sniffed from content, never the name. An
+/// **encrypted** workbook answers `false` (it is a CFB container); [`import_bytes`] tells the two
+/// apart, which is the call to make when the answer decides what to tell a person.
 pub fn sniff(bytes: &[u8]) -> bool {
     if !package::is_zip(bytes) {
         return false;
@@ -113,8 +94,8 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
     let mut book = workbook::read(&source, &mut report)?;
     workbook::resolve_parts(&mut book, &mut package, &part, &mut seen);
 
-    // A macro-enabled workbook imports its data like any other. The macro is a separate part
-    // and is **never executed** — counted, and that is all.
+    // A macro-enabled workbook imports its data like any other; the macro is counted and **never
+    // executed**.
     if package.part("xl/vbaProject.bin").is_some() {
         report.drop_one(Dropped::Macro);
     }
@@ -122,9 +103,8 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
     let mut document = workbook::document(&book, &mut report);
     let names = workbook::names(&book, &mut document, &mut report);
 
-    // Styles before sheets, as `odf/read.rs` reads `styles.xml` before `content.xml`: a serial
-    // is not a date until its format says so. Both parts are optional, and a workbook without
-    // them reads every cell as a plain value.
+    // Styles before sheets: a serial is not a date until its format says so. Both parts are
+    // optional.
     let theme = book
         .theme_part
         .as_deref()
@@ -201,17 +181,11 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
     Ok((document, report))
 }
 
-/// What a **shell** opens (X6): the workbook imported and written as a flat ODF document,
-/// ready for `App::open_bytes` under [`suggested_name`], with the report beside it.
-///
-/// Bytes rather than a `Document` because `grind_sheet::App` never takes one — its only door
-/// is `open_bytes`, and this phase adds nothing to the core (`doc/xlsx-import.md`, risk 6). The
-/// detour is the identity loop A′ already asserts over every corpus workbook: an imported
-/// document written by our writer and read by our reader is the same document. It costs one
-/// write and one read, about a second and a half for half a million cells in a release build.
-///
-/// Flat because `doc/flat-first.md` says so, and the form is invisible anyway: the shell holds
-/// the document in memory and the user picks the form when they save.
+/// What a **shell** opens: the workbook imported and written as flat ODF, ready for
+/// `App::open_bytes` under [`suggested_name`], with the report beside it. Bytes because `App`'s
+/// only door is `open_bytes`; writing then reading is the identity loop A′ asserts, and costs
+/// about a second and a half for half a million cells in a release build. Flat is the default form
+/// (`doc/flat-first.md`).
 pub fn open(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
     let (document, report) = import_bytes(bytes)?;
     let odf = grind_sheet::write_bytes(&document, grind_sheet::Form::Flat)
@@ -219,14 +193,11 @@ pub fn open(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
     Ok((odf, report))
 }
 
-/// The name an imported workbook goes by until it is saved: `budget.xlsx` becomes
-/// `budget.fods`, the flat form `doc/flat-first.md` makes every save dialog's default.
+/// The name an imported workbook goes by until it is saved: `budget.xlsx` becomes `budget.fods`.
 ///
-/// **A shell must never save back to the workbook's own path.** One way in, never out
-/// (`doc/not-doing.md` §1): an imported document is a new, unsaved ODF document, and writing
-/// ODF into a file called `.xlsx` would be the one way this filter could destroy a user's data.
-/// This is the name to offer in the save dialog; the path to save *to* is `None` until the
-/// user picks one.
+/// **A shell must never save back to the workbook's own path**: writing ODF into a file called
+/// `.xlsx` is the one way this filter could destroy a user's data. This is the name to offer in a
+/// save dialog; the path to save to is `None` until the user picks one.
 pub fn suggested_name(workbook: &str) -> String {
     let stem = match workbook.rsplit_once('.') {
         Some((stem, ext)) if !stem.is_empty() && !ext.contains(['/', '\\']) => stem,

@@ -3,13 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! What hangs off a worksheet in parts of its own — drawings, charts, comments, pivot tables —
-//! **counted and never read** (X5).
-//!
-//! Each is a construct the model has no home for, or one whose home would cost a second
-//! vocabulary: a chart is DrawingML, a comment is a part plus an author table plus a VML anchor
-//! from 2007. Recognising them costs a relationship type and buys an honest report
-//! (`doc/xlsx-import.md` Part II §6). They are found **by relationship from the worksheet
-//! part**, never by path, and each is counted once per construct:
+//! **counted and never read**: each has no home in the model, or one that would cost a second
+//! vocabulary. Found by relationship from the worksheet part, counted once per construct:
 //!
 //! | relationship | counted as | unit |
 //! |---|---|---|
@@ -18,8 +13,8 @@
 //! | `comments` | `Dropped::Comment` | per `<comment>` in it |
 //! | `pivotTable` | `Dropped::PivotTable` | per table, however many cache parts it took |
 //!
-//! A comment's `vmlDrawing` is its anchor, not a drawing, and is not counted a second time.
-//! An external target is never opened, whatever its type.
+//! A comment's `vmlDrawing` is its anchor and is not counted again. An external target is never
+//! opened.
 
 use crate::names::{RelType, Seen};
 use crate::package::Package;

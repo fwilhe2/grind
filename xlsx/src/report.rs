@@ -2,11 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What the conversion carried, and what it did not.
-//!
-//! **The report is part of the output, not an afterthought.** What a conversion dropped is as
-//! important as what it carried, and a converter that lies about it is worse than one that
-//! refuses. `--strict` turns any loss into a non-zero exit, which is what a pipeline wants.
+//! What the conversion carried, and what it did not — part of the output: a converter that lies
+//! about its losses is worse than one that refuses. `--strict` turns any loss into a non-zero
+//! exit.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -14,15 +12,9 @@ use grind_sheet::model::Pos;
 
 pub use crate::names::Flavour;
 
-/// A construct the **model** has no home for.
-///
-/// An enum rather than strings so the list is finite, greppable and testable, and so that a
-/// new kind of loss is a compile-time decision rather than a new string somewhere.
-///
-/// The admission rule, which is what keeps it honest: an entry here names something a
-/// `grind_sheet::Document` *cannot express*, never something this filter has not got to yet.
-/// The second kind belongs in `doc/xlsx-import.md`'s milestone table, where it is work rather
-/// than a permanent property of a converted document.
+/// A construct the **model** has no home for — an enum, so a new kind of loss is a compile-time
+/// decision. An entry names something a `grind_sheet::Document` cannot express, never something
+/// this filter has not got to yet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Dropped {
     Chart,
@@ -87,49 +79,37 @@ pub struct Report {
     pub rules: usize,
     /// Constructs the model has no home for, by kind and count.
     pub dropped: BTreeMap<Dropped, usize>,
-    /// Functions a carried formula names that this build does not implement. The cached value
-    /// is intact; recalculating would replace it with `#NAME?`.
+    /// Functions a carried formula names that grind does not implement. The cached value is
+    /// intact; recalculating would give `#NAME?`.
     pub unknown_functions: BTreeSet<String>,
     /// Cells whose formula could not be translated at all — the value was kept.
     pub untranslated: Vec<(usize, Pos)>,
-    /// The same losses by **class**: which kind of expression stopped each one.
-    ///
-    /// [`Report::untranslated`] says where and this says why, which are different questions
-    /// and both worth answering — "four formulas lost" is a number, "four structured
-    /// references" is something a person can act on. It is also the scoreboard loop A′ prints
-    /// over LibreOffice's corpus.
+    /// The same losses by **class**. [`Report::untranslated`] says where, this says why: "four
+    /// structured references" is something a person can act on. Loop A′ prints it over
+    /// LibreOffice's corpus.
     pub refused: BTreeMap<crate::formula::Refusal, usize>,
     /// Cells carrying a number format of their own.
     pub formatted: usize,
-    /// Cells whose number format lost something, by class — counted once per **cell**, the
-    /// way [`Report::refused`] counts a formula, because what a person wants to know is how
-    /// much of the document displays differently.
-    ///
-    /// A class that [`crate::numfmt::Unspellable::refuses`] cost the cell its whole format
-    /// and it shows its plain value; every other class cost it a piece and no more.
+    /// Cells whose number format lost something, by class, once per cell. A class
+    /// [`crate::numfmt::Unspellable::refuses`] cost the cell its whole format; any other only a
+    /// piece.
     pub formats_lost: BTreeMap<crate::numfmt::Unspellable, usize>,
     /// Cells carrying a cell style of their own — a font, a fill, a border or an alignment
     /// that differs from the workbook's default.
     pub styled: usize,
-    /// What the workbook's look lost, by class: per **cell** for a piece of a cell's style,
-    /// per **track** for a zero-size row or column, and once per **sheet** for panes, an
-    /// outline or a sheet-wide column width — [`crate::styles::Appearance`] says which is which.
-    ///
-    /// [`Report::formats_lost`]'s sibling, and kept apart from [`Report::dropped`] for the same
-    /// reason that one is: a construct the model has no home for is a different sentence from
-    /// a piece of formatting it has no slot for, and a person deciding whether a conversion is
-    /// good enough wants to read them separately.
+    /// What the look lost, by class: per **cell** for a piece of a cell's style, per **track** for
+    /// a zero-size row or column, once per **sheet** for panes, an outline or a sheet-wide width
+    /// ([`crate::styles::Appearance`] says which). Apart from [`Report::dropped`], since a missing
+    /// construct and a missing piece of formatting are different sentences.
     pub appearance_lost: BTreeMap<crate::styles::Appearance, usize>,
-    /// Cells past `sheet::MAX_CELLS`, read and not carried.
-    ///
-    /// Not a [`Dropped`] kind, because the model can hold these cells perfectly well and
-    /// `Dropped`'s admission rule is *what the model cannot express*. It is a bound this filter
-    /// chose, and a bound somebody hit is still a loss: [`Report::lossless`] says so.
+    /// Cells past `sheet::MAX_CELLS`, read and not carried. Not a [`Dropped`]: the model could
+    /// hold them, the bound is this filter's — but a loss all the same, which [`Report::lossless`]
+    /// reports.
     pub over_budget: usize,
     /// Namespaces the file said a consumer must understand and this one does not
     /// (`mc:MustUnderstand`). Recorded, never a refusal.
     pub must_understand: BTreeSet<String>,
-    /// Defined names carried into `Document::names` (X5).
+    /// Defined names carried into `Document::names`.
     pub names: usize,
     /// Workbook-wide defined names whose expression could not be carried, with the class that
     /// stopped each — a union of two ranges, say, or a spelling ODF has no name for. The name
@@ -157,11 +137,8 @@ impl Report {
         }
     }
 
-    /// One sentence for a shell's notice bar (X6): what arrived, and — the half a person has to
-    /// decide about — the kinds of thing that did not, largest first, at most three named.
-    ///
-    /// Written here rather than in each shell so that four shells say the same sentence about
-    /// the same import, and the CLI's report stays the long form of it.
+    /// One sentence for a shell's notice bar: what arrived, and the kinds of thing that did not,
+    /// largest first, at most three named — so every shell says the same about an import.
     pub fn summary(&self) -> String {
         let plural = |n: usize, one: &str| match n {
             1 => format!("1 {one}"),
@@ -222,12 +199,10 @@ impl Report {
         format!("{carried}; not carried: {}{more}.", named.join(", "))
     }
 
-    /// Did the conversion lose anything at all? `--strict` is this question.
-    ///
-    /// An untranslated formula counts: the cell kept Excel's value, so the document is not
-    /// wrong, but it no longer recalculates and that is a loss a pipeline should hear about.
-    /// An *unknown function* does not — the formula came through intact, and whether this
-    /// build can evaluate it is a fact about this build rather than about the conversion.
+    /// Did the conversion lose anything? `--strict` is this question. An untranslated formula
+    /// counts — the value is right but no longer recalculates. An unknown function does not: the
+    /// formula came through intact, and what grind can evaluate is not a fact about the
+    /// conversion.
     pub fn lossless(&self) -> bool {
         self.dropped.is_empty()
             && self.untranslated.is_empty()
@@ -284,8 +259,8 @@ mod tests {
         assert!(!report.lossless());
     }
 
-    /// A function this build has no implementation of is not a conversion loss, and saying it
-    /// was would make `--strict` fire on documents that converted perfectly.
+    /// A function grind has no implementation of is not a conversion loss, or `--strict` would
+    /// fire on documents that converted perfectly.
     #[test]
     fn an_unknown_function_is_not_a_loss() {
         let mut report = Report::default();

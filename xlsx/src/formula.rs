@@ -5,14 +5,11 @@
 //! Excel's A1 expression syntax → [`grind_sheet::formula::parse::Expr`], the AST the ODF parser
 //! builds.
 //!
-//! **Parsed, never rewritten with string surgery.** A translated formula is one our own parser
-//! could have produced — it is built as a tree and printed by the canonical serialiser — or it
-//! is not translated at all. That is what makes the output a formula rather than a string that
-//! resembles one, and it is why `[.A1]` is never spelled here: the brackets, the leading dot,
-//! the `;` separators and §5.8's inherited sheet all come out of `Display for Expr`.
-//!
-//! `doc/xlsx-import.md` Part II §3 is the table this file implements. The differences that
-//! matter, in the order a formula meets them:
+//! **Parsed, never rewritten with string surgery.** A translated formula is built as a tree and
+//! printed by the canonical serialiser, so it is one our own parser could have produced, or it is
+//! not translated at all. The brackets, leading dot, `;` separators and §5.8's inherited sheet all
+//! come out of `Display for Expr`. The differences, in the order a formula meets them
+//! (`doc/xlsx-import.md` Part II §3):
 //!
 //! | Excel | OpenFormula |
 //! |---|---|
@@ -21,19 +18,15 @@
 //! | `A:A`, `1:1` | `[.A:.A]`, `[.1:.1]` |
 //! | `,` between arguments | `;` (§5.6) |
 //! | `TRUE`, `FALSE` | `TRUE()`, `FALSE()` (§6.15) |
-//! | `_xlfn.XLOOKUP` | `XLOOKUP` — the prefix is Excel's own marker for a function older
-//!   readers had not got, and the name under it is the name |
+//! | `_xlfn.XLOOKUP` | `XLOOKUP` — the prefix marks a function older readers lacked |
 //! | `@A1`, `_xlfn.SINGLE(A1)` | `[.A1]` — the implicit-intersection marker, dropped |
 //!
-//! **What is deliberately not translated is semantics.** `CEILING`, `FLOOR`, `MOD` with
-//! negative operands and `ROUND`'s tie rule differ between Excel and OpenFormula *under the
-//! same name*. Nothing here renames or rewrites them: the name is carried and so is Excel's
-//! cached value. Recalculating then applies ODF's rule, which is the correct behaviour for an
-//! ODF document and a change the user chooses.
+//! **Semantics are never translated.** A function whose Excel meaning differs from OpenFormula's
+//! under the same name travels under the name meaning Excel's; Excel's cached value is carried
+//! either way.
 //!
-//! Everything this file cannot carry is a [`Refusal`] — a **named class**, never a file name
-//! and never a silent pass-through. The cell keeps Excel's cached value and loses its formula,
-//! which is counted.
+//! What cannot be carried is a [`Refusal`] — a **named class**, never a silent pass-through. The
+//! cell keeps Excel's cached value, loses its formula, and is counted.
 
 use crate::tables::Scope;
 use grind_sheet::formula::lex::{Axis, CellRef, Op, Reference};
@@ -46,17 +39,14 @@ use grind_sheet::{MAX_COLS, MAX_ROWS};
 
 use crate::report::Dropped;
 
-/// Why a formula was not translated.
-///
-/// Each variant is a *class* of expression, which is the whole point: an exclusion with a name
-/// can be counted, explained and looked for, where "this one failed" cannot. [`Refusal::Syntax`]
-/// is the only open-ended one, and a formula that lands there is either malformed or a
-/// construct this table has not learned to name yet.
+/// Why a formula was not translated: a *class* of expression, so an exclusion can be counted,
+/// explained and looked for. [`Refusal::Syntax`] is the only open-ended one — malformed, or a
+/// construct not yet named.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Refusal {
-    /// `<f t="array">` — an array formula (§2.3.2). The one class [`translate`] never returns:
-    /// it is a fact about the *cell*, decided before the expression is looked at, and it is
-    /// here so that every formula this filter loses has a class.
+    /// `<f t="array">` — an array formula (§2.3.2). Never returned by [`translate`]: a fact about
+    /// the cell, decided before the expression is read, here so that every lost formula has a
+    /// class.
     Array,
     /// `{1,2;3,4}` — an inline array constant (§5.13, excluded by §2.3.2). Both of Excel's
     /// separators change meaning in ODF at once, and nothing evaluates an array anyway.
@@ -67,30 +57,24 @@ pub enum Refusal {
     /// `[1]Sheet1!A1` — a reference into another workbook. Never followed: a link resolves to
     /// a path chosen by whoever sent the file.
     ExternalLink,
-    /// A space between two references — Excel's intersection operator. OpenFormula spells it
-    /// `!` and could hold it, so this is excluded by choice rather than by inability: §2.3.2
-    /// leaves both reference operators out of the Small Group.
+    /// A space between two references — Excel's intersection operator. OpenFormula spells it `!`;
+    /// excluded by choice, as §2.3.2 leaves both reference operators out of the Small Group.
     Intersection,
     /// A comma between two references inside parentheses — Excel's union operator, spelled `~`
     /// in OpenFormula and excluded for the same reason.
     Union,
     /// Nothing this grammar recognises.
     Syntax,
-    /// A name that is sheet-local where the formula stands (`<definedName localSheetId>`). The
-    /// model's names are document-wide, so the name is dropped (`Dropped::SheetLocalName`) —
-    /// and a formula still naming it would name nothing, or worse, a global name of the same
-    /// spelling that means something else. Like [`Refusal::Array`], a fact the translator
-    /// cannot see; decided by the sheet reader, which knows where the formula is.
+    /// A name that is sheet-local where the formula stands and was dropped
+    /// (`Dropped::SheetLocalName`): a formula still naming it would name nothing, or a global name
+    /// of the same spelling. Decided by the sheet reader, which knows where the formula is.
     SheetLocalName,
 }
 
 impl Refusal {
-    /// The [`Dropped`] kind this refusal counts as, where one exists.
-    ///
-    /// Only two classes name a *construct the model has no home for*, which is `Dropped`'s
-    /// admission rule. The others are expressions ODF could hold and this build does not
-    /// evaluate, so they are a loss of a formula and nothing more — [`crate::Report::untranslated`]
-    /// is where that is recorded.
+    /// The [`Dropped`] kind this refusal counts as, where one exists — only for a construct the
+    /// model has no home for. The rest are formulas ODF could hold, recorded in
+    /// [`crate::Report::untranslated`].
     pub fn dropped(self) -> Option<Dropped> {
         match self {
             Refusal::Array => Some(Dropped::ArrayFormula),
@@ -118,9 +102,8 @@ impl Refusal {
     }
 }
 
-/// `<f>`'s text → an expression, or the class that stopped it.
-///
-/// The leading `=` a hand-written formula may carry is accepted; `<f>` itself never has one.
+/// `<f>`'s text → an expression, or the class that stopped it. A leading `=` is accepted, though
+/// `<f>` never has one.
 pub fn translate(src: &str) -> Result<Expr, Refusal> {
     translate_in(src, None)
 }
@@ -153,11 +136,9 @@ pub fn translate_in(src: &str, scope: Option<&Scope<'_>>) -> Result<Expr, Refusa
 
 // ---- binding powers ----
 //
-// §5.5's Table 1, which Excel's own precedence agrees with, including both of its surprises:
-// prefix `-` binds **tighter** than `^` (`-2^2` is 4) and `^` is left-associative (`2^3^2` is
-// 64). They are spelled here rather than borrowed from `formula::parse` because that module's
-// are `pub(crate)` — the table is ODF's, the copy is this crate's, and one test holds the two
-// together by parsing the same expressions both ways.
+// §5.5's Table 1, which Excel agrees with, surprises included: prefix `-` binds tighter than `^`
+// (`-2^2` is 4) and `^` is left-associative (`2^3^2` is 64). Copied because `formula::parse`'s are
+// `pub(crate)`; a test parses the same expressions both ways.
 
 const CMP_BP: u8 = 10;
 const CONCAT_BP: u8 = 20;
@@ -165,10 +146,9 @@ const ADD_BP: u8 = 30;
 const MUL_BP: u8 = 40;
 const POW_BP: u8 = 50;
 const PREFIX_BP: u8 = 70;
-/// `:` as a binary operator, for the one shape [`Parser::reference`] cannot swallow whole:
-/// a range whose far end is computed, `H2:INDIRECT(ADDRESS(ROW()-1,COLUMN()))`. ODF holds it
-/// (§5.8's reference operators) and the core's own parser reads it back, so refusing it would
-/// make this filter narrower than the format it writes.
+/// `:` as a binary operator, for a range whose far end is computed —
+/// `H2:INDIRECT(ADDRESS(ROW()-1,COLUMN()))` — which [`Parser::reference`] cannot take whole. ODF
+/// holds it (§5.8) and the core reads it back.
 const RANGE_BP: u8 = 100;
 
 struct Parser<'a> {
@@ -227,8 +207,7 @@ impl<'a> Parser<'a> {
 
     // ---- the Pratt loop ----
 
-    /// One more level of nesting around `inner`, refused past [`MAX_NESTING`] — as an
-    /// unreadable expression, which is what a formula this build cannot walk is.
+    /// One more level of nesting around `inner`, refused past [`MAX_NESTING`] as unreadable.
     fn nested<T>(
         &mut self,
         inner: impl FnOnce(&mut Self) -> Result<T, Refusal>,
@@ -310,11 +289,9 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 let (mut expr, mut depth) = self.primary()?;
-                // Postfix `%`, which may repeat: `A1%%` is a hundredth of a hundredth.
-                //
-                // The whitespace before it is looked past rather than consumed: a space this
-                // operand does not turn out to want belongs to the caller, which is the one
-                // that can tell an intersection from layout.
+                // Postfix `%`, which may repeat: `A1%%` is a hundredth of a hundredth. Whitespace
+                // before it is looked past, not consumed: only the caller can tell an intersection
+                // from layout.
                 loop {
                     let save = self.at;
                     self.space();
@@ -337,9 +314,8 @@ impl<'a> Parser<'a> {
     fn primary(&mut self) -> Result<(Expr, usize), Refusal> {
         self.space();
         match self.peek().ok_or(Refusal::Syntax)? {
-            // The implicit-intersection marker Excel writes in front of a reference in a
-            // pre-dynamic-array formula. It says "one cell of this", which is what a
-            // non-array evaluator does anyway, so it is dropped rather than carried.
+            // The implicit-intersection marker of a pre-dynamic-array formula: "one cell of this",
+            // which a non-array evaluator does anyway, so it is dropped.
             '@' => {
                 self.at += 1;
                 self.nested(Self::primary)
@@ -476,10 +452,8 @@ impl<'a> Parser<'a> {
                 return Err(Refusal::Syntax);
             }
         }
-        // `_xlfn.SINGLE(x)` is the implicit-intersection marker in function clothing, and it
-        // means exactly what `@x` means. The marker is required: a workbook is free to define
-        // a macro function called `SINGLE`, and unwrapping *that* would silently change what
-        // the cell says.
+        // `_xlfn.SINGLE(x)` means `@x`. The marker is required: a workbook may define a macro
+        // function called `SINGLE`, and unwrapping that would change what the cell says.
         if name == "SINGLE" && args.len() == 1 && word != name {
             return Ok((args.remove(0), deepest));
         }
@@ -557,10 +531,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// An identifier: a function name, a defined name, or the letters half of an address.
-    ///
-    /// `.` is a word character because `_xlfn.XLOOKUP` is one word to Excel, and `_` because a
-    /// defined name may start with it.
+    /// An identifier: a function name, a defined name, or the letters half of an address. `.` is a
+    /// word character for `_xlfn.XLOOKUP`, `_` because a defined name may start with it.
     fn word(&mut self) -> Option<String> {
         let start = self.at;
         while matches!(self.peek(), Some(c) if c.is_alphanumeric() || matches!(c, '_' | '.')) {
@@ -574,17 +546,15 @@ impl<'a> Parser<'a> {
 
     // ---- references ----
 
-    /// A whole reference, sheet prefix and all, or `None` when what is here is not one.
-    ///
-    /// `Ok(None)` leaves the cursor exactly where it was, which is what lets [`Parser::operand`]
-    /// try this and fall back to a name.
+    /// A whole reference, sheet prefix and all, or `None` — leaving the cursor where it was, so
+    /// [`Parser::operand`] can fall back to a name.
     fn reference(&mut self) -> Result<Option<Reference>, Refusal> {
         let save = self.at;
         let sheets = self.sheet_prefix();
         let Some((start, end)) = self.reference_body() else {
             if sheets.is_some() {
-                // `Data!Name` — a sheet-qualified *name*, which has no ODF spelling this build
-                // writes. Restoring here would leave the `!` to be read as an operator.
+                // `Data!Name` — a sheet-qualified name, which has no ODF spelling we write.
+                // Restoring here would leave the `!` to be read as an operator.
                 return Err(Refusal::Syntax);
             }
             self.at = save;
@@ -756,18 +726,13 @@ fn row_index(digits: &str) -> Option<u32> {
     (row > 0 && row <= MAX_ROWS).then(|| row - 1)
 }
 
-/// The name a formula should carry in ODF: Excel's name under its markers, uppercased, then
-/// renamed where OpenFormula spells the same function differently.
+/// The name a formula carries in ODF: Excel's name without its markers, uppercased, then renamed
+/// where OpenFormula spells the function differently. `_xlfn.` marks a function newer than older
+/// readers, `_xlws.` a worksheet-only one; neither is part of the name.
 ///
-/// `_xlfn.` is how a workbook names a function readers older than it had not got; `_xlws.` is
-/// the same marker for one that is worksheet-only. Neither is part of the name, and a document
-/// that kept them would name functions nothing has ever implemented.
-///
-/// The renaming is the oracle's, measured name by name (`doc/xlsx-format.md` §5.1), and it is
-/// what keeps a recalculation honest: Excel's two-parameter `CEILING` is not §6.17.1's, so a
-/// workbook's `CEILING` becomes `COM.MICROSOFT.CEILING`, the name that means Excel's — as
-/// LibreOffice's own import writes it. Carrying the bare name would hand the cell to a
-/// function with the same name and a different answer.
+/// The renaming is the oracle's, measured name by name (`doc/xlsx-format.md` §5.1), and keeps a
+/// recalculation honest: Excel's two-parameter `CEILING` is not §6.17.1's, so it becomes
+/// `COM.MICROSOFT.CEILING`, as LibreOffice's import writes it.
 fn function_name(word: &str) -> String {
     let mut name = word;
     for marker in ["_xlfn.", "_xlws."] {
@@ -785,10 +750,9 @@ fn function_name(word: &str) -> String {
     }
 }
 
-/// Excel's functions OpenFormula has no name for, which ODF documents carry under
-/// LibreOffice's `COM.MICROSOFT.` prefix — each one what the oracle's import wrote for it, or,
-/// from `ARRAYTOTEXT` on, the name its *own* documents use for one its import does not know
-/// (`sc/qa`, `doc/xlsx-format.md` §5.1).
+/// Excel's functions OpenFormula has no name for, carried under LibreOffice's `COM.MICROSOFT.`
+/// prefix — what the oracle's import writes, or, from `ARRAYTOTEXT` on, the name its own documents
+/// use for one its import does not know (`doc/xlsx-format.md` §5.1).
 const MICROSOFT: &[&str] = &[
     "CEILING",
     "FLOOR",
@@ -1055,8 +1019,8 @@ mod tests {
         assert_eq!(odf("-2.5"), "-2.5");
     }
 
-    /// A plain `A1:B2` is one reference, scanned whole; a range whose far end is computed is
-    /// the operator, which ODF has and this build therefore carries.
+    /// A plain `A1:B2` is one reference, scanned whole; a range whose far end is computed is the
+    /// operator.
     #[test]
     fn a_range_is_a_reference_where_it_can_be_and_an_operator_where_it_cannot() {
         assert_eq!(odf("A1:B2"), "[.A1:.B2]");

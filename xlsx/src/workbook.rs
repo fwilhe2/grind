@@ -2,22 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `xl/workbook.xml` — the sheet list, their order, and the date system.
+//! `xl/workbook.xml` — the sheet list in order, the date system, where the string table, styles
+//! and theme are, the defined names, workbook protection, and the sheet names ODF cannot keep.
+//! Reached by relationship from `_rels/.rels`.
 //!
-//! Reached by relationship from `_rels/.rels`, never by its conventional path. What X0 takes
-//! from it is the document's skeleton: one [`grind_sheet::model::Sheet`] per `<sheet>`, in
-//! document order, and the epoch every serial date will be counted from; X1 adds where the
-//! string table, the styles and the theme are; X5 the defined names, workbook protection, and
-//! the sheet names ODF cannot keep.
-//!
-//! **A sheet name is renamed, deterministically, when LibreOffice would not keep it.** Excel
-//! allows `[`, `]` and a leading apostrophe; ODF's schema says only `string`, but LibreOffice
-//! refuses `[ ] * ? : / \` and an apostrophe at either end, and the pinned oracle drops such a
-//! sheet with every cell on it (`doc/xlsx-format.md` §2.3). This model can address one —
-//! `['Has/Slash'.A1]` evaluates — so the rename is not for grind's sake; it is so that the
-//! document this import writes survives the round trip every feature is held to (rule 6). Each
-//! offending character becomes `_`, which is the corpus's own suggestion, and a clash with an
-//! existing name gets `unique_name`'s suffix.
+//! **A sheet name LibreOffice would not keep is renamed, deterministically.** Excel allows `[`,
+//! `]` and a leading apostrophe; LibreOffice refuses `[ ] * ? : / \` and an apostrophe at either
+//! end, and the pinned oracle drops such a sheet with all its cells (`doc/xlsx-format.md` §2.3).
+//! This model can address one, so the rename is for the round trip (rule 6): each offending
+//! character becomes `_` and a clash gets `unique_name`'s suffix.
 
 use std::collections::BTreeSet;
 
@@ -79,21 +72,14 @@ pub struct Workbook {
     pub declares_strict: bool,
 }
 
-/// ODF's epoch for a 1904-system workbook, as days from 1970-01-01.
-///
-/// The 1900 system needs no constant: ODF's own default epoch is 1899-12-30, and the
-/// correction that makes Excel's serials agree with it is a *value* question
-/// (`dates::correct`), not a document-level one.
+/// ODF's epoch for a 1904-system workbook, as days from 1970-01-01. The 1900 system needs none:
+/// ODF's default is 1899-12-30, and the rest is per value (`dates::correct`).
 fn null_date_1904() -> i64 {
     date::days_from_civil(1904, 1, 1)
 }
 
-/// Find the workbook part, following `_rels/.rels`.
-///
-/// Falls back to the conventional path only when the package declares no relationship at
-/// all — a file that broken is past the spec, and half of it still being readable is better
-/// than none. The fallback is *last*, so a package that puts its workbook somewhere else and
-/// says so is followed rather than second-guessed.
+/// Find the workbook part, following `_rels/.rels`; the conventional path only when the package
+/// declares no relationship at all, so a package that says where its workbook is gets followed.
 pub fn find_part(package: &mut Package, seen: &mut Seen) -> Result<String> {
     if let Some(rel) = package.rel_of("", RelType::OfficeDocument, seen) {
         return Ok(rel.target);
@@ -216,11 +202,7 @@ pub fn resolve_parts(
     }
 }
 
-/// Turn the skeleton into a `Document`.
-///
-/// Built through the model's **public API only** — `Sheet::new`, and the `Document` fields
-/// that are public. No core change is needed to construct one, and none may be added that
-/// hands out mutable internals.
+/// Turn the skeleton into a `Document`, through the model's public API only.
 pub fn document(workbook: &Workbook, report: &mut Report) -> Document {
     let mut sheets: Vec<Sheet> = Vec::with_capacity(workbook.sheets.len());
     for entry in &workbook.sheets {
@@ -236,10 +218,7 @@ pub fn document(workbook: &Workbook, report: &mut Report) -> Document {
     if workbook.protected {
         report.drop_one(Dropped::Protection);
     }
-    // `Document::default()` is one sheet called `Sheet1`; a workbook with no sheets at all is
-    // not a document anybody wants, and an empty grid to type into is the better answer than
-    // a document with no sheet for a caret to be on. Same split as
-    // `grind_text::Document::default` vs `empty`.
+    // A workbook with no sheets still gets `Document::default()`'s `Sheet1`, somewhere to type.
     if sheets.is_empty() {
         sheets.push(Sheet::new("Sheet1"));
     }
@@ -273,25 +252,19 @@ impl Names {
 
 /// Carry `<definedNames>` into `document.names`, and say which names are sheet-local where.
 ///
-/// - `_xlnm.` names are Excel's own — `Print_Area`, `Print_Titles`, `_FilterDatabase` (an
-///   autofilter's range, which `<autoFilter>` states again) — print settings and bookkeeping
-///   wearing a name's clothes. They are not the author's names and do not arrive as if they
-///   were; print is not a feature here, and a filter is read from the sheet.
-/// - A name with `localSheetId` that is **the only definition of its name** is carried like a
-///   global one. The model's names are document-wide, and `odf/read.rs` already flattens
-///   ODF's own sheet-local names into the one map (the ponytail on `Document::names`); with
-///   one definition there is nothing to pick between. The cost is that the name becomes
-///   visible from other sheets too, where Excel would have said `#NAME?`. Loop A′ is why this
-///   is not the stricter rule: 40 of the corpus's 54 sheet-local names are unique, and
-///   dropping them refused 2,506 formulas that meant exactly one thing.
-/// - A sheet-local name that **collides** — two sheets' `Rate`, or a local `Rate` beside a
-///   global one — is dropped and counted: flattening would silently pick one. A global
-///   definition of the same name is kept, and a formula on a sheet where the local one
-///   applied is refused rather than pointed at the global.
-/// - Everything else is translated by [`crate::formula`] like a cell's formula, with renamed
-///   sheets rewritten, and stored the way `odf/read.rs` stores one: lower-case key, OpenFormula
-///   text with no `=`. A name whose expression will not translate, or whose spelling is not
-///   one identifier to the core's lexer (§5.11), is lost and listed in `Report::names_lost`.
+/// - `_xlnm.` names are Excel's own — `Print_Area`, `Print_Titles`, `_FilterDatabase` —
+///   bookkeeping, not the author's, and skipped.
+/// - A `localSheetId` name that is **the only definition of its name** is carried like a global
+///   one, since the model's names are document-wide and there is nothing to pick between; it
+///   becomes visible from other sheets, where Excel would say `#NAME?`. Loop A′ decided this: 40
+///   of the corpus's 54 sheet-local names are unique, and dropping them refused 2,506 formulas.
+/// - A sheet-local name that **collides** is dropped and counted. A global definition of the name
+///   is kept, and a formula where the local one applied is refused rather than pointed at the
+///   global.
+/// - The rest are translated by [`crate::formula`] with renamed sheets followed, and stored as
+///   `odf/read.rs` stores one: lower-case key, OpenFormula text with no `=`. One that will not
+///   translate, or is not one identifier to the core's lexer (§5.11), is listed in
+///   `Report::names_lost`.
 pub fn names(workbook: &Workbook, document: &mut Document, report: &mut Report) -> Names {
     let mut out = Names {
         local: vec![BTreeSet::new(); document.sheets.len()],
@@ -443,7 +416,7 @@ mod tests {
         assert_eq!(report.dropped[&Dropped::HiddenSheet], 1);
     }
 
-    /// The whole reason the walker exists, exercised on the part X0 actually reads.
+    /// The walker's reason to exist, on the sheet list.
     #[test]
     fn an_alternation_around_the_sheet_list_is_seen_through() {
         let xml = format!(

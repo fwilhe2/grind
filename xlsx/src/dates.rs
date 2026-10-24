@@ -27,12 +27,10 @@
 
 /// The 1900 system's serial for a **date** cell, as an ODF serial against 1899-12-30.
 ///
-/// Serial 60 is left where it is, which makes it 1900-02-28 — a day early, and the same day
-/// as serial 59. There is no right answer for a day that does not exist; this one is the
-/// oracle's (`doc/xlsx-format.md` §2.1 records the measurement), it keeps the mapping
-/// monotone, and a person who wrote 1900-02-29 into a spreadsheet will see a date beside the
-/// one they meant rather than a refusal. Negative serials are not dates in this system at all,
-/// and are carried unchanged.
+/// Serial 60 stays put, making it 1900-02-28 — the same day as 59. A day that does not exist has
+/// no right answer; this is the oracle's (`doc/xlsx-format.md` §2.1), keeps the mapping monotone,
+/// and shows a date beside the one meant rather than a refusal. Negative serials are not dates in
+/// this system and are carried unchanged.
 pub fn correct(serial: f64) -> f64 {
     if (0.0..60.0).contains(&serial) {
         serial + 1.0

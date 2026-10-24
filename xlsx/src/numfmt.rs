@@ -2,43 +2,30 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Excel number formats, translated onto `grind_sheet::numfmt::Format`.
+//! Excel number formats, translated onto `grind_sheet::numfmt::Format`. Excel spells a format as a
+//! **code string** — `#,##0.00;[Red]-#,##0.00;"—";@` — which may not exist in the core: ODF's
+//! format is an ordered sequence of parts. So the parser lives here, on the import side.
 //!
-//! Excel spells a format as a **code string** — `#,##0.00;[Red]-#,##0.00;"—";@` — and no such
-//! string may exist in the core: ODF has no such attribute, and a format there is an *ordered
-//! sequence of parts* (`doc/xlsx-import.md` Part II §4). So the parser for one lives here, on
-//! the import side of the seam, and its output is the model's own vocabulary.
+//! One reading of the code answers two questions, so they cannot disagree: **is this a date, a
+//! time or neither** ([`classify`] — Excel stores a date as a plain number), and **what does the
+//! cell display** ([`of_code`], [`of_builtin`]).
 //!
-//! Two questions, answered by one reading of the code so they cannot disagree:
+//! **What cannot be spelled is named and counted** ([`Unspellable`]), never approximated. A
+//! fraction, a scientific exponent, an elapsed-time count or a ×1000 factor drops the whole format
+//! and the cell shows its plain value, since `3.75` shown as `4` misstates it; a lost fill
+//! character or colour is carried and counted. [`Unspellable::refuses`] is that line.
 //!
-//! 1. **Is this a date, a time, or neither?** — [`classify`], which X1 needed before it could
-//!    put a serial in a cell, since Excel stores a date as a plain number and only the format
-//!    says otherwise.
-//! 2. **What does the cell display?** — [`of_code`] and [`of_builtin`], X3's work.
-//!
-//! **What cannot be spelled is named and counted** ([`Unspellable`]), never approximated into
-//! something that would misstate the number. A format carrying a fraction, a scientific
-//! exponent, an elapsed-time count or a ×1000 display factor is **dropped whole** and the cell
-//! shows its plain value, because `3.75` shown as `4` is worse than `3.75` shown as `3.75`;
-//! a format that merely loses a fill character or a colour is carried and the loss counted.
-//! [`Unspellable::refuses`] is that line, and `Report::formats_lost` is where it surfaces.
-//!
-//! The shapes are ECMA-376's — built-in ids by §18.8.30's table, a custom code by §18.8.31's
-//! grammar — and everything about *how the two models meet* is measured against the oracle and
-//! recorded in `doc/xlsx-format.md` §3: which section becomes the style and which become its
-//! `style:map` branches, and the positional rule for `m`.
+//! The shapes are ECMA-376's (built-in ids §18.8.30, custom codes §18.8.31); how the two models
+//! meet is measured against the oracle in `doc/xlsx-format.md` §3.
 
 use std::collections::BTreeSet;
 
 use grind_sheet::model::NumberKind;
 use grind_sheet::numfmt::{Format, Kind, Map, Op, Part};
 
-/// A piece of an Excel format this model has no spelling for.
-///
-/// The admission rule is [`crate::report::Dropped`]'s: every variant names something a
-/// `grind_sheet::numfmt::Format` **cannot express**, not something this filter has not got to.
-/// Inventing a `Part` for a fraction or an exponent is a decision about the core's format
-/// model, which is phase 5's and not an import filter's to take.
+/// A piece of an Excel format this model cannot express — not one this filter has not got to. A
+/// `Part` for a fraction or an exponent would be a decision about the core's format model, not an
+/// import filter's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Unspellable {
     /// `# ?/?` — no `Part` holds a numerator and a denominator.
@@ -57,12 +44,11 @@ pub enum Unspellable {
     /// A built-in currency id (5–8, 41–44), whose symbol is the *user's* locale and appears
     /// nowhere in the file. Putting a `$` on it would put dollars on euros.
     LocaleCurrency,
-    /// A built-in id §18.8.30 does not define — the East Asian ones, and anything else below
-    /// 164 a producer invented. `doc/xlsx-format.md` §3.1: an unverified fact is not
-    /// implemented.
+    /// A built-in id §18.8.30 does not define — the East Asian ones, and anything else below 164.
+    /// Unverified, so not implemented (`doc/xlsx-format.md` §3.1).
     UnknownBuiltin,
-    /// A section this build has no branch left for — a condition past the two-plus-default
-    /// shape, or a fifth section.
+    /// A section with no branch left for it — a condition past the two-plus-default shape, or a
+    /// fifth section.
     Section,
     /// `[Color N]` — an entry of the workbook's palette, which the oracle resolves against a
     /// table of its own rather than the palette (`doc/xlsx-format.md` §3.7). The eight named
@@ -79,10 +65,9 @@ pub enum Unspellable {
     NarrowMonth,
     /// `A/P`, the one-letter meridiem marker. `number:am-pm` has one spelling.
     NarrowAmPm,
-    /// `[$€-407]`'s LCID: which decimal and grouping characters to punctuate with. The symbol
-    /// itself comes through; the locale does not, since a `Format`'s locale is the document's
-    /// own two characters (`core/src/locale.rs`) and an LCID table is not a fact this build
-    /// has measured.
+    /// `[$€-407]`'s LCID: which decimal and grouping characters to use. The symbol comes through;
+    /// the locale does not, since a `Format`'s locale is the document's and no LCID table has been
+    /// measured.
     Locale,
 }
 
@@ -130,9 +115,8 @@ pub struct Translation {
     /// The format to put on a cell, or `None` when there is none to put — `General`, or a
     /// code carrying a piece [`Unspellable::refuses`].
     pub format: Option<Format>,
-    /// Whether this format makes a number a date or a time, which is a different question:
-    /// it is answered for a code this build refuses as well, so an elapsed-time cell is still
-    /// a time even though nothing formats it.
+    /// Whether this format makes a number a date or a time — answered for a refused code too, so
+    /// an elapsed-time cell is still a time though nothing formats it.
     pub kind: Option<NumberKind>,
     /// Everything about the code that did not come through, by class — sorted and each
     /// class named once, however many pieces of the code fell in it.
@@ -153,18 +137,15 @@ impl Translation {
     }
 }
 
-/// What a built-in format id means, for the value reader. `SPEC`, ECMA-376 §18.8.30:
+/// What a built-in format id means, for the value reader (ECMA-376 §18.8.30):
 ///
-/// - 14–17 are dates (`mm-dd-yy`, `d-mmm-yy`, `d-mmm`, `mmm-yy`) and 22 is a date with a
-///   time (`m/d/yy h:mm`) — a date either way, because the value is a point in time.
-/// - 18–21 and 45–47 are clock and elapsed times (`h:mm AM/PM`, `h:mm:ss`, `mm:ss`,
-///   `[h]:mm:ss`, `mmss.0`) — a duration.
+/// - 14–17 and 22 are dates (`mm-dd-yy`, `d-mmm-yy`, `d-mmm`, `mmm-yy`, `m/d/yy h:mm`) — a point
+///   in time.
+/// - 18–21 and 45–47 are clock and elapsed times — a duration.
 ///
-/// Every other id below 164 is a number, text or currency format, and so is an id the table
-/// does not list. The East Asian date ids (27–36, 50–58) are **not** here: §18.8.30 does not
-/// define them, they are locale-dependent in Excel, and `doc/xlsx-format.md`'s rule is that
-/// an unverified fact is not implemented. A file whose cell uses one carries its serial as a
-/// number, which is visible and recoverable rather than a wrong date.
+/// Every other id is a number, text or currency format. The East Asian date ids (27–36, 50–58) are
+/// not here: §18.8.30 does not define them and they are locale-dependent, so a cell using one
+/// shows its serial — visible and recoverable, rather than a wrong date.
 pub fn builtin(id: u32) -> Option<NumberKind> {
     match id {
         14..=17 | 22 => Some(NumberKind::Date),
@@ -173,20 +154,13 @@ pub fn builtin(id: u32) -> Option<NumberKind> {
     }
 }
 
-/// The code §18.8.30 assigns a built-in id — **by meaning**, which is not always its literal
-/// spelling.
+/// The code §18.8.30 assigns a built-in id — by meaning, not always its literal spelling. 14
+/// (`mm-dd-yy`) and 22 (`m/d/yy h:mm`) are shown by Excel in the reader's locale, so they map to
+/// the ISO spelling `numfmt::preset` uses rather than putting an American date in a German
+/// document. 47 (`mmss.0`) gains the separator the oracle gives it.
 ///
-/// Two ids are deliberately not their own code. 14 (`mm-dd-yy`) and 22 (`m/d/yy h:mm`) are
-/// rendered by Excel in the *reader's* locale rather than in the US order the table prints,
-/// so translating them literally would put an American date in a German document; they map
-/// onto the ISO spelling `numfmt::preset` uses, for `date.rs`'s reason — it is the one
-/// spelling that means the same day everywhere. 47 (`mmss.0`) gains the separator the oracle
-/// gives it, since minutes and seconds run together are a spelling nothing else in this model
-/// produces.
-///
-/// The currency ids (5–8, 41–44) are **absent on purpose** and answer
-/// [`Unspellable::LocaleCurrency`]: their symbol is the reader's locale and appears nowhere
-/// in the file.
+/// The currency ids (5–8, 41–44) are absent on purpose, [`Unspellable::LocaleCurrency`]: their
+/// symbol is the reader's locale and appears nowhere in the file.
 fn builtin_code(id: u32) -> Option<&'static str> {
     Some(match id {
         1 => "0",
@@ -237,25 +211,18 @@ fn once(what: Unspellable) -> Vec<Unspellable> {
     vec![what]
 }
 
-/// What a custom format code means, for the value reader. §18.8.31.
+/// What a custom format code means, for the value reader (§18.8.31). Only the first section is
+/// read, the one a positive number is shown in.
 ///
-/// Only the **first section** is read — it is the one a positive number is shown in, and a
-/// code whose sections disagree about being a date is not something any producer writes.
-///
-/// - any `y` or `d`, or an `m` that is a **month**, → a **date**. `e` is deliberately not
-///   counted: in a format code it is an exponent (`0.00E+00`) before it is ever an era year.
-/// - otherwise any `h`, `s`, an `m` that is **minutes**, an elapsed bracket, or `AM/PM` → a
-///   **time**.
+/// - any `y` or `d`, or an `m` that is a month → a **date**. `e` is not counted: in a code it is
+///   an exponent before it is an era year.
+/// - otherwise any `h`, `s`, an `m` that is minutes, an elapsed bracket or `AM/PM` → a **time**.
 /// - otherwise, a number.
 ///
-/// **Which `m` is which** is positional, and it is what a first version of this function got
-/// wrong: `m` and `mm` are minutes when the nearest token before them is an hour or the nearest
-/// after is a second (`h:mm`, `mm:ss`), and a month everywhere else — so `mm` alone is a month,
-/// and so is `mmm` and longer, always. `numfmt/datetime-codes.xlsx` has one cell per spelling
-/// and is where the first version was caught. `doc/xlsx-format.md` §3.2 records the rule.
-///
-/// Case-insensitive, as Excel reads them. `General` has none of the letters, which is not a
-/// coincidence anybody should rely on and is tested.
+/// Which `m` is which is positional: `m` and `mm` are minutes when the nearest token before is an
+/// hour or the nearest after is a second (`h:mm`, `mm:ss`), a month everywhere else, and `mmm` and
+/// longer are always months (`doc/xlsx-format.md` §3.2; `numfmt/datetime-codes.xlsx` has one cell
+/// per spelling). Case-insensitive, as Excel reads them.
 pub fn classify(code: &str) -> Option<NumberKind> {
     let first = sections(code).into_iter().next().unwrap_or_default();
     section(&first).kind()
@@ -284,13 +251,10 @@ pub fn of_code(code: &str) -> Translation {
     }
 }
 
-/// The sections of a code, as ODF's one style plus its `style:map` branches.
-///
-/// **Measured, not specified** (`doc/xlsx-format.md` §3.4): this is the shape LibreOffice
-/// writes when it converts the same workbook, read out of its conversion of
-/// `numfmt/sections.xlsx` and `numfmt/conditions.xlsx` on 2026-09-20. The style itself is
-/// always the *fallback* — the section that applies when no condition holds — and every other
-/// section is a map, because that is exactly what §16.3's first-match-wins means:
+/// The sections of a code, as ODF's one style plus its `style:map` branches — the shape
+/// LibreOffice writes for the same workbook, measured (`doc/xlsx-format.md` §3.4). The style is
+/// always the fallback section and every other is a map, which is what §16.3's first-match-wins
+/// means:
 ///
 /// | sections | the style | the maps |
 /// |---|---|---|
@@ -690,13 +654,10 @@ fn colour(inner: &str) -> Option<&'static str> {
     })
 }
 
-/// A run of digit placeholders — `#`, `0`, `?`, their grouping commas and their decimal point
-/// — as one `Part::Number`, and the index just past it.
-///
-/// The three counts ODF wants are counts of placeholders: `min_int` is the `0`s before the
-/// point, `decimals` every placeholder after it and `min_decimals` the `0`s among those — so
-/// `#.###` shows 3.7 as `3.7` where `0.000` shows it as `3.700`, which is the distinction the
-/// two spellings exist to make.
+/// A run of digit placeholders — `#`, `0`, `?`, grouping commas and the decimal point — as one
+/// `Part::Number`, and the index past it. `min_int` counts the `0`s before the point, `decimals`
+/// every placeholder after it, `min_decimals` the `0`s among those, so `#.###` shows 3.7 as `3.7`
+/// and `0.000` as `3.700`.
 fn number(chars: &[char], from: usize, out: &mut Section) -> usize {
     let mut i = from;
     let (mut min_int, mut decimals, mut min_decimals) = (0u8, 0u8, 0u8);
@@ -1119,9 +1080,9 @@ mod tests {
     fn a_condition_becomes_the_map_it_already_is() {
         assert_eq!(shows("[>=100]#,##0;0.00", 50.0), "50.00");
         assert_eq!(shows("[>=100]#,##0;0.00", 500.0), "500");
-        // A style carrying maps spells its own sign, so the fallback shows −50 unsigned —
-        // which is what the oracle renders from its own conversion of this code, measured on
-        // 2026-09-20 (`doc/xlsx-format.md` §3.4). Excel signs it; ODF's renderers do not.
+        // A style carrying maps spells its own sign, so the fallback shows −50 unsigned, as the
+        // oracle renders its own conversion (`doc/xlsx-format.md` §3.4). Excel signs it; ODF's
+        // renderers do not.
         assert_eq!(shows("[>=100]#,##0;0.00", -50.0), "50.00");
         assert!(lost("[>=100]#,##0;0.00").is_empty(), "nothing is lost");
 
@@ -1255,7 +1216,7 @@ mod tests {
         assert!(of_builtin(12).lost.contains(&Unspellable::Fraction));
     }
 
-    /// Every class this build knows is either a refusal or an approximation, and says which.
+    /// Every class is either a refusal or an approximation, and says which.
     #[test]
     fn every_class_has_a_label_and_a_severity() {
         for class in [

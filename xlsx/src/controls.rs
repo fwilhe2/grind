@@ -2,18 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Form-control checkboxes, read out of a worksheet's legacy VML drawing
-//! (`doc/xlsx-format.md` §4.11) onto the model's own `Checkbox`.
+//! Form-control checkboxes, read out of a worksheet's legacy VML drawing (`doc/xlsx-format.md`
+//! §4.11) onto the model's `Checkbox`.
 //!
-//! Excel spells every control three times — in the worksheet's `<controls>`, in a DrawingML
-//! part, and in VML — and the first two sit inside an `mc:Choice` this filter does not satisfy
-//! (`mce.rs`), with no fallback. The VML is the copy outside it, and it says everything a
-//! checkbox linked to a cell is: where it is anchored, the cell it is linked to, whether it is
-//! ticked, and its caption.
-//!
-//! What a VML drawing holds that is not a checkbox — a comment's note is the common one — is
-//! not read here; a comment is counted by `parts.rs`. Any other form control (a button, a
-//! list, a spinner) is counted as `Dropped::FormControl`.
+//! Excel spells every control three times — in `<controls>`, in DrawingML and in VML — and the
+//! first two sit inside an `mc:Choice` this filter does not satisfy, with no fallback. The VML
+//! says everything a linked checkbox is: its anchor, linked cell, state and caption. A comment's
+//! note in the same drawing is counted by `parts.rs`; any other form control is
+//! `Dropped::FormControl`.
 
 use grind_sheet::{Checkbox, Link, Pos, Sheet};
 

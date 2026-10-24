@@ -2,19 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Tables (`xl/tables/tableN.xml`) and the structured references that name them.
+//! Tables (`xl/tables/tableN.xml`) and the structured references that name them. `Sales[Amount]`,
+//! `Sales[[#This Row],[Tax]]` is a range with a name for a spelling: the table part says which
+//! cells, so the reference becomes the plain A1 range the model understands. Nothing about the
+//! table is kept, so its later growth is not followed.
 //!
-//! A structured reference — `Sales[Amount]`, `Sales[[#This Row],[Tax]]` — is a *range with a
-//! name for a spelling*: the table part says which range, and which column is which, so the
-//! reference can be turned into the plain A1 range the model understands. Nothing about a table
-//! is kept (the model has none) — only the answer to "which cells does this say" at the moment a
-//! formula is read, which is why a table's later growth is not followed: the formula is as true
-//! as the file's own geometry was.
-//!
-//! What cannot be answered stays a [`crate::formula::Refusal::StructuredReference`]: a table
-//! this workbook does not have, a column it does not have, a row item that has no row
-//! (`#Totals` on a table with no totals row), `[#This Row]` from a cell outside the table's
-//! data rows, and any combination of row items that is not one contiguous run.
+//! What cannot be answered stays a [`crate::formula::Refusal::StructuredReference`]: an unknown
+//! table or column, a row item with no row (`#Totals` without a totals row), `[#This Row]` outside
+//! the data rows, and row items that are not one contiguous run.
 
 use crate::names::Ns;
 use crate::xml::{Handled, Reader};

@@ -2,20 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `xl/theme/theme1.xml` — the colour scheme a `<color theme="4"/>` indexes into.
+//! `xl/theme/theme1.xml` — the colour scheme a `<color theme="4"/>` indexes into. DrawingML:
+//! `<a:clrScheme>` holds twelve named slots, each an `<a:srgbClr val="4472C4"/>` or an `<a:sysClr
+//! val="window" lastClr="FFFFFF"/>`, whose saved value is the only one a converter can use.
 //!
-//! A theme is DrawingML, not SpreadsheetML: `<a:theme><a:themeElements><a:clrScheme>` holds
-//! twelve named slots, each an `<a:srgbClr val="4472C4"/>` or an `<a:sysClr val="window"
-//! lastClr="FFFFFF"/>` — a system colour together with the value it had when the file was
-//! saved, which is the only value a converter can use.
-//!
-//! **The slot order is the trap.** The scheme lists `dk1, lt1, dk2, lt2, accent1…accent6,
-//! hlink, folHlink`, and a `theme` attribute counts `lt1, dk1, lt2, dk2, …`: the light and the
-//! dark of each of the first two pairs are swapped. A reader that indexes by document order
-//! gets white and black backwards and every accent exactly right, which is the worst way to be
-//! wrong. Measured against the oracle — theme 0 is `#ffffff` and theme 1 `#000000` in
-//! `styles/colors.xlsx` — and recorded in `doc/xlsx-format.md` §4.2. Only the colours are read;
-//! the font scheme (`+mn-lt`, `scheme="minor"`) names a *family*, and the model carries none.
+//! **The slot order is the trap.** The scheme lists `dk1, lt1, dk2, lt2, accent1…accent6, hlink,
+//! folHlink`; a `theme` attribute counts `lt1, dk1, lt2, dk2, …`. Reading in document order gets
+//! white and black backwards and every accent right — the worst way to be wrong. Measured
+//! (`styles/colors.xlsx`: theme 0 is `#ffffff`), `doc/xlsx-format.md` §4.2. Only colours are read;
+//! the font scheme names a family, which the model does not carry.
 
 use crate::color;
 use crate::names::Ns;
@@ -27,11 +22,10 @@ const ORDER: [&str; 12] = [
     "hlink", "folHlink",
 ];
 
-/// Read the colour scheme, in `theme` attribute order. Empty when the part is not a theme this
-/// build can read — including a Strict one, whose DrawingML namespace is unmeasured — so every
-/// theme colour then resolves to [`color::Resolved::Unknown`] and is counted rather than
-/// guessed. A slot the scheme leaves out ends the table there, for the same reason: the
-/// indices after it would otherwise shift onto the wrong colours.
+/// Read the colour scheme, in `theme` attribute order. Empty when the part is not a readable theme
+/// — including a Strict one, whose DrawingML namespace is unmeasured — so every theme colour is
+/// [`color::Resolved::Unknown`] and counted. A missing slot ends the table, or the later indices
+/// would shift onto wrong colours.
 pub fn read(bytes: &[u8]) -> Vec<[u8; 3]> {
     let mut slots: [Option<[u8; 3]>; 12] = [None; 12];
     let mut reader = Reader::new(bytes);
@@ -126,7 +120,7 @@ mod tests {
     fn not_a_theme_is_no_colours() {
         assert!(read(b"<nonsense/>").is_empty());
         assert!(read(b"").is_empty());
-        // The right shape in a namespace this build has not measured.
+        // The right shape in an unmeasured namespace.
         let strict = scheme("").replace(A, "http://example.invalid/drawingml");
         assert!(read(strict.as_bytes()).is_empty());
     }
