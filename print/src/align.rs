@@ -2,12 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where a laid-out line sits across its measure: `fo:text-align` (`doc/odt-format.md` §5c,
-//! fact 8). Pure arithmetic over widths, so it is decided here and only drawn in `text.rs`.
-//!
-//! Here rather than in `grind_core::layout` because only paper aligns today: no screen draws an
-//! aligned line, so no caret has to agree with one yet. The day a shell centres a heading this
-//! moves into the core, beside the breaker, so the caret and the ink keep agreeing.
+//! Where a laid-out line sits across its measure: `fo:text-align` (`doc/odt-format.md` §5c, fact
+//! 8). Pure arithmetic over widths, decided here and drawn in `text.rs`. Not in
+//! `grind_core::layout` because only paper aligns: no screen draws an aligned line, so no caret
+//! has to agree with one. When a shell does, this moves beside the breaker.
 
 /// `fo:text-align`, left to right only (`doc/text-layout.md`, decision 1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

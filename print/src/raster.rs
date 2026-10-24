@@ -2,13 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The preview: a page of the display list rasterised (`doc/pdf-export.md` §4).
-//!
-//! **Never re-laid-out with a shell's own fonts.** The preview exists to show what will print,
-//! so it draws the very glyphs the PDF embeds, from the same faces, at the same positions —
-//! outlines from skrifa, filled by tiny-skia. A shell shows the RGBA this returns and owns
-//! nothing else about it. A test holds it against `hayro`'s raster of our own PDF, so a
-//! backend that drifted from the other would be caught rather than trusted.
+//! The preview: a page of the display list rasterised (`doc/pdf-export.md` §4). **Never
+//! re-laid-out with a shell's own fonts**: it draws the very glyphs the PDF embeds, from the same
+//! faces at the same positions — outlines from skrifa, filled by tiny-skia. A test holds it
+//! against `hayro`'s raster of our own PDF.
 
 use std::collections::HashMap;
 

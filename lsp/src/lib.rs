@@ -2,11 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **`grind lsp`** — a language server for the two languages, `doc/init.md` I5.
-//!
-//! One server, speaking the Language Server Protocol over stdio, so every editor that speaks it
-//! — VS Code through a client, Helix, Zed, Neovim, Emacs — gets the same answers rather than one
-//! editor's configuration each (`doc/init.md` §3.3, §3.9 b).
+//! **`grind lsp`** — one language server for both languages, over stdio, so every editor that
+//! speaks LSP (VS Code through a client, Helix, Zed, Neovim, Emacs) gets the same answers.
 //!
 //! | | `.grind` (`grind.rs`) | `.rhai` (`script.rs`) |
 //! |---|---|---|
@@ -16,19 +13,16 @@
 //! | inlay hints | what each formula computes, **shown and never written** | — |
 //! | go to definition | a defined name's or a sheet's node | — |
 //!
-//! **Everything comes from the core.** The server holds no knowledge of its own: a `.grind` is
-//! opened by the same `open_bytes` the CLI uses, linted by the same rules, located through the
-//! span map its reader recorded (`App::source_anchors`). A server that answered differently
-//! from `grind lint` would be a bug in the server.
+//! **Everything comes from the core**; a server answering differently from `grind lint` is a bug
+//! in the server.
 //!
-//! **No evaluator** (R11, `build/tests/manifest.rs`). This crate opens documents, so it may not
-//! link `grind-build`; the vocabulary arrives as the text `grind definitions` prints, and the
-//! syntax check as a function, both through [`Host`], which `grind lsp` implements. Which also
-//! makes the rule visible: a script runs because a person typed a command, never because an
-//! editor opened a file.
+//! **No evaluator** (R11): this crate opens documents, so it may not link `grind-build`. The
+//! vocabulary arrives as the text `grind definitions` prints and the syntax check as a function,
+//! both through [`Host`], which `grind lsp` implements — a script runs because a person typed a
+//! command, never because an editor opened a file.
 //!
-//! Full-document sync, one document at a time, everything recomputed per change: the files this
-//! is for are written by hand, and a person types slower than a projection reads.
+//! Full-document sync, one document at a time, everything recomputed per change: these files are
+//! written by hand, and a person types slower than a projection reads.
 
 mod grind;
 mod lines;

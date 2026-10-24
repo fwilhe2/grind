@@ -4,19 +4,15 @@
 
 //! The spelling dictionaries (`doc/spelling.md`): Hunspell's, compiled in, checked by
 //! [`spellbook`], and handed to either application's `App` as a [`Lexicon`] through
-//! [`grind_core::spell::Spelled`] — this crate names neither application.
+//! [`grind_core::spell::Spelled`] — this crate names neither application. `grind-text` decides
+//! what a word is and which are checked; this crate answers whether one is spelled right. Separate
+//! so two megabytes of word lists go only into binaries that check spelling.
 //!
-//! `grind-text` decides what a word is and which words are worth checking; this crate only
-//! answers whether one is spelled right. It is a separate crate for the reason `grind-print` is:
-//! two megabytes of word lists belong in the binaries that check spelling and in no other.
-//!
-//! **Every language, unless somebody asks for one.** A word is right when any dictionary this
-//! build has knows it, so a German letter quoting an English sentence underlines neither. The
-//! document's own language — picked by [`choose`] in a fixed order: the one somebody named, then
-//! the one the document states, then the one that knows most of its words — is the *first*
-//! dictionary asked and the one suggestions come from; naming a language ([`Setting::In`]) is how
-//! to check in that one alone. Beside the dictionaries is the person's own word list
-//! ([`personal`]), which is theirs rather than the document's and so is never written into one.
+//! **Every language, unless somebody asks for one.** A word is right when any dictionary knows it,
+//! so a German letter quoting English underlines neither. The document's own language —
+//! [`choose`]: the one named, else the one the document states, else the one knowing most of its
+//! words — is asked first and gives suggestions; naming one ([`Setting::In`]) checks in it alone.
+//! The person's own word list ([`personal`]) is theirs, never written into a document.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -114,10 +110,9 @@ impl Language {
     }
 
     /// The dictionary for a BCP 47 tag or a POSIX locale name — `de`, `de-AT`, `de_DE.UTF-8`,
-    /// `en-GB`. Matched on the language alone: one dictionary per language is what this build
-    /// carries, so `en-GB` is checked as American English and `pt-BR` as European Portuguese, and
-    /// each says so in every message
-    /// (`doc/spelling.md`, "Regional spellings" — a named gap).
+    /// `en-GB`. Matched on the language alone, since there is one dictionary per language: `en-GB`
+    /// is checked as American English and `pt-BR` as European Portuguese, and each says so
+    /// (`doc/spelling.md`, "Regional spellings").
     pub fn from_tag(tag: &str) -> Option<Language> {
         let language = tag
             .split(['-', '_', '.', '@'])

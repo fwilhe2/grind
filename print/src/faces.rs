@@ -2,15 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Which face a block is set in on paper, and at what width.
-//!
-//! Until paragraph styles are resolved (`doc/pdf-export.md` P5), a page prints **what the screen
-//! shows**: the face of a block is [`Role::of`]'s, the same choice every shell makes, at
-//! [`BODY_PT`] times that role's scale. A run's own direct formatting wins over its block's
-//! face, property by property, as it does on screen.
-//!
-//! [`Column`] is the Mac's `text::face::Column` for paper: each block measured in its role's
-//! face, at its cell's width inside a table and the column less its indent everywhere else.
+//! Which face a block is set in on paper, and at what width. A block whose paragraph style the
+//! document declares is set as that style says; otherwise in [`Role::of`]'s face, the choice every
+//! shell makes, at [`BODY_PT`] times that role's scale. A run's direct formatting wins property by
+//! property, as on screen. [`Column`] measures each block in its face, at its cell's width inside
+//! a table and the column less its indent elsewhere.
 
 use std::collections::HashMap;
 

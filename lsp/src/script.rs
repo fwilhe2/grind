@@ -2,19 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A `.rhai` script: completion and hover from the host vocabulary, and syntax errors.
+//! A `.rhai` script: completion and hover from the host vocabulary, and syntax errors. **Not a
+//! Rhai analyser**: it does not know what `s` holds or what the script's own functions return. It
+//! knows the vocabulary `grind build` registers — read out of `grind definitions`' text — with
+//! each registration's documentation: methods and properties after a `.`, free functions
+//! elsewhere, so `s.pu` offers `push` rather than everything starting `pu`.
 //!
-//! **Nothing here analyses Rhai.** `doc/dsl.md` §9 declines to write a Rhai language server,
-//! and this is not one: it does not know what `s` is, what a variable holds or what a function
-//! of the script's own returns. It knows the vocabulary `grind build` registers — read out of
-//! `grind definitions`' own text, the file `snippets()` is made from too — and offers it, with
-//! the documentation every registration is required to carry. After a `.` it offers the
-//! methods and properties, anywhere else the free functions; that one distinction is the
-//! difference between `s.pu` offering `push` and offering everything that starts with `pu`.
-//!
-//! **Nothing here runs a script either.** The syntax check is [`crate::Host::check_script`],
-//! which compiles and never evaluates (`grind_build::check`): a script runs because a person
-//! typed `grind build` or `grind test`, never because an editor opened the file.
+//! The syntax check is [`crate::Host::check_script`], which compiles and never evaluates.
 
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionItemLabelDetails, Diagnostic, DiagnosticSeverity,

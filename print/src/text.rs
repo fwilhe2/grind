@@ -409,10 +409,10 @@ fn numbering(pages: &[grind_text::page::Page]) -> Vec<(usize, usize)> {
         .collect()
 }
 
-/// A face for every block whose paragraph style says something about its text
-/// (`doc/pdf-export.md` P5): all four properties when the document declares the block's style,
-/// and only the default style's family when it does not — such a block keeps the screen's own
-/// size and weight for its role, which is the better guess for a heading whose style is missing.
+/// A face for every block whose paragraph style says something about its text: all four properties
+/// when the document declares the block's style, and only the default style's family when it does
+/// not — such a block keeps the screen's size and weight for its role, the better guess for a
+/// heading whose style is missing.
 fn block_faces<'a>(
     app: &App,
     setter: &'a Typesetter,
@@ -450,9 +450,9 @@ fn block_faces<'a>(
         .collect()
 }
 
-/// The space above and below every block whose paragraph style the document declares, in
-/// points — added, as Writer adds them (`doc/odt-format.md` §5c, fact 5). A margin in a unit with
-/// no length (a percentage of a parent this build does not keep) counts as none.
+/// The space above and below every block whose paragraph style the document declares, in points —
+/// added, as Writer adds them (`doc/odt-format.md` §5c, fact 5). A margin with no length (a
+/// percentage of an unread parent) counts as none.
 fn block_spacing(
     app: &App,
     viewport: &grind_text::Viewport,
@@ -570,9 +570,9 @@ fn level_labels(
     labels
 }
 
-/// Every block whose paragraph style says something about page breaks around it: a page break
-/// before or after (`page`, and `even-page`/`odd-page` as a page, since this build prints no
-/// blank pages), and `fo:keep-with-next` (`always`, or `auto` to let even a heading go).
+/// Every block whose paragraph style says something about page breaks around it: a break before or
+/// after (`page`; `even-page`/`odd-page` as `page`, since no blank pages are printed), and
+/// `fo:keep-with-next` (`always`, or `auto` to let even a heading go).
 fn block_breaks(
     app: &App,
     viewport: &grind_text::Viewport,
@@ -1095,10 +1095,10 @@ struct Figure {
     height: f64,
 }
 
-/// A block's figure, when it is a picture whose size the document states. Paper is physical,
-/// so `svg:width` and `svg:height` are exactly the right size here, where a screen ignores
-/// them. A picture with no stated size is measured as text (ponytail: decoding its pixels for a
-/// natural size is the shells' `Decoder`, which this crate does not have yet).
+/// A block's figure, when it is a picture whose size the document states. Paper is physical, so
+/// `svg:width` and `svg:height` are exactly right here, where a screen ignores them. A picture
+/// with no stated size is measured as text (ponytail: a natural size needs decoding its pixels,
+/// the shells' `Decoder`, which this crate lacks).
 fn figure(view: &BlockView, measure: f64, body: &RoleFace<'_>) -> Option<Figure> {
     let (image, caption) = picture_of(view)?;
     let length = |value: &Option<String>| value.as_deref().and_then(length_mm).map(pt);
@@ -1569,9 +1569,8 @@ mod tests {
         assert_eq!(lines_on(Some("2")), vec![3, 2]);
     }
 
-    /// `doc/pdf-export.md` P5: a block whose style the document declares is set as that style
-    /// says; one whose style it does not declare keeps the screen's face, in the document's own
-    /// default family.
+    /// A block whose style the document declares is set as that style says; one whose style it
+    /// does not declare keeps the screen's face, in the document's default family.
     #[test]
     fn a_declared_style_sets_its_blocks_face() {
         let bytes = r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">

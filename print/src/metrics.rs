@@ -2,15 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The real [`Metrics`]: text measured by shaping it in the font file the PDF will embed.
+//! The real [`Metrics`]: text measured by shaping it in the font file the PDF embeds.
 //!
-//! **One engine measures and draws.** `doc/windows-shell.md` W5a learned it from bugs: measure
-//! with one engine and draw with another, and the caret lands where the ink is not. Here the
-//! "caret" is every glyph on the page, so [`Typesetter::shape`] is what both
-//! [`Metrics::advances`] and the PDF call, with the same face, the same size and the same text.
-//!
-//! The unit is the **PostScript point**, a PDF's own, so a page's geometry and a line's width are
-//! in one unit with no conversion in between.
+//! **One engine measures and draws**, or the ink lands where the layout did not put it:
+//! [`Typesetter::shape`] is what both [`Metrics::advances`] and the PDF call, with the same face,
+//! size and text. The unit is the PostScript point, the PDF's own.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
@@ -129,8 +125,8 @@ impl Typesetter {
             let out = shaper.shape(buffer, harfrust::ShapeOptions::new());
             let scale = size / f32::from(shaper.units_per_em().max(1) as u16);
             let infos = out.glyph_infos();
-            // A cluster runs from its own byte to the next *larger* cluster's — clusters arrive
-            // in text order for the left-to-right text this build lays out.
+            // A cluster runs from its own byte to the next larger cluster's — they arrive in text
+            // order for left-to-right text.
             let mut starts: Vec<usize> = infos.iter().map(|info| info.cluster as usize).collect();
             starts.sort_unstable();
             starts.dedup();
@@ -202,7 +198,7 @@ fn is_bold(weight: &str) -> bool {
 }
 
 /// `fo:font-size` in points, when it is an absolute length. A percentage is relative to a parent
-/// style this build does not read, so it is the default like no size at all.
+/// style that is not read, so it counts as no size.
 fn size_of(style: &TextStyle) -> f32 {
     style
         .font_size

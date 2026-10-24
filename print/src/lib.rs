@@ -2,10 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Pages, PDF and print preview for the word processor. `doc/pdf-export.md` is normative here.
-//!
-//! The font stack lives in this crate and nowhere else: `grind-core` stays font-free
-//! (`doc/text-layout.md`, decision 2), and so does any build that leaves this crate out.
+//! Pages, PDF and print preview for the word processor (`doc/pdf-export.md`). The font stack lives
+//! here and nowhere else: `grind-core` stays font-free (`doc/text-layout.md`, decision 2), and so
+//! does any build without this crate.
 
 pub mod align;
 pub mod faces;
@@ -118,9 +117,9 @@ pub fn fonts_for(app: &App) -> Fonts {
     fonts
 }
 
-/// Where each page begins and ends: the first character on it and one past the last, `None`
-/// for a page with no text. Typeset exactly as [`export`] typesets, so these are the PDF's own
-/// page breaks — what `grind text pages` prints and loop G will compare with LibreOffice's.
+/// Where each page begins and ends: the first character on it and one past the last, `None` for a
+/// page with no text. Typeset exactly as [`export`] typesets, so these are the PDF's own page
+/// breaks — what `grind text pages` prints.
 pub fn pages(
     app: &App,
     fonts: Fonts,
@@ -140,9 +139,8 @@ pub fn pages(
         .collect()
 }
 
-/// The document typeset, every page as a display list, for a client that shows pages — a
-/// preview window draws [`raster::render`] of whichever page it is on, and the typesetting is
-/// done once rather than per page turned.
+/// The document typeset, every page as a display list, for a client that shows pages: a preview
+/// draws [`raster::render`] of the page it is on, typeset once rather than per page turned.
 pub fn typeset(app: &App, fonts: Fonts, options: &Options) -> (ops::Document, Typesetter) {
     let setter = Typesetter::new(fonts);
     let doc = text::typeset(

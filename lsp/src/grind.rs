@@ -3,15 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! A `.grind`: the projection, opened the way every command opens it and asked what an editor
-//! wants to know.
-//!
-//! Every answer here is the core's. The document is read by the same `open_bytes` the CLI
-//! uses, linted by the same rules, recalculated by the same engine; where an address is in the
-//! file comes from the span map the reader recorded while reading it (`App::source_anchors`),
-//! so hover, inline values and the line a finding is on cannot disagree with `grind lint` or
-//! with `grind project --anchors --as-read`. Nothing is ever written: the inline values are
-//! **shown**, the way `doc/view-modes.md`'s overlays are drawn and never stored, and
-//! `grind sheet recalc` stays the verb that writes them.
+//! wants to know. Every answer is the core's — read by `open_bytes`, linted by the same rules,
+//! recalculated by the same engine, located through the span map its reader recorded
+//! (`App::source_anchors`) — so nothing here can disagree with `grind lint`. Nothing is written:
+//! inline values are **shown**, and `grind sheet recalc` stays the verb that writes them.
 
 use std::ops::Range;
 

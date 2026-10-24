@@ -2,15 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A page as data: everything decided, nothing drawn (`doc/pdf-export.md`, "The display list
-//! is the seam").
+//! A page as data: everything decided, nothing drawn (`doc/pdf-export.md`, "The display list is
+//! the seam"). The PDF and the preview's raster execute the same list, so the preview is the PDF
+//! by construction.
 //!
-//! Two backends execute the same list — the PDF and the preview's raster — so the preview is the
-//! PDF by construction rather than by agreement. It is `ui_mac/src/ops.rs`'s idea applied to
-//! paper: decide everything portably, then hand it to whatever puts it down.
-//!
-//! Coordinates are **points from the page's top-left corner, y growing down**, the way every
-//! layout in this suite measures. A backend whose y grows up (a PDF's user space) flips once.
+//! Coordinates are **points from the page's top-left corner, y growing down**, as every layout in
+//! the suite measures; a backend whose y grows up (a PDF's user space) flips once.
 
 use std::sync::Arc;
 

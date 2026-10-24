@@ -2,15 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The display list, written as a PDF by krilla (`doc/pdf-export.md` §2).
+//! The display list, written as a PDF by krilla (`doc/pdf-export.md` §2). **The only file that
+//! knows the PDF library**, so an upgrade of krilla — pre-1.0, pinned exactly — or another backend
+//! touches nothing else.
 //!
-//! **The only file that knows the PDF library**, as `ui_win32/src/gdi.rs` is the only one that
-//! creates a GDI object: an upgrade of krilla — pre-1.0, pinned exactly — or a different backend
-//! one day touches this file and nothing else.
-//!
-//! What krilla does that this file therefore does not: subsetting each face to the glyphs used,
-//! the CID font and its `ToUnicode` map (so text copies and searches as text), and refusing to
-//! write a file that breaks a standard it was asked to meet.
+//! krilla subsets each face to the glyphs used, writes the CID font and its `ToUnicode` map (so
+//! text copies and searches as text), and refuses to write a file breaking a standard it was asked
+//! to meet.
 
 use std::collections::HashMap;
 

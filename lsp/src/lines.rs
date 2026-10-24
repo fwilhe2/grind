@@ -2,14 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Byte offsets ⇄ the protocol's positions.
-//!
-//! Everything in the suite counts **bytes** — a span in the projection, an anchor, a parse
-//! error's offset — and the protocol counts **lines and UTF-16 code units**, because that is
-//! what VS Code counts and the protocol's default (`positionEncoding` was added later and VS
-//! Code still asks for nothing else). The conversion within a line is `grind_core::utf16`'s, the
-//! one the Windows and Mac shells already use for the same reason, so an `é` or an emoji before
-//! a cell lands the mark where it is in all three.
+//! Byte offsets ⇄ the protocol's positions. The suite counts **bytes**; the protocol counts
+//! **lines and UTF-16 code units**, VS Code's default and still the only encoding it asks for.
+//! Within a line the conversion is `grind_core::utf16`'s, as in the Windows and Mac shells, so an
+//! `é` or an emoji before a cell lands the mark in the right place.
 
 use std::ops::Range;
 
