@@ -2,16 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The spreadsheet's half of the host API — what a script may say, and what it means.
-//!
-//! ## The vocabulary is the projection's
-//!
-//! `doc/projection-sheet.md` already names every piece of a spreadsheet in plain words:
-//! `sheet`, `row`, `cell`, `style … bold=#true background=navy align=center`,
-//! `format … currency decimals=2 grouping=#true symbol="EUR"`. A generator that invented a
-//! second set of names for the same things would be a third vocabulary for one model, and
-//! `doc/dsl.md` §3.7's argument about two scope lines applies word for word to two spellings.
-//! So the nouns here are those nouns, and the adjectives are those adjectives.
+//! The spreadsheet's half of the host API. Its nouns and adjectives are the projection's (`sheet`,
+//! `row`, `style … bold=#true`, `format … currency`), so one model has one vocabulary.
 //!
 //! ```rhai
 //! let s = sheet("Budget");
@@ -24,39 +16,22 @@
 //! s
 //! ```
 //!
-//! ## A script has types, so nothing here guesses
-//!
-//! `App::enter` is the *typing rule* — a leading `=` is a formula, `1800` is a number,
-//! `TRUE` is a logical — and it exists because a person typing into a cell, or into a shell,
-//! has only characters to say it with. **A script does not**: `1800` is already an integer and
-//! `"1800"` is already a string, and re-deriving that from their spelling would be a second
-//! rule that can disagree with the first. So:
+//! A script has types, so nothing here re-applies the typing rule `App::enter` uses for
+//! characters:
 //!
 //! | The script writes | The cell holds |
 //! |---|---|
 //! | `1800`, `1825.5` | a number |
 //! | `true` | a logical |
-//! | `"Housing"`, `"2091"` | text, exactly as written — a string is a string |
+//! | `"Housing"`, `"2091"` | text, exactly as written |
 //! | `"=SUM([.B2:.B7])"` | a formula, verbatim, in ODF syntax |
-//! | `formula("SUM(B2:B7)")` | the same formula, written the way a formula bar shows one |
-//! | `"'=not a formula"` | text, the quote stripped — the core's own escape, kept for the one case a script cannot otherwise spell |
+//! | `formula("SUM(B2:B7)")` | the same formula as a formula bar shows it, converted by `formula::display::from_display` |
+//! | `"'=not a formula"` | text, the quote stripped |
 //! | `()` | nothing; the cell is left empty |
 //!
-//! The one guess left is the leading `=`, and it is the guess every spreadsheet in the world
-//! makes.
-//!
-//! **Both formula spellings are the suite's, not this crate's.** A `=` string is stored
-//! exactly as `grind sheet set` stores one — ODF syntax, which is what the file holds and what
-//! `doc/projection-sheet.md` writes. `formula(…)` is A1 syntax put through
-//! `formula::display::from_display`, the same converter behind `grind sheet fmt --from-display`
-//! and behind every shell's formula bar, so a script may say `SUM(B2:B7)` and get a validated
-//! formula rather than a string that happened to look right.
-//!
-//! **A date value has no spelling here**, and that is a named gap rather than an oversight:
-//! `App::enter` will read `2026-08-16` as a date *only* in a cell already known to hold one,
-//! which the cells of a document being generated are not. `=DATE(2026;8;16)` under a
-//! `format("date")` is how `examples/budget.rhai` writes one, exactly as
-//! `examples/sample-sheet.sh` does.
+//! A date value has no spelling: `App::enter` reads `2026-08-16` as a date only in a cell already
+//! formatted as one. `=DATE(2026;8;16)` under `format("date")` is how `examples/budget.rhai`
+//! writes one.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -72,22 +47,17 @@ use crate::hint::{hint, hint_get};
 /// What a host function hands back — a value, or a message with the script's position on it.
 type Res<T> = Result<T, Box<EvalAltResult>>;
 
-/// The largest rectangle one `style`, `format`, `width` or `height` may cover.
-///
-/// `App::set_format`'s own bound, restated because the layering in [`Layered`] walks the cells
-/// itself and would otherwise walk a million of them for a range nobody meant.
+/// The largest rectangle one `style`, `format`, `width` or `height` may cover —
+/// `App::set_format`'s bound, restated because [`Layered`] walks the cells itself.
 const MAX_CELLS: u64 = 1_000_000;
 
 // ---------------------------------------------------------------------------
 // The tree
 // ---------------------------------------------------------------------------
 
-/// A document, as a script builds it: sheets in the order they were pushed.
-///
-/// `Rc<RefCell<…>>` here and in [`Sheet`], and it is not an implementation detail. Rhai values
-/// are copied on assignment, so a `Sheet` pushed into a book and then written to again would
-/// silently update a *copy* — the script would look right and the document would be missing
-/// its last few rows. A shared handle makes `d.push(s)` mean what it reads as.
+/// A document, as a script builds it: sheets in the order they were pushed. `Rc<RefCell<…>>` here
+/// and in [`Sheet`] because Rhai copies values on assignment: a sheet pushed into a book and
+/// written to afterwards would otherwise update a copy and lose its last rows.
 #[derive(Clone, Default)]
 pub struct Book(Rc<RefCell<Vec<Sheet>>>);
 
@@ -109,10 +79,8 @@ struct SheetSpec {
     ops: Vec<Op>,
 }
 
-/// One thing a script asked for, in the order it asked.
-///
-/// Ranges are kept as the strings they were written as and resolved against the *finished*
-/// sheet — see [`materialise`], which is where the two-pass order is argued.
+/// One thing a script asked for, in order. Ranges stay strings until [`materialise`] resolves them
+/// against the finished sheet.
 enum Op {
     Cell {
         pos: Pos,
@@ -167,13 +135,8 @@ pub struct Row {
 #[derive(Clone, Default)]
 pub struct Style(CellStyle);
 
-/// How a value is spelled — `doc/projection-sheet.md`'s `format` node.
-///
-/// A *request* for a format rather than one: `numfmt::preset` builds the real thing when the
-/// format is used (`Fmt::format`), so the generator cannot produce a format the format picker in a shell
-/// could not also produce. A format outside that vocabulary is a named gap — the projection
-/// spells one part by part, and a generator that could too would be inventing Excel's format
-/// codes (`doc/dsl.md` §3.8).
+/// How a value is spelled — the projection's `format` node. A request, built by `numfmt::preset`
+/// when used, so a script can produce only what a shell's format picker can.
 #[derive(Clone)]
 pub struct Fmt {
     kind: Option<numfmt::Kind>,
@@ -190,13 +153,7 @@ pub struct Fmt {
 // Registration
 // ---------------------------------------------------------------------------
 
-/// Everything a script may say about a spreadsheet.
-///
-/// **Every registration carries its own documentation**, and that is not decoration: `grind
-/// definitions` turns what is written here into a `.d.rhai` file, which is what an editor reads
-/// to complete a call and to show what it does while somebody is typing it
-/// (`doc/generator-spec.md` §9). A function registered without a comment is a function whose
-/// hover says nothing, so [`hint`] takes both and there is no shorter way to add one.
+/// Everything a script may say about a spreadsheet, each registration documented through [`hint`].
 pub fn register(engine: &mut Engine) {
     engine
         .register_type_with_name::<Book>("Spreadsheet")
@@ -300,10 +257,8 @@ pub fn register(engine: &mut Engine) {
         },
     );
 
-    // Every method that *asks for something* hands its receiver back, so a script may chain.
-    // It is a shared handle, so the one that comes back is the one that went in — see [`Book`].
-    // `push` is the exception and returns where the row landed, which is the answer a script
-    // has no other way to get.
+    // Every method that asks for something hands its receiver back, so a script may chain. `push`
+    // instead returns where the row landed, which a script has no other way to learn.
     hint(
         engine,
         "push",
@@ -413,8 +368,7 @@ pub fn register(engine: &mut Engine) {
             sheet.clone()
         },
     );
-    // Both spellings, because a script reaches for `s.rows` as often as `s.rows()` and being
-    // told which one this build wants is not a lesson worth teaching.
+    // Both spellings, `s.rows` and `s.rows()`.
     hint(
         engine,
         "rows",
@@ -667,13 +621,7 @@ fn valign(align: &str) -> Res<String> {
     }
 }
 
-/// A 0-based row and column as the address a person reads — `at(0, 1)` is `B1`.
-///
-/// **The indices are the script's own**: a row is where it sits in the sheet and a column is
-/// where a cell sits in a `row([…])` array, both counted from zero like every other index in
-/// the language. The 1-based spelling belongs to the address, and turning one into the other
-/// is `a1::format`'s job and nobody else's — the workspace's one `+ 1`.
-/// Whether a cell is on the grid at all — `grind_sheet`'s own extent, not a second opinion.
+/// Whether a cell is on the grid at all, by `grind_sheet`'s own extent.
 fn within(row: u32, col: u32) -> Res<()> {
     match (row < grind_sheet::MAX_ROWS, col < grind_sheet::MAX_COLS) {
         (true, true) => Ok(()),
@@ -685,6 +633,8 @@ fn within(row: u32, col: u32) -> Res<()> {
     }
 }
 
+/// A 0-based row and column as the address a person reads — `at(0, 1)` is `B1`. The indices
+/// count from zero like every other index in the language; `a1::format` adds the one.
 fn address(row: i64, col: i64) -> Res<String> {
     let axis = |n: i64, what: &str| {
         u32::try_from(n).map_err(|_| bad(format!("{n}: a {what} index starts at 0")))
@@ -708,12 +658,9 @@ impl Sheet {
         })))
     }
 
-    /// Append a row, and answer where it landed — 0-based, so `s.at(s.push(…), 2)` is an
-    /// address in the row just written.
-    ///
-    /// The sheet's own limits are checked here rather than left to the writer: a script that
-    /// walks off the end of the grid should be told which line did it, and a document with a
-    /// cell past `XFD1048576` in it is not a document.
+    /// Append a row, and answer where it landed — 0-based, so `s.at(s.push(…), 2)` is an address
+    /// in the row just written. A row past the end of the grid is refused here, at the script's
+    /// line.
     fn push(&mut self, row: Row) -> Res<i64> {
         let mut spec = self.0.borrow_mut();
         let at = spec.next_row;
@@ -864,9 +811,8 @@ impl Cell {
         }
     }
 
-    /// A formula written the way a formula bar shows one — `SUM(B2:B7)` — converted by the
-    /// core's own converter rather than by a rule invented here. The leading `=` is optional
-    /// because a script is not typing into a cell and has nothing to disambiguate.
+    /// A formula as a formula bar shows it — `SUM(B2:B7)` — converted by the core's converter. The
+    /// leading `=` is optional.
     fn formula(source: &str) -> Res<Cell> {
         let display = match source.starts_with('=') {
             true => source.to_owned(),
@@ -909,9 +855,8 @@ impl Fmt {
         })
     }
 
-    /// The format itself. `general` has none — and asking for `format("general")` where a
-    /// format is required is a script saying nothing at all, which is an error rather than a
-    /// silent no-op.
+    /// The format itself. `general` has none, so asking for it where a format is required is an
+    /// error rather than a silent no-op.
     fn format(&self) -> Res<numfmt::Format> {
         let format = match (self.kind, self.datetime) {
             (_, true) => numfmt::datetime_preset(),
@@ -952,14 +897,9 @@ fn cell_address(at: &str) -> Res<Pos> {
 // The tree as a document
 // ---------------------------------------------------------------------------
 
-/// Build the document a script described.
-///
-/// **Cells first, then everything that decorates them**, which is not the order the script
-/// said them in and is the order it meant. A range is resolved against the sheet's used
-/// extent, so `style("A:A", …)` means the column the script actually filled — and it would
-/// mean an empty column if it were applied when the script said it. Within each pass the
-/// script's order is kept, so a second `format` over the same cells wins, as the last word
-/// should.
+/// Build the document a script described: **cells first, then everything that decorates them**, so
+/// `style("A:A", …)` means the column the script filled rather than one empty when it was said.
+/// Within each pass the script's order holds, so a later `format` over the same cells wins.
 pub fn materialise(book: &Book) -> Result<App, String> {
     let app = App::new();
     let sheets = book.0.borrow();
@@ -999,18 +939,10 @@ pub fn materialise(book: &Book) -> Result<App, String> {
     Ok(app)
 }
 
-/// The styling a script asked for, cell by cell, before any of it is applied.
-///
-/// **Styles layer here, and `App::set_style` replaces.** Both are right for who they serve: a
-/// toolbar's Bold button sets what a cell *is*, and a shell that wants "bold as well" reads
-/// first, which is one call and keeps a merge policy out of the core. A script is not a
-/// toolbar — it says `row(…).bold()` and then `style("A1:H1", style().background("silver"))`,
-/// meaning both, in the order a stylesheet means both. Replacing there would silently drop the
-/// bold, which is the kind of quiet loss a generated document is least likely to be checked
-/// for.
-///
-/// So the layering is this crate's rule, applied to what the script said, and the *result* is
-/// one ordinary `set_style` per run of cells that agree — nothing the core has to know about.
+/// The styling a script asked for, cell by cell, before any is applied. **Styles layer here, where
+/// `App::set_style` replaces**: `row(…).bold()` then `style("A1:H1",
+/// style().background("silver"))` means both, as a stylesheet would, and replacing would silently
+/// drop the bold. The result is one ordinary `set_style` per run of agreeing cells.
 #[derive(Default)]
 struct Layered(std::collections::BTreeMap<(u32, u32), CellStyle>);
 
@@ -1042,9 +974,8 @@ impl Layered {
         }
     }
 
-    /// One `set_style` per run of adjacent cells in a row that ended up agreeing — which is
-    /// what a script's row-at-a-time styling produces, so this is one call per row rather than
-    /// one per cell.
+    /// One `set_style` per run of adjacent cells in a row that agree — one call per row, as a
+    /// script styles.
     fn apply(self, app: &App, sheet: usize) -> Result<(), String> {
         let mut run: Option<(u32, u32, u32, CellStyle)> = None;
         for ((row, col), style) in self.0 {
@@ -1092,17 +1023,10 @@ fn cell(app: &App, sheet: usize, pos: Pos, cell: &Cell) -> Result<(), String> {
     }
 }
 
-/// `sum_above()` as a formula, resolved where the cell landed.
-///
-/// **The rule is the one a spreadsheet's AutoSum uses**: the contiguous run of cells directly
-/// above that hold a number or a formula. Not "everything above", which would reach up into
-/// the header row and sum a heading; not "the whole column", which cannot be written before
-/// the sheet exists. A script that wants a different range writes the formula, which is one
-/// string and needs nothing from this.
-///
-/// `doc/dsl.md` §4.2's sketch spelled it `sum_above(i + 1)`, passing the column. Building it
-/// took the argument away: the cell knows which column it landed in, and a helper that can be
-/// told a *different* one is a helper that can disagree with where its answer sits.
+/// `sum_above()` as a formula, resolved where the cell landed: AutoSum's rule, the contiguous run
+/// directly above holding a number or a formula — not everything above, which would reach the
+/// header. It takes no column, since the cell knows its own and a helper told another could
+/// disagree with where its answer sits.
 fn sum_above(app: &App, sheet: usize, pos: Pos) -> Result<String, String> {
     let filled = |row: u32| -> Result<bool, String> {
         let at = Pos::new(row, pos.col);
@@ -1135,9 +1059,8 @@ fn decoration(app: &App, sheet: usize, op: &Op, styles: &mut Layered) -> Result<
     let place = |range: &str| -> Result<(usize, Pos, Pos), String> {
         let reference = a1::parse(range).map_err(say)?;
         let (sheet, start, end) = a1::resolve_in(app, sheet, &reference).map_err(say)?;
-        // The same bound `App::set_format` puts on a rectangle, checked here because the
-        // layering walks the cells itself: `A1:XFD1048576` is a memory-exhaustion request
-        // rather than an intent, whoever wrote it.
+        // The bound `App::set_format` puts on a rectangle, since the layering walks the cells
+        // itself.
         let cells = (u64::from(end.row - start.row) + 1) * (u64::from(end.col - start.col) + 1);
         match cells > MAX_CELLS {
             true => Err(format!(
@@ -1171,9 +1094,8 @@ fn decoration(app: &App, sheet: usize, op: &Op, styles: &mut Layered) -> Result<
                 .map_err(say)
                 .map(drop)
         }
-        // A name is document-level in ODF (§5.11) and is written here anyway: a script says
-        // it on the sheet whose cells it names, and the definition is qualified with that
-        // sheet, which is what makes `budgeted` mean the same range read from anywhere.
+        // A name is document-level, but a script says it on the sheet whose cells it names, and
+        // the definition is qualified with that sheet so it means the same range from anywhere.
         Op::Name { name, target } => {
             let definition = match target.strip_prefix('=') {
                 Some(formula) => formula.to_owned(),

@@ -2,21 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Numbers as text, for a locale — the three functions a letter needs.
+//! Numbers as text, for a locale — for a text document, which holds text and so has to spell a
+//! figure itself ("Ihr Anteil: 1.234,50 €"). Over the core's own separators
+//! (`grind_core::locale`), so a figure in a letter and the same figure in a cell cannot be spelled
+//! two ways.
 //!
-//! A spreadsheet cell shows a number through a `format(…)` and the document's locale, but a
-//! *text* document holds text: a script that writes "Ihr Anteil: 1.234,50 €" has to spell the
-//! number itself. Every letter example used to carry the same thirty lines to do it, because the
-//! dialect has no `import`. They are host functions now, over the core's own separators
-//! (`grind_core::locale`) — the same decimal point and grouping a spreadsheet in that locale
-//! uses, so a figure in a letter and the same figure in a cell cannot be spelled two ways.
-//!
-//! **Pure and deterministic**, like everything a script may call: no clock, no machine locale —
-//! the locale is *an argument*, never read from the environment, so the same script writes the
-//! same letters on a German machine and an American one.
-//!
-//! Rounding is done once, on whole units of the last decimal place, so two figures that are equal
-//! print equally and a value like `-0.004` shown with two decimals is `0,00` rather than `−0,00`.
+//! The locale is an argument, never the machine's, so the same script writes the same letters
+//! everywhere. Rounding is done once, on whole units of the last decimal place, so equal figures
+//! print equally and `-0.004` at two decimals is `0,00`, not `−0,00`.
 
 use grind_core::locale::Locale;
 use rhai::{Dynamic, Engine, EvalAltResult};
@@ -86,9 +79,9 @@ pub fn number(x: f64, decimals: u32, tag: &str) -> Res<String> {
     })
 }
 
-/// Where a locale puts a unit that follows its number — a currency symbol, a percent sign — and
-/// whether a space stands between. The languages that write a decimal *comma* put it after, with
-/// a space; the others before the amount (a symbol) or hard against it (a percent sign).
+/// Whether a locale puts a following unit (currency symbol, percent sign) after its number, with a
+/// space. The decimal-comma languages do; the others put a symbol before the amount and a percent
+/// sign hard against it.
 fn after(tag: &str) -> Res<bool> {
     Ok(locale(tag)?.decimal() == ',')
 }

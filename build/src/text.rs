@@ -2,11 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The word processor's half of the host API.
-//!
-//! Smaller than the spreadsheet's by the same margin the models differ: a text document is a
-//! **flat sequence of blocks** (`text/src/model.rs`), so a script that can say *heading*,
-//! *paragraph* and *list item* can say the whole shape of one.
+//! The word processor's half of the host API: headings, paragraphs, list items, bookmarks, tables
+//! and page breaks.
 //!
 //! ```rhai
 //! let d = text();
@@ -17,17 +14,10 @@
 //! d
 //! ```
 //!
-//! **The inline notation is `grind_text::markdown`'s, not a fourth reading of `**`.** A
-//! paragraph's text goes in through `App::type_markdown`, which is the same function the TUI's
-//! formatting toolbar uses and the same one `doc/dsl.md` §3.6 built the projection's inline
-//! notation beside. A generator that had its own emphasis rule would be the `**` problem one
-//! layer up, and `CLAUDE.md` names that as the mistake the core exists to prevent.
-//!
-//! What a script cannot say here, each because the model reaches it through a caret rather
-//! than through a block: character formatting that does not come from the notation (a font, a
-//! size, a colour), images (`doc/dsl.md` §3.8's open question, and it has no projection
-//! either), and a named paragraph style — a generator cannot *declare* one, and `grind lint`'s
-//! `undeclared-style` would rightly complain about every block that used it.
+//! A paragraph's text goes in through `App::type_markdown`, the suite's one reading of `**`. A
+//! script cannot declare a paragraph style or a page; it names those a template declares
+//! (`text_from`). Character formatting beyond the notation (a font, a size, a colour) and images
+//! have no spelling.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -39,10 +29,8 @@ use crate::hint::{hint, hint_get};
 
 type Res<T> = Result<T, Box<EvalAltResult>>;
 
-/// A text document, as a script builds it: blocks in the order they were said.
-///
-/// Shared like [`crate::sheet::Sheet`] and for the same reason — a document handed to a
-/// function has to be the same document when it comes back.
+/// A text document, as a script builds it: blocks in order. Shared like [`crate::sheet::Sheet`],
+/// for the same reason.
 #[derive(Clone, Default)]
 pub struct Doc {
     blocks: Rc<RefCell<Vec<Item>>>,
@@ -85,11 +73,8 @@ struct Block {
     style: Option<String>,
 }
 
-/// Every method hands the document back, so a script may chain — and because it is a shared
-/// handle, the one that comes back is the one that went in.
-///
-/// Documented at the registration for the reason `crate::hint` gives: what an editor shows
-/// while somebody types is written here or nowhere.
+/// Everything a script may say about a text document. Every method hands the shared document back,
+/// so a script may chain.
 pub fn register(engine: &mut Engine) {
     engine.register_type_with_name::<Doc>("Text");
     hint(
@@ -220,9 +205,8 @@ pub fn register(engine: &mut Engine) {
         ["/// A list item at depth 1."],
         |doc: &mut Doc, text: &str| doc.push(BlockKind::ListItem { depth: 1 }, text),
     );
-    // An anchor on the block last said, which is what `#intro` addresses and what makes a
-    // generated document navigable — `loc.rs`'s point that a named target survives edits
-    // elsewhere and `p12` does not.
+    // An anchor on the block last said — what `#intro` addresses, and it survives edits elsewhere
+    // where `p12` does not.
     hint(
         engine,
         "bookmark",
@@ -352,9 +336,8 @@ fn break_style(parent: Option<&str>) -> String {
     format!("grind-break-{}", parent.unwrap_or("none"))
 }
 
-/// `template` — or a bare document when there is none — with the paragraph styles that carry a
-/// page break declared in it, so a script's `page_break()` is a *named style the document has*
-/// like any other, whatever it started from.
+/// `template` — or a bare document — with the paragraph styles that carry a page break declared,
+/// so `page_break()` is a named style the document has, whatever it started from.
 fn with_break_styles(template: Option<&str>, parents: &[Option<String>]) -> String {
     const OFFICE: &str = "urn:oasis:names:tc:opendocument:xmlns:office:1.0";
     let declared: String = parents
@@ -441,10 +424,9 @@ pub fn materialise(doc: &Doc) -> Result<App, String> {
             app.delete(0..kept).map_err(say)?;
         }
     }
-    // A new document already has one empty paragraph in it, and a template's body is dropped
-    // but may leave one. Filling the first block into that one keeps a generated document from
-    // starting with a blank line — and one that opens with a table has no block to fill, so the
-    // placeholder goes.
+    // A new document has one empty paragraph, and a dropped template body may leave one: the first
+    // block fills it, so a generated document does not start with a blank line — and one opening
+    // with a table has nothing to fill, so the placeholder goes.
     let mut spare = app.block_count();
     if matches!(items.first(), Some(Item::Table { .. })) && spare > 0 {
         app.delete(0..spare).map_err(say)?;

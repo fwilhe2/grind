@@ -2,46 +2,20 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `json("prices.json")` — **data a script reads, and the four walls around it.**
+//! `json("prices.json")` — data a script reads, and the four walls around it. The one exception to
+//! "no I/O": a script reads **data**, never code, and only from one directory a person named.
 //!
-//! Separating data from code is the reason a generator is worth having: a script that says how
-//! a document is *shaped* and a file that says what is *in it* are two different things, edited
-//! by different people at different times. Without this, the data ends up as a `const` at the
-//! top of the script, which works and is what `examples/budget.rhai` does — until somebody who
-//! does not read Rhai has to change a price.
+//! 1. **JSON, nothing that can execute** — parsed by `serde_json` into Rhai data. The function's
+//!    name says which parser ran, so a `csv(…)` would be a peer.
+//! 2. **One directory.** `..` and absolute paths are refused before the filesystem is touched, and
+//!    the canonical result must lie inside the root, which is what stops a symlink. `grind build`
+//!    roots it at the script's directory unless `--data` says otherwise.
+//! 3. **Bounded**: [`MAX_BYTES`] per file, [`MAX_FILES`] per script.
+//! 4. **Read only, and cached**, so a `json(…)` inside a loop is one read.
 //!
-//! **This is the one place `doc/dsl.md` §2's "no I/O" is not literally true, and the promise it
-//! replaces is written down rather than quietly dropped:**
-//!
-//! > A script reads **data**, never code, and only from one directory a person named.
-//!
-//! Four walls, and each is here rather than in a caller:
-//!
-//! 1. **JSON, and nothing that can execute.** JSON has no references, no includes, no
-//!    functions and no side effects — it is a value, parsed by a real parser (`serde_json`),
-//!    and what comes back is Rhai data. The name of the function says which parser ran, so a
-//!    `csv(…)` later is a peer rather than a surprise.
-//! 2. **One directory, named by a person.** Paths are relative to it, `..` is refused before
-//!    the filesystem is touched, an absolute path is refused, and the result is canonicalised
-//!    and checked to be *inside* it, which is what stops a symlink. `grind build` roots it at
-//!    the script's own directory unless `--data` says otherwise — the same shape as
-//!    `doc/dsl.md` §9's rule that a script may not import from anywhere but the project.
-//! 3. **Bounded**, like everything else the engine does: a file may be [`MAX_BYTES`] and a
-//!    script may read [`MAX_FILES`] of them, so "read a file" cannot become "read a disk".
-//! 4. **Read only, and cached.** There is no writing, and reading the same file twice returns
-//!    the same value without touching the filesystem again — so a `json(…)` inside a loop is a
-//!    mistake with no consequences rather than a performance trap.
-//!
-//! **Determinism survives, restated.** §2 promised that the same source produces the same
-//! bytes; with data it is the same source *and the same data*. That is a build system's
-//! contract rather than a weakening of it — inputs to outputs, with the inputs named in the
-//! script and living beside it.
-//!
-//! **The crate still has no filesystem of its own.** [`Data`] is a trait and [`Directory`] is
-//! one implementation of it; `build` takes whichever the caller supplies, and the default is
-//! [`NoData`], where every read is an error that says so. That is architecture rule 5 —
-//! everything with a path has a twin without one — and it is what keeps a host that has no
-//! filesystem (a browser, one day) able to run a script that does not ask for a file.
+//! Determinism becomes: the same source *and the same data* produce the same bytes. The crate
+//! still has no filesystem of its own: [`Data`] is a trait, [`Directory`] one implementation, and
+//! [`NoData`] the default (rule 5).
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -51,27 +25,17 @@ use std::rc::Rc;
 use rhai::{Dynamic, Engine, EvalAltResult, Map};
 
 /// The largest data file a script may read, in bytes.
-///
-/// Eight megabytes of JSON is a document nobody would generate and everybody would regret
-/// opening; a spreadsheet's worth of prices is kilobytes. The point of the bound is that
-/// "reading data" cannot become "reading whatever is there" by degree.
 pub const MAX_BYTES: usize = 8 * 1024 * 1024;
 
 /// How many distinct files one script may read. Reading the same one again is free (it is
 /// cached) and does not count twice.
 pub const MAX_FILES: usize = 64;
 
-/// Where a script's data comes from.
-///
-/// A trait rather than a path, because this crate has no filesystem: `grind-cli` hands over a
-/// [`Directory`], a test hands over a map in memory, and a host with no filesystem hands over
-/// [`NoData`] and gets a clear error instead of a panic.
+/// Where a script's data comes from: a [`Directory`] from `grind-cli`, a map in memory from a
+/// test, [`NoData`] from a host with no filesystem.
 pub trait Data {
-    /// The text of one data file, by the name the script used.
-    ///
-    /// The name is the script's, unresolved and untrusted: **an implementation is responsible
-    /// for refusing anything outside whatever it considers its own**. [`Directory`] is the
-    /// worked example.
+    /// The text of one data file, by the name the script used. The name is untrusted: **an
+    /// implementation must refuse anything outside its own root**, as [`Directory`] does.
     fn read(&self, name: &str) -> Result<String, String>;
 
     /// What to say when there is nothing to read from. Overridden by [`NoData`] so that the
@@ -81,10 +45,8 @@ pub trait Data {
     }
 }
 
-/// No data at all: every read is an error that explains how to get one.
-///
-/// The default, and deliberately not "an empty directory": a script asking for data it cannot
-/// have should say so loudly, at the line that asked.
+/// No data at all: every read is an error that explains how to get some — loudly, at the line that
+/// asked, rather than an empty directory.
 pub struct NoData;
 
 impl Data for NoData {
@@ -100,11 +62,8 @@ impl Data for NoData {
     }
 }
 
-/// One directory, and nothing outside it.
-///
-/// The root is canonicalised once, when the directory is made; every read is canonicalised and
-/// checked against it, so a symlink pointing out is refused at the point it would escape rather
-/// than trusted because its name looked innocent.
+/// One directory, and nothing outside it. The root is canonicalised once; every read is
+/// canonicalised and checked against it, so a symlink pointing out is refused.
 pub struct Directory {
     root: PathBuf,
     /// Every file actually read, in order, without repeats — what a build's inputs were.
@@ -126,20 +85,14 @@ impl Directory {
         })
     }
 
-    /// The files this script actually read, in the order it first read them.
-    ///
-    /// A build's inputs, which is what a person wants when the output changed and the script
-    /// did not.
+    /// The files this script read, in the order it first read them — a build's inputs.
     pub fn inputs(&self) -> Vec<PathBuf> {
         self.read.borrow().clone()
     }
 
-    /// `name` as a path inside the root, or an error saying which wall it hit.
-    ///
-    /// Two checks, and both are needed. The first is on the *name*, before the filesystem is
-    /// touched, so `../../etc/hosts` is refused as what it plainly is. The second is on the
-    /// canonical *result*, because a name with nothing suspicious in it can still be a symlink
-    /// pointing anywhere, and only the filesystem knows.
+    /// `name` as a path inside the root, or an error saying which wall it hit. The name is checked
+    /// before the filesystem is touched (`../../etc/hosts`), and the canonical result after, since
+    /// an innocent name can still be a symlink pointing out.
     fn resolve(&self, name: &str) -> Result<PathBuf, String> {
         let path = Path::new(name);
         if name.is_empty() {
@@ -187,10 +140,8 @@ impl Data for Directory {
     }
 }
 
-/// The [`Data`] a script is running against, plus what it has already read.
-///
-/// The cache is not an optimisation first: it is what makes `json("prices.json")` inside a loop
-/// mean one file rather than a thousand reads, and it is where [`MAX_FILES`] is counted.
+/// The [`Data`] a script runs against, plus what it has already read — the cache that makes a
+/// `json(…)` in a loop one read, and where [`MAX_FILES`] is counted.
 pub(crate) struct Loaded {
     data: Rc<dyn Data>,
     cache: RefCell<HashMap<String, Dynamic>>,
@@ -255,16 +206,12 @@ fn bad(message: impl Into<String>) -> Box<EvalAltResult> {
     message.into().into()
 }
 
-/// JSON as Rhai's own values, which is the whole of what "pure data" means here.
+/// JSON as Rhai values: an object is a map, an array an array, `null` is `()` — the empty a cell
+/// takes. A number is an integer when it is one, since a script comparing `1800` with `1800.0` can
+/// tell them apart.
 ///
-/// One mapping, no surprises: an object is a map, an array is an array, `null` is `()` — the
-/// same empty a cell takes. A number is an integer when it is one and a float otherwise, which
-/// matters because a spreadsheet writes `1800` and `1800.0` the same way but a script comparing
-/// them does not.
-///
-/// **Object keys come back sorted**, because Rhai's map and `serde_json`'s are both ordered by
-/// key. JSON says an object is unordered, so nothing is lost — but a script that wants the
-/// author's order wants an array, and this comment is where that is said.
+/// **Object keys come back sorted**, as both Rhai's and `serde_json`'s maps are ordered by key; a
+/// script that wants the author's order wants an array.
 fn dynamic(value: serde_json::Value) -> Dynamic {
     use serde_json::Value;
     match value {

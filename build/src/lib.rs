@@ -2,35 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The generator — `doc/dsl.md` layer 1, D7. **\[GENERIC\]** in neither direction: this crate
-//! knows both applications, and nothing that reads a document knows this crate.
+//! The generator: a Rhai script that **returns** a document. `grind build model.rhai -o
+//! model.fods` runs it and writes the value it returns; the script never opens a document or
+//! touches a file, and is not recoverable from what it produced.
 //!
-//! A script is **compiled into a document**. `grind build model.rhai -o model.fods` runs it,
-//! takes the value it returns and writes that; the script never opens a document, never
-//! touches a file, and is not recoverable from what it produced (§1 — the arrow points one
-//! way, as it does for Typst and for Jsonnet). That is the whole layer boundary, and it is
-//! what keeps the language choice reversible: the artefact is a document, never the script.
+//! Not a macro: a macro runs when a *reader* opens a document, this when an *author* types `grind
+//! build`. Two things hold that line:
 //!
-//! **This is not a macro, and §2 is the argument rather than this comment.** The distinction
-//! is who runs it, when, and with whose authority: a macro runs when a *reader* opens a
-//! document, this runs when an *author* types `grind build`. Two things enforce it.
-//!
-//! * **R11 — no evaluator on any read path.** Nothing in `grind-core`, `grind-sheet`,
-//!   `grind-text` or any shell depends on this crate, so no code path that opens a document
-//!   can evaluate anything. `tests/manifest.rs` reads every manifest in the workspace and
-//!   fails the build the day one of them names `grind-build`, which is how R8 is checked one
-//!   crate over.
-//! * **No I/O, no clock, no randomness, and bounded** ([`engine`]). Two of those are facts
-//!   about the *build* rather than about this code remembering to unregister something: see
-//!   `Cargo.toml`, where Rhai's default features are turned off to take the clock out of the
-//!   language and the runtime seed out of its hasher.
-//!
-//! ## What a script says
-//!
-//! It builds a value tree and returns it — never a string of projection text, because a
-//! template that interpolates a value containing a quote produces a broken file, which is the
-//! injection problem every stringly-typed generator has (§4.1). The host serialises, so the
-//! question cannot arise.
+//! * **R11 — no evaluator on any read path.** Nothing that opens a document depends on this crate;
+//!   `tests/manifest.rs` reads every manifest in the workspace to enforce it.
+//! * **No I/O, no clock, no randomness, and bounded** ([`engine`]), the clock and the hasher's
+//!   seed removed by feature flags in `Cargo.toml`.
 //!
 //! ```rhai
 //! let s = sheet("Sales");
@@ -41,19 +23,10 @@
 //! s
 //! ```
 //!
-//! [`sheet`] is the spreadsheet's vocabulary and [`text`] the word processor's; each module's
-//! own comment is the reference for what it registers. The script's **return value** is the
-//! document, and the three things it may be are the three [`Artifact`] arms below.
-//!
-//! ## What it returns, and what the host does with it
-//!
-//! [`build`] hands back an `App` — the same one a shell drives — rather than a `Document`,
-//! because a generated document is nearly always asked one more question before it is
-//! written: recalculate it, lint it, or (D8) assert something about a total. Writing it is
-//! then the ordinary `save_file`, and `grind build` is a dozen lines in `cli/src/main.rs`.
-//!
-//! [`test`](mod@test) is the other verb, D8: the same script built the same way, recalculated, and its
-//! `test_` functions called with the result.
+//! A script builds a value tree, never projection text, so a value with a quote in it cannot break
+//! the file. [`sheet`] is the spreadsheet's vocabulary and [`text`] the word processor's.
+//! [`build`] hands back an `App` rather than a `Document`, since a generated document is nearly
+//! always recalculated, linted or tested before it is written; [`test`](mod@test) is `grind test`.
 
 pub mod chart;
 pub mod data;
@@ -71,19 +44,16 @@ use rhai::Dynamic;
 
 pub use data::{Data, Directory, NoData};
 
-/// What a script produced: one document, of one of the two kinds this suite has.
-///
-/// An `App` rather than a `Document` — see the module comment. The kind is decided by what the
-/// script *returned*, never by the output's name, which is the same rule
-/// `grind_core::kind` follows on the way in.
+/// What a script produced. The kind is decided by what the script returned, never by the output's
+/// name.
 pub enum Artifact {
     // Both boxed: each `App` is a few hundred bytes and they differ by hundreds, which is a
     // lopsided enum for a value made once per build.
     Spreadsheet(Box<grind_sheet::App>),
     Text(Box<grind_text::App>),
-    /// **Many documents**: a script that ended with a map of name to document — one letter per
-    /// recipient — is a series, and `grind build -o DIR` writes `DIR/<name>.<ext>` for each.
-    /// All of one kind, and never nested. Shared (`Rc`) because a test asks for one by name.
+    /// **Many documents**: a script ending with a map of name to document is a series, and `grind
+    /// build -o DIR` writes `DIR/<name>.<ext>` for each. All of one kind, never nested; `Rc`
+    /// because a test asks for one by name.
     Series(Vec<(String, Rc<Artifact>)>),
 }
 
@@ -99,11 +69,7 @@ impl Artifact {
     }
 }
 
-/// A script that would not run, or would not produce a document.
-///
-/// The position is the script's own, because a generator whose errors have no line number is
-/// a generator nobody debugs — §2's "a build error with a line number, not a hang" is about
-/// the bounded ones, and it would be a strange promise to keep only for those.
+/// A script that would not run, or would not produce a document, with the script's own position.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
     /// The script's name, as the caller spelled it — a path, or something like `<script>`.
@@ -139,17 +105,9 @@ impl Error {
     }
 }
 
-/// **What an editor needs to help somebody write a script**: every function this build
-/// registers, with its parameter names, its types and its documentation, as a Rhai definition
-/// file (`.d.rhai`).
-///
-/// This is Rhai's own mechanism for the purpose and the language server's own format, so
-/// nothing here is invented: `grind definitions > grind.d.rhai` beside a script is enough for
-/// completion and hover in an editor that speaks Rhai (`doc/generator-spec.md` §9).
-///
-/// The standard library is left out. A script's own vocabulary is what somebody is trying to
-/// learn, and burying forty of those functions in six hundred of Rhai's own is how a reference
-/// becomes unreadable — an editor already knows the standard ones.
+/// Every function a script may call, with its parameter names, types and documentation, as a Rhai
+/// definition file (`.d.rhai`) for an editor. Rhai's standard library is left out: a script's own
+/// vocabulary is what somebody is learning, and an editor already knows the rest.
 pub fn definitions() -> String {
     // `grind test`'s vocabulary too: a test is written in the same file as the model, so the
     // editor open on it should complete `assert_eq` as readily as `row`.
@@ -161,25 +119,13 @@ pub fn definitions() -> String {
         .single_file()
 }
 
-/// The same vocabulary as **VS Code snippets**, for the editor most people actually have open.
+/// The same vocabulary as **VS Code snippets**, which need no language server — the published Rhai
+/// extension has none. Parsed out of [`definitions`]'s output rather than this crate's source, so
+/// both are the engine's own answer and neither can describe a function that is not there.
 ///
-/// [`definitions`] is the right answer and needs a **language server** to read it; measured
-/// against the published Rhai extension, there is not one (`doc/editor-setup.md` says what was
-/// measured and how). A snippet file needs no server at all — VS Code reads `*.code-snippets`
-/// out of a workspace itself, given only the language id a syntax extension already registers —
-/// and carries a name, a call with its parameters as tab stops, and the documentation `hint`
-/// already required. That is completion and inline documentation for the whole host API, from
-/// the same source as the definition file, which is the property worth having: **both are the
-/// engine's own answer**, so neither can describe a function that is not there.
-///
-/// The parse is of [`definitions`]'s output rather than of this crate's source, for that
-/// reason. Its shape is Rhai's: doc comment lines, then one `fn` line per registration.
-///
-/// **A method is told from a free function by its first parameter's type.** Rhai spells a host
-/// type with a capital (`Sheet`, `Row`, `Format`) and a built-in without one (`string`, `int`,
-/// `array`), and every constructor here takes a built-in or nothing — so a leading capital is
-/// the receiver, and `s.push(…)` gets a snippet with the receiver dropped rather than one that
-/// asks for the sheet twice.
+/// A method is told from a free function by its first parameter's type: a host type is capitalised
+/// (`Sheet`, `Row`), a built-in is not, and no constructor takes a host type — so `s.push(…)` gets
+/// a snippet without the receiver.
 pub fn snippets() -> String {
     let mut out = serde_json::Map::new();
     let mut doc: Vec<String> = Vec::new();
@@ -256,19 +202,13 @@ fn snippet(signature: &str, doc: &[String]) -> Option<serde_json::Value> {
     }))
 }
 
-/// Run a script and return the document it built, with no data to read.
-///
-/// `script` is what to call the source in an error — a path, usually. Nothing here reads a
-/// file: rule 5 has no exception for a generator, and `grind-cli` is the one that owns paths.
+/// Run a script and return the document it built, with no data to read. `script` names the source
+/// in an error — a path, usually; nothing here reads a file.
 pub fn build(source: &str, script: &str) -> Result<Artifact, Error> {
     build_with(source, script, Rc::new(NoData))
 }
 
-/// [`build`], with somewhere for `json(…)` to read from.
-///
-/// The data is a [`Data`] rather than a path for the reason `build` takes a string rather than
-/// a file: this crate has no filesystem. `grind build` hands over a [`Directory`] rooted at the
-/// script's own directory, and `build/src/data.rs` is where the four walls around that are.
+/// [`build`], with a [`Data`] for `json(…)` to read from.
 pub fn build_with(source: &str, script: &str, data: Rc<dyn Data>) -> Result<Artifact, Error> {
     let engine = engine::engine(data);
     let value = engine
@@ -277,18 +217,10 @@ pub fn build_with(source: &str, script: &str, data: Rc<dyn Data>) -> Result<Arti
     materialise(value, script)
 }
 
-/// **Whether a script parses** — compiled by the same engine `grind build` runs, and never
-/// evaluated.
-///
-/// What an editor may do with a script it merely has open: report the syntax error at its line
-/// and column as somebody types. Running it is not that — a script runs because a person typed
-/// `grind build` or `grind test` (`doc/dsl.md` §2), never because a file was opened, which is
-/// why the language server is handed this and not [`build`] (`doc/init.md` I5). Compiling needs
-/// no data and touches no host function, so nothing a script *does* happens here.
-///
-/// The engine is the real one rather than a bare `Engine::new_raw()`, because its limits are
-/// part of the language: an expression nested past the depth `grind build` allows is an error
-/// here too.
+/// Whether a script parses — compiled by the same engine `grind build` runs, never evaluated. What
+/// an editor may do with a script it has open: a script runs because a person typed `grind build`
+/// or `grind test`, never because a file was opened, so the language server gets this and not
+/// [`build`]. The engine is the real one because its limits are part of the language.
 pub fn check(source: &str, script: &str) -> Result<(), Error> {
     let mut engine = engine::engine(Rc::new(NoData));
     test::register(&mut engine);
@@ -303,11 +235,8 @@ pub fn check(source: &str, script: &str) -> Result<(), Error> {
     })
 }
 
-/// The returned tree as a document.
-///
-/// Three accepted shapes, and the third is sugar: a script that builds one sheet may return
-/// the sheet, because `spreadsheet()` around a single `sheet(…)` is ceremony. `doc/dsl.md`
-/// §4.2's sketch ends with a bare `s`, and it runs.
+/// The returned tree as a document. A script building one sheet may return the bare sheet, since
+/// `spreadsheet()` around a single `sheet(…)` is ceremony.
 pub(crate) fn materialise(value: Dynamic, script: &str) -> Result<Artifact, Error> {
     if value.is::<rhai::Map>() {
         return series(value.cast::<rhai::Map>(), script);
@@ -315,9 +244,8 @@ pub(crate) fn materialise(value: Dynamic, script: &str) -> Result<Artifact, Erro
     single(value, script)
 }
 
-/// A map of name to document: the files a build of many documents writes. A name is a file's
-/// stem, so what a file system would mangle is refused here, at the name, instead of by an
-/// `open` that fails halfway through a series.
+/// A map of name to document: the files a series writes. A name is a file's stem, so what a file
+/// system would mangle is refused here rather than halfway through writing the series.
 fn series(map: rhai::Map, script: &str) -> Result<Artifact, Error> {
     if map.is_empty() {
         return Err(Error::at(

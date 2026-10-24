@@ -2,13 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Charts — the one decoration that may read any sheet, and so the last thing materialised.
-//!
-//! `doc/generator-spec.md` §7 used to list charts as a gap, with `grind sheet chart-add` as the
-//! answer and "nobody hand-writes one" as the reason. Then somebody wanted a generated
-//! spreadsheet *with a graph in it* to be the demo (`examples/loc/`), and a demo that ends in
-//! three shell commands after the script is a demo of the shell, not of the script. So a
-//! chart is sayable now, in exactly `grind sheet chart-add`'s vocabulary:
+//! Charts — the one decoration that may read any sheet, and so the last thing materialised. The
+//! vocabulary is `grind sheet chart-add`'s:
 //!
 //! ```rhai
 //! let s = sheet("Sales");
@@ -20,11 +15,10 @@
 //!     .position("6cm", "0cm").size("14cm", "8cm"));
 //! ```
 //!
-//! **Nothing here decides what a chart is.** The builder fills a `grind_sheet::ChartSpec` and
-//! `App::add_chart` resolves its ranges exactly as it does for the CLI and the GNOME dialog —
-//! an unqualified range means the sheet the chart is on, `Data.B2:B9` another one. The two
-//! things a spec does not carry, the frame's place and a series' colour, go through the two
-//! calls a shell would make for them, so a generated chart is one a person could have drawn.
+//! Nothing here decides what a chart is: the builder fills a `grind_sheet::ChartSpec` and
+//! `App::add_chart` resolves its ranges as it does for the CLI and the shells — an unqualified
+//! range means the chart's own sheet, `Data.B2:B9` another. The frame's place and a series'
+//! colour, which a spec does not carry, go through the calls a shell makes for them.
 
 use grind_core::style;
 use grind_sheet::{App, ChartAxis, ChartKind, ChartLegend, ChartSpec};
@@ -35,11 +29,9 @@ use crate::sheet::Sheet;
 
 type Res<T> = Result<T, Box<EvalAltResult>>;
 
-/// A chart as a script describes it — a request, resolved when the document exists.
-///
-/// A plain value rather than a shared handle like [`Sheet`]: every method returns a modified
-/// copy, the way [`crate::sheet`]'s `Style` and `Format` do, because a chart is said once and
-/// then handed to `s.chart(…)` rather than written to after it is placed.
+/// A chart as a script describes it — a request, resolved when the document exists. A plain value,
+/// every method returning a modified copy like `Style` and `Format`, since a chart is said once
+/// and handed to `s.chart(…)`.
 #[derive(Clone)]
 pub struct Chart(Request);
 

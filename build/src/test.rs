@@ -2,10 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `grind test` — `doc/dsl.md` §4.4, D8: **a generated document's numbers, checked**.
-//!
-//! A test is a function in the model's own script whose name starts with `test_`, and which takes
-//! the document:
+//! `grind test` — a generated document's numbers, checked. A test is a function in the model's own
+//! script named `test_…`, taking the document:
 //!
 //! ```rhai
 //! let s = sheet("Sales");
@@ -19,26 +17,14 @@
 //! }
 //! ```
 //!
-//! `grind test model.rhai` builds the document exactly as `grind build` does, **recalculates it**
-//! — the answer a test asks about is the one the formulas give, not whatever the script typed —
-//! and calls every `test_` function with it, one at a time, each failure with the line of the
-//! assertion that failed. `grind build` never calls them; a function nothing calls is inert, so
-//! the model and its checks are one file, the way a Rust module and its `#[cfg(test)]` are. The
-//! model's last statement is still its document — `s;` with a semicolon, since Rhai will not
-//! take a function definition straight after a bare expression, and the value of a script is
-//! its last statement's either way.
+//! The document is built as `grind build` builds it and **recalculated**, then every `test_`
+//! function is called with it, a failure reporting the assertion's line. `grind build` calls none,
+//! so a model and its checks are one file. The model ends `s;` with a semicolon because Rhai takes
+//! no function definition straight after a bare expression.
 //!
-//! **Why functions rather than §4.4's `test "name" { … }`.** That sketch is not Rhai, and making
-//! it Rhai means custom syntax — a second grammar in a crate whose whole argument is that the
-//! language is somebody else's. A function is already a name, a body and a line number, and a
-//! Rhai function cannot see the script's own variables, so a test can only reach the document
-//! through the one argument it is given: it checks what was **built**, never what the script
-//! happened to leave lying around.
-//!
-//! **What a test can do that a build cannot, and the reverse.** A test gets the assertions and a
-//! read-only [`Built`] document; it cannot change the document it is checking, because there is
-//! no method here that would. The builders are still in scope, since the vocabulary is one
-//! engine's, but a sheet built inside a test is a value that goes nowhere.
+//! Functions rather than custom `test "name" { … }` syntax, which would be a second grammar. A
+//! Rhai function cannot see the script's variables, so a test reaches only the document it is
+//! given — what was built — through a read-only [`Built`].
 
 use std::rc::Rc;
 
@@ -81,11 +67,8 @@ impl Tests {
     }
 }
 
-/// Build the script, recalculate what it built, and run its tests.
-///
-/// `Err` is for a script that did not build — the same error `grind build` would give — or one
-/// that defines no test at all, which is a mistake rather than a pass: a CI step that runs a
-/// file with no checks in it must not go green.
+/// Build the script, recalculate what it built, and run its tests. `Err` for a script that did not
+/// build, or that defines no test — a CI step running a file with no checks must not go green.
 pub fn run(source: &str, script: &str, data: Rc<dyn crate::Data>) -> Result<Tests, Error> {
     let mut engine = crate::engine::engine(data);
     register(&mut engine);
@@ -152,9 +135,8 @@ pub fn run(source: &str, script: &str, data: Rc<dyn crate::Data>) -> Result<Test
     Ok(Tests { kind, outcomes })
 }
 
-/// A failure inside a test arrives wrapped in "error in function `test_…`", at the position of
-/// the *call* — which this runner made, and which is nowhere in the script. The inner error is
-/// the one with the assertion's line.
+/// A failure inside a test arrives wrapped in "error in function `test_…`" at the position of the
+/// runner's call; the inner error has the assertion's line.
 fn unwrap_call(error: &EvalAltResult) -> &EvalAltResult {
     match error {
         EvalAltResult::ErrorInFunctionCall(_, _, inner, _) => unwrap_call(inner),
@@ -184,9 +166,8 @@ fn failed(message: String) -> Box<EvalAltResult> {
     EvalAltResult::ErrorRuntime(message.into(), rhai::Position::NONE).into()
 }
 
-/// Two script values, compared the way a person reading `assert_eq(total, 780)` means: an
-/// integer and a float are equal when they are the same number, since a cell holds only floats
-/// and a script mostly writes integers.
+/// Two script values, compared as `assert_eq(total, 780)` means: an integer equals a float of the
+/// same number, since a cell holds floats and a script writes integers.
 fn same(a: &Dynamic, b: &Dynamic) -> bool {
     match (number(a), number(b)) {
         (Some(x), Some(y)) => x == y,
@@ -333,9 +314,8 @@ impl Built {
     }
 }
 
-/// The test vocabulary: four assertions and a read-only document. Registered only for `grind
-/// test` — `grind build` has no assertion to make and no built document to read — and through
-/// [`hint`] like every other registration, so an editor documents these too.
+/// The test vocabulary: four assertions and a read-only document, registered only for `grind
+/// test`.
 pub fn register(engine: &mut Engine) {
     engine.register_type_with_name::<Built>("Built");
     engine.register_type_with_name::<Cell>("Cell");

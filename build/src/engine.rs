@@ -2,24 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The engine, and everything `doc/dsl.md` §2 promises about it.
+//! The engine, and every restriction on it, in one screen so it can be checked.
 //!
-//! §4.2's third argument for Rhai was that it is *built to be restricted* — keywords and
-//! operators can be turned off one at a time and every limit is the host's to set — and this
-//! module is that argument spent. It is deliberately one screen: a sandbox nobody can read in
-//! one sitting is a sandbox nobody checks.
-//!
-//! **What the language cannot do at all**, and needs nothing from this file to be unable to:
-//! there is no filesystem, no network, no environment and no randomness in core Rhai. Those
-//! live in crates one does not take, which is the difference §4.2 draws between *sandboxing a
-//! language* and using one designed to be reduced to a DSL.
-//!
-//! **What `Cargo.toml` takes away**, because a feature flag outranks a line of code somebody
-//! could delete: `no_time` removes `timestamp()`, and turning off `ahash/runtime-rng` takes
-//! the operating system's seed out of the hasher, so a map iterates in the same order on every
-//! machine. §2 asks for the same source to produce the same bytes; those two are why it does.
-//!
-//! **What this file takes away**: `eval`, module imports, and unbounded anything.
+//! Core Rhai has no filesystem, network, environment or randomness. `Cargo.toml` removes the rest
+//! by feature flag: `no_time` takes out `timestamp()`, and turning off `ahash/runtime-rng` takes
+//! the OS seed out of the hasher, so a map iterates in the same order everywhere and the same
+//! source produces the same bytes. This file removes `eval`, module imports, and unbounded
+//! anything.
 
 use std::rc::Rc;
 
@@ -27,21 +16,17 @@ use rhai::Engine;
 
 use crate::data::Data;
 
-/// How many operations a script may perform before it is a build error.
-///
-/// §2: "a generator that does not terminate is a build error with a line number, not a hang".
-/// Ten million is far more than a document needs — `examples/budget.rhai` uses about four
-/// thousand — and small enough that a runaway loop stops in about a second rather than never.
+/// How many operations a script may perform before it is a build error, not a hang: far more than
+/// a document needs, and a runaway loop stops in about a second.
 const MAX_OPERATIONS: u64 = 10_000_000;
 
 /// How deep a call may nest. A recursive function that never bottoms out is the other way a
 /// script fails to terminate, and this is the one that catches it.
 const MAX_CALL_DEPTH: usize = 64;
 
-/// How deeply one expression may nest — at a script's top level, and inside a `fn`. These are
-/// Rhai's own defaults *for a release build*; a debug build of Rhai halves both, so a script
-/// that `grind` built fine failed under `cargo run` with *Expression exceeds maximum
-/// complexity*. Stated here so that every build of `grind` accepts the same scripts.
+/// How deeply one expression may nest, at top level and inside a `fn`: Rhai's release-build
+/// defaults, stated because a debug build of Rhai halves them, and every build of `grind` should
+/// accept the same scripts.
 const MAX_EXPR_DEPTH: usize = 64;
 const MAX_FUNCTION_EXPR_DEPTH: usize = 32;
 
@@ -53,19 +38,15 @@ const MAX_STRING: usize = 1_000_000;
 const MAX_ARRAY: usize = 1_000_000;
 
 /// The engine a script runs in.
-///
-/// Every restriction is here rather than spread over the callers, so that "what may a script
-/// do" is answered by reading one function.
 pub fn engine(data: Rc<dyn Data>) -> Engine {
     let mut engine = Engine::new();
 
-    // `eval` is a script rewriting itself at run time. Nothing a generator wants needs it, and
-    // it defeats reading a script to know what it does — which is the property that makes a
-    // generated document reviewable.
+    // `eval` is a script rewriting itself at run time; nothing a generator wants needs it, and it
+    // defeats reading a script to know what it does.
     engine.disable_symbol("eval");
 
-    // No modules, so `import` resolves nothing. §9: an `import` that reaches a URL is the
-    // supply chain this project does not have, and one that reaches a path is I/O.
+    // No modules, so `import` resolves nothing: one reaching a URL is a supply chain, one reaching
+    // a path is I/O.
     engine.set_max_modules(0);
 
     engine.set_max_operations(MAX_OPERATIONS);
@@ -75,9 +56,7 @@ pub fn engine(data: Rc<dyn Data>) -> Engine {
     engine.set_max_array_size(MAX_ARRAY);
     engine.set_max_map_size(MAX_ARRAY);
 
-    // `print` and `debug` are the only output a script has, and they go to stderr: stdout
-    // belongs to the command's own report, which may be JSON, and a script printing into the
-    // middle of it would corrupt it.
+    // `print` and `debug` go to stderr: stdout is the command's report, which may be JSON.
     engine.on_print(|text| eprintln!("{text}"));
     engine.on_debug(|text, source, pos| match source {
         Some(source) => eprintln!("{source} @ {pos:?}: {text}"),
@@ -97,8 +76,8 @@ pub fn engine(data: Rc<dyn Data>) -> Engine {
 mod tests {
     use rhai::Dynamic;
 
-    /// The clock is gone from the *language*, not unregistered by hand — `no_time` in
-    /// `Cargo.toml`. This test is what notices somebody taking the feature flag back off.
+    /// The clock is gone through `no_time` in `Cargo.toml`; this notices the flag being turned
+    /// back off.
     #[test]
     fn there_is_no_clock() {
         let error = super::engine(std::rc::Rc::new(crate::data::NoData))
