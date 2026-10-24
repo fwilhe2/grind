@@ -2,11 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The spreadsheet half of the terminal shell. **\[ODS\]**
-//!
-//! Its sibling is [`crate::text`], and `main.rs` picks between them by asking
-//! `grind_core::kind` what the file is — R10's rule that every document type reaches every
-//! shell, arriving in the cheapest shell first.
+//! The spreadsheet half of the terminal shell. Its sibling is [`crate::text`]; `main.rs` picks
+//! between them by asking `grind_core::kind` what the file is.
 
 pub mod app;
 pub mod assist;

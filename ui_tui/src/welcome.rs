@@ -2,14 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The pane with no document in it — what `grind-tui` shows when it is given nothing to open
-//! and not told which kind to start (`doc/feature-matrix.md` §2's welcome-screen row).
-//!
-//! Before it, an empty invocation guessed "a spreadsheet", which is one binary holding two
-//! applications and choosing for the person. Three choices, each a key: `s` a new spreadsheet,
-//! `t` a new text document, `o` a path to open. The arrows and Enter work as well, and the open
-//! prompt is the only place this pane takes text. Like `ui_win32`'s welcome pane it owns no
-//! document, so what it hands back is an [`crate::app::Switch`] and the event loop does the rest.
+//! The pane with no document in it — what `grind-tui` shows when given nothing to open and no kind
+//! to start. Three choices, each a key: `s` a new spreadsheet, `t` a new text document, `o` a path
+//! to open; the arrows and Enter work too, and the open prompt is the only text it takes. It owns
+//! no document, so it hands back an [`crate::app::Switch`].
 
 use std::path::PathBuf;
 use std::sync::Arc;

@@ -2,13 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The key list, and the pane that shows it.
-//!
-//! **Written once, shown twice.** `grind-tui --help` prints it before the terminal is taken
-//! over; `:help` shows it inside, over the document. A list that lived in two places would be
-//! wrong in one of them, and the one nobody reads is the one that rots — so each shell owns
-//! its own section (`sheet::HELP`, `text::HELP`), this file owns what they share, and both
-//! entry points compose the same strings.
+//! The key list, and the pane that shows it. **Written once, shown twice**: `grind-tui --help`
+//! prints it before the terminal is taken over, and `:help` shows it inside. Each half owns its
+//! section (`sheet::HELP`, `text::HELP`), this file what they share.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -62,10 +58,8 @@ pub fn licences() -> &'static str {
 
 pub const LICENCES_TITLE: &str = " third-party licences — j/k scroll ";
 
-/// A help pane's scroll position, and whether it is showing at all.
-///
-/// Held by each shell rather than by this module: it is presentation state, and a shell that
-/// asked a global for it would be a shell that could not be tested twice in one process.
+/// A help pane's scroll position, and whether it is showing — presentation state, held by each
+/// half so it can be tested twice in one process.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Help {
     open: bool,

@@ -2,19 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **`:charts`** — the sheet's charts as a list to take hold of, the terminal's half of
-//! `doc/chart-handling.md`.
+//! **`:charts`** — the sheet's charts as a list to take hold of (`doc/chart-handling.md`). A
+//! terminal has no pointer and draws no chart on the grid, so selecting one is this pane: a row
+//! per chart, the selected one reversed and drawn in characters below the list (`chartview`). It
+//! stays selected when the pane closes, so `:chart <words>`, `:chart here` and `:chart!` mean it
+//! too.
 //!
-//! A terminal has no pointer to click a chart with and draws none on the grid, so the gesture
-//! the windows have — click it, see it selected, act on it — is this pane: every chart a row, one
-//! of them **selected** (reversed, as every list in this shell marks its cursor) and drawn in
-//! characters below the list (`chartview`), and the keys acting on that one. It stays selected
-//! when the pane closes, so `:chart <words>`, `:chart here` and `:chart!` mean it too.
-//!
-//! The keys are the same verbs every window gives a selected chart, in this shell's vocabulary:
-//! `d`/`x`/Delete deletes it (and `u` brings it back), `H`/`J`/`K`/`L` nudge it a cell, `+`/`-`
-//! make it bigger or smaller, `m` moves it to the cursor's cell, `b`/`l`/`p` make it a bar, line
-//! or pie chart (the GNOME dialog's three kinds), Enter changes it in words, Esc lets go. Pure state and a reply; `app.rs` does what a reply asks.
+//! Keys: `d`/`x`/Delete deletes it (`u` brings it back), `H`/`J`/`K`/`L` nudge it a cell, `+`/`-`
+//! resize, `m` moves it to the cursor's cell, `b`/`l`/`p` make it a bar, line or pie chart, Enter
+//! changes it in words, Esc lets go. Pure state and a reply; `app.rs` acts on the reply.
 
 use ratatui::Frame;
 use ratatui::crossterm::event::KeyCode;

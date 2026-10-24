@@ -2,24 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Event routing and rendering for the word processor.
+//! Event routing and rendering for the word processor. Holds no document state: blocks come from
+//! [`grind_text::App::get_viewport`] and lines from [`grind_text::App::layout_block`] every frame;
+//! the fields here are presentation — the caret, the scroll offset, the mode, a status line.
 //!
-//! Holds no document state of its own. Blocks come from [`grind_text::App::get_viewport`] and
-//! lines from [`grind_text::App::layout_block`] every frame; the only fields here are
-//! presentation concerns — the caret, the scroll offset, the mode and a status line.
+//! Every motion is answered by the core: `j` is `App::caret_line`, `0` and `$`
+//! `App::caret_line_bounds`, typing `App::insert_text`, Enter `App::split_block`, Backspace at a
+//! block's front `App::join_block`. This file decides which question to ask and where to draw the
+//! answer (`doc/text-layout.md`).
 //!
-//! **Where the editing model is, and is not.** Every motion this shell offers is answered by
-//! the core: `j` is `App::caret_line`, `0` and `$` are `App::caret_line_bounds`, typing is
-//! `App::insert_text`, Enter is `App::split_block`, Backspace at the front of a block is
-//! `App::join_block`. This file decides *which* question to ask and where to draw the answer.
-//! That division is `doc/text-layout.md`'s whole point: the GTK shell will ask the same
-//! questions of the same code and get the same answers, in different units.
-//!
-//! Three modes, vi-style. **Normal** navigates ([`super::keymap`]), **Insert** types at the
-//! caret, **Command** (`:`) runs a line. One difference from the spreadsheet's shell is worth
-//! naming: Insert here edits the *document*, not a staged buffer, so `Esc` returns to Normal
-//! without undoing anything — `u` is how you take a sentence back, exactly as in vi. A cell's
-//! edit is staged because a half-typed formula is not a value; a half-typed sentence is a
+//! Three modes, vi-style: **Normal** ([`super::keymap`]), **Insert**, **Command** (`:`). Unlike
+//! the spreadsheet half, Insert edits the document itself, so `Esc` undoes nothing — `u` takes a
+//! sentence back, as in vi: a half-typed formula is not a value, a half-typed sentence is a
 //! sentence.
 
 use std::collections::HashMap;
@@ -46,19 +40,12 @@ use grind_text::markdown::{self, Emphasis};
 /// Room for `p12 h1 ` down the left, so a reader can see the structure the outline is made of.
 const GUTTER: u16 = 8;
 
-/// How far one nesting level of a list indents its text, in terminal cells.
-///
-/// Two, which is exactly the width of the bullet that goes in it — so a depth-1 item's marker
-/// occupies the indent rather than sitting beside it, and a depth-2 item's is two cells further
-/// in. `ui_text_gtk/src/geom.rs`'s `INDENT` is the same idea in pixels.
+/// How far one nesting level of a list indents its text, in terminal cells: two, the width of the
+/// bullet, so a depth-1 item's marker fills the indent.
 const INDENT: u16 = 2;
 
-/// How far a block's text starts from the left of the text column.
-///
-/// The only kind that has one is a list item, because it is the only kind whose *depth* is part
-/// of the model. A heading is not indented: outline structure is implied by the level alone
-/// (`text/src/model.rs`), and indenting it would be this shell inventing a hierarchy the
-/// document does not have.
+/// How far a block's text starts from the left of the text column. Only a list item has a depth in
+/// the model; a heading is not indented, since outline structure is implied by level alone.
 fn indent_of(kind: &BlockKind) -> u16 {
     match kind {
         // Bounded, because a document may legitimately carry a deeply nested list and a window
@@ -68,20 +55,15 @@ fn indent_of(kind: &BlockKind) -> u16 {
     }
 }
 
-/// How wide each block is measured, and in what — this shell's [`grind_text::Faces`].
+/// How wide each block is measured — this shell's [`grind_text::Faces`]. A list item's depth
+/// arrives with its kind; a **table cell** does not, so cells are a map built once per frame from
+/// the blocks in and around the view, since `Faces::of` runs under `App`'s read lock and must not
+/// ask the document anything.
 ///
-/// Two things make a block narrower than the window: a **list item**'s own depth, which
-/// [`grind_text::Faces::of`] is handed directly as part of the kind, and a **table cell**, which
-/// it is not. So the cells are a map, built once per frame from the blocks in and around the view
-/// and read back here — which is the shape `ui_text_gtk/src/view.rs`'s `Column` has, and for the
-/// reason `grind_text::Faces`' own documentation gives: this is called while `App` holds its read
-/// lock, so it must not ask the document anything.
-///
-/// ponytail: the map covers the view and any table it touches, not the whole document. A caret
-/// motion that leaps out of the view into a table it has never drawn measures that table's first
-/// block at the full measure for one frame, and the frame after it is right. The upgrade is a
-/// flow over the whole document, which is what the GNOME window builds and what a terminal
-/// showing thirty lines of a thousand-block report should not.
+/// ponytail: the map covers the view and any table it touches. A motion leaping into a table never
+/// drawn measures its first block at full width for one frame. The upgrade is a flow over the
+/// whole document, which a terminal showing thirty lines of a thousand-block report should not
+/// build.
 #[derive(Clone, Debug, Default)]
 struct Measures {
     /// The text column, in terminal cells.
@@ -128,13 +110,9 @@ impl grind_text::Faces for Measures {
     }
 }
 
-/// One screen row of the document.
-///
-/// Three kinds, because a terminal draws three things: a line of an ordinary block, one line
-/// across a table's row, and a table's own rule. Everything else in this file is the first of
-/// those; the other two exist because a table's cells are placed by *coordinate* and not by what
-/// came before them, which is the one place a flat sequence of blocks stops being a stack of
-/// lines.
+/// One screen row: a line of an ordinary block, one line across a table's row, or a table's rule.
+/// A table's cells are placed by coordinate, the one place the flat sequence of blocks stops being
+/// a stack of lines.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Row {
     /// A line of an ordinary block: which block, which of its lines, the characters it covers,
@@ -219,20 +197,16 @@ impl Row {
     }
 }
 
-/// Where the last `:find` matched, and which of those the caret is on.
-///
-/// A snapshot, like the spreadsheet half's — `App::find` walks every block, and re-running it per
-/// keystroke would make `j` the most expensive key in the shell.
+/// Where the last `:find` matched, and which hit the caret is on — a snapshot, since `App::find`
+/// walks every block.
 #[derive(Clone, Debug, Default)]
 struct Find {
     needle: String,
     /// Each hit as the block it is in and the character offset of its first character. Ordered,
     /// because `n` and `N` are defined in terms of the order.
     hits: Vec<(usize, usize)>,
-    /// The same hits, grouped by block. Two shapes of one list rather than one, because the two
-    /// questions asked of it are different: `n` wants *the next one*, and the renderer asks *what
-    /// does this block match at* once per drawn line — which a filter over every hit would make
-    /// the window's height times every match a common word has.
+    /// The same hits grouped by block: `n` wants the next one, and the renderer asks what each
+    /// drawn block matches at.
     by_block: HashMap<usize, Vec<usize>>,
     at: usize,
 }
@@ -319,25 +293,20 @@ pub struct App {
     help: crate::help::Help,
     /// `:licences` — the third-party list, read-only.
     licences: crate::help::Help,
-    /// The code view, when it is showing, and the projection it is showing (`doc/dsl.md` §6).
-    ///
-    /// Projected once when the pane opens and dropped when it closes, which §6.3's `ponytail`
-    /// allows and which is exact here rather than approximate: the pane is read-only and any key
-    /// that is not one of its motions closes it, so the document cannot change underneath it.
+    /// The code view and the projection it shows, projected when the pane opens — exact, since the
+    /// pane is read-only and any other key closes it.
     code: crate::code::Code,
     source: Option<grind_text::projection::Projection>,
-    /// `grind text lint`'s findings, when the pane is showing them (`doc/dsl.md` §4.3, D6) —
-    /// the same pane the spreadsheet half uses, because a diagnostic is document-type-neutral.
+    /// `grind text lint`'s findings while the pane shows them.
     problems: crate::problems::Problems,
     /// The window's height as of the last frame — what a page key in the help pane scrolls by.
     help_height: usize,
     quit: bool,
     /// Set by `:new` and `:open`; the event loop takes it and swaps the pane.
     switch: Option<crate::app::Switch>,
-    /// Spelling (`doc/spelling.md`): what `:spell` last said, what that came to for this
-    /// document, and the dictionary `:spell ignore` adds to. `None` checks nothing — which is
-    /// where a pane starts until [`App::spelling`] attaches one, so a test's frame is the
-    /// document's alone.
+    /// Spelling: what `:spell` last said, what that came to here, and the dictionary `:spell
+    /// ignore` adds to. `None` checks nothing until [`App::spelling`] attaches one, so a test's
+    /// frame is the document's alone.
     spelling: grind_spell::Setting,
     /// Whether a `:spell` choice is written to the person's remembered setting — on for a pane opened
     /// on a file (`spelling()`), off in a test.
@@ -676,13 +645,9 @@ impl App {
         }
     }
 
-    /// How each block is set, for the motions that may cross out of one into another.
-    ///
-    /// One font at one size, because a terminal has one — but **not one measure any more**: a
-    /// list item is indented and a table cell is a column of its own, so this is [`Measures`]
-    /// rather than [`grind_text::Uniform`]. That is the seam earning its keep in the medium it
-    /// was hardest to fake: the GUI shells vary the *face* per block and this varies only the
-    /// width, and the engine above cannot tell which of the two it is being handed.
+    /// How each block is set, for motions crossing between blocks: one font at one size, but not
+    /// one measure — a list item is indented and a table cell is a column — so [`Measures`] rather
+    /// than [`grind_text::Uniform`].
     fn faces(&self) -> &Measures {
         &self.measures
     }
@@ -694,11 +659,8 @@ impl App {
         self.measures.measure(index, &kind)
     }
 
-    /// Every motion, routed to the core.
-    ///
-    /// The horizontal ones are the only arithmetic in this file, and they are arithmetic over
-    /// *characters* rather than over layout — walking off the end of a block onto the next is a
-    /// document fact, not a line one, so the shell may do it.
+    /// Every motion, routed to the core. The horizontal ones are arithmetic over characters, not
+    /// layout: walking off a block onto the next is a document fact.
     fn go(&mut self, motion: Motion) {
         let blocks = self.core.block_count();
         if blocks == 0 {
@@ -886,9 +848,8 @@ impl App {
     }
 
     fn type_char(&mut self, c: char) {
-        // **One core call, one undo step.** The notation, the erasing of the markers and the
-        // formatting are `App::type_markdown`'s (`grind_text::markdown`), so this shell and
-        // the two windows read `**` the same way and none of them has its own idea of it.
+        // One core call, one undo step: the notation, the erasing of its markers and the
+        // formatting are `App::type_markdown`'s.
         match self
             .core
             .type_markdown(self.caret, &c.to_string(), self.resume.as_ref())
@@ -1024,9 +985,8 @@ impl App {
             _ if cmd.starts_with("table ") => self.cmd_table(cmd[6..].trim()),
             _ if cmd.starts_with("move ") => self.cmd_move(cmd[5..].trim()),
             _ if cmd.starts_with("find ") => self.cmd_find(cmd[5..].trim()),
-            // vi's own substitution, and the one command here that is a *document* edit rather
-            // than a caret move: `App::replace` changes every match, which is what `/g` means
-            // and the only thing this build's core offers.
+            // vi's substitution, a document edit: `App::replace` changes every match, which is
+            // what `/g` means.
             _ if cmd.starts_with("s/") => self.cmd_substitute(&cmd[2..]),
             _ if cmd.starts_with("font ") => {
                 self.cmd_char(grind_text::format::Change::Family(non_empty(&cmd[5..])))
@@ -1310,12 +1270,8 @@ impl App {
         };
     }
 
-    /// `:outline` — every heading, indented by its level, each row a jump.
-    ///
-    /// A **pane** rather than a line of status text, which is what it used to be: an outline is a
-    /// list somebody reads and then acts on, and a list printed into a one-line bar is neither
-    /// readable past the third heading nor clickable at all. [`crate::pick`] is the widget, and it
-    /// opens on the section the caret is already in — the same courtesy the code view does.
+    /// `:outline` — every heading indented by its level in a [`crate::pick`] pane, each row a
+    /// jump, opening on the section the caret is in.
     fn cmd_outline(&mut self) {
         let rows: Vec<crate::pick::Row> = self
             .core
@@ -1338,12 +1294,8 @@ impl App {
         self.status.clear();
     }
 
-    /// `:mark <name>` — anchor a bookmark at the caret's block, which is the one thing `:names`
-    /// could *show* and this shell could not make.
-    ///
-    /// A bookmark is what makes `#intro` an address that survives an edit above it where `p12`
-    /// does not, and until now every client in the suite could read one and only the CLI could
-    /// write one (`doc/feature-matrix.md` §7).
+    /// `:mark <name>` — a bookmark at the caret's block: what makes `#intro` an address that
+    /// survives an edit above it.
     fn cmd_mark(&mut self, name: &str) {
         if name.is_empty() {
             self.status = "usage: :mark <name>".to_string();
@@ -1377,11 +1329,8 @@ impl App {
         }
     }
 
-    /// `:table [rows cols]` — a table before the caret's block, and the grid this shell draws
-    /// round one.
-    ///
-    /// A cell holds *blocks* (`doc/text-core.md`), so every key here already worked inside one
-    /// before this verb existed; what it adds is the ability to make one at all.
+    /// `:table [rows cols]` — a table before the caret's block. A cell holds blocks, so every
+    /// other key already works inside one.
     fn cmd_table(&mut self, size: &str) {
         let mut words = size.split_whitespace();
         let rows = words
@@ -1410,11 +1359,8 @@ impl App {
         }
     }
 
-    /// `:move <address>` — the caret's block, moved to sit before the block that address names.
-    ///
-    /// The one block operation this shell had no spelling for: `o` opens one and `X` deletes one,
-    /// and reordering meant deleting and retyping. `App::move_blocks` is one action, so it is one
-    /// press of `u`.
+    /// `:move <address>` — the caret's block, moved before the block that address names; one
+    /// `App::move_blocks`, so one `u`.
     fn cmd_move(&mut self, address: &str) {
         let to = match grind_text::loc::parse(address)
             .map_err(|e| e.to_string())
@@ -1481,12 +1427,8 @@ impl App {
         }
     }
 
-    /// Where a piece of text is: **every** match marked on screen, and the caret on the first one
-    /// at or after where it already was.
-    ///
-    /// `n` and `N` step from there, which is vi's own pair of keys and the spreadsheet half's
-    /// (`crate::sheet::keymap`). It used to be one jump to the first match and a count — a search
-    /// you could not walk.
+    /// `:find` — **every** match marked, and the caret on the first at or after where it was; `n`
+    /// and `N` step from there.
     fn cmd_find(&mut self, needle: &str) {
         if needle.is_empty() {
             self.find = Find::default();
@@ -1752,10 +1694,9 @@ impl App {
         }
     }
 
-    /// `:font <family>` and `:size <length>` — the family or the size over the selection, as the
-    /// document stores them (`fo:font-family`'s name, an ODF length such as `14pt`); with no
-    /// argument the document's own is put back. One font at one size is a terminal's nature, so
-    /// nothing changes on screen here: the other windows draw what this writes.
+    /// `:font <family>` and `:size <length>` — the family or size over the selection, as the
+    /// document stores them; with no argument the document's own is put back. Nothing changes on
+    /// screen, since a terminal has one font.
     fn cmd_char(&mut self, change: grind_text::format::Change) {
         let Some((from, to)) = self.selection() else {
             self.status = "nothing selected — v starts a selection".to_string();
@@ -1814,14 +1755,11 @@ impl App {
         }
     }
 
-    // --- the code view (doc/dsl.md §6, D9) ---
+    // --- the code view ---
 
-    /// `:source` — the document as its projection, with the cursor on the block the caret is in.
-    ///
-    /// A `:` command for the reason `:names` is one: it is a *mode*, and this shell's keys are
-    /// vi's motions. `doc/tui-shell.md`'s second decision rules out drawing markdown markers
-    /// *inline*, and this is not that — it is a separate pane showing a different notation, which
-    /// is exactly how a source view avoids the problem that rules the inline one out.
+    /// `:source` — the document as its projection, the cursor on the caret's block. A `:` command
+    /// because it is a mode. This is not drawing markdown inline (`doc/tui-shell.md`, decision 2):
+    /// it is a separate pane in a different notation.
     fn cmd_source(&mut self) {
         let projection = self.core.project();
         // `p12` — the address every block has, whatever else it answers to.
@@ -1905,26 +1843,18 @@ impl App {
 
     // --- Rendering ---
 
-    /// Every screen row from `top`, as far as the window needs.
-    ///
-    /// Offsets rather than a `String`, because what is drawn is not one piece of text: a run of it
-    /// may be bold, part of it may be selected, part of it may be a search match, and the caret
-    /// sits between two characters. [`App::draw`] cuts it up; this only says where each line goes.
-    ///
-    /// **A table is laid out here, and it is why this returns a [`Row`] rather than a triple.** A
-    /// document is a flat sequence of blocks and a terminal is a stack of lines, so everything
-    /// else in this file is one block per line and one line under the last. A table's cells are
-    /// side by side — its blocks are placed by coordinate, not by what came before them — and that
-    /// is the whole of the difference, expressed as one variant.
+    /// Every screen row from `top`, as far as the window needs — offsets rather than strings,
+    /// since a run may be bold, part selected, part a search match, with the caret between two
+    /// characters; [`App::draw`] cuts them up. A table is laid out here: its cells sit side by
+    /// side, placed by coordinate, which is what [`Row`] carries.
     fn visible(&self, height: usize) -> Vec<Row> {
         let blocks = self.core.block_count();
         let mut out: Vec<Row> = Vec::with_capacity(height);
         let mut block = self.top.0.min(blocks.saturating_sub(1));
         let mut skip = self.top.1;
-        // One viewport read for the whole walk rather than one per block: a block is at least one
-        // line tall, so `height` of them is the most a window of `height` rows can reach. The
-        // only thing wanted from it is each block's *kind*, which is what says how far its text
-        // is indented — a table's cells get their measure from `Measures` instead.
+        // One viewport read for the whole walk: `height` blocks is the most `height` rows can
+        // reach. Only each block's kind is wanted, for its indent; table cells get their measure
+        // from `Measures`.
         let kinds = self
             .core
             .get_viewport(block..(block + height + 1).min(blocks));
@@ -1978,12 +1908,10 @@ impl App {
         out
     }
 
-    /// One table, as the rows a terminal draws it in: a rule, then each of its rows' lines side by
-    /// side, a rule between rows, and a rule under the last.
-    ///
-    /// Every cell is laid out at its **own** measure, which is what makes the caret land where the
-    /// ink is: `Measures` gave each of its blocks that width, so `App::layout_block`,
-    /// `App::caret_line` and this all break the same text at the same places.
+    /// One table as the rows a terminal draws: a rule, each row's lines side by side, a rule
+    /// between rows and one under the last. Every cell is laid out at its own measure, which
+    /// `Measures` gave its blocks, so layout, `App::caret_line` and this break the same text
+    /// alike.
     fn table_rows(&self, table: &TableBox) -> Vec<Row> {
         let views = self.core.get_viewport(table.blocks.clone());
         let mut out = Vec::new();
@@ -2041,11 +1969,9 @@ impl App {
         out
     }
 
-    /// Where each block in and around the view is measured, rebuilt every frame.
-    ///
-    /// One viewport read for the window, and one `App::table` call per *table* rather than per
-    /// block — a table's extent is derived from its cells (`Document::table_extent`), and the core
-    /// is the one place that derivation lives.
+    /// Where each block in and around the view is measured, rebuilt every frame: one viewport
+    /// read, and one `App::table` per table, since a table's extent is derived from its cells in
+    /// the core.
     fn measures_for(&self, width: f32, height: usize) -> Measures {
         let blocks = self.core.block_count();
         // A page either side of the view, so a `Ctrl+f` that lands in a table has already
@@ -2071,9 +1997,8 @@ impl App {
                 index += 1;
                 continue;
             };
-            // Every column the same width, which is what this build's model can say: a table
-            // carries no style of its own, so there are no column widths to honour
-            // (`doc/text-core.md`). One rule down each side of each column comes out first.
+            // Every column the same width — the table's own column widths are not drawn here. One
+            // rule down each side of each column comes out first.
             let columns = table.columns.max(1) as u16;
             let cell_width = ((width as u16).saturating_sub(columns + 1) / columns).max(1);
             for block in table.blocks.clone() {
@@ -2125,17 +2050,11 @@ impl App {
         }
     }
 
-    /// One laid-out line, cut into the pieces the terminal can draw it as.
+    /// One laid-out line, cut into drawable pieces at every boundary of the **formatting**, the
+    /// **selection** and the **caret**, none of which line up.
     ///
-    /// Three things change part-way along a line and none of them lines up with the others:
-    /// the document's own **formatting**, the **selection**, and the **caret**. Each is a set
-    /// of boundaries in the block's character offsets, and a piece is what falls between two
-    /// adjacent ones — the same cut `ui_web/src/text/runs.rs` makes for the same reason, in a
-    /// different toolkit.
-    ///
-    /// **A terminal draws formatting, it does not spell it.** Bold is bold, not `**bold**`:
-    /// markers on screen would be characters the core never measured, and every caret after
-    /// one would sit in the wrong column. The markers are for *typing* (`markdown.rs`).
+    /// **Formatting is drawn, not spelled**: bold is bold, not `**bold**`, since markers would be
+    /// characters the core never measured and every caret after one would be off.
     fn line_spans(
         &self,
         view: &BlockView,
@@ -2225,21 +2144,17 @@ impl App {
             if block_code {
                 style = style.add_modifier(Modifier::DIM);
             }
-            // A `:find` match, and it **replaces** the run's own colours rather than adding to
-            // them — the same rule the spreadsheet half's marks follow, for the same reason: a
-            // match drawn over a run that was already yellow would be a mark nobody could tell
-            // from the document. It is transient, it is only drawn while a search is live, and
-            // `Esc` puts it away.
+            // A `:find` match **replaces** the run's colours rather than adding to them, or a
+            // match over yellow text would be invisible. Drawn only while a search is live.
             if marks
                 .iter()
                 .any(|span| span.start <= start && end <= span.end)
             {
                 style = MATCH;
             }
-            // A misspelt word is underlined in red — the one decoration a terminal has that
-            // reads as a squiggle's cousin. A terminal that cannot colour an underline draws it
-            // in the text's own ink, which reads like the document's underline; `]` is what
-            // says which words they are.
+            // A misspelt word is underlined in red. A terminal that cannot colour an underline
+            // draws it in the text's ink, like the document's own underline; `]` says which words
+            // they are.
             if misspelt
                 .iter()
                 .any(|span| span.start <= start && end <= span.end)
@@ -2314,9 +2229,8 @@ impl App {
         let width = f32::from(body.width.saturating_sub(GUTTER)).max(1.0);
         self.height = usize::from(body.height).max(1);
         self.clamp_caret();
-        // Twice, either side of following the caret: the first pass measures the window the view
-        // is on, the second the window it moved to — a `G` into a table would otherwise be drawn
-        // for one frame at the full measure. Both are one viewport read of three screenfuls.
+        // Twice, either side of following the caret: once for the window the view is on, once for
+        // where it moved, or a `G` into a table draws one frame at full width.
         self.measures = self.measures_for(width, self.height);
         self.follow_caret(self.height);
         self.measures = self.measures_for(width, self.height);
@@ -2346,9 +2260,8 @@ impl App {
         self.reconsider_spelling();
         let rows = self.visible(self.height);
         let selection = self.selection();
-        // **One viewport read for the whole window**, rather than one per block: every row says
-        // which blocks it draws, and the range between the first and the last is contiguous
-        // because the document is a sequence.
+        // One viewport read for the window: the blocks the rows touch are contiguous, since the
+        // document is a sequence.
         let touched: Vec<usize> = rows.iter().flat_map(Row::blocks).collect();
         let views = match (touched.iter().min(), touched.iter().max()) {
             (Some(lo), Some(hi)) => self.core.get_viewport(*lo..hi + 1),
@@ -2409,11 +2322,9 @@ impl App {
                         caret,
                         &misspelt,
                     ));
-                    // `doc/view-modes.md` §3.6: a bookmark is the named-range analogue and it is
-                    // the one part of a text document a reader cannot see at all — it contributes
-                    // no characters. With `:names` on, the block that holds one says so, after
-                    // its text rather than inside it, because an offset inside the line is an
-                    // offset the caret counts and a mark drawn there would move it.
+                    // With `:names` on, a block holding a bookmark says so after its text, not
+                    // inside it: a mark inside the line would be an offset the caret counts
+                    // (`doc/view-modes.md` §3.6).
                     if self.names && first && !view.marks.is_empty() {
                         let marks: Vec<String> = view
                             .marks
@@ -2531,20 +2442,14 @@ impl App {
         }
     }
 
-    /// What the title bar calls this document.
-    /// What a pane's title calls the document — its file's **name**, as the title bar does,
-    /// rather than the whole path, which on any real machine pushed the pane's own word off the
-    /// end of its border.
+    /// What a title calls the document: its file's **name**, not the whole path, which pushed a
+    /// pane's own word off its border.
     fn document_name(&self) -> String {
         chrome::file_name(self.path.as_deref())
     }
 
-    /// Which section the caret is in — the last heading at or before it, as `\u{a7}2.1 Costs`.
-    ///
-    /// The one thing on screen that says *where in a long document* the caret is, which is why it
-    /// earns the title bar's right-hand end. It walks the outline, which walks every block; that
-    /// is one pass per frame over a document a person is reading, and the same walk `:outline`
-    /// makes.
+    /// Which section the caret is in — the last heading at or before it, as `\u{a7}2.1 Costs` —
+    /// for the title bar's right end. One outline walk per frame.
     fn section_here(&self) -> Option<String> {
         let heading = self
             .core
@@ -2556,11 +2461,7 @@ impl App {
 }
 
 /// A table's rules, and a `:find` match — the two grounds this pane paints that are not the
-/// document's own.
-///
-/// Named colours for `crate::chrome`'s reason. A rule is drawn quietly on purpose: it is the
-/// shape of the table, and a grid whose lines shouted would be a grid you read instead of the
-/// text in it.
+/// document's. A rule is quiet: it is the table's shape, not its content.
 const RULE: Style = Style::new().fg(Color::DarkGray);
 const MATCH: Style = Style::new().bg(Color::LightYellow).fg(Color::Black);
 
@@ -2569,10 +2470,9 @@ const MATCH: Style = Style::new().bg(Color::LightYellow).fg(Color::Black);
 fn indent_text(mark: Option<&str>, indent: u16) -> String {
     match mark {
         Some(mark) => {
-            // *Drawn* rather than inserted: a marker in the text would be a character the core
-            // never measured, which puts every caret after it in the wrong column
-            // (`doc/tui-shell.md`, decision 2). A label wider than the indent takes the cells
-            // it needs, as a terminal has no smaller type to set it in.
+            // Drawn, not inserted: a marker in the text would be a character the core never
+            // measured (`doc/tui-shell.md`, decision 2). A label wider than the indent takes the
+            // cells it needs.
             let mark = format!("{mark} ");
             format!(
                 "{}{mark}",
@@ -2583,13 +2483,10 @@ fn indent_text(mark: Option<&str>, indent: u16) -> String {
     }
 }
 
-/// What colour the gutter is drawn in — the shell's own space, so this is the one place a
-/// *structural* colour is allowed.
-///
-/// A run's own `fo:color` is the document's and is drawn as itself (`terminal_style`); a colour
-/// chosen here would be indistinguishable from one. The gutter has no document content in it at
-/// all — it holds an address and three letters this shell wrote — so the kind may be a hue there
-/// without ever being one in the text.
+/// The gutter's colour — the shell's own space, so the one place a structural colour is allowed. A
+/// run's `fo:color` is drawn as itself in the text, where a shell colour would be
+/// indistinguishable from the document's; the gutter holds only an address and three letters this
+/// shell wrote.
 fn gutter_style(kind: &BlockKind, style: Option<&str>) -> Style {
     let color = match kind {
         _ if style == Some(markdown::PREFORMATTED) => Color::Magenta,
@@ -2600,11 +2497,8 @@ fn gutter_style(kind: &BlockKind, style: Option<&str>) -> Style {
     Style::default().fg(color)
 }
 
-/// Cut or pad a row of spans to exactly `width` terminal cells.
-///
-/// What a table cell needs and nothing else does: the rule after a cell has to land in the same
-/// column on every line of the table, so a cell that came out one cell wide — the caret sitting
-/// past the end of a full line does exactly that — would bend the grid.
+/// Cut or pad a row of spans to exactly `width` cells, so the rule after a table cell lands in the
+/// same column on every line — even when the caret past a full line makes the cell one wider.
 fn fit(spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
     use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
     let mut out = Vec::with_capacity(spans.len() + 1);
@@ -2650,12 +2544,8 @@ fn span_len(from: Caret, to: Caret) -> usize {
     }
 }
 
-/// A run's own formatting, as the attributes a terminal has.
-///
-/// Four of the eight `CharStyle` properties land here; family and size have no meaning in a
-/// grid of one font at one size (`Cells`' own note), and that is a limit of the medium rather
-/// than a gap in the shell. A colour is offered as one of the sixteen the terminal names,
-/// nearest by hue — a document's `#ff4136` is red here, which is the honest answer.
+/// A run's own formatting as terminal attributes: four of `CharStyle`'s eight. Family and size
+/// mean nothing at one font and size; a colour becomes the nearest of the sixteen by hue.
 fn terminal_style(props: &CharStyle) -> Style {
     let on = |value: &Option<String>, off: &str| value.as_deref().is_some_and(|v| v != off);
     let mut style = Style::default();
@@ -2671,25 +2561,17 @@ fn terminal_style(props: &CharStyle) -> Style {
     if on(&props.line_through, "none") {
         style = style.add_modifier(Modifier::CROSSED_OUT);
     }
-    // **A terminal has one font**, so a monospace run cannot be drawn as a different one —
-    // everything here already is monospace. It is dimmed instead, and SGR 2 is optional, so on
-    // a terminal or a theme that ignores it a `` `code` `` run is *invisible*. That was left
-    // open once; it is decided now, and the decision is to keep DIM and say what it costs,
-    // because every alternative is worse:
+    // A terminal has one font, so a monospace run is **dimmed** — and SGR 2 is optional, so on
+    // some terminals a `` `code` `` run does not show. Every alternative is worse:
     //
-    // * a colour or a background would be the *document's* — three lines below, a run's own
-    //   `fo:color` becomes exactly that, so a shell-chosen one would be indistinguishable from
-    //   a document-chosen one and would overwrite it where a run had both;
+    // * a colour or background would be indistinguishable from the run's own `fo:color`, and
+    //   overwrite it;
     // * bold, italic, underline and strikethrough are each already a property of the run;
     // * reverse video is the selection and the caret;
-    // * a marker in the line (`` ` ``) is a character the core never measured, which puts every
-    //   caret after it in the wrong column — `doc/tui-shell.md`'s decision 2, and the reason
-    //   markdown is for typing and never for showing.
+    // * a `` ` `` marker in the line is a character the core never measured (`doc/tui-shell.md`,
+    //   decision 2).
     //
-    // The *block* half does not depend on SGR 2 at all: a fenced block says `pre` in the
-    // gutter (`describe_block`), which is plain text every terminal draws. There is no such
-    // place for a run inside a line, and `doc/tui-shell.md` says so rather than implying that
-    // dimming always shows.
+    // A code *block* does not depend on SGR 2: its gutter says `pre` (`describe_block`).
     if props.font_family.is_some() {
         style = style.add_modifier(Modifier::DIM);
     }
@@ -2705,19 +2587,11 @@ fn terminal_style(props: &CharStyle) -> Style {
     style
 }
 
-/// What the gutter calls a block: its kind, or the one named paragraph style this shell has a
-/// spelling for.
-///
-/// **The gutter is where a code *block* is visible in a terminal**, and deliberately so. A
-/// fence (```) sets a paragraph style and changes no character of the text, so the only two
-/// places to show it are inside the line — where a marker would be a character the core never
-/// measured, putting every caret after it in the wrong column (`doc/tui-shell.md`, decision 2)
-/// — and outside it, where this shell already writes each block's address and kind. Three
-/// letters in the gutter are plain characters that every terminal draws, which is more than
-/// can be said for the `Modifier::DIM` the block also carries (`terminal_style`).
-///
-/// `Title` and `Subtitle` get no spelling of their own: they are drawn bold, which is a
-/// distinction the reader can already see in the text, and the gutter has three columns.
+/// What the gutter calls a block: its kind, or the one named paragraph style with a spelling here.
+/// **The gutter is where a code block shows**: a fence sets a paragraph style and changes no
+/// character, and a marker in the line would be a character the core never measured; three plain
+/// letters in the gutter draw on every terminal. `Title` and `Subtitle` are drawn bold and get no
+/// spelling of their own.
 fn describe_block(kind: &BlockKind, style: Option<&str>) -> String {
     if style == Some(markdown::PREFORMATTED) {
         return "pre".to_owned();
@@ -2767,8 +2641,8 @@ mod tests {
         App::new(core, Arc::new(RedrawFlag::default()), None)
     }
 
-    /// **D9 in this shell.** `:source` shows the projection, opens on the block the caret is in,
-    /// and moving in it puts the caret in the block that line projects.
+    /// `:source` shows the projection, opens on the caret's block, and moving in it puts the caret
+    /// in the block that line projects.
     #[test]
     fn the_code_view_shows_the_source_and_moving_in_it_moves_the_caret() {
         let mut app = app(&["first", "second", "third"]);
@@ -2864,9 +2738,8 @@ mod tests {
         assert_eq!(render(&mut app, 40, 6)[1], plain[1]);
     }
 
-    /// **The gap `doc/tui-shell.md` named, closed.** A table is drawn as a grid, with box rules
-    /// round cells that were already editable — and every cell is laid out at its *own* measure,
-    /// which is what makes the caret land where the ink is.
+    /// A table is drawn as a grid with box rules, and every cell is laid out at its own measure,
+    /// so the caret lands where the ink is.
     #[test]
     fn a_table_is_drawn_as_a_grid_and_its_cells_are_measured_narrower() {
         let mut app = app(&["before", "after"]);
@@ -2942,8 +2815,7 @@ mod tests {
         assert!(app.core.input_text(1).unwrap().contains('X'));
     }
 
-    /// `:table` — the verb that makes one. Until now this shell could edit a cell and not create
-    /// a table to put one in.
+    /// `:table` makes a table, and `u` takes it back.
     #[test]
     fn the_command_line_inserts_a_table_and_u_takes_it_back() {
         let mut app = app(&["only"]);
@@ -3307,8 +3179,7 @@ mod tests {
         );
     }
 
-    /// The test S8 exists for. `j` is not "the next block" — it is the next *line*, and the
-    /// answer comes from the core, measured in terminal cells.
+    /// `j` is the next *line*, not the next block — the core's answer, measured in terminal cells.
     #[test]
     fn j_moves_by_a_wrapped_line_not_by_a_block() {
         let mut app = app(&["the cat sat on the mat and then it slept"]);
@@ -3569,9 +3440,8 @@ mod tests {
         assert!(!preformatted(&fenced, 2), "the closing fence ends it");
     }
 
-    /// The bug the backtick test found, pinned for all five notations: a character typed
-    /// after a closing marker joins the run that was just emphasised unless something stops
-    /// it, so `say **this** and` would carry on bold past the marker that ended it.
+    /// A character typed after a closing marker does not join the emphasised run, for all five
+    /// notations: `say **this** and` must not carry on bold.
     #[test]
     fn typing_after_a_closing_marker_is_not_emphasised() {
         for typed in [
@@ -3683,11 +3553,8 @@ mod tests {
         assert_eq!(text(&app), "hello world", "the register puts it back");
     }
 
-    /// Formatting is *drawn*, not spelled: the terminal's own bold, with no markers on screen
-    /// to shift every caret after them.
     /// A tab is drawn as the cells it was measured at, and a caret after it sits on the character
-    /// it is before. It used to draw as nothing — `name⇥value` read `namevalue` — and every caret
-    /// after it stood one column right of its character.
+    /// it is before.
     #[test]
     fn a_tab_is_drawn_as_wide_as_it_was_measured() {
         let mut app = app(&["name\tvalue"]);

@@ -3,35 +3,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! The chrome both halves wear: a **title bar** at the top, a **status bar** at the bottom, and
-//! the mode chip that says which of vi's modes is on.
+//! the chip saying which of vi's modes is on. Not a document widget but the frame round one: both
+//! halves frame the same four facts — which document, whether it is unsaved, which mode, where the
+//! cursor is — so there is one spelling of them.
 //!
-//! [`crate::app`] says the grid and the flow have no rendering in common and does not invent a
-//! widget for them. This is the exception that proves it rather than a hole in it: a bar is not a
-//! document, it is the frame round one, and both halves frame the same four facts — which
-//! document is open, whether it has unsaved changes, which mode the keyboard is in, and where the
-//! cursor is. Two spellings of that would drift the way two key lists drift
-//! (`crate::help`), so there is one.
+//! **Named colours, never hex**: the reader chose a sixteen-colour palette. A bar paints its own
+//! ground, the reader's own `Blue`; the document area between the bars is left as the terminal had
+//! it.
 //!
-//! **Named colours, never hex** — `crate::code`'s rule, and for the same reason: the reader chose
-//! a sixteen-colour palette and this is not the window that ignores it. A bar *does* paint its own
-//! ground, which is not a contradiction: the ground it paints is the reader's own `Blue`, and the
-//! document area between the two bars is left exactly as the terminal had it.
-//!
-//! **Two rows is what the chrome costs**, out of a window that may only have twenty-four. That is
-//! paid for by what the rows carry that nothing else could: the sheet strip is this shell's only
-//! answer to "which sheets are there" (`:sheet` needs the name before it can go to it), and the
-//! heading path is the only thing on screen that says where in a long document the caret is.
+//! **Two rows** is what the chrome costs, paid for by what nothing else carries: the sheet strip
+//! (`:sheet` needs a name to go to) and the heading path (where in a long document the caret is).
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 
-/// Which of vi's modes a shell is in — the one thing a modal editor must never leave a reader
-/// guessing about.
-///
-/// Neither half's own `Mode` enum: those carry a mode's *state* (the edit buffer, the command
-/// line), and this carries only what a bar says about it. Each half maps its own onto this in one
-/// line, which is cheaper than teaching this module about a `Vec<char>` it would never read.
+/// Which of vi's modes a shell is in. Not either half's own `Mode`, which carries the mode's state
+/// (the edit buffer, the command line); each half maps onto this in one line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
     Normal,
@@ -108,18 +96,14 @@ pub fn status_style() -> Style {
 }
 
 /// Quieter text on the status bar — a hint, a position, a count. Grey rather than
-/// [`Modifier::DIM`], because SGR 2 is optional and a bar that vanishes on half the terminals in
-/// the world is not a bar (`doc/tui-shell.md` makes the same call for a `` `code` `` run and
-/// records what it costs).
+/// [`Modifier::DIM`], because SGR 2 is optional and a bar that vanishes on half the world's
+/// terminals is not a bar.
 pub fn muted() -> Style {
     Style::default().bg(Color::Gray).fg(Color::DarkGray)
 }
 
-/// A badge at the very left of the title bar: which document type this window is holding.
-///
-/// One binary opens both (R10), and the two halves look nothing alike, so this is belt and braces
-/// rather than information — but it is also where the eye lands first, and a bar that starts with
-/// a coloured word reads as a bar rather than as a line of text that happens to be inverted.
+/// A badge at the very left of the title bar: which document type this window holds — where the
+/// eye lands first, and what makes the bar read as a bar.
 pub fn badge(what: &str) -> Span<'static> {
     Span::styled(
         format!(" {what} "),
@@ -130,12 +114,8 @@ pub fn badge(what: &str) -> Span<'static> {
     )
 }
 
-/// What the title bar calls a file: its name, not its path.
-///
-/// A path can be longer than the window, and a bar filled with `/home/…/scratch/2026/` has pushed
-/// out the two things beside it that a reader cannot get anywhere else — the sheet strip and the
-/// heading path. The whole path is still what `:w` reports, what the code and problems panes are
-/// titled with, and what the shell was invoked with; this is the tab title.
+/// What the title bar calls a file: its name, not its path, which can be longer than the window
+/// and would push out the sheet strip and the heading path. `:w` still reports the whole path.
 pub fn file_name(path: Option<&std::path::Path>) -> String {
     match path {
         Some(path) => path
@@ -146,10 +126,8 @@ pub fn file_name(path: Option<&std::path::Path>) -> String {
     }
 }
 
-/// The document's name, and a marker when it has changes that are not on disk.
-///
-/// `can_undo` is what "modified" means here — the same question `:q` asks before refusing to quit,
-/// so the marker and the refusal can never disagree about whether there is work to lose.
+/// The document's name, and a marker when it has changes that are not on disk — the same answer
+/// `:q` asks before refusing to quit.
 pub fn document(name: &str, modified: bool) -> Vec<Span<'static>> {
     let mut out = vec![Span::styled(
         format!(" {name}"),
@@ -164,12 +142,9 @@ pub fn document(name: &str, modified: bool) -> Vec<Span<'static>> {
     out
 }
 
-/// A strip of tabs, with `active` picked out — the sheet tab bar every other shell has and this
-/// one had no room for until there was a title bar to put it in.
-///
-/// Windowed round the active tab when they do not all fit, with `\u{2039}` / `\u{203a}` saying
-/// which way the rest are. A strip that simply ran off the edge would hide exactly the tab a
-/// reader of a wide workbook is looking for.
+/// A strip of tabs with `active` picked out, windowed round the active tab when they do not all
+/// fit, `\u{2039}`/`\u{203a}` saying which way the rest are — a strip that ran off the edge would
+/// hide exactly the tab being looked for.
 pub fn tabs(names: &[String], active: usize, room: usize) -> Vec<Span<'static>> {
     if names.is_empty() {
         return Vec::new();
@@ -226,17 +201,13 @@ pub fn tabs(names: &[String], active: usize, room: usize) -> Vec<Span<'static>> 
     out
 }
 
-/// A bar: `left` at one end, `right` at the other, `ground` in between, exactly `width` cells
-/// wide.
+/// A bar: `left` at one end, `right` at the other, `ground` between, exactly `width` cells wide —
+/// measured in **terminal cells** (`Span::width`, the measure [`crate::text::Cells`] gives
+/// layout), so a CJK file name lines up.
 ///
-/// Measured in **terminal cells** rather than in `char`s — `Span::width` is `unicode-width`'s
-/// answer, the same one [`crate::text::Cells`] gives the layout engine, so a bar holding a CJK
-/// file name lines up with the one holding an ASCII one.
-///
-/// When the two ends will not both fit, the **right one yields**: it carries a position or a
-/// count, and the left carries what the reader asked for — a file name, a message, the mode. A
-/// left that is still too long is cut with an ellipsis rather than allowed to wrap, since a bar
-/// that became two rows would move the document under it.
+/// When both ends will not fit, the **right one yields** (a position or a count), and a left still
+/// too long is cut with an ellipsis rather than wrapped, since a two-row bar would move the
+/// document under it.
 pub fn bar(
     width: u16,
     ground: Style,

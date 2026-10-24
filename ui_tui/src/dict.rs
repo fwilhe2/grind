@@ -2,11 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `:dict` — the personal dictionary, in both halves: the words every spelling check accepts,
-//! in every document and every language (`grind_spell::personal`, `doc/spelling.md` decision 5).
-//! `:dict` lists them in a [`crate::pick`] pane where `Enter` removes one, and `:dict add WORD`
-//! and `:dict rm WORD` do the rest from the command line — `grind words` from a terminal's other
-//! half. What a word is and where the list lives are `grind_spell`'s; this file is the wording.
+//! `:dict` — the personal dictionary, in both halves (`grind_spell::personal`): the words every
+//! spelling check accepts. `:dict` lists them in a [`crate::pick`] pane where `Enter` removes one;
+//! `:dict add WORD` and `:dict rm WORD` do the rest. The list itself is `grind_spell`'s; this file
+//! is the wording.
 
 use grind_spell::{Speller, personal};
 

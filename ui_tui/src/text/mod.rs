@@ -2,17 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The word processor half of the terminal shell. **\[ODT\]**
-//!
-//! Phase 10's S8, and it comes *before* the GTK text shell on purpose (`doc/suite.md`): it is
-//! the cheapest complete editor, and it is the sharpest test of `doc/text-layout.md`'s
-//! decision. A terminal cannot fake font metrics — a cell is a cell — so if the layout engine
-//! were secretly assuming pixels, this is where it would fall over.
-//!
-//! It does not. [`Cells`] below is the whole of what this shell contributes to layout: about
-//! twenty lines answering "how wide is this text, in terminal columns". Line breaking, and
-//! every caret motion defined in terms of a line, come from `grind_core::layout` through
-//! `grind_text::App` — the same code the GTK shell will drive through Pango.
+//! The word processor half of the terminal shell. [`Cells`] is all it contributes to layout — how
+//! wide text is, in terminal columns; line breaking and every line-based caret motion come from
+//! `grind_core::layout` through `grind_text::App`.
 
 pub mod app;
 pub mod keymap;
@@ -66,29 +58,15 @@ use grind_core::style::TextStyle;
 use grind_text::Metrics;
 use unicode_width::UnicodeWidthChar;
 
-/// Text measured in **terminal cells**.
-///
-/// The proof that injecting metrics works, and the reason `doc/text-layout.md` chose Path C
-/// over putting a line breaker in each shell: the unit here is a character cell, GTK's will be
-/// a Pango unit, and the engine above neither knows nor cares — it does arithmetic against a
-/// width supplied in the same unit and never invents one.
-///
-/// `unicode-width` rather than counting `char`s, because a terminal is a grid of cells and a
-/// CJK ideograph occupies two of them while a combining mark occupies none. Getting that wrong
-/// does not merely look untidy: every caret x this shell draws would be off by the difference.
-///
-/// Font family, size, weight and style are all ignored, because a terminal has one font at one
-/// size. That is not a shortcut — it is what makes the terminal the honest test.
+/// Text measured in **terminal cells**, with `unicode-width`: a CJK ideograph occupies two, a
+/// combining mark none, and getting that wrong puts every caret off by the difference. Family,
+/// size, weight and style are ignored: a terminal has one font at one size.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Cells;
 
-/// How many cells a `text:tab` is — the browser's four spaces and the Windows pane's
-/// `TAB_SPACES`, so a tab is one width across the suite. A fixed width rather than a tab *stop*,
-/// because a stop is a paragraph property this build does not read (`doc/text-core.md`).
-///
-/// Drawn as that many spaces (`text/app.rs`), because a terminal draws a tab character as
-/// nothing at all: measured as one cell and drawn as none, `name⇥value` read `namevalue` and
-/// every caret after the tab stood a column right of the character it was on.
+/// How many cells a `text:tab` is, the same four as the browser and the Windows pane. Drawn as
+/// that many spaces (`text/app.rs`), since a terminal draws a tab character as nothing, and every
+/// caret after it would be a column off.
 pub const TAB: usize = 4;
 
 impl Metrics for Cells {

@@ -2,26 +2,19 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Help while a formula is being typed — what may be completed, and what the call under the caret
-//! wants next.
+//! Help while a formula is typed — what may be completed, and what the call under the caret wants
+//! next. The thinking is `grind_sheet::formula::assist`'s (`prefix_at`, `candidates`, `call_at`,
+//! `signature_parts`), so an offer is a function the evaluator has; what is here is presentation —
+//! which offer is highlighted, whether Escape dismissed the list for this word, and how it reads
+//! as one line.
 //!
-//! **None of the thinking is here.** `grind_sheet::formula::assist` holds `prefix_at`,
-//! `candidates`, `call_at` and `signature_parts` — hoisted into the core the day a second shell
-//! wanted them (`CLAUDE.md`, W9), so a completion this shell offers is a function the evaluator
-//! really has and a signature it shows is the one the GNOME window and the Windows one show. What
-//! is left here is presentation state: which offer is highlighted, whether Escape has dismissed
-//! the list for this word, and how the whole thing reads as one line of a terminal.
+//! **A band, not a popup**: a terminal has no second window, and a list drawn over the grid would
+//! need a z-order, a dismissal rule and a redraw region for something that lives three keystrokes.
+//! One line under the formula line costs a row.
 //!
-//! **A band, not a popup**, for `ui_win32`'s reason expressed in a different medium: a terminal
-//! has no second window to put a list in, and a shell that drew one over the grid would have to
-//! own a z-order, a dismissal rule and a redraw region for a list that lives for three keystrokes.
-//! One line under the formula line costs a row and reads left to right, which is what the rest of
-//! this shell already does with a status line.
-//!
-//! **Enter is deliberately not claimed.** It commits the cell, as it always does: a formula
-//! finished by pressing Enter is the common case, and an accidental completion in its place would
-//! store the wrong thing. Tab accepts, Up/Down step, Escape dismisses this word's list and leaves
-//! the edit open.
+//! **Enter is deliberately not claimed**: it commits the cell, the common way to finish a formula,
+//! where an accidental completion would store the wrong thing. Tab accepts, Up/Down step, Escape
+//! dismisses this word's list and leaves the edit open.
 
 use std::ops::Range;
 
@@ -31,17 +24,12 @@ use ratatui::text::Span;
 
 pub use grind_sheet::formula::assist::Candidate;
 
-/// How many offers fit on one line before the rest become a count.
-///
-/// Five, and the sixth is `+n` — a band is a line, and a line that ran off the window would hide
-/// exactly the offer somebody is looking for. One more keystroke narrows the list.
+/// How many offers fit on one line; the sixth becomes `+n`, since a band running off the window
+/// would hide the offer being looked for.
 pub const MAX_OFFERS: usize = 5;
 
-/// What the band is showing, and what a key would do to it.
-///
-/// Recomputed from the edit buffer on every keystroke rather than updated in place: a remembered
-/// completion goes stale the moment the caret moves, and this shell's whole rendering contract is
-/// "asked for fresh, never stored".
+/// What the band shows, and what a key would do to it — recomputed from the edit buffer on every
+/// keystroke.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Assist {
     /// Everything worth offering for the word being typed. Empty when there is no such word, when
@@ -130,14 +118,10 @@ impl Assist {
         self.is_offering() || self.call.is_some()
     }
 
-    /// The band's whole content: the offers if there are any, otherwise the signature of the call
-    /// the caret is in, with the argument being typed picked out.
-    ///
-    /// `friendly` picks which spelling of a signature is used — `Sum(Number: …)` or `SUM(…)`. This
-    /// shell always asks for the second, because its formula line shows a formula in ODF's display
-    /// syntax and a band that named the same function differently would be two names for one
-    /// thing on adjacent rows. The parameter is here because `signature_parts` has it and the two
-    /// windows that *do* offer the friendly reading pass the other value.
+    /// The band's content: the offers if there are any, else the signature of the call the caret
+    /// is in, the argument being typed picked out. `friendly` picks `Sum(Number: …)` or `SUM(…)`;
+    /// this shell passes `false`, since its formula line shows display syntax and two names for
+    /// one function on adjacent rows would confuse.
     pub fn line(&self, friendly: bool) -> Vec<Span<'static>> {
         let muted = Style::default().add_modifier(Modifier::DIM);
         let strong = Style::default()
@@ -163,10 +147,8 @@ impl Assist {
                     muted,
                 ));
             }
-            // The key first and the summary after it, because the summary is what runs off the
-            // right-hand edge of a narrow window and a hint nobody can see is not a hint. The
-            // chosen offer's own summary is the line a reader actually wants; the price of a
-            // band is that the other four are names alone.
+            // The key first and the summary after, since the summary is what runs off a narrow
+            // window. Only the chosen offer's summary is shown; the other four are names.
             spans.push(Span::styled("   Tab accepts", muted));
             if let Some(offer) = self.offers.get(self.chosen)
                 && !offer.detail.is_empty()

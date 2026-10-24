@@ -2,18 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Vi-style Normal-mode keys for the word processor, as a pure function.
-//!
-//! Same shape as [`crate::sheet::keymap`] — key plus modifiers in, an [`Action`] out, nothing
-//! from ratatui anywhere near it, so the whole map unit-tests with no terminal attached.
-//!
-//! **What is deliberately *not* here: any arithmetic.** The spreadsheet's map computes the cell
-//! a motion lands on, because a grid's geometry is the grid. A document's is not: `j` means
-//! "the next *line*", and a line is an output of layout, so the answer comes from
-//! `grind_text::App::caret_line` and this file only names the question
-//! (`doc/text-layout.md`). That split is the whole reason the terminal shell was built before
-//! the GTK one — if a motion needed arithmetic here, it would need the same arithmetic again in
-//! GTK and in the browser, and the three would drift.
+//! Vi-style Normal-mode keys for the word processor, as a pure function like
+//! [`crate::sheet::keymap`]. **No arithmetic here**: `j` means the next line, a line is an output
+//! of layout, so the answer is `grind_text::App::caret_line`'s and this file only names the
+//! question (`doc/text-layout.md`).
 
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
@@ -58,18 +50,12 @@ pub enum Action {
     Yank,
     Put,
     /// A marker key over a selection: `*` bold, `_` underline, `~` strikethrough, `` ` ``
-    /// monospace, `/` italic.
-    ///
-    /// **The same notation `markdown.rs` recognises while typing**, on one key — a terminal has
-    /// no toolbar, so the toolbar's vocabulary is the notation. (`/` rather than a lone `*`
-    /// for italic: one asterisk is bold's own key here, and doubling a keystroke to mean
-    /// *less* emphasis reads backwards.)
+    /// monospace, `/` italic — the notation `markdown.rs` reads while typing, on one key each. `/`
+    /// for italic because `*` is bold's key.
     Emphasise(grind_text::markdown::Emphasis),
     /// `-` over a selection: back to no formatting at all.
     Plain,
-    /// `n` / `N` — the next or previous match of the last `:find`. **The same two keys the
-    /// spreadsheet's map binds** (`crate::sheet::keymap`), because one suite should not have two
-    /// ways to say "the next one".
+    /// `n` / `N` — the next or previous match of the last `:find`, as in the spreadsheet half.
     Next(bool),
     /// `]` / `[` — the next or previous misspelt word, with what it might have been on the
     /// status line (`doc/spelling.md`). vi's own `]s`/`[s` without the `s`: this map has no
@@ -79,11 +65,8 @@ pub enum Action {
     Escape,
 }
 
-/// The key map. One table, no state — `None` means the shell does not claim the key.
-///
-/// `visual` says whether a selection is being dragged out, and changes only what the keys that
-/// need a range mean: everything else is the same key in both modes, which is what makes
-/// Visual feel like Normal with a highlight rather than like a different editor.
+/// The key map. One table, no state; `None` means the shell does not claim the key. `visual`
+/// changes only what the range keys mean, so Visual feels like Normal with a highlight.
 pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<Action> {
     use grind_text::markdown::Emphasis;
     let ctrl = mods.contains(KeyModifiers::CONTROL);
@@ -130,11 +113,8 @@ pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<
     }
 }
 
-/// How many lines a page is.
-///
-/// A fixed number rather than the window's height, unlike the spreadsheet's — the shell would
-/// have to hand its geometry to a pure function to do better, and the map exists to have no
-/// geometry in it. ponytail: pass the height in when somebody notices.
+/// How many lines a page is. Fixed, since the map has no geometry. ponytail: pass the height in
+/// when somebody notices.
 const PAGE: i32 = 20;
 
 #[cfg(test)]

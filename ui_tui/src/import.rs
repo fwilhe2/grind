@@ -2,15 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Opening an Excel workbook (`doc/xlsx-import.md`, X6) — sniffed from the bytes, imported,
-//! and opened as a new, **unsaved** ODF document with no path. `:w` then needs a name, so the
-//! one command that could write ODF over the `.xlsx` it came from has nothing to write to
-//! (`doc/not-doing.md` §1: one way in, never out).
-//!
-//! Compiled out with the `xlsx` feature; a build without it opens ODF only, as before X6.
-//!
-//! A Word document (`doc/docx-import.md`, DX6) is the text pane's twin of a workbook: imported,
-//! opened under an ODF name and no path, behind the `docx` feature.
+//! Opening an Excel workbook or a Word document: sniffed from the bytes, imported, and opened as a
+//! new, **unsaved** ODF document with no path, so `:w` needs a name and nothing can write ODF over
+//! the file it came from. Behind the `xlsx` and `docx` features.
 
 use std::path::Path;
 
@@ -73,7 +67,7 @@ pub fn open_markdown(
     })
 }
 
-/// Whether these bytes are a workbook this build imports.
+/// Whether these bytes are a workbook this binary imports.
 pub fn is_workbook(bytes: &[u8]) -> bool {
     #[cfg(feature = "xlsx")]
     return grind_xlsx::sniff(bytes);
@@ -106,7 +100,7 @@ pub fn open(app: &App, path: &Path, bytes: &[u8]) -> Result<Imported, String> {
     }
 }
 
-/// Whether these bytes are a Word document this build imports.
+/// Whether these bytes are a Word document this binary imports.
 pub fn is_word(bytes: &[u8]) -> bool {
     #[cfg(feature = "docx")]
     return grind_docx::sniff(bytes);

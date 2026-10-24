@@ -2,30 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The **code view** — the document as its projection, shown (`doc/dsl.md` §6, D9).
+//! The **code view** — the document as its projection, read-only (`doc/dsl.md` §6). Shared by both
+//! halves: the projection is plain text in both cases, coloured from the core's token map, so one
+//! widget serves two callers that neither know nor care which they hold.
 //!
-//! Delphi's form and its `.dfm`, in a terminal: the grid on one pane and its source on the
-//! other, the same document either way. What it costs is this file, because the projection
-//! writer is already D1 and D2 and the two maps it emits are already tested — a code view is
-//! that output plus something that shows text, and this shell shows text for a living.
+//! Read-only because an editable code view needs an error-tolerant parser, a model diff and an
+//! answer for the other view's caret (§6.4). What is here is the half that pays for itself: the
+//! cursor is a line, the line reports the address it projects, and the shell selects it in the
+//! document.
 //!
-//! **Shared by both halves of this shell, which nothing else here is.** [`crate::app`] says the
-//! spreadsheet's grid and the document's flow have no rendering in common and does not invent a
-//! widget for them; the projection is the one thing they *do* render identically, because it is
-//! plain text in both cases and its colours come from a token map whose vocabulary is the core's.
-//! So a spreadsheet's source and a text document's source are one widget with two callers, and
-//! neither of them knows which it is holding.
-//!
-//! **Read-only, and §6.4 is the argument.** An editable code view is a text editor whose buffer
-//! is a document, and reconciling the two needs an error-tolerant parser, a model diff and an
-//! answer for the other view's caret — none of which exists. What is here instead is the half
-//! that pays for itself immediately: *see the correspondence*. The cursor is a line, the line
-//! reports the address it projects, and the shell selects it in the document. §6.2's point
-//! exactly — the toggle is the cheap half and the span map is the artefact.
-//!
-//! Three colours and no more, from the terminal's own palette rather than from hex: a code view
-//! in a terminal is read in whatever theme the reader chose, and a shell that picked its own
-//! background would be the one window on their screen that ignored it.
+//! Three colours, from the terminal's own palette, so the pane follows the reader's theme.
 
 use grind_core::projection::{Projection, TokenKind};
 use ratatui::Frame;
@@ -35,11 +21,8 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
-/// The pane's own state: whether it is showing, and where its cursor is.
-///
-/// Presentation state, held by each shell half for [`crate::help::Help`]'s reason — a module
-/// that kept it in a global could not be tested twice in one process. Nothing here is ever
-/// written to a document, which is the same thing `doc/view-modes.md` says about an overlay.
+/// The pane's own state: whether it is showing, and where its cursor is. Held by each half rather
+/// than globally, so it can be tested twice in one process; nothing here is written to a document.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Code {
     open: bool,
@@ -79,30 +62,20 @@ impl Code {
         self.open = false;
     }
 
-    /// Where the cursor is.
-    ///
-    /// Test-only: a shell asks [`Code::address`] what the cursor is *on*, which is the question
-    /// it can act on. A line number is what a test checks, because a line number is what moving
-    /// is defined in terms of.
+    /// Where the cursor is. Test-only: a shell asks [`Code::address`] instead.
     #[cfg(test)]
     pub fn line(self) -> usize {
         self.line
     }
 
-    /// Which address the cursor is on, if the line projects one.
-    ///
-    /// A line that projects nothing — a blank, a closing brace, the header — answers `None`, and
-    /// the shell leaves its selection where it was rather than jumping somewhere arbitrary.
+    /// Which address the cursor is on, if the line projects one. A blank, a closing brace or the
+    /// header answers `None`, and the shell leaves its selection where it was.
     pub fn address(self, projection: &Projection) -> Option<&str> {
         projection.address_on_line(self.line)
     }
 
-    /// A key while the pane is open.
-    ///
-    /// The same keys as the document underneath, because this is the same shell: `j`/`k` move,
-    /// `Ctrl+f`/`Ctrl+b` page, `g`/`G` go to the ends. Anything else closes it, which is
-    /// [`crate::help::Help`]'s rule and is right for the same reason — there is nothing here to
-    /// lose by pressing the wrong key.
+    /// A key while the pane is open: the document's own keys (`j`/`k`, `Ctrl+f`/`Ctrl+b`,
+    /// `g`/`G`), and anything else closes it — nothing here is lost by a wrong key.
     pub fn on_key(&mut self, code: KeyCode, projection: &Projection, height: usize) -> Nav {
         let last = projection.line_count().saturating_sub(1);
         let page = height.saturating_sub(2).max(1);
@@ -137,11 +110,8 @@ impl Code {
         )
     }
 
-    /// Draw it over `area`.
-    ///
-    /// The whole area, like the help pane: a code view is what the reader asked to look at, and a
-    /// third of one beside a grid is the worst of both. `title` is the shell's, because only the
-    /// shell knows what the file is called.
+    /// Draw it over the whole of `area`, like the help pane: a third of a code view beside a grid
+    /// is the worst of both. `title` is the shell's, which knows what the file is called.
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, projection: &Projection, title: &str) {
         let height = usize::from(area.height).saturating_sub(2).max(1);
         // Keep the cursor on screen, exactly as the grid keeps the active cell on screen.
@@ -194,12 +164,8 @@ impl Code {
     }
 }
 
-/// What each kind of token is painted.
-///
-/// The shell's decision and not the core's — `TokenKind` says what a byte *is*, and what colour
-/// that gets is exactly the part a shell owns (`doc/dsl.md` §6.6). Named colours rather than hex
-/// for the reason every colour in `ui_sheet_gtk` comes from the theme: the reader chose a
-/// palette, and a code view that ignored it would be the one window on their screen that did.
+/// What each kind of token is painted. `TokenKind` says what a byte is; its colour is the shell's
+/// (`doc/dsl.md` §6.6), and a named one, so the reader's palette holds.
 fn colour(kind: TokenKind) -> Color {
     match kind {
         TokenKind::Node => Color::Cyan,

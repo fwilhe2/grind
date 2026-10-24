@@ -2,21 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A **list to pick from**: rows that each carry an address, one of them highlighted, and `Enter`
-//! handing that address back to the shell.
-//!
-//! The third pane of this shell's three, and the generic one. [`crate::help`] shows text,
-//! [`crate::code`] shows a projection, [`crate::problems`] shows diagnostics — and each of those
-//! knows what it is holding. This one does not: a row is a string to show and a string to go to,
-//! which is every list a document can offer. The outline is the first caller; a list of defined
-//! names or of bookmarks is the same pane with a different `Vec`.
-//!
-//! `ui_win32/src/dialog.rs`'s `choose` is the same idea in a different toolkit, and for the same
-//! reason it gives there: a shell that grew a fourth list widget would have four answers to
-//! "which key closes this".
-//!
-//! The keys are the pane vocabulary this shell already has: `j`/`k` move, `Enter` goes, any other
-//! key closes. `doc/tui-shell.md`'s rule — vi's motions, no menu.
+//! A **list to pick from**: rows that each carry an address, one highlighted, `Enter` handing that
+//! address back. Unlike [`crate::help`], [`crate::code`] and [`crate::problems`], it does not know
+//! what it holds — a row is a string to show and a string to go to — so the outline, defined names
+//! and bookmarks are all this pane with a different `Vec`, with one answer to "which key closes
+//! this". `j`/`k` move, `Enter` goes, any other key closes.
 
 use ratatui::Frame;
 use ratatui::crossterm::event::KeyCode;
@@ -30,9 +20,8 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 pub const SELECTED: Style = Style::new().add_modifier(Modifier::REVERSED);
 
 /// A selected row: `spans` with their own colours set aside, padded to `width` cells and drawn as
-/// one [`SELECTED`] bar. Padded because a `Line`'s style stops where its text does — measured, by
-/// `the_selected_row_is_one_bar_across_the_pane` — and a highlight that ends mid-pane reads as a
-/// highlight of the words rather than of the row.
+/// one [`SELECTED`] bar — padded because a `Line`'s style stops where its text does, and a
+/// highlight ending mid-pane reads as a highlight of the words.
 pub fn selected_row(spans: Vec<Span<'_>>, width: usize) -> Line<'_> {
     use unicode_width::UnicodeWidthStr;
     let used: usize = spans.iter().map(|span| span.content.width()).sum();
@@ -169,9 +158,8 @@ impl Pick {
             let row = &self.rows[index];
             let address = format!(" {:width$}", row.address, width = 9);
             let label = format!("{}{}", "  ".repeat(row.depth), row.label);
-            // The selected row is **one bar across the whole pane** — `SELECTED`, on the `Line`
-            // rather than on each span, since a coloured span reversed is a block of its own colour
-            // and the row read as two different highlights side by side.
+            // The selected row is one bar across the pane, styled on the `Line`: a reversed
+            // coloured span is a block of its own colour.
             lines.push(match index == self.selected {
                 true => selected_row(vec![Span::raw(address), Span::raw(label)], inner),
                 false => Line::from(vec![
@@ -305,8 +293,7 @@ mod tests {
         assert!(shown.contains("3 of 3"), "{shown}");
     }
 
-    /// The selected row is one bar from border to border, and nothing else on screen is
-    /// reversed — it used to be a cyan block beside a black one, stopping where the text did.
+    /// The selected row is one bar from border to border, and nothing else on screen is reversed.
     #[test]
     fn the_selected_row_is_one_bar_across_the_pane() {
         use ratatui::Terminal;

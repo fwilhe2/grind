@@ -2,23 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where each column sits across the screen, as pure arithmetic. **No ratatui types.**
+//! Where each column sits across the screen, as pure arithmetic with **no ratatui types**, so the
+//! layout decisions test without a terminal.
 //!
-//! `ui_sheet_gtk/src/geom.rs` and `ui_web/src/sheet/layout.rs`'s counterpart, and it exists for
-//! their reason: the layout decisions are the part most worth testing and the part hardest to test
-//! through a terminal, so they live in a module that has never heard of one.
-//!
-//! **A column is as wide as the document says it is.** That used to be a `ponytail` in
-//! `sheet/app.rs` — every column ten cells — and it was the difference between opening somebody's
-//! spreadsheet and opening an approximation of it: a column sized to hold `2026-01-31` and a
-//! column sized to hold `x` were the same width, and a wide one truncated its own contents while
-//! the narrow one sat mostly empty. Widths accumulate from the scroll position rather than
-//! dividing by one, which is the same prefix-sum shape both other shells grew.
-//!
-//! [`pad`] is the other half of the same `ponytail`: padding is measured in **terminal cells**
-//! (`unicode-width`), not in `char`s, so a column of CJK text lines up with the one beside it. It
-//! is the same measure [`crate::text::Cells`] hands the layout engine, which is what stops the two
-//! halves of this shell disagreeing about how wide text is.
+//! **A column is as wide as the document says**, so `2026-01-31` and `x` get the columns their
+//! author gave them; widths accumulate from the scroll position as a prefix sum. [`pad`] measures
+//! in **terminal cells** (`unicode-width`), not `char`s, so a CJK column lines up — the measure
+//! [`crate::text::Cells`] gives the layout engine.
 
 use std::collections::{HashMap, HashSet};
 
@@ -29,29 +19,19 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 /// keeps, so nine characters are visible.
 pub const DEFAULT_WIDTH: u16 = 10;
 
-/// How many millimetres one terminal cell stands for.
-///
-/// **Derived, not chosen**: the suite's own default column is one inch wide (`ui_web`'s
-/// `CELL.cell_w` is 96 CSS pixels at 96 per inch), and this shell draws an unsized column as
-/// [`DEFAULT_WIDTH`] cells. A cell is therefore a tenth of an inch, and the two shells agree about
-/// what an unsized column is without either of them saying so twice.
+/// How many millimetres one terminal cell stands for — derived: the suite's default column is one
+/// inch, drawn here as [`DEFAULT_WIDTH`] cells, so a cell is a tenth of an inch.
 pub const MM_PER_CELL: f64 = 25.4 / DEFAULT_WIDTH as f64;
 
-/// The narrowest a sized column is drawn, and the widest.
-///
-/// A document may legitimately hold a 0.5mm column — LibreOffice writes one for a spacer — and
-/// three cells is the least that can show a truncated value plus its separator. The ceiling is so
-/// that one absurd column cannot take the whole window and leave nothing to scroll with; the
-/// document keeps its own width either way, because nothing here is ever written back.
+/// The narrowest and widest a sized column is drawn. A document may hold a 0.5mm spacer column,
+/// and three cells is the least that shows a cut value and its separator; the ceiling stops one
+/// absurd column taking the whole window. The document keeps its own width either way.
 pub const MIN_WIDTH: u16 = 3;
 pub const MAX_WIDTH: u16 = 60;
 
-/// The sizes a document gave particular columns, over a default for the rest, plus which of them
-/// it says are not there at all.
-///
-/// Sparse, because a spreadsheet sizes a handful of columns and leaves thousands alone —
-/// `App::col_widths` hands back exactly the ones it stored, in the ODF lengths it stored them as,
-/// and this is where those become cells.
+/// The sizes a document gave particular columns, over a default for the rest, and which are
+/// hidden. Sparse: `App::col_widths` returns exactly the ones stored, as ODF lengths, and this is
+/// where they become cells.
 #[derive(Clone, Debug, Default)]
 pub struct Tracks {
     sized: HashMap<u32, u16>,
@@ -59,12 +39,8 @@ pub struct Tracks {
 }
 
 impl Tracks {
-    /// Build from `(index, length)` pairs as the core reports them, and the columns it says are
-    /// hidden.
-    ///
-    /// A length nothing can parse is left at the default rather than treated as zero, which is the
-    /// same tolerance the readers apply: a column that vanished because of a typo in a style would
-    /// be worse than one that is the ordinary width.
+    /// Build from the core's `(index, length)` pairs and its hidden columns. A length that will
+    /// not parse is the default, not zero, as the readers tolerate it.
     pub fn new(
         sized: impl IntoIterator<Item = (u32, String)>,
         hidden: impl IntoIterator<Item = u32>,
@@ -89,9 +65,8 @@ impl Tracks {
     }
 }
 
-/// An ODF length as a whole number of terminal cells, clamped to what a grid can draw.
-///
-/// `None` for a length this build cannot read, which [`Tracks::new`] turns into the default.
+/// An ODF length as a whole number of terminal cells, clamped to what a grid can draw; `None` for
+/// a length that will not parse.
 pub fn cells(length: &str) -> Option<u16> {
     let mm = length_mm(length)?;
     if !mm.is_finite() || mm <= 0.0 {
@@ -103,21 +78,14 @@ pub fn cells(length: &str) -> Option<u16> {
     )
 }
 
-/// The other direction: the ODF length a column of `cells` terminal cells is, for `:width` to
-/// write back.
-///
-/// A width set here is a width every other shell honours, because it goes into the document in the
-/// document's own unit rather than as a terminal's idea of one.
+/// The ODF length a column of `cells` terminal cells is, for `:width` to write.
 pub fn length(cells: u16) -> String {
     mm_length(f64::from(cells.max(1)) * MM_PER_CELL)
 }
 
-/// The columns visible from `first`, and how wide each is drawn: as many as fit in `room` cells,
-/// skipping the hidden ones, and never fewer than one.
-///
-/// The last column may be **clipped** rather than dropped — a grid that showed only whole columns
-/// would jump by a whole column at a time when the window is resized by one cell, and a partial
-/// column is what every spreadsheet draws at the right-hand edge.
+/// The columns visible from `first`, and how wide each is drawn: as many as fit in `room`,
+/// skipping hidden ones, never fewer than one. The last may be **clipped**, as every spreadsheet
+/// draws the right edge, rather than dropped and jumping a column per resize.
 pub fn columns(tracks: &Tracks, first: u32, room: u16, limit: u32) -> Vec<(u32, u16)> {
     let mut out = Vec::new();
     let mut used = 0u16;
@@ -141,15 +109,9 @@ pub fn columns(tracks: &Tracks, first: u32, room: u16, limit: u32) -> Vec<(u32, 
     out
 }
 
-/// The first column to show so that `active` is on screen, given where the view is now.
-///
-/// Moves the least it can — a cell already in view leaves the grid exactly where it is, which is
-/// the difference between moving a cursor and having the sheet jump under you. The same rule
-/// `follow_cursor` always applied, now with columns that are not all the same width.
-///
-/// Scrolling *forward* walks back from `active` accumulating widths rather than trying one first
-/// column after another: `G` on a wide sheet is a jump of sixteen thousand columns, and a loop
-/// that stepped one at a time would do that arithmetic sixteen thousand times per frame.
+/// The first column to show so that `active` is on screen, moving the least it can — a cell in
+/// view leaves the grid where it is. Scrolling forward walks back from `active` accumulating
+/// widths, so `G` across sixteen thousand columns is not sixteen thousand steps.
 pub fn follow(tracks: &Tracks, first: u32, active: u32, room: u16, limit: u32) -> u32 {
     if active < first {
         return active;
@@ -181,11 +143,8 @@ pub fn follow(tracks: &Tracks, first: u32, active: u32, room: u16, limit: u32) -
     }
 }
 
-/// The rows drawn from `first` down: `count` of them, skipping the ones the document folds away.
-///
-/// A filtered row is *absent*, not blank — the same thing [`columns`] does to a hidden column on
-/// the other axis, and the reason a filtered sheet fills the window instead of trailing off into
-/// gaps a third of the way down.
+/// The rows drawn from `first` down: `count` of them, skipping folded ones — absent, not blank, so
+/// a filtered sheet fills the window.
 pub fn rows(hidden: &HashSet<u32>, first: u32, count: u32, limit: u32) -> Vec<u32> {
     let mut out = Vec::with_capacity(count as usize);
     let mut at = first;
@@ -233,21 +192,15 @@ pub enum Align {
 pub enum Fit {
     /// Words, which may be cut — with an ellipsis saying so.
     Text,
-    /// A number, a date or a time, which may **not** be: any part of `2026-08-16` or `3,710.00 €`
-    /// is a different value (`2026-08-1` is the first of August), so one that does not fit is
-    /// drawn as `###` across its column — what LibreOffice and Excel draw, and the one spelling
-    /// nobody reads as a value. Widening the column (`:width`) shows it.
+    /// A number, a date or a time, which may not be cut: part of `2026-08-16` is a different date.
+    /// One that does not fit is `###`, as LibreOffice and Excel draw it; `:width` shows it.
     Number,
 }
 
-/// Pad or cut `text` to exactly `width` **terminal cells**, one trailing space as the column
-/// separator, with the text pushed to one side of what is left.
-///
-/// Measured with `unicode-width` rather than `chars().count()`: a CJK ideograph is two cells and a
-/// combining mark is none, so counting characters would draw a column of Japanese one cell wider
-/// per character than the header above it. A cut stops on a whole character and then pads, so a
-/// wide character never half-lands in the last cell — and **says it is a cut**: text that does not
-/// fit ends in `…`, the other shells' own mark, and a number becomes `###` ([`Fit::Number`]).
+/// Pad or cut `text` to exactly `width` **terminal cells**, one trailing space as the separator,
+/// aligned in what is left. `unicode-width`, so a CJK ideograph is two cells and a combining mark
+/// none. A cut stops on a whole character and says it is a cut: text ends in `…`, and a number
+/// becomes `###` ([`Fit::Number`]).
 pub fn pad(text: &str, width: usize, align: Align, fit: Fit) -> String {
     pad_marked(text, width, align, fit, &[])
         .into_iter()
@@ -477,9 +430,8 @@ mod tests {
         }
     }
 
-    /// **The screenshot this answers**: a ten-cell column drew `2026-08-16` as `2026-08-1` and
-    /// `3,710.00 €` as `3,710.00` — a different date, and a different kind of number. A number
-    /// that does not fit is `###`, and text that does not fit says so with an ellipsis.
+    /// A ten-cell column must not draw `2026-08-16` as `2026-08-1` or `3,710.00 €` as `3,710.00`:
+    /// a number that does not fit is `###`, and cut text ends in an ellipsis.
     #[test]
     fn a_cut_says_it_is_a_cut_and_a_number_is_never_cut() {
         assert_eq!(

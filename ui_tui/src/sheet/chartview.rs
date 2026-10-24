@@ -2,13 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A chart **drawn in characters** — what `:charts` shows, so the terminal can see what it just
-//! inserted rather than take the other windows' word for it (`doc/feature-matrix.md` §6).
-//!
-//! No geometry of the chart's own is used: the frame's position and size are ODF lengths for a
-//! page and mean nothing in a terminal. What is drawn is what the chart *says* — its title, its
-//! legend (where it asked for one), and its data: a bar chart as one block bar per value, a line as
-//! a sparkline per series, a pie as each slice's share. Pure, so every line is a test.
+//! A chart **drawn in characters**, for `:charts`. The frame's position and size are page lengths
+//! and mean nothing here; what is drawn is what the chart says — its title, its legend where it
+//! asked for one, and its data: a bar per value, a sparkline per series, each slice's share of a
+//! pie. Pure, so every line is a test.
 
 use grind_sheet::chart::{Chart, ChartData, ChartKind, Legend};
 

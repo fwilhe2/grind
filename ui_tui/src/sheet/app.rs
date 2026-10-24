@@ -2,21 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Event routing and rendering. Holds no spreadsheet state of its own — cells come from
-//! [`grind_sheet::App::get_viewport`] every frame, exactly as `ui_sheet_gtk/src/grid.rs` reads it.
-//! The only fields here are presentation concerns: the active cell, the scroll offset, the
-//! editing mode and a status line.
+//! Event routing and rendering for the spreadsheet. Holds no spreadsheet state: cells come from
+//! [`grind_sheet::App::get_viewport`] every frame, and the fields here are presentation — the
+//! active cell, the scroll offset, the mode, a status line.
 //!
-//! Three modes, vi-style: **Normal** navigates (`keymap.rs`), **Insert** (`i`/`a`/`c`) edits
-//! the active cell's text, **Command** (`:`) runs a line like `:w`, `:q`, `:recalc` or a bare
-//! cell address to jump to. `Esc` always returns to Normal — cancelling Insert, since a
-//! spreadsheet's staged edit (unlike vi's document-resident text) has somewhere honest to go
-//! back to.
+//! Three modes, vi-style: **Normal** navigates (`keymap.rs`), **Insert** (`i`/`a`/`c`) edits the
+//! active cell's text, **Command** (`:`) runs a line. `Esc` returns to Normal, cancelling Insert,
+//! since a cell's staged edit has somewhere honest to go back to.
 //!
-//! **Six bands, top to bottom**: the title bar (`crate::chrome`), the column headers, the grid,
-//! the formula line, the completion band (`super::assist`, only while one is up) and the status
-//! bar. Two of those are chrome and one comes and goes, which is three rows out of twenty-four —
-//! paid for by what they carry that nothing else could, and argued in `doc/tui-shell.md`.
+//! Six bands, top to bottom: the title bar (`crate::chrome`), the column headers, the grid, the
+//! formula line, the completion band (`super::assist`, only while it is up) and the status bar.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -67,22 +62,17 @@ struct Pointing {
     cell: Pos,
 }
 
-/// Where the last `:find` matched, and which of those matches the cursor is on.
-///
-/// Held rather than re-derived per frame, for the reason [`crate::problems`] holds its report:
-/// searching walks every used cell of every sheet, and a shell that did that once per keystroke
-/// would make `j` the most expensive key it has. It is a **snapshot** — an edit that changes a
-/// cell does not re-run it — and `n` says so by naming the count it was taken with.
+/// Where the last `:find` matched, and which match the cursor is on. A snapshot — searching walks
+/// every used cell of every sheet — so an edit does not re-run it, and `n` names the count it was
+/// taken with.
 #[derive(Clone, Debug, Default)]
 struct Find {
     needle: String,
     /// Every hit, in reading order across the document: which sheet, and where in it. Ordered,
     /// because `n` and `N` are defined in terms of the order.
     hits: Vec<(usize, Pos)>,
-    /// The same hits, as a set. Two shapes of one list rather than one, because the two questions
-    /// asked of it are different: `n` wants *the next one* and the grid asks *is this cell one of
-    /// them* once per visible cell per frame, and a linear scan for the second would be the whole
-    /// window times every match a common word has.
+    /// The same hits as a set: `n` wants the next one, and the grid asks "is this cell a hit" once
+    /// per visible cell per frame.
     marked: HashSet<(usize, Pos)>,
     at: usize,
 }
@@ -124,10 +114,9 @@ pub struct App {
     mode: Mode,
     /// The other corner of a Visual-mode rectangle. The active cell is this one's opposite.
     anchor: Option<Pos>,
-    /// What `y` copied, as tab-separated text — the shape every spreadsheet reads, so a range
-    /// yanked here is a range this build could paste anywhere. A register rather than the
-    /// system clipboard: a terminal cannot reach one without a protocol the host may not
-    /// speak, and vi's register is the convention a reader of this shell already has.
+    /// What `y` copied, as tab-separated text (`grind_sheet::clip`). A register rather than the
+    /// system clipboard, which a terminal cannot reliably reach; vi's register is the convention a
+    /// reader of this shell has.
     register: String,
     status: String,
     /// Which of `doc/view-modes.md`'s overlays this pane is drawing — presentation state
@@ -168,17 +157,12 @@ pub struct App {
     /// The selected chart, as its sheet and its index there: what `:chart <words>`, `:chart here`
     /// and `:chart!` mean, else the sheet's last (`doc/chart-handling.md`).
     chart_selected: Option<(usize, usize)>,
-    /// The code view, when it is showing, and the projection it is showing (`doc/dsl.md` §6).
-    ///
-    /// Projected **once, when the pane opens**, and dropped when it closes — which is §6.3's
-    /// `ponytail` in its cheapest possible form and is exact rather than approximate here: the
-    /// pane is read-only and every key that is not one of its motions closes it, so the document
-    /// cannot change while a projection of it is on screen.
+    /// The code view and the projection it shows, projected when the pane opens and dropped when
+    /// it closes — exact, since the pane is read-only and any other key closes it, so the document
+    /// cannot change underneath.
     code: crate::code::Code,
     source: Option<grind_sheet::projection::Projection>,
-    /// `grind sheet lint`'s findings, when the pane is showing them (`doc/dsl.md` §4.3, D6).
-    /// A snapshot, like the projection above and for the same reason: linting costs a
-    /// recalculation, so it is taken when `:lint` is typed and not once per keystroke.
+    /// `grind sheet lint`'s findings while the pane shows them, taken when `:lint` is typed.
     problems: crate::problems::Problems,
     /// The window's height as of the last frame — what a page key in the help pane scrolls by.
     help_height: usize,
@@ -188,11 +172,10 @@ pub struct App {
     quit: bool,
     /// Set by `:new` and `:open`; the event loop takes it and swaps the pane.
     switch: Option<crate::app::Switch>,
-    /// Spelling (`doc/spelling.md`, "In a spreadsheet"): what `:spell` last said — remembered
-    /// for every spreadsheet (`grind_spell::preference`) — what that came to for this document,
-    /// and the dictionary `:spell ignore` adds to. `None` checks nothing, which is where a pane
-    /// starts until [`App::spelling`] attaches one, so a test's frame is the same whatever the
-    /// machine's own setting is.
+    /// Spelling: what `:spell` last said (remembered for every spreadsheet,
+    /// `grind_spell::preference`), what that came to here, and the dictionary `:spell ignore` adds
+    /// to. `None` checks nothing until [`App::spelling`] attaches one, so a test's frame does not
+    /// depend on the machine's setting.
     spelling: grind_spell::Setting,
     checked: Option<grind_spell::Choice>,
     speller: Option<Arc<grind_spell::Speller>>,
@@ -759,12 +742,9 @@ impl App {
         }
     }
 
-    /// Every row the document does not show.
-    ///
-    /// **Two calls, not one.** `App::hidden_rows` is the *filter's* answer alone and
-    /// `App::manually_hidden_rows` is the other half; a shell that trusted either to be both would
-    /// draw rows `:hide rows` had just taken away, or fold away rows nothing had hidden. The
-    /// column axis has no filter, so `App::hidden_cols` really is the whole answer there.
+    /// Every row the document does not show: `App::hidden_rows` (the filter's) and
+    /// `App::manually_hidden_rows` together. Columns have no filter, so `App::hidden_cols` is the
+    /// whole answer there.
     fn folded_rows(&self) -> HashSet<u32> {
         let filtered = self.core.hidden_rows(self.sheet).unwrap_or_default();
         let by_hand = self
@@ -782,12 +762,8 @@ impl App {
             .collect()
     }
 
-    /// Apply a motion, counted in the tracks the document actually shows.
-    ///
-    /// The hidden sets are read here, per keystroke, rather than kept: a filter can change under
-    /// the cursor (`:show`, an undo), and a remembered set would move the cursor by yesterday's
-    /// idea of what is on screen. This is the same "asked for fresh, never stored" rule every
-    /// paint in this file follows.
+    /// Apply a motion, counted in the tracks the document shows. The hidden sets are read per
+    /// keystroke, since a filter can change under the cursor (`:show`, an undo).
     fn go(&mut self, motion: Motion) {
         let extent = self.core.used_extent(self.sheet).unwrap_or((0, 0));
         let (rows, cols) = (self.folded_rows(), self.folded_cols());
@@ -870,15 +846,11 @@ impl App {
         self.status.clear();
     }
 
-    // --- the code view (doc/dsl.md §6, D9) ---
+    // --- the code view ---
 
-    /// `:source` — show the document as its projection, with the cursor on the active cell's own
-    /// line.
-    ///
-    /// A `:` command rather than a key, which is this shell's rule for a *mode* (`:roles`,
-    /// `:names`): keys here are vi's motions, and a pane that came and went under one of them
-    /// would be a motion that sometimes moved the cursor and sometimes did not. Turning it off is
-    /// any other key, which is what the help pane already does.
+    /// `:source` — show the document as its projection, the cursor on the active cell's line. A
+    /// `:` command, this shell's rule for a mode (`:roles`, `:names`), since keys are vi's
+    /// motions; any other key turns it off.
     fn cmd_source(&mut self) {
         let projection = self.core.project();
         // The address the *projection* spells this cell as: sheet-qualified, because two sheets
@@ -922,8 +894,7 @@ impl App {
         }
     }
 
-    /// A key while the code view is open. Moving the cursor **selects the cell that line
-    /// projects**, which is §6.2's map in the direction that makes the pane worth having.
+    /// A key while the code view is open. Moving the cursor selects the cell that line projects.
     fn on_code_key(&mut self, code: KeyCode, mods: KeyModifiers) {
         let Some(projection) = self.source.take() else {
             self.code.close();
@@ -950,16 +921,10 @@ impl App {
         self.source = Some(projection);
     }
 
-    /// An address the span map handed back, resolved to a place in this document.
-    ///
-    /// Two spellings, and the order matters. A **sheet's own name** is checked first, because a
-    /// `sheet` node anchors one and a bare name is also a perfectly good cell address — `Sheet1`
-    /// parses as column `SHEET`, row 1, and a code view that answered a click on `sheet Sales {`
-    /// by jumping to a cell nobody has ever used would be worse than useless. Naming a sheet
-    /// means its top-left, which is where opening that sheet puts you anyway.
-    ///
-    /// Otherwise it is `a1::parse` and `a1::resolve`, the same pair `:{address}` already uses —
-    /// the projection spells a cell the way `a1.rs` does, which is the point of `a1.rs`.
+    /// An address the span map handed back, resolved to a place in this document. A **sheet's own
+    /// name** is checked first: a bare name is also a cell address (`Sheet1` parses as column
+    /// `SHEET`, row 1), and `sheet Sales {` should open the sheet, at its top-left. Otherwise
+    /// `a1::parse` and `a1::resolve`, as `:{address}` uses.
     fn locate(&self, address: &str) -> Option<(usize, Pos)> {
         if let Ok(sheet) = grind_sheet::a1::sheet(&self.core, address) {
             return Some((sheet, Pos::new(0, 0)));
@@ -1015,12 +980,9 @@ impl App {
 
     // --- the register ---
 
-    /// The selection as tab-separated text, cell by cell in reading order.
-    ///
-    /// The cells' *input* text, not their displayed text: a formula yanks as a formula, which
-    /// is what somebody copying `=SUM(A1:A9)` means, and it is what `put` feeds back to
-    /// `App::enter_range` — so a round trip through the register is lossless. The codec is
-    /// `grind_sheet::clip`'s, shared with every other shell's clipboard.
+    /// The selection as tab-separated text, in reading order: each cell's *input* text, so a
+    /// formula yanks as a formula and `put` feeds it back to `App::enter_range` losslessly
+    /// (`grind_sheet::clip`).
     fn yank(&mut self) {
         let (start, end) = self.rect();
         let out = grind_sheet::clip::rect_text(
@@ -1064,11 +1026,9 @@ impl App {
 
     // --- styling ---
 
-    /// Read the active cell's style, change one field, write the whole rectangle.
-    ///
-    /// `App::set_style` *replaces* rather than merges, deliberately (`sheet/src/lib.rs`), so
-    /// the merge policy is here — where "make this bold as well" is a sentence about the cell
-    /// under the cursor rather than about every cell in the range.
+    /// Read the active cell's style, change one field, write the whole rectangle. `App::set_style`
+    /// replaces rather than merges, so "bold as well" is decided here, from the cell under the
+    /// cursor.
     fn toggle_style(&mut self, change: impl Fn(&mut CellStyle)) {
         let mut style = self
             .core
@@ -1175,10 +1135,8 @@ impl App {
     // --- Insert mode ---
 
     fn on_insert_key(&mut self, code: KeyCode) {
-        // A list of offers claims four keys, and only while it is up: Tab would otherwise do
-        // nothing at all, Up/Down nothing, and Escape would throw the whole edit away when what
-        // was meant was "not that completion". **Enter is deliberately not claimed** — a formula
-        // finished by pressing Enter is the common case (`super::assist`).
+        // A list of offers claims Tab, Up, Down and Escape while it is up; Enter still commits
+        // (`super::assist`).
         if self.assist.is_offering() {
             match code {
                 KeyCode::Tab => return self.accept_offer(),
@@ -1275,11 +1233,8 @@ impl App {
         true
     }
 
-    /// Ask [`Assist`] what to offer for the buffer as it now stands.
-    ///
-    /// Recomputed after every keystroke rather than updated in place: a remembered completion goes
-    /// stale the moment the caret moves, which is the same reason nothing else in this file caches
-    /// a read of the document.
+    /// Ask [`Assist`] what to offer for the buffer as it now stands — recomputed per keystroke,
+    /// since a remembered completion goes stale when the caret moves.
     fn refresh_assist(&mut self) {
         let Mode::Insert { buf, cursor } = &self.mode else {
             self.assist.clear();
@@ -1323,11 +1278,10 @@ impl App {
         self.refresh_assist();
     }
 
-    /// Display form goes back to canonical here, exactly as `ui_sheet_gtk/src/grid.rs`'s `commit`
-    /// does — the one step between what an editor holds and what `App::enter` takes. A
-    /// formula that will not parse, or a value the core rejects, does **not** commit: Insert
-    /// mode stays open with the typed text intact, because silently storing `=SUM(B2` as text
-    /// is how a spreadsheet loses a user's work.
+    /// Display form back to canonical — the one step between what the editor holds and what
+    /// `App::enter` takes. A formula that will not parse, or a value the core rejects, does
+    /// **not** commit: Insert stays open with the text intact, rather than storing `=SUM(B2` as
+    /// text.
     fn commit_edit(&mut self) {
         let Mode::Insert { buf, .. } = &self.mode else {
             return;
@@ -1440,8 +1394,7 @@ impl App {
             // *modes*, and this shell's keys are vi's motions; `:roles` off is `:roles`
             // again, which is the whole of turning one off — nothing was written.
             "source" => self.cmd_source(),
-            // `doc/dsl.md` §4.3, D6 — the rules are the core's and this is a list in front of
-            // them. `:lint hints` is `--hints`, off by default here as everywhere.
+            // The rules are the core's; `:lint hints` is `--hints`, off by default.
             "lint" => self.cmd_lint(false),
             "lint hints" | "lint!" => self.cmd_lint(true),
             "roles" => self.cmd_overlay(true),
@@ -1547,13 +1500,11 @@ impl App {
         }
     }
 
-    /// `:down` / `:right` — replicate the selection's leading line across the rest of it, with
-    /// every relative reference shifted (`App::fill`).
+    /// `:down` / `:right` — replicate the selection's leading line across the rest, relative
+    /// references shifted (`App::fill`).
     ///
-    /// ponytail: one `App::fill` call, and so one undo entry, **per line** — a fill down across
-    /// five columns is five undo steps rather than one. The same ceiling `ui_sheet_gtk/src/grid.rs`
-    /// records, and the same upgrade: a multi-source fill in the core. Nothing needs it until that
-    /// selection shape is a common one.
+    /// ponytail: one `App::fill`, so one undo entry, per line — five undo steps for a fill down
+    /// across five columns. The upgrade is a multi-source fill in the core.
     fn cmd_fill(&mut self, down: bool) {
         let (start, end) = self.rect();
         let lines = grind_sheet::nav::fill_lines(start, end, down);
@@ -1612,11 +1563,9 @@ impl App {
         self.leave_visual();
     }
 
-    /// `:chart` — a chart of the table the selection means (`grind_sheet::verbs::insert_chart`),
-    /// written into the document beside it; `:chart new bar|line|pie` makes it that kind rather
-    /// than the one the cells want, as the GNOME dialog's three buttons do. A terminal draws no
-    /// chart on the grid, so where it sits is a default column width and row height: the other
-    /// shells will draw it where the table is.
+    /// `:chart` — a chart of the table the selection means (`grind_sheet::verbs::insert_chart`);
+    /// `:chart new bar|line|pie` makes it that kind. A terminal draws no chart on the grid, so it
+    /// is placed at a default column width and row height.
     fn cmd_chart(&mut self, kind: &str) {
         let Some(kind) = chart_kind(kind) else {
             self.status = not_a_kind(kind);
@@ -1990,9 +1939,9 @@ impl App {
         self.rules.open("Rules", rows, None);
     }
 
-    /// `:functions [text]` — the functions this build implements, each with its plain-English name
-    /// and what it does (`grind sheet functions --long`'s columns, from the same catalog), in a
-    /// list pane; Enter starts a formula in the active cell with the one chosen.
+    /// `:functions [text]` — every function grind implements, with its plain-English name and
+    /// summary (the catalog `grind sheet functions --long` prints), in a list pane; Enter starts a
+    /// formula in the active cell with the one chosen.
     fn cmd_functions(&mut self, filter: &str) {
         let wanted = filter.to_uppercase();
         let mut rows: Vec<crate::pick::Row> = grind_sheet::formula::funcs::catalog()
@@ -2077,10 +2026,9 @@ impl App {
         .to_owned();
     }
 
-    /// `:filter` — an autofilter over the selection (or, from one cell, the table around it), or
-    /// off again when the sheet has one. `grind_sheet::Filter::over_selection` is the rule every
-    /// shell shares; the dropdowns themselves are not drawn here, so choosing values is `grind
-    /// sheet filter`'s.
+    /// `:filter` — an autofilter over the selection (or the table round one cell), or off again
+    /// (`grind_sheet::Filter::over_selection`). The dropdowns are not drawn here, so choosing
+    /// values is `grind sheet filter`'s.
     fn cmd_filter(&mut self) {
         if self.core.filter(self.sheet).ok().flatten().is_some() {
             self.status = match self.core.set_filter(self.sheet, None) {
@@ -2140,11 +2088,8 @@ impl App {
         self.status = "yanked the values as shown".to_owned();
     }
 
-    /// `:eval <formula>` — what it would come to, storing nothing and creating no undo entry.
-    ///
-    /// Typed in display syntax like every other formula in this shell, and evaluated **at the
-    /// active cell**, which is what its relative references are relative to — the same two
-    /// decisions `grind sheet eval` makes.
+    /// `:eval <formula>` — what it would come to, storing nothing. Display syntax, evaluated at
+    /// the active cell, as `grind sheet eval` does.
     fn cmd_eval(&mut self, formula: &str) {
         let canonical = match formula.starts_with('=') {
             true => match display::from_display(formula) {
@@ -2162,12 +2107,9 @@ impl App {
         };
     }
 
-    /// `:width [n|auto]` — how many terminal cells wide the selection's columns are drawn.
-    ///
-    /// Written into the document as an **ODF length** (`super::geom::length`), not as a count of
-    /// cells: a width set here is a width every other shell honours, because it goes in in the
-    /// document's own unit rather than in this terminal's idea of one. `auto` takes the width away
-    /// again, leaving the column at whatever a renderer's default is.
+    /// `:width [n|auto]` — how many terminal cells wide the selection's columns are drawn, written
+    /// as an **ODF length** (`super::geom::length`) so every other client honours it. `auto`
+    /// removes the width.
     fn cmd_width(&mut self, cells: Option<&str>) {
         let width = match cells {
             None => None,
@@ -2196,12 +2138,10 @@ impl App {
         }
     }
 
-    /// `:fit` — each selected column becomes as wide as its widest text, measured in terminal
-    /// cells (`text::Cells`, `unicode-width`, so a CJK column fits too), plus the one blank the
-    /// grid leaves between columns. The twin of the GNOME window's double-click on a column
-    /// edge; an empty column goes back to the default width. `:fit rows` gives the selected
-    /// rows back to their content, and `:fit all` is *Fit Content to Cells* — every column in
-    /// use and every row. Each is one `App::fit`, so one `u`.
+    /// `:fit` — each selected column as wide as its widest text in terminal cells, plus the
+    /// separator; an empty column goes back to the default. `:fit rows` gives the selected rows
+    /// back to their content, `:fit all` fits every used column and row. Each is one `App::fit`,
+    /// one `u`.
     fn cmd_fit(&mut self, what: &str) {
         let (start, end) = self.rect();
         let (cols, rows) = match what {
@@ -2241,11 +2181,8 @@ impl App {
         }
     }
 
-    /// `:height [n]` — the row twin of [`App::cmd_width`], in ODF's own unit.
-    ///
-    /// **Stored and not drawn**, and that is the medium rather than a gap: a row here is one line
-    /// of a terminal, so there is nothing for a height to change. Every other shell draws it, the
-    /// CLI reads it back, and a document that arrives with row heights keeps them.
+    /// `:height [n]` — the row twin of [`App::cmd_width`], in ODF's unit. Stored and not drawn: a
+    /// row here is one terminal line.
     fn cmd_height(&mut self, cells: Option<&str>) {
         let height = match cells {
             None | Some("auto" | "default") => None,
@@ -2275,14 +2212,8 @@ impl App {
         }
     }
 
-    /// `:hide` / `:show`, over the selection's columns — or its rows, with `rows` after the verb.
-    ///
-    /// Explicit rather than guessed from the shape of the selection: a rectangle covers both axes,
-    /// and a verb that hid a column when you meant a row is a verb you have to undo to find out
-    /// what it did.
-    /// `:merge` / `:unmerge` — the selection into one cell, or every merge in it taken away;
-    /// `grind sheet merge`'s twin, one undo step either way. What the covered cells held stays,
-    /// out of sight.
+    /// `:merge` / `:unmerge` — the selection into one cell, or every merge in it taken away, one
+    /// undo step either way. What the covered cells held stays, out of sight.
     fn cmd_merge(&mut self, merge: bool) {
         let (start, end) = self.rect();
         let done = match merge {
@@ -2305,6 +2236,8 @@ impl App {
         }
     }
 
+    /// `:hide` / `:show`, over the selection's columns — or its rows, with `rows` after the verb.
+    /// Explicit rather than guessed: a rectangle covers both axes.
     fn cmd_hide(&mut self, hidden: bool, rows: bool) {
         let (start, end) = self.rect();
         let done = match rows {
@@ -2326,10 +2259,8 @@ impl App {
         match done {
             Ok(changed) => {
                 self.leave_visual();
-                // Hiding the track the cursor is on would leave it somewhere invisible, so it
-                // steps off — the same courtesy every spreadsheet's own Hide does, and onto the
-                // next one that is *shown* rather than onto whatever is one past the run, which
-                // may itself have been hidden earlier.
+                // Hiding the cursor's track would leave it somewhere invisible, so it steps onto
+                // the next one that is shown.
                 if hidden && !rows {
                     let folded = self.folded_cols();
                     let past = self.active.col.max(end.col + 1).min(super::MAX_COLS - 1);
@@ -2346,11 +2277,8 @@ impl App {
         }
     }
 
-    /// `:name <name>` — define a name over the selection, which is what makes `:tax_rate` a place
-    /// to go and `=tax_rate*subtotal` a formula somebody can read.
-    ///
-    /// The definition is `a1::as_definition`'s, so the expression stored is the absolute,
-    /// sheet-qualified form ODF wants rather than whatever the cursor happened to be spelled as.
+    /// `:name <name>` — define a name over the selection, stored as `a1::as_definition`'s
+    /// absolute, sheet-qualified form.
     fn cmd_name(&mut self, name: &str) {
         if name.is_empty() {
             self.status = "usage: :name <name>".to_owned();
@@ -2396,15 +2324,11 @@ impl App {
     }
 
     /// `:format-table [--no-header] [--totals [FUNC]] [--name NAME]` — format the selection as a
-    /// table: autofilter, alternating row shading, an optional totals row and a named range, all
-    /// in one undo step (`App::format_table`). `--totals` alone is a sum; `--totals average` (or
-    /// any other `TotalsFunction` id) picks the aggregate, and the word offered when somebody
-    /// mistypes one is `TotalsFunction::ids()` rather than a second list kept here.
-    /// A single cell expands to the sheet's used extent,
-    /// the same rule `:csv-out` and the GTK shell's own filter toggle use. There is no
-    /// "un-table": ODF has nothing resembling a persisted table object to remove as a unit,
-    /// so clearing the effects means `:name!` on the name and restyling the cells by hand,
-    /// same as after LibreOffice's own AutoFormat.
+    /// table: autofilter, banded rows, an optional totals row and a named range, in one undo step
+    /// (`App::format_table`). `--totals` alone is a sum; a mistyped function is answered from
+    /// `TotalsFunction::ids()`. A single cell expands to the used extent. There is no un-table —
+    /// ODF keeps no table object — so undoing it later means `:name!` and restyling, as after
+    /// LibreOffice's AutoFormat.
     fn cmd_table(&mut self, what: &str) {
         const USAGE: &str = "usage: :format-table [--no-header] [--totals [FUNC]] [--name NAME]";
         let mut header = true;
@@ -2467,12 +2391,8 @@ impl App {
         }
     }
 
-    /// `:csv-in <file>` — a CSV or TSV read in at the cursor, delimiter sniffed from the file's
-    /// own content (`csv::Import::sniffed`, which is what every shell imports with).
-    ///
-    /// It used to say that and pass `Import::default()`, which is the comma whatever the file
-    /// holds; the options a window uses are the core's now, so the four shells cannot read one
-    /// file four ways.
+    /// `:csv-in <file>` — a CSV or TSV read in at the cursor, the delimiter sniffed from the
+    /// content (`csv::Import::sniffed`).
     fn cmd_csv_in(&mut self, rest: &str) {
         // `:csv-in data.txt with delimiter=semicolon locale=de-DE trim` — the words after `with`
         // are `csv::Import::amended`'s, the same options `grind sheet import-csv` has as flags.
@@ -2507,11 +2427,8 @@ impl App {
         }
     }
 
-    /// `:csv-out <file>` — the selection, or the whole used sheet when nothing is selected.
-    ///
-    /// The **name** says which dialect, since there is no dialog and no flag to say it with:
-    /// `:csv-out data.tsv` writes tabs (`Dialect::for_name`, and the same rule in every window's
-    /// save dialog).
+    /// `:csv-out <file>` — the selection, or the whole used sheet. The name picks the dialect:
+    /// `data.tsv` writes tabs (`Dialect::for_name`).
     fn cmd_csv_out(&mut self, path: &str) {
         let (start, end) = match self.anchor {
             Some(_) => self.rect(),
@@ -2656,8 +2573,7 @@ impl App {
         }
     }
 
-    /// The alignments a cell has, in ODF's own words — `start`/`end` rather than left/right,
-    /// because that is what the document stores and this build keeps values verbatim.
+    /// The alignments a cell has, in ODF's own words — `start`/`end` rather than left/right.
     fn cmd_align(&mut self, how: &str) {
         let value = match how {
             "l" | "left" | "start" => Some("start"),
@@ -2692,9 +2608,8 @@ impl App {
         });
     }
 
-    /// One of the number-format presets, in the core's own vocabulary
-    /// (`grind_sheet::numfmt::preset`) rather than a format-code string — this build has no
-    /// such thing, which is `doc/ods-format.md` §5.2's decision and not this shell's.
+    /// One of the number-format presets, in the core's vocabulary (`grind_sheet::numfmt::preset`);
+    /// there are no format-code strings.
     fn cmd_format(&mut self, what: &str) {
         match parse_format(what) {
             Ok(format) => {
@@ -2730,10 +2645,8 @@ impl App {
     }
 
     fn cmd_sheet_rename(&mut self, name: &str) {
-        // A rename now rewrites everything that named the old sheet — formulas, named
-        // expressions, chart ranges — in one undo step (`doc/dsl.md` §6.5, D10). Saying how many
-        // is what tells a user the document-wide edit really happened, and that `u` undoes all
-        // of it.
+        // A rename carries every formula, named expression and chart range that named the old
+        // sheet, in one undo step; saying how many tells the user `u` undoes all of it.
         match self.core.rename_sheet(self.sheet, name) {
             Ok(0) => self.status = format!("renamed to {name}"),
             Ok(rewritten) => {
@@ -2774,14 +2687,9 @@ impl App {
         }
     }
 
-    /// `:{address}` — vi's `:{line}`, over the three things a place in a spreadsheet can be
-    /// called.
-    ///
-    /// **A defined name is tried first.** `tax_rate` parses perfectly well as a cell address
-    /// (column `TAX_RATE` does not exist, but `Sheet1` parses as column `SHEET`, row 1 — the same
-    /// trap `locate` documents for the code view), so a name has to win or naming a range would
-    /// make it unreachable by the name somebody gave it. The name box in every other shell offers
-    /// them for the same reason.
+    /// `:{address}` — vi's `:{line}`, over the three things a place can be called. **A defined
+    /// name is tried first**: `tax_rate` could parse as a cell address (`Sheet1` is column
+    /// `SHEET`, row 1), and a name must win or naming a range would make it unreachable.
     fn cmd_jump(&mut self, addr: &str) {
         if let Some((_, expression)) = self
             .core
@@ -2808,12 +2716,8 @@ impl App {
 
     // --- Rendering ---
 
-    /// Slide the scroll offset just far enough to keep the active cell on screen — the same
-    /// rule `editor`'s `Editor::follow_cursor` applies to a line, one axis at a time here.
-    ///
-    /// Both axes are [`super::geom`]'s arithmetic now rather than a division: columns are not all
-    /// the same width any more, and a hidden row is not a row, so neither question is "how many
-    /// fit" times "how big is one".
+    /// Scroll just far enough to keep the active cell on screen, one axis at a time, through
+    /// [`super::geom`]: columns differ in width and a hidden row is not a row.
     fn follow_cursor(&mut self, tracks: &Tracks, hidden: &HashSet<u32>, rows: u32, room: u16) {
         // The cell being pointed at is brought into sight, or pointing below the fold is typing
         // blind; otherwise it is the active one.
@@ -2822,10 +2726,8 @@ impl App {
         self.top.col = geom::follow(tracks, self.top.col, at.col, room, super::MAX_COLS);
     }
 
-    /// What the title bar calls this document.
-    /// What a pane's title calls the document — its file's **name**, as the title bar does,
-    /// rather than the whole path, which on any real machine pushed the pane's own word off the
-    /// end of its border. An imported workbook goes by the name `:w` would give it.
+    /// What a title calls the document: its file's **name**, not the whole path, which pushed a
+    /// pane's own word off its border. An imported workbook goes by the name `:w` would give it.
     fn document_name(&self) -> String {
         match (&self.path, &self.imported) {
             (None, Some(imported)) => chrome::file_name(Some(Path::new(imported))),
@@ -2833,13 +2735,10 @@ impl App {
         }
     }
 
-    /// Where the selection is, and what it adds up to — the right-hand end of the status bar.
-    ///
-    /// The numbers are `grind_sheet::summary`'s — [`grind_sheet::App::preview`] over generated
-    /// formulas, hoisted out of this shell, `ui_sheet_gtk` and `ui_win32` when the macOS shell was
-    /// the fourth caller — so what the bar says and what a cell holding `=SUM(...)` would say
-    /// cannot differ. The *spelling* stays this shell's: a terminal has less room, so `Avg`, four
-    /// decimals, and a single cell saying where it is, since there is no name box beside it.
+    /// Where the selection is and what it adds up to — the status bar's right end. The numbers are
+    /// `grind_sheet::summary`'s, over [`grind_sheet::App::preview`], so they agree with a cell
+    /// holding `=SUM(...)`; the spelling is the terminal's: `Avg`, four decimals, and a single
+    /// cell saying where it is, since there is no name box.
     fn selection_summary(&self) -> String {
         use grind_sheet::a1::format as spell;
         let (start, end) = self.rect();
@@ -3125,28 +3024,23 @@ impl App {
                     Some(CellValue::Number(_))
                 );
                 let role = viewport.as_ref().and_then(|v| v.role(r, c));
-                // The document's own styling, then the shell's own marks over it: the active
-                // cell and the selection are *not* the document, so they are drawn last. In
-                // role mode the document's colours are suppressed altogether (§4.5): colour
-                // means role, exclusively, or a cell's colour has two causes and no way to
-                // tell them apart.
+                // The document's styling, then the shell's marks over it — the active cell and the
+                // selection last. In role mode the document's colours are suppressed
+                // (`doc/view-modes.md` §4.5): colour means role alone.
                 let mut style = match role {
                     Some(role) => Style::default().fg(role_color(role)),
                     None => terminal_style(cell),
                 };
-                // The name overlay, in the one channel a cell has to spare: *underlined* means
-                // this cell has a name, and the name itself is spelled out for the active cell
-                // on the formula line below. Drawing `sales` inside a ten-character column
-                // would be the value yielding to the hint, which §3.2 forbids in every shell.
+                // The name overlay in the one channel a cell can spare: **underlined** means
+                // named, and the name is spelled on the formula line for the active cell (§3.2: a
+                // value never yields to a hint).
                 if viewport.as_ref().and_then(|v| v.name_at(r, c)).is_some() {
                     style = style.add_modifier(Modifier::UNDERLINED);
                 }
                 let pos = Pos::new(r, c);
-                // A `:find` match, and it **replaces** the document's own colours rather than
-                // adding to them — the same rule the role overlay follows, for the same reason:
-                // a marked cell whose own background was already yellow would be a mark nobody
-                // could tell from the document. It is a transient reading, it is drawn only
-                // while a search is live, and `Esc` puts it away.
+                // A `:find` match **replaces** the document's colours rather than adding to them,
+                // as the role overlay does: a mark over a yellow cell would be invisible. Drawn
+                // only while a search is live; `Esc` puts it away.
                 if self.find.matched(self.sheet, pos) {
                     style = MATCH;
                 }
@@ -3158,11 +3052,9 @@ impl App {
                 if pos == self.active || self.selected(pos) {
                     style = style.add_modifier(Modifier::REVERSED);
                 }
-                // §4.6's second channel, and a terminal needs it more than a window does:
-                // eight ANSI colours are what some of them have, and the glyph is what says
-                // the role where the colour cannot. It takes a column of the cell, which is
-                // the mode's price and is paid only while the mode is on — and a column
-                // clipped at the window's edge has none to give, so it keeps its text.
+                // §4.6's second channel: a glyph says the role where eight ANSI colours cannot. It
+                // takes a column of the cell while the mode is on — except a column clipped at the
+                // window's edge, which keeps its text.
                 let marked = role.is_some() && *width >= 2;
                 if let (true, Some(role)) = (marked, role) {
                     spans.push(Span::styled(role.marker().to_string(), style));
@@ -3173,8 +3065,7 @@ impl App {
                 };
                 // A plain number too wide for its column narrows first — fewer decimals, then
                 // scientific — as LibreOffice's General format does (`Viewport::narrower`); only
-                // what still does not fit becomes `###` in `geom::pad`. Every spelling it offers
-                // is ASCII, one cell a character.
+                // what still does not fit becomes `###` in `geom::pad`.
                 let room = width.saturating_sub(1);
                 let narrowed = match (boxed.is_none() && shown_formula.is_none(), &viewport) {
                     (true, Some(v)) if text.chars().count() > room => v
@@ -3350,11 +3241,10 @@ impl App {
                     Span::styled(format!(" {says}"), chrome::status_style()),
                 ],
                 vec![
-                    // How this document spells a number, so which sign is the decimal one is
-                    // never a guess (`grind_sheet::locale::badge`) — first to give way when the
-                    // bar is short, since the arithmetic is what a selection is for.
-                    // Then the spelling language in letters (`ALL`, `DE`, `Off`): a terminal cannot
-                    // be trusted with a flag's width, and `:spell` is the picker.
+                    // How this document spells a number (`grind_sheet::locale::badge`), first to
+                    // give way when the bar is short; then the spelling language in letters
+                    // (`ALL`, `DE`, `Off`), since a terminal cannot be trusted with a flag's
+                    // width.
                     Span::styled(
                         format!(
                             "{}  \u{00b7}  {}  \u{00b7}  ",
@@ -3410,11 +3300,9 @@ fn parse_format(what: &str) -> Result<Option<numfmt::Format>, String> {
     })
 }
 
-/// The header bands, the name box and a search mark — the four places this shell paints a ground
-/// of its own inside the document area.
-///
-/// Named colours for `crate::chrome`'s reason, and picked out rather than merely bold because a
-/// grid's own crosshair is the read-out a reader uses most: which column am I in, which row.
+/// The header bands, the name box and a search mark — where this shell paints a ground of its own
+/// inside the document area. Named colours (`crate::chrome`), picked out rather than merely bold:
+/// which column and row the cursor is in is the read-out used most.
 const HEADER: Style = Style::new().bg(Color::DarkGray).fg(Color::Gray);
 const HEADER_ROW: Style = Style::new().fg(Color::DarkGray);
 const HEADER_ACTIVE: Style = Style::new()
@@ -3459,25 +3347,17 @@ fn toggle(field: &mut Option<String>, value: &str) {
     };
 }
 
-/// The colour a role is drawn in — `doc/view-modes.md` §4.5's convention, in the sixteen
-/// colours a terminal is guaranteed to have.
-///
-/// Named `ratatui` colours rather than an RGB one on purpose: an RGB escape is not what
-/// every terminal reads, and a role mode that is invisible in `screen` over `ssh` is a role
-/// mode half the people who would use this shell cannot use. The hues are the same
-/// convention `ui_sheet_gtk` draws from `style::PALETTE` — inputs blue, formulas the default
-/// foreground, another sheet green — quantised to what the medium has, which is the same
-/// trade [`terminal_style`] already makes for a document's own colours.
+/// The colour a role is drawn in — `doc/view-modes.md` §4.5's convention (inputs blue, formulas
+/// the default ink, another sheet green) in the sixteen colours every terminal has, so the mode
+/// works in `screen` over `ssh`.
 fn role_color(role: grind_sheet::view::CellRole) -> Color {
     use grind_sheet::view::CellRole as R;
     match role {
         R::InputNamed => Color::LightBlue,
         R::InputUnnamed => Color::Cyan,
         R::ConstantUnnamed => Color::Yellow,
-        // The terminal's own ink — `ui_sheet_gtk`'s "the default foreground" for a formula. It
-        // was `Color::White`, on the worry that the default would read as no role on a reversed
-        // cell; what it did instead was erase every formula on a light terminal, where white is
-        // the ground. Reversed, the default ink is exactly what the ordinary cursor looks like.
+        // The terminal's own ink. Not `Color::White`, which erased every formula on a light
+        // terminal; reversed, the default ink is what the ordinary cursor looks like.
         R::ComputedLocal | R::Empty => Color::Reset,
         R::ComputedCrossSheet => Color::Green,
         R::Label => Color::DarkGray,
@@ -3486,12 +3366,9 @@ fn role_color(role: grind_sheet::view::CellRole) -> Color {
     }
 }
 
-/// A cell's own styling, as the attributes a terminal has.
-///
-/// Four of `CellStyle`'s nine properties land here; a font size, a border and a wrap have no
-/// meaning in a grid of one font at one size and one row per row, and that is a limit of the
-/// medium rather than a gap in the shell — all of them are *stored*, and every other shell
-/// draws them. Alignment is [`geom::pad`]'s, which is where the width is known.
+/// A cell's own styling, as the attributes a terminal has: four of `CellStyle`'s nine properties.
+/// A font size, a border and a wrap mean nothing in a grid of one font and one line per row; they
+/// are stored, and other clients draw them. Alignment is [`geom::pad`]'s, which knows the width.
 fn terminal_style(style: Option<&CellStyle>) -> Style {
     let Some(style) = style else {
         return Style::default();
@@ -3611,9 +3488,9 @@ mod tests {
         backend.cursor_visible().then_some((at.x, at.y))
     }
 
-    /// While a cell is being typed into, the terminal's cursor stands at the insertion point on
-    /// the formula line and follows Left — it used to be hidden, so an arrow key moved something
-    /// nobody could see. In Normal mode there is no cursor: the active cell is the cursor.
+    /// While a cell is typed into, the terminal's cursor stands at the insertion point on the
+    /// formula line and follows Left. In Normal mode there is no cursor: the active cell is the
+    /// cursor.
     #[test]
     fn the_insertion_point_is_the_terminals_own_cursor() {
         let mut app = app();
@@ -3668,8 +3545,8 @@ mod tests {
         assert!(app.should_quit(), ":wq — {}", app.status);
     }
 
-    /// An imported workbook comes up unsaved with no path (X6): `:q` will not lose it, and
-    /// `:w` will not guess where it goes — it names the file it would take instead.
+    /// An imported workbook comes up unsaved with no path: `:q` will not lose it, and `:w` names
+    /// the file it would take instead of guessing.
     #[test]
     fn an_imported_workbook_is_unsaved_and_has_nowhere_to_write_yet() {
         let mut app = app().imported(Some(crate::import::Imported {
@@ -3746,10 +3623,9 @@ mod tests {
         assert!(after.contains("hidden"), "{after}");
     }
 
-    /// Spelling in this half (`doc/spelling.md`, "In a spreadsheet"): only a misspelt word's
-    /// letters are underlined in red, `]` goes to it with suggestions, `:fix 1` takes the first,
-    /// and a number or a formula's result is never marked. Attached by language rather than by
-    /// `:spell`, which would write the machine's own remembered setting.
+    /// Only a misspelt word's letters are underlined in red, `]` goes to it with suggestions,
+    /// `:fix 1` takes the first, and a number or a formula's result is never marked. Attached by
+    /// language rather than by `:spell`, which would write the machine's remembered setting.
     #[test]
     fn a_misspelt_word_is_underlined_stepped_to_and_fixed() {
         let mut app = app();
@@ -3831,9 +3707,9 @@ mod tests {
         assert!(after.contains("[x]"), "{after}");
     }
 
-    /// **D9 in this shell.** `:source` shows the projection, the cursor lands on the active
-    /// cell's line, moving it selects the cell that line projects, and any other key puts the
-    /// grid back exactly as it was — a code view is a reading, so there is nothing to undo.
+    /// `:source` shows the projection, the cursor lands on the active cell's line, moving it
+    /// selects the cell that line projects, and any other key puts the grid back exactly as it
+    /// was.
     #[test]
     fn the_code_view_shows_the_source_and_moving_in_it_selects_the_cell() {
         let mut app = app();
@@ -3880,9 +3756,8 @@ mod tests {
         );
     }
 
-    /// `doc/view-modes.md` V7 in this shell: `:roles` draws the marker channel, and turning
-    /// it off leaves the screen as it was — a mode is a reading, so there is nothing to undo
-    /// and nothing to write.
+    /// `:roles` draws the marker channel, and turning it off leaves the screen as it was — nothing
+    /// to undo, nothing written.
     #[test]
     fn the_role_mode_marks_every_cell_and_puts_the_screen_back() {
         let mut app = app();
@@ -4397,9 +4272,7 @@ mod tests {
         );
     }
 
-    /// **The `ponytail` this shell carried since S8, gone.** A column is as wide as the document
-    /// says it is, so opening somebody's spreadsheet is opening theirs rather than an
-    /// approximation of it laid out ten cells at a time.
+    /// A column is as wide as the document says it is.
     #[test]
     fn the_document_s_own_column_widths_are_drawn() {
         let mut app = filled();
@@ -5101,8 +4974,7 @@ mod tests {
         );
     }
 
-    /// CSV out and back in again, through the command line — the one non-ODF format
-    /// (`doc/not-doing.md` §2), and until now the CLI's alone.
+    /// CSV out and back in again, through the command line.
     #[test]
     fn csv_goes_out_and_comes_back_in() {
         let dir = std::env::temp_dir().join(format!("grind-tui-csv-{}", std::process::id()));
@@ -5127,10 +4999,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// **The bug this test exists for.** A filter folds rows away; `j` used to step onto them
-    /// anyway, so pressing it five times moved the cursor one row on screen and left it invisible
-    /// for the other four — which does not read as a cursor on a hidden row, it reads as a
-    /// terminal dropping keystrokes.
+    /// A filter folds rows away, and `j` must never step onto one: five presses would move the
+    /// cursor one row and leave it invisible for four, which reads as dropped keystrokes.
     #[test]
     fn every_press_of_j_lands_on_a_row_that_is_actually_drawn() {
         let mut app = filled();
@@ -5190,8 +5060,7 @@ mod tests {
         assert_eq!(app.active.col, 0);
     }
 
-    /// `App::hidden_rows` is the **filter's** answer alone, so a shell that trusted it to be both
-    /// halves drew rows `:hide rows` had just taken away — and stepped onto them.
+    /// `App::hidden_rows` is the filter's answer alone; a row hidden by hand must fold away too.
     #[test]
     fn a_row_hidden_by_hand_folds_away_like_a_filtered_one() {
         let mut app = filled();

@@ -2,21 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `grind-tui` — a vi-style terminal shell over the suite.
+//! `grind-tui` — a vi-style terminal shell over the suite. **One binary, both document types**:
+//! which half runs is decided by [`grind_core::kind()`] reading the bytes, never the name —
+//! [`sheet`] for a spreadsheet, [`text`] for a text document, and for an empty invocation
+//! whichever `--sheet` or `--text` asks for, else the welcome pane.
 //!
-//! **One binary, both document types** (`doc/suite.md`, R10 and S8). Which shell runs is
-//! decided by [`grind_core::kind()`] reading the *bytes*, never the file name, because a
-//! spreadsheet does not become a document by being called one. `.ods`/`.fods` opens
-//! [`sheet`], `.odt`/`.fodt` opens [`text`], and an empty invocation opens whichever
-//! `--text` or `--sheet` asks for.
-//!
-//! Pure Rust, so it depends on the two core crates directly: no FFI, no bindings. The loop is
-//! render → block on a key → route it to the core, and every capability it offers also exists
-//! in the CLI (doc/plan.md rule 4).
-//!
-//! The terminal is global state this process borrows. Raw mode and the alternate screen must
-//! be handed back on *every* exit path — normal quit, error, or panic — or the user is left
-//! with a shell that no longer echoes. [`restore_terminal`] and the panic hook are for that.
+//! The terminal is global state this process borrows: raw mode and the alternate screen must be
+//! handed back on every exit path, panic included, or the user is left with a shell that no longer
+//! echoes ([`restore_terminal`] and the panic hook).
 
 mod app;
 mod chrome;
@@ -50,11 +43,7 @@ use grind_core::DocumentKind;
 
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
-/// What `--help` prints: the invocation, then the same two help texts `:help` shows inside
-/// each shell.
-///
-/// One source for both, because a key list that is written twice is a key list that is wrong
-/// in one of the two places — and the one nobody reads is the one that rots.
+/// What `--help` prints: the invocation, then the same two help texts `:help` shows.
 fn usage() -> String {
     format!(
         "usage: grind-tui [--sheet|--text] [file]\n\n\
@@ -100,10 +89,9 @@ fn main() -> ExitCode {
         }
     }
 
-    // A file decides for itself (`grind_core::kind::reconcile`). `--sheet`/`--text` only answer
-    // the empty case, and disagreeing with the file is an error rather than a silent override —
-    // opening a spreadsheet as a document would show an empty one, which is exactly the
-    // confusion `kind` exists to stop.
+    // A file decides for itself (`grind_core::kind::reconcile`); `--sheet`/`--text` only answer
+    // the empty case, and disagreeing with the file is an error — a spreadsheet opened as a
+    // document would show an empty one.
     let kind = match &path {
         Some(path) => match sniff(path) {
             Ok(found) => {
@@ -276,11 +264,7 @@ fn sniff(path: &Path) -> io::Result<DocumentKind> {
     })
 }
 
-/// What the loop needs of a shell — and all either of them has in common.
-///
-/// Three methods rather than a shared widget: a grid and a flow have no rendering in common,
-/// and `doc/suite.md` rejects a generic `App<D: Document>` for the same reason. This is the
-/// event loop's shape, not an abstraction over documents.
+/// What the event loop needs of a shell — the loop's shape, not an abstraction over documents.
 trait Shell {
     fn draw(&mut self, frame: &mut ratatui::Frame<'_>);
     fn on_key(&mut self, key: ratatui::crossterm::event::KeyEvent);
@@ -341,10 +325,9 @@ fn event_loop<S: Shell>(terminal: &mut Tui, shell: &mut S) -> io::Result<Option<
 fn setup_terminal() -> io::Result<Tui> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    // The alternate screen keeps the user's scrollback intact. The cursor is a **bar**: it is only
-    // ever shown where text is being typed — the formula line and the `:` line — and a bar
-    // between two characters is what an insertion point looks like in every editor that
-    // distinguishes one from a block cursor over a character.
+    // The alternate screen keeps the user's scrollback. The cursor is a **bar**: it is shown only
+    // where text is typed (the formula line, the `:` line), and an insertion point is a bar
+    // between characters.
     execute!(stdout, EnterAlternateScreen, SetCursorStyle::BlinkingBar)?;
 
     // From here on a panic would leave the terminal unusable, so teardown runs first.

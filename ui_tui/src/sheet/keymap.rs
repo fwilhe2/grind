@@ -2,17 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Vi-style Normal-mode key handling, as a pure function — the same shape as
-//! `ui_sheet_gtk/src/keymap.rs`: key plus modifiers in, an [`Action`] out, no ratatui `Frame` or
-//! terminal handle anywhere near it, so the whole map unit-tests with no terminal attached.
+//! Vi-style Normal-mode keys as a pure function: key and modifiers in, an [`Action`] out, nothing
+//! of ratatui near it, so the map tests with no terminal. crossterm's `KeyCode` is already plain
+//! data, so there is no shell-local key type.
 //!
-//! `KeyCode`/`KeyModifiers` are used directly rather than through a shell-local `Key` enum —
-//! unlike GTK's `gdk::Key`, crossterm's is already a plain data type with nothing to
-//! translate away.
-//!
-//! ponytail: `g` alone stands in for vi's `gg` (a real two-key chord would need the caller
-//! to track a pending first key). One key does the same job here; upgrade if a document ever
-//! needs a literal `g` bound to something else.
+//! ponytail: `g` alone stands in for vi's `gg`; a real chord needs the caller to track a pending
+//! key. Upgrade if a literal `g` is ever wanted for something else.
 
 use std::collections::HashSet;
 
@@ -20,12 +15,8 @@ use super::{MAX_COLS, MAX_ROWS};
 use grind_sheet::Pos;
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
-/// The tracks the document does not show, on both axes.
-///
-/// Handed in rather than looked up, because this module is pure and has never seen a document —
-/// which is exactly the upgrade `doc/sheet-shell.md` names for the GNOME window's own version of
-/// this gap: *`keymap.rs` is pure and knows nothing about the document, so skipping means handing
-/// it the hidden set.*
+/// The tracks the document does not show, on both axes — handed in, since this module has never
+/// seen a document.
 #[derive(Clone, Copy, Debug)]
 pub struct Folded<'a> {
     pub rows: &'a HashSet<u32>,
@@ -33,11 +24,7 @@ pub struct Folded<'a> {
 }
 
 impl Folded<'static> {
-    /// A sheet that folds nothing away.
-    ///
-    /// Test-only, like [`crate::code::Code::line`] and for the same reason: the shell always has
-    /// the two real sets to hand (`App::folded_rows`, `App::folded_cols`), so a constructor that
-    /// said *nothing is hidden* would only ever be a way of not asking.
+    /// A sheet that folds nothing away. Test-only: the shell always has the two real sets.
     #[cfg(test)]
     pub fn none() -> Self {
         static EMPTY: std::sync::OnceLock<HashSet<u32>> = std::sync::OnceLock::new();
@@ -88,9 +75,8 @@ pub enum Action {
     /// `y` — copy the selection into the register as tab-separated text; `p` puts it back.
     Yank,
     Put,
-    /// A marker key over the selection: `*` bold, `/` italic — **the same two keys the word
-    /// processor's Visual mode uses** (`crate::text::keymap`), because one suite should not
-    /// have two vocabularies for emphasis.
+    /// A marker key over the selection: `*` bold, `/` italic — the word processor's Visual-mode
+    /// keys too.
     Bold,
     Italic,
     /// `_` underline and `~` strikethrough — the word processor's two keys again.
@@ -117,10 +103,8 @@ pub enum Action {
     Escape,
 }
 
-/// The key map. One table, no state — `None` means the shell does not claim the key.
-///
-/// `visual` says whether a rectangle is being dragged out, and changes only what the keys that
-/// need a range mean.
+/// The key map. One table, no state; `None` means the shell does not claim the key. `visual`
+/// changes only what the range keys mean.
 pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<Action> {
     let ctrl = mods.contains(KeyModifiers::CONTROL);
     let by = |dir| Some(Action::Move(Motion::By(dir)));
@@ -175,14 +159,9 @@ pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<
     }
 }
 
-/// Apply a motion, clamped to the sheet's own limits — [`super::MAX_ROWS`]/[`super::MAX_COLS`]
-/// for a plain move, `extent` (the used region) for the row/sheet edges, matching
-/// `ui_sheet_gtk/src/keymap.rs`'s `moved` — and **over the tracks the document actually shows**.
-///
-/// Every distance here is counted in tracks that are *drawn*: `j` is the next row on screen, not
-/// the next row in the model, and a page is a screenful of rows somebody can see. Anything else
-/// puts the cursor where nothing is drawn, which reads as a shell dropping keystrokes rather than
-/// as a cursor sitting on a folded row — see [`walk`].
+/// Apply a motion, clamped to [`super::MAX_ROWS`]/[`super::MAX_COLS`] for a plain move and to
+/// `extent` (the used region) for the edges, and counted **in the tracks the document shows**: `j`
+/// is the next row on screen, a page a screenful somebody can see ([`walk`]).
 pub fn moved(from: Pos, motion: Motion, extent: (u32, u32), page: u32, folded: Folded<'_>) -> Pos {
     let page = page.max(1);
     let (last_row, last_col) = (MAX_ROWS - 1, MAX_COLS - 1);
@@ -215,16 +194,9 @@ fn step(from: Pos, dir: Dir, by: u32, folded: Folded<'_>) -> Pos {
     }
 }
 
-/// Move `by` tracks **the document shows**, stopping at the sheet's own edge and never landing on
-/// a folded one.
-///
-/// The bug this exists for: a filter that folds rows 3 to 7 away used to mean five presses of `j`
-/// to move one row on screen, with the cursor invisible for four of them — which does not look
-/// like a cursor on a hidden row, it looks like a terminal dropping keys. Every spreadsheet steps
-/// over what it is not drawing, and now so does this one.
-///
-/// The scan past a run of folded tracks is bounded by how many of them there are, and the outer
-/// loop by `by`; a sheet whose every remaining track is folded stops where it started.
+/// Move `by` tracks the document shows, stopping at the sheet's edge and never landing on a folded
+/// one — a cursor on a hidden row reads as dropped keystrokes. Bounded by the folded run and by
+/// `by`; a sheet whose remaining tracks are all folded stops where it started.
 fn walk(at: u32, by: u32, forward: bool, folded: &HashSet<u32>, last: u32) -> u32 {
     let mut here = at;
     for _ in 0..by {
@@ -448,10 +420,7 @@ mod tests {
         )
     }
 
-    /// **Every distance here is counted in tracks that are drawn.** A motion that stepped onto a
-    /// folded row would put the cursor where nothing is on screen, and pressing `j` five times to
-    /// move one row reads as a terminal dropping keystrokes rather than as a cursor on a hidden
-    /// row — which is exactly what it was doing.
+    /// Every distance is counted in tracks that are drawn.
     #[test]
     fn a_motion_counts_only_the_tracks_the_document_shows() {
         let (rows, cols) = folded(&[2, 3, 4, 5, 6], &[1, 2, 3]);

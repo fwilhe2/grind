@@ -2,17 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The **problems pane** — `grind lint`'s findings, in the terminal (`doc/dsl.md` §4.3, D6).
-//!
-//! **Shared by both halves of this shell**, like [`crate::code`] and for the same reason: a
-//! diagnostic is document-type-neutral by construction (`grind_core::lint`), so a spreadsheet's
-//! findings and a text document's are one list with two callers and neither knows which it is
-//! holding. What differs is only what an address *means*, and that is the caller's business —
-//! this pane hands back the string and the shell resolves it the way it resolves any other
-//! address.
-//!
-//! The keys are the pane vocabulary this shell already has: `j`/`k` move, `Enter` goes to the
-//! finding, any other key closes. `doc/tui-shell.md`'s rule — vi's motions, no menu.
+//! The **problems pane** — `grind lint`'s findings. Shared by both halves, since a diagnostic is
+//! document-type-neutral (`grind_core::lint`): the pane hands back an address string and the shell
+//! resolves it like any other. `j`/`k` move, `Enter` goes to the finding, any other key closes.
 
 use grind_core::lint::{Diagnostic, Report, Severity};
 use ratatui::Frame;
@@ -22,12 +14,9 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
-/// The pane's own state: the findings it is showing, and which one is selected.
-///
-/// The report is held rather than re-derived per frame, for [`crate::code`]'s reason: linting
-/// costs a recalculation, and a pane that re-ran it every keystroke would make `j` the most
-/// expensive key in the shell. It is a snapshot, and the status line says so by naming the verb
-/// that takes a new one.
+/// The findings shown, and which is selected — a snapshot, since linting costs a recalculation and
+/// re-running it per keystroke would make `j` the most expensive key. The status line names the
+/// verb that takes a new one.
 #[derive(Clone, Debug, Default)]
 pub struct Problems {
     open: bool,
