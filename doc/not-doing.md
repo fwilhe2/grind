@@ -154,7 +154,7 @@ the code, and this table is an index rather than a second source of truth.
 | **The format picker's vocabulary** | Exactly `numfmt::preset`'s parameters, which is what makes GUI- and CLI-formatted documents identical. A document's format that is outside it — `DD.MM.YYYY`, a two-branch currency — is kept, rendered, and reported as one the picker cannot build (`Format::is_preset`) rather than silently replaced. | `ui_sheet_gtk/src/formatting.rs` |
 | **`NOW` / `TODAY`** | UTC, not the host's local time. | `date.rs:283` |
 | **String comparison** | Code-point order after case folding, not locale collation. §6.4.9 permits it. | `eval.rs:503` |
-| **Corrupt-zip recovery** | Unbuilt. No corpus file needs it, and it belongs with the spec's explicit repair mode. | `CLAUDE.md` |
+| **Corrupt-zip recovery** | Unbuilt. No corpus file needs it, and it belongs with the spec's explicit repair mode. | `core/src/odf/package.rs:108` |
 | **Loop C's `back` direction** | Skips formula-bearing documents. | `roundtrip.rs` |
 | **Named expressions** | One flat map, so a sheet-local name is visible document-wide. | `model.rs:258` |
 | **Autosave** | The macOS shell only, by platform convention (`doc/macos-shell.md` decision 5): `NSDocument` saves in place as it goes, and Versions and Revert keep what came before. Every other client saves when it is asked to — a GNOME, Windows, terminal or browser user expects that, and a save there is one line of diff (R6) because they asked for it. An import is never autosaved beside its workbook in either case: it opens untitled. | `ui_mac/src/document.rs` |

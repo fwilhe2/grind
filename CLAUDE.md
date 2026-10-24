@@ -1,8 +1,7 @@
 # CLAUDE.md
 
-Guidance for Claude Code in this repo. This file is kept short on purpose — the "why" behind
-any given piece of code lives in that code's own doc comments and in `doc/*.md`; read those
-when touching that area rather than expecting the full rationale here.
+Guidance for Claude Code in this repo. Keep it short: the reasoning behind a piece of code lives
+in that code and in `doc/*.md`, and the history lives in git. Read those when touching an area.
 
 <!--
 SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
@@ -12,36 +11,25 @@ SPDX-License-Identifier: CC-BY-4.0
 
 ## What this is
 
-An ODF-native office **suite**: one shared core, one crate per document type, native shells,
-a feature list that ends. Not a port of LibreOffice, contains none of its code. `README.md`
-has the pitch, `CONTRIBUTING.md` the contributor rules, `doc/plan.md` phases 0–9,
-`doc/suite.md` phase 10 — the split into `grind-core` + `grind-sheet` + `grind-text`, the
-`grind <app> <verb>` CLI, and R8/R9/R10.
+An ODF-native office **suite**: one shared core, one crate per document type, native shells, a
+feature list that ends. Not a port of LibreOffice and contains none of its code. `README.md` has
+the pitch, `CONTRIBUTING.md` the contributor rules, `doc/plan.md` phases 0–9 and `doc/suite.md`
+phase 10.
 
-The spreadsheet (`grind sheet`) is complete through phase 9. The word processor
-(`grind text`) is done through S10: it reads, writes, edits by block *and by caret*, lays text
-out, and **has all three shells** — `grind-tui` opens both document types in one binary,
-`grind-text-gtk` is its window, and `grind-web`'s one bundle holds both panes. The two GUI
-shells are deliberately *minimal*; `doc/text-shell.md` lists what they do and do not do.
-`examples/sample-text.sh` builds a document out of every feature it has, through the CLI only. **Markdown in and out** is the word processor's CSV (`text/src/commonmark.rs`: `pulldown-cmark` reads, our own fold writes; `grind text import-md`/`export-md`, and every shell opens a `.md` as a new unsaved document and has Import/Export Markdown; a picture goes out as a file beside it, `README.md`'s in `README.images/` and named for its bytes, or as a `data:` URI in the browser, and comes back in from either). **Word documents are read** — `grind text import letter.docx letter.fodt`, and every shell opens a `.docx` as a new unsaved document (`doc/docx-import.md`): one way in, never out, as for `.xlsx`.
-Loops A and C are both green. **Line layout lives in `grind-core`** (`doc/text-layout.md`,
-decided on Path C), so `j`/`k`/Home/End mean one thing in every shell and the CLI can answer
-them; a shell supplies only font metrics. **Tables are built** (`doc/text-core.md`'s Tables
-section): a block carries the coordinate of the cell it is in, a cell holds blocks because
-`table-table-cell-content` is the body's own production (rng:16126), and so every caret motion,
-formatting edit and address already worked inside one — read, written, projected, linted, and
-drawn as a grid by `grind-text-gtk`. What it does **not** have: a session (so no `undo` across
-invocations), a table's own style (column widths, borders) or `table:formula`, footnotes, fields,
-style definitions, RTL layout and pages. Every shell *does* now have a selection and a formatting
-toolbar over it; the clipboard is uneven only in the terminal — `grind-tui` has a register,
-`grind-web` the browser's own and `grind-text-gtk` the system one.
+- **`grind sheet`** — the spreadsheet, complete through phase 9.
+- **`grind text`** — the word processor: reads, writes, edits by block and by caret, lays text
+  out, tables, Markdown in and out, PDF export. Not built: a session (no `undo` across CLI
+  invocations), table styles and `table:formula`, footnotes, fields, style definitions, RTL.
+- **Import filters**, one way in and never out: `.xlsx` (`grind-xlsx`), `.docx` (`grind-docx`).
+- **Shells**: GTK (one per document type), terminal, browser, Windows, macOS (built, not yet run
+  on a Mac). `doc/feature-matrix.md` is which client can do what.
 
-`doc/plan.md`'s "The requirements" (R1–R7) is normative. In short: independence and
-ODF-native semantics (R1); everything written validates against the RELAX NG schema (R2,
-`jing -i`); minimal boilerplate (R3); `calcext:` opt-in, outranked by R2 (R4); LibreOffice's
-files read, unknown properties inert (R5); writing changes as little XML as possible (R6,
-phase 8, done); eight named documents that must load, vendored in `sheet/tests/data/kb/` (R7).
-Strictness on the way out, tolerance on the way in — several R7 files are schema-invalid and
+`doc/plan.md`'s "The requirements" (R1–R7) is normative: independence and ODF-native semantics
+(R1); everything written validates against the RELAX NG schema (R2, `jing -i`); minimal
+boilerplate (R3); `calcext:` opt-in, outranked by R2 (R4); LibreOffice's files read, unknown
+properties inert (R5); writing changes as little XML as possible (R6); eight named documents
+that must load, vendored in `sheet/tests/data/kb/` (R7). `doc/suite.md` adds R8–R10, `doc/dsl.md`
+R11. Strictness on the way out, tolerance on the way in: several R7 files are schema-invalid and
 must still load.
 
 ## The README is the author's
@@ -49,1267 +37,245 @@ must still load.
 **Never write `README.md` or `README.fodt`** — no edit, regeneration, export, restore, move or
 delete, however small or obviously right the change. The author writes it by hand in
 `grind-text-gtk` (`README.fodt`, exported to `README.md` with Ctrl+Alt+S). When something in it is
-wrong or out of date — a feature it misstates, a command that changed — **say so in your reply**,
-quoting the line, and leave the fix to the author. `.claude/hooks/protect-readme.sh` and the deny
-rules in `.claude/settings.json` enforce this; do not work around or edit either.
+wrong or out of date, **say so in your reply**, quoting the line, and leave the fix to the author.
+`.claude/hooks/protect-readme.sh` and the deny rules in `.claude/settings.json` enforce this; do
+not work around or edit either.
 
 ## The two constraints that govern everything
 
-**1. Clean room.** LibreOffice source may be *read* and *cited by `file:line`*, never
-copied. Every fact learned from reading it goes into a cited spec document
-(`doc/ods-format.md`) *before* it reaches code. LibreOffice is a conformance oracle and test
-corpus, never a source — this is what keeps the project freely licensable.
+**1. Clean room.** LibreOffice source may be *read* and *cited by `file:line`*, never copied.
+Every fact learned from reading it goes into a cited spec document (`doc/ods-format.md`,
+`doc/odt-format.md`, …) *before* it reaches code. LibreOffice is a conformance oracle and test
+corpus, never a source. In the format notes, a fact marked **`UNVERIFIED` may not be
+implemented** (`doc/odt-format.md` §5, `doc/xlsx-format.md`, `doc/docx-format.md`).
 
 **2. ODF semantics are the product.** No Excel-oriented libraries with a translation layer —
-the divergence (error model, coercion, empty-cell handling, null-date, reference operators,
-collation) is semantic, not syntactic, and a syntax translator leaks it. Normative sources:
+the divergence (error model, coercion, empty cells, null-date, reference operators, collation) is
+semantic, not syntactic. Format-neutral plumbing (quick-xml, zip, petgraph, chrono) can be lazy;
+semantics never are.
 
-| Source | Role |
+## Where to read
+
+| Area | Documents |
 |---|---|
-| `doc/OpenDocument-v1.4-schema.rng` | ODF 1.4 Part 3 — content schema |
-| `doc/OpenDocument-v1.4-os-part4-formula.html` | ODF 1.4 Part 4 — OpenFormula semantics |
-| `doc/small-group.md` | The 110-function scope line, extracted from Part 4 §2.3.2 |
-| `doc/function-coverage.md` | **The evidence for moving a function past that line — descriptive, not normative.** How many functions ODF (393), LibreOffice (~516) and Excel (521) have, which ones real spreadsheets call (Enron, EUSES, LibreOffice's test documents), where the 144 stand, and the gaps ranked in tiers — the third of which needs an array value rather than more functions. `scripts/function-usage.py` re-measures the corpus half |
-| `doc/suite.md` | Phase 10 — the suite plan; normative for that phase, incl. R8/R9/R10 |
-| `doc/odt-format.md` | Clean-room notes for text documents. **§5 is `UNVERIFIED` and may not be implemented** |
-| `doc/text-core.md` | The text scope line — *invented*, not extracted, and checked by `text/tests/scope.rs` |
-| `doc/text-layout.md` | **Where layout lives — decided, Path C.** Normative for it, including the five answers at its end (RTL out, `Layout` in `grind-core`, the CLI's unit). Outranks `doc/suite.md`'s fork section, which is the record of an argument rather than the answer |
-| `doc/ods-format.md` | Clean-room notes on undocumented LibreOffice behaviour |
-| `doc/cli-parity-sheet.md`, `doc/cli-parity-text.md` | Every public `App` method and the CLI command reaching it — one per app (R9) |
-| `doc/feature-matrix.md` | **Every capability against every client** — the cross-cut R10's per-shell gap lists cannot show. **Descriptive, not normative**: read out of the shells' own verb tables and their core calls, dated, and where it disagrees with a shell's own document that document wins. §8 is the ranked list of where the six clients actually diverge, §10 the greps that re-derive it — of which step 3 (does the shell *call* the core method?) is the one that finds what a gap list left out |
-| `doc/projection-sheet.md` | **The projection's grammar for the spreadsheet, executable rather than descriptive.** Every node with a one-line example the test really reads, and every field of `Document`/`Sheet` with the node that carries it or a named gap. `sheet/tests/projection_scope.rs` is `doc/dsl.md` §3.7 made mechanical |
-| `doc/projection-text.md` | **The projection's grammar for the word processor** — the twin, and the one where §3.7 is kept *literally*: a text document has an element scope line (`doc/text-core.md`), so every element `grind_text::implemented()` returns must have a node, a piece of inline notation, or a named gap. `text/tests/projection_scope.rs` is that check. Images are the one gap in the scope line, and the section on them is why; generated index entries and kept runs (footnotes, fields — spelled as the text they show) are the two beside it |
-| `doc/sheet-shell.md` | Phase 9's work plan for the **spreadsheet's** GTK shell — normative for that phase, and its "Four surfaces" section is normative for that window's chrome: which of the four surfaces a control may go in, and why only the command palette is allowed to grow |
-| `doc/text-shell.md` | S9 + S10 — what the word processor's GTK and browser shells do, what they deliberately do not, and what building them proved about `Metrics` |
-| `doc/tui-shell.md` | **The terminal shell — normative for `ui_tui/`.** Its two decisions (vi rather than a menu; markdown is for *typing*, never for *showing*), what both halves do, and its gap list |
-| `doc/web-shell.md` | **The browser shell — normative for `ui_web/`.** Its one design decision (a page, not a window: one verb bar, one tool row, Ctrl+K for the rest), what both panes do, and its gap list — which used to live in the two shell docs above and outgrew them |
-| `doc/windows-shell.md` | **The Windows shell — normative for `ui_win32/`: every milestone, W0 through W8, is done.** Its seven decisions, of which the one that was genuinely open — how text gets measured, since Win32 has no Pango and GDI does not shape — is **settled by W5a**: GDI on both halves, measuring *and* drawing, because they have to be one engine or the caret and the ink disagree. Also why the menu bar is this platform's growable surface where the GTK window needed a palette, and the gap list, which names the LTR complex scripts as this shell's own gap rather than one `doc/text-layout.md` already covered |
-| `doc/macos-shell.md` | **The macOS shell — normative for `ui_mac/`; M0 (plan and wiring) and M1 (the hoists) are done, and nothing opens a window yet.** Its twelve decisions, of which the one that departs from Windows is decision 3: **AppKit draws the chrome and the shell draws only the document**, because AppKit's controls are the convention and take on the system's look for free. The rest: `objc2` from Rust, CoreText measuring *and* drawing (the same rule as decision 3 of the Windows doc, met by a shaping engine), `NSDocument` with **autosave in place** (the first client with autosave, by the user's choice), keys as selectors rather than key codes, and ad-hoc signing until notarization is decided. Its first section is the answer to *how much can be done without a Mac*: the AppKit half type-checks and lints from Linux, and everything that links or runs happens on GitHub's macOS runners. Its M1 was **hoists**, not a copy, and is done: `grind_sheet::{nav, tracks, summary, clip, format}`, `formula::display::to_input`, `grind_text::flow`, `grind_core::{utf16, kind::reconcile}` — each one a copy the Mac would otherwise have made, several of them fixing a drift between the copies on the way (*What M1 did*). The one row answered the other way is the edit-mode key machine, **mirrored** because no one abstract key type fits GTK's, Windows' and the Mac's inputs |
-| `doc/flat-first.md` | **In doubt, write the form that diffs.** Normative for every default choice between the package and flat forms — `Form::from_path`, save dialogs, new documents |
-| `doc/view-modes.md` | **What a document *means*, drawn — normative for `sheet/graph.rs`, `sheet/view.rs` and the overlays in all four shells.** Inline names and derived cell roles, neither of which is ever *written*: a stored classification goes stale and a derived one cannot |
-| `doc/formula-workbench.md` | **The formula workbench — F0–F3 done (`App::trace`, `App::overlay`, `display::pretty`, `grind sheet eval --trace --with --pretty`, `sheet/tests/corpus_trace.rs`); normative for it.** An *evaluate expression* pane: discover a function, trace every sub-expression's value in place, override inputs without touching the sheet (an `Overlay` seeded into `Engine::new`'s memo), lay one expression over several lines, and **extract** a sub-expression into a cell, a helper column or a name. Its decisions: no new syntax, nothing written but Apply and Extract, and extract *refuses* rather than changes meaning — §5's rules come from `doc/ods-format.md` §4.2, which measured the four ways moving a sub-expression into a cell changes an answer (empty, a direct text or logical in a sequence, a range, position) |
-| `doc/dsl.md` | **The projection — a document as plain text, and a generator that writes one.** Normative for `core/src/projection/`, `sheet/src/projection/`, `text/src/projection/` and `build/`. Two layers, and fusing them is the mistake it exists to prevent: layer 0 (`.grind`, KDL, bijective, round-trips — D0–D5, both document types) and layer 1 (a generator, one direction, `grind build` — D7's `grind build` and D8's `grind test` both built) |
-| `doc/generator-spec.md` | **The generator's language — normative for `build/`.** §8 is the editor half: `grind definitions` writes a Rhai `.d.rhai` file from the engine itself and `--snippets` writes the same vocabulary as VS Code snippets, so completion and hover cover it with or without a language server, and `build/src/hint.rs` is why every function has documentation to show — registering one *takes* the comment, so an undocumented function cannot be added by forgetting. The Rhai dialect (which features are taken, what is removed and *how*, every limit, what determinism rests on), the whole host API for both document types, how the returned tree becomes a document, and §7's list of what a script cannot say and what to do instead. `doc/dsl.md` §4 is the argument; this is the reference, and `build/tests/spec.rs` holds it to the code in both directions |
-| `doc/projection-guide.md` | **The projection's guide (D12)** — writing a `.grind` by hand, in the order the problems arrive, built on `examples/quote.grind`. Task-shaped where `doc/projection-sheet.md` is a vocabulary; §1 is the answer to *why would anybody want this*, and §10 the honest list of what converting *to* a projection drops |
-| `doc/generator-guide.md` | **The generator's guide (D14)** — from `examples/first.rhai` to `examples/timesheet/timesheet.rhai`, four sheets that have to agree with each other. `cli/tests/editor.rs` builds every script it names |
-| `doc/editor-setup.md` | **VS Code for `.grind` and `.rhai`** — what each extension actually does, measured as installed rather than as described, and why the vocabulary ships as *snippets* as well as a `.d.rhai`: the published Rhai extension runs no language server. `.vscode/` is the shipped configuration and `cli/tests/editor.rs` holds both snippet files to the vocabularies they describe |
-| `doc/init.md` | **`grind init`, the language server and its VS Code client — I0, I1, I2, I5 and I6 built; I3, I4 and I7 planned.** Three CLI prerequisites first, now done (lint findings at a line through the span map, a suite-level `grind project` for git's `textconv`, the projection's snippets in the binary), then `init` — recommend extensions and never install them, never clobber a user's settings, no project manifest, generated files rewritten by `--update` and seeded ones never — and then `grind lsp` rather than a VS Code-only extension, with inline values as inlay hints that are shown and never written. §3 is the request's assumptions, challenged one at a time |
-| `doc/xlsx-import.md` | **Phase 11 — reading `.xlsx`, done, X0–X6 (values, formulas, number formats, styles and geometry, the document level, and every shell's Open).** Normative for that phase: its own crate behind a feature flag, one way in and never out, a fidelity report that is part of the output, and "Transitional, and the real world" — the section that decides whether the filter opens other people's files, since Transitional is what every real producer writes and markup compatibility is the tax they charge. **ECMA-376 is the source; LibreOffice stays the oracle** |
-| `doc/xlsx-format.md` | Clean-room notes on OOXML, the `doc/ods-format.md` of that filter. Every fact carries `MEASURED` / `SPEC` / `UNVERIFIED`, and **`UNVERIFIED` may not be implemented** |
-| `doc/docx-import.md` | **Reading `.docx` — done, DX0–DX6.** The word processor's `doc/xlsx-import.md`, under the same rules, plus its three own decisions: the OOXML container layer is **one shared crate** (`grind-ooxml`, hoisted out of `grind-xlsx`); the filter **writes ODF and lets `grind_text` read it**, because a Word document's look lives in named styles, list styles, a page and a header the text model reads and never writes — so an import is, from then on, indistinguishable from a document LibreOffice wrote; and an intermediate form, because some of Word's facts arrive after the content they change |
-| `doc/docx-format.md` | Clean-room notes on WordprocessingML, `MEASURED` / `SPEC` / `UNVERIFIED` as above: the Strict URIs, whitespace in `w:t`, fields that span paragraphs, headings by stated level only, the empty paragraph that closes a section, the defaults when there are none |
-| `doc/conditional-format.md` | **Conditional formatting's one rule type — built.** The scope line (a formula true here draws a `CellStyle` over the cell's own; colour scales, data bars and icon sets stay out), the model (`sheet/src/rule.rs`: several ranges, one base cell, first true rule wins — LibreOffice's order, measured), and §3's questions, answered in `doc/ods-format.md` §3.6. The viewport evaluates rules, so no shell does; ODF is the standard `style:map`/`is-true-formula` spelling with the rule's style a common style; `.xlsx` rules arrive through `xlsx/src/rules.rs` (`doc/xlsx-format.md` §4.12). Editing rules from a window is the open row |
-| `doc/chart-handling.md` | **Taking hold of a chart — normative for `sheet/src/chart_frame.rs` and every shell's half.** A click selects; a selected chart wears the accent and eight handles for as long as it is selected; the body moves it, a handle resizes it, Shift keeps proportions on a corner; the release is one `reshape_chart`; Delete/Backspace delete, arrows nudge, Return changes, Escape lets go, any other key lets go *and* means what it means; the chart verbs mean the selected chart, else the last. The terminal's half is a list (`:charts`) since it has no pointer |
-| `doc/pdf-export.md` | **PDF export and print preview for the word processor — decided, being built.** Pagination as an *output*, derived and never stored (the editor stays continuous); krilla writes the PDF from glyphs our own layout placed, shaped by harfrust, in the optional `grind-print` crate; one display list feeds the PDF and the preview. **Paper is ISO 216**: A4 by default, never a US size by choice. Milestones P0–P9, loop G as pagination's differential |
-| `doc/spelling.md` | **Spelling — normative for `text/src/spell.rs`, `spell/` and every shell's underline.** Hunspell dictionaries (English, German) checked by `spellbook`, compiled into the optional `grind-spell` crate; the core decides what a word is and which are checked (`Lexicon`, injected like `Metrics`); **every language by default** — a word any of the seven dictionaries knows is right, the document's own language (named, else stated by `fo:language` on `Standard`, else guessed from the words) asked first and suggesting, and one language *alone* only when asked for; a personal word list that is never written into a document. A language per paragraph is its first named gap |
-| `doc/third-party.md` | **Every third-party component and its licence — normative for `core/src/third_party/` and every About.** One list in the core, *generated* by `core/tests/third_party.rs` from `cargo metadata` (every binary's normal-edge closure), each crate's own licence files and the fonts' own `name` tables; the test **rewrites the file and fails** when it is stale, refuses a licence not on its `ALLOWED` list, and holds every file REUSE says is not ours to the list or to `NOT_SHIPPED`. `grind licences` prints it |
-| `doc/not-doing.md` | The feature line as a product document |
-
-Format-neutral plumbing (quick-xml, zip, petgraph, chrono) can be lazy; semantics never are.
+| ODF itself | `doc/OpenDocument-v1.4-schema.rng` (Part 3), `doc/OpenDocument-v1.4-os-part4-formula.html` (Part 4) |
+| Scope lines | `doc/small-group.md` (functions), `doc/function-coverage.md` (the evidence for going past it), `doc/text-core.md` (text elements), `doc/not-doing.md` (the product line) |
+| Format notes | `doc/ods-format.md`, `doc/odt-format.md`, `doc/chart-format.md`, `doc/xlsx-format.md`, `doc/docx-format.md` |
+| Core design | `doc/text-layout.md` (layout in the core, Path C), `doc/view-modes.md`, `doc/flat-first.md` (in doubt, write the flat form), `doc/conditional-format.md`, `doc/formula-workbench.md`, `doc/spelling.md`, `doc/pdf-export.md` (paper is ISO 216, A4 by default), `doc/chart-handling.md` |
+| Projection and generator | `doc/dsl.md`, `doc/projection-sheet.md`, `doc/projection-text.md`, `doc/generator-spec.md`, `doc/projection-guide.md`, `doc/generator-guide.md`, `doc/editor-setup.md`, `doc/init.md` |
+| Import filters | `doc/xlsx-import.md`, `doc/docx-import.md` |
+| Shells | `doc/sheet-shell.md` (its "Four surfaces" governs the GTK chrome), `doc/text-shell.md`, `doc/tui-shell.md`, `doc/web-shell.md`, `doc/windows-shell.md`, `doc/macos-shell.md` |
+| Parity and licences | `doc/cli-parity-sheet.md`, `doc/cli-parity-text.md`, `doc/feature-matrix.md`, `doc/third-party.md` |
 
 ## Commands
 
 ```sh
-cargo test                       # everything
+cargo test                                     # the default members: everything without system packages
 cargo test -p grind-sheet --test read_values   # one test file
-cargo test -- repeated_columns   # one test by name substring
-cargo clippy --workspace --all-targets   # CI gates on it, warnings as errors
-cargo fmt --all                          # rustfmt.toml is its config; CI gates on --check
-cargo doc --no-deps                      # CI gates on it with RUSTDOCFLAGS=-D warnings
-reuse lint                               # must stay compliant; CI gates on this too
+cargo test -- repeated_columns                 # one test by name substring
+cargo clippy --workspace --all-targets         # CI gates on it, warnings as errors
+cargo fmt --all                                # CI gates on --check
+RUSTDOCFLAGS=-D warnings cargo doc --no-deps   # CI gates on it
+reuse lint                                     # CI gates on it
 ```
 
-`grind` is the CLI — `grind <app> <verb>`, plus a few suite-level verbs that read the
-document's kind out of the file (`info`, `convert`, `lint`, `project`) and two that have no document to read
-(`build`, which runs a generator script — `doc/dsl.md` layer 1 — and `init`, which sets up a directory
-for writing one, `doc/init.md`). Every core capability is reachable from
-it, enforced by
-`cli/tests/parity.rs`:
+`grind` is the CLI: `grind <app> <verb>`, plus suite-level verbs that read the kind from the file
+(`info`, `convert`, `lint`, `project`) and three with no document (`build`, `test`, `init`).
 
 ```sh
 cargo run -p grind-cli -- sheet new book.ods
-cargo run -p grind-cli -- sheet set book.ods A1 1
-cargo run -p grind-cli -- sheet set book.ods A2 '=[.A1]*2'   # ODF syntax, verbatim
+cargo run -p grind-cli -- sheet set book.ods A2 '=[.A1]*2'      # ODF syntax, verbatim
 cargo run -p grind-cli -- sheet recalc book.ods
-cargo run -p grind-cli -- sheet view book.ods A1:A2
-cargo run -p grind-cli -- sheet import-csv book.ods data.csv --locale de-DE  # delimiter sniffed
-cargo run -p grind-cli -- sheet export-csv book.ods --delimiter tab
-cargo run -p grind-cli -- --format json info book.ods    # suite level: reads the kind
-cargo run -p grind-cli -- build examples/budget.rhai -o book.fods   # a script returns a document
-cargo run -p grind-cli -- test examples/budget.rhai                # and asserts its own totals
-cargo run -p grind-cli -- build examples/timesheet/timesheet.rhai -o month.fods  # four sheets that agree
-cargo run -p grind-cli -- lint examples/quote.grind       # a hand-written projection
-cargo run -p grind-cli -- init ~/work/pricing             # a starter script + VS Code + git, never clobbering
-cargo run -p grind-cli -- init --update ~/work/pricing    # after upgrading: rewrite stale vocabulary, nothing else
-cargo run -p grind-cli -- lsp                             # the language server, over stdio, for an editor
-editors/vscode/package.sh && code --install-extension target/grind-0.0.1.vsix   # its VS Code client
-editors/vscode/test/run.sh                                 # that client in a real, headless VS Code
-cargo run -p grind-cli -- sheet import book.xlsx book.fods  # phase 11; one way in, never out
-cargo run -p grind-cli -- text export-pdf report.fodt report.pdf --paper a4   # ISO 216 only
-cargo run -p grind-cli -- text preview report.fodt page1.png --page 1 --dpi 96
+cargo run -p grind-cli -- sheet import-csv book.ods data.csv --locale de-DE
+cargo run -p grind-cli -- sheet import book.xlsx book.fods
+cargo run -p grind-cli -- text import letter.docx letter.fodt --strict
+cargo run -p grind-cli -- text export-pdf report.fodt report.pdf --paper a4
+cargo run -p grind-cli -- --format json info book.ods
+cargo run -p grind-cli -- build examples/budget.rhai -o book.fods
+cargo run -p grind-cli -- test examples/budget.rhai
+cargo run -p grind-cli -- lint examples/quote.grind
+cargo run -p grind-cli -- lsp
 ```
 
-The import filter is a **cargo feature**, on by default. Both halves are built by CI, because
-"it still compiles without it" rots silently:
+The import filters, PDF, spelling and the language server are cargo features, on by default.
+CI also builds and tests `-p grind-cli --no-default-features`, because "it still compiles
+without it" rots silently.
+
+`examples/sample-sheet.sh` and `examples/sample-text.sh` build a document out of every feature,
+through the CLI only, and `cli/tests/cli.rs` runs both. **Add a line there when adding a
+capability.**
+
+### Shells
 
 ```sh
-cargo build -p grind-cli --no-default-features   # a `grind` with no Excel code in it
-cargo test  -p grind-cli --no-default-features
-cargo test -p grind-xlsx --test ooxmlgen   # the vendored corpus; needs nothing, never skips
-cargo run -p grind-cli -- text import letter.docx letter.fodt --strict   # the Word filter, likewise
-cargo test -p grind-docx --test fixtures   # hand-built Word packages; needs nothing
-GRIND_LO_CORPUS=/path/to/libreoffice/core cargo test -p grind-xlsx   # loop A′ as well
-```
-
-The two GTK shells need `libgtk-4-dev` + `libadwaita-1-dev`, and are **not** in
-`cargo build --workspace`'s path — built and run on their own:
-
-```sh
-cargo run -p grind-sheet-gtk -- book.ods                  # .ods or .fods; no file = empty document
+cargo run -p grind-sheet-gtk -- book.fods                 # needs libgtk-4-dev + libadwaita-1-dev,
+cargo run -p grind-text-gtk -- report.fodt                #   and is not a default member
 cargo run -p grind-sheet-gtk -- book.fods --render-to /tmp/grid.png   # one frame, then exit
-cargo test -p grind-sheet-gtk                             # geom.rs, no display needed
-
-cargo run -p grind-text-gtk -- report.fodt                # the word processor's window
-cargo run -p grind-text-gtk -- report.fodt --render-to /tmp/page.png
-cargo test -p grind-text-gtk   # geom + keymap always; the widget tests skip with no display
+cargo run -p grind-tui -- book.fods                       # one binary, both document types
+ui_web/build.sh && ui_web/smoke.sh                        # wasm32 + a matched wasm-bindgen-cli; jsdom
 ```
 
-`--render-to` is how a custom-drawn widget gets an assertable output (a refactor is proved
-one when the PNG comes back byte-identical). Not a user feature.
+`--render-to` is how a custom-drawn widget gets an assertable output; a drawing refactor is
+proved one when the frame comes back byte-identical. Not a user feature.
 
-`grind-tui` is the terminal shell and needs no system packages. **One binary, both document
-types**, chosen by `grind_core::kind` from the file's bytes:
-
-```sh
-cargo run -p grind-tui -- book.fods       # the spreadsheet
-cargo run -p grind-tui -- report.fodt     # the word processor
-cargo run -p grind-tui -- --text          # a new document, empty
-cargo test -p grind-tui                   # both keymaps, `Cells`, the markdown notation, and rendering via TestBackend
-```
-
-**`doc/tui-shell.md` is normative for it, and it is built well past S8.** The grid honours the
-document's own **column widths** (`ui_tui/src/sheet/geom.rs` — whole terminal cells, derived from
-the suite's one-inch default column, and the `ponytail` that measured padding in `char`s is gone
-with it) and folds hidden tracks away on both axes; there is a formula **completion band** over
-`grind_sheet::formula::assist` (Tab accepts, Enter still commits), `:find` + `n`/`N` over cells
-with every match marked, `:s/old/new/` over `App::replace`, `:down`/`:right`, `:eval`, `:width`/`:height`/`:hide`/`:show`, `:name`,
-CSV both ways, and selection arithmetic on the status bar through `App::preview`. The word
-processor half **draws a table as a grid** in box-drawing characters — `Measures` is its
-`grind_text::Faces`, building the block-to-cell map once per frame because `Faces::of` is called
-while `App` holds its read lock and so must not ask the document anything — indents list items
-with a *drawn* bullet, and gained `:mark`, `:table`, `:move`, `n`/`N` and an outline **pane**
-(`ui_tui/src/pick.rs`, a list widget that does not know what it is holding). Both halves wear two
-rows of chrome (`ui_tui/src/chrome.rs`): a title bar carrying the sheet strip or the heading path,
-and a status bar with a coloured mode chip.
-
-`grind-win32` is the Windows shell (`doc/windows-shell.md`), built **through W11**: a window, the
-spreadsheet as a grid — the document's own column widths and row heights, hidden tracks gone,
-headers, both scrollbars and the wheel, per-monitor DPI v2, a theme read from the registry — a
-**selection** (arrows, Ctrl+arrows, Home/End, PageUp/Down, Ctrl+A, click and drag, whole rows and
-columns from the header bands, a status bar whose Sum/Count/Average come from `App::preview` over
-generated formulas rather than from a second summing loop, and a name box on F5), and now
-**editing**: one child `EDIT` serving as both the in-cell editor and the formula bar, the
-Ready/Enter/Edit modes in a portable `sheet/state.rs`, formulas typed in display syntax and
-stored in ODF's — one that will not parse keeps the edit open with the caret on the problem —
-Delete, undo/redo, F9, open/save/save-as through `IFileDialog`, the three-button close question,
-sheet add/rename/delete, and **the menu bar that decision 4 makes this platform's growable
-surface**, built from `menu.rs`'s table so that a verb in no menu fails a test and a verb with no
-handler fails the build. Beside the strip is a **notice bar** for a state the document is in —
-a recalculation this build refused to perform, a formula that would not parse, a rename that
-carried four references with it — whose every sentence is a pure function in `notice.rs`. And now
-the **clipboard**: `CF_UNICODETEXT`, tab- and CRLF-separated, over `App::input_text` —
-`clipboard.rs` is the only file that opens it and `grind_sheet::clip` the portable codec either
-side, so Ctrl+X/C/V and the Edit menu's Cut/Copy/Paste reach `clear_range` and `enter_range` the
-same way Delete already did. And the grid has its **format strip** (W12, `sheet/format.rs` over
-`strip.rs`, the layout and painting both panes' strips now share, and over `grind_sheet::format`
-for what a toggle, a colour or a decimal step writes): Bold, Italic, three alignments,
-text colour and cell background, a number-format picker whose face says what the cell is (`123`,
-`%`, `€`, `Date`), fewer/more decimals and Clear — every control a read of the active cell and one
-`set_style`/`set_format` over the selection, the same verbs in the Format menu (checked as the
-strip draws them) and Ctrl+B/I on the grid. Wrap and borders are its named gaps: this window
-draws neither. Edit ▸ Find…/Replace… and F3/Shift+F3 are find and replace over cells —
-`dialog::prompt` for the word, the notice bar for where it landed, and `App::find`/`replace` and
-`grind_sheet::find::step` underneath, the same three calls the GNOME bar and the browser make.
-
-**W9 is formula literacy, and the chrome that carries it.** The pure half of "help somebody
-typing a formula" is now the core's — `grind_sheet::formula::assist`, which holds `prefix_at`,
-`call_at`, `candidates` and `signature_parts` with their tests, hoisted out of `ui_sheet_gtk`
-(whose `state::call_at` and `formula_ux::{prefix_at, candidates}` are re-exports of it now) the
-day a second shell wanted the same answers, the way `grind_core::search::score` came out of
-`ui_web`. On top of it `ui_win32/src/sheet/assist.rs` is portable too: what to offer, which
-argument the caret is in, the runs a band draws, and the keys a list of offers claims — Tab
-accepts, Up/Down step, Escape dismisses for that word only, and **Enter is deliberately left to
-commit the cell**. It is drawn as a **band** under the strip rather than a popup (decision 8: a
-Win32 popup is a second window with its own class, theming, DPI answer and focus problem, and
-this shell must keep the keyboard in the editor), stacked *under* the notice bar rather than
-sharing its row, since a formula that will not parse leaves a notice up while the edit is still
-open. Beside it: the formula bar reads `Sum(Number: B2:B7)` where the document stores
-`=SUM([.B2:.B7])` (View ▸ Friendly Formulas, on by default as in the GNOME window, and the `fx`
-badge in the accent says which of the two is up), Data ▸ Explain Formula unfolds a nested call
-over `friendly::explain`, and Data ▸ Function List is every function with its plain-English name,
-categories and summaries — the same four columns `grind sheet functions --long` prints — which
-writes the call it is asked for. Nothing here parses back and nothing is written: R1 says the
-document's formula is ODF's. The **look** changed with it, on one sentence — *quieter chrome, one
-louder accent*: softer hairlines, quieter still past `App::used_extent`, rounded fields, a
-select-all triangle in the corner, an accent bar under a selected header button, a stripe down
-the notice bar, a status bar with the document at one end and the selection's arithmetic at the
-other, and one accent that is the suite's own blue rather than the user's Windows accent
-(decision 9 — following the system accent is a named gap).
-
-**W11 is the welcome screen, and it is decision 1 finally applied to startup.** This shell used to
-open an empty spreadsheet when it was given no file — one binary holding two applications,
-guessing which was wanted. A window with no document is now neither: `Pane::Welcome` over
-`welcome.rs` draws three cards (New Spreadsheet, New Text Document, Open a Document…), answers the
-arrows, Tab and Enter as well as the pointer, and every card runs a `Command` so the menu bar and
-the pane cannot disagree about what a verb is. `Command::New` became the pair it always owed
-(`NewSheet`/`NewText`, Ctrl+N and Ctrl+Shift+N, either kind from either pane) and `File ▸ Welcome
-Screen` goes back. The menu bar now asks `menu::Surface` — `Welcome` or `Document(kind)` — rather
-than a `DocumentKind` it would have had to invent, so the bar over the welcome pane is **File and
-Help** by the same omission rule that already drops `&Sheet` over a text document. `--sheet` and
-`--text` still skip straight to an empty document, and `--render-to` with no file draws the pane,
-which is the only way it can be looked at from here. Its named gap is a recent-documents list:
-that is a *store* this shell does not have, and the answer when it is built is Windows' own
-(`SHAddToRecentDocs`), not a file of ours.
-
-**W10 is the Fluent pass, and it changed no capability at all** — everything this window could
-do before it, it does after. `theme.rs` is **Fluent 2's tokens**, composited to opaque values
-because `FillRect` has no alpha, and the shape of it is that there are now **three grounds where
-there was one**: a `backdrop` the chrome stands on, a `background` the *document* is (the grid's
-paper, the text pane's page — a layer above the backdrop in both palettes, which is Fluent's
-layering rather than an inversion), and a `card` for things you type in and click. Beside it two
-more ramps: type (Caption 12, **Body 14** — Windows 11's, not the 12 a Win32 window has drawn
-since 1995 — with a cell's own size deliberately left where it was, since a document's column
-widths were chosen against it) and space (the four-pixel grid, the 32-pixel control height, and
-the two corner radii). Every band in both panes is re-measured onto those, the notice bar and the
-assist band are **inset cards** rather than stripes (`sheet::geom::card_in`), the text pane's
-document stands on a **page** (`text::geom::Page::page_card`), and the format strip is a row of
-real buttons in three groups with separators, a chevron on each picker and a swatch that shows
-what its colour *does* — every one of them **responding to the pointer** (`theme::Interaction`,
-`Text::hover`, and a press that acts on release so it can be taken back). **Decision 9 is
-reversed**: the accent is the user's own, read from `DWM\AccentColor` and moved along its own
-hue until `Rgb::contrast` against the ground clears 3.0 — the objection W9 raised was to
-`SystemAccentColor` painted neat, which is a step WinUI does not take either, and the whole thing
-is a pure function swept over every hue and lightness in both palettes by one test. The suite's
-blue is still the fallback, and still what every `--render-to` frame draws. Two more things W10
-needed: `--dark`, because until it existed the dark palette could not be rendered at all and was
-therefore shipping unlooked-at (the first frame it drew had a W1 bug in it — `theme::automatic_ink`
-is the fix, and ODF's *automatic* colour is what it means: the theme's ink where it reads on the
-ground the **document** chose, black or white where it does not); and `gdi::ui_face`, which asks
-`EnumFontFamiliesExW` for *Segoe UI Variable Text* before falling back to Segoe UI, since GDI
-substitutes silently for a face it has not got. The modals are themed too (`dialog.rs`).
-
-**W14 is the modern pass, and closed what W10 left system-drawn.** Every dialog is one shape,
-Fluent's *ContentDialog* (`modal.rs`, decision 12): no caption, a Subtitle title, a footer on the
-window's ground with the accent on the default — the *safe* answer where one destroys something —
-and **fitted to the work area of the owner's monitor** by `modal::place`, since the old popups asked
-for fixed outer sizes (the print preview's ran off a 1080p screen at 125%) and placed buttons by
-guessing the caption. Buttons, lists and fields are owner-drawn, `MessageBoxW` is replaced by verb
-buttons (*Save*/*Don't Save*/*Cancel*), and the owner is dimmed with Fluent's smoke (not under
-Wine, which draws it opaque). The **menu bar is drawn** (`menubar.rs`, decision 13) in the
-non-client band Windows' own would take, so no client coordinate moved; the popups are still
-`TrackPopupMenuEx` over the same `HMENU`s, a `WH_MSGFILTER` hook moves between menus, and
-`SC_KEYMENU` drives the keyboard. The `.exe` now carries an **application manifest**
-(`ui_win32/data/grind.manifest`: Common Controls 6, PMv2), read back in `artifacts.yml`; and the
-popup menus and scroll bars go dark through two `uxtheme` ordinals (`theme::dark_controls`), the
-shell's one undocumented API, looked up and skipped below 1809.
-
-**W5a is the text pane, and it settles this shell's one open decision.** `metrics.rs` is the
-fourth `layout::Metrics` implementation and the first one no toolkit handed over: GDI measures
-with `GetTextExtentExPointW` and draws with `ExtTextOutW` **using the advances that same call
-produced**, because a shell that measured with one engine and drew with another would put the
-caret where the ink is not. A window is now *either* pane (`win.rs`'s `Pane`), chosen by
-`grind_core::kind` from the file's bytes, so File ▸ Open on a `.fodt` turns the grid into a
-document in the same window. The pane lays the whole document out into a `Flow` (`grind_text::flow`
-since the Mac's M1, shared with `ui_text_gtk` and checked against what `grind text view --width`
-breaks), draws it run by run
-with its headings, bold, italic, underline, colour, highlight, lists and tabs, has a caret that
-blinks at the user's own rate, a selection by Shift+arrow, Shift+click, drag and double-click,
-and edits — typing, Backspace/Delete, Enter, Tab, undo/redo and a plain-text clipboard. **W5b is
-done**: every character typed now goes through `App::type_markdown` rather than a plain
-`insert_text`, carrying its `resume` style across keystrokes the same way `ui_tui` does, so
-`**bold**` is read as it is typed here too. Ctrl+B/I/U, a Format menu, and now a **drawn format
-strip** — five toggles (Bold, Italic, Underline, Strike, Code) under the banner
-(`text::geom::Page::strip`/`strip_buttons`, `text::draw::draw_strip`), then Family and Size
-pickers, two colour swatches and Clear (`text::geom::StripHit`, `grind_text::format::Change`,
-hoisted out of `ui_text_gtk/src/format.rs` the day this shell wanted the same vocabulary) — all
-reach `char_style`/`set_char_style` over the selection through `text_emphasise` and its general
-form `text_format`, whose toggle logic is `ui_tui`'s `emphasise_selection` mirrored, on across the
-whole selection or off when it already agrees. The strip's own toggles press themselves
-in when the selection already agrees, or — with nothing selected — when the style the next
-character typed would carry does (`resume` if a markdown span left one pending, otherwise the
-character just behind the caret), and it is a no-op on the grid exactly as the sheet's own verbs
-are a no-op on this pane. Go-to reaches `p12`/`#intro`/`§2.1.3` too, as
-F5 or Ctrl+G — the grid's own two keys for the verb — opening a modal prompt over `loc::parse` and
-`App::resolve_caret` rather than a strip box, since this pane owns no child control of its own to
-put one in. The same menu's Paragraph and Heading 1/2/3 items, and Ctrl+0/1/2/3 to match
-`ui_text_gtk`'s own keys, reach `App::set_kind` at the caret's block — no selection needed, unlike
-the three toggles. Ctrl+Shift+O opens an outline dialog — `dialog::choose`, a `LISTBOX`-backed
-popup generic over strings so `dialog.rs` stays ignorant of `Heading`, one row per heading
-indented by depth, a double-click or OK landing the caret on it. The same popup lists **every**
-block kind on Ctrl+Shift+K — Paragraph, Heading 1 through 6, List item at four depths — so a
-level past 3 and a list item both reach this window too, and it is the suite's first UI that can
-turn a paragraph into a list item at all rather than only draw one read from a file
-(`doc/text-shell.md`'s "no lists UI" gap, closed here first). The menu itself now knows which
-pane it is over, too: `menu::applies_to` — tested on Linux, no window needed — is which verb means
-anything for which document kind. It first answered a `false` with `EnableMenuItem`'s
-`MF_GRAYED`, and that did not survive contact with the actual shape of the two panes' verbs — the
-sheet's own six so outnumber the universal ones that `&Sheet` and half of `&View` sat on screen,
-greyed, over every document that was not a spreadsheet. `menu::items_for`/`menu_has_items` now
-**omit** instead: `&Sheet`/`&Data` are missing entirely over a text document, `&Format` is
-missing over a spreadsheet, and `&Edit`/`&View` each lose just the one item that does not apply
-(`Outline`; `Cell Roles`) — rebuilt whenever `adopt` changes the pane's own kind, as before.
-`WM_CHAR`'s surrogate pairs are
-reassembled too — `surrogate.rs` is the pure half, tested with no window, and `typed_char` is
-where a pending high half waits, per pane rather than in a static — and `WM_IME_STARTCOMPOSITION`
-now positions the composition window at the caret before handing the rest of composing back to
-`DefWindowProcW`, the one message this shell answers of the whole IME surface. The system caret
-is real now too: `place_system_caret` calls `CreateCaret`/`SetCaretPos`/`ShowCaret` at
-`Text::caret_geometry` on `WM_SETFOCUS`, on every `text_refresh` (every motion and every edit)
-and once more after every `WM_PAINT` — the last of which is what catches a handler like
-`text_button_down` that invalidates the window directly rather than through `refresh`, a bug a
-first pass left in and a Wine screenshot caught. `WM_KILLFOCUS` calls `DestroyCaret`, and `paint`
-hides it before the back buffer's `BitBlt` and shows it again after, since the blit knows nothing
-about the caret and paints over it otherwise; `render`'s windowless frame is the one path with no
-`HWND` and so still draws the manual rectangle, which `draw_text_frame`'s `system_caret` flag
-suppresses everywhere else. Verified by screenshot under Wine and Xvfb: the caret tracks a click
-and a keystroke to the right block and offset, has the right height on a heading versus a
-paragraph, blinks on its own with no timer in this process at all, and survives a modal dialog
-stealing and returning focus. **What is still owed**: an inline composition string in the pane's
-own ink rather than the IME's default floating box, real verification under an actual IME (Wine
-ships none), and greying by state *within* one kind
-(Undo with nothing to undo, Paste with an empty clipboard) rather than
-only by which kind is open.
-
-**W6 is done: the three shared panes.** Ctrl+Shift+U (Show Source, D9) and F8 (Check Document,
-D6) both open `dialog::choose`'s listbox — the modal chooser `text_outline` and
-`text_block_kind_dialog` already use, rather than a fourth drawn text-view widget — pre-selected
-on the line the pane's own selection or caret projects to, over `App::project`'s
-`Projection::line_count`/`line_pieces`/`line_of`/`address_on_line` and `App::lint`'s `Report`
-respectively; `code.rs` and `problems.rs` are the portable halves that turn either into the rows
-a listbox shows, and every row is a jump — `a1::parse`/`a1::resolve` for the grid, allowed to land
-on a different sheet than the one open, and `loc::parse`/`resolve_caret` for the text pane, the
-same two calls `text_go_to` makes. A new **View** menu is this shell's `doc/view-modes.md`
-answer: Cell Roles and Names are checkable toggles reaching `App::get_viewport_with`'s overlay,
-drawn as a marker reserved at each cell's leading edge (`theme::role_color`, the same named
-colours `ui_sheet_gtk` uses) plus a muted outline round a defined name's range, and Names reaches
-the text pane too — `:names`' equivalent there, a muted `‹name›` drawn beside each bookmark
-(`BlockView::marks`) rather than spliced into the text the way the CLI prints it, since splicing
-would move every offset after it. Nothing here writes, so opening every overlay and saving is
-still byte-identical.
-
-**W7 is done: chrome and the accessibility floor.** `WM_CONTEXTMENU` is one handler for a right
-click, Shift+F10 and the keyboard's own Menu key — Windows sends all three the same message, and
-`(-1, -1)` is how the keyboard's two are told from the mouse's real point — and it builds its
-popup from `menu::label_for`, the one copy of a command's label, so a context-menu row and a
-menu-bar row can never disagree about what a `Command` is called; `TrackPopupMenuEx`'s
-`TPM_RETURNCMD` hands the id picked straight to the same `do_command` a menu click reaches, with
-no borrow held across the nested message loop (decision 7). The grid's cells and headers share
-one menu — Cut, Copy, Paste, Delete, since this build has no header-only verb to add — and the
-text pane its own plus the three format toggles. The "key list" `doc/windows-shell.md` named is
-`menu::shortcuts()`: every accelerator `MENUS`' own labels already carry, read once rather than
-kept as a second table that could drift from them, shown in `dialog::choose`'s read-only listbox
-from a new Help ▸ Keyboard Shortcuts. `WM_SETTINGCHANGE` and `WM_DPICHANGED` were already built
-(W1/W3) and About already carried `grind_core::build_info`, so W7's remaining work was exactly
-the context menus and the key list. `accesskit_windows` remains named and deferred, and the
-system caret is the floor.
-
-**W8 is done: packaging, the last milestone the original plan named** (W9 was added after it).
-The release artifact and the
-import-table gate were both W0's; what W8 added is `ui_win32/build.rs`, compiling
-`ui_win32/data/grind.rc` with `embed_resource` into the icon (`grind.ico`, generated from
-`grind.svg` — the two GTK apps' own navy-square-and-white-outline language, one mark with a grid
-corner and a document's lines in it, a placeholder until S11's suite mark exists) and a version
-block Explorer's Properties dialog reads. Attempted only when `CARGO_CFG_TARGET_OS` is `windows`,
-and a no-op everywhere this crate is checked from Linux — `embed_resource` finds no cross
-resource compiler there and says so without failing the build, which is exactly the property
-that keeps `cargo check -p grind-win32 --target x86_64-pc-windows-msvc` examinable with no
-Windows at all. `win32.yml` gained a step reading `FileVersionInfo` and the icon back off the
-linked `.exe`, so a resource that silently failed to embed on `windows-latest` — the one machine
-where that would be a real bug rather than an expected gap — fails the build. File
-associations were answered in `doc/windows-shell.md` and are **now built** (`assoc.rs`), with no
-installer: twelve ProgIDs — the three ODF forms of each type plus `.xlsx`/`.xlsm`, `.docx`/`.docm`, `.csv`/`.tsv` and `.md` — written
-per-user by the window on start whenever one is missing or names another copy of the `.exe`,
-and **offered, never taken**: `OpenWithProgids` and a `RegisteredApplications` capability, never
-an extension's own default value or `UserChoice`, so Excel or LibreOffice keeps a double-click
-until the user picks Grind. `--register`/`--unregister` do it and exit. What is unusual about the whole thing is
-that it is examinable from Linux, because `cargo check` does not link:
+**Windows** (`ui_win32/`) is checked from Linux, because `cargo check` does not link:
 
 ```sh
-rustup target add x86_64-pc-windows-msvc
-cargo check  -p grind-win32 --target x86_64-pc-windows-msvc     # the Windows source, no Windows
+cargo check  -p grind-win32 --target x86_64-pc-windows-msvc
 cargo clippy -p grind-win32 --target x86_64-pc-windows-msvc --all-targets -- -D warnings
-cargo test   -p grind-win32                                     # the portable half, on any host
+cargo test   -p grind-win32                                # the portable half, on any host
+scripts/run.sh win32                                       # link with cargo-xwin, run under Wine
+env -u DISPLAY wine target/x86_64-pc-windows-msvc/debug/grind-win32.exe book.fods --render-to /tmp/f.bmp
 ```
 
-`cargo build --target x86_64-pc-windows-msvc` **fails** here and that is not a bug — it tries to
-link and there is no MSVC. To link one anyway, for inspection only, `cargo xwin build` does it and
-Wine runs it; the shipped artifact comes off `windows-latest` in `artifacts.yml` and nowhere else.
-`scripts/run.sh win32` is both halves in one command — link with `cargo-xwin`, run under Wine, on
-the same sample document every other shell gets. It earns its place: all three of W1's bugs, W2's
-one and both of W3's were one glance at a screenshot and none was visible in review. **W3's first
-was a hard crash** that `cargo check`, clippy and 104 unit tests all passed clean — an empty
-`Vec<u16>` has no allocation, so `as_mut_ptr` hands `DrawTextW` a dangling pointer, and drawing
-an empty string was an access violation reading address 2. **W5a's three were the same shape**: a
-tab and a line break are characters in the model and GDI drew the font's missing-glyph box for
-both, and the first line of a two-line selection was never washed — at a break `Layout::x_at`
-resolves an offset to the *later* line, so the wash came out with negative width.
+`cargo build --target x86_64-pc-windows-msvc` fails here; that is expected (no MSVC). **Run Wine
+headless when a crash is possible** — WineDbg otherwise opens on whatever desktop is in front of
+you. A screenshot under Wine has caught drawing bugs that review and the tests all missed.
 
-`--render-to` (W2, `doc/windows-shell.md` decision 5) draws **one frame with no window, no
-compositor and no display** — `CreateCompatibleDC(None)` + `CreateDIBSection` — and writes a
-`.bmp` that is 54 bytes of header in front of the section's own bits. Two renders of one document
-are byte-identical, which is how a drawing refactor is proved one; `artifacts.yml`'s `windows` job
-asserts exactly that on `windows-latest`, and it works headless under Wine here:
+**macOS** (`ui_mac/`): the AppKit half type-checks and lints from Linux; linking needs the SDK and
+happens only on GitHub's runners (`artifacts.yml`'s `macos` job). `scripts/mac-remote.sh
+renders|drive <script>|session` drives the latest built `Grind.app` without compiling. A runner
+reports back through **annotations**, which the public API serves without credentials.
 
 ```sh
-env -u DISPLAY wine target/x86_64-pc-windows-msvc/debug/grind-win32.exe book.fods \
-    --render-to /tmp/frame.bmp
-```
-
-```sh
-scripts/run.sh win32                                   # the sample document, in a Wine window
-Xvfb :99 -screen 0 1400x900x24 & DISPLAY=:99 scripts/run.sh win32 &
-DISPLAY=:99 import -window root /tmp/shot.png          # ImageMagick; python-xlib drives the mouse
-```
-
-`grind-mac` is the macOS shell (`doc/macos-shell.md`), **through M1, with M2–M11 built and not yet run**: the application, an `NSDocument` holding an `App`, the grid in an `NSScrollView` with floating header bands, `--render-to` and `--drive`; the selection from the user's own key bindings (`keys.rs`), clicks, drags and the bands, the name box and status read-out in a titlebar accessory, and the sheets in a sidebar; and editing — a cell editor over the active cell fed by the edit-mode machine, undo from the core, a notice banner, sheets added, renamed and deleted, and **autosave in place**, the suite's first (decision 5); and the pasteboard and Edit ▸ Find, the platform's own `performFindPanelAction:`; and **the page** (M6) — a text document laid out through `grind_text::flow` in CoreText faces per role, an `NSTextInputClient` whose marked text is drawn inline and underlined, the user's own key bindings read by selector, `**bold**` read as it is typed, and every range an input method names converted once in `text/input.rs`. And **packaging** (M10): `plist.rs` is the Info.plist from one table of nine types — offered, never taken — printed by `--info-plist`; `ui_mac/data/Grind.icns` is packed in the tree by `make-icns.py`; and `.github/scripts/mac-bundle.sh` makes the universal, ad-hoc-signed `Grind.app` and its DMG on the runner and checks it with `plutil`, `codesign`, `otool`, `vtool`, LaunchServices (`--handlers`) and `spctl`, which must *reject* it. And **the welcome window, context menus and the accessibility floor** (M9): a launch with nothing named shows the choice — drawn from `welcome.rs` as `Op`s, so `--render-to` with no file draws it — the context menus are tables in `menu.rs` held to the bar, and a drive's `a11y` step reads back in-process what VoiceOver is told. And **formula literacy and the shared panes** (M8): an assist band under the cell editor over `formula::assist` (Tab takes an offer, Return still commits), friendly formulas, Explain and Insert ▸ Function…, the role and name overlays, a sidebar for **both** kinds (`places.rs`: sheets, names and Problems, or outline, bookmarks and Problems, every row a jump), and the source pane as a trailing inspector (⌥⌘U). And **formatting** (M7): a Format menu in TextEdit's shape whose every verb is a `Command` greyed where it means nothing (`Command::applies`) and ticked where the selection already is it, the system font and colour panels, and an `NSToolbar` built from `tools.rs`, where every item's menu twin is a test. The probe's answers are in the doc's *Evidence*: on both OS versions CoreText renders headless and byte-identically and a ZWJ family is one caret stop, and a runner's window **never becomes key** — which is why a drive sends a ⌘-key's action along AppKit's documented path itself, and the delegate finds the front document without a main window. Every decision a user would notice is a portable module tested here (`sheet/geom.rs`, `sheet/paint.rs`'s list of `Op`s, `menu.rs`, `drive.rs`'s parser, the UTF-16 fold, `png.rs`); the AppKit half has only been type-checked. There is no Wine for AppKit, so the Linux side is the type-check and the portable tests, and the runner is the Mac:
-
-```sh
-rustup target add aarch64-apple-darwin x86_64-apple-darwin
-cargo check  -p grind-mac --all-targets --target aarch64-apple-darwin      # no SDK needed
+cargo check  -p grind-mac --all-targets --target aarch64-apple-darwin
 cargo clippy -p grind-mac --all-targets --target aarch64-apple-darwin -- -D warnings
-cargo test   -p grind-mac                                                  # the portable half
+cargo test   -p grind-mac
 ```
 
-`cargo build --target aarch64-apple-darwin` **fails** here, and that is not a bug: linking needs the macOS SDK, whose licence keeps it on Apple hardware. `scripts/mac-remote.sh renders|drive <script>|session` is the remote loop (M11): the latest built `Grind.app` driven or its frames fetched, compiling nothing, through `mac-drive.yml`; and anything a runner must say to a session without credentials it says as an **annotation** (`/check-runs/<job>/annotations`), since logs and artifacts need admin rights. `artifacts.yml`'s `macos` job is where it links and runs — every R7 document and the sample drawn twice in each appearance and compared byte for byte, and each opened in a window through a drive (`.github/scripts/mac-frames.sh`). `macos.yml`'s `probe` job runs `examples/probe.rs` on `macos-15` and `macos-26` until its answers are in the doc's *Evidence* table; it emits them as annotations, which the public API serves without signing in.
-
-**Run Wine headless when a crash is possible** (`env -u DISPLAY`, or that Xvfb display) — WineDbg
-otherwise opens its dialog on whatever desktop is in front of you.
-
-```sh
-cargo build && GRIND=target/debug/grind examples/sample-sheet.sh /tmp/demo
-cargo run -p grind-sheet-gtk -- /tmp/demo/sample.fods
-```
-
-```sh
-cargo build && GRIND=target/debug/grind examples/sample-sheet.sh /tmp/demo
-cargo run -p grind-sheet-gtk -- /tmp/demo/sample.fods
-```
-
-`examples/sample-sheet.sh` and `examples/sample-text.sh` build a document out of **every feature
-this build supports**, through the CLI only, and `cli/tests/cli.rs` runs both — a feature
-without a line there is invisible. Add one when adding a capability.
-
-`scripts/claude-vm.sh` runs **Claude Code itself in a microVM** whose only host path is this
-repository — `doc/claude-vm.md` is normative for it, including the two measured smolvm quirks
-it works around. It is also this workspace's **best test machine**, which was not the reason
-it was built: `ghcr.io/fwilhe2/rust-libreoffice:latest` carries `jing`, so R2's schema
-validation actually runs there instead of skipping the way it does on a host without one, and
-`soffice` too, so loops C, D and E need no `scripts/soffice-docker`. **The image has since
-grown the rest of CI as well** — GTK 4 and libadwaita with Xvfb, the `x86_64-pc-windows-msvc`
-target with `cargo-xwin`, `llvm-windres` and Wine, the wasm target with a matched
-`wasm-bindgen-cli`, `reuse`, and the two packagers — so everything CI gates on now runs in
-there, `artifacts.yml`'s Windows job excepted, and `doc/claude-vm.md` has the table of which
-is which. Needs `smolvm` and
-`/dev/kvm`; the VM keeps its own `CARGO_TARGET_DIR`, so it never fights the host's `target/`.
-
-```sh
-scripts/claude-vm.sh up                 # create + boot + provision (idempotent)
-scripts/claude-vm.sh yolo               # the agent, no permission prompts, one directory of world
-scripts/claude-vm.sh exec cargo test -p grind-sheet --test kb   # jing included
-scripts/claude-vm.sh upgrade            # pull a newer image (delete + re-create; /work untouched)
-scripts/claude-vm.sh shell | status | stop | down
-```
-
-`latest` is resolved **once, at `machine create`** — the layers then live on the machine's own
-disk and nothing re-resolves them, so the tag moving is invisible to a VM that exists and a
-machine stays as reproducible as a pinned one. `upgrade` is the only thing that asks for a
-newer build, and it costs the VM's `target/` and cargo cache to take it. The *oracle* stays
-pinned by digest regardless (`ci/libreoffice-image`): loop E's `FLOOR` is a fact about one
-`soffice` build, and this VM's is a convenience rather than that.
-
-The corpus tests need a LibreOffice checkout and skip with a notice without one:
-
-```sh
-GRIND_LO_CORPUS=/path/to/libreoffice/core cargo test
-```
+**`scripts/claude-vm.sh`** runs Claude Code in a microVM whose image carries everything CI needs —
+`jing`, `soffice`, GTK with Xvfb, the Windows target with Wine, the wasm toolchain, `reuse`
+(`doc/claude-vm.md`). `scripts/claude-vm.sh exec cargo test -p grind-sheet --test kb` runs R2's
+schema check rather than skipping it.
 
 ## The loops
 
-Correctness is checked against LibreOffice, not our own opinion. `soffice` must be on `PATH`
-for loops C, D and E; loops A and B want a LibreOffice source checkout (`GRIND_LO_CORPUS`, the
-**checkout root** — Calc's corpus is at `sc/qa/unit/data` and Writer's at `sw/qa`, and one
-clone serves both). CI's `corpus` job gets that with a blobless sparse clone of just those two
-directories rather than the whole tree. The oracle is pinned to a container
-image by digest (`ci/libreoffice-image`, "Pinning LibreOffice" in `doc/differential-fuzz.md`)
-— loop E's `FLOOR` is a fact about one `soffice` build. `scripts/soffice-docker/soffice` is a
-shim that runs that image, so putting it first on `PATH` pins the oracle without any test
-knowing about Docker; `scripts/soffice-tests.sh` does that and runs loops C, D and E locally
-against exactly what CI uses.
+Correctness is checked against LibreOffice, not our own opinion. Loops C, D and E want `soffice`
+on `PATH`; `scripts/soffice-tests.sh` puts `scripts/soffice-docker/soffice` first, which runs the
+oracle image pinned by digest in `ci/libreoffice-image`. Loops A and B want a LibreOffice checkout
+(`GRIND_LO_CORPUS=/path/to/libreoffice/core`) and skip with a notice without one.
 
 | Loop | Asserts | Where |
 |---|---|---|
-| **A** — read tolerance | every `.ods`/`.fods` loads without error | `sheet/tests/corpus_read.rs` |
-| **A** — read tolerance, text | every `.odt`/`.fodt` in `sw/qa` loads without error | `text/tests/corpus_read.rs` |
-| **B** — formula conformance | parse / display round-trip / evaluate-matches-cached-value | `sheet/tests/corpus_parse.rs`, `corpus_eval.rs` |
-| **C** — round-trip differential | write → `soffice --convert-to` → read back → identical, and reverse | `sheet/tests/roundtrip.rs` |
-| **C** — round-trip differential, text | the same, both directions, over `sw/qa` | `text/tests/roundtrip.rs` |
-| **E** — generated differential | formulas generated from the catalog's signatures, evaluated by us and by LO | `sheet/tests/loop_e.rs`, `doc/differential-fuzz.md` |
-| **F** — projection differential | project → read back → the two models are identical, both directions | `sheet/tests/loop_f.rs`, `text/tests/loop_f.rs`, `doc/dsl.md` §8 |
-| **A′** — import tolerance | every `.xlsx`/`.xlsm` in `sc/qa/unit/data` imports without an `Err` or a panic, every imported document survives our own writer and reader, and (since X2) every `<f>` either translates or falls in a named class — the scoreboard, with its own ratchet on the share translated | `xlsx/tests/corpus_read.rs`, `doc/xlsx-import.md` |
-| **A″** — import tolerance, Word | every `.docx`/`.docm`/`.dotx` in `sw/qa` imports, reads back and saves in both forms (2159 of 2167; the rest locked or ODF wearing the extension) | `docx/tests/corpus_read.rs`, `doc/docx-import.md` |
-| **D″** — import fidelity, Word | our import against the oracle's conversion, block by block — kind, cell, text — over the vendored documents (all agree) and Word's own in `sw/qa/extras/ooxmlimport/data` (152 of 167 accounted for, 103 agreeing outright, `FLOOR`), with five named divergences | `docx/tests/loop_d.rs`, `doc/docx-format.md` |
-| **D** — import fidelity | our import of a workbook against LibreOffice's conversion of it, cell by cell — value and kind, over the vendored generated corpus, so it needs `soffice` and no checkout; where the *oracle* differs it is a named divergence, asserted to still occur. **Formula text is deliberately not compared**: the oracle spells the same expression differently in four measured ways (`doc/xlsx-format.md` §2.4), so the manifest is the oracle for that | `xlsx/tests/loop_d.rs`, `doc/xlsx-format.md` §2.3 |
+| A | every corpus `.ods`/`.odt` loads | `sheet/tests/corpus_read.rs`, `text/tests/corpus_read.rs` |
+| A′, A″ | every corpus `.xlsx` / `.docx` imports and survives our writer | `xlsx/tests/corpus_read.rs`, `docx/tests/corpus_read.rs` |
+| B | formula parse, display round-trip, evaluation matches the cached value | `sheet/tests/corpus_parse.rs`, `corpus_eval.rs` |
+| C | write → `soffice` → read back is identical, both directions | `sheet/tests/roundtrip.rs`, `text/tests/roundtrip.rs` |
+| D, D″ | our import against the oracle's conversion | `xlsx/tests/loop_d.rs`, `docx/tests/loop_d.rs` |
+| E | generated formulas, evaluated by us and by LibreOffice | `sheet/tests/loop_e.rs`, `doc/differential-fuzz.md` |
+| F | project → read back is the same model | `sheet/tests/loop_f.rs`, `text/tests/loop_f.rs` |
 
-`sheet/tests/kb.rs` is the fourth check and never skips: R7's vendored documents. It also
-validates the writer against the schema (`jing -i`) and measures R3/R6.
+These never skip: `sheet/tests/kb.rs` (R7, plus R2/R3/R6), `text/tests/libreoffice.rs` (vendored
+Writer documents in both forms), `xlsx/tests/ooxmlgen.rs` (Open XML SDK workbooks with a manifest
+of expectations; its `PENDING`/`UNSPELLABLE`/`DECIDED_OTHERWISE` tables are checked both ways),
+and the function samples (`sheet/tests/function_samples.rs`).
 
-`text/tests/libreoffice.rs` is its counterpart for text and never skips either: documents
-LibreOffice Writer actually wrote, vendored in `text/tests/data/` in **both forms** of the same
-file. Everything there is globbed rather than listed, so adding a Writer document is dropping a
-file in — it must load, an untouched flat save must return its bytes exactly, and the package
-and flat readers must agree. It is also where **saving never makes an existing file worse** is
-measured against a file none of us wrote: an untouched `.odt` save keeps every entry byte for
-byte, and a structural edit (Enter) leaves every byte outside `office:body` as it was, in both
-forms — `grind_core::odf::envelope` merges a regenerated body into the original and rebuilds a
-package from the original's entries, and refuses to write output that is not well-formed.
+- A `FLOOR` in a loop test is a ratchet: raise it, never lower it.
+- Each loop has its documented loosenings and no others; any other exception is a bug in the
+  code. A corpus file is never special-cased by name.
+- **Adding a function means adding its samples** (`scripts/function-samples.sh`, from odsgen).
+  Measure expectations with `table:use-wildcards="true"` in the oracle's document, or
+  LibreOffice reads every criterion as a regular expression.
 
-`xlsx/tests/ooxmlgen.rs` is the import filter's, and it never skips either: **86 workbooks
-written by the Open XML SDK**, generated by
-[ooxmlgen](https://github.com/fwilhe2/ooxmlgen) and vendored in `xlsx/tests/data/corpus/` with
-a `manifest.json` that is not an index but **the expectation** — the `Dropped` variants by
-name, `Flavour` by name, the `Error` variant a hostile file must produce, the sheet list in
-workbook order, every fixture's SHA-256, and for each of 2757 cells both what the file
-literally contains and what a conversion should produce. It is loop D's oracle travelling with
-the corpus instead of waiting for `soffice`, and it is the answer to `doc/xlsx-import.md`'s
-risk 3 (LibreOffice's corpus over-represents the strange, and needs a checkout nobody has).
-Since the build is X5, every cell's value and kind is asserted — one claim per cell — and so is
-every cell's **formula** (the text where the manifest states one, and the *absence* of one where
-it states Excel's `<f>` and no translation, which is what holds the exclusion classes rather
-than merely describing them) and every **display** it states, which is the claim about a number
-*format*. The gap between claim and capability lives in **three tables checked
-in both directions**: `PENDING` (**empty since X5** — a claim that starts passing *fails the test*, so the entry
-must be deleted when its milestone lands; X1 deleted three, X2 five, X4 two and X5 the last eleven),
-`UNSPELLABLE` (18 — X3's, and a third table because neither of the others fits: a claim the
-**model** cannot satisfy, since the piece of format it names has no `Part` in `numfmt` and
-adding one is a decision about the core's format model rather than an import filter's) and
-`DECIDED_OTHERWISE` (27 — two refusals this filter deliberately does not make, both in
-`hostile/`, five manifests that disagree with their own fixture's bytes — two of them X4's
-`ThemeColor` counts, one in each direction — two spellings where ours is as true as the one
-asked for, and ten functions spelled as the oracle's import spells them, `COM.MICROSOFT.*`).
-3327 of 3372 claims hold: 2756 of 2757 cells,
-308 of 326 formulas and 89 of 107 displays. Ten of the workbooks are the `functions/` family —
-the function samples below, in Excel's spelling — and `xlsx/tests/function_samples.rs`
-recalculates every one of their formulas after import. X4's expectations are in the manifest's *prose*
-rather than its fields, so three tests write them out a note at a time — `colors.xlsx`'s own
-"expected" column, the fonts, fills, borders, alignment and named styles, and the widths,
-heights, hidden tracks, outlines and panes. `fixtures.rs` keeps its own job:
-packages assembled from XML **a reviewer can read in the source**. The corpus's 500,000-cell
-sheet makes `ooxmlgen.rs` the slowest test file in a debug build — about two minutes, nearly all
-of it `grind-sheet`'s debug ODF reader reading that sheet back.
+## CI
 
-**The function samples** are the evaluator's, and never skip: `sheet/tests/data/functions/`,
-one flat ODS document per category of Part 4 §6 — a household budget, an invoice, a class's
-marks, a stock-take, a price list, a staff roster, a mortgage — with a `Samples` sheet calling
-**every function this build implements** the way a real spreadsheet does (188 calls), each
-recalculated by LibreOffice so the value beside it is the oracle's. They are documentation as
-well as a harness: column B is the formula as typed and `README.md` beside them is the table of
-all of it. `sheet/tests/function_samples.rs` holds four properties — every implemented function
-has a sample, every formula recalculates to the oracle's value or is named in `DIVERGES` (four,
-all LibreOffice's precision, checked in both directions), column B is what the formula bar
-shows, and the README lists every function. The source is
-[odsgen](https://github.com/fwilhe2/odsgen)'s `function_samples.py`, and
-`scripts/function-samples.sh` regenerates and vendors both halves — the documents, and
-ooxmlgen's `functions/` family, the same samples as Excel workbooks, which
-`xlsx/tests/function_samples.rs` imports and recalculates. **Adding a function means adding its
-samples there**; the first test fails until it has one. Writing them found two bugs: the reader
-ignored the `table:filter-or` LibreOffice saves every one-column autofilter in (so `SUBTOTAL`
-saw no filter, and a filter change was refused as a loss), and `NPER` lost its fourteenth digit.
+A binary is built once per platform, and everything that has something to say about it is a
+later step in the same job. Debug checks (`ci.yml`, `gtk.yml`, `win32.yml`, `macos.yml`) and
+release artifacts (`artifacts.yml`) are the two tiers. `container.yml` builds the images;
+`documents.yml`, `screenshots.yml` and `mac-drive.yml` compile nothing and use published
+binaries; `mac-session.yml` is dispatch-only; `dependabot-third-party.yml` commits the
+regenerated licence list on Dependabot's branches.
 
-Loop A′ also prints X3's own scoreboard: **42,970 of 123,424 cells come out formatted, and
-fourteen in the whole corpus lose their format** (eleven fractions, two scientific codes, one
-elapsed time) — every other loss being a cosmetic piece the format was carried without. And
-X4's: **32,428 cells come out styled**, and the losses are named `Appearance` classes rather
-than approximations — 2,394 font families, 249 indents, 90 underlines and so on down. The
-19,813 bordered and filled *blanks* that used to head that list are carried now (52,241 styled
-cells in all), since the ODF reader keeps an empty cell's own style.
+Things that bite if forgotten:
 
-Current scoreboard (see each test's own comments for what each column means and why):
-loop A (sheet) 360 read / 3 password-protected / 0 failed; loop A (text) 1755 read /
-4 password-protected / 4 independently confirmed non-documents / 0 failed; loop B parse 75845/77061 (1216 named
-syntactic exclusions); loop B display 75845 round-trip, 271 named ambiguity; loop B evaluate
-14116/52812 matching LO on a 2026-10 checkout, with the classic band in (13327/52213 at 112
-functions; `FLOOR` in the test is the ratchet — raise it, never lower it; run
-`GRIND_LOOP_B_DUMP=LOG cargo test -p grind-sheet --test corpus_eval -- --nocapture` for the scoreboard).
-Loop C is green both directions for the sheet and for text (17 documents out, 20 corpus
-documents / 10235 blocks back, 0 differences — the block count doubled when tables entered the
-model, since the sample is the twenty documents with the most blocks in them) and gates CI in
-all four. The text loop compares
-structure, text, bookmarks and — **out only** — the character formatting of every character;
-formatting is excluded on the way back because LibreOffice hoists a character style covering a
-whole paragraph onto the paragraph, which is measured rather than assumed
-(`a_character_style_over_a_whole_paragraph_is_hoisted_into_it`, `doc/odt-format.md` §5b).
-`ci/libreoffice-image`
-was a Calc-only LibreOffice when the text loop was written, so `oracle_ready` in
-`text/tests/roundtrip.rs` probes whether the `soffice` on `PATH` can convert a text document at
-all rather than assuming it; the image has since been rebuilt with Writer, and that half started
-gating with no file changed. The probe stays for a developer whose own `soffice` has no Writer.
-Loop F is green for **both document types**: R7's fourteen vendored spreadsheets and
-`text/tests/data/`'s vendored Writer documents, neither of which skips, and — as D3 —
-**360/360 of loop A's spreadsheet corpus and 1755/1755 of its text corpus, with nothing
-differing** (`FLOOR = 360` and `FLOOR = 1755`, and they only go up). It costs no corpus of its
-own, which is the point of building it on loop A's. It has exactly one named exclusion per
-application — charts for the sheet, images for text — each with a test that fails the day it is
-projected. The text half compares runs after the normalisation `text/src/odf/write.rs` already
-performs (a literal tab in a run *is* a `text:tab`), and proves that equivalence directly rather
-than assuming it.
-Loop D is green on the pinned image: 68 workbooks, 501,335 cells, 0 disagreements, and ten
-named divergences — eight where the oracle is the one that differs (it recalculates on load,
-applies no 1900 correction, drops an empty string, …; `doc/xlsx-format.md` §2.3) and two, since
-X3, where this build is: a built-in date id spelled in ISO rather than in the converting
-machine's locale, and a blank-width pad ODF has no attribute for. Since X3 it compares what
-each cell **displays** as well, wherever both sides put a format on it; since X4, every
-carried cell's **style** (loop C's rule, after taking out the defaults the oracle spells on
-every automatic style) and every column's width, row's height and track's hidden-ness — with
-eleven more named divergences, each the oracle approximating or guessing where this build
-counts: a pattern fill blended into one colour, LibreOffice's own border-line names, a column
-measured in whatever font the converting machine substituted (`doc/xlsx-format.md` §4.5), and
-so on. **Those eleven were measured against LibreOffice 26.8 on a development machine, not the
-pinned image** — which on 26.8 also renames the two sheets 26.2 drops, the one disagreement
-left there and not X4's.
-Loop E is at 913/1000 on the pinned
-image at its default seed (same binary locally and in CI, so the figure should match), with
-the untriaged disagreements classified in `doc/differential-fuzz.md`. All the
-loops now run in CI (`build`, `oracle`, `corpus` jobs — `oracle` is loops C-out, D and E, which
-want the same `soffice` and the same compile) rather than only where a
-developer's machine happens to have a LibreOffice checkout.
-
-Each loop has its documented loosenings and no others: loop A accepts `Error::Encrypted`;
-loop C compares doubles at 15 significant digits, all LibreOffice writes, and on the way
-*back* counts only a difference LibreOffice's own round-trip of the untouched original does
-not show too — since a save carries every untouched row and block as the file's own bytes, it
-gets exactly the treatment the original gets (an optimal-height row re-measured, a date with no
-language shown in the machine's locale), and that is the oracle's behaviour. Its sample also
-skips LibreOffice's own `fail/` directories, which hold files the oracle refuses to open. Any
-other exception is a bug in the code, not the loop.
-
-## CI, and the one rule that shapes it
-
-Six workflows, in two tiers. **A binary is built once per platform, and everything that has
-something to say about that binary is a later step in the same job.** The tier a job belongs to
-is decided by its profile, which is the real seam: debug checks and release artifacts cannot
-share a compile, and everything within one of them can.
-
-| Workflow | Tier | Does |
-|---|---|---|
-| `ci.yml` | checks (debug) | `reuse`, `fmt`, `clippy`, `docs`, `build` (build + test), `oracle` (loops C-out and E), `corpus` (loops A, B, C-back). The five compiling jobs share one `rust-cache` key, `linux-debug` |
-| `gtk.yml` | checks (debug) | The two GTK shells: test, clippy, doc. Its own cache key, since it is the only job that compiles gtk4-rs |
-| `win32.yml` | checks (debug) | `check-from-linux` only — `cargo check`/`clippy`/`doc`/`test` for the msvc target with no Windows. The fast Windows signal, and this crate's only clippy run |
-| `artifacts.yml` | artifacts (release) | **One release build per platform**, then everything downstream of it: `linux` (4 binaries → sizes → `.deb` + `.rpm` → bloat), `windows` (the `.exe` → import-table/stack/version checks → two reproducible renders → size → bloat), `wasm` (module → smoke test → sizes → twiggy), `report` (the size table, with `main`'s last green run as baseline) |
-| `container.yml` | images | Both images, per-arch on native runners, then a manifest. Genuinely cannot reuse a runner's binary: `distroless/cc-debian12` is glibc 2.36 and the runners are 2.39 |
-| `documents.yml` | sample | Drives the *published* image; compiles nothing |
-
-Things that will bite if forgotten:
-
-- **`cargo bloat` rebuilds the binary with debug info and leaves it there**, so it is the last
-  step of every job that runs it — after the measurement, the packages and the uploads. A
-  `.deb` built after it would ship the debug-info binary.
-- **`cargo deb` is passed `--no-build`.** It builds what it packages otherwise, which is how one
-  release build became three.
-- **`push` is restricted to `main`** in every workflow. With `on: [push, pull_request]` each
-  commit on a branch with a PR open ran everything twice, to the same conclusion.
-- **`save-if: main` on every `rust-cache`.** Caches are scoped per branch; without it each
-  branch kept its own copy and the repository sat over the 10 GB limit, evicting the entries
-  that were being hit. `container.yml` uses `mode=min` for the same budget.
-- `cli/tests/packaging.rs` **reads `artifacts.yml`** and fails the build when a binary has no
-  `cargo deb`/`cargo generate-rpm` line. Its `release_line()` matches on `-p grind-cli`, because
-  that workflow has more than one `cargo build --release`.
+- `cargo bloat` rebuilds with debug info and leaves it there, so it is the last step of a job.
+- `cargo deb` is passed `--no-build`, or it builds what it packages.
+- `push` is restricted to `main`, and every `rust-cache` has `save-if: main`.
+- `cli/tests/packaging.rs` reads `artifacts.yml`: every packaged binary needs its `cargo deb` and
+  `cargo generate-rpm` lines, its manifest blocks and its `data/`, and the `grind` meta-package
+  (`suite/`) must depend on it.
+- `core/tests/third_party.rs` rewrites `core/src/third_party/data.rs` and fails when it was stale.
 
 ## Architecture
 
-Shared Core / Native Shell (see
-[fwilhe2/editor](https://github.com/fwilhe2/editor)'s `doc/shared-core-native-shell.md`).
-All state and logic in `core/`; every shell is a renderer and event forwarder owning
-nothing. `cli/` exists so capabilities cannot hide in a UI; `ui_sheet_gtk/` is held to the same
-rule by `cli/tests/parity.rs`.
-
-Rules that are cheap now, expensive to break later:
+Shared Core / Native Shell. All state and logic live in the core crates; every shell is a
+renderer and event forwarder that owns nothing. Rules that are cheap now and expensive to break:
 
 1. **Reads go through `App::get_viewport`.** No getter hands out the whole document.
-2. **Undo/redo lives in the core.** `Document::apply` returns the action's inverse; that is
-   the whole mechanism. Shells never implement history.
-3. **The core pushes, shells never poll.** `App::mutate` drops the write lock *before*
-   notifying observers, because an observer calls straight back in to re-read.
-4. **Whatever any GUI can do, the CLI can do.** A UI-only feature is a bug.
+2. **Undo/redo lives in the core.** `Document::apply` returns the action's inverse.
+3. **The core pushes, shells never poll.** `App::mutate` drops the write lock before notifying.
+4. **Whatever any GUI can do, the CLI can do** (R9, held by `cli/tests/parity.rs` against the
+   two `doc/cli-parity-*.md` files).
 5. **No filesystem assumptions.** Every `*_file` has a `*_bytes` twin.
-6. **Every feature must survive a LibreOffice round-trip** (loop C).
-7. **Saving never makes an existing file worse.** A save that cannot splice is written *into
-   the file it came from* — `grind_core::odf::envelope` keeps everything outside the body, each
-   app's writer keeps every block, row and cell nobody touched as the file's own bytes — and
-   what it still cannot carry is refused (`Error::WouldLose`) rather than dropped. Every such
-   save is also read back and compared with the document before it is written.
-   `sheet/tests/never_worse.rs` and `text/tests/never_worse.rs` hold every vendored
-   LibreOffice document to it under ordinary edits; their `REFUSED` lists are the ratchet.
+6. **Every feature survives a LibreOffice round-trip** (loop C).
+7. **Saving never makes an existing file worse.** Untouched parts and elements are carried as the
+   file's own bytes (`grind_core::odf::envelope`, each writer's splicing); what cannot be carried
+   is refused with `Error::WouldLose`. `sheet/tests/never_worse.rs` and `text/tests/never_worse.rs`
+   hold it; their `REFUSED` lists are a ratchet.
 
-### The crates
-
-Phase 10 (`doc/suite.md`) split the core in two, so that a second document type is a peer
-rather than a guest:
+**R8: no document type's vocabulary reaches `grind-core`** (`core/tests/generic.rs`). **R11:
+nothing that opens a document depends on `grind-build`** (`build/tests/manifest.rs`).
 
 | Crate | Directory | Holds |
 |---|---|---|
-| `grind-core` | `core/` | **\[GENERIC\]** — the container (`odf/package`, sub-documents and a `styles.xml` included), the namespace vocabulary (`odf/names`), the tolerant reading architecture (`odf/context`), `Form`, the styling primitives every family of style is built from, the locale (and `KNOWN`, the ones a picker offers), `color` (WCAG contrast, automatic ink, a colour lifted along its hue — the Windows and GNOME themes both), the build stamp, `Observer`, `kind` (which document type some bytes are), and `projection/` — the KDL container, the kind header, the token and span maps of `doc/dsl.md`'s third physical form, and `projection/source.rs`, which is R6 for it |
-| `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, R6 splicing, number formats, cell styles, the OpenFormula engine, `App`, and `projection/` — the same document as plain text (`doc/dsl.md`) |
-| `grind-text` | `text/` | The word processor (phase 10): the block model — flat, with two axes: a block's *kind* (paragraph, heading, list item) and the `Cell` coordinate that says which table cell it is in, since a cell holds blocks rather than a value — `loc.rs` addressing and carets, `style.rs`'s `CharStyle` (direct character formatting — bold, italic, family, size, colour), `markdown.rs`'s notation and `App::type_markdown` (`**bold**` read as it is typed, in the core so four shells cannot read `**` four ways), the ODT reader and writer, `App` with block *and* caret edits, `projection/` — the same document as plain text, with `inline.rs`'s bidirectional notation (`doc/dsl.md` §3.6) — and R6 splicing — a `.fodt` lives in git the way a `.fods` does, and one keystroke is one line of diff. Line layout is `grind_core::layout`'s and reaches a shell through `App::layout_block`/`caret_line`/`caret_line_bounds` (`doc/text-layout.md`, Path C) |
-| `grind-build` | `build/` | **The generator** (`doc/dsl.md` layer 1, D7): a Rhai script that *returns* a document, and the sandbox it runs in. `sheet.rs` and `text.rs` are the two host vocabularies — the projection's own nouns — `engine.rs` is every restriction §2 promises, in one screen, and `data.rs` is the one exception to them: `json(…)`, which reads **data and never code** from one directory a person named, with `..`, absolute paths and symlinks out all refused. **Nothing that opens a document may depend on this crate** (R11), which `build/tests/manifest.rs` reads the manifests to enforce |
-| `grind-xlsx` | `xlsx/` | **The Excel import filter** (`doc/xlsx-import.md`, phase 11, **done through X6**): OPC, the Transitional/Strict namespace table, markup compatibility, the workbook's sheet list, every cell's **value** — shared and inline strings, all seven cell types, and the two date systems with the 1900 leap-year rule (`dates.rs`) — every cell's **formula**, and every cell's **number format**. `formula.rs` is Excel's A1 syntax lexed and Pratt-parsed into `grind_sheet::formula::Expr` and printed by the core's own serialiser, so a translated formula is one our parser could have produced or it is not translated at all; shared groups are resolved after the whole sheet is read (a master need not be above its followers) and shifted by `formula::shift`, the core function a fill already uses. What it cannot carry is a `Refusal` — a **named class**, counted in the report by class as well as by address — and the cell keeps Excel's cached value. Nothing is evaluated on import, and nothing renames a function whose semantics differ under the same name. `numfmt.rs` is X3: Excel's format *code string* parsed into the model's ordered `Part`s — the string ODF has no attribute for and the core may not hold — with the sections becoming a style and its `style:map` branches in the shape the oracle's own conversion writes (`doc/xlsx-format.md` §3.4), and with what no `Part` can spell named as an `Unspellable` and counted per cell rather than approximated: a fraction, an exponent or an elapsed hour count costs the cell its whole format and it shows its plain value, since `3.75` beats `4`, where a fill character or a colour costs it only that piece. Depends on `grind-sheet` and adds **no new dependency** — `zip` and `quick-xml` are already the core's, which is half the argument against `calamine`. An **optional** dependency of `grind-cli` behind the `xlsx` feature, on by default; `--no-default-features` builds a `grind` with no Excel code in it, and CI builds both. Produces a `Document` through the model's public API and nothing goes the other way: no Excel vocabulary reaches `grind-sheet` (R1), and this phase plans to add nothing to it at all — X1's one change there, `Sheet::rows_carrying`, fixed a writer that could not write a sheet with a cell in each far corner, and X3's three fixed a renderer that no ODF document in the corpus happened to reach — a `style:map` branch that doubled a negative's sign, and `number:text-content` rendering a number as nothing — plus making `grind_sheet::render` public, since "what does this cell display" must keep one answer. X4 is every cell's **look**: `styles.rs` translates each `<cellXfs>` entry once into a `CellStyle` — the cell format's *own* ids in effect whatever its `applyX` flags say, and a property equal to the default cell format's written nowhere, since the model has no document default — with `color.rs` (the legacy palette, **measured** one index per cell rather than transcribed, and ECMA's tint in HSL) and `theme.rs` (the scheme, whose `theme` order swaps light and dark), plus every track's size and hidden-ness in `sheet.rs`: a row height is points, a column width is characters of Calibri 11's seven-pixel digit (the spec's constant, *not* the oracle's, which measures in whatever font the converting machine substituted). What `CellStyle` has no slot for — underline, a pattern fill, a diagonal, a rotation, a styled *empty* cell, frozen panes — is an `Appearance`, `Unspellable`'s sibling, counted and never approximated. X5 is the document level: defined names (a sheet-local one carried when it is the only one of its name, dropped with its formulas refused when it collides), sheet names LibreOffice would not keep renamed with every reference following, autofilters onto the model's own `Filter` and merges onto its own merged ranges, conditional formats, validation, protection, and the parts beside a worksheet (`parts.rs`: drawings, charts, comments, pivot tables) counted by kind, and `grind sheet import --strict`, which fails and writes nothing when `Report::lossless` is false. X6 is the shells: `open` imports and writes flat ODF for `App::open_bytes` (the core gained no door for a `Document`), `suggested_name` turns `budget.xlsx` into `budget.fods`, and `Report::summary` is the one sentence every shell shows — the GNOME window, the terminal, the browser page and the Windows window each open a workbook as a new, unsaved document **with no path**, so no Save can write ODF over it, and the word processor's window hands one to the spreadsheet's. Each shell's `import.rs` is its whole half, behind its own `xlsx` feature. The walker — `xml.rs`, since the Word filter `grind-ooxml`'s, with OPC and markup compatibility beside it — is `core/src/odf/context.rs`'s ignore-the-subtree property **rebuilt rather than borrowed** — that file's dispatch key is a closed enum of ODF namespace URIs and R8 keeps it that way — and it is the one place `mc:AlternateContent` is handled, because it can wrap anything and per-site handling is per-site bugs. Held to **three** corpora rather than one: loop A′ over LibreOffice's (`corpus_read.rs`, skips without a checkout), packages assembled from readable XML (`fixtures.rs`), and **76 Open XML SDK workbooks vendored with a manifest of what each should convert to** (`ooxmlgen.rs`, never skips) |
-| `grind-ooxml` | `ooxml/` | **The OOXML family's container layer**, hoisted out of `grind-xlsx` when the Word filter wanted the same thing: OPC (`package.rs` — the zip, relationships, part names, the zip-bomb caps), markup compatibility (`mce.rs`), the tolerant walker (`xml.rs` — an unrecognised element takes its subtree with it) and the namespace and relationship-type tables for **both** SpreadsheetML and WordprocessingML, in both flavours (`names.rs`), plus the one `Error` both filters return. Knows neither cells nor paragraphs: each filter wraps `Name::in_ns` in its own one-word method (`is("c")`, `w("p")`) |
-| `grind-docx` | `docx/` | **The Word import filter** (`doc/docx-import.md`, **done through DX6**). `body.rs` reads the story parts — body, headers, footers, notes — into an intermediate form (paragraphs, runs, tables, pictures, the field state machine, the page-break split); `props.rs` turns `w:rPr`/`w:pPr` into ODF's own property vocabulary in points; `styles.rs` the named styles, their `w:basedOn` chain and the theme's fonts; `numbering.rs` `numbering.xml` into one list style per `numId`; `section.rs` the page; and `emit.rs` writes **one flat ODF text document**, which `grind_text::read_bytes` then reads — `convert`/`open` return those bytes, `import_bytes` the document read back. What does not come through is a `Dropped` kind in the `Report`. An optional dependency (`docx` feature, on by default) of `grind-cli` and every text-capable shell. Held to fixtures, loop A″, loop D″ and an editing check that opens imports as a shell does and saves them after typing, Enter, Backspace and bold |
-| `grind-print` | `print/` | **PDF export and print preview for the word processor** (`doc/pdf-export.md`). The font stack lives here and nowhere else (`doc/text-layout.md` decision 2): `fonts.rs` (bundled Liberation 2.1.5, OFL-1.1 in `print/fonts/`; a family resolved exactly, then its metric-compatible twin, then a generic, then Writer's default), `metrics.rs` (`Typesetter`, the `Metrics` that shapes with harfrust in points), `faces.rs` (a block's face on paper, `look::Role`'s until P5), `ops.rs` (a page as a display list), `text.rs` (`typeset`), `pdf.rs` (krilla — the only file that knows it) and `raster.rs` (the preview, tiny-skia, held to `hayro`'s raster of our own PDF). skrifa, harfrust and krilla are pinned exactly so they agree on one `read-fonts`. An optional dependency of `grind-cli` behind the `pdf` feature, on by default |
-| `grind-spell` | `spell/` | **The spelling dictionaries** (`doc/spelling.md`): Hunspell's dictionaries for seven languages (English, German, French, Spanish, Italian, European Portuguese, Polish — `doc/spelling.md`'s *The languages*), compiled in and checked by `spellbook`, a `Speller` that is `grind_text::Lexicon`, `choose`/`attach` (named, stated, guessed), the personal word list, and `preference` — the remembered on/off-and-language switch, per kind of document, which every spreadsheet client reads and writes so spelling turned off stays off. Both applications reach it through `grind_core::spell::Spelled`, so it depends on neither. Optional in `grind-cli` behind `spell`, on by default; a plain dependency of the four native shells |
-| `grind-lsp` | `lsp/` | **The language server** (`doc/init.md` I5): `grind lsp`, LSP over stdio through rust-analyzer's `lsp-server` and `lsp-types`. For a `.grind`: read errors and every `grind lint` finding on their line, hover (a cell's formula through its names and what it shows, a name's definition, a block's addresses), inline values — what each formula computes, **shown and never written** — go to a name's or a sheet's node, and completion of nodes and, inside a formula, of functions and names. For a `.rhai`: completion and hover from the host vocabulary (methods after a `.`) and the compiler's syntax errors — **compiled, never run**, since a script runs because a person typed a command, not because an editor opened it. Every answer is the core's; where an address is in the file comes from `App::source_anchors`, the span map of the `.grind` **as read**. A **reader** under R11, so it links no evaluator: the vocabulary (as `grind definitions`' text), the syntax check and the dictionaries arrive through `grind_lsp::Host`, which the CLI implements. An optional dependency of `grind-cli` behind `lsp`, on by default. VS Code reaches it through `editors/vscode/` (I6), a plain-JavaScript client that contributes a `grind` language — so a `.grind` works in an untrusted folder — and is tested in a real headless VS Code by `editors/vscode/test/run.sh` |
+| `grind-core` | `core/` | Generic ODF: the package, namespaces, the tolerant reader, `Form`, style primitives, locale, colour, `kind`, line layout, the projection container, lint diagnostics |
+| `grind-sheet` | `sheet/` | The spreadsheet: model, column store, ODS reader/writer, number formats, styles, the OpenFormula engine, `App`, projection |
+| `grind-text` | `text/` | The word processor: block model, addressing, ODT reader/writer, `App`, projection, Markdown |
+| `grind-build` | `build/` | The Rhai generator and its sandbox (`grind build`, `grind test`) |
+| `grind-ooxml` | `ooxml/` | The OOXML container layer both import filters share |
+| `grind-xlsx` | `xlsx/` | Excel import |
+| `grind-docx` | `docx/` | Word import; writes flat ODF and lets `grind-text` read it |
+| `grind-print` | `print/` | PDF export and print preview; the only crate with a font stack |
+| `grind-spell` | `spell/` | Hunspell dictionaries and the speller |
+| `grind-lsp` | `lsp/` | The language server (`grind lsp`) |
 | `grind-cli` | `cli/` | The `grind` binary |
-| `grind-sheet-gtk` | `ui_sheet_gtk/` | The spreadsheet's GTK shell |
-| `grind-text-gtk` | `ui_text_gtk/` | The word processor's GTK shell — the suite's **showcase** for this document type, and the client that gets a text feature first. Its own binary and app ID because a `.desktop` file's `MimeType=` is per application. `geom.rs` is this window's numbers for `grind_text::flow`, which places the blocks (a stack, and a grid where a table is), `keymap.rs` names the motions, `metrics.rs` is Pango behind `Metrics` and honours all eight `CharStyle` properties, `format.rs` is the formatting bar, `view.rs` is the widget |
-| `grind-web` | `ui_web/` | The wasm shell, **both document types in one bundle** — `sheet/` and `text/` under it, panes picked by `grind_core::kind`. `text/mod.rs`'s `Face` is its layout contribution: how wide is this text, in CSS pixels, measured on a canvas. `command.rs` is every verb either pane has, as *data*, reached from the Ctrl+K palette, a key and a button alike (`doc/web-shell.md`) |
-| `grind-tui` | `ui_tui/` | The terminal shell, **both document types in one binary** — `sheet/` and `text/` under it, picked by `grind_core::kind` from the file's bytes. `text/mod.rs`'s `Cells` is its whole layout contribution: how wide is this text, in terminal columns. Its formatting toolbar is `grind_text::markdown` — typed, never *drawn* as markers (`doc/tui-shell.md`). `chrome.rs` is the title and status bars both halves wear, `pick.rs` the list pane the outline opens in, `sheet/geom.rs` the grid's arithmetic with no ratatui in it, `sheet/assist.rs` the formula-completion band over `grind_sheet::formula::assist`, and `text/app.rs`'s `Measures` is the `Faces` that gives a list item its indent and a table cell its column |
-| `grind-win32` | `ui_win32/` | The Windows shell — **built through W10: a window, both document types in it, the grid, the selection, editing, the clipboard, the three shared panes, the chrome, packaging, the formula assist, and the Fluent pass** (`doc/windows-shell.md`). Win32 + GDI through the `windows` crate, and an `.exe` that depends on nothing Windows does not ship (`.cargo/config.toml` links the CRT statically; `artifacts.yml` reads the import table back). The `windows` dependency is gated on `cfg(windows)` so the portable half — the command line, the geometry, the key table and the selection model (`sheet/keymap.rs`), the editing modes and the two caret conversions (`sheet/state.rs`), the name box, the formula bar and the status bar's two halves over a real `App` (`sheet/status.rs`), what to offer somebody typing a formula and the runs its band draws (`sheet/assist.rs`), what a cell *looks like*, the palette and the rest of `theme.rs`'s Fluent ramps (including the accent tinting, which is swept over every hue there), the menus as data (`menu.rs`) and every sentence the notice bar says (`notice.rs`) — compiles and **tests on Linux**, which no other native shell here can do. `win.rs` is the only file that holds state and the only one with the `GWLP_USERDATA` `unsafe` in it; `gdi.rs` is the only one that creates a GDI object, including `--render-to`'s windowless DIB; `dialog.rs` is the only one that runs a nested message loop, which is what makes decision 7's rule a property of a file rather than of a habit |
-| `grind-mac` | `ui_mac/` | The macOS shell (`doc/macos-shell.md`) — **M2–M9 built, not yet run: the application, the document, the grid with selection, editing, the pasteboard and find, the page, formatting, formula literacy with the shared panes, the welcome window with the accessibility floor, and packaging.** The objc2 family is gated on `cfg(target_os = "macos")` with default features off, so the portable half tests on Linux and the AppKit half type-checks and lints there for both Apple targets. `sheet/paint.rs` and `text/paint.rs` are a frame as a list of `ops.rs`'s `Op`s, decided portably and executed by `render.rs` into a `CGContext` — the view's `drawRect:` and `--render-to`'s bitmap alike; `menu.rs` is the menu bar as data with the platform's conventions as tests; `document.rs`'s controller reads a file's kind from its bytes and leaves an import untitled. `args.rs` passes AppKit's own `-Key value` launch arguments through rather than reading them as files |
+| `grind-sheet-gtk`, `grind-text-gtk` | `ui_sheet_gtk/`, `ui_text_gtk/` | The GTK shells |
+| `grind-tui` | `ui_tui/` | The terminal shell |
+| `grind-web`, `grind-web-print` | `ui_web/`, `ui_web_print/` | The browser shell, and its PDF module loaded on first use |
+| `grind-win32` | `ui_win32/` | The Windows shell; its portable half tests on Linux |
+| `grind-mac` | `ui_mac/` | The macOS shell; its portable half tests on Linux |
+| `grind` | `suite/` | The meta-package, no code |
 
-**R8: no document type's vocabulary reaches `grind-core`.** Checked by `core/tests/generic.rs`,
-which asserts the manifest names no document-type crate, that no source dispatches on
-`Ns::Table` or `Ns::Text`, and — since the projection — that no source spells a projection node
-name either (`doc/dsl.md` §3.2: the projection splits exactly where `odf/` splits). `grind-sheet` re-exports the generic modules (`grind_sheet::odf`
-hands on `context`, `names`, `package`, `Form`), so the reader and writer reach them by the
-paths they always used — the crate boundary is the seam, those aliases are ergonomics.
+Facts that are easy to get wrong:
 
-Two things stayed in `grind-sheet` on purpose and move when a second caller pulls on them:
-`numfmt/` (it depends on `formula::date` and `model::CellValue`, so the generic part is the
-format *model*, not applying one to a cell) and `odf/source.rs` (R6's splice registry, whose
-shape is spreadsheet-addressed until a text writer needs one). There is deliberately **no
-`Editor` trait** yet; `core/src/observer.rs` records the open question and what has to exist
-before it can be answered.
-
-### Where things live
-
-- **`sheet/src/a1.rs`** — addressing. The *only* 0↔1 conversion in the workspace; a shell
-  never does its own index arithmetic. Parses by wrapping in `[…]` and calling `lex::lex`.
-- **`sheet/src/model.rs`** — `Sheet::used_rows`/`used_cols` are the extent of **everything a
-  cell can carry**, not just of the values: a formula, a date/time spelling, a number format or a
-  cell style all count. `odf::write` emits exactly that rectangle (`carries` is the same five
-  questions on the way out), so a narrower answer is silent data loss — regenerating
-  `kb/fizzbuzz.fods`, eighteen formulas with no cached values, used to write a sheet with no rows
-  in it. The reader half is closed too: an empty cell's **own** style is kept on read, under
-  the row and column bounds `odf/read.rs` measured, and only a *column default* on a blank is
-  still dropped — that is where the 125.9 billion addresses were, and carrying it needs a
-  per-column side table. `Sheet::cell_extent` is the narrower extent, values and formulas only,
-  that bounds an open reference (`A:A`) in evaluation: a styled blank is still empty.
-- **Merged cells** — `Sheet::merges`, keyed by the top-left cell (`model::Span`), never
-  overlapping. A covered cell keeps its own value and style, as LibreOffice does
-  (`doc/ods-format.md` §3.4), and is simply not drawn: `Viewport::merges` hands a shell each
-  merge with its top-left cell's text and look, so one scrolled half out of view still draws.
-  A save that merges or unmerges splices the file's own cell elements: renamed, split and
-  given spans (`odf::write`'s `remerge`).
-- **Checkboxes** — `Sheet::checkboxes`, keyed by the cell each is drawn in; a `Checkbox` is
-  linked to a cell (`Link`) whose value **is** its state, so ticking (`App::toggle_checkbox`) is
-  an ordinary cell edit plus a recalculation. The one form control the model carries
-  (`doc/ods-format.md` §3.5): read from `office:forms` + the cell's `draw:control`, and by
-  `xlsx/src/controls.rs` from Excel's VML. A save keeps an unchanged checkbox's own element
-  (`odf::write`'s `patched_forms`).
-- **`sheet/src/grid.rs`** — the column store: a run-length sequence of typed blocks
-  (LibreOffice's `mdds` shape). Invariants restored by `normalize()`, asserted by `check()`.
-- **`sheet/src/numfmt/`** — number formats (§5.2). Display only, never touches the value. No
-  format-code strings (Excel's spelling, not ODF's) — a format is an ordered sequence of
-  pieces. `preset`/`is_preset`/`preset_params` are the whole "set/read a format" vocabulary
-  and live here so no shell invents a second one.
-- **`sheet/src/csv.rs`** — CSV and TSV, the one non-ODF format (`doc/not-doing.md` §2). `open` is
-  what a double-click on one means in every window — a new, unsaved `data.fods`, the shape
-  `grind_xlsx::open` gives a workbook — and `is_delimited_name` is the one question a *name*
-  answers, asked only after the bytes have said they are neither ODF nor a workbook. TSV is
-  not a second format: the delimiter is a field of `Dialect`, sniffed from the file's own
-  content when nobody names one. Tolerance on the way in (`parse` never fails — an unterminated
-  quote, a stray quote, CRLF, a BOM and ragged rows all have a defined reading), strictness on
-  the way out. **It does not own the typing rule**: `input` turns a field into the string a
-  person would have *typed*, and `App::enter_range`'s rule decides what that means — so
-  `007`, `NaN` and a leading `=` are forced to text by re-spelling them, not by a second
-  coercion path. `--dates` is the one thing that is not a paste, and it is a *precondition*:
-  the typing rule reads an ISO date only into a cell already formatted as one, so
-  `App::import_csv` applies those formats in pass one and asks the ordinary question in pass
-  two, both in a single undo entry (`commit_after`).
-- **`sheet/src/reading.rs`** — how a *typed* number is read: the document's spelling first, the
-  other one (point and comma swapped) where the document's cannot be meant — `1.5` in a German
-  document is one and a half, not text — and one separator with exactly three digits after it
-  (`1.234`) read the document's way and flagged as ambiguous. Either comes back on
-  `EnterOutcome::note` as one sentence every client shows; `'` still forces text, and a CSV
-  field is read strictly. Every sheet client's status bar shows `grind_core::locale::badge`
-  (`1.234,5 · de-DE`), so which sign is the decimal one is never a guess.
-- **`core/src/locale.rs`** — decimal point and grouping separator only (two characters).
-  Everything else (month names, CLDR tables) is a deliberate, named gap.
-- **`core/src/kind.rs`** — which document type some bytes are, decided *before* parsing,
-  because §8's reader is tolerant by construction and would hand back an empty document
-  rather than an error. Sniffed from content, never from the file name.
-- **`core/src/style.rs`** / **`sheet/src/style.rs`** / **`text/src/style.rs`** — the split: the
-  `fo:` primitives, ODF lengths, three-part borders, `TextStyle` (the four properties that
-  change how *wide* text is) and `PALETTE` (the clrs.cc colours, a default a shell offers and
-  never a limit) are generic; `CellStyle` — which of those pieces a *cell* carries — is the
-  spreadsheet's, and `CharStyle` — which a *run of text* carries — is the word processor's. ODF
-  values kept verbatim in all three, with one named exception (`fo:font-family`'s XSL-FO
-  quoting, decoded on read and re-encoded on write). `CharStyle` is **direct** formatting only:
-  an `office:automatic-styles` entry is resolved onto the run and its generated name forgotten,
-  an `office:styles` name is kept as a name and never resolved — `doc/text-core.md`'s Styles
-  section is that line and why it is there.
-- **`sheet/src/odf/`** — the reader. Tolerance is structural: an unrecognised element gets
-  `Ignore` for its whole subtree, so unknown content is inert by construction rather than by
-  special-casing. Dispatch is on `(namespace-uri, local-name)`, never prefixes.
-  `sheet/src/odf/source.rs` is R6's diffable-write machinery: it retains the original bytes
-  and splices edits into them instead of regenerating, falling back to a full regenerate
-  whenever a change can't be spliced (format/style edits, a package, a repeated row, …).
-  `sheet/src/odf/write.rs` is the regenerating writer, minimal by intent, pooling formats and
-  cell styles so equal ones share one automatic style.
-- **`text/src/model.rs`** — the text model. A body is a **flat sequence**, not a tree
-  (rng:16938): a heading does not contain what follows it, outline structure is implied by
-  `text:outline-level` alone, and lists are flattened into the sequence with a depth. Blocks
-  carry stable `BlockId`s because an index is invalidated by any insertion above it.
-  `split_runs`/`coalesce` are the run surgery every caret edit is built on — the `grid.rs`
-  `normalize()` of this crate. **`Document::default()` is one empty paragraph, `Document::empty()`
-  is none** — the same split `sheet/src/odf/read.rs` already made for `Sheet1`: a *new* document
-  has somewhere for a caret to be, and a document read from a file has exactly the blocks the
-  file has. Getting that backwards is how `grind text new` shipped a document that could not be
-  typed into (`no block p1`, in every client at once); the readers use `empty`, everything else
-  wants `default`.
-- **`text/src/loc.rs`** — addressing, the `a1.rs` of that crate and its only 0↔1 conversion.
-  A `Loc` is a `Target` (`p12`, `#bookmark`, `§2.1.3`) plus an optional character `offset`, and
-  the offset is a separate axis *on purpose*: `#intro+5` and `§2.1+0` are addresses, not just
-  `p12+40`. The named targets survive edits elsewhere in the document, which is what makes a
-  caret scriptable; `p12` does not.
-- **`sheet/src/formula/`** — the OpenFormula engine, built value model → lexer/parser/
-  serializer → eval → functions, all cited to Part 4 by section. `value.rs` is the single
-  point of failure for the value model, error set and §6.3 conversions. `eval.rs` recurses
-  over the dependency graph rather than sorting one. `display.rs` is the formula bar's A1
-  syntax layered on top of the same lexer/parser, not a second grammar. All 110 Small Group
-  functions are implemented, and 34 beyond it by explicit decision (`ROW`, `COLUMN`, the
-  classic band of `doc/function-coverage.md`'s Tier 1, `SUBTOTAL`, `SUMPRODUCT`, and
-  Excel's `CEILING`/`FLOOR` as `COM.MICROSOFT.*`, the names LibreOffice gives them);
-  `funcs::implemented()` is checked against both halves of `doc/small-group.md` by a test,
-  which is the anti-bloat rule made mechanical. `funcs/beyond.rs` holds the 34's expectations,
-  every one measured against LibreOffice, and `doc/ods-format.md` §4.1 is what the oracle
-  answered where Part 4 is silent. `array.rs` is ForceArray (§6.3.4) — a parameter evaluated
-  in array mode, operators place by place and a scalar parameter iterated, reduced to one
-  value inside the function, so nothing spills and `doc/not-doing.md`'s array row stands. `assist.rs` is what a shell needs
-  while somebody is *typing* one — which word may be completed, what to offer for it, which call
-  the caret is inside and how a signature splits — three questions about display syntax and a
-  caret offset, and here rather than in a shell since `ui_sheet_gtk` and `ui_win32` both ask
-  them. `friendly.rs` is the plain-English reading of a finished formula (`PV` → `Present
-  Value`, arguments labelled with the parameter they fill); it is presentation only and never
-  parses back.
-- **`ui_sheet_gtk/`** — the spreadsheet's GNOME shell (phase 9, `doc/sheet-shell.md` is
-  normative here). Owns no data — every paint reads `App::get_viewport` and throws it away.
-  Custom `gtk::Widget` drawing in `snapshot()`, not `GtkColumnView`. `geom.rs` holds all
-  layout arithmetic and no GTK types, so it's unit-testable with no display. Every colour
-  comes from the theme, never a literal, except the reference palette and a colour the
-  document itself chose.
-- **`core/src/projection/`** + **`sheet/src/projection/`** + **`text/src/projection/`** —
-  `doc/dsl.md` layer 0, the third
-  physical form: the same document as plain KDL a person can write in any editor. The core half
-  is the container and the two maps a code view is made of — the token map (highlighting comes
-  from the *writer*, never from a highlighter) and the span map (address ⇄ byte range, both
-  ways, plus the line-shaped questions a code view asks) — and `source.rs`, R6 for the third form: the retained text plus the byte range of every
-  address in it, so one edit is one line and an untouched save is the bytes that were read. Each
-  app half is that app's node vocabulary; the text one adds `inline.rs`, a
-  paragraph's runs as one string and back, whose marker table is `markdown.rs`'s so no fifth
-  reading of `**` exists anywhere in the suite. A text block anchors *every* address `loc.rs`
-  gives it — `p12`, `#intro` and `§2.1.3` are one line and three rows of the span map. Reached as `grind sheet project`, as
-  **`Form::Projection`** — the third arm of the form enum, so `grind convert book.fods
-  book.grind` writes one and every shell's save dialog offers it — and by `read_bytes`, which
-  sniffs the form from the first line rather than from the name. Each app's `projection::save` is
-  the one door out — splice if it can, regenerate if it cannot — so no caller can write a
-  projection without R6. **Charts are the one named gap for the sheet, images for text.**
-  The grammar cannot drift from the model: `doc/projection-sheet.md` lists every node with an
-  example the test executes, and every field of `Document`/`Sheet` with its node or a reason
-  there is none — read out of `sheet/src/model.rs` at compile time, so a new side table fails
-  the build until it has a spelling.
-- **`core/src/lint.rs`** + **`sheet/src/lint.rs`** + **`text/src/lint.rs`** — `doc/dsl.md` §4.3,
-  D6. The core half is what a *diagnostic* is — a rule id, a severity, an address in the
-  application's own spelling, a sentence — and nothing about documents (R8). Each app half is its
-  `RULES` array, checked against §4.3's table in both directions by `cli/tests/lint.rs`. A rule
-  never writes and never stores: linting leaves a file's bytes exactly as they were, which is
-  `doc/view-modes.md`'s promise for the same reason. `Document::styles` on the text side is read
-  and never written, and exists only so `undeclared-style` can ask whether a name points at
-  anything.
-- **`cli/`** — `main.rs` (clap, one arm per subcommand) + `report.rs`. A subcommand is a few
-  lines driving `App`; anything longer belongs in the core. `doc/cli-parity-sheet.md` +
-  `cli/tests/parity.rs` are the parity ratchet: every public `App` method needs a reaching
-  command or a named reason it has none, checked by a test that reads `sheet/src/lib.rs`.
+- **Positions are 0-based in the core.** `sheet/src/a1.rs` and `text/src/loc.rs` are the only
+  places that convert; a shell never does its own index arithmetic.
+- **A document's kind is sniffed from its bytes** (`grind_core::kind`), never its name: the
+  readers are tolerant and would hand back an empty document rather than an error.
+- `Sheet::used_rows`/`used_cols` cover everything a cell can carry (formula, format, style), and
+  the writer emits exactly that rectangle; `Sheet::cell_extent` is the narrower one for `A:A`.
+- `grind_text::Document::default()` is one empty paragraph; `Document::empty()` is none and is
+  for readers only.
+- A number format is an ordered sequence of `Part`s, never a format-code string.
+- `CharStyle` is direct formatting only: automatic styles are resolved onto runs, named styles
+  stay names.
 
 ## Conventions
 
-- **Positions are 0-based in the core.** Only a UI is 1-based; the whole workspace converts
-  in exactly one place — `sheet/src/a1.rs`.
-- **`ponytail:` comments** mark deliberate shortcuts with a known ceiling and upgrade path.
-  They're a tracked ledger — don't silently "fix" one without reading the reason.
-- **`TODO:` comments** are different: something *reported or suspected wrong* and not yet
-  reproduced. Each one says what is already checked, what that check did not cover, and the
-  named suspects — so the next person starts where the evidence stops rather than re-proving
-  the half that works. `grep -rn 'TODO:' --include='*.rs'` is the list.
-- Deferred on purpose, documented where it lives: corrupt-zip recovery (no corpus file needs
-  it; belongs with the spec's explicit repair mode).
+- **Comments must earn their place.** Say what the code and its names cannot, and stay true when
+  other files change: no milestone tags, no "used to", no status ("not yet", "this build"), no
+  descriptions of other shells. A doc comment is one to three lines unless the item really needs
+  more; a design argument belongs in `doc/`, linked once.
+- **`ponytail:` comments** mark deliberate shortcuts with a known ceiling and upgrade path — a
+  tracked ledger; read the reason before "fixing" one.
+- **`TODO:` comments** are something reported or suspected wrong and not yet reproduced: what is
+  checked, what is not, and the suspects. `grep -rn 'TODO:' --include='*.rs'` is the list.
 
 ## REUSE / licensing
 
-REUSE compliance enforced in CI. **The licence follows what a file is for**
-(`CONTRIBUTING.md`'s table, `REUSE.toml`'s opening comment): code **AGPL-3.0-or-later**;
-prose — `doc/`, the READMEs, the user guide, `CONTRIBUTING.md`, this file — **CC-BY-4.0**;
-what is meant to be copied — `examples/`, `.vscode/` — **MIT**; data and what `grind init`
-seeds — fixtures, `cli/templates/` — **CC0-1.0**. A shipped file of ours that is not AGPL goes
-on `OURS_OTHERWISE` in `core/tests/third_party.rs`. New files need annotating:
+REUSE compliance is enforced in CI. The licence follows what a file is for (`CONTRIBUTING.md`,
+`REUSE.toml`): code **AGPL-3.0-or-later**; prose (`doc/`, the READMEs, `CONTRIBUTING.md`, this
+file) **CC-BY-4.0**; what is meant to be copied (`examples/`, `.vscode/`) **MIT**; data and what
+`grind init` seeds (fixtures, `cli/templates/`) **CC0-1.0**, declared in `REUSE.toml` rather than
+annotated so the documents under test stay unchanged. `sheet/tests/data/kb/**` stays MIT, as
+upstream states. A shipped file of ours that is not AGPL goes on `OURS_OTHERWISE` in
+`core/tests/third_party.rs`.
 
 ```sh
 reuse annotate --copyright "Florian Wilhelm <fwilhelm.wgt+github@gmail.com>" \
-               --license AGPL-3.0-or-later path/to/file   # CC-BY-4.0 / MIT / CC0-1.0 as above
+               --license AGPL-3.0-or-later path/to/file
 ```
 
-`Cargo.lock` is declared in `REUSE.toml` instead of annotated. **Never annotate
-`doc/OpenDocument-v1.4-*` in place** — they're OASIS specs redistributed verbatim under terms
-that forbid modification; they carry `.license` sidecar files instead. Anything *derived*
-from them (`doc/small-group.md`) carries the OASIS copyright alongside ours.
-
-**Test documents are data, not code.** The fixtures this project authored are **CC0-1.0** —
-`sheet/tests/data/samples/**` and `text/tests/data/**` — declared in `REUSE.toml` rather than
-annotated, because a header inside the XML would change the document under test. AGPL on a
-fixture makes no sense: the point of one is that it can be copied into a bug report or into
-somebody else's ODF test suite. `sheet/tests/data/kb/**` stays MIT — its upstream repository
-states MIT, and a vendored copy does not restate somebody else's terms.
-
-## Where the work is
-
-Phases 0–8 are done: harness, column store, undo/redo, reader (loop A green), writer (loop C
-green both directions), the OpenFormula engine (all 110 Small Group functions, dates, named
-expressions), number formats and cell styling, the CLI (with the parity ratchet), sheet
-add/rename/delete, `doc/not-doing.md` (the product stop-line), and R6's diffable writer.
-
-**Phase 9 (the shells) is done through M9**, planned in `doc/sheet-shell.md`. Done: M0–M8 — CI
-split, the read-only grid, core prep (`a1`, `formula::display`, `enter`/`preview`/
-`clear_range`/`enter_range`), selection/navigation, editing (in-cell editor + formula bar,
-undo/redo, spoilage banner), clipboard, formula UX (point mode, autocomplete, signature
-hints), styling + the format strip, and column widths/row heights (drag to resize,
-double-click to autofit a column or clear a row, both surviving a LibreOffice round-trip).
-M10 adds row auto-height (a row without a height of its own is measured from what is in it,
-so a wrapped cell and an oversized font are drawn whole) and zoom (Ctrl+wheel,
-Ctrl+`+`/`-`/`0`) — one factor in `Grid::geom`, with nothing measured ever stored zoomed.
-
-**The chrome was then reworked, and `doc/sheet-shell.md`'s "Four surfaces" is normative for
-it.** The problem it answers: every new feature was becoming another toolbar button. The cause
-was not inattention — it was that the mode-switched tool row's three pages were three
-*different kinds* of control (a property inspector, view state, and a list of verbs with no
-membership rule), so every verb landed on the third page. The rework gives each kind the
-surface its kind wants and gives verbs one that is *meant* to grow: a **header bar** fixed at
-five slots, one **format bar** whose admission test is "reads and writes a property of the
-selection" (so `CellStyle` + `numfmt::Format` bound it), **context menus** on the cells, the
-sheet tab, the headers and the charts, and a **Ctrl+K command palette** (`ui_sheet_gtk/src/palette.rs`)
-for everything else. The palette is a view over `main.rs`'s own `actions()` table, so a verb
-cannot be added without becoming findable — the growth rule is structural, not a habit — and
-`main.rs`'s `chrome_tests` walk every `gio::Menu` in the window to check it, with no display
-needed. The tab strip's removal also takes away the one piece of this window that resembled a
-ribbon at all. `grind_core::search::score` came out of `ui_web/src/command.rs` in the same
-change, so the two shells with a palette rank a query the same way.
-
-**M9** brought packaging under `ui_sheet_gtk/data/` (`.desktop`, AppStream metainfo, a scalable
-icon — nothing builds or installs them yet, since this is a pure Cargo workspace), a
-`gtk::ShortcutsWindow` built from the same accelerator table the window wires up, recent
-files via `gtk::RecentManager` (which `gtk::FileDialog`'s own "Recent" section already reads,
-so no custom menu was needed), and the a11y floor — `gtk::Accessible::announce` on every
-selection move, which is why `ui_sheet_gtk/Cargo.toml`'s `gtk4` feature is now `v4_14`. The flatpak
-manifest was the one "stretch" item and was skipped. `.github/workflows/artifacts.yml`'s `linux`
-job builds `.deb` (`cargo deb --no-build`) and `.rpm` (`cargo generate-rpm`) packages for **every
-binary the suite has** — `grind-cli`, `grind-sheet-gtk`, `grind-text-gtk` and `grind-tui` —
-reading the `[package.metadata.deb]`/`[package.metadata.generate-rpm]` blocks in each crate's
-`Cargo.toml`, as artifacts on every push to `main` and every pull request — not yet attached to a
-release. Both packagers read the binaries that job's one `cargo build --release` produced, which
-is why `cargo deb` is passed `--no-build`: it builds what it packages otherwise, and that was one
-of the four release builds this workspace used to do per push. A shell that is not named there is
-invisible in exactly the way a feature with no line in `examples/sample-*.sh` is: adding one
-means adding its two manifest blocks, its `data/` (`.desktop`, metainfo, icon under its own app
-ID) and its two lines in that workflow — held to it by `cli/tests/packaging.rs`, which reads the
-workflow. The **meta-package** is `suite/` (crate and package `grind`): a stub crate with no
-code, because both packagers build *from* a crate, whose `.deb` and `.rpm` install a README and
-depend on the four at exactly their own version — `cli/tests/packaging.rs` fails the day a fifth
-packaged binary is missing from it.
-
-`ui_web/` is the wasm shell — rule 5's honest test, and it needed no core change: a document
-arrives from the file picker as bytes (`App::open_bytes`) and leaves as a download
-(`App::save_bytes`), with no path anywhere. Built by `ui_web/build.sh` (needs
-`wasm32-unknown-unknown` and a version-matched `wasm-bindgen-cli`), checked without a browser
-by `ui_web/smoke.sh` (jsdom) and by `cargo test -p grind-web` — the command table and its
-fuzzy match, both keymaps, the viewport and track arithmetic, the chart's geometry, and the
-line-cutting that turns formatting, a selection and a caret into `<span>`s.
-
-**`doc/web-shell.md` is normative for it**, and is where its gap list lives. Its one design
-decision: a browser tab has no menu bar and inventing one makes a worse desktop application, so
-there is one bar of verbs, one tool row per document type, and **Ctrl+K** for everything else —
-a palette over `ui_web/src/command.rs`, which is every verb as data. A command id is the one
-vocabulary a button, a key and a palette row all speak. The palette is also the go-to box (an
-address, a sheet, a defined name, a heading, a bookmark), which is why this shell has no go-to
-or outline dialog. A page with **no document open** shows a third mode — `Mode::Welcome`, three
-cards offering a new spreadsheet, a new text document or an existing file — rather than loading
-into an empty grid the way it used to; the cards are command ids like every other button, the two
-`doc.new-*` verbs are in both document tables as well (so a spreadsheet can start a text document
-without opening one), `doc.welcome` goes back, and replacing an edited document asks first.
-`doc/sheet-shell.md`'s "The gaps, written down" section is the up-to-date
-list of everything deferred by decision in phase 9 for the *GTK* window.
-
-**Phase 10 (the suite) is done through S10**, planned in `doc/suite.md` — every cell of R10's
-shell matrix is now filled, some of them minimally and every gap named. S1–S6 split
-`grind-core` out, built the `grind` CLI, wrote the two normative text documents, and gave the
-word processor its model, reader, writer, R6 splicing and `App`.
-
-S7 landed the *caret edits* — `insert_text`, `erase`, `split_block`, `join_block`, plus an
-offset axis on `Loc` so `#intro+5` is as good as `p12+40` and survives an edit above it where
-`p12+40` does not. Each has a CLI verb (`type`, `erase`, `split`, `join`) because rule 4 has no
-exception for operations that feel like a UI's. **All of that is correct under every option in
-`doc/text-layout.md` and none of it is at risk.**
-
-What S7 also did was close the layout fork on Path A, and that was **reopened immediately**.
-The objection: `CLAUDE.md`'s own architecture rule puts all logic in the core, and line layout
-is not rendering — Down-arrow, Home/End, click-to-caret and selection extents are every one of
-them defined in terms of a *line*, so Path A hands a piece of the editing model to three shells
-that will disagree, and leaves the CLI unable to answer Down-arrow at all. `doc/text-layout.md`
-separates two questions `doc/suite.md` had fused (line layout vs. pagination), and it **closed
-on Path C**: line layout in `grind-core` (`core/src/layout.rs`), font metrics injected through
-a `Metrics` trait, pagination still gated, RTL excluded by explicit decision.
-L1 and L2 built it and gave `grind_text::App` the caret operations defined in terms of a line —
-`layout_block`, `caret_x`, `caret_line`, `caret_line_bounds` — each reachable from the CLI
-(`grind text view --width`, `grind text caret --down/--home/--end`).
-
-**S8 is done: `grind-tui` is a word processor as well as a spreadsheet.** One binary, both
-types, dispatched on the file's bytes. It is the payoff of Path C and the proof of it — the
-shell implements `Metrics` in terminal cells (`ui_tui/src/text/mod.rs`, about twenty lines using
-`unicode-width`) and gets line breaking, `j`/`k` by wrapped line, Home/End and hit-testing from
-the core. **S9 and S10 are done, minimally** (`doc/text-shell.md`): `grind-text-gtk` is the word
-processor's window — a custom widget drawing from `App::layout_block`, Pango behind `Metrics`,
-typing through `GtkIMMulticontext`, an outline dialog and a go-to-address popover for `p12` /
-`#intro` / `§2.1.3`, and a banner offering to hand a spreadsheet to `grind-sheet-gtk`. The
-browser shell gained a second pane the same way `grind-tui` gained a second mode, dispatching
-on `grind_core::kind`, with the canvas as a third `Metrics`. Three implementations of that
-trait now exist and the engine needed no change, which is Path C's evidence. Building them
-found one core bug (an empty paragraph laid out one *unit* tall, since fixed in
-`grind_text::lay_out`) and one core limitation, written down rather than worked around and
-**since fixed in the core**: `App::caret_line` took one width and one provider for a motion that
-may cross into a block set in a different face, so Down-arrow out of a heading measured the
-paragraph below it with the heading's font. The three caret operations now take a
-`grind_text::Faces` — which measure and which `Metrics` *this* block is set in, asked as the
-motion arrives at each block — with `Uniform` for the every-block-alike case the CLI and the
-terminal want. The trait is `grind-text`'s rather than `grind_core::layout`'s because a block is
-the word processor's vocabulary (R8), and it is handed a kind and a style name rather than the
-block because `App` holds its read lock for the whole motion.
-
-**After S10, character formatting landed in the core** — the half of a rich-text editor that is
-not a shell. A `Run` carries a `CharStyle` (`text/src/style.rs`): bold, italic, underline,
-strike, family, size, colour, highlight, all ODF values verbatim. The reader resolves an
-`office:automatic-styles` text style onto the run and forgets its generated name; the writer
-pools distinct formattings back into `T1`, `T2`, … and declares them, so a formatting edit
-survives a regenerate where a style *name* does not. `App::set_char_style` replaces (one
-`Action::Batch`, one Ctrl+Z) and `App::char_style` reports what a span agrees about, which is
-what a toolbar reads before it writes; `grind text format <range>` reaches both (R9). `lay_out`
-now measures each run with its own metrics, so a bold word is measured bold. Loop C compares it
-character by character on the way out, and `doc/odt-format.md` §5b gained three measured
-LibreOffice facts: the `style:font-name` rewrite, the font-family requoting, and the paragraph
-hoist.
-
-**The shell half followed, in all three shells.** Selection was the piece everything else waited
-on, and each has one: an anchor beside the caret, grown by Shift+arrow, Shift+click and dragging,
-erased first by typing or Enter (`Doc::selection` in `ui_text_gtk/src/view.rs`, `Ui::selection` in
-`ui_web/src/text/mod.rs`, Visual mode in `grind-tui`). Over it sits a toolbar of the four toggles
-— a second top bar of `gtk::ToggleButton`s, the browser's tool row plus colour and highlight,
-`*`/`/`/`_`/`~` in the terminal — every one of them reading `App::char_style` and writing
-`set_char_style`, so no shell has an idea of what bold means that the document does not share. And
-each now *draws* what the core measures rather than one plain string per line:
-`ui_text_gtk/src/metrics.rs`'s `run_attributes` builds a Pango attribute list per line out of the
-block's own runs, `ui_web/src/text/runs.rs` cuts a line into `<span>`s at every boundary the
-formatting, the selection and the caret introduce, and the terminal uses its own attributes. Both
-GUI shells give `Title` and `Subtitle` a face of their own. **What is still uneven** is how much
-of a `CharStyle` reaches the screen: the browser pane carries colour, highlight, family and size
-as inline CSS, and the GTK window emits the four booleans and paints each line in one theme ink,
-so a coloured run draws in the theme's foreground there. That, its missing clipboard and its
-missing lists UI are `doc/text-shell.md`'s gap list, which is the up-to-date statement of all of
-it.
-
-**View modes are built, V0 through V7** (`doc/view-modes.md`): `sheet/src/graph.rs` is the
-reference index — the forward and reverse dependency answers, resolved through `Engine::area` so
-it cannot disagree with the evaluator — and `sheet/src/view.rs` turns it into a `CellRole` for
-every cell and a `NameAnchor` for every named place. `App::get_viewport_with` carries both to a
-shell, `view::Names` reads a formula through the names it uses (`=tax_rate*subtotal`), and
-`grind sheet view --roles/--names/--formulas` and `grind text view --names` print all of it.
-**Nothing here is ever written to a document**, and the headline check is exactly that: open
-every R7 document, ask for every overlay, read the whole sheet, save, assert the bytes are
-identical. Loop C cannot verify a feature that writes nothing, which is the point rather than a
-gap. All four shells draw it; `CellRole::marker` is in the core so no shell invents a glyph
-table.
-
-**The projection is built for both document types, D0 through D5** (`doc/dsl.md` layer 0): a
-`.grind` is a **third physical form** beside the package and the flat file — `Form::Projection`,
-so `grind convert book.fods book.grind` and back both work, for either application, and every
-shell opens one because `read_bytes` sniffs the form from the first line rather than the name.
-`grind <app> project` prints it, with `--tokens` and `--anchors` for the two maps §6 is built
-on. Each grammar is held to its own scope line by a document with executable examples
-(`doc/projection-sheet.md` against `sheet/src/model.rs`'s fields, `doc/projection-text.md`
-against `doc/text-core.md`'s elements) and loop F holds the bijection over both corpora. **D5 is
-R6 for it**: a `.grind` is read with a `grind_core::projection::Source` beside it — the text, and
-the byte range of every address in it — so saving splices rather than regenerates. One cell or
-one block edited changes one line; comments, blank lines and hand alignment survive; an untouched
-save returns the bytes that were read, asserted over both corpora. It is **not** `kdl-rs`'s
-mutation API, which reprints nothing and loses the alignment when forced to — `doc/dsl.md` §3.1
-records the measurement. **D9 is the code view**: every shell now shows the document as its projection, read-only, with the
-line the selection is on marked and moving in it selecting what that line projects — `:source` in
-`grind-tui`, *Show the source* in `grind-web`, Ctrl+Shift+U on the other page of a `gtk::Stack` in
-both GTK windows. The four line-shaped questions a code view asks (`line_count`, `line_span`,
-`line_pieces`, `address_on_line`) are `Projection`'s, so four shells cannot answer them four ways;
-each shell contributes one file and the drawing. **D6 is `grind lint`**: eight rules over the two
-applications (§4.3's table, which `cli/tests/lint.rs` executes — a rule with no row fails the
-build and so does a row naming no rule), reached as `grind sheet lint`, `grind text lint` and
-`grind lint` at the suite level, which reads the kind out of the file. What a diagnostic *is* is
-`grind_core::lint` and nothing else (R8); every rule is asked through the machinery that already
-answers its question — `RefIndex` for what a formula reads, one recalculation walk for whether a
-cached value is still true — so the linter cannot disagree with the document's own behaviour.
-**Nothing is written**, and an *error* exits non-zero so CI can gate on it. **All four shells
-show the findings**: F8 opens a *Check Document* dialog in both GTK windows
-(`ui_*_gtk/src/lint.rs`), `:lint` opens a pane in `grind-tui` and Ctrl+K → *Check the document*
-one in `grind-web` (`ui_tui/src/problems.rs`, `ui_web/src/problems.rs`, each shared by both
-document types). Every row is a jump, because a diagnostic's address is a string the shell's own
-parser already takes. **D10's first row is done**: renaming a sheet now carries every reference
-that named it — formulas, named expressions and chart ranges — in one `Action::Batch`, so it is
-one Ctrl+Z and `doc/not-doing.md`'s row says *deleting* rather than "renaming or deleting". The
-rewrite is `formula::rename`, an AST substitution re-serialised by the printer, never a textual
-one; a formula this build cannot parse is left alone and `grind lint` finds it. **A named
-expression renames the same way** — `App::rename_name`, `grind sheet name <old> --rename <new>`
-— carrying every formula and every other name that uses it; the function `RATE(…)` is not the
-name `rate`, and a clash with an existing name is refused rather than merged. **And one inlines**
-— `App::inline_name`, `grind sheet name <name> --inline` — the same substitution with the
-definition's tree where the new name would go, bracketed by the printer's own precedence rule,
-and the name deleted in the same batch.
-
-**D7 is `grind build` — layer 1 has begun.** `grind build model.rhai -o model.fods` runs a Rhai
-script that **returns** a document and writes it, for either document type;
-`examples/budget.rhai` and `examples/report.rhai` are the two smallest worked examples, `examples/timesheet/timesheet.rhai` (with `timesheet.json`) is the one `doc/generator-guide.md` builds up to, and the first is
-D7's exit criterion — `examples/sample-sheet.sh`'s budget, said once with the categories as data
-and a loop for the rows. The arrow points one way: a script produces a document and is never
-recovered from one, so this is `build` rather than a form `convert` reaches. Three things hold
-the macro line (`doc/not-doing.md` §1, unchanged): **R11** — no crate that opens a document may
-depend on `grind-build`, checked by `build/tests/manifest.rs` against every manifest in the
-workspace *and* against the workspace's own member list; the language has no filesystem,
-network, environment, clock or randomness, two of those by feature flags rather than by
-unregistering; and everything is bounded, so a script that does not terminate is an error with a
-line number. The host vocabulary is `doc/projection-sheet.md`'s rather than a third spelling of
-one model, and the same source produces the same bytes — a test builds the budget twice and
-compares them. **D8 is `grind test`**: the same script built the same way and recalculated, and
-every `fn test_…(d)` in it called with the document it built — assertions (`assert`,
-`assert_eq`, `assert_ne`, `assert_near`) and a read-only handle (`d.cell("B8").value`,
-`.display`, `.formula`, `d.block("p2")`, `d.lint()`), in `build/src/test.rs` and
-`doc/generator-spec.md` §10. `grind build` never calls a test, so a model and its checks are one
-file — `examples/budget.rhai` ends with four, and CI runs them. The rest of §6.5's table is the
-open list. A script may read JSON data beside itself (`json("prices.json")`,
-`examples/prices/prices.rhai` + `prices.json`), which is the one amendment to §2's "no I/O" and is
-narrower than the rule it replaces — `doc/generator-spec.md` §3.5 has the four walls and
-`build/tests/data.rs` tests each of them, including a symlink pointing out. **`grind
-definitions`** prints the vocabulary as a Rhai definition file for an editor (§8);
-`examples/grind.d.rhai` is a generated copy kept in the tree, with a test that fails when it
-goes stale.
-
-**The generator's examples live one directory each when they come with more than a script**
-(`examples/{prices,timesheet,letters,darlehen,notenbuch,loc}/`), and `cli/tests/cli.rs` builds and tests
-every `.rhai` under `examples/`. `examples/letters/` is the word processor's: DIN 5008 letters from one
-flat-ODF template through **`text_from("brief-din5008.fodt")`** and `para(style, text)`/`.style(name)`
-(`doc/generator-spec.md` §3.5, §5) — a generator cannot declare a page or a style, a template does — and
-a script that ends with a **map of names to documents** is a *series* — `grind build -o DIR [--as pdf]` writes
-one file per recipient (`doc/generator-spec.md` §1). A generated text document can say `d.table(rows)` and
-`d.page_break()`, and a paragraph whose style names a master page opens a page on it anywhere
-(`doc/pdf-export.md` P8b).
-
-**The two languages owed four documents, and three of them are written** (§7, D11–D14). A design
-record is not a specification somebody can implement against, nor a guide somebody can learn
-from. **D13** is `doc/generator-spec.md`, the generator's language — the dialect, its limits, the
-whole host API, what materialisation does, and what a script cannot say — held to the code by
-`build/tests/spec.rs` in both directions plus the limits. That check was the reason to write it
-first: adding to the host API is three lines in `register()`, so it was the one vocabulary in the
-project with no §3.7-style guard.
-
-**D12 and D14 are the two guides**, and each carries the check its genre allows.
-`doc/projection-guide.md` is writing a `.grind` by hand, built on `examples/quote.grind` — a
-joinery quote whose formulas carry no answers until `grind sheet recalc` fills them in, asserted
-cell by cell in `cli/tests/cli.rs` along with the two properties the guide is *for*: one edit is
-one line of diff, and an untouched save returns the bytes that were read.
-`doc/generator-guide.md` runs from `examples/first.rhai` to `examples/timesheet/timesheet.rhai` — four
-sheets that have to agree with each other, built out of `examples/timesheet/timesheet.json`, whose
-cross-sheet ranges are measured from tables another loop wrote rather than counted.
-`cli/tests/editor.rs` builds every script either guide names and fails when one moves.
-
-Writing them found three things worth keeping (`doc/dsl.md` §7 records all three): the existing
-examples were too small to make the case, the two vocabularies disagree about one word
-(`percentage` in the projection, `percent` in the generator), and **`doc/generator-spec.md` §8's
-editor answer was wrong** — the published `rhaiscript.vscode-rhai` ships no language server, so
-the `.d.rhai` file nothing reads is now joined by `grind definitions --snippets`, the same engine
-metadata as a VS Code snippet file. `doc/editor-setup.md` is what was measured and how to set it
-up; `.vscode/` holds both snippet files and `cli/tests/editor.rs` holds them to their
-vocabularies. **Still owed**: the projection's *specification* (D11), for which the two guides
-are the evidence of what it would have to settle.
-
-**L3 is done: `ui_sheet_gtk`'s row auto-height measurement moved onto `grind_core::layout`'s own
-trait**, so one breaker serves both applications rather than a second, Pango-only idea of where a
-line may end living beside it. `measure_rows` (`ui_sheet_gtk/src/grid.rs`) builds a `TextStyle`
-from the cell's `CellStyle` and hands one `Fragment` to `grind_core::layout::wrap`, reading the
-row's height off the `Layout` it returns instead of a raw `pango::Layout::pixel_size`; `wrap`'s
-own "a width of zero means do not wrap" answers the unwrapped, oversized-font case the same call
-already had to cover. `SheetMetrics` is the `Metrics` impl this needed — built fresh per
-measurement pass rather than cached the way the text pane's `Face` is one object per block kind,
-since a spreadsheet cell's weight, slant and size vary cell to cell where a block's font does
-not — and `font_desc_for`, the part of it that resolves a style into a `pango::FontDescription`,
-is a free function precisely so it is testable with no Pango context or display, the same as
-`font`/`font_scale` already were. `font_scale` itself now shares its string parsing with the new
-code (`scale_of`) rather than each retyping "ODF points over the default", so a cell can no
-longer be drawn at one size and measured at another.
-
-**The GNOME spreadsheet's chart and locale pass is done** — the one that found that a pie this
-build wrote ran the other way round in LibreOffice. Loop C now has chart cases, and their first
-run found three shipped bugs (`doc/chart-format.md`): a pie's direction was never written
-(`Chart::clockwise`, always stated now, LibreOffice's counter-clockwise the reading default),
-LibreOffice ignored every colour because a series named no style of its own, and an `.ods`
-lost its charts because LibreOffice drops an inline chart document in a package (the package
-form writes `Object N/content.xml` sub-documents now). A colour is a *series* rather than a point,
-a chart has its own **title and legend** (a scope-line change, `doc/not-doing.md`), and the core
-reads a table the way a person means it — `chart::guess`/`App::suggest_chart`, orientation,
-labels, a line for dates — which `chart-add --from` and the new **chart dialog**
-(`ui_sheet_gtk/src/chart_dialog.rs`) share. The dialog is built around a live preview from
-`App::preview_chart` (`add_chart`/`edit_chart` without the write), puts a new chart beside its
-table, and *Edit a Chart…* reaches one from the keyboard. A document states **its own locale**
-(`Document::locale`, `fo:language` on the default cell style — `doc/ods-format.md` §5.2 has the
-measurement that LibreOffice renders by the machine instead): it decides every unmarked number
-shown and every number typed, reaches `grind sheet locale`, the projection and *Document
-Settings…*, and the number popover shows a live sample through `App::shown_as`. Dark mode reads:
-`grind_core::color` is the contrast arithmetic hoisted out of the Windows shell, and
-`ui_sheet_gtk/src/theme.rs`'s `ink` gives automatic text a colour that reads on the document's
-own fill and lifts the document's own colours along their hue on a dark sheet — never writing
-either.
-
-**S11 — packaging the suite — is done.** The per-app half was already (both GTK apps' `.desktop`
-files, metainfo, icons and packages, and the `grind` CLI container); the meta-package closed it.
-Its exit criterion was checked on packages rather than on paper: all five `.deb`s built in
-release, installed with `apt install ./grind_*.deb …` so apt resolved the four through the
-meta-package, and `gio open note.fodt` — what a file manager's double-click calls — started the
-installed `grind-text-gtk` on the document, with GIO resolving all four media types to the
-right window both on a machine with LibreOffice installed and on a data directory holding only
-grind's entries. R10's matrix, which S11 called `doc/shell-matrix.md`, is `doc/feature-matrix.md`.
-
-**Function compatibility: the classic band is in, and the rest waits on decisions.**
-`doc/function-coverage.md` §7 is the status: 26 functions of its Tier 1 that needed no new
-machinery moved in on 2026-10-12, and `SUBTOTAL`, `SUMPRODUCT`, `CEILING` and `FLOOR` on
-2026-10-18 (144 in all, `doc/small-group.md`'s second half), each held to
-an expectation measured against LibreOffice in `sheet/src/formula/funcs/beyond.rs`, with what
-the oracle answered where Part 4 is silent in `doc/ods-format.md` §4.1 — and where the two
-disagree, the spec wins and the test says so. `ROUND`/`TRUNC`/`INT` changed with them: they
-step the value a cell shows (`math::shown`), so `ROUND(0.285;2)` is 0.29. **Excel's functions
-travel under the oracle's names**: `grind-xlsx` writes Excel's `CEILING` as
-`COM.MICROSOFT.CEILING`, every Excel-only function as `COM.MICROSOFT.*`, the old distributions
-as `LEGACY.*` — LibreOffice's own import, measured over all 520 (`doc/xlsx-format.md` §5.1) —
-so a recalculation never hands a workbook's call to an ODF function of the same name and a
-different answer. What is next — `INDIRECT`/`OFFSET`, `TEXT`, `CELL`, `LOOKUP` — each needs an
-engine change or a scope decision first, and §7's table says which. Measure expectations with
-`table:use-wildcards="true"` in the oracle's document, or LibreOffice reads every criterion as a
-regular expression.
+**Never annotate `doc/OpenDocument-v1.4-*` in place** — OASIS specs, redistributed verbatim under
+terms that forbid modification; they carry `.license` sidecars. Anything derived from them
+carries the OASIS copyright alongside ours.

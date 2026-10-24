@@ -739,7 +739,7 @@ as much of it as possible is a test, and most of those tests are portable:
 
 ## CI
 
-**One build per platform** still holds (`CLAUDE.md`, "CI, and the one rule that shapes it"):
+**One build per platform** still holds (`CLAUDE.md`, "CI"):
 
 - **`macos.yml` → `check-from-linux`** (ubuntu): `check`, `clippy -D warnings` and
   `doc -D warnings` for `aarch64-apple-darwin` and `x86_64-apple-darwin`, then the portable
