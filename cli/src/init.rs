@@ -3,38 +3,29 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! `grind init` — a directory set up for writing `.rhai` and `.grind` in an editor
-//! (`doc/init.md`, I1 and I2).
+//! (`doc/init.md`): the editor configuration `doc/editor-setup.md` describes, the repository files
+//! `doc/init.md` argues for, a starter, and a README saying what to do first. A file is written
+//! only if a person following the documentation would otherwise have written it by hand. Three
+//! rules, each a test in `cli/tests/init.rs`:
 //!
-//! **What it writes is `doc/editor-setup.md` §3 and §6, executed**, plus the repository files
-//! `doc/init.md` §3.7–§3.8 argue for, a starter, and a README saying what to do first and what
-//! the editor will and will not do. The scope line is §3.4's: a file is written only if a person
-//! following this repository's own documentation would otherwise have written it by hand — or,
-//! for the README, would otherwise have had to discover its contents by being surprised.
+//! * **Never clobber.** A file that exists with other content is kept, byte for byte, and the
+//!   report says what it would have needed; `--force` replaces it. A file already holding exactly
+//!   what would be written is unchanged, so a second run writes nothing.
+//! * **Nothing outside the directory.** Extensions are recommended in `extensions.json`, never
+//!   installed, and git is configured only when the directory is a repository's root, in its own
+//!   `.git/config`.
+//! * **No project file.** Nothing written here is read back by `grind`: delete any of it and every
+//!   command behaves as before.
 //!
-//! Three rules, each a test in `cli/tests/init.rs`:
+//! **Generated** files are this binary's answer to "what can a script say", owned by grind: each
+//! carries a header naming the build that wrote it, `init` reports one whose vocabulary differs as
+//! `stale`, and `--update` rewrites exactly those. **Seeded** files belong to the user from the
+//! moment they exist; only `--force` writes over one.
 //!
-//! * **Never clobber.** A file that exists with other content is *kept*, byte for byte, and the
-//!   report says what it would have needed (`doc/init.md` §3.6); `--force` replaces it. A file
-//!   that already holds exactly what would be written is *unchanged*, so a second run writes
-//!   nothing at all.
-//! * **Nothing outside the directory.** No editor is touched — extensions are recommended in
-//!   `extensions.json`, never installed (§3.2) — and git is configured only when the directory
-//!   is itself a repository's root, in that repository's own `.git/config`.
-//! * **No project file.** Nothing written here is read back by `grind` (§3.1): delete any of it
-//!   and every command behaves as before.
-//!
-//! The files are of two kinds (§3.5), and I2 is where they part. **Generated** ones are this
-//! binary's answer to "what can a script say", owned by grind: each carries a header naming the
-//! build that wrote it, a plain `init` reports one whose vocabulary differs from this binary's as
-//! `stale`, and `--update` rewrites exactly those and touches nothing else. **Seeded** ones are a
-//! starting point that belongs to the user from the moment it exists, and only `--force` ever
-//! writes over one.
-//!
-//! **Stale is decided by content, not by the header.** The header's commit is the one
-//! `grind-core` was last built at (`core/build.rs`), which an incremental build does not refresh,
-//! and a new commit that registered no function has not made anybody's completion wrong. So the
-//! body under the header is compared with what this binary would write, and the header itself is
-//! information for a person.
+//! **Stale is decided by content, not by the header.** The header's commit is the one `grind-core`
+//! was last built at (`core/build.rs`), which an incremental build does not refresh, and a commit
+//! that registered no function has made nobody's completion wrong. So the body is compared with
+//! what this binary would write.
 
 use std::path::Path;
 use std::process::Command;

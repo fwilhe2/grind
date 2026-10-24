@@ -3256,7 +3256,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
             }
         }
 
-        // D8: the same script, built the same way, and its `test_` functions called with what it
+        // The same script, built the same way, and its `test_` functions called with what it
         // built. Nothing is written; a failed test is the command's failure (`Report::failed`).
         Top::Test { script, data } => {
             let source = std::fs::read_to_string(script)
@@ -3274,13 +3274,12 @@ fn run(cli: &Cli) -> Result<Report, String> {
             )))
         }
 
-        // No document, no script — the vocabulary itself, for an editor rather than for a
-        // person (doc/generator-spec.md §9). It is the engine's own answer: what this prints
-        // is what `grind build` registered, so it cannot describe a function that is not there.
+        // No document, no script — the vocabulary itself, for an editor. The engine's own answer:
+        // what `grind build` registered, so it cannot describe a function that is not there.
         //
-        // The projection's snippets are the exception: written by hand, held to the two grammar
-        // notes by `cli/tests/editor.rs`, and compiled in here so an installed `grind` can hand
-        // them to a project that has no copy of this repository (`doc/init.md` I0).
+        // The projection's snippets are the exception: written by hand, held to the grammar by
+        // `cli/tests/editor.rs`, and compiled in so an installed `grind` can hand them to a
+        // project with no copy of this repository.
         Top::Definitions {
             snippets,
             projection,
@@ -4369,9 +4368,8 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
         } => {
             let app = load(file, cli)?;
             let (sheet, start, end) = a1::resolve(&app, &a1::parse(range).say()?).say()?;
-            // `--totals` with no value is a sum, `--totals average` names another aggregate,
-            // and no flag at all is no totals row — clap's `default_missing_value` doing the
-            // work that used to be a bool.
+            // `--totals` with no value is a sum, `--totals average` names another aggregate, and
+            // no flag is no totals row (clap's `default_missing_value`).
             let options = grind_sheet::TableOptions {
                 header: !no_header,
                 totals: *totals,
@@ -4392,10 +4390,9 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
         Command::Rename { file, sheet, name } => {
             let app = load(file, cli)?;
             let index = a1::sheet(&app, sheet).say()?;
-            // A rename is a document-wide edit now (`doc/dsl.md` §6.5, D10): every formula,
-            // named expression and chart range that named the old sheet follows it, in one undo
-            // step. Said on stderr rather than in the report, exactly like the staleness
-            // warning — stdout is the report a script parses.
+            // A rename carries every formula, named expression and chart range that named the old
+            // sheet, in one undo step. Said on stderr, like the staleness warning: stdout is the
+            // report a script parses.
             let rewritten = app.rename_sheet(index, name).say()?;
             if rewritten > 0 {
                 eprintln!(
@@ -4416,10 +4413,10 @@ fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
         Command::Recalc { file } => {
             let app = load(file, cli)?;
             let recalc = app.recalc().say()?;
-            // Diagnostics to stderr, so the warning cannot corrupt parseable output. This
-            // build implements a subset of OpenFormula; a document using anything else
-            // loses a good cached value to #NAME? here, and saying so is the difference
-            // between a recalculation and silent data loss. `sheet undo` is the way back.
+            // To stderr, so the warning cannot corrupt parseable output. A document using a
+            // function grind does not implement loses a good cached value to #NAME? here, and
+            // saying so is the difference between a recalculation and silent data loss. `sheet
+            // undo` is the way back.
             if recalc.spoiled > 0 {
                 eprintln!(
                     "sheet: {} cell(s) became errors — a function this build does not \

@@ -38,9 +38,9 @@ pub enum Report {
     /// A text document's shape — `grind info` over a `.odt`, and every `grind text` command
     /// that writes.
     TextDocument(TextDocumentReport),
-    /// What `grind lint` found (`doc/dsl.md` §4.3, D6).
+    /// What `grind lint` found.
     Lint(LintReport),
-    /// What `grind test` ran, and what failed (`doc/dsl.md` §4.4, D8).
+    /// What `grind test` ran, and what failed.
     Tests(TestsReport),
     /// What `grind sheet import` carried, and what it did not (`doc/xlsx-import.md`).
     /// Boxed for the reason `CellStyle` is: the fidelity report outgrew every other variant.
@@ -174,7 +174,7 @@ pub struct ImportReport {
     /// value Excel cached for it, so the document is not wrong — it no longer recalculates
     /// there, which is what this says.
     pub untranslated: Vec<DroppedCount>,
-    /// Functions a carried formula names that this build cannot evaluate. Not a loss: the
+    /// Functions a carried formula names that grind cannot evaluate. Not a loss: the
     /// formula came through intact, and this is a fact about the evaluator.
     pub unknown_functions: Vec<String>,
     /// Every construct the model has no home for, by name and count.
