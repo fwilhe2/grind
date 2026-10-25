@@ -225,7 +225,7 @@ borders, which that window does not draw either.
 | Bold, italic | ● | ● | ● | ● | ● | ● |
 | Underline, strikethrough (cells) | ● ᵘˡ | ● ᵘˡ | ● ᵘˡ | ● ᵘˡ | ● ᵘˡ | ● ᵘˡ |
 | Indent (cells) | ● ⁱʳ | ● ⁱⁿ | ● ⁱⁿ | ● ⁱⁿ | ● ⁱⁿ | ● ⁱⁿ |
-| Rotation (cells) | ● ⁱʳ | ● ʳᵗ | ● ʳᵗ | ○ | ○ | ○ |
+| Rotation (cells) | ● ⁱʳ | ● ʳᵗ | ● ʳᵗ | ● ʳᵗ | ○ | ○ |
 | Alignment | ● | ● | ● | ● | ● | ● |
 | Wrap text | ● | ● | ● | ● | ● ʷʷ | ● |
 | Borders | ● | ● ᵃ | ● | ● | ● ʷᵇ | ● |
@@ -240,7 +240,7 @@ borders, which that window does not draw either.
 | **Drawn**: bold, italic, alignment | — | ● | ● | ● | ● | ● |
 | **Drawn**: underline, strikethrough | — | ● | ● | ● | ● | ● ᵘˡ |
 | **Drawn**: indent | — | ● | ● ⁱʳ | ● | ● | ● |
-| **Drawn**: rotated text | — | ● ⁱʳ | ○ | ○ | ○ | ○ |
+| **Drawn**: rotated text | — | ● ⁱʳ | ○ | ● ʳᵗ | ○ | ○ |
 | **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● | ● |
 | **Drawn**: borders | — | ◐ ᵉ | ○ | ● | ◐ ʷᵇ | ◐ ³ |
 | **Drawn**: wrapped text | — | ● | ○ | ● | ● ʷʷ | ● ¹ |
@@ -275,7 +275,7 @@ none unless told.
 ᵘˡ A cell's `style:text-underline-style` and `style:text-line-through-style` (2026-10-05): read, written, projected (`underline=`/`strike=`) and carried from `.xlsx`, and set by `grind sheet style --underline --strike`. Every window draws them — Pango attributes, terminal modifiers, CSS `text-decoration`, `LOGFONTW`'s own two switches, and on the Mac two fills placed from the portable metrics. Every window sets them too since 2026-10-07, as `grind_sheet::format::Toggle::Underline`/`Strike` — any style but `none` reads as on, a press writes `solid` or takes it off: two toggles beside Bold and Italic on the GNOME format bar, the browser's tool row (Ctrl+U) and the Windows strip (Ctrl+U, Ctrl+Shift+X, and the Format menu), `_`/`~` in Visual mode and `:underline`/`:strike` in the terminal, and the Mac's toolbar and Format ▸ Font menu, ungreyed on the grid. The Windows grid draws italic now too, which it did not before.
 
 ⁱʳ `fo:margin-left` and `style:rotation-angle` (2026-10-05): read, written, projected (`indent=`/`rotate=`), carried from `.xlsx` (`doc/xlsx-format.md` §4.14) and set by `grind sheet style --indent --rotate`. The terminal indents in whole columns. Rotated text is drawn turned about the cell's middle in the GNOME window only; the other windows draw it level, which is a gap of drawing and not of the document — the angle is kept and saved.
-ʳᵗ `grind_sheet::format::ROTATIONS` — Excel's four turns (45° either way, up, down) and level again, through `format::rotated` (2026-10-25): a *Text Rotation* menu on the GNOME format bar (lint-checked only), `:rotate 45|up|down|none` in the terminal, which keeps the angle and draws the text level.
+ʳᵗ `grind_sheet::format::ROTATIONS` — Excel's four turns (45° either way, up, down) and level again, through `format::rotated` (2026-10-25): a *Text Rotation* menu on the GNOME format bar (lint-checked only), `:rotate 45|up|down|none` in the terminal, which keeps the angle and draws the text level; five palette rows in the browser, which turns the text with a CSS transform inside the cell (smoke-checked).
 ⁱⁿ Increase and Decrease Indent (2026-10-07), whole levels of `grind_sheet::format::indented` — 0.2646cm a level, the step the oracle writes for an imported `indent="1"` (`doc/xlsx-format.md` §4.14), so a level set here is a level an imported workbook already has: two buttons beside the alignments on the GNOME format bar and the browser's tool row (and two palette rows there), two icon buttons on the Windows strip and Format ▸ Decrease/Increase Indent, `>`/`<` in Visual mode and `:indent`/`:outdent` in the terminal, and ⌘[/⌘] in the Mac's Format ▸ Text with a toolbar group.
 
 **One rule for a number that does not fit.** Part of a number is a different number —

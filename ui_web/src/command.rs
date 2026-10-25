@@ -182,6 +182,18 @@ pub const SHEET: &[Command] = &[
     // Whole indent levels, `format::indented`'s — the step an imported workbook's indents use.
     cmd("style.indent-less", "Decrease indent", "Format", "", false),
     cmd("style.indent-more", "Increase indent", "Format", "", false),
+    // `format::ROTATIONS`, in the same order.
+    cmd("style.rotate-0", "No rotation", "Format", "", false),
+    cmd(
+        "style.rotate-1",
+        "Angle counterclockwise",
+        "Format",
+        "",
+        false,
+    ),
+    cmd("style.rotate-2", "Angle clockwise", "Format", "", false),
+    cmd("style.rotate-3", "Rotate text up", "Format", "", false),
+    cmd("style.rotate-4", "Rotate text down", "Format", "", false),
     cmd(
         "style.align-clear",
         "Align automatically",

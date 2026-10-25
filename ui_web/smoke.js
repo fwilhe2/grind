@@ -640,6 +640,11 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("Increase indent indents a cell by one level", document.querySelector("td.active").getAttribute("style").includes("text-indent:0.265cm"), true);
   await press_button("s-outdent");
   check("and Decrease indent takes it back to none", (document.querySelector("td.active").getAttribute("style") || "").includes("text-indent"), false);
+  await command("Rotate text up");
+  const turned = () => document.querySelector("td.active .turned");
+  check("Rotate text up turns the cell's text", turned() && turned().getAttribute("style"), "transform:rotate(-90deg)");
+  await command("No rotation");
+  check("and No rotation sets it level", turned(), null);
 
   await enter("12345");
   press("ArrowUp");

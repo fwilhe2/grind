@@ -467,6 +467,23 @@ impl Ui {
                     true => cell.set_text_content(Some(&text)),
                     false => self.append_spelled(&cell, &text, wrong)?,
                 }
+                let style = match merge {
+                    Some(m) => m.style.as_ref(),
+                    None => viewport.style(row, col),
+                };
+                // Turned text is turned about the cell's middle and kept inside it, as the GNOME
+                // grid draws it.
+                if let Some(degrees) = style.and_then(CellStyle::rotation_degrees)
+                    && !(active && editing)
+                {
+                    let turned = self.dom.document.create_element("span")?;
+                    turned.set_class_name("turned");
+                    turned.set_attribute("style", &format!("transform:rotate({}deg)", -degrees))?;
+                    while let Some(child) = cell.first_child() {
+                        turned.append_child(&child)?;
+                    }
+                    cell.append_child(&turned)?;
+                }
                 // A checkbox: a real `<input type=checkbox>` ahead of the text, so the browser
                 // draws it in the platform's own look and a screen reader announces it as one.
                 // A click on it is handled by `on_click`, which writes the linked cell.
@@ -507,10 +524,6 @@ impl Ui {
                         }
                     }
                     None => {
-                        let style = match merge {
-                            Some(m) => m.style.as_ref(),
-                            None => viewport.style(row, col),
-                        };
                         let css = css_of(style, numeric, dark);
                         if !css.is_empty() {
                             cell.set_attribute("style", &css)?;
@@ -984,6 +997,16 @@ impl Ui {
             "style.wrap" => style(|s| Toggle::Wrap.flipped(s)),
             "style.indent-less" => style(|s| format::indented(s, -1)),
             "style.indent-more" => style(|s| format::indented(s, 1)),
+            id if id.starts_with("style.rotate-") => {
+                let Some(&(degrees, _)) = id["style.rotate-".len()..]
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|n| format::ROTATIONS.get(n))
+                else {
+                    return;
+                };
+                self.merge_style(|s| format::rotated(s, degrees))
+            }
             "style.border" => style(|s| {
                 format::restyled(s, |s| {
                     s.set_border(Some(grind_sheet::format::BORDER.to_owned()))

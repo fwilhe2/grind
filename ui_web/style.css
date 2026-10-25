@@ -834,6 +834,12 @@ input[type="text"] {
   vertical-align: bottom;
 }
 
+/* Turned text (`style:rotation-angle`), about the cell's middle and kept inside it. */
+.grid td .turned {
+  display: inline-block;
+  transform-origin: center;
+}
+
 .head {
   position: sticky;
   background: var(--head);
