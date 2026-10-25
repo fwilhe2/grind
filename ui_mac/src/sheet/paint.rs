@@ -422,6 +422,21 @@ pub fn cells(
                     }
                 }
             }
+            // Turned text is turned about the cell's middle and kept inside it.
+            if let Some(degrees) = style.and_then(|s| s.rotation_degrees()) {
+                let text_style = look::text_style(style);
+                ops.push(Op::Turned {
+                    centre: (cell.x + cell.w / 2.0, cell.y + cell.h / 2.0),
+                    degrees,
+                    w: width(metrics, &text, &text_style),
+                    h: f64::from(metrics.line_height(&text_style)),
+                    text,
+                    style: text_style,
+                    color: ink,
+                    clip: cell,
+                });
+                continue;
+            }
             let narrower = viewport.narrower(row, col);
             let mut op = cell_text(text, &narrower, &value, style, cell, ink, metrics);
             if let Op::Text { clip, .. } = &mut op {
@@ -1081,6 +1096,7 @@ mod tests {
                 Op::Text { text, x, top, .. } => Some((text.as_str(), *x, *top)),
                 Op::Fill { .. }
                 | Op::Wash { .. }
+                | Op::Turned { .. }
                 | Op::Run { .. }
                 | Op::Image { .. }
                 | Op::Path { .. } => None,
@@ -1310,6 +1326,19 @@ mod tests {
             texts.iter().any(|(t, ..)| *t == "Rent"),
             "text keeps its words"
         );
+    }
+
+    #[test]
+    fn turned_text_is_one_turned_op_about_the_cells_middle() {
+        let app = sheet();
+        let up = grind_sheet::format::rotated(&CellStyle::default(), Some(90));
+        app.set_style(0, Pos::new(0, 0), Pos::new(0, 0), up).unwrap();
+        let ops = drawn(&app);
+        assert!(ops.iter().any(|op| matches!(
+            op,
+            Op::Turned { text, degrees, .. } if text == "Rent" && *degrees == 90.0
+        )));
+        assert!(!texts(&ops).iter().any(|(t, ..)| *t == "Rent"));
     }
 
     #[test]

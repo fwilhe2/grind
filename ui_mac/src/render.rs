@@ -195,6 +195,28 @@ pub fn draw(context: &CGContext, ops: &[Op], text: &CoreText) {
                 unsafe { line.draw(context) };
                 CGContext::restore_g_state(context_ref);
             }
+            Op::Turned {
+                centre: (cx, cy),
+                degrees,
+                w,
+                h,
+                text: string,
+                style,
+                color,
+                clip,
+            } => {
+                CGContext::save_g_state(context_ref);
+                CGContext::clip_to_rect(context_ref, cg_rect(clip));
+                fill_color(context, *color, 1.0);
+                // y runs down here, so a turn anticlockwise on screen is a negative angle.
+                CGContext::translate_ctm(context_ref, *cx, *cy);
+                CGContext::rotate_ctm(context_ref, -degrees.to_radians());
+                let line = text.line(string, style);
+                CGContext::set_text_position(context_ref, -w / 2.0, -h / 2.0 + text.ascent(style));
+                // SAFETY: the context is live for the whole of this call.
+                unsafe { line.draw(context) };
+                CGContext::restore_g_state(context_ref);
+            }
             Op::Run {
                 x,
                 top,

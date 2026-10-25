@@ -59,6 +59,8 @@ pub enum Command {
     Indent(i8),
     /// `fo:wrap-option` on the selected cells.
     Wrap,
+    /// One of `grind_sheet::format::ROTATIONS`, by index, over the selected cells.
+    Rotate(u8),
     /// A hairline round every selected cell (`true`), or no border at all (`false`).
     Borders(bool),
     /// One of the number picker's nine formats over the selected cells.
@@ -289,6 +291,7 @@ impl Command {
         all.extend([Align::Left, Align::Center, Align::Right].map(Command::Align));
         all.extend([Command::Indent(-1), Command::Indent(1)]);
         all.push(Command::Wrap);
+        all.extend((0..5).map(Command::Rotate));
         all.extend([Command::Borders(true), Command::Borders(false)]);
         all.extend(Preset::ALL.map(Command::Number));
         all.extend([Command::Decimals(-1), Command::Decimals(1)]);
@@ -469,6 +472,7 @@ impl Command {
             | Command::Align(_)
             | Command::Indent(_)
             | Command::Wrap
+            | Command::Rotate(_)
             | Command::Borders(_)
             | Command::Number(_)
             | Command::Decimals(_)
@@ -730,6 +734,24 @@ static TEXT: Menu = Menu {
         command("Increase Indent", key("]", CMD), Command::Indent(1)),
         Item::Separator,
         command("Wrap Text", None, Command::Wrap),
+        Item::Separator,
+        Item::Submenu {
+            title: "Rotation",
+            menu: &ROTATION,
+        },
+    ],
+};
+
+/// `grind_sheet::format::ROTATIONS`, in its order.
+static ROTATION: Menu = Menu {
+    title: "Rotation",
+    role: Role::Plain,
+    items: &[
+        command("No Rotation", None, Command::Rotate(0)),
+        command("Angle Counterclockwise", None, Command::Rotate(1)),
+        command("Angle Clockwise", None, Command::Rotate(2)),
+        command("Rotate Text Up", None, Command::Rotate(3)),
+        command("Rotate Text Down", None, Command::Rotate(4)),
     ],
 };
 

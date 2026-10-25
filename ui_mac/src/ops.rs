@@ -36,6 +36,18 @@ pub enum Op {
         color: Rgb,
         clip: Rect,
     },
+    /// A cell's line of text `w` by `h`, turned `degrees` anticlockwise about `centre` (its own
+    /// middle), drawn only inside `clip`.
+    Turned {
+        centre: (f64, f64),
+        degrees: f64,
+        w: f64,
+        h: f64,
+        text: String,
+        style: TextStyle,
+        color: Rgb,
+        clip: Rect,
+    },
     /// One piece of a line on the **page**, whose box starts at `(x, top)`, set in `font` — the
     /// face its block and its run resolved to, which is exactly what measured it
     /// (`text/face.rs`). Underline and strike are drawn with it, from that font's own metrics.
@@ -104,6 +116,25 @@ impl Op {
                 color,
                 clip: clip.offset(dx, dy),
             },
+            Op::Turned {
+                centre: (cx, cy),
+                degrees,
+                w,
+                h,
+                text,
+                style,
+                color,
+                clip,
+            } => Op::Turned {
+                centre: (cx + dx, cy + dy),
+                degrees,
+                w,
+                h,
+                text,
+                style,
+                color,
+                clip: clip.offset(dx, dy),
+            },
             Op::Run {
                 x,
                 top,
@@ -163,6 +194,28 @@ impl Op {
                 (!clip.is_empty()).then_some(Op::Text {
                     x: x + dx,
                     top: top + dy,
+                    text,
+                    style,
+                    color,
+                    clip,
+                })
+            }
+            Op::Turned {
+                centre: (cx, cy),
+                degrees,
+                w,
+                h,
+                text,
+                style,
+                color,
+                clip: own,
+            } => {
+                let clip = own.offset(dx, dy).intersection(clip);
+                (!clip.is_empty()).then_some(Op::Turned {
+                    centre: (cx + dx, cy + dy),
+                    degrees,
+                    w,
+                    h,
                     text,
                     style,
                     color,

@@ -100,6 +100,10 @@ pub fn write(command: Command, active: &Active, locale: Option<Locale>) -> Optio
         Command::Group => format::grouped(active.format.as_ref(), active.shown, locale)
             .map(|format| Write::Format(Some(format))),
         Command::Indent(step) => Some(Write::Style(format::indented(&active.style, step))),
+        Command::Rotate(index) => {
+            let (degrees, _) = format::ROTATIONS.get(usize::from(index))?;
+            Some(Write::Style(format::rotated(&active.style, *degrees)))
+        }
         Command::ClearFormatting => Some(Write::Clear),
         _ => None,
     }
@@ -120,6 +124,9 @@ pub fn checked(command: Command, active: &Active) -> bool {
             format::currency_chosen(active.format.as_ref()) == Some(usize::from(index))
         }
         Command::Group => format::is_grouped(active.format.as_ref()),
+        Command::Rotate(index) => {
+            format::rotation_chosen(&active.style) == Some(usize::from(index))
+        }
         _ => false,
     }
 }
