@@ -1012,7 +1012,7 @@ impl App {
     }
 
     /// Start as an imported markdown file: its summary on the status bar, and no path to write to.
-    pub fn noticed(mut self, imported: Option<crate::import::Imported>) -> Self {
+    pub fn noticed(mut self, imported: Option<grind_open::Imported>) -> Self {
         if let Some(imported) = imported {
             self.status = imported.summary;
         }

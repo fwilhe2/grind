@@ -16,7 +16,6 @@ mod chrome;
 mod code;
 mod dict;
 mod help;
-mod import;
 mod ink;
 mod pick;
 mod problems;
@@ -173,59 +172,44 @@ fn welcome_pane() -> Pane {
 fn prepare(kind: DocumentKind, path: Option<PathBuf>) -> io::Result<Pane> {
     let redraw = Arc::new(RedrawFlag::default());
     redraw.raise(); // paint the first frame before waiting for input
+    let (mut file, mut imported) = (None, None);
+    if let Some(given) = &path {
+        let bytes = std::fs::read(given)?;
+        file = Some(
+            match grind_open::import_file(given, &bytes)
+                .transpose()
+                .map_err(io::Error::other)?
+            {
+                Some(mut import) => {
+                    let odf = std::mem::take(&mut import.odf);
+                    let name = import.name.clone();
+                    imported = Some(import);
+                    (name, odf)
+                }
+                None => (given.display().to_string(), bytes),
+            },
+        );
+    }
+    // An import has no path: `:w` must be told where the ODF document goes, and cannot write
+    // over the file it came from.
+    let path = path.filter(|_| imported.is_none());
+    let fail = |name: &str, e: &dyn std::fmt::Display| io::Error::other(format!("{name}: {e}"));
     match kind {
         DocumentKind::Text => {
             let core = Arc::new(grind_text::App::new());
-            let (mut path, mut notice) = (path, None);
-            if let Some(given) = path.clone() {
-                let bytes = std::fs::read(&given)?;
-                let fail = |e: &dyn std::fmt::Display| {
-                    io::Error::other(format!("{}: {e}", given.display()))
-                };
-                if import::is_markdown(&given, &bytes) {
-                    // Markdown is opened the way a CSV is: a new document, and no path.
-                    notice =
-                        Some(import::open_markdown(&core, &given, &bytes).map_err(|e| fail(&e))?);
-                    path = None;
-                } else if import::is_word(&bytes) {
-                    // A Word document is opened the way a workbook is: imported, a new ODF
-                    // document, and no path, so `:w` cannot write ODF over the `.docx`.
-                    notice = Some(import::open_word(&core, &given, &bytes).map_err(|e| fail(&e))?);
-                    path = None;
-                } else {
-                    core.open_bytes(&given.display().to_string(), &bytes)
-                        .map_err(|e| fail(&e))?;
-                }
+            if let Some((name, bytes)) = &file {
+                core.open_bytes(name, bytes).map_err(|e| fail(name, &e))?;
             }
             Ok(Pane::Text(Box::new(
                 text::app::App::new(core, redraw, path)
                     .spelling()
-                    .noticed(notice),
+                    .noticed(imported),
             )))
         }
         _ => {
             let core = Arc::new(grind_sheet::App::new());
-            let (mut path, mut imported) = (path, None);
-            if let Some(given) = path.clone() {
-                let bytes = std::fs::read(&given)?;
-                if import::is_workbook(&bytes) {
-                    // No path: `:w` must be told where the ODF document goes.
-                    imported = Some(
-                        import::open(&core, &given, &bytes)
-                            .map_err(|e| io::Error::other(format!("{}: {e}", given.display())))?,
-                    );
-                    path = None;
-                } else if import::is_delimited(&given, &bytes) {
-                    // A CSV is opened the way a workbook is: a new document, and no path.
-                    imported = Some(
-                        import::open_delimited(&core, &given, &bytes)
-                            .map_err(|e| io::Error::other(format!("{}: {e}", given.display())))?,
-                    );
-                    path = None;
-                } else {
-                    core.open_bytes(&given.display().to_string(), &bytes)
-                        .map_err(|e| io::Error::other(format!("{}: {e}", given.display())))?;
-                }
+            if let Some((name, bytes)) = &file {
+                core.open_bytes(name, bytes).map_err(|e| fail(name, &e))?;
             }
             Ok(Pane::Sheet(Box::new(
                 sheet::app::App::new(core, redraw, path)
@@ -248,15 +232,7 @@ fn run_pane(terminal: &mut Tui, pane: Pane) -> io::Result<Option<app::Switch>> {
 /// What kind of document a file holds, read from its bytes.
 fn sniff(path: &Path) -> io::Result<DocumentKind> {
     let bytes = std::fs::read(path)?;
-    // An Excel workbook is a spreadsheet this shell *imports* (`import.rs`). `grind_core::kind`
-    // does not know it, and should not: it answers which ODF document type some bytes are.
-    if import::is_workbook(&bytes) || import::is_delimited(path, &bytes) {
-        return Ok(DocumentKind::Spreadsheet);
-    }
-    if import::is_markdown(path, &bytes) || import::is_word(&bytes) {
-        return Ok(DocumentKind::Text);
-    }
-    grind_core::kind(&bytes).ok_or_else(|| {
+    grind_open::kind(&path.display().to_string(), &bytes).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             "not an ODF spreadsheet or text document",

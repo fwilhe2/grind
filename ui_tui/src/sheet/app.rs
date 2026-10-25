@@ -166,7 +166,7 @@ pub struct App {
     problems: crate::problems::Problems,
     /// The window's height as of the last frame — what a page key in the help pane scrolls by.
     help_height: usize,
-    /// The name an imported workbook goes by until `:w NAME` saves it (`crate::import`). While
+    /// The name an imported workbook goes by until `:w NAME` saves it. While
     /// set the document is unsaved, whatever the undo stack says — an import clears it.
     imported: Option<String>,
     quit: bool,
@@ -250,7 +250,7 @@ impl App {
 
     /// Start as an imported workbook: named after it, unsaved, with no path to write to, and
     /// the report's sentence on the status bar.
-    pub fn imported(mut self, imported: Option<crate::import::Imported>) -> Self {
+    pub fn imported(mut self, imported: Option<grind_open::Imported>) -> Self {
         if let Some(imported) = imported {
             let short = Path::new(&imported.name)
                 .file_name()
@@ -3549,8 +3549,10 @@ mod tests {
     /// the file it would take instead of guessing.
     #[test]
     fn an_imported_workbook_is_unsaved_and_has_nowhere_to_write_yet() {
-        let mut app = app().imported(Some(crate::import::Imported {
+        let mut app = app().imported(Some(grind_open::Imported {
+            kind: grind_core::DocumentKind::Spreadsheet,
             name: "/tmp/budget.fods".into(),
+            odf: Vec::new(),
             summary: "Imported from Excel: 1 sheet, 3 cells; nothing was lost.".into(),
         }));
         assert!(app.status.contains(":w budget.fods"), "{}", app.status);

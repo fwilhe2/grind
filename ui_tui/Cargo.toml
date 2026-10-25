@@ -14,19 +14,17 @@ repository.workspace = true
 name = "grind-tui"
 path = "src/main.rs"
 
-# The Excel import filter (`doc/xlsx-import.md`, X6): on by default, as in `grind-cli`.
+# The import filters: on by default, as in `grind-cli`.
 [features]
 default = ["xlsx", "docx", "pdf"]
-xlsx = ["dep:grind-xlsx"]
-# The Word import filter (`doc/docx-import.md`, DX6), likewise.
-docx = ["dep:grind-docx"]
+xlsx = ["grind-open/xlsx"]
+docx = ["grind-open/docx"]
 # `:pdf` and `:pages` (doc/pdf-export.md). Optional because it is where the font stack lives:
 # off, the terminal is the font-free shell doc/text-layout.md promised it could be.
 pdf = ["dep:grind-print"]
 
 [dependencies]
-grind-xlsx = { path = "../xlsx", optional = true }
-grind-docx = { path = "../docx", optional = true }
+grind-open = { path = "../open", default-features = false }
 grind-print = { path = "../print", optional = true }
 # One binary, both document types: `grind_core::kind` decides which shell runs (R10).
 grind-core = { path = "../core" }

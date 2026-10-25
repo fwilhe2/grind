@@ -1368,12 +1368,11 @@ name = "grind-tui"
 version = "0.0.0"
 dependencies = [
  "grind-core",
- "grind-docx",
+ "grind-open",
  "grind-print",
  "grind-sheet",
  "grind-spell",
  "grind-text",
- "grind-xlsx",
  "ratatui",
  "unicode-width 0.2.2",
 ]
