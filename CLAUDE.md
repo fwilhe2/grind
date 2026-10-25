@@ -225,6 +225,7 @@ nothing that opens a document depends on `grind-build`** (`build/tests/manifest.
 | `grind-ooxml` | `ooxml/` | The OOXML container layer both import filters share |
 | `grind-xlsx` | `xlsx/` | Excel import |
 | `grind-docx` | `docx/` | Word import; writes flat ODF and lets `grind-text` read it |
+| `grind-open` | `open/` | What opening a file means in every shell: ODF as it is, anything else imported |
 | `grind-print` | `print/` | PDF export and print preview; the only crate with a font stack |
 | `grind-spell` | `spell/` | Hunspell dictionaries and the speller |
 | `grind-lsp` | `lsp/` | The language server (`grind lsp`) |
