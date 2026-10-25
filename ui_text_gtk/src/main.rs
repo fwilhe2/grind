@@ -788,9 +788,9 @@ impl Ui {
     }
 
     fn load(self: &Rc<Self>, path: &Path) {
-        // An ODF document is a load, not an edit. A markdown file is imported as an unsaved
-        // document, so it is the one open that *should* leave the window dirty.
-        let imported = std::fs::read(path).is_ok_and(|bytes| is_import(path, &bytes));
+        // An ODF document is a load, not an edit. Anything else is imported as an unsaved
+        // document, the one open that *should* leave the window dirty.
+        let imported = std::fs::read(path).is_ok_and(|bytes| kind(&bytes).is_none());
         self.loading.set(!imported);
         match open_path(&self.app, path) {
             Ok(summary) => {
@@ -1872,45 +1872,28 @@ fn remember_recent(path: &Path) {
     gtk::RecentManager::default().add_item(&gio::File::for_path(path).uri());
 }
 
-/// Read `path` into `app`. `Ok(Some(summary))` for a markdown or Word file, imported as a new,
-/// unsaved document under an ODF name — no path for Save to write back over — with the notice
-/// every shell shows. `Ok(None)` for an ODF document, which keeps its path.
+/// Read `path` into `app`. `Ok(Some(summary))` for a file imported as a new, unsaved document
+/// under an ODF name — no path for Save to write back over — with the notice every shell shows.
+/// `Ok(None)` for an ODF document, which keeps its path.
 fn open_path(app: &App, path: &Path) -> Result<Option<String>, String> {
     let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
-    // A Word document is imported like a markdown file, so Save cannot write ODF over the `.docx`.
-    #[cfg(feature = "docx")]
-    if grind_docx::sniff(&bytes) {
-        let (odf, report) = grind_docx::open(&bytes).map_err(|error| error.to_string())?;
-        let name = grind_docx::suggested_name(&path.display().to_string());
-        app.open_bytes(&name, &odf)
-            .map_err(|error| error.to_string())?;
-        return Ok(Some(report.summary()));
-    }
-    if kind(&bytes).is_none()
-        && let Some(opened) = grind_text::commonmark::open(
-            &path.display().to_string(),
-            &bytes,
-            &grind_text::commonmark::beside(path),
-        )
+    if grind_open::kind(&path.display().to_string(), &bytes)
+        .is_some_and(|found| found != DocumentKind::Text)
     {
-        let opened = opened?;
-        app.open_bytes(&opened.name, &opened.odf)
-            .map_err(|error| error.to_string())?;
-        return Ok(Some(opened.summary));
+        return Err("not a text document".to_owned());
     }
-    app.open_bytes(&path.display().to_string(), &bytes)
-        .map_err(|error| error.to_string())?;
-    Ok(None)
-}
-
-/// Whether opening `path` is an import — a new, unsaved document — rather than a load: a
-/// markdown file, or a Word document.
-fn is_import(path: &Path, bytes: &[u8]) -> bool {
-    #[cfg(feature = "docx")]
-    if grind_docx::sniff(bytes) {
-        return true;
+    match grind_open::import_file(path, &bytes).transpose()? {
+        Some(imported) => {
+            app.open_bytes(&imported.name, &imported.odf)
+                .map_err(|error| error.to_string())?;
+            Ok(Some(imported.summary))
+        }
+        None => {
+            app.open_bytes(&path.display().to_string(), &bytes)
+                .map_err(|error| error.to_string())?;
+            Ok(None)
+        }
     }
-    kind(bytes).is_none() && grind_text::commonmark::is_markdown_name(&path.display().to_string())
 }
 
 fn document_name(path: Option<&Path>) -> String {
@@ -1920,26 +1903,12 @@ fn document_name(path: Option<&Path>) -> String {
     )
 }
 
-/// Whether a file is a spreadsheet, from its bytes (`grind_core::kind`). An Excel workbook is one
-/// too, as `grind-sheet-gtk` imports it, and so is a CSV or TSV — known by name only once the
-/// bytes say they are neither ODF nor a workbook, since plain text has no signature. The extension
-/// list restates `grind_sheet::csv::is_delimited_name`, since this crate must not depend on
-/// `grind-sheet`.
+/// Whether a file is the spreadsheet window's: an ODF spreadsheet, or a workbook or CSV that it
+/// imports.
 fn is_spreadsheet(path: &Path) -> bool {
-    let Ok(bytes) = std::fs::read(path) else {
-        return false;
-    };
-    #[cfg(feature = "xlsx")]
-    if grind_xlsx::sniff(&bytes) {
-        return true;
-    }
-    match kind(&bytes) {
-        Some(found) => found == DocumentKind::Spreadsheet,
-        None => path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| ["csv", "tsv", "tab"].contains(&ext.to_ascii_lowercase().as_str())),
-    }
+    std::fs::read(path).is_ok_and(|bytes| {
+        grind_open::kind(&path.display().to_string(), &bytes) == Some(DocumentKind::Spreadsheet)
+    })
 }
 
 fn describe_kind(kind: &BlockKind, style: Option<&str>) -> String {

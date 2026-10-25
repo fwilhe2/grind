@@ -1354,11 +1354,10 @@ version = "0.0.0"
 dependencies = [
  "async-channel",
  "grind-core",
- "grind-docx",
+ "grind-open",
  "grind-print",
  "grind-spell",
  "grind-text",
- "grind-xlsx",
  "gtk4",
  "libadwaita",
 ]
