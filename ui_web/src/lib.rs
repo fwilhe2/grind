@@ -26,6 +26,7 @@ pub mod command;
 pub mod ink;
 pub mod palette;
 pub mod problems;
+mod recent;
 pub mod sheet;
 pub mod spelling;
 pub mod swatch;
@@ -225,6 +226,9 @@ struct Chrome {
     /// The welcome pane — a fifth, and the one shown when there is **no** document: three
     /// choices, and the page's whole content until one of them is made.
     welcome_pane: HtmlElement,
+    /// The welcome pane's recent documents (`recent`), and the list they are drawn into.
+    welcome_recent: HtmlElement,
+    welcome_recent_list: HtmlElement,
     /// The status bar's own line. Written straight to only on the welcome pane, which has no
     /// `Ui` to hold a message and repaint it; both document panes write theirs in their render.
     message: HtmlElement,
@@ -243,6 +247,8 @@ impl Chrome {
             code_pane: element(document, "code")?,
             problems_pane: element(document, "problems")?,
             welcome_pane: element(document, "welcome")?,
+            welcome_recent: element(document, "welcome-recent")?,
+            welcome_recent_list: element(document, "welcome-recent-list")?,
             preview_pane: element(document, "preview")?,
             preview_title: element(document, "preview-title")?,
             preview_pages: element(document, "preview-pages")?,
@@ -411,6 +417,9 @@ impl Shell {
         self.dom.code_pane.set_hidden(!code || welcome);
         self.dom.problems_pane.set_hidden(!problems || welcome);
         self.dom.welcome_pane.set_hidden(!welcome);
+        if welcome {
+            self.fill_recent()?;
+        }
         self.dom.formula_bar.set_hidden(!sheet);
         self.dom.tabs.set_hidden(!sheet);
         self.dom.sheet_add.set_hidden(!sheet);
@@ -466,6 +475,8 @@ impl Shell {
                 }
             }
         }
+        let welcome = self.mode.get() == Mode::Welcome;
+        entries.extend(recent::entries(query, &recent::names(), welcome));
         // The personal dictionary's words, once the query reaches for them (`spelling::forget`).
         entries.extend(
             spelling::forget(query, &spelling::words())
@@ -519,6 +530,21 @@ impl Shell {
                 let _ = self.show(Mode::Welcome);
             }
             "doc.save" => self.save(),
+            "doc.forget-recent" => {
+                recent::forget();
+                let _ = self.fill_recent();
+                self.set_message("Forgot the recent documents".to_owned());
+            }
+            id if id.starts_with("doc.recent:") => {
+                match id["doc.recent:".len()..]
+                    .parse()
+                    .ok()
+                    .and_then(recent::bytes)
+                {
+                    Some((name, bytes)) => self.open(name, &bytes),
+                    None => self.set_message("That document is no longer kept".to_owned()),
+                }
+            }
             "doc.about" => {
                 if let Err(error) = self.about() {
                     self.set_message(format!("Could not show About: {error:?}"));
@@ -1191,6 +1217,7 @@ impl Shell {
         };
         match opened {
             Ok(mode) => {
+                recent::note(&name, bytes);
                 *self.name.borrow_mut() = name.clone();
                 // A document arriving closes the code view: what is on screen is a projection of
                 // the document that just went away.
@@ -1228,7 +1255,10 @@ impl Shell {
             Err(error) => return self.set_message(error),
         };
         match self.download(&name, &bytes) {
-            Ok(()) => self.set_message(format!("Saved {name} to your downloads")),
+            Ok(()) => {
+                recent::note(&name, &bytes);
+                self.set_message(format!("Saved {name} to your downloads"))
+            }
             Err(_) => self.set_message(format!("The browser refused to download {name}")),
         }
     }
@@ -1251,6 +1281,24 @@ impl Shell {
 
         // The blob would otherwise be held until the tab closes.
         web_sys::Url::revoke_object_url(&url)
+    }
+
+    /// One button a recent document on the welcome pane, each running `doc.recent:<n>`.
+    fn fill_recent(&self) -> Result<(), JsValue> {
+        let names = recent::names();
+        self.dom.welcome_recent.set_hidden(names.is_empty());
+        self.dom.welcome_recent_list.set_inner_html("");
+        for (n, name) in names.iter().enumerate() {
+            let button: HtmlButtonElement =
+                self.dom.document.create_element("button")?.dyn_into()?;
+            button.set_type("button");
+            button.set_text_content(Some(name));
+            button
+                .dataset()
+                .set("command", &format!("doc.recent:{n}"))?;
+            self.dom.welcome_recent_list.append_child(&button)?;
+        }
+        Ok(())
     }
 
     fn document_name(&self) -> String {
@@ -1548,6 +1596,22 @@ fn wire_toolbar(shell: &Rc<Shell>) -> Result<(), JsValue> {
             let _ = shell.show(shell.mode.get());
         })?;
     }
+
+    // The recent documents are made on every visit to the welcome pane, so their list listens
+    // for them.
+    let list = shell.dom.welcome_recent_list.clone();
+    let on_list = shell.clone();
+    listen(&list, "click", move |event: Event| {
+        let command = event
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+            .and_then(|t| t.closest("button").ok().flatten())
+            .and_then(|t| t.dyn_into::<HtmlElement>().ok())
+            .and_then(|button| button.dataset().get("command"));
+        if let Some(command) = command {
+            on_list.run(&command);
+        }
+    })?;
 
     // The palette's own button is not a command: it opens the list of them.
     Ok(())

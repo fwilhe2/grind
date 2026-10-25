@@ -1483,6 +1483,39 @@ input[type="text"] {
   font-size: 13px;
 }
 
+.welcome-recent {
+  margin-top: 1.5rem;
+  text-align: left;
+}
+
+.welcome-recent-title {
+  margin: 0 0 0.5rem;
+  font-size: 13px;
+  font-weight: 600;
+  color: color-mix(in srgb, CanvasText 60%, Canvas);
+}
+
+.welcome-recent-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.welcome-recent-list button {
+  padding: 0.4rem 1rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: default;
+}
+
+.welcome-recent-list button:hover {
+  background: var(--hover);
+}
+
 .welcome-hint {
   margin: 2rem 0 0;
   color: color-mix(in srgb, CanvasText 45%, Canvas);

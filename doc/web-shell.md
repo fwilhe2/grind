@@ -177,11 +177,13 @@ between two characters is lost (`ponytail` in `ui_web/src/text/mod.rs`). The col
 and never a limit, so a colour a *file* already had is drawn as it is and only a *new* colour
 is restricted to the table.
 
-**The welcome pane has no recent-documents list, and cannot have the usual one.** A page is
-handed a `File` by a picker and never a path, so there is nothing to remember that could be
-re-opened — the File System Access API's handles are the browser feature that would change that,
-and they are neither universal nor free (a stored handle needs permission again on the next
-visit). What this shell has instead is `?doc=<url>`, which is a link and therefore a bookmark.
+**The welcome pane's recent documents are copies, not paths.** A page is handed a `File` by a
+picker and never a path, so there is nothing to re-open the usual way — the File System Access
+API's handles would change that, and they are neither universal nor free (a stored handle needs
+permission again on the next visit). So `ui_web/src/recent.rs` keeps the bytes: the four documents
+last opened or saved, each up to 768 KiB, base64 in `localStorage`, listed on the welcome pane and
+in the palette (*Open …*, and *Forget the recent documents*). Opening one opens the copy as it was
+then, not the file on disk. `?doc=<url>` remains the link form, and therefore the bookmark.
 **Starting a new document replaces the one that pane is holding**, in the same tab, and asks
 first when there is anything to lose — `window.confirm`, over the same `can_undo` approximation
 `beforeunload` already uses, and asked of the pane being *replaced* rather than the one on

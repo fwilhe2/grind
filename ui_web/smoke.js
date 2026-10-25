@@ -1056,6 +1056,17 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   await command("Welcome screen");
   check("the welcome pane is reachable again", byId("welcome").hidden, false);
   check("with the document pane away", byId("page").hidden, true);
+  // The documents opened here are kept in the browser, newest first, each a button.
+  const recent = () => [...document.querySelectorAll("#welcome-recent-list button")].map((b) => b.textContent);
+  check("it lists the recent documents", recent()[0], "misspelt.fods");
+  check("under its heading", byId("welcome-recent").hidden, false);
+  document.querySelector("#welcome-recent-list button").click();
+  await settle();
+  check("and a recent one opens from its copy", byId("surface").hidden, false);
+  check("under its own name", byId("name").textContent, "misspelt.fods");
+  await command("Forget the recent documents");
+  await command("Welcome screen");
+  check("forgetting empties the list", byId("welcome-recent").hidden, true);
 
   // The print module (doc/pdf-export.md): the page loads it on first use and hands it the
   // document as flat ODF bytes and the fonts it fetched, so that is exactly what is done here —
