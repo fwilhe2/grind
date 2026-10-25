@@ -51,7 +51,29 @@ const APPS: [App; 2] = [
     },
     App {
         name: "text",
-        core: &[("text/src/lib.rs", include_str!("../../text/src/lib.rs"))],
+        core: &[
+            ("text/src/lib.rs", include_str!("../../text/src/lib.rs")),
+            (
+                "text/src/app/formatting.rs",
+                include_str!("../../text/src/app/formatting.rs"),
+            ),
+            (
+                "text/src/app/layout.rs",
+                include_str!("../../text/src/app/layout.rs"),
+            ),
+            (
+                "text/src/app/spelling.rs",
+                include_str!("../../text/src/app/spelling.rs"),
+            ),
+            (
+                "text/src/app/structure.rs",
+                include_str!("../../text/src/app/structure.rs"),
+            ),
+            (
+                "text/src/app/styles.rs",
+                include_str!("../../text/src/app/styles.rs"),
+            ),
+        ],
         parity: include_str!("../../doc/cli-parity-text.md"),
         parity_path: "doc/cli-parity-text.md",
         least: 12,

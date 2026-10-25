@@ -12,8 +12,8 @@ SPDX-License-Identifier: CC-BY-4.0
 
 This file is that rule made mechanical, **for the word processor**. Every public method of
 `grind_text::App` appears below exactly once, with the command that reaches it or the reason it
-is not reachable. `cli/tests/parity.rs` reads `text/src/lib.rs` and this file and fails the
-build when they disagree.
+is not reachable. `cli/tests/parity.rs` reads `text/src/lib.rs` and `text/src/app/` and this
+file, and fails the build when they disagree.
 
 One of these per application, never a second section in the spreadsheet's: two apps sharing one
 document would pass every check while covering half as much, and `parity.rs` asserts the

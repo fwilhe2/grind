@@ -13,7 +13,7 @@ SPDX-License-Identifier: CC-BY-4.0
 > — `doc/suite.md`
 
 Rule 4 is checked mechanically, and only down one column: `cli/tests/parity.rs` reads
-`sheet/src/lib.rs` and `text/src/lib.rs` against `doc/cli-parity-sheet.md` and
+each `App`'s methods (`sheet/src/`, `text/src/`) against `doc/cli-parity-sheet.md` and
 `doc/cli-parity-text.md`, so **the CLI's column cannot silently lose a row**. Nothing checks the
 other six. Each shell names its own gaps in its own document, which is the right place for the
 *reason* — and it is the wrong place to see that `grind-win32` cannot bold a cell while
@@ -657,7 +657,7 @@ The tables were read out of the code, not out of the shell documents, in this or
 
 ```sh
 # 1. What each application can do at all — the two authorities on the rows.
-grep -oE "^\s*pub fn [a-z_0-9]+" sheet/src/lib.rs text/src/lib.rs
+grep -oE "^\s*pub fn [a-z_0-9]+" sheet/src/lib.rs sheet/src/app/*.rs text/src/lib.rs text/src/app/*.rs
 
 # 2. What each client reaches. Every shell has one table of verbs, and this is where it is:
 sed -n '/pub const SHEET/,/^];/p' ui_web/src/command.rs   # and TEXT, below it
