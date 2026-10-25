@@ -1277,6 +1277,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "grind-open"
+version = "0.0.0"
+dependencies = [
+ "grind-core",
+ "grind-docx",
+ "grind-sheet",
+ "grind-text",
+ "grind-xlsx",
+]
+
+[[package]]
 name = "grind-print"
 version = "0.0.0"
 dependencies = [

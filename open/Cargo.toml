@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-open"
+version = "0.0.0"
+description = "What opening a file means in every shell: ODF read as it is, anything else imported to flat ODF"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["xlsx", "docx"]
+xlsx = ["dep:grind-xlsx"]
+docx = ["dep:grind-docx"]
+
+[dependencies]
+grind-core = { path = "../core" }
+grind-sheet = { path = "../sheet" }
+grind-text = { path = "../text" }
+grind-xlsx = { path = "../xlsx", optional = true }
+grind-docx = { path = "../docx", optional = true }
