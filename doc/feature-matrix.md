@@ -66,7 +66,7 @@ numbered, under each table, so they cannot collide with the lettered ones.
 | Code view — the projection, read-only (D9) | ● | ● | ● | ● | ● | ● | ● |
 | Check Document — `lint` findings, each a jump (D6) | ● | ● | ● | ● | ● | ● | ● ³ |
 | Go to an address | ● | ● | ● | ● | ● | ● | ● ⁴ |
-| Key list / help | ● | ● | ● | ● | ◐ ᵈ | ● | ● ⁵ |
+| Key list / help | ● | ● | ● | ● | ● ᵈ | ● | ● ⁵ |
 | About / build stamp | ● | ● | ● | ● ʰ | ● ʷᵃ | ● | ● ⁶ |
 | Recent files | — | ● | ● | ● ᵗʳ | ● ʷᶜ | ● ʷʳ | ● |
 | Opening the *other* document kind | ● ᵉ | ● ᶠ | ● ᵉ | ● | ● | ● | ● |
@@ -83,7 +83,7 @@ type each (`doc/suite.md`), so the row means nothing there; `grind-tui` has no "
 ᵇ Only with `--session`, which carries `grind_sheet::Action` between invocations.
 ᶜ **Named**: `grind_text::Action` is not serialisable, so there is no text session
 (`doc/cli-parity-text.md`, "History"). Every shell can undo a text edit in process.
-ᵈ The palette shows each verb's key beside it; there is no shortcuts window.
+ᵈ The palette shows each verb's key beside it, and *Keyboard shortcuts* (F1) lists the showing pane's moves and every row's key in a dialog (2026-10-25).
 ᵉ The four clients marked plainly ● simply open it — one binary, both kinds. The CLI routes on
 `grind_core::kind` at the suite level (`info`, `lint`, `convert`); `grind-text-gtk` cannot open
 one and says so, raising a banner — *"This is a spreadsheet"* + **Open in Sheet**, which launches

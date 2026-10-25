@@ -24,6 +24,7 @@ pub mod about;
 pub mod code;
 pub mod command;
 pub mod ink;
+mod keys;
 pub mod palette;
 pub mod problems;
 mod recent;
@@ -548,6 +549,11 @@ impl Shell {
                     None => self.set_message("That document is no longer kept".to_owned()),
                 }
             }
+            "doc.keys" => {
+                if let Err(error) = self.shortcuts() {
+                    self.set_message(format!("Could not show the shortcuts: {error:?}"));
+                }
+            }
             "doc.about" => {
                 if let Err(error) = self.about() {
                     self.set_message(format!("Could not show About: {error:?}"));
@@ -610,6 +616,17 @@ impl Shell {
 
     /// The version, the commit, and every third-party component's licence (`about.rs`) —
     /// `grind_core::build_info` and `grind_core::third_party`. Filled the first time it opens.
+    /// The showing pane's keys, made each time: the two panes answer different ones.
+    fn shortcuts(&self) -> Result<(), JsValue> {
+        let dialog: web_sys::HtmlDialogElement = element(&self.dom.document, "keys")?;
+        let html = match self.mode.get() {
+            Mode::Text => keys::html(command::TEXT, false),
+            _ => keys::html(command::SHEET, true),
+        };
+        dialog.set_inner_html(&html);
+        dialog.show_modal()
+    }
+
     fn about(&self) -> Result<(), JsValue> {
         let dialog: web_sys::HtmlDialogElement = element(&self.dom.document, "about")?;
         if dialog.child_element_count() == 0 {
@@ -1649,6 +1666,11 @@ fn wire_palette(shell: &Rc<Shell>) -> Result<(), JsValue> {
                 event.prevent_default();
                 event.stop_propagation();
                 keys.open_palette();
+            }
+            "F1" if matches!(keys.mode.get(), Mode::Sheet | Mode::Text) => {
+                event.prevent_default();
+                event.stop_propagation();
+                keys.run("doc.keys");
             }
             "k" | "K" if primary => {
                 event.prevent_default();

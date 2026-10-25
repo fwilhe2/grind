@@ -64,6 +64,7 @@ pub const SHEET: &[Command] = &[
     // screen.
     cmd("doc.welcome", "Welcome screen", "Document", "", false),
     cmd("doc.save", "Save a copy", "Document", "Ctrl+S", true),
+    cmd("doc.keys", "Keyboard shortcuts", "Document", "F1", false),
     cmd("doc.about", "About this build", "Document", "", false),
     cmd("doc.undo", "Undo", "Document", "Ctrl+Z", false),
     cmd("doc.redo", "Redo", "Document", "Ctrl+Shift+Z", false),
@@ -483,6 +484,7 @@ pub const TEXT: &[Command] = &[
     cmd("doc.new-text", "New text document", "Document", "", false),
     cmd("doc.welcome", "Welcome screen", "Document", "", false),
     cmd("doc.save", "Save a copy", "Document", "Ctrl+S", true),
+    cmd("doc.keys", "Keyboard shortcuts", "Document", "F1", false),
     cmd("doc.about", "About this build", "Document", "", false),
     cmd("doc.undo", "Undo", "Document", "Ctrl+Z", false),
     cmd("doc.redo", "Redo", "Document", "Ctrl+Shift+Z", false),

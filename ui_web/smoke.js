@@ -645,6 +645,9 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("Rotate text up turns the cell's text", turned() && turned().getAttribute("style"), "transform:rotate(-90deg)");
   await command("No rotation");
   check("and No rotation sets it level", turned(), null);
+  // jsdom has no `showModal` here yet, so what is checked is what the dialog was filled with.
+  await command("Keyboard shortcuts");
+  check("the shortcut list names the grid's moves", byId("keys").textContent.includes("Ctrl+Arrows"), true);
   // A wrapped cell grows its row, and the row is given that height, so the rows counted onto the
   // surface are the rows drawn on it.
   await enter("a sentence long enough to need three lines in one column");

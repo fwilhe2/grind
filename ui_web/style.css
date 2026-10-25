@@ -1606,3 +1606,21 @@ input[type="text"] {
 .about-close {
   margin-top: 0.75rem;
 }
+
+/* The shortcut list (`ui_web/src/keys.rs`): the keys, then what they do. */
+.keys {
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+}
+
+.keys th {
+  padding: 0.2rem 1rem 0.2rem 0;
+  text-align: left;
+  font-weight: normal;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.keys td {
+  padding: 0.2rem 0;
+}
