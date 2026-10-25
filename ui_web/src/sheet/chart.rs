@@ -2,22 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A chart, as SVG.
+//! A chart, as SVG — drawn from [`grind_sheet::ChartData`] and [`grind_sheet::Chart`] like every
+//! other renderer, and scaled against [`grind_sheet::axis_ticks`] rather than the tallest bar, so
+//! a chart has the same axis everywhere.
 //!
-//! The third renderer of `doc/chart-format.md`'s three shapes, after the GTK shell's
-//! `snapshot()` and the writer's own `chart:` XML. It draws from
-//! [`grind_sheet::ChartData`] and [`grind_sheet::Chart`] exactly as the other two do, and —
-//! the part that matters — scales the plot against [`grind_sheet::axis_ticks`] rather than
-//! against the tallest bar, so a chart has the same axis in a browser as it has in a window.
-//! That function lives in the core for this reason (`doc/chart-format.md`, "Where the scale
-//! lives").
-//!
-//! SVG rather than a `<canvas>`: the marks are elements, so the browser's own zoom, text
-//! rendering, printing and copy-the-picture all work without this shell implementing any of
-//! them, and a colour the document chose is an attribute rather than a paint call.
-//!
-//! **Read-only, for now.** The GTK shell lets a click on a bar assign it a colour; here a
-//! chart is a picture. `doc/chart-format.md`'s shell section names that gap.
+//! SVG rather than `<canvas>`: the marks are elements, so the browser's zoom, text, printing and
+//! copy-the-picture work for free, and a document's colour is an attribute. A mark's colour cannot
+//! be changed here (`doc/chart-format.md`).
 
 use grind_sheet::{
     Chart, ChartAxis, ChartData, ChartKind, ChartLegend, axis_ticks, effective_color,
@@ -32,18 +23,12 @@ const TITLE_SPACE: f64 = 16.0;
 /// One line of tick text, and the gap between a tick label and the plot.
 const TICK_H: f64 = 12.0;
 const TICK_GAP: f64 = 4.0;
-/// How wide one character of tick text is taken to be.
-///
-/// Estimated rather than measured, unlike the GTK painter's Pango pass: nothing here
-/// hit-tests against the plot, so a gutter a few pixels out costs a few pixels of plot and
-/// nothing else. Measuring would mean laying the text out before deciding where to put it.
+/// How wide one character of tick text is taken to be — estimated, since nothing here hit-tests
+/// against the plot; a gutter a few pixels out costs a few pixels of plot.
 const TICK_CHAR_W: f64 = 6.2;
 
-/// The whole `<svg>` for one chart, as a string of markup.
-///
-/// A string rather than a tree of `createElementNS` calls: an SVG is written once per repaint
-/// and never edited in place, `innerHTML` is one call to the same parser the page itself came
-/// from, and every value that reaches it here is a number or a colour this build produced.
+/// The whole `<svg>` for one chart, as markup: written once per repaint and never edited, and
+/// every value reaching it is a number or a colour produced here.
 pub fn svg(chart: &Chart, data: &ChartData, w: f64, h: f64) -> String {
     let mut out = format!(
         "<svg viewBox=\"0 0 {w:.1} {h:.1}\" preserveAspectRatio=\"none\" \

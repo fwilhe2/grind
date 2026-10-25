@@ -2,20 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What a keystroke means, as a pure function — the same shape as
-//! `ui_sheet_gtk/src/keymap.rs` and `ui_tui/src/keymap.rs`, and for the same reason: this
-//! is the part everyone has an opinion about and nobody needs a browser to check.
+//! What a keystroke means, as a pure function, testable without a browser. A browser key arrives
+//! as a string (`"a"`, `"ArrowLeft"`, `"F2"`), so [`Chord`] is the event's own vocabulary, with ⌘
+//! on macOS and Ctrl elsewhere already folded into one `primary` flag by the caller.
 //!
-//! A browser key arrives as a *string* (`"a"`, `"ArrowLeft"`, `"F2"`), so there is no
-//! keyval table to translate — [`Chord`] is the event's own vocabulary with the
-//! platform question already answered: ⌘ on macOS and Ctrl everywhere else are one
-//! `primary` flag, resolved by the caller, so this file never asks what it is
-//! running on.
-//!
-//! The two-mode split `ui_sheet_gtk/src/state.rs` documents (Enter vs Edit) is *not* here.
-//! This shell edits in one place, the formula bar, and an arrow key there moves the
-//! text caret — the browser's own behaviour, which is the right one for an `<input>`
-//! and is why editing claims only the three keys that end an edit.
+//! There is no Enter/Edit mode split: this shell edits in one place, the formula bar, where an
+//! arrow moves the text caret as an `<input>`'s should, and editing claims only the keys that end
+//! an edit.
 
 use grind_sheet::Pos;
 
@@ -65,8 +58,8 @@ pub enum Action {
         motion: Motion,
         extend: bool,
     },
-    /// Start editing. `Some(c)` is a printable key, which replaces the cell and is
-    /// its first character; `None` is F2, which keeps what the cell holds.
+    /// Start editing: `Some(c)` is a printable key that replaces the cell, `None` is F2, keeping
+    /// it.
     Begin(Option<char>),
     /// Store what is being edited, then move — Enter and Tab.
     Commit(Option<Dir>),
@@ -202,9 +195,7 @@ fn step(from: Pos, dir: Dir, by: u32) -> Pos {
     }
 }
 
-/// Where the cursor goes after a commit — `ui_sheet_gtk`'s `state::after_commit` without
-/// the tab-column memory, which needs a run of Tabs to be worth anything and is one
-/// more thing to keep in step across three shells.
+/// Where the cursor goes after a commit — without the GTK window's tab-column memory.
 pub fn after_commit(from: Pos, direction: Option<Dir>) -> Pos {
     match direction {
         Some(dir) => step(from, dir, 1),

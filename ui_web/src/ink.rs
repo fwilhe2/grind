@@ -2,23 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A document's own colours, made to read on whichever page the browser is painting.
+//! A document's own colours, made to read on whichever page the browser paints. The stylesheet
+//! follows the reader's light or dark setting (`Canvas`/`CanvasText`), and a colour the document
+//! chose is inline and outranks it — so on a dark page a navy word vanished and a silver-filled
+//! heading row kept white text. The rule is every window's, over [`grind_core::color`]; nothing it
+//! decides is written.
 //!
-//! The stylesheet follows the reader's light or dark setting through `Canvas`/`CanvasText`, and
-//! a colour the *document* chose is written inline and outranks it — which is right on white
-//! paper and was two bugs on a dark page, the same two `ui_sheet_gtk`'s `theme::ink` was written
-//! to answer: a navy word vanished into the dark ground, and a heading row the document filled
-//! silver kept the dark theme's white text across it.
-//!
-//! The rule is that one, over the same arithmetic ([`grind_core::color`]), so every window in the
-//! suite draws a document's colours the same way. Nothing it decides is written.
-//!
-//! - **No colour of its own, no fill**: say nothing, and the page's own ink applies.
-//! - **No colour of its own, on a fill of its own**: ODF's *automatic* colour — the page's ink
-//!   where it reads on that fill, black or white where it does not.
-//! - **A colour of its own on the page, when the page is dark**: lifted along its own hue until
-//!   it reads ([`grind_core::color::legible`]).
-//! - **Anything else** is the document's decision about its own paper, and is drawn as it is.
+//! - **No colour, no fill**: say nothing; the page's ink applies.
+//! - **No colour, on a fill**: ODF's automatic colour — the page's ink where it reads on the fill,
+//!   black or white where not.
+//! - **A colour on the page, when it is dark**: lifted along its hue until it reads
+//!   ([`grind_core::color::legible`]).
+//! - **Anything else** is the document's decision about its own paper.
 
 use grind_core::color::{self, Rgb};
 

@@ -2,20 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The word processor half of the browser shell — phase 10's S10.
+//! The word processor half of the browser shell. **The DOM is a renderer, not the document**: no
+//! `contenteditable`, which would be a second copy of the text with its own paragraphs and undo
+//! stack. Every visible line is rebuilt from [`App::get_viewport`] and [`App::layout_block`] each
+//! repaint.
 //!
-//! The same rule the grid follows: **the DOM is a renderer, not the document.** No
-//! `contenteditable` anywhere. Every visible line is rebuilt from [`App::get_viewport`] and
-//! [`App::layout_block`] on each repaint and thrown away, so the page cannot become a second
-//! copy of the text — which is exactly what `contenteditable` would make it, with its own
-//! idea of what a paragraph is and its own undo stack (doc/plan.md rule 1).
-//!
-//! **One `<div>` per laid-out line, not per paragraph.** The browser would happily wrap a
-//! paragraph itself, and then its line breaks and the core's would disagree — Down-arrow
-//! would land somewhere other than where the caret appears to be. So the core breaks the
-//! lines, in *this* shell's units, and the page draws exactly what it was told
-//! (`doc/text-layout.md`, Path C). `Face` below is the whole of what the browser
-//! contributes: how wide is this text, in CSS pixels.
+//! **One `<div>` per laid-out line, not per paragraph**: a browser wrapping a paragraph itself
+//! would break lines where the core does not, and Down-arrow would land elsewhere than the caret
+//! appears. The core breaks the lines in this shell's units (`doc/text-layout.md`); `Face` is the
+//! browser's whole contribution — how wide is this text, in CSS pixels.
 
 pub mod keymap;
 mod runs;
@@ -45,12 +40,9 @@ use crate::command::Entry;
 use crate::{element, listen, request_repaint, set_pressed, set_select, set_swatch};
 use keymap::{Action, Chord, Motion};
 
-/// The document's typeface, owned **here** rather than in the stylesheet.
-///
-/// Two declarations that must agree are two declarations that will not — the same trap
-/// `declare_cell_size` fixed for the grid. So the font is written into each block's inline
-/// style as it is rendered, and the canvas measures with the identical string. A serif at
-/// this size because this is a page of prose, not a user interface.
+/// The document's typeface, owned **here** rather than in the stylesheet, so it cannot disagree:
+/// written into each block's inline style and given to the canvas that measures. A serif, since
+/// this is a page of prose.
 const FAMILY: &str = "Georgia, 'Times New Roman', serif";
 /// What a fenced block and a `` `code` `` run are set in. A generic first, so the reader's own
 /// monospace face wins — which one that is, is theirs to know.
@@ -64,29 +56,21 @@ const GAP: f64 = 0.85;
 const HEADING_GAP: f64 = 1.4;
 const INDENT: f64 = 1.6;
 
-/// Where a paragraph wraps when the browser has not laid the page out yet.
-///
-/// jsdom reports every rectangle as zero (`ui_web/smoke.js`), and a width of zero means
-/// "do not wrap" to the core — one line per paragraph, which is a perfectly good answer for
-/// a headless test and a wrong one for a window that simply has not been measured yet.
+/// Where a paragraph wraps before the browser has laid the page out. jsdom reports every rectangle
+/// as zero, and a zero width means "do not wrap" to the core — right for a headless test, wrong
+/// for a window not yet measured.
 const UNMEASURED: f64 = 640.0;
 
-/// One block-level face: a font, its line height, and a canvas to measure with.
+/// One block-level face: a font, its line height, and a canvas to measure with, in **CSS pixels**.
 ///
-/// **The unit is the CSS pixel**, and the core neither knows nor converts — the terminal
-/// answers in cells and GTK in Pango units over the same trait.
-///
-/// ponytail: a character's advance is measured **once and cached**, so `advance("ab")` is
-/// `advance("a") + advance("b")` and kerning between two characters is lost. The trait's own
-/// documentation warns about exactly this. The correct alternative is measuring every prefix
-/// of every paragraph on every repaint, which is quadratic in the paragraph's length and
-/// shows up as latency while typing. It is invisible where it would matter most — the caret
-/// is an element *in* the line, so the browser places it against its own kerning, not against
-/// this measurement — and it costs at most a pixel or two in where a line breaks.
+/// ponytail: a character's advance is measured once and cached, so `advance("ab")` is
+/// `advance("a") + advance("b")` and kerning is lost. Measuring every prefix of every paragraph
+/// per repaint is quadratic and shows as typing latency; the caret is an element in the line,
+/// placed by the browser's own kerning, so this costs at most a pixel or two in where a line
+/// breaks.
 struct Face {
-    /// `None` where the page has no canvas at all — a headless run under jsdom, which is
-    /// where `ui_web/smoke.js` drives this shell. Everything still works there; the widths
-    /// are simply made up, and nothing in that test is about how wide a letter is.
+    /// `None` where the page has no canvas — headless under jsdom, where `ui_web/smoke.js` runs.
+    /// Everything still works; the widths are made up.
     ctx: Option<Rc<CanvasRenderingContext2d>>,
     font: String,
     size: f64,
@@ -216,13 +200,8 @@ impl Faces {
     }
 }
 
-/// The measure and the face of **every** block — `grind_text::Faces`, for the motions that may
-/// cross out of one block into another.
-///
-/// Down out of a heading lands in the paragraph below, which is set smaller; a list item's
-/// indent comes out of the column, so it is also narrower. Both of those are this shell's own
-/// arithmetic, and handing the core one width and one face for a whole motion is what used to
-/// make Down-arrow out of a heading land a few characters from where a click would have.
+/// The measure and face of every block — `grind_text::Faces`, for motions crossing between blocks:
+/// a heading is set larger than the paragraph below it, and a list item's indent narrows it.
 struct Column<'a> {
     faces: &'a Faces,
     /// The flow's width, in the same CSS pixels [`Face`] answers in.
@@ -292,19 +271,17 @@ pub struct Ui {
     /// Whether the bookmark anchors are drawn — `doc/view-modes.md` §3.6. Presentation
     /// state: it is a reading of the document rather than a change to it.
     names: Cell<bool>,
-    /// Pictures already turned into a `data:` URL, by the block they are in.
+    /// Pictures already turned into a `data:` URL, by block.
     ///
-    /// ponytail: keyed by *index*, so an insertion above an image invalidates nothing and the
-    /// picture under the old index is drawn for one frame before the next repaint corrects it.
-    /// A `BlockId` would be exact; it is not on `RunView`, and the cost of being wrong is one
-    /// frame of the wrong picture in a document with two images in it.
+    /// ponytail: keyed by index, so an insertion above an image draws the old index's picture for
+    /// one frame. A `BlockId` would be exact, but is not on `RunView`.
     images: RefCell<HashMap<usize, String>>,
     message: RefCell<String>,
     /// The picture the alt text dialog is open on — where `picture::set_alt` writes when it
     /// closes on Save. Kept rather than re-asked, since the caret is not the dialog's to move.
     alt_at: Cell<Option<Caret>>,
     /// The word the palette last found, which F3 and Shift+F3 step through and Replace offers
-    /// back — `sheet::Ui::needle`'s twin.
+    /// back.
     needle: RefCell<String>,
 }
 
@@ -314,12 +291,9 @@ impl Ui {
         app: Arc<App>,
         pending: Arc<AtomicBool>,
     ) -> Result<Rc<Self>, JsValue> {
-        // A canvas that is never added to the page: it exists to be asked how wide a string
-        // is, which is the one thing the DOM will not answer without laying it out first.
-        //
-        // Optional, and deliberately not an error: a page with no canvas is a page that
-        // still opens documents, and refusing to start over a measurement device would make
-        // the *whole* shell — the spreadsheet included — depend on one.
+        // A canvas never added to the page, there to be asked how wide a string is. Optional: a
+        // page with no canvas still opens documents, and refusing to start over it would take the
+        // spreadsheet down too.
         let ctx = document
             .create_element("canvas")
             .ok()
@@ -404,10 +378,9 @@ impl Ui {
     fn render(&self) -> Result<(), JsValue> {
         let caret = self.caret.get();
         let selection = self.selection();
-        // ponytail: the whole document is rendered, not the part on screen. A grid needs a
-        // viewport because a sheet has a million rows; a document has as many blocks as
-        // somebody typed, and windowing one costs a scroll-position-to-block map that only
-        // pays for itself on documents nobody has written yet. Named in `doc/text-shell.md`.
+        // ponytail: the whole document is rendered, not the part on screen. Windowing needs a
+        // scroll-position-to-block map that pays only on documents far longer than people write
+        // (`doc/text-shell.md`).
         let viewport = self.app.get_viewport(0..self.app.block_count());
         // The same lookup a click and a motion ask, so a cell's lines are drawn broken where
         // the caret will think they are.
@@ -491,11 +464,9 @@ impl Ui {
                     (&selection, &wrong),
                     here,
                 )?;
-                // `doc/view-modes.md` §3.6: a bookmark contributes no characters, so it is
-                // the one part of a text document a reader cannot see at all. With the mode
-                // on, each one is named on the line it falls on — after the text rather than
-                // inside it, because an offset inside the line is an offset the caret counts
-                // and a mark drawn there would move it.
+                // A bookmark contributes no characters (`doc/view-modes.md` §3.6), so with the
+                // mode on each is named after its line's text, not inside it, where it would be an
+                // offset the caret counts.
                 if self.names.get() {
                     for (at, name) in &block.marks {
                         if !(line.start..line.end.max(line.start + 1)).contains(at) {
@@ -576,11 +547,9 @@ impl Ui {
             })
         });
 
-        // `doc/view-modes.md` §3.6: a bookmark contributes no characters, so a tick at its
-        // own offset is the only way to say *exactly* where one is — the name at the end of
-        // the line (below) says only which line. `ui_text_gtk`'s `x_at` twin: a boundary
-        // between two pieces places it against its own kerning rather than in the middle of
-        // whichever run it falls in.
+        // A tick at a bookmark's own offset says exactly where it is; the name at the line's end
+        // says only which line. A boundary between two pieces places it against the browser's own
+        // kerning.
         let anchors_here: Vec<usize> = match self.names.get() {
             true => block
                 .marks
@@ -647,11 +616,9 @@ impl Ui {
         Ok(())
     }
 
-    /// A picture as a `data:` URL, encoded once and remembered.
-    ///
-    /// A `blob:` URL would avoid the base64 pass, and would then have to be revoked — a
-    /// lifetime this shell has nowhere to keep, since every frame throws the whole page away.
-    /// A `data:` URL is owned by the element that carries it.
+    /// A picture as a `data:` URL, encoded once and remembered. A `blob:` URL would skip the
+    /// base64 pass but must be revoked, a lifetime nothing here keeps when every frame discards
+    /// the page.
     fn image_url(&self, block: usize, image: &grind_text::ImageView) -> String {
         if let Some(url) = self.images.borrow().get(&block) {
             return url.clone();
@@ -661,11 +628,9 @@ impl Ui {
         url
     }
 
-    /// The status line, in words: what the caret is in and how long the document is —
-    /// `Heading 1 · 90 words · 1 min read`, `Body text · 90 words · 1 min read · 12 characters
-    /// selected`. It used to lead with the caret's address (`p1+0 · 90 words · 22 blocks`), which
-    /// is the palette's to take and now its tooltip; `ui_text_gtk`'s status bar made the same
-    /// change.
+    /// The status line, in words: what the caret is in and how long the document is — `Heading 1 ·
+    /// 90 words · 1 min read`, `… · 12 characters selected`. The caret's address is the palette's
+    /// tooltip.
     fn render_chrome(&self) {
         let caret = self.caret.get();
         let counts = self.app.counts();
@@ -833,12 +798,8 @@ impl Ui {
         }
     }
 
-    /// What the palette offers for a query that is not a verb: a heading to jump to, a
-    /// bookmark, or an address.
-    ///
-    /// **This is the outline dialog and the go-to field, in the box that was already there.**
-    /// `doc/text-shell.md` named both as the browser pane's next candidates; one palette
-    /// answers both without a second dialog to open, style and keep accessible.
+    /// What the palette offers for a query that is not a verb: a heading, a bookmark or an address
+    /// to jump to — the outline and the go-to field in one box.
     pub fn targets(&self, query: &str) -> Vec<Entry> {
         let mut out = self.spelling_entries(query);
         out.extend(self.heading_targets(query));
@@ -1201,9 +1162,7 @@ impl Ui {
     // --- tables ---
 
     /// *Insert a table…* — a size, then a table below the caret's block
-    /// (`grind_text::table::insert_below`, the one answer to where it goes). One prompt that
-    /// takes `3x4`, `3 4` or `3×4`: this page has no dialog surface, and two numbers are one
-    /// question.
+    /// (`grind_text::table::insert_below`). One prompt takes `3x4`, `3 4` or `3×4`.
     fn insert_table(&self) {
         let Some(window) = web_sys::window() else {
             return;
@@ -1231,10 +1190,9 @@ impl Ui {
 
     // --- bookmarks and named styles ---
 
-    /// *Bookmark this paragraph…* — a name, then `App::set_bookmark` at the caret's block. A
-    /// name already in use *moves* (the core's rule), so asking twice relocates rather than
-    /// duplicates. The overlay goes on, because a bookmark contributes no characters and would
-    /// otherwise leave nothing on the page to say it was made.
+    /// *Bookmark this paragraph…* — a name, then `App::set_bookmark` at the caret's block; a name
+    /// in use moves. The overlay goes on, since a bookmark contributes no characters and would
+    /// leave nothing to show it was made.
     fn bookmark(&self) {
         let Some(window) = web_sys::window() else {
             return;
@@ -1289,13 +1247,10 @@ impl Ui {
 
     // --- find and replace (`grind_text::find`) ---
 
-    /// What the palette offers *after* the verbs for a query: the paragraphs holding it.
-    ///
-    /// After, not before like [`Ui::targets`] — a word somebody types is far more often a verb
-    /// than a phrase of the text, and `bold` must still put *Bold* first. Two characters at
-    /// least, since one letter is in every paragraph. When there are more hits than fit, the
-    /// last row is all of them, stepped through with F3. The browser's own find would only see
-    /// what is on screen, which is why Ctrl+F opens this box.
+    /// What the palette offers *after* the verbs: the paragraphs holding the query — after, so
+    /// `bold` still puts *Bold* first. Two characters at least; past what fits, the last row is
+    /// all of them, stepped through with F3. Ctrl+F opens this box, since the browser's own find
+    /// sees only what is on screen.
     pub fn found(&self, query: &str) -> Vec<Entry> {
         const SHOWN: usize = 5;
         let query = query.trim();
@@ -1412,7 +1367,7 @@ impl Ui {
         }
     }
 
-    // --- the code view (doc/dsl.md §6, D9) ---
+    // --- the code view ---
 
     /// The document as its projection, for the code view.
     pub fn project(&self) -> grind_text::projection::Projection {
@@ -1425,16 +1380,13 @@ impl Ui {
         Some(grind_text::loc::format(self.caret.get().block))
     }
 
-    /// Put the caret in whatever block a code-view line projects.
-    ///
-    /// The span map may hand back `p12`, `#intro` or `§2.1.3`, and `loc::parse` takes all three,
-    /// so this needs no vocabulary of its own — which is `loc.rs` earning its keep for the third
-    /// time.
-    /// What the document says about itself (`doc/dsl.md` §4.3, D6).
+    /// What the document says about itself.
     pub fn lint(&self) -> grind_core::lint::Report {
         self.app.lint(&grind_core::lint::Options::default())
     }
 
+    /// Put the caret in whatever block a code-view line projects: `p12`, `#intro` or `§2.1.3`,
+    /// all of which `loc::parse` takes.
     pub fn select_projected(&self, address: &str) {
         let Ok(caret) = grind_text::loc::parse(address)
             .map_err(|e| e.to_string())
@@ -1470,10 +1422,9 @@ impl Ui {
         self.change_char(Change::toggle(emphasis, &self.style_here()));
     }
 
-    /// One control of the tool row over the selection — or, with nothing selected, held for
-    /// the next character typed at the caret, which is what Bold-then-type means in every word
-    /// processor (`grind_text::format::apply`). The pending style is the `resume`
-    /// [`App::type_markdown`] already carries, and moving the caret forgets it.
+    /// One tool-row control over the selection — or, with nothing selected, held for the next
+    /// character typed (`grind_text::format::apply`), as the `resume` [`App::type_markdown`]
+    /// carries; moving the caret forgets it.
     fn change_char(&self, change: Change) {
         let pending = self.resume.borrow().clone();
         let landed = format::apply(
@@ -1632,17 +1583,11 @@ impl Ui {
         self.app.get_viewport(index..index + 1).get(index).cloned()
     }
 
-    /// Scroll the least it takes to keep the caret on screen.
-    ///
-    /// Arithmetic rather than `scrollIntoView`, because the caret is only ever a *line* out of
-    /// view and the browser's own version jumps the page around — and because a headless run
-    /// reports every rectangle as zero, where this does nothing at all rather than throwing.
-    ///
-    /// The caret's place on the page is its client rectangle less the pane's, plus how far the
-    /// pane is already scrolled. It used to be `offsetTop`, which is measured from the nearest
-    /// *positioned* ancestor — a block (`.block` is `position: relative` for its bullet), not
-    /// the pane — so every caret sat a few pixels from "the top", and PageDown walked the caret
-    /// off the bottom of the screen with the page never following it.
+    /// Scroll the least it takes to keep the caret on screen. Arithmetic rather than
+    /// `scrollIntoView`, whose jumps are too big for a caret a line out of view and which a
+    /// headless run would make throw. The caret's place is its client rectangle less the pane's
+    /// plus the pane's scroll — not `offsetTop`, which counts from the nearest positioned
+    /// ancestor, a `.block`.
     fn follow_caret(&self) {
         let Some(caret) = self
             .dom
@@ -1679,25 +1624,17 @@ impl Ui {
         let Some(action) = keymap::action_for(&chord) else {
             return;
         };
-        // A key this shell claimed must not also do its default — Tab moves focus, Ctrl+S
-        // opens the browser's own save dialog, and Backspace used to go back a page.
+        // A key this shell claimed must not also do its default — Tab moves focus, Ctrl+S opens
+        // the browser's save dialog, Backspace can go back a page.
         event.prevent_default();
         if let Err(error) = self.apply(action) {
             web_sys::console::error_1(&error);
         }
     }
 
-    /// What a composition finally produced, typed as if it had been one keystroke.
-    ///
-    /// **The only path a dead key has into this document.** `` ` ``, `´`, `^` and `~` are dead
-    /// keys on German, French, Spanish and many other layouts, and while one is composing the
-    /// browser reports `key == "Dead"` and then `isComposing` — never the character. The
-    /// keymap refuses both (`keymap`'s module documentation) and the text arrives here
-    /// instead, which is why `` `code` `` can be typed on those keyboards at all.
-    ///
-    /// It goes through [`Ui::type_text`] rather than [`Ui::insert_plain`], so the notation
-    /// reads a composed backtick exactly as it reads one that came from a key — a composition
-    /// is a way of *typing* a character, not a different kind of character.
+    /// What a composition finally produced, typed as one keystroke — **the only way a dead key's
+    /// character gets in** (see `keymap`). Through [`Ui::type_text`], not [`Ui::insert_plain`], so
+    /// a composed backtick is read by the notation like any other.
     fn on_composed(&self, text: &str) {
         if text.is_empty() {
             return;
@@ -1853,15 +1790,10 @@ impl Ui {
 
     // --- editing ---
 
-    /// A typed character, read as **markdown-shaped notation** as it lands
-    /// (`grind_text::markdown`): `**bold**` becomes bold and its markers go, `` `code` ``
-    /// becomes monospace, `# ` makes the block a heading, ``` fences a code paragraph.
-    ///
-    /// The reading is `App::type_markdown`'s, so this pane, the terminal and the CLI agree
-    /// about what `**` means — and it is one action, so one Ctrl+Z takes back the whole of
-    /// `**bold**`. Pasting deliberately does *not* go through it ([`Ui::paste_text`]): text
-    /// arriving from a clipboard is text, and turning somebody's asterisks into formatting
-    /// they did not ask for is not a favour.
+    /// A typed character, read as markdown-shaped notation as it lands (`grind_text::markdown`):
+    /// `**bold**` becomes bold and its markers go, `` `code` `` monospace, `# ` makes a heading,
+    /// ``` fences a code paragraph. One `App::type_markdown` action, so one Ctrl+Z takes back
+    /// `**bold**`. Pasting does not go through it ([`Ui::paste_text`]): clipboard text is text.
     fn type_text(&self, text: &str) {
         // A document with no blocks at all has nowhere to put a character, and the first
         // thing anybody does with an empty page is type into it.
@@ -1950,11 +1882,8 @@ impl Ui {
         }
     }
 
-    /// Where a click landed. The line carries its own address, so the DOM answers the first
-    /// half and the core's layout answers the second.
-    ///
-    /// `extend` is Shift held, or the pointer still down from a press — the two ways every
-    /// editor grows a selection, and they end in the same place here.
+    /// Where a click landed: the line carries its address, and the core's layout answers the
+    /// offset. `extend` is Shift held, or the pointer still down from a press.
     fn on_click(&self, event: &MouseEvent, extend: bool) -> Result<(), JsValue> {
         let Some(caret) = self.caret_at(event)? else {
             return Ok(());
@@ -2046,11 +1975,8 @@ fn named_block(block: Option<&BlockView>) -> String {
     }
 }
 
-/// Bytes as base64, for a picture's `data:` URL.
-///
-/// Written out rather than pulled in: it is fifteen lines, the alternative is a dependency in
-/// a `wasm` bundle that every reader downloads, and `window.btoa` would need the bytes turned
-/// into a string of code points first — which is the same loop with an extra copy.
+/// Bytes as base64, for a picture's `data:` URL — fifteen lines rather than a dependency every
+/// reader downloads; `window.btoa` would need the bytes as code points first.
 fn base64(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
@@ -2113,10 +2039,8 @@ fn wire(ui: &Rc<Ui>) -> Result<(), JsValue> {
         keys.on_key(&event);
     })?;
 
-    // The other half of the keyboard. A composition — a dead key, and as much of an input
-    // method as a page with no `contenteditable` gets — produces its character here rather
-    // than in a `keydown`, and the keymap turns away every keystroke belonging to one so this
-    // is the only place it is typed.
+    // A composition — a dead key, the page's share of an input method — produces its character
+    // here, and the keymap refuses every keystroke belonging to one.
     let composed = ui.clone();
     listen(
         &ui.dom.pane,
@@ -2159,8 +2083,7 @@ fn wire(ui: &Rc<Ui>) -> Result<(), JsValue> {
         }
     })?;
 
-    // Dragging: every move with the button down extends the selection, which is the same
-    // "press, move, release" gesture `ui_text_gtk` gets from `GestureDrag`.
+    // Dragging: every move with the button down extends the selection.
     let drag = ui.clone();
     listen(&ui.dom.pane, "mousemove", move |event: MouseEvent| {
         if !drag.dragging.get() {

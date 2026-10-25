@@ -2,14 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The colour grid both panes pick from — one popover, moved under whichever button opened it.
-//!
-//! The colours are [`grind_core::style::PALETTE`], the core's own table, so a swatch here and
-//! `sheet style --color navy` on the CLI are the same attribute. A page could offer a native
-//! `<input type="color">` instead and hand back an arbitrary hex; that is a *different*
-//! product decision (`doc/sheet-shell.md`: a palette is a default a shell offers, never a
-//! limit) and this shell has not made it — what the grid cannot say, the document can still
-//! hold, and every colour a file already had is drawn as it is.
+//! The colour grid both panes pick from — one popover, moved under whichever button opened it. The
+//! colours are [`grind_core::style::PALETTE`], so a swatch here and `sheet style --color navy`
+//! write the same attribute. No `<input type="color">`: a palette is a default, never a limit, and
+//! every colour a file already has is drawn as it is.
 
 use std::cell::RefCell;
 

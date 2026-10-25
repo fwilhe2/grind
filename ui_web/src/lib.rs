@@ -2,35 +2,23 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `grind-web` — the browser shell, over **both** document types.
+//! `grind-web` — the browser shell, over **both** document types: Rust compiled to
+//! `wasm32-unknown-unknown`, talking to the page through `wasm-bindgen`, with the cores as
+//! ordinary dependencies.
 //!
-//! A third kind of shell. `grind-cli` and `grind-tui` are Rust calling the core directly and
-//! the GTK shells are Rust through GTK's bindings; this one is Rust compiled to
-//! `wasm32-unknown-unknown`, talking to the page through `wasm-bindgen`. The cores are
-//! ordinary Cargo dependencies — there is no FFI layer, because the shell is Rust too.
+//! **The honest test of rule 5** (no filesystem): a document arrives from the File API as bytes
+//! and leaves as a download, through `App::open_bytes` and `App::save_bytes`; the shell never
+//! learns a path. Neither core needed a change to run here.
 //!
-//! **This is the honest test of rule 5** (doc/plan.md: *do not assume a filesystem*). The
-//! browser has no paths. A document arrives from the File API as bytes and leaves as a
-//! download, which is exactly what `App::open_bytes` and `App::save_bytes` exist for — the
-//! shell never learns a path, because there isn't one. Neither core needed a change to run
-//! here, which is the whole point of having paired every `*_file` with a `*_bytes`.
+//! **One bundle, two document types**: a document from a file picker has no path and no mime
+//! association, so there is nothing for a second bundle to be associated with. `grind_core::kind`
+//! reads the bytes and the shell shows that pane.
 //!
-//! **One bundle, two document types** (`doc/suite.md`, R10 and S10). Unlike GTK, the web
-//! shell does not split per type: a document arrives from a file picker as bytes with no
-//! path and no mime association, so there is nothing for a second bundle to be associated
-//! *with*. `grind_core::kind` reads the bytes, the shell shows that pane, and the toolbar
-//! above them is the same toolbar either way.
-//!
-//! This file is that shell: the chrome both panes share (open, save, undo, redo, the
-//! command palette, the colour grid, the clipboard, the document's name), the dispatch, and
-//! the frame scheduling. Everything about a *grid* is in [`sheet`] and everything about a
-//! *document* is in [`text`].
-//!
-//! **It is a web page, not a window.** There is no menu bar to imitate and no window manager
-//! to borrow chrome from, so this shell does not pretend: one bar of verbs, one row of tools
-//! for whichever document is open, and [`command`]'s palette — Ctrl+K — for everything else,
-//! including going somewhere. A file dropped on the page opens; the clipboard is the
-//! browser's own, through the events every browser already sends.
+//! This file is the chrome both panes share (open, save, undo, redo, the palette, the colour grid,
+//! the clipboard, the document's name), the dispatch and the frame scheduling; a grid is
+//! [`sheet`], a document [`text`]. **A web page, not a window** (`doc/web-shell.md`): one bar of
+//! verbs, one tool row, and [`command`]'s palette for the rest, going somewhere included. A
+//! dropped file opens; the clipboard is the browser's own.
 
 pub mod about;
 pub mod code;
@@ -60,26 +48,16 @@ use web_sys::{
 
 use command::Entry;
 
-/// What a document nobody has opened is downloaded as — one per document type.
-///
-/// The **flat** forms, per `doc/flat-first.md`: a download nobody named is exactly the case
-/// that decision covers, and a browser download is the likeliest thing to land straight in a
-/// repository. Every other application opens flat ODF too; it is only less familiar, which is
-/// a reason to lead with it rather than a reason to hide it.
+/// What a document nobody has named downloads as, per type — the **flat** forms
+/// (`doc/flat-first.md`): an unnamed download is exactly that case, and the likeliest to land in a
+/// repository.
 const UNTITLED_SHEET: &str = "untitled.fods";
 const UNTITLED_TEXT: &str = "untitled.fodt";
 
-/// What the file picker offers, per [`Pick`]. Set on the input each time it is raised, so the
-/// two lists live here rather than half in `index.html`.
-///
-/// Both document types and all three forms in one list, for `spreadsheet_filters`' reason in
-/// the GTK window: packaged, flat and projected are the same document to everyone but the
-/// writer, and the kind is read from the bytes (`grind_core::kind`) rather than the name.
-/// A CSV or TSV is opened too, as a new spreadsheet (`import.rs`) — where the sheet pane's own
-/// *Import CSV* puts the fields into the sheet already open.
-///
-/// And an Excel workbook or a Word document, each imported on arrival (`import.rs`, X6 and
-/// DX6), when this build has the filter.
+/// What the file picker offers, per [`Pick`], set on the input each time it is raised. Both
+/// document types and all three forms in one list, since the kind is read from the bytes; a CSV or
+/// TSV too, opened as a new spreadsheet (the sheet pane's *Import CSV* puts fields into the open
+/// one); and an Excel workbook or Word document, imported on arrival when the filter is built in.
 fn document_types() -> String {
     let mut types = ".fods,.ods,.fodt,.odt,.xml,.grind,.csv,.tsv,.tab,.md,.markdown".to_owned();
     if cfg!(feature = "xlsx") {
@@ -102,12 +80,9 @@ thread_local! {
     static SHELL: RefCell<Option<Rc<Shell>>> = const { RefCell::new(None) };
 }
 
-/// Which document type is open, or **neither**.
-///
-/// It used to be one of two, and the page opened on an empty spreadsheet "because a page has to
-/// show something and a grid is what this shell was first". That is a bundle holding two
-/// applications picking one of them before being asked, and it is wrong half the time — so a
-/// page nobody has handed a document shows [`Mode::Welcome`], which is where the choice is made.
+/// Which document type is open, or **neither** — a page nobody has handed a document shows
+/// [`Mode::Welcome`], where the choice is made, rather than a bundle of two applications picking
+/// one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode {
     /// No document: the welcome pane, offering a new spreadsheet, a new text document, or one
@@ -242,7 +217,7 @@ struct Chrome {
     /// The code view — a third pane, shown instead of whichever of the two is open
     /// (`doc/dsl.md` §6).
     code_pane: HtmlElement,
-    /// The problems pane — a fourth, and the same rule (`doc/dsl.md` §4.3, D6).
+    /// The problems pane — a fourth, and the same rule.
     problems_pane: HtmlElement,
     /// The print preview — a sixth, and the same rule again.
     preview_pane: HtmlElement,
@@ -308,17 +283,11 @@ struct Shell {
     /// The name the document arrived under, so a download has something to be called. Not a
     /// path — there are none here.
     name: RefCell<String>,
-    /// The projection the code view is showing, when it is showing (`doc/dsl.md` §6, D9).
-    ///
-    /// Projected when the pane opens and dropped when it closes, which is §6.3's `ponytail` in
-    /// its cheapest form. `Some` *is* "the pane is open": one fact rather than two that can
-    /// disagree.
+    /// The projection the code view shows, while it is open — projected on opening, dropped on
+    /// closing. `Some` *is* "the pane is open": one fact rather than two.
     source: RefCell<Option<grind_core::projection::Projection>>,
-    /// The findings the problems pane is showing, when it is showing (`doc/dsl.md` §4.3, D6).
-    ///
-    /// A snapshot taken when the pane opens, for the projection's reason above and one more:
-    /// linting costs a recalculation, so re-running it on every repaint would make a document
-    /// with the pane open the slowest one in the shell. `Some` *is* "the pane is open".
+    /// The findings the problems pane shows, while it is open — a snapshot, since linting costs a
+    /// recalculation. `Some` *is* "the pane is open".
     problems: RefCell<Option<problems::Listing>>,
     /// Whether the print preview is the surface on screen (`doc/pdf-export.md` §4).
     previewing: Cell<bool>,
@@ -362,12 +331,8 @@ enum Paper {
     Preview,
 }
 
-/// Which of the two things a picked file is.
-///
-/// One `<input type="file">` rather than two: the only difference between them is the `accept`
-/// list, which is an attribute rather than an element, and a second hidden input is a second
-/// thing to keep wired. The browser gives a `change` event no clue what it was for, so this is
-/// the clue.
+/// Which of the two things a picked file is. One `<input type="file">`, since only the `accept`
+/// list differs, and a `change` event gives no clue what it was for.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Pick {
     /// A document to open — the shell's own verb, either document type.
@@ -426,24 +391,17 @@ impl Shell {
         }
     }
 
-    /// Put one pane on screen and take the other one off.
-    ///
-    /// `hidden` rather than a class, because a hidden element must not be *focusable* — a
-    /// pane that is only invisible still takes the keyboard, and then every keystroke goes
-    /// to the document nobody can see.
+    /// Put one pane on screen and take the others off — `hidden` rather than a class, since an
+    /// invisible pane would still take the keyboard.
     fn show(&self, mode: Mode) -> Result<(), JsValue> {
         self.mode.set(mode);
         let sheet = mode == Mode::Sheet;
         let welcome = mode == Mode::Welcome;
-        // **Five panes, one on screen.** The code view is not a mode of its own — the document is
-        // still a spreadsheet or a text document while its source is showing, and every verb in
-        // the tool row still applies to it. So the *mode* decides which chrome, and the code view
-        // decides which surface. Having one function answer both is what stops the two from
-        // disagreeing: this used to be two, and closing the command palette closed the code view.
-        //
-        // The welcome pane is the one that *is* a mode, because it is the absence of a document
-        // rather than another way of looking at one: no tool row applies to it, and neither the
-        // source nor the problems pane can be open over nothing.
+        // **Five panes, one on screen.** The code view and the problems pane are not modes: the
+        // document is still a spreadsheet or a text document while its source shows, and the tool
+        // row still applies. So the mode decides the chrome and the open pane the surface, in one
+        // function so the two agree. The welcome pane is a mode, being the absence of a document:
+        // no tool row applies and nothing can be open over it.
         let code = self.source.borrow().is_some();
         let problems = self.problems.borrow().is_some();
         let preview = self.previewing.get() && mode == Mode::Text;
@@ -489,10 +447,8 @@ impl Shell {
 
     // --- the command palette ---
 
-    /// What the palette shows for a query: whatever the pane can *go to*, then the verbs.
-    ///
-    /// Targets first because they are the specific answer — someone who typed `B12` meant the
-    /// cell, and someone who typed `bold` gets no targets at all.
+    /// What the palette shows for a query: where the pane can go, then the verbs — someone who
+    /// typed `B12` meant the cell, and `bold` gets no targets.
     fn entries(&self, query: &str) -> Vec<Entry> {
         let (table, mut entries) = match self.mode.get() {
             Mode::Sheet => (command::SHEET, self.sheet.targets(query)),
@@ -551,18 +507,13 @@ impl Shell {
         let _ = self.show(self.mode.get());
     }
 
-    /// Run whatever the palette (or a toolbar button, or a shortcut) asked for.
-    ///
-    /// The chrome's own verbs are answered here and everything else goes to the pane that is
-    /// showing — so a command id is the one vocabulary a button, a key and a palette row all
-    /// speak, and there is no second path for any of them to drift down.
+    /// Run whatever the palette, a toolbar button or a shortcut asked for: the chrome's own verbs
+    /// here, the rest to the pane showing. A command id is the one vocabulary all three speak.
     fn run(self: &Rc<Self>, id: &str) {
         match id {
             "doc.open" => self.open_picker(),
-            // The welcome pane's two cards, and the palette's rows for them — reachable from
-            // every pane, because "start a new one of the other kind" is a verb this shell used
-            // not to have at all: a page that had opened a spreadsheet could only get a text
-            // document by opening a file that already was one.
+            // The welcome pane's cards and their palette rows, reachable from every pane: "start a
+            // new one of the other kind".
             "doc.new-sheet" => self.new_document(Mode::Sheet),
             "doc.new-text" => self.new_document(Mode::Text),
             "doc.welcome" => {
@@ -627,18 +578,10 @@ impl Shell {
         }
     }
 
-    // --- the code view (doc/dsl.md §6, D9) ---
+    // --- the code view ---
 
-    /// Show the document as its projection, or put the document back.
-    ///
-    /// A third pane rather than a split: §6.2 is right that a split is what a person eventually
-    /// wants, and it is also two viewports to keep in step and a resize handle to build. What
-    /// pays for itself first is the *correspondence*, and one pane at a time carries it — the
-    /// line the selection is on is drawn as current, and clicking a line selects what it
-    /// projects.
-    /// The version, the commit, and every third-party component's licence (`about.rs`,
-    /// doc/third-party.md) — `grind_core::build_info` and `grind_core::third_party`, the one
-    /// place each is kept for every window. Filled the first time it opens.
+    /// The version, the commit, and every third-party component's licence (`about.rs`) —
+    /// `grind_core::build_info` and `grind_core::third_party`. Filled the first time it opens.
     fn about(&self) -> Result<(), JsValue> {
         let dialog: web_sys::HtmlDialogElement = element(&self.dom.document, "about")?;
         if dialog.child_element_count() == 0 {
@@ -647,6 +590,9 @@ impl Shell {
         dialog.show_modal()
     }
 
+    /// Show the document as its projection, or put the document back. A pane rather than a split,
+    /// which would be two viewports to keep in step: the line the selection is on is drawn as
+    /// current, and clicking a line selects what it projects.
     fn toggle_source(&self) {
         let open = self.source.borrow().is_some();
         *self.source.borrow_mut() = match open {
@@ -679,14 +625,11 @@ impl Shell {
             .set_inner_html(&code::html(projection, cursor));
     }
 
-    // --- the problems pane (doc/dsl.md §4.3, D6) ---
+    // --- the problems pane ---
 
-    /// Check the document and show what it says about itself, or put the document back.
-    ///
-    /// A pane rather than a dialog, unlike the GTK shells: a browser tab has no window manager
-    /// to keep a second window in front of the first, and `doc/web-shell.md`'s one design
-    /// decision is that this page does not pretend otherwise. It is the code view's shape, with
-    /// a list where the projection is — and the same command turns it off.
+    /// Check the document and show what it says about itself, or put the document back. A pane
+    /// rather than a dialog: a tab has no window manager to keep a second window in front. The
+    /// code view's shape, with a list where the projection is.
     fn toggle_problems(&self) {
         let open = self.problems.borrow().is_some();
         *self.problems.borrow_mut() = match open {
@@ -750,12 +693,8 @@ impl Shell {
         }
     }
 
-    /// A click on a line of the code view: select what that line projects.
-    ///
-    /// §6.2's map in the direction that has to be *built* — address to span is the writer's own
-    /// bookkeeping, and span back to address is what makes the pane worth having. The document
-    /// underneath moves even though it is not on screen, so closing the pane lands the reader
-    /// where they were looking.
+    /// A click on a line of the code view: select what it projects. The document underneath moves
+    /// though it is not on screen, so closing the pane lands the reader where they were looking.
     fn source_clicked(&self, line: usize) {
         let address = {
             let borrowed = self.source.borrow();
@@ -807,11 +746,9 @@ impl Shell {
         }
     }
 
-    /// Copy — or cut — from a *command* rather than from the browser's own event.
-    ///
-    /// `navigator.clipboard.writeText` needs the user gesture it is running inside, which a
-    /// palette row and a toolbar button both are. The `copy`/`cut` events handle Ctrl+C and
-    /// Ctrl+X without any of this; both paths end in the same two calls.
+    /// Copy or cut from a command rather than the browser's event: `navigator.clipboard.writeText`
+    /// needs the user gesture a palette row or button is. The `copy`/`cut` events handle Ctrl+C
+    /// and Ctrl+X; both end in the same two calls.
     fn copy_out(&self, cut: bool) {
         let Some(text) = self.clipboard_text() else {
             return self.set_message("Nothing to copy".to_owned());
@@ -924,11 +861,8 @@ impl Shell {
         self.dom.file_input.click();
     }
 
-    /// Read a picked file into the core.
-    ///
-    /// **Bytes, not text** — an `.ods` is a zip, and the name is all the browser gives us. It
-    /// travels with the document only so a download has something to be called; there is no
-    /// path to write back to.
+    /// Read a picked file into the core — **bytes, not text**, since an `.ods` is a zip. The name
+    /// travels only so a download has something to be called.
     async fn load(self: Rc<Self>, file: File) {
         let name = file.name();
         let buffer = match JsFuture::from(file.array_buffer()).await {
@@ -938,11 +872,8 @@ impl Shell {
         self.open(name, &js_sys::Uint8Array::new(&buffer).to_vec());
     }
 
-    /// The same read, for a file that is data rather than a document.
-    ///
-    /// Bytes again, and decoded by the core (`csv::decode`), because "this file is not UTF-8"
-    /// is a rule about CSV rather than about browsers — the CLI and the other three windows
-    /// say the same sentence from the same constant.
+    /// The same read for a data file, decoded by the core (`csv::decode`): "this file is not
+    /// UTF-8" is a rule about CSV, said in the same words by every client.
     async fn load_csv(self: Rc<Self>, file: File) {
         let name = file.name();
         let buffer = match JsFuture::from(file.array_buffer()).await {
@@ -1188,11 +1119,9 @@ impl Shell {
             .insert_picture(js_sys::Uint8Array::new(&buffer).to_vec());
     }
 
-    /// Hand the selection to a download as delimited text.
-    ///
-    /// The name carries the dialect (`csv::Dialect::for_name`), which is why there are two
-    /// verbs here and two filters in the other windows' save dialogs: a download names itself,
-    /// so the choice has to be made before the file exists rather than in a dialog after.
+    /// Hand the selection to a download as delimited text. The name carries the dialect
+    /// (`csv::Dialect::for_name`), so there are two verbs: a download names itself before it
+    /// exists.
     fn export_csv(&self, extension: &str) {
         let stem = std::path::Path::new(&self.document_name())
             .file_stem()
@@ -1208,14 +1137,10 @@ impl Shell {
         }
     }
 
-    /// A document named in the page's own URL — `?doc=sample.fodt` — fetched and opened as if
-    /// it had been picked.
-    ///
-    /// The browser hands a page no path and no way to preload the file picker, so a document
-    /// *served next to the page* has no other way in. That is the whole point: `scripts/run.sh
-    /// web` puts a sample document in `dist/` and prints the URL, which is how this shell gets
-    /// demo data in front of it without a picker and without a second open path — the bytes
-    /// end up in `App::open_bytes` either way.
+    /// A document named in the page's URL — `?doc=sample.fodt` — fetched and opened as if picked.
+    /// A page cannot preload the file picker, so a document served beside the page has no other
+    /// way in; `scripts/run.sh web` puts a sample in `dist/` and prints the URL. Either way the
+    /// bytes reach `App::open_bytes`.
     async fn fetch(self: Rc<Self>, url: String) {
         let Some(window) = web_sys::window() else {
             return;
@@ -1241,12 +1166,9 @@ impl Shell {
         self.open(name, &js_sys::Uint8Array::new(&buffer).to_vec());
     }
 
-    /// Bytes in, and the pane that can show them.
-    ///
-    /// **The kind decides, not the extension** (`grind_core::kind`): both readers are
-    /// tolerant by construction, so handing a spreadsheet to the text reader would produce an
-    /// empty document rather than an error. Deciding first is what makes one bundle able to
-    /// hold two document types honestly.
+    /// Bytes in, and the pane that can show them. **The kind decides, not the extension**
+    /// (`grind_core::kind`): both readers are tolerant, and a spreadsheet handed to the text
+    /// reader would be an empty document rather than an error.
     fn open(&self, name: String, bytes: &[u8]) {
         // A workbook is imported first and arrives as the flat ODF document it became, under
         // the name it will download as.
@@ -1288,12 +1210,9 @@ impl Shell {
         }
     }
 
-    /// Save by handing the document to a download — the only writing a page may do.
-    ///
-    /// The form follows the name the document arrived under, so an `.fodt` opened here goes
-    /// back as flat XML and an `.odt` as a package. R6's spliced writer is underneath: a
-    /// document that was only edited comes back as the file it was, with those paragraphs
-    /// replaced.
+    /// Save by handing the document to a download — the only writing a page may do. The form
+    /// follows the name it arrived under, and R6's splicing writer is underneath, so an edited
+    /// document comes back as the file it was with those paragraphs replaced.
     fn save(&self) {
         let name = self.document_name();
         let form = form_of(&name);
@@ -1347,24 +1266,17 @@ impl Shell {
         }
     }
 
-    /// Start a new, empty document of one kind — the welcome pane's two cards, and the palette's
-    /// two rows for them.
-    ///
-    /// **Written and read back**, which looks roundabout and is the honest way to do it here: a
-    /// pane owns one `App` for the life of the page (its observer is registered once, and every
-    /// closure on the page holds an `Rc` to it), so "a new document" has to be a new document
-    /// *in* that app. `App::open_bytes` is the one door that replaces one — it clears the undo
-    /// history with it, which is exactly right across a document boundary — and an empty
-    /// document's flat XML is a few hundred bytes. The alternative is an `App::new_document` in
-    /// the core, which is a capability every other shell would then owe the CLI (rule 4) for a
-    /// case none of them has: the three native shells make a *window* per document.
+    /// Start a new, empty document of one kind — the welcome cards and their palette rows.
+    /// **Written and read back**: a pane owns one `App` for the page's life (its observer
+    /// registered once, every closure holding an `Rc`), so a new document has to go into that app,
+    /// and `App::open_bytes` is the door that replaces one and clears its undo history. An
+    /// `App::new_document` would be a capability every other shell owed the CLI (rule 4) for a
+    /// case none has, since native shells open a window per document.
     fn new_document(&self, mode: Mode) {
         let Some(kind) = mode.kind() else { return };
-        // **Asked about first**, because this is the one verb in the shell that throws a document
-        // away: the pane keeps one `App`, so a new document replaces what that app is holding.
-        // The question is asked of the pane being *replaced* rather than the one on screen — with
-        // a text document open, a new spreadsheet replaces the spreadsheet, which may be empty
-        // and untouched while the thing you are looking at is neither.
+        // **Asked first**, since this is the one verb that throws a document away. It asks of the
+        // pane being *replaced*: with a text document open, a new spreadsheet replaces the
+        // spreadsheet, which may be empty while what is on screen is not.
         let replacing = match mode {
             Mode::Sheet => self.sheet.app.can_undo(),
             Mode::Text => self.text.app.can_undo(),
@@ -1469,18 +1381,11 @@ pub(crate) fn request_frame() {
     let _ = window.request_animation_frame(callback.unchecked_ref());
 }
 
-/// Ask the reader a yes/no question, the one modal a page is allowed without building one.
-///
-/// **`true` when the browser will not ask**, which is the uncomfortable half and is deliberate: a
-/// page in a sandboxed frame without `allow-modals`, and every headless runtime including the one
-/// `ui_web/smoke.js` runs in, answers `confirm` with nothing at all. Refusing the verb there
-/// would make a button that silently does nothing, which reads as broken and is the failure mode
-/// a reader cannot diagnose; going ahead does what was asked. The environments where this matters
-/// are the ones with no user in front of them.
-/// It is reached through `Reflect` rather than through `Window::confirm_with_message` for exactly
-/// that reason: a runtime with no real `confirm` returns `undefined`, and the typed binding
-/// coerces that to `false` — the same answer as a reader pressing Cancel, which is the one answer
-/// it must not be confused with. An answer that is not a boolean is nobody answering.
+/// Ask the reader a yes/no question, the one modal a page gets without building one. **`true` when
+/// the browser will not ask**: a sandboxed frame without `allow-modals`, and every headless
+/// runtime including `ui_web/smoke.js`'s, answer `confirm` with nothing, and refusing there would
+/// be a button that silently does nothing. Reached through `Reflect`, since the typed binding
+/// turns a missing `confirm`'s `undefined` into `false`, which must not be confused with Cancel.
 fn confirm(question: &str) -> bool {
     let Some(window) = web_sys::window() else {
         return true;
@@ -1552,12 +1457,8 @@ pub(crate) fn element<T: JsCast>(document: &Document, id: &str) -> Result<T, JsV
         .map_err(|_| JsValue::from_str(&format!("#{id} is not the element this shell expects")))
 }
 
-/// Which ODF form a name asks for — the core's rule, not a second one.
-///
-/// This used to spell the extension list itself, which meant `doc/flat-first.md` would have had
-/// to be implemented twice and could have been implemented differently. A browser has no
-/// filesystem (rule 5), but it does have `Path`, and a download's file *name* is exactly the
-/// input `Form::from_path` takes.
+/// Which ODF form a name asks for — `Form::from_path`, the core's rule, since a download's file
+/// name is the input it takes.
 pub(crate) fn form_of(name: &str) -> Form {
     Form::from_path(std::path::Path::new(name))
 }
@@ -1568,11 +1469,8 @@ pub(crate) fn js(error: impl std::fmt::Display) -> JsValue {
 
 // --- wiring ---
 
-/// Every button in the chrome, and every button in either tool row.
-///
-/// **All of them run a command id.** A button is a way to say a verb, never a second
-/// implementation of one — which is what keeps the toolbar, the palette and the keyboard
-/// from drifting apart, and what makes `every_button_names_a_command` checkable.
+/// Every button in the chrome and either tool row. **All of them run a command id**: a button is a
+/// way to say a verb, never a second implementation, which `every_button_names_a_command` checks.
 fn wire_toolbar(shell: &Rc<Shell>) -> Result<(), JsValue> {
     // `(element id, command id, does it keep the focus)`. Opening is the one that keeps it:
     // the focus belongs in the file picker it just raised. Everything else hands the keyboard
@@ -1617,9 +1515,8 @@ fn wire_toolbar(shell: &Rc<Shell>) -> Result<(), JsValue> {
     ];
     for (id, command, keeps_focus) in BUTTONS {
         let button: HtmlButtonElement = element(&shell.dom.document, id)?;
-        // **`click`, not `mousedown`.** A `mousedown` handler is unreachable from the
-        // keyboard — Enter and Space on a focused button fire `click` and nothing else — and
-        // this row has to work without a pointer.
+        // **`click`, not `mousedown`**: Enter and Space on a focused button fire only `click`, and
+        // this row must work without a pointer.
         let shell = shell.clone();
         let command = (*command).to_owned();
         let keeps_focus = *keeps_focus;
@@ -1839,12 +1736,9 @@ fn keep_focus(button: &HtmlButtonElement) -> Result<(), JsValue> {
     })
 }
 
-/// Copy, cut and paste through the browser's own events.
-///
-/// **This is the path Ctrl+C actually takes.** `navigator.clipboard` needs a permission a
-/// `copy` event does not, so the keys work everywhere and the palette's own commands are the
-/// ones that fall back. Listened for on the document, because the event fires at whatever has
-/// the focus and both panes are `tabindex` divs rather than fields.
+/// Copy, cut and paste through the browser's own events — **the path Ctrl+C takes**, since a
+/// `copy` event needs no permission. Listened for on the document, as the event fires at whatever
+/// has the focus and both panes are `tabindex` divs.
 fn wire_clipboard(shell: &Rc<Shell>, document: &Document) -> Result<(), JsValue> {
     // An edit in progress belongs to its `<input>`: the browser's own copy of a selected
     // formula is right, and ours would replace it with the cell underneath.
@@ -1945,11 +1839,8 @@ fn wire_file_input(shell: &Rc<Shell>) -> Result<(), JsValue> {
     })
 }
 
-/// Clicking a line of the code view selects what that line projects (`doc/dsl.md` §6.2).
-///
-/// One listener on the pane rather than one per line, because the pane is rebuilt on every
-/// repaint and a listener per line would be a hundred closures to leak. `data-line` is the
-/// line number [`code::html`] wrote onto each row, which is why it is there.
+/// Clicking a line of the code view selects what it projects. One listener on the pane, which is
+/// rebuilt every repaint; `data-line` is what [`code::html`] wrote on each row.
 fn wire_code(shell: &Rc<Shell>) -> Result<(), JsValue> {
     let pane = shell.dom.code_pane.clone();
     let shell = shell.clone();
@@ -1970,12 +1861,8 @@ fn wire_code(shell: &Rc<Shell>) -> Result<(), JsValue> {
     })
 }
 
-/// Clicking a finding goes to the place it is about (`doc/dsl.md` §4.3, D6).
-///
-/// One listener on the pane, for `wire_code`'s reason — the pane is rebuilt whole and a
-/// listener per row would be a hundred closures to leak. `data-address` is what
-/// [`problems::html`] wrote onto each row, and it is the diagnostic's own address: the string
-/// `grind lint` prints and a user could type into the palette.
+/// Clicking a finding goes to its place. One listener on the pane, for `wire_code`'s reason;
+/// `data-address` is what [`problems::html`] wrote — the address `grind lint` prints.
 fn wire_problems(shell: &Rc<Shell>) -> Result<(), JsValue> {
     let pane = shell.dom.problems_pane.clone();
     let shell = shell.clone();
@@ -2083,8 +1970,8 @@ mod tests {
         assert_eq!(form_of("report.fodt"), Form::Flat);
         assert_eq!(form_of("book.ods"), Form::Package);
         assert_eq!(form_of("report.odt"), Form::Package);
-        // And a projection goes back as one: a `.grind` opened here downloads as KDL rather
-        // than quietly turning into XML under the same name (`doc/dsl.md` D4).
+        // A projection goes back as one: a `.grind` downloads as KDL, not as XML under the same
+        // name.
         assert_eq!(form_of("book.grind"), Form::Projection);
         // A name that asks for nothing gets the form that diffs — `doc/flat-first.md`, decided
         // once in `Form::from_path` and reached from here rather than restated.

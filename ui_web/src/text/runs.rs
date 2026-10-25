@@ -2,17 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Cutting one laid-out line into the pieces the page draws it as.
-//!
-//! A line is drawn as a run of `<span>`s rather than as one string, because three different
-//! things change part-way along it and none of them lines up with the others: the document's
-//! own **formatting** (a bold word), the **selection**, and the **caret**. Each of those is a
-//! set of boundaries in the block's own character offsets; the pieces are what falls between
-//! two adjacent ones.
-//!
-//! Pure arithmetic over offsets, so it runs on the host with no browser — which is where the
-//! interesting cases are: a bold run that starts mid-selection, a selection that starts
-//! mid-word, a caret sitting exactly on either boundary.
+//! Cutting one laid-out line into the `<span>`s the page draws: the **formatting**, the
+//! **selection** and the **caret** each change part-way along a line and none line up, so each is
+//! a set of boundaries in the block's offsets and a piece is what falls between two. Pure
+//! arithmetic, tested on the host — a bold run starting mid-selection, a caret on a boundary.
 
 use std::ops::Range;
 
@@ -33,14 +26,9 @@ pub struct Piece {
     pub wrong: bool,
 }
 
-/// Cut `line` into pieces. `runs` are the block's own, in order; `selection` is in the same
-/// offsets and may lie entirely outside this line.
-///
-/// A `caret` inside the line is a boundary too, so the caret element can be appended between
-/// two pieces rather than inside one — which is what lets the browser place it against its own
-/// kerning (`text/mod.rs`). `anchors` are bookmark offsets, boundaries for the same reason: a
-/// tick drawn at one has to sit against its own kerning too, not inside whichever run it lands
-/// in the middle of.
+/// Cut `line` into pieces. `runs` are the block's, in order; `selection` is in the same offsets
+/// and may lie outside this line. A `caret` and the bookmark `anchors` are boundaries too, so
+/// their elements sit between two pieces and the browser places them against its own kerning.
 #[cfg(test)]
 pub fn cut(
     line: Range<usize>,
@@ -147,12 +135,9 @@ pub fn classes(piece: &Piece) -> String {
     class
 }
 
-/// The inline style a piece's formatting asks for: the values the *document* chose, which is
-/// the half a class cannot carry. Empty when it chose none.
-///
-/// `dark` is whether the page is painted dark, which a colour the document chose has to be
-/// readable against ([`crate::ink`]) — and a highlight's text with it, since the dark theme's
-/// white ink across a yellow highlight is the other half of the same bug.
+/// The inline style a piece's formatting asks for: the values the document chose, which a class
+/// cannot carry; empty when it chose none. `dark` is whether the page is dark, which a document's
+/// colour and a highlight's text must read against ([`crate::ink`]).
 pub fn css(piece: &Piece, dark: bool) -> String {
     let mut css = String::new();
     let fill = piece

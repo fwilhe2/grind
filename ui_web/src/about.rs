@@ -2,12 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The About dialog: which build this is, and every third-party component with its licence
-//! (`doc/third-party.md`) — the list every window's About shows, from `grind_core::third_party`.
-//!
-//! A native `<dialog>` rather than a sixth pane: it is read and dismissed, it has nothing to do
-//! with the document under it, and the browser already gives it Esc, focus and a backdrop.
-//! Each component is a `<details>`, so a list of hundreds is one line each until opened.
+//! The About dialog: the build, and every third-party component with its licence
+//! (`grind_core::third_party`). A native `<dialog>`, which the browser gives Esc, focus and a
+//! backdrop; each component is a `<details>`, one line until opened.
 
 use grind_core::third_party;
 

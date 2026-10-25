@@ -2,12 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! An Excel workbook arriving in the page (`doc/xlsx-import.md`, X6): imported into flat ODF
-//! before either pane sees it, and renamed so the download it becomes is an ODF document.
-//!
-//! A page can never write over the file it was given — saving is a download — so the rename is
-//! the whole of "one way in, never out" here: `budget.xlsx` goes back as `budget.fods`, never
-//! as an `.xlsx` with ODF inside. No browser API is touched, so it is tested on the host.
+//! An Excel workbook or Word document arriving in the page, imported into flat ODF before either
+//! pane sees it and renamed so its download is an ODF document: `budget.xlsx` goes back as
+//! `budget.fods`. No browser API is touched, so it is tested on the host.
 
 /// An imported workbook, ready for the spreadsheet pane.
 #[derive(Debug)]

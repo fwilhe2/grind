@@ -2,17 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The browser shell's paper: PDF export and print preview, in a wasm module of its own.
-//!
-//! `grind-print` is the font stack and a PDF writer, and in the browser that is about four
-//! megabytes nobody should download to open a spreadsheet. So `ui_web` loads this module the
-//! first time somebody exports or previews (`doc/pdf-export.md` §7), and hands it **the document
-//! as flat ODF bytes** — the boundary every other client already uses (`App::save_bytes`,
-//! `App::open_bytes`), so nothing about the document has to be shared between two modules — and
-//! the bundled fonts the page fetched.
-//!
-//! The functions with a host-side twin are tested here with no browser; the `#[wasm_bindgen]`
-//! wrappers only convert.
+//! The browser shell's paper: PDF export and print preview, in a wasm module of its own —
+//! `grind-print`'s font stack and PDF writer are about four megabytes nobody should download to
+//! open a spreadsheet. `ui_web` loads this the first time somebody exports or previews, and hands
+//! it the document as flat ODF bytes (the `save_bytes`/`open_bytes` boundary every client uses)
+//! with the fonts the page fetched. Functions with a host-side twin are tested without a browser;
+//! the `#[wasm_bindgen]` wrappers only convert.
 
 use grind_print::{Fonts, Options};
 use grind_text::App;

@@ -2,29 +2,20 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The autofilter's dropdown (§9.4): what values a field's popover offers, and what choosing
-//! among them means.
-//!
-//! **Portable, and tested on the host** like [`super::keymap`] and [`super::assist`] — nothing
-//! here touches the DOM. `mod.rs` builds the popover's checkboxes from [`field_values`] and
-//! turns what was ticked into a [`Chosen`], the same split `ui_sheet_gtk/src/filter_ui.rs`
-//! makes between the core's own question ("what does a field's column hold") and the widget
-//! that asks it.
-//!
-//! The core decides what a filter *means* (`grind_sheet::filter`); this decides only what a
-//! field's list should offer. The values are read from the same [`grind_sheet::Viewport`] the
-//! grid itself draws from, so the list can never offer a value that would then match nothing.
+//! The autofilter's dropdown: what values a field's popover offers, and what choosing among them
+//! means. Portable and tested on the host: `mod.rs` builds the checkboxes from [`field_values`]
+//! and turns what was ticked into a [`Chosen`]. What a filter means is `grind_sheet::filter`'s,
+//! and the values come from the [`grind_sheet::Viewport`] the grid draws from, so the list offers
+//! nothing that matches nothing.
 
 use std::collections::BTreeSet;
 
 use grind_sheet::{Filter, Viewport};
 
-/// How many distinct values a field's list will show.
+/// How many distinct values a field's list shows.
 ///
-/// ponytail: a column with more than this many distinct values gets a truncated list and no
-/// way to reach the rest — the same ceiling `ui_sheet_gtk`'s popover has, for the same reason:
-/// a search box over the values is what makes a list this long usable at all, and is worth
-/// building the first time a real document wants it.
+/// ponytail: a column with more gets a truncated list and no way to the rest. A search box over
+/// the values is the upgrade, worth building when a real document wants it.
 pub const MAX_VALUES: usize = 500;
 
 /// What the empty cell is labelled in the list. A blank row would read as a rendering bug, and

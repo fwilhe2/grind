@@ -2,27 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Which key means what in the document pane, as a pure function.
+//! Which key means what in the document pane, as a pure function — [`Chord`] in, [`Action`] out,
+//! no `web_sys` — tested on the host. **No arithmetic here**: Down means the next *line*, and the
+//! answer is `grind_text::App::caret_line`'s (`doc/text-layout.md`).
 //!
-//! The same shape as [`crate::sheet::keymap`] — a [`Chord`] in, an [`Action`] out, no
-//! `web_sys` anywhere near it — so the whole map unit-tests on the host with no browser
-//! (`cargo test -p grind-web`).
-//!
-//! **Nothing here does arithmetic.** Down means "the next *line*", a line is an output of
-//! layout, and the answer comes from `grind_text::App::caret_line` (`doc/text-layout.md`).
-//! `ui_tui/src/text/keymap.rs` and `ui_text_gtk/src/keymap.rs` name the same questions in
-//! their own spellings; three keyboards, one editing model.
-//!
-//! **A composed character does not come from a key, and this file knows it.** A dead key —
-//! `` ` ``, `´`, `^`, `~` on German, French, Spanish and many other layouts — reports
-//! `KeyboardEvent.key == "Dead"`, and every keystroke *inside* the composition it opens
-//! reports `isComposing`. Neither carries the character that is finally produced: the browser
-//! is composing, and what it composed arrives on `compositionend`. So both are refused here
-//! and the text is taken from that event instead ([`Chord::composing`], and `wire` in
-//! `super`). The alternative mechanisms need an editable host — `beforeinput` fires on one,
-//! and this shell deliberately has no `contenteditable` (`super`'s own module documentation
-//! says why) — and a bigger match arm cannot work at all, because `"Dead"` is not a character
-//! and the composition may still be several keystrokes from deciding which one it is.
+//! **A composed character does not come from a key.** A dead key (`` ` ``, `´`, `^`, `~` on many
+//! layouts) reports `KeyboardEvent.key == "Dead"`, and every keystroke inside its composition
+//! reports `isComposing`; neither carries the final character, which arrives on `compositionend`.
+//! So both are refused here and the text comes from that event ([`Chord::composing`], `wire` in
+//! `super`). `beforeinput` would need an editable host, which this shell deliberately lacks.
 
 /// A keystroke, in the browser's own vocabulary.
 ///
@@ -55,19 +43,14 @@ pub enum Motion {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action<'a> {
-    /// Move the caret. `extend` is Shift held down: the anchor stays where it is and the
-    /// selection grows, which is the same word `ui_sheet_gtk`'s grid uses for the same idea.
+    /// Move the caret. `extend` is Shift: the anchor stays and the selection grows.
     Move {
         motion: Motion,
         extend: bool,
     },
-    /// A character was typed. Borrowed from the event, because it is `KeyboardEvent.key` and
-    /// copying it would be a `String` per keystroke.
-    ///
-    /// A composed character — `é` from a dead key — arrives here whole, which is why this is
-    /// a string and not a `char`. It reaches this action from `compositionend` rather than
-    /// from a key, though: see the module documentation. What still does *not* arrive is a
-    /// candidate window; see the gap list in `doc/web-shell.md`.
+    /// A character was typed — borrowed from the event (`KeyboardEvent.key`), and a string, since
+    /// a composed `é` arrives whole, from `compositionend`. An input method's candidate window
+    /// does not arrive (`doc/web-shell.md`).
     Type(&'a str),
     Split,
     EraseBack,
@@ -84,12 +67,9 @@ pub enum Action<'a> {
 }
 
 pub fn action_for<'a>(chord: &Chord<'a>) -> Option<Action<'a>> {
-    // A composition owns the keyboard until it ends. Both halves of it are refused: the dead
-    // key that opens one (`"Dead"` — there is no character yet, and the next keystroke decides
-    // which one there will be) and every keystroke inside one (`isComposing` — whose `key` is
-    // either the base character or the composed one depending on the browser, so typing it
-    // would drop `` ` `` on one and double `è` on another). `compositionend` carries the
-    // result exactly once, and that is where the text comes from.
+    // A composition owns the keyboard until it ends: the dead key that opens one (no character
+    // yet) and every keystroke inside one (whose `key` differs by browser, dropping `` ` `` on one
+    // and doubling `è` on another) are refused. `compositionend` carries the result exactly once.
     if chord.composing || chord.key == "Dead" {
         return None;
     }

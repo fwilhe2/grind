@@ -2,18 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The spreadsheet half of the browser shell.
-//!
-//! The DOM is a **renderer**, not the document, the same rule the other shells follow. No
-//! `contenteditable` anywhere: every visible cell is rebuilt from [`App::get_viewport`] on
-//! each repaint and thrown away, so the page cannot become a second source of truth. The one
-//! editable element is the formula bar's `<input>`, and what it holds is not a cell until
-//! [`App::enter`] says so.
-//!
-//! Hit-testing is the DOM's job, not this shell's: every cell carries its address in
-//! `data-row`/`data-col` and a click reads it back off the event target. The platform already
-//! knows which box the pointer is in, and `layout.rs` is left with only the arithmetic the
-//! platform cannot do.
+//! The spreadsheet half of the browser shell. **The DOM is a renderer**, not the document: no
+//! `contenteditable`; every visible cell is rebuilt from [`App::get_viewport`] each repaint and
+//! thrown away. The one editable element is the formula bar's `<input>`, whose text is not a cell
+//! until [`App::enter`] says so. Hit-testing is the DOM's: every cell carries
+//! `data-row`/`data-col`, read back off a click's target.
 
 mod assist;
 mod chart;
@@ -51,11 +44,9 @@ use layout::{PX_PER_MM, Tracks};
 pub const MAX_ROWS: u32 = 1_048_576;
 pub const MAX_COLS: u32 = 16_384;
 
-/// Hand the page the cell size the viewport arithmetic assumes.
-///
-/// The stylesheet declares the same two numbers so the empty page has a shape before the
-/// module arrives, and this overwrites them: two declarations that must agree are two
-/// declarations that will not, and when they disagreed the grid grew a column every repaint.
+/// Hand the page the cell size the viewport arithmetic assumes. The stylesheet declares the same
+/// numbers so the empty page has a shape before the module loads, and this overwrites them, so the
+/// two cannot disagree.
 fn declare_cell_size(document: &Document) -> Result<(), JsValue> {
     let Some(root) = document
         .document_element()
@@ -68,10 +59,8 @@ fn declare_cell_size(document: &Document) -> Result<(), JsValue> {
     style.set_property("--cell-h", &format!("{}px", layout::CELL.cell_h))
 }
 
-/// The selected rectangle: where the selection started and where it is now.
-///
-/// The same two-`Pos` shape `ui_sheet_gtk/src/keymap.rs` uses, and it is two rather than a
-/// rectangle so that extending with Shift knows which corner is pinned.
+/// The selected rectangle as two `Pos`es — where it started and where it is — so extending with
+/// Shift knows which corner is pinned.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Selection {
     anchor: Pos,
@@ -126,12 +115,8 @@ struct Sizing {
 /// How near a header's right edge a press is taken as grabbing it, in CSS pixels.
 const EDGE_GRAB: f64 = 5.0;
 
-/// The elements this shell writes to. No document state — that is all in the core.
-/// The elements this pane writes to. No document state — that is all in the core.
-///
-/// The shared chrome — the toolbar, the file input, the document's name — belongs to
-/// [`crate::Shell`] and is not here: it is the same chrome whichever document is open, and
-/// two panes reaching for the same button is how the two disagree about which is enabled.
+/// The elements this pane writes to; no document state. The shared chrome — toolbar, file input,
+/// the document's name — is [`crate::Shell`]'s, the same whichever document is open.
 struct Dom {
     document: Document,
     /// The scrolling box, and the thing that holds the keyboard.
@@ -227,14 +212,14 @@ pub struct Ui {
     /// `zoom`; hit-testing is the DOM's, so only how many cells fit needs to know.
     zoom: Cell<f64>,
     message: RefCell<String>,
-    /// The word the last cell picked from the palette was found by — what F3 and Shift+F3
-    /// step through, and what *Replace in every cell…* offers to replace.
+    /// The word the last cell picked from the palette was found by — what F3 and Shift+F3 step
+    /// through and *Replace in every cell…* offers.
     needle: RefCell<String>,
     /// Which field the autofilter's popover is open for, when it is open (`filter_ui.rs`).
     /// `None` *is* "closed" — one fact rather than two that can disagree.
     filter_field: Cell<Option<u32>>,
-    /// The checkbox behind each value the popover currently lists, so `Ui::filter_ticked` can
-    /// read them back without a DOM query — the same cache `ui_sheet_gtk`'s `FilterMenu` keeps.
+    /// The checkbox behind each value the popover lists, so `Ui::filter_ticked` reads them without
+    /// a DOM query.
     filter_checks: RefCell<Vec<(String, HtmlInputElement)>>,
     /// The chart that is selected — outlined and handled, and what the keys and the chart verbs
     /// mean (`grab.rs`). Presentation, like the cell selection.
@@ -346,12 +331,9 @@ impl Ui {
         let corner_col = self.dom.document.create_element("col")?;
         corner_col.set_attribute("style", "width:3.5rem")?;
         self.dom.cols.append_child(&corner_col)?;
-        //
-        // A hidden column is **left out** of all three — the `<col>`, the header and the cells —
-        // rather than given a width of nothing. A zero-width `<col>` was what this did, and a
-        // `max-content` table sizes a column from what is in it, so the column the document
-        // hid was drawn at full width with its heading and its values in it. Leaving it out is
-        // the column's own answer to a filtered row's `display: none`.
+        // A hidden column is **left out** of the `<col>`s, the header and the cells. A zero-width
+        // `<col>` in a `max-content` table is sized from its content, so the hidden column showed
+        // at full width.
         let shown: Vec<u32> = cols
             .clone()
             .filter(|col| !hidden_cols.contains(col))
@@ -361,13 +343,11 @@ impl Ui {
             declaration.set_attribute("style", &format!("width:{:.1}px", widths.size(col)))?;
             self.dom.cols.append_child(&declaration)?;
         }
-        // **The table is as wide as its columns add up to**, stated. `table-layout: fixed` sizes
-        // columns from the `<col>`s only when the table has a width of its own; with the
-        // stylesheet's `max-content` the browser sized them from what was *in* them, so a column
-        // the document made 0.6in wide grew to fit a long label, and a number too wide for its
-        // column was never too wide — every other shell drew the document's width and this one
-        // quietly did not. With it, a cell's content is clipped at the document's width, and a
-        // number that no longer fits is `###` (`hash_overflowing`).
+        // **The table is as wide as its columns add up to**, stated: `table-layout: fixed` sizes
+        // columns from the `<col>`s only when the table has a width, and with `max-content` the
+        // browser sized them from their content, ignoring the document's widths. With it, content
+        // is clipped at the document's width, and a number that no longer fits is `###`
+        // (`hash_overflowing`).
         let total: f64 = shown.iter().map(|&col| widths.size(col)).sum();
         if let Some(table) = self.dom.cols.parent_element() {
             table.set_attribute("style", &format!("width:calc(3.5rem + {total:.1}px)"))?;
@@ -516,11 +496,9 @@ impl Ui {
                     };
                     numbers.push((cell.clone(), narrower));
                 }
-                // `doc/view-modes.md`, both overlays, in two attributes and no extra
-                // elements: the stylesheet draws the marker and the hint with
-                // `content: attr(…)`, so a mode costs one attribute per cell rather than a
-                // second DOM node per cell. In role mode the document's own colours are
-                // suppressed (§4.5) — colour means role, exclusively.
+                // Both overlays as two attributes and no extra elements: the stylesheet draws the
+                // marker and the hint with `content: attr(…)`. In role mode the document's own
+                // colours are suppressed (`doc/view-modes.md` §4.5).
                 match viewport.role(row, col) {
                     Some(role) => {
                         cell.set_attribute("data-role", role.name())?;
@@ -550,11 +528,10 @@ impl Ui {
                         cell.set_attribute("data-anchor", &edges)?;
                     }
                 }
-                // The autofilter's dropdown button (§9.4): one per field, on the range's
-                // own heading row — appended last, since `set_text_content` above would
-                // have thrown it away. `table:display-filter-buttons="false"` is honoured:
-                // the document asked for no buttons, and `run("sheet.filter")` still reaches
-                // the filter itself.
+                // The autofilter's dropdown button, one per field on the range's heading row —
+                // appended last, since `set_text_content` would discard it.
+                // `table:display-filter-buttons="false"` is honoured; `run("sheet.filter")` still
+                // reaches the filter.
                 if let Some(filter) = &filter
                     && filter.buttons
                     && row == filter.start.row
@@ -590,12 +567,9 @@ impl Ui {
         Ok(())
     }
 
-    /// Every chart on this sheet, over the cells it floats above.
-    ///
-    /// Read fresh and thrown away like everything else here (doc/plan.md rule 1). A chart's
-    /// own position is an ODF length from the table's corner, so it is placed in pixels from
-    /// that corner *minus* whatever has been scrolled past — the same arithmetic
-    /// `ui_sheet_gtk/src/geom.rs` does, in a different unit.
+    /// Every chart on this sheet, over the cells it floats above, read fresh each repaint. A
+    /// chart's position is an ODF length from the table's corner, so it is placed from that corner
+    /// less what has been scrolled past.
     fn render_charts(&self, widths: &Tracks, heights: &Tracks) -> Result<(), JsValue> {
         self.dom.charts.set_text_content(None);
         let sheet = self.sheet.get();
@@ -606,8 +580,7 @@ impl Ui {
         let selected = self.selected_chart_now();
         let mut handled = None;
         for (index, chart) in charts.iter().enumerate() {
-            // A length this build cannot parse is a chart it does not draw, which is §9's own
-            // tolerance applied to a picture.
+            // A length that will not parse is a chart not drawn.
             let Some(Some(frame)) = frames.get(index) else {
                 continue;
             };
@@ -728,11 +701,10 @@ impl Ui {
 
         let (start, end) = selection.rect();
         let mut summary = summary(&self.app, sheet, start, end);
-        // With the Names overlay on, a formula that uses a defined name is also *read* through
-        // it, beside the arithmetic — the bar itself keeps the text that would be stored, since
-        // it is an input a person may type in (`grind_sheet::place::named_reading`).
-        // A formula at rest, in plain words (`assist::friendly_line`) — beside the arithmetic
-        // rather than in the bar, which is an input and must keep the text that would be stored.
+        // A formula at rest in plain words (`assist::friendly_line`), and with the Names overlay
+        // one using a defined name read through it (`grind_sheet::place::named_reading`) — beside
+        // the arithmetic rather than in the bar, which is an input and keeps the text that would
+        // be stored.
         if self.friendly.get() && !self.editing.get() {
             let shown = self.app.input_text(sheet, active).unwrap_or_default();
             if let Some(reading) = grind_sheet::formula::assist::friendly_line(&shown) {
@@ -798,8 +770,7 @@ impl Ui {
             return;
         }
         let key = event.key();
-        // The assist band gets first refusal on Tab, the arrows and Escape while it is
-        // offering — the same three keys `ui_win32`'s band claims, and for the same reason:
+        // The assist band gets first refusal on Tab, the arrows and Escape while it offers;
         // everything else stays with the `<input>`.
         let offering = self.editing.get() && self.assist.borrow().is_offering();
         if let Some(reply) = assist::on_key(
@@ -1053,10 +1024,8 @@ impl Ui {
         }
     }
 
-    /// What the palette offers for a query that is not a verb: somewhere to go.
-    ///
-    /// An address or a range, a defined name, or a sheet — the three things a spreadsheet
-    /// navigates by, in one box. This is why there is no separate go-to dialog.
+    /// What the palette offers for a query that is not a verb: an address or range, a defined
+    /// name, or a sheet — so there is no separate go-to dialog.
     pub fn targets(&self, query: &str) -> Vec<Entry> {
         let query = query.trim();
         if query.is_empty() {
@@ -1103,11 +1072,9 @@ impl Ui {
 
     // --- the function list ---
 
-    /// What the palette offers for a query that names a function: its name or its plain-English
-    /// name contains the query (`grind sheet functions --long`'s four columns, from the same
-    /// catalog), five rows at most. Picking one starts an edit seeded `=NAME(` with the caret
-    /// where the first argument goes — the Windows window's *Function List* in the box that was
-    /// already here.
+    /// What the palette offers for a query naming a function: its name or plain-English name
+    /// contains the query (the `grind sheet functions --long` catalog), five rows at most. Picking
+    /// one starts an edit seeded `=NAME(` with the caret at the first argument.
     pub fn functions(&self, query: &str) -> Vec<Entry> {
         let query = query.trim().to_uppercase();
         if query.chars().count() < 2 {
@@ -1135,16 +1102,11 @@ impl Ui {
 
     // --- find and replace (`grind_sheet::find`) ---
 
-    /// What the palette offers *after* the verbs for a query: the cells holding it.
-    ///
-    /// After, not before like [`Ui::targets`] — a word somebody types is far more often a verb
-    /// than a cell's contents, and `bold` must still put *Bold* first however many cells say
-    /// "bold". Two characters at least, since one letter is in half the sheet. Each row is a
-    /// cell; when there are more than fit, the last row is all of them, stepped through with F3.
-    ///
-    /// This is the browser's whole find UI, and it is the palette's go-to rule applied once
-    /// more: **one box** rather than a find bar, which this page has no surface for. It is also
-    /// why Ctrl+F opens that box — the browser's own find can only see the cells on screen.
+    /// What the palette offers *after* the verbs: the cells holding the query. After, since a
+    /// typed word is far more often a verb — `bold` must still put *Bold* first. Two characters at
+    /// least; past what fits, the last row is all of them, stepped through with F3. This is the
+    /// page's whole find UI, one box, and why Ctrl+F opens it: the browser's own find sees only
+    /// the cells on screen.
     pub fn found(&self, query: &str) -> Vec<Entry> {
         const SHOWN: usize = 5;
         let query = query.trim();
@@ -1272,7 +1234,7 @@ impl Ui {
         }
     }
 
-    // --- the code view (doc/dsl.md §6, D9) ---
+    // --- the code view ---
 
     /// The document as its projection, for the code view.
     pub fn project(&self) -> grind_sheet::projection::Projection {
@@ -1286,15 +1248,7 @@ impl Ui {
         Some(a1::format(Some(&name), self.selection.get().active))
     }
 
-    /// Select whatever a code-view line projects.
-    ///
-    /// A **sheet's own name** is checked first, because a `sheet` node anchors one and a bare
-    /// name is also a perfectly good cell address — `Sheet1` parses as column `SHEET`, row 1,
-    /// and answering a click on `sheet Sales {` with a jump to a cell nobody has used would be
-    /// worse than doing nothing. The palette's own spelling for *that sheet* is a trailing dot,
-    /// so this is the one place the two vocabularies meet.
-    /// What the document says about itself (`doc/dsl.md` §4.3, D6) — the core's rules, and
-    /// nothing decided here.
+    /// What the document says about itself — the core's rules, nothing decided here.
     pub fn lint(&self) -> grind_core::lint::Report {
         self.app.lint(&grind_core::lint::Options::default())
     }
@@ -1317,6 +1271,9 @@ impl Ui {
         )
     }
 
+    /// Select whatever a code-view line projects. A **sheet's own name** is checked first: a bare
+    /// name is also a cell address (`Sheet1` is column `SHEET`, row 1), and `sheet Sales {` should
+    /// open the sheet.
     pub fn select_projected(&self, address: &str) {
         match a1::sheet(&self.app, address) {
             Ok(_) => self.go_to(&format!("{address}.")),
@@ -1376,13 +1333,10 @@ impl Ui {
         self.selection.get().rect()
     }
 
-    /// Read the active cell's style, change one field, write the whole rectangle.
-    ///
-    /// `App::set_style` *replaces* rather than merges, deliberately (`sheet/src/lib.rs`) — so
-    /// the merge is here, where "make this bold as well" is a sentence about what is under the
-    /// cursor rather than about every cell in the range. `write` is one of
-    /// `grind_sheet::format`'s, which answer `None` for a style that sets nothing: un-bolding the
-    /// only bold cell used to leave an empty `style:style` behind.
+    /// Read the active cell's style, change one field, write the whole rectangle. `App::set_style`
+    /// replaces, so the merge is here, from the cell under the cursor; `write` is one of
+    /// `grind_sheet::format`'s, which answer `None` for a style that sets nothing, leaving no
+    /// empty `style:style`.
     fn merge_style(&self, write: impl Fn(&CellStyle) -> Option<CellStyle>) {
         let style = self
             .app
@@ -1419,10 +1373,9 @@ impl Ui {
             .filter(|shown| !shown.is_empty())
     }
 
-    /// More or fewer decimal places — `grind_sheet::format::stepped`, which keeps whatever
-    /// kind the cell already had and starts a plain cell from the decimals it *shows*. A date,
-    /// text, or a format this build did not write has no decimals to step, and nothing is
-    /// written: this used to turn a date into a number format with decimals.
+    /// More or fewer decimal places — `grind_sheet::format::stepped`, which keeps the cell's kind
+    /// and starts a plain cell from the decimals it shows. A date, text or a format the presets
+    /// cannot spell has none to step, and nothing is written.
     fn step_decimals(&self, by: i8) {
         let (sheet, at) = (self.sheet.get(), self.selection.get().active);
         let current = self.app.format_at(sheet, at).ok().flatten();
@@ -1482,9 +1435,9 @@ impl Ui {
         set_swatch(document, "s-color-bar", style.color.as_deref());
         set_swatch(document, "s-fill-bar", style.background.as_deref());
 
-        // The format `<select>` shows the preset the cell's format *is*, and General for
-        // anything this vocabulary cannot spell — which is honest: choosing a preset would
-        // overwrite a format the document brought and this build only knows how to display.
+        // The format `<select>` shows the preset the cell's format is, and General for anything
+        // the presets cannot spell — choosing a preset would overwrite a format the document
+        // brought.
         let format = self.app.format_at(self.sheet.get(), at).ok().flatten();
         set_select(document, "s-format", &named_format(format.as_ref()));
         Ok(())
@@ -1492,13 +1445,9 @@ impl Ui {
 
     // --- the clipboard ---
 
-    /// The selection as tab-separated text — the shape every spreadsheet on every platform
-    /// reads, so a range copied here pastes into one of them and back. The codec is
-    /// `grind_sheet::clip`'s, shared with every other shell's clipboard.
-    ///
-    /// The cells' *input* text, not their displayed text: a formula copies as a formula, which
-    /// is what a user who copies `=SUM(A1:A9)` means. It is also what `paste_text` feeds back
-    /// to `App::enter_range`, so a round trip through the clipboard is lossless.
+    /// The selection as tab-separated text (`grind_sheet::clip`): each cell's *input* text, so a
+    /// formula copies as a formula and `paste_text` feeds it back to `App::enter_range`
+    /// losslessly.
     pub fn clipboard_text(&self) -> Option<String> {
         let (start, end) = self.rect();
         let text = grind_sheet::clip::rect_text(
@@ -1625,9 +1574,8 @@ impl Ui {
         let Ok(Some(name)) = window.prompt_with_message_and_default("Sheet name", &current) else {
             return;
         };
-        // A rename carries every reference with it (`doc/dsl.md` §6.5, D10) — formulas, named
-        // expressions, chart ranges — in one undo step. Saying how many is what makes a
-        // document-wide edit visible.
+        // A rename carries every formula, named expression and chart range that named the sheet,
+        // in one undo step; saying how many makes the edit visible.
         match self.app.rename_sheet(sheet, name.trim()) {
             Ok(0) => {}
             Ok(rewritten) => self.set_message(format!("{rewritten} reference(s) rewritten")),
@@ -1657,10 +1605,8 @@ impl Ui {
         });
     }
 
-    /// Replicate each column's top cell down the selection — or each row's left cell across it —
-    /// which is what `App::fill` already is, over `grind_sheet::nav::fills` (the same lines the
-    /// Mac and the Windows grid fill). It used to copy one cell over the whole rectangle, which
-    /// made a two-column fill write column A's formulas into column B.
+    /// Replicate each column's top cell down the selection, or each row's left cell across it —
+    /// `App::fill` over `grind_sheet::nav::fills`.
     fn fill(&self, down: bool) {
         let (start, end) = self.rect();
         let lines = grind_sheet::nav::fill_lines(start, end, down);
@@ -1806,10 +1752,10 @@ impl Ui {
         });
     }
 
-    /// *Fit column width to text*, *Fit row height to content* and *Fit content to cells* — the
-    /// selected columns each as wide as its widest text, estimated in CSS pixels
-    /// (`layout::fit_width`), the selected rows given back to their content, or both over the
-    /// whole sheet; one `App::fit`, so one undo step, and an empty column back to the default.
+    /// *Fit column width to text*, *Fit row height to content* and *Fit content to cells* — each
+    /// selected column as wide as its widest text, estimated in CSS pixels (`layout::fit_width`),
+    /// the selected rows back to their content, or both over the sheet; one `App::fit`, one undo
+    /// step.
     fn fit(&self, cols: bool, rows: bool, whole: bool) {
         let sheet = self.sheet.get();
         let selection = self.nav_selection();
@@ -2013,10 +1959,9 @@ impl Ui {
         }
     }
 
-    /// *Preview the chart for the selection…* — the chart *Insert* would make, drawn by the same
-    /// `chart::svg` the sheet uses, in a dialog with **Insert** and **Cancel** and the GNOME
-    /// dialog's three kind buttons above it. Nothing is written until Insert
-    /// (`verbs::preview_insert_chart`), which inserts the kind that is pressed.
+    /// *Preview the chart for the selection…* — the chart *Insert* would make, drawn by
+    /// `chart::svg` in a dialog with **Insert**, **Cancel** and three kind buttons. Nothing is
+    /// written until Insert (`verbs::preview_insert_chart`).
     fn preview_chart(&self) {
         let (start, end) = self.rect();
         let sheet = self.sheet.get();
@@ -2233,10 +2178,9 @@ impl Ui {
         }
     }
 
-    /// *Explain this formula in words* — the active cell's formula unfolded, one call a line,
-    /// with its functions by their plain names and its arguments labelled (`friendly::explain`),
-    /// in a dialog read and dismissed like About. Presentation only: it never parses back and
-    /// nothing is written.
+    /// *Explain this formula in words* — the active cell's formula unfolded, a call a line,
+    /// functions by plain name and arguments labelled (`friendly::explain`), in a dialog read and
+    /// dismissed. Nothing is written.
     fn explain(&self) {
         let at = self.selection.get().active;
         let text = self
@@ -2281,13 +2225,9 @@ impl Ui {
         );
     }
 
-    /// Hide — or, with `hidden: false`, unhide — the rows the selection spans.
-    ///
-    /// `doc/sheet-shell.md`'s row/column hiding, over `App::set_row_hidden`, the same call
-    /// the CLI's `sheet hide`/`--unhide` makes. There is no fill handle or drag here to hide
-    /// a column edge, so a selected rectangle's own row span is the whole of "which rows" —
-    /// unhiding reaches a hidden run the same way, since Shift+arrow through one still moves
-    /// the selection's index across it even though it draws at no height.
+    /// Hide — or with `hidden: false` unhide — the rows the selection spans
+    /// (`App::set_row_hidden`). The selection's row span is the whole of "which rows": Shift+arrow
+    /// through a hidden run still moves the selection across it.
     fn hide_rows(&self, hidden: bool) {
         let (start, end) = self.selection.get().rect();
         match self
@@ -2334,12 +2274,8 @@ impl Ui {
         }
     }
 
-    /// Filter the selection, or clear the filter the sheet already has — the toolbar's
-    /// `sheet.filter`, `ui_sheet_gtk`'s `Grid::toggle_filter` mirrored.
-    ///
-    /// Over a sheet that already has one this clears it, so the command is the on/off switch
-    /// its name implies; otherwise the selection becomes the range, with its first row the
-    /// heading, which is what a person selecting a table with its titles means.
+    /// Filter the selection, or clear the sheet's filter (`sheet.filter`): over a sheet with one
+    /// this clears it; otherwise the selection becomes the range, its first row the heading.
     fn toggle_filter(&self) {
         let sheet = self.sheet.get();
         if self.filter().is_some() {
@@ -2361,12 +2297,9 @@ impl Ui {
         }
     }
 
-    /// Format the selection as a table — the toolbar's `sheet.format-table`.
-    ///
-    /// No dialog: like [`Self::toggle_filter`], the selection is the range, its first row is
-    /// the heading, and the name auto-generates (`Table1`, `Table2`, …). There is no
-    /// "un-format" to match — ODF has nothing resembling a persisted table object, so this is
-    /// a one-shot composite the same way LibreOffice's own AutoFormat is
+    /// Format the selection as a table (`sheet.format-table`). No dialog: the selection is the
+    /// range, its first row the heading, the name `Table1`, `Table2`, …. There is no un-format:
+    /// ODF keeps no table object, so this is a one-shot composite like LibreOffice's AutoFormat
     /// (`sheet/src/table_format.rs`).
     fn format_table(&self, totals: Option<grind_sheet::TotalsFunction>) {
         let sheet = self.sheet.get();
@@ -2392,13 +2325,9 @@ impl Ui {
         }
     }
 
-    /// *Format as table with totals…* — the same composite, having asked which aggregate the
-    /// totals row carries.
-    ///
-    /// `window.prompt` for the same reason [`Self::rename_sheet`] uses one: it is one word of
-    /// input and the browser already has a box for that. It is a *second* command rather than
-    /// a prompt bolted onto the first so that the plain one stays zero-prompt — the palette's
-    /// own way of offering two shapes of a verb, since there are no submenus here.
+    /// *Format as table with totals…* — the same, having asked which aggregate the totals row
+    /// carries, through `window.prompt` (one word of input). A second command so the plain one
+    /// asks nothing; the palette has no submenus.
     fn format_table_with_totals(&self) {
         let Some(window) = web_sys::window() else {
             return;
@@ -2415,13 +2344,9 @@ impl Ui {
 
     // --- CSV, the one non-ODF format (`doc/not-doing.md` §2) ---
 
-    /// A delimited file, read in **at the cursor**, in one undo step.
-    ///
-    /// The shell hands over the text because only it can reach a file (rule 5 — a browser has
-    /// no filesystem, and `App::import_csv` takes a `&str` rather than a path for exactly that
-    /// reason); what is this pane's is where the fields land and what they are read as, and
-    /// both come from what it already holds. `csv::Import::sniffed` is the same answer every
-    /// other window gives, so one file imports the same way in all four.
+    /// A delimited file read in **at the cursor**, one undo step. The shell hands over the text,
+    /// being the one that can reach a file (`App::import_csv` takes a `&str`);
+    /// `csv::Import::sniffed` decides how it is read, as in every window.
     pub fn import_csv(&self, text: &str, words: &str) {
         let sheet = self.sheet.get();
         let at = self.selection.get().active;
@@ -2441,11 +2366,9 @@ impl Ui {
         }
     }
 
-    /// The selection as delimited text — or everything the sheet uses, when the selection is
-    /// one cell and therefore a cursor rather than a range (`format_table`'s own reading).
-    ///
-    /// `None` is "there is nothing to write", already said on the message line: a download of
-    /// an empty file is a worse answer than a sentence.
+    /// The selection as delimited text, or everything the sheet uses when one cell is selected.
+    /// `None` means nothing to write, already said on the message line — a sentence beats an empty
+    /// download.
     pub fn export_csv(&self, dialect: csv::Dialect) -> Option<String> {
         let sheet = self.sheet.get();
         let (mut start, mut end) = self.selection.get().rect();
@@ -2560,10 +2483,8 @@ impl Ui {
             .collect()
     }
 
-    /// What the popover decided, as an undoable change. The whole filter is replaced because
-    /// that is the vocabulary `App::set_filter` has — one filter is one value
-    /// (`grind_sheet::model`), so a field's condition is edited by reading, changing and
-    /// writing it back.
+    /// What the popover decided, as an undoable change. The whole filter is replaced, since
+    /// `App::set_filter` takes one filter as one value.
     fn apply_filter(&self, chosen: filter_ui::Chosen) {
         let Some(field) = self.filter_field.get() else {
             return;
@@ -2673,8 +2594,8 @@ impl Ui {
         self.request_repaint();
     }
 
-    /// Start editing. `Some(c)` replaces the cell with that character, `None` keeps
-    /// what is there — F2, and a double-click.
+    /// Start editing: `Some(c)` replaces the cell with that character, `None` keeps it — F2, and a
+    /// double-click.
     fn begin(&self, seed: Option<char>) -> Result<(), JsValue> {
         let text = match seed {
             Some(c) => c.to_string(),
@@ -2691,9 +2612,8 @@ impl Ui {
         self.editing.set(true);
         self.dom.formula.set_value(text);
         self.dom.formula.focus()?;
-        // Focusing an `<input>` selects it in some browsers, and the caret belongs
-        // after what is there or the next keystroke deletes the seed — the same trap
-        // `ui_sheet_gtk`'s `Grid::begin` documents, in a different toolkit.
+        // Focusing an `<input>` selects it in some browsers, and the caret belongs after the seed
+        // or the next keystroke deletes it.
         let end = utf16::units_before(text, text.len()) as u32;
         self.dom.formula.set_selection_range(end, end)?;
         self.set_message(String::new());
@@ -2710,9 +2630,8 @@ impl Ui {
         }
         let text = self.dom.formula.value();
         // `selection_start` counts UTF-16 code units, as every DOM offset does, and the assist
-        // counts bytes — `grind_core::utf16` is the conversion, the one `ui_win32`'s
-        // `EM_GETSEL` goes through too. Counting `char`s instead put the caret one place off
-        // for every emoji before it.
+        // counts bytes; `grind_core::utf16` converts, or every emoji before the caret puts it a
+        // place off.
         let units = self.dom.formula.selection_start()?.unwrap_or(0) as usize;
         let caret = utf16::byte_of(&text, units);
         let names: Vec<String> = self.app.names().into_iter().map(|(name, _)| name).collect();
@@ -2759,12 +2678,8 @@ impl Ui {
         self.refresh_assist()
     }
 
-    /// Store what the formula bar holds, then move on.
-    ///
-    /// The display-form → canonical → [`App::enter`] path, and the "stay open on a
-    /// bad formula" rule, are the same three lines `grind-tui` and `grind-sheet-gtk` run:
-    /// a formula is typed in A1 form and stored in ODF's, and the one place that
-    /// conversion lives is the core.
+    /// Store what the formula bar holds, then move on: display form to canonical to
+    /// [`App::enter`], and a formula that will not parse keeps the edit open.
     fn commit(&self, direction: Option<Dir>) -> Result<(), JsValue> {
         if !self.editing.get() {
             // Enter with no edit open is "edit this cell", which is what a
@@ -2837,11 +2752,8 @@ impl Ui {
         }
     }
 
-    /// Turn one of `doc/view-modes.md`'s overlays on or off, and say which.
-    ///
-    /// The message is not a nicety: role mode suppresses the document's own colours (§4.5),
-    /// which is the right call and still a surprise, and §9 asks for the mode to say it is
-    /// on somewhere a reader will see it.
+    /// Turn one of the overlays on or off, and say which: role mode suppresses the document's
+    /// colours (`doc/view-modes.md` §4.5), and §9 asks for the mode to say it is on.
     fn overlay(&self, roles: bool) {
         let mut overlays = self.overlays.get();
         let on = match roles {
@@ -3103,10 +3015,9 @@ fn replaced(what: &str, done: &find::Replaced) -> String {
 /// here looks the way the same command formats it everywhere else.
 const CURRENCY: &str = grind_sheet::numfmt::DEFAULT_CURRENCY;
 
-/// The format a `format.*` preset command writes: `Some(None)` is *General* (no format),
-/// `None` is a command that is not a preset. One table for the verb and for its sample, so the
-/// row cannot promise one thing and write another. Presets are the core's vocabulary
-/// (`grind_sheet::numfmt::preset`), never a format-code string (`doc/ods-format.md` §5.2).
+/// The format a `format.*` preset command writes: `Some(None)` is *General*, `None` is not a
+/// preset. One table for the verb and its sample, so a row cannot promise one thing and write
+/// another (`grind_sheet::numfmt::preset`).
 fn preset_of(id: &str) -> Option<Option<grind_sheet::numfmt::Format>> {
     let preset = |kind: Kind, decimals: u8, symbol: &str| {
         let grouping = matches!(kind, Kind::Number | Kind::Currency) && decimals > 0;
@@ -3127,14 +3038,9 @@ fn preset_of(id: &str) -> Option<Option<grind_sheet::numfmt::Format>> {
     }
 }
 
-/// Turn a property on, or — when it is already that value — off. What a *toggle* means, as
-/// opposed to a value a picker sets.
-/// Which of the format `<select>`'s options a cell's format *is* — the command id, so the
-/// toolbar reports in the same vocabulary it commands in.
-///
-/// A format the preset vocabulary cannot spell (`DD.MM.YYYY`, a document's own) reports as
-/// General, because none of the options is it: this build displays such a format faithfully
-/// and has no name for it (`Format::is_preset`).
+/// Which of the format `<select>`'s options a cell's format is — the command id, so the toolbar
+/// reports in its own vocabulary. A format the presets cannot spell (`DD.MM.YYYY`) reports as
+/// General: it is displayed faithfully and has no name here (`Format::is_preset`).
 fn named_format(format: Option<&numfmt::Format>) -> String {
     let Some(format) = format else {
         return "format.general".to_owned();
@@ -3164,20 +3070,9 @@ fn named_format(format: Option<&numfmt::Format>) -> String {
     .to_owned()
 }
 
-/// A `CellStyle` as inline CSS.
-///
-/// ODF's style vocabulary is CSS's here, near enough to pass values through
-/// verbatim: `fo:font-weight`, `fo:color` and `fo:border` are spelled the way CSS
-/// spells them, which is not a coincidence — both took them from XSL. The values
-/// stay exactly as the document wrote them (doc/ods-format.md's rule), so anything
-/// this shell does not understand is passed to the browser rather than dropped.
-/// Whether this cell is the one that carries its anchor's hint — `doc/view-modes.md` §3.2's
-/// "drawn once".
-///
-/// A name over `A2:A50` is one anchor, not forty-nine, and scrolling must move the hint
-/// rather than lose it: it goes on the first cell of the anchor that is actually on screen.
-/// Rows the document says are not there — filtered or hidden — are skipped, because a hint
-/// drawn into one of those is a hint nobody sees.
+/// Whether this cell carries its anchor's hint (`doc/view-modes.md` §3.2, "drawn once"): the first
+/// cell of the anchor on screen, so scrolling moves the hint rather than losing it. Filtered and
+/// hidden rows are skipped.
 fn hint_here(viewport: &grind_sheet::Viewport, hidden: &[u32], row: u32, col: u32) -> bool {
     viewport.names().iter().any(|anchor| {
         let first_col = anchor.cols.start.max(viewport.cols.start);
@@ -3187,13 +3082,9 @@ fn hint_here(viewport: &grind_sheet::Viewport, hidden: &[u32], row: u32, col: u3
     })
 }
 
-/// Which edges of a name anchor's range this cell sits on, space-separated for
-/// `data-anchor` — `doc/view-modes.md`'s "a range anchor is not outlined" gap, closed the
-/// way `ui_sheet_gtk/src/grid.rs`'s `draw_hints` does it: a range says how far it reaches
-/// by being outlined, and a single cell needs no outline since the hint already sits
-/// inside the only cell it means. `content: attr(data-anchor)` is not used here — the
-/// stylesheet reads each edge word with `~=` and turns it into a `border-*`, so the
-/// outline is one attribute per boundary cell rather than a second element.
+/// Which edges of a name anchor's range this cell sits on, space-separated for `data-anchor`: a
+/// range is outlined to say how far it reaches, and a single cell needs none. The stylesheet reads
+/// each edge word with `~=` into a `border-*`, one attribute per boundary cell.
 fn anchor_edges(viewport: &grind_sheet::Viewport, row: u32, col: u32) -> String {
     let mut edges = Vec::new();
     for anchor in viewport.names() {
@@ -3216,17 +3107,10 @@ fn anchor_edges(viewport: &grind_sheet::Viewport, row: u32, col: u32) -> String 
     edges.join(" ")
 }
 
-/// The status line's reading of a selection: `B8:C10 · Sum 9,391.13 · Count 4 · Average …`,
-/// the range alone when it holds nothing, and **nothing for one cell** — the address box above
-/// the grid is already saying where that is, and the tab below it which sheet.
-///
-/// It used to read `Budget · 20×10 used · 3×2 selected`: the sheet's name the tab beside it was
-/// showing, the used extent — a number about the file that nobody selecting cells is asking —
-/// and a size where every other spreadsheet puts the sum. The aggregates are `App::preview` over
-/// generated formulas, the way `ui_sheet_gtk`'s and `ui_win32`'s status bars do it: `COUNTA`,
-/// since a status bar's Count is of what is there rather than of numbers, and Sum and Average
-/// only when there is a number to add. The range is clamped to the used extent first, so a
-/// whole-column selection does not walk a million rows.
+/// The status line's reading of a selection — `B8:C10 · Sum 9,391.13 · Count 4 · Average …`, the
+/// range alone when it holds nothing, and **nothing for one cell**, which the address box already
+/// shows. `App::preview` over generated formulas: `COUNTA`, since Count is of what is there, and
+/// Sum and Average only when there is a number. The range is clamped to the used extent first.
 fn summary(app: &App, sheet: usize, start: Pos, end: Pos) -> String {
     if start == end {
         return String::new();
@@ -3267,6 +3151,9 @@ fn summary(app: &App, sheet: usize, start: Pos, end: Pos) -> String {
     parts.join(" · ")
 }
 
+/// A `CellStyle` as inline CSS. ODF's `fo:` vocabulary is CSS's near enough — both took it from
+/// XSL — so values pass through as the document wrote them, and what this shell does not
+/// understand goes to the browser rather than being dropped.
 fn css_of(style: Option<&CellStyle>, numeric: bool, dark: bool) -> String {
     let mut css = String::new();
     // A number right-aligns unless the document says otherwise — the convention
@@ -3567,19 +3454,12 @@ fn wire_filter_menu(ui: &Rc<Ui>) -> Result<(), JsValue> {
     })
 }
 
-/// A plain number that does not fit narrows first, to the first of its shorter spellings that
-/// does — fewer decimals, as LibreOffice's General format shows it (`Viewport::narrower`).
-///
-/// A number that does not fit its cell is **`###`**, never part of itself — `numfmt::overflow`,
-/// the rule every shell in the suite draws. The stylesheet clips a cell's content, so without this
-/// `3,710.00 €` in a narrow column read `3,710.0` with nothing to say a digit and the currency
-/// had gone.
-///
-/// Measured after the rows are in the page, since only then has the browser laid them out: a
+/// A plain number that does not fit narrows first, to the first shorter spelling that fits
+/// (`Viewport::narrower`), else becomes **`###`** (`numfmt::overflow`) — the stylesheet clips, so
+/// `3,710.00 €` in a narrow column would read `3,710.0`. Measured after the rows are laid out: a
 /// cell whose content is wider than its box (`scrollWidth > clientWidth`) is measured once more
-/// with ten hashes in its own font, and given as many as its room holds. The box's horizontal
-/// padding is taken off both, since both widths include it. Nothing happens where nothing is laid
-/// out — jsdom reports every width as zero, so the smoke test sees the numbers unchanged.
+/// with ten hashes in its font and given as many as fit, padding taken off both. jsdom reports
+/// widths of zero, so the smoke test sees numbers unchanged.
 fn hash_overflowing(cells: &[(web_sys::Element, Vec<String>)]) -> Result<(), JsValue> {
     /// `.grid td`'s `padding: 0 4px`, both sides.
     const PADDING: f64 = 8.0;
@@ -3717,10 +3597,8 @@ mod tests {
         );
     }
 
-    /// A range anchor is outlined on its boundary cells only — `doc/view-modes.md`'s "a range
-    /// anchor is not outlined" gap, closed the way `ui_sheet_gtk`'s `draw_hints` outlines the
-    /// same rectangle. A single-cell name gets no edges at all: the hint already sits inside
-    /// the only cell it means (`NameAnchor::is_range`).
+    /// A range anchor is outlined on its boundary cells only; a single-cell name gets no edges
+    /// (`NameAnchor::is_range`).
     #[test]
     fn a_range_anchor_is_outlined_on_its_boundary_cells_only() {
         let app = App::new();

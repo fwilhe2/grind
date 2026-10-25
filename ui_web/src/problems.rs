@@ -2,18 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The **problems pane** — `grind lint`'s findings, in a browser tab (`doc/dsl.md` §4.3, D6).
-//!
-//! **Shared by both panes**, like [`crate::code`] and for the same reason, which is stronger
-//! here than it is there: a diagnostic is document-type-neutral *by construction*
-//! (`grind_core::lint`), so a spreadsheet's findings and a text document's are one list and one
-//! stylesheet. What differs is what an address means, and neither this file nor its markup has
-//! an opinion about that — the row carries the string and the pane resolves it through the
-//! `select_projected` it already has for the code view.
-//!
-//! The HTML is a string rather than `Document::create_element` calls, exactly as
-//! [`crate::code`], `chart::svg` and `text::runs` already are: one `set_inner_html` per render,
-//! and one escaping function every path goes through.
+//! The **problems pane** — `grind lint`'s findings. Shared by both panes: a diagnostic is
+//! document-type-neutral (`grind_core::lint`), so each row carries its address string and the pane
+//! resolves it through the `select_projected` it has for the code view. Built as a string, like
+//! [`crate::code`].
 
 use grind_core::lint::{Report, Severity};
 use grind_sheet::Calculation;
@@ -69,11 +61,8 @@ pub fn calculations_html(found: &[Calculation]) -> String {
     out
 }
 
-/// The findings as markup: a header with the tally, then one row per finding.
-///
-/// Each row carries `data-address`, which is what a click resolves — the same trick
-/// `code::html` plays with `data-line`, and for the same reason: the pane is rebuilt whole on
-/// every render, so a listener per row would be a hundred closures to leak.
+/// The findings as markup: a header with the tally, then one row per finding, each carrying
+/// `data-address` for one listener on the pane to read.
 pub fn html(report: &Report) -> String {
     let mut out = String::new();
     out.push_str(&format!(
@@ -130,8 +119,7 @@ pub fn summary(report: &Report) -> String {
     summary
 }
 
-/// One character per severity. A page has no icon theme either — `ui_tui`'s three, so the two
-/// shells that draw with characters draw the same ones.
+/// One character per severity, the terminal's three, since a page has no icon theme.
 fn mark(severity: Severity) -> char {
     match severity {
         Severity::Error => '!',

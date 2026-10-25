@@ -2,21 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Spelling in the browser (`doc/spelling.md`): the same checker, the same rules and the same
-//! seven languages as every other client, with two differences the page forces.
+//! Spelling in the browser (`doc/spelling.md`): the checker, rules and languages of every other
+//! client, with two differences.
 //!
-//! **The dictionaries are fetched, not carried.** They are twelve megabytes, and the native
-//! binaries compile them in; a page that did the same would charge everybody who never types a
-//! word. `grind-spell` is linked here *without* its bundled lists, and [`fetch`] asks the server
-//! for the one language that is wanted — `dictionaries/<tag>.aff` and `.dic`, which
-//! `ui_web/build.sh` puts beside the page — and hands the text to
-//! [`grind_spell::Language::provide`], the way `print_module` and `fonts` fetch the PDF stack.
-//! Nothing is fetched until a document is opened with spelling on, or somebody asks for a
-//! language.
+//! **The dictionaries are fetched, not carried**: twelve megabytes nobody who never types a word
+//! should download. `grind-spell` is linked without its bundled lists, and [`fetch`] asks for the
+//! one language wanted — `dictionaries/<tag>.aff` and `.dic`, which `ui_web/build.sh` puts beside
+//! the page — for [`grind_spell::Language::provide`]. Nothing is fetched until a document opens
+//! with spelling on, or a language is asked for.
 //!
-//! **The setting is remembered in the browser**, not in a file: `localStorage`, one entry per
-//! kind of document — the page's counterpart of `$XDG_CONFIG_HOME/grind/spelling`, and like it
-//! the person's, never the document's. So are the words somebody added to their dictionary.
+//! **The setting is remembered in the browser**: `localStorage`, one entry per kind of document —
+//! the person's, never the document's — as are the words they added.
 
 use std::rc::Rc;
 
@@ -261,10 +257,10 @@ impl Shell {
         }
     }
 
-    /// Attach what the remembered setting for `kind` means to the document in its pane —
-    /// fetching the dictionary first if the language has not arrived, which is the one
-    /// asynchronous step — and repaint. `announce` says what it is checking in on the status
-    /// line; opening a document says nothing unless something is wrong.
+    /// Attach what the remembered setting for `kind` means to the document in its pane — fetching
+    /// the dictionary first if needed, the one asynchronous step — and repaint. `announce` says on
+    /// the status line what it checks in; opening a document says nothing unless something is
+    /// wrong.
     pub(crate) async fn apply_spelling(self: Rc<Self>, kind: DocumentKind, announce: bool) {
         let setting = load(kind);
         for _ in 0..2 {

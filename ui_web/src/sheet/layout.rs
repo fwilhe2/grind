@@ -2,33 +2,19 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Pixels ↔ cells: how much of the sheet fits, and where the view has to be to show
-//! the selection.
-//!
-//! One of the two halves of this shell that runs without a browser, and it is
-//! deliberately small: *which* cell the pointer landed on is answered by the DOM
-//! (every cell carries its address, and a click reads it off the target), because
-//! hit-testing is something the platform already does. What is left is the part the
-//! platform cannot know — how many rows and columns to ask [`grind_sheet::App::get_viewport`]
-//! for, and how to keep the active cell on screen.
-//!
-//! **A column is as wide as the document says it is** ([`Tracks`]). That used to be a
-//! `ponytail` here — every column one width — and it was the difference between opening
-//! somebody's spreadsheet and opening an approximation of it. The viewport arithmetic
-//! accumulates widths from the scroll position rather than dividing by one, which is the
-//! same prefix-sum shape `ui_sheet_gtk/src/geom.rs` grew in M8.
+//! Pixels ↔ cells: how much of the sheet fits, and where the view must be to show the selection.
+//! Which cell the pointer landed on is the DOM's answer (every cell carries its address); what is
+//! left is what the platform cannot know — how many rows and columns to ask
+//! [`grind_sheet::App::get_viewport`] for, and how to keep the active cell on screen. **A column
+//! is as wide as the document says** ([`Tracks`]), widths accumulating from the scroll position.
 
 use std::collections::HashMap;
 
 use grind_sheet::Pos;
 use grind_sheet::style::length_mm;
 
-/// How many CSS pixels one millimetre is drawn as.
-///
-/// The number the whole page is sized in: a document's own lengths are physical
-/// (`"2.258cm"`) and a browser's are not, so one conversion has to be declared. 96 CSS
-/// pixels per inch is the one the CSS specification itself fixes, which makes this the
-/// browser's own answer rather than this shell's opinion.
+/// How many CSS pixels one millimetre is drawn as: 96 per inch, which the CSS specification itself
+/// fixes.
 pub const PX_PER_MM: f64 = 96.0 / 25.4;
 
 /// The size of one cell, in CSS pixels.
@@ -38,25 +24,19 @@ pub struct Metrics {
     pub cell_h: f64,
 }
 
-/// The cell size the grid is drawn at, and the shell's own number rather than the
-/// page's: `start` writes it into `--cell-w`/`--cell-h`, so the stylesheet cannot
-/// disagree with the arithmetic here.
-///
-/// It is *declared*, not measured, and that is the point. Measuring a rendered cell
-/// makes the viewport a function of the layout the viewport produced, and the loop
-/// has no fixed point: a table stretched to its container puts one more column on
-/// screen every repaint, each one narrower than the last. Both sides of the page's
-/// size question stay in CSS pixels — `clientWidth` is too — so nothing is lost by
-/// not measuring, page zoom included.
+/// The cell size the grid is drawn at, written into `--cell-w`/`--cell-h` by `start` so the
+/// stylesheet cannot disagree. **Declared, not measured**: measuring a rendered cell makes the
+/// viewport a function of the layout it produced, with no fixed point — a table stretched to its
+/// container gained a narrower column every repaint. Both sides stay in CSS pixels, page zoom
+/// included.
 pub const CELL: Metrics = Metrics {
     cell_w: 96.0,
     cell_h: 24.0,
 };
 
-/// How wide one character of a cell's text is taken to be, in CSS pixels, and the padding a
-/// cell keeps either side — the grid is 13px type, so this is **estimated** the way the chart's
-/// tick text is (`chart.rs`'s `TICK_CHAR_W`) rather than measured: measuring a rendered cell is
-/// the loop `CELL`'s own comment rules out.
+/// How wide one character of a cell's text is taken to be, in CSS pixels, and a cell's padding
+/// either side — estimated, as the chart's tick text is, since measuring a rendered cell is the
+/// loop `CELL` rules out.
 const FIT_CHAR_W: f64 = 7.4;
 const FIT_PAD: f64 = 14.0;
 
@@ -103,11 +83,8 @@ pub fn text_cells(text: &str) -> usize {
         .sum()
 }
 
-/// The sizes a document gave particular columns or rows, over a default for the rest.
-///
-/// Sparse, because a spreadsheet sizes a handful of tracks and leaves thousands alone —
-/// `App::col_widths` hands back exactly the ones it stored, in the ODF lengths it stored them
-/// as, and this is where those become pixels.
+/// The sizes a document gave particular columns or rows, over a default for the rest — sparse, as
+/// `App::col_widths` returns only those stored, as ODF lengths.
 #[derive(Clone, Debug, Default)]
 pub struct Tracks {
     sized: HashMap<u32, f64>,
@@ -115,10 +92,8 @@ pub struct Tracks {
 }
 
 impl Tracks {
-    /// Build from `(index, length)` pairs as the core reports them. A length nothing can
-    /// parse is left at the default rather than treated as zero, which is the same §9
-    /// tolerance the readers apply — a column that vanished would be worse than one that is
-    /// the ordinary width.
+    /// Build from the core's `(index, length)` pairs. A length that will not parse is the default,
+    /// not zero.
     pub fn new(default: f64, sized: impl IntoIterator<Item = (u32, String)>) -> Self {
         Tracks {
             sized: sized
@@ -187,12 +162,9 @@ impl Tracks {
 /// The most tracks either axis will ask for in one viewport.
 const MAX_VISIBLE: u32 = 512;
 
-/// Where the view has to be for `active` to be on screen, given where it is now.
-///
-/// Moves as little as possible — a selection already inside the view leaves it
-/// alone, which is what keeps a click from scrolling the sheet out from under the
-/// pointer. `visible` is `(rows, cols)` and comes from [`Metrics::visible`], minus
-/// the spare row and column it adds: a cell only half drawn is not on screen.
+/// Where the view must be for `active` to be on screen, moving as little as possible, so a click
+/// never scrolls the sheet from under the pointer. `visible` is `(rows, cols)` from
+/// [`Metrics::visible`] less the spare row and column it adds: a half-drawn cell is not on screen.
 pub fn follow(scroll: Pos, active: Pos, visible: (u32, u32)) -> Pos {
     let axis = |offset: u32, at: u32, span: u32| {
         let span = span.max(1);
@@ -239,12 +211,9 @@ mod tests {
 
     use super::*;
 
-    /// The bug this shell shipped with: the cell size was *measured* from a rendered
-    /// cell, and a table stretched to its container reports a narrower cell than the
-    /// one the shell drew — so every repaint asked for one more column, and typing
-    /// grew the grid without end. Every width here is declared instead: the
-    /// stylesheet's default, or the document's own. Declared sizes have a fixed
-    /// point; measured ones did not.
+    /// The column count must not depend on what was drawn: a cell size measured from a rendered
+    /// table stretched to its container asked for one more column every repaint. Every width is
+    /// declared instead — the stylesheet's default or the document's own.
     #[test]
     fn the_column_count_does_not_depend_on_what_was_drawn() {
         let tracks = Tracks::new(CELL.cell_w, [(0, "8cm".to_owned())]);
@@ -259,7 +228,7 @@ mod tests {
         // One inch, in the pixels the CSS specification fixes an inch at.
         assert!((tracks.size(2) - 96.0).abs() < 0.5, "{}", tracks.size(2));
         assert!(tracks.is_sized(2));
-        // A length this build cannot parse leaves the column ordinary rather than gone.
+        // A length that will not parse leaves the column ordinary rather than gone.
         assert_eq!(tracks.size(4), 96.0);
         assert!(!tracks.is_sized(4));
     }

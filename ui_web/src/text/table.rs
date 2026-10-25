@@ -2,30 +2,23 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A table's shape on the page — how many columns each has, and how wide the text in each cell
-//! is set. Pure arithmetic, so it is tested on the host; `mod.rs` builds the elements.
+//! A table's shape on the page — how many columns, and how wide each cell's text is set. Pure
+//! arithmetic, tested on the host; `mod.rs` builds the elements. A table is a run of blocks
+//! carrying a `Cell` (`grind_text::model::Cell`), drawn as a grid:
 //!
-//! A table in the model is a **run of blocks carrying a `Cell`** (`grind_text::model::Cell`):
-//! the body stays a flat sequence and a block says which table, row and column it sits in. This
-//! pane used to ignore that and stack a cell's blocks like any other, so a table read as a run
-//! of paragraphs with a tall blank gap where its empty cells were. It draws a grid now, with
-//! `ui_text_gtk`'s answers to the two questions the model leaves open:
-//!
-//! - **Columns are equal shares of the measure**, since the model carries no column widths
-//!   (`doc/text-core.md`: a table's own style is not read). Equal shares never overflow.
+//! - **Columns are equal shares of the measure**; a table's own column widths are not drawn here.
+//!   Equal shares never overflow.
 //! - **A merged cell is as wide as the columns it spans**, and as tall as the rows.
 //!
-//! The width matters beyond drawing. A cell's text is broken into lines at the cell's own width,
-//! and a click and a Down-arrow have to ask the core with that same width, or the caret lands
-//! where the ink is not — which is why [`measures`] is read by the `Faces` every motion goes
-//! through, not only by the renderer.
+//! The width is read by the `Faces` every motion goes through ([`measures`]), not only by the
+//! renderer, so a click and Down-arrow break a cell's lines where the ink does.
 
 use std::collections::HashMap;
 
 use grind_text::model::Cell;
 
-/// The space between a cell's rule and its text, and the rule's own width, in CSS pixels —
-/// `ui_text_gtk::geom::CELL_PAD` and `RULE`, so a table is one shape in both windows.
+/// The space between a cell's rule and its text, and the rule's width, in CSS pixels — the GTK
+/// window's numbers.
 pub const CELL_PAD: f64 = 6.0;
 pub const RULE: f64 = 1.0;
 
@@ -90,8 +83,7 @@ mod tests {
         assert_eq!(columns["B"], 4, "a span reaches past its own column");
     }
 
-    /// Equal shares, less the padding and the rule — the same arithmetic `ui_text_gtk`'s grid
-    /// does, so a cell's lines break in the same places in both windows.
+    /// Equal shares, less the padding and the rule.
     #[test]
     fn a_cell_is_set_at_its_share_of_the_measure() {
         assert_eq!(measure(&cell("A", 0, 0), 3, 600.0), 200.0 - 12.0 - 1.0);

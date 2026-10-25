@@ -2,22 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The command palette's vocabulary — every verb either pane can do, as data.
+//! The command palette's vocabulary — every verb either pane can do, as data. **This shell's
+//! answer to a menu bar**: a tab has none, and a pretend one makes a worse copy of a desktop
+//! application. So the verbs are one searchable list Ctrl+K opens, the toolbar carries what a
+//! pointer wants (toggles, swatches), and nothing is reachable from one and not the other.
 //!
-//! **This shell's answer to a menu bar.** A browser tab has no menu bar to hang things off
-//! and no window manager to borrow one from, and inventing a pretend one is how a web
-//! application ends up looking like a worse copy of a desktop application. So the verbs live
-//! in one searchable list that Ctrl+K opens, the toolbar carries only what a *pointer* wants
-//! (the toggles and the swatches), and nothing is reachable from one and not the other.
+//! Data rather than closures: a [`Command`] is an `id` and some words, the pane matches on the id,
+//! and the list tests on the host like the keymaps.
 //!
-//! It is data rather than closures on purpose: a [`Command`] is an `id` and some words, the
-//! pane matches on the id, and the whole list — including "does every command have a home" —
-//! unit-tests on the host with no browser, exactly as the keymaps do.
-//!
-//! The palette is also where **going somewhere** lives. A pane contributes [`Entry`] values of
-//! its own for whatever the query looks like — an address, a sheet's name, a heading — so the
-//! same box that runs *Bold* also jumps to `B12`, to `Summary`, or to the heading called
-//! *Method*. One box, because a second one would be a second thing to find.
+//! The palette is also where **going somewhere** lives: a pane contributes [`Entry`] values for
+//! whatever the query looks like — an address, a sheet, a heading — so the box that runs *Bold*
+//! also jumps to `B12`.
 
 /// One verb, as the palette shows it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,20 +53,15 @@ impl Entry {
     }
 }
 
-/// The spreadsheet's verbs.
-///
-/// Every one of these reaches an `App` method, and every one is also on the toolbar or a key
-/// — the palette adds a *way in*, never a capability the other shells do not have.
+/// The spreadsheet's verbs. Each reaches an `App` method and is also on the toolbar or a key.
 pub const SHEET: &[Command] = &[
     // --- what a document does ---
     cmd("doc.open", "Open document…", "Document", "Ctrl+O", true),
-    // The welcome pane's two cards, reachable while a document is open too: a page that had
-    // opened a spreadsheet used to have no way at all to start a text document.
+    // The welcome pane's two cards, reachable while a document is open too.
     cmd("doc.new-sheet", "New spreadsheet", "Document", "", false),
     cmd("doc.new-text", "New text document", "Document", "", false),
-    // Back to the pane the page opened on. A welcome screen you can never return to is a
-    // splash screen — `ui_win32`'s File ▸ Welcome Screen is the same row in that shell's
-    // growable surface.
+    // Back to the pane the page opened on; a welcome screen you can never return to is a splash
+    // screen.
     cmd("doc.welcome", "Welcome screen", "Document", "", false),
     cmd("doc.save", "Save a copy", "Document", "Ctrl+S", true),
     cmd("doc.about", "About this build", "Document", "", false),
@@ -135,12 +125,9 @@ pub const SHEET: &[Command] = &[
     cmd("spell.pl-PL", "Spelling: Polski", "Spelling", "", false),
     cmd("spell.off", "Spelling: off", "Spelling", "", false),
     cmd("sheet.recalc", "Recalculate", "Document", "F9", true),
-    // CSV, the one non-ODF format this suite reads and writes (`doc/not-doing.md` §2).
-    // **Three rows rather than two**: the delimiter a window writes comes from the name it is
-    // saved under (`csv::Dialect::for_name`), and a download names itself — so where the other
-    // shells offer two filters in a save dialog, this one offers two verbs, which is the same
-    // choice in the surface this shell has. Importing needs no such row: the delimiter is read
-    // out of the file's own content.
+    // CSV, the one non-ODF format read and written (`doc/not-doing.md` §2). Two export rows, since
+    // the delimiter comes from the name a download takes (`csv::Dialect::for_name`); importing
+    // needs one, the delimiter being read from the content.
     cmd("doc.import-csv", "Import CSV…", "Document", "", false),
     cmd(
         "doc.import-csv-with",
@@ -252,9 +239,7 @@ pub const SHEET: &[Command] = &[
     ),
     // --- what it is, rather than what it says ---
     //
-    // `doc/view-modes.md`. Neither writes anything: they are readings of the document, and
-    // the same command turns one off, which is why they sit beside the verbs rather than
-    // behind a confirmation.
+    // `doc/view-modes.md`'s readings: neither writes anything, and the same command turns one off.
     cmd("view.roles", "Show what each cell is", "View", "", true),
     cmd("view.names", "Show where names live", "View", "", false),
     cmd(
@@ -280,8 +265,7 @@ pub const SHEET: &[Command] = &[
     // `doc/dsl.md` §6. The same command turns it off, like the two above, and for the same
     // reason: it is a *reading* of the document and writes nothing.
     cmd("view.source", "Show the source", "View", "", false),
-    // `doc/dsl.md` §4.3, D6 — what the document says about itself. A verb rather than a key,
-    // and the same word closes it, like the readings above.
+    // What the document says about itself; the same word closes it, like the readings above.
     cmd("view.problems", "Check the document", "View", "", false),
     // Every formula in the document, filtered by a word, in the problems pane's shape.
     cmd(
@@ -680,12 +664,8 @@ pub const TEXT: &[Command] = &[
     cmd("view.problems", "Check the document", "View", "", false),
 ];
 
-/// The welcome pane's verbs — what Ctrl+K offers when **no document is open**.
-///
-/// Three rows, and they are the three cards the pane already draws. Everything else in this file
-/// acts on a document: offering Bold or Recalculate over nothing would be the palette listing
-/// verbs that cannot run, which is the same mistake `ui_win32`'s menu bar made once and stopped
-/// making (`menu::items_for`).
+/// The welcome pane's verbs — what Ctrl+K offers when **no document is open**: the three cards the
+/// pane draws. Bold or Recalculate over nothing would be verbs that cannot run.
 pub const WELCOME: &[Command] = &[
     cmd("doc.new-sheet", "New spreadsheet", "Start", "", true),
     cmd("doc.new-text", "New text document", "Start", "", true),
@@ -710,11 +690,9 @@ const fn cmd(
     }
 }
 
-/// The commands that match `needle`, best first — or, for an empty query, the common ones in
-/// the order they are declared.
-///
-/// The rank is deliberately simple and deliberately *stable*: a palette whose first row moves
-/// around as a fourth letter is typed is a palette nobody trusts to press Enter on.
+/// The commands matching `needle`, best first — or, for an empty query, the common ones in
+/// declared order. The rank is simple and **stable**: a first row that moves as a fourth letter is
+/// typed is one nobody trusts to press Enter on.
 pub fn filter(commands: &[Command], needle: &str) -> Vec<Entry> {
     let needle = needle.trim();
     if needle.is_empty() {
@@ -754,11 +732,8 @@ fn entry(command: &Command, hits: Vec<usize>) -> Entry {
     }
 }
 
-/// How well `needle` matches `haystack`, and where.
-///
-/// **The core's**, since `doc/sheet-shell.md`'s rework: the GTK window grew a palette of its
-/// own, and two shells ranking the same query two ways is two palettes nobody learns. This
-/// crate keeps the name it always used.
+/// How well `needle` matches `haystack`, and where — the core's, shared with the GTK window's
+/// palette.
 pub use grind_core::search::score;
 
 #[cfg(test)]
@@ -922,11 +897,8 @@ mod tests {
         }
     }
 
-    /// Every id has to be unique, or two rows of the palette run the same thing — and the
-    /// pane's own `run` match would silently pick one.
-    /// The welcome pane offers exactly the three things a page with no document can do, and
-    /// every one of them is `Shell::run`'s own id — so a row here and the card in `index.html`
-    /// cannot come to mean two different things.
+    /// The welcome pane offers exactly the three things a page with no document can do, each
+    /// `Shell::run`'s own id, so a row here and the card in `index.html` mean the same.
     #[test]
     fn the_welcome_table_is_the_three_ways_to_get_a_document() {
         let ids: Vec<&str> = WELCOME.iter().map(|c| c.id).collect();
@@ -948,6 +920,7 @@ mod tests {
         }
     }
 
+    /// Two rows sharing an id would run the same thing, and the pane's `run` match would pick one.
     #[test]
     fn no_two_commands_share_an_id() {
         for table in [SHEET, TEXT, WELCOME] {

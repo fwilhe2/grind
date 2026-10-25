@@ -2,32 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Help while a formula is being typed: what may be completed, and what the call under the
-//! caret wants next — `doc/sheet-shell.md`'s M7 for the GTK window, `doc/windows-shell.md`'s
-//! W9 for Win32, and the largest gap `doc/web-shell.md` names for this one.
+//! Help while a formula is typed: what may be completed, and what the call under the caret wants
+//! next. Portable and tested on the host: `mod.rs` reads the formula `<input>`'s text and caret,
+//! calls [`Assist::refresh`], and draws [`band`] in the `#assist` line under the formula bar;
+//! [`on_key`] says which of Tab, the arrows and Escape the list claims before the keymap sees
+//! them.
 //!
-//! **Portable, and tested on the host** like [`super::keymap`] and [`super::layout`] —
-//! nothing here touches the DOM. `mod.rs` reads the formula `<input>`'s text and caret, calls
-//! [`Assist::refresh`], and draws [`band`] as a strip of `<span>`s in the `#assist` line under
-//! the formula bar; [`on_key`] says which of Tab, the arrows and Escape the list claims before
-//! the ordinary keymap ever sees them.
-//!
-//! ## Why a band and not a popover
-//!
-//! `ui_sheet_gtk` floats a `gtk::Popover` under the cell being edited. This shell draws a
-//! line instead — the same call `ui_win32` makes, for a browser's own version of its reason: a
-//! popover would be a second focusable element with its own layer and its own escape route,
-//! where the whole point of an assist band is that the keyboard never leaves the `<input>`
-//! while the list narrows. What that costs is the same thing it costs there: a row of names
-//! rather than a column of them with their summaries, so the chosen offer's own summary is
-//! drawn after the names — the one line a vertical list would have shown beside it.
-//!
-//! ## What is *not* here
-//!
-//! **Point mode** — arrow keys building a reference into a half-typed formula while the grid
-//! still has the focus. It stays on `doc/web-shell.md`'s gap list: this shell edits in exactly
-//! one place, the formula bar, and a caret that leaves it to build a reference is a third
-//! editing mode this file has no `Reply` for.
+//! **A band, not a popover**: a popover would be a second focusable element with its own layer and
+//! escape route, where the keyboard must never leave the `<input>` while the list narrows. The
+//! cost is a row of names rather than a column with summaries, so the chosen offer's summary
+//! follows the names.
 
 use std::ops::Range;
 
@@ -37,12 +21,9 @@ pub use grind_sheet::formula::assist::Candidate;
 /// How many offers fit on one line before the rest become a count.
 pub const MAX_OFFERS: usize = 6;
 
-/// What the assist band is showing, and what a key would do to it.
-///
-/// Recomputed from the formula bar's own text and caret on every keystroke and every caret
-/// move rather than updated in place — the same "asked for fresh, never stored" shape the view
-/// overlays follow, and for the same reason: a remembered completion goes stale the moment the
-/// caret moves with the mouse.
+/// What the band shows, and what a key would do to it — recomputed from the formula bar on every
+/// keystroke and caret move, since a remembered completion goes stale when the caret moves with
+/// the mouse.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Assist {
     /// Everything worth offering for the word being typed. Empty when there is no such word,
@@ -63,11 +44,9 @@ pub struct Assist {
 }
 
 impl Assist {
-    /// Read the formula bar's text at `caret` (a **byte** offset — the caller converts from
-    /// the `<input>`'s own UTF-16 units) and say what to show.
-    ///
-    /// `names` is the document's defined names, which the caller reads from `App::names` —
-    /// this module never touches a document.
+    /// Read the formula bar's text at `caret` — a **byte** offset; the caller converts from the
+    /// `<input>`'s UTF-16 units — and say what to show. `names` is the document's defined names,
+    /// read by the caller.
     pub fn refresh(&mut self, text: &str, caret: usize, names: &[String]) {
         self.call = core_assist::call_at(text, caret);
         self.chosen = 0;
@@ -140,16 +119,10 @@ pub enum Reply {
     Dismiss,
 }
 
-/// What a keystroke means **while a list of offers is up** — asked before
-/// [`super::keymap::action_for`], and `None` for everything this list has no answer for, which
-/// is almost every key.
-///
-/// The three it claims are the three that would otherwise do something the user did not mean:
-/// Tab commits the cell and moves right, Up/Down would otherwise be left to the `<input>`'s own
-/// (largely inert, on a single line) caret handling, and Escape throws the whole edit away.
-/// **Enter is deliberately not claimed**: it commits, as it always does, because a formula
-/// finished by pressing Enter is the common case and an accidental completion in its place
-/// would store the wrong thing.
+/// What a keystroke means **while offers are up** — asked before [`super::keymap::action_for`],
+/// and `None` for nearly every key. It claims Tab (else commit and move right), Up/Down and Escape
+/// (else the whole edit is thrown away). **Enter is not claimed**: it commits, the common way to
+/// finish a formula, where an accidental completion would store the wrong thing.
 pub fn on_key(offering: bool, key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<Reply> {
     if !offering || ctrl || alt {
         return None;
@@ -191,16 +164,10 @@ impl Piece {
     }
 }
 
-/// The band's whole content, as runs — offers if there are any, otherwise the signature of the
-/// call the caret is in.
-///
-/// Always the friendly spelling (`Sum(Number…)` rather than `SUM( { NumberSequenceList N } +
-/// )`): this shell has no friendly-formulas toggle the way the two desktop windows do, and a
-/// hint that reads is worth more here than one that matches the spec's own `Syntax:` line —
-/// the formula bar beside it is already in A1, not ODF's, so there was never one spelling this
-/// band had to answer to.
-///
-/// Empty when there is nothing to say, which is the caller's cue to hide `#assist`.
+/// The band's content as runs — offers if any, else the signature of the call the caret is in.
+/// Always the friendly spelling (`Sum(Number…)`): this shell has no friendly-formulas toggle, and
+/// the formula bar beside it is in A1, not ODF's spec syntax. Empty when there is nothing to say,
+/// the cue to hide `#assist`.
 pub fn band(assist: &Assist) -> Vec<Piece> {
     if assist.is_offering() {
         return offers_band(assist);
@@ -235,10 +202,8 @@ fn offers_band(assist: &Assist) -> Vec<Piece> {
     pieces
 }
 
-/// `SUM(Number…)`, with the argument the caret is in in the accent.
-///
-/// Which part is emphasised is `assist::part_for`'s answer — `=SUM(1;2;3;4;5|` is still
-/// inside `Number…`, and `COUNTIFS`' fifth argument is its third range.
+/// `SUM(Number…)` with the caret's argument in the accent — `assist::part_for`'s choice:
+/// `=SUM(1;2;3;4;5|` is still in `Number…`, and `COUNTIFS`' fifth argument is its third range.
 fn signature_band(name: &str, argument: usize) -> Vec<Piece> {
     let Some((head, parts)) = core_assist::signature_parts(name, true) else {
         return Vec::new();

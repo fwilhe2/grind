@@ -2,33 +2,20 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The **code view** — the document as its projection, shown (`doc/dsl.md` §6, D9).
+//! The **code view** — the document as its projection (`doc/dsl.md` §6): one `<pre>` of `<span>`s,
+//! a class per [`TokenKind`], since the writer already says what every byte is. Shared by both
+//! panes: a projection is plain text either way, coloured by the core's vocabulary.
 //!
-//! One `<pre>` of `<span>`s, which is what §6.1 predicted this shell's half would cost: the
-//! projection writer already says what every byte it emits *is*, so the page paints a class per
-//! [`TokenKind`] and takes no highlighter. `ui_web/src/text/runs.rs` already cuts a laid-out line
-//! into spans for the document pane, and this is the same shape over a different cutter.
+//! **Read-only** (§6.4). Clicking a line asks the pane to select what that line projects.
 //!
-//! **Shared by both panes**, like [`crate::palette`] and unlike everything else here — the grid
-//! and the flow have no markup in common, and their projections have all of it, because a
-//! projection is plain text either way and its colours come from a vocabulary the core owns.
-//!
-//! **Read-only** (§6.4). Clicking a line asks the pane to select what that line projects, which
-//! is §6.2's map in the direction that has to be built rather than assumed; typing into it is a
-//! feature with three prerequisites this build has none of, and the gate is in `doc/dsl.md`.
-//!
-//! The HTML is built as a string rather than through `Document::create_element`, exactly as
-//! `chart::svg` and `runs::html` already are: one `set_inner_html` per render beats a hundred
-//! DOM calls, and the escaping is one function that every path goes through.
+//! The HTML is built as a string, like `chart::svg` and `runs::html`: one `set_inner_html` per
+//! render, and one escaping function for every path.
 
 use grind_core::projection::{Projection, TokenKind};
 
-/// The whole projection as markup: one `<div class="code-line">` per line, holding the gutter
-/// and the coloured pieces.
-///
-/// `cursor` is the line the pane's selection is on, drawn as the current line. `None` means the
-/// selection is somewhere the projection does not spell — an empty cell, most often — and then
-/// no line is current, which is honest rather than defaulting to the first.
+/// The whole projection as markup: one `<div class="code-line">` per line, with its gutter and
+/// coloured pieces. `cursor` is the line the selection is on; `None` when the projection does not
+/// spell the selection (an empty cell, mostly), and then no line is current.
 pub fn html(projection: &Projection, cursor: Option<usize>) -> String {
     let mut out = String::with_capacity(projection.text().len() * 2);
     for index in 0..projection.line_count() {

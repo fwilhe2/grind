@@ -2,21 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **Taking hold of a chart** — `grind_sheet::chart_frame`'s one behaviour, in this page
-//! (`doc/chart-handling.md`).
-//!
-//! A press on a chart selects it, and a selected chart wears an accent outline and eight square
-//! handles (`.chart.selected`, `.chart-handle`) for as long as it is selected. Its body moves it,
-//! a handle resizes it with the opposite edge held, Shift on a corner keeps its proportions; the
-//! arrows nudge it, Delete and Backspace delete it, Return changes it, Escape lets go. A right
-//! click selects it and opens a menu saying all of that with its keys. Nothing is written while
-//! the pointer is down: the page draws the frame the drag has reached, and the release is one
+//! **Taking hold of a chart** (`doc/chart-handling.md`). A press selects a chart, which wears an
+//! accent outline and eight handles (`.chart.selected`, `.chart-handle`) while selected. Its body
+//! moves it, a handle resizes it with the opposite edge held, Shift on a corner keeps proportions;
+//! arrows nudge, Delete and Backspace delete, Return changes it, Escape lets go, and a right click
+//! opens a menu saying so. Nothing is written while the pointer is down: the release is one
 //! `App::reshape_chart`, one Ctrl+Z.
 //!
-//! The DOM does the hit-testing — a handle is its own element, its reach widened by a
-//! `::before` of [`chart_frame::HANDLE_SLOP`] — so the only arithmetic here is `chart_frame`'s.
-//! Frames are in the chart layer's own pixels, which CSS `zoom` scales: a pointer's movement in
-//! the window is divided by the zoom before it moves anything.
+//! The DOM hit-tests — a handle is its own element, its reach widened by a `::before` of
+//! [`chart_frame::HANDLE_SLOP`] — so the arithmetic is `chart_frame`'s. Frames are in the chart
+//! layer's pixels, which CSS `zoom` scales, so pointer movement is divided by the zoom.
 
 use grind_sheet::chart_frame::{self, Frame, Grip};
 use grind_sheet::style::{length_mm, mm_length};
@@ -41,9 +36,9 @@ pub(super) struct Grab {
 const HEADER_W: f64 = 3.5 * 16.0;
 
 impl Ui {
-    /// Every chart's frame on this sheet in the layer's pixels (`None` for one whose lengths
-    /// this build cannot read, which is a chart it does not draw), and where the sheet's own
-    /// corner is in the same pixels — what turns a frame back into `svg:x`/`svg:y`.
+    /// Every chart's frame on this sheet in the layer's pixels (`None` for one whose lengths will
+    /// not parse, which is not drawn), and the sheet's corner in the same pixels — what turns a
+    /// frame back into `svg:x`/`svg:y`.
     pub(super) fn chart_frames(
         &self,
         widths: &Tracks,
