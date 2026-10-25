@@ -22,16 +22,36 @@
 const APPS: [App; 2] = [
     App {
         name: "sheet",
-        core: include_str!("../../sheet/src/lib.rs"),
-        core_path: "sheet/src/lib.rs",
+        core: &[
+            ("sheet/src/lib.rs", include_str!("../../sheet/src/lib.rs")),
+            (
+                "sheet/src/app/charts.rs",
+                include_str!("../../sheet/src/app/charts.rs"),
+            ),
+            (
+                "sheet/src/app/formatting.rs",
+                include_str!("../../sheet/src/app/formatting.rs"),
+            ),
+            (
+                "sheet/src/app/names.rs",
+                include_str!("../../sheet/src/app/names.rs"),
+            ),
+            (
+                "sheet/src/app/spelling.rs",
+                include_str!("../../sheet/src/app/spelling.rs"),
+            ),
+            (
+                "sheet/src/app/structure.rs",
+                include_str!("../../sheet/src/app/structure.rs"),
+            ),
+        ],
         parity: include_str!("../../doc/cli-parity-sheet.md"),
         parity_path: "doc/cli-parity-sheet.md",
         least: 12,
     },
     App {
         name: "text",
-        core: include_str!("../../text/src/lib.rs"),
-        core_path: "text/src/lib.rs",
+        core: &[("text/src/lib.rs", include_str!("../../text/src/lib.rs"))],
         parity: include_str!("../../doc/cli-parity-text.md"),
         parity_path: "doc/cli-parity-text.md",
         least: 12,
@@ -40,8 +60,8 @@ const APPS: [App; 2] = [
 
 struct App {
     name: &'static str,
-    core: &'static str,
-    core_path: &'static str,
+    /// Every file holding an `impl App` block, by path.
+    core: &'static [(&'static str, &'static str)],
     parity: &'static str,
     parity_path: &'static str,
     /// The smallest API that is plausibly complete. A scanner that matched nothing would pass
@@ -50,24 +70,29 @@ struct App {
     least: usize,
 }
 
-/// Every `pub fn` in `impl App`.
+/// Every `pub fn` in every `impl App` block of the application's files.
 fn public_methods(app: &App) -> Vec<&'static str> {
-    let body = app
-        .core
-        .split_once("impl App {")
-        .unwrap_or_else(|| panic!("{} still defines `impl App`", app.core_path))
-        .1;
-    // rustfmt puts the closing brace of a top-level impl in column 0, and nothing inside the
-    // block is indented that far.
-    let body = body
-        .split_once("\n}")
-        .unwrap_or_else(|| panic!("{}'s impl block ends", app.core_path))
-        .0;
-
-    body.lines()
-        .filter_map(|line| line.trim().strip_prefix("pub fn "))
-        .filter_map(|rest| rest.split(['(', '<']).next())
-        .collect()
+    let mut methods = Vec::new();
+    for (path, source) in app.core {
+        let mut rest = *source;
+        let mut blocks = 0;
+        while let Some((_, after)) = rest.split_once("impl App {") {
+            // rustfmt puts the closing brace of a top-level impl in column 0, and nothing
+            // inside the block is indented that far.
+            let (body, tail) = after
+                .split_once("\n}")
+                .unwrap_or_else(|| panic!("{path}'s impl block ends"));
+            methods.extend(
+                body.lines()
+                    .filter_map(|line| line.trim().strip_prefix("pub fn "))
+                    .filter_map(|rest| rest.split(['(', '<']).next()),
+            );
+            rest = tail;
+            blocks += 1;
+        }
+        assert!(blocks > 0, "{path} still defines `impl App`");
+    }
+    methods
 }
 
 /// Every method named in a parity document, with the text explaining how it is reached.
