@@ -1086,11 +1086,11 @@ impl Ui {
     /// What the palette offers for a query that is not a verb: an address or range, a defined
     /// name, or a sheet — so there is no separate go-to dialog.
     pub fn targets(&self, query: &str) -> Vec<Entry> {
+        let mut out = self.spelling_entries(query);
         let query = query.trim();
         if query.is_empty() {
-            return Vec::new();
+            return out;
         }
-        let mut out = Vec::new();
         // An address only counts if it names a *cell* — `bol` lexes as the column BOL, and
         // offering "Go to BOL" above "Bold" would put a destination where a verb was meant.
         // Requiring a row is what tells a word from an address.
@@ -1338,6 +1338,72 @@ impl Ui {
             Ok(_) => self.go_to(&format!("{address}.")),
             Err(_) => self.go_to(address),
         }
+    }
+
+    // --- spelling ---
+
+    /// The first misspelt word in the active cell, while it is not being edited.
+    pub fn misspelt_here(&self) -> Option<grind_sheet::spell::Misspelling> {
+        if self.editing.get() {
+            return None;
+        }
+        let at = self.selection.get().active;
+        let all = self
+            .app
+            .misspellings(Some(self.sheet.get()), Some((at, at)));
+        all.ok()?.into_iter().next()
+    }
+
+    /// The palette's spelling rows for the active cell's misspelt word; empty without one.
+    fn spelling_entries(&self, query: &str) -> Vec<Entry> {
+        let Some(wrong) = self.misspelt_here() else {
+            return Vec::new();
+        };
+        crate::spelling::offers(&wrong.word, &self.app.suggest(&wrong.word), query)
+    }
+
+    /// Replace the active cell's misspelt word with the `n`th suggestion — one undo step, the
+    /// cell staying text (`App::correct`).
+    pub fn fix_misspelt(&self, n: usize) {
+        let Some(wrong) = self.misspelt_here() else {
+            return self.set_message("No misspelt word here".to_owned());
+        };
+        let Some(with) = self.app.suggest(&wrong.word).into_iter().nth(n) else {
+            return self.set_message(format!("No suggestion {} for {}", n + 1, wrong.word));
+        };
+        let said = match self
+            .app
+            .correct(wrong.sheet, wrong.pos, wrong.offset, &wrong.word, &with)
+        {
+            Ok(_) => format!("{} \u{2192} {with}", wrong.word),
+            Err(error) => error.to_string(),
+        };
+        self.set_message(said);
+    }
+
+    /// Select the next cell with a misspelt word, in reading order across every sheet, wrapping
+    /// round — and say what it might have been.
+    pub fn next_misspelling(&self) {
+        let Ok(all) = self.app.misspellings(None, None) else {
+            return;
+        };
+        let here = (self.sheet.get(), self.selection.get().active);
+        let key = |m: &grind_sheet::spell::Misspelling| (m.sheet, m.pos.row, m.pos.col);
+        let after =
+            |m: &&grind_sheet::spell::Misspelling| key(m) > (here.0, here.1.row, here.1.col);
+        let Some(wrong) = all.iter().find(after).or_else(|| all.first()) else {
+            return self.set_message("Nothing is misspelt".to_owned());
+        };
+        if wrong.sheet != self.sheet.get() {
+            self.sheet.set(wrong.sheet);
+            self.scroll.set(Pos::new(0, 0));
+        }
+        self.set_selection(Selection::at(wrong.pos));
+        let suggestions: Vec<String> = self.app.suggest(&wrong.word).into_iter().take(3).collect();
+        self.set_message(match suggestions.is_empty() {
+            true => format!("{} \u{2014} no suggestion", wrong.word),
+            false => format!("{} \u{2014} {}", wrong.word, suggestions.join(", ")),
+        });
     }
 
     /// Go where an address says. A trailing dot is a *sheet* with no cell — `Data.` means

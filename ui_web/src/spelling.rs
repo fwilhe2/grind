@@ -103,6 +103,49 @@ pub fn remove_word(word: &str) -> Result<bool, String> {
         .map_err(|_| "the browser refused to keep it".to_owned())
 }
 
+/// The palette's rows for a misspelt word under the caret or in the active cell: its first five
+/// `suggestions` as `spell.fix:N`, then Ignore and Add. Offered for an empty query, for the words
+/// that name them, and for what somebody typing the correction they mean would be typing:
+/// `receive`, over the word `recieve`.
+pub fn offers(word: &str, suggestions: &[String], query: &str) -> Vec<crate::command::Entry> {
+    use crate::command::Entry;
+    let query = query.trim().to_lowercase();
+    let asks = query.is_empty()
+        || ["spelling", "replace", "correct", "ignore", "dictionary"]
+            .iter()
+            .any(|name| name.contains(query.as_str()))
+        || word.to_lowercase().contains(&query)
+        || suggestions
+            .iter()
+            .any(|with| with.to_lowercase().contains(&query));
+    if !asks {
+        return Vec::new();
+    }
+    let mut out: Vec<Entry> = suggestions
+        .iter()
+        .take(5)
+        .enumerate()
+        .map(|(n, with)| {
+            Entry::target(
+                format!("spell.fix:{n}"),
+                format!("Replace \u{201c}{word}\u{201d} with \u{201c}{with}\u{201d}"),
+                "Spelling",
+            )
+        })
+        .collect();
+    out.push(Entry::target(
+        "spell.ignore",
+        format!("Ignore \u{201c}{word}\u{201d}"),
+        "Spelling",
+    ));
+    out.push(Entry::target(
+        "spell.add",
+        format!("Add \u{201c}{word}\u{201d} to your dictionary"),
+        "Spelling",
+    ));
+    out
+}
+
 /// The palette's row prefix for a word on the personal dictionary — picking it removes it.
 pub const FORGET: &str = "Remove from your dictionary: ";
 
@@ -225,23 +268,34 @@ impl Shell {
             }
             return spawn_local(self.clone().apply_spelling(kind, true));
         }
-        if self.mode.get() != Mode::Text {
-            return;
-        }
+        let sheet = match self.mode.get() {
+            Mode::Sheet => true,
+            Mode::Text => false,
+            Mode::Welcome => return,
+        };
         match id {
+            "spell.next" if sheet => self.sheet.next_misspelling(),
             "spell.next" => self.text.next_misspelling(),
             "spell.ignore" | "spell.add" => {
-                let Some(wrong) = self.text.misspelt_here() else {
+                let word = match sheet {
+                    true => self.sheet.misspelt_here().map(|wrong| wrong.word),
+                    false => self.text.misspelt_here().map(|wrong| wrong.word),
+                };
+                let Some(word) = word else {
                     return self.set_message("No misspelt word here".to_owned());
                 };
-                if let Some(speller) = self.text_speller.borrow().as_ref() {
-                    speller.accept(&wrong.word);
+                let speller = match sheet {
+                    true => &self.sheet_speller,
+                    false => &self.text_speller,
+                };
+                if let Some(speller) = speller.borrow().as_ref() {
+                    speller.accept(&word);
                 }
                 let said = match id == "spell.add" {
-                    false => format!("{} is ignored for this visit", wrong.word),
-                    true => match add_word(&wrong.word) {
-                        Ok(()) => format!("{} added to your dictionary", wrong.word),
-                        Err(why) => format!("{} is ignored, but not kept: {why}", wrong.word),
+                    false => format!("{word} is ignored for this visit"),
+                    true => match add_word(&word) {
+                        Ok(()) => format!("{word} added to your dictionary"),
+                        Err(why) => format!("{word} is ignored, but not kept: {why}"),
                     },
                 };
                 self.set_message(said);
@@ -251,6 +305,7 @@ impl Shell {
                 .strip_prefix("spell.fix:")
                 .and_then(|n| n.parse::<usize>().ok())
             {
+                Some(n) if sheet => self.sheet.fix_misspelt(n),
                 Some(n) => self.text.fix_misspelt(n),
                 None => self.set_message(format!("No such command: {id}")),
             },

@@ -1076,6 +1076,17 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   await settle();
   check("a misspelt word in a cell is underlined",
     [...document.querySelectorAll("td.cell .wrong")].map((el) => el.textContent), ["recieve"]);
+  await command("Go to the next misspelling");
+  check("the next misspelling is found and its suggestions said",
+    byId("message").textContent.startsWith("recieve \u2014") && byId("message").textContent.includes("receive"), true);
+  palette("k", { ctrlKey: true });
+  paletteType("receive");
+  check("the palette offers a correction for the cell's word",
+    paletteRows().some((row) => row.includes("with \u201creceive\u201d")), true);
+  paletteEnter();
+  await settle();
+  check("picking it corrects the cell", shown(), "receive it");
+  check("and nothing in it is underlined any more", document.querySelectorAll("td.cell .wrong").length, 0);
 
   await command("Welcome screen");
   check("the welcome pane is reachable again", byId("welcome").hidden, false);

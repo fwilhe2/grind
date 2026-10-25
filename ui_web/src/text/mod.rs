@@ -886,46 +886,7 @@ impl Ui {
         let Some(wrong) = self.misspelt_here() else {
             return Vec::new();
         };
-        let suggestions: Vec<String> = self.app.suggest(&wrong.word).into_iter().take(5).collect();
-        // Offered for an empty query, for the words that name them, and for what somebody typing
-        // the correction they mean would be typing: `receive`, over the word `recieve`.
-        let query = query.trim().to_lowercase();
-        let asks = query.is_empty()
-            || ["spelling", "replace", "correct", "ignore", "dictionary"]
-                .iter()
-                .any(|word| word.contains(query.as_str()))
-            || wrong.word.to_lowercase().contains(&query)
-            || suggestions
-                .iter()
-                .any(|with| with.to_lowercase().contains(&query));
-        if !asks {
-            return Vec::new();
-        }
-        let mut out: Vec<Entry> = suggestions
-            .into_iter()
-            .enumerate()
-            .map(|(n, with)| {
-                Entry::target(
-                    format!("spell.fix:{n}"),
-                    format!(
-                        "Replace \u{201c}{}\u{201d} with \u{201c}{with}\u{201d}",
-                        wrong.word
-                    ),
-                    "Spelling",
-                )
-            })
-            .collect();
-        out.push(Entry::target(
-            "spell.ignore",
-            format!("Ignore \u{201c}{}\u{201d}", wrong.word),
-            "Spelling",
-        ));
-        out.push(Entry::target(
-            "spell.add",
-            format!("Add \u{201c}{}\u{201d} to your dictionary", wrong.word),
-            "Spelling",
-        ));
-        out
+        crate::spelling::offers(&wrong.word, &self.app.suggest(&wrong.word), query)
     }
 
     /// Replace the word at the caret with the `n`th suggestion — one undo step, the word's

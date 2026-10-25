@@ -125,6 +125,13 @@ pub const SHEET: &[Command] = &[
     ),
     cmd("spell.pl-PL", "Spelling: Polski", "Spelling", "", false),
     cmd("spell.off", "Spelling: off", "Spelling", "", false),
+    cmd(
+        "spell.next",
+        "Go to the next misspelling",
+        "Spelling",
+        "",
+        false,
+    ),
     cmd("sheet.recalc", "Recalculate", "Document", "F9", true),
     // CSV, the one non-ODF format read and written (`doc/not-doing.md` §2). Two export rows, since
     // the delimiter comes from the name a download takes (`csv::Dialect::for_name`); importing
@@ -784,7 +791,7 @@ mod tests {
             }
         }
         assert!(TEXT.iter().any(|c| c.id == "spell.next"));
-        assert!(!SHEET.iter().any(|c| c.id == "spell.next"));
+        assert!(SHEET.iter().any(|c| c.id == "spell.next"));
     }
 
     #[test]
