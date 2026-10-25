@@ -146,7 +146,7 @@ than as a cursor on a hidden row.
 | | CLI | Sheet GTK | TUI | Web | Win32 | Mac |
 |---|---|---|---|---|---|---|
 | The typing rule (`=` formula, `'` text, empty clears) | ● | ● | ● | ● | ● | ● |
-| In-cell editor | — | ● | ○ ᵃ | ○ ᵃ | ● | ● |
+| In-cell editor | — | ● | ○ ᵃ | ◐ ᵃ | ● | ● |
 | Formula bar | — | ● | ◐ ᵃ | ● | ● | ● ¹ |
 | Clear a cell or a range | ● | ● | ● | ● | ● | ● |
 | Clear only the formula, keeping the value | ● | ● ᵍᶠ | ● ᵗᵘ | ● | ● | ● |
@@ -184,8 +184,10 @@ than as a cursor on a hidden row.
 ʲʷ In words rather than checkboxes, through `csv::Import::amended` (`delimiter=semicolon locale=de-DE text formulas trim no-dates`): `:csv-in <file> with …` in the terminal, *Import CSV with Options…* in GNOME's palette (an alert, then the picker), *Import CSV with Options…* in the Mac's File menu (type-checked only), *Import CSV with options…* in the browser's palette and File ▸ Import CSV with Options… in Windows — the options asked first (the browser) or after the file (Windows) — 2026-10-02.
 ᵍᶠ *Replace Formulas with Values* in GNOME's palette (`verbs::formulas_to_values` over the selection; lint-checked only).
 ʷⁿ A *Names* menu: Define for the Selection, Rename, Inline into Formulas, Delete — typed by name in a prompt, over the core's own calls (2026-10-02).
-ᵃ The TUI edits on a formula line rather than in the cell; the browser edits in the formula bar
-only. Both are `App::enter` underneath, so the *rule* is identical and only the surface differs.
+ᵃ The TUI edits on a formula line rather than in the cell. The browser's text lives in the formula
+bar, and the cell being edited draws it with the bar's caret where it is (2026-10-25), so typing
+reads as in the cell; a click in that cell does not move the caret. Both are `App::enter`
+underneath, so the *rule* is identical and only the surface differs.
 ᵇ A vi register, not the system clipboard — a terminal cannot reach one without a protocol the
 host may not speak (`doc/tui-shell.md`).
 ᶜ `grind sheet functions --long` is the same four columns the Win32 dialog and the GNOME

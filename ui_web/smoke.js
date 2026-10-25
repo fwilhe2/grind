@@ -349,6 +349,10 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   // The formula bar speaks A1; the document stores ODF's own syntax. That
   // conversion is the core's, and this is the check that the shell uses it.
   type("=SUM(A1:A2)");
+  await frame();
+  const edited = document.querySelector("td.active");
+  check("the cell being typed in shows the text and the caret after it",
+    [edited.textContent, edited.lastChild?.className], ["=SUM(A1:A2)", "caret"]);
   press("Enter");
   press("ArrowUp");
   await frame();

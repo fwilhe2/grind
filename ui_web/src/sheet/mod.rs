@@ -474,9 +474,10 @@ impl Ui {
                     (false, false) => viewport.misspelt(pos.row, pos.col),
                     _ => &[],
                 };
-                match wrong.is_empty() {
-                    true => cell.set_text_content(Some(&text)),
-                    false => self.append_spelled(&cell, &text, wrong)?,
+                match (active && editing, wrong.is_empty()) {
+                    (true, _) => self.append_with_caret(&cell, &text)?,
+                    (false, true) => cell.set_text_content(Some(&text)),
+                    (false, false) => self.append_spelled(&cell, &text, wrong)?,
                 }
                 let style = match merge {
                     Some(m) => m.style.as_ref(),
@@ -2651,6 +2652,21 @@ impl Ui {
         self.request_repaint();
     }
 
+    /// The text being typed, with the formula bar's caret drawn where it is — so the cell reads as
+    /// the place being typed in, though the one `<input>` holds the text.
+    fn append_with_caret(&self, cell: &Element, text: &str) -> Result<(), JsValue> {
+        let units = self.dom.formula.selection_start()?.unwrap_or(0) as usize;
+        let at = utf16::byte_of(text, units);
+        cell.set_text_content(Some(&text[..at]));
+        let caret = self.dom.document.create_element("span")?;
+        caret.set_class_name("caret");
+        cell.append_child(&caret)?;
+        if at < text.len() {
+            cell.append_child(&self.dom.document.create_text_node(&text[at..]))?;
+        }
+        Ok(())
+    }
+
     /// Start editing: `Some(c)` replaces the cell with that character, `None` keeps it — F2, and a
     /// double-click.
     fn begin(&self, seed: Option<char>) -> Result<(), JsValue> {
@@ -3469,12 +3485,14 @@ fn wire_editor(ui: &Rc<Ui>) -> Result<(), JsValue> {
     // just moved.
     let moved = ui.clone();
     listen(&ui.dom.formula, "keyup", move |_: Event| {
+        moved.request_repaint();
         if let Err(error) = moved.refresh_assist() {
             web_sys::console::error_1(&error);
         }
     })?;
     let clicked = ui.clone();
     listen(&ui.dom.formula, "click", move |_: Event| {
+        clicked.request_repaint();
         if let Err(error) = clicked.refresh_assist() {
             web_sys::console::error_1(&error);
         }
