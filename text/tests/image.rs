@@ -81,10 +81,10 @@ fn a_nested_frame_reads_as_one_image_sized_from_both_frames() {
         unreachable!()
     };
     assert_eq!(mime, "image/jpeg");
-    // The **outermost** frame's anchor — `char` here, where the inner one says `paragraph` —
-    // for the same reason the outermost frame's size wins: that is the frame the document
-    // actually anchored, and the inner one is LibreOffice's own resizing wrapper. What decides
-    // where the picture sits, and what loop C caught this build losing (`Run::Image::anchor`).
+    // The **outermost** frame's anchor — `char` here, where the inner says `paragraph` — as the
+    // outermost frame's size wins: it is the frame the document anchored, the inner one
+    // LibreOffice's resizing wrapper. It decides where the picture sits (`Run::Image::anchor`),
+    // and loop C caught it being lost.
     assert_eq!(anchor.as_deref(), Some("char"));
     assert_eq!(data, PIXELS);
     // The outer frame's width wins; it had no height, so the inner frame's fills in.

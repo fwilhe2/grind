@@ -2,20 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **Loop F for text documents** — the projection differential (`doc/dsl.md` §8, milestone D2).
+//! **Loop F for text documents** — the projection differential (`doc/dsl.md` §8). For every
+//! document loop A reads: project it, read the projection back, and assert the two models are
+//! identical — no corpus of its own, and a ratchet like loop B's `FLOOR`.
 //!
-//! For every document loop A already reads: project it, read the projection back, and assert
-//! the two models are identical. It costs no corpus of its own, which is the point of building
-//! it on loop A's, and it ratchets exactly as loop B's `FLOOR` does.
+//! Two halves: one over `text/tests/data/` — documents Writer wrote, vendored, globbed — which
+//! **never skips**, and one over `sw/qa`, which needs a checkout and says so without one.
 //!
-//! Two halves, and the difference between them matters. The first runs over `text/tests/data/`
-//! — documents LibreOffice Writer actually wrote, vendored here, globbed rather than listed —
-//! and **never skips**. The second runs over `sw/qa`, needs a checkout, and says so when there
-//! is none.
-//!
-//! **The one named gap is images**, and it is excluded by name rather than absorbed by the
-//! ratchet. `doc/projection-text.md` has the reasoning: §3.8's answer is a sidecar directory,
-//! and D4 made the projection a `Form`, which is reached through bytes and never a path.
+//! **The one named gap is images**, excluded by name rather than absorbed by the ratchet:
+//! `doc/projection-text.md` has the reasoning (§3.8's sidecar directory, and a `Form` is reached
+//! through bytes, never a path).
 
 use std::path::{Path, PathBuf};
 
@@ -76,8 +72,8 @@ fn every_vendored_document_survives_being_projected_and_read_back() {
     }
 }
 
-/// The same property one layer out: through `write_bytes`/`read_bytes` rather than through
-/// `projection::` directly, which is the door every shell and CLI verb goes through (D4).
+/// The same property one layer out: through `write_bytes`/`read_bytes` rather than `projection::`,
+/// the door every shell and CLI verb goes through.
 #[test]
 fn the_projection_is_a_form_like_the_other_two() {
     for path in vendored() {
@@ -112,13 +108,9 @@ fn re_projecting_changes_nothing() {
     }
 }
 
-/// **D3 for text — loop F at corpus scale.** LibreOffice's own `sw/qa`, which is loop A's
-/// corpus, so it costs nothing to add.
-///
-/// A ratchet rather than a pass/fail, exactly like loop B's: the number below is what this
-/// build achieves, it may be *raised* and never lowered, and the documents it does not manage
-/// are listed by the scoreboard rather than hidden by it. Run
-/// `cargo test -p grind-text --test loop_f -- --nocapture` to see them.
+/// **Loop F at corpus scale**, over LibreOffice's `sw/qa`, loop A's corpus. A ratchet like loop
+/// B's: it may be *raised*, never lowered, and the documents it misses are listed by the
+/// scoreboard (`cargo test -p grind-text --test loop_f -- --nocapture`).
 #[test]
 fn the_corpus_projects() {
     const DEFAULT_CHECKOUT: &str = "/home/florian/code/github.com/LibreOffice/core";
@@ -277,7 +269,7 @@ fn the_span_map_finds_a_block_by_every_name_it_has() {
     );
 }
 
-// --- D5: R6 for the projection ---
+// --- R6 for the projection ---
 
 /// A hand-written projection with everything in it the model has no room for: a comment, blank
 /// lines, and the `list { … }` authoring spelling the writer never emits.
@@ -313,8 +305,8 @@ fn saved(app: &grind_text::App) -> String {
     String::from_utf8(app.save_bytes(grind_text::Form::Projection).expect("saves")).expect("utf-8")
 }
 
-/// **D5's headline for text.** Typing into one paragraph rewrites one line, and everything the
-/// model has no room for is still there.
+/// Typing into one paragraph rewrites one line, and everything the model has no room for is still
+/// there.
 #[test]
 fn one_paragraph_typed_into_changes_one_line() {
     let app = opened();
@@ -529,9 +521,9 @@ fn spellable(block: &Block) -> Vec<Run> {
             run => runs.push(run.clone()),
         }
     }
-    // Where a run's formatting was read from (`CharStyle::origin`) is provenance, not content,
-    // and the projection has nowhere to keep it — so it is not what this loop compares. Without
-    // this, two runs an image used to separate stay apart on one side only.
+    // Where a run's formatting was read from (`CharStyle::origin`) is provenance, not content, and
+    // the projection has nowhere to keep it, so it is not compared — otherwise two runs an image
+    // once separated stay apart on one side only.
     for run in &mut runs {
         if let Run::Text { props, .. } = run {
             props.origin = Default::default();

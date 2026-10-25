@@ -375,14 +375,10 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
     out
 }
 
-/// Every chart on one sheet, compared as what it *says* rather than as XML — `doc/chart-format.md`
-/// is the list of what that is, and none of it was checked against LibreOffice until a pie this
-/// build wrote turned out to run the other way round there, and every colour turned out to be
-/// ignored.
-///
-/// Ranges are compared by the cells they name ([`range_key`]), since LibreOffice respells every
-/// one absolute (`$A$2`), and the frame by [`same_length`]'s tolerance. A pie's direction is
-/// compared only on a pie: it is the one kind this build gives a direction.
+/// Every chart on one sheet, compared as what it *says* rather than as XML
+/// (`doc/chart-format.md`). Ranges by the cells they name ([`range_key`]), since LibreOffice
+/// respells every one absolute (`$A$2`); the frame at [`same_length`]'s tolerance; a direction
+/// only on a pie, the one kind given one.
 fn chart_differences(label: &str, i: usize, w: &Sheet, g: &Sheet) -> Vec<String> {
     let mut out = Vec::new();
     if w.charts().len() != g.charts().len() {

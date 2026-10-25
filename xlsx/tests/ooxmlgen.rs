@@ -2,62 +2,45 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The generated corpus — workbooks written by the Open XML SDK, with an oracle beside them.
+//! The generated corpus — workbooks written by the Open XML SDK, with an oracle beside them, and
+//! the corpus this filter is held to that **never skips**. Loop A′ (`corpus_read.rs`) reads
+//! LibreOffice's `sc/qa/unit/data`, a fine regression suite and a poor sample of the world
+//! (*"minimal reproductions of bugs, so they over-represent the strange"*, `doc/xlsx-import.md`'s
+//! risk 3) that needs a checkout; `fixtures.rs` hand-assembles packages and stops where
+//! hand-assembly does — nobody writes a four-section number format or 500,000 cells by hand.
 //!
-//! This is the second corpus this filter is held to, and the one that **never skips**. Loop A′
-//! (`corpus_read.rs`) reads LibreOffice's own `sc/qa/unit/data`, which is a magnificent
-//! regression suite and a poor sample of the world: `doc/xlsx-import.md`'s risk 3 says so in
-//! as many words — *"LibreOffice's xlsx files are minimal reproductions of bugs, so they
-//! over-represent the strange"* — and it needs a checkout nobody has by default, so the loop
-//! is silent on most machines. `fixtures.rs` answers the other half, hand-assembling packages
-//! from XML written out in full, and it stops where hand-assembly stops: nobody writes a
-//! four-section number format, eighteen fill patterns and 500,000 cells by hand.
+//! So <https://github.com/fwilhe2/ooxmlgen> generates them from the Open XML SDK, a **real
+//! producer's** bytes. Vendored at `tests/data/corpus/` from run
+//! <https://github.com/fwilhe2/ooxmlgen/actions/runs/34999727235> (ooxmlgen 0.2.0, 2026-09-15),
+//! with the `functions/` family added on 2026-10-18 by `scripts/function-samples.sh` from a run
+//! that left every earlier fixture byte-identical. **Vendored, so the requirement cannot skip**
+//! (R7's rule).
 //!
-//! So: <https://github.com/fwilhe2/ooxmlgen> generates them, from the Open XML SDK, which
-//! means the bytes are a **real producer's** rather than our idea of one. Vendored at
-//! `tests/data/corpus/` from run
-//! <https://github.com/fwilhe2/ooxmlgen/actions/runs/34999727235> (ooxmlgen 0.2.0,
-//! 2026-09-15), with the `functions/` family added on 2026-10-18 by `scripts/function-samples.sh`
-//! from a local run that left every earlier fixture byte-identical. 86 fixtures, 5.4 MB of
-//! workbook and a 640 KB manifest, and R7's rule applies
-//! to all of it: **vendored, so the requirement cannot skip**.
+//! What makes it worth its size is `manifest.json`: not an index but the **expectation**, in this
+//! project's own vocabulary — `Dropped` variants and `Flavour` by name, the `Error` a hostile file
+//! must produce, the sheet list in workbook order, and for every cell what the file contains and
+//! what a conversion should produce.
 //!
-//! What makes it worth its size is `manifest.json`. It is not an index — it is the
-//! **expectation**, machine-readable, written in this project's own vocabulary: the `Dropped`
-//! variants by name, `Flavour` by name, the `Error` variant a hostile file must produce, the
-//! sheet list in workbook order, and for every one of 1341 cells both what the file literally
-//! contains and what a conversion of it should produce. A corpus with an oracle travelling
-//! beside it is the thing loop D needs and does not have until `soffice` is on `PATH`.
+//! Every cell's value and kind is asserted, one claim per cell; so is every **formula** — the text
+//! where the manifest states one, and *its absence* where it states an `excel` and no translation,
+//! which holds the exclusion classes; and every **display**, the claim about a number format.
+//! Claims in the manifest's prose (styles, tracks, names, filters, renames) are written out one
+//! assertion per note in four tests below. Three tables carry the difference, checked in *both*
+//! directions:
 //!
-//! **This build is X5**: every cell's value and kind is asserted against the manifest, one
-//! claim per cell; so is every cell's **formula** — the text where the manifest states one,
-//! and *the absence of one* where it states an `excel` and no translation, which is how the
-//! exclusion classes are held to rather than merely described; and so is every **display** the
-//! manifest states, which is the claim about a number *format*. X4's claims — what a style or a
-//! track should become — are in the manifest's prose rather than its fields, so three tests
-//! below write them out one assertion per note, and a fourth does the same for X5's names,
-//! filters and renames. Nothing in the oracle is about a later milestone any more. Three tables carry the difference and
-//! they are checked in *both* directions, which is the only arrangement that survives contact
-//! with a growing filter:
+//! - [`PENDING`] — a claim not satisfied yet. One that starts passing **fails this test**, and the
+//!   entry must go.
+//! - [`UNSPELLABLE`] — a claim the **model** cannot satisfy: the piece of format has no `Part` in
+//!   `grind_sheet::numfmt` (a fraction, an exponent, an elapsed hour count). Adding one is a
+//!   decision about the core's format model; the manifest is right.
+//! - [`DECIDED_OTHERWISE`] — a claim answered differently *on purpose*: two hostile files,
+//!   manifests disagreeing with their fixtures' bytes, spellings as true as the one asked for, and
+//!   functions spelled as the oracle's import spells them ([`ORACLE_SPELLING`]). Each is a place
+//!   where the corpus should change rather than the code.
 //!
-//! - [`PENDING`] — a claim this build does not satisfy yet, with the milestone that will.
-//!   A claim that starts passing **fails this test**, and the entry must then be deleted. It
-//!   is the loop-F idiom (`a test that fails the day it is projected`) applied to a roadmap.
-//! - [`UNSPELLABLE`] — a claim the **model** cannot satisfy, because the piece of format it is
-//!   about has no `Part` in `grind_sheet::numfmt`: a fraction, an exponent, an elapsed hour
-//!   count. Not pending, since no milestone of this phase lands them — adding a part is a
-//!   decision about the core's format model — and not decided otherwise, since the manifest is
-//!   right and this build is the one that cannot say it.
-//! - [`DECIDED_OTHERWISE`] — a claim this build will never satisfy because it answers the
-//!   question differently *on purpose*. Two are about hostile files, three are manifests that
-//!   disagree with their own fixture's bytes, two are spellings where ours is as true as
-//!   the one asked for, and ten are a function spelled the way the oracle's import spells it
-//!   ([`ORACLE_SPELLING`]). Each is a place where the corpus should change rather than the
-//!   code.
+//! Everything not in a table is asserted.
 //!
-//! Everything not in either table is asserted. Run it like anything else:
-//!
-//!     cargo test -p grind-xlsx --test ooxmlgen
+//! cargo test -p grind-xlsx --test ooxmlgen
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -72,20 +55,16 @@ use grind_xlsx::{Dropped, Error, Flavour};
 /// was thinned and a vendoring that half failed look identical from here otherwise.
 const FLOOR: usize = 86;
 
-/// Claims this build does not satisfy yet: `(fixture, claim, the milestone and the reason)`.
-///
-/// Every entry is asserted to *still* fail. Delete one the day its milestone lands — the test
-/// will insist on it, which is the point: a roadmap nobody checks becomes a list of things
-/// that quietly already work.
+/// Claims not satisfied yet: `(fixture, claim, why)`, each asserted to *still* fail — delete one
+/// the day it passes, which the test insists on.
 const PENDING: &[(&str, &str, &str)] = &[
-    // Empty since X5, which satisfied the last eleven: every claim the manifest makes is now
-    // either held or named in one of the two tables below. Kept, and still checked in both
-    // directions, because the corpus grows.
+    // Empty: every claim the manifest makes is held or named in a table below. Kept, and checked
+    // both ways, because the corpus grows.
 ];
 
-/// Why ten formula claims name a function differently: the manifest gives Excel's name with
-/// its marker stripped, and this build writes the name the oracle's own import writes — the
-/// manifest's `oracle` field, word for word.
+/// Why some formula claims name a function differently: the manifest gives Excel's name with its
+/// marker stripped, and grind writes the name the oracle's own import writes — the manifest's
+/// `oracle` field, word for word.
 const ORACLE_SPELLING: &str = "The manifest expects Excel's name with the `_xlfn.` marker stripped; this build \
      writes the name LibreOffice's import writes, which the manifest records as the cell's \
      `oracle` spelling. Excel's two-parameter CEILING and FLOOR are not §6.17's, and its newer \
@@ -93,12 +72,10 @@ const ORACLE_SPELLING: &str = "The manifest expects Excel's name with the `_xlfn
      function or nobody's: `COM.MICROSOFT.CEILING` is the one an ODF reader recalculates as \
      Excel does (`doc/xlsx-format.md` §5.1).";
 
-/// Claims this build answers differently **on purpose**: `(fixture, claim, why ours stands)`.
-///
-/// Not a pending list and not an excuse: each of these is a place where the fixture should
-/// change rather than the filter. The two in `hostile/` encode a policy this project
-/// deliberately does not have; the third is a manifest that disagrees with its own fixture's
-/// bytes, which is the one kind of claim no filter could satisfy.
+/// Claims answered differently **on purpose**: `(fixture, claim, why ours stands)` — each a place
+/// where the fixture should change rather than the filter. The `hostile/` ones encode a policy
+/// this project does not have; others are manifests disagreeing with their fixtures' bytes, which
+/// no filter could satisfy.
 const DECIDED_OTHERWISE: &[(&str, &str, &str)] = &[
     (
         "document/merged-cells.xlsx",
@@ -277,18 +254,11 @@ const DECIDED_OTHERWISE: &[(&str, &str, &str)] = &[
     ("formulas/xlfn.xlsx", "unknown-functions", ORACLE_SPELLING),
 ];
 
-/// Claims the **model** cannot satisfy: `(fixture, claim, the class and what is missing)`.
-///
-/// X3's own table, and a third one because neither of the others fits. These are not
-/// pending — no milestone of this phase lands them, since what is missing is a piece of
-/// `grind_sheet::numfmt` and adding one is a decision about the core's format model rather
-/// than about an import filter (`doc/xlsx-import.md` Part II §4 says so, and
-/// `grind_xlsx::numfmt::Unspellable` is the same list in code). They are not decided
-/// otherwise either: the manifest is *right* about what Excel shows, and this build is the
-/// one that cannot say it.
-///
-/// Every entry names its class, and is asserted to still fail exactly like [`PENDING`]: the
-/// day `numfmt` grows a fraction part, these fail for passing and the table shrinks.
+/// Claims the **model** cannot satisfy: `(fixture, claim, the class and what is missing)`. What is
+/// missing is a piece of `grind_sheet::numfmt`, a decision about the core's format model
+/// (`doc/xlsx-import.md` Part II §4; `grind_xlsx::numfmt::Unspellable` is the same list in code);
+/// the manifest is *right* about what Excel shows. Each is asserted to still fail like
+/// [`PENDING`]: the day `numfmt` grows a fraction part, they fail for passing.
 const UNSPELLABLE: &[(&str, &str, &str)] = &[
     (
         "numfmt/custom-numeric.xlsx",
@@ -514,8 +484,8 @@ struct Cell {
     /// and no `formula` is one whose expression the conversion is expected **not** to carry —
     /// which is how the exclusion classes are asserted rather than merely described.
     excel: Option<String>,
-    /// The text Excel shows in the cell, where the manifest states one — X3's claim, and the
-    /// only one about a *format* rather than a value.
+    /// The text Excel shows in the cell, where the manifest states one — the only claim about a
+    /// format rather than a value.
     display: Option<String>,
 }
 
@@ -532,12 +502,10 @@ impl Cell {
         }
     }
 
-    /// The display claim: what one cell reads as, asked through the core's own
-    /// `grind_sheet::render` so that this test cannot answer it differently from a viewport.
-    ///
-    /// A cell whose format this build refuses shows its plain value, which is a *different*
-    /// string from the one Excel shows — that is the whole point of refusing, and it is why
-    /// the misses here are named in [`UNSPELLABLE`] rather than waved through.
+    /// The display claim: what one cell reads as, through the core's own `grind_sheet::render`, so
+    /// this test cannot answer differently from a viewport. A cell whose format is refused shows
+    /// its plain value — a different string from Excel's, which is why those misses are named in
+    /// [`UNSPELLABLE`].
     fn check_display(&self, sheet: &Sheet, null_date: i64) -> Option<Result<(), String>> {
         let want = self.display.as_ref()?;
         let pos = grind_xlsx::address::cell(&self.address).expect("a manifest address");
@@ -563,7 +531,7 @@ impl Cell {
                 true => Ok(()),
                 false => Err(format!("{got:?}")),
             }),
-            // An `<f>` the manifest states no translation for is one this build must refuse.
+            // An `<f>` the manifest states no translation for must be refused.
             (None, Some(_)) => Some(match got {
                 None => Ok(()),
                 Some(got) => Err(format!("{got:?}")),
@@ -602,8 +570,8 @@ impl Cell {
                 CellValue::Bool(b) if b.to_string() == *want => Ok(()),
                 _ => Err(held()),
             },
-            // Currency and percentage are a *format*'s business in this model (X3); the value
-            // underneath is a plain number either way.
+            // Currency and percentage are a *format*'s business in this model; the value is a
+            // plain number either way.
             "Number" | "Currency" | "Percentage" => {
                 number(want.parse().expect("a manifest number"))
             }
@@ -717,7 +685,7 @@ fn unspellable(file: &str, claim: &str) -> bool {
         .any(|(f, c, _)| *f == file && *c == claim)
 }
 
-/// Every claim this build is *not* held to, by any of the three tables.
+/// Every claim not held, by any of the three tables.
 fn excused(file: &str, claim: &str) -> bool {
     pending(file, claim) || decided_otherwise(file, claim) || unspellable(file, claim)
 }
@@ -857,11 +825,8 @@ fn collect(dir: &Path, base: &Path, out: &mut Vec<String>) {
 
 // ---- what the filter does with it ----
 
-/// The whole corpus, every claim this build can answer, and the two tables held in both
-/// directions.
-///
-/// One test rather than six, because the tables are what is being checked and they are one
-/// thing: a claim is satisfied, or it is excused by name, and no third outcome exists.
+/// The whole corpus, every claim, and the tables held in both directions — one test, since a claim
+/// is satisfied or excused by name, with no third outcome.
 #[test]
 fn every_claim_is_satisfied_or_named() {
     let fixtures = manifest();
@@ -914,9 +879,8 @@ fn every_claim_is_satisfied_or_named() {
         imported += 1;
         cells_carried += report.cells;
 
-        // 6. Every cell the manifest names — X1's half of the oracle, and the reason the
-        // manifest exists. One claim per cell, spelled `cell:<sheet>!<address>` so a PENDING
-        // entry can name exactly the cell it excuses.
+        // 6. Every cell the manifest names, one claim per cell, spelled `cell:<sheet>!<address>`
+        //    so a table entry can name exactly the cell it excuses.
         for (sheet, cell) in &fixture.cells {
             let claim = format!("cell:{}!{}", fixture.sheets[*sheet].0, cell.address);
             let outcome = document
@@ -937,8 +901,7 @@ fn every_claim_is_satisfied_or_named() {
                 ));
             }
 
-            // 6c. And what it displays — X3's half, stated for the cells whose fixture is
-            // about a format rather than a value.
+            // 6c. What it displays, for the cells whose fixture is about a format.
             let claim = format!("display:{}!{}", fixture.sheets[*sheet].0, cell.address);
             if let Some(outcome) = document
                 .sheets
@@ -958,8 +921,8 @@ fn every_claim_is_satisfied_or_named() {
                 }
             }
 
-            // 6b. And its formula — X2's half. A cell with an `excel` and no `formula` claims
-            // the opposite: that this build carries no formula for it at all.
+            // 6b. Its formula. A cell with an `excel` and no `formula` claims the opposite: that
+            // no formula is carried for it.
             let claim = format!("formula:{}!{}", fixture.sheets[*sheet].0, cell.address);
             let Some(outcome) = document
                 .sheets
@@ -1462,10 +1425,8 @@ fn the_geometry_fixtures_size_and_hide_what_their_notes_say() {
     );
 }
 
-/// The document fixtures, by their notes (X5): what `Document::names` holds, what the
-/// autofilter keeps, which sheets were renamed, and that a merge moves nothing.
-/// `document/merged-cells.xlsx`: every real merge carried as one, anchored where Excel keeps
-/// the value, and — the manifest's own point — no value moved by it.
+/// `document/merged-cells.xlsx`: every real merge carried as one, anchored where Excel keeps the
+/// value, and — the manifest's own point — no value moved by it.
 #[test]
 fn the_merges_are_carried_and_no_value_moves() {
     use grind_sheet::{Pos, Span};
@@ -1497,6 +1458,8 @@ fn the_merges_are_carried_and_no_value_moves() {
     );
 }
 
+/// The document fixtures, by their notes: what `Document::names` holds, what the autofilter
+/// keeps, which sheets were renamed, and that a merge moves nothing.
 #[test]
 fn the_document_fixtures_carry_what_their_notes_say() {
     use grind_xlsx::Appearance;
@@ -1586,22 +1549,15 @@ fn the_document_fixtures_carry_what_their_notes_say() {
     }
 }
 
-/// Every imported document survives our own writer and reader.
+/// Every imported document survives our own writer and reader — import → write → read → compare,
+/// the identity `corpus_read.rs` runs over LibreOffice's corpus: the import produced something
+/// **ODF can express**, not only something in memory. Every cell's value, kind and style, the
+/// sheet list, and every track's size and hidden-ness.
 ///
-/// The same identity check `corpus_read.rs` runs over LibreOffice's corpus and phase 3 owns
-/// for ODF: import → write → read → compare. It proves the importer produced something **ODF
-/// can actually express** rather than something that only lives in memory, and it is the
-/// cheapest test in this file to keep honest as X1–X5 add content to carry. Since X1 that is
-/// every cell's value and kind as well as the sheet list; since X4, every cell's style and
-/// every column's and row's size and hidden-ness.
-///
-/// And no longer the cheapest to run: `scale/large-sheet.xlsx` makes it a 47 MB ODF write and
-/// read, which takes about two minutes in a debug build against a second and a half in a
-/// release one. Nothing here is wrong — the debug ODF reader is simply slow on half a million
-/// cells — but it is the one test in the suite whose cost is a corpus file's size.
-///
-/// Flat, because `doc/flat-first.md` says so and because a package would only add a zip round
-/// trip to a question about the content model.
+/// The slowest test in the suite: `scale/large-sheet.xlsx` makes it a 47 MB ODF write and read,
+/// about two minutes in a debug build against a second and a half in release — the debug reader is
+/// slow on half a million cells. Flat (`doc/flat-first.md`), since a package would only add a zip
+/// round trip.
 #[test]
 fn every_imported_document_survives_a_write_and_a_read() {
     let mut checked = 0usize;
@@ -1625,9 +1581,8 @@ fn every_imported_document_survives_a_write_and_a_read() {
         if ours != theirs {
             differences.push(format!("{}: {ours:?} became {theirs:?}", fixture.file));
         }
-        // Every carried cell, value and kind — X1's contribution to this check. Walked over
-        // the rows that carry anything rather than the used rectangle, which for
-        // `scale/wide-and-sparse.xlsx` is the whole grid.
+        // Every carried cell's value and kind, walked over the rows carrying anything rather than
+        // the used rectangle, which for `scale/wide-and-sparse.xlsx` is the whole grid.
         for (sheet, read) in document.sheets.iter().zip(&back.sheets) {
             let cols = sheet.used_cols();
             let rows = sheet.rows_carrying().into_iter().flatten();
@@ -1646,7 +1601,7 @@ fn every_imported_document_survives_a_write_and_a_read() {
                     read.kind(pos)
                 ));
             }
-            // X4's: every cell's style, exactly, and every track's size and hidden-ness.
+            // Every cell's style, exactly, and every track's size and hidden-ness.
             let styled = sheet.rows_carrying().into_iter().flatten();
             if let Some(pos) = styled
                 .flat_map(|row| (0..cols).map(move |col| Pos::new(row, col)))
@@ -1696,10 +1651,8 @@ fn every_imported_document_survives_a_write_and_a_read() {
     );
 }
 
-/// Every fixture's milestone is one `doc/xlsx-import.md` actually has.
-///
-/// Cheap, and it keeps the corpus and the plan from drifting apart in the way that matters:
-/// the manifest's `milestone` column is how the eventual loop D decides what to compare.
+/// Every fixture's milestone is one `doc/xlsx-import.md` has, so the corpus and the plan cannot
+/// drift apart.
 #[test]
 fn every_milestone_is_one_the_plan_names() {
     const MILESTONES: [&str; 7] = ["X0", "X1", "X2", "X3", "X4", "X5", "X6"];

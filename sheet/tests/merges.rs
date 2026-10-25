@@ -207,8 +207,8 @@ fn merges_project_and_read_back() {
     );
 }
 
-/// A value typed into the covered half of a file's merge used to be refused, since the model
-/// had nowhere to put it. A covered cell holds one like any other now, and the merge stays.
+/// A value typed into the covered half of a file's merge is saved — a covered cell holds one like
+/// any other — and the merge stays.
 #[test]
 fn a_value_typed_under_a_files_merge_is_saved_and_the_merge_kept() {
     let original = std::fs::read(quarterly()).unwrap();

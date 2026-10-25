@@ -271,7 +271,7 @@ fn recalc_counts_the_values_it_spoiled() {
     app.set_cell(0, p(0, 0), 5.0).unwrap();
     app.set_formula(0, p(1, 0), "=[.A1]*2").unwrap();
 
-    // A cached value from elsewhere, for a function this build does not have.
+    // A cached value from elsewhere, for a function grind does not have.
     let doc = app.save_bytes(grind_sheet::Form::Flat).unwrap();
     let app = App::new();
     app.open_bytes("book.fods", &doc).unwrap();
@@ -457,10 +457,8 @@ fn a_sheet_can_be_added_renamed_and_removed() {
     assert_eq!(app.sheet_count(), 1);
 }
 
-/// **`doc/dsl.md` §6.5's first refactoring, D10.** Renaming a sheet used to leave every formula
-/// naming it pointing at nothing — `doc/not-doing.md` recorded that as a known loss. Now the
-/// rename carries them, and this is the test that says which "them": a formula on another sheet,
-/// a named expression, and a chart's ranges.
+/// Renaming a sheet carries every reference that named it: a formula on another sheet, a named
+/// expression, and a chart's ranges.
 #[test]
 fn renaming_a_sheet_carries_every_reference_that_named_it() {
     let app = App::new();
@@ -539,9 +537,8 @@ fn renaming_a_sheet_carries_every_reference_that_named_it() {
     );
 }
 
-/// A formula this build cannot parse is left exactly as it was — rewriting text nobody
-/// understood is how a refactoring corrupts a document. `grind sheet lint` is what finds the
-/// leftovers afterwards.
+/// A formula that will not parse is left exactly as it was — rewriting text nobody understood is
+/// how a refactoring corrupts a document; `grind sheet lint` finds the leftovers.
 #[test]
 fn a_rename_leaves_a_formula_it_cannot_read_alone() {
     let app = App::new();
@@ -1155,11 +1152,9 @@ fn a_style_reads_back_and_rides_in_the_viewport() {
     assert!(app.style_at(9, p(0, 0)).is_err() && app.format_at(9, p(0, 0)).is_err());
 }
 
-/// A style on a cell with nothing in it survives a save **and the next read** — both forms.
-/// The write half always worked; the reader used to drop every styled blank, so a bordered empty
-/// cell or `grind sheet style book.fods A5 --bold` on a blank was gone after one reopen. The
-/// reader now keeps a blank's *own* style (`odf/read.rs`, where the bound and its measurement
-/// are), and still drops a column default on a blank, which is where the cost would be.
+/// A style on a cell with nothing in it survives a save **and the next read**, in both forms: the
+/// reader keeps a blank's *own* style (`odf/read.rs`, where the bound and its measurement are),
+/// and still drops a column default on a blank, where the cost would be.
 #[test]
 fn a_styled_empty_cell_survives_a_save_and_a_read() {
     let app = App::new();

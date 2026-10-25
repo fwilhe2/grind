@@ -3,28 +3,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! A checklist workbook as an online spreadsheet exports one — the **shape** of a real file
-//! somebody tried to open, rebuilt here with invented content, since the file itself is not
-//! ours to vendor.
+//! somebody tried to open, rebuilt with invented content, since the file is not ours to vendor.
+//! The shape, read off that file's parts:
 //!
-//! What the shape is, read off that file's parts rather than remembered:
-//!
-//! * a heading in `B2`, merged across `B2:D2`, bold and centred — which, with the merge
-//!   dropped, drew centred in `B2` alone and looked wrong;
-//! * section headers merged across two columns, the **covered** cell carrying the border the
-//!   merged area is drawn with;
+//! * a heading in `B2`, merged across `B2:D2`, bold and centred — which, with the merge dropped,
+//!   drew centred in `B2` alone;
+//! * section headers merged across two columns, the **covered** cell carrying the merged area's
+//!   border;
 //! * a note merged *down* one column across three item rows;
-//! * the tick of each item as a boolean in a **hidden** column `E` — the exporter writes the
-//!   checkbox's state there and no control at all — with one `expression` rule per block,
-//!   `$E5=TRUE`, filling the item's row when it is ticked;
-//! * a summary row merged across `B:D` whose formula counts the ticks, with two more rules on
-//!   it, thresholds on that count;
-//! * external hyperlinks on the item notes, a sheet with its grid lines off, and every row
-//!   22.5 points tall by hand.
+//! * each item's tick as a boolean in a **hidden** column `E`, with one `expression` rule per
+//!   block, `$E5=TRUE`, filling the item's row when ticked;
+//! * a summary row merged across `B:D` counting the ticks, with two threshold rules;
+//! * external hyperlinks on the notes, a sheet with grid lines off, and every row 22.5 points by
+//!   hand.
 //!
-//! The merges are carried, and so are the checkboxes — Excel's form controls, spelled in the
-//! sheet's VML drawing, each linked to its tick in column E — and so are the conditional rules
-//! (`doc/conditional-format.md`): ticking a box turns its row green, which is the whole point of
-//! the document.
+//! The merges, the checkboxes (Excel's form controls in the sheet's VML, each linked to its tick)
+//! and the rules (`doc/conditional-format.md`) are carried: ticking a box turns its row green.
 
 use std::io::{Cursor, Write};
 

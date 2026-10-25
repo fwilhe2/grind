@@ -198,12 +198,9 @@ fn a_document_ending_in_a_list_is_still_well_formed() {
     both_forms(&doc);
 }
 
-/// A tab or a newline *inside a run's text* is significant whitespace and has to become the
-/// element ODF has for it, exactly as a run of spaces does.
-///
-/// Loop C is what found this: the model has had [`Run::Tab`] and [`Run::Break`] since S4, but a
-/// paragraph whose text merely *contained* `\t` — which is what `grind text set` produces —
-/// wrote the character literally, and LibreOffice handed it back as a space.
+/// A tab or a newline *inside a run's text* is significant whitespace and must become ODF's
+/// element for it, as a run of spaces does — `grind text set` produces such text, and written
+/// literally LibreOffice hands it back as a space (loop C's find).
 #[test]
 fn tabs_and_newlines_inside_a_run_survive_as_elements() {
     for (spelling, want) in [
@@ -511,21 +508,16 @@ fn allowing_libreoffices_paragraph<'a>(want: &Document, got: &'a Document) -> &'
 }
 
 /// Whether a comparison holds the two documents to the same *formatting*, or only to the same
-/// structure and text.
+/// structure and text. The two directions of loop C differ here, and the difference is
+/// **measured** ([`a_character_style_over_a_whole_paragraph_is_hoisted_into_it`]):
 ///
-/// The two directions of loop C can be held to different standards here, and the difference is
-/// **measured rather than assumed** — see
-/// [`a_character_style_over_a_whole_paragraph_is_hoisted_into_it`].
-///
-/// * **out**, [`Styling::Compared`]: we build the document, so it has exactly the automatic
-///   styles the writer emitted and nothing else. Every property has to survive LibreOffice.
-/// * **back**, [`Styling::Ignored`]: the document handed to LibreOffice was *regenerated*, so
-///   its `office:styles` is gone — and LibreOffice then reorganises what is left, most visibly
-///   by hoisting a character style that covers a whole paragraph into that paragraph's own
-///   automatic style. This build models a paragraph style by name only (`doc/text-core.md`
-///   gates definitions), so the formatting comes back on a paragraph nobody is reading it from.
-///   The same reason style **names** are not compared in either direction, which this loop has
-///   always documented.
+/// * **out**, [`Styling::Compared`]: we build the document, with exactly the automatic styles the
+///   writer emitted. Every property must survive LibreOffice.
+/// * **back**, [`Styling::Ignored`]: the document handed to LibreOffice was *regenerated*, so its
+///   `office:styles` is gone, and LibreOffice reorganises the rest — hoisting a character style
+///   covering a whole paragraph into the paragraph's own automatic style, where a run-level
+///   comparison does not see it. Style **names** are not compared in either direction, for the
+///   same reason.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Styling {
     Compared,
@@ -977,11 +969,10 @@ fn a_document_ending_with_a_table_comes_back_with_a_paragraph_after_it() {
     assert!(last.is_empty(), "with nothing in it");
 }
 
-/// **A `text:style-name` this build wrote does not survive, because this build declares no
-/// styles.** That is loop C's one documented loosening for text, and the reason [`differences`]
-/// compares structure and text but not style names.
-///
-/// Six cases, measured together because only the contrast makes the rule legible:
+/// **A `text:style-name` written into a regenerated document does not survive, because the writer
+/// declares no styles** — loop C's one loosening for text, and why [`differences`] compares
+/// structure and text but not style names. Six cases, measured together because the contrast makes
+/// the rule legible:
 ///
 /// | What the document says | What comes back | |
 /// |---|---|---|
@@ -992,25 +983,16 @@ fn a_document_ending_with_a_table_comes_back_with_a_paragraph_after_it() {
 /// | `office:automatic-styles`, with no properties | `Standard` | dropped |
 /// | Declared nowhere | `Standard` | dropped |
 ///
-/// So the rule is not "LibreOffice mangles style names". It is ODF's own distinction, applied
-/// exactly: a **named** style is an identity and keeps its name; an **automatic** style is
-/// anonymous direct formatting by definition, so its name is not identity and LibreOffice
-/// renumbers it into its own sequence; a name that resolves to nothing is not formatting at all
-/// and goes.
+/// ODF's own distinction, applied exactly: a **named** style is an identity and keeps its name; an
+/// **automatic** one is anonymous direct formatting, renumbered into LibreOffice's sequence; a
+/// name resolving to nothing goes.
 ///
-/// What that costs *us* is the last row. This writer is minimal by intent (R3) and emits no
-/// `office:styles`, and the model carries a style's *name* but never its properties
-/// (`doc/text-core.md`) — so there is nothing it could declare. A **regenerated** document
-/// therefore refers to styles that are not there, and `grind text style p1 --style Mine` on a
-/// document this build authored means nothing to LibreOffice.
-///
-/// R6 is what keeps that from mattering in the common case: a document *read from a file*
-/// splices, so its own `office:styles` is still in the bytes and its names still resolve. The
-/// gap is a document this build authored from nothing, and it is written down in
-/// `doc/text-core.md` rather than papered over.
-///
-/// The day the writer learns to declare styles, the last row goes red and [`differences`] gains
-/// a style comparison.
+/// The last row is the cost: the writer is minimal (R3), emits no `office:styles`, and the model
+/// carries a style's name but not its properties, so `grind text style p1 --style Mine` on a
+/// document authored from nothing means nothing to LibreOffice. A document *read from a file*
+/// splices, keeping its own `office:styles`, so the gap is a new document's (`doc/text-core.md`).
+/// The day the writer declares styles, the last row goes red and [`differences`] gains a style
+/// comparison.
 #[test]
 fn a_style_name_this_build_wrote_does_not_survive() {
     if !oracle_ready("styles") {
@@ -1080,21 +1062,16 @@ fn a_style_name_this_build_wrote_does_not_survive() {
     );
 }
 
-/// **A character style that covers a whole paragraph is hoisted into the paragraph.** That is
-/// why the "back" direction passes [`Styling::Ignored`], and it is a fact about LibreOffice
-/// rather than a licence to stop checking.
+/// **A character style covering a whole paragraph is hoisted into the paragraph** — why the "back"
+/// direction passes [`Styling::Ignored`], a fact about LibreOffice rather than a licence to stop
+/// checking.
 ///
-/// Two paragraphs, both set in Cambria and nothing else. The first has one span over all of it;
-/// the second has a plain word between two Cambria ones, so no single style covers it.
-/// LibreOffice moves the first paragraph's font onto a `style:family="paragraph"` automatic
-/// style and leaves no `text:span` at all, and leaves the second's spans exactly where they
-/// were. The formatting is not lost from the *document* — it moved somewhere this build reads
-/// only a name from (`doc/text-core.md` gates paragraph style definitions), so a run-level
-/// comparison sees it vanish.
-///
-/// Which is exactly what happens to a real Writer document: most paragraphs are uniform, so
-/// most of them hoist. The day this build reads style definitions, this goes red, the
-/// [`Styling`] distinction disappears and both directions compare formatting.
+/// Two paragraphs, both in Cambria and nothing else: one span over all of the first, and a plain
+/// word between two Cambria spans in the second. LibreOffice moves the first's font onto a
+/// `style:family="paragraph"` automatic style with no `text:span`, and leaves the second's spans
+/// where they were. The formatting is not lost — it moved to the paragraph's style, where a
+/// run-level comparison does not see it. Most real paragraphs are uniform, so most hoist. When
+/// runs carry their paragraph's style, this goes red and both directions compare formatting.
 #[test]
 fn a_character_style_over_a_whole_paragraph_is_hoisted_into_it() {
     if !oracle_ready("hoist") {

@@ -262,9 +262,8 @@ fn every_other_edit_reaches_into_a_cell_unchanged() {
     assert_eq!(app.bookmarks(), vec![("here".to_owned(), 2)]);
 }
 
-/// A table this build writes is one LibreOffice's schema allows: at least one
-/// `table:table-column`, because `table-columns-and-groups` is a `oneOrMore` (rng:14200), and
-/// R2 says everything written validates.
+/// A written table is one LibreOffice's schema allows: at least one `table:table-column`, since
+/// `table-columns-and-groups` is a `oneOrMore` (rng:14200), and everything written validates (R2).
 #[test]
 fn a_written_table_declares_its_columns() {
     let app = App::new();
@@ -386,10 +385,9 @@ fn a_tables_widths_cell_styles_and_header_rows_are_read() {
     );
 }
 
-/// A table's look lives in style names on four kinds of element — the table, its columns, its
-/// rows, its cells — and the model carries none of them. A body regenerated for an edit
-/// *elsewhere* used to write every table bare, and the save's loss check refused it; now an
-/// untouched table goes back as its own bytes, and an edited one keeps every one of those names.
+/// A table's look lives in style names on the table, its columns, rows and cells, which the model
+/// does not carry. An untouched table goes back as its own bytes when something beside it is
+/// edited, and an edited one keeps every one of those names.
 #[test]
 fn a_tables_styles_survive_an_edit_beside_it_and_inside_it() {
     let table = r#"<table:table table:name="T" table:style-name="T"><table:table-column table:style-name="T.A" table:number-columns-repeated="2"/><table:table-header-rows><table:table-row table:style-name="R1"><table:table-cell table:style-name="T.A1" office:value-type="string"><text:p>head</text:p></table:table-cell><table:covered-table-cell table:style-name="T.B1"/></table:table-row></table:table-header-rows><table:table-row><table:table-cell table:style-name="T.A2" office:value-type="string"><text:p>a</text:p></table:table-cell><table:table-cell table:style-name="T.B2" office:value-type="string"><text:p>b</text:p></table:table-cell></table:table-row></table:table>"#;

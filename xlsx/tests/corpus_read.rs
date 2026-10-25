@@ -2,23 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Loop A′ — import tolerance.
+//! Loop A′ — import tolerance. Every `.xlsx`/`.xlsm` in LibreOffice's test corpus must import
+//! without an error or a panic; values are loop D's. This pins that unrecognised input is
+//! structurally inert (`xlsx/src/xml.rs`): a file needing special-casing means the walker is
+//! wrong. **Fix the architecture, not the file** — an exclusion is a named construct, never a file
+//! name.
 //!
-//! Every `.xlsx` / `.xlsm` in LibreOffice's own test corpus must import without an error and
-//! without a panic. Nothing here checks *values* — that is loop D, and X1's work. This pins
-//! the property that unrecognised input is structurally inert (`xlsx/src/xml.rs`): if a file
-//! ever needs special-casing to pass, the walker is wrong. **Fix the architecture, not the
-//! file** — an exclusion is a *construct* with a name, never a file name.
+//! It needs only the corpus, so on a machine with no LibreOffice checkout it is silent;
+//! `ooxmlgen.rs`'s vendored workbooks are the half that never is.
 //!
-//! It needs no oracle and no display, only the corpus — and a corpus is the one thing it
-//! *does* need, so on a machine with no LibreOffice checkout this file is silent.
-//! `ooxmlgen.rs` is the one that never is: 76 vendored workbooks with an oracle beside them,
-//! which is the same tolerance property plus the fidelity one, on every machine.
+//! GRIND_LO_CORPUS=/path/to/libreoffice/core cargo test -p grind-xlsx
 //!
-//!     GRIND_LO_CORPUS=/path/to/libreoffice/core cargo test -p grind-xlsx
-//!
-//! CI gets it free: `ci.yml`'s `corpus` job already sparse-checks out `sc/qa/unit/data`, and
-//! `xlsx/` is a directory inside it.
+//! CI's `corpus` job already sparse-checks out `sc/qa/unit/data`, which holds `xlsx/`.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -39,14 +34,11 @@ const DIRS: [&str; 2] = ["xlsx", "xlsm"];
 /// broke look identical from here otherwise.
 const FLOOR: usize = 360;
 
-/// X2's ratchet: the share of this corpus's `<f>` elements that became a formula rather than
-/// falling in a named class. **Raise it, never lower it.**
-///
-/// A *share* where [`FLOOR`] is a count, and deliberately so: the count moves whenever the
-/// corpus does — 12681 of 13039 on 2026-09-20, against master at `fe40f0393` — and what is
-/// being ratcheted here is the translator rather than the fixtures. The remainder is not
-/// slack: every one of it is counted by class in the scoreboard below, and three of those
-/// classes are §2.3.2 exclusions that will never translate.
+/// The share of this corpus's `<f>` elements that became a formula rather than falling in a named
+/// class. **Raise it, never lower it.** A share where [`FLOOR`] is a count, since the count moves
+/// with the corpus (12681 of 13039 on 2026-09-20, master at `fe40f0393`) and what is ratcheted is
+/// the translator. The remainder is counted by class in the scoreboard below; three classes are
+/// §2.3.2 exclusions that never translate.
 const TRANSLATED_FLOOR: f64 = 0.97;
 
 /// The corpus stores some files as ciphertext, and says so.
@@ -205,9 +197,8 @@ fn every_corpus_workbook_imports() {
         strict,
     );
 
-    // X2's scoreboard, in loop B's shape: every `<f>` the corpus holds either became a formula
-    // our own parser produces, or fell in a class with a name. There is no third outcome, and
-    // the classes are what makes that a statement rather than a percentage.
+    // Formulas, in loop B's shape: every `<f>` either became a formula our own parser produces or
+    // fell in a named class — no third outcome.
     let lost: usize = refused.values().sum();
     eprintln!(
         "loop A′ formulas: {carried}/{} translated ({:.1}%), {lost} in a named class",
@@ -217,11 +208,9 @@ fn every_corpus_workbook_imports() {
     for (class, count) in &refused {
         eprintln!("  {:24} {count}", class.label());
     }
-    // X3's, in the same shape: how many cells came out of the corpus with a number format on
-    // them, and every piece of a format that did not, by the class that stopped it. No
-    // ratchet — unlike a formula, a cell with no format is the *ordinary* case (`General` is
-    // most of every workbook), so a share here would measure the corpus rather than the
-    // filter. The classes are the statement.
+    // Number formats, the same shape: how many cells carry one, and every lost piece by class. No
+    // ratchet — a cell with no format is the ordinary case (`General` is most of every workbook),
+    // so a share would measure the corpus, not the filter.
     eprintln!("loop A′ formats: {formatted}/{cells} cells carry one");
     for (class, count) in &formats_lost {
         eprintln!(
@@ -233,9 +222,8 @@ fn every_corpus_workbook_imports() {
             }
         );
     }
-    // X4's, in the same shape and for the same reason no ratchet: an unstyled cell is the
-    // ordinary case. The two style losses the report names as `Dropped` kinds are printed
-    // here too, since this is where somebody reading about looks will look for them.
+    // Styles, the same shape and no ratchet — an unstyled cell is ordinary. The two style losses
+    // the report names as `Dropped` kinds are printed here too.
     eprintln!("loop A′ styles: {styled}/{cells} cells carry one");
     for (kind, count) in &style_drops {
         eprintln!("  {:40} {count}", kind.label());
@@ -243,8 +231,8 @@ fn every_corpus_workbook_imports() {
     for (class, count) in &appearance_lost {
         eprintln!("  {:40} {count}", class.label());
     }
-    // X5's: the document level. Every construct the model has no home for, by kind — the
-    // report's own vocabulary, summed — and the names and sheet spellings that did not survive.
+    // The document level: every construct the model has no home for, by kind, and the names and
+    // sheet spellings that did not survive.
     eprintln!(
         "loop A′ document: {names} names carried, {names_lost} lost, {renamed} sheets renamed"
     );

@@ -2,12 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What a script can build, asserted against the document that came out.
-//!
-//! The exit criterion for D7 is `examples/sample-sheet.sh`'s document, generated, and
-//! `cli/tests/cli.rs` runs the real script end to end. This file is the layer under that: one
-//! feature per test, so a failure says which part of the host API broke rather than that the
-//! budget is wrong.
+//! What a script can build, asserted against the document that came out — one feature per test, so
+//! a failure names the part of the host API that broke. `cli/tests/cli.rs` runs the real budget
+//! script end to end.
 
 use grind_build::{Artifact, build};
 use grind_sheet::{App, CellValue, Pos};

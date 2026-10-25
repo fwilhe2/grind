@@ -183,11 +183,10 @@ fn envelope_vocabulary(flat: &[u8]) -> std::collections::BTreeMap<String, usize>
     whole
 }
 
-/// **Saving into the other form is not a way round any of this.** A `.fodt` saved as an `.odt`
-/// — or an `.ods` as a `.fods` — used to start from nothing and drop everything the model does
-/// not own, with no error. Untouched, the document in the other form is every element and
-/// attribute of the original, counted the same; after an edit, nothing outside the body has
-/// gone, and an edit a same-form save refuses is refused here too.
+/// **Saving into the other form is not a way round any of this.** Untouched, a `.fodt` saved as an
+/// `.odt` (or the reverse) is every element and attribute of the original, counted the same; after
+/// an edit nothing outside the body has gone, and an edit a same-form save refuses is refused here
+/// too.
 #[test]
 fn saving_into_the_other_form_carries_everything() {
     use grind_core::odf::{envelope, forms};
@@ -269,10 +268,10 @@ fn span_properties(xml: &str, text: &str) -> String {
     xml[start..end].to_owned()
 }
 
-/// **Restyling a run keeps everything about its style the model does not read**, the text half
-/// of the restyle hole: a superscript's new style is its old one with only what changed
-/// rewritten — and a style that says more than the model reads is never borrowed for a run
-/// that merely looks the same to it, which used to *add* the superscript to somebody's bold.
+/// **Restyling a run keeps everything about its style the model does not read**: a superscript's
+/// new style is its old one with only what changed rewritten — and a style that says more than the
+/// model reads is never borrowed for a run that merely looks the same, which would *add* the
+/// superscript to somebody's bold.
 #[test]
 fn restyling_a_run_keeps_what_the_model_does_not_read() {
     let restyle = |at: &str, end: usize, bold: bool| {

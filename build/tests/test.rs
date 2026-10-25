@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `grind test` (D8), end to end below the CLI: a script builds, is recalculated, and its
-//! `test_` functions are called with what it built.
+//! `grind test`, end to end below the CLI: a script builds, is recalculated, and its `test_`
+//! functions are called with what it built.
 
 use std::rc::Rc;
 

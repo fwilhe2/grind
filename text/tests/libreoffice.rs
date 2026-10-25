@@ -2,33 +2,24 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Documents LibreOffice Writer actually wrote — vendored, and **this test never skips**.
+//! Documents LibreOffice Writer actually wrote — vendored, and **this test never skips**, the text
+//! twin of `sheet/tests/kb.rs`: loop A's corpus lives outside the repository and skips, and a
+//! requirement that skips is a preference.
 //!
-//! `sheet/tests/kb.rs` is the spreadsheet's version of this and says why it exists: loop A's
-//! corpus is LibreOffice's own, lives outside the repository and skips when it is not there,
-//! and *a requirement that skips is a preference*. Text had no such fixture at all — every
-//! check on real Writer output needed `GRIND_LO_CORPUS` — so `data/` holds a small one that
-//! is always present.
+//! **What is in it**: a lightly formatted document saved by Writer in **both forms**. A `Title`
+//! and a `Subtitle` (paragraphs, not headings — a trap for anything assuming a big bold line is a
+//! `text:h`), two heading levels that *are* headings, character spans, an **edited default
+//! paragraph style** (putting every body paragraph on an automatic `P1`, whence the file's name),
+//! an empty paragraph, and a `text:s`. The `.odt` is a whole LibreOffice package — `styles.xml`,
+//! `settings.xml`, `meta.xml`, `manifest.rdf` and a PNG thumbnail — none of which the model holds,
+//! all of which must come back.
 //!
-//! **What is in it**, and why it is a useful sample rather than a big one: a document with the
-//! light formatting a real document has, saved by Writer in **both forms**. A `Title` and a
-//! `Subtitle` (which are paragraphs, not headings — a trap for anything that assumes a big
-//! bold line is a `text:h`), two heading levels that *are* headings, character spans inside
-//! paragraphs, an **edited default paragraph style** (which is what puts every body paragraph
-//! on an automatic `P1` instead of `Standard`, and what the file is named after), an empty
-//! paragraph, and a `text:s`. The `.odt` is a whole LibreOffice package: `styles.xml`,
-//! `settings.xml`, `meta.xml`, `manifest.rdf` and a PNG thumbnail, none of which this build
-//! models and all of which have to come back.
+//! **Adding one is dropping a file in.** Everything walks `data/`, so a new Writer document must
+//! load, survive an untouched save byte for byte, and, as half of a `.odt`/`.fodt` pair, agree
+//! with its other form. The assertions naming *this* document come last.
 //!
-//! **Adding one is dropping a file in.** Everything below walks `data/`, so a new document
-//! from Writer is covered the moment it lands: it must load, it must survive an untouched save
-//! byte for byte, and if it is one of a `.odt`/`.fodt` pair the two forms must agree. The
-//! assertions that name *this* document are last and are the only part that knows what is in
-//! it.
-//!
-//! Licensing: the fixtures are **CC0-1.0**, declared in `REUSE.toml` rather than annotated —
-//! a header inside the XML would change the document under test, which is the whole thing
-//! being measured. See that file for why data is not AGPL here.
+//! Licensing: the fixtures are **CC0-1.0**, declared in `REUSE.toml` rather than annotated, since
+//! a header inside the XML would change the document under test.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -118,14 +109,10 @@ fn an_untouched_flat_save_returns_the_bytes_exactly() {
     assert!(checked > 0, "no flat document is vendored");
 }
 
-/// **A package keeps every entry.** An untouched save of a `.odt` Writer wrote comes back with
-/// the same entries holding the same bytes — `styles.xml`, `settings.xml`, `meta.xml`,
-/// `manifest.rdf` and the thumbnail included — because the writer keeps the original archive
-/// and replaces only `content.xml` (`grind_core::odf::envelope::repackage`).
-///
-/// This test used to assert the opposite: a 9-entry Writer package came back as 3 entries on a
-/// plain open-and-save. Saving never makes an existing file worse, and this is that rule with
-/// the original's own bytes as the measure.
+/// **A package keeps every entry.** An untouched save of a Writer `.odt` comes back with the same
+/// entries holding the same bytes — `styles.xml`, `settings.xml`, `meta.xml`, `manifest.rdf` and
+/// the thumbnail included — since the writer keeps the original archive and replaces only
+/// `content.xml` (`grind_core::odf::envelope::repackage`).
 #[test]
 fn an_untouched_package_save_keeps_every_entry_byte_for_byte() {
     let mut checked = 0;
@@ -334,8 +321,8 @@ fn editing_one_paragraph_of_a_writer_document_changes_one_line() {
     assert!(added[0].contains("Nam liber tempor, edited."), "{added:#?}");
     // The style name survives the edit: `set_text` replaces a block's *content*.
     assert!(added[0].contains("text:style-name=\"P1\""), "{added:#?}");
-    // And the parts of the file nobody touched are untouched, including the ones this build
-    // has no model for at all.
+    // And the parts of the file nobody touched are untouched, including those the model does not
+    // hold.
     assert!(after.contains("<text:sequence-decls>"));
     assert!(after.contains("officeooo:rsid"));
 }

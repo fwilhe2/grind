@@ -2,18 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `grind sheet lint` against real documents — `doc/dsl.md` §4.3, D6.
-//!
-//! The unit tests beside the rules (`sheet/src/lint.rs`) build the document each rule is about;
-//! this runs every rule over R7's fourteen vendored documents, which nobody wrote for a linter.
-//! Two things are checked and they are the two that matter:
+//! `grind sheet lint` against real documents. The unit tests beside the rules
+//! (`sheet/src/lint.rs`) build each rule's document; this runs every rule over R7's fourteen
+//! vendored documents, which nobody wrote for a linter:
 //!
 //! 1. **Linting writes nothing.** Open, ask for every rule including the hints, save, and assert
-//!    the bytes are identical. `doc/view-modes.md`'s headline check, for the same reason — a
-//!    feature that only reads cannot be verified by loop C, so it is verified here.
-//! 2. **It survives every one of them.** A rule that panics on a document LibreOffice wrote is
-//!    the failure mode a corpus exists to find, and the fourteen documents between them have
-//!    charts, filters, named expressions, styles and formulas that this build cannot evaluate.
+//!    the bytes are identical — a feature that only reads cannot be verified by loop C.
+//! 2. **It survives every one of them**, charts, filters, named expressions, styles and formulas
+//!    grind cannot evaluate included.
 
 use std::path::{Path, PathBuf};
 

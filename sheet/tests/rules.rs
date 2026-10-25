@@ -46,8 +46,8 @@ fn libreoffices_rules_are_read_in_their_order_and_merged_over_their_cells() {
         [
             Rule::over(Pos::new(0, 0), Pos::new(0, 0), "[.A1]>0", fill("#ff0000")),
             Rule::over(Pos::new(0, 0), Pos::new(0, 0), "[.A1]>1", fill("#00ff00")),
-            // Two cell styles (bold, italic), one rule: LibreOffice reads it back as one, and so
-            // does this build.
+            // Two cell styles (bold, italic), one rule: LibreOffice reads it back as one, as grind
+            // does.
             Rule::over(Pos::new(1, 1), Pos::new(2, 2), "[.$A2]>0", fill("#00ff00")),
         ]
     );

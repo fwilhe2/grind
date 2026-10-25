@@ -2,16 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! D6's exit criterion, made mechanical: **every rule named in a table and covered by a test.**
-//!
-//! `doc/dsl.md` §4.3 holds the table, and this reads it — the same mechanism
-//! `doc/small-group.md` uses against `funcs::implemented()` and `cli/tests/parity.rs` uses
-//! against each `App`. A rule with no row fails the build; a row naming a rule nothing
-//! implements fails it too.
-//!
-//! It lives here rather than in either application because the table is one table for the
-//! suite: a rule that "applies to both" is one row and two `RULES` entries, and only a test
-//! that can see both crates can check that.
+//! **Every lint rule named in `doc/dsl.md` §4.3's table and covered by a test**: this reads the
+//! table, as `cli/tests/parity.rs` reads each `App`. A rule with no row fails, and so does a row
+//! naming no rule. Here rather than in either application because the table is the suite's: a rule
+//! for both is one row and two `RULES` entries.
 
 use grind_core::lint::Rule;
 

@@ -2,13 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `doc/projection-text.md` against the code, and against `doc/text-core.md`. **D2's §3.7.**
-//!
-//! The spreadsheet's twin of this file (`sheet/tests/projection_scope.rs`) had to invent its own
-//! answer, because a spreadsheet turned out to have no element scope line to check against.
-//! This one does not have to invent anything: `doc/text-core.md` **is** a scope line, and
-//! `text/tests/scope.rs` already holds `grind_text::implemented()` to it. So the chain is
-//! complete and mechanical, and it is the chain §3.7 described:
+//! `doc/projection-text.md` against the code, and against `doc/text-core.md`. `doc/text-core.md`
+//! **is** a scope line, and `text/tests/scope.rs` holds `grind_text::implemented()` to it, so the
+//! chain is mechanical:
 //!
 //! ```text
 //! doc/text-core.md  ←  scope.rs  →  grind_text::implemented()
@@ -16,14 +12,12 @@
 //!         └──── this file ────────────────────┘  →  doc/projection-text.md  →  write.rs
 //! ```
 //!
-//! An element cannot enter the scope line without a projection spelling, and a projection node
-//! cannot exist without the writer emitting it.
+//! An element cannot enter the scope line without a projection spelling, and a node cannot exist
+//! without the writer emitting it.
 //!
-//! **The one hole, named rather than papered over.** Check (2) reads node names out of
-//! `write.rs` by looking for `out.begin("…")`, which is a *source pattern*: a writer that
-//! computed a node name would slip past it. `the_corpus_emits_nothing_undocumented` is the
-//! behavioural backstop — it reads the node names out of real projected documents instead of
-//! out of the source — and between them the gap is small and stated.
+//! **The one hole, named.** Check (2) reads node names out of `write.rs` by `out.begin("…")`, a
+//! source pattern a computed name would slip past; `the_corpus_emits_nothing_undocumented` is the
+//! backstop, reading node names out of projected documents.
 
 use std::collections::BTreeSet;
 
@@ -302,9 +296,8 @@ fn examples() -> Vec<(&'static str, &'static str)> {
         .collect()
 }
 
-/// The behavioural backstop for check (2): node names read out of documents this build really
-/// projected, rather than out of the source. It is what would catch a writer that computed a
-/// node name instead of spelling one.
+/// The backstop for check (2): node names read out of documents really projected rather than out
+/// of the source, catching a writer that computed a node name.
 #[test]
 fn the_vendored_corpus_emits_nothing_undocumented() {
     let documented: BTreeSet<&str> = nodes().into_iter().map(|(node, _)| node).collect();

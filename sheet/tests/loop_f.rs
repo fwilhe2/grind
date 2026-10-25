@@ -2,36 +2,25 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **Loop F — the projection differential** (`doc/dsl.md` §8).
+//! **Loop F — the projection differential** (`doc/dsl.md` §8). For every document grind reads:
+//! project it, read the projection back, and assert the two models are identical — the bijection
+//! layer 0 stands on.
 //!
-//! For every document this build can read: project it, read the projection back, and assert
-//! the two models are identical. That is the bijection, and the whole of layer 0 stands on it
-//! — a projection that is not 1:1 with the model is a prettier `.csv`, and `doc/dsl.md` §1 is
-//! the argument that the format is only worth having if it round-trips.
+//! It costs **no corpus**: it runs over R7's fourteen vendored documents, which never skip, and
+//! over loop A's corpus, which skips without a LibreOffice checkout (`the_corpus_projects`, a
+//! ratchet).
 //!
-//! It costs **no corpus**: every document loop A already reads is a case. So it runs over R7's
-//! fourteen vendored documents, which never skip, *and* — as D3 — over loop A's whole 359,
-//! which skip without a LibreOffice checkout. The corpus half is at **359/359, nothing
-//! differing**, which is the bijection's evidence rather than a promise about it.
+//! It compares the **model**, never the bytes — `at`/`row` and `cell` are two spellings of one
+//! state (§3.4) — and in *both* directions, as loop C does: `document → projection → document`
+//! catches a writer dropping something, re-projecting the result a reader dropping it.
 //!
-//! What it compares is the **model**, never the bytes. `at`/`row` and `cell` are two spellings
-//! of the same state and the reader takes both (§3.4), so byte equality would be asserting the
-//! writer's taste rather than the format's promise. It compares in *both* directions for the
-//! same reason loop C does: `document → projection → document` catches a writer that drops
-//! something, and re-projecting the result catches a *reader* that drops it instead.
+//! ## The named gap
 //!
-//! ## The named gaps
+//! * **Charts.** `Sheet::charts` has no projection node. They are excluded from the comparison *by
+//!   name* below, and `charts_are_the_one_named_gap` fails the day one is projected.
 //!
-//! A document that will not round-trip is either a scope-line gap or a bug, and the difference
-//! is what this file measures rather than what it assumes. The gaps as of D1:
-//!
-//! * **Charts.** `Sheet::charts` has no projection node yet (§3.8 puts them in for bijectivity
-//!   rather than for authoring). They are excluded from the comparison *by name* below, and
-//!   `charts_are_the_one_named_gap` fails the day one is projected — so the exclusion cannot
-//!   outlive the gap.
-//!
-//! Nothing else is excused. A difference in a value, a formula, a style, a number format, a
-//! track size, a filter or a named expression is a bug in the projection.
+//! Nothing else is excused: a difference in a value, a formula, a style, a number format, a track
+//! size, a filter or a named expression is a bug.
 
 use std::path::{Path, PathBuf};
 
@@ -86,14 +75,10 @@ fn every_document_survives_being_projected_and_read_back() {
     assert!(checked >= 14, "loop F ran over {checked} documents");
 }
 
-/// **D4 — the projection is a `Form`.** The same property as above, one layer out: through
-/// `write_bytes`/`read_bytes` rather than through `projection::` directly.
-///
-/// It is a separate test because it asserts a different thing. The one above says the grammar
-/// is bijective; this one says the *crate's own door* knows about it — that a caller who never
-/// heard of `grind_sheet::projection` and only ever asks for a form gets a projection out and
-/// the same document back in. Every shell and every CLI verb is such a caller, which is how D4
-/// is reached without any of them changing (rule 5).
+/// **The projection is a `Form`.** The same property one layer out: through
+/// `write_bytes`/`read_bytes` rather than `projection::` — the crate's own door, which every shell
+/// and CLI verb uses, so a caller asking only for a form gets a projection out and the same
+/// document back.
 #[test]
 fn the_projection_is_a_form_like_the_other_two() {
     for path in corpus() {
@@ -103,9 +88,8 @@ fn the_projection_is_a_form_like_the_other_two() {
 
         let written = grind_sheet::write_bytes(&original, grind_sheet::Form::Projection)
             .unwrap_or_else(|e| panic!("{name}: will not write as a projection: {e}"));
-        // Sniffed from the bytes, not from the name — `book.fods` here holds KDL, and reading
-        // has to notice. This is the half of D4 that was already true and is asserted anyway,
-        // because it is what makes the other half safe.
+        // Sniffed from the bytes, not the name — `book.fods` here holds KDL — which is what makes
+        // the other half safe.
         let back = grind_sheet::read_bytes(&name, &written)
             .unwrap_or_else(|e| panic!("{name}: its own projection will not read back: {e}"));
 
@@ -118,16 +102,10 @@ fn the_projection_is_a_form_like_the_other_two() {
     }
 }
 
-/// **D3 — loop F at corpus scale.** The same property over LibreOffice's own `sc/qa` corpus,
-/// which is loop A's, so it costs no corpus of its own.
-///
-/// A ratchet rather than a pass/fail: like loop B's `FLOOR`, the number below is what this
-/// build achieves, it may be *raised* and never lowered, and the failures it tolerates are
-/// listed by the scoreboard rather than hidden by it. Run
-/// `cargo test -p grind-sheet --test loop_f -- --nocapture` to see them.
-///
-/// Skips with a notice when there is no checkout, exactly as loop A does — the corpus is not
-/// vendorable and a test that cannot run must say so rather than pass quietly.
+/// **Loop F at corpus scale**, over LibreOffice's own `sc/qa` corpus — loop A's, so no corpus of
+/// its own. A ratchet like loop B's `FLOOR`: it may be *raised*, never lowered, and the failures
+/// it tolerates are listed by the scoreboard (`cargo test -p grind-sheet --test loop_f --
+/// --nocapture`). Skips with a notice when there is no checkout.
 #[test]
 fn the_corpus_projects() {
     const DEFAULT_CHECKOUT: &str = "/home/florian/code/github.com/LibreOffice/core";
@@ -319,7 +297,7 @@ fn the_span_map_finds_a_cell_and_a_cell_finds_its_line() {
     );
 }
 
-// --- D5: R6 for the projection ---
+// --- R6 for the projection ---
 
 /// A hand-written projection, with everything in it the model has no room for: a comment, blank
 /// lines, a column of numbers lined up by eye, and a value spelled `4200.0` where the writer
@@ -354,8 +332,8 @@ fn edited(edit: grind_sheet::action::Action) -> String {
         .expect("utf-8")
 }
 
-/// **D5's headline.** One cell edited is one line of `git diff`, and everything the model does
-/// not carry is still there afterwards.
+/// One cell edited is one line of `git diff`, and everything the model does not carry is still
+/// there afterwards.
 #[test]
 fn one_cell_edited_changes_one_line() {
     let after = edited(grind_sheet::action::Action::SetCell {

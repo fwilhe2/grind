@@ -2,13 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `grind text lint` against documents LibreOffice Writer actually wrote — `doc/dsl.md` §4.3,
-//! D6. The twin of `sheet/tests/lint.rs`, and it checks the same two things: that linting writes
-//! nothing, and that every rule survives real files.
-//!
-//! The corpus is `text/tests/data/`, globbed rather than listed exactly as
-//! `text/tests/libreoffice.rs` globs it — adding a Writer document is dropping a file in, and it
-//! then has to survive the linter too.
+//! `grind text lint` against documents LibreOffice Writer wrote — `sheet/tests/lint.rs`'s twin,
+//! checking that linting writes nothing and every rule survives real files. The corpus is
+//! `text/tests/data/`, globbed as `text/tests/libreoffice.rs` globs it, so a Writer document
+//! dropped in must survive the linter too.
 
 use std::path::{Path, PathBuf};
 

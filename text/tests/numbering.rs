@@ -76,8 +76,8 @@ fn every_label_is_the_one_libreoffice_draws() {
         ("capA", Some("A.")),
         ("four", Some("IV.")),
         ("five", Some("V.")),
-        // LibreOffice draws nothing for a list naming no style; this build draws its own bullet,
-        // which is what every list it writes would otherwise lose.
+        // LibreOffice draws nothing for a list naming no style; grind draws its own bullet, which
+        // every list it writes would otherwise lose.
         ("nostyle", Some("\u{2022}")),
         ("skipped", Some("1.a)")),
     ];
@@ -107,9 +107,9 @@ fn a_new_item_numbers_itself_and_the_items_after_it_move() {
     assert_eq!(got[6].1.as_deref(), Some("3."), "{got:?}");
 }
 
-/// A list this build opens is written with a bullet list style of its own — LibreOffice draws a
-/// list naming no style with no mark at all (fact 15) — and reads back wearing the same marks
-/// every window draws; a file's own list keeps its style through the same save.
+/// A new list is written with a bullet list style of its own — LibreOffice draws a list naming no
+/// style with no mark (fact 15) — and reads back wearing the marks every window draws; a file's
+/// own list keeps its style through the same save.
 #[test]
 fn a_new_list_is_written_with_a_style_that_draws_its_bullets() {
     use grind_text::{BlockKind, Form};

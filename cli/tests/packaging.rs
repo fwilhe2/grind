@@ -68,8 +68,8 @@ const PACKAGED: [Packaged; 4] = [
     },
 ];
 
-/// The suite's meta-package (`suite/`, S11): a package of its own, depending on every packaged
-/// binary's package and shipping none.
+/// The suite's meta-package (`suite/`): a package of its own, depending on every packaged binary's
+/// package and shipping none.
 const META: &str = include_str!("../../suite/Cargo.toml");
 
 /// The members that ship no binary, each with the reason. A crate here is *not* a package that
@@ -115,20 +115,16 @@ const UNPACKAGED: [(&str, &str); 15] = [
         "ui_web",
         "a wasm bundle served as files, not installed from a repository",
     ),
-    // Not an oversight and not deferred work: a `.deb` or an `.rpm` of a `.exe` would install
-    // something no Linux machine can run. `artifacts.yml`'s `windows` job builds it on
-    // `windows-latest` and uploads it, which is that platform's equivalent of the packaging
-    // steps here. What Windows *packaging* means — a portable executable, an installer, file
-    // associations through ProgIDs — is W8's question in `doc/windows-shell.md`, and the day it
-    // is answered the answer belongs in a guard of its own rather than in this one.
+    // Not deferred work: a `.deb` or `.rpm` of a `.exe` would install something no Linux machine
+    // runs. `artifacts.yml`'s `windows` job builds and uploads it; what Windows packaging means is
+    // `doc/windows-shell.md`'s, and belongs in a guard of its own.
     (
         "ui_win32",
         "a Windows executable; artifacts.yml builds and uploads it, and a .deb would be unrunnable",
     ),
-    // The same reason, one platform over: a Mach-O binary in a `.deb` would install something no
-    // Linux machine can run. What packaging means for it — an `.app` bundle, a DMG, a Homebrew
-    // tap, and which of them are signed — is M10's question in `doc/macos-shell.md`, answered on
-    // a macOS runner rather than here.
+    // The same, one platform over: a Mach-O binary in a `.deb` runs nowhere it installs. Its
+    // packaging — the `.app`, the DMG, signing — is `doc/macos-shell.md`'s, checked on a macOS
+    // runner.
     (
         "ui_mac",
         "a macOS application; built on a macOS runner, and a .deb would be unrunnable",
@@ -144,9 +140,9 @@ struct Desktop {
     entry: &'static str,
     /// The media types this application claims, both forms of its one document type.
     mime: [&'static str; 2],
-    /// The media types it opens by importing — Excel workbooks (`doc/xlsx-import.md`, X6) and
-    /// CSV/TSV (`grind_sheet::csv::open`): listed so a file manager offers it for them, and never
-    /// made their default — no package here writes a `mimeapps.list`.
+    /// The media types it opens by importing — Excel workbooks and CSV/TSV
+    /// (`grind_sheet::csv::open`): listed so a file manager offers it for them, never made their
+    /// default — no package here writes a `mimeapps.list`.
     imports: &'static [&'static str],
 }
 
@@ -333,9 +329,8 @@ fn every_member_of_the_workspace_is_accounted_for() {
     }
 }
 
-/// What a desktop reads. `Exec=` naming something other than the installed binary is a
-/// packaging bug that no build catches and no test would have caught: `Exec=sheet-gtk` sat in
-/// the spreadsheet's entry from M9 until the word processor's was written beside it.
+/// What a desktop reads. `Exec=` naming something other than the installed binary is a packaging
+/// bug no build catches; `Exec=sheet-gtk` once sat in the spreadsheet's entry unnoticed.
 #[test]
 fn each_gui_shell_declares_itself_to_the_desktop() {
     for app in DESKTOPS {

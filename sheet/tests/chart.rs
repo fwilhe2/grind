@@ -625,9 +625,8 @@ fn a_pies_direction_survives_a_save_and_reopen_either_way_round() {
     }
 }
 
-/// A pie whose file says nothing about its direction reads as LibreOffice draws it —
-/// counter-clockwise — rather than as this build's own default, which is what made the same
-/// bytes draw two different pies in two programs.
+/// A pie whose file says nothing about its direction reads counter-clockwise, as LibreOffice draws
+/// it, so the same bytes draw one pie in both programs.
 #[test]
 fn a_pie_whose_file_says_nothing_reads_counter_clockwise() {
     let app = App::new();
@@ -696,10 +695,9 @@ fn a_bar_series_colour_survives_a_save_and_an_untouched_one_stays_untouched() {
     }
 }
 
-/// A bar chart this build wrote *before* a colour was a series — every bar its own data-point
-/// style cycling per point, the series naming no style — reads back untouched rather than with
-/// every bar's old default mistaken for a colour somebody picked. The bytes are that writer's
-/// own shape, spelled out so the test does not depend on a writer that no longer exists.
+/// A bar chart in the older per-point shape — every bar its own data-point style cycling per
+/// point, the series naming no style — reads back untouched, its bars' defaults not mistaken for
+/// picked colours. The bytes are spelled out here.
 #[test]
 fn a_bar_chart_written_per_point_by_an_older_build_reads_back_untouched() {
     let app = App::new();

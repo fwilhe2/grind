@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Loop D — import fidelity: our conversion of a workbook against **LibreOffice's** conversion
-//! of the same workbook, cell by cell (`doc/xlsx-import.md`, "Verification").
+//! Loop D — import fidelity: our conversion of a workbook against **LibreOffice's** conversion of
+//! it, cell by cell (`doc/xlsx-import.md`, "Verification").
 //!
 //! ```text
 //! ours   = grind_xlsx::import_bytes(bytes)              → Document
@@ -11,42 +11,29 @@
 //! compare(ours, theirs)
 //! ```
 //!
-//! The corpus is the vendored generated one (`tests/data/corpus/`, `ooxmlgen.rs`), every
-//! fixture whose manifest row says `oracleOpens` — so the loop needs `soffice` and nothing
-//! else, no LibreOffice checkout. `ooxmlgen.rs` holds the same files to the manifest's claims;
-//! this holds them to the oracle's *behaviour*, which is the independent half: a manifest is
-//! somebody's belief about a file, and the oracle is a program that opened it.
+//! The corpus is the vendored generated one (`tests/data/corpus/`, `ooxmlgen.rs`), every fixture
+//! whose manifest says `oracleOpens`, so it needs `soffice` and no checkout. `ooxmlgen.rs` holds
+//! the files to the manifest's claims; this holds them to the oracle's *behaviour* — a manifest is
+//! a belief about a file, the oracle a program that opened it.
 //!
-//! **Needs `soffice` on `PATH`; skips with a notice without one**, exactly as loop C does. The
-//! oracle is pinned to a container image in CI (`doc/differential-fuzz.md`, "Pinning
-//! LibreOffice") and `scripts/soffice-tests.sh` puts the same one first on `PATH` locally. Its
-//! output is **cached** under the temp directory by the fixture's SHA-256 — which the
-//! manifest already carries — and the oracle's own version string, so a second run costs no
-//! conversion and a different LibreOffice never reuses another one's answer.
+//! **Needs `soffice` on `PATH`; skips with a notice without one**, as loop C does. CI pins the
+//! oracle to a container image (`doc/differential-fuzz.md`) and `scripts/soffice-tests.sh` puts it
+//! first on `PATH` locally. Output is **cached** by fixture SHA-256 and the oracle's version
+//! string.
 //!
-//! **What is compared: every cell's value, its kind, and — since X3 — what it displays; since
-//! X4, every carried cell's style and every column's and row's size and hidden-ness.** Each
-//! milestone widens [`differences`] rather than adding a loop. The
-//! display is compared where **both** sides put a format on the cell, since a cell this build
-//! left unformatted is one whose code it refused by name, and those classes are counted in the
-//! report and asserted one at a time in `ooxmlgen.rs` — asking the oracle about them here would
-//! say the same thing again in a worse vocabulary. **Formula text is not
-//! compared even now that X2 carries it**, and that is a decision rather than an omission: the
-//! oracle spells the same expression differently in at least three ways this corpus already
-//! records in `manifest.json`'s own `oracle` fields — `[$Data.A1]` for our `[Data.A1]`,
-//! `com.microsoft.xlookup` for `XLOOKUP`, an unknown name lower-cased — so the comparison would
-//! be of two spellings rather than of two conversions. The manifest is the oracle for formula
-//! *text* (`ooxmlgen.rs`, 125 claims), and it is the better one because it was written to state
-//! the difference rather than to hide it. The value rule is loop C's — equal at 15 significant digits, since that is all LibreOffice
-//! writes — and a kind (date, time) must match exactly.
+//! **Compared: every cell's value, kind and display, every carried cell's style, and every
+//! column's and row's size and hidden-ness** ([`differences`]). A display is compared where
+//! **both** sides format the cell, since a cell left unformatted had its code refused by name,
+//! which `ooxmlgen.rs` asserts. **Formula text is not compared**: the oracle spells one expression
+//! differently in ways the manifest records (`[$Data.A1]` for `[Data.A1]`,
+//! `com.microsoft.xlookup`, lower-cased unknown names), so the manifest is the oracle for formula
+//! text. Values compare at 15 significant digits (loop C's rule); a kind must match exactly.
 //!
-//! **Where the two conversions differ on purpose** — usually because the oracle is wrong, twice
-//! because this build is the one that chose differently — the disagreement is a named
-//! [`Divergence`] — a *construct*,
-//! never a file name (`CLAUDE.md`'s rule for every loop) — asserted to still occur, so that a
-//! divergence LibreOffice stops having fails this test and has to be deleted.
+//! **Where the conversions differ on purpose** — usually the oracle being wrong, twice grind
+//! choosing differently — the disagreement is a named [`Divergence`], a construct and never a file
+//! name, asserted to still occur, so one LibreOffice stops having fails and is deleted.
 //!
-//!     cargo test -p grind-xlsx --test loop_d -- --nocapture
+//! cargo test -p grind-xlsx --test loop_d -- --nocapture
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -75,14 +62,13 @@ struct Divergence {
 enum Scope {
     /// One cell both sides have a sheet for.
     Cell(fn(ours: &Cell, theirs: &Cell) -> bool),
-    /// One cell's **style**, where both sides carry a value (X4). A scope of its own rather
-    /// than [`Scope::Cell`]'s, so that a divergence written about values — which says nothing
-    /// about styles — cannot swallow a style difference on the same cell.
+    /// One cell's **style**, where both sides carry one — its own scope, so a divergence about
+    /// values cannot swallow a style difference on the same cell.
     Style(fn(ours: &CellStyle, theirs: &CellStyle) -> bool),
-    /// One column or row of a sheet both sides have (X4).
+    /// One column or row of a sheet both sides have.
     Track(fn(&Track) -> bool),
-    /// A sheet of ours that the oracle's conversion does not have, by the name **the workbook**
-    /// gave it — this import may have renamed it (X5), and the construct is the spelling.
+    /// A sheet of ours the oracle's conversion lacks, by the name **the workbook** gave it — the
+    /// import may have renamed it, and the construct is the spelling.
     OnlyOurs(fn(name: &str) -> bool),
     /// A sheet of the oracle's, by name, that ours does not have.
     OnlyTheirs(fn(name: &str) -> bool),
@@ -177,7 +163,7 @@ const DIVERGENCES: &[Divergence] = &[
             ours.value == theirs.value && theirs.display.trim_end() == ours.display
         }),
     },
-    // ---- X4: styles ----
+    // ---- styles ----
     Divergence {
         name: "the oracle names its own border lines",
         why: "`fo:border` is XSL-FO's shorthand (ODF §20.183), whose line styles are `solid`, \
@@ -334,7 +320,7 @@ const DIVERGENCES: &[Divergence] = &[
                 })
         }),
     },
-    // ---- X4: geometry ----
+    // ---- geometry ----
     Divergence {
         name: "the oracle measures a column in the font it substituted",
         why: "ECMA-376 §18.3.1.13 counts a column's width in the maximum digit width of the \
@@ -422,10 +408,9 @@ const DIVERGENCES: &[Divergence] = &[
 struct Cell {
     value: CellValue,
     kind: Option<NumberKind>,
-    /// Whether the cell holds a formula. Both sides carry one since X2 — ours except where a
-    /// named class stopped it, the oracle's wherever the workbook had one — and it is read
-    /// here to *exclude* those cells from the value comparison, for the reason the divergence
-    /// below gives: the oracle recalculates them and this import does not.
+    /// Whether the cell holds a formula — ours except where a named class stopped it, the oracle's
+    /// wherever the workbook had one. Read to *exclude* such cells from the value comparison: the
+    /// oracle recalculates them and this import does not.
     formula: bool,
     formatted: bool,
     display: String,
@@ -613,11 +598,9 @@ fn same(a: &Cell, b: &Cell) -> bool {
         }
         (x, y) => x == y,
     };
-    // The display is compared only where **both** sides put a format on the cell. A cell
-    // this build left unformatted is one whose code it refused, and the classes it refuses
-    // are named and counted in the report and asserted one by one in `ooxmlgen.rs`; asking
-    // the oracle about them here would say the same thing a second time and in a worse
-    // vocabulary — `"3.75" vs "3 3/4"` rather than `Fraction`.
+    // The display is compared only where **both** sides format the cell: an unformatted one had
+    // its code refused by a named class, asserted in `ooxmlgen.rs`, and the oracle would say the
+    // same in a worse vocabulary — `"3.75" vs "3 3/4"` rather than `Fraction`.
     let display = !(a.formatted && b.formatted) || a.display == b.display;
     values && a.kind == b.kind && display
 }
@@ -746,10 +729,9 @@ fn differences(
     out
 }
 
-/// The columns and rows on which two sheets disagree (X4). A size is compared where **ours**
-/// carries one — the oracle carries one for every track, measuring the rows nobody sized with
-/// its own fonts, and a height this import did not state is one a shell measures in its own —
-/// at loop C's tolerance of a tenth of a millimetre. Hidden-ness is compared everywhere.
+/// The columns and rows on which two sheets disagree. A size is compared where **ours** carries
+/// one — the oracle carries one for every track, measuring unsized rows in its own fonts — at loop
+/// C's tolerance of a tenth of a millimetre; hidden-ness everywhere.
 fn tracks(mine: &Sheet, other: &Sheet) -> Vec<Track> {
     let mut out = Vec::new();
     let mm = |s: Option<&str>| s.and_then(style::length_mm);

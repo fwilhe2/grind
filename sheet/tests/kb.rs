@@ -2,42 +2,29 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! R7's corpus — fourteen documents that are a *requirement* rather than an opportunity.
-//!
-//! Loop A's corpus is LibreOffice's, lives outside the repo and skips when it is not there.
-//! These are named in `doc/plan.md`'s requirements, so they are vendored and this test never
-//! skips: a requirement that skips is a preference. Two sets, and they pull in opposite
-//! directions, which is the point of having both.
+//! R7's corpus — fourteen documents that are a *requirement*, so vendored and never skipped: a
+//! requirement that skips is a preference. Two sets pulling in opposite directions:
 //!
 //! **`data/kb/`** — hand-written against the spec
-//! (<https://github.com/fwilhe2/open-document-knowledge-base>, MIT). Worth having *because*
-//! they are not LibreOffice's output: an `office:version` of 1.3, a table with no
-//! `table:table-column` at all, formulas with no cached value, `<table:table-cell/>`
-//! self-closed with nothing in it. They hit the tolerant reader from the sparse side.
+//! (<https://github.com/fwilhe2/open-document-knowledge-base>, MIT), the sparse side: an
+//! `office:version` of 1.3, a table with no `table:table-column`, formulas with no cached value, a
+//! self-closed `<table:table-cell/>`.
 //!
-//! **`data/samples/`** — LibreOffice's own output, normalised by `odslint-clean`
-//! (<https://github.com/fwilhe2/office-in-git>). The dense side: three-sheet workbooks, 137
-//! formulas in one table, charts, a pivot table, conditional formatting with `calcext:`
-//! icon sets, named expressions, and several hundred elements and attributes this build has
-//! no model for at all. Six of the eight upstream samples are here — `Personal Budget
-//! Tracker` and `Inventory Manager` were dropped because they add **zero** elements or
-//! attributes the other six do not already have, and a corpus file that widens nothing is
-//! only slower.
+//! **`data/samples/`** — LibreOffice's output, normalised by `odslint-clean`
+//! (<https://github.com/fwilhe2/office-in-git>), the dense side: three-sheet workbooks, 137
+//! formulas in one table, charts, a pivot table, `calcext:` icon sets, named expressions, and
+//! hundreds of elements and attributes the model does not hold. Six of eight upstream samples: the
+//! other two add no element or attribute the six lack.
 //!
-//! Three things are checked, and each is a normative requirement:
+//! Three normative checks:
 //!
-//! * every one of them **reads** (R5), and survives write → read with its values, formulas
-//!   and names intact;
-//! * everything this build **writes** validates against the ODF 1.4 RELAX NG schema (R2);
-//! * what it writes stays **small** (R3) — see `a_written_document_carries_no_boilerplate`.
+//! * every one **reads** (R5) and survives write → read with values, formulas and names intact;
+//! * everything grind **writes** validates against the ODF 1.4 RELAX NG schema (R2);
+//! * what it writes stays **small** (R3) — `a_written_document_carries_no_boilerplate`.
 //!
-//! What is deliberately *not* checked is that a sample's charts and pivot tables come back.
-//! They do not: the writer regenerates from the model, and the model has no chart. That is
-//! R6, it is phase 8's whole job, and these six files are the evidence for it — which is
-//! why `the_samples_measure_what_regenerating_still_loses` prints the size instead of
-//! pretending.
-//!
-//! `jing` on `PATH` is the one thing that can skip, because a validator is not vendorable.
+//! A *regenerated* save loses what the model does not hold — a pivot table, say — which splicing
+//! exists to avoid; `the_samples_measure_what_regenerating_still_loses` prints the size rather
+//! than pretending. `jing` on `PATH` is the one thing that can skip.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -183,13 +170,10 @@ fn a_document_of_formulas_with_no_cached_values_recalculates() {
     let app = grind_sheet::App::new();
     app.open_file(&data("kb", "fizzbuzz.fods")).unwrap();
     assert_eq!(app.formula_count(0).unwrap(), 18);
-    // **Eighteen rows, and not one value in them.** This used to assert `(0, 0)` — the used
-    // extent counted values and nothing else — and that turned out to be a data loss rather
-    // than a curiosity: `odf::write` emits the rectangle the extent describes, so regenerating
-    // this document wrote a sheet with no rows at all. `grind convert fizzbuzz.fods
-    // fizzbuzz.ods` gave back a file with zero formulas in it, and the round-trip test above
-    // could not see it, because `digest` walks the same extent and was comparing nothing with
-    // nothing. The assertion below is the one that would have caught it.
+    // **Eighteen rows, and not one value in them.** The used extent covers formulas too:
+    // `odf::write` emits the rectangle the extent describes, so an extent counting only values
+    // wrote this document with no rows at all — and `digest`, walking the same extent, compared
+    // nothing with nothing. This assertion is the one that catches it.
     assert_eq!(
         app.used_extent(0).unwrap(),
         (18, 1),

@@ -113,11 +113,11 @@ fn every_edit_undoes_and_redoes_in_one_step() {
     assert!(!app.can_undo());
 }
 
-// --- the caret-level edits (S7) -------------------------------------------------------------
+// --- the caret-level edits ---
 //
-// The four operations a continuous-flow editor is made of, and the reason they are in the core
-// rather than in a shell: three shells writing their own would disagree about the answers
-// below, and `doc/plan.md` rule 4 means the CLI has to be able to do them anyway.
+// The four operations a continuous-flow editor is made of, in the core because three shells
+// writing their own would disagree about the answers below, and the CLI has to do them anyway
+// (rule 4).
 
 /// Turn an address into a caret the way every caller does — through `loc`, which is the only
 /// place a 1-based `p12+40` becomes indices.
@@ -508,18 +508,10 @@ fn down_carries_into_the_next_block_and_stops_at_the_document_edge() {
     );
 }
 
-/// A motion that crosses a block boundary measures the block it *arrives* in.
-///
-/// The limitation `doc/text-shell.md` recorded after S10 and this closes: `caret_line` took one
-/// width and one provider, so Down-arrow out of a heading measured the paragraph below it with
-/// the heading's font — invisible in the middle of a line and wrong by a few characters at the
-/// ends, in both GUI shells at once, because both were asking the same question. A shell fixing
-/// it locally would have meant a shell doing its own line arithmetic, which is the thing Path C
-/// exists to prevent, so the provider is looked up per block instead ([`grind_text::Faces`]).
-///
-/// `Scaled` is the smallest thing that makes the difference assertable: two units per character
-/// for a heading and one for everything else, which is what a heading being set larger amounts
-/// to once the font is out of the way.
+/// A motion that crosses a block boundary measures the block it *arrives* in: Down-arrow out of a
+/// heading must measure the paragraph below in the paragraph's face, so the provider is looked up
+/// per block ([`grind_text::Faces`]) rather than one for the whole motion. `Scaled` makes it
+/// assertable: two units per character for a heading, one for everything else.
 #[test]
 fn a_motion_by_line_measures_the_block_it_arrives_in() {
     struct Scaled(f32);
@@ -1207,13 +1199,8 @@ fn ordinary_prose_types_as_itself() {
     }
 }
 
-/// `doc/dsl.md` D2 + D4: the third physical form, through the same door as the other two.
-///
-/// This test used to assert the opposite — that a text document *refused* to be written as a
-/// projection and named D2 while doing it. That was the honest behaviour for exactly as long as
-/// there was no text projection, and D2 is the milestone that turns it into a round trip. Loop
-/// F is where the property is really held (`text/tests/loop_f.rs`, over 1755 corpus documents);
-/// what is checked here is that `App` reaches it at all.
+/// The third physical form, through the same door as the other two. Loop F holds the property
+/// (`text/tests/loop_f.rs`, over the corpus); this checks that `App` reaches it at all.
 #[test]
 fn a_document_saves_as_a_projection_and_opens_again() {
     let app = App::new();

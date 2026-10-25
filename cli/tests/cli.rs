@@ -513,8 +513,7 @@ fn formatting_an_absurd_rectangle_fails_instead_of_trying() {
     );
 }
 
-/// `examples/sample-sheet.sh` is the inventory of what this build can do, and an inventory that
-/// `examples/*.rhai`, which is the file this repository's copy of the workspace root is.
+/// An `examples/` file, from the workspace root.
 fn example(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -576,9 +575,8 @@ fn inlining_a_name_writes_it_into_every_use() {
     );
 }
 
-/// **D8's exit criterion**: a generated document's totals asserted — by the script that generated
-/// it, through `grind test`, which fails the command when an assertion does and points at its
-/// line.
+/// A generated document's totals asserted by the script that generated it, through `grind test`,
+/// which fails the command when an assertion does and points at its line.
 #[test]
 fn a_script_tests_its_own_totals() {
     let json = succeeds(
@@ -618,9 +616,8 @@ fn a_script_tests_its_own_totals() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("defines no tests"));
 }
 
-/// **D7's exit criterion**: `examples/sample-sheet.sh`'s document, generated
-/// (`doc/dsl.md` §7). The script is the whole table said once — the categories are data and a
-/// loop writes the rows — and what comes out is an ordinary document with the same totals.
+/// `examples/sample-sheet.sh`'s budget, generated: the categories are data, a loop writes the
+/// rows, and what comes out is an ordinary document with the same totals.
 #[test]
 fn a_script_builds_the_budget() {
     let dir = Sandbox::new("build");
@@ -1144,9 +1141,9 @@ fn csv_arrives_and_leaves_through_the_command_line() {
     );
 }
 
-/// `examples/sample-sheet.sh` is the inventory of what this build can do, and an inventory that
-/// is not run is a wish list. Running it here means a feature that stops working, or a
-/// command that changes its flags, fails the build rather than the next reader.
+/// `examples/sample-sheet.sh` is the inventory of what grind can do, and an inventory that is not
+/// run is a wish list: a feature that stops working, or a command whose flags change, fails the
+/// build.
 #[test]
 fn the_sample_script_still_builds_its_document() {
     let dir = Sandbox::new("sample");
@@ -1298,13 +1295,11 @@ fn recalc_warns_on_stderr_when_it_turns_a_value_into_an_error() {
     );
 }
 
-/// Editing a cell a formula reads leaves the document disagreeing with itself, and saying so
-/// is the whole point: ODF has no dirty bit, so the file on disk claims a total that is no
-/// longer the sum of its parts, and LibreOffice will show that stale total.
-///
-/// A warning rather than an automatic recalculation, for the same reason `recalc` reports
-/// `spoiled`: this build implements the Small Group, and recalculating a document that uses
-/// anything else turns good cached values into `#NAME?`. That choice stays the user's.
+/// Editing a cell a formula reads leaves the document disagreeing with itself, and that is said:
+/// ODF has no dirty bit, so the file claims a total that is no longer the sum of its parts, and
+/// LibreOffice shows it stale. A warning rather than an automatic recalculation, for `recalc`'s
+/// `spoiled` reason: recalculating a document using a function grind lacks turns good cached
+/// values into `#NAME?`, and that choice is the user's.
 #[test]
 fn editing_a_cell_a_formula_reads_warns_that_the_document_is_stale() {
     let dir = Sandbox::new("stale");
@@ -1582,13 +1577,9 @@ fn convert_moves_between_the_package_and_flat_forms() {
     assert_eq!(ok(&["view", &s(&back), "A1:B1"]), "1.5\ttext\n");
 }
 
-/// `doc/dsl.md` D4: the projection is a *form*, so it is reached by the verb that moves a
-/// document between forms rather than by an export verb of its own.
-///
-/// Out and back, because that is the claim being made. A conversion to a lossy format is a
-/// one-way trip and this is not one: the projection is bijective with the model, so the
-/// document that comes back from `.grind` is the document that went in — a formula still a
-/// formula, and a style still a style.
+/// The projection is a *form*, so `convert` reaches it rather than an export verb of its own — out
+/// and back, since the projection is bijective with the model: a formula comes back a formula, a
+/// style a style.
 #[test]
 fn convert_reaches_the_projection_and_comes_back() {
     let dir = Sandbox::new("convert-projection");
@@ -1607,8 +1598,7 @@ fn convert_reaches_the_projection_and_comes_back() {
         "the projection names its kind in its first line: {text}"
     );
 
-    // And every command already reads one, because `read_bytes` sniffs the form (D4's other
-    // half, landed with D1).
+    // And every command reads one, because `read_bytes` sniffs the form.
     assert_eq!(ok(&["view", &s(&grind_file), "A1:A2"]), "1.5\n3\n");
 
     ok_top(&["convert", &s(&grind_file), &s(&back)]);
@@ -1695,13 +1685,10 @@ fn convert_reaches_the_projection_for_a_text_document_too() {
     assert!(view.contains("Field Notes"), "{view}");
 }
 
-/// **D5 through the CLI, both applications**: editing a `.grind` in place rewrites one line and
-/// leaves everything the model has no room for exactly as it was.
-///
-/// It is a CLI test rather than a core one because the core tests can only prove that
-/// `write_bytes` splices; this proves that the *product* does — that `grind sheet set book.grind`
-/// picks the projection form from the name, finds the retained text on the document it just
-/// read, and puts the file back. R6 has never been a library property here.
+/// Editing a `.grind` in place, both applications, rewrites one line and leaves everything the
+/// model has no room for as it was. A CLI test, since the core's tests prove `write_bytes` splices
+/// and this proves the product does: `grind sheet set book.grind` picks the projection form from
+/// the name, finds the retained text on the document it read, and puts the file back.
 #[test]
 fn editing_a_projection_in_place_rewrites_one_line() {
     let dir = Sandbox::new("projection-r6");
@@ -1748,13 +1735,11 @@ fn editing_a_projection_in_place_rewrites_one_line() {
     );
 }
 
-/// **A spreadsheet written without doing the arithmetic** (`doc/projection-sheet.md`).
-///
-/// The cached value is optional: `cell B5 "=SUM([.B2:.B4])"` is a whole cell, and `recalc` is
-/// what fills the answers in. The reason this is a CLI test is that the interesting half is what
-/// happens *between* the forms — a formula with no cached value used to be outside the used
-/// extent, which is the rectangle the ODF writer emits, so converting a hand-written model to
-/// `.fods` gave back a file with no formulas in it at all.
+/// **A spreadsheet written without doing the arithmetic** (`doc/projection-sheet.md`). The cached
+/// value is optional — `cell B5 "=SUM([.B2:.B4])"` is a whole cell — and `recalc` fills the
+/// answers in. A CLI test because what matters happens between forms: a formula with no cached
+/// value must count in the used extent the ODF writer emits, or converting the model to `.fods`
+/// writes no formulas at all.
 #[test]
 fn a_model_written_without_its_answers_keeps_them_through_every_form() {
     let dir = Sandbox::new("no-math");
@@ -1795,8 +1780,8 @@ fn a_model_written_without_its_answers_keeps_them_through_every_form() {
         );
     }
 
-    // And `recalc` is the step that gives it answers — in the projection itself, one line of
-    // diff per cell, with everything the model has no room for still there (D5).
+    // `recalc` gives it answers — in the projection itself, a line of diff per cell, with
+    // everything the model has no room for still there.
     let before = std::fs::read_to_string(&model).unwrap();
     ok(&["recalc", &s(&model)]);
     let after = std::fs::read_to_string(&model).unwrap();
@@ -2064,8 +2049,8 @@ fn the_text_sample_script_still_builds_its_document() {
     }
 }
 
-/// `grind lint` — `doc/dsl.md` §4.3, D6 — from the outside: the exit status, the two
-/// application verbs, the suite-level one, and the promise that nothing is written.
+/// `grind lint` from the outside: the exit status, the two application verbs, the suite-level one,
+/// and that nothing is written.
 #[test]
 fn lint_reports_what_a_document_says_about_itself_and_writes_nothing() {
     let dir = Sandbox::new("lint");
@@ -2210,8 +2195,8 @@ fn project_at_the_suite_level_is_the_application_verb() {
     assert!(ok_top(&["project", &book]).starts_with("grind spreadsheet\n"));
 }
 
-/// **`doc/dsl.md` §6.5's first refactoring, D10**, from the outside: renaming a sheet carries
-/// the formulas that named it, in one undo step, and the document is clean afterwards.
+/// Renaming a sheet from the outside carries the formulas that named it, in one undo step, and the
+/// document is clean afterwards.
 #[test]
 fn renaming_a_sheet_rewrites_the_formulas_that_named_it() {
     let dir = Sandbox::new("rename");
@@ -2249,10 +2234,9 @@ fn renaming_a_sheet_rewrites_the_formulas_that_named_it() {
     );
 }
 
-/// `grind sheet import` carries values (X1) and formulas (X2), and the result is an ODF
-/// document every other verb reads — the workbook is never consulted again. The vendored sample
-/// is the oracle's own conversion of a small budget, so what it holds is known without opening
-/// it.
+/// `grind sheet import` carries values and formulas, and the result is an ODF document every other
+/// verb reads — the workbook is never consulted again. The vendored sample is the oracle's own
+/// conversion of a small budget, so what it holds is known without opening it.
 #[cfg(feature = "xlsx")]
 #[test]
 fn an_imported_workbook_arrives_with_its_values() {
@@ -2279,8 +2263,8 @@ fn an_imported_workbook_arrives_with_its_values() {
     assert_eq!(ok(&["get", &book, "B3", "--raw"]).trim(), "240");
 }
 
-/// `--strict` fails a conversion that lost anything, writes nothing, and still says what was
-/// lost (X5). The vendored sample loses nothing; a corpus workbook with comments does.
+/// `--strict` fails a conversion that lost anything, writes nothing, and still says what was lost.
+/// The vendored sample loses nothing; a corpus workbook with comments does.
 #[cfg(feature = "xlsx")]
 #[test]
 fn a_strict_import_refuses_a_lossy_conversion() {
@@ -2353,9 +2337,9 @@ fn a_workbook_is_refused_by_the_word_import() {
     assert!(!std::path::Path::new(&out).exists());
 }
 
-/// `grind text link` — `App::set_link`, `link` and `link_at` from the outside. The first link
-/// in a document `text new` made used to be refused on save: that file declares no `xlink:`,
-/// and a splice cannot add one to the root.
+/// `grind text link` — `App::set_link`, `link` and `link_at` from the outside — including the
+/// first link in a document `text new` made, whose file declares no `xlink:` that a splice could
+/// not add to the root.
 #[test]
 fn text_link_sets_shows_and_removes_a_link() {
     let dir = Sandbox::new("link");

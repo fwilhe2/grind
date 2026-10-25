@@ -2,26 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **`doc/editor-setup.md`'s two files, held to the vocabularies they describe.**
-//!
-//! Editor support is documentation that happens to be machine-readable, and it rots exactly the
-//! way documentation rots: a function is added, a node is added, and the file somebody's
-//! completion list comes from still describes last month's language. The house rule applies —
-//! a document that nothing checks drifts — so each of the two files in `.vscode/` has the
-//! mechanical check its genre allows.
+//! **`doc/editor-setup.md`'s two files, held to the vocabularies they describe.** Editor support
+//! is machine-readable documentation and rots like documentation, so each file in `.vscode/` has
+//! the check its genre allows:
 //!
 //! | File | Written by | Checked how |
 //! |---|---|---|
 //! | `.vscode/grind.code-snippets` | `grind definitions --snippets` | it *is* what the command prints today |
 //! | `.vscode/grind-projection.code-snippets` | by hand, and printed by `grind definitions --projection` | every node in the two grammar notes has a snippet, every snippet names a node, and the binary prints the file byte for byte |
 //!
-//! The second is weaker than the first on purpose, and the weakness is named: this checks
-//! **coverage**, not wording. A snippet whose description has gone out of date is a prose
-//! problem, and prose problems are what `doc/projection-sheet.md` itself is for.
-//!
-//! The last two tests are `doc/dsl.md` §7's exit criteria for D12 and D14, which both come down
-//! to the same thing: a guide whose examples have moved should fail the build rather than the
-//! reader.
+//! The second checks **coverage**, not wording: a stale description is a prose problem. The last
+//! two tests hold the two guides' examples to files that exist, so a moved example fails the build
+//! rather than the reader.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -191,13 +183,9 @@ fn named_in(guide: &str) -> Vec<PathBuf> {
     found
 }
 
-/// **D12's exit criterion, in the part a test can hold**: a guide that names a file which has
-/// moved fails the build rather than the reader.
-///
-/// What this does not cover, and a reader should therefore treat as prose: whether the *output*
-/// shown beside a command is the output it produces today. The commands themselves are ordinary
-/// verbs with their own tests in `cli.rs`; the two examples both guides are built around are
-/// asserted there, cell by cell.
+/// A guide that names a file which has moved fails the build rather than the reader. Not covered:
+/// whether the output shown beside a command is today's — the commands have their own tests in
+/// `cli.rs`, and both guides' examples are asserted there cell by cell.
 #[test]
 fn the_projection_guide_names_files_that_exist() {
     let named = named_in(PROJECTION_GUIDE);
@@ -207,8 +195,7 @@ fn the_projection_guide_names_files_that_exist() {
     }
 }
 
-/// **D14's exit criterion**: every script the generator's guide names is a file under
-/// `examples/` that this test suite builds.
+/// Every script the generator's guide names is a file under `examples/` that this suite builds.
 #[test]
 fn the_generator_guide_names_scripts_that_build() {
     let named = named_in(GENERATOR_GUIDE);

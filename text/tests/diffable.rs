@@ -20,11 +20,10 @@
 use grind_text::model::BlockKind;
 use grind_text::{App, Form, odf};
 
-/// A document with rather more in it than this build models: change tracking, a section, an
-/// index, an annotation, a vendor's own element, and attributes on the paragraphs themselves.
-///
-/// That is the point. `doc/text-core.md` puts ten of `text-content`'s sixteen alternatives out
-/// of scope, and R6 is the reason that is a defensible product decision rather than data loss.
+/// A document with more in it than the model holds: change tracking, a section, an index, an
+/// annotation, a vendor's own element, and attributes on the paragraphs. `doc/text-core.md` puts
+/// ten of `text-content`'s sixteen alternatives out of scope, and R6 is why that is a product
+/// decision rather than data loss.
 const RICH: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <office:document
   xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
@@ -86,8 +85,8 @@ fn saving_an_unedited_document_returns_its_bytes_exactly() {
 #[test]
 fn editing_one_paragraph_changes_one_line() {
     let app = open(RICH.as_bytes());
-    // "First paragraph." is the third block: the heading, then it, then the one inside the
-    // section — which this build reads past — then "Second paragraph.".
+    // "First paragraph." is the third block: the heading, then it, then the one inside the section
+    // — which is read past — then "Second paragraph.".
     let index = app
         .get_viewport(0..app.block_count())
         .iter()
@@ -256,10 +255,9 @@ fn deleting_a_block_removes_one_line_and_keeps_everything_else() {
     assert!(added.is_empty(), "added: {added:#?}");
 }
 
-/// Saving into the *other* form used to start from nothing, and so dropped everything the model
-/// does not read. It is a save into the document's own form moved across now
-/// (`grind_core::odf::forms`), so what the model never saw survives a trip through the package
-/// and back as it survives an edit.
+/// Saving into the *other* form is a save into the document's own form moved across
+/// (`grind_core::odf::forms`), so what the model never saw survives a trip through the package and
+/// back as it survives an edit.
 #[test]
 fn converting_between_forms_carries_what_the_model_does_not_read() {
     let app = open(RICH.as_bytes());
@@ -312,10 +310,9 @@ fn two_edits_are_two_lines_and_stay_in_file_order() {
     );
 }
 
-/// **A footnote is a run the model keeps** (`Run::Kept`): typing beside one rewrites the
-/// paragraph from the model, and the note goes back with it as the file's own bytes, where the
-/// edit left it. It used to be refused instead, since the model had no footnote to write. Erasing
-/// it — replacing the whole paragraph's text — is an edit like any other, and saves.
+/// **A footnote is a run the model keeps** (`Run::Kept`): typing beside one rewrites the paragraph
+/// from the model, and the note goes back as the file's own bytes, where the edit left it. Erasing
+/// it — replacing the whole paragraph's text — is an edit like any other.
 #[test]
 fn typing_beside_a_footnote_keeps_it() {
     let note = "<text:note text:note-class=\"footnote\"><text:note-citation>1</text:note-citation>\

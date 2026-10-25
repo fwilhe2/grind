@@ -5,14 +5,12 @@
 //! **Saving never makes an existing file worse**, held to every spreadsheet vendored here that
 //! somebody else's program wrote — R7's documents and the samples — under ten ordinary edits.
 //!
-//! Each save has exactly two allowed outcomes. Either it writes, and then the file reads back
-//! with the edit in it (the writer's own read-back check) and with every byte outside
-//! `office:body` the original's; or it is **refused** with `Error::WouldLose`, naming what it
-//! would have dropped, and nothing is written. Any other outcome — an error of another kind, a
-//! file that does not open — fails here.
+//! Each save has two allowed outcomes: it writes, and the file reads back with the edit in it and
+//! every byte outside `office:body` the original's; or it is **refused** with `Error::WouldLose`,
+//! naming what it would have dropped, and nothing is written. Anything else fails.
 //!
-//! The refusals are listed, so the list is a ratchet: the day this build learns to carry what
-//! one of them names, the save goes through, this test fails, and the row is deleted.
+//! The refusals are listed, so the list is a ratchet: the day one can be carried, the save goes
+//! through, this fails, and the row is deleted.
 
 use std::path::PathBuf;
 
@@ -189,11 +187,10 @@ fn envelope_vocabulary(flat: &[u8]) -> std::collections::BTreeMap<String, usize>
     whole
 }
 
-/// **Saving into the other form is not a way round any of this.** A `.fodt` saved as an `.odt`
-/// — or an `.ods` as a `.fods` — used to start from nothing and drop everything the model does
-/// not own, with no error. Untouched, the document in the other form is every element and
-/// attribute of the original, counted the same; after an edit, nothing outside the body has
-/// gone, and an edit a same-form save refuses is refused here too.
+/// **Saving into the other form is not a way round any of this.** Untouched, a `.ods` saved as a
+/// `.fods` (or the reverse) is every element and attribute of the original, counted the same;
+/// after an edit nothing outside the body has gone, and an edit a same-form save refuses is
+/// refused here too.
 #[test]
 fn saving_into_the_other_form_carries_everything() {
     use grind_core::odf::{envelope, forms};
@@ -293,11 +290,9 @@ fn style_of(xml: &str, cell: usize) -> String {
     xml[start..end].to_owned()
 }
 
-/// **Restyling a cell keeps everything about its style the model does not read** — the hole
-/// `doc/not-doing.md` named: the new style used to be built from the model's reading of the
-/// old one, so a rotation, a protection flag, a parent style or a conditional format went with
-/// the first click on Bold. It is the old style's element now, renamed, with only what the
-/// model owns rewritten.
+/// **Restyling a cell keeps everything about its style the model does not read**: a rotation, a
+/// protection flag, a parent style or a conditional format survives the first click on Bold, since
+/// the new style is the old one's element, renamed, with only what the model owns rewritten.
 #[test]
 fn restyling_a_cell_keeps_what_the_model_does_not_read() {
     let restyle = |change: fn(&mut grind_sheet::style::CellStyle), col: u32| {
@@ -342,9 +337,9 @@ fn restyling_a_cell_keeps_what_the_model_does_not_read() {
 }
 
 /// **A byte-order mark does not shift the file under a save.** `quick-xml` measures positions
-/// after one, so every range a reader recorded in such a file used to point three bytes early,
-/// and the first splice cut `<office:spreadsheet>` short — refused by the writer's own check on
-/// `sc/qa`'s `tdf117948_CollapseBeforeShape.ods`. Every vendored document, with one put in front.
+/// after one, so a reader's ranges would point three bytes early and the first splice would cut
+/// `<office:spreadsheet>` short (`sc/qa`'s `tdf117948_CollapseBeforeShape.ods`). Every vendored
+/// document, with one put in front.
 #[test]
 fn a_byte_order_mark_does_not_shift_a_save() {
     for path in documents()

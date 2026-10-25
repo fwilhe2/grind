@@ -19,9 +19,9 @@ use grind_sheet::formula::eval::{Address, Engine};
 use grind_sheet::formula::value::{FormulaError, Value};
 use grind_sheet::model::{CellValue, Pos};
 
-/// Where this build answers otherwise than the oracle: `(file, OpenFormula, why)`. The same
-/// four as `sheet/tests/function_samples.rs`'s, for the same reason — the cached values are
-/// the oracle's, and these are where its precision is short of the formula's.
+/// Where grind answers otherwise than the oracle: `(file, OpenFormula, why)` — the four of
+/// `sheet/tests/function_samples.rs`: the cached values are the oracle's, and these are where its
+/// precision falls short of the formula's.
 const DIVERGES: &[(&str, &str, &str)] = &[
     (
         "financial.xlsx",
