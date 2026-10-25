@@ -471,7 +471,7 @@ it, and dragging one moves it. There is no dialog, and resizing or recolouring o
 | Export a PDF | ● | ● | ● | ● | ● | ● |
 | Where each page begins | ● | — | ● | — | — | — |
 | Print preview | ● ᵖᵖ | ● | ○ | ● | ● | ● ᵖᵖ |
-| Print | — | ● | ○ | ● ᵖᵖ | ● ᵖᵖ | ● |
+| Print | — | ● | ● ˡᵖ | ● ᵖᵖ | ● ᵖᵖ | ● |
 | **Files** | | | | | | |
 | Open a Word document (`doc/docx-import.md`) | ● ʷᵈ | ● ʷᵈ | ● ʷᵈ | ● ʷᵈ | ● ʷᵈ | ● ʷᵈ |
 
@@ -538,6 +538,7 @@ either side of it, which is the `ponytail` `doc/tui-shell.md` records.
 ᵃˡ 2026-10-09. `svg:title` and `svg:desc`, through one shared half — `grind_text::picture::at` (which picture the caret means), `set_alt` (trimmed, blank is none) and `advice` (the one sentence every dialog shows as it is typed, with a count against `picture::SHORT`); the CLI's is `grind text alt`. **GNOME**: an `adw::Dialog` with the picture on a card, *Alt text* and an optional long description, from the page's menu, Insert ▸ *Picture Alt Text…*, Ctrl+Alt+A and an *Add Alt Text* button on the toast an insert raises (`ui_text_gtk/src/alt.rs`; seen under Broadway). **Terminal**: `:alt <text>`, `:desc <text>`, `:alt!`; bare, either puts the command line back holding what the picture says now. **Browser**: a chip on every picture — *+ Alt text* in the accent until it has some, a quiet *ALT* after — opening a `<dialog>` with the picture, the advice and a collapsed long description, also *Alt text for the picture…* in the palette; the title is the page's own `alt` too (`smoke.js` drives it). **Windows**: Format ▸ *Picture Alt Text…* and the text pane's context menu over a picture, a ContentDialog with the picture decoded by WIC (`dialog::alt_text`, geometry `modal::alt_body`; seen under Wine). **Mac**: Format ▸ *Image Description…* — Pages' words — and the page's context menu, an `NSAlert` whose field's delegate keeps the advice current, VoiceOver named in it; type-checked, not run.
 ᵗⁱ `:image <file>` puts the picture in below the caret's paragraph (`grind_text::picture`); the terminal still draws it as the placeholder character — the drawing row stays ○ (2026-10-02).
 ˣ The palette is the find box, as over cells (Ctrl+F, or two characters typed after the verbs); picking a hit selects it, F3/Shift+F3 step, and Ctrl+H is *Replace in the document…* — closed 2026-10-02, over `grind_text::find`.
+ˡᵖ `:print` hands the PDF `:pdf` would write to the system's spooler, `lp`, on its standard input, and puts its answer on the status line (2026-10-25, checked in a pty against a stand-in `lp`).
 ᵗ The model reads a `table:number-columns-spanned`, writes it back with the covered positions it
 implies, projects it as `span=` and (in `grind-text-gtk`) draws it merged. Nothing **creates**
 one, and no client sets a column width, because the model carries no table style

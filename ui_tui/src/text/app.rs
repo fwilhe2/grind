@@ -979,6 +979,8 @@ impl App {
             _ if cmd.starts_with("pdf ") => self.cmd_pdf(cmd[4..].trim()),
             #[cfg(feature = "pdf")]
             "pages" => self.cmd_pages(),
+            #[cfg(feature = "pdf")]
+            "print" => self.cmd_print(),
             _ if cmd.starts_with("md-in ") => self.cmd_md_in(cmd[6..].trim()),
             _ if cmd.starts_with("md-out ") => self.cmd_md_out(cmd[7..].trim()),
             _ if cmd.starts_with("mark ") => self.cmd_mark(cmd[5..].trim()),
@@ -1055,6 +1057,24 @@ impl App {
             });
         self.status = match result {
             Ok(report) => format!("{} \u{2014} wrote {path}", report.summary()),
+            Err(e) => e,
+        };
+    }
+
+    /// `:print` — the PDF `:pdf` would write, handed to the system's spooler (`lp`) on its
+    /// standard input.
+    #[cfg(feature = "pdf")]
+    fn cmd_print(&mut self) {
+        let options = grind_print::Options {
+            paper: None,
+            title: Some(self.document_name()),
+        };
+        let result = grind_print::export(&self.core, grind_print::fonts_for(&self.core), &options)
+            .and_then(|(bytes, report)| {
+                spool(&bytes, &self.document_name()).map(|said| (report, said))
+            });
+        self.status = match result {
+            Ok((report, said)) => format!("{} \u{2014} {said}", report.summary()),
             Err(e) => e,
         };
     }
@@ -2608,6 +2628,32 @@ fn describe_block(kind: &BlockKind, style: Option<&str>) -> String {
 fn non_empty(text: &str) -> Option<String> {
     let text = text.trim();
     (!text.is_empty()).then(|| text.to_owned())
+}
+
+/// Hand a PDF to `lp`, and say what it answered — its request id, usually.
+#[cfg(feature = "pdf")]
+fn spool(pdf: &[u8], title: &str) -> Result<String, String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut lp = Command::new("lp")
+        .args(["-t", title])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("lp: {e} \u{2014} :pdf <file> writes one to print"))?;
+    if let Some(mut stdin) = lp.stdin.take() {
+        stdin.write_all(pdf).map_err(|e| format!("lp: {e}"))?;
+    }
+    let out = lp.wait_with_output().map_err(|e| format!("lp: {e}"))?;
+    let said = |bytes: &[u8]| String::from_utf8_lossy(bytes).trim().to_owned();
+    match out.status.success() {
+        true => Ok(match said(&out.stdout) {
+            text if text.is_empty() => "sent to the printer".to_owned(),
+            text => text,
+        }),
+        false => Err(format!("lp: {}", said(&out.stderr))),
+    }
 }
 
 #[cfg(test)]
