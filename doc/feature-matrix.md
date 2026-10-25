@@ -608,8 +608,8 @@ window (row 7) — inserts and draws charts (row 8), and inserts and draws pictu
 spreadsheet window does that right.** `Tool_Entsparphase_Weltportfoliom.xlsx` (a Google Sheets
 export, 5 sheets of ~10,000 styled columns, 1.6 million cells, ~60 s and ~2.5 GB to open in a
 release build) froze `grind-sheet-gtk` until GNOME offered to kill it. Fixed there by
-`Ui::load_then` (`ui_sheet_gtk/src/main.rs`): `import::prepare` does the whole slow half — read,
-import, `grind_sheet::read_bytes` — on a worker thread with no `App` and no widget, and the main
+`Ui::load_then` (`ui_sheet_gtk/src/main.rs`): the whole slow half — read, `grind_open::import`,
+`grind_sheet::read_bytes` — runs on a worker thread with no `App` and no widget, and the main
 thread only calls `App::open_document` and shows a toast while it waits. **Not yet checked or
 fixed in** `grind-text-gtk` (same shape for a big `.odt`), `grind-tui`, `grind-win32` (a frozen
 window is "Not Responding" there too), `grind-mac` (the beachball) and `grind-web` (a wasm module

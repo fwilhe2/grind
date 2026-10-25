@@ -92,12 +92,12 @@ window in front of the first. `problems.rs` is shared by both panes, like `code.
 imported through `grind_xlsx::open`, and opened as a **new, unsaved ODF document with no path**
 under `grind_xlsx::suggested_name` (`budget.xlsx` → `budget.fods`), with the report's one
 sentence (`Report::summary`) shown. Having no path is the point: one way in and never out
-(`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `import.rs` is
-this shell's whole half of it, and is compiled out with the crate's `xlsx` feature.
+(`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `grind-open`
+decides it, the same in every shell, and the crate's `xlsx` feature compiles it out.
 
 **A Word document opens** the same way into the text pane (`doc/docx-import.md`, DX6): the
 picker lists `.docx`, `.docm` and `.dotx`, the message line says the report, and the download is
-`letter.fodt` — `import.rs` again, behind the crate's `docx` feature.
+`letter.fodt` — `grind-open` again, behind the crate's `docx` feature.
 
 ## What it does not do
 

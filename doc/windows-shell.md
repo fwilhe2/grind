@@ -933,8 +933,8 @@ and the reason the per-user half is only provable on a real Windows.
 imported through `grind_xlsx::open`, and opened as a **new, unsaved ODF document with no path**
 under `grind_xlsx::suggested_name` (`budget.xlsx` → `budget.fods`), with the report's one
 sentence (`Report::summary`) shown. Having no path is the point: one way in and never out
-(`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `import.rs` is
-this shell's whole half of it, and is compiled out with the crate's `xlsx` feature.
+(`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `grind-open`
+decides it, the same in every shell, and the crate's `xlsx` feature compiles it out.
 
 ## What it will not do
 

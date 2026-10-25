@@ -139,12 +139,12 @@ any other.
 imported through `grind_xlsx::open`, and opened as a **new, unsaved ODF document with no path**
 under `grind_xlsx::suggested_name` (`budget.xlsx` → `budget.fods`), with the report's one
 sentence (`Report::summary`) shown. Having no path is the point: one way in and never out
-(`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `import.rs` is
-this shell's whole half of it, and is compiled out with the crate's `xlsx` feature.
+(`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `grind-open`
+decides it, the same in every shell, and the crate's `xlsx` feature compiles it out.
 
 **A Word document opens** the same way into the word processor (`doc/docx-import.md`, DX6):
 `grind-tui letter.docx` is a text document titled `letter.fodt`, unsaved and with no path, the
-report's sentence on the status line — `import::open_word`, behind the crate's `docx` feature.
+report's sentence on the status line — `grind-open` again, behind the crate's `docx` feature.
 
 ## What it does not do
 

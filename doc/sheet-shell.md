@@ -656,8 +656,8 @@ the design rule, and the design rule is: diverge, rather than rely on anything h
 imported through `grind_xlsx::open`, and opened as a **new, unsaved ODF document with no path**
 under `grind_xlsx::suggested_name` (`budget.xlsx` → `budget.fods`), with the report's one
 sentence (`Report::summary`) shown. Having no path is the point: one way in and never out
-(`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `import.rs` is
-this shell's whole half of it, and is compiled out with the crate's `xlsx` feature.
+(`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `grind-open`
+decides it, the same in every shell, and the crate's `xlsx` feature compiles it out.
 
 ## The UX pass — one bottom bar, and nothing that misleads
 

@@ -310,7 +310,6 @@ ui_mac/
   src/
     main.rs             *   argv, the kind sniff, and — until M2 — what a window *would* open
     args.rs             *   the command line, including AppKit's own `-Key value` pairs (M0)
-    import.rs           *   which bytes are imported rather than opened (M0: the sniff only)
     menu.rs             *   the menu bar as data: title, key equivalent, and an action that is
                             either a standard selector or a `Command` (M2)
     keys.rs             *   selector name → grid action / page action (M3, M6)
@@ -424,7 +423,6 @@ portable and tested here; only turning it into pixels and events needs a Mac:
 | `png.rs` | portable | The frame's PNG, written here over the workspace's own `flate2`, so two renders are the same **bytes** — a system encoder may write a timestamp or a profile of its choosing |
 | `menu.rs` | portable | The menu bar as data, and *Conventions made mechanical* as its tests |
 | `drive.rs` | both | The drive-script parser, portable, and its replay through `NSApp.sendEvent` |
-| `import.rs` | portable | A workbook, a Word document or a CSV to flat ODF **in bytes**, the shape `NSDocument` hands a document over in |
 | `document.rs` | both | The type names and the byte sniff, portable; the `NSDocument` subclass and the document controller, whose `typeForContentsOfURL:error:` reads the file rather than its name |
 | `render.rs` `grid_view.rs` `app.rs` | Mac | The `Op`s onto a flipped `CGContext`; the grid in its scroll view with the bands floating; the application, its delegate and the menu bar |
 
