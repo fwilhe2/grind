@@ -41,20 +41,10 @@ pub fn kind_of(type_name: &str) -> Option<DocumentKind> {
     }
 }
 
-/// The kind some bytes are, as the controller answers it: a workbook or a CSV is a spreadsheet
-/// this shell imports, and anything else is what `grind_core::kind` reads.
+/// The kind some bytes are, as the controller answers it: an ODF document's own, or the kind its
+/// import makes.
 pub fn sniff(name: &str, bytes: &[u8]) -> Result<DocumentKind, String> {
-    if crate::import::is_workbook(bytes)
-        || crate::import::is_delimited(std::path::Path::new(name), bytes)
-    {
-        return Ok(DocumentKind::Spreadsheet);
-    }
-    if crate::import::is_markdown(std::path::Path::new(name), bytes)
-        || crate::import::is_word(bytes)
-    {
-        return Ok(DocumentKind::Text);
-    }
-    match grind_core::kind(bytes) {
+    match grind_open::kind(name, bytes) {
         Some(DocumentKind::Presentation) => Err(format!(
             "{name} is a presentation, and this build opens spreadsheets and text documents"
         )),
@@ -92,7 +82,6 @@ mod mac {
     use super::{SHEET, TEXT, kind_of, sniff};
     use crate::formatting::Formats;
     use crate::grid_view::{Pane, sheet_view};
-    use crate::import;
     use crate::page_view::{self, TextPane, page_view};
     use crate::sidebar::{Places, Sidebar};
     use crate::source_pane::{self, SourcePane};
@@ -147,7 +136,7 @@ mod mac {
         /// The source pane's split item and its delegate.
         source: RefCell<Option<(Retained<NSSplitViewItem>, Retained<SourcePane>)>>,
         /// For an import: the ODF name it would be saved under, and the report's sentence.
-        imported: RefCell<Option<(String, Option<String>)>>,
+        imported: RefCell<Option<(String, String)>>,
     }
 
     /// Write `message` into an `NSError **` a method was handed, if it was handed one.
@@ -346,7 +335,7 @@ mod mac {
                         window.setContentView(Some(&label));
                     }
                 }
-                if let Some((_, Some(summary))) = self.ivars().imported.borrow().as_ref() {
+                if let Some((_, summary)) = self.ivars().imported.borrow().as_ref() {
                     window.setSubtitle(&NSString::from_str(summary));
                 }
                 let controller =
@@ -437,12 +426,18 @@ mod mac {
             let path = url.to_file_path().ok_or("only a file can be opened")?;
             let name = path.display().to_string();
             let bytes = std::fs::read(&path).map_err(|error| format!("{name}: {error}"))?;
-            let opened = import::open(&name, &bytes)?;
-            let content = Content::open(&opened.name, &opened.bytes)?;
+            let (name, bytes, imported) =
+                match grind_open::import_file(&path, &bytes).transpose()? {
+                    Some(imported) => (
+                        imported.name.clone(),
+                        imported.odf,
+                        Some((imported.name, imported.summary)),
+                    ),
+                    None => (name, bytes, None),
+                };
+            let content = Content::open(&name, &bytes)?;
             *self.ivars().content.borrow_mut() = Some(content);
-            *self.ivars().imported.borrow_mut() = opened
-                .untitled
-                .then(|| (opened.name.clone(), opened.summary.clone()));
+            *self.ivars().imported.borrow_mut() = imported;
             Ok(())
         }
 

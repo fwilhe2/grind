@@ -49,8 +49,6 @@ mod formatting;
 #[cfg(target_os = "macos")]
 mod grid_view;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
-mod import;
-#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod keys;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod menu;
@@ -189,6 +187,16 @@ const FRAME: (f64, f64) = (1024.0, 640.0);
 #[cfg(target_os = "macos")]
 const SCALE: f64 = 2.0;
 
+/// A file as `open_bytes` takes it: imported to flat ODF under its ODF name, or as it is.
+#[cfg(target_os = "macos")]
+fn read(path: &Path) -> Result<(String, Vec<u8>), String> {
+    let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    Ok(match grind_open::import_file(path, &bytes).transpose()? {
+        Some(imported) => (imported.name, imported.odf),
+        None => (path.display().to_string(), bytes),
+    })
+}
+
 /// Draw one frame of the document `opening` names into the PNG it names, with no window (decision
 /// 9), through the `sheet::paint` or `text::paint` and `render::draw` a view calls. The palette is
 /// the fixed light or dark one, so a frame depends on its command line alone and two renders are
@@ -200,15 +208,13 @@ fn render_to(opening: &Opening) -> Result<(), String> {
     let Some((target, dark)) = &opening.render else {
         unreachable!("only a render reaches here")
     };
+    let file = opening.path.as_deref().map(read).transpose()?;
     match opening.kind {
         Some(DocumentKind::Spreadsheet) => {
             let app = grind_sheet::App::new();
-            if let Some(path) = &opening.path {
-                let bytes =
-                    std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
-                let opened = import::open(&path.display().to_string(), &bytes)?;
-                app.open_bytes(&opened.name, &opened.bytes)
-                    .map_err(|error| format!("{}: {error}", path.display()))?;
+            if let Some((name, bytes)) = &file {
+                app.open_bytes(name, bytes)
+                    .map_err(|error| format!("{name}: {error}"))?;
             }
             let text = metrics::CoreText::new(metrics::BASE_PT);
             let grid = sheet::geom::Grid::measured(&app, 0, &text);
@@ -238,12 +244,9 @@ fn render_to(opening: &Opening) -> Result<(), String> {
             use text::paint::{Frame, Palette};
 
             let app = grind_text::App::new();
-            if let Some(path) = &opening.path {
-                let bytes =
-                    std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
-                let opened = import::open(&path.display().to_string(), &bytes)?;
-                app.open_bytes(&opened.name, &opened.bytes)
-                    .map_err(|error| format!("{}: {error}", path.display()))?;
+            if let Some((name, bytes)) = &file {
+                app.open_bytes(name, bytes)
+                    .map_err(|error| format!("{name}: {error}"))?;
             }
             grind_spell::ensure(&app);
             let fonts = metrics::CoreText::new(metrics::BASE_PT);

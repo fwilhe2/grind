@@ -14,17 +14,15 @@ repository.workspace = true
 name = "grind-mac"
 path = "src/main.rs"
 
-# The Excel import filter (`doc/xlsx-import.md`, X6): on by default, as in `grind-cli`.
+# The import filters: on by default, as in `grind-cli`.
 [features]
 default = ["xlsx", "docx"]
-xlsx = ["dep:grind-xlsx"]
-# The Word import filter (`doc/docx-import.md`, DX6), likewise.
-docx = ["dep:grind-docx"]
+xlsx = ["grind-open/xlsx"]
+docx = ["grind-open/docx"]
 
 [dependencies]
 grind-core = { path = "../core" }
-grind-xlsx = { path = "../xlsx", optional = true }
-grind-docx = { path = "../docx", optional = true }
+grind-open = { path = "../open", default-features = false }
 grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
 # Spelling (doc/spelling.md): the dictionaries, attached before Check Document runs.
