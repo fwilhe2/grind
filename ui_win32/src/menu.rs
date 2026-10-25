@@ -221,6 +221,8 @@ pub enum Command {
     /// and the two buttons after the strip's alignments.
     IndentLess,
     IndentMore,
+    /// One of `grind_sheet::format::ROTATIONS` from a chooser, over the selection.
+    TextRotation,
     /// *Cell Background* — a cell's `fo:background-color`, over *Text Colour*'s palette. Its own
     /// verb rather than [`Command::PickHighlight`] relabelled: a run's highlight and a cell's fill
     /// are two properties sharing an attribute name, and one id with two labels is one the menu
@@ -429,6 +431,7 @@ impl Command {
         Command::AlignRight,
         Command::IndentLess,
         Command::IndentMore,
+        Command::TextRotation,
         Command::PickBackground,
         Command::NumberFormat,
         Command::FewerDecimals,
@@ -972,6 +975,10 @@ pub const MENUS: &[Menu] = &[
                 command: Command::IndentMore,
                 label: "Incre&ase Indent",
             },
+            Item::Verb {
+                command: Command::TextRotation,
+                label: "Te&xt Rotation…",
+            },
             Item::Separator,
             Item::Verb {
                 command: Command::PickFamily,
@@ -1376,6 +1383,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::AlignRight
         | Command::IndentLess
         | Command::IndentMore
+        | Command::TextRotation
         | Command::PickBackground
         | Command::NumberFormat
         | Command::FewerDecimals
@@ -1955,6 +1963,7 @@ mod tests {
                 Command::AlignRight,
                 Command::IndentLess,
                 Command::IndentMore,
+                Command::TextRotation,
                 Command::PickColor,
                 Command::WrapText,
                 Command::BordersAll,

@@ -480,6 +480,67 @@ pub fn line(dc: HDC, text: &str, rect: RECT, across: Across, ink: Rgb) {
     }
 }
 
+/// One line in the DC's current font turned `degrees` anticlockwise about the middle of `cell`
+/// (left, top, right, bottom), and clipped to it.
+pub fn turned(dc: HDC, text: &str, cell: (i32, i32, i32, i32), degrees: f64, ink: Rgb) {
+    use windows::Win32::Graphics::Gdi::{
+        ETO_CLIPPED, ExtTextOutW, GetCurrentObject, GetObjectW, OBJ_FONT, SetBkMode, SetTextAlign,
+        SetTextColor, TA_LEFT, TA_TOP, TRANSPARENT,
+    };
+    let wide: Vec<u16> = crate::sheet::draw::one_line(text).encode_utf16().collect();
+    let (left, top, right, bottom) = cell;
+    if wide.is_empty() || right <= left || bottom <= top {
+        return;
+    }
+    let mut size = windows::Win32::Foundation::SIZE::default();
+    let mut log = LOGFONTW::default();
+    // SAFETY: the DC is the caller's and live; every buffer is a local that outlives its call, and
+    // the turned font is selected out again before it is deleted.
+    unsafe {
+        let _ = GetTextExtentPoint32W(dc, &wide, &mut size);
+        let current = GetCurrentObject(dc, OBJ_FONT);
+        GetObjectW(
+            current,
+            std::mem::size_of::<LOGFONTW>() as i32,
+            Some((&mut log as *mut LOGFONTW).cast()),
+        );
+        let tenths = (degrees * 10.0).round() as i32;
+        log.lfEscapement = tenths;
+        log.lfOrientation = tenths;
+        let font = CreateFontIndirectW(&log);
+        let previous = SelectObject(dc, HGDIOBJ(font.0));
+        let middle = (f64::from(left + right) / 2.0, f64::from(top + bottom) / 2.0);
+        let (x, y) = crate::sheet::draw::turned_origin(
+            f64::from(size.cx),
+            f64::from(size.cy),
+            middle,
+            degrees,
+        );
+        let clip = RECT {
+            left,
+            top,
+            right,
+            bottom,
+        };
+        let align = SetTextAlign(dc, TA_LEFT | TA_TOP);
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, windows::Win32::Foundation::COLORREF(ink.colorref()));
+        let _ = ExtTextOutW(
+            dc,
+            x.round() as i32,
+            y.round() as i32,
+            ETO_CLIPPED,
+            Some(&clip),
+            windows::core::PCWSTR(wide.as_ptr()),
+            wide.len() as u32,
+            None,
+        );
+        SetTextAlign(dc, windows::Win32::Graphics::Gdi::TEXT_ALIGN_OPTIONS(align));
+        SelectObject(dc, previous);
+        let _ = DeleteObject(HGDIOBJ(font.0));
+    }
+}
+
 /// A paragraph in the DC's current font, broken into lines at word boundaries to fit `rect`'s
 /// width, from its top. With `measure`, nothing is drawn and the height it *would* take is
 /// returned instead — the two share one call so they cannot break the text differently.

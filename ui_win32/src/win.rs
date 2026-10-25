@@ -4033,6 +4033,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::AlignRight => format_control(hwnd, format::Control::AlignRight),
         Command::IndentLess => format_control(hwnd, format::Control::Outdent),
         Command::IndentMore => format_control(hwnd, format::Control::Indent),
+        Command::TextRotation => format_pick_rotation(hwnd),
         Command::PickColor => format_control(hwnd, format::Control::Color),
         Command::PickBackground => format_control(hwnd, format::Control::Background),
         Command::NumberFormat => format_control(hwnd, format::Control::Number),
@@ -5411,6 +5412,28 @@ fn format_pick_color(hwnd: HWND, background: bool) {
 
 /// *Number Format* — `dialog::choose` over `format::KINDS`, opening on the row the active cell
 /// already is, and one click is the whole request (`format::format_for_kind`).
+/// *Text Rotation…* — one of `format::ROTATIONS`, the active cell's checked first.
+fn format_pick_rotation(hwnd: HWND) {
+    use grind_sheet::format::{ROTATIONS, rotated, rotation_chosen};
+    // SAFETY: one borrow, released before the chooser's nested loop.
+    let Some(initial) =
+        (unsafe { with_sheet(hwnd, |state| rotation_chosen(&active_style(state))) })
+    else {
+        return;
+    };
+    let items: Vec<String> = ROTATIONS
+        .iter()
+        .map(|(_, name)| (*name).to_owned())
+        .collect();
+    let Some(choice) = dialog::choose(hwnd, "Text Rotation", &items, initial.unwrap_or(0)) else {
+        return;
+    };
+    format_write(hwnd, |state, start, end| {
+        let style = rotated(&active_style(state), ROTATIONS[choice].0);
+        state.app.set_style(state.sheet, start, end, style)
+    });
+}
+
 fn format_pick_number(hwnd: HWND) {
     // SAFETY: one borrow, released before the chooser's nested loop.
     let Some((current, items)) = (unsafe {
@@ -6816,6 +6839,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::AlignRight
         | Command::IndentLess
         | Command::IndentMore
+        | Command::TextRotation
         | Command::PickBackground
         | Command::NumberFormat
         | Command::FewerDecimals
@@ -7933,6 +7957,7 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::AlignRight
         | Command::IndentLess
         | Command::IndentMore
+        | Command::TextRotation
         | Command::PickBackground
         | Command::NumberFormat
         | Command::FewerDecimals

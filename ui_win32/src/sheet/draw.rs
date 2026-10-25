@@ -102,6 +102,16 @@ pub fn one_line(text: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+/// Where text `w` by `h` turned `degrees` anticlockwise starts — its unturned top-left corner —
+/// so that its middle is at `(cx, cy)`, in a y-down space.
+pub fn turned_origin(w: f64, h: f64, (cx, cy): (f64, f64), degrees: f64) -> (f64, f64) {
+    let (sin, cos) = degrees.to_radians().sin_cos();
+    (
+        cx - w / 2.0 * cos - h / 2.0 * sin,
+        cy + w / 2.0 * sin - h / 2.0 * cos,
+    )
+}
+
 #[cfg(windows)]
 pub use windows_impl::{FormatStrip, Frame, draw_text, paint};
 
@@ -502,6 +512,11 @@ mod windows_impl {
                     // measured in its own font, and drawn a line at a time; what the row cannot
                     // hold is cut by the cell.
                     let style = frame.viewport.style(row, col);
+                    // Turned text is turned about the cell's middle and cut by the cell.
+                    if let Some(degrees) = style.and_then(CellStyle::rotation_degrees) {
+                        gdi::turned(dc, text, (left, top, text_right, bottom), degrees, ink);
+                        continue;
+                    }
                     if grind_sheet::look::wraps(style) && !grind_sheet::numfmt::is_number(value) {
                         let misspelt = match frame.formula_text.contains_key(&(row, col)) {
                             true => &[][..],
@@ -1665,6 +1680,17 @@ mod tests {
         let mut style = CellStyle::default();
         f(&mut style);
         style
+    }
+
+    /// Level text starts half its size up and left of the middle; turned up, it starts below the
+    /// middle, reading upwards.
+    #[test]
+    fn turned_text_is_placed_about_its_middle() {
+        let near = |(x, y): (f64, f64), (ex, ey): (f64, f64)| {
+            assert!((x - ex).abs() < 1e-9 && (y - ey).abs() < 1e-9, "{x},{y}")
+        };
+        near(turned_origin(40.0, 10.0, (50.0, 50.0), 0.0), (30.0, 45.0));
+        near(turned_origin(40.0, 10.0, (50.0, 50.0), 90.0), (45.0, 70.0));
     }
 
     #[test]
