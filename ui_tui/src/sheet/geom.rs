@@ -83,6 +83,21 @@ pub fn length(cells: u16) -> String {
     mm_length(f64::from(cells.max(1)) * MM_PER_CELL)
 }
 
+/// A row `length` tall as terminal lines: one per default row's height, at least one and at most
+/// [`MAX_LINES`]; one for a length that will not parse.
+pub fn lines(length: &str) -> usize {
+    length_mm(length)
+        .filter(|mm| mm.is_finite() && *mm > 0.0)
+        .map_or(1, |mm| {
+            ((mm / grind_sheet::model::DEFAULT_ROW_MM).round() as usize).clamp(1, MAX_LINES)
+        })
+}
+
+/// The ODF length a row of `lines` terminal lines is, for `:height` to write.
+pub fn row_length(lines: u16) -> String {
+    mm_length(f64::from(lines.max(1)) * grind_sheet::model::DEFAULT_ROW_MM)
+}
+
 /// The columns visible from `first`, and how wide each is drawn: as many as fit in `room`,
 /// skipping hidden ones, never fewer than one. The last may be **clipped**, as every spreadsheet
 /// draws the right edge, rather than dropped and jumping a column per resize.
@@ -301,6 +316,16 @@ pub fn pad_marked(
 mod tests {
     use super::*;
     use unicode_width::UnicodeWidthStr;
+
+    #[test]
+    fn a_rows_height_is_whole_lines_of_the_default_row() {
+        assert_eq!(lines("0.452cm"), 1);
+        assert_eq!(lines("0.2cm"), 1, "never less than one");
+        assert_eq!(lines("1.4cm"), 3);
+        assert_eq!(lines("50cm"), MAX_LINES);
+        assert_eq!(lines("tall"), 1);
+        assert_eq!(lines(&row_length(3)), 3);
+    }
 
     #[test]
     fn a_wrapped_cell_breaks_at_its_column_and_stops_at_max_lines() {

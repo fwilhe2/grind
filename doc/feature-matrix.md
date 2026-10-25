@@ -311,7 +311,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Autofit a column | ● ᶜᶦ | ● ᵍᶠ | ● ᶠⁱ | ● ʷᶠ | ● ᶠᶜ | ● ᵐᶠ |
 | Fit Content to Cells — every column and row, one undo step | ● ᶜᶦ | ● ᵍᶠ | ● ᶠⁱ | ● ʷᶠ | ● ᶠᶜ | ● ᵐᶠ |
 | Row auto-height from content (L3) | — | ● | ● ˡⁿ | ● ʷᵗ | ● ʷʷ | ● |
-| **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |
+| **Honours** the document's widths and heights | ● | ● | ● ᵃ | ● | ● | ● |
 | Hide / unhide a row or column | ● | ● | ● | ● | ● | ● |
 | **Honours** hidden tracks | ● | ● | ● | ● | ● | ● |
 | Create or clear a filter | ● | ● | ● ᵗᵘ | ● | ● | ● |
@@ -367,9 +367,9 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 
 ᶜᵇ `grind sheet checkbox <cell> --link <cell>` adds one, `--toggle` ticks it, `--remove` takes it away, and with no cell it lists them (2026-10-04, `doc/ods-format.md` §3.5). Every shell draws the box — a GTK/GDI/AppKit square, `[x]`/`[ ]` in the terminal, a real `<input type=checkbox>` in the browser — and ticks it on a click inside the box or Space on its cell, writing the linked cell in one undo step. Making one from a window is ○ by decision for now: `doc/not-doing.md` §3.
 ᵐᵈ `grind sheet merge` with no range lists them; `grind sheet view` prints the grid, and a merge's covered cells show nothing there unless they hold a value.
-ᵃ The **widths** are honoured, in whole terminal cells (`ui_tui/src/sheet/geom.rs`); a row is
-one line of a terminal, so a **height** is stored and not drawn and `:height` says so on the
-status line. Both are written back untouched either way.
+ᵃ In whole terminal cells and lines (`ui_tui/src/sheet/geom.rs`): a width in cells, a height
+in lines of the default row's height, up to eight (since 2026-10-25). Both are written back
+untouched either way.
 ᵇ Read, kept and written back untouched — a deliberate stop, not a stub.
 ᶜ A **Names…** dialog, and the name box resolves one — though only within the open sheet, since
 "navigating to another sheet is the sheet tabs' job".

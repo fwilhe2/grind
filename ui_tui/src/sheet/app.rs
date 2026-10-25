@@ -2241,13 +2241,13 @@ impl App {
         }
     }
 
-    /// `:height [n]` — the row twin of [`App::cmd_width`], in ODF's unit. Stored and not drawn: a
-    /// row here is one terminal line.
+    /// `:height [n]` — the row twin of [`App::cmd_width`], in terminal lines of a default row's
+    /// height each.
     fn cmd_height(&mut self, cells: Option<&str>) {
         let height = match cells {
             None | Some("auto" | "default") => None,
             Some(n) => match n.parse::<u16>() {
-                Ok(n) if n > 0 => Some(geom::length(n)),
+                Ok(n) if n > 0 => Some(geom::row_length(n)),
                 _ => {
                     self.status = format!("not a height in cells: {n}");
                     return;
@@ -2262,9 +2262,7 @@ impl App {
             Ok(changed) => {
                 self.leave_visual();
                 self.status = match height {
-                    Some(length) => {
-                        format!("{changed} row(s) at {length} \u{2014} stored, not drawn here")
-                    }
+                    Some(length) => format!("{changed} row(s) at {length}"),
                     None => format!("{changed} row(s) back to the default height"),
                 };
             }
@@ -2937,8 +2935,14 @@ impl App {
         let cols = geom::columns(&tracks, self.top.col, room, super::MAX_COLS);
         let last_col = cols.last().map_or(self.top.col + 1, |(col, _)| col + 1);
 
-        // A wrapped row takes as many lines as its tallest cell, so the rows drawn are those whose
-        // lines fit, and the view moves on until the cursor's row is one of them.
+        // A row takes the lines of its own height, or of its tallest wrapped cell, so the rows drawn
+        // are those whose lines fit, and the view moves on until the cursor's row is one of them.
+        let heights: std::collections::HashMap<u32, String> = self
+            .core
+            .row_heights(self.sheet)
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
         let at = self.point.as_ref().map_or(self.active, |p| p.cell).row;
         let (rows, viewport) = loop {
             let rows = geom::rows(&hidden, self.top.row, visible_rows, super::MAX_ROWS);
@@ -2952,7 +2956,7 @@ impl App {
                     self.overlays,
                 )
                 .ok();
-            let rows = fitted(&rows, viewport.as_ref(), &cols, visible_rows);
+            let rows = fitted(&rows, viewport.as_ref(), &cols, &heights, visible_rows);
             match rows.iter().any(|(row, _)| *row == at) || at < self.top.row || rows.len() < 2 {
                 true => break (rows, viewport),
                 false => self.top.row = rows[1].0,
@@ -3523,12 +3527,14 @@ fn cell_lines(
     ))
 }
 
-/// The rows from the top whose lines fit in `room` lines, each with its count of lines; the last
-/// may be cut by the window, and there is always the first.
+/// The rows from the top whose lines fit in `room` lines, each with its count of lines — its own
+/// height's or its tallest wrapped cell's; the last may be cut by the window, and there is always
+/// the first.
 fn fitted(
     rows: &[u32],
     viewport: Option<&grind_sheet::Viewport>,
     cols: &[(u32, u16)],
+    heights: &std::collections::HashMap<u32, String>,
     room: u32,
 ) -> Vec<(u32, usize)> {
     let mut out = Vec::new();
@@ -3541,6 +3547,7 @@ fn fitted(
             .iter()
             .filter_map(|(col, width)| cell_lines(viewport?, row, *col, *width))
             .map(|lines| lines.len())
+            .chain(heights.get(&row).map(|length| geom::lines(length)))
             .max()
             .unwrap_or(1);
         out.push((row, height));
@@ -5143,13 +5150,24 @@ mod tests {
         assert!(app.status.starts_with("not a width"), "{}", app.status);
     }
 
-    /// A row height is *stored and not drawn* — the medium, not a gap, and the shell says so.
+    /// A row height is lines of a default row's height: written so, and drawn so.
     #[test]
-    fn a_row_height_is_stored_and_the_status_line_is_honest_about_it() {
+    fn a_row_height_is_drawn_as_that_many_lines() {
         let mut app = filled();
         app.run_command("height 3");
-        assert_eq!(app.core.row_heights(0).expect("heights").len(), 1);
-        assert!(app.status.contains("not drawn here"), "{}", app.status);
+        let heights = app.core.row_heights(0).expect("heights");
+        assert_eq!(heights.len(), 1);
+        assert_eq!(geom::lines(&heights[0].1), 3);
+        let rows = screen(&mut app, 60, 12);
+        let first = rows
+            .iter()
+            .position(|row| row.contains("Party"))
+            .expect("row 1");
+        assert!(
+            rows[first + 1].trim().is_empty() && rows[first + 2].trim().is_empty(),
+            "{rows:#?}"
+        );
+        assert!(rows[first + 3].contains("CDU"), "{rows:#?}");
     }
 
     /// `:eval` evaluates against the document and stores nothing — no cell changes, and there
