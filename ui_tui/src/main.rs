@@ -32,7 +32,7 @@ use std::sync::Arc;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::crossterm::cursor::SetCursorStyle;
-use ratatui::crossterm::event::{self, Event};
+use ratatui::crossterm::event::{self, DisableBracketedPaste, EnableBracketedPaste, Event};
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -246,6 +246,8 @@ fn sniff(path: &Path) -> io::Result<DocumentKind> {
 trait Shell {
     fn draw(&mut self, frame: &mut ratatui::Frame<'_>);
     fn on_key(&mut self, key: ratatui::crossterm::event::KeyEvent);
+    /// A paste, whole — bracketed paste is on, so it does not arrive as keys.
+    fn on_paste(&mut self, text: &str);
     fn should_quit(&self) -> bool;
     /// A request to be replaced by another pane, taken once.
     fn take_switch(&mut self) -> Option<app::Switch>;
@@ -261,6 +263,9 @@ macro_rules! shell {
             }
             fn on_key(&mut self, key: ratatui::crossterm::event::KeyEvent) {
                 <$t>::on_key(self, key);
+            }
+            fn on_paste(&mut self, text: &str) {
+                <$t>::on_paste(self, text);
             }
             fn should_quit(&self) -> bool {
                 <$t>::should_quit(self)
@@ -290,6 +295,7 @@ fn event_loop<S: Shell>(terminal: &mut Tui, shell: &mut S) -> io::Result<Option<
         // Block until something happens; a TUI has no reason to spin.
         match event::read()? {
             Event::Key(key) => shell.on_key(key),
+            Event::Paste(text) => shell.on_paste(&text),
             Event::Resize(_, _) => redraw.raise(),
             _ => {}
         }
@@ -306,7 +312,12 @@ fn setup_terminal() -> io::Result<Tui> {
     // The alternate screen keeps the user's scrollback. The cursor is a **bar**: it is shown only
     // where text is typed (the formula line, the `:` line), and an insertion point is a bar
     // between characters.
-    execute!(stdout, EnterAlternateScreen, SetCursorStyle::BlinkingBar)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        SetCursorStyle::BlinkingBar,
+        EnableBracketedPaste
+    )?;
 
     // From here on a panic would leave the terminal unusable, so teardown runs first.
     let previous_hook = std::panic::take_hook();
@@ -326,6 +337,7 @@ fn restore_terminal() {
     let _ = disable_raw_mode();
     let _ = execute!(
         io::stdout(),
+        DisableBracketedPaste,
         SetCursorStyle::DefaultUserShape,
         LeaveAlternateScreen
     );

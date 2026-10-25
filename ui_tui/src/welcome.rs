@@ -79,6 +79,9 @@ impl Welcome {
         self.redraw.clone()
     }
 
+    /// Nothing here takes text.
+    pub fn on_paste(&mut self, _text: &str) {}
+
     pub fn on_key(&mut self, key: KeyEvent) {
         self.redraw.raise();
         if self.typing.is_some() {

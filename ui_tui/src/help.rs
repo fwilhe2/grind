@@ -20,7 +20,8 @@ Normal mode, both document types (vi-style):
   0 / $              start / end of the line
   g / G              start / end of the document
   v                  select — Visual mode, a rectangle or a run of text
-  y / p              yank the selection / put it back
+  y / p              yank the selection (to the clipboard too) / put it back
+  terminal paste     put at the cursor, or into the line being typed
   n / N              the next / previous match of the last :find
   u / Ctrl+r         undo / redo
   :                  command line          :help  this page

@@ -188,8 +188,10 @@ than as a cursor on a hidden row.
 bar, and the cell being edited draws it with the bar's caret where it is (2026-10-25), so typing
 reads as in the cell; a click in that cell does not move the caret. Both are `App::enter`
 underneath, so the *rule* is identical and only the surface differs.
-ᵇ A vi register, not the system clipboard — a terminal cannot reach one without a protocol the
-host may not speak (`doc/tui-shell.md`).
+ᵇ A vi register, also handed to the system clipboard by OSC 52 where the terminal honours it, and
+a paste from the terminal put at the active cell, or typed into the line being edited
+(2026-10-25). `p` still puts the register: reading the clipboard back is a query many terminals
+refuse (`doc/tui-shell.md`).
 ᶜ `grind sheet functions --long` is the same four columns the Win32 dialog and the GNOME
 window's autocomplete read from; a completion popup is not a thing a pipe has.
 ᵈ As the live result of the formula being typed, before it is committed.
@@ -497,7 +499,9 @@ written from, except the Mac's, which is the PDF. The terminal cannot show a pag
 ᶜ Cut/Copy/Paste over `gdk::Clipboard`, plain text both ways, a newline being a block boundary —
 the same two halves `grind-web` has. This used to be the one shell in the suite with neither a
 clipboard nor a register.
-ᵈ A vi register, plain text, a newline splitting a block.
+ᵈ A vi register, plain text, a newline splitting a block; `y` hands it to the system clipboard by
+OSC 52 too, and a paste from the terminal goes in at the caret (2026-10-25). `p` still puts the
+register.
 ᵉ Reachable only by typing the markdown notation (`~~struck~~`, `` `code` ``) — no button, no
 key, no menu item. On Win32 the toggle exists in `text_emphasise` and nothing calls it with
 `Emphasis::Strike` or `::Code`. `grind-text-gtk`'s format bar has a Monospace toggle, which is

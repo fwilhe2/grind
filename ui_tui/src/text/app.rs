@@ -574,6 +574,7 @@ impl App {
         match self.selected_text() {
             Some(text) => {
                 let count = text.chars().count();
+                crate::app::copy_to_terminal(&text);
                 self.register = text;
                 self.anchor = None;
                 self.mode = Mode::Normal;
@@ -594,9 +595,13 @@ impl App {
             self.status = "nothing yanked".to_string();
             return;
         }
+        self.put_text(&self.register.clone());
+    }
+
+    /// `text` at the caret, replacing a selection if there is one.
+    fn put_text(&mut self, text: &str) {
         self.erase_selection();
-        let register = std::mem::take(&mut self.register);
-        for (index, piece) in register.split('\n').enumerate() {
+        for (index, piece) in text.split('\n').enumerate() {
             if index > 0 {
                 self.split();
             }
@@ -604,8 +609,29 @@ impl App {
                 self.insert_at_caret(piece);
             }
         }
-        self.register = register;
         self.status.clear();
+    }
+
+    /// A paste from the terminal, which arrives whole: onto the `:` line as one line, else at the
+    /// caret as `p` puts the register.
+    pub fn on_paste(&mut self, text: &str) {
+        self.redraw.raise();
+        let overlay = self.overlay_open();
+        match &mut self.mode {
+            Mode::Command { buf } => buf.push_str(&crate::app::one_line(text)),
+            _ if overlay => {}
+            _ => self.put_text(&crate::app::unix_lines(text)),
+        }
+    }
+
+    /// Whether a pane over the page has the keys.
+    fn overlay_open(&self) -> bool {
+        self.help.is_open()
+            || self.licences.is_open()
+            || self.code.is_open()
+            || self.problems.is_open()
+            || self.outline.is_open()
+            || self.dict.is_open()
     }
 
     fn insert_at_caret(&mut self, text: &str) {
@@ -3598,6 +3624,21 @@ mod tests {
 
         press(&mut app, KeyCode::Char('p'));
         assert_eq!(text(&app), "hello world", "the register puts it back");
+    }
+
+    /// A paste goes in at the caret, a pasted line break splitting the block; on the `:` line it
+    /// is one line.
+    #[test]
+    fn a_paste_goes_in_at_the_caret() {
+        let mut app = app(&["ab"]);
+        render(&mut app, 40, 6);
+        app.caret.offset = 1;
+        app.on_paste("X\rY");
+        assert_eq!(app.core.input_text(0).unwrap(), "aX");
+        assert_eq!(app.core.input_text(1).unwrap(), "Yb");
+        press(&mut app, KeyCode::Char(':'));
+        app.on_paste("w\r");
+        assert!(matches!(&app.mode, Mode::Command { buf } if buf == "w"));
     }
 
     /// A tab is drawn as the cells it was measured at, and a caret after it sits on the character

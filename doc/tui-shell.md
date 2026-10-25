@@ -80,7 +80,7 @@ shorter than one being edited.
 | Select | `v` — a rectangle | `v` — a run of text, across blocks |
 | Edit | `i`/`a`/`c` into the formula line, Enter commits, Esc cancels | `i`/`a`/`o`, typing goes straight into the document, `x`/`X`/`J` |
 | Formula help | offers while typing, the signature of the call the caret is in — a band under the formula line; Tab accepts, Up/Down pick, Esc dismisses | — |
-| Clipboard | `y`/`p` — a register of tab-separated text, the shape every other spreadsheet reads | `y`/`p` — plain text, a newline splits a block |
+| Clipboard | `y`/`p` — a register of tab-separated text, the shape every other spreadsheet reads; `y` also to the system clipboard (OSC 52), a terminal paste put at the active cell | `y`/`p` — plain text, a newline splits a block; `y` also to the system clipboard, a terminal paste at the caret |
 | Format | `*`/`/`/`-` over a selection; `:bold :italic :wrap :border :align :color :fill :plain` | `*`/`/`/`_`/`~`/`-` over a selection; markdown while typing; `:color :highlight :plain` |
 | Number formats | `:format` over eight presets, `:general` | — |
 | Structure | `:sheet`, `:sheet-new`, `:sheet-rename`, `:sheet-delete`; `:width`, `:fit` (`rows`, `all`), `:height`, `:hide`, `:show`; `:name`, `:name!`; `:format-table [--no-header] [--totals [FUNC]] [--name NAME]` (FUNC is a `TotalsFunction` id: sum, average, count, count-numbers, min, max, stdev, var) | `:h <level>`, `:li [depth]`, `:style [name]`, `:table [rows cols]`, `:move <address>`, `:mark`, `:mark!`, `:words` |
@@ -241,9 +241,12 @@ The outline is its first caller and a list of defined names or of bookmarks woul
 pane with a different `Vec` — a shell that grew a fifth list widget would have five answers to
 "which key closes this". `ui_win32/src/dialog.rs`'s `choose` is the same idea in another toolkit.
 
-The register is this shell's own, not the system clipboard — a terminal cannot reach
-one without a protocol the host may not speak, and vi's register is the convention a reader of
-this shell already has. Markdown-while-typing costs two undo steps rather than one (an erase
+The register is this shell's own, and vi's register is the convention a reader of this shell
+already has. The system clipboard is reached one way out and one way in, each over what a
+terminal already speaks: a yank is also sent as OSC 52, which a terminal that does not honour it
+ignores, and bracketed paste delivers a paste whole rather than as keys, so it is put at the
+active cell or the caret instead of being run as commands. Reading the clipboard back (OSC 52's
+query) is refused by most terminals, so `p` stays the register's. Markdown-while-typing costs two undo steps rather than one (an erase
 and a style), which is the honest price of not inventing a compound action for a shell's own
 convenience.
 

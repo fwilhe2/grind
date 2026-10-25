@@ -994,21 +994,65 @@ impl App {
             "\n",
         );
         let cells = (end.row - start.row + 1) * (end.col - start.col + 1);
+        crate::app::copy_to_terminal(&out);
         self.register = out;
         self.leave_visual();
         self.status = format!("yanked {cells} cell(s)");
     }
 
-    /// The register back, as a rectangle from the active cell — one undo step, because
-    /// `App::enter_range` is one action.
+    /// The register back, as a rectangle from the active cell.
     fn put(&mut self) {
         if self.register.is_empty() {
             self.status = "nothing yanked".to_string();
             return;
         }
+        self.put_text(&self.register.clone());
+    }
+
+    /// A paste from the terminal, which arrives whole: typed into the line being edited, its
+    /// newlines as spaces, else put at the active cell as `p` puts the register.
+    pub fn on_paste(&mut self, text: &str) {
+        self.redraw.raise();
+        let line = crate::app::one_line(text);
+        let overlay = self.overlay_open();
+        match &mut self.mode {
+            Mode::Insert { buf, cursor } => {
+                let chars: Vec<char> = line.chars().collect();
+                let n = chars.len();
+                buf.splice(*cursor..*cursor, chars);
+                *cursor += n;
+                self.point = None;
+                self.refresh_assist();
+            }
+            Mode::Command { buf } => buf.push_str(&line),
+            Mode::Normal | Mode::Visual if !overlay => {
+                self.put_text(&crate::app::unix_lines(text));
+            }
+            _ => {}
+        }
+    }
+
+    /// Whether a pane over the grid has the keys.
+    fn overlay_open(&self) -> bool {
+        self.help.is_open()
+            || self.licences.is_open()
+            || self.chart_pane.is_open()
+            || self.charts.is_open()
+            || self.code.is_open()
+            || self.problems.is_open()
+            || self.calculations.is_open()
+            || self.dict.is_open()
+            || self.rules.is_open()
+            || self.explained.is_open()
+            || self.functions.is_open()
+    }
+
+    /// Tab-separated rows as a rectangle from the active cell — one undo step, because
+    /// `App::enter_range` is one action.
+    fn put_text(&mut self, text: &str) {
         // Display syntax back to ODF's (`grind_sheet::clip`) — without it a formula yanked here
         // was put back as `#NAME?`.
-        let rows = grind_sheet::clip::parse_rows(&self.register);
+        let rows = grind_sheet::clip::parse_rows(text);
         match self
             .core
             .enter_range(self.sheet, self.active, &rows, RecalcMode::Document)
@@ -2099,6 +2143,7 @@ impl App {
             CoreApp::value_text,
             "\n",
         );
+        crate::app::copy_to_terminal(&self.register);
         self.leave_visual();
         self.status = "yanked the values as shown".to_owned();
     }
@@ -4123,6 +4168,23 @@ mod tests {
             app.core.input_text(0, Pos::new(5, 1)).unwrap(),
             "1200",
             "the bottom-right of the rectangle"
+        );
+    }
+
+    /// A paste is a rectangle from the active cell, and text inside a line being typed.
+    #[test]
+    fn a_paste_puts_a_rectangle_or_types_into_the_line() {
+        let mut app = filled();
+        app.active = Pos::new(4, 0);
+        app.on_paste("a\tb\r=1+1\t4\r");
+        assert_eq!(app.core.input_text(0, Pos::new(4, 1)).unwrap(), "b");
+        assert!(app.core.formula(0, Pos::new(5, 0)).unwrap().is_some());
+        assert_eq!(app.core.input_text(0, Pos::new(5, 1)).unwrap(), "4");
+
+        press(&mut app, KeyCode::Char('i'));
+        app.on_paste("two\rlines");
+        assert!(
+            matches!(&app.mode, Mode::Insert { buf, .. } if buf.iter().collect::<String>().ends_with("two lines"))
         );
     }
 
