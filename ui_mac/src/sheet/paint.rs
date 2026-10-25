@@ -1332,7 +1332,8 @@ mod tests {
     fn turned_text_is_one_turned_op_about_the_cells_middle() {
         let app = sheet();
         let up = grind_sheet::format::rotated(&CellStyle::default(), Some(90));
-        app.set_style(0, Pos::new(0, 0), Pos::new(0, 0), up).unwrap();
+        app.set_style(0, Pos::new(0, 0), Pos::new(0, 0), up)
+            .unwrap();
         let ops = drawn(&app);
         assert!(ops.iter().any(|op| matches!(
             op,
