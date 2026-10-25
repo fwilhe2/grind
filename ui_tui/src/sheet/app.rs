@@ -2495,6 +2495,7 @@ impl App {
         };
         match self.core.save_file(&target) {
             Ok(()) => {
+                crate::recent::note(&target);
                 self.status = format!("wrote {}", target.display());
                 self.path = Some(target);
                 self.imported = None;

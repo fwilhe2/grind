@@ -319,5 +319,7 @@ described.
 `grind-tui` with no file and neither `--sheet` nor `--text` no longer guesses a spreadsheet: it
 opens `ui_tui/src/welcome.rs`, three choices (`s` new spreadsheet, `t` new text document, `o` a
 path to open — the arrows and Enter work too) and `q` to leave. `:welcome` returns to it from
-either pane, refusing over unsaved work like `:new`; `:welcome!` discards. Recent files stay a
-named gap: a list needs a store this shell does not have.
+either pane, refusing over unsaved work like `:new`; `:welcome!` discards. Below the cards it
+lists up to nine recent documents, `1` to `9` (`ui_tui/src/recent.rs`): every file opened or
+written goes to the head of `$XDG_STATE_HOME/grind/recent`, one path a line, and one that no longer
+exists drops out.

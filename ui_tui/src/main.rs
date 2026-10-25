@@ -19,6 +19,7 @@ mod help;
 mod ink;
 mod pick;
 mod problems;
+mod recent;
 mod sheet;
 mod text;
 mod welcome;
@@ -175,6 +176,7 @@ fn prepare(kind: DocumentKind, path: Option<PathBuf>) -> io::Result<Pane> {
     let (mut file, mut imported) = (None, None);
     if let Some(given) = &path {
         let bytes = std::fs::read(given)?;
+        recent::note(given);
         file = Some(
             match grind_open::import_file(given, &bytes)
                 .transpose()

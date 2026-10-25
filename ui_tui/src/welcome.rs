@@ -4,8 +4,9 @@
 
 //! The pane with no document in it — what `grind-tui` shows when given nothing to open and no kind
 //! to start. Three choices, each a key: `s` a new spreadsheet, `t` a new text document, `o` a path
-//! to open; the arrows and Enter work too, and the open prompt is the only text it takes. It owns
-//! no document, so it hands back an [`crate::app::Switch`].
+//! to open; then the recent documents, `1` to `9`. The arrows and Enter work too, and the open
+//! prompt is the only text it takes. It owns no document, so it hands back an
+//! [`crate::app::Switch`].
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -32,9 +33,14 @@ const CARDS: [(&str, char, &str); 3] = [
     ),
 ];
 
+/// How many recent documents are listed, each on a digit key.
+const RECENT_MAX: usize = 9;
+
 pub struct Welcome {
     redraw: Arc<RedrawFlag>,
+    /// A card, or past the cards a recent document.
     selected: usize,
+    recent: Vec<PathBuf>,
     /// `Some` while the open prompt is up: the path typed so far.
     typing: Option<String>,
     message: String,
@@ -44,9 +50,16 @@ pub struct Welcome {
 
 impl Welcome {
     pub fn new(redraw: Arc<RedrawFlag>) -> Self {
+        let mut recent = crate::recent::list();
+        recent.truncate(RECENT_MAX);
+        Self::with_recent(redraw, recent)
+    }
+
+    fn with_recent(redraw: Arc<RedrawFlag>, recent: Vec<PathBuf>) -> Self {
         Self {
             redraw,
             selected: 0,
+            recent,
             typing: None,
             message: String::new(),
             switch: None,
@@ -75,26 +88,47 @@ impl Welcome {
             KeyCode::Char('s') => self.choose(0),
             KeyCode::Char('t') => self.choose(1),
             KeyCode::Char('o') => self.choose(2),
+            KeyCode::Char(digit @ '1'..='9') => {
+                let n = digit as usize - '1' as usize;
+                if n < self.recent.len() {
+                    self.choose(CARDS.len() + n);
+                }
+            }
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit = true,
             KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
-                self.selected = (self.selected + 1) % CARDS.len()
+                self.selected = (self.selected + 1) % self.targets()
             }
             KeyCode::Up | KeyCode::Char('k') | KeyCode::BackTab => {
-                self.selected = (self.selected + CARDS.len() - 1) % CARDS.len()
+                self.selected = (self.selected + self.targets() - 1) % self.targets()
             }
             KeyCode::Enter => self.choose(self.selected),
             _ => {}
         }
     }
 
-    fn choose(&mut self, card: usize) {
-        self.selected = card;
+    fn targets(&self) -> usize {
+        CARDS.len() + self.recent.len()
+    }
+
+    fn choose(&mut self, target: usize) {
+        self.selected = target;
         self.message.clear();
-        match card {
+        match target {
             0 => self.switch = Some(Switch::New(DocumentKind::Spreadsheet)),
             1 => self.switch = Some(Switch::New(DocumentKind::Text)),
-            _ => self.typing = Some(String::new()),
+            2 => self.typing = Some(String::new()),
+            _ => {
+                let path = self.recent[target - CARDS.len()].clone();
+                self.open(path);
+            }
+        }
+    }
+
+    fn open(&mut self, path: PathBuf) {
+        match crate::sniff(&path) {
+            Ok(kind) => self.switch = Some(Switch::Open(path, kind)),
+            Err(error) => self.message = format!("{}: {error}", path.display()),
         }
     }
 
@@ -114,10 +148,7 @@ impl Welcome {
                     self.typing = None;
                     return;
                 }
-                match crate::sniff(&path) {
-                    Ok(kind) => self.switch = Some(Switch::Open(path, kind)),
-                    Err(error) => self.message = format!("{}: {error}", path.display()),
-                }
+                self.open(path);
             }
             _ => {}
         }
@@ -159,6 +190,34 @@ impl Welcome {
                 ),
             ]));
         }
+        if !self.recent.is_empty() {
+            lines.push(Line::raw(""));
+            lines.push(Line::styled(
+                "Recent",
+                Style::default().add_modifier(Modifier::BOLD),
+            ));
+        }
+        for (i, path) in self.recent.iter().enumerate() {
+            let on = CARDS.len() + i == self.selected;
+            let marker = if on { "▸" } else { " " };
+            let style = match on {
+                true => Style::default().add_modifier(Modifier::REVERSED),
+                false => Style::default(),
+            };
+            let name = path.file_name().unwrap_or(path.as_os_str());
+            let dir = path.parent().map(|dir| dir.display().to_string());
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!(" {marker} [{}] {} ", i + 1, name.to_string_lossy()),
+                    style,
+                ),
+                Span::raw("  "),
+                Span::styled(
+                    dir.unwrap_or_default(),
+                    Style::default().fg(ratatui::style::Color::DarkGray),
+                ),
+            ]));
+        }
         lines.push(Line::raw(""));
         match &self.typing {
             Some(typed) => lines.push(Line::raw(format!("Open: {typed}▏"))),
@@ -170,6 +229,9 @@ impl Welcome {
 
         let hint = match self.typing {
             Some(_) => " Enter opens · Esc goes back",
+            None if !self.recent.is_empty() => {
+                " s sheet · t text · o open · 1–9 recent · Enter chooses · q quits"
+            }
             None => " s sheet · t text · o open · Enter chooses · q quits",
         };
         frame.render_widget(
@@ -238,6 +300,34 @@ mod tests {
         assert!(w.message.contains("/no/such/file.fods"), "{}", w.message);
         press(&mut w, KeyCode::Esc);
         assert!(w.typing.is_none());
+    }
+
+    #[test]
+    fn a_recent_document_opens_on_its_digit_and_by_the_arrows() {
+        let dir = std::env::temp_dir().join("grind-tui-welcome-recent");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("r.fods");
+        std::fs::write(
+            &path,
+            grind_sheet::App::new()
+                .save_bytes(grind_core::Form::Flat)
+                .unwrap(),
+        )
+        .unwrap();
+        let mut w = Welcome::with_recent(Arc::new(RedrawFlag::default()), vec![path.clone()]);
+        let opened = Some(Switch::Open(path, DocumentKind::Spreadsheet));
+        press(&mut w, KeyCode::Char('2'));
+        assert_eq!(w.take_switch(), None, "there is no second one");
+        press(&mut w, KeyCode::Char('1'));
+        assert_eq!(w.take_switch(), opened);
+        w.selected = 0;
+        press(&mut w, KeyCode::Up);
+        press(&mut w, KeyCode::Enter);
+        assert_eq!(
+            w.take_switch(),
+            opened,
+            "Up from the first card wraps to it"
+        );
     }
 
     #[test]

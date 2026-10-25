@@ -68,7 +68,7 @@ numbered, under each table, so they cannot collide with the lettered ones.
 | Go to an address | ● | ● | ● | ● | ● | ● | ● ⁴ |
 | Key list / help | ● | ● | ● | ● | ◐ ᵈ | ● | ● ⁵ |
 | About / build stamp | ● | ● | ● | ● ʰ | ● ʷᵃ | ● | ● ⁶ |
-| Recent files | — | ● | ● | ○ | ○ | ● ʷʳ | ● |
+| Recent files | — | ● | ● | ● ᵗʳ | ○ | ● ʷʳ | ● |
 | Opening the *other* document kind | ● ᵉ | ● ᶠ | ● ᵉ | ● | ● | ● | ● |
 | Assertable headless output | stdout | `--render-to` PNG | `--render-to` PNG | `TestBackend` | `smoke.js` (jsdom) | `--render-to` BMP | `--render-to` PNG, `--drive` |
 | `.deb` + `.rpm` | ● | ● | ● | ● | — | — | — ⁷ |
@@ -98,6 +98,7 @@ launches `grind-text-gtk` (`is_text`, unit-tested; the banner itself not yet see
 ᵍ A pipe is the accessible surface, which is `doc/view-modes.md` §4.6's argument for why the
 CLI matters most exactly where a GUI's whole output is colour.
 
+ᵗʳ The welcome pane lists the nine most recent, `1` to `9`, from `$XDG_STATE_HOME/grind/recent` — every file opened or written (2026-10-25, checked in a pty).
 ʷʳ Every document opened or saved is handed to `SHAddToRecentDocs`, so it is in the taskbar jump list and every file dialog's Recent — the platform's own list, with none of ours (2026-10-02; build-checked only).
 ʷᵃ *About this build* in the palette says `grind_core::build_info::describe` on the message line — no dialog to put it in (2026-10-02).
 
@@ -703,7 +704,7 @@ look::border_strokes, format::bordered}`.
 **Still open**, as the ○ cells above say: charts — editing and restyling outside GNOME and
 the Mac beyond the kind (which every window chooses since 2026-10-09), and none drawn by the terminal; the terminal's zoom and drag (a terminal has neither) and
 its borders and pictures (it has no way to draw them); wrapped text and row heights in the terminal; the seven CSV import options in any window; a welcome screen and a
-second document kind in the two GNOME shells (by decision); recent files in the terminal and the
+second document kind in the two GNOME shells (by decision); recent files in the
 browser; and the number-format sample in the terminal.
 
 **Closed on 2026-10-03** (build- and lint-checked, jsdom smoke for the browser; not seen drawn): the
