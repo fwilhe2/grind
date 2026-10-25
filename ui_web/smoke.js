@@ -645,6 +645,18 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("Rotate text up turns the cell's text", turned() && turned().getAttribute("style"), "transform:rotate(-90deg)");
   await command("No rotation");
   check("and No rotation sets it level", turned(), null);
+  // A wrapped cell grows its row, and the row is given that height, so the rows counted onto the
+  // surface are the rows drawn on it.
+  await enter("a sentence long enough to need three lines in one column");
+  press("ArrowUp");
+  await frame();
+  await command("Wrap text");
+  const row = document.querySelector("td.active").parentElement;
+  check("a wrapped cell's row is given the height it grows to",
+    parseFloat((row.getAttribute("style") || "").replace("height:", "")) > 24, true);
+  await command("Wrap text");
+  check("and back to the default when it no longer wraps",
+    document.querySelector("td.active").parentElement.getAttribute("style"), null);
 
   await enter("12345");
   press("ArrowUp");

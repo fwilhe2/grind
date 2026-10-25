@@ -19,7 +19,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use grind_core::utf16;
 use grind_sheet::find::{self, Search, Towards};
@@ -175,11 +175,19 @@ impl Dom {
     }
 }
 
+/// The grown rows, measured when there had been this many changes, on this sheet.
+type Grown = ((u64, usize), Vec<(u32, f64)>);
+
 pub struct Ui {
     pub app: Arc<App>,
     dom: Dom,
     /// Set by the observer, cleared by the repaint it asked for.
     pending: Arc<AtomicBool>,
+    /// Counted by the observer: what [`Ui::grown`] is keyed on.
+    changes: Arc<AtomicU64>,
+    /// The rows a cell's content grows (`grind_sheet::autoheight`), for a count of `changes` and a
+    /// sheet — measured once per change, not per frame.
+    grown: RefCell<Option<Grown>>,
     // Everything below is *presentation*: which part of the document is on screen
     // and what the user has picked out. None of it is the document, which is why
     // the core neither knows nor keeps it.
@@ -235,12 +243,15 @@ impl Ui {
         document: &Document,
         app: Arc<App>,
         pending: Arc<AtomicBool>,
+        changes: Arc<AtomicU64>,
     ) -> Result<Rc<Self>, JsValue> {
         declare_cell_size(document)?;
         let ui = Rc::new(Ui {
             app,
             dom: Dom::find(document)?,
             pending,
+            changes,
+            grown: RefCell::new(None),
             sheet: Cell::new(0),
             selection: Cell::new(Selection::default()),
             pointing: RefCell::new(None),
@@ -752,11 +763,35 @@ impl Ui {
         )
     }
 
+    /// The document's row heights, and under them the height a row's content grows it to — given
+    /// to the row, so the rows counted onto the surface are the rows that fit on it.
     fn heights(&self) -> Tracks {
         Tracks::new(
             layout::CELL.cell_h,
             self.app.row_heights(self.sheet.get()).unwrap_or_default(),
         )
+        .grown(&self.grown())
+    }
+
+    fn grown(&self) -> Vec<(u32, f64)> {
+        let key = (self.changes.load(Ordering::SeqCst), self.sheet.get());
+        if let Some((at, rows)) = &*self.grown.borrow()
+            && *at == key
+        {
+            return rows.clone();
+        }
+        let widths = self.widths();
+        let rows = grind_sheet::autoheight::grown_rows(
+            &self.app,
+            key.1,
+            &|col| widths.size(col),
+            layout::CELL_PAD_X,
+            layout::ROW_PAD,
+            layout::CELL.cell_h,
+            &layout::Drawn,
+        );
+        *self.grown.borrow_mut() = Some((key, rows.clone()));
+        rows
     }
 
     /// How much of the sheet is on screen. A function of the surface and the document's own

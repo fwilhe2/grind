@@ -35,7 +35,7 @@ pub mod text;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use grind_core::{DocumentKind, Form, Observer, kind};
 use grind_sheet::csv;
@@ -116,16 +116,19 @@ pub fn start() -> Result<(), JsValue> {
     // One flag for both panes: it says "a repaint is owed", and which pane owes it is
     // whichever one is showing.
     let pending = Arc::new(AtomicBool::new(false));
+    // How many times either document has changed — what a cache of something read from one is
+    // keyed on.
+    let changes = Arc::new(AtomicU64::new(0));
     let sheet_app = Arc::new(grind_sheet::App::new());
     let text_app = Arc::new(grind_text::App::new());
 
     // The core pushes, the shell never polls (doc/plan.md rule 3) — the same contract
     // `grind-tui` implements with a flag and the GTK shells with a channel.
-    sheet_app.set_observer(Arc::new(Notifier(pending.clone())));
-    text_app.set_observer(Arc::new(Notifier(pending.clone())));
+    sheet_app.set_observer(Arc::new(Notifier(pending.clone(), changes.clone())));
+    text_app.set_observer(Arc::new(Notifier(pending.clone(), changes.clone())));
 
     let shell = Rc::new(Shell {
-        sheet: sheet::Ui::new(&document, sheet_app, pending.clone())?,
+        sheet: sheet::Ui::new(&document, sheet_app, pending.clone(), changes)?,
         text: text::Ui::new(&document, text_app, pending.clone())?,
         dom: Chrome::find(&document)?,
         palette: palette::Palette::find(&document)?,
@@ -1410,10 +1413,11 @@ pub(crate) fn request_repaint(pending: &AtomicBool) {
 /// [`Observer`] is `Send + Sync`, so this may not hold anything from the page — a wasm module
 /// is single-threaded but the trait does not know that. It holds a flag instead, which
 /// doubles as "a frame is already scheduled": an edit that notifies twice still repaints once.
-struct Notifier(Arc<AtomicBool>);
+struct Notifier(Arc<AtomicBool>, Arc<AtomicU64>);
 
 impl Observer for Notifier {
     fn changed(&self) {
+        self.1.fetch_add(1, Ordering::SeqCst);
         request_repaint(&self.0);
     }
 }

@@ -256,7 +256,7 @@ Decimals), and the three currencies of `numfmt::CURRENCIES` — Format ▸ Curre
 context menu, a currency cell keeping its own decimals and grouping (`grind_sheet::format::currency`,
 hoisted from `ui_win32/src/sheet/currency.rs`), and Format ▸ Use 1000 Separator, checked by the cell
 (`format::grouped`, 2026-10-07). No other symbol.
-ʷᵗ The table grows a wrapped or oversized-font row itself (see the 2026-10-03 note at the end); the shell's row count does not know. Not seen drawn.
+ʷᵗ The rows a wrapped or larger cell grows are measured by `grind_sheet::autoheight` on the stylesheet's own line height (`layout::Drawn`), once per change, and given that height — so the rows counted onto the surface are the rows drawn there (2026-10-25, smoke-checked).
 ʷʷ Closed 2026-10-02: Format ▸ Wrap Text; the grid breaks a wrapped cell with `grind_core::layout::wrap` over GDI measurements (`sheet/measure.rs`) and grows rows through `grind_sheet::autoheight` (hoisted from the Mac) — checked by a Wine render.
 ʷᵇ Closed 2026-10-02: Format ▸ All Borders / Remove Borders (`format::bordered`), and the grid draws every edge through `look::border_strokes` — the Mac's geometry, hoisted — checked by a Wine render. `dashed` and `dotted` draw solid.
 ˣ Named in `doc/windows-shell.md`'s "What it will not do": this window draws neither wrapped text
@@ -305,7 +305,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Drag a track edge to resize | — | ● | ○ | ● ʷʰ | ● ʷᵈ | ● |
 | Autofit a column | ● ᶜᶦ | ● ᵍᶠ | ● ᶠⁱ | ● ʷᶠ | ● ᶠᶜ | ● ᵐᶠ |
 | Fit Content to Cells — every column and row, one undo step | ● ᶜᶦ | ● ᵍᶠ | ● ᶠⁱ | ● ʷᶠ | ● ᶠᶜ | ● ᵐᶠ |
-| Row auto-height from content (L3) | — | ● | ○ | ◐ ʷᵗ | ● ʷʷ | ● |
+| Row auto-height from content (L3) | — | ● | ○ | ● ʷᵗ | ● ʷʷ | ● |
 | **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |
 | Hide / unhide a row or column | ● | ● | ● | ● | ● | ● |
 | **Honours** hidden tracks | ● | ● | ● | ● | ● | ● |

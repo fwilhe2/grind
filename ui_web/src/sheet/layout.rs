@@ -59,6 +59,28 @@ impl grind_core::layout::Metrics for Estimate {
     }
 }
 
+/// A cell's horizontal padding and a row's border, in CSS pixels, as the stylesheet draws them.
+pub const CELL_PAD_X: f64 = 4.0;
+pub const ROW_PAD: f64 = 2.0;
+/// The line a cell's text is set on: the page's `font: 14px/1.4`.
+const LINE_H: f64 = 14.0 * 1.4;
+
+/// [`Estimate`]'s advances on the stylesheet's own line height, scaled by the cell's font size —
+/// how tall the table draws a cell's text, which `Estimate` (a row fit, a whole cell a line) is
+/// not.
+pub struct Drawn;
+
+impl grind_core::layout::Metrics for Drawn {
+    fn advances(&self, text: &str, style: &grind_core::style::TextStyle, out: &mut Vec<f32>) {
+        Estimate.advances(text, style, out)
+    }
+
+    fn line_height(&self, style: &grind_core::style::TextStyle) -> f32 {
+        let scale = grind_sheet::look::font_scale(style.font_size.as_deref()).unwrap_or(1.0);
+        (LINE_H * scale) as f32
+    }
+}
+
 /// The length column `col` fits to, from [`Estimate`] — `None` for an empty column, which
 /// goes back to the default width (`grind_sheet::fit::width`).
 pub fn fit_width(app: &grind_sheet::App, sheet: usize, col: u32) -> Option<String> {
@@ -102,6 +124,14 @@ impl Tracks {
                 .collect(),
             default,
         }
+    }
+
+    /// With `grown`'s heights under any the document gave.
+    pub fn grown(mut self, grown: &[(u32, f64)]) -> Self {
+        for (at, px) in grown {
+            self.sized.entry(*at).or_insert(*px);
+        }
+        self
     }
 
     /// One track's size, in CSS pixels. Never zero: a hidden track is hidden by the *core*
