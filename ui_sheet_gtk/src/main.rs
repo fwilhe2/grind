@@ -25,7 +25,6 @@ mod formatting;
 mod formula_ux;
 mod geom;
 mod grid;
-mod import;
 mod keymap;
 mod licences;
 mod lint;
@@ -175,7 +174,7 @@ struct Ui {
     undo: gtk::Button,
     redo: gtk::Button,
     path: RefCell<Option<PathBuf>>,
-    /// The name an imported workbook goes by until it is saved (`import.rs`) — shown as the
+    /// The name an imported workbook goes by until it is saved — shown as the
     /// title and offered by Save As. `None` for every document that came from ODF.
     imported: RefCell<Option<String>>,
     dirty: Cell<bool>,
@@ -1046,7 +1045,7 @@ impl Ui {
     }
 
     /// Open `path`, then call `done`. Everything slow — reading, importing, parsing — runs on a
-    /// worker thread (`import::prepare` touches no `App` and no widget), so the window stays
+    /// worker thread (which touches no `App` and no widget), so the window stays
     /// drawn and answers the desktop's pings however large the file is; only handing the
     /// finished document over happens here.
     fn load_then(self: &Rc<Self>, path: &Path, done: impl FnOnce(&Rc<Self>) + 'static) {
@@ -1066,16 +1065,26 @@ impl Ui {
         let path = path.to_owned();
         glib::spawn_future_local(async move {
             let worker_path = path.clone();
-            let prepared = gio::spawn_blocking(move || {
+            let prepared = gio::spawn_blocking(move || -> Result<_, String> {
                 let bytes = std::fs::read(&worker_path).map_err(|e| e.to_string())?;
                 // Cross-app handoff: the ODS reader is tolerant by construction and would hand
                 // back a document with no sheets in it, so the kind is asked first.
                 if is_text(&worker_path, &bytes) {
                     return Ok(None);
                 }
-                let imports = import::is_import(&worker_path, &bytes);
-                import::prepare(&worker_path, &bytes)
-                    .map(|(document, opened)| Some((document, opened, imports)))
+                // Named after the file alone, which is what the title shows and Save As offers.
+                let name = worker_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy();
+                let imported =
+                    grind_open::import(&name, &bytes, &grind_open::nowhere).transpose()?;
+                let document = match &imported {
+                    Some(imported) => grind_sheet::read_bytes(&imported.name, &imported.odf),
+                    None => grind_sheet::read_bytes(&worker_path.display().to_string(), &bytes),
+                }
+                .map_err(|e| e.to_string())?;
+                Ok(Some((document, imported)))
             })
             .await;
             notice.dismiss();
@@ -1083,17 +1092,18 @@ impl Ui {
             ui.opening.set(false);
             match prepared {
                 Ok(Ok(None)) => ui.offer_handoff(&path),
-                Ok(Ok(Some((document, opened, imports)))) => {
+                Ok(Ok(Some((document, imported)))) => {
                     // The open's own notification is swallowed so an ODF document comes up
                     // unmodified. An imported workbook or CSV is *meant* to come up modified —
                     // nothing has saved it — so for one the notification is let through.
-                    ui.loading.set(!imports);
+                    ui.loading.set(imported.is_none());
                     match ui.app.open_document(document) {
                         Ok(()) => {
-                            *ui.path.borrow_mut() = opened.path;
+                            // An import has never been saved: Save asks where the ODF goes.
+                            *ui.path.borrow_mut() = imported.is_none().then(|| path.clone());
                             *ui.imported.borrow_mut() = None;
                             ui.grid.set_sheet(0);
-                            match opened.imported {
+                            match imported {
                                 Some(imported) => ui.adopt_import(imported),
                                 None => remember_recent(&path),
                             }
@@ -1141,7 +1151,7 @@ impl Ui {
     /// An imported workbook: named after it, unsaved, and the report's sentence where it
     /// cannot be missed. Not added to the recent files — it is not a file this window can
     /// open *as*, and reopening it would import it again rather than open what was saved.
-    fn adopt_import(self: &Rc<Self>, imported: import::Imported) {
+    fn adopt_import(self: &Rc<Self>, imported: grind_open::Imported) {
         *self.imported.borrow_mut() = Some(imported.name);
         self.dirty.set(true);
         self.refresh();
@@ -2673,7 +2683,7 @@ fn spreadsheet_filters() -> gio::ListStore {
     filter.add_pattern("*.grind");
 
     let filters = gio::ListStore::new::<gtk::FileFilter>();
-    // A workbook and a CSV are imported (`import.rs`), so each is a filter of its own, named as a
+    // A workbook and a CSV are imported, so each is a filter of its own, named as a
     // person knows it; everything together first, so the default shows every file this window
     // opens.
     let mut patterns = vec!["*.fods", "*.ods", "*.grind"];
