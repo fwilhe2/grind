@@ -11,9 +11,9 @@ SPDX-License-Identifier: CC-BY-4.0
 
 This file is that rule made mechanical, **for the spreadsheet**. Every public method of
 `grind_sheet::App` appears below exactly once, with the command that reaches it or the reason
-it is not reachable. `cli/tests/parity.rs` reads `sheet/src/lib.rs` and this file and fails the
-build when they disagree — so adding a capability to the core without exposing it breaks CI,
-and so does deleting a command that this file still claims.
+it is not reachable. `cli/tests/parity.rs` reads `sheet/src/lib.rs`, `sheet/src/app/` and this
+file, and fails the build when they disagree — so adding a capability to the core without
+exposing it breaks CI, and so does deleting a command that this file still claims.
 
 One of these per application (doc/suite.md's **R9**): the test drives a registry of
 (application, core source, parity document) triples, so `grind-text` arrives as three lines
