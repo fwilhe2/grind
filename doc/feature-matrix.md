@@ -456,7 +456,7 @@ it, and dragging one moves it. There is no dialog, and resizing or recolouring o
 | `p12`, `p12+40`, `#bookmark`, `§2.1.3` | ● | ● | ● | ● | ● | ● ³ |
 | Outline, each row a jump | ● | ● | ● | ● | ● | ● ⁴ |
 | Create a bookmark | ● | ● ᵍᵖ | ● | ● ᶻ | ● ᶻ | ● |
-| Show where bookmarks anchor (V7) | ● | ● | ◐ ˡ | ◐ ˡ | ◐ ˡ | ● |
+| Show where bookmarks anchor (V7) | ● | ● | ◐ ˡ | ● ˡ | ● | ● |
 | **Pictures** | | | | | | |
 | Insert an image | ● | ● | ● ᵗⁱ | ● ᵖⁱ | ● | ● |
 | **Draws** an image | — | ● | ○ | ● | ● | ● |
@@ -506,7 +506,7 @@ one parse feeding the measuring attribute, `Metrics::line_height` and the drawin
 per fragment, so honouring a size in the width and not in the height would measure a big word
 wide on a line too short to hold it.
 ʲ Heading 4 only.
-ˡ The name is drawn at the end of the line the anchor falls on rather than at its offset in it.
+ˡ The browser draws a tick at the anchor's own offset and the name at the end of its line; the terminal writes `‹name›+offset` after the block's first line, since a mark inside the line would be a character the caret counts. Windows draws the name at the offset, which this row missed until 2026-10-25.
 Only `grind-text-gtk` puts a tick at the exact offset — it already has `x_at` for the caret.
 ᵐ `:li [depth]`. ⁿ Tab and Shift+Tab — in `grind-text-gtk`, Tab at the front of a paragraph
 starts a list and Shift+Tab out of depth 1 ends it. ᵒ Ctrl+Shift+K's block-kind dialog lists four
