@@ -12,8 +12,10 @@
 //! filters are the `xlsx` and `docx` features: without one, its files are not recognised.
 
 use grind_core::DocumentKind;
-use grind_text::commonmark::Resolve;
 use std::path::Path;
+
+/// How a Markdown file's pictures are found, so a shell needs no `grind-text` to pass one.
+pub use grind_text::commonmark::{Resolve, beside, nowhere};
 
 /// A file imported to flat ODF, for `App::open_bytes`.
 #[derive(Debug, PartialEq, Eq)]
@@ -78,8 +80,8 @@ pub fn kind(name: &str, bytes: &[u8]) -> Option<DocumentKind> {
 
 /// Import a file, or `None` when it is not one to import — ODF, or anything unknown, for the
 /// caller to read as it is. `name` is what the result is named after, and is also how CSV and
-/// Markdown are recognised; `resolve` finds a Markdown file's pictures
-/// (`grind_text::commonmark::beside` for a file on disk, `nowhere` otherwise).
+/// Markdown are recognised; `resolve` finds a Markdown file's pictures ([`beside`] a file on disk,
+/// or [`nowhere`]).
 pub fn import(name: &str, bytes: &[u8], resolve: &Resolve<'_>) -> Option<Result<Imported, String>> {
     #[cfg(feature = "xlsx")]
     if grind_xlsx::sniff(bytes) {
@@ -131,17 +133,12 @@ pub fn import(name: &str, bytes: &[u8], resolve: &Resolve<'_>) -> Option<Result<
 /// [`import`] for a file on disk: named after its path, a Markdown file's pictures found beside
 /// it.
 pub fn import_file(path: &Path, bytes: &[u8]) -> Option<Result<Imported, String>> {
-    import(
-        &path.display().to_string(),
-        bytes,
-        &grind_text::commonmark::beside(path),
-    )
+    import(&path.display().to_string(), bytes, &beside(path))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grind_text::commonmark::nowhere;
 
     fn flat_text() -> Vec<u8> {
         grind_text::write_bytes(&grind_text::Document::default(), grind_core::Form::Flat).unwrap()
