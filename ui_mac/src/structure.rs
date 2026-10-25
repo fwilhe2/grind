@@ -504,7 +504,7 @@ impl TextPane {
             Command::DeleteParagraph => {
                 return self.act_on(|page, app, _| page.delete_paragraphs(app));
             }
-            // A name this build keeps and does not interpret, unless it is Title or Subtitle
+            // A name kept and not interpreted, unless it is Title or Subtitle
             // (`doc/text-core.md`'s Styles section) — `grind text style`'s verb.
             Command::ParagraphStyle => {
                 let blocks = self.state.borrow().blocks();
@@ -665,10 +665,9 @@ impl TextPane {
         }
     }
 
-    /// Insert ▸ Picture…: a file the open panel names, embedded in the document — a picture is
-    /// its bytes, never a link to them — in a paragraph of its own: the caret's, when that one is
-    /// empty, and otherwise a new one after it. The caret lands just past the picture, so what is
-    /// typed next is its caption, which is `ui_text_gtk`'s rule.
+    /// Insert ▸ Picture…: a file the open panel names, embedded — a picture is its bytes, never a
+    /// link — in a paragraph of its own: the caret's when empty, otherwise a new one after it. The
+    /// caret lands just past the picture, so what is typed next is its caption.
     fn insert_picture(&self, mtm: MainThreadMarker) {
         let panel = NSOpenPanel::openPanel(mtm);
         panel.setCanChooseDirectories(false);
@@ -744,10 +743,9 @@ impl TextPane {
 }
 
 impl Pane {
-    /// A defined name's context menu in the sidebar: rename it with every use following, point
-    /// it somewhere else, write it out into every formula that uses it, or delete it — each one
-    /// core call and one undo step, the first and third the first window to have them
-    /// (`grind sheet name --rename`/`--inline` until now).
+    /// A defined name's context menu in the sidebar: rename it with every use following, point it
+    /// elsewhere, write it out into every formula using it, or delete it — each one core call and
+    /// one undo step.
     pub fn act_on_name(&self, verb: NameVerb, name: &str, mtm: MainThreadMarker) {
         let said = match verb {
             NameVerb::Rename => {

@@ -2,27 +2,20 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The document — an `NSDocument` holding an `App` (decision 5) — and the document controller that
-//! decides which of the two kinds a file is.
-//!
-//! AppKit's document architecture supplies most of what "a Mac document application" means with
-//! no code here: Open, Open Recent, Close, the window list, Revert, Duplicate, Rename, Move To and
-//! the Versions browser all go to `NSDocument` and `NSDocumentController` by their standard
-//! selectors (`menu.rs`). What is this shell's is small and said once:
+//! The document — an `NSDocument` holding an `App` (decision 5) — and the controller deciding
+//! which kind a file is. AppKit's document architecture supplies Open, Open Recent, Close, the
+//! window list, Revert, Duplicate, Rename, Move To and Versions through standard selectors
+//! (`menu.rs`). What is this shell's:
 //!
 //! - **The bytes decide the kind, not the name.** `Controller` answers
 //!   `typeForContentsOfURL:error:` by reading the file — `grind_core::kind`, and the workbook and
-//!   CSV sniffs — which is the rule every shell follows and the reason a `.xml` holding a flat
-//!   spreadsheet opens as one.
-//! - **An import is untitled.** A workbook or a CSV is read to flat ODF and its document is left
-//!   with no file URL, so neither Save nor, from M4, autosave has anything to write *into*. One
-//!   way in, never out, kept by construction.
-//! - **Undo is the core's** (rule 2). M4 answers `undo:` and `redo:` by forwarding to `App`; M2 is
-//!   read-only, so autosave is off until then.
+//!   CSV sniffs.
+//! - **An import is untitled.** A workbook or a CSV is read to flat ODF and left with no file URL,
+//!   so neither Save nor autosave has anything to write into.
+//! - **Undo is the core's** (rule 2): `undo:` and `redo:` forward to `App`.
 //!
-//! The type names are the system's own identifiers for the two ODF kinds; which **form** a
-//! document is saved in comes from its file name (`Form::from_path`), flat when it has none, which
-//! is `doc/flat-first.md`'s rule.
+//! Which form a document is saved in comes from its file name (`Form::from_path`), flat when it
+//! has none (`doc/flat-first.md`).
 
 use grind_core::DocumentKind;
 
@@ -151,7 +144,7 @@ mod mac {
         toolbar: RefCell<Option<Retained<Toolbar>>>,
         /// The sidebar's list, which its table holds only weakly.
         sidebar: RefCell<Option<Retained<Sidebar>>>,
-        /// The source pane's split item and its delegate (D9).
+        /// The source pane's split item and its delegate.
         source: RefCell<Option<(Retained<NSSplitViewItem>, Retained<SourcePane>)>>,
         /// For an import: the ODF name it would be saved under, and the report's sentence.
         imported: RefCell<Option<(String, Option<String>)>>,
@@ -269,10 +262,10 @@ mod mac {
                         // the window was made at.
                         window.setContentSize(size);
                         window.center();
-                        // The grid takes the keyboard from the start, as a sheet's cursor does.
-                        // Asked twice: now, and as the window's initial responder for when it is
-                        // first made key — the split view may not hold the grid yet, and a
-                        // responder outside the window is refused without a word.
+                        // The grid takes the keyboard from the start, asked twice: now, and as the
+                        // window's initial responder for when it is first made key — the split
+                        // view may not hold the grid yet, and a responder outside the window is
+                        // refused silently.
                         let grid = scroll.documentView();
                         window.setInitialFirstResponder(grid.as_deref());
                         window.makeFirstResponder(grid.as_deref().map(|view| &**view));
@@ -372,21 +365,19 @@ mod mac {
                 }
             }
 
-            /// **Autosave in place** — the Mac convention since 10.7, and the user's choice
-            /// (decision 5). Safe here for three reasons the decision gives: an untouched document
-            /// is never written, since only a change the core reports marks it edited; an import
-            /// is untitled, so its autosave goes to `~/Library/Autosave Information` and never
-            /// beside the workbook; and every save is `App::save_bytes`, so R6's splicing makes an
-            /// autosave one line of diff like any other save.
+            /// **Autosave in place** — the Mac convention since 10.7 (decision 5). Safe because an
+            /// untouched document is never written (only a change the core reports marks it
+            /// edited), an import is untitled so its autosave goes to `~/Library/Autosave
+            /// Information`, and every save is `App::save_bytes`, so an autosave is one line of
+            /// diff like any save.
             #[unsafe(method(autosavesInPlace))]
             fn autosaves_in_place() -> bool {
                 true
             }
 
-            /// Every write on the main thread, where `App` is used — the answer *Risks* gives to an
-            /// autosave arriving on a background queue. `NSDocument` says NO by default; this says
-            /// it on purpose, so a change of default could not move a save off the main thread
-            /// unnoticed. R6's splice makes a main-thread save fast enough to need nothing else.
+            /// Every write on the main thread, where `App` is used. `NSDocument` says NO by
+            /// default; this says it on purpose, so a changed default cannot move a save off the
+            /// main thread unnoticed. R6's splicing keeps a main-thread save fast.
             #[unsafe(method(canAsynchronouslyWriteToURL:ofType:forSaveOperation:))]
             fn can_asynchronously_write(
                 &self,
@@ -494,7 +485,7 @@ mod mac {
             }
         }
 
-        /// A Format command, on whichever pane this document has (M7).
+        /// A Format command, on whichever pane this document has.
         pub fn format(&self, command: crate::menu::Command) {
             if let Some(pane) = self.pane() {
                 pane.format(command);

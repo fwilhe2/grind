@@ -2,21 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The page's caret, its selection, and an input method's composition — and every edit made at
-//! them (M6). Portable, so each is tested here over a real `grind_text::App` and
-//! [`grind_text::Fixed`].
+//! The page's caret, selection and an input method's composition, and every edit made at them —
+//! portable, tested over a real `grind_text::App` and [`grind_text::Fixed`].
 //!
-//! **The selection is presentation state**: an anchor and a caret, never told to the core. It
-//! reaches `App` as two carets when something is done to it — erased, typed over, copied — the
-//! arrangement every page in the suite has. The same holds for a **composition**: the marked
-//! text an input method is still working on is held here and drawn by `text/paint.rs` through
-//! `App::layout_composing`, and the document learns of it only when the input method commits.
+//! **The selection is presentation state**: an anchor and a caret, reaching `App` as two carets
+//! when something is done to it. So is a **composition**: the marked text is held here and drawn
+//! through `App::layout_composing`; the document learns of it only on commit.
 //!
-//! Every motion that is about lines is the core's (`App::caret_line`, `caret_line_bounds`,
-//! through the page's `Faces`); every one about characters and words is `grind_text::caret`'s.
-//! What is this shell's is the Mac's own reading of the keys, which `keys.rs` names: ⌥→ goes to
-//! the end of a word, ← with a selection collapses it to its start, and ⌃K kills to the end of
-//! the paragraph.
+//! Motions about lines are the core's (`App::caret_line`, `caret_line_bounds`, through the page's
+//! `Faces`); about characters and words, `grind_text::caret`'s. What is this shell's is the Mac's
+//! reading of the keys (`keys.rs`): ⌥→ to a word's end, ← with a selection collapses it to its
+//! start, ⌃K kills to the paragraph's end.
 
 use std::ops::Range;
 
@@ -278,9 +274,8 @@ impl Page {
         Ok(true)
     }
 
-    /// Type `text` at the caret through `App::type_markdown`, so `**bold**` is read as it is
-    /// typed — the notation every page in the suite reads, never a fifth idea of it. Replaces a
-    /// selection, and a composition: this is what an input method's commit is.
+    /// Type `text` at the caret through `App::type_markdown`, so `**bold**` is read as typed.
+    /// Replaces a selection and a composition: this is an input method's commit.
     pub fn type_text(&mut self, app: &App, text: &str) -> Result<(), Refused> {
         self.composing = None;
         self.drop_selection(app)?;
@@ -400,13 +395,11 @@ impl Page {
         }
     }
 
-    /// Paste `text` at the caret, replacing the selection. A newline in it — `\r\n` or `\n` —
-    /// becomes a block break, so a paragraph of prose pastes as paragraphs.
+    /// Paste `text` at the caret, replacing the selection; a newline (`\r\n` or `\n`) becomes a
+    /// block break.
     ///
     /// ponytail: one `split_block` and one `insert_text` per line, so a pasted paragraph is as
-    /// many ⌘Z as it has pieces. `App` has no multi-block insert, and adding one is a core
-    /// change; the Windows pane pastes the same way and names the same cost. The trigger is a
-    /// third page that pastes.
+    /// many ⌘Z as pieces; `App` has no multi-block insert.
     pub fn paste(&mut self, app: &App, text: &str) -> Result<(), Refused> {
         self.composing = None;
         self.drop_selection(app)?;

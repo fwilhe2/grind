@@ -2,14 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What a key, a click or a drag does to the selection — portable, and tested with no window.
-//!
-//! The rules are `grind_sheet::nav`'s; what is here is the Mac's reading of its own input onto
-//! them. A selector arrives as a [`GridAction`] (`keys.rs`), a click as a point in the grid view,
-//! a click on a header band as a track — and each comes back as the selection it produces, which
-//! the view stores and draws. The grid view's own coordinates keep a margin the header bands
-//! float over, so a point is taken in the **sheet's** coordinates here and the view subtracts the
-//! margin first.
+//! What a key, a click or a drag does to the selection — portable. The rules are
+//! `grind_sheet::nav`'s; this reads the Mac's input onto them: a selector arrives as a
+//! [`GridAction`] (`keys.rs`), a click as a point, a band click as a track, and each comes back as
+//! the selection it makes. Points are in the **sheet's** coordinates; the view subtracts its
+//! header margin first.
 
 use grind_sheet::nav::{self, Extent, Selection};
 use grind_sheet::{App, MAX_COLS, MAX_ROWS, Pos};
@@ -45,7 +42,7 @@ pub fn apply(
             nav::through_merges(selection, moved, motion, &nav::merges(app, sheet))
         }
         GridAction::Collapse => Selection::at(selection.active),
-        // Emptying cells is an edit, and M4's; until then the key does nothing to the selection.
+        // Emptying cells is an edit, which the grid view makes; the selection stays.
         GridAction::Clear => selection,
     }
 }
@@ -141,7 +138,7 @@ mod tests {
         apply(app, 0, &grid, from, action, 10)
     }
 
-    /// M3's exit criterion, the keyboard half: arrows, ⌘-arrows and Shift-extension.
+    /// Arrows, ⌘-arrows and Shift-extension go where a spreadsheet's go.
     #[test]
     fn arrows_command_arrows_and_shift_go_where_a_spreadsheet_goes() {
         let app = book();

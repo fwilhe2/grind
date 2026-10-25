@@ -2,17 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The pasteboard (M5): Copy, Cut, Paste and Delete over the grid — the page's (M6) are in
-//! `page_view.rs`, over [`write()`] and [`read()`] — and the one file that touches
-//! `NSPasteboard` — as `ui_win32/src/clipboard.rs` is the one that opens the Windows clipboard.
+//! The pasteboard: Copy, Cut, Paste and Delete over the grid — the page's are in `page_view.rs`,
+//! over [`write()`] and [`read()`] — and the one file that touches `NSPasteboard`.
 //!
-//! What travels is `grind_sheet::clip`'s, the codec every shell's clipboard shares: each cell's
-//! input text — the raw number, the formula in display syntax — tab-separated, a row a line. It
-//! goes on the pasteboard twice, as plain text and as tab-separated text
-//! (`NSPasteboardTypeTabularText`), so a text editor and a spreadsheet each take the flavour it
-//! reads; Numbers and Excel read the rectangle back as a rectangle. A paste reads plain text, since
-//! every source writes that, and goes in through `App::enter_range` — one ⌘Z for the whole
-//! rectangle, the formulas turned back into ODF's syntax on the way.
+//! What travels is `grind_sheet::clip`'s: each cell's input text, tab-separated, a row a line, put
+//! on the pasteboard as plain text and as `NSPasteboardTypeTabularText`, so a text editor and a
+//! spreadsheet each take their flavour; Numbers and Excel read the rectangle back as one. A paste
+//! reads plain text and goes in through `App::enter_range` — one ⌘Z, formulas turned back into
+//! ODF's syntax.
 
 use grind_sheet::{App, RecalcMode, clip};
 use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString, NSPasteboardTypeTabularText};

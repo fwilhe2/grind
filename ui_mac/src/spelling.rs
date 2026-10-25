@@ -2,17 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Spelling on the page and on the grid (`doc/spelling.md`): Edit ▸ Spelling's *Check Document
-//! Now* (⌘;), *Spelling Language…* and *Check Spelling While Typing*, and the rows that lead the
-//! context menu over a misspelt word — what it might have been, *Ignore Spelling* and *Learn
-//! Spelling*, the names every Mac text view gives them. On the grid the setting is remembered for
-//! every spreadsheet (`grind_spell::preference`); on the page it is the session's.
-//!
-//! The decisions are the core's and `grind_spell`'s — which words are wrong
-//! (`App::misspellings`), what they might have been (`App::suggest`), which dictionary
-//! (`grind_spell::Setting`), the person's own list (`grind_spell::personal`) — and the Windows
-//! pane's popup is the same rows in the same order. What is here is AppKit: an `NSMenu` led by
-//! items made at the moment the menu opens, since a word's suggestions are not a table.
+//! Spelling on the page and the grid (`doc/spelling.md`): Edit ▸ Spelling's *Check Document Now*
+//! (⌘;), *Spelling Language…* and *Check Spelling While Typing*, and the rows leading the context
+//! menu over a misspelt word — its suggestions, *Ignore Spelling* and *Learn Spelling*, as every
+//! Mac text view names them. On the grid the setting is remembered for every spreadsheet
+//! (`grind_spell::preference`); on the page it is the session's. The decisions are the core's and
+//! `grind_spell`'s; what is here is an `NSMenu` led by items made as it opens, since a word's
+//! suggestions are not a table.
 
 use std::sync::Arc;
 

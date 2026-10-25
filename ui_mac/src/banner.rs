@@ -2,12 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The notice banner: a state the document is in, under the name box (decision 3; M4).
-//!
-//! A second titlebar accessory, hidden when there is nothing to say — so it takes on the
-//! window's own material like the first, and appearing is AppKit's animation rather than this
-//! shell's. Every sentence is `notice.rs`'s; this is where they are shown, and where the one
-//! notice that offers an action — a recalculation this build declined — carries its button.
+//! The notice banner: a state the document is in, under the name box (decision 3). A second
+//! titlebar accessory, hidden when there is nothing to say, so it takes on the window's material
+//! and appears with AppKit's animation. Every sentence is `notice.rs`'s; the one notice offering
+//! an action — a declined recalculation — carries its button here.
 
 use std::rc::{Rc, Weak};
 

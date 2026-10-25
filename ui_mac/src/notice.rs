@@ -2,16 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Every sentence the notice banner says, as a pure function (M4). Portable, and tested on any
-//! host — whether a message reads well, counts right and says what to do next needs no window.
-//!
-//! The banner, under the titlebar accessory (decision 3), is for **a state the document is in**,
-//! never an event: a recalculation this build declined to perform stays true until somebody
-//! recalculates, so it stays on screen; an error in a save is over once it is read, and is an
-//! alert instead. `ui_win32/src/notice.rs` draws the same line, and says the same things in its
-//! own keys. Here every key is spelled ⌘, ⌥, ⇧ or ⌃ — never "Ctrl" — which a test holds.
-//!
-//! Every sentence ends by naming the way out; a notice with no next action can only be dismissed.
+//! Every sentence the notice banner says, as a pure function, tested on any host. The banner
+//! (decision 3) is for **a state the document is in**, never an event: a declined recalculation
+//! stays true until somebody recalculates, so it stays; a save error is over once read, and is an
+//! alert. Every key is spelled ⌘, ⌥, ⇧ or ⌃, never "Ctrl", which a test holds, and every sentence
+//! ends by naming the way out.
 
 /// `1 thing` / `4 things` — the whole of the pluralisation, in one place.
 fn counted(n: usize, singular: &str, plural: &str) -> String {
@@ -21,10 +16,9 @@ fn counted(n: usize, singular: &str, plural: &str) -> String {
     }
 }
 
-/// A recalculation that was **not** performed, because performing it would have replaced saved
-/// values this build cannot reproduce (`grind_sheet::Recalc::spoiled`). The banner's button is
-/// [`RECALCULATE_ANYWAY`]; the edit itself committed, since refusing it would make such a
-/// document read-only.
+/// A recalculation **not** performed, because it would have replaced saved values grind cannot
+/// reproduce (`grind_sheet::Recalc::spoiled`). The button is [`RECALCULATE_ANYWAY`]; the edit
+/// itself committed, since refusing it would make such a document read-only.
 pub fn recalc_skipped(spoiled: usize) -> String {
     format!(
         "{} this build does not have — recalculating would replace {} saved {}.",

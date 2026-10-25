@@ -2,33 +2,19 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The command line, decided without a window.
+//! The command line, decided without a window — portable, so tested on any host. **A file decides
+//! its own type**, `--sheet`/`--text` answer only the empty case, disagreeing with the file is an
+//! error, and no file and no flag is the welcome window (decision 6) — the terminal's and the
+//! Windows shell's rules.
 //!
-//! Portable on purpose, like every file in this crate that can be (`doc/macos-shell.md`, "The
-//! crate"). A flag is a string and a document kind is an enum, so nothing here needs AppKit,
-//! and the whole of it is tested on the Linux machine this repository is developed on.
+//! **AppKit reads `argv` too.** Any `-Key value` pair lands in `NSUserDefaults`' argument domain
+//! (`-AppleLanguages (de)`, `-NSDocumentRevisionsDebugMode YES`), and old LaunchServices passed
+//! `-psn_0_…`. Neither is a file, so a single dash followed by a letter is AppKit's and its value
+//! goes with it; `-h` and `-V` are matched first.
 //!
-//! The semantics are `ui_win32/src/args.rs`'s, which are `ui_tui/src/main.rs`'s. **A file
-//! decides its own type**, `--sheet`/`--text` answer only the empty case, disagreeing with the
-//! file is an error rather than an override, and no file and no flag means the welcome window
-//! (decision 6).
-//!
-//! **What is different here is who else reads `argv`.** A Mac application's command line is
-//! shared with AppKit:
-//!
-//! * Any `-Key value` pair lands in `NSUserDefaults`' argument domain. `-AppleLanguages (de)`,
-//!   `-NSDocumentRevisionsDebugMode YES` and their like are how a developer, a scheme or a CI
-//!   step sets a default for one launch.
-//! * Old versions of LaunchServices passed a `-psn_0_…` process serial number.
-//!
-//! Neither is a file, and treating either as one would make `grind-mac -AppleLanguages (de)`
-//! try to open a document called `(de)`. So a single dash followed by a letter is AppKit's, and
-//! its value goes with it. `-h` and `-V`, the two short flags this binary has, are matched first.
-//!
-//! **Files opened from the Finder do not arrive here at all.** A double-click, a drop on the Dock
-//! icon and `open book.fods` all reach the application as an Apple event, which
-//! `NSDocumentController` turns into a document (decision 5). `argv` is the developer's and the
-//! CI runner's way in, and `open -a Grind --args book.fods` is how to reach it through
+//! **Files opened from the Finder never arrive here**: a double-click, a Dock drop and `open
+//! book.fods` are Apple events `NSDocumentController` turns into documents. `argv` is a
+//! developer's and a runner's way in; `open -a Grind --args book.fods` reaches it through
 //! LaunchServices.
 
 use std::path::PathBuf;
@@ -46,10 +32,8 @@ pub enum Command {
         /// `--render-to <file.png>`: draw one frame with no window, write it, exit. Not a user
         /// feature. It is how custom drawing gets an assertable output (decision 9).
         render_to: Option<PathBuf>,
-        /// `--dark`: which appearance that frame is drawn in.
-        ///
-        /// **Only meaningful with `--render-to`**, for the reason `ui_win32` gives. A window
-        /// follows the system's appearance, and a render must depend on its command line alone.
+        /// `--dark`: which appearance the `--render-to` frame is drawn in — a render must depend
+        /// on its command line alone, where a window follows the system.
         dark: bool,
         /// `--drive <script> --out <dir>`: open a real window, replay the script's synthesized
         /// events, write its snapshots to the directory, print a transcript and exit (decision
@@ -61,9 +45,8 @@ pub enum Command {
     /// `--info-plist`: print the bundle's Info.plist (`plist.rs`) and exit — what the bundle
     /// step writes into `Grind.app`. Not a user feature.
     InfoPlist,
-    /// `--handlers <file>`: which applications LaunchServices offers for a file, and which one a
-    /// double-click opens — what M10's "offered, never taken" is checked with. Not a user
-    /// feature.
+    /// `--handlers <file>`: which applications LaunchServices offers for a file and which one a
+    /// double-click opens — how "offered, never taken" is checked. Not a user feature.
     Handlers(PathBuf),
     /// Something was wrong with the arguments. The string is the whole message.
     Error(String),
@@ -181,11 +164,8 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     }
 }
 
-/// Whether `arg` is a key in `NSUserDefaults`' argument domain.
-///
-/// A single dash followed by a letter. The flags this binary itself has with one dash (`-h`,
-/// `-V`) are matched before this is asked, and a path beginning with `-` would be as unusual on
-/// a Mac as anywhere else. `./-odd.fods` still reaches it.
+/// Whether `arg` is a key in `NSUserDefaults`' argument domain: a single dash and a letter. `-h`
+/// and `-V` are matched before this; `./-odd.fods` still reaches a file.
 fn is_user_default(arg: &str) -> bool {
     let mut chars = arg.chars();
     chars.next() == Some('-') && chars.next().is_some_and(|c| c.is_ascii_alphabetic())

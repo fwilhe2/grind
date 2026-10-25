@@ -2,14 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The core's observer, bridged to a window's state — for the grid and the page alike.
-//!
-//! `grind_core::Observer` has to be `Send + Sync`, because the core does not say which thread a
-//! change arrives on, and a window's state holds views, which are the main thread's alone. So
-//! the observer holds only an address, and the state is found in a registry the main thread
-//! owns. Every edit in this shell is made on the main thread, so every notification arrives
-//! there; one that did not would find no registry and change nothing, rather than touch AppKit
-//! from elsewhere (architecture rule 3: the core pushes, and the shell re-reads).
+//! The core's observer, bridged to a window's state, for the grid and the page.
+//! `grind_core::Observer` must be `Send + Sync`, since the core does not say which thread a change
+//! arrives on, and a window's state holds views, which are the main thread's. So the observer
+//! holds only an address and the state is found in a registry the main thread owns; a notification
+//! arriving elsewhere finds no registry and changes nothing (rule 3).
 
 use std::cell::RefCell;
 use std::collections::HashMap;

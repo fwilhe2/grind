@@ -3,19 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! What an input method is told about the page, and what its ranges mean — `NSTextInputClient`'s
-//! arithmetic, portable (M6).
+//! arithmetic, portable. An input method sees a **string** and speaks `NSRange`s over it in UTF-16
+//! units; the page is blocks, counted in characters. So the string shown is **the caret's own
+//! block**, with marked text spliced in at the caret — everything an input method asks about
+//! (reconversion, the press-and-hold accent menu, the marked text). Ranges are converted here
+//! once, through `grind_core::utf16`.
 //!
-//! An input method sees a **string** and speaks in `NSRange`s over it, counted in UTF-16 units.
-//! The page is not one string: it is blocks, and the core counts characters. So the string an
-//! input method is shown is **the caret's own block**, with any marked text spliced in where the
-//! caret is — which is everything an input method asks about (the characters before the caret
-//! for a reconversion, the ones under the press-and-hold accent menu, where the marked text is).
-//! A range is converted here, once, through `grind_core::utf16`, so `page_view.rs` never counts
-//! a unit itself.
-//!
-//! **A selection across blocks** is shown as the caret alone: the one block an input method sees
-//! cannot hold it. Typing still replaces the whole selection, because that is `Page::type_text`'s
-//! rule and not the input method's.
+//! **A selection across blocks** shows as the caret alone, since one block cannot hold it; typing
+//! still replaces the whole selection (`Page::type_text`).
 
 use std::ops::Range;
 

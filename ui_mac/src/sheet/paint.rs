@@ -2,25 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A frame of the grid as a list of things to draw — every decision about what goes where and
-//! in which colour, with **no CoreGraphics in it**.
-//!
-//! `ui_win32`'s split, taken one step further. There the portable half decides what a cell looks
-//! like and the GDI half still walks the viewport; here the walk is portable too, and what comes
-//! out is a list of [`Op`]s — a filled rectangle or a line of text at a place — that `render.rs`
-//! executes into a `CGContext`, whether that context is a view's `drawRect:` or `--render-to`'s
-//! bitmap (decision 9: one drawing path, two callers). So the arithmetic a user would notice is
-//! wrong — where a number sits, when it turns into `###`, which rows a hidden one closes up — is
-//! tested on Linux against [`grind_core::layout::Fixed`], and the Mac half has nothing left to
-//! decide.
-//!
-//! Text is measured through [`grind_core::layout::Metrics`], the trait the page's line breaking
-//! uses, so the width that decides `###` and the width CoreText draws are one engine's answer
-//! (`metrics.rs`, decision 4).
-//!
-//! **What it does not draw**, each a named gap in `doc/macos-shell.md`: a label spilling into the
-//! empty cells beside it (it is clipped to its own cell), borders, and the view-mode overlays
-//! (M8).
+//! A frame of the grid as a list of [`Op`]s — every decision about what goes where and in which
+//! colour, with **no CoreGraphics**. `render.rs` executes it into a `CGContext`, a view's
+//! `drawRect:` or `--render-to`'s bitmap alike (decision 9), so the arithmetic a user would notice
+//! — where a number sits, when it becomes `###`, which rows a hidden one closes up — is tested on
+//! Linux against [`grind_core::layout::Fixed`]. Text is measured through
+//! [`grind_core::layout::Metrics`], so the width that decides `###` and the width CoreText draws
+//! are one engine's (decision 4).
 
 use grind_core::color::{self, Rgb};
 use grind_core::layout::Metrics;
@@ -97,7 +85,7 @@ pub struct Look<'a> {
     pub palette: &'a Palette,
     pub metrics: &'a dyn Metrics,
     pub hairline: f64,
-    /// Which of `doc/view-modes.md`'s overlays are on — View ▸ Cell Roles and Names (M8).
+    /// Which of `doc/view-modes.md`'s overlays are on — View ▸ Cell Roles and Names.
     pub overlays: Overlays,
     /// View ▸ Formulas: a cell holding a formula shows it, in display syntax, rather than what it
     /// came to — `grind sheet view --formulas`.
@@ -128,9 +116,8 @@ fn selection_rect(grid: &Grid, selection: Selection) -> Rect {
     )
 }
 
-/// The selection's wash: the whole range **but the active cell**, which is left out so it reads as
-/// the cell the cursor is in rather than one more selected cell — the GNOME window's rule and the
-/// Windows pane's. A single cell has no wash at all.
+/// The selection's wash: the whole range **but the active cell**, so that reads as the cursor's
+/// cell. A single cell has no wash.
 fn selection_wash(grid: &Grid, view: &Rect, selection: Selection, color: Rgb) -> Vec<Op> {
     if selection.is_single() {
         return Vec::new();
@@ -554,16 +541,14 @@ pub fn checkbox_box(cell: Rect) -> Rect {
 /// A checkbox's box, in points.
 const CHECKBOX: f64 = 12.0;
 
-/// A cell's own borders, each centred on the grid line it stands on — so a cell's right border
-/// and its neighbour's left one are the same line, and either covers the hairline under it.
+/// A cell's own borders, each centred on its grid line, so a right border and the neighbour's left
+/// one are one line covering the hairline. ODF's three parts (`grind_sheet::style::border_parts`):
+/// never thinner than a device pixel, the document's colour lifted to read on a dark page,
+/// `double` as two thin lines with a gap. `none`, `hidden` and anything that will not parse draw
+/// nothing (R5).
 ///
-/// A border is ODF's three parts (`0.5pt solid #000000`, `grind_sheet::style::border_parts`):
-/// never thinner than one device pixel, in the document's colour lifted to read on a dark page,
-/// and `double` as two thin lines with a gap between. `none` and `hidden` draw nothing, and
-/// neither does a border this build cannot read — R5's tolerance.
-///
-/// ponytail: `dashed` and `dotted` are drawn solid. The trigger is a document whose dashes are
-/// what distinguishes two of its tables; a dash is a run of fills along the edge.
+/// ponytail: `dashed` and `dotted` are drawn solid; a dash would be a run of fills along the edge,
+/// worth it when a document's dashes distinguish two of its tables.
 pub fn borders(cell: Rect, style: &CellStyle, palette: &Palette, hairline: f64) -> Vec<Op> {
     grind_sheet::look::border_strokes(
         (cell.x, cell.y, cell.w, cell.h),
@@ -756,10 +741,10 @@ fn cell_text(
     }
 }
 
-/// The underline and the line through a cell's text asks for, as fills under and across the
-/// text op it was drawn as — in its own colour, clipped where it is, one point thick. The page
-/// draws a run's lines from CoreText's own underline metrics (`render.rs`); a cell's are placed
-/// from the portable metrics so that a frame stays a list of `Op`s decided here.
+/// The underline and line-through a cell's text asks for, as fills under and across its text op —
+/// its colour, clipped as it is, one point thick — placed from the portable metrics so a frame
+/// stays a list of `Op`s decided here. A page's run takes CoreText's own underline metrics
+/// (`render.rs`).
 fn lines(op: &Op, style: Option<&grind_sheet::style::CellStyle>, metrics: &dyn Metrics) -> Vec<Op> {
     let Op::Text {
         x,
@@ -840,12 +825,9 @@ fn dots(op: &Op, ranges: &[std::ops::Range<usize>], metrics: &dyn Metrics, color
     out
 }
 
-/// A wrapping cell's text, broken at its column's width by `grind_core::layout::wrap` — the
-/// breaker the page and the GNOME window's row heights use — one line an op, aligned across as a
-/// line is and the block of lines placed down the cell as one line would be. What does not fit
-/// the row's height is cut by the cell, since the row is as tall as the document says.
-///
-/// A row with no height of its own is grown to hold them (`Grid::measured`, L3).
+/// A wrapping cell's text, broken at its column's width by `grind_core::layout::wrap`, one line an
+/// op, aligned across as a line is and placed down the cell as one block. What exceeds the row's
+/// height is cut; an unsized row was grown to hold it (`Grid::measured`).
 fn wrapped_text(
     text: &str,
     value: &grind_sheet::model::CellValue,

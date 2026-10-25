@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The portable half of the page (M6): its numbers, its faces, its state and what a frame of it
-//! draws — every decision `page_view.rs` puts on the screen, tested on any host.
+//! The portable half of the page: its numbers, faces, state and what a frame of it draws — every
+//! decision `page_view.rs` puts on screen, tested on any host.
 
 pub mod blink;
 pub mod face;

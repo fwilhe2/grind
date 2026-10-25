@@ -2,24 +2,20 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `grind-mac` — the macOS shell over the suite, shipped as `Grind.app`.
+//! `grind-mac` — the macOS shell over the suite, shipped as `Grind.app` (`doc/macos-shell.md`).
+//! Built so that as much as possible tests on Linux, since the machine this is developed on is not
+//! a Mac:
 //!
-//! **M2: the application, the document and the read-only grid.** `doc/macos-shell.md` is
-//! normative for this crate and is where the decisions, the milestones and the named gaps live. It is written
-//! so that as much as possible of this shell can be built and tested on Linux, because the
-//! machine this repository is developed on is not a Mac:
-//!
-//! * Everything that can be a pure function is one, and compiles and tests on any host. That is
-//!   the argument parsing here, and from M2 the menus, the selector tables, the edit modes and
-//!   the Info.plist.
-//! * Everything that needs AppKit is behind `cfg(target_os = "macos")`. The Linux machine
-//!   type-checks and lints it with `--target aarch64-apple-darwin` (nothing links, so no SDK is
-//!   needed), and `artifacts.yml`'s `macos` job is the one place it links and runs.
+//! * Everything that can be a pure function is one, and compiles and tests on any host: the
+//!   argument parsing, the menus, the selector tables, the edit modes, the Info.plist, a frame's
+//!   `Op`s.
+//! * Everything needing AppKit is behind `cfg(target_os = "macos")`, type-checked and linted from
+//!   Linux with `--target aarch64-apple-darwin` (nothing links, so no SDK), and linked and run
+//!   only in `artifacts.yml`'s `macos` job.
 //!
 //! This file owns the process: it resolves the command line into what to open, and hands that to
 //! `--render-to`'s windowless frame or to `app.rs`'s window. Off a Mac it says what a window would
-//! have done, which is what makes the argument handling runnable there rather than only testable —
-//! the same thing `ui_win32`'s W0 did.
+//! have done, so the argument handling runs rather than only tests.
 
 // Portable, and reached from the AppKit half — which is not compiled off macOS, so on Linux the
 // only callers of much of this are the tests.
@@ -193,12 +189,10 @@ const FRAME: (f64, f64) = (1024.0, 640.0);
 #[cfg(target_os = "macos")]
 const SCALE: f64 = 2.0;
 
-/// Draw one frame of the document `opening` names into the PNG it names, with no window — decision
-/// 9's `--render-to`, through the same `sheet::paint` or `text::paint` and `render::draw` a view
-/// calls.
-///
-/// The palette is the fixed light or dark one rather than the system's current colours, so a
-/// frame is a function of its command line alone and two renders are the same bytes.
+/// Draw one frame of the document `opening` names into the PNG it names, with no window (decision
+/// 9), through the `sheet::paint` or `text::paint` and `render::draw` a view calls. The palette is
+/// the fixed light or dark one, so a frame depends on its command line alone and two renders are
+/// the same bytes.
 #[cfg(target_os = "macos")]
 fn render_to(opening: &Opening) -> Result<(), String> {
     use sheet::paint::{self, Look, Palette};

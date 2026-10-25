@@ -2,13 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where Find goes next on a page — `App::find_ignoring_case`'s hits, in document order, and the
-//! one a step from the caret lands on, wrapping at either end. Portable, and tested here.
-//!
-//! `sheet/search.rs` is the grid's twin, over `grind_sheet::find::step`; that step is typed to
-//! cells, so the page's is its own few lines with the same three rules: **Next** is the first
-//! hit after the caret, **Previous** the last one before it, and **Here** the first at or after
-//! it — so a search typed with the caret on a hit stays on that hit.
+//! Where Find goes next on a page — `App::find_ignoring_case`'s hits in document order, and the
+//! one a step from the caret lands on, wrapping. Portable. `find::step` is typed to cells, so this
+//! is a few lines of its own with the same rules: **Next** is the first hit after the caret,
+//! **Previous** the last before it, **Here** the first at or after it, so a search typed with the
+//! caret on a hit stays there.
 
 use grind_sheet::find::Towards;
 use grind_text::{App, Caret};

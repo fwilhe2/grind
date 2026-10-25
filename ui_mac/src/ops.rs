@@ -2,11 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A frame as a list of things to draw, for either document — the vocabulary `sheet/paint.rs`
-//! and `text/paint.rs` speak and `render.rs` executes.
-//!
-//! Portable, with no CoreGraphics in it: whatever decides *what* is drawn where is tested on
-//! Linux, and the Mac half only puts it down (decision 9: one drawing path, two callers).
+//! A frame as a list of things to draw, for either document — what `sheet/paint.rs` and
+//! `text/paint.rs` speak and `render.rs` executes. No CoreGraphics in it, so what is drawn where
+//! is tested on Linux (decision 9: one drawing path, two callers).
 
 use std::rc::Rc;
 
@@ -16,9 +14,8 @@ use grind_core::style::TextStyle;
 use crate::metrics::Font;
 use crate::sheet::geom::Rect;
 
-/// How strongly an [`Op::Wash`] tints what is under it — enough to read as selected, and little
-/// enough that a document's own red is still red. `ui_win32`'s wash, as an alpha rather than a
-/// blend, since CoreGraphics composites where GDI could not.
+/// How strongly an [`Op::Wash`] tints what is under it: enough to read as selected, little enough
+/// that a document's red stays red.
 pub const WASH: f64 = 0.22;
 
 /// One thing to draw.

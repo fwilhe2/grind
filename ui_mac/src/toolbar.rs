@@ -2,15 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The toolbar (M7): `tools.rs`'s table as AppKit controls — segmented controls for the toggles,
-//! pop-ups for the number format and the paragraph kind, colour wells for the two colours.
-//!
-//! One object is the toolbar's delegate **and** every control's target, and it holds the pane
-//! as a [`Formats`], so nothing here knows which kind of document it is over. Every control
-//! **reads before it shows**: whenever the pane says something changed, each segment is
-//! pressed where the selection already has what it sends, each pop-up shows the row the
-//! selection already is, and each well its colour — there is one fact about whether a run is
-//! bold, and it is in the document.
+//! The toolbar: `tools.rs`'s table as AppKit controls — segmented controls for the toggles,
+//! pop-ups for the number format and the paragraph kind, colour wells for the two colours. One
+//! object is the delegate and every control's target, holding the pane as a [`Formats`], so
+//! nothing here knows which kind of document it is over. Every control **reads before it shows**:
+//! when the pane says something changed, each segment, pop-up and well shows what the selection
+//! already is.
 
 use std::cell::RefCell;
 use std::collections::HashMap;

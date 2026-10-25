@@ -3,20 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! Which font a piece of the page is set in, and how wide each block is measured — the page's
-//! [`grind_text::Faces`] (M6).
+//! [`grind_text::Faces`]. The **block's** face is its [`Role`] (`grind_text::look`), so a heading
+//! is the same size as in every other window; the **run's** direct formatting goes over it —
+//! `**bold**` in a heading is bold *and* a heading, a run's family and size replace the face's.
+//! The answer is a [`Font`], which measures and draws (decision 4).
 //!
-//! Two layers, the way every page in the suite has them. The **block's** face is its
-//! [`Role`] — `grind_text::look`'s decision, so a heading is the same size here as in every
-//! other window. The **run's** own direct formatting goes over it: `**bold**` inside a heading
-//! is bold *and* a heading, a run's own family replaces the face's, and its own size replaces
-//! the face's size. The answer is a [`Font`], which the page's `Metrics` measures with and
-//! `text/paint.rs` hands the renderer — one resolution, so a run is measured and drawn in one
-//! font (decision 4).
-//!
-//! **Sizes are points**, and a document's are honoured as written: a run at `14pt` is fourteen
-//! points on this page, and one at `120%` is a fifth bigger than its block. The body is
-//! [`BODY_PT`], LibreOffice's own default, so a document that states no sizes and one that states
-//! LibreOffice's look the same.
+//! **Sizes are points**, honoured as written: `14pt` is fourteen points, `120%` a fifth bigger
+//! than the block. The body is [`BODY_PT`], LibreOffice's default, so a document stating no sizes
+//! looks as one stating LibreOffice's does.
 
 use std::collections::HashMap;
 
@@ -79,13 +73,10 @@ pub fn slot(role: Role) -> usize {
         .expect("Role::ALL lists every role")
 }
 
-/// The page's [`grind_text::Faces`]: each block measured in its role's face, at the width it
-/// is set — its cell's inside a table, the column less its indent everywhere else.
-///
-/// Generic over the face so the arithmetic is tested here against [`grind_text::Fixed`]; the Mac
-/// hands it one `metrics::Face` per role. The cell map is built before this is, because
-/// `Faces::of` is called while `App` holds its read lock and so must not ask the document
-/// anything (`grind_text::flow::across`).
+/// The page's [`grind_text::Faces`]: each block measured in its role's face, at its cell's width
+/// inside a table and the column less its indent elsewhere. Generic over the face so it tests
+/// against [`grind_text::Fixed`]. The cell map is built first, since `Faces::of` runs under
+/// `App`'s read lock and must not ask the document anything (`grind_text::flow::across`).
 pub struct Column<'a, M> {
     /// One face per role, in [`Role::ALL`]'s order.
     pub faces: &'a [M],
@@ -255,8 +246,8 @@ mod tests {
         assert_eq!(column.of(3, &BlockKind::Paragraph, None).0, 100.0);
     }
 
-    /// M6's exit criterion, portably: with every face `Fixed`, a paragraph breaks where the
-    /// core breaks it for `grind text view --width`, and its slot is as tall as its lines.
+    /// With every face `Fixed`, a paragraph breaks where `grind text view --width` breaks it, and
+    /// its slot is as tall as its lines.
     #[test]
     fn the_page_breaks_where_the_cli_does() {
         let app = App::new();

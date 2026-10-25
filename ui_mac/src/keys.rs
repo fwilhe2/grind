@@ -2,18 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What a key means on the grid and on the page — **by selector, not by key code** (decision 7).
-//!
-//! A view hands `keyDown:` to `interpretKeyEvents:`, and AppKit answers with what the key
-//! *means*: `insertText:` for text, or `doCommandBySelector:` with `moveLeft:`,
-//! `moveToBeginningOfDocument:`, `deleteBackward:` and the rest of
-//! `NSStandardKeyBindingResponding`. That table is the user's — it honours
-//! `~/Library/KeyBindings/DefaultKeyBinding.dict` and the platform's own idea of what ⌘← and ⇧⌥↓
-//! do — so this file is `ui_win32`'s virtual-key table in the Mac's vocabulary: a portable map
-//! from a selector's name to a grid action, over `grind_sheet::nav`'s motions.
-//!
-//! The Mac spells a spreadsheet's keys like this, which is Excel for Mac's and Numbers' reading
-//! of the platform's bindings:
+//! What a key means on the grid and the page — **by selector, not key code** (decision 7).
+//! `keyDown:` goes to `interpretKeyEvents:`, and AppKit answers with what the key *means*:
+//! `insertText:`, or `doCommandBySelector:` with `moveLeft:`, `moveToBeginningOfDocument:`,
+//! `deleteBackward:` and the rest of `NSStandardKeyBindingResponding`. That table is the user's —
+//! it honours `~/Library/KeyBindings/DefaultKeyBinding.dict` — so this file is a portable map from
+//! selector names to grid actions over `grind_sheet::nav`'s motions. The Mac spells a
+//! spreadsheet's keys as Excel for Mac and Numbers read the bindings:
 //!
 //! | Key | Selector | Here |
 //! |---|---|---|
@@ -27,13 +22,13 @@
 //! | Tab, ⇧Tab | `insertTab:`, `insertBacktab:` | right, or left |
 //! | Esc | `cancelOperation:` | the selection back to its active cell |
 //!
-//! Every selector `StandardKeyBinding.dict` binds is either answered here or named in
-//! [`UNANSWERED`] with the reason; the runner holds that list to the system's own file.
+//! Every selector `StandardKeyBinding.dict` binds is answered here or named in [`UNANSWERED`] with
+//! the reason; the runner holds that list to the system's file.
 //!
-//! The page (M6) reads the same bindings as every Mac text view does — which is the point of
-//! taking selectors: ⌥→ goes to the end of a word, ⌘← to the start of the visual line, ⌃A and ⌃E
-//! to the ends of the paragraph, ⌃K kills to its end, and a `DefaultKeyBinding.dict` a user wrote
-//! for TextEdit works here unchanged. [`PAGE`] and [`PAGE_UNANSWERED`] are that table.
+//! The page reads the same bindings as every Mac text view: ⌥→ to a word's end, ⌘← to the visual
+//! line's start, ⌃A and ⌃E to the paragraph's ends, ⌃K kills to its end, and a
+//! `DefaultKeyBinding.dict` written for TextEdit works unchanged. [`PAGE`] and [`PAGE_UNANSWERED`]
+//! are that table.
 
 use grind_sheet::nav::{Dir, Motion};
 
@@ -48,7 +43,7 @@ pub enum GridAction {
     },
     /// The selection back to its active cell — Esc.
     Collapse,
-    /// Empty the selected cells — Delete and Forward Delete. Editing, and so M4's.
+    /// Empty the selected cells — Delete and Forward Delete.
     Clear,
 }
 
@@ -144,9 +139,9 @@ pub const GRID: &[(&str, GridAction)] = &[
     ("deleteForward:", GridAction::Clear),
 ];
 
-/// Selectors the standard bindings produce that the grid **deliberately does not answer**, and
-/// why — so a key that does nothing is a decision written down rather than an omission. Read by
-/// the tests here and, on the runner, against the system's own `StandardKeyBinding.dict`.
+/// Selectors the standard bindings produce that the grid **deliberately does not answer**, and why
+/// — a key doing nothing is a decision written down. Read by the tests here and, on the runner,
+/// against the system's `StandardKeyBinding.dict`.
 #[cfg_attr(not(test), allow(dead_code))]
 pub const UNANSWERED: &[(&str, &str)] = &[
     (
@@ -173,7 +168,7 @@ pub const UNANSWERED: &[(&str, &str)] = &[
     ),
     (
         "complete:",
-        "Esc's other binding; completion is the formula editor's (M8)",
+        "Esc's other binding; completion is the formula editor's",
     ),
 ];
 

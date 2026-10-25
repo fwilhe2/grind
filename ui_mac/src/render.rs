@@ -245,12 +245,10 @@ pub fn draw(context: &CGContext, ops: &[Op], text: &CoreText) {
     }
 }
 
-/// A frame `width` by `height` points drawn at `scale` device pixels a point, as RGBA bytes — top
-/// row first, `width * scale` pixels a row — ready for [`crate::png::encode`].
-///
-/// With no application object and no window: a `CGBitmapContext` in sRGB, which the probe showed
-/// CoreGraphics and CoreText draw into headless (`doc/macos-shell.md`, *Evidence*). The bitmap is
-/// flipped and scaled before `paint` runs, so `paint` is the same function a view calls.
+/// A frame `width` by `height` points at `scale` device pixels a point, as RGBA bytes, top row
+/// first, for [`crate::png::encode`]. No application object and no window: a `CGBitmapContext` in
+/// sRGB, which CoreGraphics and CoreText draw into headless (*Evidence*). Flipped and scaled
+/// before `paint` runs, so `paint` is the function a view calls.
 pub fn bitmap(
     width: f64,
     height: f64,

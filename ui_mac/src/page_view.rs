@@ -2,24 +2,20 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The page, inside an `NSScrollView` — the word processor's document view (M6), and the one
-//! place this shell draws a text document on screen (decision 3: AppKit draws the chrome, this
-//! draws the document).
-//!
-//! One flipped view over one [`TextPane`], as tall as the document and as wide as what shows of
-//! it; the scroll view does the scrolling. It draws through `text::paint` and
-//! [`crate::render::draw`], the path `--render-to` takes too.
+//! The page inside an `NSScrollView` — the word processor's document view, the one place this
+//! shell draws a text document (decision 3). One flipped view over one [`TextPane`], as tall as
+//! the document; the scroll view scrolls. It draws through `text::paint` and
+//! [`crate::render::draw`], as `--render-to` does.
 //!
 //! **Keys arrive as an input method's**: the view is an `NSTextInputClient`, so a key goes to
 //! `interpretKeyEvents:` and comes back as `insertText:replacementRange:`, as a selector through
-//! `doCommandBySelector:` — read by `keys.rs`'s page table, so a `DefaultKeyBinding.dict` works
-//! here as in TextEdit — or as **marked text**, which `text/state.rs` holds and `text/paint.rs`
-//! draws in the line until the input method commits it. Every range an input method names is
-//! converted in `text/input.rs`; nothing here counts a UTF-16 unit.
+//! `doCommandBySelector:` (read by `keys.rs`'s page table, so a `DefaultKeyBinding.dict` works as
+//! in TextEdit), or as **marked text**, which `text/state.rs` holds and `text/paint.rs` draws in
+//! the line until committed. Every range an input method names is converted in `text/input.rs`.
 //!
 //! **The core pushes** (rule 3): an edit's notification lays the document out again, and an edit
-//! the view makes itself runs with the pane marked busy, so the notification that arrives in the
-//! middle of it waits for the edit to finish rather than borrowing the state the edit holds.
+//! the view makes itself runs with the pane busy, so the notification arriving mid-edit waits
+//! rather than borrowing the state the edit holds.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -83,7 +79,7 @@ pub struct TextPane {
     stale: Cell<bool>,
     /// Told whenever the caret, the selection or the document changed — the toolbar.
     listeners: RefCell<Vec<Box<dyn Fn()>>>,
-    /// View ▸ Names: each bookmark named in the margin (M8). Drawn, never written.
+    /// View ▸ Names: each bookmark named in the margin. Drawn, never written.
     pub names: Cell<bool>,
     /// Told when the document changed, and not when the caret moved — the sidebar.
     document_listeners: RefCell<Vec<Box<dyn Fn()>>>,
@@ -746,8 +742,8 @@ define_class!(
             }
         }
 
-        /// Format ▸ Font ▸ Show Fonts: the panel told what the selection is set in first, so
-        /// it opens on it (M7).
+        /// Format ▸ Font ▸ Show Fonts: the panel told what the selection is set in first, so it
+        /// opens on it.
         #[unsafe(method(orderFrontFontPanel:))]
         fn order_front_font_panel(&self, sender: Option<&AnyObject>) {
             self.ivars().show_font(self.mtm());

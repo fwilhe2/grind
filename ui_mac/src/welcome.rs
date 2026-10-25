@@ -2,17 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The welcome window (decision 6, M9) — what a launch with nothing to open shows, and what a
-//! Dock click with no window open brings back. Portable: what a choice is, where everything
-//! sits, which thing a point is on, where a key moves, and a frame as [`Op`]s, so `--render-to`
-//! draws it with no document named, in both appearances.
-//!
-//! It offers the *choice* rather than guessing — one application holds two kinds of document,
-//! and a window that picks one before being asked is wrong half the time (`ui_win32`'s W11) —
-//! and every card runs a menu item's action, so the window is never a second way of doing
-//! anything. **The recent-documents list W11 declined to build comes free** here: it is
-//! `NSDocumentController`'s, the system's list rather than a file of ours, handed to this file as
-//! names and shown under the cards.
+//! The welcome window (decision 6) — what a launch with nothing to open shows, and what a Dock
+//! click with no window brings back. Portable: what a choice is, where everything sits, which
+//! thing a point is on, where a key moves, and a frame as [`Op`]s, so `--render-to` draws it in
+//! both appearances. It offers the choice rather than guessing which of two kinds of document is
+//! wanted, and every card runs a menu item's action. Recent documents are `NSDocumentController`'s
+//! list, handed in as names and shown under the cards.
 
 use grind_core::color::Rgb;
 use grind_core::style::TextStyle;

@@ -2,19 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The cell editor (M4): one `NSTextField` over the active cell, and what its keys mean.
+//! The cell editor: one `NSTextField` over the active cell, and what its keys mean. Everything
+//! inside the field — caret, selection, dead keys, the emoji picker, every input method — is
+//! AppKit's text system. What is this shell's is what `sheet/state.rs` decides about the selectors
+//! its field editor hands the delegate: Return, Tab and their shifted twins commit and move, Esc
+//! discards, and an arrow commits in Enter mode and moves the caret in Edit mode.
 //!
-//! The field is AppKit's, and so is everything inside it — the caret, the selection, dead keys,
-//! the emoji picker, every input method — because its field editor is the system's text system.
-//! What is this shell's is only what `sheet/state.rs` decides about the selectors the field editor
-//! hands its delegate: Return, Tab and their shifted twins commit and move, Esc throws the edit
-//! away, and an arrow commits in Enter mode and moves the caret in Edit mode.
-//!
-//! A commit is `grind_sheet::formula::display::to_input` and then `App::enter`, the path every
-//! shell's Enter takes: a formula is typed in display syntax and stored in ODF's. **A formula that
-//! will not parse is not stored**: the edit stays open, the banner says why, and the caret goes to
-//! the problem — a byte offset turned into the UTF-16 units the field counts
-//! (`grind_core::utf16`, hoisted in M1 for exactly this).
+//! A commit is `grind_sheet::formula::display::to_input` then `App::enter`, every shell's path.
+//! **A formula that will not parse is not stored**: the edit stays open, the banner says why, and
+//! the caret goes to the problem — a byte offset in the field's UTF-16 units
+//! (`grind_core::utf16`).
 
 use std::ops::Range;
 
@@ -82,8 +79,8 @@ fn attributed(pieces: &[Piece]) -> Retained<NSAttributedString> {
     line.into_super()
 }
 
-/// An edit in progress: the field, its delegate (which the field holds weakly), the mode, and
-/// the help shown under it while a formula is typed (M8).
+/// An edit in progress: the field, its delegate (held weakly by the field), the mode, and the help
+/// shown under it while a formula is typed.
 pub struct Edit {
     field: Retained<NSTextField>,
     _delegate: Retained<EditorDelegate>,

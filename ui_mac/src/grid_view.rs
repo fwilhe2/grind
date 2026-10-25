@@ -2,24 +2,23 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The grid, inside an `NSScrollView` — the spreadsheet's document view, and the one place this
-//! shell draws a sheet on screen (decision 3: AppKit draws the chrome, this draws the document).
+//! The grid inside an `NSScrollView` — the spreadsheet's document view, the one place this shell
+//! draws a sheet (decision 3: AppKit draws the chrome, this the document).
 //!
-//! Four flipped views over one [`Pane`]: the grid itself, as the scroll view's document view and as
-//! large as the part of the sheet worth scrolling to; the column and row header bands, as the
-//! scroll view's **floating subviews**, so each stays put along its own axis and scrolls with the
-//! cells along the other; and the corner where they meet, over both. The scroll view does the
-//! scrolling — elastic, with the system's own scrollers — and every view draws through
-//! `sheet::paint` and [`crate::render::draw`], the path `--render-to` takes too.
+//! Four flipped views over one [`Pane`]: the grid as the scroll view's document view, as large as
+//! the part of the sheet worth scrolling to; the column and row header bands as **floating
+//! subviews**, so each stays put along its own axis; and the corner over both. The scroll view
+//! scrolls, elastic, with the system's scrollers, and every view draws through `sheet::paint` and
+//! [`crate::render::draw`], `--render-to`'s path too.
 //!
-//! **The selection is the pane's** (M3), and every input only asks `sheet::select` what it
-//! becomes: a key through `interpretKeyEvents:` and `doCommandBySelector:` — the user's own key
-//! bindings, read by `keys.rs` — a click and a drag on the grid, and a click on a header band. A
-//! change redraws the four views, scrolls the active cell into sight beside the bands, and tells
-//! whoever listens (the name box and the status bar).
+//! **The selection is the pane's**, and every input asks `sheet::select` what it becomes: a key
+//! through `interpretKeyEvents:` and `doCommandBySelector:` (the user's own bindings, read by
+//! `keys.rs`), a click or drag on the grid, a click on a band. A change redraws the four views,
+//! scrolls the active cell into sight beside the bands, and tells the name box and status
+//! read-out.
 //!
-//! The grid view's own coordinates put the sheet's top-left cell at `(HEADER_W, HEADER_H)`: the
-//! bands float over that margin, so at rest they cover nothing but it.
+//! The grid view's coordinates put the sheet's top-left cell at `(HEADER_W, HEADER_H)`; the bands
+//! float over that margin.
 
 use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak as RcWeak};
@@ -103,14 +102,13 @@ pub struct Pane {
     document_listeners: RefCell<Vec<Box<dyn Fn()>>>,
     /// The find bar, once the window has one (`find_bar.rs`).
     pub(crate) find_bar: RefCell<Option<Retained<FindBar>>>,
-    /// Whether formulas are read in plain English — View ▸ Friendly Formulas (M8).
+    /// Whether formulas are read in plain English — View ▸ Friendly Formulas.
     pub friendly: Cell<bool>,
     /// What the last move announced (decision 10) — kept so a drive can read back what
     /// VoiceOver was told.
     pub announced: RefCell<String>,
-    /// Which of `doc/view-modes.md`'s overlays are drawn — View ▸ Cell Roles and Names (M8).
-    /// Asked for on every paint and never written: a save with every overlay on is the bytes
-    /// a save with none would be.
+    /// Which of `doc/view-modes.md`'s overlays are drawn — View ▸ Cell Roles and Names. Asked for
+    /// on every paint, never written.
     pub overlays: Cell<grind_sheet::view::Overlays>,
     /// A track picked up by its edge in a header band, until the button comes up (`resize.rs`).
     resizing: Cell<Option<Drag>>,
@@ -126,10 +124,10 @@ pub struct Pane {
     /// A chart held by the pointer — drawn where the drag has it until the button comes up, which
     /// is one `App::reshape_chart`.
     chart_grab: Cell<Option<crate::sheet::chart::Grab>>,
-    /// Spelling (`doc/spelling.md`, "In a spreadsheet", `spelling.rs`): the person's remembered
-    /// choice — so *Check Spelling While Typing* off here is off in every spreadsheet — the last
-    /// one that was not Off, the dictionary *Ignore Spelling* adds to, the word and suggestions
-    /// the context menu was opened on, and the word *Check Document Now* last stopped on.
+    /// Spelling: the person's remembered choice (so *Check Spelling While Typing* off here is off
+    /// in every spreadsheet), the last choice that was not Off, the dictionary *Ignore Spelling*
+    /// adds to, the word and suggestions a context menu opened on, and the word *Check Document
+    /// Now* last stopped on.
     pub(crate) spelling: Cell<grind_spell::Setting>,
     pub(crate) spelling_on: Cell<grind_spell::Setting>,
     pub(crate) speller: RefCell<Option<Arc<grind_spell::Speller>>>,
@@ -627,8 +625,7 @@ impl Pane {
         self.announce(selection);
     }
 
-    /// Say where the cursor went and what the cell shows — the accessibility floor's grid half,
-    /// `ui_sheet_gtk`'s `announce` in the Mac's terms.
+    /// Say where the cursor went and what the cell shows — the accessibility floor's grid half.
     fn announce(&self, selection: Selection) {
         let said = crate::a11y::grid_announcement(&self.app, self.sheet.get(), selection);
         if let Some(grid) = self.grid_view() {
@@ -830,10 +827,9 @@ pub(crate) fn rgb(color: &NSColor) -> Rgb {
     )
 }
 
-/// The system's semantic colours, resolved in the appearance AppKit is drawing in — a view's
-/// `drawRect:` runs with the view's own `effectiveAppearance` current, so dark mode, high contrast,
-/// the user's accent and a window forced into one appearance all follow with nothing here knowing
-/// (decision 8).
+/// The system's semantic colours, resolved in the appearance AppKit is drawing in: `drawRect:`
+/// runs with the view's `effectiveAppearance` current, so dark mode, high contrast, the accent and
+/// a forced appearance follow (decision 8).
 pub(crate) fn palette() -> Palette {
     let page = rgb(&NSColor::textBackgroundColor());
     Palette {
@@ -971,10 +967,9 @@ define_class!(
             draw(&ops, pane);
         }
 
-        /// A key goes to the text system, which answers with what it means for this user — a
-        /// selector, handled below, or text, which starts an edit. ⌃U, Excel for Mac's key for
-        /// editing the active cell, is bound to nothing in the standard bindings, so it is read
-        /// here first.
+        /// A key goes to the text system, which answers with a selector (handled below) or text
+        /// (which starts an edit). ⌃U, Excel for Mac's key for editing the active cell, is bound
+        /// to nothing in the standard bindings, so it is read here first.
         #[unsafe(method(keyDown:))]
         fn key_down(&self, event: &NSEvent) {
             crate::drive::hear("keyDown:");
@@ -1053,9 +1048,8 @@ define_class!(
             }
         }
 
-        /// Edit ▸ Copy, Cut, Paste and Delete — `clipboard.rs`.
-        /// Format ▸ Font ▸ Show Fonts: the panel told what the selection is set in first, so
-        /// it opens on it (M7).
+        /// Format ▸ Font ▸ Show Fonts: the panel told what the selection is set in first, so it
+        /// opens on it.
         #[unsafe(method(orderFrontFontPanel:))]
         fn order_front_font_panel(&self, sender: Option<&AnyObject>) {
             self.ivars().show_font(self.mtm());
@@ -1080,6 +1074,7 @@ define_class!(
             self.ivars().change_color(&color);
         }
 
+        /// Edit ▸ Copy, Cut, Paste and Delete — `clipboard.rs`.
         #[unsafe(method(copy:))]
         fn copy(&self, _sender: Option<&AnyObject>) {
             self.ivars().copy();
@@ -1133,8 +1128,7 @@ define_class!(
             pane.turn.set(Turn::Done);
         }
 
-        /// Undo and Redo are grey when the core has nothing to take back or bring back — the
-        /// named gap `ui_win32` has, closed by the platform's own mechanism.
+        /// Undo and Redo are grey when the core has nothing to take back or bring back.
         #[unsafe(method(validateMenuItem:))]
         fn validate_menu_item(&self, item: &NSMenuItem) -> bool {
             let app = &self.ivars().app;

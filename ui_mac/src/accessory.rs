@@ -2,23 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The titlebar accessory: the name box and the status bar's read-out — decision 3's surface for
-//! the two read-outs of *where* and *what* (M3), and where M4's formula field joins them.
+//! The titlebar accessory: the name box, the formula read-out and the status read-out — *where*
+//! and *what* (decision 3). An `NSTitlebarAccessoryViewController` at the title bar's bottom edge,
+//! so it takes on the window's material and, on macOS 26, its Liquid Glass.
 //!
-//! Between them (M4) is the formula read-out: the active cell as it would be typed back in —
-//! a formula in display syntax — and, while a cell is being edited, what the editor holds.
-//!
-//! At rest it is a read-out; clicked, it is an editor — `FormulaBar` opens the same edit the cell
-//! editor is, in this field, or carries one already open over the cell into it, the way
-//! `ui_win32`'s one `EDIT` is both.
-//!
-//! An `NSTitlebarAccessoryViewController` at the title bar's bottom edge, so it takes on the
-//! window's own material and, on macOS 26, its Liquid Glass, with nothing here knowing. Both
-//! read-outs are `grind_sheet::place`'s, the words every other shell's name box and status bar
-//! say: the name box shows a name over exactly the selection or the active cell's address, and
-//! **typing a place into it goes there** — `g20`, `Data.B2:C9`, a defined name — through
-//! `place::locate`; the read-out says nothing for one cell and the range's sum, count and average
-//! for more.
+//! The formula read-out shows the active cell as it would be typed back in, or what the editor
+//! holds while one is open; clicked, it is an editor — `FormulaBar` opens the cell's edit here, or
+//! carries an open one into it. The name box and status read-out are `grind_sheet::place`'s words:
+//! a name over exactly the selection or the active cell's address, and **typing a place into it
+//! goes there** (`g20`, `Data.B2:C9`, a defined name) through `place::locate`; the status says
+//! nothing for one cell and the sum, count and average for more.
 
 use std::rc::{Rc, Weak};
 

@@ -2,16 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A track's edge dragged in a header band, and one double-clicked — portable.
-//!
-//! The GNOME window's gesture (`doc/sheet-shell.md`, M8), in this shell's points: the pointer
-//! within [`GRAB`] of a column's right edge or a row's bottom one picks that track up, a drag
-//! sizes it — and every other selected whole track with it, as one undo step, since dragging
-//! three selected headers wider is one gesture — and a double-click fits a column to what it
-//! holds or gives a row back to its content. Nothing is written until the button comes up; the
-//! drag itself is drawn from [`Sizes::with`], so a hundred motion events are not a hundred undo
-//! steps. What is written is an ODF length (`style::mm_length`), so a width survives a round
-//! trip as the document's own and never as a number of this screen's points.
+//! A track's edge dragged in a header band, and one double-clicked — portable. Within [`GRAB`] of
+//! a column's right edge or a row's bottom one the pointer picks the track up, and a drag sizes it
+//! — and every other selected whole track with it, one undo step; a double-click fits a column to
+//! its content or gives a row back to its content. Nothing is written until release: the drag is
+//! drawn from [`Sizes::with`]. What is written is an ODF length (`style::mm_length`), so a width
+//! round-trips as the document's own.
 
 use std::ops::Range;
 

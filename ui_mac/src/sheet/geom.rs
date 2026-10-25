@@ -2,16 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where every cell of a sheet is, in points — pure arithmetic, **no AppKit types**.
-//!
-//! The Mac's grid is a flipped `NSView` that is as large as the part of the sheet worth
-//! scrolling to, inside an `NSScrollView` that does the scrolling (decision 3: AppKit draws the
-//! chrome). So unlike `ui_win32`'s `GridGeom`, whose scroll position is a track index, everything
-//! here is in **document coordinates**: a cell's rectangle is where it is on the sheet, and the
-//! scroll view's clip decides which of them are on screen. The two header bands are floating
-//! subviews of the scroll view and use the same coordinates along their own axis.
-//!
-//! The axes are `grind_sheet::tracks::Sizes` (M1), at 72 points to the inch.
+//! Where every cell of a sheet is, in points — pure arithmetic, **no AppKit types**. The grid is a
+//! flipped `NSView` as large as the part of the sheet worth scrolling to, inside an `NSScrollView`
+//! that scrolls (decision 3), so everything here is in **document coordinates**: a cell's
+//! rectangle is where it is on the sheet, and the scroll view's clip decides what is on screen.
+//! The header bands are floating subviews using the same coordinates along their axis. The axes
+//! are `grind_sheet::tracks::Sizes`, at 72 points to the inch.
 
 use std::ops::Range;
 
@@ -19,11 +15,10 @@ use grind_core::layout::Metrics;
 use grind_sheet::tracks::Sizes;
 use grind_sheet::{App, MAX_COLS, MAX_ROWS};
 
-/// A column nobody sized: **one inch**, the suite's own default column (`ui_web`'s 96 CSS pixels,
-/// `ui_tui`'s ten cells), in points.
+/// A column nobody sized: **one inch**, the suite's default column, in points.
 pub const COL_W: f64 = 72.0;
 
-/// A row nobody sized: a quarter of an inch, `ui_web`'s 24 CSS pixels.
+/// A row nobody sized: a quarter of an inch.
 pub const ROW_H: f64 = 18.0;
 
 /// The row header's width and the column header's height — the two bands the scroll view floats
@@ -34,10 +29,9 @@ pub const HEADER_H: f64 = 22.0;
 /// A millimetre in points, which is what [`Sizes::from_lengths`] is handed.
 pub const PT_PER_MM: f64 = 72.0 / 25.4;
 
-/// How much sheet lies beyond the last used cell before the grid stops — room to see that a
-/// sheet ends where it ends, and to scroll a little past it, without a view 18 million points
-/// tall. `NSScrollView` scrolls anything, but a document view sized to the whole sheet would ask
-/// every overlay, ruler and accessibility client to think about a million rows.
+/// How much sheet lies beyond the last used cell before the grid stops: room to see the sheet end
+/// and scroll a little past it, without a view 18 million points tall that every overlay, ruler
+/// and accessibility client would have to consider.
 pub const MARGIN_ROWS: u32 = 100;
 pub const MARGIN_COLS: u32 = 26;
 
@@ -101,12 +95,10 @@ pub struct Grid {
 }
 
 impl Grid {
-    /// The grid of `sheet` in `app`: the document's own widths and heights, its hidden tracks
-    /// hidden, and the used part of the sheet with a margin after it.
-    ///
-    /// A sheet that cannot be read — a stale index after a sheet was deleted — is an empty
-    /// default grid rather than an error, since this answers what to *draw* and the next
-    /// observer notification brings the right sheet.
+    /// The grid of `sheet` in `app`: the document's widths and heights, hidden tracks hidden, the
+    /// used part of the sheet with a margin after it. An unreadable sheet — a stale index after a
+    /// delete — is an empty default grid, since this answers what to draw and the next
+    /// notification brings the right sheet.
     pub fn of(app: &App, sheet: usize) -> Grid {
         let widths = app.col_widths(sheet).unwrap_or_default();
         let heights = app.row_heights(sheet).unwrap_or_default();
@@ -125,11 +117,10 @@ impl Grid {
         }
     }
 
-    /// The grid of `sheet` as [`Grid::of`] reads it, and every row with no height of its own
-    /// grown to hold what is in it — a cell that wraps onto more lines, or one set in a larger
-    /// face — measured in `metrics` by `grind_core::layout::wrap`, the breaker that draws the
-    /// wrapped lines (L3, the GNOME window's rule). A row is only ever grown, never shrunk below
-    /// [`ROW_H`]; one the document sized keeps its size, and a hidden one stays hidden.
+    /// The grid as [`Grid::of`] reads it, every unsized row grown to hold what wraps or is set
+    /// larger, measured in `metrics` by `grind_core::layout::wrap`, the breaker that draws the
+    /// wrapped lines. A row is only grown, never below [`ROW_H`]; a sized row keeps its size and a
+    /// hidden one stays hidden.
     pub fn measured(app: &App, sheet: usize, metrics: &dyn Metrics) -> Grid {
         let mut grid = Grid::of(app, sheet);
         let grown = auto_heights(app, sheet, &grid, metrics);
@@ -150,7 +141,6 @@ impl Grid {
     }
 
     /// How large the grid view is: every shown column's width and every shown row's height.
-    // Reached from the grid view, which sizes itself by this, and not yet written.
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub fn size(&self) -> (f64, f64) {
         (
@@ -181,7 +171,6 @@ impl Grid {
 
     /// Which cell a point on the sheet is in — nearest, never nothing, so a click past the last
     /// shown row still lands on a cell.
-    // Reached from a click on the grid, which is M3's.
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub fn hit(&self, x: f64, y: f64) -> (u32, u32) {
         let row = self

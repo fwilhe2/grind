@@ -2,15 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Insert ▸ Chart Preview… — the chart a selection would make, shown before it is made.
-//!
-//! An `NSAlert` with the picture as its accessory view — under a segmented control of the three
-//! kinds, the GNOME dialog's buttons, which swaps the picture — and **Insert** / **Cancel** as its buttons,
-//! the platform's own shape for a question with a picture in it (`prompt.rs` is the one-line
-//! sibling). The picture is not drawn by a view of this shell's own: `sheet/chart.rs`'s `Op`s —
-//! the very list the grid draws a chart from — are rendered headless to a bitmap by `render`, as
-//! `--render-to` does, and handed to an `NSImageView`. So what is previewed is what the grid then
-//! draws, by construction, and no second chart painter exists.
+//! Insert ▸ Chart Preview… — the chart a selection would make, before it is made: an `NSAlert`
+//! with the picture as its accessory view under a segmented control of the three kinds, and
+//! **Insert** / **Cancel**. The picture is `sheet/chart.rs`'s `Op`s — what the grid draws a chart
+//! from — rendered headless to a bitmap by `render`, as `--render-to` does, in an `NSImageView`;
+//! so the preview is what the grid then draws, with no second chart painter.
 
 use objc2::rc::Retained;
 use objc2::runtime::NSObject;
@@ -55,10 +51,9 @@ define_class!(
     }
 );
 
-/// Show the chart a selection would make as each of `pictures`' kinds — a segmented control of
-/// the GNOME dialog's three kinds over the picture, `shown` chosen first — and ask whether to
-/// insert it: the kind chosen for Insert, `None` for Cancel. A picture that cannot be made is a
-/// reason to say so, not to insert blind, so that is `None` too.
+/// Show the chart a selection would make as each of `pictures`' kinds — `shown` first — and ask
+/// whether to insert it: the kind chosen for Insert, `None` for Cancel or for a picture that
+/// cannot be made.
 pub fn choose(
     mtm: MainThreadMarker,
     pictures: &[(

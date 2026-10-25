@@ -2,14 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The toolbar, as data (M7) — portable, and held to the menu bar by its tests.
-//!
-//! Decision 3 gives the toolbar one kind of control: **a property of the selection**, which is
-//! the format bar's admission test, bounded by `CellStyle`, `numfmt::Format` and `CharStyle`.
-//! And because a Mac user may hide the toolbar, **every item has a menu twin**: each segment and
-//! each pop-up row *is* a [`Command`] that a Format menu item also sends, and a colour well's
-//! twin is the colour submenu beside it. `toolbar.rs` builds the AppKit controls from this and
-//! nothing else, so a control cannot be added without its twin failing a test first.
+//! The toolbar, as data — portable, held to the menu bar by its tests. Decision 3 gives it one
+//! kind of control, **a property of the selection**, bounded by `CellStyle`, `numfmt::Format` and
+//! `CharStyle`. A Mac user may hide the toolbar, so **every item has a menu twin**: each segment
+//! and pop-up row is a [`Command`] a Format menu item also sends, and a colour well's twin is the
+//! colour submenu. `toolbar.rs` builds from this alone, so a control without a twin fails a test.
 
 use grind_core::DocumentKind;
 use grind_sheet::format::Preset;
@@ -187,8 +184,8 @@ const CLEAR: Tool = Tool::Segments {
     toggles: false,
 };
 
-/// The spreadsheet's toolbar, left to right: the weight of the text, its alignment and indent, its
-/// colours, the number it shows, and Clear — `ui_win32`'s strip's five groups.
+/// The spreadsheet's toolbar, left to right: the text's weight, its alignment and indent, its
+/// colours, the number it shows, and Clear.
 const SHEET: &[Tool] = &[
     WEIGHT, ALIGN, INDENT, TEXT_COLOR, BACKGROUND, NUMBER, DECIMALS, CLEAR,
 ];

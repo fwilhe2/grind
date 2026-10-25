@@ -2,16 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The source pane (D9, M8): the document as its projection, read-only, in a trailing split item
-//! — decision 3's surface for it — toggled by View ▸ Show Source (⌥⌘U, Safari's key for the same
-//! idea).
-//!
-//! It is an `NSTextView`, so selecting, copying and Find in it are the system's. Its colours are
-//! the projection's own token map (`code.rs`), resolved against the system's semantic colours so
-//! both appearances follow. The line the selection or the caret projects to is kept selected in
-//! it, and **clicking a line goes where that line projects** — a cell, a sheet, a block — through
-//! the same jump the sidebar makes. Nothing here writes: the projection is a view of the model,
-//! and §6.4 has no error-tolerant parser that would make it editable.
+//! The source pane: the document as its projection, read-only, in a trailing split item (decision
+//! 3), toggled by View ▸ Show Source (⌥⌘U). An `NSTextView`, so selecting, copying and Find in it
+//! are the system's; its colours are the projection's token map (`code.rs`) against the system's
+//! semantic colours. The line the selection or caret projects to is kept selected, and **clicking
+//! a line goes where it projects** — a cell, a sheet, a block — by the sidebar's jump. Nothing
+//! here writes (§6.4).
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

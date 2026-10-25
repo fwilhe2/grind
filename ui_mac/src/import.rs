@@ -2,19 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Excel workbooks and CSV: which bytes this shell imports rather than opens, and what importing
-//! them hands the document.
-//!
-//! Every shell has an `import.rs` of its own (`doc/xlsx-import.md`, X6). This one answers in
-//! **bytes**, because that is the shape `NSDocument` hands a document over in
-//! (`readFromData:ofType:`), and `--render-to` reads a file the same way. A workbook or a CSV
-//! comes back as flat ODF under its ODF name and marked [`Opened::untitled`]: the document that
-//! opens it has no file URL, so there is nothing for Save — or autosave, decision 5 — to write
-//! over the workbook with. One way in, never out, kept by construction.
+//! Excel workbooks, Word documents and CSV: which bytes this shell imports rather than opens, and
+//! what importing hands the document — in **bytes**, the shape `NSDocument`'s
+//! `readFromData:ofType:` gives. An import comes back as flat ODF under its ODF name and marked
+//! [`Opened::untitled`], so its document has no file URL for Save or autosave to write over the
+//! original with.
 
 use std::path::Path;
 
-/// Whether these bytes are a workbook this build imports.
+/// Whether these bytes are a workbook this binary imports.
 pub fn is_workbook(bytes: &[u8]) -> bool {
     #[cfg(feature = "xlsx")]
     return grind_xlsx::sniff(bytes);
@@ -25,7 +21,7 @@ pub fn is_workbook(bytes: &[u8]) -> bool {
     }
 }
 
-/// Whether these bytes are a Word document this build imports (`doc/docx-import.md`, DX6).
+/// Whether these bytes are a Word document this binary imports.
 pub fn is_word(bytes: &[u8]) -> bool {
     #[cfg(feature = "docx")]
     return grind_docx::sniff(bytes);

@@ -2,14 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Formatting (M7), on either pane: a Format command, the font panel's `changeFont:` and the
-//! colour panel's `changeColor:`.
-//!
-//! Every decision is portable — `sheet/format.rs` and `text/format.rs`, over the cores' own
-//! vocabularies — and this file only reads what those need off a pane, writes what they answer,
-//! and turns an `NSFont` or an `NSColor` into the facts they speak in. The font and colour panels
-//! are the platform's (decision 3): nothing here draws a picker, and **Format ▸ Font ▸ Show
-//! Fonts** and **Show Colors** are the standard selectors, answered by AppKit.
+//! Formatting, on either pane: a Format command, the font panel's `changeFont:` and the colour
+//! panel's `changeColor:`. Every decision is portable (`sheet/format.rs`, `text/format.rs`); this
+//! reads what they need off a pane, writes what they answer, and turns an `NSFont` or `NSColor`
+//! into their facts. The panels are the platform's (decision 3): Show Fonts and Show Colors are
+//! standard selectors AppKit answers.
 
 use grind_core::color::Rgb;
 use grind_text::BlockKind;
@@ -246,11 +243,10 @@ impl TextPane {
     }
 
     /// A Format command over the selection: a character change, or a paragraph kind for every
-    /// block the selection touches.
+    /// block it touches.
     ///
-    /// ponytail: a kind over several blocks is one `set_kind` each, so as many ⌘Z as blocks.
-    /// `App` has no kind over a range; the Windows pane and the GNOME window pay the same, and
-    /// the trigger is a third page that sets kinds over a selection.
+    /// ponytail: a kind over several blocks is one `set_kind` each, so as many ⌘Z as blocks; `App`
+    /// has no kind over a range.
     pub fn format(&self, command: Command) {
         if page::block(command, &BlockKind::Paragraph, None).is_some() {
             self.act_on(|state, app, _| {

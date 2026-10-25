@@ -2,16 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Find and replace (M5, and the page's since M11): Edit ▸ Find's four items, the platform's own —
-//! `performFindPanelAction:` with `NSFindPanelAction`'s tags, so ⌘F, ⌘G, ⇧⌘G and ⌘E mean here what
-//! they mean in every text view — and the bar ⌘F opens.
-//!
-//! The bar is a titlebar accessory, hidden until asked for: a search field whose Return finds the
-//! next place holding the word, a field for what to replace it with, Replace All, a line saying
-//! which of how many the selection is on, and Done. **It is one bar for either pane**, through
-//! [`Findable`]: what a match is and where Next goes is the grid's `sheet/search.rs` over
-//! `grind_sheet::find`, or the page's `text/search.rs` over `App::find_ignoring_case`, and what
-//! the bar says is `notice.rs`'s.
+//! Find and replace, on either pane: Edit ▸ Find's four items, the platform's own —
+//! `performFindPanelAction:` with `NSFindPanelAction`'s tags, so ⌘F, ⌘G, ⇧⌘G and ⌘E mean what they
+//! do in every text view — and the bar ⌘F opens: a titlebar accessory with a search field, a
+//! replacement field, Replace All, which-of-how-many, and Done. One bar for either pane through
+//! [`Findable`]: the grid's `sheet/search.rs` over `grind_sheet::find`, or the page's
+//! `text/search.rs` over `App::find_ignoring_case`; the words are `notice.rs`'s.
 
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};

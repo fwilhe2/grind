@@ -2,10 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Zoom — View ▸ Zoom In (⌘+), Zoom Out (⌘−) and Actual Size (⌘0), the platform's keys, and a
-//! pinch, which `NSScrollView`'s magnification answers with nothing here. Portable: where a step
-//! goes from where the view is. Nothing measured is ever stored zoomed, which is
-//! `ui_sheet_gtk`'s M10 rule — magnification is the scroll view's, outside the document.
+//! Zoom — View ▸ Zoom In (⌘+), Zoom Out (⌘−) and Actual Size (⌘0), and a pinch, which
+//! `NSScrollView`'s magnification answers. Portable: where a step goes from where the view is.
+//! Nothing measured is stored zoomed; magnification is the scroll view's, outside the document.
 
 /// The stops ⌘+ and ⌘− walk, the ones every Mac application with a zoom menu offers near them.
 pub const STOPS: [f64; 9] = [0.5, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0, 3.0];

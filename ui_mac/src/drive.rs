@@ -2,13 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `--drive`'s script — what it says, parsed and checked with no Mac in sight (decision 9).
-//!
-//! A drive opens a real window and replays a script of synthesized events through
-//! `NSApp.sendEvent`, so each one takes the path a real key takes: key equivalents and the menu
-//! bar, the responder chain, `interpretKeyEvents:`. **The parser is portable** and this file is
-//! all of it; only the replay (`app.rs`) needs AppKit. A script with a mistake in it fails here, on
-//! its line, before a runner has spent a minute launching an application.
+//! `--drive`'s script — parsed and checked with no Mac (decision 9). A drive opens a real window
+//! and replays synthesized events through `NSApp.sendEvent`, so each takes a real key's path: key
+//! equivalents and the menu bar, the responder chain, `interpretKeyEvents:`. The parser is
+//! portable and all here; only the replay (`app.rs`) needs AppKit, so a mistaken script fails on
+//! its line before a runner spends a minute launching.
 //!
 //! One step a line; `#` starts a comment; blank lines are nothing.
 //!
@@ -26,12 +24,10 @@
 //! a11y                 what the key view tells VoiceOver, read back in-process and printed
 //! ```
 //!
-//! `mark` and `commit` call the key view's `NSTextInputClient` methods directly, which is what an
-//! input method does: the runner has no input method a script could select, and this proves the
-//! protocol where it cannot prove the experience (*What the runner cannot speak for*).
-//!
-//! The transcript a drive prints, and the assertions made afterwards on the saved document through
-//! the CLI, are what make it a test; the snapshots are for a person to look at.
+//! `mark` and `commit` call the key view's `NSTextInputClient` methods directly, as an input
+//! method does: the runner has none to select, so this proves the protocol, not the experience.
+//! The transcript and assertions on the saved document through the CLI make it a test; the
+//! snapshots are for a person.
 
 use crate::menu::Mods;
 
@@ -399,15 +395,12 @@ mod mac {
         Ok(true)
     }
 
-    /// `item`'s action, sent where AppKit would have sent it were `window` key.
-    ///
-    /// A runner's window never becomes key (*Evidence*), and an action with no target starts at
-    /// the key window — so a ⌘-key a drive pressed there reached nothing: Copy copied nothing and
-    /// Save saved nothing. This walks AppKit's own documented path for a document application
-    /// from `window` instead: the first responder up through its views to the window, the
-    /// window's delegate, its controller and the controller's document, then the application,
-    /// its delegate and the document controller. Used only when the window is not key; a key
-    /// window gets the real path.
+    /// `item`'s action, sent where AppKit would send it were `window` key. A runner's window never
+    /// becomes key (*Evidence*), and a targetless action starts at the key window, so a driven
+    /// ⌘-key reached nothing. This walks AppKit's documented path for a document application from
+    /// `window`: the first responder up its views to the window, its delegate, controller and
+    /// document, then the application, its delegate and the document controller. A key window gets
+    /// the real path.
     fn send(app: &NSApplication, window: &NSWindow, item: &NSMenuItem) -> Result<(), String> {
         let mut responder = window.firstResponder();
         while let Some(current) = responder {
@@ -622,8 +615,8 @@ mod mac {
         std::fs::write(&path, png.to_vec()).map_err(|error| format!("{}: {error}", path.display()))
     }
 
-    /// One line of what the drive left behind after a step: the window, whether the document is
-    /// edited, and where the selection is — what M3's drives assert on.
+    /// One line of what a step left: the window, whether the document is edited, and where the
+    /// selection is — what drives assert on.
     fn transcript(app: &NSApplication, document: Option<&NSDocument>) -> String {
         let title = window(app).map_or_else(|_| "no window".to_owned(), |w| w.title().to_string());
         let edited = document.is_some_and(|document| document.isDocumentEdited());

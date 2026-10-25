@@ -2,14 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A picture on the page: how big it is drawn, and how tall its block is — portable.
-//!
-//! `grind_text::flow::lay_out` asks a shell for a picture block's height through a hook, because
-//! decoding needs a platform decoder; on a Mac that is `NSImage` (`render.rs`'s `ImageDecoder`), and
-//! everything else is this file. The rule is `ui_text_gtk`'s, so a figure takes the same room in
-//! both windows: **fit the column, keep the aspect ratio, never draw larger than the picture's
-//! own size** — ODF's `svg:width`/`svg:height` are not used, for the same reason that window
-//! gives — and a caption, when the block has one, under it after a small gap.
+//! A picture on the page: how big it is drawn and how tall its block is — portable.
+//! `grind_text::flow::lay_out` asks a shell for a picture block's height through a hook, since
+//! decoding needs a platform decoder (`NSImage`, `render.rs`'s `ImageDecoder`). The rule is the
+//! GNOME window's: **fit the column, keep the aspect ratio, never larger than the picture's own
+//! size** — `svg:width`/`svg:height` are not used — and a caption under it after a small gap.
 
 use grind_core::layout::{Fragment, Metrics, wrap};
 use grind_core::style::TextStyle;

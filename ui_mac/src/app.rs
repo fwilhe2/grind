@@ -2,17 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The application: `NSApplication`, its delegate, and the menu bar built from `menu.rs`.
+//! The application: `NSApplication`, its delegate, and the menu bar built from `menu.rs`. What the
+//! menu bar *is* was decided in `menu.rs`; this turns each row into an `NSMenuItem` — a standard
+//! selector for the responder chain, or [`COMMAND_SELECTOR`] with the command's tag for what the
+//! delegate answers itself — and tells AppKit which menus are Window, Help and Services. Documents
+//! are `NSDocumentController`'s ([`Controller`]), made first so it is the shared one.
 //!
-//! Everything the menu bar *is* was decided in `menu.rs`, portable and tested; this file turns
-//! each row into an `NSMenuItem` — a standard selector for the responder chain, or
-//! [`COMMAND_SELECTOR`] with the command's tag for the one thing the delegate answers itself — and
-//! tells AppKit which menus are the Window, Help and Services menus. Documents are
-//! `NSDocumentController`'s ([`Controller`]), which is made first so that it is the shared one.
-//!
-//! A launch with a file opens it the way File ▸ Open would; a launch with `--sheet` or `--text`
-//! starts an empty document of that kind; and a launch with neither, which decision 6 answers with
-//! the welcome window, starts an empty spreadsheet until M9 builds that window.
+//! A launch with a file opens it as File ▸ Open would; `--sheet` or `--text` starts an empty
+//! document of that kind; neither shows the welcome window (decision 6).
 
 use std::cell::RefCell;
 use std::ffi::CString;
@@ -165,9 +162,8 @@ impl Delegate {
         let kind = match command {
             Command::NewSheet => DocumentKind::Spreadsheet,
             Command::NewText => DocumentKind::Text,
-            // The rest act on the front document's grid, when the front document is a
-            // spreadsheet; with none, they do nothing.
-            // Formatting acts on whichever pane the front document has (M7).
+            // The rest act on the front document's grid, when it is a spreadsheet, and do nothing
+            // otherwise. Formatting acts on whichever pane the front document has.
             Command::Mark(_)
             | Command::Align(_)
             | Command::Indent(_)
@@ -206,14 +202,14 @@ impl Delegate {
                 }
                 return;
             }
-            // The overlays (M8), on either pane.
+            // The overlays, on either pane.
             Command::CellRoles | Command::Names => {
                 if let Some(document) = self.front_document() {
                     document.toggle_overlay(command);
                 }
                 return;
             }
-            // Formula literacy (M8), on the front document's grid.
+            // Formula literacy, on the front document's grid.
             Command::FriendlyFormulas | Command::ExplainFormula | Command::InsertFunction => {
                 if let Some(pane) = self.front_pane() {
                     match command {
@@ -328,12 +324,10 @@ impl Delegate {
         }
     }
 
-    /// The document a command acts on: `currentDocument` — the main window's — and when no
-    /// window is main, the frontmost window's document, then the first there is.
-    ///
-    /// The fallback is not a nicety. A runner's application never becomes active, so no window
-    /// is ever main there (*Evidence*), and `currentDocument` alone left every command a drive
-    /// sent reaching nothing: Go To did not go.
+    /// The document a command acts on: `currentDocument` — the main window's — else the frontmost
+    /// window's document, else the first. A runner's application never becomes active, so no
+    /// window is main there (*Evidence*), and `currentDocument` alone left every driven command
+    /// reaching nothing.
     fn front_document(&self) -> Option<Retained<Document>> {
         let controller = &self.ivars().controller;
         let app = NSApplication::sharedApplication(self.mtm());
@@ -464,9 +458,9 @@ fn ask_sheet_name(mtm: MainThreadMarker, current: &str) -> Option<String> {
     )
 }
 
-/// Insert ▸ Function…: every function this build has, by its name and its plain-English one,
-/// in a pop-up under an alert — the platform's own shape for choosing one of many, with each
-/// row's summary as its tooltip. The chosen row's place in the catalog, or `None`.
+/// Insert ▸ Function…: every function grind has, by its name and its plain-English one, in a
+/// pop-up under an alert, each row's summary its tooltip. The chosen row's place in the catalog,
+/// or `None`.
 fn ask_function(mtm: MainThreadMarker) -> Option<usize> {
     let alert = NSAlert::new(mtm);
     alert.setMessageText(&NSString::from_str("Insert Function"));
@@ -562,8 +556,8 @@ fn build(menu: &'static Menu, app: &NSApplication, mtm: MainThreadMarker) -> Ret
     built
 }
 
-/// A context menu (M9) from `menu.rs`'s table — built by the same function as the menu bar,
-/// so a row and its bar twin are one kind of item.
+/// A context menu from `menu.rs`'s table, built by the menu bar's own function, so a row and its
+/// bar twin are one kind of item.
 pub fn context_menu(menu: &'static Menu, mtm: MainThreadMarker) -> Retained<NSMenu> {
     build(menu, &NSApplication::sharedApplication(mtm), mtm)
 }
@@ -598,14 +592,11 @@ pub fn run(opening: Opening) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Tell AppKit not to open the command line's arguments as documents.
-///
-/// Left on, `NSTreatUnknownArgumentsAsOpen` has AppKit open every argument it does not
-/// recognise as a file — the path [`Delegate::launch`] has already opened — and a second
-/// document with the same title comes up beside the first. A drive's keys then moved the
-/// selection in that second window, the key one, while its transcript read the first (run
-/// 37052072298). What the command line means is `args.rs`'s decision; a Finder open arrives as
-/// an Apple Event and is not touched by this. Registered rather than set, so an explicit
+/// Tell AppKit not to open the command line's arguments as documents. With
+/// `NSTreatUnknownArgumentsAsOpen` on, AppKit opens every argument it does not recognise — the
+/// path [`Delegate::launch`] already opened — and a second window with the same title appears,
+/// which a drive's keys then moved in while its transcript read the first. A Finder open is an
+/// Apple Event and is not affected; registered rather than set, so an explicit
 /// `-NSTreatUnknownArgumentsAsOpen YES` still wins.
 fn ignore_arguments_as_files() {
     let key = NSString::from_str("NSTreatUnknownArgumentsAsOpen");

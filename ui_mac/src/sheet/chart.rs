@@ -2,19 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A chart, as a list of [`Op`]s — portable, so where every bar, point, slice and label goes is
-//! tested on Linux and the Mac only puts it down.
+//! A chart as a list of [`Op`]s — portable. Where every mark goes is `grind_sheet::chart_paint`'s;
+//! what is here is where a chart's frame sits on the sheet, which one a point is in, what a
+//! context menu changes, and [`draw`], turning the marks into this shell's [`Op`]s.
 //!
-//! Where every mark goes is `grind_sheet::chart_paint`'s, hoisted out of this file when the
-//! Windows grid wanted charts too; what is here is the Mac's half — where a chart's frame sits on
-//! the sheet, which one a point is in, what a context menu changes — and [`draw`], which turns the
-//! shared marks into this shell's [`Op`]s.
-//!
-//! Taking hold of one is `grind_sheet::chart_frame`'s behaviour, every window's
-//! (`doc/chart-handling.md`): a click selects it and it wears the accent and eight handles
-//! ([`held_ops`]), its body moves it, a handle resizes it, the keys a selected chart answers are
-//! [`key`]'s, and a release is one `App::reshape_chart`. Frames are in the sheet's points, which
-//! at 1× are the suite's CSS pixels near enough that its sizes are used as they are.
+//! Taking hold of one is `grind_sheet::chart_frame`'s behaviour (`doc/chart-handling.md`): a click
+//! selects it and it wears the accent and eight handles ([`held_ops`]), its body moves it, a
+//! handle resizes it, [`key`] has the keys a selected chart answers, and a release is one
+//! `App::reshape_chart`. Frames are in the sheet's points, which at 1× are near enough the suite's
+//! CSS pixels to use its sizes as they are.
 
 use grind_core::layout::Metrics;
 use grind_sheet::chart_frame::{self, Frame, Grip};
@@ -24,9 +20,8 @@ use super::geom::{PT_PER_MM, Rect};
 use super::paint::Palette;
 use crate::ops::Op;
 
-/// Where a chart's frame is on its sheet, in points from the corner of A1 — `draw:frame`'s own
-/// position and size, or `None` for a length this build cannot read, which is a chart it does
-/// not draw rather than one drawn in the wrong place.
+/// Where a chart's frame is on its sheet, in points from A1's corner, or `None` for a length that
+/// will not parse — a chart not drawn rather than drawn in the wrong place.
 pub fn frame_of(chart: &Chart) -> Option<Rect> {
     let pt = |length: &str| grind_sheet::style::length_mm(length).map(|mm| mm * PT_PER_MM);
     let rect = Rect::new(

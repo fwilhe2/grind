@@ -3,33 +3,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! What a keystroke means **while a cell is being edited** — the modes, and the one function that
-//! decides (M4). Portable, and tested on any host.
-//!
-//! The modes are Excel's, by name, as in `ui_sheet_gtk/src/state.rs` and
-//! `ui_win32/src/sheet/state.rs`:
+//! decides. Portable. The modes are Excel's:
 //!
 //! * **Ready** — the grid has the keys (`keys.rs`). Text typed there starts an edit seeded with
 //!   it; a double-click, ⌃U (Excel for Mac's key) or a click in the formula field starts one
 //!   seeded with the cell.
-//! * **Enter** — an edit that began by typing. An arrow *commits and moves*, because the caret has
-//!   nowhere useful to go in text somebody has only just started.
-//! * **Edit** — an edit that began from the cell's own content. An arrow moves the caret, because
-//!   the text is worth navigating. ⌃U toggles between the two.
+//! * **Enter** — an edit begun by typing. An arrow *commits and moves*.
+//! * **Edit** — an edit begun from the cell's content. An arrow moves the caret. ⌃U toggles.
 //!
-//! **The Mac's input is selectors**, here as everywhere in this shell (decision 7): the cell
-//! editor is a text field, and its field editor hands its delegate `insertNewline:`,
-//! `insertTab:`, `cancelOperation:` and `moveLeft:` rather than keys. So this machine is fed
-//! selector names, and answers what the delegate should do — take the key and act, or leave it
-//! to the field editor, which is what makes the caret, the selection, dead keys and every input
-//! method in the field the system's own.
+//! **The input is selectors** (decision 7): the field editor hands its delegate `insertNewline:`,
+//! `insertTab:`, `cancelOperation:` and `moveLeft:`, so this machine takes selector names and
+//! answers whether the delegate acts or leaves the key to the field editor, whose caret, selection
+//! and input methods are the system's.
 //!
-//! ponytail: this is the third copy of the edit-mode machine, after the GNOME window's and the
-//! Windows pane's. `doc/macos-shell.md`'s M1 asked whether one abstract key type fits all three
-//! shells' inputs and found that it does not — a GTK key carries its character, Windows splits
-//! `WM_KEYDOWN` from `WM_CHAR` and asks its accelerators first, and this one is selectors — so
-//! each is mirrored, and what is not about keys is shared: `display::to_input` is what a commit
-//! stores. **The trigger is a fourth copy**, or two of them answering one keystroke differently
-//! for a reason that is not their input model.
+//! ponytail: this mirrors the GNOME window's and the Windows pane's machines, since no one
+//! abstract key type fits a GTK key, Windows' split `WM_KEYDOWN`/`WM_CHAR` and AppKit's selectors;
+//! what is not about keys is shared (`display::to_input`). The trigger is a fourth copy, or two
+//! answering one keystroke differently for a reason other than input.
 
 use grind_sheet::formula::assist::ref_eligible;
 use grind_sheet::nav::{Dir, Motion};

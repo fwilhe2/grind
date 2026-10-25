@@ -2,18 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The accessibility floor's words (decision 10, M9) — portable.
+//! The accessibility floor's words (decision 10) — portable. The page speaks `NSAccessibility`'s
+//! text-area protocol: its value is the document's text, a line a block; its selected range is the
+//! selection or caret in that text, in the UTF-16 units an `NSRange` counts; its insertion line is
+//! the caret's block. A move on the grid announces where the cursor is and what the cell shows.
+//! Each answer is computed from the core, so what VoiceOver hears cannot drift from what is drawn,
+//! and a drive's `a11y` step reads it back.
 //!
-//! The page speaks `NSAccessibility`'s text-area protocol: its value is the document's text,
-//! one line a block; its selected range is the selection or the caret in that text, in the
-//! UTF-16 units an `NSRange` counts; its insertion line is the caret's block. A move on the grid
-//! posts an announcement saying where the cursor is and what the cell shows. Each answer is
-//! computed here from the core, so what VoiceOver is told cannot drift from what is drawn —
-//! and the runner reads all of it back in-process through a drive's `a11y` step.
-//!
-//! ponytail: a line of the value is a block, not a laid-out line, so "the insertion point's
-//! line" is a paragraph's number. `accesskit_macos` is the named upgrade (decision 10), and the
-//! day a screen reader user asks for line-by-line reading is the trigger.
+//! ponytail: a line of the value is a block, not a laid-out line, so "the insertion point's line"
+//! is a paragraph's number. `accesskit_macos` is the upgrade, when a screen reader user asks for
+//! line-by-line reading.
 
 use std::ops::Range;
 

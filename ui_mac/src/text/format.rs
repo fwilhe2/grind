@@ -2,13 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What a Format command does to the page (M7), and whether its menu item is ticked — portable.
-//!
-//! Every character change is a `grind_text::format::Change`, applied where `format::apply`
-//! applies it — over the selection, or held for the next character typed when nothing is
-//! selected — so a Bold from this menu, from the toolbar, from `**` typed and from `grind text
-//! format --bold` are the same run. A paragraph kind is `App::set_kind` over every block the
-//! selection touches.
+//! What a Format command does to the page, and whether its menu item is ticked — portable. A
+//! character change is a `grind_text::format::Change` applied where `format::apply` applies it —
+//! over the selection, or held for the next character typed — so Bold from the menu, the toolbar,
+//! `**` typed and `grind text format --bold` make the same run. A paragraph kind is
+//! `App::set_kind` over every block the selection touches.
 
 use grind_text::BlockKind;
 use grind_text::format::{Change, has};
@@ -32,11 +30,10 @@ pub fn change(command: Command, here: &CharStyle) -> Option<Change> {
 /// face of their own. Any other name on a block is the document's, and is left alone.
 const OURS: [&str; 2] = ["Title", "Subtitle"];
 
-/// What `command` makes a block that is `current`, wearing `style`: its kind, and the paragraph
-/// style it should wear — the GNOME window's rule. Title and Subtitle are paragraphs wearing those
-/// names; any other kind takes one of those two names off, and leaves a document's own name (a
-/// `Quotations`, say) exactly where it was. A list item keeps its depth when asked to be a list
-/// item again.
+/// What `command` makes a block that is `current`, wearing `style`: its kind and paragraph style.
+/// Title and Subtitle are paragraphs wearing those names; any other kind takes those two off and
+/// leaves a document's own name (`Quotations`) where it was. A list item asked to be one again
+/// keeps its depth.
 pub fn block(
     command: Command,
     current: &BlockKind,

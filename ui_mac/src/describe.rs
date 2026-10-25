@@ -2,14 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Format ▸ Image Description… — a picture's alternative text, in the words Pages uses for it.
-//!
-//! An `NSAlert` whose accessory view holds the picture — `NSImage` decodes the document's own
-//! bytes, so it is the picture as it is, not a thumbnail of this shell's making — a field for the
-//! short description VoiceOver reads in the picture's place (`svg:title`), the one sentence of
-//! advice `grind_text::picture::advice` gives every client, kept up to date as it is typed by the
-//! field's delegate, and a scrolling text view for the long description (`svg:desc`). The
-//! platform's own shape for a question with a picture in it, `chart_preview.rs`'s sibling.
+//! Format ▸ Image Description… — a picture's alternative text, in Pages' words. An `NSAlert` whose
+//! accessory view holds the picture (`NSImage` from the document's own bytes), a field for the
+//! short description VoiceOver reads (`svg:title`) with `grind_text::picture::advice` kept current
+//! as it is typed, and a text view for the long description (`svg:desc`).
 
 use objc2::rc::Retained;
 use objc2::runtime::{NSObject, ProtocolObject};

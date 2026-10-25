@@ -2,15 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Help while a formula is typed — the Mac's half (M8), portable.
-//!
-//! What to offer, how the list narrows, what accepting replaces and what the band says are
-//! `grind_sheet::formula::assist`'s, shared with the Windows pane. What is this shell's is which
-//! **selectors** steer the list, because a Mac's keys arrive as selectors from the cell editor's
-//! field editor (decision 7): `insertTab:` takes the offer, `moveUp:` and `moveDown:` step
-//! through the list, `cancelOperation:` closes it for this word — and **Return is deliberately
-//! left to commit the cell**, as in every other shell, since a formula finished by pressing
-//! Return is the common case and a completion in its place would store the wrong thing.
+//! Help while a formula is typed — portable. What to offer, how the list narrows, what accepting
+//! replaces and what the band says are `grind_sheet::formula::assist`'s. What is this shell's is
+//! which **selectors** steer the list, since keys arrive as selectors from the cell editor's field
+//! editor (decision 7): `insertTab:` takes the offer, `moveUp:`/`moveDown:` step,
+//! `cancelOperation:` closes it for this word — and **Return is left to commit the cell**, the
+//! common way to finish a formula.
 
 use std::ops::Range;
 
@@ -53,10 +50,9 @@ pub fn replaced(text: &str, span: Range<usize>, with: &str) -> (String, usize) {
     (out, start + with.len())
 }
 
-/// What the formula read-out shows: while a cell is being edited, what the editor holds;
-/// otherwise the active cell's own text, read through `friendly_line` when the friendly view is
-/// on and the text is a formula this build can read. Nothing here parses back — R1 says the
-/// document's formula is ODF's, and this is a reading of it.
+/// What the formula read-out shows: while editing, what the editor holds; otherwise the cell's own
+/// text, read through `friendly_line` when the friendly view is on and the text is a formula.
+/// Nothing parses back (R1).
 pub fn read_out(text: &str, editing: bool, friendly: bool) -> String {
     match (editing, friendly) {
         (false, true) => friendly_line(text).unwrap_or_else(|| text.to_owned()),
@@ -81,7 +77,7 @@ mod tests {
         }
     }
 
-    /// `=SU` and Tab: M8's exit criterion, portably.
+    /// `=SU` and Tab takes the offer.
     #[test]
     fn typing_su_and_tab_takes_the_offer() {
         let mut assist = Assist::default();

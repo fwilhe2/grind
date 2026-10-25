@@ -2,21 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The sidebar: *where you can go* (decision 3) — for a spreadsheet its sheets, its defined
-//! names and its Problems, for a page its outline, its bookmarks and its Problems (M3, M8).
+//! The sidebar: *where you can go* (decision 3) — sheets, defined names and Problems for a
+//! spreadsheet; outline, bookmarks and Problems for a page. An `NSSplitViewController` whose first
+//! item is the platform's sidebar — collapsed and restored by View ▸ Show Sidebar (⌃⌘S,
+//! `toggleSidebar:`) with nothing here answering — holding one source-list table; the second is
+//! the document. What the rows are is `places.rs`'s; this is the one list over them, through
+//! [`Places`]. A section heading is an unselectable group row, and any other row goes where it
+//! says.
 //!
-//! An `NSSplitViewController` whose first item is a sidebar — the platform's own, collapsed and
-//! restored by View ▸ Show Sidebar (⌃⌘S, `toggleSidebar:`) with nothing here answering it —
-//! holding one source-list table, and whose second is the document. What the rows *are* is
-//! `places.rs`'s, portable; this file is the one list over them, for either pane, through
-//! [`Places`]. A section's heading is a group row nobody can select, and choosing any other row
-//! goes where it says — a sheet, a name, a heading, or where `grind lint` found a problem.
-//!
-//! The rows are read again when the document changes, not when the cursor moves: a Problems
-//! section re-lints the document, which an arrow key has no business costing.
-//!
-//! A change re-reads them only once changes pause ([`SETTLE`]), since a Problems section is
-//! `grind lint` over the whole document and typing should not wait for it.
+//! The rows are re-read when the document changes, not when the cursor moves, and only once
+//! changes pause ([`SETTLE`]), since a Problems section is `grind lint` over the whole document.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

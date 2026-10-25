@@ -2,14 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What a Format command does to the grid (M7), and whether its menu item is ticked — portable.
-//!
-//! Nothing is decided here that `grind_sheet::format` has not already decided for every shell: a
-//! toggle is one field of a `CellStyle` ([`Toggle`]), a colour is `coloured`, a number format is
-//! a [`Preset`], a decimal step is `stepped`. The three rules that module carries hold here by
-//! construction — **every read is of the active cell**, a write is read-change-write, and a style
-//! that sets nothing is no style. What is left is the Mac's vocabulary: which [`Command`] is
-//! which control, and what a tick in the menu means for each.
+//! What a Format command does to the grid, and whether its menu item is ticked — portable, over
+//! `grind_sheet::format`: a toggle is one field of a `CellStyle` ([`Toggle`]), a colour is
+//! `coloured`, a number format a [`Preset`], a decimal step `stepped`. Every read is of the active
+//! cell, a write is read-change-write, and a style that sets nothing is no style. What is left is
+//! which [`Command`] is which control, and what a tick means for each.
 
 use grind_core::style::PALETTE;
 use grind_sheet::format::{self, Preset, Toggle};
@@ -127,10 +124,9 @@ pub fn checked(command: Command, active: &Active) -> bool {
     }
 }
 
-/// What the font panel's answer writes over a cell styled `style`: its size and its weight and
-/// slant where they changed, and nothing where nothing did — `None` then. A family is the one
-/// thing the panel can choose that a `CellStyle` cannot hold, and is left out rather than
-/// approximated (a named gap in `doc/macos-shell.md`).
+/// What the font panel's answer writes over a cell styled `style`: size, weight and slant where
+/// they changed, `None` where nothing did. A family is the one choice a `CellStyle` cannot hold,
+/// left out rather than approximated (`doc/macos-shell.md`).
 pub fn font_restyle(style: &CellStyle, before: &Facts, after: &Facts) -> Option<Option<CellStyle>> {
     let size = (points(after.size) != points(before.size)).then(|| points(after.size));
     let bold = (after.bold != before.bold).then_some(after.bold);

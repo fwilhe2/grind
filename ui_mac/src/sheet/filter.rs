@@ -2,16 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The autofilter on the grid (§9.4) — portable: where its buttons are, what a choice in a
-//! button's list does to the filter, and how a button is drawn.
-//!
-//! The core decides what a filter *means* (`grind_sheet::filter`) and what a field's list offers
-//! (`filter::offered`, the order every shell's list has); this decides only the Mac's half. Data ▸
-//! Filter turns one on over the selection — or, from one cell, from it to the end of what the
-//! sheet uses, the browser's rule — and off again. Each heading of the range carries a button at
-//! its right edge, and a click on it lists the field's values in a menu, ticked when shown:
-//! choosing one hides or shows it, and Show All drops the field's condition. A field with a
-//! condition has its button filled in the accent, so a filtered column is visible as one.
+//! The autofilter on the grid — portable: where its buttons are, what a choice in a button's list
+//! does, and how a button is drawn. What a filter means and what a field's list offers are
+//! `grind_sheet::filter`'s. Data ▸ Filter turns one on over the selection — or, from one cell, to
+//! the end of what the sheet uses — and off. Each heading carries a button at its right edge whose
+//! menu lists the field's values, ticked when shown; choosing one hides or shows it, Show All
+//! drops the field's condition, and a field with a condition has its button filled in the accent.
 
 use std::collections::BTreeSet;
 

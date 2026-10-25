@@ -2,10 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The welcome window's AppKit half (decision 6, M9): a small window whose one view draws
-//! `welcome.rs`'s frame — the same `Op`s `--render-to` puts in a PNG — in the system's colours,
-//! and answers the keys by selector and the pointer by `Welcome::hit`. What a choice *does* is
-//! the application delegate's, handed in as a callback, so this file runs no command itself.
+//! The welcome window's AppKit half: a small window whose one view draws `welcome.rs`'s frame —
+//! the `Op`s `--render-to` puts in a PNG — in the system's colours, answering keys by selector and
+//! the pointer by `Welcome::hit`. What a choice does is the application delegate's, handed in as a
+//! callback.
 
 use std::cell::RefCell;
 use std::path::PathBuf;

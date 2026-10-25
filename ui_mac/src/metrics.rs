@@ -3,14 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! Text measured by CoreText — `grind_core::layout::Metrics`, answered by a shaping engine
-//! (decision 4).
-//!
-//! Two halves. [`fold`] is portable: CoreText answers "where is the caret at this UTF-16 index",
-//! the trait asks "how far after each `char`", and turning one into the other is arithmetic that
-//! is tested on any host. `CoreText` is the Mac's, and it is **also what draws**: `render.rs`
-//! sets each line with the very `CTLine` this measured, so the caret and the ink cannot disagree
-//! (`doc/windows-shell.md` decision 3, which GDI met with its own advances and CoreText meets by
-//! construction).
+//! (decision 4). [`fold`] is portable: CoreText answers "where is the caret at this UTF-16 index",
+//! the trait asks "how far after each `char`", and the conversion is tested on any host.
+//! `CoreText` is the Mac's, and **also draws**: `render.rs` sets each line with the `CTLine` this
+//! measured, so caret and ink cannot disagree.
 
 /// The cumulative advance after each character of `text`, appended to `out`, from `offset_at` —
 /// the caret's offset at a UTF-16 index, which is what `CTLineGetOffsetForStringIndex` answers.
@@ -50,11 +46,9 @@ pub enum Family {
     Named(String),
 }
 
-/// A font, resolved: everything CoreText is asked for, and nothing it has to interpret.
-///
-/// The one currency between measuring and drawing — a cell's `TextStyle` and a page's block face
-/// and run both come down to one of these, `CoreText` measures with it and `render.rs` sets the
-/// line in it, so the caret and the ink cannot come from two different fonts (decision 4).
+/// A font, resolved: everything CoreText is asked for, nothing left to interpret — the one
+/// currency between measuring and drawing, so a cell or a run is measured and drawn in one font
+/// (decision 4).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Font {
     /// In points.
@@ -105,10 +99,9 @@ mod mac {
     /// What a made font is kept under: its size's bits, bold, italic and family.
     type FontKey = (u64, bool, bool, Family);
 
-    /// Fonts by size and face, and the lines set in them.
-    ///
-    /// The cache is by the whole [`Font`], because a paint measures hundreds of cells and lines
-    /// in a handful of faces, and creating a `CTFont` per piece would be most of the paint.
+    /// Fonts by size and face, and the lines set in them, cached by the whole [`Font`]: a paint
+    /// measures hundreds of pieces in a handful of faces, and a `CTFont` per piece would be most
+    /// of the paint.
     pub struct CoreText {
         base: CGFloat,
         fonts: RefCell<HashMap<FontKey, CFRetained<CTFont>>>,

@@ -2,13 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where Find goes next (M5): `App::find` and `find::step`, turned into the one cell to select —
-//! on whichever sheet it is — and how many there are. Portable, and tested here.
-//!
-//! What a match *is* is `grind_sheet::find`'s: a cell's input text, the formula in display syntax,
-//! case folded unless asked; and where Next goes from a cell that is not a hit is `find::step`'s,
-//! which the GNOME, Windows and browser find bars already share. This is only the glue the Mac's
-//! `performFindPanelAction:` needs.
+//! Where Find goes next: `App::find` and `find::step` turned into the one cell to select, on
+//! whichever sheet, and how many there are — the glue `performFindPanelAction:` needs. What a
+//! match is — a cell's input text, the formula in display syntax, case folded unless asked — is
+//! `grind_sheet::find`'s.
 
 use grind_sheet::find::{self, Search, Towards};
 use grind_sheet::{App, Pos};

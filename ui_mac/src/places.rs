@@ -2,13 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The sidebar's rows — *where you can go* (decision 3) — for either document, portable.
-//!
-//! A spreadsheet's are its sheets, its defined names and its **Problems**; a page's are its
-//! outline, its bookmarks and its Problems (D6, M8). Every row but a heading is a jump, and a
-//! jump is an address the pane's own go-to machinery already reads — `a1` for the grid, `loc`
-//! for the page — so a Problems row goes where `grind lint` says the problem is, by the same
-//! words. `sidebar.rs` is the one AppKit list over these rows; this file decides what they are.
+//! The sidebar's rows — *where you can go* (decision 3) — for either document, portable. A
+//! spreadsheet's are its sheets, defined names and **Problems**; a page's its outline, bookmarks
+//! and Problems. Every row but a heading is a jump to an address the pane's own go-to reads — `a1`
+//! for the grid, `loc` for the page — so a Problems row goes where `grind lint` says. `sidebar.rs`
+//! is the AppKit list over them.
 
 use grind_core::lint::{Diagnostic, Report, Severity};
 use grind_sheet::nav::Selection;

@@ -2,22 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The menu bar, as data — `ui_win32/src/menu.rs`'s idea in the Mac's vocabulary.
+//! The menu bar, as data — portable, tested on any host. The menu bar is this platform's growable
+//! surface (decision 3), so it is where "follow the platform's conventions" would rot first in a
+//! shell nobody here can run; `doc/macos-shell.md`'s *Conventions made mechanical* is the list of
+//! tests at the foot of this file: standard items use standard selectors, no two items share a key
+//! equivalent, nothing takes a shortcut the system reserves, an ellipsis means the item asks for
+//! more, and the application, Window and Help menus are the ones AppKit is told about.
 //!
-//! **Portable, and tested on any host.** The menu bar is this platform's surface that grows
-//! (decision 3), so it is also where "follow the platform's conventions" would rot first in a
-//! shell nobody here can run. `doc/macos-shell.md`'s *Conventions made mechanical* is therefore a
-//! list of tests at the foot of this file: standard items use the standard selectors, no two items
-//! share a key equivalent, nothing takes a shortcut the system reserves, the platform's own
-//! shortcuts are the platform's, an ellipsis means the item asks for more, and the application,
-//! Window and Help menus are the ones AppKit is told about.
-//!
-//! An item's action is one of two things. A **standard selector** goes down the responder chain,
-//! where AppKit, `NSDocument` and `NSDocumentController` answer most of them with no code here —
-//! Open, Save, Close, Revert, Duplicate, Undo, the window list, Hide and Quit — and where an item
-//! nobody answers is greyed by the system. A [`Command`] is a verb of this shell's own, sent as one
-//! selector with the command's index as the item's tag, so the dispatcher in `app.rs` matches on
-//! [`Command`] exhaustively and a command with no handler fails the build.
+//! An item's action is a **standard selector**, going down the responder chain where AppKit,
+//! `NSDocument` and `NSDocumentController` answer most with no code here (and an unanswered one is
+//! greyed by the system), or a [`Command`] — a verb of this shell's own, sent as one selector with
+//! the command's index as the tag, so `app.rs` matches on [`Command`] exhaustively and a command
+//! with no handler fails the build.
 
 use grind_core::DocumentKind;
 use grind_core::style::PALETTE;
@@ -39,12 +35,12 @@ pub enum Command {
     NewSheet,
     /// A new, empty text document.
     NewText,
-    /// The keyboard into the name box, to type a place — `g20`, `Data.B2:C9`, a defined name —
-    /// and go there (M3). ⌘L, the precedent `doc/macos-shell.md` names. On a page, a prompt for
-    /// an address — `p12`, `#intro`, `§2.1` — since a page has no box of its own.
+    /// The keyboard into the name box, to type a place — `g20`, `Data.B2:C9`, a defined name — and
+    /// go there; ⌘L. On a page, a prompt for an address — `p12`, `#intro`, `§2.1` — since a page
+    /// has no box.
     GoTo,
-    /// A sheet, after the last, under `App::fresh_sheet_name` (M4) — Insert ▸ Sheet, where Excel
-    /// for Mac has it.
+    /// A sheet after the last, under `App::fresh_sheet_name` — Insert ▸ Sheet, where Excel for Mac
+    /// has it.
     AddSheet,
     /// The sheet showing, renamed, with every reference that named it following
     /// (`App::rename_sheet`) — Format ▸ Rename Sheet….
@@ -52,9 +48,9 @@ pub enum Command {
     /// The sheet showing, deleted — one ⌘Z brings it back, so there is no confirmation to click
     /// through. Edit ▸ Delete Sheet.
     DeleteSheet,
-    /// One of the five character emphases (M7): on over the selection, or off where every
-    /// character already has it. Bold and Italic reach a cell as well; the other three are the
-    /// page's, since a `CellStyle` has no underline, strike or family of its own to set.
+    /// One of the five character emphases: on over the selection, or off where every character
+    /// already has it. Bold and Italic reach a cell too; the other three are the page's, since a
+    /// `CellStyle` has no strike or family of its own.
     Mark(Emphasis),
     /// A cell's alignment — one field with three answers (`grind_sheet::format::Toggle`).
     Align(Align),
@@ -85,23 +81,22 @@ pub enum Command {
     Block(Block),
     /// Every character or cell property off at once, and a cell's number format with them.
     ClearFormatting,
-    /// The formula read-out and the signature band in plain English — `Present Value(Rate: …)`
-    /// for `=PV(…)` — or in the spec's own spelling (M8). On by default, as in the GNOME and
-    /// Windows windows; a reading, never written back.
+    /// The formula read-out and signature band in plain English — `Present Value(Rate: …)` for
+    /// `=PV(…)` — or in the spec's spelling. On by default; a reading, never written back.
     FriendlyFormulas,
-    /// The active cell's formula unfolded, a call at a time, in plain English (M8).
+    /// The active cell's formula unfolded, a call at a time, in plain English.
     ExplainFormula,
-    /// Every function, with its plain-English name, and the chosen one's call written
-    /// into the cell — Excel for Mac's Insert ▸ Function… (M8).
+    /// Every function with its plain-English name, the chosen one's call written into the cell —
+    /// Excel for Mac's Insert ▸ Function….
     InsertFunction,
-    /// `doc/view-modes.md`'s role overlay: a marker at each cell's leading edge saying what the
-    /// cell *is* — an input, a formula, a label, a number nobody named (M8).
+    /// The role overlay: a marker at each cell's leading edge saying what the cell is — an input,
+    /// a formula, a label, a number nobody named.
     CellRoles,
     /// The name overlay: an outline round each defined name's range, or each bookmark's name
-    /// beside its line on a page (M8).
+    /// beside its line on a page.
     Names,
-    /// The document as its projection, in a pane beside it (D9, M8) — ⌥⌘U, Safari's key for
-    /// showing a page's source.
+    /// The document as its projection, in a pane beside it — ⌥⌘U, Safari's key for a page's
+    /// source.
     ShowSource,
     /// Every formula recalculated now — Excel for Mac's Calculate Now, on its key, ⌘=.
     Recalculate,
@@ -191,8 +186,8 @@ pub enum Command {
     ImageDescription,
     /// Zoom In (1), Zoom Out (-1) or Actual Size (0) — `zoom.rs`.
     Zoom(i8),
-    /// The welcome window back (decision 6, M9) — Window ▸ Welcome to Grind, ⇧⌘1, where Xcode
-    /// keeps its own.
+    /// The welcome window back (decision 6) — Window ▸ Welcome to Grind, ⇧⌘1, where Xcode keeps
+    /// its own.
     Welcome,
 }
 
@@ -565,7 +560,6 @@ pub struct Key {
 }
 
 impl Key {
-    // Tested now, and a notice's from M4 (every notice spells a key as ⌘, never Ctrl).
     #[cfg(test)]
     /// How the menu draws it — `⇧⌘S` — which is also how a notice spells a key (⌘, never Ctrl).
     pub fn spelled(&self) -> String {
@@ -605,11 +599,9 @@ pub enum Item {
     },
 }
 
-/// Which of AppKit's own menus a menu is, when it is one.
-///
-/// Telling AppKit is what makes them work: the Window menu gets the window list, the Help menu
-/// gets Help ▸ Search over every item, Services fills itself, and `NSDocumentController` finds
-/// Open Recent by its `clearRecentDocuments:` item and keeps it.
+/// Which of AppKit's own menus a menu is. Telling AppKit is what makes them work: the Window menu
+/// gets the window list, Help gets Search over every item, Services fills itself, and
+/// `NSDocumentController` finds Open Recent by its `clearRecentDocuments:` item.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
     Application,
@@ -1155,10 +1147,8 @@ pub static MENUS: &[Menu] = &[
     },
 ];
 
-/// The grid's context menu (M9): what a right-click on the cells offers — the clipboard, the
-/// two toggles a cell has, the colours, and Clear. Every row is a menu-bar item with the same
-/// title and action, which a test holds, so the two can never disagree about what a verb is
-/// called.
+/// The grid's context menu: the clipboard, the cell's two toggles, the colours, and Clear. Every
+/// row is a menu-bar item with the same title and action, which a test holds.
 pub static GRID_CONTEXT: Menu = Menu {
     title: "Cells",
     role: Role::Plain,
@@ -1229,10 +1219,9 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    /// The AppKit selectors this table may name — the responder chain's own vocabulary, spelled
-    /// as `NSResponder`, `NSApplication`, `NSWindow`, `NSDocument` and `NSDocumentController`
-    /// declare them. A selector outside this list is a typo until proved otherwise: a misspelt one
-    /// is a grey item and nothing else, which is why it is a test.
+    /// The AppKit selectors this table may name, as `NSResponder`, `NSApplication`, `NSWindow`,
+    /// `NSDocument` and `NSDocumentController` declare them. A selector outside this list is a
+    /// typo until proved otherwise: a misspelt one is just a grey item.
     const KNOWN: &[&str] = &[
         "orderFrontStandardAboutPanel:",
         "hide:",

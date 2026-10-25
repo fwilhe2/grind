@@ -2,16 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The page's numbers, in points — where the text column sits and how blocks are spaced (M6).
-//!
-//! Everything about stacking blocks is `grind_text::flow`'s, shared with every window that sets
-//! a page; this is only what this one is set *at*: its [`Spacing`] and its column. **No AppKit**,
-//! so it is tested on any host.
-//!
-//! The page is the document view of an `NSScrollView` and is laid out in its own coordinates —
-//! flipped, y down from the document's top — so scrolling is the scroll view's business and
-//! nothing here has a scroll offset in it, which is the difference from the Windows pane's
-//! `Page`.
+//! The page's numbers, in points — where the text column sits and how blocks are spaced. Stacking
+//! blocks is `grind_text::flow`'s; this is only its [`Spacing`] and column. **No AppKit**. The
+//! page is the scroll view's document view, laid out flipped from the document's top, so nothing
+//! here has a scroll offset.
 
 use grind_text::flow::Spacing;
 

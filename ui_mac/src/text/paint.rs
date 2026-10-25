@@ -2,26 +2,19 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A frame of the page as a list of [`Op`]s — every decision about what is drawn where, with no
-//! CoreGraphics in it (M6). `sheet/paint.rs`'s twin, and the reason it is portable is the same:
-//! where a run sits, which part of a line a selection washes, where the caret is inside a
-//! composition, all tested here against [`grind_text::Fixed`].
+//! A frame of the page as a list of [`Op`]s, with no CoreGraphics — `sheet/paint.rs`'s twin, so
+//! where a run sits, what a selection washes and where the caret is in a composition are tested
+//! against [`grind_text::Fixed`]. What a line is made of is `grind_text::paint`'s — pieces cut at
+//! every run, tabs and breaks measured and never drawn, the selection band, the bullet — so this
+//! is the walk: the blocks in view, laid out through the page's `Faces`, each piece set in the
+//! [`Font`] its block and run resolve to (`text/face.rs`), which also measured it.
 //!
-//! What a line is made of is `grind_text::paint`'s — pieces cut at every run, a tab and a line
-//! break measured and never drawn, the selection band, the bullet — so this file is only the
-//! walk: the blocks the flow says are in view, each laid out through the page's own `Faces`
-//! (the same answer the caret's motions got), and each piece set in the
-//! [`Font`] its block and its run resolve to (`text/face.rs`), which is
-//! also what measured it.
+//! **An input method's composition is drawn inline**: `App::layout_composing` lays the caret's
+//! block out as if the marked text were typed, and the marked text is underlined, its selected
+//! clause more heavily — the Mac convention.
 //!
-//! **An input method's composition is drawn inline**, in the line it will land in:
-//! `App::layout_composing` lays the caret's block out as if the marked text were typed, and the
-//! marked text is underlined, its selected clause more heavily — the Mac convention, and ahead of
-//! the Windows pane, whose composition is the system's floating box.
-//!
-//! **What it does not draw**, each a named gap in `doc/macos-shell.md`: a picture whose bytes
-//! nothing here decodes (its block is outlined where the picture would go), and paragraph styles
-//! beyond the faces `grind_text::look` names.
+//! Not drawn, each named in `doc/macos-shell.md`: a picture whose bytes nothing here decodes (its
+//! block is outlined), and paragraph styles beyond the faces `grind_text::look` names.
 
 use grind_core::color::{self, Rgb};
 use grind_text::flow::Flow;
@@ -128,7 +121,7 @@ pub struct Frame<'a> {
     pub caret: bool,
     /// What decodes a picture's bytes — `NSImage` on a Mac.
     pub decoder: &'a dyn Decoder,
-    /// View ▸ Names: each bookmark's name in the margin beside its line (M8).
+    /// View ▸ Names: each bookmark's name in the margin beside its line.
     pub names: bool,
     pub palette: &'a Palette,
 }
@@ -439,11 +432,9 @@ pub fn frame(frame: &Frame) -> Vec<Op> {
                     dot += 2.0 * SPELL_DOT;
                 }
             }
-            // `doc/view-modes.md`'s name overlay: every bookmark anchored on this line, named in
-            // the margin beside it — never spliced into the text the way `grind text view
-            // --names` prints it, which would move every offset after it, and never over the
-            // ink, which a name drawn at its own offset would be. Muted: a label on the
-            // document's structure, not a thing to act on.
+            // The name overlay: every bookmark on this line named in the margin — never spliced
+            // into the text, which would move every offset after it, and never over the ink.
+            // Muted: a label, not a control.
             if frame.names {
                 for (offset, name) in &block.marks {
                     if layout.line_at(*offset) != number {

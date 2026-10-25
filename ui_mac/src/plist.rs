@@ -2,19 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `Grind.app`'s Info.plist, generated from one table of types (M10) — portable, and printed by
-//! `grind-mac --info-plist` for the bundle step to write.
-//!
-//! The types are the ones `ui_win32/src/assoc.rs` offers — the three ODF forms of each kind, and
-//! the workbooks, Word documents and delimited text this build imports (`.docm` is offered there
-//! and not here: its Uniform Type Identifier has not been measured) — and the stance is that file's in Mac
-//! terms: **offered, never taken**. Every type is at `LSHandlerRank` **Alternate**, so Grind is
-//! in Open With and a double-click keeps going wherever the user sent it before — except
-//! `.grind`, which nothing else opens, at **Owner**, and declared to conform to
-//! `public.plain-text` so Quick Look previews a projection for free.
-//!
-//! An import is a **Viewer** role, because this build opens a workbook or a CSV and never writes
-//! one back (`doc/xlsx-import.md`: one way in, never out); every ODF form is an **Editor**.
+//! `Grind.app`'s Info.plist, generated from one table of types — portable, printed by `grind-mac
+//! --info-plist` for the bundle step. The types are the three ODF forms of each kind and the
+//! workbooks, Word documents and delimited text it imports (`.docm`'s Uniform Type Identifier has
+//! not been measured, so it is left out). **Offered, never taken**: every type is at
+//! `LSHandlerRank` **Alternate**, so Grind is in Open With and a double-click goes where the user
+//! sent it before — except `.grind`, which nothing else opens, at **Owner**, conforming to
+//! `public.plain-text` so Quick Look previews a projection. An import is a **Viewer** role (one
+//! way in, never out); every ODF form is an **Editor**.
 
 /// How strongly Grind claims a type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -320,8 +315,8 @@ mod tests {
     use grind_core::Form;
     use std::path::Path;
 
-    /// Every extension declared is one this build opens: an ODF form `Form::from_path` reads as
-    /// the form it is, or an import `import.rs` recognises by name.
+    /// Every extension declared is one this binary opens: an ODF form `Form::from_path` reads, or
+    /// an import `import.rs` recognises by name.
     #[test]
     fn every_extension_is_one_this_build_opens() {
         for ty in TYPES {

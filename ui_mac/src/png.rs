@@ -2,14 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A frame's pixels as a PNG — written here rather than by `NSBitmapImageRep`, so that two renders
-//! of one document are the same **bytes** and not merely the same picture.
-//!
-//! Decision 9 asserts `--render-to` twice and compares the files, the way `ui_win32`'s BMP frames
-//! are compared. A system encoder is free to write a timestamp, a colour profile it picked, or a
-//! compression level that changes between releases; this one writes the four chunks a PNG needs
-//! and nothing else, compressed by the `flate2` the workspace already links for `zip`. Portable,
-//! so what it writes is checked on any host.
+//! A frame's pixels as a PNG, written here rather than by `NSBitmapImageRep` so two renders of one
+//! document are the same **bytes**: a system encoder may write a timestamp, a colour profile or a
+//! compression level that changes between releases. This writes the four chunks a PNG needs,
+//! compressed by the `flate2` already linked for `zip`. Portable.
 
 use std::io::Write;
 

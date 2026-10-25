@@ -2,14 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The source pane's arithmetic (D9, M8) — portable.
-//!
-//! The pane shows the document as its projection, read-only, in an `NSTextView`, and three
-//! questions connect it to the document: which line the selection or the caret projects to
-//! (`Projection::line_of`), what a line projects back to (`Projection::address_on_line`), and
-//! where a line is — in UTF-16 units, since that is what an `NSRange` counts. The first two are
-//! the core's, shared by every shell's code view; this file is the third, and the colouring,
-//! which comes from the projection's own token map rather than a highlighter (`doc/dsl.md` §6).
+//! The source pane's arithmetic — portable. It connects the read-only `NSTextView` to the document
+//! through three questions: which line the selection or caret projects to (`Projection::line_of`),
+//! what a line projects back to (`Projection::address_on_line`) — both the core's — and where a
+//! line is in UTF-16 units, an `NSRange`'s count, which is this file's, with the colouring from
+//! the projection's own token map.
 
 use std::ops::Range;
 
