@@ -23,7 +23,6 @@
 pub mod about;
 pub mod code;
 pub mod command;
-pub mod import;
 pub mod ink;
 pub mod palette;
 pub mod problems;
@@ -1170,13 +1169,14 @@ impl Shell {
     /// (`grind_core::kind`): both readers are tolerant, and a spreadsheet handed to the text
     /// reader would be an empty document rather than an error.
     fn open(&self, name: String, bytes: &[u8]) {
-        // A workbook is imported first and arrives as the flat ODF document it became, under
-        // the name it will download as.
-        let (name, bytes, summary) = match import::workbook(&name, bytes) {
-            Some(Ok(imported)) => (imported.name, imported.odf, Some(imported.summary)),
-            Some(Err(error)) => return self.set_message(error),
-            None => (name, bytes.to_vec(), None),
-        };
+        // An import arrives as the flat ODF document it became, under the name it will
+        // download as.
+        let (name, bytes, summary) =
+            match grind_open::import(&name, bytes, &grind_text::commonmark::nowhere) {
+                Some(Ok(imported)) => (imported.name, imported.odf, Some(imported.summary)),
+                Some(Err(error)) => return self.set_message(error),
+                None => (name, bytes.to_vec(), None),
+            };
         let bytes = bytes.as_slice();
         let opened = match kind(bytes) {
             Some(DocumentKind::Spreadsheet) => self.sheet.open(&name, bytes).map(|()| Mode::Sheet),

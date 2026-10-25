@@ -1383,12 +1383,11 @@ name = "grind-web"
 version = "0.0.0"
 dependencies = [
  "grind-core",
- "grind-docx",
+ "grind-open",
  "grind-print",
  "grind-sheet",
  "grind-spell",
  "grind-text",
- "grind-xlsx",
  "js-sys",
  "wasm-bindgen",
  "wasm-bindgen-futures",
