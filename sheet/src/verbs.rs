@@ -113,7 +113,8 @@ pub fn insert_chart(
 
 /// Restyle the chart at `index` from a person's words — `line`, `bar`, `pie`; `title=Quarterly
 /// sales` (to the end of the line) or `no-title`; `legend=top|bottom|start|end|none`;
-/// `width=12cm`, `height=8cm` — keeping everything else. For a window with no chart dialog.
+/// `width=12cm`, `height=8cm`; `range=A1:C9`, the cells it charts, read as Insert Chart reads
+/// them — keeping everything else. For a window with no chart dialog.
 /// Returns the sentence to say, or why not.
 ///
 /// ponytail: a look and a size together are two undo steps (`edit_chart`, `reshape_chart`); one
@@ -156,6 +157,18 @@ pub fn restyle_chart(
                     "width" => width = Some(length.to_owned()),
                     _ => height = Some(length.to_owned()),
                 }
+            }
+            _ if word.starts_with("range=") => {
+                let text = &word["range=".len()..];
+                let reference = crate::a1::parse(text)
+                    .map_err(|_| format!("“{text}” is not a range — A1:C9"))?;
+                let (_, start, end) =
+                    crate::a1::resolve_in(app, sheet, &reference).map_err(|e| e.to_string())?;
+                let guessed = app
+                    .suggest_chart(sheet, start, end, None)
+                    .map_err(|e| e.to_string())?;
+                spec.categories = guessed.spec.categories;
+                spec.series = guessed.spec.series;
             }
             _ if word.starts_with("title=") => {
                 // The title is the rest of the line: it has spaces in it.
@@ -218,8 +231,8 @@ pub fn set_chart_kind(
 }
 
 /// Every word [`restyle_chart`] takes, for a prompt to say.
-pub const CHART_WORDS: &str =
-    "bar, line, pie, title=…, no-title, legend=top|bottom|start|end|none, width=12cm, height=8cm";
+pub const CHART_WORDS: &str = "bar, line, pie, title=…, no-title, legend=top|bottom|start|end|none, width=12cm, height=8cm, \
+     range=A1:C9";
 
 /// Move the chart at `index` so its top-left corner is at the active cell's, keeping its size, one
 /// undo step (`App::reshape_chart`). `place` is [`insert_chart`]'s. For a window that does not
@@ -459,6 +472,14 @@ mod tests {
         );
         assert_eq!(sized.kind, crate::ChartKind::Line);
         assert!(restyle_chart(&app, 0, 0, "width=wide").is_err());
+
+        // A range is read again as Insert Chart reads one; the look stays.
+        restyle_chart(&app, 0, 0, "range=A1:B2").unwrap();
+        let narrowed = crate::ChartSpec::of(&app.charts(0).unwrap()[0]);
+        let values = &narrowed.series[0].0;
+        assert!(values.contains("B2") && !values.contains("B3"), "{values}");
+        assert_eq!(narrowed.kind, crate::ChartKind::Line);
+        assert!(restyle_chart(&app, 0, 0, "range=nowhere").is_err());
 
         // Moved: the corner at the cell, the size kept, one undo step.
         let said = move_chart(&app, 0, 0, Pos::new(4, 2), |col, row| {

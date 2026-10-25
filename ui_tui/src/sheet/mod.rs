@@ -43,7 +43,7 @@ Spreadsheet:
   :yank-values            — the selection as shown (results, not formulas) into the register
   :chart  :chart!         — a chart of the table here (drawn by the other windows); drop the chart
   :chart <words>          — change the chart: line|bar|pie  title=…|no-title  legend=top|…|none
-                            width=12cm  height=8cm
+                            width=12cm  height=8cm  range=A1:C9
   :chart here             — move the chart so it starts at the cursor's cell
                             (the chart: the one :charts selected, else the sheet's last)
   :calc [text]            — every formula in the document, searchable; Enter jumps to its cell
