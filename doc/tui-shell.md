@@ -172,6 +172,9 @@ Sixteen colours, so a
 document's `#ff4136` is drawn as one of them — `ui_tui/src/ink.rs`, by the rule "The UX pass"
 below gives: a text colour as its hue family's member that reads on a light *and* a dark
 terminal, a fill as its nearest, and ODF's automatic ink on a fill.
+A cell's left or right border is a `│` in the column separator, in its colour by the same rule.
+A top or bottom border is not drawn: there is no line between two rows to put it in, and an
+underline would read as underlined text.
 No pictures, no charts: a chart in a file is kept and written back untouched, and nothing here
 draws one.
 

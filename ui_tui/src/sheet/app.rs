@@ -3213,6 +3213,20 @@ impl App {
                         };
                         spans.push(Span::styled(piece, style));
                     }
+                    // A border between this cell and the next, drawn in the separator column.
+                    let next = cols.get(index).map(|(next, _)| *next);
+                    let rule = ruled(cell, 1).or_else(|| {
+                        let neighbour = viewport.as_ref()?.style(r, next?);
+                        ruled(neighbour, 0)
+                    });
+                    if let (Some(rule), Some(last)) = (rule, spans.last_mut())
+                        && last.content.ends_with(' ')
+                    {
+                        let mut kept = last.content.to_string();
+                        kept.pop();
+                        last.content = kept.into();
+                        spans.push(Span::styled("\u{2502}", rule));
+                    }
                 }
                 lines.push(Line::from(spans));
             }
@@ -3460,8 +3474,8 @@ fn role_color(role: grind_sheet::view::CellRole) -> Color {
 }
 
 /// A cell's own styling, as the attributes a terminal has: four of `CellStyle`'s nine properties.
-/// A font size, a border and a wrap mean nothing in a grid of one font and one line per row; they
-/// are stored, and other clients draw them. Alignment is [`geom::pad`]'s, which knows the width.
+/// A font size means nothing in a grid of one font, a border is [`ruled`]'s and a wrap is
+/// [`cell_lines`]'s. Alignment is [`geom::pad`]'s, which knows the width.
 fn terminal_style(style: Option<&CellStyle>) -> Style {
     let Some(style) = style else {
         return Style::default();
@@ -3490,6 +3504,18 @@ fn terminal_style(style: Option<&CellStyle>) -> Style {
         out = out.bg(color);
     }
     out
+}
+
+/// How a cell's border on `edge` (`style::EDGES` order) is drawn as a separator, in its colour
+/// as `crate::ink` reads one; `None` for no border, `none` and `hidden` included.
+fn ruled(style: Option<&CellStyle>, edge: usize) -> Option<Style> {
+    let border = style?.borders[edge].as_deref()?;
+    let (points, line, color) = grind_sheet::style::border_parts(border)?;
+    if matches!(line, "none" | "hidden") || points <= 0.0 {
+        return None;
+    }
+    let (ink, _) = crate::ink::colours(Some(color), None);
+    Some(ink.map_or_else(Style::default, |ink| Style::default().fg(ink)))
 }
 
 /// Which way a cell's text sits in its column: what the document said, or — for a number with
@@ -5148,6 +5174,31 @@ mod tests {
 
         app.run_command("width nonsense");
         assert!(app.status.starts_with("not a width"), "{}", app.status);
+    }
+
+    /// A left or right border is a rule in the column separator; a cell without one keeps a space.
+    #[test]
+    fn a_side_border_is_drawn_in_the_separator() {
+        let mut app = filled();
+        let mut style = CellStyle::default();
+        style.borders[1] = Some("0.5pt solid #000000".to_owned());
+        app.core
+            .set_style(0, Pos::new(1, 0), Pos::new(1, 0), Some(style))
+            .unwrap();
+        app.active = Pos::new(4, 1);
+        let rows = screen(&mut app, 60, 12);
+        let cdu = rows.iter().find(|row| row.contains("CDU")).expect("row 2");
+        let party = rows
+            .iter()
+            .find(|row| row.contains("Party"))
+            .expect("row 1");
+        assert_eq!(cdu.matches('\u{2502}').count(), 1, "{rows:#?}");
+        assert_eq!(party.matches('\u{2502}').count(), 0, "{rows:#?}");
+        assert_eq!(
+            cdu.find('\u{2502}'),
+            party.find("Votes").map(|at| at - 1),
+            "{rows:#?}"
+        );
     }
 
     /// A row height is lines of a default row's height: written so, and drawn so.

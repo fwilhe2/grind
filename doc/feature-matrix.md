@@ -246,7 +246,7 @@ borders, which that window does not draw either.
 | **Drawn**: indent | — | ● | ● ⁱʳ | ● | ● | ● |
 | **Drawn**: rotated text | — | ● ⁱʳ | ○ | ● ʳᵗ | ● ʳᵗ | ● ʳᵗ |
 | **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● | ● |
-| **Drawn**: borders | — | ● ᵉ | ○ | ● | ● ʷᵇ | ● ³ |
+| **Drawn**: borders | — | ● ᵉ | ◐ ᵇᵈ | ● | ● ʷᵇ | ● ³ |
 | **Drawn**: wrapped text | — | ● | ● ˡⁿ | ● | ● ʷʷ | ● ¹ |
 | **Drawn**: a number too wide for its column is `###`, never cut (`numfmt::overflow`) | — | ● | ● | ● | ● | ● |
 | **Drawn**: a plain number (the General format) narrows to its column first — fewer decimals, then scientific (`Viewport::narrower`) | — | ● | ● | ● | ● | ● |
@@ -267,6 +267,7 @@ hoisted from `ui_win32/src/sheet/currency.rs`), and Format ▸ Use 1000 Separato
 ˣ Named in `doc/windows-shell.md`'s "What it will not do": this window draws neither wrapped text
 nor borders, and a control whose effect cannot be seen is not offered.
 ᵈ Sixteen terminal colours, nearest match — the medium, not a gap (`doc/tui-shell.md`).
+ᵇᵈ A left or right border as `│` in the column separator, in its colour; a top or bottom one is not drawn, having no line between rows to go in (`doc/tui-shell.md`, 2026-10-25).
 ᵉ Through `look::border_strokes` since 2026-10-25, as Windows and the Mac draw them: `double` as two lines, `dashed` and `dotted` as runs in step across cells, LibreOffice's `dash-dot` kinds as dashes.
 ᶠ Above the number popover's settings: the active cell as they would show it, from
 `App::shown_as`, the renderer's own answer — and the strip's button face says what the cell is
