@@ -104,6 +104,30 @@ pub fn fold_advances(text: &str, dx: &[i32], base: f32, out: &mut Vec<f32>) -> f
     last
 }
 
+/// The body face's size in points: [`crate::theme::text::PROSE`] pixels at 96 DPI.
+const BODY_PT: f64 = crate::theme::text::PROSE * 72.0 / 96.0;
+
+/// A run's `fo:font-size` in pixels, in a block whose face is `block_px`, the body being `body_px`:
+/// a point length (`14pt`) or a share of the block's face (`120%`). Anything else, a `cm` size
+/// included, is the block's own.
+pub fn size_px(font_size: Option<&str>, block_px: f64, body_px: f64) -> f64 {
+    let Some(value) = font_size.map(str::trim) else {
+        return block_px;
+    };
+    if let Some(points) = value
+        .strip_suffix("pt")
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .filter(|points| *points > 0.0)
+    {
+        return points * body_px / BODY_PT;
+    }
+    value
+        .strip_suffix('%')
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .filter(|percent| *percent > 0.0)
+        .map_or(block_px, |percent| block_px * percent / 100.0)
+}
+
 #[cfg(windows)]
 pub use windows_impl::{Faces, Fonts};
 
@@ -201,8 +225,8 @@ mod windows_impl {
         }
 
         /// The font a fragment of `spec`'s block, formatted with `props`, is set in: the run's
-        /// formatting over the block's, so `**bold**` in a heading is bold *and* a heading.
-        /// `fo:font-size` is **not** honoured — see [`Face::line_height`].
+        /// formatting over the block's, so `**bold**` in a heading is bold *and* a heading, and a
+        /// run's own size over the block's ([`super::size_px`]).
         fn resolve(&self, spec: &Spec, props: &CharStyle) -> HFONT {
             let face = props
                 .font_family
@@ -212,7 +236,13 @@ mod windows_impl {
                 .unwrap_or(BODY_FACE);
             self.font(Key {
                 face: face.to_owned(),
-                height: (self.body_px * spec.scale).round().max(1.0) as i32,
+                height: super::size_px(
+                    props.font_size.as_deref(),
+                    self.body_px * spec.scale,
+                    self.body_px,
+                )
+                .round()
+                .max(1.0) as i32,
                 bold: spec.bold || props.is_bold(),
                 italic: spec.italic || props.is_italic(),
                 underline: props.is_underlined(),
@@ -260,6 +290,17 @@ mod windows_impl {
         /// How tall a line set in `font` is: ascent, descent and the leading the font itself asks
         /// for between one line and the next.
         fn height(&self, font: HFONT) -> f32 {
+            let tm = self.text_metrics(font);
+            ((tm.tmHeight + tm.tmExternalLeading) as f32).max(1.0)
+        }
+
+        /// How far below a line's top the baseline of text in `font` sits.
+        fn ascent(&self, font: HFONT) -> f32 {
+            let tm = self.text_metrics(font);
+            (tm.tmAscent + tm.tmExternalLeading) as f32
+        }
+
+        fn text_metrics(&self, font: HFONT) -> TEXTMETRICW {
             let mut tm = TEXTMETRICW::default();
             // SAFETY: `tm` is a live local; the font is restored before the call returns.
             unsafe {
@@ -267,7 +308,7 @@ mod windows_impl {
                 let _ = GetTextMetricsW(self.dc, &mut tm);
                 SelectObject(self.dc, previous);
             }
-            ((tm.tmHeight + tm.tmExternalLeading) as f32).max(1.0)
+            tm
         }
     }
 
@@ -305,16 +346,28 @@ mod windows_impl {
             }
         }
 
-        /// Draw one run at `x`, top at `top`, in the font it was **measured** in: `ExtTextOutW`
-        /// with that measurement's advance array (decision 3), not `DrawTextW`, which would place
-        /// glyphs where the caret arithmetic does not. The advances are per code unit, which
-        /// `ExtTextOutW` wants, so this is the one place they are not folded to characters.
+        /// The font a fragment of this block in `style` is set in, for its height and ascent.
+        fn sized(&self, style: &TextStyle) -> HFONT {
+            let props = CharStyle {
+                font_size: style.font_size.clone(),
+                font_weight: style.font_weight.clone(),
+                font_style: style.font_style.clone(),
+                font_family: style.font_family.clone(),
+                ..CharStyle::default()
+            };
+            self.fonts.resolve(&self.spec, &props)
+        }
+
+        /// Draw one run at `x`, sitting on `baseline`, in the font it was **measured** in:
+        /// `ExtTextOutW` with that measurement's advance array (decision 3), not `DrawTextW`, which
+        /// would place glyphs where the caret arithmetic does not. The advances are per code unit,
+        /// which `ExtTextOutW` wants, so this is the one place they are not folded to characters.
         /// Returns how far the pen moved.
         pub fn draw_run(
             &self,
             dc: HDC,
             x: f64,
-            top: f64,
+            baseline: f64,
             text: &str,
             props: &CharStyle,
             ink: Rgb,
@@ -324,6 +377,8 @@ mod windows_impl {
                 return 0.0;
             }
             let font = self.fonts.resolve(&self.spec, props);
+            let top = baseline - f64::from(self.fonts.ascent(font));
+            let height = self.fonts.height(font);
             let mut dx = vec![0i32; units.len()];
             let mut size = SIZE::default();
             // SAFETY: every buffer is a live local of exactly the length given; the DC's previous
@@ -360,7 +415,7 @@ mod windows_impl {
                     left: x.round() as i32,
                     top: top.round() as i32,
                     right: (x + f64::from(size.cx)).round() as i32,
-                    bottom: (top + f64::from(self.height)).round() as i32,
+                    bottom: (top + f64::from(height)).round() as i32,
                 };
                 if let Some(colour) = highlight {
                     SetBkColor(dc, COLORREF(colour.colorref()));
@@ -490,11 +545,17 @@ mod windows_impl {
             }
         }
 
-        /// The block face's own height, whatever the fragment is set in. **A run's `fo:font-size`
-        /// is not honoured**, and width and height must move together: a size honoured in width
-        /// and not height would measure a big word wide on a line too short for it.
-        fn line_height(&self, _style: &TextStyle) -> f32 {
-            self.height
+        /// The height of the font the fragment is set in; `layout::wrap` takes the tallest, so a
+        /// 24pt word makes room for itself.
+        fn line_height(&self, style: &TextStyle) -> f32 {
+            match style.font_size {
+                None => self.height,
+                Some(_) => self.fonts.height(self.sized(style)),
+            }
+        }
+
+        fn ascent(&self, style: &TextStyle) -> f32 {
+            self.fonts.ascent(self.sized(style))
         }
     }
 
@@ -642,6 +703,19 @@ mod tests {
         let last = fold_advances("ab", &[7, 15], 0.0, &mut out);
         assert_eq!(out, vec![7.0, 15.0]);
         assert_eq!(last, 15.0);
+    }
+
+    /// A run's size: points against the body's, a percentage against its block's face, anything
+    /// else the block's own.
+    #[test]
+    fn a_runs_size_is_points_or_a_share_of_its_block() {
+        let body = crate::theme::text::PROSE;
+        assert_eq!(size_px(None, 30.0, body), 30.0);
+        assert_eq!(size_px(Some("11.25pt"), 30.0, body), body);
+        assert_eq!(size_px(Some("22.5pt"), 30.0, body), 2.0 * body);
+        assert_eq!(size_px(Some("150%"), 30.0, body), 45.0);
+        assert_eq!(size_px(Some("1cm"), 30.0, body), 30.0);
+        assert_eq!(size_px(Some("-3pt"), 30.0, body), 30.0);
     }
 
     /// A character outside the basic multilingual plane is two code units and **one** advance.

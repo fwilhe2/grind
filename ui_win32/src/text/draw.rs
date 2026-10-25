@@ -239,7 +239,7 @@ mod windows_impl {
                 face.draw_run(
                     dc,
                     x - scale(super::super::geom::INDENT, page.dpi) * 0.7,
-                    top,
+                    top + f64::from(painted.layout.baseline()),
                     mark,
                     &CharStyle::default(),
                     theme.text,
@@ -300,7 +300,7 @@ mod windows_impl {
                         face.draw_run(
                             dc,
                             x + f64::from(painted.layout.x_at(start)),
-                            line_top,
+                            line_top + f64::from(painted.layout.baseline()),
                             segment,
                             piece.props,
                             ink,

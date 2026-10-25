@@ -450,7 +450,7 @@ There is no dialog.
 | Clear formatting | ● | ● | ● | ● | ● | ● |
 | **Drawn**: the four booleans | — | ● | ● | ● | ● | ● |
 | **Drawn**: colour, highlight | — | ● | ◐ ʰ | ● | ● | ● |
-| **Drawn**: family, size | — | ● ⁱ | ○ ʰ | ● | ◐ ʳ | ● |
+| **Drawn**: family, size | — | ● ⁱ | ○ ʰ | ● | ● ʳ | ● |
 | **Block structure** | | | | | | |
 | Paragraph, Heading 1–3 | ● | ● | ● | ● | ● | ● |
 | Heading 4–6 | ● | ● | ● | ● | ● | ● ² |
@@ -510,9 +510,9 @@ the same thing under the name the document uses: `` `code` `` is a *family*, not
 ⁱ Both, and the size reaches the line's *height* as well as its width — `metrics::size_units` is
 one parse feeding the measuring attribute, `Metrics::line_height` and the drawing attribute, so a
 24pt word makes room for itself. A size in a unit with no resolution here (`5cm`) is left alone.
-ʳ The family is honoured, the size deliberately is not — a line's height is one `line_height`
-per fragment, so honouring a size in the width and not in the height would measure a big word
-wide on a line too short to hold it.
+ʳ Both, since 2026-10-25: a run is measured, and drawn on the line's baseline, in its own size
+(`metrics::size_px`, points or a share of its block's face), and the line is as tall as its
+tallest run, as `layout::wrap` makes it everywhere. Seen in a Wine render.
 ʲ Heading 4 only.
 ˡ The browser draws a tick at the anchor's own offset and the name at the end of its line; the terminal writes `‹name›+offset` after the block's first line, since a mark inside the line would be a character the caret counts. Windows draws the name at the offset, which this row missed until 2026-10-25.
 Only `grind-text-gtk` puts a tick at the exact offset — it already has `x_at` for the caret.
