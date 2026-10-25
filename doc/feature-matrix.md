@@ -243,7 +243,7 @@ borders, which that window does not draw either.
 | **Drawn**: rotated text | — | ● ⁱʳ | ○ | ● ʳᵗ | ● ʳᵗ | ● ʳᵗ |
 | **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● | ● |
 | **Drawn**: borders | — | ◐ ᵉ | ○ | ● | ◐ ʷᵇ | ◐ ³ |
-| **Drawn**: wrapped text | — | ● | ○ | ● | ● ʷʷ | ● ¹ |
+| **Drawn**: wrapped text | — | ● | ● ˡⁿ | ● | ● ʷʷ | ● ¹ |
 | **Drawn**: a number too wide for its column is `###`, never cut (`numfmt::overflow`) | — | ● | ● | ● | ● | ● |
 | **Drawn**: a plain number (the General format) narrows to its column first — fewer decimals, then scientific (`Viewport::narrower`) | — | ● | ● | ● | ● | ● |
 
@@ -256,6 +256,7 @@ Decimals), and the three currencies of `numfmt::CURRENCIES` — Format ▸ Curre
 context menu, a currency cell keeping its own decimals and grouping (`grind_sheet::format::currency`,
 hoisted from `ui_win32/src/sheet/currency.rs`), and Format ▸ Use 1000 Separator, checked by the cell
 (`format::grouped`, 2026-10-07). No other symbol.
+ˡⁿ A wrapped text cell is broken at its column's width by `grind_core::layout::wrap` in terminal cells, and its row is as many lines as its tallest cell, up to eight; the rows drawn are those whose lines fit (2026-10-25, `TestBackend`-checked).
 ʷᵗ The rows a wrapped or larger cell grows are measured by `grind_sheet::autoheight` on the stylesheet's own line height (`layout::Drawn`), once per change, and given that height — so the rows counted onto the surface are the rows drawn there (2026-10-25, smoke-checked).
 ʷʷ Closed 2026-10-02: Format ▸ Wrap Text; the grid breaks a wrapped cell with `grind_core::layout::wrap` over GDI measurements (`sheet/measure.rs`) and grows rows through `grind_sheet::autoheight` (hoisted from the Mac) — checked by a Wine render.
 ʷᵇ Closed 2026-10-02: Format ▸ All Borders / Remove Borders (`format::bordered`), and the grid draws every edge through `look::border_strokes` — the Mac's geometry, hoisted — checked by a Wine render. `dashed` and `dotted` draw solid.
@@ -305,7 +306,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Drag a track edge to resize | — | ● | ○ | ● ʷʰ | ● ʷᵈ | ● |
 | Autofit a column | ● ᶜᶦ | ● ᵍᶠ | ● ᶠⁱ | ● ʷᶠ | ● ᶠᶜ | ● ᵐᶠ |
 | Fit Content to Cells — every column and row, one undo step | ● ᶜᶦ | ● ᵍᶠ | ● ᶠⁱ | ● ʷᶠ | ● ᶠᶜ | ● ᵐᶠ |
-| Row auto-height from content (L3) | — | ● | ○ | ● ʷᵗ | ● ʷʷ | ● |
+| Row auto-height from content (L3) | — | ● | ● ˡⁿ | ● ʷᵗ | ● ʷʷ | ● |
 | **Honours** the document's widths and heights | ● | ● | ◐ ᵃ | ● | ● | ● |
 | Hide / unhide a row or column | ● | ● | ● | ● | ● | ● |
 | **Honours** hidden tracks | ● | ● | ● | ● | ● | ● |
@@ -705,7 +706,7 @@ look::border_strokes, format::bordered}`.
 
 **Still open**, as the ○ cells above say: charts — editing and restyling outside GNOME and
 the Mac beyond the kind (which every window chooses since 2026-10-09), and none drawn by the terminal; the terminal's zoom and drag (a terminal has neither) and
-its borders and pictures (it has no way to draw them); wrapped text and row heights in the terminal; the seven CSV import options in any window; a welcome screen and a
+its borders and pictures (it has no way to draw them); the seven CSV import options in any window; a welcome screen and a
 second document kind in the two GNOME shells (by decision); and the number-format sample in the terminal.
 
 **Closed on 2026-10-03** (build- and lint-checked, jsdom smoke for the browser; not seen drawn): the

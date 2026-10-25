@@ -175,11 +175,11 @@ terminal, a fill as its nearest, and ODF's automatic ink on a fill.
 No pictures, no charts: a chart in a file is kept and written back untouched, and nothing here
 draws one.
 
-**A row is one line**, so a **row height** is stored and not drawn — `:height` writes one into
-the document in ODF's own unit and says on the status line that this shell will not show it.
-That is the medium and not a gap in the same way a font size is: every other shell draws it, the
-CLI reads it back, and a document that arrives with row heights keeps them. Wrapped cell text is
-the same limit seen from the other side, and it is why `:wrap` is stored and not drawn either.
+**A row is as many lines as its content needs**, not as tall as the document says: a **row
+height** is stored and not drawn — `:height` writes one into the document in ODF's own unit and
+says on the status line that this shell will not show it. A wrapped text cell is broken at its
+column's width in terminal cells and its row grows to its tallest cell, up to eight lines
+(`geom::wrapped`); the rows drawn are those whose lines fit.
 
 **The grid.** No point mode while typing a formula — the offers and the signature band are built
 (`ui_tui/src/sheet/assist.rs`), and arrow keys building a reference into a half-typed formula are

@@ -157,6 +157,32 @@ pub fn rows(hidden: &HashSet<u32>, first: u32, count: u32, limit: u32) -> Vec<u3
     out
 }
 
+/// The most lines a wrapped row is drawn in; past it the cell is cut, as a short row cuts it in a
+/// window.
+pub const MAX_LINES: usize = 8;
+
+/// `text` broken to fit a column `width` cells wide less its separator, as ranges of its
+/// characters — one range when it fits, and at most [`MAX_LINES`].
+pub fn wrapped(text: &str, width: u16) -> Vec<std::ops::Range<usize>> {
+    use grind_core::layout::{Fragment, wrap};
+    let style = grind_core::style::TextStyle::default();
+    let fragment = Fragment {
+        text,
+        style: &style,
+    };
+    let room = f32::from(width.saturating_sub(1).max(1));
+    let mut lines: Vec<_> = wrap(std::slice::from_ref(&fragment), room, &crate::text::Cells)
+        .lines()
+        .iter()
+        .map(|line| line.start..line.end)
+        .collect();
+    lines.truncate(MAX_LINES);
+    if lines.is_empty() {
+        lines.push(0..text.chars().count());
+    }
+    lines
+}
+
 /// [`follow`]'s row twin: the first row to show so that `active` is on screen.
 pub fn follow_row(hidden: &HashSet<u32>, first: u32, active: u32, count: u32, limit: u32) -> u32 {
     if active < first {
@@ -275,6 +301,18 @@ pub fn pad_marked(
 mod tests {
     use super::*;
     use unicode_width::UnicodeWidthStr;
+
+    #[test]
+    fn a_wrapped_cell_breaks_at_its_column_and_stops_at_max_lines() {
+        assert_eq!(
+            (wrapped("short", 10).len(), wrapped("short", 10)[0].clone()),
+            (1, 0..5)
+        );
+        let lines = wrapped("one two three", 6);
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert_eq!(wrapped(&"word ".repeat(40), 6).len(), MAX_LINES);
+        assert_eq!(wrapped("", 10)[0], 0..0, "an empty text is one empty line");
+    }
 
     #[test]
     // One misspelt word is a slice of one range, which is what `pad_marked` takes.

@@ -2891,19 +2891,29 @@ impl App {
         self.follow_cursor(&tracks, &hidden, visible_rows, room);
 
         let cols = geom::columns(&tracks, self.top.col, room, super::MAX_COLS);
-        let rows = geom::rows(&hidden, self.top.row, visible_rows, super::MAX_ROWS);
         let last_col = cols.last().map_or(self.top.col + 1, |(col, _)| col + 1);
-        let last_row = rows.last().map_or(self.top.row + 1, |row| row + 1);
 
-        let viewport = self
-            .core
-            .get_viewport_with(
-                self.sheet,
-                self.top.row..last_row,
-                self.top.col..last_col,
-                self.overlays,
-            )
-            .ok();
+        // A wrapped row takes as many lines as its tallest cell, so the rows drawn are those whose
+        // lines fit, and the view moves on until the cursor's row is one of them.
+        let at = self.point.as_ref().map_or(self.active, |p| p.cell).row;
+        let (rows, viewport) = loop {
+            let rows = geom::rows(&hidden, self.top.row, visible_rows, super::MAX_ROWS);
+            let last_row = rows.last().map_or(self.top.row + 1, |row| row + 1);
+            let viewport = self
+                .core
+                .get_viewport_with(
+                    self.sheet,
+                    self.top.row..last_row,
+                    self.top.col..last_col,
+                    self.overlays,
+                )
+                .ok();
+            let rows = fitted(&rows, viewport.as_ref(), &cols, visible_rows);
+            match rows.iter().any(|(row, _)| *row == at) || at < self.top.row || rows.len() < 2 {
+                true => break (rows, viewport),
+                false => self.top.row = rows[1].0,
+            }
+        };
 
         // --- the title bar: which document, and which of its sheets ---
         let name = match (&self.path, &self.imported) {
@@ -2952,194 +2962,212 @@ impl App {
         frame.render_widget(Line::from(header), col_header_area);
 
         let mut lines = Vec::with_capacity(rows.len());
-        for r in rows.iter().copied() {
-            let mut spans = vec![Span::styled(
-                format!(
-                    "{:>width$} ",
-                    r + 1,
-                    width = (ROW_HEADER_WIDTH - 1) as usize
-                ),
-                match r == self.active.row {
-                    true => HEADER_ACTIVE,
-                    false => HEADER_ROW,
-                },
-            )];
-            let mut index = 0;
-            while index < cols.len() {
-                let (c, width) = &cols[index];
-                index += 1;
-                // A merge is one cell: its top-left cell's text across every column of it on
-                // screen, on the first of its rows on screen, and nothing in the cells it
-                // covers.
-                if let Some(m) = viewport.as_ref().and_then(|v| v.merge_at(r, *c)) {
-                    let mut span = usize::from(*width);
-                    while let Some((next, w)) = cols.get(index)
-                        && *next <= m.end.col
-                    {
-                        span += usize::from(*w);
-                        index += 1;
+        for (r, height) in rows.iter().copied() {
+            for k in 0..height {
+                let number = match k {
+                    0 => (r + 1).to_string(),
+                    _ => String::new(),
+                };
+                let mut spans = vec![Span::styled(
+                    format!(
+                        "{:>width$} ",
+                        number,
+                        width = (ROW_HEADER_WIDTH - 1) as usize
+                    ),
+                    match r == self.active.row {
+                        true => HEADER_ACTIVE,
+                        false => HEADER_ROW,
+                    },
+                )];
+                let mut index = 0;
+                while index < cols.len() {
+                    let (c, width) = &cols[index];
+                    index += 1;
+                    // A merge is one cell: its top-left cell's text across every column of it on
+                    // screen, on the first of its rows on screen, and nothing in the cells it
+                    // covers.
+                    if let Some(m) = viewport.as_ref().and_then(|v| v.merge_at(r, *c)) {
+                        let mut span = usize::from(*width);
+                        while let Some((next, w)) = cols.get(index)
+                            && *next <= m.end.col
+                        {
+                            span += usize::from(*w);
+                            index += 1;
+                        }
+                        let first_row = rows
+                            .iter()
+                            .map(|(row, _)| *row)
+                            .find(|row| (m.anchor.row..=m.end.row).contains(row));
+                        let text = match first_row == Some(r) && k == 0 {
+                            true => m.text.as_str(),
+                            false => "",
+                        };
+                        let numeric = matches!(m.value, CellValue::Number(_));
+                        let mut style = terminal_style(m.style.as_ref());
+                        if m.anchor == self.active || self.selected(m.anchor) {
+                            style = style.add_modifier(Modifier::REVERSED);
+                        }
+                        spans.push(Span::styled(
+                            geom::pad(
+                                text,
+                                span,
+                                alignment(m.style.as_ref(), numeric),
+                                match numeric {
+                                    true => geom::Fit::Number,
+                                    false => geom::Fit::Text,
+                                },
+                            ),
+                            style,
+                        ));
+                        continue;
                     }
-                    let first_row = rows
-                        .iter()
-                        .copied()
-                        .find(|row| (m.anchor.row..=m.end.row).contains(row));
-                    let text = match first_row == Some(r) {
-                        true => m.text.as_str(),
-                        false => "",
+                    let (r, c, column) = (r, *c, *width);
+                    let shown_formula = self
+                        .formulas
+                        .then(|| self.core.formula(self.sheet, Pos::new(r, c)).ok().flatten())
+                        .flatten()
+                        .and_then(|_| self.core.input_text(self.sheet, Pos::new(r, c)).ok());
+                    // A checkbox is drawn as one, ahead of whatever its cell holds.
+                    let boxed = viewport
+                        .as_ref()
+                        .and_then(|v| v.checkbox(r, c))
+                        .map(|ticked| {
+                            let text = shown_formula
+                                .as_deref()
+                                .or_else(|| viewport.as_ref().and_then(|v| v.text(r, c)))
+                                .unwrap_or("");
+                            let mark = match ticked {
+                                true => "[x]",
+                                false => "[ ]",
+                            };
+                            match text.is_empty() {
+                                true => mark.to_owned(),
+                                false => format!("{mark} {text}"),
+                            }
+                        });
+                    let text = boxed
+                        .as_deref()
+                        .or(shown_formula.as_deref())
+                        .or_else(|| viewport.as_ref().and_then(|v| v.text(r, c)))
+                        .unwrap_or("");
+                    let cell = viewport.as_ref().and_then(|v| v.style(r, c));
+                    let numeric = matches!(
+                        viewport.as_ref().and_then(|v| v.get(r, c)),
+                        Some(CellValue::Number(_))
+                    );
+                    let role = viewport.as_ref().and_then(|v| v.role(r, c));
+                    // The document's styling, then the shell's marks over it — the active cell and the
+                    // selection last. In role mode the document's colours are suppressed
+                    // (`doc/view-modes.md` §4.5): colour means role alone.
+                    let mut style = match role {
+                        Some(role) => Style::default().fg(role_color(role)),
+                        None => terminal_style(cell),
                     };
-                    let numeric = matches!(m.value, CellValue::Number(_));
-                    let mut style = terminal_style(m.style.as_ref());
-                    if m.anchor == self.active || self.selected(m.anchor) {
+                    // The name overlay in the one channel a cell can spare: **underlined** means
+                    // named, and the name is spelled on the formula line for the active cell (§3.2: a
+                    // value never yields to a hint).
+                    if viewport.as_ref().and_then(|v| v.name_at(r, c)).is_some() {
+                        style = style.add_modifier(Modifier::UNDERLINED);
+                    }
+                    let pos = Pos::new(r, c);
+                    // A `:find` match **replaces** the document's colours rather than adding to them,
+                    // as the role overlay does: a mark over a yellow cell would be invisible. Drawn
+                    // only while a search is live; `Esc` puts it away.
+                    if self.find.matched(self.sheet, pos) {
+                        style = MATCH;
+                    }
+                    // The cell a formula being typed points at (point mode), in a colour of its own
+                    // so it is never mistaken for the selection.
+                    if self.point.as_ref().is_some_and(|p| p.cell == pos) {
+                        style = POINTED;
+                    }
+                    if pos == self.active || self.selected(pos) {
                         style = style.add_modifier(Modifier::REVERSED);
                     }
-                    spans.push(Span::styled(
-                        geom::pad(
-                            text,
-                            span,
-                            alignment(m.style.as_ref(), numeric),
-                            match numeric {
-                                true => geom::Fit::Number,
-                                false => geom::Fit::Text,
-                            },
-                        ),
-                        style,
-                    ));
-                    continue;
-                }
-                let (r, c) = (r, *c);
-                let shown_formula = self
-                    .formulas
-                    .then(|| self.core.formula(self.sheet, Pos::new(r, c)).ok().flatten())
-                    .flatten()
-                    .and_then(|_| self.core.input_text(self.sheet, Pos::new(r, c)).ok());
-                // A checkbox is drawn as one, ahead of whatever its cell holds.
-                let boxed = viewport
-                    .as_ref()
-                    .and_then(|v| v.checkbox(r, c))
-                    .map(|ticked| {
-                        let text = shown_formula
-                            .as_deref()
-                            .or_else(|| viewport.as_ref().and_then(|v| v.text(r, c)))
-                            .unwrap_or("");
-                        let mark = match ticked {
-                            true => "[x]",
-                            false => "[ ]",
-                        };
-                        match text.is_empty() {
-                            true => mark.to_owned(),
-                            false => format!("{mark} {text}"),
-                        }
-                    });
-                let text = boxed
-                    .as_deref()
-                    .or(shown_formula.as_deref())
-                    .or_else(|| viewport.as_ref().and_then(|v| v.text(r, c)))
-                    .unwrap_or("");
-                let cell = viewport.as_ref().and_then(|v| v.style(r, c));
-                let numeric = matches!(
-                    viewport.as_ref().and_then(|v| v.get(r, c)),
-                    Some(CellValue::Number(_))
-                );
-                let role = viewport.as_ref().and_then(|v| v.role(r, c));
-                // The document's styling, then the shell's marks over it — the active cell and the
-                // selection last. In role mode the document's colours are suppressed
-                // (`doc/view-modes.md` §4.5): colour means role alone.
-                let mut style = match role {
-                    Some(role) => Style::default().fg(role_color(role)),
-                    None => terminal_style(cell),
-                };
-                // The name overlay in the one channel a cell can spare: **underlined** means
-                // named, and the name is spelled on the formula line for the active cell (§3.2: a
-                // value never yields to a hint).
-                if viewport.as_ref().and_then(|v| v.name_at(r, c)).is_some() {
-                    style = style.add_modifier(Modifier::UNDERLINED);
-                }
-                let pos = Pos::new(r, c);
-                // A `:find` match **replaces** the document's colours rather than adding to them,
-                // as the role overlay does: a mark over a yellow cell would be invisible. Drawn
-                // only while a search is live; `Esc` puts it away.
-                if self.find.matched(self.sheet, pos) {
-                    style = MATCH;
-                }
-                // The cell a formula being typed points at (point mode), in a colour of its own
-                // so it is never mistaken for the selection.
-                if self.point.as_ref().is_some_and(|p| p.cell == pos) {
-                    style = POINTED;
-                }
-                if pos == self.active || self.selected(pos) {
-                    style = style.add_modifier(Modifier::REVERSED);
-                }
-                // §4.6's second channel: a glyph says the role where eight ANSI colours cannot. It
-                // takes a column of the cell while the mode is on — except a column clipped at the
-                // window's edge, which keeps its text.
-                let marked = role.is_some() && *width >= 2;
-                if let (true, Some(role)) = (marked, role) {
-                    spans.push(Span::styled(role.marker().to_string(), style));
-                }
-                let width = match marked {
-                    true => usize::from(*width) - 1,
-                    false => usize::from(*width),
-                };
-                // A plain number too wide for its column narrows first — fewer decimals, then
-                // scientific — as LibreOffice's General format does (`Viewport::narrower`); only
-                // what still does not fit becomes `###` in `geom::pad`.
-                let room = width.saturating_sub(1);
-                let narrowed = match (boxed.is_none() && shown_formula.is_none(), &viewport) {
-                    (true, Some(v)) if text.chars().count() > room => v
-                        .narrower(r, c)
-                        .into_iter()
-                        .find(|shorter| shorter.len() <= room),
-                    _ => None,
-                };
-                let text = narrowed.as_deref().unwrap_or(text);
-                // An indent (`fo:margin-left`) in whole terminal columns, ahead of text that is
-                // not set against the right edge.
-                let indent = match alignment(cell, numeric) {
-                    Align::Right => 0,
-                    _ => cell
-                        .and_then(|s| s.indent_mm())
-                        .map_or(0, |mm| (mm / geom::MM_PER_CELL).round() as usize),
-                };
-                let indented;
-                let text = match indent {
-                    0 => text,
-                    n => {
-                        indented = format!("{}{text}", " ".repeat(n));
-                        indented.as_str()
+                    // §4.6's second channel: a glyph says the role where eight ANSI colours cannot. It
+                    // takes a column of the cell while the mode is on — except a column clipped at the
+                    // window's edge, which keeps its text.
+                    let marked = role.is_some() && *width >= 2;
+                    if let (true, Some(role)) = (marked, role) {
+                        spans.push(Span::styled(role.marker().to_string(), style));
                     }
-                };
-                // A misspelt word is underlined in red, as in the word processor's half — but
-                // only in the text the core checked: not a formula shown in its place, not a
-                // checkbox's mark ahead of it. Shifted past the indent the text was given.
-                let marks: Vec<std::ops::Range<usize>> =
-                    match (boxed.is_none() && shown_formula.is_none(), &viewport) {
-                        (true, Some(v)) => v
-                            .misspelt(r, c)
-                            .iter()
-                            .map(|m| m.start + indent..m.end + indent)
-                            .collect(),
-                        _ => Vec::new(),
+                    let width = match marked {
+                        true => usize::from(*width) - 1,
+                        false => usize::from(*width),
                     };
-                for (piece, marked) in geom::pad_marked(
-                    text,
-                    width,
-                    alignment(cell, numeric),
-                    match numeric {
-                        true => geom::Fit::Number,
-                        false => geom::Fit::Text,
-                    },
-                    &marks,
-                ) {
-                    let style = match marked {
-                        true => style
-                            .add_modifier(Modifier::UNDERLINED)
-                            .underline_color(Color::Red),
-                        false => style,
+                    // A plain number too wide for its column narrows first — fewer decimals, then
+                    // scientific — as LibreOffice's General format does (`Viewport::narrower`); only
+                    // what still does not fit becomes `###` in `geom::pad`.
+                    let room = width.saturating_sub(1);
+                    let narrowed = match (boxed.is_none() && shown_formula.is_none(), &viewport) {
+                        (true, Some(v)) if text.chars().count() > room => v
+                            .narrower(r, c)
+                            .into_iter()
+                            .find(|shorter| shorter.len() <= room),
+                        _ => None,
                     };
-                    spans.push(Span::styled(piece, style));
+                    let text = narrowed.as_deref().unwrap_or(text);
+                    // A wrapped cell shows its `k`th line, any other its whole text on the first.
+                    let lines = match boxed.is_none() && shown_formula.is_none() {
+                        true => viewport.as_ref().and_then(|v| cell_lines(v, r, c, column)),
+                        false => None,
+                    };
+                    let line = match (&lines, k) {
+                        (Some(lines), _) => lines.get(k).cloned().unwrap_or(0..0),
+                        (None, 0) => 0..text.chars().count(),
+                        (None, _) => 0..0,
+                    };
+                    let piece: String = text.chars().skip(line.start).take(line.len()).collect();
+                    let text = piece.as_str();
+                    // An indent (`fo:margin-left`) in whole terminal columns, ahead of text that is
+                    // not set against the right edge.
+                    let indent = indent_cells(cell, numeric);
+                    let indented;
+                    let text = match indent {
+                        0 => text,
+                        n => {
+                            indented = format!("{}{text}", " ".repeat(n));
+                            indented.as_str()
+                        }
+                    };
+                    // A misspelt word is underlined in red, as in the word processor's half — but
+                    // only in the text the core checked: not a formula shown in its place, not a
+                    // checkbox's mark ahead of it. Shifted past the indent the text was given.
+                    let marks: Vec<std::ops::Range<usize>> =
+                        match (boxed.is_none() && shown_formula.is_none(), &viewport) {
+                            (true, Some(v)) => v
+                                .misspelt(r, c)
+                                .iter()
+                                .filter_map(|m| {
+                                    let (from, to) = (m.start.max(line.start), m.end.min(line.end));
+                                    (from < to).then(|| {
+                                        from - line.start + indent..to - line.start + indent
+                                    })
+                                })
+                                .collect(),
+                            _ => Vec::new(),
+                        };
+                    for (piece, marked) in geom::pad_marked(
+                        text,
+                        width,
+                        alignment(cell, numeric),
+                        match numeric {
+                            true => geom::Fit::Number,
+                            false => geom::Fit::Text,
+                        },
+                        &marks,
+                    ) {
+                        let style = match marked {
+                            true => style
+                                .add_modifier(Modifier::UNDERLINED)
+                                .underline_color(Color::Red),
+                            false => style,
+                        };
+                        spans.push(Span::styled(piece, style));
+                    }
                 }
+                lines.push(Line::from(spans));
             }
-            lines.push(Line::from(spans));
         }
         frame.render_widget(Paragraph::new(lines), grid_area);
 
@@ -3419,6 +3447,64 @@ fn terminal_style(style: Option<&CellStyle>) -> Style {
 /// Which way a cell's text sits in its column: what the document said, or — for a number with
 /// nothing said about it — the right, which is the convention every spreadsheet has and a
 /// rendering default rather than a property of the cell.
+/// An indent (`fo:margin-left`) in whole terminal columns, for text not set against the right edge.
+fn indent_cells(style: Option<&CellStyle>, numeric: bool) -> usize {
+    match alignment(style, numeric) {
+        Align::Right => 0,
+        _ => style
+            .and_then(|s| s.indent_mm())
+            .map_or(0, |mm| (mm / geom::MM_PER_CELL).round() as usize),
+    }
+}
+
+/// A wrapping text cell's lines at its column's width, as ranges of its characters — `None` for a
+/// cell drawn on one line. The room is what the drawing leaves: less a role's marker and the indent.
+fn cell_lines(
+    viewport: &grind_sheet::Viewport,
+    r: u32,
+    c: u32,
+    width: u16,
+) -> Option<Vec<std::ops::Range<usize>>> {
+    let style = viewport.style(r, c);
+    let numeric = matches!(viewport.get(r, c), Some(CellValue::Number(_)));
+    if !grind_sheet::look::wraps(style) || numeric || viewport.merge_at(r, c).is_some() {
+        return None;
+    }
+    let text = viewport.text(r, c).filter(|text| !text.is_empty())?;
+    let marker = u16::from(viewport.role(r, c).is_some() && width >= 2);
+    let indent = u16::try_from(indent_cells(style, false)).unwrap_or(u16::MAX);
+    Some(geom::wrapped(
+        text,
+        width.saturating_sub(marker).saturating_sub(indent),
+    ))
+}
+
+/// The rows from the top whose lines fit in `room` lines, each with its count of lines; the last
+/// may be cut by the window, and there is always the first.
+fn fitted(
+    rows: &[u32],
+    viewport: Option<&grind_sheet::Viewport>,
+    cols: &[(u32, u16)],
+    room: u32,
+) -> Vec<(u32, usize)> {
+    let mut out = Vec::new();
+    let mut used = 0;
+    for &row in rows {
+        if used >= room as usize {
+            break;
+        }
+        let height = cols
+            .iter()
+            .filter_map(|(col, width)| cell_lines(viewport?, row, *col, *width))
+            .map(|lines| lines.len())
+            .max()
+            .unwrap_or(1);
+        out.push((row, height));
+        used += height;
+    }
+    out
+}
+
 fn alignment(style: Option<&CellStyle>, numeric: bool) -> Align {
     match style.and_then(|style| style.align.as_deref()) {
         Some("center") => Align::Centre,
@@ -3608,6 +3694,32 @@ mod tests {
                     .to_string()
             })
             .collect()
+    }
+
+    /// A wrapped cell takes as many lines as it needs, its row number on the first, and the next
+    /// row starts below it; the cursor going below the window brings its row into view.
+    #[test]
+    fn a_wrapped_cell_grows_its_row_by_lines() {
+        let mut app = app();
+        app.core
+            .set_cell(0, Pos::new(0, 0), "one two three four")
+            .unwrap();
+        app.core.set_cell(0, Pos::new(1, 0), "next").unwrap();
+        app.run_command("wrap");
+        let screen = screen(&mut app, 60, 12);
+        let at = |word: &str| screen.iter().position(|line| line.contains(word)).unwrap();
+        assert_eq!(at("three"), at("one") + 1, "{screen:#?}");
+        assert_eq!(at("next"), at("four") + 1, "{screen:#?}");
+        assert!(
+            screen[at("three")].trim_start().starts_with("three"),
+            "no row number: {screen:#?}"
+        );
+
+        for _ in 0..12 {
+            press(&mut app, KeyCode::Char('j'));
+        }
+        let screen = super::tests::screen(&mut app, 60, 12);
+        assert!(screen.iter().any(|line| line.trim() == "13"), "{screen:#?}");
     }
 
     /// A merge is one cell: its text across every column of it, nothing from the cells it
