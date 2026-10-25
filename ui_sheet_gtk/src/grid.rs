@@ -2,31 +2,23 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The grid: a custom widget that draws a rectangle of cells and nothing else.
+//! The grid: a custom widget that draws a rectangle of cells and owns no data. Every paint asks
+//! [`App::get_viewport`] for exactly the cells on screen and throws them away, so a 1048576 ×
+//! 16384 sheet costs a screenful.
 //!
-//! It owns no data. Every paint asks [`App::get_viewport`] for exactly the cells that fit
-//! on screen and throws them away again — which is what makes a 1048576 × 16384 sheet cost
-//! a screenful (doc/plan.md rule 1).
+//! **Not `GtkColumnView`**, which is row-oriented, owns a list model, has no rectangular selection
+//! and does not virtualise 16384 columns. A `GtkScrollable` drawing in `snapshot()` is more code
+//! once and owns nothing.
 //!
-//! **Not `GtkColumnView`.** That widget is row-oriented, wants to own a list model, has no
-//! rectangular selection and does not virtualise 16384 columns — and a widget that owns
-//! the document is rule 1's trap in its nastiest form. A `GtkWidget` implementing
-//! `GtkScrollable` and drawing in `snapshot()` is more code once and less argument forever.
+//! Layout arithmetic is [`crate::geom`]'s and colours [`crate::theme`]'s; this is the drawing.
 //!
-//! Layout arithmetic lives in [`crate::geom`] and colours in [`crate::theme`], so what is
-//! left here is the drawing itself. Two things about that are worth knowing:
+//! * **GTK 4 has no partial invalidation**, so every change redraws the widget — bounded by the
+//!   cells on screen.
+//! * **Text overflows into empty neighbours, numbers do not**: a label runs on until it meets
+//!   something, a number that will not fit becomes `###` (see [`imp::Grid::draw_cells`]).
 //!
-//! * **GTK 4 has no partial invalidation.** There is no `queue_draw_area`, so every change
-//!   redraws the widget — which is fine, because the cost is bounded by the cells that fit
-//!   on screen rather than by the sheet.
-//! * **Text overflows into empty neighbours, and numbers do not.** That asymmetry is the
-//!   spreadsheet convention every user expects: a label wider than its column keeps going
-//!   until it meets something, and a number that will not fit becomes `###` rather than
-//!   silently showing the wrong magnitude. See [`imp::Grid::draw_cells`].
-//!
-//! Selection lives here rather than in the core because it is presentation state: an anchor
-//! and an active cell, and [`crate::keymap`] holds every rule about moving them. This widget
-//! translates events into that vocabulary, applies the answer, and repaints.
+//! The selection lives here, as presentation state — an anchor and an active cell, moved by
+//! [`crate::keymap`]'s rules.
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::sync::Arc;
@@ -41,12 +33,8 @@ use libadwaita::subclass::prelude::ObjectSubclassIsExt;
 use crate::geom::{GridGeom, MAX_COLS, MAX_ROWS, Sizes};
 use crate::keymap::{Dir, Selection};
 
-/// Pixels to an ODF millimetre.
-///
-/// A length in a document is physical (§5.4) and a widget is not, so something has to
-/// choose. 96 dpi is the toolkit's own notional density — GTK scales the whole widget for a
-/// HiDPI display on top of this, so a column set to 2.5cm is 2.5cm on a correctly configured
-/// screen and consistent everywhere else.
+/// Pixels to an ODF millimetre: 96 dpi, the toolkit's notional density. GTK scales the widget for
+/// HiDPI on top, so a 2.5cm column is 2.5cm on a correctly configured screen.
 const PX_PER_MM: f64 = 96.0 / 25.4;
 
 /// The gap between a new chart and the block it was made from, in millimetres — about a
@@ -97,33 +85,26 @@ impl Grid {
         self.invalidate();
     }
 
-    /// The document changed: repaint, and forget what was measured from it.
-    ///
-    /// Every write goes through `App` and every write notifies the observer, so this one
-    /// call from the observer's end covers the whole shell — including this widget's own
-    /// edits, which reach the core the same way.
+    /// The document changed: repaint, and forget what was measured from it. Every write notifies
+    /// the observer, this widget's own included, so this one call covers the shell.
     pub fn invalidate(&self) {
         self.imp().auto_rows.replace(None);
         self.queue_draw();
     }
 
-    /// Which of `doc/view-modes.md`'s overlays this view draws.
-    /// Check spelling with `speller` — the one the window's Spelling setting attached to the
-    /// document — or, with `None`, stop: what the cell menu's Ignore All and Add to Dictionary
-    /// teach. The underlines themselves come from the core (`Viewport::misspelt`), so this only
-    /// redraws.
+    /// Check spelling with `speller` — the one the window's setting attached — or, with `None`,
+    /// stop: what the cell menu's Ignore All and Add to Dictionary teach. The underlines come from
+    /// the core (`Viewport::misspelt`), so this only redraws.
     pub fn set_speller(&self, speller: Option<Arc<grind_spell::Speller>>) {
         self.imp().speller.replace(speller);
         self.queue_draw();
     }
 
+    /// Which of `doc/view-modes.md`'s overlays this view draws.
     pub fn overlays(&self) -> grind_sheet::view::Overlays {
         self.imp().overlays.get()
     }
 
-    /// Draw the overlays, or stop drawing them — a **reading** of the document and never a
-    /// write, so this changes nothing but the paint. Toggling one back off restores exactly
-    /// what was on screen before, because nothing was stored in the first place.
     /// Show each formula instead of its result (View ▸ Show Formulas).
     pub fn set_formulas(&self, on: bool) {
         self.imp().formulas.set(on);
@@ -134,6 +115,8 @@ impl Grid {
         self.imp().formulas.get()
     }
 
+    /// Draw the overlays, or stop — a reading of the document, so this changes nothing but the
+    /// paint, and turning one off restores exactly what was on screen.
     pub fn set_overlays(&self, overlays: grind_sheet::view::Overlays) {
         self.imp().overlays.set(overlays);
         self.queue_draw();
@@ -200,12 +183,8 @@ impl Grid {
         self.imp().fill(dir);
     }
 
-    /// The clipboard four, as `win.` actions rather than only as keys.
-    ///
-    /// They existed here already — [`crate::keymap::Action`] has reached them since M5 — but only
-    /// from the keyboard, which meant the context menu `doc/sheet-shell.md`'s rework adds had
-    /// nothing to point at. A `win.` action is the one spelling a menu item, an accelerator
-    /// and a palette row can all share.
+    /// The clipboard four, as `win.` actions as well as keys — the one spelling a menu item, an
+    /// accelerator and a palette row share.
     pub fn copy(&self, cut: bool) {
         self.imp().copy(cut);
     }
@@ -262,11 +241,10 @@ impl Grid {
         self.imp().filter().is_some()
     }
 
-    /// Where a new chart of the block `start..=end` goes, as ODF lengths `(x, y)`: beside it —
-    /// a column's gap to the right of its last column, level with its first row — so a chart
-    /// never lands on the figures it was made from. The sheet's own track sizes decide it,
-    /// hidden tracks at zero, and the zoom comes back out: a chart's place is a length on the
-    /// sheet, not a pixel on this screen.
+    /// Where a new chart of the block `start..=end` goes, as ODF lengths `(x, y)`: a column's gap
+    /// to the right of its last column, level with its first row, so it never lands on its own
+    /// figures. From the sheet's track sizes (hidden at zero), zoom removed: a chart's place is a
+    /// length on the sheet.
     pub fn anchor_beside(&self, start: Pos, end: Pos) -> (String, String) {
         self.imp().anchor_beside(start, end)
     }
@@ -292,13 +270,10 @@ impl Grid {
         self.imp().set_selection(selection);
     }
 
-    /// The text being edited, which the formula bar shares.
-    ///
-    /// **One buffer, two views.** The in-cell editor and the formula bar are both
-    /// `GtkEditable`s over this, so their content stays in step for free while each keeps
-    /// its own caret and selection — which is exactly the familiar behaviour. When nothing
-    /// is being edited it holds the active cell's `App::input_text`, which is what makes
-    /// the formula bar show the cell.
+    /// The text being edited, which the formula bar shares. **One buffer, two views**: the in-cell
+    /// editor and the formula bar are both `GtkEditable`s over it, so their content agrees while
+    /// each keeps its own caret. With no edit open it holds the active cell's `App::input_text`,
+    /// which is what the formula bar shows.
     pub fn buffer(&self) -> gtk::EntryBuffer {
         self.imp().buffer.clone()
     }
@@ -329,15 +304,10 @@ impl Grid {
         self.imp().mode.get().is_editing()
     }
 
-    /// Mirror the formula bar's caret into the in-cell editor's own.
-    ///
-    /// The two are separate `GtkEditable`s over one shared buffer, so each keeps its own
-    /// cursor position — but [`Self::caret`] only ever reads the in-cell editor's, which
-    /// point mode (`pointing()`, in this file) decides off. Without this, typing `=SUM(` in
-    /// the formula bar leaves the in-cell editor's position wherever it last was (0, most of
-    /// the time), so a click afterwards judges point mode against the wrong spot in the text
-    /// and just commits the edit instead — the formula bar calls this on every caret move so
-    /// the two never disagree about where "the" caret is.
+    /// Mirror the formula bar's caret into the in-cell editor's. [`Self::caret`] reads only the
+    /// editor's, which point mode decides from; without this, typing `=SUM(` in the formula bar
+    /// leaves the editor's caret where it was, and a click commits instead of pointing. The
+    /// formula bar calls this on every caret move.
     pub fn set_caret(&self, position: i32) {
         self.imp().editor.set_position(position);
     }
@@ -347,10 +317,8 @@ impl Grid {
         self.imp().cancel();
     }
 
-    /// Told whenever the caret moves without the text changing — an arrow key through a
-    /// formula, or this widget placing it after a reference it just wrote. The signature
-    /// hint depends on *where* the caret is, so a text-changed signal alone would leave it
-    /// one keystroke behind.
+    /// Told whenever the caret moves without the text changing — an arrow through a formula, or
+    /// this widget placing it after a reference. The signature hint depends on where the caret is.
     pub fn connect_caret_moved(&self, f: impl Fn() + 'static) {
         self.imp().on_caret.borrow_mut().push(Box::new(f));
     }
@@ -373,16 +341,12 @@ impl Grid {
         self.imp().notice(notice);
     }
 
-    /// The selection as a rectangle the core will accept: clamped to the sheet's used extent,
-    /// never smaller than the anchor cell.
+    /// The selection as a rectangle the core accepts: clamped to the used extent, never smaller
+    /// than the anchor cell — a whole column is 1048576 rows.
     ///
-    /// A whole-column selection is 1048576 rows, and every per-cell operation — formatting,
-    /// styling, summing — has to stop at the data or ask for a million writes.
-    ///
-    /// ponytail: which means "format column A" formats the *used* part of column A, where a
-    /// spreadsheet would put a default style on the column itself. That needs the column
-    /// default styles the reader already honours on the way in (see `odf/read.rs`) to become
-    /// something the model can *write*, which is M8's neighbourhood.
+    /// ponytail: so "format column A" formats the used part of A, where a spreadsheet would style
+    /// the column itself. That needs column default styles, which the reader honours, to become
+    /// writable in the model.
     pub fn target(&self) -> Option<(usize, Pos, Pos)> {
         let app = self.imp().app.borrow().clone()?;
         let sheet = self.sheet();
@@ -462,14 +426,9 @@ fn selection_for_hit(hit: crate::geom::Hit) -> Selection {
     }
 }
 
-/// What a right-click on a header hides: `is_cols`, and the half-open run. Not a header at
-/// all gives `None`, which is the whole gate on the menu appearing. Free of the widget for
-/// the same reason [`selection_for_hit`] is.
-///
-/// A header inside `selection` hides the *whole* selected run — several headers dragged
-/// over and then hidden in one go is the ordinary gesture — and one outside it hides just
-/// itself, the same "click somewhere else, act on just that" rule the fill handle and the
-/// filter button already follow.
+/// What a right-click on a header hides: `is_cols` and the half-open run, or `None` for no header
+/// — the gate on the menu. A header inside `selection` hides the whole selected run; one outside
+/// it hides itself. Free of the widget, like [`selection_for_hit`].
 fn hide_range_for_hit(selection: Selection, hit: crate::geom::Hit) -> Option<(bool, u32, u32)> {
     use crate::geom::Hit;
     let (start, end) = selection.rect();
@@ -505,12 +464,9 @@ mod tests {
         }
     }
 
-    /// The regression this exists for: a LibreOffice sheet says `10pt` twice — once on the
-    /// cells it styled, once in the `style:default-style` covering every cell it did not —
-    /// and this build reads only the first. Drawing that `10pt` as an absolute size while
-    /// the rest of the sheet kept the widget's own font therefore showed one document in two
-    /// sizes. A cell at the default size has to be indistinguishable from a cell with no
-    /// size at all, which is what "no attributes either way" says.
+    /// A LibreOffice sheet says `10pt` on the cells it styled and again in the
+    /// `style:default-style` covering the rest, which grind does not read. A cell at the default
+    /// size must be drawn exactly like a cell with no size, or one document shows in two sizes.
     #[test]
     fn a_cell_at_the_default_size_is_drawn_like_a_cell_with_no_size() {
         assert_eq!(imp::font_scale(&sized("10pt")), Some(1.0));
@@ -544,9 +500,8 @@ mod tests {
         }
     }
 
-    /// L3: row auto-height's own font resolution agrees with the cell's drawn one — a
-    /// spreadsheet's font is measured no differently for `layout::wrap` than for `font`, which
-    /// is what keeps a row grown for a size it does not then clip.
+    /// Row auto-height resolves the same font size the cell is drawn at, so a row grown for a size
+    /// does not then clip it.
     #[test]
     fn a_row_height_pass_resolves_the_same_size_the_cell_is_drawn_at() {
         let mut base = pango::FontDescription::new();
@@ -650,18 +605,11 @@ mod tests {
     }
 }
 
-/// The right-click menu over the cells (`doc/sheet-shell.md`, "Four surfaces").
-///
-/// **Where a verb about the selection goes.** Every item is a `win.` action, which resolves up
-/// the widget tree to the window — so the grid lists these verbs and owns none of them, and an
-/// item cannot appear here that the palette and the shortcuts window do not also know about.
-/// Three sections, in the order a person reaches for them: what to do with the cells' content,
-/// what to do to the cells, and what the *range* is rather than what is in it — those last
-/// three being the ones that used to sit on the tool strip's Calculate page, where they were
-/// always about a selection and never about calculating.
-///
-/// A free function returning the model rather than one built inline, so that `main.rs`'s
-/// ratchet can walk it: an item naming an action nobody declares is silent at runtime.
+/// The right-click menu over the cells — **where a verb about the selection goes**
+/// (`doc/sheet-shell.md`, "Four surfaces"). Every item is a `win.` action, so the grid lists these
+/// verbs and owns none, and nothing can appear here that the palette and the shortcuts window do
+/// not know. Three sections: the cells' content, the cells themselves, and the range. A free
+/// function so `main.rs`'s check can walk it.
 pub fn cell_menu_model() -> gio::Menu {
     let model = gio::Menu::new();
     let clipboard = gio::Menu::new();
@@ -692,17 +640,15 @@ pub fn cell_menu_model() -> gio::Menu {
     model
 }
 
-/// How many suggestions the cell menu offers for each misspelt word, and for how many of a
-/// cell's words. Hunspell ranks them and past the first few they are rarely the word meant; and
-/// suggesting is tens of milliseconds a word, which a right click should not wait on for a cell
-/// full of them.
+/// How many suggestions the cell menu offers per misspelt word, and for how many words: past the
+/// first few Hunspell's rarely help, and each costs tens of milliseconds a right click should not
+/// wait on.
 pub const SUGGESTIONS: usize = 5;
 pub const SPELLING_WORDS: usize = 3;
 
-/// The spelling sections that lead the cell menu over a cell with misspelt words in it
-/// (`doc/spelling.md`, "In a spreadsheet"): for each word, what it might have been — each one
-/// `spell.correct` with `"<index>:<suggestion>"` as its target — then Ignore All and Add to
-/// Dictionary for that word. A free function so a test can walk it with no display.
+/// The spelling sections leading the cell menu over a cell with misspelt words: for each, its
+/// suggestions — `spell.correct` with `"<index>:<suggestion>"` as the target — then Ignore All and
+/// Add to Dictionary. A free function so a test can walk it.
 pub fn spelling_menu_model(words: &[(String, Vec<String>)]) -> gio::Menu {
     let model = gio::Menu::new();
     for (index, (word, suggestions)) in words.iter().enumerate() {
@@ -770,10 +716,9 @@ mod imp {
     /// §4.6's second channel, so the mode is usable with no colour discrimination at all.
     /// A distance on screen, so it zooms with everything else.
     const ROLE_MARK: f64 = 9.0;
-    /// Slack added on top of a measured autofit width. The same text gets measured twice —
-    /// once unzoomed here, once at zoom when it is actually drawn — and Pango's own
-    /// sub-pixel rounding does not round the same way both times, so a width fit exactly to
-    /// the first measurement can be a pixel short of the second and trip the overflow rule.
+    /// Slack on a measured autofit width: the text is measured unzoomed here and drawn at zoom,
+    /// and Pango's sub-pixel rounding can make the second a pixel wider and trip the overflow
+    /// rule.
     const FIT_SLACK: f64 = 2.0;
     /// Space above and below it, which is what makes the default row taller than a line.
     const ROW_PAD: f64 = 8.0;
@@ -824,13 +769,10 @@ mod imp {
         rows: std::ops::Range<u32>,
         cols: std::ops::Range<u32>,
         selection: Selection,
-        /// The cells this paint draws, read **once** — three passes need them (backgrounds
-        /// under the selection wash, borders over the grid lines, then the text), and asking
-        /// three times would take the document's lock three times a frame.
-        ///
-        /// Wider than `cols` by [`OVERFLOW_MARGIN`] either side, so a label anchored just
-        /// off-screen still reaches into the view and "is the neighbour empty" needs no
-        /// second read. `None` when there is no document.
+        /// The cells this paint draws, read **once** for its three passes (backgrounds, borders,
+        /// text). Wider than `cols` by [`OVERFLOW_MARGIN`] either side, so a label just off-screen
+        /// reaches into view and "is the neighbour empty" needs no second read. `None` with no
+        /// document.
         cells: Option<grind_sheet::Viewport>,
         /// The sheet's autofilter (§9.4), read once for the same reason as `cells`: the
         /// buttons pass asks about it per visible column, and that is one lock, not twelve.
@@ -845,27 +787,21 @@ mod imp {
         pub hscroll_policy: Cell<gtk::ScrollablePolicy>,
         pub vscroll_policy: Cell<gtk::ScrollablePolicy>,
         pub metrics: Cell<Metrics>,
-        /// The view's scale, applied to every pixel this widget derives — the metrics, the
-        /// document's own lengths, and the font, which takes it as a Pango *scale* so that a
-        /// cell with a size of its own zooms too.
-        ///
-        /// Nothing measured is stored zoomed: a natural row height is a document-space
-        /// number like the heights it sits beside, and only [`Grid::geom`] multiplies.
+        /// The view's scale, applied to every pixel this widget derives — metrics, the document's
+        /// lengths, and the font as a Pango scale so a sized cell zooms too. Nothing measured is
+        /// stored zoomed; only [`Grid::geom`] multiplies.
         pub zoom: Cell<f64>,
-        /// Natural heights for rows the document did not size, measured from what is in
-        /// them — `None` until the next paint measures again.
+        /// Natural heights for rows the document did not size, measured from their content —
+        /// `None` until the next paint measures.
         ///
-        /// ponytail: the whole used extent is re-measured after any change, where measuring
-        /// only the rows a change touched would do. Bounded instead by [`AUTO_HEIGHT_CELLS`],
-        /// so the cost has a ceiling rather than a cache to invalidate correctly.
+        /// ponytail: the whole used extent is re-measured after any change; bounded by
+        /// [`AUTO_HEIGHT_CELLS`] rather than cached.
         pub auto_rows: RefCell<Option<Vec<(u32, f64)>>>,
         pub palette: RefCell<Option<Palette>>,
         /// One reusable layout rather than one per cell.
         ///
-        /// ponytail: `set_text` re-shapes on every cell, where a `(row, col)` cache would
-        /// re-shape only what changed. This is the cheaper thing to write and allocates
-        /// nothing per frame; add the cache when a profiler blames shaping rather than
-        /// before.
+        /// ponytail: `set_text` re-shapes every cell, where a `(row, col)` cache would re-shape
+        /// only changes. Add one when a profiler blames shaping.
         pub layout: RefCell<Option<pango::Layout>>,
         /// Which of `doc/view-modes.md`'s overlays this view is drawing — a *reading* of
         /// the document, never a change to it, so it belongs with the presentation state
@@ -888,10 +824,9 @@ mod imp {
         /// The chart under the pointer, if any — outlined faintly, so a person can see it is a
         /// thing that can be picked up before they press.
         pub hovered_chart: Cell<Option<usize>>,
-        /// The **selected** chart (`grind_sheet::chart_frame`): a click selects one, and while it
-        /// is selected it wears an accent outline and its eight handles, the arrow keys nudge
-        /// it, Delete and Backspace delete it and Escape lets go of it. `None` while the cells
-        /// have the keyboard.
+        /// The **selected** chart (`grind_sheet::chart_frame`): it wears an accent outline and
+        /// eight handles, arrows nudge it, Delete and Backspace delete it, Escape lets go. `None`
+        /// while the cells have the keyboard.
         pub selected_chart: Cell<Option<usize>>,
         /// Whether Shift is held during the chart drag in progress — a corner keeps the
         /// chart's proportions then.
@@ -911,11 +846,9 @@ mod imp {
         /// Ready, or an edit in progress. The whole editing state, since the text lives in
         /// the buffer and the cell in the selection.
         pub mode: Cell<Mode>,
-        /// The in-cell editor: a real `gtk::Text` child, allocated over the active cell.
-        ///
-        /// Not a custom-drawn one, and not negotiable: `gtk::Text` brings the input method
-        /// with it — preedit, dead keys, CJK, Compose — plus the caret, selection and
-        /// clipboard. Hand-rolling `GtkIMContext` is the classic way to ship broken input.
+        /// The in-cell editor: a real `gtk::Text` child over the active cell, which brings the
+        /// input method — preedit, dead keys, CJK, Compose — with its caret, selection and
+        /// clipboard.
         pub editor: gtk::Text,
         pub buffer: gtk::EntryBuffer,
         /// Where the editor was last put, so that a click inside it can be told from a
@@ -953,10 +886,8 @@ mod imp {
         /// The right-click menu over a chart — *Edit* and *Delete*, built once and
         /// repositioned per opening, exactly as `hide_menu` is.
         pub chart_menu: OnceCell<gtk::Popover>,
-        /// The right-click menu over the **cells** (`doc/sheet-shell.md`'s four surfaces):
-        /// what a person can do to the selection, where the selection is. Built from a
-        /// `gio::Menu` of `win.` actions rather than by hand, so the same verbs the palette
-        /// and the keyboard reach are the ones listed here.
+        /// The right-click menu over the cells, built from a `gio::Menu` of `win.` actions so it
+        /// lists the verbs the palette and the keyboard reach.
         pub cell_menu: OnceCell<gtk::PopoverMenu>,
         /// The speller the window attached, for the cell menu's Ignore All and Add to
         /// Dictionary — `None` while spelling is off.
@@ -981,11 +912,9 @@ mod imp {
         pub size: f64,
     }
 
-    /// A chart being moved or resized by hand — presentation state until the pointer is
-    /// released, the same as [`Resize`] and the fill handle are. The live rect this produces
-    /// is painted from instead of the document's own geometry (`Grid::draw_charts`), which is
-    /// what makes the drag itself smooth rather than one written cell per pixel of motion —
-    /// this shell's whole answer to "I hate how dragging a chart feels in LibreOffice."
+    /// A chart being moved or resized by hand — presentation state until release, like [`Resize`]
+    /// and the fill handle. Its live rect is painted instead of the document's geometry
+    /// (`Grid::draw_charts`), so the drag is smooth and one write at the end.
     #[derive(Clone, Copy, Debug)]
     pub struct ChartDrag {
         pub index: usize,
@@ -1327,9 +1256,8 @@ mod imp {
                 }
             ));
 
-            // **Capture phase**, so the grid decides before the editor child does. Every
-            // key it does not claim then travels on to the editor untouched, which is what
-            // keeps the input method working.
+            // **Capture phase**, so the grid decides before the editor child; every key it does
+            // not claim travels on to the editor, keeping the input method working.
             let keys = gtk::EventControllerKey::new();
             keys.set_propagation_phase(gtk::PropagationPhase::Capture);
             keys.connect_key_pressed(glib::clone!(
@@ -1509,14 +1437,11 @@ mod imp {
             ));
             widget.add_controller(scroll);
 
-            // A touchpad or touchscreen pinch is the same zoom, anchored on the gesture's
-            // own centre. The gesture needs two touch points, so it cannot collide with the
-            // click and drag gestures above.
-            // Dark mode and the accent colour arrive as style-manager properties, not
-            // system settings, and GTK does not expose the `css_changed` vfunc — without
-            // these two, flipping either at runtime would leave the grid painted from the
-            // stale cached palette until restart. The accent property is libadwaita ≥ 1.6;
-            // connecting to its notify by name is inert on 1.5 rather than an error.
+            // A touchpad or touchscreen pinch is the same zoom, anchored on the gesture's centre;
+            // it needs two touch points, so it cannot collide with the click and drag gestures.
+            // Dark mode and the accent colour arrive as style-manager properties, and GTK does not
+            // expose `css_changed`, so these two notifies repaint from a fresh palette. The accent
+            // property is libadwaita ≥ 1.6; connecting by name is inert on 1.5.
             let style = libadwaita::StyleManager::default();
             style.connect_dark_notify(glib::clone!(
                 #[weak(rename_to = grid)]
@@ -1688,14 +1613,9 @@ mod imp {
         }
     }
 
-    /// `grind_core::layout::Metrics` over Pango — [`Grid::measure_rows`]'s join to the same
-    /// breaker `grind-text`'s four shells already answer to, rather than a second, Pango-only
-    /// idea of where a line may end (L3, `CLAUDE.md`'s "Where the work is").
-    ///
-    /// Built fresh per `measure_rows` call rather than cached the way a text pane's `Face` is
-    /// one object per block kind: a spreadsheet cell's weight, slant and size vary cell to
-    /// cell, where a block's font does not change mid-measurement, so `font_desc_for` answers
-    /// per fragment instead of the object answering once for its whole lifetime.
+    /// `grind_core::layout::Metrics` over Pango, for [`Grid::measure_rows`]: the same line breaker
+    /// the word processor uses. Built per `measure_rows` call, since a cell's weight, slant and
+    /// size vary cell to cell, so `font_desc_for` answers per fragment.
     struct SheetMetrics {
         context: pango::Context,
         /// A layout of this measurement pass's own — never the widget's shared, cached one,
@@ -1707,13 +1627,9 @@ mod imp {
         base: pango::FontDescription,
     }
 
-    /// One style's font, as a whole `pango::FontDescription` rather than three separate
-    /// attributes — including the size, which a text run's own measuring never has to
-    /// resolve, because a spreadsheet's "oversized font" row trigger is exactly this field.
-    ///
-    /// A free function over `base` rather than a `SheetMetrics` method, so it is testable with
-    /// no Pango context or display at all — the same reason [`font`] and [`font_scale`] are
-    /// plain functions over data rather than methods needing a live widget.
+    /// One style's font as a whole `pango::FontDescription`, size included — a spreadsheet's
+    /// oversized-font row is exactly this field. A free function over `base`, testable with no
+    /// Pango context, like [`font`] and [`font_scale`].
     pub(super) fn font_desc_for(
         base: &pango::FontDescription,
         style: &grind_core::style::TextStyle,
@@ -1742,10 +1658,8 @@ mod imp {
     }
 
     impl grind_core::layout::Metrics for SheetMetrics {
-        /// `pango::LayoutLine::index_to_x` gives the cumulative advance in one pass, the same
-        /// way `ui_text_gtk`'s own `Face::measure` reads it — `advance("a") + advance("b")` is
-        /// not `advance("ab")` once kerning is involved, which is the whole reason the trait
-        /// asks for the cumulative array rather than a width per character.
+        /// `pango::LayoutLine::index_to_x` gives every cumulative advance from one shaping pass —
+        /// `advance("a") + advance("b")` is not `advance("ab")` once kerning applies.
         fn advances(&self, text: &str, style: &grind_core::style::TextStyle, out: &mut Vec<f32>) {
             let font = font_desc_for(&self.base, style);
             self.layout.set_font_description(Some(&font));
@@ -1781,10 +1695,9 @@ mod imp {
     impl Grid {
         /// What the document says about one axis, in pixels.
         ///
-        /// ponytail: read afresh every time rather than cached and invalidated. A document
-        /// sizes a handful of tracks out of sixteen thousand, so this is a short walk over a
-        /// `BTreeMap` and cannot go stale; cache it against a document-change token if a
-        /// profiler ever blames it.
+        /// ponytail: read afresh every time; a document sizes a handful of tracks, so this is a
+        /// short `BTreeMap` walk that cannot go stale. Cache it against a change token if a
+        /// profiler blames it.
         fn track_lengths(&self, rows: bool) -> Vec<(u32, f64)> {
             let sheet = self.sheet.get();
             let app = self.app.borrow();
@@ -1878,13 +1791,10 @@ mod imp {
             }
         }
 
-        /// Natural heights for the rows that need one, measured once per document change.
-        ///
-        /// A row is only ever *grown*: the default height already fits a line of the widget's
-        /// font, so what can overflow it is a cell that wraps onto a second line or one whose
-        /// style asks for a bigger font. Both need a style, and a cell without one is skipped
-        /// without laying anything out — which is what keeps this a cheap pass over a sheet
-        /// where nine cells in ten are plain.
+        /// Natural heights for the rows that need one, measured once per document change. A row is
+        /// only grown: the default fits a line of the widget's font, so only a wrapping cell or a
+        /// bigger font can overflow it — both need a style, and an unstyled cell is skipped
+        /// without layout.
         fn auto_heights(&self) -> Vec<(u32, f64)> {
             if let Some(measured) = self.auto_rows.borrow().as_ref() {
                 return measured.clone();
@@ -1894,12 +1804,8 @@ mod imp {
             measured
         }
 
-        /// L3 (`CLAUDE.md`'s "Where the work is"): a wrapped cell's height comes from
-        /// `grind_core::layout::wrap` — the same breaker `grind-text`'s every shell already
-        /// answers to through [`Metrics`](grind_core::layout::Metrics) — rather than from a
-        /// second, Pango-only idea of where a line may end. [`SheetMetrics`] is the one
-        /// `advances`/`line_height` pair this crate needs to join that; the core does the
-        /// deciding, exactly as it does for a paragraph.
+        /// A wrapped cell's height comes from `grind_core::layout::wrap` through [`SheetMetrics`],
+        /// the breaker paragraphs use, rather than from a Pango-only idea of where a line may end.
         fn measure_rows(&self) -> Vec<(u32, f64)> {
             let Some(app) = self.app.borrow().clone() else {
                 return Vec::new();
@@ -2080,12 +1986,9 @@ mod imp {
             self.obj().queue_allocate();
         }
 
-        /// Size the scrollbars.
-        ///
-        /// `upper` is deliberately **not** the sheet's full extent: a thumb sized against
-        /// 1048576 rows is a few pixels tall and one click lands in row 800000. It is the
-        /// used extent plus a screenful — enough to scroll into blank space, which is
-        /// normal — and it grows as the view moves into it.
+        /// Size the scrollbars. `upper` is **not** the sheet's full extent, where a thumb is a few
+        /// pixels and a click lands in row 800000: it is the used extent plus a screenful, growing
+        /// as the view moves into it.
         fn configure_adjustments(&self, width: f64, height: f64) {
             let geom = self.geom();
             let (used_rows, used_cols) = self.used_extent();
@@ -2273,10 +2176,8 @@ mod imp {
             glib::Propagation::Stop
         }
 
-        /// Start editing the active cell.
-        ///
-        /// `Seed::Cell` needs no work: the buffer already holds the cell's input text,
-        /// because that is what it holds whenever nothing is being edited.
+        /// Start editing the active cell. `Seed::Cell` needs no work: with no edit open the buffer
+        /// already holds the cell's input text.
         pub fn begin(&self, seed: Seed, focus_cell: bool) {
             self.pending.replace(None);
             if let Seed::Char(c) = seed {
@@ -2317,13 +2218,9 @@ mod imp {
 
         // --- pointing (doc/sheet-shell.md's formula UX) ---
 
-        /// Where the caret is, as a byte offset into the buffer.
-        ///
-        /// The in-cell editor's, whenever an edit is open — it is the widget being typed
-        /// into, and after a reference is written this widget puts the caret there itself.
-        /// With no edit open there is no caret, and the end of the text is the one answer
-        /// that is never nonsense. (The formula bar's own caret is the formula bar's to
-        /// report; it asks this only when it does not have the focus.)
+        /// Where the caret is, as a byte offset into the buffer: the in-cell editor's while an
+        /// edit is open, and the end of the text otherwise. The formula bar reports its own caret,
+        /// asking this only without the focus.
         pub fn caret(&self) -> usize {
             let text = self.buffer.text().to_string();
             if !self.editor.is_visible() {
@@ -2364,13 +2261,10 @@ mod imp {
                 let caret = self.caret();
                 caret..caret
             });
-            // A click here (`GestureDrag::connect_drag_begin`) grabs focus onto the grid
-            // widget itself, not the editor, so typing afterwards would have nowhere to land
-            // — reclaim it, since every point-mode update (click, drag, arrow key) funnels
-            // through here. *Before* the replacement, not after: focusing a `gtk::Text`
-            // selects all of its content (the same trap `begin` documents), and the next
-            // keystroke would replace the whole formula rather than extend it. `replace`
-            // ends by placing the caret, which collapses that selection again.
+            // A click here focuses the grid, not the editor, so reclaim it — every point-mode
+            // update funnels through here. Before the replacement: focusing a `gtk::Text` selects
+            // all its content, and `replace` ends by placing the caret, which collapses that
+            // selection.
             self.editor.grab_focus();
             let placed = self.replace(span.clone(), &text);
             self.pending.replace(Some(Pending {
@@ -2460,19 +2354,11 @@ mod imp {
             }
         }
 
-        /// Colour the references in the editor. The formula bar does the same to its own
-        /// copy from the same function, so the two cannot disagree.
-        /// What the in-cell editor draws with: the reference colouring, over the cell's own
-        /// font and the zoom.
-        ///
-        /// The editor is a real `gtk::Text` child rather than something this widget draws, so
-        /// what a cell looks like has to be told to it rather than falling out of the same
-        /// layout — Pango attributes rather than CSS, because they are what the grid uses for
-        /// the same cell and what the colouring already speaks.
-        ///
-        /// The font only: weight, slant, size and the zoom. The *colour* stays the theme's,
-        /// because the reference colouring owns the foreground here and a cell colour
-        /// underneath it would be a second opinion about the same bytes.
+        /// What the in-cell editor draws with: the reference colouring (the formula bar colours
+        /// its copy from the same function) over the cell's own font and the zoom. The editor is a
+        /// real `gtk::Text`, so it is told as Pango attributes, the grid's own language for the
+        /// cell. Font only: the colour stays the theme's, since the reference colouring owns the
+        /// foreground.
         pub fn restyle_formula(&self) {
             let text = self.buffer.text().to_string();
             let dark = crate::theme::is_dark(&self.palette());
@@ -2491,12 +2377,10 @@ mod imp {
             self.editor.set_attributes(Some(&attrs));
         }
 
-        /// Store what the buffer holds, then move.
-        ///
-        /// Display form goes back to canonical here — the one step between what an editor
-        /// holds and what `App::enter` takes — and a formula that will not parse **does not
-        /// commit**: the edit stays open with the caret on the problem, because silently
-        /// storing `=SUM(B2` as text is how a spreadsheet loses a user's work.
+        /// Store what the buffer holds, then move. Display form goes back to canonical — the one
+        /// step between the editor and `App::enter` — and a formula that will not parse **does not
+        /// commit**: the edit stays open with the caret on the problem, rather than storing
+        /// `=SUM(B2` as text.
         pub fn commit(&self, direction: Option<Dir>) {
             let app = self.app.borrow().clone();
             let (Some(app), true) = (app, self.mode.get().is_editing()) else {
@@ -2596,18 +2480,11 @@ mod imp {
             }
         }
 
-        /// Put the selection on the clipboard as tab-separated rows, and with `cut`, empty
-        /// it afterwards.
-        ///
-        /// What travels is each cell's `App::input_text` — the raw number, or a formula in
-        /// display form — rather than what the cell *displays*. Two reasons: pasted back
-        /// here it reproduces the cells exactly, and pasted into another spreadsheet
-        /// `1234.5` is a number where `1,234.50 €` is a guess about that program's locale.
-        ///
-        /// ponytail: a cell holding a tab or a newline has them replaced with spaces, so
-        /// that the rectangle survives. The upgrade is quoting, in a codec shared with
-        /// `sheet paste` — both halves split on tabs today and neither may grow a private
-        /// dialect (`doc/plan.md` rule 4).
+        /// Put the selection on the clipboard as tab-separated rows, and with `cut`, empty it.
+        /// What travels is each cell's `App::input_text` — the raw number, or a formula in display
+        /// form — not what it displays: pasted back it reproduces the cells, and pasted elsewhere
+        /// `1234.5` is a number where `1,234.50 €` is a locale guess. The codec, and its ponytail,
+        /// is `grind_sheet::clip`'s.
         pub fn copy(&self, cut: bool) {
             let app = self.app.borrow().clone();
             let Some(app) = app else { return };
@@ -2651,17 +2528,13 @@ mod imp {
             grind_sheet::clip::rect_text(app, self.sheet.get(), start, end, get, "\n")
         }
 
-        /// Extend the selection's first row (`Dir::Down`) or first column (`Dir::Right`)
-        /// into the rest of it — Ctrl+D / Ctrl+R, the fill-handle drag's keyboard twin.
-        /// [`keymap::fill_span`] says which line is the source and which are the targets;
-        /// a single selected cell filling into the one after it is the common case. Each
-        /// column (for `Down`) or row (for `Right`) keeps its own source,
-        /// so a multi-column Fill Down replicates column by column rather than one column's
-        /// formula sideways.
+        /// Extend the selection's first row (`Dir::Down`) or column (`Dir::Right`) into the rest
+        /// of it — Ctrl+D / Ctrl+R, the fill handle's keyboard twin. [`keymap::fill_span`] says
+        /// which line is the source; each column (or row) keeps its own, so a multi-column Fill
+        /// Down replicates column by column.
         ///
-        /// ponytail: one `App::fill` call, and one undo entry, per line — a Fill Down across
-        /// five columns is five undo steps rather than one. The upgrade is a multi-source
-        /// fill in the core; nothing here needs it until that is a common selection shape.
+        /// ponytail: one `App::fill`, one undo entry, per line — five undo steps for a Fill Down
+        /// across five columns. The upgrade is a multi-source fill in the core.
         pub fn fill(&self, dir: Dir) {
             let app = self.app.borrow().clone();
             let Some(app) = app else { return };
@@ -2701,14 +2574,10 @@ mod imp {
             self.obj().queue_draw();
         }
 
-        /// The end of a fill-handle drag: the selection replicated into the cells dragged
-        /// over, and the selection grown to cover them — the convention every spreadsheet
-        /// shares, and this shell's only fill that goes *up* or *left*.
-        ///
-        /// The source is the selection's edge facing the drag, and each line across that
-        /// edge keeps its own source, so dragging a row of formulas down replicates column
-        /// by column. Same `App::fill` and same one-undo-entry-per-line ceiling as
-        /// [`Self::fill`] above.
+        /// The end of a fill-handle drag: the selection replicated into the cells dragged over,
+        /// and grown to cover them — the only fill that goes up or left. The source is the edge
+        /// facing the drag, each line its own, with [`Self::fill`]'s one-undo-entry-per-line
+        /// ceiling.
         fn commit_fill(&self) {
             self.filling.set(false);
             let Some((dir, line)) = self.fill_to.take() else {
@@ -2750,11 +2619,9 @@ mod imp {
             self.obj().queue_draw();
         }
 
-        /// Read the clipboard and fill from the selection's top-left corner.
-        ///
-        /// Asynchronous because the clipboard is: the data may be owned by another process
-        /// that has to be asked for it. Every cell goes through the same typing rule a
-        /// keystroke does, in one `Action::Batch`, so a paste is one undo step.
+        /// Read the clipboard and fill from the selection's top-left corner — asynchronously,
+        /// since another process may own the data. Every cell goes through the typing rule in one
+        /// `Action::Batch`, so a paste is one undo step.
         pub fn paste(&self) {
             let (start, _) = self.selection.get().rect();
             self.obj().clipboard().read_text_async(
@@ -2862,10 +2729,8 @@ mod imp {
             self.obj().queue_draw();
         }
 
-        /// A chart's own `svg:x`/`svg:y`/`svg:width`/`svg:height`, converted to on-screen
-        /// pixels and placed in widget space — `None` for a length this build cannot parse,
-        /// which is a chart this shell simply does not draw rather than a panic (§9's own
-        /// tolerance, applied to a shell rather than a reader).
+        /// A chart's `svg:x`/`svg:y`/`svg:width`/`svg:height` as on-screen pixels in widget space
+        /// — `None` for a length that will not parse, a chart simply not drawn.
         fn chart_widget_rect(&self, geom: &GridGeom, chart: &grind_sheet::Chart) -> Option<Rect> {
             let zoom = self.zoom.get();
             let px = |length: &str| Some(style::length_mm(length)? * PX_PER_MM * zoom);
@@ -2877,10 +2742,9 @@ mod imp {
             ))
         }
 
-        /// What a point hits among this sheet's charts (`chart_frame::hit`): a handle of the
-        /// selected chart — they reach a little outside its frame — before any chart's body,
-        /// and the *last* chart in `table:shapes`' own order before an earlier one a point both
-        /// cover, since that is the one drawn on top.
+        /// What a point hits among this sheet's charts (`chart_frame::hit`): a selected chart's
+        /// handle, which reaches outside its frame, before any body, and the last chart in
+        /// `table:shapes` order before an earlier one, since it is drawn on top.
         fn chart_hit(&self, x: f64, y: f64) -> Option<(usize, Grip, Rect)> {
             let app = self.app.borrow().clone()?;
             let charts = app.charts(self.sheet.get()).ok()?;
@@ -3001,10 +2865,8 @@ mod imp {
                 let Ok(data) = app.chart_data(sheet, index) else {
                     continue;
                 };
-                // Every mark's colour resolved the same way the writer resolves one —
-                // `grind_sheet::chart::effective_color`, an override if the user picked one
-                // else the default cycle — so what is drawn here always matches what gets
-                // saved.
+                // Every mark's colour resolved as the writer resolves it
+                // (`grind_sheet::chart::effective_color`), so what is drawn is what is saved.
                 let color = |series: usize, point: Option<usize>| {
                     crate::theme::color(&grind_sheet::effective_color(chart, series, point))
                         .unwrap_or(f.palette.foreground)
@@ -3023,10 +2885,8 @@ mod imp {
                         color: &color,
                     },
                 );
-                // Selected (or being dragged): an accent outline and all eight handles, drawn
-                // for as long as it is selected — the one state nobody should have to guess at.
-                // Under the pointer and not selected: a faint outline, so it reads as a thing
-                // that can be picked up.
+                // Selected or being dragged: an accent outline and all eight handles. Under the
+                // pointer and not selected: a faint outline, so it reads as something to pick up.
                 if dragging == Some(index) || selected == Some(index) {
                     outline(f.snapshot, at, f.palette.accent, 2.0);
                     for (_, square) in chart_frame::handles(&frame_of(at), chart_frame::HANDLE) {
@@ -3044,10 +2904,9 @@ mod imp {
             }
         }
 
-        /// The end of a chart drag: the widget-space rect becomes ODF lengths and one undo
-        /// entry — moving and resizing are otherwise the same call, `App::reshape_chart`. A press
-        /// that never moved selected the chart; a second such click on a selected chart's body
-        /// opens the colour popover for the mark under it.
+        /// The end of a chart drag: the widget-space rect becomes ODF lengths in one
+        /// `App::reshape_chart`. A press that never moved selected the chart; a second such click
+        /// on a selected chart's body opens the colour popover for the mark under it.
         fn commit_chart_drag(&self, offset_x: f64, offset_y: f64) {
             let Some(drag) = self.chart_drag.take() else {
                 return;
@@ -3109,11 +2968,10 @@ mod imp {
             )
         }
 
-        /// A click that landed on a bar, a pie slice or a line: a palette popover at the
-        /// click point, picking from [`crate::formatting::palette_grid`] — the same swatches
-        /// a cell's own colour button offers — writes the mark's colour through
-        /// `App::set_chart_style` as one undo step. *Automatic* clears the override, back to
-        /// [`grind_sheet::series_color`]'s default cycle.
+        /// A click on a bar, a slice or a line: a palette popover at the click
+        /// ([`crate::formatting::palette_grid`]) that writes the mark's colour through
+        /// `App::set_chart_style`, one undo step. *Automatic* returns it to
+        /// [`grind_sheet::series_color`]'s cycle.
         fn open_chart_color_popover(&self, chart_index: usize, x: f64, y: f64) {
             let Some(app) = self.app.borrow().clone() else {
                 return;
@@ -3211,25 +3069,17 @@ mod imp {
             popover.popup();
         }
 
-        /// Double-clicking a column boundary: wide enough for the widest thing in the
-        /// column, which is what every spreadsheet does with that gesture.
-        ///
-        /// A row needs no equivalent: a row without a height of its own is *already* fitted
-        /// to what is in it ([`Grid::measure_rows`]), so double-clicking a row boundary
-        /// clears the explicit height and the fit is what is left.
+        /// Double-clicking a column boundary: wide enough for the widest thing in the column. A
+        /// row needs no twin: an unsized row is already fitted ([`Grid::measure_rows`]), so
+        /// double-clicking its boundary clears the explicit height.
         fn autofit(&self, col: u32) {
             self.fit(col..col + 1, 0..0);
         }
 
-        /// The length `col` fits to — its widest text in Pango, in the face each cell is
-        /// drawn in, with the cell's padding — or `None`, the default, for an empty column
-        /// (`grind_sheet::fit::width`).
-        ///
-        /// The shell measures and the core stores — text width is a font question and the
-        /// core has no font. Only the used extent is measured, because a column of a million
-        /// empty cells has no widest thing in it. Measured unzoomed, because what is stored is
-        /// a length in the document rather than a number of pixels on this screen at this
-        /// scale.
+        /// The length `col` fits to — its widest text in Pango, in each cell's face, with padding
+        /// — or `None` for an empty column (`grind_sheet::fit::width`). The shell measures and the
+        /// core stores, having no font. Only the used extent, and unzoomed, since a length is
+        /// stored.
         fn fitted_width(&self, app: &App, sheet: usize, col: u32) -> Option<String> {
             let rows = app.used_extent(sheet).map_or(0, |(rows, _)| rows);
             let layout = self.layout();
@@ -3284,12 +3134,8 @@ mod imp {
             app.filter(self.sheet.get()).ok().flatten()
         }
 
-        /// The dropdown button in one cell, when that cell is a filtered range's heading and
-        /// the column is one the filter judges on.
-        ///
-        /// Two conditions, not one: the range spans whole rows, but a field only exists for
-        /// a column inside it, and a button over a column the filter cannot act on would be
-        /// a control that does nothing.
+        /// The dropdown button in one cell, when it is a filtered range's heading over a column
+        /// the filter judges on — a button over a column it cannot act on would do nothing.
         fn filter_button_at(
             geom: &GridGeom,
             filter: &grind_sheet::Filter,
@@ -3321,11 +3167,8 @@ mod imp {
             Self::filter_button_at(geom, &filter, row, col).filter(|(_, b)| b.contains(x, y))
         }
 
-        /// Toggle a filter over the selection — the toolbar's `win.filter`.
-        ///
-        /// Over a sheet that already has one this clears it, so the button is the on/off
-        /// switch its name implies; otherwise the selection becomes the range, with its first
-        /// row the heading, which is what a person selecting a table with its titles means.
+        /// Toggle a filter over the selection (`win.filter`): over a sheet that has one this
+        /// clears it; otherwise the selection becomes the range, its first row the heading.
         pub fn toggle_filter(&self) {
             let Some(app) = self.app.borrow().clone() else {
                 return;
@@ -3374,10 +3217,8 @@ mod imp {
             menu.open(at, field, &values, filter.keep.get(&field));
         }
 
-        /// What the dropdown chose, as an undoable change. The whole filter is replaced
-        /// because that is the vocabulary `App::set_filter` has — one filter is one value
-        /// (`core/src/model.rs`), so a field's condition is edited by reading, changing and
-        /// writing it back.
+        /// What the dropdown chose, as an undoable change. The whole filter is replaced, since
+        /// `App::set_filter` takes one filter as one value.
         fn apply_filter(&self, field: u32, chosen: crate::filter_ui::Chosen) {
             let (Some(app), Some(mut filter)) = (self.app.borrow().clone(), self.filter()) else {
                 return;
@@ -3476,12 +3317,9 @@ mod imp {
             menu.popup();
         }
 
-        /// The right-click menu over the cells, at the point it was clicked.
-        ///
-        /// **A cell outside the selection becomes the selection first.** That is what every
-        /// grid does and what the menu's own wording assumes: *Clear Contents* on a right
-        /// click three cells away from a selection nobody can see any more is the one way a
-        /// context menu destroys work.
+        /// The right-click menu over the cells, at the click. **A cell outside the selection
+        /// becomes the selection first**: *Clear Contents* on a selection nobody can see any more
+        /// is how a context menu destroys work.
         fn open_cell_menu(&self, pos: Pos, x: f64, y: f64) {
             let Some(menu) = self.cell_menu.get() else {
                 return;
@@ -3556,8 +3394,8 @@ mod imp {
                     let Some(app) = self.app.borrow().clone() else {
                         return;
                     };
-                    // Refused only when the cell changed under the open menu; the menu is gone
-                    // and the cell shows what it now holds, which says so.
+                    // Refused only when the cell changed under the open menu, and the cell then
+                    // shows what it holds.
                     let _ = app.correct(wrong.sheet, wrong.pos, wrong.offset, &wrong.word, with);
                 }
                 None => {
@@ -3621,10 +3459,9 @@ mod imp {
                 }
                 _ => {}
             }
-            // A chart floats over the cells it sits above, so a press on one grabs the chart
-            // rather than starting (or extending) a cell selection underneath it — the same
-            // precedence the fill handle gets below, but earlier, since a chart is drawn over
-            // everything a filter button or the fill handle could otherwise claim first.
+            // A chart floats over its cells, so a press on one grabs the chart rather than
+            // starting a selection — checked before the filter button and the fill handle, since a
+            // chart is drawn over both.
             if let Some((index, grip, rect)) = self.chart_hit(x, y) {
                 let was_selected = self.selected_chart_now() == Some(index);
                 self.selected_chart.set(Some(index));
@@ -3748,10 +3585,9 @@ mod imp {
                 return;
             }
             let hit = self.geom().hit(x, y);
-            // Dragging while pointing grows the reference rather than the selection, which
-            // is what `=SUM(` + drag B2:B4 means. Cloned into its own binding first, not the
-            // `if let` scrutinee, or the `Ref` would still be held when `set_pending` below
-            // tries to `borrow_mut` the same `RefCell` — a reentrant-borrow panic.
+            // Dragging while pointing grows the reference, not the selection (`=SUM(` + drag
+            // B2:B4). Cloned into its own binding, or the `Ref` would still be held when
+            // `set_pending` borrows the same `RefCell` mutably.
             let pending = self.pending.borrow().clone();
             if let Some(pending) = pending
                 && let Hit::Cell { row, col } = hit
@@ -3781,16 +3617,11 @@ mod imp {
             });
         }
 
-        /// What clicking on something selects. A header selects the whole column or row —
-        /// the sheet's whole extent, not the used one, because that is what a user means by
-        /// "this column" when they are about to type into it.
-        ///
-        /// The active cell is the *near* end (row 0 of a column, column A of a row) and the
-        /// anchor the far one, not the other way round: [`Self::set_selection`] scrolls the
-        /// active cell into view, so an active cell at the sheet's far corner would fling
-        /// the view sixteen thousand columns away from the header just clicked. Extending a
-        /// drag from the far anchor still covers the same rectangle, since
-        /// [`Selection::rect`] normalises.
+        /// What clicking something selects. A header selects the whole column or row — the sheet's
+        /// extent, not the used one, which is what "this column" means. The active cell is the
+        /// **near** end and the anchor the far one: [`Self::set_selection`] scrolls the active
+        /// cell into view, and a far active cell would fling the view sixteen thousand columns
+        /// away. [`Selection::rect`] normalises either way.
         fn selection_for(&self, hit: Hit) -> Option<Selection> {
             Some(selection_for_hit(hit))
         }
@@ -4124,10 +3955,9 @@ mod imp {
             }
         }
 
-        /// The active cell's border, drawn after the text so it is never painted over — and
-        /// round a range, a hairline in the same accent. A wash alone is twelve per cent of a
-        /// colour, which on a filled table is a shape a reader has to look for; the edge is
-        /// what says where the selection *stops*, and so what a fill or a paste will cover.
+        /// The active cell's border, drawn after the text, and a hairline in the same accent round
+        /// a range: a twelve per cent wash is hard to see on a filled table, and the edge says
+        /// where a fill or a paste will stop.
         fn draw_active(&self, f: &Frame) {
             if !f.selection.is_single() {
                 let (start, end) = f.selection.rect();
@@ -4171,10 +4001,9 @@ mod imp {
             }
         }
 
-        /// The fill handle on the selection's bottom-right corner, and the rectangle a drag
-        /// from it is currently pointing at. Nothing while editing: the corner is where the
-        /// in-cell editor is, and a handle there would be a target for a click that means
-        /// "put the caret here".
+        /// The fill handle on the selection's bottom-right corner, and the rectangle a drag from
+        /// it points at. Nothing while editing: the in-cell editor is there, and a click on it
+        /// means "put the caret here".
         fn draw_fill(&self, f: &Frame) {
             if self.mode.get().is_editing() {
                 return;
@@ -4246,11 +4075,9 @@ mod imp {
         /// cell can be filled too, so this cannot ride along with the text.
         fn draw_backgrounds(&self, f: &Frame) {
             let Some(cells) = &f.cells else { return };
-            // `doc/view-modes.md` §4.5: **in role mode, colour means role, exclusively.**
-            // A wash layered over a document that already chose its colours produces cells
-            // whose colour has two causes and no way to tell them apart, which is worse than
-            // either alone. So the document's own fills are suppressed while the mode is on
-            // — and `draw_roles` marks the cells that had one, so nothing is hidden silently.
+            // **In role mode colour means role alone** (`doc/view-modes.md` §4.5), so the
+            // document's fills are suppressed while it is on, and `draw_roles` marks the cells
+            // that had one.
             if self.overlays.get().roles {
                 return;
             }
@@ -4294,10 +4121,9 @@ mod imp {
 
         /// The four `fo:border-*` edges, over the grid lines.
         ///
-        /// ponytail: the line style is ignored — `dashed` and `double` draw as solid. Dashes
-        /// need `gsk::Stroke` and a path per edge, and nothing in the corpus renders visibly
-        /// wrong without them. The width and colour are honoured, which is what carries the
-        /// meaning of a ruled table.
+        /// ponytail: the line style is ignored — `dashed` and `double` draw solid; dashes need
+        /// `gsk::Stroke` and a path per edge. Width and colour, which carry a ruled table's
+        /// meaning, are honoured.
         fn draw_borders(&self, f: &Frame) {
             let Some(cells) = &f.cells else { return };
             // A merge is drawn with its top-left cell's borders round the whole of it, which
@@ -4340,11 +4166,8 @@ mod imp {
             }
         }
 
-        /// Draw the values, with the two overflow rules and the cell's own text styling.
-        ///
-        /// Columns were fetched with a margin either side so that a label anchored just
-        /// off-screen still reaches into the view, and so that "is the next cell empty"
-        /// can be answered without a second read.
+        /// Draw the values, with the two overflow rules and each cell's text styling, over columns
+        /// fetched with a margin either side (see [`Frame::cells`]).
         fn draw_cells(&self, f: &Frame) {
             let (geom, palette, rows) = (&f.geom, &f.palette, &f.rows);
             let Some(viewport) = &f.cells else { return };
@@ -4435,21 +4258,17 @@ mod imp {
 
                     let mut cell = geom.cell_rect(row, col);
                     let mut capped = false;
-                    // A filtered range's heading ends where its button begins. The button is
-                    // drawn over the text (`draw_filter_buttons`), and a heading that runs
-                    // under it reads as `Budgete▾` — a word cut by a control rather than a
-                    // word beside one. Centred text centres in what is left, so a heading
-                    // stays centred on the part of the cell a reader can see.
+                    // A filtered range's heading ends where its button begins, rather than running
+                    // under it as `Budgete▾`; centred text centres in what is left.
                     if let Some(filter) = f.filter.as_ref().filter(|filter| filter.buttons)
                         && let Some((_, button)) = Self::filter_button_at(geom, filter, row, col)
                     {
                         cell.w = (button.x - cell.x).max(1.0);
                         capped = true;
                     }
-                    // A wrapped cell is drawn inside its own width, and its row was grown to
-                    // fit what wraps into it (`measure_rows`) unless the document set that
-                    // row a height of its own — an explicit height means explicit, so it
-                    // still clips.
+                    // A wrapped cell is drawn inside its width, and its row was grown to fit
+                    // (`measure_rows`) unless the document set the row a height, which still
+                    // clips.
                     layout.set_width(match wrapping {
                         true => ((cell.w - 2.0 * pad).max(1.0) * f64::from(pango::SCALE)) as i32,
                         false => -1,
@@ -4464,12 +4283,9 @@ mod imp {
                         false => align,
                     };
 
-                    // A number that does not fit is never truncated — a wrong magnitude
-                    // read as a right one is worse than no reading at all. Decided by the
-                    // *value*, not by where it sits: a centred or left-aligned number used to
-                    // fall through to the text path below and be cut or spill like a word.
-                    // As many whole hashes as the cell holds, `numfmt::overflow` — the rule
-                    // every shell in the suite draws.
+                    // A number that does not fit is never truncated — a wrong magnitude read as
+                    // right is worse than no reading. Decided by the value, not its alignment: as
+                    // many whole hashes as the cell holds (`numfmt::overflow`).
                     if !fits && !wrapping && grind_sheet::numfmt::is_number(value) {
                         // A plain number first narrows to what fits — fewer decimals, then
                         // scientific — as LibreOffice's General format does
@@ -4732,23 +4548,16 @@ mod imp {
             }
         }
 
-        /// `doc/view-modes.md` Part II in the grid: what every cell *is*, in two channels.
+        /// `doc/view-modes.md` Part II in the grid: what every cell *is*, in more than colour. The
+        /// colour is `draw_cells`' (a role is the text's colour, §4.5); a second channel is not
+        /// optional (§4.6), or the mode excludes people.
         ///
-        /// The colour is `draw_cells`' business — a role is the cell's text colour, which is
-        /// the financial-modelling convention this borrows and the reason the document's own
-        /// colours are suppressed while the mode is on (§4.5). What is here is everything
-        /// that is **not** colour, and §4.6 is why it is not optional: a feature whose entire
-        /// output is colour and which ships without a second channel excludes people, and
-        /// does not get fixed later.
-        ///
-        /// * **A one-glyph marker** at each cell's leading edge, one per role, in the role's
-        ///   colour but readable without it. `draw_cells` leaves the room for it.
-        /// * **A corner triangle** for a role that is also a *diagnostic* — an error, a stale
-        ///   value, an unnamed constant. §4.3's distinction, drawn: roles get the colour,
-        ///   problems get a mark, and painting both in one channel makes an ordinary model
-        ///   look like a wall of warnings.
-        /// * **A mark for suppressed styling**, bottom-left, on a cell whose own fill or text
-        ///   colour the mode is hiding — so nothing is hidden silently.
+        /// * **A one-glyph marker** at each cell's leading edge, in the role's colour but readable
+        ///   without it; `draw_cells` leaves room for it.
+        /// * **A corner triangle** for a role that is also a diagnostic — an error, a stale value,
+        ///   an unnamed constant (§4.3): roles get colour, problems get a mark.
+        /// * **A mark for suppressed styling**, bottom-left, on a cell whose own fill or ink the
+        ///   mode hides.
         fn draw_roles(&self, f: &Frame) {
             if !self.overlays.get().roles {
                 return;
@@ -4802,19 +4611,11 @@ mod imp {
             layout.set_attributes(None);
         }
 
-        /// `doc/view-modes.md` Part I in the grid: where a named expression *lives*, drawn
-        /// inside the cell it is bound to.
-        ///
-        /// The point of it is that a model does not need a label cell beside every constant
-        /// — IntelliJ's inlay hints, for a grid. It is a reading of the document and writes
-        /// nothing, which is why it can be turned on and off with one key and why the file
-        /// is byte-identical either way.
-        ///
-        /// Three rules, all of them from §3.2 and all of them about *not* becoming noise:
-        /// the hint sits at the end opposite the value, the value never yields to it
-        /// ([`crate::geom::hint_rect`] elides and then drops), and a hint for a **range** is
-        /// drawn once at the first visible cell of it with the rectangle outlined, rather
-        /// than forty-nine times.
+        /// `doc/view-modes.md` Part I in the grid: a named expression drawn inside the cell it is
+        /// bound to, so a model needs no label cell beside every constant. A reading that writes
+        /// nothing. Three rules from §3.2: the hint sits at the end opposite the value, the value
+        /// never yields ([`crate::geom::hint_rect`] elides then drops), and a range's hint is
+        /// drawn once at its first visible cell with the rectangle outlined.
         fn draw_hints(&self, f: &Frame) {
             if !self.overlays.get().names {
                 return;
@@ -4995,15 +4796,9 @@ mod imp {
             snapshot.append_color(&line, &rect(geom.header_w - 1.0, 0.0, 1.0, height));
         }
 
-        /// A run of columns or rows hidden by hand (§5.4): a thin accent bar standing where
-        /// the run collapsed to nothing, between the two headers that still show either
-        /// side of it — the one visible trace of the run, and clicking it unhides the whole
-        /// thing (`Grid::press`).
-        ///
-        /// Only *manually* hidden tracks get a mark here — a row the filter hides has its
-        /// own dropdown already saying why (`draw_filter_buttons`'s doc comment), and giving
-        /// it a second, different-looking control would be two ways to ask the same
-        /// question.
+        /// A run of columns or rows hidden by hand: a thin accent bar where it collapsed, between
+        /// the headers either side — its one visible trace, and clicking it unhides the run
+        /// (`Grid::press`). A row the filter hides gets none: its dropdown already says why.
         fn draw_hidden_markers(&self, f: &Frame) {
             let Some(app) = self.app.borrow().clone() else {
                 return;
@@ -5039,24 +4834,15 @@ mod imp {
             }
         }
 
-        /// The autofilter's dropdown buttons, one per field, in the range's heading row
-        /// (§9.4).
+        /// The autofilter's dropdown buttons, one per field, in the range's heading row.
         ///
-        /// The button's face is always the sheet's own background, never the cell's. A
-        /// heading is very often given a strong fill by the document — the sample's is solid
-        /// blue — and a button tinted to match it stops looking like a control at all. A
-        /// constant light chip with a border reads as one on any heading.
+        /// The face is always the sheet's background, never the cell's: a heading is often
+        /// strongly filled, and a matching button stops looking like a control. So the state is in
+        /// the glyph — a filtered field gets an accent chevron over an accent underline — which
+        /// survives an accent-coloured heading, and answers which column is why rows are missing.
         ///
-        /// Which leaves the *state* to the glyph rather than the fill: a filtered field gets
-        /// an accent chevron over an accent underline, an unfiltered one a plain chevron.
-        /// State has to survive being drawn on top of an accent-coloured heading, so it
-        /// cannot itself be "fill the chip with the accent" — that is the one combination
-        /// that disappears. "Which column is why rows are missing" is the question a filtered
-        /// sheet raises, and a gap in the row numbers alone cannot answer it: rows somebody
-        /// hid by hand look identical.
-        ///
-        /// `table:display-filter-buttons="false"` is honoured: the document asked for no
-        /// buttons, and the toolbar's Filter action still reaches the thing.
+        /// `table:display-filter-buttons="false"` is honoured; the Filter action still reaches the
+        /// filter.
         fn draw_filter_buttons(&self, f: &Frame) {
             let Some(filter) = &f.filter else { return };
             if !filter.buttons {
@@ -5185,31 +4971,20 @@ mod imp {
     // the style — is `grind_sheet::look`'s, shared with every shell that draws a grid.
     use grind_sheet::look::{self, Align, VAlign};
 
-    /// A cell's font as Pango attributes, or `None` when neither the cell nor the zoom has
-    /// anything to say about one.
+    /// A cell's font as Pango attributes, or `None` when neither the cell nor the zoom says
+    /// anything. Weight, slant and size only: the model carries no `fo:font-family`
+    /// (`core/src/style.rs`).
     ///
-    /// Weight, slant and size only: `fo:font-family` is deliberately not carried by the model
-    /// (LibreOffice rewrites it into a font-face reference, `core/src/style.rs`), so there is
-    /// nothing here to set a family from.
+    /// **The size is a multiple of [`look::DEFAULT_FONT_PT`], not an absolute.** A document states
+    /// a size per cell in `fo:font-size` and for the rest in `style:default-style`, which is not
+    /// read (the `ponytail:` in [`grind_sheet::odf`]'s `Styles`); drawing `10pt` absolutely while
+    /// unstyled cells keep the widget's font shows one document in two sizes. Scaling makes "says
+    /// 10pt" and "says nothing" identical, and keeps the base as the user's UI font size, an
+    /// accessibility setting.
     ///
-    /// **The size is a multiple of [`look::DEFAULT_FONT_PT`], not an absolute**, and that is the
-    /// whole point of this function. A document says what it means twice over: once per cell
-    /// in `fo:font-size`, and once for every cell that names none in
-    /// `style:default-style` — which this build does not read (the `ponytail:` in
-    /// [`grind_sheet::odf`]'s `Styles`). Drawing a cell that says `10pt` at an absolute 10pt
-    /// while a cell that says nothing kept the widget's own font therefore made **two sizes
-    /// out of one**: a LibreOffice sheet whose default is 10pt showed its styled cells
-    /// smaller than its plain ones, for no reason a reader could see. Scaling instead makes
-    /// "says 10pt" and "says nothing" identical, and leaves the base as the widget's font —
-    /// which is the user's UI font size, an accessibility setting rather than ours to
-    /// override.
-    ///
-    /// `zoom` rides in the same attribute, because a second `scale` over the same range
-    /// replaces the first rather than compounding with it.
-    ///
-    /// A size larger than the row's default grows the row rather than clipping — the tallest
-    /// styled cell in a row is what [`imp::Grid::measure_rows`] takes its height from, which
-    /// is why a measurement passes a `zoom` of 1 and nothing measured is stored zoomed.
+    /// `zoom` rides in the same attribute, since a second `scale` over a range replaces the first.
+    /// A size larger than the row's default grows the row ([`imp::Grid::measure_rows`]), which is
+    /// why a measurement passes a `zoom` of 1.
     pub(super) fn font(
         style: Option<&grind_sheet::style::CellStyle>,
         zoom: f64,
@@ -5257,22 +5032,15 @@ mod imp {
         any.then_some(attrs)
     }
 
-    /// A cell's `fo:font-size` as a multiple of [`look::DEFAULT_FONT_PT`], or `None` when it names
-    /// none.
-    ///
-    /// A length in points, which is what a spreadsheet's font size always is. A
-    /// percentage — ODF allows one — is relative to a style this model does not inherit
-    /// from, so it is left alone rather than resolved against the wrong base; so is a length
-    /// in any other unit, which no spreadsheet writes for a font.
+    /// A cell's `fo:font-size` as a multiple of [`look::DEFAULT_FONT_PT`], or `None`. Only a
+    /// length in points, what a spreadsheet's font size is; a percentage is relative to a style
+    /// this model does not inherit from, so it is left alone, as is any other unit.
     pub(super) fn font_scale(style: &grind_sheet::style::CellStyle) -> Option<f64> {
         scale_of(style.font_size.as_deref())
     }
 
-    /// [`font_scale`]'s own parsing, over the raw `fo:font-size` string rather than a
-    /// `CellStyle` — what [`SheetMetrics`] calls too, since a `TextStyle`
-    /// carries the same string with no document type's vocabulary attached to it (R8). One
-    /// parse either way, which is the point: a cell drawn at one size and measured at another
-    /// is exactly the drift `doc/text-layout.md` decision 3 warns a shell into.
+    /// [`font_scale`]'s parsing over the raw `fo:font-size` string, which [`SheetMetrics`] calls
+    /// too, so a cell is drawn and measured at one size (`doc/text-layout.md` decision 3).
     pub(super) fn scale_of(font_size: Option<&str>) -> Option<f64> {
         look::font_scale(font_size)
     }
@@ -5317,11 +5085,10 @@ mod imp {
         (x, y)
     }
 
-    /// The wavy underline under each misspelt word of a cell `draw_text` has just drawn with
-    /// the same arguments — the word processor's own mark (`ui_text_gtk`'s `squiggle`), so the
-    /// two windows mark a misspelling alike. Placed from the layout's own lines, so a word in
-    /// wrapped text is marked on the line it is on, and clipped as the text was. `misspelt`
-    /// counts characters of `text`, as the core's ranges do.
+    /// The wavy underline under each misspelt word of a cell `draw_text` has just drawn with the
+    /// same arguments — the word processor's mark. Placed from the layout's own lines, so wrapped
+    /// text is marked on the right line and clipped as the text was; `misspelt` counts characters
+    /// of `text`, as the core does.
     #[allow(clippy::too_many_arguments)]
     fn draw_squiggles(
         snapshot: &gtk::Snapshot,
@@ -5452,11 +5219,8 @@ mod imp {
         }
     }
 
-    /// An outlined rectangle with softened corners — the active cell's cursor and the
-    /// reference outlines. The radius is small enough that the rectangle still reads as
-    /// exactly the cells it covers; the grid lines and the selection wash stay square.
-    /// A filled triangle in a cell's top-right corner — §4.3's diagnostic mark, the same
-    /// shape a spreadsheet has used for "there is something here" since forever.
+    /// A filled triangle in a cell's top-right corner — §4.3's diagnostic mark, the spreadsheet's
+    /// oldest "something is here".
     fn corner(snapshot: &gtk::Snapshot, cell: Rect, color: gtk::gdk::RGBA, size: f64) {
         let builder = gsk::PathBuilder::new();
         let (x, y) = ((cell.x + cell.w) as f32, cell.y as f32);
@@ -5467,6 +5231,8 @@ mod imp {
         snapshot.append_fill(&builder.to_path(), gsk::FillRule::Winding, &color);
     }
 
+    /// An outlined rectangle with softened corners — the active cell and the reference
+    /// outlines. The radius is small enough that it still reads as exactly the cells it covers.
     fn outline(snapshot: &gtk::Snapshot, r: Rect, color: gtk::gdk::RGBA, t: f64) {
         let bounds =
             gsk::RoundedRect::from_rect(rect(r.x - 1.0, r.y - 1.0, r.w + 2.0, r.h + 2.0), 3.0);

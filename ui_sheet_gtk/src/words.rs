@@ -2,14 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **Personal Dictionary…** — the words every spelling check accepts, in every document and
-//! every language: `grind_spell::personal`'s list with a window in front of it, so a word added
-//! by mistake can be taken back and one can be added before it is ever typed
-//! (`doc/spelling.md`, decision 5). `grind words` is the same list from a terminal.
-//!
-//! `ui_text_gtk/src/words.rs` is this file, a copy for `lint.rs`'s reason — there is no crate a
-//! widget both GTK shells could use. What is not copied is anything about the list: what a word
-//! is, where the list lives and how a line is removed are `grind_spell::personal`'s.
+//! **Personal Dictionary…** — `grind_spell::personal`'s list with a window in front of it, so a
+//! word added by mistake can be taken back and one added before it is typed. `grind words` is the
+//! same list from a terminal; `ui_text_gtk/src/words.rs` is a copy, for `code.rs`'s reason.
 
 use std::rc::Rc;
 

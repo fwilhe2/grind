@@ -2,25 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `grind-sheet-gtk` — the GNOME shell, and phase 9's first one.
+//! `grind-sheet-gtk` — the GNOME spreadsheet. A renderer and an event forwarder that owns nothing:
+//! all state is in `grind-sheet`'s [`App`]; this crate holds a window, a grid drawing what
+//! [`App::get_viewport`] returns, and the editing around it. A field here that is not presentation
+//! means the core is missing something.
 //!
-//! A renderer and an event forwarder that owns nothing (doc/plan.md rule 1). All state is
-//! in `grind-sheet`'s [`App`]; this crate holds a window, a grid that draws whatever
-//! [`App::get_viewport`] returns, and the keys and editing around it. If a field shows up
-//! here that is not a presentation concern, the core is missing something.
+//! `doc/sheet-shell.md`'s **"Four surfaces"** governs the chrome, and [`actions`] enforces it: one
+//! table of verbs read by the wiring, the menus, the shortcuts window and the command palette, so
+//! no feature can be added without becoming findable. `chrome_tests` is the check.
 //!
-//! `doc/sheet-shell.md` is the plan and the running record of what is built. Milestones 1, 3
-//! and 4 are here: a document opens, draws, navigates, and can be edited and saved.
-//!
-//! Its **"Four surfaces"** section is normative for this window's chrome, and [`actions`] is
-//! where that rule is enforced: one table of verbs, read by the wiring, the menus, the
-//! shortcuts window and the command palette alike. A feature therefore cannot be added without
-//! becoming findable, which is what stops the next one from becoming another toolbar button —
-//! and `chrome_tests` at the bottom of this file is the ratchet that keeps it true.
-//!
-//! **The core pushes; this never polls** (rule 3). `App`'s observer is a channel sender —
-//! it must be `Send`, and a GTK widget is not — and one local future drains it, coalescing
-//! a burst of changes into a single refresh.
+//! **The core pushes; this never polls** (rule 3). The observer is a channel sender — it must be
+//! `Send`, and a widget is not — drained by one local future that coalesces a burst of changes
+//! into one refresh.
 
 mod chart;
 mod chart_dialog;
@@ -76,15 +69,11 @@ fn main() -> ExitCode {
     // every other shell here, a missing file is an error and not a new document.
     let mut args = std::env::args_os().skip(1);
     let mut path: Option<PathBuf> = args.next().map(PathBuf::from);
-    // `--render-to <png>` draws one frame, writes it and exits. Not a user feature: it is
-    // how a machine checks that the grid still draws, since a custom-drawn widget has no
-    // other assertable output and `editor`'s §5 rule is to exercise every boundary with a
-    // program that runs where the UI cannot.
+    // `--render-to <png>` draws one frame, writes it and exits — not a user feature, but how a
+    // machine checks a custom-drawn widget still draws.
     let mut render_to: Option<PathBuf> = None;
-    // `--overlay names|roles|all` turns `doc/view-modes.md`'s overlays on for that frame,
-    // so the modes are assertable the same way the grid is: a refactor is proved one when
-    // the PNG comes back byte-identical. Not a user feature either — the window's own
-    // toggles are.
+    // `--overlay names|roles|all` turns the overlays on for that frame, so the modes are
+    // assertable too.
     let mut overlays = grind_sheet::view::Overlays::NONE;
     while let Some(flag) = args.next() {
         match flag.to_str() {
@@ -160,19 +149,15 @@ struct Ui {
     app: Arc<App>,
     window: adw::ApplicationWindow,
     grid: Grid,
-    /// The two pages of the window: the grid, and its projection (`doc/dsl.md` §6, D9).
+    /// The two pages of the window: the grid, and its projection.
     stack: gtk::Stack,
     source: gtk::TextView,
     /// Raised while the code view is being filled, so placing its cursor does not read back as
     /// the reader moving it — `formatting::Strip`'s latch, for the same reason.
     updating: Cell<bool>,
-    /// The code view line the grid's selection is on, as last marked.
-    ///
-    /// The latch above is not enough on its own: GTK does not always deliver
-    /// `notify::cursor-position` inside the call that caused it, so a handler that answers by
-    /// touching the cursor is a loop the latch never sees the re-entry of. This makes the
-    /// handler *idempotent* instead — the same line twice does nothing — which holds however
-    /// the signal is scheduled.
+    /// The code view line the selection is on, as last marked. The latch above is not enough: GTK
+    /// does not always deliver `notify::cursor-position` inside the call that caused it, so the
+    /// handler is made idempotent — the same line twice does nothing.
     marked: Cell<Option<usize>>,
     title: adw::WindowTitle,
     toasts: adw::ToastOverlay,
@@ -231,10 +216,8 @@ impl Ui {
             .child(&grid)
             .build();
 
-        // The code view, on the other page of a stack (`doc/dsl.md` §6.1). A stack rather than a
-        // paned split: §6.2 is right that a split is what a person eventually wants, and it is
-        // also a second viewport to keep in step. The correspondence is what pays for itself
-        // first, and one page at a time carries it.
+        // The code view, on the other page of a stack. A stack rather than a split: a split is a
+        // second viewport to keep in step, and one page at a time carries the correspondence.
         let source = code::build();
         let source_scroller = gtk::ScrolledWindow::builder()
             .hexpand(true)
@@ -302,10 +285,9 @@ impl Ui {
 
         let view = adw::ToolbarView::builder().content(&toasts).build();
         view.add_top_bar(&header);
-        // The window's only toolbar, and the only one it will have: a control belongs there
-        // when it reads and writes a property of the selection (`doc/sheet-shell.md`, "Four
-        // surfaces"). Verbs go to the context menu and the palette instead, which is what
-        // stops this bar growing a button per feature.
+        // The window's only toolbar: a control belongs there when it reads and writes a property
+        // of the selection (`doc/sheet-shell.md`, "Four surfaces"); verbs go to the context menu
+        // and the palette.
         view.add_top_bar(&chrome::format_bar(&strip.widget));
         let formula_bar = chrome::formula_bar(&grid, app, true);
         view.add_top_bar(&formula_bar.widget);
@@ -466,10 +448,8 @@ impl Ui {
         ));
         self.window.add_action(&friendly);
 
-        // `doc/view-modes.md`'s two overlays, stateful for the same reason: each is a way of
-        // *looking* at the document rather than something done to it, so the toggle carries
-        // its own on/off and turning it off leaves nothing behind. Neither writes a byte,
-        // which is why they need no confirmation, no dirty flag and no undo entry.
+        // The two overlays, stateful: a way of looking at the document, so the toggle carries its
+        // own state, and neither writes a byte — no confirmation, no dirty flag, no undo entry.
         for (name, names, roles) in [("show-names", true, false), ("show-roles", false, true)] {
             let on = match names {
                 true => self.grid.overlays().names,
@@ -521,11 +501,9 @@ impl Ui {
         ));
         self.window.add_action(&shown);
 
-        // Spelling (`doc/spelling.md`, "In a spreadsheet"): one toggle, Shift+F7 as in every
-        // office suite, and a choice of language beside it. Both write the person's remembered
-        // setting rather than anything in the document, so neither needs an undo entry or a
-        // dirty flag — and both mean every spreadsheet window from now on, which is what makes
-        // *off* stay off.
+        // Spelling: one toggle, Shift+F7 as in every office suite, and a language choice beside
+        // it. Both write the person's remembered setting, not the document — no undo entry, no
+        // dirty flag — and apply to every spreadsheet window from then on, so *off* stays off.
         let check = gio::SimpleAction::new_stateful(
             "spell-check",
             None,
@@ -563,9 +541,8 @@ impl Ui {
         ));
         self.window.add_action(&language);
 
-        // `doc/dsl.md` §6, D9 — the document as its projection, on the other page of the
-        // stack. Stateful like the two overlays above and for the same reason: it is a way of
-        // *looking* at the document, it writes nothing, and the same item turns it off.
+        // The document as its projection, on the other page of the stack — stateful like the
+        // overlays: a reading, turned off by the same item.
         let source = gio::SimpleAction::new_stateful("show-source", None, &false.to_variant());
         source.connect_activate(glib::clone!(
             #[strong(rename_to = ui)]
@@ -597,7 +574,7 @@ impl Ui {
         ));
     }
 
-    // --- the code view (doc/dsl.md §6, D9) ---
+    // --- the code view ---
 
     /// Switch between the grid and its source.
     fn show_source(self: &Rc<Self>, on: bool) {
@@ -631,12 +608,9 @@ impl Ui {
         self.updating.set(false);
     }
 
-    /// The source's cursor moved: select the cell that line projects.
-    ///
-    /// A **sheet's own name** is checked first, because a `sheet` node anchors one and a bare
-    /// name is also a perfectly good cell address — `Sheet1` parses as column `SHEET`, row 1, and
-    /// answering a click on `sheet Sales {` with a jump to a cell nobody has ever used would be
-    /// worse than doing nothing.
+    /// The source's cursor moved: select the cell that line projects. A **sheet's own name** is
+    /// checked first: a bare name is also a cell address (`Sheet1` is column `SHEET`, row 1), and
+    /// `sheet Sales {` should open the sheet.
     fn source_moved(self: &Rc<Self>) {
         if self.updating.get() || self.stack.visible_child_name().as_deref() != Some("source") {
             return;
@@ -1180,14 +1154,10 @@ impl Ui {
 
     // --- CSV, the one non-ODF format (`doc/not-doing.md` §2) ---
 
-    /// *Import CSV…* — a delimited file read in **at the cursor**, in one undo step.
-    ///
-    /// A picker and nothing else. The two questions an import cannot skip are answered from
-    /// what this window already has: which delimiter, from the file's own content, and where
-    /// the fields land, from the selection — so there is no dialog for a person to get wrong,
-    /// which is the shape `Filter Rows` and `Format as Table` already have here. Every other
-    /// knob is `grind sheet import-csv`'s, and `csv::Import::sniffed` is where the choice of
-    /// which ones a window sets is written down.
+    /// *Import CSV…* — a delimited file read in **at the cursor**, one undo step. A picker and
+    /// nothing else: the delimiter comes from the file's content and the destination from the
+    /// selection, so there is no dialog to get wrong. The other knobs are `grind sheet
+    /// import-csv`'s; `csv::Import::sniffed` is which a window sets.
     fn import_csv(self: &Rc<Self>) {
         self.pick_csv(String::new());
     }
@@ -1278,12 +1248,9 @@ impl Ui {
         }
     }
 
-    /// *Export CSV…* — the selection, or everything the sheet uses when the selection is one
-    /// cell, written as what each cell **shows**.
-    ///
-    /// The dialect follows the name: saving as `.tsv` writes tabs (`csv::Dialect::for_name`),
-    /// which is the only thing a save dialog can be asked with and the same rule the terminal's
-    /// `:csv-out` uses.
+    /// *Export CSV…* — the selection, or everything the sheet uses when one cell is selected, as
+    /// each cell **shows**. The name picks the dialect: `.tsv` writes tabs
+    /// (`csv::Dialect::for_name`).
     fn export_csv(self: &Rc<Self>) {
         let suggested = match self.path.borrow().as_deref().and_then(Path::file_stem) {
             Some(stem) => format!("{}.csv", stem.to_string_lossy()),
@@ -1365,12 +1332,9 @@ impl Ui {
 
     // --- names ---
 
-    /// The names dialog: every defined name, editable in place, plus a row to add one.
-    ///
-    /// A name is document-level and there is no other window to hang it off, so this is a
-    /// list rather than a property panel. Each row is an `adw::EntryRow` over the name's
-    /// definition, which makes editing one the same gesture as reading it; the core does
-    /// every refusal, and its message is the toast.
+    /// The names dialog: every defined name, editable in place, and a row to add one. Each row is
+    /// an `adw::EntryRow` over the definition, so editing is the same gesture as reading; the core
+    /// does every refusal, and its message is the toast.
     fn manage_names(self: &Rc<Self>) {
         let list = gtk::ListBox::builder()
             .selection_mode(gtk::SelectionMode::None)
@@ -1497,18 +1461,11 @@ impl Ui {
 
     // --- calculations ---
 
-    /// The calculations dialog: every formula in the document, searchable, each row jumping
-    /// to the cell it names.
-    ///
-    /// A spreadsheet shows results and hides the formulas behind them, so the one question a
-    /// grid cannot answer is "what in here is computed, and out of what". Plain arithmetic is
-    /// listed beside function calls — `=A1/2` is as much a calculation as `=SUM(A1:A9)` — and
-    /// the search matches a function name as readily as an address, which is what makes it
-    /// also the answer to "where is TODAY used".
-    ///
-    /// The list is rebuilt per keystroke rather than filtered in place: `App::calculations`
-    /// walks the formulas already in memory, and a document with enough of them to notice
-    /// has bigger problems.
+    /// The calculations dialog: every formula in the document, searchable, each row a jump to its
+    /// cell — the one question a grid cannot answer, what in here is computed and from what. Plain
+    /// arithmetic is listed beside function calls, and the search matches a function name as
+    /// readily as an address, so it also answers "where is TODAY used". Rebuilt per keystroke:
+    /// `App::calculations` walks formulas already in memory.
     fn explore_calculations(self: &Rc<Self>) {
         let search = gtk::SearchEntry::builder()
             .placeholder_text("Search formulas, addresses, functions")
@@ -1806,10 +1763,9 @@ impl Ui {
                     if response != "rename" {
                         return;
                     }
-                    // A rename carries every reference with it (`doc/dsl.md` §6.5, D10) —
-                    // formulas, named expressions, chart ranges — in one undo step. The toast
-                    // says how many, because a document-wide edit a user did not see happen is
-                    // one they cannot trust; Ctrl+Z takes all of it back.
+                    // A rename carries every formula, named expression and chart range with it, in
+                    // one undo step; the toast says how many, since an edit nobody saw happen is
+                    // one they cannot trust.
                     match ui.app.rename_sheet(sheet, entry.text().trim()) {
                         Ok(0) => {}
                         Ok(rewritten) => {
@@ -1822,12 +1778,10 @@ impl Ui {
         );
     }
 
-    /// Format the selection as a table: autofilter, alternating shading, an optional totals
-    /// row and a name, all in [`grind_sheet::App::format_table`]'s one undo step.
-    ///
-    /// There is no separate "table" object here to reopen and re-edit — see
-    /// `sheet/src/table_format.rs` for why — so this dialog is only ever the *apply* step,
-    /// the same way `sheet filter` is: run it again over a styled range and it restyles.
+    /// Format the selection as a table: autofilter, banded rows, an optional totals row and a
+    /// name, in [`grind_sheet::App::format_table`]'s one undo step. There is no table object to
+    /// reopen (`sheet/src/table_format.rs`), so this is only ever the apply step; run again over a
+    /// styled range, it restyles.
     fn format_table_dialog(self: &Rc<Self>) {
         let (start, mut end) = self.grid.selection().rect();
         let sheet = self.grid.sheet();
@@ -1849,10 +1803,8 @@ impl Ui {
             .subtitle("The first row names the columns")
             .active(true)
             .build();
-        // The totals row's aggregate, "None" first — one dropdown rather than a switch plus a
-        // second control, since "no totals row" is one more entry in the same list. The
-        // labels are `TotalsFunction::label`, so this window cannot call one of them something
-        // the terminal or the CLI does not.
+        // The totals row's aggregate, "None" first — one dropdown, since "no totals row" is one
+        // more entry. The labels are `TotalsFunction::label`.
         let mut totals_labels = vec!["None".to_owned()];
         totals_labels.extend(
             grind_sheet::TotalsFunction::ALL
@@ -1990,13 +1942,9 @@ impl Ui {
         glib::Propagation::Stop
     }
 
-    /// M9's shortcuts dialog. Built from the same table the window wires up, so it cannot list
-    /// a binding the keyboard does not actually have — plus the grid's own vocabulary
-    /// (`keymap.rs`), which has no `GAction` to read a name from.
-    ///
-    /// Since the chrome rework it reads the *titles* from that table too, rather than keeping
-    /// a second list of them. A verb spelled one way in the palette and another here is a verb
-    /// a reader has to learn twice, and the way that happens is exactly this: two lists.
+    /// The shortcuts dialog, built from the table the window wires up — titles included — so it
+    /// cannot list a binding the keyboard lacks, plus the grid's own keys (`keymap.rs`), which
+    /// have no `GAction`.
     fn shortcuts(&self) {
         let window = gtk::ShortcutsWindow::builder()
             .transient_for(&self.window)
@@ -2080,13 +2028,10 @@ impl Ui {
 
 type Handler = fn(&Rc<Ui>);
 
-/// One verb this window has: a `win.` action, what it is called, and what runs it.
-///
-/// **The one table**, and since `doc/sheet-shell.md`'s chrome rework it has four readers
-/// rather than three: `wire` builds the actions and their accelerators, the menus point at
-/// them by name, the shortcuts window lists them, and the command palette searches them. A
-/// verb that is not here does not exist, and a verb that is here is in the palette — which is
-/// what makes "a new feature does not get a new button" structural rather than a habit.
+/// One verb this window has: a `win.` action, its name, and what runs it. **The one table**, with
+/// four readers: `wire` builds the actions and accelerators, the menus name them, the shortcuts
+/// window lists them and the palette searches them. A verb that is here is in the palette, which
+/// makes "a feature does not get a button" structural.
 struct Verb {
     /// The action's name, without the `win.` prefix.
     name: &'static str,
@@ -2098,13 +2043,9 @@ struct Verb {
     run: Handler,
 }
 
-/// The **readings** — a way of looking at the document rather than something done to it
-/// (`doc/view-modes.md`, `doc/dsl.md` §6). Stateful actions, so `wire` builds them by hand:
-/// each carries its own on/off and the same item turns it off again.
-///
-/// Named here rather than inside `wire` so that the View menu, the palette and the shortcuts
-/// window read the same list the wiring does. None of them writes a byte, which is why they
-/// need no confirmation, no dirty flag and no undo entry.
+/// The **readings** — ways of looking at the document (`doc/view-modes.md`, `doc/dsl.md` §6).
+/// Stateful, so `wire` builds them by hand; named here so the View menu, the palette and the
+/// shortcuts window read the list the wiring does. None writes a byte.
 const READINGS: [(&str, &str, &str); 6] = [
     (
         "friendly-formulas",
@@ -2125,11 +2066,8 @@ const READINGS: [(&str, &str, &str); 6] = [
 /// with none, cannot offer. Check Spelling is its palette half.
 const TARGETED: [&str; 1] = ["spell-language"];
 
-/// Bind a reading's accelerator, as [`READINGS`] spells it.
-///
-/// The stateful actions are wired by hand, and reading their keys back out of the same table
-/// the palette and the shortcuts window read is what stops the three from disagreeing about
-/// what Ctrl+Shift+N does.
+/// Bind a reading's accelerator as [`READINGS`] spells it, so the palette, the shortcuts window
+/// and the keyboard agree about what Ctrl+Shift+N does.
 fn accelerate(application: &adw::Application, name: &str) {
     for (verb, _, accel) in READINGS {
         if verb == name && !accel.is_empty() {
@@ -2138,11 +2076,9 @@ fn accelerate(application: &adw::Application, name: &str) {
     }
 }
 
-/// Every verb, as the palette takes them — the plain ones and the readings, in one list.
-///
-/// `OnceLock` because [`palette::present`] holds the rows for the life of the dialog and the
-/// table is a constant in everything but spelling: `actions()` builds it from function
-/// pointers, which is not something a `const` can hold alongside the `&'static str`s.
+/// Every verb as the palette takes them — the plain ones and the readings. `OnceLock` because
+/// [`palette::present`] holds the rows for the dialog's life, and `actions()` builds from function
+/// pointers, which a `const` cannot hold.
 fn palette_rows() -> &'static [palette::Row] {
     static ROWS: std::sync::OnceLock<Vec<palette::Row>> = std::sync::OnceLock::new();
     ROWS.get_or_init(|| {
@@ -2170,14 +2106,11 @@ fn palette_rows() -> &'static [palette::Row] {
     })
 }
 
-/// One name, as a row: its definition editable in place, and buttons that rename, inline or
-/// remove it.
-///
-/// `set_name` over the same name replaces it, so applying an edit is a definition and needs no
-/// separate path. **Rename** and **Inline** are the two edits that carry every use of the name
-/// with them (`App::rename_name`, `App::inline_name`, `doc/dsl.md` §6.5), so each is one undo
-/// step and says how many uses it rewrote. The name a row stands for is a cell, since a rename
-/// changes it under the closures that edit and delete the row.
+/// One name as a row: its definition editable in place, and buttons that rename, inline or remove
+/// it. `set_name` over the same name replaces it, so an edit is a definition. **Rename** and
+/// **Inline** carry every use of the name (`App::rename_name`, `App::inline_name`), each one undo
+/// step saying how many uses it rewrote. The row's name is a cell, since a rename changes it under
+/// the closures.
 fn name_row(
     app: &Arc<App>,
     name: &str,
@@ -2339,12 +2272,9 @@ fn chart_name(chart: &grind_sheet::Chart) -> String {
     }
 }
 
-/// What a calculation's row says first: the friendly rendering of its formula when there is
-/// one, and the formula itself otherwise.
-///
-/// The friendly spelling because a list is read rather than edited — `Round(Value: A1;
-/// Digits: 2)` answers "what does this cell do" quicker than `=ROUND(A1;2)` does, and the
-/// address line underneath still names the cell to go and look at.
+/// What a calculation's row says first: the friendly rendering of its formula, else the formula —
+/// `Round(Value: A1; Digits: 2)` says what a cell does quicker, and the address line still names
+/// the cell.
 fn headline(calc: &grind_sheet::Calculation) -> String {
     chrome::friendly_line(&calc.formula).unwrap_or_else(|| calc.formula.clone())
 }
@@ -2568,10 +2498,9 @@ fn actions() -> Vec<Verb> {
         ),
         // --- the selection ---
         //
-        // The clipboard four have no accelerator here: `keymap.rs` already owns Ctrl+C/X/V
-        // and Delete inside the grid, and a second binding for the same key is how one
-        // shortcut ends up doing two things. They are `win.` actions so the context menu and
-        // the palette can reach what the keyboard already could.
+        // The clipboard four have no accelerator here: `keymap.rs` owns Ctrl+C/X/V and Delete in
+        // the grid, and two bindings for one key is how a shortcut does two things. They are
+        // `win.` actions so the context menu and the palette reach them.
         verb("copy", &[], "Copy", "Selection", |ui| ui.grid.copy(false)),
         verb("cut", &[], "Cut", "Selection", |ui| ui.grid.copy(true)),
         verb("paste", &[], "Paste", "Selection", |ui| ui.grid.paste()),
@@ -2692,16 +2621,11 @@ fn actions() -> Vec<Verb> {
     ]
 }
 
-/// The primary menu: **the document and the window, and nothing about the selection.**
-///
-/// That is the HIG's rule for one, and applying it is what finally sizes this menu. Anything
-/// acting on cells is in the grid's context menu, where the cells are; anything about how the
-/// document is *shown* is in the View menu beside it; the two sheet verbs are on the sheet's
-/// own tab. What is left is the four file verbs, the three things a person does to a document
-/// as a whole, and the two window items — which is a menu somebody can read to the end.
-///
-/// *Find a Command* is here because a menu is where a reader goes when they do not know where
-/// something is, and the honest answer to that is now the palette.
+/// The primary menu: **the document and the window, nothing about the selection** — the HIG's
+/// rule. Cell verbs are in the grid's context menu, how the document is shown in the View menu,
+/// the sheet verbs on the tab. What is left is the file verbs, what is done to a document as a
+/// whole, and the window items. *Find a Command* is here because a menu is where a reader goes
+/// when they do not know where something is.
 fn primary_menu() -> gio::Menu {
     let menu = gio::Menu::new();
     let files = gio::Menu::new();
@@ -2735,12 +2659,9 @@ fn primary_menu() -> gio::Menu {
     menu
 }
 
-/// The file filter, in the words a user knows the format by. Nothing user-facing names
-/// another program (`CONTRIBUTING.md`).
-///
-/// One filter, all three extensions: packaged, flat and projected are the same document to
-/// everyone but the writer, so an *open* dialog that makes the user pick between them is asking
-/// a question that has no answer at the point it is asked.
+/// The open filter, in the words a user knows the format by; nothing user-facing names another
+/// program (`CONTRIBUTING.md`). One filter for all three extensions: packaged, flat and projected
+/// are one document to everyone but the writer.
 fn spreadsheet_filters() -> gio::ListStore {
     let filter = gtk::FileFilter::new();
     filter.set_name(Some("OpenDocument Spreadsheet"));
@@ -2752,10 +2673,9 @@ fn spreadsheet_filters() -> gio::ListStore {
     filter.add_pattern("*.grind");
 
     let filters = gio::ListStore::new::<gtk::FileFilter>();
-    // A workbook and a CSV are imported (`import.rs`), which is why each is a filter of its own
-    // rather than a pattern in the one above: they open as a *new* document, and "Excel
-    // Workbook" and "CSV" are the names a person knows them by. Everything together first, so
-    // the default selection shows every file this window opens.
+    // A workbook and a CSV are imported (`import.rs`), so each is a filter of its own, named as a
+    // person knows it; everything together first, so the default shows every file this window
+    // opens.
     let mut patterns = vec!["*.fods", "*.ods", "*.grind"];
     let mut imports = Vec::new();
     if cfg!(feature = "xlsx") {
@@ -2787,17 +2707,9 @@ fn spreadsheet_filters() -> gio::ListStore {
     filters
 }
 
-/// Saving is the other case: the question *does* have an answer there, and `doc/flat-first.md`
-/// is that answer. Three filters rather than one, flat first, so the default selection writes
-/// the form that diffs and choosing another is one deliberate click away.
-///
-/// The projection is last on purpose. It diffs better than flat XML does, but it is this
-/// project's own spelling and nothing else reads it, whereas both ODF forms are a format other
-/// software opens — so it is offered rather than defaulted to.
-/// What an import will open. Both spellings of the one format, because the delimiter is a
-/// field of `csv::Dialect` and not a second format (`sheet/src/csv.rs`) — and `.txt`, since
-/// that is what a great many exports are called and the delimiter is sniffed from the content
-/// rather than from the name.
+/// What an import opens: both spellings of the one format — the delimiter is a field of
+/// `csv::Dialect` — and `.txt`, which many exports are called, since the delimiter is sniffed from
+/// the content.
 fn csv_filters() -> gio::ListStore {
     let filter = gtk::FileFilter::new();
     filter.set_name(Some("Delimited text"));
@@ -2809,9 +2721,8 @@ fn csv_filters() -> gio::ListStore {
     filters
 }
 
-/// Exporting is the other direction, and here the two spellings **are** a choice: the name
-/// decides the delimiter (`csv::Dialect::for_name`), so this list is how a person says which
-/// one they meant. Comma first — it is what the verb is called.
+/// Exporting is the other direction, and here the spellings **are** a choice: the name decides the
+/// delimiter (`csv::Dialect::for_name`). Comma first, as the verb says.
 fn csv_save_filters() -> gio::ListStore {
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     for (name, pattern) in [
@@ -2826,6 +2737,8 @@ fn csv_save_filters() -> gio::ListStore {
     filters
 }
 
+/// Saving has an answer (`doc/flat-first.md`): three filters, flat first, so the default writes
+/// the form that diffs. The projection is last: it diffs better still, but nothing else reads it.
 fn spreadsheet_save_filters() -> gio::ListStore {
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     for (name, pattern) in [
@@ -2859,12 +2772,11 @@ fn remember_recent(path: &Path) {
     gtk::RecentManager::default().add_item(&gio::File::for_path(path).uri());
 }
 
-/// An empty document, as bytes — what *New* opens and what a window started without a file
-/// shows. It states a locale: `$GRIND_LOCALE` or the config file's when there is one, and the
-/// desktop's otherwise (`LC_ALL`, `LC_NUMERIC`, `LANG`), so a spreadsheet begun on a German
-/// desktop spells its numbers `1234,5` and reads `1,5` typed into it as one and a half
-/// (`doc/ods-format.md` §5.2). The command line's `sheet new` states none unless told: a
-/// script's output should not depend on whose shell ran it, and a window's should.
+/// An empty document as bytes — what *New* opens and a window started without a file shows. It
+/// states a locale: `$GRIND_LOCALE` or the config file's, else the desktop's (`LC_ALL`,
+/// `LC_NUMERIC`, `LANG`), so a spreadsheet begun on a German desktop spells `1234,5`
+/// (`doc/ods-format.md` §5.2). `sheet new` states none unless told: a script's output should not
+/// depend on whose shell ran it.
 fn fresh_document() -> Vec<u8> {
     let doc = grind_sheet::Document {
         locale: grind_sheet::locale::from_environment().or_else(grind_sheet::locale::from_desktop),
@@ -2881,12 +2793,10 @@ fn document_name(path: Option<&Path>) -> String {
     )
 }
 
-/// What the Save As dialog puts in its name field for a document with no path yet.
-///
-/// `doc/flat-first.md`: an unnamed document gets the flat extension, so the one keystroke a
-/// user is most likely *not* to change writes a file that diffs. A document that already has a
-/// path keeps its own name and therefore its own form — this build never converts a document
-/// behind somebody's back.
+/// What Save As puts in its name field for a document with no path: the flat extension
+/// (`doc/flat-first.md`), so the keystroke most likely left alone writes a file that diffs. A
+/// document with a path keeps its own name and form; nothing converts a document behind somebody's
+/// back.
 fn save_name(path: Option<&Path>) -> String {
     match path {
         Some(_) => document_name(path),
@@ -2894,11 +2804,8 @@ fn save_name(path: Option<&Path>) -> String {
     }
 }
 
-/// Draw one frame to a PNG and quit — the smoke path behind `--render-to`.
-///
-/// A frame late enough to be real: the window has to be mapped and allocated before the
-/// grid knows how many cells fit, so this waits for a beat rather than rendering an
-/// unallocated widget and writing a blank image.
+/// Draw one frame to a PNG and quit — `--render-to`. It waits a beat for the window to be mapped
+/// and allocated, or the grid would not know how many cells fit and the image would be blank.
 fn render_once(window: &adw::ApplicationWindow, target: PathBuf) {
     let window = window.clone();
     glib::timeout_add_local_once(std::time::Duration::from_millis(600), move || {
@@ -2928,10 +2835,8 @@ fn render_once(window: &adw::ApplicationWindow, target: PathBuf) {
 mod chrome_tests {
     use super::*;
 
-    /// Every `win.` action a menu model points at, found by walking it.
-    ///
-    /// `gio::Menu` is GIO rather than GTK, so this needs no display — which is the whole
-    /// reason the menus are built by a function that returns one instead of inline.
+    /// Every `win.` action a menu model names, found by walking it — no display needed, since
+    /// `gio::Menu` is GIO, which is why the menus are built by functions returning one.
     fn targets(model: &gio::MenuModel) -> Vec<String> {
         let mut found = Vec::new();
         for item in 0..model.n_items() {
@@ -2993,10 +2898,8 @@ mod chrome_tests {
         );
     }
 
-    /// A menu item naming an action that does not exist is silent: GTK draws the row and
-    /// greys it out, so it looks like a feature that is merely unavailable. This is the check
-    /// that says so out loud instead — over **every** menu this window has, which is why each
-    /// of the four is a function returning a model rather than one built inline.
+    /// A menu item naming an action that does not exist is silent — GTK greys it, so it looks
+    /// merely unavailable. This says so, over every menu in the window.
     #[test]
     fn every_menu_item_names_an_action_the_window_has() {
         let known = every_action();
@@ -3016,11 +2919,8 @@ mod chrome_tests {
         }
     }
 
-    /// The surfaces are supposed to divide the verbs, not repeat them: a verb in two menus is
-    /// two places to keep in step and two answers to "where is it".
-    ///
-    /// The exceptions are the two that are genuinely about different things depending on where
-    /// they are asked from, and they are listed rather than allowed by a rule.
+    /// The surfaces divide the verbs rather than repeat them; the two exceptions mean different
+    /// things where they are asked from, and are listed.
     #[test]
     fn a_verb_lives_in_one_menu() {
         let mut seen: Vec<(String, &str)> = Vec::new();
@@ -3049,14 +2949,9 @@ mod chrome_tests {
         }
     }
 
-    /// **The growth rule, made mechanical** (`doc/sheet-shell.md`, "Four surfaces").
-    ///
-    /// Every verb this window has is in the command palette, because the palette is built
-    /// from the same table `wire` is. A feature therefore cannot be added without becoming
-    /// findable — which is what stops the next one from becoming a button instead.
-    ///
-    /// The one exception is named rather than assumed: the palette cannot list the command
-    /// that opens the palette.
+    /// **The growth rule, made mechanical**: every verb is in the palette, which is built from the
+    /// table `wire` is, so a feature cannot be added without becoming findable. The one exception
+    /// is the command that opens the palette.
     #[test]
     fn every_verb_is_in_the_palette_or_is_the_palette() {
         let listed: Vec<&str> = palette_rows().iter().map(|row| row.name).collect();

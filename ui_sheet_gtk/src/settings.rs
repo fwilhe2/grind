@@ -2,18 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! *Document Settings* — what is true of the document as a whole rather than of any cell in it,
-//! which today is one thing: its own locale, how it spells its numbers
-//! (`doc/ods-format.md` §5.2, "The document's own language").
-//!
-//! An `adw::PreferencesDialog`, and applied the moment it changes, which is what the HIG asks of
-//! one: there is no OK to forget. Each change is still one undo step in the document
-//! ([`App::set_locale`]), so a wrong pick is Ctrl+Z away like any other edit — the dialog is a
-//! view of the document, not a copy of it waiting to be written back.
-//!
-//! The locale row is searchable, and says what it means rather than what it is called: its
-//! subtitle is a sample, `1.234.567,89 · 1234,5`, rendered by the core's own renderer — a
-//! grouped two-decimal format and a number with no format at all, the two things the locale
+//! *Document Settings* — what is true of the document as a whole: its own locale, how it spells
+//! its numbers (`doc/ods-format.md` §5.2). An `adw::PreferencesDialog` applied the moment it
+//! changes, each change one undo step ([`App::set_locale`]). The locale row is searchable, and its
+//! subtitle is a sample — `1.234.567,89 · 1234,5`, rendered by the core — the two things a locale
 //! decides.
 
 use std::rc::Rc;
@@ -27,9 +19,8 @@ use grind_sheet::locale::{self, Locale};
 use grind_sheet::numfmt::{self, Kind};
 use grind_sheet::{App, CellValue};
 
-/// What the locale row offers, in order: no locale, every [`locale::KNOWN`] one by name, and —
-/// when the document states one this build has no name for — that one by its tag, last, so the
-/// row can show what the document says rather than pretend it says something else.
+/// What the locale row offers: no locale, every [`locale::KNOWN`] one by name, and a document's
+/// own unnamed one by its tag, last.
 pub fn choices(current: Option<&Locale>) -> Vec<Option<Locale>> {
     let mut choices: Vec<Option<Locale>> = std::iter::once(None)
         .chain(locale::KNOWN.iter().map(|(tag, _)| Locale::parse(tag)))
@@ -47,8 +38,7 @@ pub fn label(choice: Option<&Locale>) -> String {
     choice.map_or_else(|| "None".to_owned(), label_of)
 }
 
-/// How one locale reads in a list: the name a person knows it by, or its tag when this build
-/// has no name for it.
+/// How a locale reads in a list: its name, or its tag when it has none here.
 pub fn label_of(locale: &Locale) -> String {
     locale
         .name()

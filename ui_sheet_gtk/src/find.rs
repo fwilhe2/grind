@@ -2,28 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The find bar — Ctrl+F, and Ctrl+H with its replace row open: `grind sheet find` and
-//! `grind sheet replace` in this window.
+//! The find bar — Ctrl+F, and Ctrl+H with its replace row: `grind sheet find` and `replace` in
+//! this window. A `gtk::SearchBar` under the formula bar that searches as typed; Enter and
+//! Shift+Enter walk the hits across every sheet, wrapping, and Escape returns the keyboard to the
+//! grid with the last hit selected.
 //!
-//! A `gtk::SearchBar` under the formula bar, the shape `ui_text_gtk/src/find.rs` gave the word
-//! processor: it slides in, it searches as it is typed, Enter and Shift+Enter walk the hits
-//! across every sheet (wrapping at either end), and Escape puts the keyboard back in the grid
-//! with the hit it stopped on still selected.
-//!
-//! **Nothing here decides what a match is.** Every question goes to `App::find` and every
-//! write to `App::replace` (`grind_sheet::find`): a cell is searched through its input text, so
-//! `sum` finds `=SUM(B2:B9)`, and a replaced cell goes back in through the typing rule. The
-//! *Replace* button is the same call narrowed to one cell — `Search::range` with both corners on
-//! the hit — so a formula this window's replace would break is refused by the core, not by a
-//! second copy of that rule here.
-//!
-//! Where this sits in `doc/sheet-shell.md`'s "Four surfaces": it is none of them. It is
-//! *transient* — the verb that opens it is a row in `main.rs`'s `actions()`, and the bar goes
-//! away again when it is done — so it adds nothing to the chrome that stays on screen.
-//!
-//! The hits are asked for again at every step rather than kept, because the document may have
-//! been edited between two presses of Enter. Which hit is next is `grind_sheet::find::step`,
-//! shared with the browser's F3.
+//! **Nothing here decides what a match is**: every question goes to `App::find` and every write to
+//! `App::replace`. A cell is searched by its input text, so `sum` finds `=SUM(B2:B9)`; *Replace*
+//! is the same call narrowed to the hit's cell, so a replacement that would break a formula is
+//! refused by the core. The hits are asked for again at every step, since the document may have
+//! changed; which is next is `grind_sheet::find::step`. The bar is transient, so it is none of the
+//! four surfaces.
 
 use std::cell::RefCell;
 use std::rc::Rc;

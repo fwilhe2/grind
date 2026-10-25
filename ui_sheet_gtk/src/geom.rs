@@ -2,23 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where a cell is, in pixels — and which cell a pixel is in.
+//! Where a cell is in pixels, and which cell a pixel is in — pure functions with **no GTK types**,
+//! so the grid's layout tests without a display. Two coordinate spaces, and mixing them is the bug
+//! this module prevents:
 //!
-//! **No GTK types.** This is the shell's pixel arithmetic as pure functions, which is what
-//! makes it the part of a GUI that unit-tests with no display, no compositor and no CI
-//! runner that has either (doc/sheet-shell.md, following `editor`'s widget-free keymap).
-//! Everything the grid widget knows about layout it asks this module.
+//! * **content** — `(0, 0)` is cell A1's top-left corner, extending to the sheet's full 1048576 ×
+//!   16384. Nothing scrolls here.
+//! * **widget** — `(0, 0)` is the widget's top-left corner, so the header band is at `x <
+//!   header_w` / `y < header_h` and the content is offset by the scroll position.
 //!
-//! Two coordinate spaces, and mixing them is the bug this module exists to prevent:
-//!
-//! * **content** — `(0, 0)` is cell A1's top-left corner, and it extends to the sheet's
-//!   full 1048576 × 16384. Nothing scrolls here.
-//! * **widget** — `(0, 0)` is the widget's top-left corner, so the header band sits at
-//!   `x < header_w` / `y < header_h` and the content is offset by the scroll position.
-//!
-//! [`GridGeom::cell_rect`] converts one way and [`GridGeom::hit`] the other; they are
-//! tested as a round trip, because a rectangle that does not contain the point that
-//! produced it is the whole class of off-by-one this module can have.
+//! [`GridGeom::cell_rect`] converts one way and [`GridGeom::hit`] the other, tested as a round
+//! trip.
 
 /// ODF's sheet bounds, which are also the scrollable extent (§3.2). The core's, not a
 /// second opinion: a scrollbar that ended somewhere the reader does not is a bug waiting.
@@ -39,11 +33,8 @@ impl Rect {
     }
 }
 
-/// What sits under a point.
-///
-/// The `*Edge` variants take precedence over the header they are inside, because a
-/// resize drag starts within a few pixels of a boundary that is also part of a header
-/// button — the narrower target has to win or resizing is unreachable.
+/// What sits under a point. The `*Edge` variants beat the header they are inside, since a resize
+/// drag starts within a few pixels of a boundary that is also part of a header button.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hit {
     Cell {
@@ -65,8 +56,7 @@ pub enum Hit {
     Corner,
 }
 
-/// How big each track on one axis is — `grind_sheet::tracks`, hoisted out of this file and
-/// `ui_win32`'s when the macOS shell would have been a third copy (`doc/macos-shell.md`, M1).
+/// How big each track on one axis is (`grind_sheet::tracks`).
 pub use grind_sheet::tracks::Sizes;
 
 /// Everything needed to place a cell: the header band, the two axes' sizes, and where the
@@ -88,43 +78,32 @@ const EDGE_GRAB: f64 = 4.0;
 /// cell corner it sits on.
 pub const HANDLE: f64 = 7.0;
 
-/// What a filter button's side is clamped to. It tracks the cell's height rather than being
-/// a constant, so it grows with the zoom like everything else drawn in the grid; the floor
-/// is the smallest thing a pointer reliably hits and the ceiling stops a tall row from
-/// getting a button the size of a cell.
+/// What a filter button's side is clamped to. It tracks the cell's height, so it zooms with the
+/// grid; the floor is the smallest thing a pointer reliably hits, the ceiling stops a tall row
+/// getting a cell-sized button.
 const FILTER_BUTTON: (f64, f64) = (9.0, 18.0);
 
-/// A hidden run's marker's width (columns) or height (rows), in **widget** space — a run
-/// collapses to a single point, so this is drawn *and* grabbed straddling it, the same way
-/// [`EDGE_GRAB`] carves a boundary's hit zone out of the header on either side.
+/// A hidden run's marker's width (columns) or height (rows), in widget space, drawn and grabbed
+/// straddling the point the run collapsed to, as [`EDGE_GRAB`] straddles a boundary.
 pub const HIDDEN_MARKER: f64 = 6.0;
 
 /// The clear space between a value and the name hint sharing its cell — enough that the two
 /// read as two things rather than as one run of text.
 const HINT_GAP: f64 = 8.0;
 
-/// The narrowest hint worth drawing, in pixels and as a fraction of the name's own width.
-///
-/// `doc/view-modes.md` §3.2 says a hint is elided and then **dropped**, and this is where
-/// dropped begins. Both halves are needed: the pixel floor keeps a hint from being an
-/// ellipsis and one letter, and the fraction keeps a *long* name from being elided down to
-/// a stub that names nothing — at which point the cell is showing punctuation where a
-/// reader expects a word, which is worse than showing nothing at all.
+/// The narrowest hint worth drawing, in pixels and as a fraction of the name's width — where
+/// `doc/view-modes.md` §3.2's "dropped" begins. The pixel floor keeps a hint from being an
+/// ellipsis and a letter; the fraction keeps a long name from being elided to a stub that names
+/// nothing.
 const HINT_MIN: f64 = 16.0;
 const HINT_KEEP: f64 = 0.5;
 
-/// How much room a name hint gets inside a cell, and where — `doc/view-modes.md` §3.2.
+/// How much room a name hint gets in a cell, and where (`doc/view-modes.md` §3.2). `value_w` is
+/// the width the cell already draws and `hint_w` the name's natural width; the hint goes at the
+/// end opposite the value (`value_right`).
 ///
-/// `value_w` is the measured width of what the cell already draws and `hint_w` the natural
-/// width of the name. `value_right` says which end the value is at, and the hint goes to the
-/// other one: a number is right-aligned and its hint sits left, a label is left-aligned and
-/// its hint sits right.
-///
-/// **The value never yields.** The returned width is what is left after the value and the
-/// gap have taken theirs, so a hint is elided into it (`Rect::w` below `hint_w`) and then
-/// dropped entirely (`None`) rather than pushing a digit off the end of a number. A
-/// spreadsheet whose figures are cut off to make room for their labels is worse than one
-/// with no labels.
+/// **The value never yields**: the width returned is what is left after the value and the gap, so
+/// a hint is elided into it and then dropped (`None`) rather than pushing a digit off a number.
 pub fn hint_rect(
     cell: Rect,
     value_w: f64,
@@ -149,17 +128,10 @@ pub fn hint_rect(
 }
 
 impl GridGeom {
-    /// Which cell of a name's rectangle carries its hint: the **first cell of it a reader
-    /// can actually see**, in row-major order — `doc/view-modes.md` §3.2's "drawn once".
-    ///
-    /// A name over `A2:A50` is one anchor, not forty-nine, and scrolling must not make it
-    /// disappear: the hint follows the top-left corner of whatever part of the anchor is on
-    /// screen. `None` when no part of it is.
-    ///
-    /// Hidden tracks are skipped rather than counted, and that is not a detail: a filter
-    /// hides the rows it filters out by giving them a height of zero, so a hint placed on
-    /// the anchor's first row alone would be drawn into a cell nought pixels tall and the
-    /// mode would look broken on exactly the documents that use it.
+    /// Which cell of a name's rectangle carries its hint: the **first one a reader can see**,
+    /// row-major (§3.2's "drawn once"), so a hint follows the visible top-left of its anchor as it
+    /// scrolls. `None` when none of it is on screen. Hidden tracks are skipped: a filter hides
+    /// rows at zero height, and a hint on a hidden first row would be drawn nought pixels tall.
     pub fn hint_cell(
         &self,
         anchor: (std::ops::Range<u32>, std::ops::Range<u32>),
@@ -190,9 +162,8 @@ impl GridGeom {
         self.rows.at(y)
     }
 
-    /// A cell's rectangle in **widget** space. May lie outside the widget entirely — the
-    /// caller clips, because a cell one row above the viewport is exactly what an
-    /// overflowing neighbour is drawn from.
+    /// A cell's rectangle in widget space. May lie outside the widget — the caller clips, since a
+    /// cell above the viewport is what an overflowing neighbour is drawn from.
     pub fn cell_rect(&self, row: u32, col: u32) -> Rect {
         Rect {
             x: self.header_w + self.cols.offset_of(col) - self.scroll_x,
@@ -202,10 +173,9 @@ impl GridGeom {
         }
     }
 
-    /// The fill handle's square, in **widget** space: centred on the bottom-right corner of
-    /// the cell a selection ends at, so it is grabbable from inside the selection and from
-    /// just outside it alike. Not [`Hit`]'s business — what is under a point here depends on
-    /// where the selection is, which this module deliberately knows nothing about.
+    /// The fill handle's square in widget space, centred on the bottom-right corner of the
+    /// selection's last cell, so it is grabbable from inside and outside alike. Not [`Hit`]'s
+    /// business: it depends on the selection, which this module knows nothing about.
     pub fn fill_handle(&self, row: u32, col: u32) -> Rect {
         let cell = self.cell_rect(row, col);
         Rect {
@@ -216,15 +186,9 @@ impl GridGeom {
         }
     }
 
-    /// A chart's own position and size, in **widget** space, given already in on-screen
-    /// pixels — a chart's `svg:x`/`svg:y`/`svg:width`/`svg:height` are ODF lengths, and unlike
-    /// every other measurement in this module, converting a physical length and applying the
-    /// zoom is `grid.rs`'s job, not this module's, the same split [`GridGeom::cell_rect`]
-    /// draws between a track's size and where it sits.
-    ///
-    /// Unlike [`GridGeom::cell_rect`], not tied to a row or column: `table:shapes` sits
-    /// beside a sheet's rows, positioned from the table's own top-left corner rather than
-    /// from any cell in it.
+    /// A chart's position and size in widget space, given already in on-screen pixels — converting
+    /// its ODF lengths and applying the zoom is `grid.rs`'s job. Not tied to a cell:
+    /// `table:shapes` is positioned from the table's own top-left corner.
     pub fn chart_rect(&self, x_px: f64, y_px: f64, w_px: f64, h_px: f64) -> Rect {
         Rect {
             x: self.header_w + x_px - self.scroll_x,
@@ -234,16 +198,9 @@ impl GridGeom {
         }
     }
 
-    /// The autofilter dropdown's square, in **widget** space: inset at the right-hand end of
-    /// a header-row cell, which is where every spreadsheet puts it.
-    ///
-    /// Like [`GridGeom::fill_handle`] and for the same reason, deliberately not [`Hit`]'s
-    /// business — *which* cells carry a button depends on the document's filter, and this
-    /// module knows nothing about the document.
-    ///
-    /// `None` when the cell cannot spare the room: a button wider than the cell it sits in
-    /// would cover the heading it belongs to, and an unhittable sliver is worse than
-    /// nothing.
+    /// The autofilter button's square in widget space, inset at the right end of a heading cell.
+    /// Not [`Hit`]'s business: which cells carry one depends on the document's filter. `None` when
+    /// the cell cannot spare the room — a button wider than its cell would cover the heading.
     pub fn filter_button(&self, row: u32, col: u32) -> Option<Rect> {
         let cell = self.cell_rect(row, col);
         let (min, max) = FILTER_BUTTON;
@@ -260,10 +217,9 @@ impl GridGeom {
         })
     }
 
-    /// Where a hidden run of columns is drawn and grabbed, in **widget** space: a narrow
-    /// bar straddling the boundary the run collapsed to, the full height of the column
-    /// header. `from` is the run's first hidden index — [`Sizes::offset_of`] gives the same
-    /// pixel for every index in the run, since none of them displace anything.
+    /// Where a hidden run of columns is drawn and grabbed in widget space: a narrow bar straddling
+    /// the boundary it collapsed to, the full height of the header. `from` is the run's first
+    /// index; [`Sizes::offset_of`] gives every index in it the same pixel.
     pub fn hidden_col_marker(&self, from: u32) -> Rect {
         let x = self.header_w + self.cols.offset_of(from) - self.scroll_x;
         Rect {
@@ -315,16 +271,11 @@ impl GridGeom {
         first..(last + 1).min(MAX_COLS)
     }
 
-    /// The scroll position that brings a cell fully into view, given the content area's
-    /// size — unchanged on the axes where it already is.
-    ///
-    /// `margin_x`/`margin_y` are how much *past* the cell the view goes whenever it does
-    /// move: a row of context beyond the cursor, so a jump never lands flush against the
-    /// edge with whatever comes next hidden. The margin never pushes the cell itself back
-    /// out of view.
-    ///
-    /// Pure, and tested, because "the active cell scrolled off the bottom" and "the view
-    /// jumps a row every keypress" are the same off-by-one seen from two sides.
+    /// The scroll position that brings a cell fully into view, unchanged on axes where it already
+    /// is. `margin_x`/`margin_y` are how far past the cell the view goes when it moves, so a jump
+    /// never lands flush with the edge; the margin never pushes the cell back out. Pure and
+    /// tested: "the cell scrolled off" and "the view jumps every keypress" are one off-by-one seen
+    /// from two sides.
     pub fn scroll_into_view(
         &self,
         row: u32,
@@ -352,11 +303,8 @@ impl GridGeom {
         )
     }
 
-    /// What is under a point in **widget** space.
-    ///
-    /// [`GridGeom::cell_rect`]'s inverse, and the two are tested against each other —
-    /// an off-by-one here would otherwise only show up as a grid that looks very slightly
-    /// wrong under the pointer.
+    /// What is under a point in widget space — [`GridGeom::cell_rect`]'s inverse, tested against
+    /// it.
     pub fn hit(&self, x: f64, y: f64) -> Hit {
         let in_row_header = x < self.header_w;
         let in_col_header = y < self.header_h;
@@ -367,11 +315,9 @@ impl GridGeom {
             (true, true) => Hit::Corner,
             (false, true) => {
                 let col = self.cols.at(content_x);
-                // Within grabbing distance of this column's right edge, or of the previous
-                // column's — a boundary belongs to the column left of it. Either side, a
-                // hidden run sitting right at that boundary beats a plain resize: there is
-                // nothing of the run left to grab, so the boundary is the only way back to
-                // it.
+                // Within grabbing distance of this column's right edge or the previous one's — a
+                // boundary belongs to the column left of it. A hidden run at that boundary beats a
+                // plain resize, since the boundary is the only way back to it.
                 let left = self.cols.offset_of(col);
                 if left + self.cols.size_of(col) - content_x <= EDGE_GRAB {
                     match self.cols.hidden_run(col + 1) {
@@ -726,10 +672,8 @@ mod tests {
         }
     }
 
-    /// A click right on a hidden run's collapsed boundary hits the marker rather than a
-    /// resize edge, whichever of the two touching (visible) columns `at()` would otherwise
-    /// have named — the whole reason `Hit::HiddenCols` exists rather than overloading
-    /// `ColEdge`.
+    /// A click on a hidden run's collapsed boundary hits the marker rather than a resize edge,
+    /// from either side.
     #[test]
     fn a_hidden_column_run_is_hit_from_either_side_of_its_collapsed_boundary() {
         let g = GridGeom {

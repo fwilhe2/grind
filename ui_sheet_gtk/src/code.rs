@@ -2,36 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The **code view** — the document as its projection, shown (`doc/dsl.md` §6, D9).
+//! The **code view** — the document as its projection, on the other page of a `gtk::Stack`
+//! (`doc/dsl.md` §6).
 //!
-//! Delphi's form and its `.dfm`: the grid on one tab of a `gtk::Stack` and its source on the
-//! other, the same document either way. §6.1 predicted this shell's half would be "a
-//! `GtkTextView` in a `GtkStack`, with the stack switcher as the Delphi tab", and that is what
-//! it is — the projection writer is already D1, and the token map it emits is already tested.
+//! **No `GtkSourceView`, and no highlighter**: the colours come from the writer, which knows what
+//! every byte it emits is, applied as one `gtk::TextTag` per [`TokenKind`].
 //!
-//! **No `GtkSourceView`, and no highlighter.** The colours come from the *writer*: it knows what
-//! every byte it emits is, so it says so, and this applies one `gtk::TextTag` per
-//! [`TokenKind`]. A highlighter would re-derive the same thing from regexes over text it did not
-//! write, and be wrong at the edges. It is the argument `formula::display` already makes for the
-//! formula bar and `grind_core::layout` for line breaking: the thing that produced it is the
-//! thing that knows.
+//! **Read-only** (§6.4). Moving the cursor in it selects the cell its line projects.
 //!
-//! **Read-only** (§6.4). Moving the cursor in it moves the caret in the document, which is
-//! §6.2's map in the direction that has to be built; typing into it needs an error-tolerant
-//! parser, a model diff and an answer for the other view's caret, and the gate is in
-//! `doc/dsl.md`.
-//!
-//! *ponytail:* `ui_text_gtk/src/code.rs` is this file, and the two are not shared because there
-//! is no crate for a widget both GTK shells could use — `grind-core` may not hold GTK types and
-//! neither application crate may depend on the other (R8). The upgrade is a `grind-gtk` crate,
-//! and the trigger is a third GTK shell or a third copy of this. Two copies of eighty lines is
-//! cheaper than a crate nobody else needs, which is the same trade `theme.rs` and `geom.rs`
-//! already make between these two shells.
-//!
-//! Because they are copies, the *widget* half is tested once — in `ui_text_gtk/src/view.rs`'s
-//! `the_widget` harness, which is where this repository already keeps the cases that need a
-//! display and the one thread GTK was initialised on. What is checked here is the part that can
-//! drift independently: the tag names, which are the core's own.
+//! ponytail: `ui_text_gtk/src/code.rs` is a copy of this — no crate may hold a widget both GTK
+//! shells share (R8). The upgrade is a `grind-gtk` crate when a third GTK shell or a third copy
+//! appears. The widget half is tested once, in `ui_text_gtk/src/view.rs`'s `the_widget` harness;
+//! what is checked here is the tag names, the core's own.
 
 use grind_sheet::projection::{Projection, TokenKind};
 use libadwaita::gtk;
@@ -46,10 +28,8 @@ fn tag(kind: TokenKind) -> &'static str {
 /// The name of the tag marking the line the document's own selection is on.
 const CURRENT: &str = "current";
 
-/// Build the view, its buffer and the tags — everything that does not change with a document.
-///
-/// Monospace and non-editable, both said here rather than in a stylesheet: the first is what a
-/// projection's alignment means, and the second is §6.4 made structural rather than a promise.
+/// Build the view, its buffer and the tags. Monospace, since a projection's alignment means it,
+/// and non-editable, which makes §6.4 structural.
 pub fn build() -> gtk::TextView {
     let view = gtk::TextView::builder()
         .editable(false)
@@ -79,12 +59,9 @@ pub fn build() -> gtk::TextView {
     view
 }
 
-/// What each kind is painted, from the running theme's own ink and accent.
-///
-/// `theme.rs`'s rule: **nothing here is a literal**, because a palette of hexes is a view that
-/// stays white in a dark theme. There are five distinguishable colours to be had from a theme
-/// that offers ink and an accent, so the kinds share where they can — a node and a keyword are
-/// both structure, and weight tells them apart above.
+/// What each kind is painted, from the running theme's ink and accent — never a literal, or the
+/// view stays white in a dark theme. A theme yields about five distinguishable colours, so kinds
+/// share where they can and weight tells them apart.
 fn colours(palette: &crate::theme::Palette) -> [(TokenKind, gtk::gdk::RGBA); 6] {
     [
         (TokenKind::Node, palette.accent),
@@ -109,12 +86,9 @@ fn mix(a: gtk::gdk::RGBA, b: gtk::gdk::RGBA) -> gtk::gdk::RGBA {
     )
 }
 
-/// Put a projection in the view, with `cursor` — the line the document's selection is on —
-/// marked and scrolled to.
-///
-/// Rebuilt whole rather than patched, which §6.3's `ponytail` allows and which is exact here:
-/// the pane is read-only, so it is only ever refilled when the document underneath changed or
-/// the tab was just opened.
+/// Put a projection in the view, with `cursor` — the line the selection is on — marked and
+/// scrolled to. Rebuilt whole: the pane is read-only, so it is refilled only when the document
+/// changed or the tab opened.
 pub fn fill(view: &gtk::TextView, projection: &Projection, cursor: Option<usize>) {
     let buffer = view.buffer();
     buffer.set_text("");
@@ -138,13 +112,9 @@ pub fn fill(view: &gtk::TextView, projection: &Projection, cursor: Option<usize>
     }
 }
 
-/// Mark a line as the document's own — the tag, and nothing else.
-///
-/// **It must not move the cursor.** This is called from the handler that runs *because* the
-/// cursor moved, and placing it again there is a feedback loop: GTK delivers
-/// `notify::cursor-position` for the placement, the handler runs again, and the window stops
-/// answering. It did, and this split is the fix — [`go_to`] is the half that drives the view,
-/// and it is only ever called when the shell already knows where the document is.
+/// Mark a line as the document's own — the tag, and nothing else. **It must not move the cursor**:
+/// this runs from the handler that runs because the cursor moved, and placing it again loops until
+/// the window stops answering. [`go_to`] is the half that drives the view.
 pub fn mark(view: &gtk::TextView, line: usize) {
     let buffer = view.buffer();
     let (start, end) = (buffer.start_iter(), buffer.end_iter());

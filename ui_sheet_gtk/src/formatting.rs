@@ -2,28 +2,20 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The format strip — M7's formatting UI (doc/sheet-shell.md).
+//! The format strip. **It maps one to one onto the core's vocabulary**: every toggle is a field of
+//! `style::CellStyle` and the number-format menu offers exactly `numfmt::preset`'s parameters, so
+//! a cell formatted here and one formatted by `sheet format` with the same arguments are the same
+//! document.
 //!
-//! **It maps 1:1 onto the core's vocabulary and adds nothing.** Every toggle here is one
-//! field of `style::CellStyle`, and the number-format menu offers exactly the parameters
-//! `numfmt::preset` takes — which is the milestone's exit criterion: a document formatted
-//! from this strip and one formatted by `sheet format` with the same arguments are the same
-//! document, because both ask the core for the same `Format`.
-//!
-//! Three things carry the weight:
-//!
-//! * **Setting a style replaces it** ([`App::set_style`]), so a bold button is a *read*
-//!   through `App::style_at`, one field, and a write. The read is of the **active** cell,
-//!   which is what every spreadsheet shows in its toolbar and what makes toggling
-//!   predictable over a mixed selection.
+//! * **Setting a style replaces it** ([`App::set_style`]), so a toggle reads the **active** cell
+//!   (`App::style_at`), changes one field, and writes — predictable over a mixed selection.
 //! * **The write is one `Action::Batch`**, so one Ctrl+Z takes back a formatted column.
-//! * **The rectangle is the selection clamped to the used extent** ([`Grid::target`]) — a
-//!   whole-column selection must not ask for a million entries, and the core refuses one that
-//!   does. A refusal becomes a toast rather than nothing (`Notice::Refused`).
+//! * **The rectangle is the selection clamped to the used extent** ([`Grid::target`]), since a
+//!   whole column must not ask for a million entries; a refusal becomes a toast
+//!   (`Notice::Refused`).
 //!
-//! The strip is a renderer like everything else: it holds no formatting state of its own and
-//! re-reads the active cell whenever the selection moves. `updating` guards that refresh,
-//! because setting a `GtkToggleButton` programmatically fires the same signal a click does.
+//! The strip holds no formatting state and re-reads the active cell whenever the selection moves;
+//! `updating` guards that, since setting a `GtkToggleButton` fires the signal a click does.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -42,13 +34,10 @@ use grind_sheet::style::{self, CellStyle};
 
 use crate::grid::{Grid, Notice};
 
-/// The number-format vocabulary as a menu offers it: [`numfmt::preset`]'s kinds, plus
-/// "General" for no format at all and "Date and time" for §4.3.4's date carrying a time.
-///
-/// The same list `sheet format` takes as its positional argument. It is spelled twice — once
-/// per shell — because the CLI's is a `clap::ValueEnum` and clap does not belong in the core;
-/// what must not be spelled twice is the *format*, and that comes from `numfmt` on both
-/// sides.
+/// The number-format vocabulary as a menu offers it: [`numfmt::preset`]'s kinds, plus "General"
+/// for none and "Date and time" for §4.3.4's date with a time — the list `sheet format` takes,
+/// spelled again because the CLI's is a `clap::ValueEnum`. The format itself comes from `numfmt`
+/// on both sides.
 const KINDS: [(&str, Option<Kind>); 9] = [
     ("General", None),
     ("Number", Some(Kind::Number)),
@@ -67,11 +56,8 @@ const DATETIME: u32 = 5;
 /// Where "Currency" sits in [`KINDS`] — what a currency button selects before it writes.
 const CURRENCY: u32 = 3;
 
-/// The strip, and the one thing anything outside it may do: ask it to re-read the cell.
-///
-/// Two events move what it should show, and only one of them is a selection change: undo,
-/// redo and a load change the *cell* under an unmoved selection, so the window's own refresh
-/// calls this too. Same shape as [`crate::chrome::Tabs`], for the same reason.
+/// The strip, and the one thing outside it may do: ask it to re-read the cell — after a selection
+/// change, and after an undo, redo or load changes the cell under an unmoved selection.
 pub struct Strip {
     pub widget: gtk::Box,
     refresh: Box<dyn Fn()>,
@@ -178,10 +164,8 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
 
     // --- writing ---
 
-    // A toggle button already knows its new state, so it asks for that state rather than a
-    // flip. §16.5's alignment values are relative to the writing direction, which is why
-    // `start`/`end` are what `Toggle` writes rather than left/right — the same spelling
-    // `sheet style --align` writes.
+    // A toggle already knows its new state, so it asks for that rather than a flip. Alignment is
+    // `start`/`end`, relative to the writing direction (§16.5), as `sheet style --align` writes.
     let toggles = [
         (bold.clone(), Toggle::Bold),
         (italic.clone(), Toggle::Italic),
@@ -283,12 +267,10 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
     strip
 }
 
-/// Read the active cell's style, change one field, write it over the whole rectangle.
-///
-/// The read is what makes "bold as well" work: `App::set_style` replaces, deliberately (its
-/// docs say so), and `write` is one of `grind_sheet::format`'s read-merge-writes — which also
-/// answer `None` for a style that sets nothing, so un-bolding the only styled cell leaves no
-/// empty `style:style` behind.
+/// Read the active cell's style, change one field, write it over the rectangle. `App::set_style`
+/// replaces, and `write` is one of `grind_sheet::format`'s read-merge-writes, which answer `None`
+/// for a style that sets nothing, so un-bolding the only styled cell leaves no empty
+/// `style:style`.
 fn restyle(grid: &Grid, app: &Arc<App>, write: &dyn Fn(&CellStyle) -> Option<CellStyle>) {
     let Some((sheet, start, end)) = grid.target() else {
         return;
@@ -303,13 +285,10 @@ fn restyle(grid: &Grid, app: &Arc<App>, write: &dyn Fn(&CellStyle) -> Option<Cel
     }
 }
 
-/// One colour button: the cell's colour on its face, [`style::PALETTE`] as the choices, and a
-/// dialog behind *Custom…* for anything else.
-///
-/// The palette is a **default, not a limit** — it lives in the core so that `sheet style
-/// --color navy` and this button's navy swatch write the same attribute, and the dialog is
-/// what keeps arbitrary colours reachable. *Automatic* is the third answer and the one a
-/// colour dialog cannot give: remove the attribute, and let the theme decide again.
+/// One colour button: the cell's colour on its face, [`style::PALETTE`] as the choices, *Custom…*
+/// for anything else, and *Automatic* to remove the attribute and let the theme decide. The
+/// palette is the core's, so `sheet style --color navy` writes the same attribute; a default, not
+/// a limit.
 struct Swatches {
     button: gtk::MenuButton,
     /// The colour drawn on the button's face — the cell's own, or the theme's when the cell
@@ -396,10 +375,10 @@ fn area(color: Rc<Cell<gdk::RGBA>>, width: i32, height: i32) -> gtk::DrawingArea
     area
 }
 
-/// The palette grid plus *Automatic*/*Custom…* every colour picker in this shell offers —
-/// [`Swatches::new`]'s own content, and [`crate::grid`]'s chart-mark colour popover, which has
-/// no cell to hang a `MenuButton` off of and builds a bare [`gtk::Popover`] around this instead.
-/// `shown` seeds *Custom…*'s dialog; `popover` is closed once a choice is made.
+/// The palette grid plus *Automatic*/*Custom…* every colour picker here offers —
+/// [`Swatches::new`]'s content, and [`crate::grid`]'s chart-mark popover, which has no cell to
+/// hang a `MenuButton` from. `shown` seeds *Custom…*'s dialog; `popover` closes once a choice is
+/// made.
 pub(crate) fn palette_grid(
     popover: &gtk::Popover,
     shown: gdk::RGBA,
@@ -487,17 +466,13 @@ fn capitalised(name: &str) -> String {
     }
 }
 
-/// The number-format menu: exactly [`numfmt::preset`]'s parameters, and an Apply.
+/// The number-format menu: exactly [`numfmt::preset`]'s parameters, and an Apply — on a button,
+/// since four widgets describe one format and applying midway would write formats nobody asked
+/// for.
 ///
-/// Applied on a button rather than on every change, because four widgets describe *one*
-/// format and applying halfway through would write two formats a user never asked for.
-///
-/// **The currency is picked, never typed** — a currency symbol is exactly the character
-/// nobody can find on their keyboard. [`numfmt::CURRENCIES`] are a row of buttons, the euro
-/// first and chosen by default ([`numfmt::DEFAULT_CURRENCY`]), and one click on any of them
-/// *is* the whole request: the selection becomes that currency, with the decimals and grouping
-/// above. A cell whose currency is none of the three shows it on a fourth button, so a
-/// document's own `CHF` is kept rather than quietly offered as a euro.
+/// **The currency is picked, never typed**: [`numfmt::CURRENCIES`] are a row of buttons, the euro
+/// first and default ([`numfmt::DEFAULT_CURRENCY`]), and one click is the whole request. A cell in
+/// another currency shows it on a fourth button, so a document's `CHF` is not offered as a euro.
 #[derive(Clone)]
 struct Picker {
     popover: gtk::Popover,
@@ -520,9 +495,8 @@ struct Picker {
     /// Says a document's format is one this vocabulary cannot spell, rather than offering
     /// parameters that would quietly replace it (`Format::is_preset`).
     note: gtk::Label,
-    /// The rows that only mean something for some kinds, each with its label — **hidden**,
-    /// not greyed, when the kind chosen has no such parameter. A greyed "Decimals" under
-    /// *Date* is a question the popover asks and then refuses to take an answer to.
+    /// The rows that only mean something for some kinds — **hidden**, not greyed, when the chosen
+    /// kind has no such parameter.
     numeric_rows: Vec<gtk::Widget>,
     locale_rows: Vec<gtk::Widget>,
 }
@@ -652,11 +626,9 @@ impl Picker {
         for widget in &self.numeric_rows {
             widget.set_visible(numeric);
         }
-        // The currency buttons stay whatever the kind: pressing one is how a cell *becomes* a
-        // currency, so hiding them until Currency is chosen would hide the quick way behind
-        // the slow one. What they must not do is look *chosen* on a cell that is not one —
-        // a pressed `€` over a General cell says the cell is in euros. So none is down until
-        // the kind is Currency, and then the default is, if nothing else was.
+        // The currency buttons stay for every kind, since pressing one is how a cell becomes a
+        // currency; but none looks chosen until the kind is Currency, or a pressed `€` over a
+        // General cell would say it is in euros.
         let buttons = || self.currencies.iter().chain([&self.other]);
         match kind {
             Some(Kind::Currency) if !buttons().any(|b| b.is_active()) => {
@@ -707,9 +679,9 @@ impl Picker {
         }
     }
 
-    /// The locale dropdown's rows for a document whose own locale is `document`, with `own`
-    /// selected — the format's own locale, or the document's row when it names none. A locale
-    /// this build has no name for is added by its tag rather than shown as something else.
+    /// The locale dropdown's rows for a document whose locale is `document`, with `own` selected —
+    /// the format's locale, or the document's row when it names none. An unnamed locale is shown
+    /// by its tag.
     fn show_locales(&self, document: Option<&Locale>, own: Option<&Locale>) {
         let mut locales: Vec<Option<Locale>> = std::iter::once(None)
             .chain(

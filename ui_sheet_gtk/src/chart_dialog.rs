@@ -2,34 +2,20 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The chart dialog — **one dialog, both jobs**: inserting a chart and editing one, built around
-//! a live preview of exactly what will be written (`doc/chart-format.md`, The shell).
+//! The chart dialog — **one dialog for inserting and editing a chart**, built round a live preview
+//! of exactly what will be written. The preview is drawn by the grid's own [`crate::chart::draw`]
+//! from [`App::preview_chart`] — [`App::add_chart`] or [`App::edit_chart`] without the write — so
+//! the picture and the chart that lands cannot disagree, and nothing is written until Insert, one
+//! undo step.
 //!
-//! The preview is the point. It is drawn by the same [`crate::chart::draw`] the grid draws a
-//! chart with, from [`App::preview_chart`] — the core's answer to "what would this spec make",
-//! which is [`App::add_chart`] or [`App::edit_chart`] without the write. So the picture in the
-//! dialog and the chart that lands on the sheet cannot disagree, and nothing is written until
-//! Insert, as one undo step.
+//! **What the chart is of is asked in the table's terms**: which block, whether series run down
+//! columns or along rows, whether the first row and column name things —
+//! [`grind_sheet::ChartShape`]'s three answers, which [`App::suggest_chart`] turns into a chart as
+//! `chart-add --from` does. The ranges themselves are folded away under *Ranges*.
 //!
-//! **What the chart is of is asked in the table's own terms**, not in range strings: which
-//! block, whether the series run down the columns or along the rows, and whether the first row
-//! and the first column name things. Those are [`grind_sheet::ChartShape`]'s three answers, and
-//! [`App::suggest_chart`] turns them into a chart — the same guess `chart-add --from` makes, so
-//! a table with its months across the top charts them along the x axis without being told. The
-//! ranges themselves — the CLI's vocabulary — are still there, folded away under *Ranges*, for
-//! anybody who wants to point a series somewhere the table's shape does not.
-//!
-//! **The widgets are the state.** Every change re-reads them into a [`ChartSpec`], asks the
-//! core for a preview, and redraws; nothing here keeps a second copy of the chart to drift out
-//! of step with what is on screen. Two flags are the exception, and each is a fact about the
-//! *person*: whether they typed a title, and whether they picked a legend — until they do, a new
-//! reading of the table may give the chart a title and a legend of its own, and once they have,
-//! it does not overwrite what they chose.
-//!
-//! Deliberately not built: a gallery of chart types that changes the document as the pointer
-//! passes over it, a contextual toolbar, or a floating button offering analyses. The preview
-//! lives inside a modal dialog, which is ordinary GNOME practice, and a type is picked by
-//! pressing one of three buttons.
+//! **The widgets are the state**: every change re-reads them into a [`ChartSpec`], asks for a
+//! preview and redraws. Two flags are facts about the person — whether they typed a title, whether
+//! they picked a legend — so a new reading of the table does not overwrite what they chose.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

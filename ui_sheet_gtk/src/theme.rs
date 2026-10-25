@@ -2,28 +2,21 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Every colour the grid draws, resolved from the running theme in one place.
-//!
-//! A custom-drawn widget has to pick its own colours, and the failure mode is a grid that
-//! is white in a dark theme. So nothing here is a literal: the foreground comes from the
-//! widget, the rest from the theme's named colours, and the whole palette is rebuilt
-//! whenever the style changes (see `grid.rs`'s `css_changed`).
-//!
-//! `lookup_color` is deprecated in GTK 4.10 and has no replacement — there is no other way
-//! to read a named theme colour, and the alternative is hardcoding one. It is called
-//! exactly here, with the fallbacks that make a missing name harmless.
+//! Every colour the grid draws, resolved from the running theme in one place. **Nothing here is a
+//! literal**: the foreground comes from the widget, the rest from the theme's named colours,
+//! rebuilt on every style change (`grid.rs`'s style-manager notifies). `lookup_color` is
+//! deprecated in GTK 4.10 with no replacement and is the only way to read a named theme colour; it
+//! is called here alone, with fallbacks.
 
 use libadwaita::gtk;
 use libadwaita::prelude::*;
 
 use gtk::gdk;
 
-/// The one stylesheet this shell installs: the in-cell editor.
-///
-/// A bare `gtk::Text` is transparent and carries the theme's entry padding, so over a cell
-/// it shows the value underneath and puts the caret a few pixels off from where the grid
-/// draws text. Both are fixed with named theme colours rather than literals, so it follows
-/// light, dark and high-contrast like everything else here.
+/// The one stylesheet this shell installs: the in-cell editor. A bare `gtk::Text` is transparent
+/// and carries the theme's entry padding, so over a cell it shows the value underneath and
+/// misplaces the caret; both are fixed with named theme colours, so it follows light, dark and
+/// high-contrast.
 const EDITOR_CSS: &str = "
 .sheet-editor {
   background-color: @view_bg_color;
@@ -76,8 +69,8 @@ impl Palette {
     /// Read the palette out of `widget`'s current style.
     pub fn of(widget: &impl IsA<gtk::Widget>) -> Self {
         let widget = widget.as_ref();
-        // `GtkWidget:color` is a 4.10 getter this build's gtk4 feature set does not
-        // expose, and the named colour is what it returns anyway.
+        // `GtkWidget:color` is a 4.10 getter the gtk4 features here do not expose; the named
+        // colour is what it returns anyway.
         let foreground = named(widget, "view_fg_color")
             .or_else(|| named(widget, "theme_fg_color"))
             .unwrap_or(BLACK);
@@ -106,13 +99,9 @@ const BLACK: gdk::RGBA = gdk::RGBA::BLACK;
 const BLUE: gdk::RGBA = gdk::RGBA::new(0.21, 0.52, 0.89, 1.0);
 const RED: gdk::RGBA = gdk::RGBA::new(0.88, 0.11, 0.14, 1.0);
 
-/// Eight colours for the references in a formula, in the order they appear.
-///
-/// These are the one place a colour is **not** taken from the theme, and deliberately: they
-/// are data colours, like a chart's series, and a theme has no opinion about the fourth
-/// reference in a formula. What the theme decides is which of the two sets to use — the
-/// darker one reads on a light sheet and the lighter one on a dark sheet, which is the part
-/// that would otherwise be unreadable.
+/// Eight colours for the references in a formula, in order of appearance — **not** from the theme:
+/// they are data colours, like a chart's series. The theme decides only which set: darker on a
+/// light sheet, lighter on a dark one.
 pub fn reference_palette(dark: bool) -> [gdk::RGBA; 8] {
     let hex = match dark {
         false => [
@@ -146,19 +135,11 @@ pub fn reference_palette(dark: bool) -> [gdk::RGBA; 8] {
     })
 }
 
-/// The colour `doc/view-modes.md`'s role mode draws a cell's text in, or `None` for a role
-/// that is drawn as nothing at all.
-///
-/// **Hues from `style::PALETTE`, readability from the theme** (§4.5). The palette is the
-/// project's own seventeen — *a default a shell offers and never a limit* — so a role has
-/// the same hue wherever it is drawn; `readable` then walks that hue towards the theme's
-/// foreground until it separates from the theme's background, which is what makes navy on a
-/// dark sheet a colour a reader can actually see rather than a decision about dark mode
-/// taken here.
-///
-/// Two roles take the theme directly rather than a hue, and that is the convention rather
-/// than a shortcut: a computed cell is "black" in every financial model ever coloured by
-/// hand, and black in a dark theme is the foreground. A label is that foreground, muted.
+/// The colour role mode draws a cell's text in, or `None` for a role drawn as nothing. **Hues from
+/// `style::PALETTE`, readability from the theme** (`doc/view-modes.md` §4.5): `readable` walks the
+/// hue towards the theme's foreground until it separates from the background, so navy on a dark
+/// sheet can be seen. A computed cell takes the foreground — the "black" of every hand-coloured
+/// financial model — and a label the foreground muted.
 pub fn role_color(role: grind_sheet::view::CellRole, palette: &Palette) -> Option<gdk::RGBA> {
     use grind_sheet::view::Hue;
     // Which colour each role is — the financial-modelling convention — is the core's
@@ -174,12 +155,8 @@ pub fn role_color(role: grind_sheet::view::CellRole, palette: &Palette) -> Optio
     }
 }
 
-/// A hue moved towards the theme's foreground until it is legible against the theme's
-/// background — the "resolved against the theme" half of §4.5.
-///
-/// Towards the *foreground* rather than towards white or black, so a high-contrast or
-/// hand-rolled theme lands where that theme's own text does instead of where a guess about
-/// dark mode would put it.
+/// A hue moved towards the theme's foreground until legible on its background — towards the
+/// foreground rather than white or black, so a high-contrast theme lands where its own text does.
 fn readable(hue: gdk::RGBA, palette: &Palette) -> gdk::RGBA {
     let luminance = |c: gdk::RGBA| 0.299 * c.red() + 0.587 * c.green() + 0.114 * c.blue();
     let background = luminance(palette.background);
@@ -200,12 +177,9 @@ fn readable(hue: gdk::RGBA, palette: &Palette) -> gdk::RGBA {
         .unwrap_or(palette.foreground)
 }
 
-/// Which colour each reference in a formula gets: one per **distinct** reference, so the
-/// same range mentioned twice is the same colour in both places and in the grid.
-///
-/// The spans come from `display::spans` — the scanner that also decides what a reference
-/// *is* when the formula is committed — so what is coloured and what is stored cannot
-/// disagree.
+/// Which colour each reference gets: one per **distinct** reference, so the same range twice is
+/// one colour in both places and in the grid. The spans are `display::spans`', the scanner that
+/// decides what a reference is when the formula commits.
 pub fn reference_colors(text: &str, dark: bool) -> Vec<(std::ops::Range<usize>, gdk::RGBA)> {
     let palette = reference_palette(dark);
     let mut seen: Vec<&str> = Vec::new();
@@ -223,10 +197,8 @@ pub fn reference_colors(text: &str, dark: bool) -> Vec<(std::ops::Range<usize>, 
         .collect()
 }
 
-/// The same colours as Pango attributes, for a `GtkEditable` showing the formula.
-///
-/// Byte indices line up by construction: `display::spans` reports bytes because Pango
-/// counts in bytes.
+/// The same colours as Pango attributes, for a `GtkEditable` showing the formula; `display::spans`
+/// reports bytes, as Pango counts.
 pub fn reference_attributes(text: &str, dark: bool) -> gtk::pango::AttrList {
     let attributes = gtk::pango::AttrList::new();
     for (range, color) in reference_colors(text, dark) {
@@ -242,20 +214,16 @@ pub fn reference_attributes(text: &str, dark: bool) -> gtk::pango::AttrList {
     attributes
 }
 
-/// The ink a cell's text is drawn in — `color` and `fill` being the document's own
-/// `fo:color` and `fo:background-color`, either of which it may not have said. **Nothing here
-/// is written**: this decides how a document's colours are shown against a theme, never what
-/// they are.
+/// The ink a cell's text is drawn in — `color` and `fill` the document's own `fo:color` and
+/// `fo:background-color`, if it said them. Nothing here is written.
 ///
-/// - **No colour of its own** is ODF's *automatic*: the theme's ink, unless the document's own
-///   fill makes that unreadable — then black or white, whichever reads
-///   ([`grind_core::color::automatic_ink`]). White theme text on a silver heading row is the
-///   case that made this necessary.
-/// - **A colour of its own, on the theme's ground in a dark theme**, is lifted along its own
-///   hue until it reads ([`grind_core::color::legible`]): navy chosen on white paper is
-///   invisible on a dark sheet, and a lighter navy is still the colour the document chose.
-/// - **A colour of its own on a fill of its own**, or in a light theme, is the document's
-///   decision about its own paper, and is drawn as it is.
+/// - **No colour of its own** is ODF's automatic: the theme's ink, unless the document's fill
+///   makes it unreadable, then black or white ([`grind_core::color::automatic_ink`]) — white theme
+///   text on a silver heading row.
+/// - **A colour of its own on the theme's ground in a dark theme** is lifted along its hue until
+///   it reads ([`grind_core::color::legible`]): navy chosen on white is invisible on a dark sheet.
+/// - **A colour on a fill of its own**, or in a light theme, is the document's decision, drawn as
+///   it is.
 pub fn ink(color: Option<&str>, fill: Option<&str>, palette: &Palette) -> gdk::RGBA {
     let own = color.and_then(self::color);
     let fill = fill.and_then(self::color);
@@ -298,15 +266,11 @@ pub fn is_dark(palette: &Palette) -> bool {
     0.299 * bg.red() + 0.587 * bg.green() + 0.114 * bg.blue() < 0.5
 }
 
-/// Whether an announcement from `widget` reaches anybody.
-///
-/// Two ways it does not, and both used to cost something. GTK's fallback accessibility context —
-/// the one it uses when there is no AT-SPI bus, as in a container, a VM or a minimal session —
-/// has no `announce` hook, and `gtk_accessible_announce` calls it anyway: a jump to address zero
-/// on every move (measured on GTK 4.18 under Xvfb, with and without a session bus). And with
-/// `GTK_A11Y=none` there is **no context at all**: `gtk_accessible_get_at_context` returns NULL,
-/// which the generated binding asserts against, so the first click in the window aborted it. The
-/// raw call is made here because it is the one spelling that can say "none".
+/// Whether an announcement from `widget` reaches anybody. GTK's fallback accessibility context —
+/// used with no AT-SPI bus, as in a container, a VM or a minimal session — has no `announce` hook
+/// and `gtk_accessible_announce` calls it anyway, a jump to address zero (measured on GTK 4.18
+/// under Xvfb). With `GTK_A11Y=none` there is no context at all, which the generated binding
+/// asserts against. The raw call is the one spelling that can say "none".
 pub fn heard(widget: &impl IsA<gtk::Accessible>) -> bool {
     use gtk::glib::translate::{ToGlibPtr, from_glib_full};
     // SAFETY: the call is transfer-full and documented to return NULL when accessibility is off;
@@ -324,16 +288,10 @@ fn named(widget: &gtk::Widget, name: &str) -> Option<gdk::RGBA> {
     widget.style_context().lookup_color(name)
 }
 
-/// A colour **the document** chose — `fo:color`, `fo:background-color`, a border's third
-/// field — as a colour to paint with.
-///
-/// The one place a colour does not come from the theme, and it has to be: a cell that says
-/// `#ffff00` is yellow in every session. `None` for anything not to be painted, which is
-/// where the two cases that are not colours live: ODF's `"transparent"` (GDK parses it as
-/// opaque black, so leaving it to the parser would be a very visible bug) and a value this
-/// build does not recognise — a document's attribute is whatever the document said
-/// (`core/src/style.rs`), so it is dropped at the point of painting rather than at the point
-/// of reading, where dropping it would lose the cell.
+/// A colour the **document** chose — `fo:color`, `fo:background-color`, a border's third field —
+/// as a colour to paint with; a cell that says `#ffff00` is yellow in every session. `None` for
+/// ODF's `transparent` (GDK would parse it as opaque black) and for anything unrecognised, dropped
+/// at painting rather than at reading, where it would lose the cell.
 pub fn color(value: &str) -> Option<gdk::RGBA> {
     match value.trim() {
         "transparent" | "none" => None,
@@ -362,10 +320,8 @@ mod tests {
         }
     }
 
-    /// `doc/view-modes.md` §4.5: the hues are the project's palette and the *readability* is
-    /// the theme's. A role mode that is unreadable on a dark sheet is a role mode nobody
-    /// turns on twice, and this is the check that it separates from the ground it is drawn
-    /// on — on both grounds, from one table of hues.
+    /// Role hues are the palette's and readability the theme's (§4.5): every role colour separates
+    /// from the ground it is drawn on, on both grounds.
     #[test]
     fn every_role_colour_separates_from_the_ground_it_is_drawn_on() {
         let luminance = |c: gdk::RGBA| 0.299 * c.red() + 0.587 * c.green() + 0.114 * c.blue();
@@ -390,11 +346,9 @@ mod tests {
         }
     }
 
-    /// Roles are read by colour first, so two of them sharing one is the mode failing at the
-    /// thing it exists to do.
     /// Every palette colour a document can give its text reads on a dark sheet, a fill it chose
-    /// gets automatic ink that reads on it, and in a light theme the document's colours are
-    /// drawn exactly as they are.
+    /// gets automatic ink that reads on it, and in a light theme the document's colours are drawn
+    /// as they are.
     #[test]
     fn a_documents_ink_reads_on_whatever_it_is_drawn_on() {
         use grind_core::color::{TEXT, contrast};
@@ -426,6 +380,7 @@ mod tests {
         assert_eq!(ink(None, Some("#dddddd"), &dark), gdk::RGBA::BLACK);
     }
 
+    /// Roles are read by colour first, so two sharing one is the mode failing at its job.
     #[test]
     fn the_roles_do_not_share_a_colour() {
         let palette = ground(WHITE, BLACK);

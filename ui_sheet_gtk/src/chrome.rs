@@ -2,16 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Everything around the grid: the format bar, the View menu, the formula bar, the sheet tabs
-//! and the status bar.
-//!
-//! None of it owns anything either. Each piece reads what it needs from [`App`] when it is
-//! asked to refresh, and writes through the grid or through `App` — the same rule the grid
-//! follows, applied to the parts that are made of ordinary widgets.
-//!
-//! Three of the four surfaces `doc/sheet-shell.md`'s "Four surfaces" names live here — the
-//! format bar, the View menu and the sheet tab's context menu — and each carries the admission
-//! test that keeps it from growing. The fourth, the command palette, is [`crate::palette`].
+//! Everything around the grid: the format bar, the View menu, the formula bar, the sheet tabs and
+//! the status bar. None of it owns anything: each piece reads from [`App`] when refreshed and
+//! writes through the grid or `App`. Three of `doc/sheet-shell.md`'s four surfaces live here — the
+//! format bar, the View menu and the sheet tab's menu; the fourth, the command palette, is
+//! [`crate::palette`].
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -28,10 +23,8 @@ use grind_sheet::{App, CellValue, a1};
 use crate::grid::{Grid, Notice};
 use crate::keymap::{Dir, Selection};
 
-/// The formula bar, and the one thing outside it may do: turn friendly mode on or off.
-///
-/// Same shape as [`crate::formatting::Strip`], and for the same reason — the window owns the
-/// action, the bar owns the widgets.
+/// The formula bar, and the one thing outside it may do: turn friendly mode on or off. The window
+/// owns the action, the bar the widgets.
 pub struct FormulaBar {
     pub widget: gtk::Box,
     /// The ⓘ button, kept so the window's `win.explain-formula` action opens the same
@@ -52,19 +45,14 @@ impl FormulaBar {
     }
 }
 
-/// The formula bar: a name box, the shared editor, and the two buttons that end an edit.
+/// The formula bar: a name box, the shared editor, and the two buttons that end an edit. The entry
+/// is built over the grid's own `EntryBuffer`, so its content stays in step with the in-cell
+/// editor while each keeps its own caret.
 ///
-/// The entry is built over the grid's own `EntryBuffer`, which is the whole trick — content
-/// stays in step with the in-cell editor for free, and each keeps its own caret.
-///
-/// **Friendly mode is a second *view* of that buffer, never a second copy of it.** A cell
-/// holding a formula is shown, while nothing is being edited, as
-/// [`friendly::explain_inline`] spells it — a `gtk::Button` in a `gtk::Stack`, in front of
-/// the entry rather than instead of it. Clicking it (or any of the ordinary ways an edit
-/// starts) swaps the entry back in, holding the *stored* ODF formula, which is the only
-/// spelling anything ever writes. Nothing here parses friendly text back: `doc/plan.md` R1
-/// says the document's formula is ODF's, and an editable friendly syntax would need a
-/// parameter-label spelling that cannot be confused with `=` as a comparison operator.
+/// **Friendly mode is a second view of that buffer, never a copy.** While nothing is edited, a
+/// formula is shown as [`friendly::explain_inline`] spells it, a `gtk::Button` in front of the
+/// entry in a `gtk::Stack`; starting an edit swaps the entry back in with the stored ODF formula,
+/// the only spelling anything writes. Nothing parses friendly text back (R1).
 pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar> {
     let name_box = gtk::Entry::builder()
         .width_chars(10)
@@ -168,11 +156,9 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
         grid,
         move |_| grid.begin_edit(false)
     ));
-    // `doc/view-modes.md` §3.3's half of inline names, and the same stand-in shape for the
-    // same reason: what it shows is a **reading**, so it must not be what a commit takes
-    // back in. `=tax_rate*subtotal` typed into the entry would store the names; shown here
-    // it is a label, and clicking it swaps the entry — holding the formula the file has —
-    // back in front.
+    // Inline names (`doc/view-modes.md` §3.3), shown the same way: a reading, so not what a commit
+    // takes back. `=tax_rate*subtotal` typed into the entry would store the names; here it is a
+    // label, and clicking it swaps the entry back with the file's formula.
     let named_label = gtk::Label::builder()
         .xalign(0.0)
         .ellipsize(gtk::pango::EllipsizeMode::End)
@@ -302,11 +288,8 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
         move || {
             let text = grid.buffer().text().to_string();
 
-            // The friendly view stands in for the entry only when there is a formula to
-            // show it for and nobody is editing — a value is already spelled the way a
-            // person would spell it, and mid-edit the stored formula is the thing being
-            // worked on.
-            //
+            // The friendly view stands in for the entry only for a formula and while nobody is
+            // editing — mid-edit, the stored formula is what is being worked on.
             let explained = (!grid.is_editing()).then(|| friendly_line(&text)).flatten();
             explain.set_visible(explained.is_some());
             // The name reading, when the overlay is on and the formula actually mentions a
@@ -364,12 +347,10 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
                 move || {
                     pending2.set(None);
                     let text = grid.buffer().text().to_string();
-                    // Errors included, which is half the value: a formula that will not
-                    // parse says so before it is committed rather than after.
-                    // A formula that does not parse yet is *unfinished* far more often than it
-                    // is wrong — this runs while somebody is typing — so it is not spelled as
-                    // though it were a value (`= expected ; or )` read as the answer), and it
-                    // is drawn in the theme's warning colour rather than the dim one.
+                    // Errors included: a formula that will not parse says so before it is
+                    // committed. While somebody types it is far more often unfinished than wrong,
+                    // so it is not spelled as a value and is drawn in the warning colour, not the
+                    // dim one.
                     let (preview, unfinished) =
                         match grind_sheet::formula::display::from_display(&text) {
                             Ok(canonical) => (
@@ -438,9 +419,8 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
         update,
         move |_| update()
     ));
-    // Swapping the entry in is only half of starting an edit from the friendly view: it has
-    // to take the focus too, or the first keystroke goes to the button that is no longer
-    // there.
+    // Swapping the entry in must also take the focus, or the first keystroke goes to the button
+    // that is gone.
     stack.connect_visible_child_name_notify(glib::clone!(
         #[weak]
         entry,
@@ -475,15 +455,10 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
     })
 }
 
-/// Whether the keyboard is in this entry — the question the formula bar asks three times:
-/// to open an edit when it is clicked into, to mirror its caret into the in-cell editor, and
-/// to decide whose caret the signature hint should read.
-///
-/// **Not `has_focus`.** A `gtk::Entry` is a wrapper around an internal `gtk::Text`, and that
-/// child is what actually takes the focus — so `has-focus` on the entry is never true, its
-/// `notify` never fires, and all three questions answered "no" for as long as they were
-/// asked that way. `FOCUS_WITHIN` is the flag GTK sets on the ancestors of the focus widget,
-/// which is what "the keyboard is in there" means for a composite widget.
+/// Whether the keyboard is in this entry — asked to open an edit on a click, to mirror its caret
+/// into the in-cell editor, and to pick whose caret the signature hint reads. **Not `has_focus`**:
+/// a `gtk::Entry` wraps an internal `gtk::Text` that takes the focus, so the entry's `has-focus`
+/// is never true; `FOCUS_WITHIN` is set on the focus widget's ancestors.
 fn typing_here(widget: &impl IsA<gtk::Widget>) -> bool {
     widget
         .as_ref()
@@ -491,14 +466,9 @@ fn typing_here(widget: &impl IsA<gtk::Widget>) -> bool {
         .contains(gtk::StateFlags::FOCUS_WITHIN)
 }
 
-/// The one-line friendly rendering of what the shared buffer holds, or `None` when there is
-/// nothing to render one for.
-///
-/// **The buffer holds *display* form and [`friendly`] reads the stored form**, so this
-/// converts before it explains — the same step the preview chip takes. Skipping it does not
-/// merely fail: an unqualified `A1` parses the same in both spellings, but `$Sheet1.$B$2`
-/// lexes as a quoted *name* rather than a reference, so a sheet-qualified formula came out as
-/// `$$'Sheet1.B2':B4` instead of erroring and falling back to the entry.
+/// The one-line friendly rendering of the shared buffer, or `None`. **The buffer holds display
+/// form and [`friendly`] reads stored form**, so this converts first: `$Sheet1.$B$2` lexes as a
+/// quoted name in the wrong spelling and would come out as `$$'Sheet1.B2':B4`.
 pub(crate) fn friendly_line(text: &str) -> Option<String> {
     if !text.starts_with('=') {
         return None;
@@ -553,12 +523,9 @@ pub fn name_box_text(app: &App, sheet: usize, selection: Selection) -> String {
     grind_sheet::place::name_box(app, sheet, selection)
 }
 
-/// Define `name` over whatever is selected — the other half of the name box.
-///
-/// Sheet-qualified and absolute, through `a1::as_definition`, because that is what a name
-/// has to be to mean the same range read from anywhere (§5.11). The core does the refusing:
-/// `App::set_name` already knows which words are names and which are addresses wearing a
-/// name's clothes, and a second opinion here would be a second thing to keep in step.
+/// Define `name` over the selection — the name box's other half. Sheet-qualified and absolute
+/// (`a1::as_definition`), so the name means the same range from anywhere; `App::set_name` does the
+/// refusing.
 fn name_selection(app: &App, grid: &Grid, name: &str) -> Result<(), String> {
     if name.is_empty() {
         return Err("Type a cell, a range, or a name for the selection".to_owned());
@@ -586,20 +553,10 @@ fn icon_button(icon: &str, tooltip: &str) -> gtk::Button {
     button
 }
 
-/// The format bar — **the window's only toolbar**, and the one with a membership rule.
-///
-/// `doc/sheet-shell.md`'s "Four surfaces": a control belongs here when it *reads and writes a
-/// property of the selection*, and nowhere else does. That admission test is what closes the
-/// bar: `CellStyle` and `numfmt::Format` are finite vocabularies, so the bar is finite too,
-/// and the next feature — which will be a verb — has a different home to go to.
-///
-/// It replaced a three-page mode switch (Format · Calculate · View). The switch was the right
-/// instinct and the wrong axis: *Format* was a property inspector, *View* was view state that
-/// writes nothing at all, and *Calculate* was a list of verbs with no membership rule — so
-/// every new verb landed there, and the page grew until it was the toolbar problem again with
-/// one more click in front of it. Dropping the tab strip also removes the only piece of this
-/// window that resembled a ribbon at all, which settles that question by construction rather
-/// than by argument.
+/// The format bar — **the window's only toolbar**, and the one with a membership rule
+/// (`doc/sheet-shell.md`, "Four surfaces"): a control belongs here when it reads and writes a
+/// property of the selection. `CellStyle` and `numfmt::Format` are finite, so the bar is finite
+/// too, and a new verb has a different home.
 pub fn format_bar(strip: &impl IsA<gtk::Widget>) -> gtk::Box {
     let bar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     bar.add_css_class("toolbar");
@@ -607,15 +564,10 @@ pub fn format_bar(strip: &impl IsA<gtk::Widget>) -> gtk::Box {
     bar
 }
 
-/// The View button: the zoom, autofit, and `doc/view-modes.md`'s readings, in a menu.
-///
-/// A **menu**, not a row of toggles, because none of this is about the selection: it is what
-/// the window is doing with the document, which is what the HIG's view menu is for and where
-/// every GNOME application with a zoom keeps it. Each reading is a stateful `win.` action, so
-/// the check mark beside it is the action's own state rather than something kept in step here.
-///
-/// The zoom is a custom child of the menu — the level readable in the middle and clickable to
-/// go back to 100%, the pattern the file manager and the document viewer both use.
+/// The View button: the zoom, autofit and `doc/view-modes.md`'s readings, in a menu — none of it
+/// is about the selection, which is what the HIG's view menu is for. Each reading is a stateful
+/// `win.` action, so its check mark is the action's own state. The zoom is a custom child: the
+/// level in the middle, clickable back to 100%, as Files and the document viewer do.
 pub fn view_menu(grid: &Grid) -> gtk::MenuButton {
     let out = gtk::Button::builder()
         .icon_name("zoom-out-symbolic")
@@ -723,16 +675,11 @@ pub fn spelling_menu_model() -> gio::Menu {
     menu
 }
 
-/// The sheet tab strip: one toggle button per sheet, and a `+`.
+/// The sheet tab strip: one toggle button per sheet, and a `+`. Plain buttons rather than
+/// `adw::TabBar`, which brings close buttons and drag-to-detach for documents in a window.
 ///
-/// Plain buttons rather than `adw::TabBar`, which is for documents in a window and brings
-/// close buttons and drag-to-detach with it — the wrong tool with the right name.
-///
-/// **Renaming and deleting live on the tab**, in a right-click menu, rather than in the
-/// primary menu where they used to be. That is the HIG's rule for anything that acts on a
-/// piece of content — the primary menu is for the window and the document as a whole — and it
-/// is also the only spelling that says *which* sheet: a menu item three surfaces away from the
-/// tab strip has to mean "the current one" and hope the reader agrees.
+/// **Renaming and deleting live on the tab**, in a right-click menu — the HIG's rule for anything
+/// acting on a piece of content, and the only spelling that says *which* sheet.
 pub struct Tabs {
     pub widget: gtk::Box,
     strip: gtk::Box,
@@ -765,12 +712,9 @@ impl Tabs {
         widget.append(add);
 
         let menu = gtk::PopoverMenu::from_model(Some(&tab_menu_model()));
-        // Parented on the **bar**, not on the strip inside it. `refresh` empties the strip by
-        // walking `first_child`, and a popover attached with `set_parent` is a child like any
-        // other to that walk — so parenting it there unparents it on the first rebuild, and
-        // the next right-click pops up a popover with no native ancestor. (It crashes; this
-        // comment is the reason the parent looks one level too high.) The bar's own two
-        // children never change.
+        // Parented on the **bar**, not the strip inside it: `refresh` empties the strip by walking
+        // `first_child`, which would unparent a popover set there, and the next right-click would
+        // crash on a popover with no native ancestor. The bar's two children never change.
         menu.set_parent(&widget);
 
         let tabs = Rc::new(Self {
@@ -782,11 +726,10 @@ impl Tabs {
             rebuilding: Rc::new(Cell::new(false)),
         });
         tabs.refresh();
-        // Follow the grid when something *else* changes its sheet — a find bar's hit, a lint
-        // finding, a row in the calculation explorer. `set_sheet` changes no document, so the
-        // observer that rebuilds this strip never hears of it, and the tab would go on
-        // highlighting the sheet that is no longer in front. It does reset the selection,
-        // which is the signal this listens for.
+        // Follow the grid when something else changes its sheet — a find hit, a lint finding, a
+        // row in the calculation explorer. `set_sheet` changes no document, so the observer that
+        // rebuilds this strip never hears of it; it does reset the selection, which this listens
+        // for.
         let weak = Rc::downgrade(&tabs);
         grid.connect_selection_changed(move |_| {
             if let Some(tabs) = weak.upgrade() {
@@ -887,11 +830,8 @@ impl Drop for Tabs {
     }
 }
 
-/// A sheet's own two verbs. Both are `win.` actions the window already owns and both act on
-/// the *current* sheet, which is why opening the menu selects the tab first.
-///
-/// A free function for [`crate::grid::cell_menu_model`]'s reason: `main.rs`'s ratchet walks
-/// every menu model in this window, and one built inline is one it cannot reach.
+/// A sheet's two verbs, both `win.` actions on the current sheet, which is why opening the menu
+/// selects the tab first. A free function so `main.rs`'s check can walk the model.
 pub fn tab_menu_model() -> gio::Menu {
     let model = gio::Menu::new();
     model.append(Some("Rename…"), Some("win.sheet-rename"));
@@ -899,17 +839,13 @@ pub fn tab_menu_model() -> gio::Menu {
     model
 }
 
-/// The status bar: where the selection is, and what it adds up to.
+/// The status bar: where the selection is, and what it adds up to — `grind_sheet::summary`'s
+/// `App::preview` over generated `SUM`, `COUNTA` and `AVERAGE` formulas, so the bar agrees with a
+/// cell.
 ///
-/// The aggregates are `App::preview` over generated formulas rather than a second summing
-/// loop here — `SUM`, `COUNTA` (a status bar's Count is non-empty, not numeric) and
-/// `AVERAGE` — so what the bar says and what a cell would say cannot differ. They are
-/// `grind_sheet::summary`'s, shared with every other shell's status bar.
-///
-/// Debounced, because a drag changes the selection on every motion event and each change
-/// costs a walk of the range. ponytail: the walk runs on the main thread, so a selection
-/// spanning a very large used extent stutters the drag; the plan's answer is a worker and a
-/// generation counter, which is the threading milestone's machinery rather than this one's.
+/// Debounced, since a drag changes the selection on every motion and each change walks the range.
+/// ponytail: the walk runs on the main thread, so a selection over a very large used extent
+/// stutters the drag; the answer is a worker and a generation counter.
 pub fn status_bar(
     grid: &Grid,
     app: &Arc<App>,
@@ -955,10 +891,9 @@ pub fn status_bar(
     ));
     bar.append(&zoom);
 
-    // `doc/view-modes.md` §9: role mode suppresses the document's own colours, which is the
-    // right call and still a surprise. It needs an indication that is *always* visible —
-    // the toggle itself is inside the View menu, which is shut — and this is it: a button
-    // that says the mode is on and, being a button, turns it off.
+    // Role mode suppresses the document's colours (`doc/view-modes.md` §9), so it needs an
+    // indication that is always visible while the View menu is shut: a button saying the mode is
+    // on that turns it off.
     let modes = gtk::Button::builder()
         .visible(false)
         .action_name("win.show-roles")
@@ -1001,10 +936,8 @@ pub fn status_bar(
     bar
 }
 
-/// How this document spells a number — `1.234,5 · de-DE` — always on the status bar, since which
-/// sign is the decimal one is the question nobody should have to type a number to answer.
-/// `grind_sheet::locale::badge` is the text; clicking it opens Document Settings, where the
-/// locale is changed. The window sets the label whenever the document changes.
+/// How this document spells a number — `1.234,5 · de-DE` (`grind_sheet::locale::badge`) — always
+/// on the status bar; clicking it opens Document Settings.
 pub fn number_badge() -> gtk::Button {
     let badge = gtk::Button::builder()
         .action_name("win.document-settings")
@@ -1015,10 +948,9 @@ pub fn number_badge() -> gtk::Button {
     badge
 }
 
-/// The spelling language, on the status bar beside [`number_badge`]: the setting's flag
-/// (`grind_spell::Setting::chip`) as the button, and the Spelling Language menu under it — so the
-/// two questions a person typing into a cell has, *which decimal sign* and *which language*, are
-/// answered in one place. The window sets the label whenever the setting changes.
+/// The spelling language beside [`number_badge`]: the setting's chip
+/// (`grind_spell::Setting::chip`) as the button, the Spelling Language menu under it — which
+/// decimal sign and which language, in one place.
 pub fn spelling_picker() -> gtk::MenuButton {
     // The languages, then the one other thing about spelling a person maintains: their words.
     let menu = gio::Menu::new();
@@ -1039,12 +971,7 @@ pub fn spelling_picker() -> gtk::MenuButton {
 }
 
 /// The window's one bottom bar: the sheet tabs at the start, the selection's arithmetic at the
-/// end.
-///
-/// It used to be two bars stacked — a tab strip, and under it a status line whose resting state
-/// was the active cell's address, which the name box above the grid was already showing. Two
-/// rows of chrome for one row of information is the kind of thing a person stops seeing, and
-/// every spreadsheet with tabs puts the two on one line for that reason.
+/// end, on one line as every spreadsheet with tabs has them.
 pub fn bottom_bar(tabs: &impl IsA<gtk::Widget>, status: &impl IsA<gtk::Widget>) -> gtk::Box {
     let bar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     // libadwaita paints a toolbar; without the class the bar is transparent and the grid
@@ -1055,8 +982,8 @@ pub fn bottom_bar(tabs: &impl IsA<gtk::Widget>, status: &impl IsA<gtk::Widget>) 
     bar
 }
 
-/// `grind_sheet::summary`'s sentence for a range, and **nothing at all for one cell** — the name
-/// box is already saying where that is (`grind_sheet::place::status`).
+/// `grind_sheet::summary`'s sentence for a range, and nothing for one cell — the name box already
+/// says where that is.
 fn status_text(app: &App, sheet: usize, selection: Selection) -> String {
     grind_sheet::place::status(app, sheet, selection)
 }

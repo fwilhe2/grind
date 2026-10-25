@@ -2,23 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Which key means what, and what it does to the selection — as pure functions.
+//! Which key means what, and what it does to the selection — pure functions with **no GTK types**:
+//! the widget turns a `gdk::Key` into [`Key`], so navigation tests without a display.
 //!
-//! **No GTK types.** The widget translates a `gdk::Key` into [`Key`] and hands it over, so
-//! everything decidable about navigation unit-tests with no display and no compositor
-//! (doc/sheet-shell.md, the same rule `geom.rs` follows). A second shell needs this logic
-//! unchanged, which is the other reason it is not written inline in an event handler.
-//!
-//! The selection is **presentation state**: an anchor and an active cell, and nothing else.
-//! The core is not told about it and does not need to be — a range is passed to `App` as two
-//! positions when something is actually done to it. [`Selection`], [`Motion`], [`Extent`] and
-//! [`moved`] are `grind_sheet::nav`'s, hoisted out of this file and `ui_win32`'s when the macOS
-//! shell was about to be the third copy (`doc/macos-shell.md`, M1); what is left here is which
-//! *key* means which motion, and the fill handle's arithmetic.
-//!
-//! ponytail: [`action_for`] takes no mode, because Ready is the only one there is. Editing
-//! adds `Enter`, `Edit` and `Point`, and the signature grows a `mode` parameter then —
-//! `state.rs` in the plan owns that machine, and this one keeps the keys.
+//! The selection is **presentation state** — an anchor and an active cell; the core sees a range
+//! only as two positions when something is done to it. [`Selection`], [`Motion`], [`Extent`] and
+//! [`moved`] are `grind_sheet::nav`'s; what is here is which key means which motion, and the fill
+//! handle's arithmetic. The keys while editing are `state.rs`'s.
 
 use grind_sheet::Pos;
 pub use grind_sheet::nav::{Dir, Extent, Motion, Selection, moved};
@@ -136,26 +126,18 @@ pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
     }
 }
 
-/// What a fill acts on along one axis, given the selection's first and last line on it:
-/// the line to copy *from*, and the first and last line to copy *into*.
-///
-/// The selection's first line is always the source — a selection more than one line deep
-/// fills into the rest of itself, and a selection exactly one line deep (a single cell being
-/// the common case) fills into the one line after it. Excel reads a single cell the other
-/// way round, copying the line *before* it; this one never reads a cell that was not
-/// selected, which is the promise "it fills what I picked" makes.
+/// What a fill acts on along one axis, given the selection's first and last line: the line to copy
+/// *from*, and the first and last to copy *into*. The first line is always the source: a deeper
+/// selection fills itself, and a one-line one fills the line after it. Excel copies the line
+/// before a single cell; this never reads a cell that was not selected.
 pub fn fill_span(first: u32, last: u32) -> Option<(u32, u32, u32)> {
     let next = first.checked_add(1)?;
     Some((first, next, last.max(next)))
 }
 
-/// Where a fill-handle drag is pointing, given the selection's rectangle and the cell under
-/// the pointer: which way to fill, and the last line to fill into.
-///
-/// **One axis at a time**, which is what every spreadsheet's handle does — a diagonal drag
-/// is read as whichever axis the pointer has left the selection furthest on, a tie going to
-/// the vertical because that is the direction a sheet grows. `None` while the pointer is
-/// still inside the selection: a drag that fills nothing.
+/// Where a fill-handle drag points, given the selection and the cell under the pointer: which way
+/// to fill and the last line. **One axis at a time**, the one the pointer left the selection
+/// furthest on, a tie going vertical. `None` while the pointer is inside the selection.
 pub fn fill_target(start: Pos, end: Pos, at: Pos) -> Option<(Dir, u32)> {
     // Horizontals first, because `max_by_key` keeps the *last* of equal keys — which is how
     // the tie goes to the vertical.

@@ -2,15 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! *Conditional Formatting…* — the sheet's rules as a list, each one removable, and a row to add
-//! one over the selection (`doc/conditional-format.md` §4).
-//!
-//! Built on the palette rather than on the format bar, because a rule is not a property of the
-//! selection — it is a thing the sheet has, and the bar's admission test (`doc/sheet-shell.md`,
-//! "Four surfaces") is "reads and writes a property of the selection". Every decision about what
-//! a rule *is* — the looks on offer, how `=B2>0` becomes ODF, how one reads in a list, what is
-//! refused — is `grind_sheet::rule`'s, shared with every other shell; this file is where the
-//! fields go. Each add and each removal is one undo step in the document, so there is no OK.
+//! *Conditional Formatting…* — the sheet's rules as a list, each removable, and a row to add one
+//! over the selection (`doc/conditional-format.md` §4). Reached from the palette, not the format
+//! bar: a rule is something the sheet has, not a property of the selection. What a rule is — the
+//! looks on offer, how `=B2>0` becomes ODF, how one reads, what is refused — is
+//! `grind_sheet::rule`'s. Each add and removal is one undo step, so there is no OK.
 
 use std::rc::Rc;
 use std::sync::Arc;

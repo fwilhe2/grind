@@ -2,19 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Opening a file that may be an Excel workbook (`doc/xlsx-import.md`, X6) or a CSV — with no
-//! GTK in it, so the rule is testable with no display. A CSV takes the same path as a workbook:
-//! a new, unsaved document under an ODF name (`grind_sheet::csv::open`).
-//!
-//! The Open dialog imports **transparently**: a workbook is sniffed from its bytes, never its
-//! name (`grind_xlsx::sniff`, as `grind_core::kind` is), imported, and opened as a **new,
-//! unsaved ODF document** under the name `grind_xlsx::suggested_name` gives it — `budget.xlsx`
-//! comes up as `budget.fods`, with no path. That last part is the one that matters: one way
-//! in and never out (`doc/not-doing.md` §1), so Save on an imported workbook asks where to put
-//! the ODF document rather than writing it over the `.xlsx` it came from.
-//!
-//! Compiled out with the `xlsx` feature, in which case every file is opened as ODF and a
-//! workbook fails to open with the reader's own error — the same as before X6.
+//! Opening a file that may be an Excel workbook or a CSV, with no GTK in it so the rule tests
+//! without a display. Either opens as a **new, unsaved ODF document** with no path, under the name
+//! `grind_xlsx::suggested_name` (or `grind_sheet::csv::open`) gives it — `budget.xlsx` comes up as
+//! `budget.fods` — so Save asks where to put the ODF rather than writing over the original. A
+//! workbook is sniffed from its bytes. Without the `xlsx` feature a workbook fails to open with
+//! the reader's own error.
 
 use std::path::{Path, PathBuf};
 
@@ -53,7 +46,7 @@ fn delimited(path: &Path, bytes: &[u8]) -> bool {
         && grind_sheet::csv::is_delimited_name(&document_name(path))
 }
 
-/// Whether these bytes are a workbook this build can import.
+/// Whether these bytes are a workbook this binary can import.
 pub fn is_workbook(bytes: &[u8]) -> bool {
     #[cfg(feature = "xlsx")]
     return grind_xlsx::sniff(bytes);

@@ -2,16 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The autofilter's dropdown: the list of values behind a header cell's button (§9.4).
-//!
-//! The core decides what a filter *means* (`core/src/filter.rs`); this decides only how it
-//! is picked. The one rule that matters here is that the values offered are the strings
-//! [`grind_sheet::Filter::hides`] compares against — both come from `App`'s single `render`,
-//! reached through [`grind_sheet::App::get_viewport`], so the list cannot offer a value that would then
-//! match nothing.
-//!
-//! Read from the **document**, never from what is drawn: a value whose rows the filter
-//! currently hides has to stay in the list, or unchecking it would be a one-way door.
+//! The autofilter's dropdown: the list of values behind a heading's button. What a filter means is
+//! `sheet/src/filter.rs`'s; this decides how it is picked. The values offered are the strings
+//! [`grind_sheet::Filter::hides`] compares, both from `App`'s one `render`, so the list cannot
+//! offer a value that matches nothing. Read from the **document**, not from what is drawn: a value
+//! whose rows are hidden must stay in the list, or unchecking it would be a one-way door.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
@@ -23,22 +18,18 @@ use grind_sheet::{Filter, Viewport};
 
 use crate::geom::Rect;
 
-/// How many distinct values the list will show.
+/// How many distinct values the list shows.
 ///
-/// ponytail: a column with more than this many distinct values gets a truncated list and no
-/// way to reach the rest. The upgrade is a search entry over the values, which is also what
-/// makes a list this long usable at all — worth building the first time a real document
-/// wants it, not before.
+/// ponytail: a column with more gets a truncated list and no way to the rest. The upgrade is a
+/// search entry over the values, worth building when a real document wants it.
 const MAX_VALUES: usize = 500;
 
 /// What the empty cell is called in the list. A blank row would read as a rendering bug, and
 /// the value behind it really is the empty string (`core/src/filter.rs`).
 const EMPTY_LABEL: &str = "(empty)";
 
-/// The distinct values a field's column holds, in the order the list shows them.
-///
-/// [`grind_sheet::filter::offered`]'s list — numbers by value, text in the model's own order,
-/// the hidden values included — so every shell's dropdown lists a column the same way.
+/// The distinct values a field's column holds, in list order — [`grind_sheet::filter::offered`]'s,
+/// hidden values included, as every client lists them.
 pub fn field_values(cells: &Viewport, filter: &Filter, field: u32) -> Vec<String> {
     grind_sheet::filter::offered(cells, filter, field, MAX_VALUES)
 }

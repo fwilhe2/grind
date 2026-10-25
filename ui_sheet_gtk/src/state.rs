@@ -2,41 +2,26 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What a keystroke means *while editing* — the modes, and the one function that decides.
+//! What a keystroke means *while editing* — the modes, and the one function that decides. Pure,
+//! like [`crate::keymap`]: everyone notices when this is wrong, and no display is needed to check
+//! it. The modes are Excel's, by name:
 //!
-//! Pure, like [`crate::keymap`], and for the same reason: this is the part of a spreadsheet
-//! that everyone has an opinion about, everyone notices when it is wrong, and no display is
-//! needed to check. The widget turns the answer into GTK calls.
+//! * **Ready** — the grid has the keys. A printable character starts an edit seeded with it, F2
+//!   and a double-click one seeded with the cell, everything else navigates.
+//! * **Enter** — an edit begun by typing. An arrow key *commits* and moves.
+//! * **Edit** — an edit begun from the cell's content (F2, double-click). An arrow moves the
+//!   caret, since the text is worth navigating. F2 toggles.
 //!
-//! The modes are Excel's, by name (doc/sheet-shell.md):
+//! **Point** is not a fourth mode but a predicate: [`ref_eligible`] asks whether a reference could
+//! go where the caret is — the text starts `=` and an operator, `(`, `;` or nothing precedes the
+//! caret — and while a pending reference exists the arrows move it. "Am I pointing" is a question
+//! about the text; a flag would go stale when the caret moved.
 //!
-//! * **Ready** — the grid has the keys. A printable character starts an edit seeded with it,
-//!   F2 and a double-click start one seeded with the cell, everything else navigates.
-//! * **Enter** — an edit that began by typing. An arrow key *commits* and moves, because
-//!   the caret has nowhere useful to go in text the user has only just started.
-//! * **Edit** — an edit that began from the cell's own content (F2, double-click). An arrow
-//!   key moves the caret instead, because the text is worth navigating. F2 toggles.
-//!
-//! That difference between Enter and Edit is the whole reason two modes exist, and typing
-//! `=` then pressing → is the case it exists for: in M6 that becomes Point mode and starts
-//! building a reference, which is why the mode lives here rather than as a bool in the
-//! widget.
-//!
-//! **Point** is not a fourth mode but a predicate. [`ref_eligible`] asks whether a reference
-//! could go where the caret is — the text starts `=` and the last thing before the caret is
-//! an operator, a `(`, a `;` or nothing — and while a pending reference exists the arrows
-//! keep moving it. That is why the mode enum has three variants and the behaviour has four:
-//! "am I pointing" is a question about the *text*, and a flag would go stale the moment
-//! someone moved the caret.
-//!
-//! ponytail: `ui_win32/src/sheet/state.rs` is this machine mirrored rather than shared, and the
-//! macOS shell will be a third. `doc/macos-shell.md`'s M1 asked whether one abstract key type
-//! fits all three shells' inputs, and it does not: this one takes a `Key` that already carries
-//! its character, Windows' takes a `WM_KEYDOWN` and a `WM_CHAR` separately and asks its menu
-//! accelerators first, and the Mac gets *selectors* from its field editor. What is not about
-//! keys is shared — `grind_sheet::formula::display::to_input` is what a commit stores, and
-//! `grind_sheet::nav` the motions. **The trigger is a fourth copy**, or the first time two of
-//! them answer the same keystroke differently for a reason that is not their input model.
+//! ponytail: `ui_win32/src/sheet/state.rs` and the Mac's are this machine mirrored, not shared: no
+//! one key type fits a GTK `Key` with its character, Windows' separate `WM_KEYDOWN`/`WM_CHAR`, and
+//! AppKit's selectors. What is not about keys is shared — `formula::display::to_input`,
+//! `grind_sheet::nav`. The trigger is a fourth copy, or two answering one keystroke differently
+//! for a reason other than input.
 
 use grind_sheet::Pos;
 
@@ -170,24 +155,15 @@ fn editing(at: Where, key: Key, mods: Mods) -> Outcome {
     }
 }
 
-/// Whether a reference may be inserted at the caret — the predicate Point mode is — and F4's
-/// `$` cycle. Both are questions about display syntax and a caret, and are the core's since the
-/// macOS shell wanted the same answers (the way `call_at` below came to be).
+/// Whether a reference may be inserted at the caret — Point mode's predicate — and F4's `$` cycle.
 pub use grind_sheet::formula::assist::{cycle_absolute, ref_eligible};
 
 /// Which call the caret is inside, and which argument of it — what a signature hint shows.
-///
-/// The core's, since the Windows shell wanted the same answer: a second backwards scan over
-/// parentheses and string literals is how two windows come to disagree about which argument
-/// `SUM`'s caret is in. Re-exported under the name this file already used so the widget and the
-/// tests below reach it unchanged.
 pub use grind_sheet::formula::assist::call_at;
 
-/// Where the cursor goes after a commit, and what to remember for the next one.
-///
-/// **Tab-column memory**: Enter after a run of Tabs returns to the column the run started
-/// in, which is how a person fills a table row by row. One remembered integer, and
-/// disproportionately loved by anyone who has typed a table.
+/// Where the cursor goes after a commit, and what to remember for the next. **Tab-column memory**:
+/// Enter after a run of Tabs returns to the column the run started in, which is how a table is
+/// filled row by row.
 pub fn after_commit(
     from: Pos,
     direction: Option<Dir>,

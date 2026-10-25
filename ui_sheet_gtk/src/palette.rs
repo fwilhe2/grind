@@ -2,31 +2,21 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **The command palette — where a verb goes when it is not worth a button.**
+//! **The command palette — where a verb goes when it is not worth a button**, and the one surface
+//! allowed to grow (`doc/sheet-shell.md`, "Four surfaces"). Ctrl+K, three letters, Enter.
 //!
-//! This window's answer to the growth problem `doc/sheet-shell.md`'s "Four surfaces" section
-//! names: every feature is a verb, a toolbar with no membership rule absorbs every verb, and
-//! so the toolbar grows without bound. The palette is the surface that is *allowed* to grow.
-//! Ctrl+K, type three letters, Enter.
+//! **A view over the window's own action table**: `main.rs`'s [`crate::Verb`] list already feeds
+//! the actions, accelerators, menus and shortcuts window, and this is one more reader of it, so a
+//! verb cannot be added without appearing here.
 //!
-//! **It is a view over the window's own action table and nothing else.** `main.rs`'s
-//! [`crate::Verb`] list is where a `win.` action, its accelerator, its menu entry and its
-//! shortcuts-window row all already come from; this adds a fourth reader of that one table
-//! rather than a second table to keep in step. That is what makes the growth rule
-//! *structural* rather than a habit: there is no way to add a verb to this window without it
-//! appearing here, because there is no second place to add one.
+//! Two things it is not:
 //!
-//! Two things it deliberately is not:
+//! * **Not a go-to box**: this window has the formula bar's name box for `B12`, and two boxes
+//!   taking addresses is one too many.
+//! * **Not a launcher for what a pointer wants**: Bold is on the format bar because the bar shows
+//!   whether a cell is bold; the palette can only run it.
 //!
-//! * **Not a go-to box.** `grind-web`'s palette also jumps to an address, a sheet or a defined
-//!   name, because a browser tab has no other place to put one (`doc/web-shell.md`). This
-//!   window has the formula bar's name box, which is where every spreadsheet's user already
-//!   looks, and two boxes that both take `B12` is one too many.
-//! * **Not a launcher for things a pointer wants.** Bold is on the format bar because the
-//!   format bar *shows whether the cell is bold*; the palette can only run it.
-//!
-//! The ranking is [`grind_core::search::score`] — the same function `ui_web`'s palette ranks
-//! with, in the core for exactly that reason.
+//! The ranking is [`grind_core::search::score`].
 
 use std::rc::Rc;
 
@@ -36,10 +26,8 @@ use libadwaita::prelude::*;
 
 use gtk::glib;
 
-/// One row of the palette: a `win.` action, spelled for a reader.
-///
-/// Borrowed from the window's table rather than owned, so a row cannot say something the
-/// action table does not.
+/// One row of the palette: a `win.` action, spelled for a reader — borrowed from the window's
+/// table, so a row cannot say what the table does not.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Row {
     /// The action's name, without the `win.` prefix.
@@ -58,11 +46,8 @@ pub struct Match {
     pub hits: Vec<usize>,
 }
 
-/// The rows matching `needle`, best first — or, for an empty query, every row in the order
-/// the window declares them, which groups them by what they are about.
-///
-/// The group is part of the haystack, so *view* finds the readings even though none of their
-/// titles contains the word.
+/// The rows matching `needle`, best first; for an empty query, every row in declared order,
+/// grouped by subject. The group is part of the haystack, so *view* finds the readings.
 pub fn rank(rows: &[Row], needle: &str) -> Vec<Match> {
     let needle = needle.trim();
     if needle.is_empty() {
@@ -93,22 +78,15 @@ pub fn rank(rows: &[Row], needle: &str) -> Vec<Match> {
     scored.into_iter().map(|(_, _, found)| found).collect()
 }
 
-/// An accelerator list as a reader spells it — **GTK's own label**, `Shift+Ctrl+F`, which is
-/// exactly what the primary menu and the shortcuts window show for the same verb. The palette
-/// used to spell them by hand (`Ctrl+Shift+f`), and a verb spelled two ways in two places is a
-/// verb a reader has to learn twice. Nothing at all when the verb has no key of its own, which
-/// is most of them.
-///
-/// The first accelerator only: `redo` has two on purpose (`doc/sheet-shell.md`), and a row
-/// that lists both is teaching a choice nobody has to make.
+/// An accelerator list as GTK's own label spells it — `Shift+Ctrl+F`, as the primary menu and the
+/// shortcuts window show the same verb — or nothing for a verb with no key. The first accelerator
+/// only: `redo` has two on purpose, and listing both teaches a choice nobody has to make.
 pub fn keys(accels: &[&str]) -> String {
     let Some(accel) = accels.first() else {
         return String::new();
     };
-    // GTK's own `accelerator_get_label` is the spelling to match, and it needs a GTK that has
-    // been initialised — so this is its format, restated for the keys this table uses, where a
-    // test with no display can hold it: modifiers as Shift, Ctrl, Alt in that order, a letter in
-    // capitals, and a symbol key by the character it types.
+    // `accelerator_get_label`'s format, restated so a test with no display can hold it: Shift,
+    // Ctrl, Alt in that order, a letter in capitals, a symbol key by the character it types.
     let (mut shift, mut ctrl, mut alt) = (false, false, false);
     let mut rest = *accel;
     while let Some(after) = rest.strip_prefix('<') {
@@ -141,11 +119,8 @@ pub fn keys(accels: &[&str]) -> String {
     label + &key
 }
 
-/// The title with its matched characters emphasised, as Pango markup.
-///
-/// Escaped **after** slicing and per piece, because markup inserted before escaping would be
-/// escaped along with the title — and a title with an `&` in it is a document's, not ours,
-/// so it will happen.
+/// The title with its matched characters emphasised, as Pango markup — escaped after slicing and
+/// per piece, since a title can hold an `&`.
 fn markup(title: &str, hits: &[usize]) -> String {
     let mut out = String::new();
     for (at, character) in title.chars().enumerate() {
@@ -158,11 +133,8 @@ fn markup(title: &str, hits: &[usize]) -> String {
     out
 }
 
-/// Open the palette over `window`, running whichever row is chosen.
-///
-/// Every row activates a `win.` action, so the palette owns no capability of its own — the
-/// same rule the tool strip it replaces was held to, and the reason this file has no `App` in
-/// it anywhere.
+/// Open the palette over `window`, running the chosen row. Every row activates a `win.` action, so
+/// the palette owns no capability and has no `App` in it.
 pub fn present(window: &adw::ApplicationWindow, rows: &'static [Row]) {
     let search = gtk::SearchEntry::builder()
         .placeholder_text("Find a command")

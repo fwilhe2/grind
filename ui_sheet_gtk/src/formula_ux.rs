@@ -2,16 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The autocomplete popover, over the core's own answer to what may be completed.
-//!
-//! What it offers comes from `grind_sheet::formula::assist`, and through it from the spec's own
-//! signature and summary for every function this build implements, plus the document's defined
-//! names. Neither list is written here: a shell that kept its own would offer a function the
-//! evaluator does not have, which is a promise nothing keeps.
-//!
-//! The popover does **not** autohide, and that is deliberate: an autohiding popover takes
-//! the input grab with it, and the whole point is that typing carries on into the editor
-//! underneath while the list narrows.
+//! The autocomplete popover, over `grind_sheet::formula::assist`'s answer to what may be
+//! completed: every function grind implements, with the spec's signature and summary, and the
+//! document's defined names. Neither list is written here, so nothing is offered the evaluator
+//! lacks. The popover does **not** autohide: an autohiding popover takes the input grab, and
+//! typing must carry on into the editor while the list narrows.
 
 use std::cell::{Cell, RefCell};
 use std::ops::Range;
@@ -26,17 +21,11 @@ use crate::geom::Rect;
 /// the widget reach them unchanged.
 pub use grind_sheet::formula::assist::{Candidate, candidates, prefix_at};
 
-/// The signature hint for the call the caret is in, as Pango markup with the current
-/// argument in bold.
-///
-/// Two spellings of the same signature, `friendly` picking between them: the spec's own
-/// `Syntax:` line, types and all, or `friendly::signature`'s plain-English one — both from
-/// `assist::signature_parts`, so this window and the Windows one split a signature the same
-/// way. The friendly spelling is the same vocabulary `friendly::explain` labels a finished
-/// formula with, so what a user reads while typing and what they read afterwards agree.
-///
-/// Which part is emphasised is `assist::part_for`'s answer: a repeating parameter is the last
-/// one however many arguments follow it, and a repeating *pair* is taken round again.
+/// The signature hint for the call the caret is in, as Pango markup with the current argument in
+/// bold. `friendly` picks the spec's `Syntax:` line or `friendly::signature`'s plain-English one,
+/// both split by `assist::signature_parts`; the friendly vocabulary is what `friendly::explain`
+/// labels a finished formula with. Which part is emphasised is `assist::part_for`'s: a repeating
+/// parameter is the last one however many follow, and a repeating pair goes round again.
 pub fn signature_markup(name: &str, argument: usize, friendly: bool) -> Option<String> {
     let (head, parts) = grind_sheet::formula::assist::signature_parts(name, friendly)?;
     let emphasised = grind_sheet::formula::assist::part_for(name, argument);
@@ -188,10 +177,6 @@ impl Completion {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // What may be completed and what to offer for it are the core's now
-    // (`grind_sheet::formula::assist`), and so are their tests. What is left here is this
-    // window's own rendering of a signature into Pango markup.
 
     #[test]
     fn the_signature_hint_bolds_the_argument_the_caret_is_in() {

@@ -2,28 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Drawing a chart's plot — bar, line or pie — from [`grind_sheet::ChartData`], at the
-//! rectangle its own `draw:frame` occupies in widget space (`crate::geom::GridGeom::chart_rect`).
+//! Drawing a chart's plot — bar, line or pie — from [`grind_sheet::ChartData`], in the rectangle
+//! its `draw:frame` occupies in widget space (`crate::geom::GridGeom::chart_rect`). A bar is a
+//! rectangle; a line or a pie slice is a `gsk::PathBuilder` path, so no cairo. Title, legend, axis
+//! titles, tick labels and gridlines ([`grind_sheet::ChartAxis`]) are drawn: capped rounded bars
+//! with the surface between them, 2px round-jointed lines, a legend of ink beside a swatch.
+//! [`describe`] is a mark's tooltip.
 //!
-//! A bar is a plain rectangle, the same `append_color` every other shape in [`crate::grid`]
-//! draws with; a line or a pie slice needs an actual path, which is `gsk::PathBuilder` — GTK's
-//! own vector drawing, already reachable through this shell's `v4_14` feature and one more
-//! thing that means cairo is never pulled in for a chart this simple. The chart's own title and
-//! legend are drawn, and so is everything an axis carries — its title, its tick labels and its
-//! gridlines ([`grind_sheet::ChartAxis`]). The marks follow the `dataviz` skill's specs: capped,
-//! rounded bars with the surface between them, 2px round-jointed lines, a legend whose words
-//! are ink beside a swatch of the colour. [`describe`] is the words a tooltip shows for a mark.
+//! Negative values are floored to zero rather than drawn from a baseline that would need its own
+//! zero line; a chart of signed data is not drawn correctly yet.
 //!
-//! Negative values are floored to zero rather than drawn the wrong way from a baseline that
-//! would need its own zero line — every document this was built against (`ltwbw2026.*`, an
-//! election's vote counts) is non-negative, and a chart of signed data is future work rather
-//! than a regression here.
-//!
-//! [`mark_at`] shares the exact geometry [`draw`] paints from, so a click and a picture can
-//! never disagree about which bar, slice or line a point belongs to — `grid.rs`'s
-//! `chart_hit` is the one caller. Because a tick label's own *width* moves the plot, both of
-//! them take the same [`Measure`]: this shell's one contribution to a chart's layout is how
-//! wide a piece of text is, exactly as it is for a page of text (`doc/text-layout.md`).
+//! [`mark_at`] shares [`draw`]'s geometry, so a click and the picture agree about which mark a
+//! point is in; since a tick label's width moves the plot, both take the same [`Measure`].
 
 use libadwaita::gtk;
 use libadwaita::prelude::*;
@@ -53,10 +43,8 @@ const LABEL_SPACE: f64 = 18.0;
 /// The gap between a tick label and the plot it is labelling.
 const TICK_GAP: f64 = 4.0;
 
-/// The gap between two x tick labels below which the second one is dropped rather than drawn
-/// over the first — an axis of twenty categories in a chart four centimetres wide labels the
-/// ones that fit and leaves the rest unlabelled, which reads as a scale where overlapping text
-/// reads as a smudge.
+/// The gap between two x tick labels below which the second is dropped rather than drawn over the
+/// first: an axis that labels what fits reads as a scale, overlapping text as a smudge.
 const TICK_CLEARANCE: f64 = 6.0;
 
 /// How close a point has to land to a line's own path, in widget pixels, to count as a hit —
@@ -240,10 +228,8 @@ fn draw_title(
     snapshot.restore();
 }
 
-/// A chart's frame, divided up: its own title's band, its legend, the frame the axes are laid
-/// out in once those have taken their room, the plot inside that, and the scale the values are
-/// drawn against. Computed once and shared by everything that draws or hit-tests, which is what
-/// keeps a click and the picture in step.
+/// A chart's frame divided up: its title's band, its legend, the axes' frame, the plot inside it,
+/// and the value scale — computed once and shared by drawing and hit-testing.
 struct Layout {
     plot: Rect,
     /// Where the axes and their titles go — the chart's frame, less its title and its legend.
@@ -433,10 +419,9 @@ fn axes(chart: &Chart, data: &ChartData) -> (ChartAxis, ChartAxis) {
     }
 }
 
-/// The frame divided up ([`Layout`]): the chart's own title takes a band off the top, the
-/// legend takes its edge ([`place_legend`]), and the plot is what is left once the axes have
-/// taken what they need there — a title's fixed [`LABEL_SPACE`], the widest y tick label, one
-/// line of x tick text.
+/// The frame divided up ([`Layout`]): the title takes a band off the top, the legend its edge
+/// ([`place_legend`]), and the plot is what is left after the axes take their room —
+/// [`LABEL_SPACE`] for a title, the widest y tick label, one line of x tick text.
 fn layout(rect: Rect, chart: &Chart, data: &ChartData, measure: &Measure) -> Layout {
     let (x_axis, y_axis) = axes(chart, data);
     let ticks = axis_ticks(max_value(data));
@@ -642,10 +627,8 @@ fn place(
     snapshot.restore();
 }
 
-/// One centred, single-line label — `angle` in degrees, `0.0` for the x axis (horizontal,
-/// centred under `along`'s own width) and `-90.0` for the y axis (rotated, centred along the
-/// frame's own height). No font or size a document controls: this build has no font
-/// (`doc/not-doing.md`), the same reason a cell's own text is drawn in the widget's font.
+/// One centred, single-line label — `angle` in degrees, `0.0` for the x axis and `-90.0` for the y
+/// axis. In the widget's font, as a cell's text is: the model carries no font family.
 #[allow(clippy::too_many_arguments)]
 fn draw_label(
     widget: &impl IsA<gtk::Widget>,
@@ -701,11 +684,8 @@ fn max_value(data: &ChartData) -> f64 {
         .max(1.0)
 }
 
-/// One bar's own rectangle, in widget space — the geometry [`draw_bar`] paints and
-/// [`bar_hit`] tests against, so the two can never disagree.
-///
-/// A group's bars are [`BAR_MAX`] wide at most and [`BAR_GAP`] apart, centred in the group's
-/// band; what is left of the band is air between groups.
+/// One bar's rectangle in widget space — what [`draw_bar`] paints and [`bar_hit`] tests. A group's
+/// bars are at most [`BAR_MAX`] wide and [`BAR_GAP`] apart, centred in the group's band.
 struct BarLayout {
     categories: usize,
     series_count: usize,
@@ -860,10 +840,8 @@ fn distance_to_segment(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
     ((p.0 - cx).powi(2) + (p.1 - cy).powi(2)).sqrt()
 }
 
-/// One sample every this many degrees of arc — a slice is a straight-edged polygon rather
-/// than a true arc (`gsk::PathBuilder` has no circular arc primitive; `conic_to` is a
-/// rational Bezier and a fan of short segments is the simpler way to the same picture),
-/// fine enough that the seam between segments is not visible.
+/// One sample every this many degrees of arc: `gsk::PathBuilder` has no circular arc, so a slice
+/// is a polygon fine enough that its seams do not show.
 const PIE_SAMPLES_PER_TURN: f64 = 96.0;
 
 /// A pie's centre and radius within its plot — shared by [`draw_pie`] and [`pie_hit`].
@@ -919,12 +897,9 @@ fn pie_hit(plot: Rect, chart: &Chart, data: &ChartData, x: f64, y: f64) -> Optio
     pie_slice_at(data, chart.clockwise, dy.atan2(dx))
 }
 
-/// What the mark under `(x, y)` *is*, in words — a tooltip's text: `Sales · Feb: 20` for a bar
-/// or a line, `Feb: 20 (33%)` for a pie slice. The same hit-test [`mark_at`] answers, so the
-/// words are always about the mark under the pointer.
-///
-/// A line has no area of its own, so hovering one names the category nearest the pointer along
-/// it; a legend entry is its own words already and gets no tooltip.
+/// The mark under `(x, y)` in words — a tooltip: `Sales · Feb: 20` for a bar or a line, `Feb: 20
+/// (33%)` for a slice, from [`mark_at`]'s hit-test. A line names the category nearest the pointer;
+/// a legend entry gets no tooltip.
 pub fn describe(
     rect: Rect,
     chart: &Chart,
@@ -1006,11 +981,9 @@ fn legend_hit<'a>(
     })
 }
 
-/// Which mark, if any, a point in widget space hits — `(series, point)`, `point` always
-/// `Some` for `Bar`/`Pie` (`Pie`'s own `series` is always `0`) and always `None` for `Line`.
-/// `rect` is the chart's own frame, exactly what [`draw`] was given, and `measure` must be the
-/// same one: a y tick label's width moves the plot, so a caller measuring differently would
-/// hit-test against a plot the user is not looking at.
+/// Which mark a point in widget space hits — `(series, point)`, `point` always `Some` for
+/// `Bar`/`Pie` (`Pie`'s `series` always `0`) and `None` for `Line`. `rect` and `measure` must be
+/// what [`draw`] was given, since a y tick label's width moves the plot.
 pub fn mark_at(
     rect: Rect,
     chart: &Chart,

@@ -2,24 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **What the document says about itself** — `grind sheet lint` with a list in front of it
-//! (`doc/dsl.md` §4.3, D6).
-//!
-//! The rules, their severities, their messages and their addresses are all the core's; this file
-//! is a dialog and a jump. That split is the whole point of §6.6's table: the shell's share of a
-//! core capability is a widget, and getting it wrong here cannot make the linter disagree with
-//! `grind lint`, because there is nothing here to disagree with.
-//!
-//! **A dialog rather than a pane**, following `Calculations` (`main.rs`'s
-//! `explore_calculations`), which is the same shape — a list of places in the document, each row
-//! a jump. A docked problems panel is what an IDE does because its list is permanently
-//! interesting; this one is consulted, acted on and closed. The row activation closes the dialog
-//! for exactly that reason.
-//!
-//! **The address is the whole interface.** A diagnostic carries a string a person could type at
-//! the CLI, and jumping to one is `a1`'s job — the same two-step `main.rs`'s code view does,
-//! sheet name first because a chart's finding is addressed to a *sheet* and `Sheet1` is also a
-//! perfectly good cell address.
+//! **What the document says about itself** — `grind sheet lint` with a list in front of it. The
+//! rules, severities, messages and addresses are the core's; this is a dialog and a jump. A dialog
+//! rather than a docked pane, like the calculations explorer: the list is consulted, acted on and
+//! closed, and activating a row closes it. A diagnostic's address is a string a person could type
+//! at the CLI, resolved sheet name first, since a chart's finding names a sheet and `Sheet1` is
+//! also a cell address.
 
 use std::sync::Arc;
 
@@ -42,10 +30,8 @@ pub fn icon(severity: Severity) -> &'static str {
     }
 }
 
-/// The line under a finding: where it is, and which rule said so.
-///
-/// The rule id is shown rather than hidden because it is the word a user types at
-/// `grind sheet lint --off <rule>` — a diagnostic nobody can name is one nobody can silence.
+/// The line under a finding: where, and which rule — shown because it is what `grind sheet lint
+/// --off <rule>` takes.
 pub fn detail(diagnostic: &Diagnostic) -> String {
     match diagnostic.at.is_empty() {
         true => diagnostic.rule.to_owned(),
@@ -174,11 +160,9 @@ pub fn present(window: &adw::ApplicationWindow, app: &Arc<App>, grid: &Grid) {
     dialog.present(Some(window));
 }
 
-/// Select what a diagnostic is about. `false` when the address names nothing this grid can
-/// show, which is a row that does not close the dialog rather than a jump to somewhere wrong.
-///
-/// Sheet name first, for `main.rs`'s reason: a chart's finding is addressed to a sheet, and
-/// `Sheet1` also parses as column `SHEET`, row 1.
+/// Select what a diagnostic is about; `false` when the address names nothing the grid can show,
+/// and the row then leaves the dialog open. Sheet name first: `Sheet1` also parses as column
+/// `SHEET`, row 1.
 fn go_to(app: &Arc<App>, grid: &Grid, address: &str) -> bool {
     if address.is_empty() {
         return false;
@@ -201,9 +185,8 @@ fn go_to(app: &Arc<App>, grid: &Grid, address: &str) -> bool {
 mod tests {
     use super::*;
 
-    /// No display needed: these are the tables, which are the part that can drift from the
-    /// core's own vocabulary. The widget half is exercised by `ui_text_gtk`'s harness, which is
-    /// where this repository keeps the cases that need a display.
+    /// The tables, which can drift from the core's vocabulary; the widget half is exercised by
+    /// `ui_text_gtk`'s harness.
     #[test]
     fn every_severity_has_an_icon_of_its_own() {
         let icons: Vec<&str> = [Severity::Error, Severity::Warning, Severity::Hint]
