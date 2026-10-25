@@ -13,36 +13,42 @@ use std::ops::Range;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
+mod app;
+
+// The document and what changes it.
 pub mod a1;
 pub mod action;
-mod app;
-pub mod autoheight;
 pub mod chart;
-pub mod chart_frame;
-pub mod chart_paint;
-pub mod clip;
-pub mod csv;
 pub mod filter;
-pub mod find;
-pub mod fit;
-pub mod format;
 pub mod formula;
 pub mod graph;
 pub mod grid;
-pub mod lint;
-pub mod look;
 pub mod model;
-pub mod nav;
 pub mod numfmt;
-pub mod odf;
-pub mod place;
-pub mod projection;
-pub mod reading;
 pub mod rule;
-pub mod spell;
 pub mod style;
-pub mod summary;
 pub mod table_format;
+
+// In and out: ODF, CSV, the projection, and lint.
+pub mod csv;
+pub mod lint;
+pub mod odf;
+pub mod projection;
+
+// What every shell would otherwise work out for itself, decided here so that no two disagree.
+pub mod autoheight;
+pub mod chart_frame;
+pub mod chart_paint;
+pub mod clip;
+pub mod find;
+pub mod fit;
+pub mod format;
+pub mod look;
+pub mod nav;
+pub mod place;
+pub mod reading;
+pub mod spell;
+pub mod summary;
 pub mod tracks;
 pub mod verbs;
 pub mod view;

@@ -16,31 +16,37 @@
 //! A run carries **direct** formatting only ([`style`]): an automatic style is resolved onto
 //! the run, a named style such as `Emphasis` stays a name.
 
-pub mod action;
 mod app;
+
+// The document and what changes it.
+pub mod action;
+pub mod loc;
+pub mod marginal;
+pub mod model;
+pub mod numbering;
+pub mod paragraph;
+pub mod style;
+pub mod table_look;
+
+// In and out: ODF, Markdown, the projection, and lint.
+pub mod commonmark;
+pub mod lint;
+pub mod odf;
+pub mod projection;
+
+// What every shell would otherwise work out for itself, decided here so that no two disagree.
 pub mod blocks;
 pub mod caret;
-pub mod commonmark;
 pub mod find;
 pub mod flow;
 pub mod format;
-pub mod lint;
-pub mod loc;
 pub mod look;
-pub mod marginal;
 pub mod markdown;
-pub mod model;
-pub mod numbering;
-pub mod odf;
 pub mod page;
 pub mod paint;
-pub mod paragraph;
 pub mod picture;
-pub mod projection;
 pub mod spell;
-pub mod style;
 pub mod table;
-pub mod table_look;
 pub mod word;
 
 pub use action::Action;
