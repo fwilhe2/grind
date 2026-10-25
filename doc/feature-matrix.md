@@ -246,7 +246,7 @@ borders, which that window does not draw either.
 | **Drawn**: indent | — | ● | ● ⁱʳ | ● | ● | ● |
 | **Drawn**: rotated text | — | ● ⁱʳ | ○ | ● ʳᵗ | ● ʳᵗ | ● ʳᵗ |
 | **Drawn**: colours | — | ● | ◐ ᵈ | ● | ● | ● |
-| **Drawn**: borders | — | ◐ ᵉ | ○ | ● | ◐ ʷᵇ | ◐ ³ |
+| **Drawn**: borders | — | ● ᵉ | ○ | ● | ● ʷᵇ | ● ³ |
 | **Drawn**: wrapped text | — | ● | ● ˡⁿ | ● | ● ʷʷ | ● ¹ |
 | **Drawn**: a number too wide for its column is `###`, never cut (`numfmt::overflow`) | — | ● | ● | ● | ● | ● |
 | **Drawn**: a plain number (the General format) narrows to its column first — fewer decimals, then scientific (`Viewport::narrower`) | — | ● | ● | ● | ● | ● |
@@ -263,11 +263,11 @@ hoisted from `ui_win32/src/sheet/currency.rs`), and Format ▸ Use 1000 Separato
 ˡⁿ A wrapped text cell is broken at its column's width by `grind_core::layout::wrap` in terminal cells, and its row is as many lines as its tallest cell, up to eight; the rows drawn are those whose lines fit (2026-10-25, `TestBackend`-checked).
 ʷᵗ The rows a wrapped or larger cell grows are measured by `grind_sheet::autoheight` on the stylesheet's own line height (`layout::Drawn`), once per change, and given that height — so the rows counted onto the surface are the rows drawn there (2026-10-25, smoke-checked).
 ʷʷ Closed 2026-10-02: Format ▸ Wrap Text; the grid breaks a wrapped cell with `grind_core::layout::wrap` over GDI measurements (`sheet/measure.rs`) and grows rows through `grind_sheet::autoheight` (hoisted from the Mac) — checked by a Wine render.
-ʷᵇ Closed 2026-10-02: Format ▸ All Borders / Remove Borders (`format::bordered`), and the grid draws every edge through `look::border_strokes` — the Mac's geometry, hoisted — checked by a Wine render. `dashed` and `dotted` draw solid.
+ʷᵇ Closed 2026-10-02: Format ▸ All Borders / Remove Borders (`format::bordered`), and the grid draws every edge through `look::border_strokes` — the Mac's geometry, hoisted — checked by a Wine render. `dashed` and `dotted` are cut into runs since 2026-10-25.
 ˣ Named in `doc/windows-shell.md`'s "What it will not do": this window draws neither wrapped text
 nor borders, and a control whose effect cannot be seen is not offered.
 ᵈ Sixteen terminal colours, nearest match — the medium, not a gap (`doc/tui-shell.md`).
-ᵉ A border's *line style* is ignored, so `dashed` and `double` draw solid.
+ᵉ Through `look::border_strokes` since 2026-10-25, as Windows and the Mac draw them: `double` as two lines, `dashed` and `dotted` as runs in step across cells, LibreOffice's `dash-dot` kinds as dashes.
 ᶠ Above the number popover's settings: the active cell as they would show it, from
 `App::shown_as`, the renderer's own answer — and the strip's button face says what the cell is
 formatted as (`123`, `%`, `€`, `Date`).
@@ -298,7 +298,7 @@ every cell, and the browser clipped without a mark — and did not honour a colu
 once its content was wider, since a `max-content` table sizes its columns from what is in them.
 
 **Mac.** ¹ Broken at the column's width and drawn as lines, and a row with no height of its own
-grown to hold them, as the GNOME window grows one. ² The toolbar's two steps and Format ▸ Number's, and since 2026-10-07 Format ▸ Number ▸ Group Thousands and the three currencies of `numfmt::CURRENCIES`, each ticked by the cell (`format::grouped`, `format::currency`). No other symbol. ³ Each edge its own width and colour, and `double` as two lines; `dashed` and `dotted` drawn solid. Format ▸ Borders sets a hairline round every selected cell or takes them all away.
+grown to hold them, as the GNOME window grows one. ² The toolbar's two steps and Format ▸ Number's, and since 2026-10-07 Format ▸ Number ▸ Group Thousands and the three currencies of `numfmt::CURRENCIES`, each ticked by the cell (`format::grouped`, `format::currency`). No other symbol. ³ Each edge its own width and colour, `double` as two lines, `dashed` and `dotted` as runs of fills. Format ▸ Borders sets a hairline round every selected cell or takes them all away.
 
 ## 6. Spreadsheet — structure, charts and interchange
 

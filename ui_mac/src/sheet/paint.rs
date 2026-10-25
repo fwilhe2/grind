@@ -559,11 +559,8 @@ const CHECKBOX: f64 = 12.0;
 /// A cell's own borders, each centred on its grid line, so a right border and the neighbour's left
 /// one are one line covering the hairline. ODF's three parts (`grind_sheet::style::border_parts`):
 /// never thinner than a device pixel, the document's colour lifted to read on a dark page,
-/// `double` as two thin lines with a gap. `none`, `hidden` and anything that will not parse draw
-/// nothing (R5).
-///
-/// ponytail: `dashed` and `dotted` are drawn solid; a dash would be a run of fills along the edge,
-/// worth it when a document's dashes distinguish two of its tables.
+/// `double` as two thin lines with a gap, `dashed` and `dotted` as runs of fills. `none`, `hidden`
+/// and anything that will not parse draw nothing (R5).
 pub fn borders(cell: Rect, style: &CellStyle, palette: &Palette, hairline: f64) -> Vec<Op> {
     grind_sheet::look::border_strokes(
         (cell.x, cell.y, cell.w, cell.h),

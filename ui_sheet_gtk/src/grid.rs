@@ -4119,13 +4119,13 @@ mod imp {
             }
         }
 
-        /// The four `fo:border-*` edges, over the grid lines.
-        ///
-        /// ponytail: the line style is ignored — `dashed` and `double` draw solid; dashes need
-        /// `gsk::Stroke` and a path per edge. Width and colour, which carry a ruled table's
-        /// meaning, are honoured.
+        /// The four `fo:border-*` edges, over the grid lines — `look::border_strokes`, every
+        /// window's geometry, in points, so a cell goes in as points and a hairline is one pixel.
         fn draw_borders(&self, f: &Frame) {
             let Some(cells) = &f.cells else { return };
+            let to_pt = 0.75 / self.zoom.get();
+            let page = crate::theme::rgb8(f.palette.background);
+            let dark = crate::theme::is_dark(&f.palette);
             // A merge is drawn with its top-left cell's borders round the whole of it, which
             // is the cell style LibreOffice draws a merge with.
             let merged = cells.merges().iter().filter_map(|m| {
@@ -4143,25 +4143,20 @@ mod imp {
                 })
             });
             for (style, cell) in plain.chain(merged) {
-                for (edge, border) in style.borders.iter().enumerate() {
-                    let Some((points, _, color)) =
-                        border.as_deref().and_then(grind_sheet::style::border_parts)
-                    else {
-                        continue;
-                    };
-                    let Some(color) = crate::theme::color(color) else {
-                        continue;
-                    };
-                    // A hairline is still a line: a 0.5pt border must not round to zero.
-                    let t = (points * 4.0 / 3.0).max(1.0);
-                    // `style::EDGES` order — left, right, top, bottom.
-                    let edge = match edge {
-                        0 => rect(cell.x, cell.y, t, cell.h),
-                        1 => rect(cell.x + cell.w - t, cell.y, t, cell.h),
-                        2 => rect(cell.x, cell.y, cell.w, t),
-                        _ => rect(cell.x, cell.y + cell.h - t, cell.w, t),
-                    };
-                    f.snapshot.append_color(&color, &edge);
+                if style.borders.iter().all(Option::is_none) {
+                    continue;
+                }
+                let points = (
+                    cell.x * to_pt,
+                    cell.y * to_pt,
+                    cell.w * to_pt,
+                    cell.h * to_pt,
+                );
+                for stroke in grind_sheet::look::border_strokes(points, style, page, dark, to_pt) {
+                    let (x, y, w, h) = stroke.rect;
+                    let edge = rect(x / to_pt, y / to_pt, w / to_pt, h / to_pt);
+                    f.snapshot
+                        .append_color(&crate::theme::rgba(stroke.color), &edge);
                 }
             }
         }

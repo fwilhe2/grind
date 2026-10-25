@@ -143,9 +143,8 @@ pub struct Stroke {
 /// its neighbour's left one coincide. A border is ODF's three parts ([`border_parts`]), at least
 /// one device pixel (`hairline`) thick, in the document's colour lifted for a dark page
 /// (`color::document_ink`), and `double` as two lines with a gap. `none`, `hidden` and unreadable
-/// borders draw nothing (R5). `cell` is `(x, y, w, h)`.
-///
-/// ponytail: `dashed` and `dotted` are drawn solid until a document needs the difference.
+/// borders draw nothing (R5). `cell` is `(x, y, w, h)`. `dashed` and `dotted` are runs of short
+/// strokes in step from the origin, so one ruled line reads as one across many cells.
 pub fn border_strokes(
     cell: (f64, f64, f64, f64),
     style: &CellStyle,
@@ -178,20 +177,50 @@ pub fn border_strokes(
         } - hairline / 2.0;
         let vertical = matches!(EDGES[edge], "left" | "right");
         let strokes: Vec<(f64, f64)> = match line {
-            "double" => {
+            "double" | "double-thin" => {
                 let thin = (width / 3.0).max(hairline);
                 let gap = thin.max(hairline);
                 vec![(at - gap / 2.0 - thin, thin), (at + gap / 2.0, thin)]
             }
             _ => vec![(at - width / 2.0, width)],
         };
+        let (start, length) = match vertical {
+            true => (y, h),
+            false => (x, w),
+        };
+        let runs = match line {
+            // LibreOffice's own dash kinds drawn as the nearest ODF one.
+            "dashed" | "fine-dashed" | "dash-dot" | "dash-dot-dot" => {
+                dashes(start, start + length, 3.0 * width, 2.0 * width)
+            }
+            "dotted" => dashes(start, start + length, width, width),
+            _ => vec![(start, length)],
+        };
         for (from, thickness) in strokes {
-            let rect = match vertical {
-                true => (from, y, thickness, h),
-                false => (x, from, w, thickness),
-            };
-            out.push(Stroke { rect, color });
+            for &(along, run) in &runs {
+                let rect = match vertical {
+                    true => (from, along, thickness, run),
+                    false => (along, from, run, thickness),
+                };
+                out.push(Stroke { rect, color });
+            }
         }
+    }
+    out
+}
+
+/// The `on` lengths of an `on`/`off` pattern counted from zero that fall within `start..end`,
+/// as `(from, length)`.
+fn dashes(start: f64, end: f64, on: f64, off: f64) -> Vec<(f64, f64)> {
+    let period = on + off;
+    let mut out = Vec::new();
+    let mut at = (start / period).floor() * period;
+    while at < end {
+        let (from, to) = (at.max(start), (at + on).min(end));
+        if to > from {
+            out.push((from, to - from));
+        }
+        at += period;
     }
     out
 }
@@ -204,6 +233,32 @@ mod tests {
         let mut style = CellStyle::default();
         set(&mut style);
         style
+    }
+
+    /// A bottom border alone, on a 10 × 10 cell at `x`, a point a device pixel.
+    fn bottom(x: f64, border: &str) -> Vec<(f64, f64)> {
+        let style = styled(|s| s.borders[3] = Some(border.to_owned()));
+        border_strokes((x, 0.0, 10.0, 10.0), &style, (255, 255, 255), false, 1.0)
+            .into_iter()
+            .map(|stroke| (stroke.rect.0, stroke.rect.2))
+            .collect()
+    }
+
+    #[test]
+    fn a_dashed_or_dotted_border_is_cut_in_step_across_cells() {
+        assert_eq!(bottom(0.0, "1pt solid #000000"), [(0.0, 10.0)]);
+        assert_eq!(bottom(0.0, "1pt double #000000").len(), 2);
+        assert_eq!(bottom(0.0, "1pt dashed #000000"), [(0.0, 3.0), (5.0, 3.0)]);
+        // The next cell carries on the pattern rather than starting it again.
+        assert_eq!(
+            bottom(12.0, "1pt dashed #000000"),
+            [(12.0, 1.0), (15.0, 3.0), (20.0, 2.0)]
+        );
+        assert_eq!(bottom(0.0, "1pt dotted #000000").len(), 5);
+        assert_eq!(bottom(0.0, "1pt dotted #000000")[1], (2.0, 1.0));
+        assert!(bottom(0.0, "1pt none #000000").is_empty());
+        assert_eq!(bottom(0.0, "1pt dash-dot #000000").len(), 2);
+        assert_eq!(bottom(0.0, "1pt double-thin #000000").len(), 2);
     }
 
     #[test]

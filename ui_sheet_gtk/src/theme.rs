@@ -244,12 +244,12 @@ pub fn ink(color: Option<&str>, fill: Option<&str>, palette: &Palette) -> gdk::R
 
 /// A colour as the core's three bytes ([`grind_core::color::Rgb`]), alpha dropped: a cell's
 /// colour is opaque in ODF, and a theme's is compared as it lands.
-fn rgb8(c: gdk::RGBA) -> grind_core::color::Rgb {
+pub fn rgb8(c: gdk::RGBA) -> grind_core::color::Rgb {
     let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
     (byte(c.red()), byte(c.green()), byte(c.blue()))
 }
 
-fn rgba((r, g, b): grind_core::color::Rgb) -> gdk::RGBA {
+pub fn rgba((r, g, b): grind_core::color::Rgb) -> gdk::RGBA {
     gdk::RGBA::new(
         f32::from(r) / 255.0,
         f32::from(g) / 255.0,

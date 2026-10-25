@@ -848,8 +848,7 @@ theme's background, so the mode reads on a dark sheet without a second table of 
 `--render-to --overlay names|roles|all` renders a frame with the modes on.
 
 M7 added four of its own, each named where it lives — three of them closed by M10 above.
-What is left: a border's *line style* is ignored, so `dashed` and
-`double` draw solid (`draw_borders`) · formatting a **whole column** formats its used part rather than putting a
+What is left: formatting a **whole column** formats its used part rather than putting a
 default style on the column, which needs `table:default-cell-style-name` to become
 something the model can write (`Grid::target`).
 
