@@ -322,7 +322,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Rename a name, carrying every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ● ʷⁿ | ● ³ |
 | Inline a name into every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ● ʷⁿ | ● ³ |
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ | ● ¹ |
-| Add, edit, remove, move or restyle a chart | ● | ● | ● ᶜʰ | ● ᶜʰ | ● ᶜʰ | ◐ ⁵ |
+| Add, edit, remove, move or restyle a chart | ● | ● | ● ᶜʰ | ● ᶜʰ | ● ᶜʰ | ● ⁵ |
 | **Take hold of** a chart — select it (accent outline, eight handles), drag to move, a handle to resize, Delete, a menu on it (`doc/chart-handling.md`) | ● ᵍʳ | ● | ◐ ᵍʳ | ● ᵍʳ | ● ᵍʳ | ● ᵍʳ |
 | A chart **read from a table** — orientation, labels, kind (`App::suggest_chart`) | ● ⁿ | ● | ● ᶜʰ | ● ᶜʰ | ● ᶜʰ | ● ⁵ |
 | A chart's own title and legend | ● | ● | ● ᵗᶜ | ● ᶜʰ | ● ᶜʰ | ● ⁵ |
@@ -415,7 +415,8 @@ menu that renames it with every use following, redefines it, inlines it everywhe
 ⁴ File ▸ Export as CSV…, the sheet's used rectangle with shown values, its delimiter picked by
 the name — `.tsv` is tabs. ⁵ Insert ▸ Chart charts the table the selection is in, beside it,
 as the core reads it, and Insert ▸ Bar/Line/Pie Chart as that kind (ᵏᵈ); a right-click on a chart sets its title, its kind and its legend or removes
-it, and dragging one moves it. There is no dialog, and resizing or recolouring one is the CLI's.
+it, and its *Change…* takes the same words as the other windows (ᶜʰ: axes, colours, size, range).
+There is no dialog.
 
 ## 7. Word processor
 

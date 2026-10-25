@@ -702,9 +702,10 @@ impl FilterChoice {
     }
 }
 
-/// A chart menu's tags: the title, the three kinds from [`CHART_KIND`], the five legends from
-/// [`CHART_LEGEND`], and removal.
+/// A chart menu's tags: the title, a change in words, the three kinds from [`CHART_KIND`], the
+/// five legends from [`CHART_LEGEND`], and removal.
 const CHART_TITLE: isize = 0;
+const CHART_WORDS: isize = 1;
 const CHART_KIND: isize = 10;
 const CHART_LEGEND: isize = 20;
 const CHART_DELETE: isize = 30;
@@ -759,6 +760,24 @@ impl ChartChoice {
                 if let Err(error) = pane.app.remove_chart(sheet, *index) {
                     pane.say(Some((&error.to_string(), None)));
                 }
+                return;
+            }
+            CHART_WORDS => {
+                let Some(words) = crate::prompt::ask(
+                    self.mtm(),
+                    "Change Chart",
+                    grind_sheet::verbs::CHART_HINT,
+                    "Change",
+                    "",
+                ) else {
+                    return;
+                };
+                let said = match grind_sheet::verbs::restyle_chart(&pane.app, sheet, *index, &words)
+                {
+                    Ok(said) => format!("{said} ⌘Z takes it back."),
+                    Err(why) => why,
+                };
+                pane.say(Some((&said, None)));
                 return;
             }
             CHART_TITLE => {
@@ -1317,6 +1336,7 @@ impl GridView {
             menu.addItem(&item);
         };
         item("Title…", CHART_TITLE, false);
+        item("Change…", CHART_WORDS, false);
         menu.addItem(&NSMenuItem::separatorItem(mtm));
         for (offset, (title, kind)) in CHART_KINDS.iter().enumerate() {
             item(title, CHART_KIND + offset as isize, chart.kind == *kind);
