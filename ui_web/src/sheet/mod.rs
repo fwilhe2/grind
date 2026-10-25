@@ -2164,15 +2164,14 @@ impl Ui {
         );
     }
 
-    /// *Change the chart…* — the selected one, else the last: its kind, title and legend, in
-    /// words (`verbs::restyle_chart`).
+    /// *Change the chart…* — the selected one, else the last, in words (`verbs::restyle_chart`).
     fn restyle_chart(&self) {
         let sheet = self.sheet.get();
         let Some(index) = self.chart_target() else {
             return self.set_message("This sheet has no chart".to_owned());
         };
         let Some(words) = self.ask(
-            &format!("Change the chart — {}", grind_sheet::verbs::CHART_WORDS),
+            &format!("Change the chart. {}", grind_sheet::verbs::CHART_HINT),
             "",
         ) else {
             return;

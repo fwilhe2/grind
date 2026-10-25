@@ -4320,13 +4320,13 @@ fn set_chart_kind(hwnd: HWND, kind: grind_sheet::ChartKind) {
     refresh(hwnd);
 }
 
-/// Chart ▸ Change Chart… — the selected chart, else the last: its kind, title and legend in words
+/// Chart ▸ Change Chart… — the selected chart, else the last, in words
 /// (`verbs::restyle_chart`). Return on a selected chart, a double click on one, and its menu.
 fn restyle_chart(hwnd: HWND) {
     let Some(words) = dialog::prompt(
         hwnd,
         "Change Chart",
-        &format!("{}:", grind_sheet::verbs::CHART_WORDS),
+        &format!("{}:", grind_sheet::verbs::CHART_HINT),
         "",
     ) else {
         return;

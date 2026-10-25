@@ -81,7 +81,7 @@ pub enum Command {
     ChartToBar,
     ChartToLine,
     ChartToPie,
-    /// The last chart's kind, title, legend and size, asked for in words (`verbs::restyle_chart`).
+    /// The chart changed in words (`verbs::restyle_chart`).
     RestyleChart,
     /// The last chart's corner moved to the active cell, its size kept (`verbs::move_chart`).
     MoveChart,

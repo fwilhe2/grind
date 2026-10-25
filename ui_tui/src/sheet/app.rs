@@ -1760,7 +1760,7 @@ impl App {
             }
             Reply::Change(index) => {
                 self.chart_selected = Some((self.sheet, index));
-                self.status = format!("change it \u{2014} {}", grind_sheet::verbs::CHART_WORDS);
+                self.status = format!("change it \u{2014} {}", grind_sheet::verbs::CHART_HINT);
                 self.mode = Mode::Command {
                     buf: "chart ".to_owned(),
                 };
@@ -1796,8 +1796,7 @@ impl App {
         };
     }
 
-    /// `:chart <words>` — the chart changed (the selected one, else the sheet's last): `line`,
-    /// `bar` or `pie`, `title=…` or `no-title`, `legend=top|bottom|start|end|none`, and its size
+    /// `:chart <words>` — the chart changed (the selected one, else the sheet's last)
     /// (`grind_sheet::verbs::restyle_chart`).
     fn cmd_restyle_chart(&mut self, words: &str) {
         self.status = match self.chart_target() {

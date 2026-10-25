@@ -111,14 +111,13 @@ pub fn insert_chart(
     Ok(app.charts(sheet)?.len().saturating_sub(1))
 }
 
-/// Restyle the chart at `index` from a person's words — `line`, `bar`, `pie`; `title=Quarterly
-/// sales` (to the end of the line) or `no-title`; `legend=top|bottom|start|end|none`;
-/// `width=12cm`, `height=8cm`; `range=A1:C9`, the cells it charts, read as Insert Chart reads
-/// them — keeping everything else. For a window with no chart dialog.
-/// Returns the sentence to say, or why not.
+/// Restyle the chart at `index` from a person's words ([`CHART_WORDS`]), keeping everything else.
+/// A title runs to the end of the line, or between quotes. `range=` is read as Insert Chart
+/// reads a selection; `colorN=` is the Nth series' colour, or a pie's Nth slice. For a window
+/// with no chart dialog. Returns the sentence to say, or why not.
 ///
-/// ponytail: a look and a size together are two undo steps (`edit_chart`, `reshape_chart`); one
-/// `Action::Batch` is the upgrade.
+/// ponytail: a look, its colours and a size together are up to three undo steps (`edit_chart`,
+/// `set_chart_style`, `reshape_chart`); one `Action::Batch` is the upgrade.
 pub fn restyle_chart(
     app: &App,
     sheet: usize,
@@ -134,6 +133,7 @@ pub fn restyle_chart(
     let mut spec = crate::ChartSpec::of(&chart);
     let mut said = Vec::new();
     let (mut width, mut height) = (None, None);
+    let mut colors = Vec::new();
     let mut rest = words.trim();
     while !rest.is_empty() {
         let (word, after) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
@@ -143,6 +143,14 @@ pub fn restyle_chart(
             "line" => spec.kind = crate::ChartKind::Line,
             "pie" => spec.kind = crate::ChartKind::Pie,
             "no-title" => spec.title = None,
+            "no-x-title" => spec.x_axis.label = None,
+            "no-y-title" => spec.y_axis.label = None,
+            "x-labels" | "no-x-labels" => spec.x_axis.tick_labels = !word.starts_with("no-"),
+            "y-labels" | "no-y-labels" => spec.y_axis.tick_labels = !word.starts_with("no-"),
+            "x-grid" | "no-x-grid" => spec.x_axis.gridlines = !word.starts_with("no-"),
+            "y-grid" | "no-y-grid" => spec.y_axis.gridlines = !word.starts_with("no-"),
+            "clockwise" => spec.clockwise = true,
+            "anticlockwise" => spec.clockwise = false,
             "legend=none" => spec.legend = None,
             "legend=top" => spec.legend = Some(crate::ChartLegend::Top),
             "legend=bottom" => spec.legend = Some(crate::ChartLegend::Bottom),
@@ -170,11 +178,31 @@ pub fn restyle_chart(
                 spec.categories = guessed.spec.categories;
                 spec.series = guessed.spec.series;
             }
-            _ if word.starts_with("title=") => {
-                // The title is the rest of the line: it has spaces in it.
-                let title = format!("{} {}", &word["title=".len()..], rest);
-                spec.title = Some(title.trim().to_owned()).filter(|t| !t.is_empty());
-                rest = "";
+            _ if word.starts_with("title=")
+                || word.starts_with("x-title=")
+                || word.starts_with("y-title=") =>
+            {
+                let (which, first) = word.split_once('=').unwrap_or((word, ""));
+                let title = quoted_or_rest(first, &mut rest)?;
+                let title = Some(title).filter(|t| !t.is_empty());
+                match which {
+                    "title" => spec.title = title,
+                    "x-title" => spec.x_axis.label = title,
+                    _ => spec.y_axis.label = title,
+                }
+            }
+            _ if word.starts_with("color") && word.contains('=') => {
+                let (n, value) = word["color".len()..].split_once('=').unwrap_or_default();
+                let n = n
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|n| *n > 0)
+                    .ok_or_else(|| format!("“{word}” — say which, from 1: color1=red"))?;
+                let color = match value {
+                    "auto" => None,
+                    _ => Some(grind_core::style::color(value)?),
+                };
+                colors.push((n - 1, color));
             }
             other => {
                 return Err(format!("“{other}” is not a chart word — {CHART_WORDS}"));
@@ -185,8 +213,37 @@ pub fn restyle_chart(
     if said.is_empty() {
         return Err(format!("say what to change — {CHART_WORDS}"));
     }
+    // Checked against the chart as it will be, before anything is written.
+    let (mut edited, data) = app
+        .preview_chart(sheet, &spec, Some(index))
+        .map_err(|e| e.to_string())?;
+    for (n, color) in &colors {
+        let what = which_colored(&edited);
+        let missing = || format!("the chart has no {what} {}", n + 1);
+        match edited.kind {
+            crate::ChartKind::Pie => {
+                let slices = data.series.first().map_or(0, |(_, values)| values.len());
+                if *n >= slices {
+                    return Err(missing());
+                }
+                let points = &mut edited.series[0].point_colors;
+                if points.len() <= *n {
+                    points.resize(n + 1, None);
+                }
+                points[*n] = color.clone();
+            }
+            _ => match edited.series.get_mut(*n) {
+                Some(series) => series.color = color.clone(),
+                None => return Err(missing()),
+            },
+        }
+    }
     if spec != crate::ChartSpec::of(&chart) {
         app.edit_chart(sheet, index, &spec)
+            .map_err(|e| e.to_string())?;
+    }
+    if !colors.is_empty() {
+        app.set_chart_style(sheet, index, edited.x_axis, edited.y_axis, edited.series)
             .map_err(|e| e.to_string())?;
     }
     if width.is_some() || height.is_some() {
@@ -230,9 +287,42 @@ pub fn set_chart_kind(
     Ok(format!("The chart is a {name} chart now."))
 }
 
-/// Every word [`restyle_chart`] takes, for a prompt to say.
-pub const CHART_WORDS: &str = "bar, line, pie, title=…, no-title, legend=top|bottom|start|end|none, width=12cm, height=8cm, \
-     range=A1:C9";
+/// A title word's value: between quotes, leaving the words after them, else the rest of the line.
+/// `first` is what followed the `=`, `rest` the words after it.
+fn quoted_or_rest(first: &str, rest: &mut &str) -> std::result::Result<String, String> {
+    let Some(quoted) = first.strip_prefix('"') else {
+        let title = format!("{first} {rest}").trim().to_owned();
+        *rest = "";
+        return Ok(title);
+    };
+    if let Some(title) = quoted.strip_suffix('"') {
+        return Ok(title.trim().to_owned());
+    }
+    let (more, after) = rest
+        .split_once('"')
+        .ok_or("a title in quotes needs its closing quote")?;
+    let title = format!("{quoted} {more}").trim().to_owned();
+    *rest = after.trim_start();
+    Ok(title)
+}
+
+/// What a `colorN=` counts: a pie's slices, everything else's series.
+fn which_colored(chart: &crate::Chart) -> &'static str {
+    match chart.kind {
+        crate::ChartKind::Pie => "slice",
+        _ => "series",
+    }
+}
+
+/// What a prompt for [`restyle_chart`] says: an example, since a word it does not know is answered
+/// with all of them ([`CHART_WORDS`]).
+pub const CHART_HINT: &str =
+    "In words, e.g. pie title=\"Sales by month\" y-grid color1=red width=12cm";
+
+/// Every word [`restyle_chart`] takes.
+pub const CHART_WORDS: &str = "bar, line, pie, title=…, no-title, x-title=…, y-title=…, \
+     legend=top|bottom|start|end|none, x-grid, y-grid, no-x-labels, color1=red|#0074d9|auto, \
+     clockwise, anticlockwise, width=12cm, height=8cm, range=A1:C9";
 
 /// Move the chart at `index` so its top-left corner is at the active cell's, keeping its size, one
 /// undo step (`App::reshape_chart`). `place` is [`insert_chart`]'s. For a window that does not
@@ -480,6 +570,45 @@ mod tests {
         assert!(values.contains("B2") && !values.contains("B3"), "{values}");
         assert_eq!(narrowed.kind, crate::ChartKind::Line);
         assert!(restyle_chart(&app, 0, 0, "range=nowhere").is_err());
+
+        // The axes: titles quoted or to the end of the line, labels and gridlines on and off.
+        restyle_chart(
+            &app,
+            0,
+            0,
+            r#"x-title="By month" y-grid no-x-labels y-title=In euro"#,
+        )
+        .unwrap();
+        let chart = app.charts(0).unwrap()[0].clone();
+        assert_eq!(chart.x_axis.label.as_deref(), Some("By month"));
+        assert_eq!(chart.y_axis.label.as_deref(), Some("In euro"));
+        assert!(chart.y_axis.gridlines && !chart.x_axis.tick_labels);
+        restyle_chart(&app, 0, 0, r#"title="Sales" no-y-title x-labels"#).unwrap();
+        let chart = app.charts(0).unwrap()[0].clone();
+        assert_eq!(chart.title.as_deref(), Some("Sales"));
+        assert_eq!(chart.y_axis.label, None);
+        assert!(chart.x_axis.tick_labels);
+        assert!(restyle_chart(&app, 0, 0, r#"title="Sales"#).is_err());
+
+        // Colours: a series' own, and back to the cycle; a pie's are its slices'.
+        restyle_chart(&app, 0, 0, "color1=red").unwrap();
+        assert_eq!(
+            app.charts(0).unwrap()[0].series[0].color.as_deref(),
+            Some("#ff4136")
+        );
+        restyle_chart(&app, 0, 0, "color1=auto").unwrap();
+        assert_eq!(app.charts(0).unwrap()[0].series[0].color, None);
+        assert!(restyle_chart(&app, 0, 0, "color2=red").is_err());
+        assert!(restyle_chart(&app, 0, 0, "color0=red").is_err());
+        assert!(restyle_chart(&app, 0, 0, "color1=mauve").is_err());
+        restyle_chart(&app, 0, 0, "pie anticlockwise color1=#123456").unwrap();
+        let pie = app.charts(0).unwrap()[0].clone();
+        assert!(!pie.clockwise);
+        assert_eq!(pie.series[0].point_colors[0].as_deref(), Some("#123456"));
+        assert!(
+            restyle_chart(&app, 0, 0, "color3=red").is_err(),
+            "a pie of one slice"
+        );
 
         // Moved: the corner at the cell, the size kept, one undo step.
         let said = move_chart(&app, 0, 0, Pos::new(4, 2), |col, row| {
