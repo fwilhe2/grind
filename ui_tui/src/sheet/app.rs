@@ -1054,6 +1054,21 @@ impl App {
         });
     }
 
+    /// `:rotate 45|up|down|none` — kept and saved; the terminal draws the text level.
+    fn cmd_rotate(&mut self, words: &str) {
+        let Some(degrees) = grind_sheet::format::rotation_from_words(words) else {
+            self.status = format!("{} is not an angle — :rotate 45|up|down|none", words.trim());
+            return;
+        };
+        let style = self
+            .core
+            .style_at(self.sheet, self.active)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        self.write_style(grind_sheet::format::rotated(&style, degrees), "rotated");
+    }
+
     fn write_style(&mut self, style: Option<CellStyle>, what: &str) {
         let (start, end) = self.rect();
         match self.core.set_style(self.sheet, start, end, style) {
@@ -1474,6 +1489,7 @@ impl App {
             "name!" => self.cmd_unname(),
             "format-table" => self.cmd_table(""),
             _ if cmd.starts_with("align ") => self.cmd_align(cmd[6..].trim()),
+            _ if cmd == "rotate" || cmd.starts_with("rotate ") => self.cmd_rotate(&cmd[6..]),
             _ if cmd.starts_with("color ") => self.cmd_color(cmd[6..].trim(), false),
             _ if cmd.starts_with("fill ") => self.cmd_color(cmd[5..].trim(), true),
             _ if cmd.starts_with("find ") => self.cmd_find(cmd[5..].trim()),
@@ -4025,6 +4041,7 @@ mod tests {
             ("underline", "underline"),
             ("strike", "strike"),
             ("indent", "indent"),
+            ("rotate up", "rotate"),
             ("color red", "color"),
             ("fill yellow", "fill"),
             ("align center", "align"),
@@ -4043,6 +4060,7 @@ mod tests {
                 "underline" => style.is_underlined(),
                 "strike" => style.is_struck(),
                 "indent" => style.indent_mm().is_some(),
+                "rotate" => style.rotation_degrees() == Some(90.0),
                 "color" => style.color.as_deref() == grind_sheet::style::palette("red"),
                 "fill" => style.background.as_deref() == grind_sheet::style::palette("yellow"),
                 _ => style.align.as_deref() == Some("center"),

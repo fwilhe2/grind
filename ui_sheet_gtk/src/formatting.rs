@@ -114,6 +114,14 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
     indents.append(&indent);
 
     let wrap = toggle("format-justify-fill-symbolic", "Wrap Text");
+    // `format::ROTATIONS`, the four turns every window offers, and level again.
+    let rotation = gtk::MenuButton::builder()
+        .icon_name("object-rotate-left-symbolic")
+        .tooltip_text("Text Rotation")
+        .build();
+    let turns = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let rotations = gtk::Popover::builder().child(&turns).build();
+    rotation.set_popover(Some(&rotations));
     // A hairline round every selected cell, or none: `format::bordered`, which the terminal, the
     // browser and the Mac's *All Borders* write too. Per-edge widths and colours are
     // `sheet style --border`'s.
@@ -153,6 +161,7 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
         align.upcast_ref(),
         indents.upcast_ref(),
         wrap.upcast_ref(),
+        rotation.upcast_ref(),
         borders.upcast_ref(),
         color.button.upcast_ref(),
         background.button.upcast_ref(),
@@ -187,6 +196,17 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
     for (button, step) in [(&outdent, -1), (&indent, 1)] {
         let apply = field(grid, app, &updating);
         button.connect_clicked(move |_| apply(&|style| format::indented(style, step)));
+    }
+
+    for (degrees, title) in format::ROTATIONS {
+        let item = gtk::Button::with_label(title);
+        item.add_css_class("flat");
+        let (apply, popover) = (field(grid, app, &updating), rotations.clone());
+        item.connect_clicked(move |_| {
+            popover.popdown();
+            apply(&|style| format::rotated(style, degrees));
+        });
+        turns.append(&item);
     }
 
     {

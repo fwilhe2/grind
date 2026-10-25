@@ -137,6 +137,51 @@ pub fn indented(style: &CellStyle, step: i8) -> Option<CellStyle> {
     })
 }
 
+/// The rotations a window offers, anticlockwise in degrees as `style:rotation-angle` is written,
+/// with their names in Excel's Orientation menu.
+pub const ROTATIONS: [(Option<u16>, &str); 5] = [
+    (None, "No Rotation"),
+    (Some(45), "Angle Counterclockwise"),
+    (Some(315), "Angle Clockwise"),
+    (Some(90), "Rotate Text Up"),
+    (Some(270), "Rotate Text Down"),
+];
+
+/// Text turned `degrees` anticlockwise, or level again.
+pub fn rotated(style: &CellStyle, degrees: Option<u16>) -> Option<CellStyle> {
+    restyled(style, |style| {
+        style.rotation = degrees
+            .map(|d| d % 360)
+            .filter(|d| *d != 0)
+            .map(|d| d.to_string());
+    })
+}
+
+/// Which of [`ROTATIONS`] a cell styled `style` is turned by, if any is.
+pub fn rotation_chosen(style: &CellStyle) -> Option<usize> {
+    let degrees = style.rotation_degrees();
+    ROTATIONS
+        .iter()
+        .position(|(preset, _)| preset.map(f64::from) == degrees)
+}
+
+/// A typed rotation — `45`, `up`, `down`, `none` — as [`rotated`] takes it.
+pub fn rotation_from_words(words: &str) -> Option<Option<u16>> {
+    match words.trim() {
+        "" | "none" | "level" | "0" => Some(None),
+        "up" => Some(Some(90)),
+        "down" => Some(Some(270)),
+        number => {
+            let degrees: i32 = number.trim_end_matches("deg").parse().ok()?;
+            Some(
+                u16::try_from(degrees.rem_euclid(360))
+                    .ok()
+                    .filter(|d| *d != 0),
+            )
+        }
+    }
+}
+
 /// Read, change, and hand back what to write — `None` meaning no style.
 pub fn restyled(style: &CellStyle, change: impl FnOnce(&mut CellStyle)) -> Option<CellStyle> {
     let mut style = style.clone();
@@ -512,6 +557,20 @@ mod tests {
                 Some(index)
             );
         }
+    }
+
+    /// A preset turns the text and reads back as itself; none takes the attribute away.
+    #[test]
+    fn a_rotation_is_written_and_read_back() {
+        let up = rotated(&CellStyle::default(), Some(90)).unwrap();
+        assert_eq!(up.rotation.as_deref(), Some("90"));
+        assert_eq!(rotation_chosen(&up), Some(3));
+        assert_eq!(rotation_chosen(&CellStyle::default()), Some(0));
+        assert_eq!(rotated(&up, None), None, "level again is no style");
+        assert_eq!(rotation_from_words("-45"), Some(Some(315)));
+        assert_eq!(rotation_from_words("down"), Some(Some(270)));
+        assert_eq!(rotation_from_words("none"), Some(None));
+        assert_eq!(rotation_from_words("sideways"), None);
     }
 
     /// An indent steps by whole levels, in the oracle's spelling, from wherever the cell's own

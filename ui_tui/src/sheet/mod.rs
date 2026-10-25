@@ -26,6 +26,7 @@ Spreadsheet:
   they keep moving it until you type something else
   :bold  :italic  :underline  :strike  :wrap  :border  :plain
   :indent  :outdent       — one indent level in or out (> and < in Visual mode)
+  :rotate 45|up|down|none — text turned anticlockwise; saved, drawn level here
   :align l|c|r            :color <name|#rrggbb>   :fill <name|#rrggbb>
   :format general|int|number [n]|percent|currency|date|time|datetime
   :general                :recalc
