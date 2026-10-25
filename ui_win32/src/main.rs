@@ -30,8 +30,6 @@ mod assoc;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod code;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
-mod import;
-#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod menu;
 // The drawn menu bar's layout, hit-testing and keyboard walk.
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
@@ -86,15 +84,7 @@ fn version() -> String {
 /// would return an empty document of the wrong type rather than an error.
 fn sniff(path: &Path) -> Result<DocumentKind, String> {
     let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    // A workbook or a CSV is a spreadsheet this shell imports (`import.rs`); `grind_core::kind`
-    // answers only which *ODF* type some bytes are, and should.
-    if import::is_workbook(&bytes) || import::is_delimited(path, &bytes) {
-        return Ok(DocumentKind::Spreadsheet);
-    }
-    if import::is_markdown(path, &bytes) || import::is_word(&bytes) {
-        return Ok(DocumentKind::Text);
-    }
-    grind_core::kind(&bytes).ok_or_else(|| {
+    grind_open::kind(&path.display().to_string(), &bytes).ok_or_else(|| {
         format!(
             "{}: not an ODF spreadsheet or text document",
             path.display()

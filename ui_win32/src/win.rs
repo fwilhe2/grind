@@ -1292,27 +1292,31 @@ fn opened_welcome(theme: Theme) -> Welcome {
     }
 }
 
+/// Read the file at `path` with `open`: imported to flat ODF under its ODF name, or as it is.
+/// Returns the import, which leaves the document unsaved with no path for Save to write over.
+fn read<E: std::fmt::Display>(
+    path: &Path,
+    open: impl FnOnce(&str, &[u8]) -> Result<(), E>,
+) -> Result<Option<grind_open::Imported>, String> {
+    let fail = |error: &dyn std::fmt::Display| format!("{}: {error}", path.display());
+    let bytes = std::fs::read(path).map_err(|error| fail(&error))?;
+    let imported = grind_open::import_file(path, &bytes).transpose()?;
+    match &imported {
+        Some(imported) => open(&imported.name, &imported.odf),
+        None => open(&path.display().to_string(), &bytes),
+    }
+    .map_err(|error| fail(&error))?;
+    Ok(imported)
+}
+
 /// The word processor's pane, on a document or on nothing.
 fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
     let app = grind_text::App::new();
-    let mut imported = None;
-    let mut path = path;
-    if let Some(given) = &path {
-        let fail = |error: &dyn std::fmt::Display| format!("{}: {error}", given.display());
-        let bytes = std::fs::read(given).map_err(|error| fail(&error))?;
-        if crate::import::is_markdown(given, &bytes) {
-            // A new, unsaved document with no path for Save to write the markdown back over.
-            imported = Some(crate::import::open_markdown(&app, given, &bytes)?);
-            path = None;
-        } else if crate::import::is_word(&bytes) {
-            // A Word document likewise: imported, unsaved, and no path to write ODF over.
-            imported = Some(crate::import::open_word(&app, given, &bytes)?);
-            path = None;
-        } else {
-            app.open_bytes(&given.display().to_string(), &bytes)
-                .map_err(|error| fail(&error))?;
-        }
-    }
+    let imported = match &path {
+        Some(path) => read(path, |name, bytes| app.open_bytes(name, bytes))?,
+        None => None,
+    };
+    let path = path.filter(|_| imported.is_none());
     let mut text = Text {
         app,
         imported: None,
@@ -1350,7 +1354,7 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
     text.check_spelling();
     // The report's sentence on the notice bar, where a state the document is in belongs.
     if let Some(imported) = imported {
-        text.imported = Some(imported.suggested);
+        text.imported = Some(PathBuf::from(imported.name));
         text.dirty = true;
         text.say(Some(imported.summary));
     }
@@ -1360,7 +1364,7 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
 fn opened_sheet(path: Option<PathBuf>, theme: Theme) -> Result<Sheet, String> {
     let app = grind_sheet::App::new();
     let imported = match &path {
-        Some(path) => crate::import::open(&app, path)?,
+        Some(path) => read(path, |name, bytes| app.open_bytes(name, bytes))?,
         None => None,
     };
     let mut sheet = opened_sheet_on(app, path, theme);
@@ -1368,7 +1372,7 @@ fn opened_sheet(path: Option<PathBuf>, theme: Theme) -> Result<Sheet, String> {
     // on the notice bar, where a state the document is in belongs.
     if let Some(imported) = imported {
         sheet.path = None;
-        sheet.imported = Some(imported.suggested);
+        sheet.imported = Some(PathBuf::from(imported.name));
         sheet.dirty = true;
         sheet.say(Some(imported.summary));
     }

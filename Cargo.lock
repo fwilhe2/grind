@@ -1410,12 +1410,11 @@ version = "0.0.0"
 dependencies = [
  "embed-resource",
  "grind-core",
- "grind-docx",
+ "grind-open",
  "grind-print",
  "grind-sheet",
  "grind-spell",
  "grind-text",
- "grind-xlsx",
  "windows",
 ]
 
