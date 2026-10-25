@@ -411,22 +411,20 @@ fn ticks_text(
         }
     }
     if x_axis.tick_labels {
-        // A label that would overlap the one before it is dropped rather than drawn over it —
-        // the same rule as the GTK painter, with the width estimated rather than measured.
-        let mut drawn_to = f64::NEG_INFINITY;
+        // Each name shortened to its own band, the width estimated rather than measured.
+        let room = plot.2 / category_count(data).max(1) as f64 - TICK_GAP;
+        let width = |t: &str| t.chars().count() as f64 * TICK_CHAR_W;
         for (i, x) in category_x(data, plot).into_iter().enumerate() {
             let Some(text) = data.categories.get(i).filter(|t| !t.is_empty()) else {
                 continue;
             };
-            let half = text.chars().count() as f64 * TICK_CHAR_W / 2.0;
-            if x - half < drawn_to + TICK_GAP {
+            let Some(text) = grind_sheet::chart_paint::shorten(text, room, width) else {
                 continue;
-            }
-            drawn_to = x + half;
+            };
             out.push_str(&format!(
                 "<text class=\"tick\" text-anchor=\"middle\" x=\"{x:.1}\" y=\"{:.1}\">{}</text>",
                 plot.1 + plot.3 + TICK_GAP + TICK_H * 0.8,
-                escape(text)
+                escape(&text)
             ));
         }
     }

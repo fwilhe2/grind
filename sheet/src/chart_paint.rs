@@ -87,6 +87,20 @@ pub fn width(metrics: &dyn Metrics, text: &str, style: &TextStyle) -> f64 {
     advances.last().copied().map_or(0.0, f64::from)
 }
 
+/// `text` whole if it fits in `room`, else its longest start that fits with "…" after it — so a
+/// category's name stays under its own band — and `None` when not even one letter does.
+pub fn shorten(text: &str, room: f64, width: impl Fn(&str) -> f64) -> Option<String> {
+    if width(text) <= room {
+        return Some(text.to_owned());
+    }
+    text.char_indices()
+        .rev()
+        .map(|(end, _)| text[..end].trim_end())
+        .filter(|start| !start.is_empty())
+        .map(|start| format!("{start}…"))
+        .find(|cut| width(cut) <= room)
+}
+
 /// How far the plot is inset from the frame.
 const INSET: f64 = 8.0;
 /// The share of a bar group's band left empty between groups.
@@ -345,18 +359,15 @@ impl Painter<'_> {
             }
         }
         if x_axis.tick_labels {
-            // A label that would overlap the one before it is dropped.
-            let mut drawn_to = f64::NEG_INFINITY;
+            let room = plot.w / category_count(self.data).max(1) as f64 - TICK_GAP;
             for (i, x) in category_x(self.data, plot).into_iter().enumerate() {
                 let Some(label) = self.data.categories.get(i).filter(|t| !t.is_empty()) else {
                     continue;
                 };
-                let w = self.text_w(label, &style);
-                if x - w / 2.0 < drawn_to + TICK_GAP {
+                let Some(label) = shorten(label, room, |t| self.text_w(t, &style)) else {
                     continue;
-                }
-                drawn_to = x + w / 2.0;
-                let label = label.clone();
+                };
+                let w = self.text_w(&label, &style);
                 self.text(
                     x - w / 2.0,
                     plot.bottom() + TICK_GAP,

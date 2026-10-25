@@ -43,8 +43,7 @@ const LABEL_SPACE: f64 = 18.0;
 /// The gap between a tick label and the plot it is labelling.
 const TICK_GAP: f64 = 4.0;
 
-/// The gap between two x tick labels below which the second is dropped rather than drawn over the
-/// first: an axis that labels what fits reads as a scale, overlapping text as a smudge.
+/// The least gap between two x tick labels: overlapping text reads as a smudge.
 const TICK_CLEARANCE: f64 = 6.0;
 
 /// How close a point has to land to a line's own path, in widget pixels, to count as a hit —
@@ -548,8 +547,8 @@ fn draw_gridlines(
 }
 
 /// The tick labels themselves: the category names under the x axis, the value scale beside
-/// the y one. An x label that would collide with the one before it is dropped
-/// ([`TICK_CLEARANCE`]) rather than drawn over it.
+/// the y one. An x label is shortened to its own band, less [`TICK_CLEARANCE`], so it sits
+/// under its own bars and never runs into its neighbour.
 fn draw_ticks(
     widget: &impl IsA<gtk::Widget>,
     snapshot: &gtk::Snapshot,
@@ -577,25 +576,20 @@ fn draw_ticks(
         }
     }
     if x_axis.tick_labels {
-        let mut drawn_to = f64::NEG_INFINITY;
+        let room = plot.w / category_count(data).max(1) as f64 - TICK_CLEARANCE;
         for (i, x) in category_ticks(layout, data).into_iter().enumerate() {
-            let Some(text) = data.categories.get(i) else {
+            let Some(text) = data.categories.get(i).filter(|t| !t.is_empty()) else {
                 continue;
             };
-            if text.is_empty() {
+            let Some(text) = grind_sheet::chart_paint::shorten(text, room, |t| measure(t).0) else {
                 continue;
-            }
-            let (w, _) = measure(text);
-            let left = x - w / 2.0;
-            if left < drawn_to + TICK_CLEARANCE {
-                continue;
-            }
-            drawn_to = left + w;
+            };
+            let (w, _) = measure(&text);
             place(
                 widget,
                 snapshot,
-                text,
-                left,
+                &text,
+                x - w / 2.0,
                 plot.y + plot.h + TICK_GAP,
                 paint.foreground,
             );
