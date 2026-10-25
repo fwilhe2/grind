@@ -2,29 +2,22 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! File associations: **offered, never taken** (`doc/windows-shell.md`, "File associations").
+//! File associations: **offered, never taken** (`doc/windows-shell.md`, "File associations"). Per
+//! extension, a ProgID of ours goes under `.ext\OpenWithProgids` — Explorer's *Open with* and the
+//! "How do you want to open this file?" chooser — and the set is published as `Capabilities` under
+//! `RegisteredApplications`, which lists Grind in Settings > Apps > Default apps. **The
+//! extension's own default value is never written**, nor anything under `UserChoice`: whatever
+//! opens a double-clicked `.xlsx` today still does tomorrow, and switching is the user's click in
+//! a dialog Windows owns. Where nothing is registered (a `.fods`, a `.grind`), Windows asks on the
+//! first double-click and offers Grind.
 //!
-//! Windows lets an application say it *can* open a type without saying it is *the* program for
-//! it, and this file says exactly the first thing. Per extension, a ProgID of ours is added
-//! under `.ext\OpenWithProgids` — which is what puts Grind in Explorer's *Open with* menu and in
-//! the "How do you want to open this file?" chooser — and the whole set is published as
-//! `Capabilities` under `RegisteredApplications`, which is what lists Grind in Settings > Apps >
-//! Default apps with every type it opens. **The extension's own default value is never
-//! written**, and neither is anything under `UserChoice`: whatever opens a double-clicked
-//! `.xlsx` today — Excel, LibreOffice, nothing — still does tomorrow, and switching to Grind is
-//! the user's one click in a dialog Windows owns. Where nothing is registered for a type at all
-//! (a `.fods` or a `.grind`, usually), Windows asks on the first double-click and offers Grind.
+//! Everything is per-user (`HKEY_CURRENT_USER\Software\…`): no elevation, no installer. The window
+//! writes it whenever it starts from a different place ([`needed`]), since the `.exe` can be
+//! copied anywhere and an association naming its old place is a failing double-click.
+//! `--unregister` removes exactly what this file writes, which is why the list is data.
 //!
-//! Everything is per-user (`HKEY_CURRENT_USER\Software\…`): no elevation, no installer, and
-//! nothing another account on the machine sees. The window writes it every time it starts from a
-//! different place ([`needed`]), because this `.exe` is a file that can be copied anywhere —
-//! off the test disc, out of a download — and an association naming where it *used* to be is a
-//! double-click that fails. `--unregister` removes every key and value this file ever writes and
-//! nothing else, which is why the list of them is data here rather than a sequence of calls.
-//!
-//! The portable half — which types, which ProgIDs, every value and where it goes — is tested on
-//! Linux like the rest of this crate. The half that touches the registry is the `cfg(windows)`
-//! block at the bottom, and it only walks the lists.
+//! The portable half — types, ProgIDs, every value and where it goes — is tested on Linux; the
+//! `cfg(windows)` block at the bottom only walks the lists.
 
 /// One type this shell opens, and how.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,13 +28,12 @@ pub struct FileType {
     pub description: &'static str,
 }
 
-/// Every type the window opens: the three forms of both ODF document types, the two Excel
-/// workbooks the import filter reads (`doc/xlsx-import.md`, X6) — `.xlsm` included, since it is
-/// the same XML with a macro that is counted and never run — and CSV/TSV, which open the same
-/// way (`grind_sheet::csv::open`). `.xls` and `.xlsb` are not here because the filter does not
-/// read them; Word's `.docx` and `.docm` likewise (`doc/docx-import.md`), and not `.doc`; `.tab` opens but is not offered, since nothing on Windows calls a file that. The Excel rows are compiled out with the `xlsx`
-/// feature, like the import itself: offering a type the binary then refuses would be worse
-/// than not offering it.
+/// Every type the window opens: the three forms of both ODF kinds, the Excel workbooks the import
+/// reads (`.xlsm` included — the macro is counted and never run), Word's `.docx` and `.docm`, and
+/// CSV/TSV (`grind_sheet::csv::open`). Not `.xls`, `.xlsb` or `.doc`, which the filters do not
+/// read; `.tab` opens but is not offered, since nothing on Windows calls a file that. The import
+/// rows are compiled out with their features: offering a type the binary then refuses would be
+/// worse than not offering it.
 pub const TYPES: &[FileType] = &[
     FileType {
         extension: ".fods",
@@ -333,8 +325,8 @@ mod registry {
                 Data::None => (REG_NONE, Vec::new()),
             };
             // `RegSetKeyValueW` creates the subkey when it is missing, so one call is one value.
-            // SAFETY: the key and name are NUL-terminated and, like the data, outlive the call;
-            // the data pointer is `None` exactly when its length is zero.
+            // SAFETY: the key and name are NUL-terminated and, like the data, outlive the call; the
+            // data pointer is `None` exactly when its length is zero.
             let set = unsafe {
                 RegSetKeyValueW(
                     HKEY_CURRENT_USER,
@@ -445,9 +437,9 @@ mod registry {
     }
 
     /// What the window does on every start: write the offer when it is missing or names another
-    /// copy of the executable, and otherwise nothing — so an ordinary launch touches no key and
-    /// sends Explorer no notification. Best effort: a registry this account may not write is not
-    /// a reason to refuse to open a document.
+    /// copy of the executable, otherwise nothing, so an ordinary launch touches no key and
+    /// notifies nothing. Best effort: an unwritable registry is no reason to refuse to open a
+    /// document.
     pub fn offer() {
         let Ok(exe) = exe() else { return };
         let registered: Vec<Option<String>> = super::witnesses()

@@ -2,41 +2,29 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Font metrics, through GDI — this shell's whole contribution to layout, and
-//! `doc/windows-shell.md`'s decision 3 made real.
-//!
-//! `doc/text-layout.md` closed on Path C: line breaking lives in `grind_core::layout` and a
-//! shell supplies only [`grind_core::layout::Metrics`] — how wide is this text, how tall is a
-//! line of it. `ui_tui` answers in terminal cells, `ui_text_gtk` asks Pango, `ui_web` asks a
-//! canvas. **This is the fourth implementation and the first one the toolkit did not hand over**,
-//! because Win32 has no Pango: GDI maps glyphs, it does not shape them.
+//! Font metrics through GDI — this shell's whole contribution to layout (decision 3). Line
+//! breaking is `grind_core::layout`'s; a shell supplies [`grind_core::layout::Metrics`]. Win32 has
+//! no Pango: GDI maps glyphs, it does not shape them.
 //!
 //! ## The measuring engine and the drawing engine are the same one
 //!
-//! That is the whole of decision 3 and it is load-bearing rather than tidy. `GetTextExtentExPointW`
-//! does not shape, so a combining mark gets an advance of its own instead of folding onto its
-//! base — the core then believes the text is one mark wider than it looks. That is survivable
-//! **only if drawing agrees**: `Face::draw_run` measures with the same call, with the same font,
-//! and hands the result to `ExtTextOutW` as explicit advances, so the mark is drawn floating in a
-//! box of its own — which looks wrong and is not *inconsistent*, and every caret operation stays
-//! right. Measure with DirectWrite and draw with plain `ExtTextOutW` and the two disagree, which
-//! is why the upgrade named in decision 3 is a whole stack rather than an API.
+//! `GetTextExtentExPointW` does not shape, so a combining mark gets an advance of its own and the
+//! core thinks the text a mark wider than it looks. That is survivable **only if drawing agrees**:
+//! `Face::draw_run` measures with the same call and font and hands the result to `ExtTextOutW` as
+//! explicit advances, so the mark is drawn in a box of its own — wrong-looking, never
+//! inconsistent, and every caret stays right. Measuring with DirectWrite while drawing with
+//! `ExtTextOutW` would disagree, which is why the upgrade is a whole stack.
 //!
-//! The named trigger for taking it, written down there and repeated here so it is not a judgement
-//! call later: **the first time a caret lands in the wrong place because characters that belong
-//! in one cluster were measured as separate boxes**, this file moves to DirectWrite —
-//! measurement *and* drawing together — and nothing above it changes.
+//! The trigger, written down so it is not a judgement call later: **the first time a caret lands
+//! in the wrong place because characters of one cluster were measured as separate boxes**, this
+//! file moves to DirectWrite — measuring *and* drawing — and nothing above it changes.
 //!
-//! ## Two halves, as everywhere in this crate
+//! ## Two halves
 //!
-//! The decisions are portable and tested on Linux: [`Spec`] and [`spec_for`] are which face a
-//! block is set in, and [`fold_advances`] is the mechanical part decision 3 calls cheap — GDI
-//! answers per **UTF-16 code unit** and [`grind_core::layout::Metrics`] asks per `char`, so the
-//! units are walked and each character takes the entry for its *last* one. A character outside
-//! the basic multilingual plane therefore comes out as one advance, correctly.
-//!
-//! Only `windows_impl` needs a window — or rather does not: it holds a memory DC from
-//! `CreateCompatibleDC(None)`, so measuring works with no `HWND` anywhere, which is what lets
+//! [`Spec`] and [`spec_for`] (which face a block is set in) and [`fold_advances`] are portable:
+//! GDI answers per **UTF-16 code unit** and the trait asks per `char`, so each character takes the
+//! entry for its *last* unit, and a character outside the BMP is one advance. `windows_impl`
+//! measures on a memory DC from `CreateCompatibleDC(None)`, so it needs no window — which lets
 //! `--render-to` lay a document out on a headless runner.
 
 use grind_text::BlockKind;
@@ -46,29 +34,21 @@ use grind_text::look::Role;
 /// GDI substitutes when it is absent — which is what happens under Wine.
 pub const BODY_FACE: &str = "Segoe UI";
 
-/// What `grind_text::markdown::MONOSPACE` resolves to here.
-///
-/// The document says `monospace`, which is a *generic* family: fontconfig resolves one and so
-/// does a browser, and GDI does not — `CreateFontIndirectW` with an unknown face name silently
-/// substitutes whatever it likes, which for a code block means proportional text. So the generic
-/// is named once, here, and Consolas is the answer because it has shipped with Windows since
-/// Vista and this binary depends on nothing Windows does not ship.
+/// What `grind_text::markdown::MONOSPACE` resolves to. `monospace` is a generic family, which
+/// fontconfig and a browser resolve and GDI does not — `CreateFontIndirectW` silently substitutes,
+/// a proportional face for a code block. So the generic is named here: Consolas, shipped with
+/// Windows since Vista.
 pub const MONO_FACE: &str = "Consolas";
 
-/// How wide a `text:tab` is, in spaces.
-///
-/// A width and **not a tab stop**: a stop is a paragraph property (`style:tab-stops`) that this
-/// build does not read, so a pane that snapped to one would be inventing a document's layout.
-/// Four is what the terminal shell uses and what every editor defaults to.
+/// How wide a `text:tab` is, in spaces — a width, **not a tab stop**: this pane does not apply a
+/// paragraph's `style:tab-stops`, and snapping to an invented stop would be inventing the
+/// document's layout. Four, as the terminal and the browser use.
 pub const TAB_SPACES: usize = 4;
 
-/// Which face a block is set in — resolved from what the document says, with no Windows in it.
-///
-/// **The face is chosen per block, by the shell**, and that is not an oversight in the core: a
-/// run's *direct* formatting reaches it, but a block's does not, because a heading and a `Title`
-/// are a paragraph **style** and style definitions are not read (`doc/text-core.md`). A heading
-/// laid out in the body font and drawn in a larger one would put every caret in the wrong place,
-/// so the shell hands the core a provider already set to the block's font.
+/// Which face a block is set in, resolved from what the document says, with no Windows in it.
+/// **Chosen per block by the shell**: a heading's or a `Title`'s face is the block's, by kind and
+/// style name (`grind_text::look`), so the shell hands the core a provider already set to the
+/// block's font, or every caret would be off.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Spec {
     /// Multiplier on the body size.
@@ -105,17 +85,12 @@ pub fn faces() -> Vec<Spec> {
     Role::ALL.into_iter().map(Spec::of).collect()
 }
 
-/// GDI's per-**code-unit** answer, folded into the per-`char` one [`grind_core::layout::Metrics`]
-/// asks for, appended to `out`; the return value is the cumulative advance after the whole string.
-///
-/// `dx` is `GetTextExtentExPointW`'s `lpnDx`: the width of the string up to and including each
-/// UTF-16 code unit. A `char` may be two of those, so the units are counted as the characters are
-/// walked and each one takes the entry for its **last** unit — which is what makes a character
-/// outside the basic multilingual plane come out as one advance rather than two half ones.
-///
-/// A short `dx` (GDI declining, or a string it measured differently) does not lose the caller its
-/// caret: whatever the last known advance was is repeated, so the array is still one entry per
-/// character and still non-decreasing, which is [`grind_core::layout::Metrics`]' whole contract.
+/// GDI's per-**code-unit** answer folded into the per-`char` one [`grind_core::layout::Metrics`]
+/// asks for, appended to `out`; returns the cumulative advance after the string. `dx` is
+/// `GetTextExtentExPointW`'s `lpnDx`, each unit's cumulative width; each character takes its
+/// **last** unit's entry, so one outside the BMP is one advance. A short `dx` repeats the last
+/// known advance, so the array stays one entry per character and non-decreasing — the trait's
+/// contract.
 pub fn fold_advances(text: &str, dx: &[i32], base: f32, out: &mut Vec<f32>) -> f32 {
     let mut units = 0usize;
     let mut last = base;
@@ -156,11 +131,8 @@ mod windows_impl {
 
     use super::{BODY_FACE, Spec, fold_advances, spec_for};
 
-    /// One entry in the font cache: everything `CreateFontIndirectW` is given.
-    ///
-    /// Underline and strikethrough are in the key because GDI draws both from the `LOGFONT`
-    /// rather than from a separate call — which is why this shell gets them for free where the
-    /// GTK window needed Pango attributes.
+    /// One entry in the font cache: everything `CreateFontIndirectW` is given — underline and
+    /// strikethrough included, since GDI draws both from the `LOGFONT`.
     #[derive(Clone, PartialEq, Eq, Hash)]
     struct Key {
         face: String,
@@ -171,16 +143,11 @@ mod windows_impl {
         strike: bool,
     }
 
-    /// The measuring surface and the fonts on it.
-    ///
-    /// A [`Metrics`] implementation needs a device context and a font, and this owns both. The DC
-    /// is `CreateCompatibleDC(None)` — **no window required**, which is what makes measuring work
-    /// under `--render-to` with no `HWND`, no compositor and no display.
-    ///
-    /// The map is `RefCell` because the trait's methods take `&self`, and it is a *cache* because
-    /// creating a font per call would be a `CreateFontIndirectW` per run per repaint — visible on
-    /// every keystroke. Every handle is deleted when this is dropped, and the window drops it and
-    /// builds another on `WM_DPICHANGED`.
+    /// The measuring surface and the fonts on it. The DC is `CreateCompatibleDC(None)` — **no
+    /// window required**, so measuring works under `--render-to`. The map is a `RefCell` because
+    /// the trait takes `&self`, and a cache because a `CreateFontIndirectW` per run per repaint
+    /// would show on every keystroke. Every handle is deleted on drop; the window rebuilds this on
+    /// `WM_DPICHANGED`.
     pub struct Fonts {
         dc: HDC,
         /// The body size in pixels, already scaled for this monitor.
@@ -206,19 +173,16 @@ mod windows_impl {
             self.body_px
         }
 
-        /// The measuring surface itself — `CreateCompatibleDC(None)`, needing no window. A
-        /// picture's caption is measured and drawn with `DrawTextW` rather than the core's own
-        /// layout (`Face::wrapped_height`'s own doc comment says why), and that needs a `DC` of
-        /// its own where nothing else in this file's callers already have a window's.
+        /// The measuring surface itself. A picture's caption is measured and drawn with
+        /// `DrawTextW` rather than the core's layout (see `Face::wrapped_height`), which needs a
+        /// DC.
         pub fn dc(&self) -> HDC {
             self.dc
         }
 
-        /// The handle for one exact font, made once and kept.
-        ///
-        /// A handle rather than a `&Font`, and that is what keeps the `RefCell` honest: the
-        /// borrow ends inside this function, and an `HFONT` stays valid for as long as the map
-        /// holds the `Font` that owns it — which is this object's whole life.
+        /// The handle for one exact font, made once and kept — a handle rather than a `&Font`, so
+        /// the `RefCell` borrow ends here; an `HFONT` stays valid as long as the map holds its
+        /// `Font`, which is this object's whole life.
         fn font(&self, key: Key) -> HFONT {
             let mut cache = self.cache.borrow_mut();
             cache
@@ -236,11 +200,9 @@ mod windows_impl {
                 .handle()
         }
 
-        /// The font a fragment of `spec`'s block, formatted with `props`, is set in.
-        ///
-        /// The run's own formatting is layered over the block's: `**bold**` inside a heading is
-        /// bold *and* a heading. `fo:font-size` is deliberately **not** honoured — see
-        /// [`Face::line_height`], which is where that stops and why.
+        /// The font a fragment of `spec`'s block, formatted with `props`, is set in: the run's
+        /// formatting over the block's, so `**bold**` in a heading is bold *and* a heading.
+        /// `fo:font-size` is **not** honoured — see [`Face::line_height`].
         fn resolve(&self, spec: &Spec, props: &CharStyle) -> HFONT {
             let face = props
                 .font_family
@@ -258,13 +220,10 @@ mod windows_impl {
             })
         }
 
-        /// Measure `text` in `font` on `dc`, appending one cumulative advance per `char`.
-        ///
-        /// The one call this whole file is built on, and the two guards in front of it are both
-        /// scars. An **empty string** is refused before `as_ptr` is taken: an empty `Vec<u16>`
-        /// has no allocation, so the pointer is dangling — that is W3's access violation reading
-        /// address 2, in the drawing code, and it is the same mistake here. And the advance array
-        /// is sized in *code units*, not characters, because that is what GDI fills in.
+        /// Measure `text` in `font` on `dc`, appending one cumulative advance per `char`. Two
+        /// guards: an **empty string** is refused before `as_ptr`, since an empty `Vec<u16>` has
+        /// no allocation and its pointer dangles (an access violation in the drawing code once),
+        /// and the advance array is sized in code units, which GDI fills.
         fn measure(&self, dc: HDC, font: HFONT, text: &str, base: f32, out: &mut Vec<f32>) -> f32 {
             let units: Vec<u16> = text.encode_utf16().collect();
             if units.is_empty() {
@@ -325,12 +284,9 @@ mod windows_impl {
         }
     }
 
-    /// One block-level face: a [`Spec`], the fonts it resolves against, and the line height it
-    /// answers with.
-    ///
-    /// Borrowed rather than owning, because [`grind_text::Faces`] hands out `&dyn Metrics` and a
-    /// face therefore has to outlive the call that asked for it — so the cache lives in the
-    /// window and a `Faces` is built around it per operation.
+    /// One block-level face: a [`Spec`], the fonts it resolves against, and its line height.
+    /// Borrowed, since [`grind_text::Faces`] hands out `&dyn Metrics` that must outlive the call:
+    /// the cache lives in the window and a `Faces` is built round it per operation.
     pub struct Face<'a> {
         fonts: &'a Fonts,
         /// Which block face this is. Compared rather than remembered by position, which is how
@@ -349,17 +305,11 @@ mod windows_impl {
             }
         }
 
-        /// Draw one run at `x`, with its top at `top`, in the font it was **measured** in.
-        ///
-        /// `ExtTextOutW` with the advance array that same measurement produced, which is decision
-        /// 3's rule and the reason this function exists rather than a `DrawTextW` call: GDI
-        /// placing glyphs freely and the core placing carets by its own arithmetic is exactly the
-        /// disagreement the caret would show. The advances are per code unit, which is the unit
-        /// `ExtTextOutW` wants — so this is the one place the fold back to characters is *not*
-        /// done.
-        ///
-        /// Returns how far the pen moved, so a caller drawing a line run by run needs no second
-        /// measurement of its own.
+        /// Draw one run at `x`, top at `top`, in the font it was **measured** in: `ExtTextOutW`
+        /// with that measurement's advance array (decision 3), not `DrawTextW`, which would place
+        /// glyphs where the caret arithmetic does not. The advances are per code unit, which
+        /// `ExtTextOutW` wants, so this is the one place they are not folded to characters.
+        /// Returns how far the pen moved.
         pub fn draw_run(
             &self,
             dc: HDC,
@@ -437,14 +387,9 @@ mod windows_impl {
             f64::from(size.cx)
         }
 
-        /// How tall `text` comes out wrapped to `width`, in this face — a picture's caption,
-        /// measured with `DrawTextW`'s own word wrap rather than the core's `grind_core::layout`.
-        ///
-        /// This is the one text this pane draws outside decision 3's rule, and on purpose: a
-        /// caption is not addressable by a [`grind_text::Caret`] the way the rest of a block's
-        /// text is (there is no line layout to disagree with the caret over, because nothing
-        /// here puts a caret in it), so asking GDI to wrap it costs nothing decision 3 was
-        /// protecting. `ui_text_gtk`'s own `Face::draw_wrapped` makes the same call, with Pango.
+        /// How tall `text` comes out wrapped to `width` in this face — a picture's caption,
+        /// wrapped by `DrawTextW` rather than `grind_core::layout`. The one text outside decision
+        /// 3's rule, on purpose: no caret goes in a caption, so nothing can disagree with it.
         pub fn wrapped_height(&self, dc: HDC, text: &str, width: f64) -> f64 {
             f64::from(self.wrapped_rect(dc, text, width).bottom)
         }
@@ -508,13 +453,10 @@ mod windows_impl {
     }
 
     impl Metrics for Face<'_> {
-        /// One cumulative advance per `char`, in pixels.
-        ///
-        /// **A line break inside a fragment is measured as nothing.** `Run::Break` is a character
-        /// in the model and arrives here as `\n`; handing it to GDI would measure whatever glyph
-        /// the font has for it. The core breaks the line there anyway, so the caret sitting on it
-        /// belongs at the end of the text before it — the same answer `ui_text_gtk` gives, for
-        /// the same reason.
+        /// One cumulative advance per `char`, in pixels. **A line break in a fragment measures as
+        /// nothing**: `Run::Break` arrives as `\n`, which GDI would measure as whatever glyph the
+        /// font has; the core breaks there, so the caret on it belongs at the end of the text
+        /// before.
         fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>) {
             // The fragment's own formatting, as the core projected it out of the run. Only the
             // four properties that change how *wide* text is are in a `TextStyle`, which is
@@ -535,13 +477,9 @@ mod windows_impl {
                     // and no width, because the line ends there.
                     out.push(base);
                 }
-                // **A tab is measured, never drawn** (`text/draw.rs`), and it is measured here
-                // rather than handed to GDI: `ExtTextOutW` draws whatever glyph the font has for
-                // U+0009, which for Segoe UI is a box. A `text:tab` is a character in the model,
-                // so it gets exactly one advance like every other character — a fixed width and
-                // not a tab *stop*, because a stop is a paragraph property this build does not
-                // read (`doc/text-core.md`) and inventing one would put the caret where no
-                // document asked for it.
+                // **A tab is measured, never drawn** (`text/draw.rs`), and measured here, since
+                // `ExtTextOutW` draws Segoe UI's box for U+0009: one fixed advance, like any
+                // character in the model.
                 for (piece, run) in segment.split('\t').enumerate() {
                     if piece > 0 {
                         base += tab;
@@ -552,42 +490,32 @@ mod windows_impl {
             }
         }
 
-        /// The block face's own height, whatever the fragment is set in.
-        ///
-        /// **`fo:font-size` on a run is not honoured**, here or in `ui_text_gtk`, and the two
-        /// halves have to move together or neither does: a size honoured in the width and not in
-        /// the height would measure a big word wide on a line too short to hold it. The notation
-        /// this shell draws sets a family and no size, so this is where the work stops and is
-        /// written down rather than half done.
+        /// The block face's own height, whatever the fragment is set in. **A run's `fo:font-size`
+        /// is not honoured**, and width and height must move together: a size honoured in width
+        /// and not height would measure a big word wide on a line too short for it.
         fn line_height(&self, _style: &TextStyle) -> f32 {
             self.height
         }
     }
 
-    /// The faces a document is set in, and the measure it is set to — [`grind_text::Faces`], which
-    /// is *which* metrics this block wants rather than a single provider for all of them.
-    ///
-    /// Built per operation around the window's [`Fonts`], and the reason it exists at all is a
-    /// bug found in the core while `ui_text_gtk` was being built: Down-arrow out of a heading
-    /// measured the paragraph below it with the heading's font. This shell inherits the fix and
-    /// must not re-introduce it by reaching for `Uniform`.
+    /// The faces a document is set in and the measure it is set to — [`grind_text::Faces`], which
+    /// metrics *this* block wants, built per operation round the window's [`Fonts`]. Not
+    /// `Uniform`: Down-arrow out of a heading must measure the paragraph below in its own font.
     pub struct Faces<'a> {
         /// The text column's width, before any indent comes out of it.
         column: f64,
         /// The pane's numbers at this monitor's scaling. **The indent comes out of the column**,
-        /// so a list item is measured to less than the measure — and it is
-        /// [`Spacing::measure`], the very function the flow places the text with, or a wrapped
-        /// list item would break its lines in one place and draw them in another.
+        /// through [`Spacing::measure`] — the function the flow places text with — or a wrapped
+        /// list item would break in one place and draw in another.
         spacing: Spacing,
         /// Every face a block can be set in, body first. A flat list because the lookup is
         /// [`Spec`] equality — [`spec_for`] decides which face a block wants and this finds the
         /// one built for it, so the decision is written down once.
         all: Vec<Face<'a>>,
-        /// The measure of every block that is in a table cell — `text::geom::across`, built once
-        /// per reflow beside the flow that placed those blocks. A cell's text breaks at the cell's
-        /// width, and every caret motion asks through here, so a Down-arrow inside a cell is
-        /// measured where the ink is. Read by index and never by asking the document, since
-        /// `grind_text::Faces::of` is called while `App` holds its read lock.
+        /// The measure of every block in a table cell — `text::geom::across`, built per reflow
+        /// beside the flow — so a Down-arrow inside a cell is measured where the ink is. Read by
+        /// index, never by asking the document, since `grind_text::Faces::of` runs under `App`'s
+        /// read lock.
         cells: &'a HashMap<usize, Across>,
     }
 
@@ -609,12 +537,10 @@ mod windows_impl {
             }
         }
 
-        /// The face a block is set in — [`spec_for`]'s answer, looked *up* rather than rebuilt, so
-        /// that a paint measuring three hundred blocks creates no fonts at all.
-        ///
-        /// A spec with no face falls back to the body's rather than panicking: the two lists are
-        /// built from the same constants and a mismatch would be a bug, but a document is not the
-        /// place to discover one.
+        /// The face a block is set in — [`spec_for`]'s answer looked up, so a paint measuring
+        /// three hundred blocks creates no fonts. A spec with no face falls back to the body's:
+        /// the lists come from the same constants, and a document is no place to discover a
+        /// mismatch.
         pub fn face(&self, kind: &BlockKind, style: Option<&str>) -> &Face<'a> {
             let spec = spec_for(kind, style);
             self.all
@@ -634,11 +560,8 @@ mod windows_impl {
         }
     }
 
-    /// A document's family name as a face name GDI will actually find.
-    ///
-    /// The one substitution, and it is the generic family a fenced code block carries: everything
-    /// else is passed through exactly as the document spells it, because `fo:font-family` is a
-    /// real face name in every document that sets one.
+    /// A document's family name as a face name GDI will find: the one substitution is the generic
+    /// family of a fenced code block; everything else passes through as the document spells it.
     fn mapped_family(family: &str) -> &str {
         match family {
             grind_text::markdown::MONOSPACE => super::MONO_FACE,
@@ -662,8 +585,7 @@ mod tests {
         assert!(spec_for(&BlockKind::Paragraph, Some("Subtitle")).italic);
     }
 
-    /// R5 is tolerance on the way in, and a level-9 heading is a document this build loads. A
-    /// shell that indexed the scale table with it would panic on one.
+    /// A level-9 heading loads (R5), and indexing the scale table with it must not panic.
     #[test]
     fn a_heading_deeper_than_the_faces_go_is_set_as_the_last_of_them() {
         let deep = spec_for(&BlockKind::Heading { level: 9 }, None);
@@ -702,7 +624,7 @@ mod tests {
                 Some(grind_text::markdown::PREFORMATTED),
             ),
             spec_for(&BlockKind::ListItem { depth: 2 }, None),
-            // A name this build keeps and does not interpret, which must land on the body face.
+            // A name kept and not interpreted lands on the body face.
             spec_for(&BlockKind::Paragraph, Some("Quotations")),
         ];
         asked.extend((1..=9).map(|level| spec_for(&BlockKind::Heading { level }, None)));
@@ -711,8 +633,8 @@ mod tests {
         }
     }
 
-    /// The mechanical half of decision 3: GDI answers per UTF-16 code unit and the trait asks per
-    /// `char`, so each character takes the entry for its **last** unit.
+    /// GDI answers per UTF-16 code unit and the trait asks per `char`, so each character takes its
+    /// **last** unit's entry.
     #[test]
     fn advances_are_per_character_where_gdi_answers_per_code_unit() {
         let mut out = Vec::new();
@@ -722,8 +644,7 @@ mod tests {
         assert_eq!(last, 15.0);
     }
 
-    /// A character outside the basic multilingual plane is two code units and **one** advance —
-    /// which is more than `ui_tui`'s cell counting manages.
+    /// A character outside the basic multilingual plane is two code units and **one** advance.
     #[test]
     fn a_character_outside_the_bmp_is_one_advance() {
         let mut out = Vec::new();

@@ -2,37 +2,19 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Help while a formula is being typed: what may be completed, and what the call under the caret
-//! wants next — `doc/sheet-shell.md`'s M6 for this shell, and W9's half of it.
+//! Help while a formula is typed: what may be completed, and what the call under the caret wants
+//! next. Portable. What to offer, how the list narrows, what accepting replaces and the runs the
+//! band draws are `grind_sheet::formula::assist`'s; what is here is which **keys** steer the list.
+//! `win.rs` reads the editor's caret and `sheet/draw.rs` draws the answer.
 //!
-//! **Portable, and tested on any host**, like [`super::keymap`], [`super::state`] and
-//! [`super::status`]. What to offer, how the list narrows, what accepting replaces and the runs
-//! the band draws are `grind_sheet::formula::assist`'s — this file's own until the Mac's cell
-//! editor would have copied them — and what is left here is which **keys** steer the list, since
-//! a key code is this platform's. `win.rs` reads the editor's caret and `sheet/draw.rs` puts the
-//! answer on screen.
+//! ## A band, not a popup
 //!
-//! ## Where it is shown, and why not in a popup
-//!
-//! `ui_sheet_gtk` floats a `gtk::Popover` under the cell being edited. This shell draws a **band**
-//! instead — one line under the strip, in the same place and the same manner as the notice bar —
-//! and that is a decision rather than a shortcut. A popup list on Win32 is a second top-level
-//! window with its own class, its own theming (`WM_CTLCOLORLISTBOX`, since a `LISTBOX` paints
-//! itself), its own DPI answer, and a focus problem: the whole point is that typing carries on
-//! into the editor underneath while the list narrows, so the popup must never take the keyboard.
-//! A band this window draws itself has none of those, follows the theme by construction, sits
-//! next to the formula bar the text is also mirrored in, and — being drawn rather than a
-//! control — is visible in `--render-to`'s windowless frame like every other read-out here.
-//!
-//! What it costs is the vertical list: five names on one line rather than eight rows with their
-//! summaries. So the chosen offer's own summary is drawn after the names, which is the line a
-//! reader actually wants, and the rest are names alone.
-//!
-//! ## What is *not* here
-//!
-//! **Point mode** — arrow keys building a reference into a half-typed formula. It stays on
-//! `doc/windows-shell.md`'s gap list: it is a third editing mode rather than a read-out, and
-//! [`super::state::Outcome`] has no `Point` for it to arrive as.
+//! A popup list on Win32 is a second top-level window with its own class, theming
+//! (`WM_CTLCOLORLISTBOX`), DPI answer and a focus problem, when typing must carry on into the
+//! editor while the list narrows. A **band** this window draws — a line under the strip, like the
+//! notice bar — follows the theme by construction, sits by the formula bar the text is mirrored
+//! in, and appears in `--render-to`'s frames. The cost is five names on a line rather than rows
+//! with summaries, so the chosen offer's summary follows the names.
 
 pub use grind_sheet::formula::assist::{
     Assist, Ink, Piece, band, friendly_line, function_insert, function_lines,
@@ -51,15 +33,10 @@ pub enum Reply {
     Dismiss,
 }
 
-/// What a keystroke means **while a list of offers is up** — asked before
-/// [`super::state::on_key`], and `None` for everything this list has no answer for, which is
-/// almost every key.
-///
-/// The three it claims are the three that would otherwise do something the user did not mean:
-/// Tab commits the cell and moves right, Up/Down commit in Enter mode, and Escape throws the
-/// whole edit away. **Enter is deliberately not claimed**: it commits, as it always does, because
-/// a formula finished by pressing Enter is the common case and an accidental completion in its
-/// place would store the wrong thing.
+/// What a keystroke means **while offers are up** — asked before [`super::state::on_key`], `None`
+/// for nearly every key. It claims Tab (else commit and move right), Up/Down (else commit in Enter
+/// mode) and Escape (else the edit is thrown away). **Enter is not claimed**: it commits, the
+/// common way to finish a formula, where an accidental completion would store the wrong thing.
 pub fn on_key(offering: bool, key: Key, mods: Mods) -> Option<Reply> {
     if !offering || mods.ctrl || mods.alt {
         return None;

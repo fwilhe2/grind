@@ -2,29 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where a cell is, in pixels — and which cell a pixel is in.
+//! Where a cell is in pixels, and which cell a pixel is in — the grid's pixel arithmetic as pure
+//! functions, **no Windows types and no `unsafe`**, so it tests on Linux. A prefix-sum axis per
+//! direction, and two coordinate spaces, which mixing is the bug this module prevents:
 //!
-//! **No Windows types, and no `unsafe`.** This is the grid's whole pixel arithmetic as pure
-//! functions, which is the half of a native shell that can be unit-tested on the Linux machine
-//! this repository is developed on (`doc/windows-shell.md`, "The crate": the `[W]` split is the
-//! design rather than an accident of it).
+//! * **content** — `(0, 0)` is cell A1's top-left corner, extending to the sheet's full 1048576 ×
+//!   16384. Nothing scrolls here.
+//! * **client** — `(0, 0)` is the client area's top-left, so the header band is at `x < header_w`
+//!   / `y < header_h` and the content is offset by the scroll position.
 //!
-//! It is deliberately a *smaller* module than `ui_sheet_gtk/src/geom.rs`, whose shape it
-//! follows: the same prefix-sum axis, the same two coordinate spaces, and none of the parts
-//! that belong to features this shell does not have yet — no resize edges (W1 draws, it does
-//! not drag), no fill handle, no name-hint placement. [`GridGeom::filter_button`] is the one
-//! exception, `ui_sheet_gtk`'s own `GridGeom::filter_button` mirrored.
-//!
-//! Two coordinate spaces, and mixing them is the bug this module exists to prevent:
-//!
-//! * **content** — `(0, 0)` is cell A1's top-left corner, and it extends to the sheet's full
-//!   1048576 × 16384. Nothing scrolls here.
-//! * **client** — `(0, 0)` is the window's client-area top-left, so the header band sits at
-//!   `x < header_w` / `y < header_h` and the content is offset by the scroll position.
-//!
-//! [`GridGeom::cell_rect`] converts one way and [`GridGeom::hit`] the other; they are tested as
-//! a round trip, because a rectangle that does not contain the point that produced it is the
-//! whole class of off-by-one this module can have.
+//! [`GridGeom::cell_rect`] converts one way and [`GridGeom::hit`] the other, tested as a round
+//! trip.
 
 use std::ops::Range;
 
@@ -32,24 +20,19 @@ use std::ops::Range;
 /// opinion: a scrollbar that ended somewhere the reader does not is a bug waiting.
 pub use grind_sheet::{MAX_COLS, MAX_ROWS};
 
-/// Pixels to an ODF millimetre, at the notional 96 dpi every Windows API calls 100%.
-///
-/// A length in a document is physical (§5.4) and a window is not, so something has to choose.
-/// The DPI of the monitor the window is on multiplies this — see [`scale`] — so a column set to
-/// 2.5cm is 2.5cm on a correctly configured screen and consistent everywhere else.
+/// Pixels to an ODF millimetre at the notional 96 dpi Windows calls 100%. The monitor's DPI
+/// multiplies this ([`scale`]), so a 2.5cm column is 2.5cm on a correctly configured screen.
 pub const PX_PER_MM: f64 = 96.0 / 25.4;
 
-/// A filter dropdown button's (min, max) side length, in design units — `GridGeom::filter_button`
-/// clamps a cell's own height into this band, the same pair `ui_sheet_gtk/src/geom.rs` uses.
+/// A filter button's (min, max) side, in design units; `GridGeom::filter_button` clamps a cell's
+/// height into it.
 const FILTER_BUTTON: (f64, f64) = (9.0, 18.0);
 /// A checkbox's box, in device-independent pixels — a little under a line of cell text.
 const CHECKBOX: f64 = 13.0;
 
-/// A length at 100% scaling, in the pixels a display at `dpi` actually has.
-///
-/// The one place this shell turns a design measurement into a device one. Per-monitor DPI v2
-/// means the answer changes when the window is dragged between monitors, so nothing measured is
-/// ever *stored* scaled — the same rule the GTK window's zoom follows.
+/// A length at 100% scaling, in the pixels a display at `dpi` has — the one place a design
+/// measurement becomes a device one. Per-monitor DPI v2 changes the answer when the window moves
+/// between monitors, so nothing measured is ever stored scaled.
 pub fn scale(value: f64, dpi: u32) -> f64 {
     value * f64::from(dpi) / 96.0
 }
@@ -68,11 +51,9 @@ impl Rect {
         x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
     }
 
-    /// The same rectangle as the integer edges GDI actually draws between.
-    ///
-    /// Rounded rather than truncated, and as *edges* rather than as an origin and a size, so
-    /// that two adjacent cells share a boundary instead of leaving a seam that lights up at
-    /// some scroll offsets and not others.
+    /// The same rectangle as the integer edges GDI draws between — rounded, and as edges rather
+    /// than origin and size, so adjacent cells share a boundary instead of leaving a seam at some
+    /// scroll offsets.
     pub fn edges(&self) -> (i32, i32, i32, i32) {
         let left = self.x.round() as i32;
         let top = self.y.round() as i32;
@@ -93,10 +74,8 @@ pub enum Hit {
     ColHeader(u32),
     /// The button where the two header bands meet, which selects the whole sheet.
     Corner,
-    /// Window furniture that is not the grid — the name-box strip above it and the status bar
-    /// below. A separate answer from [`Hit::Corner`] rather than a convenient synonym for it,
-    /// because the corner *does* something when it is clicked and the status bar must not do
-    /// that thing.
+    /// Window furniture that is not the grid — the strip above it and the status bar below. Not
+    /// [`Hit::Corner`]: the corner selects everything when clicked, and the status bar must not.
     Chrome,
 }
 
@@ -107,14 +86,11 @@ pub enum Edge {
     Row(u32),
 }
 
-/// How big each track on one axis is — `grind_sheet::tracks`, hoisted out of this file and
-/// `ui_sheet_gtk`'s when the macOS shell would have been a third copy (`doc/macos-shell.md`, M1).
+/// How big each track on one axis is (`grind_sheet::tracks`).
 pub use grind_sheet::tracks::Sizes;
 
-/// A millimetre in this shell's unit, at `dpi` — what [`Sizes::from_lengths`] is handed.
-///
-/// Converted to 96-dpi pixels first and *then* scaled, the order this shell always had, so
-/// that a frame rendered before the hoist and after it is the same bytes.
+/// A millimetre in this shell's unit at `dpi` — what [`Sizes::from_lengths`] is handed. Converted
+/// to 96-dpi pixels first and *then* scaled, so frames stay byte-identical.
 pub fn mm_to_px(dpi: u32) -> impl Fn(f64) -> f64 {
     move |mm| scale(mm * PX_PER_MM, dpi)
 }
@@ -128,37 +104,26 @@ pub const NUMBER_W: f64 = 104.0;
 /// The two decimal buttons' width at 100% — `.00` and a little air, not a square.
 pub const DECIMALS_W: f64 = 40.0;
 
-/// Everything needed to place a cell: the header band, the two axes' sizes, and which track is
-/// at the top-left corner of the view.
-///
-/// The scroll position is a **track index rather than a pixel offset**, which is a decision and
-/// not an omission. A Win32 scrollbar's range is an `i32`, and this sheet is 1048576 rows tall:
-/// in pixels that is twenty million and the thumb is quantised to something coarse anyway,
-/// whereas in rows it is exact. Excel scrolls by whole rows for the same reason, so the
-/// arithmetic and the convention agree here.
+/// Everything needed to place a cell: the header band, the two axes' sizes, and which track is at
+/// the view's top-left. The scroll position is a **track index, not a pixel offset**: a Win32
+/// scrollbar's range is an `i32`, and 1048576 rows is twenty million pixels, where in rows it is
+/// exact. Excel scrolls by whole rows too.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GridGeom {
-    /// The **format strip** at the very top — `doc/windows-shell.md` decision 4's drawn strip for
-    /// a property of the selection, over the grid at last (`sheet/format.rs`). Above the name box
-    /// and the formula bar rather than below them, which is where a spreadsheet keeps its
-    /// formatting and what keeps the formula bar against the cells it reads; and where the text
-    /// pane's own strip is, so the two panes' strips sit in one place in one window.
+    /// The **format strip** at the very top (decision 4, `sheet/format.rs`) — above the name box
+    /// and formula bar, where a spreadsheet keeps its formatting, which keeps the formula bar
+    /// against the cells, and where the text pane's strip is.
     pub format_h: f64,
     /// The strip under it that holds the name box and, beside it, the
     /// formula bar. Everything below is offset by it, which is why it is part of the geometry
     /// rather than a constant the painter knows.
     pub strip_h: f64,
-    /// The notice bar under the strip, and **zero when there is no notice** — which is the whole
-    /// of how a banner appears and disappears. Carried as a height rather than as a flag so that
-    /// every rectangle below it is one arithmetic expression whether or not it is showing.
+    /// The notice bar under the strip, **zero when there is no notice** — a height rather than a
+    /// flag, so every rectangle below is one expression either way.
     pub banner_h: f64,
-    /// The assist band under the notice bar, and zero when there is nothing to assist with —
-    /// the same appear-and-disappear arrangement as `banner_h`, for the same reason.
-    ///
-    /// A second band rather than a second use of the first, because the two answer different
-    /// questions and are routinely up together: a formula that would not parse leaves a notice on
-    /// screen *while the edit is still open*, which is exactly when the signature hint is most
-    /// worth having. Sharing one row would mean the more useful of the two hiding the other.
+    /// The assist band under the notice bar, zero with nothing to assist with. A second band
+    /// rather than a second use of the first: a formula that will not parse leaves a notice up
+    /// while the edit is open, when the signature hint is most worth having.
     pub hint_h: f64,
     pub header_w: f64,
     pub header_h: f64,
@@ -171,11 +136,8 @@ pub struct GridGeom {
     /// The client area, in pixels.
     pub width: f64,
     pub height: f64,
-    /// The DPI every measurement above was built at.
-    ///
-    /// Carried here rather than passed alongside, because the painter needs it too and two
-    /// copies of one number is how a `WM_DPICHANGED` that rebuilt the geometry but not the
-    /// fonts happens.
+    /// The DPI every measurement above was built at — carried here, since the painter needs it too
+    /// and two copies is how a `WM_DPICHANGED` rebuilds the geometry but not the fonts.
     pub dpi: u32,
     /// The zoom, a factor on every cell (the tracks are built already scaled by it; this is what
     /// the painter needs to scale what it draws in them). 1.0 is 100%.
@@ -276,13 +238,9 @@ impl GridGeom {
         }
     }
 
-    /// The name box inside the strip: the width of the row header band plus a column, so that it
-    /// is wide enough for `Sheet1.AA1234` without being wide enough to look like a formula bar.
-    ///
-    /// **A 32-pixel control centred in a 44-pixel strip** (W10), which is Fluent's own control
-    /// height and its own 12-pixel margin rather than a fraction of whatever the strip happens to
-    /// be — the previous arrangement made the field as tall as the strip less a twelfth, so
-    /// growing the strip grew the field with it and the whole row read as one slab.
+    /// The name box inside the strip: the row header's width plus a column, wide enough for
+    /// `Sheet1.AA1234` without looking like a formula bar — **a 32-pixel control centred in a
+    /// 44-pixel strip**, Fluent's control height and margin.
     pub fn name_box_rect(&self) -> Rect {
         let margin = scale(crate::theme::space::GROUP, self.dpi);
         let h = scale(crate::theme::space::CONTROL_H, self.dpi).min(self.strip_h);
@@ -294,11 +252,8 @@ impl GridGeom {
         }
     }
 
-    /// The formula bar: the rest of the strip, after the name box.
-    ///
-    /// Two read-outs on one strip and nothing else, which is `doc/windows-shell.md` decision 4's
-    /// rule for it — *where* the selection is and *what is in it*. It is not a place verbs may
-    /// go, which is what keeps it a strip rather than a second toolbar.
+    /// The formula bar: the rest of the strip after the name box. Two read-outs on one strip —
+    /// where the selection is and what is in it (decision 4) — and no verbs.
     pub fn formula_rect(&self) -> Rect {
         let margin = scale(crate::theme::space::GROUP, self.dpi);
         let name = self.name_box_rect();
@@ -316,12 +271,9 @@ impl GridGeom {
         card_in(band, self.dpi)
     }
 
-    /// Where the in-cell editor goes: the active cell, clipped to the body.
-    ///
-    /// Clipped rather than clamped, because a child control drawn over the header band or the
-    /// status bar would sit on top of chrome the painter owns. A cell scrolled entirely out of
-    /// sight gives an empty rectangle, and the caller's answer to that is to put the editor on
-    /// the formula bar instead.
+    /// Where the in-cell editor goes: the active cell, clipped to the body, since a child control
+    /// over the header band or status bar would sit on chrome the painter owns. A cell scrolled
+    /// out of sight gives an empty rectangle, and the editor then goes on the formula bar.
     pub fn editor_rect(&self, row: u32, col: u32) -> Rect {
         let body = self.body();
         let cell = self.cell_rect(row, col);
@@ -366,12 +318,9 @@ impl GridGeom {
         }
     }
 
-    /// Where an autofilter's dropdown button sits inside one cell of its heading row — a
-    /// square anchored to the cell's right edge, the GTK grid's `filter_button` mirrored.
-    /// `None` when the cell is too small to hold a button and still show any of its text.
     /// The box of a checkbox drawn in a cell: a square at the cell's leading edge, `CHECKBOX`
-    /// device-independent pixels where the cell has room and smaller where it has not, centred
-    /// down it. What is drawn, and what a click has to land in to tick it.
+    /// device-independent pixels where there is room and smaller where not, centred down it — what
+    /// is drawn, and what a click must land in.
     pub fn checkbox(&self, row: u32, col: u32) -> Rect {
         let cell = self.cell_rect(row, col);
         let pad = scale(3.0, self.dpi);
@@ -387,6 +336,8 @@ impl GridGeom {
         }
     }
 
+    /// Where an autofilter's dropdown button sits in one heading cell: a square at its right
+    /// edge, `None` when the cell cannot hold one and still show some of its text.
     pub fn filter_button(&self, row: u32, col: u32) -> Option<Rect> {
         let cell = self.cell_rect(row, col);
         let (min, max) = (
@@ -427,10 +378,8 @@ impl GridGeom {
         }
     }
 
-    /// The rows that intersect the body, as a half-open range.
-    ///
-    /// One past the last *partly* visible row, so a half-drawn row at the bottom edge is drawn
-    /// rather than left as a gap — which is what a viewport request wants.
+    /// The rows meeting the body, as a half-open range, one past the last partly visible row, so a
+    /// half-drawn bottom row is drawn rather than left a gap.
     pub fn visible_rows(&self) -> Range<u32> {
         let body = self.body();
         let end = self.rows.at(self.scroll_y() + body.h) + 1;
@@ -443,12 +392,9 @@ impl GridGeom {
         self.first_col..end.min(self.cols.count()).max(self.first_col)
     }
 
-    /// What sits under a client-space point.
-    ///
-    /// The two bands that are *not* the grid — the strip at the top and the status bar at the
-    /// foot — answer [`Hit::Chrome`], and that is load-bearing rather than tidy: a click on the
-    /// corner button selects the whole sheet, so folding the status bar in with it would make
-    /// clicking the status bar select a million rows.
+    /// What sits under a client-space point. The strip and the status bar answer [`Hit::Chrome`] —
+    /// the corner button selects the whole sheet, so folding the status bar into it would make a
+    /// click there select a million rows.
     pub fn hit(&self, x: f64, y: f64) -> Hit {
         let body = self.body();
         if y < self.header_top() || y >= body.y + body.h {
@@ -518,10 +464,8 @@ impl GridGeom {
         self.cols.last_start(self.body().w)
     }
 
-    /// Move the view by whole tracks, skipping hidden ones and stopping at the ends.
-    ///
-    /// Both scroll paths go through here — the scrollbars and the wheel — so that a wheel
-    /// notch and three clicks of the arrow land in the same place.
+    /// Move the view by whole tracks, skipping hidden ones and stopping at the ends — the
+    /// scrollbars and the wheel both, so a wheel notch and three arrow clicks land alike.
     pub fn scroll_rows(&mut self, delta: i64) {
         self.first_row = step(&self.rows, self.first_row, delta, self.max_first_row());
     }
@@ -545,15 +489,11 @@ impl GridGeom {
     }
 }
 
-/// A band drawn as an **inset card** rather than edge to edge: the notice bar in either pane, and
-/// the grid's assist band. Each of those is one sentence *about* something rather than a piece of
-/// the window's structure, and Fluent's `InfoBar` is a rounded rectangle with a margin round it —
-/// the difference between that and a full-bleed stripe is most of why the W9 chrome read as a
-/// stack of toolbars.
-///
-/// The horizontal margin is the same [`crate::theme::space::GROUP`] the grid's strip keeps for
-/// its fields, so the left edges of the name box and every band below it line up down the window.
-/// A free function because both panes need it and neither owns the other's geometry.
+/// A band drawn as an **inset card**: the notice bar in either pane, and the assist band — a
+/// sentence about something, not a piece of the window's structure, as Fluent's `InfoBar` is a
+/// rounded rectangle with a margin. The horizontal margin is [`crate::theme::space::GROUP`], the
+/// strip's own, so the name box and every band below line up. A free function since both panes
+/// need it.
 pub fn card_in(band: Rect, dpi: u32) -> Rect {
     let margin = scale(crate::theme::space::GROUP, dpi);
     let gap = scale(crate::theme::space::GAP, dpi);
@@ -729,8 +669,7 @@ mod tests {
         let box_ = g.name_box_rect();
         assert!(box_.y > 0.0 && box_.y + box_.h <= g.strip_h);
         assert!(box_.x > 0.0 && box_.w > 0.0);
-        // A control of Fluent's own height, centred — not the strip less a fraction of itself,
-        // which is what made the whole row read as one slab before W10.
+        // A control of Fluent's height, centred.
         assert_eq!(box_.h, crate::theme::space::CONTROL_H);
         assert_eq!(box_.y, (g.strip_h - box_.h) / 2.0);
         assert_eq!(box_.x, crate::theme::space::GROUP);

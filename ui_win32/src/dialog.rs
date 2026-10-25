@@ -2,33 +2,20 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Every modal this shell opens: the file dialogs, and every dialog it draws itself — the close
+//! Every modal this shell opens: the file dialogs, and the dialogs it draws itself — the close
 //! question, a message, a prompt, a list, the filter, the chart and print previews.
 //!
-//! **Windows only, and every function here runs a nested message loop.** That is the whole
-//! reason they are gathered in one file: `doc/windows-shell.md`'s decision 7 is a rule about
-//! *callers* — a handler that opens a modal borrows the window's state briefly on each side of
-//! the dialog and **never across it** — and a rule is easier to keep when the things it applies
-//! to are in one place with the warning written on them.
+//! **Windows only, and every function here runs a nested message loop.** Decision 7 is a rule
+//! about callers — a handler that opens a modal borrows the window's state on each side and
+//! **never across it** — and it is easier kept when the things it applies to are in one place.
+//! Otherwise the window still receives `WM_PAINT` while a modal is up, the procedure is
+//! re-entered, and a second `&mut State` aliases the first: UB that appears to work.
 //!
-//! What goes wrong otherwise is not a hang or a crash: while a modal is up this window still
-//! receives `WM_PAINT`, the window procedure is re-entered, and a second `&mut State` is produced
-//! while the first is alive. That is aliasing UB even though it appears to work, and reading the
-//! code does not reveal it — in the sibling repository it was found by driving the shell under
-//! Wine.
-//!
-//! The file dialogs are `IFileDialog` (COM, Vista and later) rather than `GetOpenFileNameW`,
-//! because it is the modern dialog and needs no application manifest to be one. Its filters
-//! follow `doc/flat-first.md`, the same as both GTK shells' `*_filters`/`*_save_filters`:
-//! **Open offers one combined filter and prefers neither form** — a user looking for a document
-//! does not know which physical form it is in, and this window shows either document kind so the
-//! filter combines both kinds' extensions rather than making the user guess before they have even
-//! seen the file. **Save leads with flat** — `.fods`/`.fodt` first, then the package, then
-//! `.grind` — because in doubt this project writes the form that diffs, and it offers only the
-//! kind of the pane that is open: a spreadsheet suggests `.fods`, a text document `.fodt`.
-//! Nothing here decides what a form *is*: `grind_sheet::write_file`/`grind_text::write_file` read
-//! the extension the user chose (`Form::from_path`), which is the one place in the workspace
-//! where an extension decides anything.
+//! The file dialogs are `IFileDialog` (COM), the modern dialog with no manifest needed. Their
+//! filters follow `doc/flat-first.md`: **Open offers one combined filter** over both kinds and
+//! every form, since a user looking for a document does not know its form; **Save leads with
+//! flat** — `.fods`/`.fodt`, then the package, then `.grind` — for the open pane's kind only. The
+//! extension the user chose decides the form (`Form::from_path`).
 
 #![cfg(windows)]
 
@@ -49,11 +36,8 @@ use grind_core::{DocumentKind, Form};
 
 use crate::gdi;
 
-/// Start COM for this thread, for the life of the value.
-///
-/// `IFileDialog` is a COM object and needs an apartment; an application that never opens one
-/// still pays nothing, because this is created once in `win::run` and dropped when the message
-/// loop ends. Apartment-threaded because that is what the shell dialogs want.
+/// Start COM for this thread, for the life of the value — created once in `win::run`, dropped when
+/// the message loop ends, apartment-threaded as the shell dialogs want.
 pub struct Com;
 
 impl Com {
@@ -93,22 +77,18 @@ fn kind_label(kind: DocumentKind) -> &'static str {
     }
 }
 
-/// The Open dialog's filter: **one, matching both document kinds this window can show**, and
-/// both physical forms plus the projection within each — `doc/flat-first.md`'s "one filter
-/// matching both \[forms\]" extended over kinds too, since a single window here can hold either.
-/// A user opening a `.fodt` should see it without switching away from whatever filter greeted
-/// them, the same reason `ui_sheet_gtk`'s and `ui_text_gtk`'s own `*_filters` are one filter
-/// each rather than a leading "All spreadsheets" plus a per-extension breakdown.
+/// The Open dialog's filter: **one**, matching both document kinds and every form of each, so a
+/// `.fodt` shows without switching filters.
 ///
-/// Held as owned UTF-16 by the caller, because `COMDLG_FILTERSPEC` is two borrowed pointers and
-/// the dialog reads them after `SetFileTypes` returns.
+/// Owned UTF-16 held by the caller, since `COMDLG_FILTERSPEC` is two borrowed pointers the dialog
+/// reads after `SetFileTypes` returns.
 fn open_filters() -> Vec<(Vec<u16>, Vec<u16>)> {
     let mut filters = vec![(
         gdi::wide("OpenDocument Spreadsheet or Text"),
         gdi::wide("*.fods;*.ods;*.fodt;*.odt;*.grind"),
     )];
-    // A workbook is imported as a new document (`import.rs`, X6), so it is a filter of its own
-    // under the name a person knows it by — second, so the ODF documents still greet the user.
+    // A workbook is imported as a new document (`import.rs`), so it is a filter of its own, named
+    // as a person knows it, after the ODF one.
     if cfg!(feature = "xlsx") {
         filters.push((gdi::wide("Excel Workbook"), gdi::wide("*.xlsx;*.xlsm")));
     }
@@ -127,12 +107,9 @@ fn open_filters() -> Vec<(Vec<u16>, Vec<u16>)> {
     filters
 }
 
-/// The Save dialog's filters, for whichever `kind` the open pane is. **Flat first**
-/// (`doc/flat-first.md`): in doubt this project writes the form that diffs, so `.fods`/`.fodt`
-/// leads, then the package, then `.grind` — the same order and the same three entries as
-/// `ui_sheet_gtk`'s `spreadsheet_save_filters` and `ui_text_gtk`'s `text_save_filters`, and the
-/// extensions come from [`Form::extension`] so this list cannot name one the writer disagrees
-/// with.
+/// The Save dialog's filters for the open pane's `kind`, **flat first** (`doc/flat-first.md`):
+/// `.fods`/`.fodt`, then the package, then `.grind`, the extensions from [`Form::extension`] so
+/// this list cannot name one the writer disagrees with.
 fn save_filters(kind: DocumentKind) -> Vec<(Vec<u16>, Vec<u16>)> {
     let label = kind_label(kind);
     vec![
@@ -161,10 +138,8 @@ fn specs(filters: &[(Vec<u16>, Vec<u16>)]) -> Vec<COMDLG_FILTERSPEC> {
         .collect()
 }
 
-/// An `IShellItem`'s path, as a Rust string.
-///
-/// `GetDisplayName` allocates with the COM task allocator, so the answer has to be freed with
-/// `CoTaskMemFree` — the leak this function exists to make impossible to forget.
+/// An `IShellItem`'s path, as a Rust string. `GetDisplayName` allocates with the COM task
+/// allocator, so the answer is freed with `CoTaskMemFree` here, where it cannot be forgotten.
 fn item_path(item: &windows::Win32::UI::Shell::IShellItem) -> Option<PathBuf> {
     // SAFETY: the item is live; the returned pointer is owned by this call and freed below.
     unsafe {
@@ -190,8 +165,7 @@ pub fn open_path(owner: HWND) -> Option<PathBuf> {
     }
 }
 
-/// Insert Picture's own filter — the same extensions `ui_text_gtk`'s `image_filters` offers,
-/// since both reach the same `image.rs`/WIC (this shell) or gdk-pixbuf (that one) decoders.
+/// Insert Picture's filter: the extensions the WIC decoder (`image.rs`) reads.
 fn image_filters() -> Vec<(Vec<u16>, Vec<u16>)> {
     vec![(
         gdi::wide("Images"),
@@ -214,9 +188,8 @@ pub fn open_image_path(owner: HWND) -> Option<PathBuf> {
     }
 }
 
-/// What an import will open: both spellings of the one format, plus `.txt`, since that is what
-/// a great many exports are called and the delimiter is read from the content rather than from
-/// the name. The same list `ui_sheet_gtk`'s `csv_filters` offers.
+/// What an import opens: both spellings of the one format, plus `.txt`, which many exports are
+/// called; the delimiter is read from the content.
 fn csv_filters() -> Vec<(Vec<u16>, Vec<u16>)> {
     vec![(
         gdi::wide("Delimited text"),
@@ -239,11 +212,8 @@ pub fn open_csv_path(owner: HWND) -> Option<PathBuf> {
     }
 }
 
-/// Ask where to write one out.
-///
-/// The **name** is what says which delimiter (`csv::Dialect::for_name`), so these two entries
-/// are the whole of that choice — the same pair `ui_sheet_gtk`'s save dialog offers, and what
-/// the browser shell spends two palette rows on because a download names itself.
+/// Ask where to write the CSV. The **name** says which delimiter (`csv::Dialect::for_name`), so
+/// these two entries are the whole choice.
 pub fn save_csv_path(owner: HWND, suggested: &str) -> Option<PathBuf> {
     let filters = vec![
         (gdi::wide("Comma-separated values"), gdi::wide("*.csv")),
@@ -402,17 +372,12 @@ use crate::modal::{self, Edges, End};
 use crate::sheet::geom::{Rect, scale};
 use crate::theme::{Interaction, Rgb, Theme};
 
-/// The palette every modal in this file paints itself in.
-///
-/// **A static, and the one in this crate.** Everywhere else the rule `theme.rs` states holds —
-/// the drawing code is handed a palette and cannot reach past it — and this is the exception the
-/// rule's own reason allows: a modal here is opened at a point where the caller has deliberately
-/// *released* its borrow of the pane (decision 7 forbids holding one across a nested message
-/// loop), so there is no `&Pane` to read a theme out of at the call site, and threading one
-/// through every caller would put a parameter on each of them purely to work around that. The
-/// window sets it when it learns the theme and again on `WM_SETTINGCHANGE`; there is one UI
-/// thread, and a modal that opened before the first call gets the light palette, which is also
-/// what a machine that has said nothing gets.
+/// The palette every modal here paints itself in — **a static, the one in this crate.** Elsewhere
+/// the drawing code is handed a palette and cannot reach past it; a modal opens where the caller
+/// has released its borrow of the pane (decision 7), so there is no `&Pane` to read a theme from,
+/// and threading one through every caller would be a parameter for that alone. The window sets it
+/// when it learns the theme and on `WM_SETTINGCHANGE`; one UI thread, and a modal opened before
+/// the first call gets the light palette.
 static THEME: std::sync::Mutex<Option<Theme>> = std::sync::Mutex::new(None);
 
 /// Tell this module which palette to paint in — called by `win.rs` whenever the theme changes.
@@ -451,9 +416,9 @@ const ID_LIST: usize = 12;
 /// What a button in the footer is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Role {
-    /// The answer Enter gives — drawn in the accent, which is ContentDialog's *primary* button.
-    /// One per modal, and **always the safe one** where an answer destroys something: a dialog
-    /// whose accent button deletes is a dialog that deletes when somebody presses Enter twice.
+    /// The answer Enter gives, drawn in the accent — ContentDialog's *primary* button. One per
+    /// modal, **always the safe one** where an answer destroys something, or pressing Enter twice
+    /// deletes.
     Default,
     /// Any other answer.
     Answer,
@@ -485,7 +450,7 @@ pub type Rendered = (u32, u32, Vec<u8>);
 
 /// What is between a modal's title and its footer.
 enum Body {
-    /// A sentence or two — what `MessageBoxW` used to say.
+    /// A sentence or two.
     Message(String),
     /// A label and one line of text to type.
     Field { label: String, initial: String },
@@ -779,12 +744,10 @@ extern "system" fn smoke_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: 
     }
 }
 
-/// Open a modal and pump messages until it is answered; then ask `read` what it says, while its
-/// controls still exist, and close it.
-///
-/// **A nested message loop**, like everything else in this file — the caller has released its
-/// borrow. The owner is disabled for exactly as long as the modal is up and re-enabled *before*
-/// the modal is destroyed, or Windows activates some other application instead.
+/// Open a modal and pump messages until it is answered, ask `read` what it says while its controls
+/// exist, and close it — **a nested message loop**; the caller has released its borrow. The owner
+/// is disabled while the modal is up and re-enabled *before* it is destroyed, or Windows activates
+/// another application.
 fn run<T>(spec: Spec<'_>, read: impl FnOnce(&mut Modal) -> T) -> Option<T> {
     if !register(MODAL_CLASS, Some(modal_proc), &MODAL_REGISTERED, false) {
         return None;
@@ -1409,10 +1372,9 @@ extern "system" fn modal_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: 
                 DefWindowProcW(hwnd, message, wparam, lparam)
             }
         }
-        // The whole window is client: the caption and frame exist only for the compositor.
-        // Both forms: the one `CreateWindowExW` sends first (`wparam` false) decides the client
-        // rectangle the children are laid out in, and answering only the other left a caption's
-        // height missing from the bottom of every modal.
+        // The whole window is client: the caption and frame exist only for the compositor. Both
+        // forms are answered — the one `CreateWindowExW` sends first (`wparam` false) decides the
+        // client rectangle the children are laid out in.
         WM_NCCALCSIZE => LRESULT(0),
         WM_NCHITTEST => LRESULT(HTCLIENT as isize),
         // Without `-1` the default repaints a frame this window does not have.
@@ -2151,10 +2113,9 @@ fn draw_row(modal: &Modal, item: &DRAWITEMSTRUCT) {
     }
 }
 
-/// The footer buttons' own procedure, wrapped round `BUTTON`'s: it tracks the pointer — a button
-/// that does not respond to it is what most gives a custom-drawn window away — and tells the dialog
-/// manager the button is a push button, which an owner-drawn one otherwise does not say, so that
-/// Enter on a focused *Cancel* means Cancel.
+/// The footer buttons' procedure, wrapped round `BUTTON`'s: it tracks the pointer — a button that
+/// ignores it gives a custom-drawn window away — and tells the dialog manager the button is a push
+/// button, which an owner-drawn one does not, so Enter on a focused *Cancel* means Cancel.
 extern "system" fn button_proc(
     hwnd: HWND,
     message: u32,
@@ -2349,10 +2310,8 @@ pub fn error(owner: HWND, text: &str) {
     tell(owner, "Something went wrong", text);
 }
 
-/// The Help menu's About: what build this is.
-///
-/// `grind_core::build_info::describe` is the one place this fact is formatted, so this window's
-/// About reads the same commit/tree/date every other shell's does.
+/// Help ▸ About: what build this is, as `grind_core::build_info::describe` formats it for every
+/// client.
 pub fn about(owner: HWND) {
     let text = format!(
         "An ODF-native office suite.\n\n{}\n\nhttps://github.com/fwilhe2/grind\n\n\
@@ -2383,8 +2342,8 @@ pub fn licences(owner: HWND) {
     );
 }
 
-/// The three-button close question, in the words Windows' own applications use: the verbs on
-/// the buttons rather than *Yes* and *No*, and **Save** the default, which is the safe answer.
+/// The three-button close question in Windows' own words: the verbs on the buttons, and **Save**
+/// the default, the safe answer.
 pub fn confirm_close(owner: HWND, name: &str) -> Answer {
     let answer = run(
         Spec {
@@ -2411,8 +2370,7 @@ pub fn confirm_close(owner: HWND, name: &str) -> Answer {
 }
 
 /// A destructive question — *delete this sheet?* — with the verb on its button and **Cancel** the
-/// default: a dialog whose default answer is the destructive one is a dialog that deletes things
-/// when somebody presses Enter twice.
+/// default.
 pub fn confirm(owner: HWND, title: &str, text: &str, verb: &str) -> bool {
     run(
         Spec {
@@ -2430,10 +2388,8 @@ pub fn confirm(owner: HWND, title: &str, text: &str, verb: &str) -> bool {
         == Some(IDOK.0)
 }
 
-/// Ask for one line of text. `None` means the user cancelled or typed nothing.
-///
-/// `title` heads the dialog and `label` sits over the field — Fluent's TextBox *header* — so a
-/// caller's question reads as a question rather than as a caption.
+/// Ask for one line of text; `None` when cancelled or empty. `title` heads the dialog and `label`
+/// sits over the field (Fluent's TextBox *header*).
 pub fn prompt(owner: HWND, title: &str, label: &str, initial: &str) -> Option<String> {
     run(
         Spec {
@@ -2456,8 +2412,8 @@ pub fn prompt(owner: HWND, title: &str, label: &str, initial: &str) -> Option<St
 
 /// A picture's alternative text, short and long: `Some((title, description))` on Save, `None` on
 /// Cancel. The picture is shown at the top, decoded by WIC, since alt text is written looking at
-/// what it describes; the advice under the short field is `grind_text::picture::advice`, the same
-/// sentence every client shows, kept up to date as it is typed.
+/// what it describes; the advice under the short field is `grind_text::picture::advice`, kept
+/// current as it is typed.
 pub fn alt_text(
     owner: HWND,
     picture: &[u8],
@@ -2490,18 +2446,10 @@ pub fn alt_text(
     .flatten()
 }
 
-/// Ask the user to pick one of a list of lines. `None` means cancelled, or nothing to pick from.
-///
-/// This is `grind text`'s outline dialog (`App::outline`, `doc/windows-shell.md`'s W5b) and W6's
-/// "Show Source" and "Check Document", built generically over strings rather than over `Heading`
-/// or a `Diagnostic` so this module stays ignorant of the document types (R8's rule for the core
-/// applies just as well to a shell file with no reason to know one). A double-click accepts the
-/// same as OK, because a list a user has to click twice — once to select, once on a separate
-/// button — is slower than the box it replaces. A row with a tab in it is drawn as two columns.
-///
-/// `initial` is the row already selected when the list opens — "the line the selection is on
-/// marked" (D9's own wording), clamped rather than refused so a caller need not check its own
-/// bound first.
+/// Ask the user to pick one of a list of lines; `None` when cancelled or there is nothing to pick.
+/// The outline, Show Source and Check Document all use it, generic over strings so this file knows
+/// no document type. A double-click accepts like OK. A row with a tab in it is two columns.
+/// `initial` is the row selected on opening, clamped rather than refused.
 pub fn choose(owner: HWND, title: &str, items: &[String], initial: usize) -> Option<usize> {
     if items.is_empty() {
         return None;
@@ -2556,10 +2504,9 @@ pub fn show_list(owner: HWND, title: &str, items: &[String]) {
     );
 }
 
-/// What a filter dropdown decided — [`choose_multi`]'s answer, `ui_sheet_gtk`'s own `Chosen`
-/// mirrored: *Clear* is a distinct button from *OK* rather than "every row ticked", because
-/// `grind_sheet::Filter::keep` naming every value is not the same document as no condition on
-/// that field at all, even though the two hide the same rows.
+/// What a filter dropdown decided — [`choose_multi`]'s answer. *Clear* is distinct from *OK* with
+/// every row ticked: a `keep` naming every value is not the same document as no condition, though
+/// both hide the same rows.
 pub enum FilterChoice {
     /// Keep exactly these values, in the order `items` were given.
     Keep(Vec<bool>),
@@ -2568,11 +2515,9 @@ pub enum FilterChoice {
 }
 
 /// Ask which of a column's values stay visible — the autofilter dropdown, `App::set_filter`'s
-/// `keep` on the field a header cell's button was clicked for. `checked` is one bool per
-/// `items`, the field's current `keep` set (or every value, when the field carries no
-/// condition yet); `None` means cancelled.
-///
-/// A list of check boxes over `LBS_MULTIPLESEL`: a click toggles a row, and so does Space.
+/// `keep` for the clicked field. `checked` is one bool per `items` (every value when the field has
+/// no condition); `None` when cancelled. Check boxes over `LBS_MULTIPLESEL`: a click or Space
+/// toggles a row.
 pub fn choose_multi(
     owner: HWND,
     title: &str,
@@ -2592,8 +2537,8 @@ pub fn choose_multi(
                 multi: checked.to_vec(),
                 is_multi: true,
             },
-            // *Clear* at the leading end: clearing the condition is a different kind of answer
-            // from picking values, the same separation `ui_sheet_gtk`'s dropdown draws.
+            // *Clear* at the leading end: removing the condition is a different kind of answer
+            // from picking values.
             buttons: vec![
                 (ID_CLEAR, "Clear Filter", Role::Leading),
                 (IDOK.0, "OK", Role::Default),
@@ -2624,11 +2569,10 @@ pub fn choose_multi(
     .flatten()
 }
 
-/// Show the chart *Insert Chart* would make and ask whether to insert it, with the GNOME dialog's
-/// three kind buttons — Bar, Line, Pie — beside Insert, the one `shown` names pressed: the kind
-/// pressed for **Insert**, `None` for Cancel, Escape or closing it. `pictures` is the chart as
-/// each kind. The picture is `sheet/chart.rs`'s own marks over `grind_sheet::chart_paint`, so
-/// what is previewed is what the grid then draws. Nothing is written here; the caller inserts.
+/// Show the chart *Insert Chart* would make and ask whether to insert it, with Bar, Line and Pie
+/// buttons beside Insert, `shown`'s pressed: the kind for **Insert**, `None` for Cancel, Escape or
+/// closing. The picture is `sheet/chart.rs`'s marks over `grind_sheet::chart_paint`, so the
+/// preview is what the grid draws. Nothing is written here.
 pub fn chart_preview(
     owner: HWND,
     pictures: Vec<(

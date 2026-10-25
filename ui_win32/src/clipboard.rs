@@ -2,17 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The system clipboard, `CF_UNICODETEXT` only — and the only file that touches it.
-//!
-//! **Windows only**, like [`crate::gdi`], and for the same reason: there is nothing portable
-//! to test here, so keeping every `OpenClipboard`/`CloseClipboard` pair in one file is what
-//! makes "always closed, even on the early-return path" a property of a file rather than of a
-//! habit. `sheet/clip.rs` is the portable half — the codec between a rectangle and this
-//! module's `String` — and knows nothing about `HGLOBAL` or a clipboard format.
-//!
-//! `doc/windows-shell.md` decision 6: `CF_UNICODETEXT` is the shape every other spreadsheet
-//! reads, which is what lets a copy here be pasted into LibreOffice Calc or Excel, and the
-//! reverse.
+//! The system clipboard, `CF_UNICODETEXT` only — and the only file that touches it, so "always
+//! closed, even on the early return" is a property of one file. The codec between a rectangle and
+//! this module's `String` is `grind_sheet::clip`'s. `CF_UNICODETEXT` is what every other
+//! spreadsheet reads (decision 6), so a copy here pastes into LibreOffice Calc or Excel and back.
 
 #![cfg(windows)]
 
@@ -24,13 +17,10 @@ use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, Glo
 use windows::Win32::System::Ole::CF_UNICODETEXT;
 use windows::core::PCWSTR;
 
-/// Put `text` on the clipboard as `CF_UNICODETEXT`, replacing whatever was there. `false` means
-/// another application had the clipboard open, or the allocation failed; either way nothing was
-/// changed.
-///
-/// `hwnd` is the window claiming ownership — Win32 wants one so another application can be told
-/// who to ask if it wants to keep rendering the data after this process exits, which this shell
-/// does not do.
+/// Put `text` on the clipboard as `CF_UNICODETEXT`, replacing what was there; `false` when another
+/// application had it open or the allocation failed, and then nothing changed. `hwnd` is the owner
+/// Win32 asks for, so another application knows whom to ask to keep rendering the data — which
+/// this shell does not do.
 pub fn set_text(hwnd: HWND, text: &str) -> bool {
     let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
     let bytes = wide.len() * std::mem::size_of::<u16>();

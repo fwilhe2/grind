@@ -2,46 +2,29 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Which key means what, and where it moves the selection — as pure functions.
-//!
-//! **No Windows types outside one `#[cfg(windows)]` test.** The window turns a `WM_KEYDOWN`
-//! into a [`Key`] with [`key_for`] and hands it over, so the whole of what a keystroke *means*
-//! is decided in code that compiles and tests on the Linux machine this repository is developed
-//! on (`doc/windows-shell.md`, "The crate").
+//! Which key means what, and where it moves the selection — pure functions, **no Windows types
+//! outside one `#[cfg(windows)]` test**. The window turns a `WM_KEYDOWN` into a [`Key`] with
+//! [`key_for`], so what a keystroke means is decided in code that tests on Linux.
 //!
 //! ## The virtual-key codes are written down here, not imported
 //!
-//! [`key_for`] takes a bare `u32` and compares it against constants declared below, rather than
-//! against `windows::Win32::UI::Input::KeyboardAndMouse::VK_LEFT` and its neighbours. That
-//! looks backwards and is the point: importing them would drag the `windows` crate into this
-//! file and take the whole key table off the portable side, which is the half of this shell
-//! that can actually be run here.
-//!
-//! The risk that buys — a number copied out of `winuser.h` wrongly — is answered rather than
-//! accepted: `tests::the_virtual_key_codes_are_the_ones_windows_uses` is compiled **only on
-//! Windows** and asserts every constant below against Windows' own metadata. So the table is
-//! portable, and it is still pinned to the platform by the runner that can see the platform.
+//! Importing `VK_LEFT` and its neighbours would pull the `windows` crate in and take the key table
+//! off the portable side. The risk — a number copied from `winuser.h` wrongly — is answered by
+//! `tests::the_virtual_key_codes_are_the_ones_windows_uses`, compiled **only on Windows**, which
+//! checks every constant against Windows' metadata.
 //!
 //! ## The selection is presentation state
 //!
-//! An anchor and an active cell, and nothing else. The core is never told about it: a range
-//! reaches `App` as two positions when something is actually *done* to it. That is the same
-//! arrangement `ui_sheet_gtk/src/keymap.rs` has, and both now *share* it rather than mirror
-//! it: [`Selection`], [`Motion`], [`Extent`], [`moved`], [`onto_visible`] and the Ctrl+arrow
-//! rule are `grind_sheet::nav`'s, hoisted out of this file and the GTK one when the macOS shell
-//! was about to be the third copy (`doc/macos-shell.md`, M1). What is left here is which
-//! *key* means which motion, which is the one part that is this platform's.
+//! An anchor and an active cell; the core sees a range as two positions when something is done to
+//! it. [`Selection`], [`Motion`], [`Extent`], [`moved`], [`onto_visible`] and the Ctrl+arrow rule
+//! are `grind_sheet::nav`'s; what is here is which key means which motion.
 
 pub use grind_sheet::nav::{Dir, Extent, Motion, Selection, moved, onto_visible};
 
-/// A key, as this shell cares about it.
-///
-/// W2's set was navigation plus the two verbs that are navigation in disguise (select
-/// everything, go to an address). W3 adds the four keys that only mean anything once there is
-/// something to edit — `F2`, `Delete`, `Backspace` and `F9` — and `sheet/state.rs` is the mode
-/// that interprets them. The printable characters are **not** here: a `WM_KEYDOWN` carries a
-/// key rather than a character, and typed text comes from `WM_CHAR`, which has been through the
-/// keyboard layout and the IME.
+/// A key, as this shell cares about it: navigation, the verbs that are navigation in disguise, and
+/// the keys that mean something while editing (`F2`, `Delete`, `Backspace`, `F9`), which
+/// `sheet/state.rs` interprets. Printable characters are **not** here: a `WM_KEYDOWN` carries a
+/// key, and typed text comes from `WM_CHAR`, through the layout and the IME.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
     Left,
@@ -59,27 +42,23 @@ pub enum Key {
     Backspace,
     /// Amend the cell rather than replace it — Excel's, and everybody's.
     F2,
-    /// Find the next cell holding the last word searched for — Shift+F3 the previous. Every
-    /// Windows program's, since Notepad.
+    /// Find the next cell holding the last word searched for; Shift+F3 the previous.
     F3,
     /// Go to an address — the name box's key, and Excel's.
     F5,
     /// The next misspelt word — Word's spelling key since the first Windows version, and the
     /// text pane's (`doc/spelling.md`).
     F7,
-    /// Check the document — the "next problem" key every IDE has, and the one every shell in
-    /// this suite binds "Check Document" to (`doc/sheet-shell.md`'s palette, `ui_text_gtk`'s own
-    /// accelerator).
+    /// Check the document — the "next problem" key, F8 in every client.
     F8,
-    /// Recalculate. Excel's key, and the one this shell needs most, since a document whose
-    /// cached values this build cannot reproduce is left stale on purpose.
+    /// Recalculate — Excel's key, and needed, since a document whose cached values grind cannot
+    /// reproduce is left stale on purpose.
     F9,
-    /// A letter or digit, as the keyboard reports it: **already upper case**, because a
-    /// `WM_KEYDOWN` carries the key rather than the character. W3's typed text comes from
-    /// `WM_CHAR` instead, which is the message that has been through the layout and the IME.
+    /// A letter or digit as the keyboard reports it: **already upper case**, since a `WM_KEYDOWN`
+    /// carries the key. Typed text comes from `WM_CHAR`.
     Char(char),
-    /// Anything this shell does not claim, which must go back to `DefWindowProc` so that
-    /// Alt+F4, the system menu and the accelerators Windows owns keep working.
+    /// Anything this shell does not claim, which goes back to `DefWindowProc` so Alt+F4, the
+    /// system menu and Windows' accelerators keep working.
     Other,
 }
 
@@ -90,8 +69,7 @@ pub struct Mods {
     pub alt: bool,
 }
 
-/// What a keystroke asks for. `None` means this shell does not own the key and the message
-/// must keep travelling — which is what leaves Alt+F4 and the system menu alone.
+/// What a keystroke asks for. `None` means the key is not ours and the message keeps travelling.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
     Move {
@@ -126,11 +104,8 @@ const VK_F7: u32 = 0x76;
 const VK_F8: u32 = 0x77;
 const VK_F9: u32 = 0x78;
 
-/// A virtual-key code as this shell's [`Key`].
-///
-/// `0x30`–`0x39` and `0x41`–`0x5a` are the one range Windows does not give a `VK_` name: they
-/// *are* the ASCII codes for `0`–`9` and `A`–`Z`, which is why [`Key::Char`] always arrives
-/// upper case.
+/// A virtual-key code as a [`Key`]. `0x30`–`0x39` and `0x41`–`0x5a` have no `VK_` names: they
+/// *are* the ASCII codes for `0`–`9` and `A`–`Z`, which is why [`Key::Char`] arrives upper case.
 pub fn key_for(vk: u32) -> Key {
     match vk {
         VK_LEFT => Key::Left,
@@ -208,9 +183,8 @@ pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
         Key::Char(c) if mods.ctrl && !mods.shift => match c {
             'A' => Some(Action::SelectAll),
             'G' => Some(Action::GoTo),
-            // X, C and V are `menu::accelerator`'s (W4's clipboard) and are deliberately not
-            // claimed here: `sheet/state.rs::ready` consults that table first, so this arm
-            // only ever sees a Ctrl+letter with no verb of its own.
+            // X, C and V are `menu::accelerator`'s, consulted first by `sheet/state.rs::ready`, so
+            // this arm only sees a Ctrl+letter with no verb.
             _ => None,
         },
         _ => None,
@@ -235,9 +209,8 @@ mod tests {
         }
     }
 
-    /// The whole reason the constants may be written down in portable code: on Windows, and
-    /// only there, they are checked against Windows' own metadata. A typo in the table above
-    /// fails this build rather than producing a key that silently does nothing.
+    /// On Windows only, the constants are checked against Windows' own metadata, so a typo fails
+    /// the build rather than making a key silently do nothing.
     #[test]
     #[cfg(windows)]
     fn the_virtual_key_codes_are_the_ones_windows_uses() {
@@ -332,7 +305,7 @@ mod tests {
     }
 
     /// A key this shell does not own must keep travelling, or Alt+F4 and the system menu stop
-    /// working — the failure mode of a window that claims everything it is sent.
+    /// working.
     #[test]
     fn unclaimed_keys_are_left_alone() {
         assert_eq!(action_for(Key::Other, Mods::default()), None);
@@ -342,7 +315,7 @@ mod tests {
         for key in [Key::F2, Key::F9, Key::Delete, Key::Backspace] {
             assert_eq!(action_for(key, Mods::default()), None, "{key:?}");
         }
-        // The clipboard is W4's; claiming the letters now would be a Ctrl+C that does nothing.
+        // The clipboard letters are the accelerator table's, not the keymap's.
         for c in ['C', 'X', 'V'] {
             assert_eq!(action_for(Key::Char(c), ctrl()), None, "{c}");
         }

@@ -3,20 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! Where a modal goes and what is inside it — Fluent's *ContentDialog*, measured, and **fitted to
-//! the screen it opens on**.
+//! the screen it opens on**. Every modal is one shape (decision 12): no caption of its own, a
+//! title in the type ramp's *Subtitle*, a body, and a **footer** of a quieter ground holding the
+//! buttons — numbers here so they test without a window.
 //!
-//! Every modal `dialog.rs` opens is one shape (`doc/windows-shell.md` decision 12): a surface with
-//! no caption of its own, a title set in the type ramp's *Subtitle*, a body, and a **footer** of a
-//! quieter ground holding the buttons. That is ContentDialog's anatomy, and its numbers are here
-//! rather than in the window code so they can be tested without a window.
-//!
-//! The half that was broken before this file existed is [`place`]. Each popup used to be asked
-//! for at a fixed *outer* size in logical pixels — the print preview at 640 × 860, which is 1075
-//! pixels tall at 125% and therefore taller than a 1080p screen's work area — centred on its owner
-//! with nothing stopping it at the edge of the monitor, and laid out by guessing how tall the
-//! system caption would be. So the rule is now one function: a modal is **as large as its content
-//! wants, and never larger than the work area of the monitor its owner is on**; what does not fit
-//! is the body's to absorb, by scrolling (a list, a reader) or by scaling (a picture, a page).
+//! [`place`] is the rule: a modal is **as large as its content wants and never larger than the
+//! work area of its owner's monitor**; what does not fit is the body's to absorb, by scrolling (a
+//! list, a reader) or scaling (a picture, a page). A fixed outer size centred on the owner ran a
+//! 640 × 860 preview off a 1080p screen at 125%.
 
 use crate::sheet::geom::{Rect, scale};
 

@@ -2,33 +2,21 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The welcome screen — what a window with **no document** shows.
+//! The welcome screen — what a window with **no document** shows: the choice of a new spreadsheet,
+//! a new text document or opening one, rather than guessing which of two applications was wanted.
 //!
-//! This shell used to open an empty spreadsheet when it was started with no file, and `--text`
-//! was the only way to say otherwise. That is a guess the suite has no business making: it holds
-//! two applications, and a window that picks one of them before being asked is a window that is
-//! wrong half the time. So a window with nothing to show shows the *choice* instead — new
-//! spreadsheet, new text document, or open something that already exists.
+//! **A third pane, not a dialog**: a modal over an empty grid is a window that has already
+//! decided, and cancelling it leaves the guess behind. A pane is `win.rs`'s shape — one window,
+//! one `Pane` — extended to "nothing was opened".
 //!
-//! **A third pane, not a dialog.** `dialog::choose` was the cheap answer and the wrong one: a
-//! modal in front of an empty grid is still a window that has already decided, and cancelling it
-//! leaves the guess behind. A pane is `win.rs`'s existing shape — one window, one `Pane`, decided
-//! by what was opened — and it extends to "nothing was opened" with no new machinery at all.
-//!
-//! **Portable, and tested on any host**, like every other geometry file in this crate: what a
-//! card is, where it sits, which one a point is in and which one a key moves to are arithmetic,
-//! and only putting pixels down needs Windows. The Windows half is at the bottom, behind
-//! `#[cfg(windows)]`, exactly as `sheet/draw.rs` and `text/draw.rs` arrange the same split.
+//! Portable: what a card is, where it sits, which one a point is in and which one a key moves to;
+//! only putting pixels down needs Windows, in the `#[cfg(windows)]` half at the bottom.
 
 use crate::menu::Command;
 use crate::sheet::geom::{Rect, scale};
 
-/// One thing the welcome screen offers.
-///
-/// Each is a [`Command`] rather than a private verb, which is what keeps this pane from being a
-/// second way of doing anything: the card runs the menu item, and `File ▸ New Spreadsheet` runs
-/// the card. A choice with no command could not be reached from the menu bar, and
-/// `doc/windows-shell.md`'s decision 4 says every verb is reachable from there.
+/// One thing the welcome screen offers — a [`Command`], so the card runs the menu item and `File ▸
+/// New Spreadsheet` runs the card, and every choice is reachable from the menu bar (decision 4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Choice {
     NewSheet,
@@ -49,8 +37,8 @@ impl Choice {
         }
     }
 
-    /// The card's own heading. Deliberately **not** [`crate::menu::label_for`]'s string: a menu
-    /// item carries a `&` mnemonic and a `\t` accelerator, and neither belongs on a card.
+    /// The card's own heading — not [`crate::menu::label_for`]'s string, whose `&` mnemonic and
+    /// `\t` accelerator do not belong on a card.
     pub fn title(self) -> &'static str {
         match self {
             Choice::NewSheet => "New Spreadsheet",
@@ -90,11 +78,9 @@ pub const SUBTITLE: &str = "An ODF-native office suite";
 /// a document can be dropped on the window in no shell at all, so it is *not* offered.
 pub const HINT: &str = "A document opens in this window, whichever kind it is.";
 
-/// One card's width and height at 100%, and the gap between two.
-///
-/// Wide enough for [`Choice::detail`]'s longest line at body size, which is what decides it:
-/// a card whose second line elides has lost the sentence that tells the two new-document
-/// choices apart.
+/// One card's width and height at 100%, and the gap between two — wide enough for
+/// [`Choice::detail`]'s longest line at body size, or the sentence telling the two new-document
+/// choices apart elides.
 pub const CARD_W: f64 = 420.0;
 pub const CARD_H: f64 = 64.0;
 pub const CARD_GAP: f64 = 8.0;
@@ -115,10 +101,8 @@ pub const HINT_H: f64 = 20.0;
 /// the reason is that this is the only screen with nothing else on it to be larger than.
 pub const TITLE_PX: f64 = 28.0;
 
-/// Where everything on the welcome screen goes, for a client area this size.
-///
-/// A `struct` rather than free functions so the arithmetic is done once per frame and every
-/// answer below agrees with every other — the same shape `text::geom::Page` has.
+/// Where everything on the welcome screen goes, for a client area this size — computed once per
+/// frame so every answer agrees, like `text::geom::Page`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Page {
     pub width: f64,
@@ -137,12 +121,9 @@ impl Default for Page {
 }
 
 impl Page {
-    /// The whole arrangement — heading, cards, hint — as one column, centred both ways.
-    ///
-    /// Centred *vertically* rather than pinned to the top, which is what makes this read as a
-    /// welcome screen rather than as a document that happens to be empty. The column is clamped to
-    /// the window, so a window shorter than the content starts at the top and lets the bottom
-    /// fall off rather than centring it out of sight in both directions.
+    /// The heading, cards and hint as one column, centred both ways — vertically, so it reads as a
+    /// welcome screen rather than an empty document. Clamped to the window, so one shorter than
+    /// the content starts at the top rather than centring out of sight.
     fn column(&self) -> Rect {
         let card_h = scale(CARD_H, self.dpi);
         let gap = scale(CARD_GAP, self.dpi);
@@ -206,11 +187,8 @@ impl Page {
     }
 }
 
-/// The card the keyboard moves to from `current`, wrapping at both ends.
-///
-/// Wrapping rather than stopping, because there are three of them and the list is on screen
-/// whole: there is no "further down" to be at the end of, so Down from the last card meaning
-/// "back to the top" is shorter than an edge nobody can see the point of.
+/// The card the keyboard moves to from `current`, wrapping at both ends: three cards, all on
+/// screen, so Down from the last meaning the first is shorter than an edge.
 pub fn step(current: usize, delta: i32) -> usize {
     let count = Choice::ALL.len() as i32;
     let at = current as i32 + delta;
@@ -360,11 +338,8 @@ mod windows_impl {
     use crate::sheet::draw::{Align, draw_text};
     use crate::theme::{self, Interaction, Theme, control_fill};
 
-    /// Everything one frame of the welcome screen needs, and nothing about the window.
-    ///
-    /// The same shape the other two panes' frames have, and for the same reason: [`paint`] takes
-    /// an `HDC` and this, so `--render-to` is a second *caller* rather than a second drawing path
-    /// (`doc/windows-shell.md`, decision 5).
+    /// Everything one frame of the welcome screen needs, nothing about the window — so
+    /// `--render-to` is a second caller of [`paint`] (decision 5).
     pub struct Frame<'a> {
         pub theme: Theme,
         pub face: &'a str,
@@ -381,12 +356,9 @@ mod windows_impl {
     /// The welcome screen, painted.
     pub fn paint(dc: HDC, page: &Page, frame: &Frame) {
         let theme = frame.theme;
-        // Every label here stands on a ground somebody else painted — the window's backdrop, or a
-        // card — so GDI must not fill a box behind it. Its default is `OPAQUE`, and a rendered
-        // frame is what said so: the subtitle and the hint came back sitting in pale rectangles
-        // the size of their own text, which is the same class of bug `doc/windows-shell.md` keeps
-        // a list of because it is invisible in review.
-        // SAFETY: the DC is live for the length of this call.
+        // Every label here stands on a ground already painted — the backdrop or a card — so GDI
+        // must not fill a box behind it; its default is `OPAQUE`, which drew pale rectangles
+        // behind the subtitle and the hint.
         unsafe {
             SetBkMode(dc, TRANSPARENT);
         }
@@ -449,11 +421,9 @@ mod windows_impl {
                 (false, true) => Interaction::Hover,
                 (false, false) => Interaction::Rest,
             };
-            // A card is a *filled* control — a field you press, not a toggle in a row of them —
-            // so it has a ground at rest. The focused one is outlined in the accent instead of
-            // filled with it: a keyboard focus that changed the fill would be indistinguishable
-            // from a hover, and the two have to be told apart on a screen whose whole purpose is
-            // being answered by either.
+            // A card is a *filled* control, so it has a ground at rest; the focused one is
+            // outlined in the accent rather than filled, so keyboard focus is told apart from
+            // hover.
             let fill = control_fill(theme, state, false, true).unwrap_or(theme.card);
             let focused = frame.focus == at;
             let border = match focused {

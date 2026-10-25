@@ -2,15 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Reassembling a `WM_CHAR` surrogate pair — pure, and tested on any host.
-//!
-//! `WM_CHAR` carries one UTF-16 code unit per message, so a character outside the Basic
-//! Multilingual Plane — an emoji, most of the rarer CJK ideographs, some IME output — arrives as
-//! two consecutive messages, a high surrogate and then a low one, and `char::from_u32` refuses
-//! each alone. `win.rs`'s `typed_char` is the one caller: it remembers a pending high half on
-//! whichever pane is open (`Pane::surrogate_mut`) and asks this module to close the pair the
-//! moment the low half arrives, which is the last place either shell needs to know surrogates
-//! exist at all.
+//! Reassembling a `WM_CHAR` surrogate pair — pure. `WM_CHAR` carries one UTF-16 unit per message,
+//! so a character outside the BMP — an emoji, a rare CJK ideograph, some IME output — arrives as a
+//! high then a low surrogate, and `char::from_u32` refuses each alone. `win.rs`'s `typed_char`
+//! keeps a pending high half on the open pane (`Pane::surrogate_mut`) and closes the pair here
+//! when the low half arrives.
 
 /// Whether this UTF-16 code unit is the first half of a pair — `0xD800`–`0xDBFF`.
 pub fn is_high(unit: u16) -> bool {

@@ -2,23 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The command line, decided without a window.
-//!
-//! Windows-free on purpose, like every other file in this crate that can be — see
-//! `doc/windows-shell.md`'s crate table. A flag is a string and a document kind is an enum, so
-//! nothing here needs the `windows` crate, which is what lets the whole of it be tested on the
-//! Linux machine this repository is developed on.
-//!
-//! The semantics are `ui_tui/src/main.rs`'s, deliberately and to the letter: **a file decides
-//! its own type**, `--sheet` / `--text` answer only the empty case, and asking for one when the
-//! file is the other is an error rather than a silent override. Opening a spreadsheet as a
-//! document would show an empty one, which is exactly the confusion `grind_core::kind` exists to
-//! prevent.
-//!
-//! What changed with the welcome screen is the case where **nobody said anything**: no file and no
-//! flag used to mean an empty spreadsheet, which is this binary guessing which of its two
-//! applications was wanted. It now means the welcome screen (`crate::welcome`), and the two flags
-//! are how a caller skips it — `grind-win32 --text` is still an empty document and nothing else.
+//! The command line, decided without a window — portable, so tested on Linux. The terminal shell's
+//! rules: **a file decides its own type**, `--sheet`/`--text` answer only the empty case, and
+//! asking for one when the file is the other is an error, since a spreadsheet opened as a document
+//! would show an empty one. No file and no flag is the welcome screen (`crate::welcome`); the
+//! flags skip it.
 
 use std::path::PathBuf;
 
@@ -36,14 +24,10 @@ pub enum Command {
         /// `--render-to <file>`: draw one frame, write it, exit. Not a user feature — it is how
         /// custom drawing gets an assertable output (`doc/windows-shell.md`, decision 5).
         render_to: Option<PathBuf>,
-        /// `--dark`: which palette that frame is drawn in.
-        ///
-        /// **Only meaningful with `--render-to`**, and it is there because until W10 the dark
-        /// palette could not be looked at without a Windows machine set to dark — the window
-        /// reads the registry and the render path hardcoded light, so half of every colour
-        /// decision in `theme.rs` was shipped unseen. A flag rather than a registry read keeps
-        /// the render deterministic, which is the whole point of that path: the same command
-        /// produces the same bytes on any machine, in whichever palette it names.
+        /// `--dark`: which palette the `--render-to` frame is drawn in. A flag rather than a
+        /// registry read keeps a render deterministic — the same command gives the same bytes on
+        /// any machine — and lets the dark palette be looked at without a Windows machine set to
+        /// dark.
         dark: bool,
     },
     Help,

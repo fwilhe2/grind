@@ -2,21 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The spreadsheet pane.
-//!
-//! Nine files, and not one of them owns any document: [`geom`] answers where a cell is, [`draw`]
-//! what it looks like, [`keymap`] what a keystroke means, [`state`] what one means while editing,
-//! [`status`] what the name box and the status bar say, [`assist`] what to offer somebody typing a
-//! formula, [`format`](mod@format) what the format strip reads and writes, [`tabs`] where the
-//! sheet tabs sit, and [`currency`] what the Format menu's three currencies write — all of them
-//! from arguments. The tab-separated text a rectangle turns into and back was a tenth, and is
-//! `grind_sheet::clip` now, shared with every other shell's clipboard. The document itself lives
-//! in `grind_sheet::App` and the window in `win.rs`, which is rule 1 of the architecture
-//! unchanged — every paint reads a viewport and throws it away.
-//!
-//! Only [`draw`] has a Windows half at all, and only the part of it that puts pixels down. The
-//! other eight compile and run their tests on any host, which is what lets this shell be
-//! developed on the Linux machine this repository lives on.
+//! The spreadsheet pane. None of its files owns the document: [`geom`] answers where a cell is,
+//! [`draw`] what it looks like, [`keymap`] what a keystroke means, [`state`] what one means while
+//! editing, [`status`] what the name box and status bar say, [`assist`] what to offer somebody
+//! typing a formula, [`format`](mod@format) what the format strip reads and writes, [`tabs`] where
+//! the sheet tabs sit, and [`currency`] what the three currencies write — all from arguments. The
+//! document lives in `grind_sheet::App` and the window in `win.rs`; every paint reads a viewport
+//! and throws it away. Only [`draw`] has a Windows half.
 
 pub mod assist;
 pub mod chart;

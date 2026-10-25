@@ -2,24 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What the text pane's status bar says — a pure function, tested on any host.
-//!
-//! `sheet/status.rs`'s counterpart, and the same rule applies: the sentence is built here from
-//! numbers the core already answers, so that nothing about it is decided inside a paint. The
-//! spreadsheet's bar carries Sum/Count/Average over the selection; this one carries what the
-//! caret is in and how long the document is, which are the two questions a word processor's bar
-//! answers everywhere.
+//! What the text pane's status bar says — a pure function: what the caret is in and how long the
+//! document is, built from numbers the core answers, nothing decided in a paint.
 
 use grind_text::Counts;
 
-/// The text pane's status bar, in words: what the caret is in and how long the document is —
-/// `Heading 1  ·  90 words  ·  1 min read`, `Paragraph — Text body  ·  90 words  ·  1 min read  ·
-/// 12 characters selected`.
-///
-/// It used to lead with the caret's address and count blocks (`p1+0   90 words   22 blocks`):
-/// the address is Go To's (F5 opens holding it) and a block is the model's word, not a reader's.
-/// `ui_text_gtk` and `ui_web` made the same change, and the style name is decoded by the one
-/// function all three share (`grind_text::style::readable_name`).
+/// The status bar in words: what the caret is in and how long the document is — `Heading 1  ·  90
+/// words  ·  1 min read`, `Paragraph — Text body  ·  90 words  ·  1 min read  ·  12 characters
+/// selected`. The caret's address is Go To's (F5 opens holding it); the style name is decoded by
+/// `grind_text::style::readable_name`.
 pub fn status_line(here: &str, selected: usize, counts: Counts) -> String {
     let mut parts = Vec::new();
     if !here.is_empty() {

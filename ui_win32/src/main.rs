@@ -2,41 +2,27 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `grind-win32` — the Windows shell over the suite.
+//! `grind-win32` — the Windows shell over the suite, depending on `grind-core`, `grind-sheet` and
+//! `grind-text` directly. **One binary, both document types**, chosen by [`grind_core::kind()`]
+//! from the file's bytes.
 //!
-//! Rust-direct like the CLI, the terminal and the two GTK windows: it depends on `grind-core`,
-//! `grind-sheet` and `grind-text` as ordinary Cargo dependencies, with no FFI, no bindings and
-//! no generated code. **One binary, both document types**, chosen by [`grind_core::kind()`]
-//! reading the file's *bytes* — never its name, because a spreadsheet does not become a
-//! document by being called one.
+//! **The `.exe` needs nothing Windows does not ship**: no .NET, no Windows App SDK, no Visual C++
+//! redistributable — the C runtime is linked statically (`.cargo/config.toml`), and
+//! `artifacts.yml` reads the import table back. The cost is the Fluent control set: drawn with
+//! GDI, the window follows Windows' conventions — the shell font, the user's wheel and caret
+//! settings, Ctrl+Y, Save/Don't Save/Cancel on close, a dark title bar — without its controls.
+//! `doc/windows-shell.md` is normative.
 //!
-//! What it buys is one line and is meant literally: **the built `.exe` needs nothing that
-//! Windows does not already ship.** No .NET runtime, no Windows App SDK, no Visual C++
-//! redistributable — the MSVC C runtime is linked statically by `.cargo/config.toml`, and
-//! `artifacts.yml` reads the import table back rather than trusting it.
-//!
-//! What it costs is the Fluent control set. This window is drawn with GDI, so it follows
-//! Windows' *conventions* — the shell font, the user's wheel and caret settings, Ctrl+Y for
-//! redo, a Save/Don't Save/Cancel dialog on close, a dark title bar when the theme is dark —
-//! without using Windows' *controls*. `doc/windows-shell.md` is normative for all of it and is
-//! where the argument, the milestones and the named gaps live.
-//!
-//! This file owns the process and nothing else. The window is `win.rs`'s, the grid's arithmetic
-//! is `sheet/geom.rs`'s and its drawing `sheet/draw.rs`'s; the text pane's are `text/`'s and
-//! `metrics.rs`'s. **Both document types open here**, and which one a file is comes from
-//! `grind_core::kind` reading its bytes.
+//! This file owns the process. The window is `win.rs`'s; the grid's arithmetic `sheet/geom.rs`'s
+//! and drawing `sheet/draw.rs`'s; the text pane's `text/`'s and `metrics.rs`'s.
 
-// A GUI application, not a console one. Without this, launching from Explorer flashes up a
-// console window behind the shell and leaves it there for the life of the process. The cost is
-// that there is no stderr to print to, which is why the paths below end in a message box —
-// the same bargain every Windows GUI application makes.
+// A GUI application, not a console one: otherwise launching from Explorer leaves a console window
+// behind the shell. So there is no stderr, and the paths below end in a message box.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-// Off Windows nothing calls into these, so every function reads as dead code and every import
-// the Windows half needs reads as unused — but their tests are the reason this crate builds
-// here at all, and silencing the two lints is what keeps `cargo clippy` clean on the
-// development machine. Both are scoped to `not(windows)`, so a genuinely dead function is still
-// reported where it matters.
+// Off Windows nothing calls the Windows half, so its functions read as dead and its imports as
+// unused — but the tests are why the crate builds here, so the two lints are silenced for
+// `not(windows)` only, and a dead function is still reported where it matters.
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod args;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
@@ -96,10 +82,8 @@ fn version() -> String {
     )
 }
 
-/// What kind of document a file holds, read from its bytes.
-///
-/// Decided *before* parsing, because §8's reader is tolerant by construction and would hand
-/// back an empty document rather than an error if it were handed the wrong type.
+/// What kind of document a file holds, read from its bytes before parsing, since a tolerant reader
+/// would return an empty document of the wrong type rather than an error.
 fn sniff(path: &Path) -> Result<DocumentKind, String> {
     let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
     // A workbook or a CSV is a spreadsheet this shell imports (`import.rs`); `grind_core::kind`
@@ -118,18 +102,10 @@ fn sniff(path: &Path) -> Result<DocumentKind, String> {
     })
 }
 
-/// Resolve the command line into the document type a window would open, or a message saying
-/// why it cannot.
-///
-/// Split out from [`main`] because it is the whole of the decision and none of the platform:
-/// it is exercised by the tests at the bottom of this file on any host, where `run` cannot be.
-///
-/// Which document, from where, and — when this invocation is a render rather than a window —
-/// where the frame goes and in which palette.
-///
-/// The kind is an `Option` because **"no document" is an answer**, not a missing one: with no
-/// file and no flag the window shows the welcome screen (`win::welcome`, `crate::welcome`) rather
-/// than guessing which of the suite's two applications was wanted.
+/// The command line resolved: the document kind a window would open, the file, and — for a render
+/// — where the frame goes and in which palette; or a message saying why not. Split from [`main`]
+/// as the whole decision and none of the platform, so it is tested on any host. The kind is an
+/// `Option` because **"no document" is an answer**: the welcome screen.
 type Opening = (
     Option<DocumentKind>,
     Option<std::path::PathBuf>,
@@ -155,10 +131,8 @@ fn resolve(command: Command) -> Result<Opening, String> {
             let kind = grind_core::kind::reconcile(kind, found, &file.display().to_string())?;
             Ok((Some(kind), path, render))
         }
-        // Nothing to read, so the flag is the only opinion there is — and when there is no flag
-        // either, **nobody has said**, which is the welcome screen rather than a spreadsheet. This
-        // used to default to one, and that is a binary holding two applications picking one of
-        // them on the user's behalf every time it is launched from a Start menu tile.
+        // Nothing to read, so the flag is the only opinion; with no flag either, nobody has said,
+        // which is the welcome screen.
         None => Ok((kind, None, render)),
     }
 }
@@ -168,15 +142,11 @@ fn main() -> std::process::ExitCode {
     use std::process::ExitCode;
 
     let argv: Vec<String> = std::env::args().skip(1).collect();
-    // Whether this invocation has anybody in front of it.
-    //
-    // `--render-to` draws one frame on a machine with no display and, on a CI runner, no
-    // interactive session either — and a `MessageBoxW` in a session nobody is logged into is
-    // not an error report, it is a hang: the dialog waits for an OK that can never be clicked.
-    // That is exactly what turned one mis-quoted argument into a job that timed out after
-    // twenty minutes having printed nothing at all. So the whole of the headless path reports
-    // through [`say`] rather than through a dialog, *including* the argument errors that are
-    // decided before the flag has been parsed — which is why this asks the raw command line.
+    // Whether this invocation has anybody in front of it. `--render-to` runs on machines with no
+    // display and, on a CI runner, no interactive session, where a `MessageBoxW` waits for an OK
+    // that can never be clicked — one mis-quoted argument timed a job out after twenty minutes of
+    // silence. So the headless path reports through [`say`], including the argument errors decided
+    // before the flag is parsed, which is why this asks the raw command line.
     let headless = argv.iter().any(|arg| arg == "--render-to");
     let say = |text: &str, error: bool| {
         if headless {
@@ -224,10 +194,8 @@ fn main() -> std::process::ExitCode {
                 say(&message, true);
                 ExitCode::FAILURE
             }
-            // `--render-to` draws one frame with no window at all and exits, so it comes
-            // before the window is opened rather than after (`doc/windows-shell.md`,
-            // decision 5). Its errors still go to a message box: this is a GUI-subsystem
-            // binary and there is no stderr, even when it is doing something headless.
+            // `--render-to` draws one frame with no window and exits, so it comes before a window
+            // is opened (decision 5).
             Ok((kind, path, Some((target, dark)))) => {
                 match win::render(kind, path, &target, dark) {
                     Ok(()) => ExitCode::SUCCESS,
@@ -238,9 +206,8 @@ fn main() -> std::process::ExitCode {
                 }
             }
             // A window, so somebody is in front of it: offer this executable for the types it
-            // opens, when that is not already true of this copy (`assoc.rs` — offered in
-            // "Open with", never made the default). A render is left alone: it is a CI step,
-            // and a frame is not a reason to touch the registry.
+            // opens when this copy is not already offered (`assoc.rs`). A render is a CI step and
+            // leaves the registry alone.
             Ok((kind, path, None)) => {
                 assoc::offer();
                 match win::run(kind, path) {
@@ -255,22 +222,16 @@ fn main() -> std::process::ExitCode {
     }
 }
 
-/// Say something on the headless path, where a dialog would be a deadlock rather than a message.
-///
-/// A GUI-subsystem process has no console of its own, but it does inherit the standard handles
-/// its parent gave it — so `eprintln!` reaches a redirected pipe (which is how a script or a CI
-/// step runs this) and goes nowhere at all otherwise. Nowhere is the right answer for the second
-/// case: the exit code still carries the failure, and unlike a message box it does not wait.
+/// Say something on the headless path, where a dialog would deadlock. A GUI-subsystem process
+/// inherits its parent's standard handles, so `eprintln!` reaches a redirected pipe — a script or
+/// CI step — and goes nowhere otherwise, which is fine: the exit code carries the failure.
 #[cfg(windows)]
 fn console_line(text: &str) {
     eprintln!("grind-win32: {text}");
 }
 
-/// Say something before there is a window to say it in.
-///
-/// A GUI-subsystem binary has no console: `eprintln!` here goes nowhere at all when the program
-/// is launched from Explorer. Every other shell in this suite can use stderr; this one has to
-/// ask the system for a dialog.
+/// Say something before there is a window: with no console, `eprintln!` goes nowhere when launched
+/// from Explorer, so this asks the system for a dialog.
 #[cfg(windows)]
 fn message_box(title: &str, text: &str, error: bool) {
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -298,10 +259,9 @@ fn message_box(title: &str, text: &str, error: bool) {
     }
 }
 
-/// On anything but Windows this crate still builds, so that the portable half can be compiled
-/// and tested on the machine this repository is developed on. The binary itself has nothing to
-/// do there — but it reports what it *would* have done, which makes the argument handling
-/// runnable rather than only testable.
+/// Off Windows the crate still builds, for its portable half's tests. The binary has nothing to do
+/// there, but reports what it *would* have done, so the argument handling runs rather than only
+/// tests.
 #[cfg(not(windows))]
 fn main() -> std::process::ExitCode {
     use std::process::ExitCode;
@@ -361,21 +321,14 @@ mod tests {
         }
     }
 
-    /// W8's version block is named with the literal `1`, and never `VS_VERSION_INFO`.
+    /// The version block is named with the literal `1`, never `VS_VERSION_INFO`.
     ///
-    /// A text test for a binary fact, because the binary fact is only observable on
-    /// `windows-latest` and this one is not: `VS_VERSION_INFO` is a `#define` in `winver.h`,
-    /// `grind.rc` includes no headers, and an undefined identifier in a resource's *name*
-    /// position is a **string name** to `rc.exe` rather than an error. So the resource compiled,
-    /// linked, and reached the executable as `RT_VERSION`/"VS_VERSION_INFO" — while
-    /// `GetFileVersionInfo`, Explorer's Properties dialog and `win32.yml`'s own check all ask
-    /// for `RT_VERSION`/1 and found nothing. The icon was unaffected (`1 ICON` was already a
-    /// literal), which is exactly why the failure looked like "no resource embedded" when the
-    /// resource was demonstrably there.
-    ///
-    /// Measured rather than reasoned: compiling both spellings and reading the resource
-    /// directory back out of a linked PE showed a string-named entry for one and `name=1` for
-    /// the other. This test is the cheap half of that, and the half that runs on every host.
+    /// A text test for a binary fact observable only on `windows-latest`: `VS_VERSION_INFO` is a
+    /// `#define` in `winver.h`, `grind.rc` includes no headers, and an undefined identifier in a
+    /// resource's name position is a **string name** to `rc.exe`, not an error. So the resource
+    /// linked as `RT_VERSION`/"VS_VERSION_INFO", while `GetFileVersionInfo`, Explorer and
+    /// `win32.yml` ask for `RT_VERSION`/1 and found nothing. Measured by compiling both spellings
+    /// and reading the linked PE's resource directory.
     #[test]
     fn the_version_block_is_named_with_the_literal_one() {
         let rc = include_str!("../data/grind.rc");
@@ -391,8 +344,7 @@ mod tests {
         );
     }
 
-    /// The welcome screen, and the only test that says so from here: no file and no flag is
-    /// **no document**, where it used to be a spreadsheet nobody asked for.
+    /// No file and no flag is **no document**: the welcome screen.
     #[test]
     fn an_empty_invocation_names_no_document() {
         assert_eq!(resolve(open(None, None)).unwrap(), (None, None, None));

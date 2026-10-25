@@ -5,44 +5,35 @@
 //! The window: its class, its procedure, and the loop that pumps it.
 //!
 //! **Windows only, and the only file in this crate that holds state.** Everything it decides is
-//! decided somewhere portable — `sheet/geom.rs` for where a cell is, `sheet/draw.rs` for what it
-//! looks like, `theme.rs` for what colour it is — so this file is a translator between Windows'
-//! messages and those answers, plus the one piece of genuinely unsafe machinery the shell needs.
+//! decided somewhere portable — `sheet/geom.rs` where a cell is, `sheet/draw.rs` what it looks
+//! like, `theme.rs` its colour — so this file translates Windows' messages into those answers,
+//! plus the one piece of unsafe machinery the shell needs.
 //!
 //! ## The `GWLP_USERDATA` arrangement
 //!
-//! A window procedure is a C callback: it gets an `HWND` and no context. The standard Win32
-//! answer, and the one used here, is to `Box` the state, hand the raw pointer to the window in
-//! `GWLP_USERDATA`, and read it back on every message. The safety of that rests on three facts
-//! and they are worth stating because a future edit can break any of them:
+//! A window procedure is a C callback with an `HWND` and no context, so the state is `Box`ed, its
+//! raw pointer handed to the window in `GWLP_USERDATA` and read back on every message. That is
+//! safe on three facts a future edit can break:
 //!
-//! 1. The pointer is stored in `WM_NCCREATE`, from the `CREATESTRUCTW` the caller passed —
-//!    before any message that reads it can arrive.
-//! 2. It is taken back and dropped in `WM_NCDESTROY`, the *last* message a window ever gets,
-//!    and the slot is zeroed at the same time. Nothing reads it afterwards.
-//! 3. **A message is never dispatched re-entrantly while the borrow is live.** Every handler
-//!    below takes the `&mut` for the length of one message and returns. This is
-//!    `doc/windows-shell.md`'s decision 7, and from W3 it has teeth: `dialog.rs`'s file
-//!    dialogs, message boxes and text prompt each run a nested message loop, so every handler
-//!    that opens one borrows the state **on each side of the call and never across it**.
-//!    [`sheet_rename`] is the shape written out: one [`with_sheet`] to read what the prompt
-//!    needs, the prompt, then a *fresh* [`with_sheet`] to apply the answer — each with the
-//!    SAFETY comment that says which side of the nested loop it is on.
+//! 1. The pointer is stored in `WM_NCCREATE`, from the caller's `CREATESTRUCTW`, before any
+//!    message that reads it.
+//! 2. It is taken back and dropped in `WM_NCDESTROY`, the *last* message a window gets, and the
+//!    slot zeroed then.
+//! 3. **A message is never dispatched re-entrantly while the borrow is live** (decision 7). Each
+//!    handler takes the `&mut` for one message; `dialog.rs`'s modals run nested message loops, so
+//!    a handler opening one borrows **on each side of the call and never across it** —
+//!    [`sheet_rename`] is the shape: one [`with_sheet`] to read, the prompt, a *fresh*
+//!    [`with_sheet`] to apply, each with the SAFETY comment saying which side it is on.
 //!
-//! ## What W3 added, and where the state for it lives
+//! ## Editing state
 //!
-//! Editing needs somewhere to put a keystroke that is not the document. Three things, and none
-//! of them is a second model:
-//!
-//! * a **mode** ([`crate::sheet::state::Mode`]) — Ready, Enter or Edit, decided by a pure
-//!   function and stored here because the *next* keystroke depends on it;
-//! * a child `EDIT` holding the in-progress text, which is decision 2's line exactly — a
-//!   control that holds a keystroke is a widget, a control that holds the document is a second
-//!   model, and this one is emptied into `App::enter` and hidden again;
-//! * a **dirty flag**, which the core deliberately does not have. It is set by an
-//!   [`grind_core::Observer`] that posts [`WM_DOC_CHANGED`] rather than by each handler
-//!   remembering to, so undo, redo and a recalculation mark the document modified without
-//!   anybody wiring them up (architecture rule 3: the core pushes, shells never poll).
+//! * a **mode** ([`crate::sheet::state::Mode`]) — Ready, Enter or Edit — stored here because the
+//!   next keystroke depends on it;
+//! * a child `EDIT` holding the in-progress text — a widget holding a keystroke, never the
+//!   document (decision 2): emptied into `App::enter` and hidden again;
+//! * a **dirty flag**, which the core does not have, set by an [`grind_core::Observer`] posting
+//!   [`WM_DOC_CHANGED`], so undo, redo and a recalculation mark the document modified with no
+//!   handler remembering to (rule 3).
 
 #![cfg(windows)]
 
@@ -138,16 +129,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 const APP_NAME: &str = "Grind";
 const CLASS_NAME: &str = "GrindWindowClass";
 
-/// The face everything in this window is drawn in — **asked for rather than assumed**, since W10.
-///
-/// Windows 11's shell font is *Segoe UI Variable*, a variable font whose optical sizes GDI sees
-/// as three families; `Text` is the one meant for 12 to 24 pixels, which is every size in this
-/// shell's ramp. Windows 10 has none of them and Segoe UI is the shell font there. Asking for a
-/// face GDI does not have does **not** fail — it substitutes something arbitrary — so the two are
-/// tried in order against `EnumFontFamiliesExW`, which is what makes this a probe and not a
-/// guess (`gdi::ui_face`). Under Wine neither is usually installed and the fallback is whatever
-/// GDI substitutes, which is the path `doc/windows-shell.md` says every screenshot taken there
-/// exercises.
+/// The face everything in this window is drawn in, **asked for rather than assumed**
+/// (`gdi::ui_face`): *Segoe UI Variable Text* on Windows 11, Segoe UI on Windows 10, probed with
+/// `EnumFontFamiliesExW` since GDI substitutes rather than fails. Under Wine neither is usually
+/// installed, and GDI's substitute is what every screenshot there shows.
 fn face() -> &'static str {
     gdi::ui_face()
 }
@@ -162,54 +147,34 @@ const ID_EDITOR: usize = 2;
 /// the reason `theme::text::PROSE` gives. Headings scale off this (`metrics.rs`).
 const TEXT_PX: i32 = theme::text::PROSE as i32;
 
-/// "A key went to one of our child controls", sent by the message loop.
-///
-/// Enter, Escape, Tab and the arrows never reach a child `EDIT`'s parent on their own — the
-/// control swallows them — so the pump in [`run`] relays them and lets the window decide. That
-/// is the standard answer for a window with no dialog manager, and it is preferred here over
-/// subclassing the control: a subclass means a second window procedure and a second lifetime to
-/// get right, and `SetWindowSubclass` lives in `comctl32`, which this binary does not import
-/// and would rather not start importing for one keystroke.
-///
-/// The reply is what makes it a *question* rather than a notification: non-zero for a key the
-/// shell claimed, zero for one the control should go on and handle itself.
+/// "A key went to one of our child controls", sent by the message loop. Enter, Escape, Tab and the
+/// arrows never reach a child `EDIT`'s parent — the control swallows them — so the pump in [`run`]
+/// relays them, the standard answer for a window with no dialog manager, and cheaper than a
+/// subclass (a second procedure and lifetime, and `SetWindowSubclass` lives in `comctl32`, which
+/// this binary does not import). The reply makes it a question: non-zero for a key the shell
+/// claimed, zero for one the control should handle.
 const WM_CHILD_KEY: u32 = WM_APP + 1;
 
 /// "The document changed", posted by [`Changed`].
 const WM_DOC_CHANGED: u32 = WM_APP + 2;
 
-/// The frame `--render-to` draws, in pixels at 96 dpi.
-///
-/// Fixed rather than taken from the command line, because the output's whole purpose is to be
-/// compared with another one: a size that could differ between two runs is a difference the
-/// comparison would report as a drawing change.
+/// The frame `--render-to` draws, in pixels at 96 dpi — fixed, since a size that could differ
+/// between two runs would show up as a drawing change.
 const RENDER_W: i32 = 1280;
 const RENDER_H: i32 = 800;
 
-/// Everything the window owns. One per window, boxed, reached through `GWLP_USERDATA`.
-///
-/// **One binary, both document types** (decision 1), and this is where that stops being a claim
-/// about `main.rs` and becomes one about the window: which pane a window *is* comes from
-/// [`grind_core::kind()`] reading the file's bytes, and every message below either belongs to one
-/// pane — [`with_sheet`], [`with_text`] — or is answered for both here.
-///
-/// The two arms deliberately keep their own path, theme and dirty flag rather than sharing a
-/// header struct. That is not duplication for its own sake: it is what let the spreadsheet's
-/// forty handlers keep the shape they already had, borrowing exactly the state they always
-/// borrowed, when the second pane arrived. A pane is boxed because the two are very different
-/// sizes and the enum would otherwise be as big as the larger.
+/// Everything the window owns, boxed, reached through `GWLP_USERDATA`. **One binary, both document
+/// types** (decision 1): which pane a window is comes from [`grind_core::kind()`] reading the
+/// file's bytes, and every message below belongs to one pane — [`with_sheet`], [`with_text`] — or
+/// is answered for all here. The arms keep their own path, theme and dirty flag rather than a
+/// shared header. A pane is boxed because the arms differ greatly in size.
 enum Pane {
     Sheet(Box<Sheet>),
     Text(Box<Text>),
-    /// **No document at all** — the welcome screen (`crate::welcome`), which is what a window
-    /// opened with no file shows.
-    ///
-    /// A third arm rather than an empty spreadsheet with a banner over it, and that is the whole
-    /// of the decision: a `Pane` says what the window *is*, and a window that has not been told
-    /// which application it is holding is neither of the two. Every handler below that belongs
-    /// to one pane already asks `with_sheet`/`with_text` and gets `None` for the other, so this
-    /// arm cost no arm anywhere those two are the question — which is why a third pane was
-    /// cheaper here than a modal in front of a grid nobody asked for.
+    /// **No document at all** — the welcome screen (`crate::welcome`) a window opened with no file
+    /// shows. A third arm rather than an empty spreadsheet: a `Pane` says what the window *is*.
+    /// Every handler asking `with_sheet`/`with_text` already gets `None` for the wrong pane, so
+    /// the arm cost nothing there.
     Welcome(Box<Welcome>),
 }
 
@@ -285,14 +250,9 @@ impl Pane {
         }
     }
 
-    /// Which document kind this pane is showing, for the Save dialog's filters and suggested
-    /// name — `dialog::save_path` needs to know whether to offer `.fods`/`.ods` or
-    /// `.fodt`/`.odt`.
-    ///
-    /// `None` on the welcome screen, which is not a coy way of saying spreadsheet: there is no
-    /// document, so every caller has to decide what that means rather than be handed a guess.
-    /// Both of them — the Save dialog and the menu bar — answer it by not being reachable there
-    /// at all (`menu::on_welcome`).
+    /// Which document kind this pane shows, for the Save dialog's filters and suggested name.
+    /// `None` on the welcome screen — no document, so every caller decides what that means rather
+    /// than being handed a guess; both are unreachable there (`menu::on_welcome`).
     fn kind(&self) -> Option<DocumentKind> {
         match self {
             Pane::Sheet(_) => Some(DocumentKind::Spreadsheet),
@@ -388,12 +348,9 @@ impl Pane {
     }
 }
 
-/// Everything the **welcome screen** owns, which is almost nothing — it has no document, so there
-/// is no viewport, no selection, no history and nothing to save.
-///
-/// What is left is where the cards are and which one is being pointed at, held for the same
-/// reason the text pane's format strip holds its own two: a press acts on *release*, so it can be
-/// taken back by moving off the card before letting go.
+/// Everything the **welcome screen** owns, which is almost nothing: no document, viewport,
+/// selection, history or save. Where the cards are and which is pointed at — a press acts on
+/// *release*, so it can be taken back by moving off the card.
 struct Welcome {
     theme: Theme,
     page: welcome::Page,
@@ -424,14 +381,13 @@ struct Sheet {
     tabs: std::cell::RefCell<Vec<crate::sheet::tabs::Tab>>,
     path: Option<PathBuf>,
     /// For an imported workbook, which has no `path`: the ODF name beside it that the title shows
-    /// and Save As starts from (`import.rs`, X6). Cleared by the first save.
+    /// and Save As starts from (`import.rs`). Cleared by the first save.
     imported: Option<PathBuf>,
     sheet: usize,
     geom: GridGeom,
     theme: Theme,
-    /// An anchor and an active cell — presentation state, and the core is never told about it.
-    /// A range reaches `App` as two positions when something is done to it, which in W2 is only
-    /// the status bar's aggregates.
+    /// An anchor and an active cell — presentation state; a range reaches `App` as two positions
+    /// when something is done to it.
     selection: Selection,
     /// What a held mouse button is extending, if anything.
     drag: Option<Drag>,
@@ -439,18 +395,14 @@ struct Sheet {
     /// the track was when it was taken. The live size is drawn from `geom`; the document is
     /// written once, on release, as one undo step.
     resize: Option<(Edge, f64, f64)>,
-    /// The child `EDIT` that *is* the name box while somebody is typing in it.
-    ///
-    /// Created hidden and shown over the drawn box on demand. The box itself is painted by
-    /// `sheet/draw.rs` the rest of the time, which is what lets `--render-to` show an address
-    /// with no control and no window anywhere.
+    /// The child `EDIT` that *is* the name box while somebody types in it — created hidden and
+    /// shown over the drawn box on demand; `sheet/draw.rs` paints the box otherwise, so
+    /// `--render-to` shows an address with no control.
     name_box: HWND,
     name_box_open: bool,
-    /// The child `EDIT` that holds an edit in progress — the in-cell editor and the formula
-    /// bar, which are **one control in two places** rather than two controls. Decision 2 is the
-    /// line it sits on: a control that holds a keystroke is a widget, and a control that holds
-    /// the document is a second model. This one is emptied into [`grind_sheet::App::enter`] and
-    /// hidden again.
+    /// The child `EDIT` holding an edit in progress — the in-cell editor and the formula bar,
+    /// **one control in two places**. A widget holding a keystroke, not the document (decision 2):
+    /// emptied into [`grind_sheet::App::enter`] and hidden.
     editor: HWND,
     /// Whether that control is on the formula bar rather than on the cell — true when the edit
     /// began by clicking the bar, and when the active cell is scrolled out of sight.
@@ -466,28 +418,25 @@ struct Sheet {
     /// What the notice bar says, or `None` for a document with nothing to say about itself.
     /// Always set through [`Sheet::say`], which is what keeps it and `geom.banner_h` agreeing.
     banner: Option<String>,
-    /// The word Edit ▸ Find… last asked for — what F3 and Shift+F3 step through, and what
-    /// Replace… offers to replace. Empty until somebody has searched.
+    /// The word Edit ▸ Find… last asked for — what F3 and Shift+F3 step through and Replace…
+    /// offers. Empty until a search.
     needle: String,
     /// What is being offered to somebody typing a formula, and which offer Tab would take —
     /// `sheet/assist.rs`, recomputed from the editor's text on every keystroke rather than
     /// updated in place.
     assist: assist::Assist,
-    /// The assist band's runs, as [`assist::band`] renders whatever `assist` holds. Kept beside
-    /// it rather than recomputed inside the paint, because it is the *emptiness* of this that
-    /// decides `geom.hint_h` — a band with height and nothing in it is a gap, and one with
-    /// something in it and no height draws over the headers. Always set through [`Sheet::hint`],
-    /// which is what keeps the two agreeing, exactly as [`Sheet::say`] does for the notice bar.
+    /// The assist band's runs, as [`assist::band`] renders `assist`. Kept here rather than
+    /// computed in the paint because their emptiness decides `geom.hint_h` — a band with height
+    /// and nothing in it is a gap, one with runs and no height draws over the headers. Always set
+    /// through [`Sheet::hint`], as [`Sheet::say`] sets the notice bar.
     hint: Vec<assist::Piece>,
     /// The reference being pointed at while a formula is typed (point mode): where its text is in
     /// the editor, as bytes, and the cell it names.
     pointing: Option<(std::ops::Range<usize>, Pos)>,
     /// Whether a formula cell draws its formula instead of its result (View ▸ Show Formulas).
     formulas: bool,
-    /// Whether the formula bar shows the friendly *reading* of a formula rather than the text
-    /// that would be typed back in — View ▸ Friendly Formulas. Presentation state, like the
-    /// selection and the overlays: nothing here is ever written, and the document's formula stays
-    /// exactly the one ODF spells (R1).
+    /// Whether the formula bar shows the friendly *reading* of a formula — View ▸ Friendly
+    /// Formulas. Presentation state; the stored formula stays ODF's (R1).
     friendly: bool,
     /// The face the two child `EDIT`s are set in. Owned here because a `WM_SETFONT` does not
     /// take a copy: the handle has to outlive every paint of the control, and be deleted after
@@ -497,32 +446,28 @@ struct Sheet {
     /// demand and thrown away when the theme changes, because a brush is a colour and the
     /// colour is the theme's.
     field_brush: Option<Brush>,
-    /// A `WM_CHAR` high surrogate waiting for the low half that completes it — `typed_char`'s
-    /// state, kept here rather than in a static because two windows must not share it. Only
-    /// matters in Ready mode: once an edit is open, the native `EDIT` control has focus and
-    /// assembles the pair itself, the way every Win32 control does.
+    /// A `WM_CHAR` high surrogate waiting for its low half — `typed_char`'s state, per window
+    /// rather than static. Only in Ready mode: once an edit is open, the native `EDIT` assembles
+    /// the pair itself.
     surrogate: Option<u16>,
-    /// `doc/view-modes.md`'s two overlays, W6's — presentation state exactly like `selection`:
-    /// never told to the core, and asked for fresh on every `get_viewport_with` rather than
-    /// stored on a cell, which is what keeps opening one on every R7 document and saving again
-    /// byte-identical (a stored classification goes stale; a derived one cannot).
+    /// `doc/view-modes.md`'s two overlays — presentation state like `selection`, never told to the
+    /// core and asked for fresh on every `get_viewport_with`, which keeps a save with every
+    /// overlay on byte-identical.
     overlays: grind_sheet::view::Overlays,
     /// Which format-strip control the pointer is over, and which one is held down — the text
     /// pane's `hover`/`pressed` pair, for the grid's strip: a press acts on *release*, so it can
     /// be taken back by moving off the control, and a control responds to the pointer at all.
     format_hover: Option<format::Control>,
     format_pressed: Option<format::Control>,
-    /// The selected chart (`doc/chart-handling.md`) as the sheet it is on and its index there:
-    /// outlined and handled, and what the arrows, Delete and the Data menu's chart verbs mean.
-    /// Presentation state, like `selection`; read through [`Sheet::chart_now`], which lets go of
-    /// one on another sheet or one deleted away.
+    /// The selected chart (`doc/chart-handling.md`), as its sheet and its index there: outlined
+    /// and handled, and what the arrows, Delete and the Data menu's chart verbs mean. Read through
+    /// [`Sheet::chart_now`], which lets go of one on another sheet or one deleted.
     chart_selected: Option<(usize, usize)>,
     /// A chart held by the pointer; the document is written once, on release.
     chart_grab: Option<crate::sheet::chart::Grab>,
-    /// Spelling (`doc/spelling.md`, "In a spreadsheet"): the person's remembered choice
-    /// (`grind_spell::preference`) — so Check Spelling off here is off in every spreadsheet —
-    /// what it came to for this document, and the dictionary Ignore All adds to. `checked` is
-    /// `None` when nothing is checked, which is also when nothing is underlined.
+    /// Spelling: the person's remembered choice (`grind_spell::preference`), so Check Spelling off
+    /// here is off in every spreadsheet; what it came to for this document; and the dictionary
+    /// Ignore All adds to. `checked` is `None` when nothing is checked, and nothing is underlined.
     spelling: grind_spell::Setting,
     /// The last setting that was not Off — what Shift+F7 turns spelling back on to.
     spelling_on: grind_spell::Setting,
@@ -631,17 +576,13 @@ impl Sheet {
         }
     }
 
-    /// Rebuild the geometry for the current client size and DPI.
-    ///
-    /// Everything measured is rebuilt from the *document's* lengths rather than scaled from the
-    /// last answer, so a window dragged between two monitors and back is pixel-identical to one
-    /// that never moved — repeatedly scaling a scaled number is how that drifts.
+    /// Rebuild the geometry for the current client size and DPI — from the *document's* lengths,
+    /// never scaled from the last answer, so a window dragged between monitors and back is
+    /// pixel-identical to one that never moved.
     fn relayout(&mut self, width: f64, height: f64, dpi: u32) {
-        // The one place the sheet index is checked, and it is here because *every* path that
-        // changes the document ends in a relayout. Deleting a sheet, undoing an insertion and
-        // opening a smaller document all leave the index pointing past the end, and a painter
-        // that is handed one has nothing useful to do with it — W3 found this by renaming a
-        // sheet, see `doc/windows-shell.md`.
+        // The one place the sheet index is checked, since every path changing the document ends in
+        // a relayout: deleting a sheet, undoing an insertion or opening a smaller document can
+        // leave it past the end.
         self.sheet = self.sheet.min(self.app.sheet_count().saturating_sub(1));
         let widths = self.app.col_widths(self.sheet).unwrap_or_default();
         let heights = self.app.row_heights(self.sheet).unwrap_or_default();
@@ -689,8 +630,8 @@ impl Sheet {
             dpi,
             zoom: self.geom.zoom,
         };
-        // Every row with no height of its own grows to hold what is in it — a cell that wraps,
-        // or one set in a larger face (L3). Measured in GDI, the engine that draws it.
+        // Every row with no height of its own grows to hold what is in it — a wrapping cell, or
+        // one in a larger face — measured in GDI, the engine that draws it.
         if let Some(dib) = gdi::Dib::new(1, 1) {
             let metrics = measure::CellMetrics {
                 dc: dib.dc(),
@@ -772,15 +713,10 @@ impl Sheet {
         self.reveal();
     }
 
-    /// Scroll the least it takes to put the active cell in the body, and no more.
-    ///
-    /// The whole of it is one clamp per axis, and the two ends say what the two cases are: the
-    /// view may not start after the active cell (it would be above the top) and may not start
-    /// before the least first track that shows it (it would be below the bottom). A cell already
-    /// in view falls between the two and nothing moves.
-    ///
-    /// It is also where a single cell that landed inside a merge — a click, a go-to — is moved
-    /// onto the merge's top-left cell, since every way of moving the selection ends here.
+    /// Scroll the least it takes to put the active cell in the body: one clamp per axis — the view
+    /// may not start after the active cell, nor before the least first track that shows it. A cell
+    /// already in view falls between and nothing moves. Also where a single cell landing inside a
+    /// merge is moved onto its top-left cell, since every selection move ends here.
     fn reveal(&mut self) {
         let merges = grind_sheet::nav::merges(&self.app, self.sheet);
         self.selection = grind_sheet::nav::onto_merge(self.selection, &merges);
@@ -819,11 +755,6 @@ impl Sheet {
         });
     }
 
-    /// Put something in the notice bar, or take it away.
-    ///
-    /// One function because the sentence and the *height* have to change together: a banner
-    /// with a sentence and no height draws nothing at all, and one with a height and no
-    /// sentence is a bar of colour nobody can dismiss.
     /// The selected chart's index, if it is on the sheet showing and still exists.
     fn chart_now(&self) -> Option<usize> {
         let (sheet, index) = self.chart_selected?;
@@ -841,20 +772,18 @@ impl Sheet {
         })
     }
 
+    /// Put something in the notice bar, or take it away — the sentence and the height change
+    /// together, since one without the other is nothing drawn or a bar nobody can dismiss.
     fn say(&mut self, notice: Option<String>) {
         self.geom.banner_h = banner_h(notice.as_deref(), self.geom.dpi);
         self.banner = notice;
     }
 
-    /// Recompute the assist band from what the editor holds, and set its height with it.
-    ///
-    /// The counterpart to [`Sheet::say`] and the same one-function rule: the runs and the height
-    /// change together, so no path can leave a band with nothing in it or a run with nowhere to
-    /// go. `caret` is a **byte** offset into `text` — [`state::byte_at`] is the conversion from
-    /// what `EM_GETSEL` counts.
-    ///
-    /// Returns whether the band's height changed, which is the difference between repainting the
-    /// strip and relaying out the window: the grid moves down when the band appears.
+    /// Recompute the assist band from what the editor holds, setting its height with it, as
+    /// [`Sheet::say`] does for the notice — the runs and the height change together. `caret` is a
+    /// **byte** offset into `text` ([`state::byte_at`] converts `EM_GETSEL`'s). Returns whether
+    /// the height changed: repaint the strip, or relayout, since the grid moves down when the band
+    /// appears.
     fn assist(&mut self, text: &str, caret: usize) -> bool {
         let names: Vec<String> = self.app.names().into_iter().map(|(name, _)| name).collect();
         self.assist.refresh(text, caret, &names);
@@ -876,11 +805,8 @@ impl Sheet {
         self.hint(Vec::new());
     }
 
-    /// Where the edit control goes.
-    ///
-    /// Over the active cell, unless that cell is scrolled out of sight or the edit began on the
-    /// formula bar — in which case the bar is where the text is, and typing into a control
-    /// nobody can see is the alternative.
+    /// Where the edit control goes: over the active cell, unless it is scrolled out of sight or
+    /// the edit began on the formula bar, where the text then is.
     fn editor_rect(&self) -> Rect {
         let active = self.selection.active;
         let cell = self.geom.editor_rect(active.row, active.col);
@@ -891,12 +817,9 @@ impl Sheet {
     }
 }
 
-/// Everything the *word processor's* pane owns — **W5**.
-///
-/// Deliberately smaller than [`Sheet`], and the difference is where the work went: a spreadsheet
-/// pane holds a grid geometry it can compute from four numbers, and a text pane holds a
-/// [`text::geom::Flow`] that had to be *measured*. Which is why the font cache is here and not in
-/// `gdi.rs`: it is state, it is expensive, and it belongs to the pane that measures with it.
+/// Everything the *word processor's* pane owns — smaller than [`Sheet`], but holding a
+/// [`text::geom::Flow`] that had to be *measured*, which is why the font cache is here: state,
+/// expensive, and the measuring pane's.
 struct Text {
     app: grind_text::App,
     path: Option<PathBuf>,
@@ -907,8 +830,8 @@ struct Text {
     dirty: bool,
     /// The window's bands and how far down the document the body starts.
     page: Page,
-    /// Where every block sits, measured. Rebuilt whenever the document, the width or the DPI
-    /// changes and **not** per paint — a paint re-lays-out only the blocks it can see.
+    /// Where every block sits, measured — rebuilt when the document, the width or the DPI changes,
+    /// not per paint.
     flow: Flow,
     /// Where every block in a table cell sits across the column and the width it is set at
     /// (`text::geom::across`), rebuilt with `flow` and read by [`Text::faces`] — which is how a
@@ -919,9 +842,8 @@ struct Text {
     caret: Caret,
     anchor: Caret,
     /// The column Down and Up aim for, in pixels, kept across a run of vertical keystrokes and
-    /// dropped the moment the caret moves horizontally. A property of a *run of keystrokes*
-    /// rather than of the document, which is why `App::caret_line` takes it rather than storing
-    /// it.
+    /// dropped when the caret moves horizontally — a property of the keystrokes, not the document,
+    /// which is why `App::caret_line` takes it.
     goal_x: Option<f32>,
     /// The fonts everything is measured and drawn with (`metrics.rs`). `None` only before the
     /// first `WM_CREATE`, and rebuilt whole on `WM_DPICHANGED` — a font is a size in *pixels*,
@@ -931,16 +853,13 @@ struct Text {
     fonts_dpi: u32,
     /// Whether a drag is extending the selection.
     dragging: bool,
-    /// Whether a caret should be drawn at all, in the one place that still draws one: `render`'s
-    /// windowless frame, which has no `HWND` and so no system caret. In a real window the system
-    /// caret (`place_system_caret`) is the caret and this field is left `true` and ignored —
-    /// still set after every edit and motion, on the off chance a caller draws a frame from this
-    /// state with no window, which is exactly what `render` does.
+    /// Whether a caret is drawn by the paint — only for `render`'s windowless frame, which has no
+    /// system caret. In a real window the system caret (`place_system_caret`) is the caret and
+    /// this stays `true`, ignored.
     caret_on: bool,
     banner: Option<String>,
-    /// What [`grind_text::App::type_markdown`] said the next character must be set in — the
-    /// style a completed `**bold**` span leaves behind, carried across keystrokes so the shell
-    /// does not need its own idea of the notation. `ui_tui`'s `resume` is the same field.
+    /// What [`grind_text::App::type_markdown`] said the next character must be set in — the style
+    /// a completed `**bold**` leaves behind, carried across keystrokes.
     resume: Option<grind_text::CharStyle>,
     /// A `WM_CHAR` high surrogate waiting for its low half — `Sheet::surrogate`'s twin, and the
     /// one that matters every keystroke rather than only at the start of an edit: this pane has
@@ -950,17 +869,14 @@ struct Text {
     /// drawn beside the text it anchors. Presentation state, exactly like `Sheet::overlays`.
     show_names: bool,
     /// The word [`text_find`] last asked for, which F3 and Shift+F3 step through and Replace
-    /// offers back — `Sheet::needle`'s twin.
+    /// offers back.
     needle: String,
     /// Which format-strip control is held down, and therefore the one a release over it will
     /// activate. See `text_button_down`.
     pressed: Option<text::geom::StripHit>,
-    /// Which format-strip control the pointer is over, or `None` when it is anywhere else (W10).
-    ///
-    /// The only state in this shell that exists purely so that something *looks* alive, and it
-    /// earns it: a row of drawn buttons with no hover feedback is the single thing that most
-    /// gives a custom-painted window away. Repainting is guarded on the value actually changing,
-    /// so an ordinary mouse move across the document costs one comparison.
+    /// Which format-strip control the pointer is over. A row of drawn buttons with no hover
+    /// feedback is what most gives a custom-painted window away; repainting only when this changes
+    /// keeps a mouse move to one comparison.
     hover: Option<text::geom::StripHit>,
     /// Spelling (`doc/spelling.md`): the session's choice in View ▸ Spelling Language…, what it
     /// came to for this document, and the dictionary Ignore All adds to. `checked` is `None`
@@ -1024,12 +940,8 @@ impl Text {
             .find(|m| m.offset <= at.offset && at.offset <= m.offset + m.len)
     }
 
-    /// Rebuild the bands, the fonts if the monitor changed, and the flow.
-    ///
-    /// Everything measured is rebuilt from the document rather than scaled from the last answer,
-    /// which is the same rule [`Sheet::relayout`] follows and for the same reason: repeatedly
-    /// scaling a scaled number is how a window dragged between two monitors and back stops being
-    /// pixel-identical to one that never moved.
+    /// Rebuild the bands, the fonts if the monitor changed, and the flow — from the document,
+    /// never scaled from the last answer, as [`Sheet::relayout`] does.
     fn relayout(&mut self, width: f64, height: f64, dpi: u32) {
         self.page = Page {
             width,
@@ -1059,12 +971,10 @@ impl Text {
 
     /// Measure every block and stack them.
     ///
-    /// ponytail: this lays out the **whole document**, so a five-hundred-page one is measured on
-    /// every resize. It is what makes the scrollbar honest — a flow that only knew about the
-    /// blocks on screen could not say how tall the document is — and it is fast enough for
-    /// everything in `text/tests/data/`. The upgrade when it stops being is the usual one: an
-    /// estimated height for blocks nobody has looked at, replaced by the real one as they scroll
-    /// past. The trigger is a document where a resize is visibly slow, and not before.
+    /// ponytail: the **whole document** is laid out, so a five-hundred-page one is measured on
+    /// every resize. That is what makes the scrollbar honest, and it is fast enough for everything
+    /// in `text/tests/data/`. The upgrade is an estimated height for unseen blocks, replaced as
+    /// they scroll past, when a resize is visibly slow.
     fn reflow(&mut self) {
         let dpi = self.page.dpi;
         let (_, column) = self.page.text_column();
@@ -1074,13 +984,10 @@ impl Text {
         let Some(faces) = self.faces() else {
             return;
         };
-        // A picture is measured from its own decoded pixels rather than as a line of text —
-        // `flow_of`'s own doc comment is the rule, and this closure is `image.rs`'s answer to
-        // it: fit the column, keep the aspect ratio, never larger than the picture's own size,
-        // the same rule `ui_text_gtk`'s `image_size` follows. `None` when the block is not a
-        // picture, or WIC could not read it (a corrupt file, a format nobody's decoder knows) —
-        // R5's tolerance, so a bad picture takes no more room than its placeholder character
-        // would rather than stopping the document.
+        // A picture is measured from its decoded pixels — fit the column, keep the aspect ratio,
+        // never larger than its own size (`flow_of`). `None` when the block is no picture or WIC
+        // cannot read it (R5), so a bad picture takes its placeholder's room rather than stopping
+        // the document.
         let picture = |view: &grind_text::BlockView, width: f64| -> Option<f64> {
             let (image, caption) = grind_text::picture_of(view)?;
             let (w, h) = image::size(&image.data)?;
@@ -1121,10 +1028,8 @@ impl Text {
         grind_text::caret::end(&self.app)
     }
 
-    /// The faces this document is set in, at the current measure. Built per call rather than
-    /// kept, because it borrows the font cache and a `&Faces` living in the state would borrow it
-    /// for the life of the window; the fonts themselves are cached, so this costs a handful of
-    /// map lookups.
+    /// The faces this document is set in, at the current measure — built per call, since it
+    /// borrows the font cache; the fonts are cached, so this is a few map lookups.
     fn faces(&self) -> Option<Faces<'_>> {
         let fonts = self.fonts.as_ref()?;
         let (_, width) = self.page.text_column();
@@ -1136,11 +1041,8 @@ impl Text {
         ))
     }
 
-    /// One block's lines, measured in that block's own face.
-    ///
-    /// A value, computed and thrown away — the same contract `App::get_viewport` offers for
-    /// content. Nothing here keeps a layout, because a kept one goes stale on the next keystroke
-    /// and there is no cheap way to know it has.
+    /// One block's lines, measured in its own face — computed and thrown away, since a kept layout
+    /// goes stale on the next keystroke.
     fn layout_of(&self, index: usize) -> Option<Layout> {
         let faces = self.faces()?;
         let viewport = self.app.get_viewport(index..index + 1);
@@ -1172,12 +1074,10 @@ impl Text {
         self.app.caret_x(self.caret, &faces).ok()
     }
 
-    /// Where the caret is drawn, in client pixels, and how big it is — the same geometry
-    /// `text/draw.rs` uses to paint it, answered without a `Frame` because neither caller here
-    /// has a reason to build one. `position_ime_composition` wants the point: a composing IME's
-    /// candidate list should appear where the caret is rather than wherever Windows last happened
-    /// to leave it. `place_system_caret` wants all four, because `CreateCaret` takes a size and
-    /// the caret is a different height on a heading than on a paragraph.
+    /// Where the caret is drawn, in client pixels, and its size — `text/draw.rs`'s geometry
+    /// without a `Frame`. `position_ime_composition` wants the point, so an IME's candidate list
+    /// appears at the caret; `place_system_caret` wants all four, since `CreateCaret` takes a size
+    /// and a heading's caret is taller.
     fn caret_geometry(&self) -> Option<(i32, i32, i32, i32)> {
         let slot = self.flow.slot(self.caret.block).copied()?;
         let layout = self.layout_of(self.caret.block)?;
@@ -1209,12 +1109,9 @@ impl Text {
             .unwrap_or_default()
     }
 
-    /// Where a motion lands, without moving anything.
-    ///
-    /// Every vertical answer is [`grind_text::App`]'s — `caret_line` and `caret_line_bounds`,
-    /// measured through this pane's own [`Faces`] — because `doc/text-layout.md` put line layout
-    /// in the core precisely so that four shells could not answer Down-arrow four ways. What is
-    /// left here is the horizontal half, which is about characters and not about lines.
+    /// Where a motion lands, without moving anything. Every vertical answer is
+    /// [`grind_text::App`]'s — `caret_line` and `caret_line_bounds` through this pane's [`Faces`]
+    /// (`doc/text-layout.md`); the horizontal half, about characters, is here.
     fn moved(&self, motion: text::keymap::Motion, goal: f32) -> Caret {
         use text::keymap::Motion;
         let at = self.caret;
@@ -1254,11 +1151,9 @@ impl Text {
         }
     }
 
-    /// Move the caret, extending the selection or collapsing it.
-    ///
-    /// The **goal column** is remembered across a run of vertical keystrokes and dropped the
-    /// moment the caret moves horizontally, which is what makes walking Down through a short line
-    /// and out the other side come back to the column it started in.
+    /// Move the caret, extending or collapsing the selection. The **goal column** survives a run
+    /// of vertical keystrokes, so walking Down through a short line comes back to the column it
+    /// started in.
     fn navigate(&mut self, motion: text::keymap::Motion, extend: bool) {
         let vertical = matches!(motion, text::keymap::Motion::Line(_));
         let goal = match vertical {
@@ -1274,12 +1169,9 @@ impl Text {
         self.reveal();
     }
 
-    /// Put the caret somewhere and forget the goal column and the selection — what a click does,
-    /// and what every edit does with the caret it leaves behind.
-    /// Put the caret somewhere, forgetting any style pending for the next character — a Bold
-    /// pressed with nothing selected belongs to where it was pressed. Typing sets it again after
-    /// placing the caret (`text_type`), which is what makes it survive a keystroke and nothing
-    /// else.
+    /// Put the caret somewhere, forgetting the goal column, the selection (unless `extend`) and
+    /// any style pending for the next character — a Bold pressed with nothing selected belongs to
+    /// where it was pressed. Typing sets the style again after placing the caret (`text_type`).
     fn place(&mut self, at: Caret, extend: bool) {
         self.resume = None;
         self.caret = at;
@@ -1290,11 +1182,9 @@ impl Text {
         self.reveal();
     }
 
-    /// Which caret position a point in the window is nearest.
-    ///
-    /// **Nearest, never nothing** — [`Flow::at`]'s rule, carried through to the offset:
-    /// a click in the margin of a line lands at that line's near end, because a document has no
-    /// "outside" and a caret that refuses to move is a bug nobody can see the cause of.
+    /// Which caret position a point is nearest — **nearest, never nothing** ([`Flow::at`]): a
+    /// click in a line's margin lands at its near end, since a caret refusing to move is a bug
+    /// nobody can see the cause of.
     fn caret_at(&self, x: f64, y: f64) -> Option<Caret> {
         let body = self.page.body();
         let (column_x, _) = self.page.text_column();
@@ -1306,10 +1196,8 @@ impl Text {
         )
     }
 
-    /// How many lines a Page Up or Page Down moves.
-    ///
-    /// Measured in *body* lines rather than in pixels, and one short of a screenful, which is
-    /// what keeps a line of context across the jump — the same rule the grid's page has.
+    /// How many lines Page Up or Down moves: body lines, one short of a screenful, keeping a line
+    /// of context across the jump, as the grid's page does.
     fn page_lines(&self) -> isize {
         let height = self
             .fonts
@@ -1348,17 +1236,11 @@ fn hint_h(hint: &[assist::Piece], dpi: u32) -> f64 {
     }
 }
 
-/// The bridge from the core to the window: *something changed*.
-///
-/// Architecture rule 3 — the core pushes and shells never poll — reaching a message queue. It
-/// **posts** rather than sends, and that is not an optimisation: `App::mutate` notifies with its
-/// write lock dropped but still inside the call that made the change, and a `SendMessageW` there
-/// would re-enter this window's procedure while a handler is holding `&mut State`. Posting puts
-/// the notification in the queue, where it is handled long after the borrow is gone.
-///
-/// The window is held as an `isize` rather than as an `HWND` so that this is `Send + Sync`
-/// without an unsafe promise: [`grind_core::Observer`] requires both, because the core does not
-/// say which thread a change arrives on.
+/// The bridge from the core to the window: *something changed* (rule 3). It **posts** rather than
+/// sends: `App::mutate` notifies with its write lock dropped but still inside the changing call,
+/// and a `SendMessageW` there would re-enter this procedure while a handler holds `&mut State`.
+/// The window is an `isize`, not an `HWND`, so this is `Send + Sync` without an unsafe promise, as
+/// [`grind_core::Observer`] requires.
 struct Changed(isize);
 
 impl grind_core::Observer for Changed {
@@ -1376,18 +1258,10 @@ impl grind_core::Observer for Changed {
     }
 }
 
-/// A document, read, with a window's worth of state around it and no window.
-///
-/// Shared by [`run`] and [`render`] on purpose: the render path is a *second caller* of every
-/// answer the window uses, not a second set of answers, which is what makes a byte-identical
-/// frame evidence about the real thing (`doc/windows-shell.md`, decision 5).
-///
-/// **Which pane comes out is decided by the caller**, from `grind_core::kind` reading the file's
-/// bytes — never from its name, because a spreadsheet does not become a document by being called
-/// one. This function only obeys.
-///
-/// `None` is the welcome screen: nobody named a document, and this is the one place that is
-/// answered rather than guessed at.
+/// A document, read, with a window's worth of state round it and no window — shared by [`run`] and
+/// [`render`], so a render is a second caller of every answer the window uses (decision 5). **The
+/// caller decides the pane**, from `grind_core::kind` reading the bytes. `None` is the welcome
+/// screen.
 fn opened(kind: Option<DocumentKind>, path: Option<PathBuf>, theme: Theme) -> Result<Pane, String> {
     let Some(kind) = kind else {
         return Ok(Pane::Welcome(Box::new(opened_welcome(theme))));
@@ -1411,9 +1285,8 @@ fn opened_welcome(theme: Theme) -> Welcome {
         page: welcome::Page::default(),
         hover: None,
         pressed: None,
-        // The first card, so Enter on a freshly opened window makes a spreadsheet — the thing
-        // this shell used to do without asking, now as the *default answer* to a question that
-        // was at least put.
+        // The first card, so Enter on a fresh window makes a spreadsheet — the default answer to a
+        // question that was at least put.
         focus: 0,
         surrogate: None,
     }
@@ -1543,11 +1416,9 @@ fn opened_sheet_on(app: grind_sheet::App, path: Option<PathBuf>, theme: Theme) -
         hint: Vec::new(),
         pointing: None,
         formulas: false,
-        // **On**, which is `ui_sheet_gtk`'s own default (`chrome::formula_bar(.., true)`) and is
-        // the reason to have one default rather than two: a formula reads the same in both
-        // windows unless somebody says otherwise. It costs nothing to be wrong about, either —
-        // the reading is only ever *shown*, and the moment the cell is opened for editing the
-        // bar is back to the text that will be stored.
+        // **On**, as in the GNOME window, so a formula reads the same in both unless somebody says
+        // otherwise. The reading is only shown; opening the cell brings back the text that will be
+        // stored.
         friendly: true,
         ui_font: None,
         field_brush: None,
@@ -1571,14 +1442,10 @@ fn opened_sheet_on(app: grind_sheet::App, path: Option<PathBuf>, theme: Theme) -
     sheet
 }
 
-/// Draw one frame of a document to a `.bmp` and exit — **with no window, no compositor and no
-/// display** (`doc/windows-shell.md`, decision 5).
-///
-/// Not a user feature. It is how custom drawing gets an assertable output: a refactor is proved
-/// one when the file comes back byte-identical. Everything that could differ between two runs is
-/// pinned rather than read — the size is a constant, and the **theme is forced to light**,
-/// because a screenshot compared against another one must not depend on what the machine
-/// running it has under `Themes\Personalize`.
+/// Draw one frame of a document to a `.bmp` and exit — **no window, no compositor, no display**
+/// (decision 5). Not a user feature: how custom drawing gets an assertable output, a refactor
+/// proved one when the file comes back byte-identical. Everything that could differ between runs
+/// is pinned: the size is a constant and the theme the flag's.
 pub fn render(
     kind: Option<DocumentKind>,
     path: Option<PathBuf>,
@@ -1588,11 +1455,9 @@ pub fn render(
     // COM, for `image.rs`'s WIC calls — a picture is measured in `relayout` and drawn in
     // `draw_text_frame`, and this windowless path has no `run`'s own guard to lean on.
     let _com = Com::new();
-    // The palette this frame is drawn in is the **flag's**, never the machine's: two renders of
-    // one document on two machines have to be the same bytes, and a registry read would make the
-    // developer's own theme part of the output. `--dark` is how the dark palette gets looked at
-    // at all without a Windows machine set to dark (W10) — before it, half of `theme.rs` shipped
-    // unseen.
+    // The palette is the **flag's**, never the machine's: two renders on two machines must be the
+    // same bytes, and `--dark` is how the dark palette is looked at without a Windows machine set
+    // to dark.
     let mode = match dark {
         true => Mode::Dark,
         false => Mode::Light,
@@ -1609,9 +1474,8 @@ pub fn render(
             text.relayout(w, h, 96);
             draw_text_frame(dib.dc(), text, false);
         }
-        // `grind-win32 --render-to shot.bmp` with no file draws the welcome screen, which is the
-        // only way to look at it without a Windows machine — the same argument `--dark` was added
-        // under in W10, and the reason that flag exists here too.
+        // `--render-to shot.bmp` with no file draws the welcome screen — the only way to look at
+        // it without a Windows machine.
         Pane::Welcome(state) => {
             state.relayout(w, h, 96);
             draw_welcome_frame(dib.dc(), state);
@@ -1620,17 +1484,13 @@ pub fn render(
     std::fs::write(target, dib.bmp()).map_err(|error| format!("{}: {error}", target.display()))
 }
 
-/// Open a window on a document and pump messages until it closes.
-///
-/// `path` is `None` for a new, empty document of `kind` — **both kinds**, since W5: one binary,
-/// one window class, and the pane decided by the bytes. `kind` is `None` when nobody named a
-/// document at all, which opens the welcome screen.
+/// Open a window on a document and pump messages until it closes. `path` is `None` for a new,
+/// empty document of `kind`; `kind` is `None` when nobody named a document, which opens the
+/// welcome screen.
 pub fn run(kind: Option<DocumentKind>, path: Option<PathBuf>) -> Result<(), String> {
-    // Before *any* window exists, which is the whole requirement: per-monitor v2 cannot be set
-    // once a window has been created, and asking for it late fails silently and leaves the
-    // process system-DPI-aware — a window that is bitmap-stretched and blurry on a 150% monitor.
-    // Best-effort because it also fails when a manifest already set an awareness, and that is
-    // not a reason to refuse to start.
+    // Before *any* window exists: per-monitor v2 cannot be set once a window has been created, and
+    // asking late fails silently and leaves a system-DPI-aware window, stretched and blurry at
+    // 150%. Best-effort, since it also fails when a manifest set an awareness already.
     // SAFETY: no arguments to outlive the call.
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -1694,14 +1554,10 @@ pub fn run(kind: Option<DocumentKind>, path: Option<PathBuf>) -> Result<(), Stri
         // the obvious loop spins forever on the one case that most needs to end.
         let mut message = MSG::default();
         while GetMessageW(&mut message, None, 0, 0).0 > 0 {
-            // Enter, Escape, Tab and the arrows inside a child `EDIT` never reach its parent:
-            // the control eats them, and with no dialog manager there is nothing to turn them
-            // into a command. Relaying them here is the standard answer, and it is cheaper and
-            // shorter-lived than subclassing the control — see `WM_CHILD_KEY`.
-            //
-            // The pump asks rather than decides, and reaches no state at all: "the message went
-            // to a child of ours" is everything it knows, and the window answers whether the
-            // key was claimed.
+            // Enter, Escape, Tab and the arrows inside a child `EDIT` never reach its parent: the
+            // control eats them, and with no dialog manager nothing turns them into a command. So
+            // the pump relays them (`WM_CHILD_KEY`) and asks rather than decides: it reaches no
+            // state, and the window answers whether the key was claimed.
             if message.message == WM_KEYDOWN
                 && GetParent(message.hwnd).is_ok_and(|parent| parent == hwnd)
                 && SendMessageW(
@@ -1773,10 +1629,9 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
                     // at the call site — `dialog::use_theme` says why — and so does the bar.
                     dialog::use_theme(theme);
                     menubar::set_theme(theme);
-                    // Registered here rather than in `opened`, because it needs a window to
-                    // post to — and because a document read *before* there is one must not
-                    // arrive as a change the user made. That is the whole of why this shell
-                    // needs no "loading" flag: nobody is listening yet.
+                    // Registered here rather than in `opened`: it needs a window to post to, and a
+                    // document read before there is one must not arrive as a change the user made
+                    // — so no "loading" flag is needed.
                     let observer = Arc::new(Changed(hwnd.0 as isize));
                     match pane {
                         Pane::Sheet(sheet) => sheet.app.set_observer(observer),
@@ -1879,18 +1734,16 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             double_click(hwnd, lparam);
             LRESULT(0)
         }
-        // A right click, **and** Shift+F10 or the keyboard's own Menu key — Windows sends this
-        // one message for all three, which is what lets W7's context menus answer the keyboard
-        // for free. `lparam`'s point is in *screen* coordinates here, unlike every mouse message
-        // above, and is `(-1, -1)` exactly when the keyboard asked rather than the mouse.
+        // A right click, **and** Shift+F10 or the Menu key — Windows sends this one message for
+        // all three, so the context menus answer the keyboard for free. `lparam`'s point is in
+        // *screen* coordinates here, and `(-1, -1)` exactly when the keyboard asked.
         WM_CONTEXTMENU => {
             context_menu(hwnd, lparam);
             LRESULT(0)
         }
-        // A menu is about to open — from the bar or from a right click, since
-        // `TrackPopupMenuEx` sends this to its owner too. The one check that depends on the
-        // *selection* rather than the pane is set here rather than in `build_menu`, which runs
-        // only when the pane changes: the currency the active cell has now.
+        // A menu is about to open, from the bar or a right click (`TrackPopupMenuEx` sends this
+        // too). The checks that depend on the selection — the active cell's currency, the strip's
+        // toggles — are set here, since `build_menu` runs only when the pane changes.
         WM_INITMENUPOPUP => {
             check_format(hwnd, HMENU(wparam.0 as *mut std::ffi::c_void));
             check_chart_kind(hwnd, HMENU(wparam.0 as *mut std::ffi::c_void));
@@ -1910,11 +1763,9 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             // with — which is what leaves Alt+F4 and the system menu working.
             false => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
         },
-        // A composing IME is about to show its own candidate window — moved to the caret before
-        // `DefWindowProcW` draws it, so it appears where the text is going rather than wherever
-        // Windows last happened to leave it. Everything else about composing (the candidate
-        // list itself, and the committed result arriving as ordinary `WM_CHAR`s) is left to the
-        // default handling; this is the one message this shell answers at all.
+        // A composing IME is about to show its candidate window — moved to the caret before
+        // `DefWindowProcW` draws it. The rest of composing (the list, the committed `WM_CHAR`s) is
+        // the default handling; this is the one IME message answered.
         WM_IME_STARTCOMPOSITION => {
             position_ime_composition(hwnd);
             // SAFETY: the arguments this message came with, unchanged.
@@ -1998,8 +1849,8 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
                 None => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
             }
         }
-        // The X, Alt+F4 and the Exit item all arrive here, which is what makes them one verb —
-        // and this is the last point at which "cancel" is still an answer.
+        // The X, Alt+F4 and Exit all arrive here, which makes them one verb — and this is the last
+        // point where "cancel" is still an answer.
         WM_CLOSE => {
             close(hwnd);
             LRESULT(0)
@@ -2008,10 +1859,8 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             wheel(hwnd, wparam);
             LRESULT(0)
         }
-        // The system caret exists only while this window has keyboard focus — `CreateCaret` is
-        // per-thread, so a window that never had focus never had one, and a dialog stealing
-        // focus (or another application entirely) must not leave one behind for the next thing
-        // Windows shows to trip over.
+        // The system caret exists only while this window has focus — `CreateCaret` is per-thread,
+        // and a dialog or another application taking focus must not find one left behind.
         WM_SETFOCUS => {
             if is_text(hwnd) {
                 place_system_caret(hwnd);
@@ -2029,9 +1878,7 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             LRESULT(0)
         }
         // The user changed the theme while the window was open. `WM_SETTINGCHANGE` is sent for
-        // a great many settings, so the answer is to re-read rather than to trust the message:
-        // reading a registry value is cheap and getting the condition wrong is a window stuck
-        // in the wrong palette.
+        // many settings, so the registry is re-read rather than the message trusted.
         WM_SETTINGCHANGE => {
             // SAFETY: one borrow, released before the repaint is asked for; nothing inside runs
             // a nested message loop.
@@ -2077,10 +1924,9 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             unsafe { PostQuitMessage(0) };
             LRESULT(0)
         }
-        // The last message this window will ever receive, which is what makes it the place to
-        // take the box back. The slot is zeroed first, so a message arriving from within the
-        // drop — there are none, but the ordering costs nothing — finds no state rather than a
-        // dangling pointer.
+        // The last message this window receives, so the box is taken back here. The slot is zeroed
+        // first, so a message arriving from within the drop finds no state rather than a dangling
+        // pointer.
         WM_NCDESTROY => {
             // SAFETY: the pointer was made by `Box::into_raw` in `run` and has not been freed;
             // reconstituting it exactly once is what frees it.
@@ -2098,12 +1944,10 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
     }
 }
 
-/// Recompute everything derived from the document and the client area, then repaint.
-///
-/// One function rather than four, because the things it does are not independent: a different
-/// sheet has different tracks, different tracks move the active cell, a moved active cell moves
-/// the child control sitting on it, and every one of those changes what the frame looks like and
-/// what the title says. Every path that touches the document ends here.
+/// Recompute everything derived from the document and the client area, then repaint — one
+/// function, since a different sheet has different tracks, which move the active cell, which moves
+/// the child control on it, and each changes the frame and the title. Every path touching the
+/// document ends here.
 fn refresh(hwnd: HWND) {
     if is_welcome(hwnd) {
         welcome_refresh(hwnd);
@@ -2140,17 +1984,16 @@ fn refresh(hwnd: HWND) {
             }
         })
     };
-    // The title is the *window's* rather than the pane's, so it is asked for separately — one
-    // more borrow, taken and released like every other.
+    // The title is the *window's* rather than the pane's, so it is asked for separately — one more
+    // borrow, taken and released like every other.
     // SAFETY: nothing inside dispatches.
     let title = unsafe { with_pane(hwnd, |pane| pane.title()) };
     let (Some(child), Some(title)) = (after, title) else {
         return;
     };
-    // SAFETY: the borrow above is released. `MoveWindow` on a visible child repaints it and
-    // `SetWindowTextW` repaints the caption — both dispatch messages, and therefore belong out
-    // here. The title is compared first because this runs on every `WM_SIZE`, and rewriting the
-    // caption on each pixel of a resize drag makes it flicker.
+    // SAFETY: the borrow above is released. `MoveWindow` on a visible child and `SetWindowTextW`
+    // both dispatch messages, so they belong out here. The title is compared first, since this
+    // runs on every `WM_SIZE` and rewriting the caption every pixel of a resize makes it flicker.
     unsafe {
         if let Some((edit, rect)) = child {
             move_to(edit, rect, true);
@@ -2163,10 +2006,8 @@ fn refresh(hwnd: HWND) {
     }
 }
 
-/// Put a child control on one of the geometry's rectangles.
-///
-/// The one place `Rect`'s floats become the integers Win32 wants, so a control cannot end up
-/// half a pixel away from the cell it is editing.
+/// Put a child control on one of the geometry's rectangles — the one place `Rect`'s floats become
+/// Win32's integers.
 fn move_to(child: HWND, rect: Rect, repaint: bool) {
     // SAFETY: `child` is one of this window's controls and outlives the call.
     unsafe {
@@ -2181,25 +2022,15 @@ fn move_to(child: HWND, rect: Rect, repaint: bool) {
     }
 }
 
-/// The menu bar, built from [`menu::MENUS`] — `doc/windows-shell.md`'s decision 4.
+/// The menu bar, built from [`menu::MENUS`] (decision 4): a command's id comes from its position,
+/// so two items cannot share a `WM_COMMAND` id, and reachability is checked on Linux.
 ///
-/// A table rather than a sequence of calls, which buys two things: a command's id is derived
-/// from its position and never written down twice, so the classic Win32 bug of two items sharing
-/// a `WM_COMMAND` id cannot happen; and the check that every command is reachable from a menu
-/// runs on Linux with no window at all.
-///
-/// Every item the current pane has no answer for — `menu::applies_to`'s question — is **left out
-/// of the bar**, via `menu::items_for`/`menu::menu_has_items`, rather than shown and greyed. A
-/// grey item was tried first (W5b's "a menu that knows which pane it is over") and did not
-/// survive contact with the actual shape of the two panes' verbs: the sheet's own six so
-/// outnumber the universal ones that `&Sheet` and half of `&View` stayed on screen, greyed, on
-/// every document that was not a spreadsheet, and the bar read as a grid that had not noticed it
-/// was showing a document. Omitting instead means a menu can end up with nothing left in it at
-/// all — `&Sheet`/`&Data` on the text pane — which is exactly what
-/// `menu_has_items` checks before a menu is put in the bar. This is rebuilt whenever the pane
-/// itself changes (`adopt`) rather than the selection inside it, same as before; `Command::id`
-/// still calls `do_command` for a command with no *item* on screen if one somehow arrives (a
-/// stale accelerator, say), and `do_command`'s own per-pane no-ops are what makes that safe.
+/// Every item the pane has no answer for (`menu::applies_to`) is **left out**, via
+/// `menu::items_for`/`menu::menu_has_items`, rather than greyed: greying left the sheet's many
+/// verbs visible and dead over a text document. A menu left empty — `&Sheet`/`&Data` on the text
+/// pane — is not put in the bar. Rebuilt when the pane changes (`adopt`), not the selection; a
+/// stale accelerator for a command with no item still reaches `do_command`, whose per-pane no-ops
+/// make that safe.
 fn build_menu(hwnd: HWND) {
     // SAFETY: one borrow, for the kind and the two overlay checkmarks; nothing inside dispatches.
     // The role overlay has no meaning on the text pane (`CellRole` is the grid's alone), so it
@@ -2260,10 +2091,8 @@ fn build_menu(hwnd: HWND) {
                             usize::from(command.id()),
                             PCWSTR(label.as_ptr()),
                         );
-                        // The two overlays and the friendly bar are the checkable items this bar
-                        // has — everything else is a plain verb with nothing to report back.
-                        // Each is read once above rather than per item, the same "asked for
-                        // fresh, never stored" shape the overlays themselves follow.
+                        // The two overlays and the friendly bar are this bar's checkable items,
+                        // each read once above.
                         let checked = match command {
                             Command::ToggleRoles => Some(roles_on),
                             Command::ToggleNames => Some(names_on),
@@ -2297,11 +2126,6 @@ fn build_menu(hwnd: HWND) {
     }
 }
 
-/// W7's context menus: cells and headers get the grid's own clipboard verbs, the text pane its
-/// own plus the five toggles the format strip already draws. A short, fixed list rather than a
-/// state-aware one — the same simplification W7 already names for the menu bar's own greying —
-/// and every entry is a real [`Command`] reused from [`menu::MENUS`] rather than a second
-/// vocabulary, so a click here reaches exactly the handler a click on the bar would.
 /// Whether a `WM_CONTEXTMENU` is about a chart — under the pointer (which it then selects, as a
 /// right click on a cell moves the selection) or, from the keyboard, the one already selected.
 fn context_on_chart(hwnd: HWND, lparam: LPARAM) -> bool {
@@ -2344,6 +2168,9 @@ fn context_on_chart(hwnd: HWND, lparam: LPARAM) -> bool {
     on
 }
 
+/// The context menus: the grid's clipboard verbs over cells and headers, the text pane's plus
+/// the strip's five toggles — a fixed list of real [`Command`]s from [`menu::MENUS`], so a
+/// click here reaches the handler a click on the bar would.
 fn context_menu(hwnd: HWND, lparam: LPARAM) {
     // The welcome screen's own: the three cards, which is what a right click on a screen made of
     // three choices can usefully offer. Clipboard verbs would be items over nothing.
@@ -2531,9 +2358,8 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
 }
 
 /// Where a keyboard-invoked context menu opens: the middle of the client area, in screen
-/// coordinates. Simpler than anchoring it on the caret or the active cell, and it costs nothing
-/// real — the menu still opens and still reaches every verb on it, which is the whole of what
-/// Shift+F10 promises.
+/// coordinates — simpler than anchoring on the caret or the active cell, and the menu still
+/// reaches every verb, which is what Shift+F10 promises.
 fn context_anchor(hwnd: HWND) -> POINT {
     let rect = gdi::client_rect(hwnd);
     let mut point = POINT {
@@ -2547,18 +2373,14 @@ fn context_anchor(hwnd: HWND) -> POINT {
     point
 }
 
-/// Create the two child `EDIT`s and the face they are both set in.
-///
-/// Hidden from birth and shown on demand, which is what lets the strip be *drawn* the rest of
-/// the time and therefore appear in a `--render-to` frame that has no window at all. Decision 2
-/// draws the line they sit on: a control that holds a keystroke is a widget, and one that holds
-/// the document is a second model — these hold an address on its way to `status::locate` and a
-/// cell's text on its way to `App::enter`, and nothing else.
+/// Create the two child `EDIT`s and their face — hidden from birth and shown on demand, so the
+/// strip is drawn the rest of the time and appears in a `--render-to` frame. They hold an address
+/// on its way to `status::locate` and a cell's text on its way to `App::enter`, never the document
+/// (decision 2).
 fn make_children(hwnd: HWND) {
-    // The text pane has no child controls at all — it draws its own caret and holds its own
-    // keystrokes — and a window showing one therefore creates none. A window that *becomes* a
-    // spreadsheet (File ▸ Open on a `.fods`) comes back through here, which is why this is
-    // idempotent rather than once-only.
+    // The text pane has no child controls — it draws its own caret and holds its own keystrokes —
+    // so a window showing one creates none. A window that *becomes* a spreadsheet comes back
+    // through here, so this is idempotent.
     // SAFETY: one borrow, nothing inside dispatches.
     match unsafe { with_sheet(hwnd, |state| state.editor.is_invalid()) } {
         Some(true) => {}
@@ -2610,10 +2432,8 @@ fn make_children(hwnd: HWND) {
     }
 }
 
-/// Tell Windows where the thumbs are and how big they are.
-///
-/// The range is in **tracks, not pixels** — see `GridGeom`'s comment: a `SCROLLINFO` is `i32`
-/// and this sheet is twenty million pixels tall, but only a million rows.
+/// Tell Windows where the thumbs are and how big. The range is in **tracks, not pixels**: a
+/// `SCROLLINFO` is `i32`, and this sheet is twenty million pixels but a million rows.
 fn sync_scrollbars(hwnd: HWND, state: &Sheet) {
     let set = |bar, max: u32, pos: u32, page: i64| {
         let info = SCROLLINFO {
@@ -2693,12 +2513,9 @@ fn scroll_code(code: i32) -> windows::Win32::UI::WindowsAndMessaging::SCROLLBAR_
     windows::Win32::UI::WindowsAndMessaging::SCROLLBAR_COMMAND(code)
 }
 
-/// The wheel, honouring the user's own setting rather than a constant.
-///
-/// `SPI_GETWHEELSCROLLLINES` is what the mouse control panel writes, and a user who set it to
-/// one line or to a screenful means it. `WHEEL_DELTA` is one notch; a precision wheel sends
-/// fractions of one, so the remainder would need carrying — a named simplification for W1,
-/// where every notch is at least one row.
+/// The wheel, by the user's own `SPI_GETWHEELSCROLLLINES` — one line or a screenful, as the mouse
+/// control panel set it. `WHEEL_DELTA` is one notch; a precision wheel's fractions are not
+/// carried, so every notch moves at least one row.
 fn wheel(hwnd: HWND, wparam: WPARAM) {
     let notches = f64::from(((wparam.0 >> 16) & 0xffff) as i16) / f64::from(WHEEL_DELTA);
     let mut lines = 3u32;
@@ -2720,8 +2537,8 @@ fn wheel(hwnd: HWND, wparam: WPARAM) {
         zoom_by(hwnd, if notches > 0.0 { 1.25 } else { 0.8 });
         return;
     }
-    // Zero means "do not scroll", which is a real setting. `WHEEL_PAGESCROLL` (0xFFFFFFFF)
-    // means a screenful, and is answered with the page rather than with 4 294 967 295 rows.
+    // Zero means "do not scroll", which is a real setting. `WHEEL_PAGESCROLL` (0xFFFFFFFF) means a
+    // screenful, and is answered with the page rather than with 4 294 967 295 rows.
     // SAFETY: no nested loop inside.
     unsafe {
         with_sheet(hwnd, |state| {
@@ -2740,10 +2557,8 @@ fn wheel(hwnd: HWND, wparam: WPARAM) {
     }
 }
 
-/// A drag in progress, following the pointer.
-///
-/// Nothing happens when no button is down: a plain mouse move over a grid has to cost nothing,
-/// because it arrives on every pixel of travel.
+/// A drag in progress, following the pointer. Nothing happens with no button down: a plain mouse
+/// move arrives on every pixel and must cost nothing.
 fn mouse_move(hwnd: HWND, lparam: LPARAM) {
     let (x, y) = point(lparam);
     if is_welcome(hwnd) {
@@ -2762,12 +2577,10 @@ fn mouse_move(hwnd: HWND, lparam: LPARAM) {
                 grab.follow(x, y, mods().shift, &state.geom);
                 return true;
             }
-            // The format strip's hover, asked on every move and repainted only when the answer
-            // *changes* — the text pane's rule, which keeps a move across the grid to one
-            // comparison. `WM_MOUSELEAVE` is not tracked: the strip is inside the client area, and
-            // a pointer leaving the window through it is answered by the next move anywhere.
-            // A track being sized follows the pointer, never smaller than a few pixels so it
-            // cannot be dragged out of reach (hiding is its own verb).
+            // The format strip's hover, repainted only when it *changes*. `WM_MOUSELEAVE` is not
+            // tracked: a pointer leaving the window through the strip is answered by the next move
+            // anywhere. A track being sized follows the pointer, never smaller than a few pixels,
+            // so it cannot be dragged out of reach (hiding is its own verb).
             if let Some((edge, from, size)) = state.resize {
                 let min = scale(8.0, state.geom.dpi);
                 match edge {
@@ -2870,10 +2683,8 @@ fn set_resize_cursor(hwnd: HWND) -> bool {
     true
 }
 
-/// Where a mouse message happened, in client space.
-///
-/// The position is packed as two *signed* 16-bit numbers, and the sign matters: dragging above
-/// or left of the client area gives a negative coordinate rather than a huge one.
+/// Where a mouse message happened, in client space — two *signed* 16-bit numbers, so dragging
+/// above or left of the client gives a negative coordinate, not a huge one.
 fn point(lparam: LPARAM) -> (f64, f64) {
     (
         f64::from((lparam.0 & 0xffff) as i16),
@@ -2881,11 +2692,9 @@ fn point(lparam: LPARAM) -> (f64, f64) {
     )
 }
 
-/// Which modifier keys are down, asked of the keyboard rather than carried by the message.
-///
-/// `WM_KEYDOWN` reports the key and nothing else, so this is where Ctrl+Down becomes different
-/// from Down. `GetKeyState`'s high bit is "down"; its low bit is the *toggle* state, which is
-/// what makes Caps Lock look pressed to anybody who tests for non-zero.
+/// Which modifier keys are down, asked of the keyboard since `WM_KEYDOWN` carries only the key.
+/// `GetKeyState`'s high bit is "down"; its low bit is the toggle state, which makes Caps Lock look
+/// pressed to a test for non-zero.
 fn mods() -> keymap::Mods {
     // SAFETY: no arguments, and the answer is a copy.
     let down = |vk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY| unsafe {
@@ -2898,8 +2707,8 @@ fn mods() -> keymap::Mods {
     }
 }
 
-/// One keystroke from the window itself. `false` hands it back to `DefWindowProc`, which is
-/// what leaves Alt+F4 and the system menu working.
+/// One keystroke from the window itself; `false` hands it back to `DefWindowProc`, leaving Alt+F4
+/// and the system menu working.
 fn key_down(hwnd: HWND, vk: u32) -> bool {
     if is_welcome(hwnd) {
         return welcome_key(hwnd, vk);
@@ -3006,11 +2815,9 @@ fn chart_key(hwnd: HWND, vk: u32) -> bool {
     true
 }
 
-/// One keystroke that went to a child control instead, relayed by the pump. `true` means the
-/// shell claimed it and the control must not see it.
-///
-/// The two children answer differently and that is the whole reason this asks which one it was:
-/// the name box has two keys and no mode, and the editor has [`state::on_key`]'s whole table.
+/// One keystroke relayed by the pump from a child control; `true` means the shell claimed it and
+/// the control must not see it. The name box has two keys and no mode; the editor has
+/// [`state::on_key`]'s whole table.
 fn child_key(hwnd: HWND, vk: u32, child: HWND) -> bool {
     // SAFETY: one borrow, for two flags and a mode; nothing inside dispatches.
     let focused = unsafe {
@@ -3036,11 +2843,8 @@ fn child_key(hwnd: HWND, vk: u32, child: HWND) -> bool {
             }
             _ => false,
         },
-        // The offer list is asked **before** the editing state machine, because the three keys it
-        // claims all mean something else there: Tab commits and moves right, Up and Down commit
-        // in Enter mode, and Escape throws the whole edit away. `assist::on_key` answers `None`
-        // unless a list is actually up, so with nothing offered this costs one match and every
-        // key means exactly what it always meant.
+        // The offer list is asked **before** the editing machine, since the keys it claims mean
+        // something else there; `assist::on_key` answers `None` unless a list is up.
         Some(Focused::Editor(mode)) => assist_key(hwnd, vk) || on_key(hwnd, mode, vk),
         None => false,
     }
@@ -3084,12 +2888,9 @@ fn assist_key(hwnd: HWND, vk: u32) -> bool {
     true
 }
 
-/// Put the highlighted offer into the editor, replacing the word that was being typed.
-///
-/// `EM_REPLACESEL` rather than rewriting the whole control: it leaves the caret after what it
-/// inserted — which for `SUM(` is exactly where the first argument goes — and it is one undo step
-/// in the control's own history, so Ctrl+Z inside a half-typed formula still undoes a completion
-/// rather than the whole edit.
+/// Put the highlighted offer into the editor in place of the word being typed — `EM_REPLACESEL`,
+/// which leaves the caret after it (for `SUM(`, where the first argument goes) and is one undo
+/// step in the control's own history.
 fn accept_offer(hwnd: HWND) {
     let Some((edit, text)) = editor_text(hwnd) else {
         return;
@@ -3149,9 +2950,8 @@ fn on_key(hwnd: HWND, mode: state::Mode, vk: u32) -> bool {
     let key = keymap::key_for(vk);
     let held = mods();
     // Point mode: where a reference could go, an arrow points at a cell and writes its address
-    // (`assist::ref_eligible`, as the GNOME and Mac windows do); anything else ends it. Only in
-    // Enter mode starts one — in Edit mode (F2) the arrows are the caret's — but a reference
-    // already being pointed at keeps moving in either.
+    // (`assist::ref_eligible`); anything else ends it. Only Enter mode starts one — in Edit mode
+    // the arrows are the caret's — but a reference already pointed at keeps moving in either.
     if mode.is_editing() {
         let arrow = matches!(
             key,
@@ -3199,8 +2999,8 @@ fn on_key(hwnd: HWND, mode: state::Mode, vk: u32) -> bool {
             true
         }
         Outcome::ToggleMode => {
-            // SAFETY: no nested loop inside, and nothing on screen changes — F2 changes what
-            // the *next* arrow key means and nothing else.
+            // SAFETY: no nested loop inside, and nothing on screen changes — F2 changes what the
+            // next arrow means.
             unsafe { with_sheet(hwnd, |state| state.mode = state.mode.toggled()) };
             true
         }
@@ -3261,16 +3061,10 @@ fn point_at(hwnd: HWND, mode: state::Mode, key: keymap::Key) -> bool {
     true
 }
 
-/// A character, after the keyboard layout and after the IME. `true` means it started an edit or
-/// was otherwise claimed.
-///
-/// `WM_CHAR` carries one UTF-16 code unit at a time, so a character outside the Basic
-/// Multilingual Plane — an emoji, most of the rarer CJK ideographs, some IME output — arrives as
-/// two consecutive messages, and `char::from_u32` refuses each alone. `surrogate::combine` is
-/// where the halves are reassembled; [`Pane::surrogate_mut`] is where the first one waits, which
-/// is the pane's own state rather than a static because two windows must not share it, and per
-/// pane rather than shared between them because a grid and a document mean two different open
-/// documents once `adopt` has run.
+/// A character, after the keyboard layout and the IME; `true` when it started an edit or was
+/// otherwise claimed. A character outside the BMP arrives as two `WM_CHAR`s: `surrogate::combine`
+/// reassembles them, the first waiting in [`Pane::surrogate_mut`], per pane since a grid and a
+/// document are different open documents once `adopt` has run.
 fn typed_char(hwnd: HWND, code: u32) -> bool {
     let unit = code as u16;
     // SAFETY: no nested loop inside.
@@ -3326,13 +3120,9 @@ fn typed_char(hwnd: HWND, code: u32) -> bool {
     }
 }
 
-/// Move a composing IME's own composition window to the caret.
-///
-/// Only the text pane needs this: the grid's editing happens inside a native `EDIT` control once
-/// an edit is open, and every Win32 `EDIT` positions its own IME without being asked. This pane
-/// draws its own caret and owns no control for Windows to ask, so with no help `CFS_DEFAULT`
-/// leaves the composition window wherever it last was — often the top-left corner the first time
-/// this process composes anything.
+/// Move a composing IME's composition window to the caret. Only the text pane needs it: the grid
+/// edits in a native `EDIT`, which positions its own IME, while this pane draws its own caret, and
+/// with `CFS_DEFAULT` the window stays wherever it last was.
 fn position_ime_composition(hwnd: HWND) {
     // SAFETY: one borrow, released before the IME calls below; nothing here dispatches.
     let Some((x, y, ..)) = unsafe { with_text(hwnd, |text| text.caret_geometry()) }.flatten()
@@ -3368,14 +3158,12 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
         text_button_down(hwnd, lparam);
         return;
     }
-    // An edit in progress is committed by clicking somewhere else, which is what every
-    // spreadsheet does — and it has to happen **before** the selection moves, or the cell being
-    // typed into would turn out to be the one that was just clicked.
+    // Clicking elsewhere commits an edit in progress — **before** the selection moves, or the cell
+    // being typed into would be the one just clicked.
     commit_edit(hwnd, None);
     let (x, y) = point(lparam);
-    // The format strip (`sheet/format.rs`): **pressed here, done on release**, exactly as the
-    // text pane's strip is — see `format_button_up`.
-    // SAFETY: one borrow; the hit test is arithmetic over the geometry and dispatches nothing.
+    // The format strip: **pressed here, done on release** — see `format_button_up`.
+    // SAFETY: one borrow; the hit test is arithmetic and dispatches nothing.
     let control = unsafe { with_sheet(hwnd, |state| state.geom.format_hit(x, y)) }.flatten();
     if let Some(control) = control {
         // SAFETY: one borrow; assigning fields dispatches nothing. `SetCapture` and `SetFocus`
@@ -3410,9 +3198,9 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
         }
         None => {}
     }
-    // A chart floats over the cells, so it answers before any of them (`doc/chart-handling.md`):
-    // a press on one selects it and takes hold of it — its body to move it, a handle of the
-    // selected one to resize it. A press anywhere else lets go of a selected chart.
+    // A chart floats over the cells, so it answers before any of them (`doc/chart-handling.md`): a
+    // press on one selects it and takes hold of it — its body to move it, a handle of the selected
+    // one to resize it. A press anywhere else lets go of a selected chart.
     // SAFETY: one borrow; arithmetic. `SetCapture` sends messages, so it comes after the borrow.
     let took = unsafe { with_sheet(hwnd, |state| chart_press(state, x, y)) }.flatten();
     if took.is_some() {
@@ -3450,8 +3238,8 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
     }
     let extend = mods().shift;
     // The two fields on the strip are drawn chrome until they are clicked, at which point the
-    // control hiding behind the drawing appears over it. Deciding that needs the geometry, so it
-    // is read here and acted on below the borrow.
+    // control hiding behind the drawing appears over it. Deciding that needs the geometry, so it is
+    // read here and acted on below the borrow.
     // SAFETY: no nested loop inside.
     let click = unsafe {
         with_sheet(hwnd, |state| {
@@ -3566,11 +3354,10 @@ fn double_click(hwnd: HWND, lparam: LPARAM) {
         return;
     }
     let (x, y) = point(lparam);
-    // **A double-click on a format strip is two clicks**, in either pane. Windows turns the
-    // second press of a quick pair into `WM_LBUTTONDBLCLK` instead of `WM_LBUTTONDOWN`, so a strip
-    // that only listened for the press lost it: `+.0` clicked twice stepped once, and on the text
-    // pane the second press fell through to the page and selected a word in the document. Treated
-    // as a press here, and the release that follows activates it, exactly like the first.
+    // **A double-click on a format strip is two clicks.** Windows turns the second press of a
+    // quick pair into `WM_LBUTTONDBLCLK`, so a strip listening only for the press lost it: `+.0`
+    // clicked twice stepped once, and on the text pane the second press selected a word in the
+    // document. Treated as a press, and the release activates it.
     if is_text(hwnd) {
         // SAFETY: one borrow; the hit test is arithmetic and dispatches nothing.
         let on_strip = unsafe { with_text(hwnd, |text| text.page.strip_hit(x, y).is_some()) };
@@ -3598,10 +3385,8 @@ fn double_click(hwnd: HWND, lparam: LPARAM) {
         restyle_chart(hwnd);
         return;
     }
-    // A double-click on a tab renames the sheet, as it does in every spreadsheet — the first
-    // click has already brought it to the front.
-    // A double-click on a header boundary: the column fits its widest text, the row goes back to
-    // the height its content wants — what every spreadsheet's edge does.
+    // A double-click on a header boundary fits the column to its widest text, or gives the row back
+    // to its content.
     // SAFETY: one borrow; arithmetic.
     let edge = unsafe { with_sheet(hwnd, |state| state.geom.edge_at(x, y)) }.flatten();
     match edge {
@@ -3652,9 +3437,8 @@ fn button_up(hwnd: HWND) {
         return;
     }
     if is_text(hwnd) {
-        // A strip control that was pressed and is still under the pointer is *now* activated —
-        // see `text_button_down`. Released before the verb runs, because three of the six open a
-        // modal dialog and a borrow may not be held across one (decision 7).
+        // A strip control pressed and still under the pointer is activated *now*, after the borrow
+        // is released, since some open a modal and no borrow may be held across one (decision 7).
         // SAFETY: one borrow, and nothing inside it dispatches.
         let pressed = unsafe {
             with_text(hwnd, |text| {
@@ -3758,9 +3542,8 @@ fn button_up(hwnd: HWND) {
         refresh(hwnd);
         return;
     }
-    // A strip control that was pressed and is still under the pointer is *now* activated.
-    // Released before the verb runs, because two of them open a modal chooser and a borrow may
-    // not be held across one (decision 7).
+    // A strip control pressed and still under the pointer is activated now, after the borrow, since
+    // two open a modal chooser (decision 7).
     // SAFETY: no nested loop inside.
     let pressed = unsafe {
         with_sheet(hwnd, |state| {
@@ -3782,12 +3565,9 @@ fn button_up(hwnd: HWND) {
     }
 }
 
-/// Put the caret in the name box: move the control over the drawn box, fill it with what the
-/// box says, select all of it, and show it.
-///
-/// Every window call here happens with **nothing borrowed** — `ShowWindow` and `SetFocus` both
-/// dispatch messages synchronously, so a borrow held across them is decision 7's aliasing bug in
-/// its cheapest form.
+/// Put the caret in the name box: move the control over the drawn box, fill it, select all, show
+/// it — with **nothing borrowed**, since `ShowWindow` and `SetFocus` dispatch messages
+/// synchronously.
 fn open_name_box(hwnd: HWND) {
     // An edit and an address are two things to type in one window, and only one of them can
     // have the keyboard. Committing rather than cancelling is the same answer a click gets.
@@ -3823,12 +3603,9 @@ fn open_name_box(hwnd: HWND) {
     }
 }
 
-/// Finish with the name box: go where it says, or put it away and go nowhere.
-///
-/// Idempotent, and that is load-bearing rather than defensive: hiding the control fires
-/// `EN_KILLFOCUS`, which calls straight back in here. The flag is cleared *first*, so the second
-/// call returns immediately instead of hiding a control that is already hidden and stealing the
-/// focus back off whatever has just been given it.
+/// Finish with the name box: go where it says, or put it away. Idempotent, and that matters:
+/// hiding the control fires `EN_KILLFOCUS`, which calls back in here. The flag is cleared *first*,
+/// so the second call returns rather than stealing the focus back.
 fn close_name_box(hwnd: HWND, commit: bool) {
     // SAFETY: no nested loop inside.
     let Some((edit, was_open)) = (unsafe {
@@ -3857,9 +3634,8 @@ fn close_name_box(hwnd: HWND, commit: bool) {
     // SAFETY: a fresh borrow, taken after the window calls rather than across them.
     unsafe {
         with_sheet(hwnd, |state| {
-            // Nonsense goes nowhere and says so by doing nothing: the box closes and the
-            // selection stays where it was, which is less alarming than an error dialog for a
-            // typo. `grind sheet view` is the R9 answer for a name this build cannot resolve.
+            // Nonsense goes nowhere: the box closes and the selection stays, less alarming than an
+            // error dialog for a typo.
             if let Some(to) = status::locate(&state.app, state.sheet, &typed) {
                 state.selection = to;
                 state.reveal();
@@ -3924,24 +3700,18 @@ fn begin_edit_with(hwnd: HWND, text: String, mode: state::Mode, on_bar: bool) {
         select(edit, caret, caret);
         let _ = InvalidateRect(Some(hwnd), None, false);
     }
-    // What the seeded text already says, before a key is pressed: a cell holding `=SUM(B2:B4)`
-    // opened with F2 shows that call's signature at once, and the function list's `=AVERAGE(`
-    // shows what its first argument is.
+    // What the seeded text says before a key is pressed: `=SUM(B2:B4)` opened with F2 shows its
+    // signature at once, and the function list's `=AVERAGE(` its first argument.
     //
-    // **Last**, and that ordering is the whole of it: `SetWindowTextW` fires `EN_CHANGE`, which
-    // is wired to [`editor_changed`], which reads `EM_GETSEL` — and at that moment the control
-    // has the new text with its caret still at **zero**, so the band it computes is the band for
-    // an empty prefix, which is no band at all. Seeding it before the control was filled put a
-    // signature up and had it wiped one message later; asking again here, after the caret is
-    // where it belongs, is what makes it stay. `editor_changed` also refreshes, which is what
-    // moves this control down when the band it just added took height out of the grid.
+    // **Last**: `SetWindowTextW` fires `EN_CHANGE`, wired to [`editor_changed`], which reads
+    // `EM_GETSEL` while the caret is still at zero — a band for an empty prefix, which is none.
+    // Asking again here, with the caret placed, makes it stay; `editor_changed` also refreshes,
+    // moving this control down when the band took height from the grid.
     editor_changed(hwnd);
 }
 
-/// Store what the editor holds and close it, moving the cursor if a key asked to.
-///
-/// Idempotent for [`close_name_box`]'s reason and by the same means: hiding the control fires
-/// `EN_KILLFOCUS`, which is wired to call straight back in here.
+/// Store what the editor holds and close it, moving the cursor if a key asked to — idempotent for
+/// [`close_name_box`]'s reason, since hiding the control fires `EN_KILLFOCUS`.
 fn commit_edit(hwnd: HWND, dir: Option<Dir>) {
     // SAFETY: one borrow, for the control and whether there is anything to commit.
     let Some((edit, open)) =
@@ -3955,9 +3725,8 @@ fn commit_edit(hwnd: HWND, dir: Option<Dir>) {
     let text = window_text(edit);
     let store = match grind_sheet::formula::display::to_input(&text) {
         Ok(store) => store,
-        // A formula that will not parse **does not commit**: the edit stays open with the caret
-        // on the problem, because silently storing `=SUM(B2` as a piece of text is how a
-        // spreadsheet loses somebody's work.
+        // A formula that will not parse **does not commit**: the edit stays open with the caret on
+        // the problem, rather than storing `=SUM(B2` as text.
         Err(error) => {
             let caret = state::caret_at(&text, error.at);
             // SAFETY: one borrow, for the notice and nothing else.
@@ -4049,13 +3818,10 @@ fn cancel_edit(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// The text in the editor changed, so the drawn formula bar — which mirrors an in-cell edit —
-/// and the assist band are recomputed and repainted.
-///
-/// **Only the two bands**, when the assist band was already the height it now wants: a keystroke
-/// must not redraw the grid under it. When the band appeared or disappeared the grid really did
-/// move — every rectangle below it is offset by `hint_h` — and then this is a full [`refresh`],
-/// which is also what moves the editor control down with it.
+/// The editor's text changed, so the drawn formula bar mirroring it and the assist band are
+/// recomputed and repainted — **only those two bands** when the band's height is unchanged, so a
+/// keystroke does not redraw the grid; a full [`refresh`] when it appeared or disappeared, which
+/// moves the editor too.
 fn editor_changed(hwnd: HWND) {
     let (edit, text) = match editor_text(hwnd) {
         Some(pair) => pair,
@@ -4081,11 +3847,8 @@ fn editor_text(hwnd: HWND) -> Option<(HWND, String)> {
     (open && !edit.is_invalid()).then(|| (edit, window_text(edit)))
 }
 
-/// Where the caret is in the editor, as a **byte** offset into `text`.
-///
-/// `EM_GETSEL` reports UTF-16 units and reports a *selection*; its end is the caret, which is
-/// where typing would go and therefore what a completion is about. [`state::byte_at`] is the
-/// conversion, and it is a pure function tested on Linux rather than arithmetic done here.
+/// Where the caret is in the editor, as a **byte** offset into `text`: `EM_GETSEL` reports a
+/// selection in UTF-16 units, whose end is the caret; [`state::byte_at`] converts.
 fn editor_caret(edit: HWND, text: &str) -> usize {
     let mut end: u32 = 0;
     // SAFETY: `edit` is one of this window's controls, and the out-parameter is a live local.
@@ -4132,14 +3895,10 @@ fn window_text(hwnd: HWND) -> String {
 // The verbs
 // ---------------------------------------------------------------------------
 
-/// Run a verb, whether it arrived from a menu item or from its accelerator.
-///
-/// Every one of these acts on the **document**, so an edit in progress is committed first: the
-/// half-typed cell is part of what Save would write and part of what Undo would take back.
-///
-/// The match is exhaustive on purpose. That is the other half of `menu.rs`'s reachability check
-/// — a command with no handler fails the build, where a command in no menu fails a test — and it
-/// is why neither of them needs a registry of ids.
+/// Run a verb from a menu item or its accelerator. Every one acts on the **document**, so an edit
+/// in progress is committed first — the half-typed cell is part of what Save writes and Undo takes
+/// back. Exhaustive on purpose: a command with no handler fails the build, as one in no menu fails
+/// `menu.rs`'s test.
 fn do_command(hwnd: HWND, command: Command) {
     if is_welcome(hwnd) {
         welcome_command(hwnd, command);
@@ -4149,10 +3908,9 @@ fn do_command(hwnd: HWND, command: Command) {
         text_command(hwnd, command);
         return;
     }
-    // The one verb that means something *into* an open edit: picking a function while typing
-    // inserts the call at the caret, where committing first would store whatever half-formula is
-    // in the control — and a half-formula does not commit at all, it puts up a notice and keeps
-    // the editor open, which is a poor answer to "which function did you want?".
+    // The one verb meaning something *into* an open edit: picking a function while typing inserts
+    // the call at the caret, where committing first would try to store a half-formula, which does
+    // not commit.
     if matches!(command, Command::FunctionList) {
         function_list(hwnd);
         return;
@@ -4169,8 +3927,8 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::SaveAs => {
             save_as(hwnd);
         }
-        // Not `DestroyWindow`: going through `WM_CLOSE` is what makes this item, Alt+F4 and the
-        // title bar's X one verb with one close question.
+        // Not `DestroyWindow`: through `WM_CLOSE`, this item, Alt+F4 and the X are one verb with
+        // one close question.
         Command::Exit => {
             // SAFETY: nothing is borrowed, and posting only queues the message.
             unsafe {
@@ -4333,13 +4091,10 @@ fn history(hwnd: HWND, undo: bool) {
 }
 
 /// Put the selection on the clipboard as `CF_UNICODETEXT`, tab- and CRLF-separated
-/// (`grind_sheet::clip::rect_text`), and with `cut`, clear it afterwards — one
-/// `App::clear_range`, so it is one undo step like Delete's.
-///
-/// What travels is each cell's `App::input_text` — the raw number, or a formula in display
-/// form — rather than what the cell *displays*, for the reason `doc/windows-shell.md` decision
-/// 6 gives: pasted back here it reproduces the cells exactly, and pasted into LibreOffice Calc
-/// or Excel `1234.5` is a number where `1,234.50 €` is a guess about that program's locale.
+/// (`grind_sheet::clip::rect_text`), and with `cut` clear it — one `App::clear_range`, one undo
+/// step. Each cell's `App::input_text` travels, not what it displays (decision 6): pasted back it
+/// reproduces the cells, and into Calc or Excel `1234.5` is a number where `1,234.50 €` is a
+/// locale guess.
 fn copy(hwnd: HWND, cut: bool) {
     // SAFETY: one borrow; `clipboard::set_text` and `clear_range` each run with nothing else
     // borrowed.
@@ -4360,10 +4115,9 @@ fn copy(hwnd: HWND, cut: bool) {
     refresh(hwnd);
 }
 
-/// Read the clipboard and fill from the selection's top-left corner — `App::enter_range` under
-/// `grind_sheet::clip::parse_rows`, one undo step for the whole rectangle. Nothing happens when
-/// the clipboard holds no text, which is what makes pasting an image or a file list silently do
-/// nothing rather than write garbage into a cell.
+/// Read the clipboard and fill from the selection's top-left — `App::enter_range` under
+/// `grind_sheet::clip::parse_rows`, one undo step. No text on the clipboard (an image, a file
+/// list) does nothing.
 fn paste(hwnd: HWND) {
     let Some(text) = clipboard::get_text(hwnd) else {
         return;
@@ -4502,10 +4256,9 @@ fn insert_chart(hwnd: HWND, kind: Option<grind_sheet::ChartKind>) {
     refresh(hwnd);
 }
 
-/// Chart ▸ Chart Preview… — the chart Insert would make, drawn in a dialog of its own with the
-/// three kinds to press, opening on the one the cells want; **Insert** there is the same
-/// `insert_chart` as the menu's, as the kind pressed, and Cancel writes nothing. The borrow is
-/// released before the dialog opens (decision 7).
+/// Chart ▸ Chart Preview… — the chart Insert would make, in a dialog with the three kinds to
+/// press, opening on the one the cells want; **Insert** is the menu's `insert_chart` as the kind
+/// pressed, Cancel writes nothing. The borrow is released first (decision 7).
 fn preview_chart(hwnd: HWND) {
     // SAFETY: one borrow, ended before the modal below.
     let made = unsafe {
@@ -4806,10 +4559,8 @@ fn track_size(hwnd: HWND, rows: bool) {
     refresh(hwnd);
 }
 
-/// Sheet ▸ Fit Column Width — each selected column becomes as wide as its widest text, measured
-/// in the font that text is drawn in (decision 3: one engine for measuring and drawing), with the
-/// cell's padding either side. A column holding nothing goes back to the default. The same
-/// answer the GNOME window's double-click on a column edge gives, from the menu.
+/// Sheet ▸ Fit Column Width — each selected column as wide as its widest text, measured in its
+/// drawing font (decision 3), with padding; an empty column goes back to the default.
 fn fit_columns(hwnd: HWND) {
     fit_tracks(hwnd, Fit::Columns(None));
 }
@@ -5102,14 +4853,10 @@ fn evaluate(hwnd: HWND) {
     refresh(hwnd);
 }
 
-// --- W6: the source, the check, and the two overlays ---
+// --- the source, the check, and the overlays ---
 
-/// The document as its own projection (D9), opened already marked on the line the pane's own
-/// selection or caret projects to — `Projection::line_of`, the reverse of the map `Show Source`'s
-/// own list is built from. Read-only, and a modal list rather than a drawn pane: `code.rs`'s own
-/// doc comment is why — this shell's dialog-for-a-list idiom is already `text_outline`'s and
-/// `text_block_kind_dialog`'s, and a fourth text-view widget for one more read-only list would be
-/// a second way of doing what `dialog::choose` already does.
+/// The document as its projection, opened on the line the selection or caret projects to
+/// (`Projection::line_of`) — read-only, a modal list (`code.rs`) rather than a drawn pane.
 fn show_source(hwnd: HWND) {
     // SAFETY: one borrow, released before the modal — which runs a nested message loop.
     let Some(projection) = (unsafe { with_pane(hwnd, project) }).flatten() else {
@@ -5131,8 +4878,7 @@ fn show_source(hwnd: HWND) {
     }
 }
 
-/// "Check Document" (D6) — every finding `App::lint` reports, worst first (`Report::diagnostics`
-/// is already sorted), and every row a jump.
+/// Check Document — every finding `App::lint` reports, worst first, each row a jump.
 fn check_document(hwnd: HWND) {
     // SAFETY: one borrow, released before the modal.
     let Some(report) = (unsafe { with_pane(hwnd, lint) }).flatten() else {
@@ -5201,11 +4947,8 @@ fn toggle_formulas(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// Whether the formula bar shows the friendly *reading* of a formula rather than its text.
-///
-/// Menu-only, like the two overlays beside it, and the menu is rebuilt straight after for the
-/// same reason: a checkmark answering with the state before the click is a checkmark that is
-/// always one click behind.
+/// Whether the formula bar shows a formula's friendly reading. The menu is rebuilt straight after,
+/// or its check mark would answer with the state before the click.
 fn toggle_friendly(hwnd: HWND) {
     // SAFETY: one borrow; nothing inside dispatches.
     unsafe {
@@ -5215,12 +4958,9 @@ fn toggle_friendly(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// The function list: every function this build implements, and picking one writes the call.
-///
-/// `dialog::choose`'s listbox again — this shell's one idiom for "a list to pick a line from",
-/// already the outline, the source and the lint pane. What the rows say is `assist::function_lines`,
-/// which is `grind sheet functions --long`'s own four columns, so the window and the CLI cannot
-/// disagree about what a function is called or what it does.
+/// The function list: every function grind implements, and picking one writes the call.
+/// `dialog::choose`'s listbox, rows from `assist::function_lines` (`grind sheet functions
+/// --long`'s columns), so window and CLI agree.
 fn function_list(hwnd: HWND) {
     let rows = assist::function_lines();
     // SAFETY: one borrow, for one flag; released before the modal, which runs a nested loop.
@@ -5258,11 +4998,8 @@ fn function_list(hwnd: HWND) {
     }
 }
 
-/// The active cell's formula, explained — `formula::friendly::explain`, one line per row.
-///
-/// Read-only: the answer is thrown away, exactly as Help ▸ Keyboard Shortcuts does with the same
-/// dialog. It never parses back and nothing is written (R1) — this is a *reading* of the formula
-/// the document stores, not a second spelling of it.
+/// The active cell's formula explained — `formula::friendly::explain`, a line a row, read-only:
+/// never parsed back, nothing written (R1).
 fn explain_formula(hwnd: HWND) {
     // SAFETY: one borrow, released before the modal.
     let Some((address, text)) = (unsafe {
@@ -5276,9 +5013,8 @@ fn explain_formula(hwnd: HWND) {
         return;
     };
     let Ok(explained) = grind_sheet::formula::friendly::explain(&text) else {
-        // Not a formula, or one this build cannot parse. A sentence in the notice bar rather than
-        // a modal saying no: the question was asked *about a cell*, and the bar is where this
-        // window says things about the cell it is on.
+        // Not a formula, or one that will not parse: a sentence in the notice bar, where this
+        // window talks about the cell it is on, rather than a modal saying no.
         // SAFETY: one borrow; nothing inside dispatches.
         unsafe {
             with_sheet(hwnd, |state| {
@@ -5332,12 +5068,9 @@ fn current_address(hwnd: HWND) -> Option<String> {
     }
 }
 
-/// Jump either pane to an address `Show Source` or `Check Document` produced.
-///
-/// The same two calls [`text_go_to`] already makes for the word processor, and `a1::parse` /
-/// `a1::resolve` for the grid — **allowed to land on a different sheet than the one open**, unlike
-/// `status::locate`'s name box: a diagnostic or a source line may be about any sheet in the
-/// document, where a name box is answering "where on *this* sheet".
+/// Jump either pane to an address Show Source or Check Document produced — [`text_go_to`]'s two
+/// calls for a document, `a1::parse`/`a1::resolve` for the grid, **allowed to land on another
+/// sheet**, unlike the name box, since a diagnostic may be about any sheet.
 fn go_to_address(hwnd: HWND, address: &str) {
     if is_text(hwnd) {
         // SAFETY: a fresh borrow, taken and released within this call — there is no dialog either
@@ -5384,9 +5117,8 @@ fn go_to_address(hwnd: HWND, address: &str) {
     }
 }
 
-/// W7's "key list" — `menu::shortcuts()` in `dialog::choose`'s read-only listbox, the same
-/// widget every other list in this shell already is. There is nowhere to jump to from an
-/// accelerator, so the row picked (or Escape) is thrown away; the list exists to be read.
+/// The key list — `menu::shortcuts()` in `dialog::choose`'s read-only listbox; the row picked is
+/// thrown away, the list being there to read.
 fn show_shortcuts(hwnd: HWND) {
     let rows = menu::shortcuts();
     dialog::show_list(hwnd, "Keyboard Shortcuts", &rows);
@@ -5408,15 +5140,9 @@ fn recalculate(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// An autofilter over the selection, or clear the one the sheet already has — the Data menu's
-/// *Autofilter*, `Grid::toggle_filter` in the GTK shell and `sheet.filter` in the web one
-/// mirrored.
-///
-/// Over a sheet that already has one this clears it, so the command is the on/off switch its
-/// name implies; otherwise the selection becomes the range, with its first row the heading.
-/// Drawing the dropdown buttons and folding the rows it hides is `sheet/draw.rs`/`relayout`'s
-/// (`win.rs:439-443` already merges `App::hidden_rows` into the hidden-row list every layout
-/// pass); this is only the on/off switch and the range it covers.
+/// An autofilter over the selection, or clear the sheet's — Data ▸ Autofilter. Over a sheet with
+/// one this clears it; otherwise the selection becomes the range, its first row the heading.
+/// Drawing the buttons and folding the hidden rows is `sheet/draw.rs`'s and `relayout`'s.
 fn toggle_filter(hwnd: HWND) {
     // SAFETY: one borrow.
     unsafe {
@@ -5442,13 +5168,9 @@ fn toggle_filter(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// Open the dropdown for one field, under the button `button_down` caught —
-/// `Click::FilterButton`'s handler.
-///
-/// Values come from a fresh read, the same range `ui_sheet_gtk`'s own `field_values` and the
-/// web shell's build them from: the column's own cells from the filter's first data row to its
-/// last, deduplicated. No borrow is held across `dialog::choose_multi`'s nested loop (decision
-/// 7), so this is two separate `with_sheet` calls rather than one.
+/// Open the dropdown for one field, under the button `button_down` caught. Values come from a
+/// fresh read of the column's cells from the filter's first data row to its last, deduplicated.
+/// Two `with_sheet` calls, since `dialog::choose_multi` runs a nested loop (decision 7).
 fn open_filter_menu(hwnd: HWND, col: u32) {
     // SAFETY: one borrow, released before the dialog.
     let Some((field, title, values, checked)) = (unsafe {
@@ -5526,15 +5248,10 @@ fn open_filter_menu(hwnd: HWND, col: u32) {
     refresh(hwnd);
 }
 
-/// Format the selection as a table — the Data menu's *Format as Table*.
-///
-/// No dialog: the selection is the range, its first row is the heading, and the name
-/// auto-generates (`Table1`, `Table2`, …), the same zero-prompt shape the web shell's
-/// `sheet.format-table` and the GTK grid's `Grid::toggle_filter` both use for the plain case.
-/// There is no "un-format" — ODF has nothing resembling a persisted table object to remove as
-/// a unit — so clearing the effects means Undo (one step, right after this) or clearing the
-/// filter, restyling the cells and dropping the name by hand later, same as after
-/// LibreOffice's own AutoFormat (`sheet/src/table_format.rs`).
+/// Format the selection as a table — Data ▸ Format as Table. No dialog: the selection is the
+/// range, its first row the heading, the name `Table1`, `Table2`, …. No un-format — ODF keeps no
+/// table object — so its effects go by Undo (one step) or by hand, as after LibreOffice's
+/// AutoFormat (`sheet/src/table_format.rs`).
 fn format_table(hwnd: HWND, totals: Option<grind_sheet::TotalsFunction>) {
     // SAFETY: one borrow.
     unsafe {
@@ -5565,9 +5282,9 @@ fn format_table(hwnd: HWND, totals: Option<grind_sheet::TotalsFunction>) {
 }
 
 /// Format the selection as `numfmt::CURRENCIES[index]` — the Format menu's three items and the
-/// cells' context menu. `sheet/currency.rs` decides the format: a cell that is already a currency
-/// keeps its decimals, grouping and locale and changes only its symbol, and anything else gets
-/// the GTK picker's defaults. One `App::set_format`, so one undo step over the whole selection.
+/// cells' context menu. `sheet/currency.rs` decides: a currency cell keeps its decimals, grouping
+/// and locale and changes its symbol; anything else gets the defaults. One `App::set_format`, one
+/// undo step.
 fn set_currency(hwnd: HWND, index: usize) {
     let Some((symbol, _)) = grind_sheet::numfmt::CURRENCIES.get(index) else {
         return;
@@ -5595,13 +5312,10 @@ fn set_currency(hwnd: HWND, index: usize) {
     refresh(hwnd);
 }
 
-/// What one format-strip control does, once it has been pressed and released over itself —
-/// and what the same verb in the Format menu or on a key does, since those arrive here too.
-///
-/// Every write is one `App::set_style` or `App::set_format` over the selection cut to the sheet in
-/// use (`grind_sheet::nav::target`), so one Ctrl+Z takes back a
-/// formatted column. *Clear* is the one control that makes two calls, the same pair the GNOME
-/// strip's Clear makes — the core has one "plain again" per kind of property.
+/// What one format-strip control does once pressed and released over itself — and the same verb
+/// from the Format menu or a key. Every write is one `App::set_style` or `App::set_format` over
+/// the selection cut to the sheet in use (`grind_sheet::nav::target`), one Ctrl+Z; *Clear* makes
+/// two calls, the core having one "plain again" per kind of property.
 fn format_control(hwnd: HWND, control: format::Control) {
     use format::Control;
     match control {
@@ -5827,10 +5541,9 @@ fn check_chart_kind(hwnd: HWND, popup: HMENU) {
     }
 }
 
-/// Check the format items that describe the active cell — the currency its format names, and the
-/// strip's toggles that are in — and uncheck the rest, in whichever menu is opening.
-/// `MF_BYCOMMAND` on a popup that holds none of them — File, say — finds nothing and changes
-/// nothing, so this needs no idea of *which* menu it is.
+/// Check the format items describing the active cell — its currency and the strip's pressed
+/// toggles — and uncheck the rest, in whichever menu is opening. `MF_BYCOMMAND` on a popup holding
+/// none of them finds nothing, so this needs no idea which menu it is.
 fn check_format(hwnd: HWND, popup: HMENU) {
     // SAFETY: one borrow; nothing inside dispatches. `None` off the grid, where no currency item
     // is ever shown.
@@ -5863,8 +5576,8 @@ fn check_format(hwnd: HWND, popup: HMENU) {
         check(*command, chosen == Some(index));
     }
     check(Command::GroupThousands, grouped);
-    // The strip's five toggles, checked as the strip draws them pressed — so the menu and the
-    // strip cannot disagree about whether the active cell is bold.
+    // The strip's five toggles, checked as the strip draws them pressed — so the menu and the strip
+    // cannot disagree about whether the active cell is bold.
     // SAFETY: one borrow; nothing inside dispatches.
     let Some(style) = (unsafe { with_sheet(hwnd, |state| active_style(state)) }) else {
         return;
@@ -5882,15 +5595,10 @@ fn check_format(hwnd: HWND, popup: HMENU) {
     }
 }
 
-/// *Format as Table with Totals…* — [`format_table`], having asked which aggregate the totals
-/// row carries.
-///
-/// `dialog::choose` rather than a dropdown on a dialog of its own: this is one choice from a
-/// short list, which is exactly the listbox the outline, the block-kind picker and W6's two
-/// panes already open, and it costs this shell no new window class. The rows are
-/// `TotalsFunction::label`, so the Windows menu cannot call an aggregate something the GTK
-/// dropdown and the CLI do not. Chosen outside `with_sheet` because the chooser runs a nested
-/// message loop, and decision 7 is that no borrow is held across one.
+/// *Format as Table with Totals…* — [`format_table`], having asked which aggregate the totals row
+/// carries, in `dialog::choose` over `TotalsFunction::label`s, so the aggregates have the names
+/// every client gives them. Chosen outside `with_sheet`, as the chooser runs a nested loop
+/// (decision 7).
 fn format_table_totals(hwnd: HWND) {
     let rows: Vec<String> = grind_sheet::TotalsFunction::ALL
         .iter()
@@ -5907,10 +5615,9 @@ fn format_table_totals(hwnd: HWND) {
 
 // --- conditional formatting (`doc/conditional-format.md` §4) ---
 
-/// Data ▸ Add Conditional Format… — the condition in a prompt, then the look in a chooser, and
-/// `grind_sheet::rule::add_from_input` with the selection as the range. Both dialogs run nested
-/// message loops, so the selection is read in one borrow and the rule written in another
-/// (decision 7).
+/// Data ▸ Add Conditional Format… — the condition in a prompt, the look in a chooser, then
+/// `grind_sheet::rule::add_from_input` over the selection. Both dialogs run nested loops, so the
+/// selection is read in one borrow and the rule written in another (decision 7).
 fn add_rule(hwnd: HWND) {
     use grind_sheet::rule::{self, Look};
     // SAFETY: one borrow, released before the prompt.
@@ -6008,16 +5715,9 @@ fn remove_rule(hwnd: HWND) {
 
 // --- CSV, the one non-ODF format (`doc/not-doing.md` §2) ---
 
-/// File ▸ Import CSV… — a delimited file read in **at the cursor**, in one undo step.
-///
-/// A dialog for the file and nothing else, which is `format_table`'s own zero-prompt shape: the
-/// delimiter is read out of the file's own content and where the fields land is the selection,
-/// so the two questions an import cannot skip are already answered. Every other knob is
-/// `grind sheet import-csv`'s (R9), and `csv::Import::sniffed` is where the choice of which ones
-/// a window sets is written down.
-/// Edit ▸ Find… — ask for a word, then land on the first cell holding it at or after the
-/// cursor, across every sheet. The prompt runs a nested message loop, so the word it offers is
-/// read in one borrow and the search is a second (decision 7).
+/// Edit ▸ Find… — ask for a word, then land on the first cell holding it at or after the cursor,
+/// across every sheet. The prompt runs a nested loop, so the word offered is read in one borrow
+/// and the search is a second (decision 7).
 fn find(hwnd: HWND) {
     // SAFETY: one borrow, released before the prompt.
     let Some(offered) = (unsafe { with_sheet(hwnd, |state| state.needle.clone()) }) else {
@@ -6036,11 +5736,9 @@ fn find(hwnd: HWND) {
     find_step(hwnd, find::Towards::Here);
 }
 
-/// F3 / Shift+F3, and the landing half of Find…: `App::find` for the remembered word, and
-/// `grind_sheet::find::step` for which of its hits is next — the same step the GNOME bar and
-/// the browser take, so all three agree about where Shift+F3 goes from a cell that is not a hit.
-/// The hits are asked for again every time, since the document may have changed between two
-/// presses.
+/// F3 / Shift+F3, and Find…'s landing: `App::find` for the remembered word and
+/// `grind_sheet::find::step` for the next hit, asked again each time since the document may have
+/// changed.
 fn find_step(hwnd: HWND, towards: find::Towards) {
     // SAFETY: one borrow, and no dialog on either side of it.
     let asked = unsafe {
@@ -6155,11 +5853,10 @@ enum SpellPick {
     Command(Command),
 }
 
-/// A popup with a misspelt word's suggestions, Ignore All and Add to Dictionary on top, and
-/// `commands` under them — both panes' context menus and F7's popup are this one function, so
-/// the two panes offer a misspelling the same rows. `word` is `None` over a word spelled right,
-/// which leaves only the commands. Runs a nested message loop, so nothing may be borrowed across
-/// it (decision 7): the suggestions are asked for before, and the pick is acted on after.
+/// A popup with a misspelt word's suggestions, Ignore All and Add to Dictionary on top and
+/// `commands` under — both panes' context menus and F7's popup, so a misspelling gets the same
+/// rows everywhere. `word` is `None` over a word spelled right, leaving only the commands. A
+/// nested loop (decision 7): suggestions are asked for before, the pick acted on after.
 fn spelling_menu(
     hwnd: HWND,
     at: POINT,
@@ -6460,10 +6157,9 @@ fn sheet_spelling_language(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// View ▸ Personal Dictionary… over either pane: the list in `dialog::choose`'s listbox, whose
-/// first row adds a word and every other row removes the one it names — asked again after each
-/// change, so a list is maintained in one sitting, until Cancel. The running speller is told
-/// at once (`Speller::accept`/`forget`), so what is underlined changes behind the dialog.
+/// View ▸ Personal Dictionary… over either pane: the list in `dialog::choose`, whose first row
+/// adds a word and each other row removes its word — asked again after each change, until Cancel.
+/// The running speller is told at once (`Speller::accept`/`forget`).
 fn personal_dictionary(hwnd: HWND) {
     use grind_spell::personal;
     let tell = |word: &str, add: bool| {
@@ -6615,6 +6311,9 @@ fn replace(hwnd: HWND) {
     refresh(hwnd);
 }
 
+/// File ▸ Import CSV… — a delimited file read in **at the cursor**, one undo step: a dialog for
+/// the file and nothing else, since the delimiter is read from the content and the selection says
+/// where the fields land (`csv::Import::sniffed`); every other knob is `grind sheet import-csv`'s.
 fn import_csv(hwnd: HWND, with_options: bool) {
     // The dialog runs a nested message loop, so nothing may be borrowed across it (decision 7).
     let Some(path) = dialog::open_csv_path(hwnd) else {
@@ -6672,11 +6371,9 @@ fn import_csv(hwnd: HWND, with_options: bool) {
     refresh(hwnd);
 }
 
-/// File ▸ Export CSV… — the selection, or everything the sheet uses when the selection is one
-/// cell and therefore a cursor rather than a range.
-///
-/// **Writes a file and changes nothing**, so there is no undo entry and no dirty flag: what
-/// comes out is what each cell *shows*, which is `App::export_csv`'s own answer.
+/// File ▸ Export CSV… — the selection, or everything the sheet uses when one cell is selected.
+/// **Writes a file and changes nothing**: no undo entry, no dirty flag; what comes out is what
+/// each cell shows (`App::export_csv`).
 fn export_csv(hwnd: HWND) {
     // SAFETY: one borrow, released before the dialog — which runs a nested message loop.
     let suggested = unsafe {
@@ -6744,10 +6441,6 @@ fn export_csv(hwnd: HWND) {
 
 // --- sheets ---
 
-/// Move to another sheet, keeping the selection and the view.
-///
-/// Clamped rather than wrapped: Ctrl+PageDown on the last sheet doing nothing is less surprising
-/// than it jumping back to the first, and it is what Excel does.
 /// The tab under a client-space point, if the grid's status bar has one there.
 fn sheet_tab_at(state: &Sheet, x: f64, y: f64) -> Option<crate::sheet::tabs::Target> {
     crate::sheet::tabs::hit(&state.tabs.borrow(), x, y)
@@ -6804,6 +6497,8 @@ fn sheet_show(hwnd: HWND, index: usize) {
     refresh(hwnd);
 }
 
+/// Move to another sheet, keeping the selection and the view — clamped, not wrapped:
+/// Ctrl+PageDown on the last sheet does nothing, as in Excel.
 fn sheet_step(hwnd: HWND, by: i64) {
     // SAFETY: one borrow.
     unsafe {
@@ -6863,9 +6558,8 @@ fn sheet_rename(hwnd: HWND) {
     // SAFETY: a fresh borrow, taken after the dialog rather than across it.
     let refused = unsafe {
         with_sheet(hwnd, |state| match state.app.rename_sheet(sheet, &name) {
-            // The answer is **how many references were rewritten**, not an index — D10's whole
-            // point, and worth saying: a rename that quietly carried three hundred formulas
-            // with it is a thing to be told about, and to be able to take back in one step.
+            // The answer is **how many references were rewritten**: a rename that carried three
+            // hundred formulas is something to be told about, and taken back in one step.
             Ok(0) => None,
             Ok(rewritten) => {
                 state.say(Some(notice::references_renamed(rewritten)));
@@ -6950,18 +6644,12 @@ fn save_as(hwnd: HWND) -> bool {
     write(hwnd, &path)
 }
 
-/// Write the document. A failure is the one file operation that must never be quiet: the work is
-/// still only in memory afterwards, and a close that went ahead anyway would lose it.
-///
-/// Which *form* is written is `Form::from_path`'s answer to the extension the user chose, inside
-/// `grind_sheet::write_file` — the one place in the workspace where an extension decides
-/// anything, and the reason this shell offers `.fods`, `.ods` and `.grind` and then says nothing
-/// more about them.
+/// Write the document. A failure must never be quiet: the work is still only in memory, and a
+/// close going ahead would lose it. Which form is written is `Form::from_path`'s answer to the
+/// chosen extension, inside `grind_sheet::write_file`.
 fn write(hwnd: HWND, path: &Path) -> bool {
-    // SAFETY: one borrow. `save_file` only reads the document: it notifies nothing, opens
-    // nothing, and cannot dispatch a message.
-    // No "Saved" banner: the title's `*` clearing is the confirmation, and routine success
-    // asking to be noticed is noise.
+    // SAFETY: one borrow. `save_file` only reads the document: it notifies nothing, opens nothing,
+    // dispatches nothing. No "Saved" banner: the title's `*` clearing is the confirmation.
     let failed = unsafe { with_pane(hwnd, |pane| pane.save_file(path).err()) }.flatten();
     match failed {
         Some(message) => {
@@ -6979,12 +6667,9 @@ fn write(hwnd: HWND, path: &Path) -> bool {
     }
 }
 
-/// Replace what the window is showing — **including with a document of the other kind**.
-///
-/// The observer is registered again because it is bound to an `App` rather than to the window: a
-/// new document is a new `App`, and one nobody is listening to is one whose edits never mark the
-/// title. Registering it *after* the file has been read is also why this shell needs no "a load
-/// is not an edit" flag — during the read there is nobody to tell.
+/// Replace what the window shows — **including with a document of the other kind**. The observer
+/// is registered again, being bound to an `App`, not the window; registering after the file is
+/// read is why no "a load is not an edit" flag is needed.
 fn adopt(hwnd: HWND, pane: Pane) {
     // SAFETY: one borrow. `set_observer` stores an `Arc` and dispatches nothing, and dropping the
     // pane that was there releases its fonts and its document with no message in between.
@@ -7011,12 +6696,7 @@ fn adopt(hwnd: HWND, pane: Pane) {
     refresh(hwnd);
 }
 
-/// A new, empty document of the kind the *caller* names — either kind, from either pane.
-///
-/// This used to take no argument and make another document of whatever the window already held,
-/// with a comment saying that a New Spreadsheet / New Document pair was a menu question left
-/// open. The welcome screen answered it: a window that offers both when it opens cannot then refuse
-/// to offer them from the File menu, so there are two verbs and this takes the kind.
+/// A new, empty document of the kind the caller names — either kind, from either pane.
 fn new_document(hwnd: HWND, kind: DocumentKind) {
     if !offer_to_save(hwnd) {
         return;
@@ -7028,11 +6708,8 @@ fn new_document(hwnd: HWND, kind: DocumentKind) {
     }
 }
 
-/// Back to the welcome screen, closing whatever the window was showing.
-///
-/// The same shape as the two above — ask about unsaved work, then adopt a new pane — because it
-/// is the same operation with `None` for the kind. A welcome screen you can only ever see once
-/// would be a splash screen, which is a different and much less useful thing.
+/// Back to the welcome screen, closing what the window showed: ask about unsaved work, then adopt
+/// a new pane — the operation above with `None` for the kind.
 fn welcome_screen(hwnd: HWND) {
     if !offer_to_save(hwnd) {
         return;
@@ -7044,12 +6721,9 @@ fn welcome_screen(hwnd: HWND) {
     }
 }
 
-/// The welcome screen's verbs. Everything that needs a document is a no-op here, and the match is
-/// exhaustive for `text_command`'s reason: a command with no handler fails the build.
-///
-/// The six that mean something are exactly `menu::on_welcome`'s list, which is what the menu bar
-/// offers on this pane — the two cannot drift apart without a test failing, since the cards name
-/// commands and `welcome.rs` checks that each is in a menu.
+/// The welcome screen's verbs: everything needing a document is a no-op, the match exhaustive for
+/// `text_command`'s reason. The ones that mean something are `menu::on_welcome`'s list, and the
+/// cards name commands that `welcome.rs` checks are in a menu.
 fn welcome_command(hwnd: HWND, command: Command) {
     match command {
         Command::NewSheet => new_document(hwnd, DocumentKind::Spreadsheet),
@@ -7200,9 +6874,7 @@ fn open_document(hwnd: HWND) {
     let Some(path) = dialog::open_path(hwnd) else {
         return;
     };
-    // The kind is read from the bytes rather than from the name, before anything is parsed —
-    // `grind_core::kind`, and `main.rs` asks it the same question about the command line. **This
-    // is where one binary holding both document types stops being a claim**: a `.fodt` chosen
+    // The kind is read from the bytes, before parsing (`grind_core::kind`) — so a `.fodt` chosen
     // here replaces the grid with a text pane in the same window.
     let kind = match crate::sniff(&path) {
         Ok(kind) => kind,
@@ -7227,10 +6899,8 @@ fn open_document(hwnd: HWND) {
     }
 }
 
-/// Tell Windows this document was just used, so it is in the taskbar jump list and in every file
-/// dialog's *Recent* — the platform's own recent-documents list, which is why this window keeps
-/// none of its own (`doc/windows-shell.md`: "the answer is `SHAddToRecentDocs`, not a file of
-/// ours"). Best-effort: a path Windows will not take is not worth an error box.
+/// Tell Windows this document was used, for the taskbar jump list and every file dialog's *Recent*
+/// — the platform's own list, so this window keeps none. Best-effort.
 fn add_recent(path: &Path) {
     use windows::Win32::UI::Shell::{SHARD_PATHW, SHAddToRecentDocs};
     let wide = gdi::wide(&path.to_string_lossy());
@@ -7271,10 +6941,8 @@ fn close(hwnd: HWND) {
     }
 }
 
-/// Everything one frame needs, drawn onto a device context.
-///
-/// Takes an `HDC` and the state and nothing about the window, which is what makes
-/// [`render`] a second *caller* rather than a second drawing path.
+/// Everything one frame needs, drawn onto a device context — an `HDC` and the state, nothing about
+/// the window, so [`render`] is a second caller.
 fn draw_frame(dc: HDC, state: &Sheet) {
     let rows = state.geom.visible_rows();
     let cols = state.geom.visible_cols();
@@ -7321,8 +6989,8 @@ fn draw_frame(dc: HDC, state: &Sheet) {
             })
             .flatten()
     });
-    // The format strip reads the **active** cell, which is what every spreadsheet's toolbar shows
-    // and what makes a toggle over a mixed selection predictable (`sheet/format.rs`).
+    // The format strip reads the **active** cell, as every spreadsheet's toolbar does
+    // (`sheet/format.rs`).
     let active = state.selection.active;
     let style = state
         .app
@@ -7391,10 +7059,8 @@ fn draw_frame(dc: HDC, state: &Sheet) {
 
 /// One frame, through the back buffer.
 fn paint(hwnd: HWND) {
-    // The text pane's caret is Windows' own object now (`place_system_caret`), and the blit
-    // below is unaware of it — `BitBlt` paints over whatever was on screen, caret included,
-    // which is what turns it into a stray rectangle if it is not hidden first and shown again
-    // after. The grid never creates one, so this is a no-op there.
+    // The text pane's caret is Windows' own (`place_system_caret`), and `BitBlt` paints over it,
+    // leaving a stray rectangle unless it is hidden first and shown after. The grid has none.
     let has_caret = is_text(hwnd);
     if has_caret {
         // SAFETY: no arguments to outlive the call.
@@ -7422,21 +7088,17 @@ fn paint(hwnd: HWND) {
         let _ = EndPaint(hwnd, &ps);
     }
     if has_caret {
-        // Repositioned here rather than trusted to whatever handler invalidated the window: a
-        // caret this pane moves in a dozen places is a caret placed in one, the same argument
-        // `App::caret_line` already won for *where* it goes — this is only *that* it is shown
-        // there again after every single repaint, including ones with nothing to do with the
-        // caret at all (a resize, a theme change), which costs nothing next to a whole frame.
+        // Repositioned after every repaint, not trusted to whichever handler invalidated the
+        // window — a resize or a theme change included — so a caret moved in a dozen places is
+        // placed in one.
         place_system_caret(hwnd);
     }
 }
 
 // --- the welcome screen ---
 //
-// The third pane, and by far the smallest: no document, so no viewport, no history, no scrolling
-// and nothing to save. What it needs is the same four things the other two need — a refresh, a
-// frame that takes an `HDC` and no `HWND`, a hit test and a keymap — which is why it fits the
-// shape above rather than being a special case bolted onto it.
+// The third pane, and the smallest — no document, viewport, history, scrolling or save — with the
+// four things the others have: a refresh, a frame taking an `HDC`, a hit test and a keymap.
 
 /// Whether this window is showing the welcome screen rather than a document.
 fn is_welcome(hwnd: HWND) -> bool {
@@ -7450,11 +7112,8 @@ unsafe fn with_welcome<T>(hwnd: HWND, f: impl FnOnce(&mut Welcome) -> T) -> Opti
     unsafe { with_pane(hwnd, |pane| pane.welcome_mut().map(f)) }.flatten()
 }
 
-/// The welcome screen's [`refresh`]: re-measure for the client area, retitle, repaint.
-///
-/// The scrollbars are flattened rather than left alone, because a window that was a spreadsheet a
-/// moment ago still has the thumbs it set — and a welcome screen with a scrollbar down its side is
-/// a window that looks like it is hiding something.
+/// The welcome screen's [`refresh`]: re-measure, retitle, repaint. The scrollbars are flattened,
+/// since a window that was a spreadsheet still has its thumbs.
 fn welcome_refresh(hwnd: HWND) {
     let rect = gdi::client_rect(hwnd);
     // SAFETY: `hwnd` is this window's.
@@ -7573,11 +7232,9 @@ fn welcome_button_up(hwnd: HWND) {
     }
 }
 
-/// The welcome screen's keyboard: step through the cards, run one, and nothing else.
-///
-/// Tab is Down and Shift+Tab is Up, which is the Windows convention for a list of buttons with no
-/// dialog manager behind it. `false` hands the key back to `DefWindowProcW`, which is what leaves
-/// Alt+F4 and the menu bar's own Alt working.
+/// The welcome screen's keyboard: step through the cards and run one. Tab is Down and Shift+Tab
+/// Up, the convention for buttons with no dialog manager; `false` hands the key to
+/// `DefWindowProcW`, so Alt+F4 and the menu bar's Alt work.
 fn welcome_key(hwnd: HWND, vk: u32) -> bool {
     use crate::sheet::keymap::Key;
 
@@ -7614,31 +7271,23 @@ fn welcome_key(hwnd: HWND, vk: u32) -> bool {
     true
 }
 
-// --- the text pane (W5) ---
+// --- the text pane ---
 //
-// Everything below belongs to the word processor's pane. The shape is deliberately the same as
-// the grid's above — a refresh that rebuilds everything derived, a frame that takes an `HDC` and
-// no `HWND`, handlers that borrow the state for the length of one message — so that the two panes
-// are two documents in one window rather than two programs in one binary.
+// The word processor's pane, in the grid's shape: a refresh rebuilding everything derived, a frame
+// taking an `HDC` and no `HWND`, and handlers borrowing the state for one message — two documents
+// in one window, not two programs in one binary.
 
-/// Whether this window is showing a document rather than a spreadsheet.
-///
-/// Asked at the top of each shared handler rather than by giving every message two arms, because
-/// most of them *are* one pane's: the grid's forty handlers kept the shape they had.
+/// Whether this window shows a document rather than a spreadsheet — asked at the top of each
+/// shared handler, since most messages are one pane's.
 fn is_text(hwnd: HWND) -> bool {
     // SAFETY: one borrow, for one bit; nothing inside dispatches.
     unsafe { with_pane(hwnd, |pane| matches!(pane, Pane::Text(_))) }.unwrap_or(false)
 }
 
-/// Show the system caret at [`Text::caret_geometry`], creating it first.
-///
-/// `CreateCaret` again rather than only `SetCaretPos`, because the caret is a different height on
-/// a heading than on a paragraph and recreating is how either is set — simpler than tracking
-/// whether the size actually changed, and Windows already blinks it at the user's own
-/// `GetCaretBlinkTime` for free, which is what makes a system caret worth having at all: this
-/// shell no longer keeps that setting or a timer of its own. The ordinary cost of recreating on
-/// every keystroke is that Windows resets the blink phase each time, which reads as normal
-/// because every editor's own caret does the same thing.
+/// Show the system caret at [`Text::caret_geometry`], creating it first: `CreateCaret` again
+/// rather than only `SetCaretPos`, since a heading's caret is taller and recreating sets either
+/// size. Windows blinks it at the user's `GetCaretBlinkTime`, which is why a system caret is worth
+/// having; recreating resets the blink phase each keystroke, as every editor's caret does.
 fn place_system_caret(hwnd: HWND) {
     // SAFETY: one borrow; nothing inside dispatches.
     let geometry = unsafe { with_text(hwnd, |text| text.caret_geometry()) }.flatten();
@@ -7684,19 +7333,14 @@ fn text_refresh(hwnd: HWND) {
         }
         let _ = InvalidateRect(Some(hwnd), None, false);
     }
-    // The one place this is called from every motion and every edit — `place_system_caret`
-    // recreates the caret at the caret's current size and position, which is cheap next to a
-    // whole-window invalidate and correct even though a keystroke that does not move the caret
-    // calls it too: `CreateCaret` with no change is documented as harmless.
+    // Called from every motion and edit: `CreateCaret` with no change is documented as harmless,
+    // and cheap next to a repaint.
     place_system_caret(hwnd);
 }
 
-/// The scrollbars for a document, which are **pixels** where the grid's are tracks.
-///
-/// That difference is the reason this is not `sync_scrollbars` with a flag: a sheet is twenty
-/// million pixels tall and only a million rows, so it has to scroll in tracks; a document is as
-/// tall as it measures, and a line is not a unit anything else in this pane counts in. The
-/// horizontal bar is disabled outright — the measure is fixed, so there is nothing to scroll to.
+/// The scrollbars for a document, in **pixels** where the grid's are tracks — a document is as
+/// tall as it measures, and a line is no unit anything else here counts in. The horizontal bar is
+/// disabled: the measure is fixed.
 fn text_scrollbars(hwnd: HWND, text: &Text) {
     let page = text.page.body().h.max(1.0);
     let info = SCROLLINFO {
@@ -7851,12 +7495,9 @@ fn text_key(hwnd: HWND, vk: u32) -> bool {
     true
 }
 
-/// A character, after the keyboard layout, the IME and — care of `typed_char` — any surrogate
-/// pair it arrived as.
-///
-/// Control characters arrive here too — Escape is `\u{1b}` and Enter is `\r`, because
-/// `TranslateMessage` produces a `WM_CHAR` for both — and none of them is text. Return and
-/// Backspace are handled as *keys* above, which is where they belong.
+/// A character, after the layout, the IME and any surrogate pair (`typed_char`). Escape (`\u{1b}`)
+/// and Enter (`\r`) arrive too, since `TranslateMessage` makes a `WM_CHAR` for both; Return and
+/// Backspace are handled as keys.
 fn text_char(hwnd: HWND, c: char) -> bool {
     let m = mods();
     if m.ctrl || m.alt || c.is_control() {
@@ -7866,12 +7507,8 @@ fn text_char(hwnd: HWND, c: char) -> bool {
     true
 }
 
-/// Type one character through `App::type_markdown`, so `**bold**` is read as it is typed —
-/// `grind_text::markdown`'s notation, the same one `ui_tui` reads, rather than a fifth idea of
-/// what `**` means.
-///
-/// A selection is dropped first exactly as [`text_insert`] drops one, because `type_markdown`
-/// has no "replace" either — it only ever inserts at a caret.
+/// Type one character through `App::type_markdown`, so `**bold**` is read as it is typed. A
+/// selection is dropped first, as [`text_insert`] drops one, since `type_markdown` only inserts.
 fn text_type(hwnd: HWND, c: char) {
     // SAFETY: one borrow. `type_markdown` notifies, and the observer posts rather than sends.
     unsafe {
@@ -7895,11 +7532,8 @@ fn text_type(hwnd: HWND, c: char) {
     refresh(hwnd);
 }
 
-/// Type text at the caret, replacing the selection if there is one.
-///
-/// One `Action::Batch` per keystroke would be one Ctrl+Z per keystroke; that the erase and the
-/// insert are two is a named gap, not an oversight — `App` has no "replace" and adding one is a
-/// core change rather than a shell one.
+/// Type text at the caret, replacing the selection. Erase and insert are two undo steps — `App`
+/// has no "replace", and one would be a core change.
 fn text_insert(hwnd: HWND, what: &str) {
     // SAFETY: one borrow. `insert_text` notifies, and the observer posts rather than sends.
     unsafe {
@@ -8011,11 +7645,8 @@ fn text_split(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// Erase whatever is selected, leaving the caret where it was. `true` when there was something.
-///
-/// A free function rather than a method because it is the *editing* half of the selection and
-/// every edit begins with it: typing over a selection replaces it, which is what every editor
-/// does and the one thing a shell must not forget.
+/// Erase whatever is selected, leaving the caret where it was; `true` when there was something.
+/// Every edit begins with it: typing over a selection replaces it.
 fn text_drop_selection(text: &mut Text) -> bool {
     if !text.has_selection() {
         return false;
@@ -8034,11 +7665,9 @@ fn text_drop_selection(text: &mut Text) -> bool {
     }
 }
 
-/// A press of the left button: the format strip's three buttons first, since they sit over the
-/// document rather than beside it — a click there is a click on chrome and must not also move
-/// the caret underneath it, the same rule `button_down`'s own `Strip` match applies to the grid's
-/// name box and formula bar. Anywhere else, the caret goes where the pointer is, and dragging
-/// extends.
+/// A press of the left button: the format strip first, since it sits over the document and a click
+/// on chrome must not move the caret underneath; anywhere else the caret goes to the pointer, and
+/// dragging extends.
 fn text_button_down(hwnd: HWND, lparam: LPARAM) {
     let (x, y) = point(lparam);
     // The status bar's spelling language: Spelling Language…'s own chooser.
@@ -8051,10 +7680,8 @@ fn text_button_down(hwnd: HWND, lparam: LPARAM) {
     // nothing.
     let hit = unsafe { with_text(hwnd, |text| text.page.strip_hit(x, y)) }.flatten();
     if let Some(hit) = hit {
-        // **Pressed here, done on release** (W10) — which is what every button on this platform
-        // does and is not only cosmetic: a press that has not been let go of can be taken back by
-        // dragging off the control, and until W10 this strip acted the instant the button went
-        // down, so a mis-aimed click was a formatting edit and a Ctrl+Z.
+        // **Pressed here, done on release**, as every button on this platform does: a press can be
+        // taken back by dragging off the control, so a mis-aimed click is not a formatting edit.
         // SAFETY: one borrow; assigning a field dispatches nothing.
         unsafe {
             with_text(hwnd, |text| {
@@ -8094,11 +7721,9 @@ fn text_mouse_move(hwnd: HWND, x: f64, y: f64) {
     // SAFETY: one borrow; nothing inside dispatches.
     let moved = unsafe {
         with_text(hwnd, |text| {
-            // The strip's hover (W10), asked on every move and repainted only when the answer
-            // *changes* — which is what keeps a move across the document down to one comparison.
-            // `WM_MOUSELEAVE` is not tracked and does not need to be: the pointer cannot leave
-            // the window from inside the strip without passing over the rest of it first, and
-            // any point that is not on a control clears the hover anyway.
+            // The strip's hover, repainted only when it *changes*. `WM_MOUSELEAVE` is not needed:
+            // the pointer cannot leave the window from inside the strip without passing the rest
+            // of it, and any point off a control clears the hover.
             let hover = text.page.strip_hit(x, y);
             let hovered = hover != text.hover;
             text.hover = hover;
@@ -8164,12 +7789,9 @@ fn trim_trailing_spaces(text: &str, start: usize, end: usize) -> usize {
     at
 }
 
-/// A verb, in the text pane. Exhaustive on [`Command`] for the same reason the grid's is: a verb
-/// added to `menu.rs` and nowhere else fails the build rather than doing nothing.
-///
-/// The verbs that are the *spreadsheet's* are no-ops here and say nothing about it — Recalculate
-/// and the four sheet verbs cannot be greyed out until W7 makes the menus state-aware, and a
-/// message box saying "this document has no sheets" would be worse than nothing happening.
+/// A verb in the text pane, exhaustive on [`Command`] like the grid's. The spreadsheet's verbs are
+/// no-ops here; the menu bar leaves them out over this pane, so only a stray accelerator reaches
+/// them.
 fn text_command(hwnd: HWND, command: Command) {
     match command {
         Command::NewSheet => new_document(hwnd, DocumentKind::Spreadsheet),
@@ -8336,10 +7958,8 @@ fn text_toggle_names(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// Go to an address — `p12`, `#intro` or `§2.1.3` — the one item of W5b's "block kinds, outline
-/// and go-to" bullet this pane has so far. A modal prompt rather than a strip box, unlike the
-/// grid's name box, because this pane owns no child control of its own to put one in; `loc::parse`
-/// and `App::resolve_caret` are the same two calls `ui_tui`'s `cmd_jump` makes.
+/// Go to an address — `p12`, `#intro` or `§2.1.3` — in a modal prompt, since this pane owns no
+/// child control for a box; `loc::parse` and `App::resolve_caret` are the calls.
 fn text_go_to(hwnd: HWND) {
     let Some(address) = dialog::prompt(hwnd, "Go To", "Address — p12, #bookmark or §2.1.3:", "")
     else {
@@ -8365,9 +7985,8 @@ fn text_go_to(hwnd: HWND) {
 }
 
 /// Edit ▸ Find… over the page — ask for a word, then select the first occurrence at or after the
-/// caret. The prompt runs a nested message loop, so the word it offers is read in one borrow and
-/// the search is a second (decision 7). Case is ignored, as in the GNOME window's bar:
-/// `grind_text::find` is the one answer to what a hit is and where the next one lies.
+/// caret. The prompt runs a nested loop, so the word is read in one borrow and the search is a
+/// second (decision 7). Case is ignored (`grind_text::find`).
 fn text_find(hwnd: HWND) {
     // SAFETY: one borrow, released before the prompt.
     let Some(offered) = (unsafe { with_text(hwnd, |text| text.needle.clone()) }) else {
@@ -8386,9 +8005,8 @@ fn text_find(hwnd: HWND) {
     text_find_step(hwnd, grind_text::find::Towards::Here);
 }
 
-/// F3 / Shift+F3, and the landing half of Find…: the occurrences are asked for again every time,
-/// since the document may have changed between two presses, and the next one is selected so that
-/// typing replaces it.
+/// F3 / Shift+F3, and Find…'s landing: the occurrences are asked for again each time, and the next
+/// is selected so typing replaces it.
 fn text_find_step(hwnd: HWND, towards: grind_text::find::Towards) {
     use grind_text::find;
     // SAFETY: one borrow, and no dialog on either side of it.
@@ -8455,11 +8073,8 @@ fn text_replace(hwnd: HWND) {
     text_refresh(hwnd);
 }
 
-/// The outline dialog: every heading, indented by its own depth, jump to any of them.
-///
-/// `App::outline` is the list and `Heading::address` the same `§2.1.3` spelling `text_go_to`'s
-/// prompt takes, but this goes straight to the block index it already has rather than round
-/// tripping through `loc::parse` for an address it just built.
+/// The outline dialog: every heading, indented by its depth, each a jump — straight to the block
+/// index, rather than round-tripping the `§2.1.3` address through `loc::parse`.
 fn text_outline(hwnd: HWND) {
     // SAFETY: one borrow, released before the dialog — which runs a nested message loop.
     let headings = unsafe { with_text(hwnd, |text| text.app.outline()) }.unwrap_or_default();
@@ -8501,9 +8116,9 @@ const STRIP_BUTTONS: [markdown::Emphasis; 5] = [
     markdown::Emphasis::Code,
 ];
 
-/// The style a toggle button reads before it draws itself, and what every control changes:
-/// `grind_text::format::here` — the selection's agreed style, or with nothing selected the style
-/// the *next* character typed would carry. `ui_text_gtk` and `ui_web` ask the same function.
+/// The style a toggle reads before it draws, and what every control changes:
+/// `grind_text::format::here` — the selection's agreed style, or with nothing selected what the
+/// next character would carry.
 fn text_style_here(text: &Text) -> grind_text::CharStyle {
     let selection = text.has_selection().then(|| text.range());
     grind_text::format::here(&text.app, selection, text.caret, text.resume.as_ref())
@@ -8515,20 +8130,17 @@ fn format_state(text: &Text) -> [bool; 5] {
     STRIP_BUTTONS.map(|emphasis| grind_text::format::has(&style, emphasis))
 }
 
-/// Toggle one emphasis across the selection — the format strip `doc/windows-shell.md` named as
-/// still owed for W5b, and now drawn (`text::draw::paint`'s strip) as well as reachable from
-/// Ctrl+B/I/U and the Format menu, all three converging on this one function. On across the
-/// selection, or off when every character already has it (`Change::toggle`).
+/// Toggle one emphasis across the selection — the strip, Ctrl+B/I/U and the Format menu all
+/// converge here: on across it, or off when every character has it (`Change::toggle`).
 fn text_emphasise(hwnd: HWND, emphasis: markdown::Emphasis) {
     // SAFETY: one borrow. `set_char_style` notifies, and the observer posts rather than sends.
     let style = unsafe { with_text(hwnd, |text| text_style_here(text)) }.unwrap_or_default();
     text_format(hwnd, grind_text::format::Change::toggle(emphasis, &style));
 }
 
-/// Apply a formatting-bar change over the selection — or, with nothing selected, hold it for the
-/// next character typed at the caret (`Text::resume`, which `type_markdown` already carried).
-/// Bold, then type, is bold in every word processor. `grind_text::format::apply` is the rule,
-/// shared with `grind-text-gtk`, `grind-web` and the Mac.
+/// Apply a format change over the selection — or, with nothing selected, hold it for the next
+/// character typed (`Text::resume`): Bold, then type, is bold. `grind_text::format::apply` is the
+/// rule.
 fn text_format(hwnd: HWND, change: grind_text::format::Change) {
     // SAFETY: one borrow. `set_char_style` notifies, and the observer posts rather than sends.
     unsafe {
@@ -8554,11 +8166,9 @@ fn text_format(hwnd: HWND, change: grind_text::format::Change) {
     refresh(hwnd);
 }
 
-/// The families the picker offers — curated rather than enumerated. `grind-text-gtk` lists every
-/// family Pango can resolve; this shell has no `EnumFontFamiliesExW` wiring yet, which is a named
-/// gap in `doc/windows-shell.md` rather than an oversight. The document's own family is added
-/// when it set one this list does not carry, so a document written elsewhere still shows what it
-/// chose.
+/// The families the picker offers — curated, not enumerated from the system (a named gap in
+/// `doc/windows-shell.md`). A document's own family is added when it is not in the list, so a
+/// document written elsewhere shows what it chose.
 const FONT_CHOICES: [&str; 8] = [
     "Segoe UI",
     "Calibri",
@@ -8635,18 +8245,11 @@ fn text_pick_color(hwnd: HWND, highlight: bool) {
     text_format(hwnd, change);
 }
 
-/// Turn the caret's own block into this kind, wearing this named paragraph style —
-/// `App::set_kind` and `App::set_style` in one gesture, `ui_text_gtk`'s own `Ui::set_kind`
-/// mirrored here so a heading and a *Title* behave one way everywhere rather than a
-/// shell-specific idea of either.
-///
-/// **The style is only ever taken off when this window put it on** — `grind_text::named_style_for`
-/// is the whole rule, shared with that window: choosing Paragraph after *Title* or *Subtitle*
-/// clears the name, and a document's own name this build does not interpret (`Quotations`, say)
-/// is left exactly as it is.
-///
-/// Unlike [`text_emphasise`], which needs a selection, a block's kind is asked of wherever the
-/// caret sits — the same reason `App::set_kind` takes an index and not a range.
+/// Turn the caret's block into this kind, wearing this named paragraph style — `App::set_kind` and
+/// `App::set_style` in one gesture. **The style is only taken off when this window put it on**
+/// (`grind_text::named_style_for`): Paragraph after *Title* or *Subtitle* clears the name, and a
+/// document's own `Quotations` stays. A block's kind is asked of the caret, not a selection, as
+/// `App::set_kind` takes an index.
 fn text_set_kind(hwnd: HWND, kind: grind_text::BlockKind, style: Option<&str>) {
     // SAFETY: one borrow. `set_kind`/`set_style` notify, and the observer posts rather than
     // sends.
@@ -8677,11 +8280,9 @@ fn text_set_kind(hwnd: HWND, kind: grind_text::BlockKind, style: Option<&str>) {
     refresh(hwnd);
 }
 
-/// Tab or Shift+Tab: nest a list item one level deeper, un-nest one, or start one at the front
-/// of a block — `grind_text::indent_kind` is the whole rule, the same one `ui_text_gtk`'s
-/// `Doc::indent` calls, so a list nests the same way in both windows. A literal tab character
-/// where none of that applies, which is what a word processor's Tab does in the middle of a
-/// sentence; Shift+Tab with nothing to un-nest types nothing, since there is no such character.
+/// Tab or Shift+Tab: nest a list item, un-nest one, or start one at a block's front
+/// (`grind_text::indent_kind`); a literal tab mid-sentence. Shift+Tab with nothing to un-nest
+/// types nothing.
 fn text_indent(hwnd: HWND, back: bool) {
     let by = if back { -1 } else { 1 };
     // SAFETY: one borrow. `set_kind` notifies, and the observer posts rather than sends.
@@ -8708,17 +8309,9 @@ fn text_indent(hwnd: HWND, back: bool) {
     }
 }
 
-/// Every block kind, listed rather than one key per depth — the schema's headings go past level
-/// 3 and lists have a depth of their own, and `Command::Heading1`/`2`/`3` only reach the common
-/// case. `dialog::choose` is the same `LISTBOX` popup `text_outline` already opens, generic over
-/// strings for the same reason: it has no idea what a `BlockKind` is and does not need one.
-///
-/// This is the first window in the suite to reach a list item from its own UI at all —
-/// `doc/text-shell.md` names "no lists UI" as a gap in both GTK windows and the browser, since a
-/// list read from a file draws its bullet but nothing makes one. Six heading levels plus four
-/// list depths plus Paragraph is the same authoring ceiling `doc/text-core.md` already draws
-/// (headings) or is a reasonable one to draw (`MAX_LIST_DEPTH`) rather than the schema's
-/// literally uncapped nesting.
+/// The deepest list item the block-kind chooser offers. Every kind is listed rather than a key per
+/// depth — headings past level 3 and lists with depths — in the `LISTBOX` `text_outline` opens.
+/// Six heading levels, four list depths and Paragraph are the authoring ceiling.
 const MAX_LIST_DEPTH: u32 = 4;
 
 fn text_block_kind_dialog(hwnd: HWND) {
@@ -8742,11 +8335,9 @@ fn text_block_kind_dialog(hwnd: HWND) {
     text_set_kind(hwnd, kind, None);
 }
 
-/// Insert a picture at the caret — a file dialog, then `App::insert_image`, mirroring
-/// `ui_text_gtk`'s own `Ui::embed_image`: an empty block is used as it stands, and any other
-/// block gets a fresh paragraph inserted after it, so the picture always lands in a paragraph of
-/// its own rather than mid-sentence, where every shell in the suite still draws the placeholder
-/// character instead of the picture.
+/// Insert a picture — a file dialog, then `App::insert_image`, in a paragraph of its own: an empty
+/// block as it stands, else a fresh paragraph after it, since a picture mid-sentence draws as the
+/// placeholder character.
 fn text_insert_picture(hwnd: HWND) {
     let Some(path) = dialog::open_image_path(hwnd) else {
         return;
@@ -9214,8 +8805,8 @@ fn text_print(hwnd: HWND) {
         nCopies: 1,
         ..Default::default()
     };
-    // SAFETY: `request` is initialised and lives across the call. **A nested message loop**; no
-    // borrow is held.
+    // SAFETY: `request` is initialised and lives across the call. **A nested message loop**;
+    // nothing borrowed.
     if !unsafe { PrintDlgW(&mut request) }.as_bool() || request.hDC.is_invalid() {
         return;
     }
@@ -9295,13 +8886,9 @@ fn text_history(hwnd: HWND, undo: bool) {
     refresh(hwnd);
 }
 
-/// Copy the selection to the clipboard as `CF_UNICODETEXT`, and with `cut`, erase it afterwards.
-///
-/// What travels is the document's **plain text**, one `\r\n` per block: the shape every other
-/// program on this platform reads. The formatting does not travel, which is the honest position
-/// for a build with no `CF_RTF` or `HTML Format` writer — and a named gap rather than a silent
-/// one, because pasting into WordPad and losing the bold is the sort of thing a user attributes
-/// to the document.
+/// Copy the selection as `CF_UNICODETEXT`, and with `cut` erase it. The document's **plain text**
+/// travels, one `\r\n` per block — what every program here reads. Formatting does not, there being
+/// no `CF_RTF` or `HTML Format` writer: a named gap.
 fn text_copy(hwnd: HWND, cut: bool) {
     // SAFETY: one borrow, released before the clipboard is opened — `clipboard.rs` is the only
     // file that opens it and it does so with nothing else borrowed.
@@ -9389,14 +8976,9 @@ fn text_paste(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// Everything one frame of the text pane needs, drawn onto a device context.
-///
-/// Takes an `HDC` and the state and nothing about the window, which is what makes [`render`] a
-/// second *caller* rather than a second drawing path — the same property the grid's `draw_frame`
-/// has, and the reason `--render-to` works for a document too.
-/// `system_caret` is `false` only for [`render`]'s windowless frame, which has no `HWND` and so
-/// no system caret to draw one for it — every other caller has a real window and Windows draws
-/// its own caret over whatever this paints, so drawing one here too would be two.
+/// Everything one frame of the text pane needs, drawn onto a device context — an `HDC` and the
+/// state, so [`render`] is a second caller. `system_caret` is `false` only for [`render`]'s
+/// windowless frame; elsewhere Windows draws its own caret, and drawing one here too would be two.
 fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
     let body = state.page.body();
     let visible = state
@@ -9478,10 +9060,8 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
     );
 }
 
-/// How many characters the selection covers — what the status bar says.
-///
-/// Counted rather than subtracted, because a selection that spans blocks covers the breaks
-/// between them as well, and each of those is one character a `Caret` can sit either side of.
+/// How many characters the selection covers, for the status bar — counted, since a selection
+/// across blocks covers the breaks too, each a character a `Caret` can sit either side of.
 fn selected_chars(state: &Text) -> usize {
     let (from, to) = state.range();
     if from == to {

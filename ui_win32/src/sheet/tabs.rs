@@ -2,24 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The sheet tabs, as arithmetic — where each one sits in the status bar, and which one a point
-//! is on. **Portable**, and tested on Linux like the rest of `sheet/`.
-//!
-//! This window had no tabs. The only sign a document had a second sheet was *sheet 1 of 2* in
-//! the status bar, and the only ways to reach it were Ctrl+PageDown and the Sheet menu — a
-//! workbook whose second sheet a person never finds is a workbook with one sheet, as far as
-//! they know. Every other window in the suite shows the sheets as tabs along the bottom, and so
-//! does every spreadsheet anybody has used on this platform.
-//!
-//! So the status bar's left half is the tabs now, and the sentence they replace goes: the name
-//! is on its tab, the count is the number of tabs, and the used extent was a fact about the file
-//! nobody selecting cells was asking. A tab is a click away from being the sheet on screen; a
-//! double-click renames it and a right-click is the tab's own menu, the same verbs the Sheet
-//! menu already has (`menu.rs`), so the tab adds a way in and no new verb.
-//!
-//! The widths are the caller's — measured with the font the tabs are drawn in — so this file
-//! never needs a DC, and what a click hits is exactly what was drawn: the window keeps the
-//! layout the last paint produced and asks [`hit`] against that.
+//! The sheet tabs as arithmetic — where each sits in the status bar, and which a point is on.
+//! Portable. A workbook whose second sheet nobody finds is a workbook with one sheet, so the
+//! sheets are tabs along the bottom as in every spreadsheet: a click shows one, a double-click
+//! renames it, a right-click is the tab's menu — the Sheet menu's verbs, so no new ones. The
+//! widths are measured by the caller in the tabs' font, so this needs no DC, and the window keeps
+//! the last paint's layout and asks [`hit`] against it.
 
 use super::geom::Rect;
 
@@ -54,12 +42,10 @@ pub struct Tab {
     pub rect: Rect,
 }
 
-/// Lay the tabs out along `bar` from its left edge: one per name, each as wide as its name
-/// (`widths`, already measured) plus padding within [`MIN_W`, `MAX_W`], then the add button.
-/// Tabs that would not fit before `limit` are left out rather than squeezed — the Sheet menu and
-/// Ctrl+PageDown still reach them, and the ones shown stay readable.
-///
-/// `scale` is the DPI factor (1.0 at 96 DPI).
+/// Lay the tabs out along `bar` from its left edge: one per name, as wide as its name (`widths`,
+/// measured) plus padding within [`MIN_W`, `MAX_W`], then the add button. Tabs that would not fit
+/// before `limit` are left out rather than squeezed — the Sheet menu and Ctrl+PageDown still reach
+/// them. `scale` is the DPI factor (1.0 at 96 DPI).
 pub fn layout(widths: &[f64], bar: Rect, limit: f64, scale: f64) -> Vec<Tab> {
     let inset = 3.0 * scale;
     let (top, height) = (bar.y + inset, (bar.h - 2.0 * inset).max(1.0));

@@ -5,16 +5,13 @@
 //! The menu bar, drawn — the portable half: where its titles go, which one a point or a letter
 //! means, and how the keyboard walks along it.
 //!
-//! Decision 4 keeps the menu bar as the surface that grows, and decision 13 is how it is drawn:
-//! **by this shell, in the non-client band where Windows' own menu bar would be**, on the window's
-//! own ground and in Fluent's *MenuBar* proportions. The system's bar is a strip of `COLOR_MENUBAR`
-//! that ignores the dark theme entirely and draws a hairline under itself in a colour no palette
-//! chose; nothing about it can be changed through a documented API. The bar's *popups* are still
-//! Windows' own (`TrackPopupMenuEx` over the same `HMENU`s `build_menu` always made), so every item,
-//! accelerator label, check mark and mnemonic inside a menu is exactly what it was.
-//!
-//! Living in the non-client area is what keeps this cheap: the client rectangle every pane already
-//! lays itself out in, hit-tests in and positions its child controls in does not move.
+//! Decision 13: **drawn by this shell, in the non-client band where Windows' own bar would be**,
+//! on the window's ground in Fluent's *MenuBar* proportions. The system's bar is a `COLOR_MENUBAR`
+//! strip that ignores the dark theme and draws a hairline no palette chose, with no documented way
+//! to change either. The *popups* are still Windows' own (`TrackPopupMenuEx` over the `HMENU`s
+//! `build_menu` makes), so every item, accelerator label, check and mnemonic is the system's.
+//! Living in the non-client area leaves the client rectangle — where every pane lays out,
+//! hit-tests and places its children — where it was.
 
 use crate::sheet::geom::{Rect, scale};
 
@@ -199,9 +196,8 @@ pub use native::{
 };
 
 /// The drawing and the tracking: Windows only, and **a nested message loop** in two places —
-/// `TrackPopupMenuEx`, and the keyboard's walk along the bar — so, by decision 7's rule, nothing
-/// here holds a borrow of the window's state, and this module's own state is borrowed only between
-/// messages.
+/// `TrackPopupMenuEx`, and the keyboard's walk along the bar — so nothing here holds a borrow of
+/// the window's state (decision 7), and this module's own state is borrowed only between messages.
 #[cfg(windows)]
 mod native {
     use std::cell::RefCell;
@@ -678,13 +674,13 @@ mod native {
         unsafe { CallNextHookEx(None::<HHOOK>, code, wparam, lparam) }
     }
 
-    /// The keyboard on the bar with no menu open — after Alt or F10 on its own. Left and Right
-    /// move, Enter, Up and Down open, a title's letter opens it, and Escape, Alt again, a click or
-    /// any other key leave. The command chosen in a menu opened from here, if any.
+    /// The keyboard on the bar with no menu open, after Alt or F10 alone: Left and Right move,
+    /// Enter, Up and Down open, a title's letter opens it, and Escape, Alt, a click or any other
+    /// key leave. Returns the command chosen in a menu opened from here.
     ///
-    /// **A message loop of its own**, like a menu's: the keyboard has to be the bar's without the
-    /// focus moving, since moving it would commit a half-typed cell. Everything that is not a key
-    /// is dispatched as usual, so the window keeps painting.
+    /// **A message loop of its own**: the keyboard must be the bar's without moving the focus,
+    /// which would commit a half-typed cell. Everything that is not a key is dispatched, so the
+    /// window keeps painting.
     fn walk(hwnd: HWND, start: usize) -> Option<u16> {
         let count = BAR.with_borrow_mut(|bar| {
             bar.focus = Some(start);

@@ -2,13 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Opening an Excel workbook (`doc/xlsx-import.md`, X6) or a CSV — the portable half, tested on
-//! Linux like the rest of this crate's.
-//!
-//! A workbook is sniffed from its bytes, imported, and opened as a new **unsaved** spreadsheet
-//! with no path: Save then runs Save As, seeded with the ODF name beside the workbook
-//! (`budget.xlsx` → `budget.fods`), so the one command that could write ODF over the workbook it
-//! came from has nowhere to write until somebody chooses (`doc/not-doing.md` §1).
+//! Opening an Excel workbook, a Word document or a CSV — the portable half. Sniffed from the
+//! bytes, imported, and opened as a new **unsaved** document with no path: Save runs Save As
+//! seeded with the ODF name beside it (`budget.xlsx` → `budget.fods`), so nothing can write ODF
+//! over the original until somebody chooses where.
 
 use std::path::{Path, PathBuf};
 
@@ -21,7 +18,7 @@ pub struct Imported {
     pub summary: String,
 }
 
-/// Whether these bytes are a workbook this build imports.
+/// Whether these bytes are a workbook this binary imports.
 pub fn is_workbook(bytes: &[u8]) -> bool {
     #[cfg(feature = "xlsx")]
     return grind_xlsx::sniff(bytes);
@@ -96,7 +93,7 @@ pub fn open_markdown(app: &grind_text::App, path: &Path, bytes: &[u8]) -> Result
     })
 }
 
-/// Whether these bytes are a Word document this build imports (`doc/docx-import.md`, DX6).
+/// Whether these bytes are a Word document this binary imports.
 pub fn is_word(bytes: &[u8]) -> bool {
     #[cfg(feature = "docx")]
     return grind_docx::sniff(bytes);

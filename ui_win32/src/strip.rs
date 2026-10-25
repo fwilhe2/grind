@@ -2,20 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A **format strip** — a row of controls on a band, in groups — laid out, and drawn.
+//! A **format strip** — a row of controls on a band, in groups — laid out and drawn, for both
+//! panes (`CharStyle` for the text pane, `CellStyle` and `numfmt::Format` for the grid), which
+//! must look like one kind of surface (decision 4). **Where** controls go is [`lay_out`],
+//! portable; **how** each shape is painted is the `cfg(windows)` half. What each control means
+//! stays with its pane (`text/geom.rs`'s `StripHit`, `sheet/format.rs`'s `Control`).
 //!
-//! Both panes have one now: the text pane's since W5b (`CharStyle`) and the grid's since the
-//! format-strip milestone (`CellStyle` + `numfmt::Format`). They are one kind of surface under
-//! `doc/windows-shell.md` decision 4 and they must look like one, so the two things a strip is made
-//! of live here once: **where** its controls go ([`lay_out`], portable and tested on any host) and
-//! **how** each shape of control is painted (the `cfg(windows)` half). What each control *means*
-//! stays with its pane — `text/geom.rs`'s `StripHit` and `sheet/format.rs`'s `Control`.
-//!
-//! The layout is W10's, written down once rather than twice: a control is Fluent's 32-pixel height
-//! standing centred on its band, the first starts one group's margin in (the name box's own), the
-//! controls of a group sit half a gap apart, and a new group starts a whole group's margin on with
-//! a separator in the middle of that gap — Fluent's `AppBarSeparator`, which says "a different kind
-//! of thing follows" without a border round anything.
+//! The layout: a control is Fluent's 32-pixel height centred on its band, the first one group's
+//! margin in (the name box's), controls of a group half a gap apart, and a new group a whole
+//! margin on with a separator in the gap — Fluent's `AppBarSeparator`.
 
 use crate::sheet::geom::{Rect, scale};
 use crate::theme::space;
@@ -74,12 +69,10 @@ pub fn hit(placed: &[Placed], x: f64, y: f64) -> Option<usize> {
     placed.iter().position(|p| p.rect.contains(x, y))
 }
 
-/// The rows a colour picker offers, in order: *Automatic* — no colour of its own, so the theme
-/// decides — and then `grind_core::style::PALETTE` by name, **capitalised** as a list row is.
-/// Row `n` past the first is `PALETTE[n - 1]`, which is what both panes' pickers write.
-///
-/// One list for both strips, so the text pane's *Text Colour* and the grid's are the same list;
-/// the palette's own names are the lower-case words `grind sheet style --color navy` takes.
+/// The rows a colour picker offers: *Automatic* (no colour of its own; the theme decides), then
+/// `grind_core::style::PALETTE` by name, **capitalised** as a list row is. Row `n` past the first
+/// is `PALETTE[n - 1]`. One list for both strips; the palette's own names are the lower-case words
+/// `grind sheet style --color navy` takes.
 pub fn colour_choices() -> Vec<String> {
     std::iter::once("Automatic".to_owned())
         .chain(grind_core::style::PALETTE.iter().map(|(name, _)| {
@@ -205,14 +198,10 @@ mod paint {
         gdi::fill(dc, left, top, right.max(left + 1), bottom, theme.divider);
     }
 
-    /// One colour swatch: an **A** with the colour it carries shown the way that colour is used —
-    /// as a bar under the letter for a text colour, and as the ground behind it for a fill (a
-    /// highlight, a cell background). So two swatches are told apart by what they *do* rather than
-    /// by a label.
-    ///
-    /// *Automatic* — no colour set — draws the bar in the theme's own ink, since that is what
-    /// automatic resolves to, and a fill with nothing set draws a hollow ground, which is what no
-    /// fill looks like while still reading as a control.
+    /// One colour swatch: an **A** showing its colour as the colour is used — a bar under the
+    /// letter for a text colour, the ground behind it for a fill — so two swatches are told apart
+    /// by what they do. *Automatic* draws the bar in the theme's ink, which is what it resolves
+    /// to; an empty fill draws a hollow ground.
     #[allow(clippy::too_many_arguments)]
     pub fn swatch(
         dc: HDC,

@@ -3,12 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! The page on paper, the portable half: what Print Preview and Print decide before a pixel
-//! (`doc/pdf-export.md`).
-//!
-//! Both draw `grind_print::raster`'s pixels of the display list the PDF is written from, so the
-//! preview, the printer and the exported file are one typesetting. What is decided here: how a
-//! page fits a window, what the window's title says, the resolution a printer is sent, and the
-//! one conversion between the raster's channel order and GDI's.
+//! (`doc/pdf-export.md`). Both draw `grind_print::raster`'s pixels of the display list the PDF is
+//! written from, so preview, printer and file are one typesetting. Here: how a page fits a window,
+//! the window's title, the resolution a printer gets, and the one conversion between the raster's
+//! channel order and GDI's.
 
 /// A page's room from the window's edge, in device-independent pixels.
 pub const MARGIN: f64 = 16.0;

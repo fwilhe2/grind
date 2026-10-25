@@ -3,52 +3,36 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! What a keystroke means *while editing* — the modes, and the one function that decides.
-//!
-//! **Portable, and tested on any host**, like [`super::keymap`] and for the same reason: this is
-//! the part of a spreadsheet everyone has an opinion about, everyone notices when it is wrong,
-//! and no window is needed to check. `win.rs` turns the answer into Win32 calls.
-//!
-//! The modes are Excel's, by name, and `ui_sheet_gtk/src/state.rs` has the same three:
+//! Portable: everyone notices when this is wrong, and no window is needed to check it. `win.rs`
+//! turns the answer into Win32 calls. The modes are Excel's:
 //!
 //! * **Ready** — the grid has the keys. A printable character starts an edit seeded with it, F2
-//!   and a double-click start one seeded with the cell, Delete empties the selection, everything
-//!   else navigates or is a verb.
-//! * **Enter** — an edit that began by typing. An arrow key *commits and moves*, because the
-//!   caret has nowhere useful to go in text the user has only just started.
-//! * **Edit** — an edit that began from the cell's own content (F2, double-click, or clicking the
-//!   formula bar). An arrow key moves the caret instead, because the text is worth navigating.
-//!   F2 toggles between the two.
+//!   and a double-click one seeded with the cell, Delete empties the selection, everything else
+//!   navigates or is a verb.
+//! * **Enter** — an edit begun by typing. An arrow *commits and moves*.
+//! * **Edit** — an edit begun from the cell's content (F2, double-click, the formula bar). An
+//!   arrow moves the caret. F2 toggles.
 //!
 //! ## Two messages, not one
 //!
-//! The GTK version takes a single `Key` that already carries a character. Win32 does not have
-//! one: `WM_KEYDOWN` reports a *key* — `A` is `0x41` whether or not Shift is down and whatever
-//! the keyboard layout says — and `WM_CHAR` reports the character that key produced, after the
-//! layout and after the IME. So the machine has two doors: [`on_key`] for the keys that mean
-//! something regardless of layout, and [`typed`] for a character that starts an edit. Deciding
-//! "is this printable" on a virtual-key code is the bug that split buys, and it is the one that
-//! makes an accented character or a Japanese composition unable to start an edit.
+//! `WM_KEYDOWN` reports a *key* — `A` is `0x41` whatever Shift and the layout say — and `WM_CHAR`
+//! the character it produced, after the layout and the IME. So the machine has two doors:
+//! [`on_key`] for keys that mean something regardless of layout, and [`typed`] for a character
+//! that starts an edit. Deciding "printable" on a virtual-key code would leave an accented
+//! character or a Japanese composition unable to start one.
 //!
-//! ## What is deliberately missing
+//! ## Not here
 //!
-//! **Point mode** — arrow keys building a reference into a half-typed formula, the last piece of
-//! `doc/sheet-shell.md`'s M6 this shell does not have. That is why [`Outcome`] has no `Point` and
-//! why an arrow in Enter mode simply commits: there is no pending reference for it to move. The
-//! mode enum is still three variants rather than a boolean, because Enter-versus-Edit is what the
-//! arrow keys turn on, and it is also where pointing would attach if it is ever built.
+//! **Point mode** — an arrow building a reference into a half-typed formula — is answered in
+//! `win.rs`'s `on_key` before this table, over `assist::ref_eligible`; [`Outcome`] has no `Point`.
+//! Autocomplete and the signature hint are [`super::assist`], also asked first, since the keys a
+//! completion list claims already mean something here.
 //!
-//! Autocomplete and the signature hint are **no longer missing** (W9) and are not here: they are
-//! [`super::assist`], asked *before* this table, because the three keys a completion list claims
-//! — Tab, Up/Down, Escape — all already mean something in this one, and a state machine that had
-//! to know whether a popup was up would be two questions in one match.
-//!
-//! ponytail: `ui_sheet_gtk/src/state.rs` is this machine mirrored rather than shared, and the
-//! macOS shell will be a third — `doc/macos-shell.md`'s M1 found no one abstract key type that
-//! fits a GTK `Key` carrying its character, this file's two messages with the accelerators asked
-//! first, and the Mac's selectors. What is not about keys is shared:
-//! `grind_sheet::formula::display::to_input` is what a commit stores. **The trigger is a fourth
-//! copy**, or two of them answering one keystroke differently for a reason that is not their
-//! input model.
+//! ponytail: the GNOME window and the Mac mirror this machine rather than share it: no one key
+//! type fits a GTK `Key` carrying its character, these two messages with accelerators first, and
+//! AppKit's selectors. What is not about keys is shared
+//! (`grind_sheet::formula::display::to_input`). The trigger is a fourth copy, or two answering one
+//! keystroke differently for a reason other than input.
 
 use crate::menu::{self, Command};
 
@@ -81,8 +65,8 @@ impl Mode {
 pub enum Seed {
     /// Typing over a cell replaces it — the character is the whole new content. Enter mode.
     Char(char),
-    /// F2, a double-click, or clicking the formula bar: the cell's own text, ready to be
-    /// amended. Edit mode.
+    /// F2, a double-click, or a click in the formula bar: the cell's own text, to amend. Edit
+    /// mode.
     Cell,
 }
 
@@ -98,9 +82,8 @@ impl Seed {
 /// What the window should do about a key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
-    /// Not ours. In Ready mode that means back to `DefWindowProc`, so Alt+F4 and the system
-    /// menu keep working; while editing it means the child `EDIT` gets the key and does its
-    /// own thing with it — the caret, the selection, its own Ctrl+Z.
+    /// Not ours: in Ready mode back to `DefWindowProc`, so Alt+F4 and the system menu work; while
+    /// editing the child `EDIT` gets the key — its caret, selection and own Ctrl+Z.
     Passthrough,
     /// Move the selection; Ready mode only.
     Navigate(keymap::Action),
@@ -156,10 +139,9 @@ fn editing(mode: Mode, key: Key, mods: Mods) -> Outcome {
         Key::F2 => Outcome::ToggleMode,
         Key::Return if !mods.ctrl => Outcome::Commit(Some(reverse(Dir::Up, Dir::Down))),
         Key::Tab if !mods.ctrl => Outcome::Commit(Some(reverse(Dir::Left, Dir::Right))),
-        // An arrow commits and moves in Enter mode and moves the caret in Edit mode. That
-        // difference *is* the reason there are two modes: someone who typed `12` and pressed →
-        // meant the next cell, and someone who pressed F2 to fix a typo meant the next
-        // character.
+        // An arrow commits and moves in Enter mode and moves the caret in Edit mode — the reason
+        // for two modes: someone who typed `12` and pressed → meant the next cell, someone who
+        // pressed F2 to fix a typo the next character.
         Key::Left | Key::Right | Key::Up | Key::Down
             if mode == Mode::Enter && !mods.ctrl && !mods.shift =>
         {
@@ -177,31 +159,24 @@ fn editing(mode: Mode, key: Key, mods: Mods) -> Outcome {
     }
 }
 
-/// A character from `WM_CHAR`: does it start an edit?
-///
-/// Only in Ready mode, only without Ctrl or Alt, and only when it is something a person can
-/// see. Control characters arrive here too — Escape is `\u{1b}` and Enter is `\r`, because
-/// `TranslateMessage` produces a `WM_CHAR` for both — and none of them is the start of a value.
+/// A character from `WM_CHAR`: does it start an edit? Only in Ready mode, without Ctrl or Alt, and
+/// only for something visible — Escape (`\u{1b}`) and Enter (`\r`) arrive too, since
+/// `TranslateMessage` makes a `WM_CHAR` for both.
 pub fn typed(mode: Mode, c: char, mods: Mods) -> Option<Seed> {
     let usable = mode == Mode::Ready && !mods.ctrl && !mods.alt && !c.is_control();
     usable.then_some(Seed::Char(c))
 }
 
-/// Where a caret goes inside the editor for a byte offset the parser reported.
-///
-/// `EM_SETSEL` counts **UTF-16 code units** and a `DisplayError` is a byte offset into UTF-8, so
-/// this is [`grind_core::utf16::units_before`] — shared with the macOS shell, whose `NSRange`
-/// counts the same units — in the `i32` the control's messages take.
+/// Where the editor's caret goes for a byte offset the parser reported: `EM_SETSEL` counts UTF-16
+/// units and a `DisplayError` bytes, so this is [`grind_core::utf16::units_before`], in the `i32`
+/// the control takes.
 pub fn caret_at(text: &str, byte: usize) -> i32 {
     i32::try_from(grind_core::utf16::units_before(text, byte)).unwrap_or(i32::MAX)
 }
 
-/// The same conversion the other way: where the editor's caret is, as a **byte** offset.
-///
-/// `EM_GETSEL` reports UTF-16 units and everything that reads the text — `sheet/assist.rs`'s
-/// completion and signature hint, `formula::display` — counts bytes, so one of the two has to
-/// convert and this is where: [`grind_core::utf16::byte_of`], with a negative count (a control
-/// with no selection) at the start.
+/// The other way: the editor's caret as a **byte** offset. `EM_GETSEL` reports UTF-16 units and
+/// everything reading the text counts bytes, so this converts ([`grind_core::utf16::byte_of`]), a
+/// negative count (no selection) at the start.
 pub fn byte_at(text: &str, units: i32) -> usize {
     usize::try_from(units).map_or(0, |units| grind_core::utf16::byte_of(text, units))
 }
@@ -374,8 +349,7 @@ mod tests {
         );
     }
 
-    /// Ready mode must keep handing back what it does not own, or Alt+F4 stops working — the
-    /// failure mode of a window that claims every key it is sent.
+    /// Ready mode hands back what it does not own, or Alt+F4 stops working.
     #[test]
     fn ready_mode_still_lets_go_of_what_it_does_not_own() {
         assert_eq!(

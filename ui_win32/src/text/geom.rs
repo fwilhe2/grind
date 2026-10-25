@@ -2,20 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where each block sits down the page, and where the page sits in the window — pure arithmetic.
-//!
-//! `sheet/geom.rs`'s counterpart for the text pane, and it exists for the same reason: the layout
-//! decisions are the part most worth testing and the part hardest to test through a window, so
-//! they live in a module that has never heard of one. **No Windows types at all.**
-//!
-//! **This is neither line layout nor the stacking above it.** Breaking a paragraph into lines is
-//! `grind_core::layout`'s job and reaches this shell through [`grind_text::App`]
-//! (`doc/text-layout.md`, Path C); how tall each block's box is, where it starts, where a table's
-//! blocks go, which ones are on screen and how far to scroll to keep the caret visible is
-//! [`grind_text::flow`]'s, shared with every shell that draws a page. This module was one of its
-//! two copies and `ui_text_gtk` the other, until the macOS shell would have made a third
-//! (`doc/macos-shell.md`, M1). What is left here is this pane's own: its numbers ([`spacing`]),
-//! where the page sits in the window ([`Page`]), and the strip.
+//! Where each block sits down the page, and where the page sits in the window — pure arithmetic,
+//! **no Windows types**. Line breaking is `grind_core::layout`'s and stacking the blocks — boxes,
+//! table cells, what is on screen, scrolling to the caret — is [`grind_text::flow`]'s; what is
+//! here is this pane's numbers ([`spacing`]), where the page sits ([`Page`]), and the strip.
 
 use std::collections::HashMap;
 
@@ -23,35 +13,26 @@ pub use grind_text::flow::{Across, CellBox, Flow, Slot, Spacing};
 
 use crate::sheet::geom::{Rect, scale};
 
-/// Space either side of the text column, in pixels at 100%.
-///
-/// Wide enough since W10 to hold the **page** the column is set on: the card is [`PAGE_PAD`]
-/// outside the text on each side, and this has to leave a strip of the window's own backdrop
-/// showing either side of that or the page is not a page, it is the window.
+/// Space either side of the text column, in pixels at 100% — wide enough for the **page** card
+/// ([`PAGE_PAD`] outside the text) with a strip of the window's backdrop showing either side, or
+/// the page is the window.
 pub const MARGIN: f64 = 48.0;
 
-/// The widest the text column is allowed to get.
-///
-/// A maximised window is far wider than a readable measure, and a word processor that sets prose
-/// across 1800 pixels is unreadable in a way a spreadsheet never is. Roughly 80 characters at a
-/// normal body size; the column is centred in whatever is left.
+/// The widest the text column may get — roughly 80 characters at a normal body size, since prose
+/// across 1800 pixels is unreadable; the column is centred in what is left.
 pub const MEASURE: f64 = 720.0;
 
 /// How far one nesting level of a list indents its text.
 pub const INDENT: f64 = 28.0;
 
-/// The page's own top margin — space above the first block, which **scrolls with the text**
-/// rather than framing it, so that a document scrolled to the bottom has no dead band at the top.
-///
-/// It is also the page card's top padding, which is why it grew in W10: a sheet of paper with
-/// twenty-four pixels above the first line looks like a mistake, and forty like a margin.
+/// The page's top margin — space above the first block, which **scrolls with the text**, so a
+/// document scrolled to the bottom has no dead band at the top. Also the page card's top padding:
+/// forty pixels reads as a margin where twenty-four looked like a mistake.
 pub const TOP: f64 = 40.0;
 
-/// How far the page card extends past the text column on each side, and below the last block.
-///
-/// The card is the document's own surface — `Theme::background` — standing on the window's
-/// backdrop, which is the whole of W10's answer for this pane: a word processor whose text sits
-/// directly on the window chrome has no document in it, only some text.
+/// How far the page card extends past the text column on each side and below the last block. The
+/// card is the document's surface, `Theme::background`, on the window's backdrop: text set
+/// straight on the chrome is no document, only some text.
 pub const PAGE_PAD: f64 = 40.0;
 
 /// Space under a block, and the extra a heading gets above it — the whole of this pane's
@@ -59,23 +40,19 @@ pub const PAGE_PAD: f64 = 40.0;
 pub const GAP: f64 = 10.0;
 pub const HEADING_GAP: f64 = 18.0;
 
-/// The gap between a picture and its caption — small, since the two read as one figure.
-/// `ui_text_gtk`'s own `CAPTION_GAP`, at the same value.
+/// The gap between a picture and its caption — small, since they read as one figure.
 pub const CAPTION_GAP: f64 = 4.0;
 
 /// The status bar, the same height the grid's is so that the two panes' windows agree.
 pub const STATUS_H: f64 = crate::sheet::draw::STATUS_H;
 
-/// The notice bar, when there is a notice. Zero when there is not — see `win.rs`'s `banner_h`.
-/// The grid's own height, and drawn the same way since W10: an inset card, not a stripe.
+/// The notice bar, when there is a notice, and zero when not (`win.rs`'s `banner_h`) — the grid's
+/// height, an inset card.
 pub const BANNER_H: f64 = crate::sheet::draw::BANNER_H;
 
-/// The format strip — decision 4's admission test applied to this pane: it reads and writes
-/// `CharStyle`, so it goes under the menu rather than in it. Never zero, unlike the banner: this
-/// bar has no "nothing to show" state, since the five toggles always mean something.
-///
-/// One Fluent control tall plus its surround, which is the grid's own strip height, so that the
-/// two panes' chrome measures the same in the same window.
+/// The format strip — decision 4's test applied to this pane: it reads and writes `CharStyle`, so
+/// it goes under the menu rather than in it. Never zero: the toggles always mean something. The
+/// grid's strip height, so both panes' chrome measures the same.
 pub const STRIP_H: f64 = crate::sheet::draw::STRIP_H;
 
 /// One toggle button's width on the strip — square, at Fluent's control height, which is what a
@@ -96,10 +73,8 @@ pub const SWATCH_W: f64 = crate::theme::space::CONTROL_H;
 /// *Clear Formatting*'s width — wider than a toggle, since "Clear" does not fit [`BUTTON_W`].
 pub const CLEAR_W: f64 = 64.0;
 
-/// The text column inside a pane `width` pixels wide: where it starts and how wide it is.
-///
-/// Centred rather than left-aligned once the window is wider than [`MEASURE`], which keeps the
-/// measure constant as a window grows instead of letting the lines stretch.
+/// The text column inside a pane `width` pixels wide: where it starts and how wide it is, centred
+/// once the window is wider than [`MEASURE`].
 pub fn column(width: f64, dpi: u32) -> (f64, f64) {
     let margin = scale(MARGIN, dpi);
     let available = (width - 2.0 * margin).max(1.0);
@@ -119,11 +94,9 @@ pub enum StripHit {
     Clear,
 }
 
-/// The window's furniture around the page: what is left for the document, and where.
-///
-/// The banner's *height* is the window's to set, and it is zero when there is no notice — so
-/// every rectangle below it is one arithmetic expression whether or not it is showing, which is
-/// the arrangement the grid already has.
+/// The window's furniture round the page: what is left for the document, and where. The banner's
+/// height is the window's to set and zero with no notice, so every rectangle below is one
+/// expression either way.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Page {
     pub width: f64,
@@ -188,11 +161,9 @@ impl Page {
         }
     }
 
-    /// One control on the strip: `w` wide, at Fluent's control height, centred in the band.
-    ///
-    /// Every rectangle below is one of these, which is what stops the strip drifting back into
-    /// full-height slabs the moment a control is added: a button is a *control standing on a
-    /// band*, and the band's own height is not its business.
+    /// One control on the strip: `w` wide, Fluent's control height, centred in the band — a
+    /// control standing on a band, so adding one never turns the strip back into full-height
+    /// slabs.
     fn strip_control(&self, x: f64, w: f64) -> Rect {
         let strip = self.strip();
         let h = scale(crate::theme::space::CONTROL_H, self.dpi).min(strip.h);
@@ -210,12 +181,9 @@ impl Page {
         scale(crate::theme::space::GROUP, self.dpi)
     }
 
-    /// The gap between two controls that belong together, and between two groups of them.
-    ///
-    /// Three groups, and the grouping is the point (W10): the five emphasis toggles are one
-    /// segmented control, the two pickers are the *shape* of the text, the two swatches are its
-    /// *colour*, and Clear stands alone because it undoes all three. A row of nine evenly spaced
-    /// buttons says none of that.
+    /// The gap between two controls of a group, and between groups. Three groups: the five
+    /// emphasis toggles as one segmented control, the two pickers (the text's shape), the two
+    /// swatches (its colour), and Clear alone, undoing all three.
     fn strip_gaps(&self) -> (f64, f64) {
         (
             scale(crate::theme::space::GAP / 2.0, self.dpi),
@@ -231,7 +199,7 @@ impl Page {
         std::array::from_fn(|i| self.strip_control(start + (w + tight) * i as f64, w))
     }
 
-    /// *Font* — opens `dialog::choose` over the families this build knows.
+    /// *Font* — opens `dialog::choose` over the families known here.
     pub fn strip_family(&self) -> Rect {
         let (_, group) = self.strip_gaps();
         let last = self.strip_buttons()[4];
@@ -309,17 +277,11 @@ impl Page {
         column(self.width, self.dpi)
     }
 
-    /// **The page** — the document's own surface, `height` pixels of content tall.
-    ///
-    /// The card the text is set on, in window coordinates and already scrolled: its top is the
-    /// top of the document, so it moves off the screen as the document does, and its bottom is
-    /// the last block plus one [`PAGE_PAD`]. Nothing is clipped here — the painter clips to the
-    /// body, and a card whose top is a thousand pixels above the window is exactly what a
-    /// document scrolled a thousand pixels down should have.
-    ///
-    /// This is decorative and the caret knows nothing about it: [`Page::text_column`] is
-    /// unchanged, so where a line breaks and where a click lands are the same answers they were
-    /// before there was a page to draw them on.
+    /// **The page** — the document's surface, `height` pixels of content tall, in window
+    /// coordinates and already scrolled: its top is the document's top, its bottom the last block
+    /// plus one [`PAGE_PAD`]. Nothing is clipped here; the painter clips to the body. Decorative:
+    /// the caret knows nothing of it, and [`Page::text_column`] decides where lines break and
+    /// clicks land.
     pub fn page_card(&self, height: f64) -> Rect {
         let body = self.body();
         let (x, w) = self.text_column();
@@ -333,15 +295,13 @@ impl Page {
     }
 }
 
-/// The space between a cell's rule and its text, and the rule's own width, in pixels at 100% —
-/// `ui_text_gtk::geom::CELL_PAD` and `RULE`, so a table is one shape in every window.
+/// The space between a cell's rule and its text, and the rule's width, in pixels at 100% — the
+/// GNOME window's numbers, so a table is one shape everywhere.
 pub const CELL_PAD: f64 = 6.0;
 pub const RULE: f64 = 1.0;
 
-/// This pane's page at a monitor's scaling — the numbers [`grind_text::flow`] stacks with.
-///
-/// Rebuilt from the constants at each DPI rather than scaled from the last answer, the same rule
-/// the grid follows.
+/// This pane's page at a monitor's scaling — the numbers [`grind_text::flow`] stacks with, rebuilt
+/// from the constants at each DPI rather than scaled from the last answer.
 pub fn spacing(dpi: u32) -> Spacing {
     Spacing {
         top: scale(TOP, dpi),
@@ -359,16 +319,12 @@ pub fn across(app: &grind_text::App, column: f64, dpi: u32) -> HashMap<usize, Ac
     grind_text::flow::across(app, column, &spacing(dpi))
 }
 
-/// Measure every block of a document and stack them, laying a table out as a grid —
-/// [`grind_text::flow::lay_out`] with this pane's numbers.
-///
-/// **Portable on purpose.** The only thing it asks of Windows is the [`grind_text::Faces`] it is
-/// handed, so on a machine with no Windows at all it can be handed [`grind_text::Uniform`] over
-/// [`grind_text::Fixed`] and checked against what `grind text view --width` prints — W5's exit
-/// criterion, which is now `grind_text::flow`'s own test and holds for every shell.
-///
-/// `picture` is `lay_out`'s hook: `image.rs`'s WIC decoder sizing a picture block, which this
-/// module must not depend on. A caller with no decoder passes `&|_, _| None`.
+/// Measure every block of a document and stack them, a table as a grid —
+/// [`grind_text::flow::lay_out`] with this pane's numbers. Portable: the only Windows in it is the
+/// [`grind_text::Faces`] it is handed, so off Windows it takes [`grind_text::Uniform`] over
+/// [`grind_text::Fixed`] and matches `grind text view --width`. `picture` is `lay_out`'s hook —
+/// `image.rs`'s WIC decoder sizing a picture block; a caller with no decoder passes `&|_, _|
+/// None`.
 pub fn flow_of(
     app: &grind_text::App,
     faces: &dyn grind_text::Faces,

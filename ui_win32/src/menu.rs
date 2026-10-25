@@ -2,58 +2,38 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Every verb this shell has, as data — and the menu bar it hangs in.
+//! Every verb this shell has, as data, and the menu bar it hangs in — portable, tested on any
+//! host. Decision 4 makes the menu bar this platform's growable surface: Windows draws its popups,
+//! scaled, themed, with Alt-key navigation for nothing. The rule for what goes in it: **a verb
+//! goes in a menu, a property of the selection on the format strip**.
 //!
-//! **Portable, and tested on any host.** `doc/windows-shell.md`'s decision 4 makes the menu bar
-//! this platform's growable surface, where the GNOME window needed a Ctrl+K palette: Windows
-//! draws a menu itself, so it scales with DPI, follows the theme and gets Alt-key navigation for
-//! nothing. The price of a surface that is *meant* to grow is a rule about what may go in it, and
-//! it is the GTK window's rule unchanged — **a verb goes in a menu, a property of the selection
-//! goes on the format strip** (which is W5's, since `CharStyle` and `CellStyle` bound it).
+//! * A command's **id** comes from its position in [`Command::ALL`], never written twice, so two
+//!   items cannot share a `WM_COMMAND` id.
+//! * **Every command is reachable** is checked on Linux with no window; **every command has a
+//!   handler** is the compiler's, as `win.rs` matches on [`Command`] exhaustively.
 //!
-//! Two things follow from the menus being a table rather than a sequence of `AppendMenuW` calls:
+//! The accelerators are here rather than in `sheet/keymap.rs`, being verbs; `sheet/state.rs`
+//! consults this first, so Ctrl+S is Save whatever `S` would do to the grid.
 //!
-//! * The **id** of a command is derived from its position in [`Command::ALL`] and never written
-//!   down twice, so the classic Win32 bug of two menu items sharing a `WM_COMMAND` id cannot
-//!   happen here.
-//! * The **check that every command is reachable** runs on Linux with no window at all. Its other
-//!   half — that every command has a handler — is the Rust compiler's: `win.rs`'s dispatcher
-//!   matches on [`Command`] exhaustively, so a command with nowhere to go fails the build.
-//!
-//! The accelerators live here too rather than in `sheet/keymap.rs`, because they are *verbs*
-//! and that file is navigation. `sheet/state.rs` consults this first and the keymap second,
-//! which is what makes Ctrl+S mean Save whatever the grid would otherwise have done with `S`.
-//!
-//! ponytail: the accelerators are matched by [`accelerator`] rather than by a real `HACCEL` and
-//! `TranslateAccelerator`. The table is the same either way; what a real accelerator table would
-//! add is Windows drawing the key next to the menu item automatically instead of this file
-//! spelling it — a cosmetic difference `win.rs`'s own `context_menu` and [`shortcuts`] (W7) do
-//! not depend on, since both read the same `\t`-separated spelling this file already carries.
+//! ponytail: accelerators are matched by [`accelerator`] rather than an `HACCEL` and
+//! `TranslateAccelerator`. A real table would only have Windows draw the key beside the item,
+//! which this file's `\t`-separated labels already spell for the menus, the context menus and
+//! [`shortcuts`].
 
 use crate::sheet::keymap::{Key, Mods};
 
-/// One verb. Everything the shell can be *asked* to do that is not a movement.
-///
-/// Deliberately not a home for anything that reads or writes a property of the selection —
-/// alignment, a number format, bold — which is the format strip's admission test and W5's work.
-/// Two exceptions, and each of them is also somewhere else: the text pane's toggles also sit on
-/// its strip, and the three currencies are in the grid's Format menu because that pane has no
-/// strip of its own yet. A cell's other properties wait for one.
+/// One verb: anything the shell can be asked to do that is not a movement. A property of the
+/// selection — alignment, a number format, bold — belongs on a format strip; the Format menu also
+/// carries those, so the keyboard reaches them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
-    /// A new, empty spreadsheet — **in this window**, whichever kind it was showing.
-    ///
-    /// One of a pair where there used to be a single kind-locked `New`, which could only ever
-    /// make another document of the kind already open. That was a stop-gap with its own comment
-    /// saying so, and the welcome screen is what made it untenable: a window that offers the two
-    /// choices when it opens cannot then refuse to offer them from the File menu.
+    /// A new, empty spreadsheet — **in this window**, whichever kind it was showing; with
+    /// [`Command::NewText`], the welcome screen's two choices from the File menu.
     NewSheet,
     NewText,
-    /// Back to the welcome screen — [`crate::welcome`], the pane a window with no document shows.
-    ///
-    /// Reachable rather than only initial, because a welcome screen you can never return to is a
-    /// splash screen. It asks the close question first, like every other verb that replaces what
-    /// the window is showing.
+    /// Back to the welcome screen ([`crate::welcome`]). Reachable rather than only initial — a
+    /// welcome screen you can never return to is a splash screen — and asking the close question
+    /// first, like every verb that replaces what the window shows.
     Welcome,
     Open,
     Save,
@@ -105,13 +85,12 @@ pub enum Command {
     RestyleChart,
     /// The last chart's corner moved to the active cell, its size kept (`verbs::move_chart`).
     MoveChart,
-    /// A hairline round every selected cell, or every edge taken away — `grind_sheet::format::
-    /// bordered`, the call every other shell's Borders control makes. The grid draws them
-    /// (`look::border_strokes`).
-    /// Wrap the selected cells' text at their column's width (`Toggle::Wrap`); on when the active
-    /// cell is already wrapped, off. The grid breaks it with `grind_core::layout::wrap` and grows
-    /// the row to hold it.
+    /// Wrap the selected cells' text at their column's width (`Toggle::Wrap`): on unless the
+    /// active cell is already wrapped. The grid breaks it with `grind_core::layout::wrap` and
+    /// grows the row.
     WrapText,
+    /// A hairline round every selected cell, or every edge taken away (`grind_sheet::format::
+    /// bordered`); the grid draws them (`look::border_strokes`).
     BordersAll,
     BordersNone,
     /// Copy the selection as it is *shown* — a formula's formatted result rather than its source
@@ -162,8 +141,8 @@ pub enum Command {
     /// every sheet — `App::find`, whose matching rule (`grind_sheet::find`) is the one every
     /// other shell's find uses. The grid's alone: a text document has no cells.
     Find,
-    /// The next or previous cell holding the word [`Command::Find`] last asked for, wrapping
-    /// at either end — `grind_sheet::find::step`, the GNOME bar's and the browser's F3.
+    /// The next or previous cell holding the word [`Command::Find`] last asked for, wrapping —
+    /// `grind_sheet::find::step`.
     FindNext,
     FindPrevious,
     /// Ask what and with what, then `App::replace` in every cell of every sheet — one undo
@@ -176,9 +155,8 @@ pub enum Command {
     /// [`Command::ImportCsv`], having first asked for options in words — `delimiter=semicolon
     /// locale=de-DE text trim` (`csv::Import::amended`), the flags `grind sheet import-csv` has.
     ImportCsvWith,
-    /// Write the selection out as one — a save dialog whose **name** says which delimiter
-    /// (`csv::Dialect::for_name`, the two filters below it), then `App::export_csv`. Nothing is
-    /// stored, so the document is untouched by it.
+    /// Write the selection out as CSV — a save dialog whose **name** says which delimiter
+    /// (`csv::Dialect::for_name`), then `App::export_csv`. The document is untouched.
     ExportCsv,
     /// Read a markdown file in before the caret's block — a file dialog, then
     /// `App::import_markdown`, one undo step. The page's alone, as CSV is the grid's.
@@ -196,10 +174,9 @@ pub enum Command {
     /// prints a PDF, so the pages go as rasters at the printer's resolution (`doc/pdf-export.md`).
     Print,
     Recalculate,
-    /// Every function this build implements, as a list to pick from — `sheet/assist.rs`'s
-    /// `function_lines`, which is `grind sheet functions --long`'s four columns in a dialog.
-    /// Picking one puts `=NAME(` in the cell, so the list is a way of *writing* a formula and
-    /// not only of reading about one.
+    /// Every function grind implements, as a list to pick from (`sheet/assist.rs`'s
+    /// `function_lines`, the `grind sheet functions --long` catalog). Picking one puts `=NAME(` in
+    /// the cell.
     FunctionList,
     /// The active cell's formula in full — `formula::friendly::explain`: names spelled out,
     /// arguments labelled with the parameter they fill, one per line once a call stops fitting
@@ -216,32 +193,27 @@ pub enum Command {
     /// `App::format_table`. No dialog: fixed defaults (a header, no totals row), the same
     /// zero-prompt shape `sheet.filter` already has in the web shell.
     FormatTable,
-    /// The same composite with a totals row, having asked which aggregate it carries —
-    /// `dialog::choose` over `TotalsFunction::ALL`. A second verb rather than a prompt on the
-    /// first, so the plain one stays zero-prompt, which is the shape the web shell's palette
-    /// gives the pair too.
+    /// The table composite with a totals row, having asked which aggregate (`dialog::choose` over
+    /// `TotalsFunction::ALL`) — a second verb, so the plain one asks nothing.
     FormatTableTotals,
     /// A conditional-format rule over the selection: the condition in a prompt, written for its
     /// first cell, then the look from `dialog::choose` over `grind_sheet::rule::Look::ALL` —
-    /// `grind_sheet::rule::add_from_input`, the call every shell's rule editor makes
-    /// (`doc/conditional-format.md` §4).
+    /// `grind_sheet::rule::add_from_input` (`doc/conditional-format.md` §4).
     AddRule,
     /// The sheet's rules in `dialog::choose`, one of them taken away — `App::remove_rule`.
     RemoveRule,
-    /// Format the selection as one of `numfmt::CURRENCIES` — the euro, the dollar, the pound,
-    /// in that order ([`Command::currency`]), one click each, as the GTK picker's buttons are.
-    /// The grid's alone; `sheet/currency.rs` is what each one writes, and the item whose
-    /// currency the active cell already has carries a check.
+    /// Format the selection as one of `numfmt::CURRENCIES` — euro, dollar, pound
+    /// ([`Command::currency`]), one click each. `sheet/currency.rs` is what each writes; the
+    /// active cell's currency is checked.
     CurrencyEuro,
     CurrencyDollar,
     CurrencyPound,
     /// The thousands separator turned on over the selection, or off when the active cell has it
     /// (`grind_sheet::format::grouped`) — checked by the cell.
     GroupThousands,
-    /// Align the selection's text to one side of its cells, or centre it — `fo:text-align`,
-    /// written `start`/`center`/`end` (§16.5, relative to the writing direction). The grid's
-    /// alone, and the format strip's three alignment toggles (`sheet/format.rs`): pressing the
-    /// alignment a cell already has takes it off.
+    /// Align the selection's text to one side of its cells, or centre it — `fo:text-align` as
+    /// `start`/`center`/`end` (§16.5). The grid's, and its strip's three toggles
+    /// (`sheet/format.rs`): the alignment a cell already has takes it off.
     AlignLeft,
     AlignCenter,
     AlignRight,
@@ -249,10 +221,10 @@ pub enum Command {
     /// and the two buttons after the strip's alignments.
     IndentLess,
     IndentMore,
-    /// *Cell Background* — the grid's fill, `fo:background-color` on a cell, over the same palette
-    /// as *Text Colour*. A verb of its own rather than [`Command::PickHighlight`] under another
-    /// label, because a run's highlight and a cell's fill are two properties that merely share an
-    /// attribute name, and one command id with two labels is one the menu cannot spell.
+    /// *Cell Background* — a cell's `fo:background-color`, over *Text Colour*'s palette. Its own
+    /// verb rather than [`Command::PickHighlight`] relabelled: a run's highlight and a cell's fill
+    /// are two properties sharing an attribute name, and one id with two labels is one the menu
+    /// cannot spell.
     PickBackground,
     /// *Number Format* — the nine kinds `grind sheet format` takes, one click each
     /// (`sheet/format.rs`'s `KINDS`).
@@ -266,9 +238,9 @@ pub enum Command {
     SheetDelete,
     SheetNext,
     SheetPrevious,
-    /// Toggle bold, italic, underline or strikethrough across the selection — **both panes'**: a
-    /// run's `CharStyle` in the text pane, a cell's `CellStyle` on the grid, and Ctrl+B means bold
-    /// in either. Code is the text pane's alone, since a cell has no family to toggle.
+    /// Toggle bold, italic, underline or strikethrough across the selection, in **both panes** — a
+    /// run's `CharStyle`, a cell's `CellStyle` — so Ctrl+B is bold in either. Code is the text
+    /// pane's alone: a cell has no family.
     Bold,
     Italic,
     Underline,
@@ -290,39 +262,35 @@ pub enum Command {
     /// Every property of the selection's formatting, off at once — the one-shot the toggles can
     /// only approximate, and the strip's own *Clear* button.
     ClearFormatting,
-    /// The caret's block becomes a paragraph wearing the `Title` named style —
-    /// `ui_text_gtk`'s own `win.title`, mirrored so the two windows both know how to apply and
-    /// draw the same two names (`grind_text::NAMED_STYLES`).
+    /// The caret's block becomes a paragraph wearing the `Title` named style
+    /// (`grind_text::NAMED_STYLES`).
     Title,
     Subtitle,
     /// The caret's block becomes a plain paragraph — `App::set_kind`, `BlockKind::Paragraph`.
     /// Left out of the grid's menus, the same way the three toggles above are.
     Paragraph,
-    /// The caret's block becomes a heading at this level — `ui_text_gtk`'s own Ctrl+1/2/3, kept
-    /// to the same three quick levels here so a key reaches the common case the way it does in
-    /// that window. [`Command::BlockKindDialog`] is where the rest of the schema's uncapped
-    /// `positiveInteger` (`doc/text-core.md`) and every list depth live instead of a key each.
+    /// The caret's block becomes a heading at this level — Ctrl+1/2/3 for the common three;
+    /// [`Command::BlockKindDialog`] has the deeper levels and every list depth.
     Heading1,
     Heading2,
     Heading3,
     /// The text pane's outline dialog — every heading, jump to any of them. Left out of the
     /// grid's menus.
     Outline,
-    /// Every block kind this build authors, heading levels past 3 and list items included, as one
-    /// dialog rather than a key per depth — the gap `doc/text-shell.md` names for every shell's
-    /// own window ("no lists UI") and the first one to close it.
+    /// Every block kind there is to author, headings past 3 and list items at every depth, as one
+    /// dialog rather than a key each.
     BlockKindDialog,
-    /// Insert a picture at the caret — a file dialog, then `App::insert_image`, into a paragraph
-    /// of its own below the caret's block (an empty block is used as it stands). Decoded and
-    /// drawn for real (`image.rs`, WIC), matching `ui_text_gtk`'s own Ctrl+Shift+I.
+    /// Insert a picture — a file dialog, then `App::insert_image`, into a paragraph of its own
+    /// below the caret's block (an empty block used as it is), decoded and drawn through WIC
+    /// (`image.rs`). Ctrl+Shift+I.
     InsertPicture,
     /// The picture beside the caret's alternative text — `dialog::alt_text`, then
     /// `grind_text::picture::set_alt`. On the text pane's context menu when the pointer is on a
     /// picture, as well as in Format.
     AltText,
-    /// Insert a table below the caret's block — a size asked for in one prompt (`3x4`), then
-    /// `grind_text::table::insert_below`, which also decides where it goes and that a document
-    /// never ends with one. Matches `ui_text_gtk`'s Ctrl+Shift+T.
+    /// Insert a table below the caret's block — a size in one prompt (`3x4`), then
+    /// `grind_text::table::insert_below`, which decides where it goes and that a document never
+    /// ends with one. Ctrl+Shift+T.
     InsertTable,
     /// Anchor a bookmark at the caret's block — a name, then `App::set_bookmark`. Naming one
     /// already there moves it. Switches the name overlay on, since a bookmark contributes no
@@ -336,12 +304,11 @@ pub enum Command {
     ParagraphUp,
     ParagraphDown,
     ParagraphDelete,
-    /// The document as its own projection (D9) — a modal list of its lines, `App::project`'s
-    /// text-form, opened on whichever line the pane's own selection or caret projects to. Applies
-    /// to both document types, the same as `App::project` reaching both.
+    /// The document as its projection — a modal list of `App::project`'s lines, opened on the line
+    /// the selection or caret projects to. Both document types.
     ShowSource,
-    /// "Check Document" (D6) — every `App::lint` finding, worst first, each row a jump. Applies
-    /// to both document types, the same as `App::lint` reaching both.
+    /// Check Document — every `App::lint` finding, worst first, each row a jump. Both document
+    /// types.
     CheckDocument,
     /// F7: select the next misspelt word and offer what it might have been (`doc/spelling.md`).
     NextMisspelling,
@@ -369,8 +336,7 @@ pub enum Command {
     /// `BlockView::marks`' bookmarks on the text pane (`:names`' equivalent there, since a
     /// bookmark contributes no characters of its own). Both document types.
     ToggleNames,
-    /// W7's "key list" — every accelerator this shell answers, read straight off [`MENUS`]'
-    /// own labels rather than a second table that could drift from them.
+    /// The key list: every accelerator this shell answers, read off [`MENUS`]' own labels.
     Shortcuts,
     About,
     /// Every third-party component and its licence (`doc/third-party.md`), in a read-only
@@ -379,10 +345,8 @@ pub enum Command {
 }
 
 impl Command {
-    /// Every command, in the order that decides their `WM_COMMAND` ids.
-    ///
-    /// Adding one here and nowhere else fails two checks at once: the test below says it is in no
-    /// menu, and `win.rs`'s exhaustive match says it has no handler.
+    /// Every command, in the order that decides their `WM_COMMAND` ids. One added here alone fails
+    /// twice: the test below finds it in no menu, and `win.rs`'s match finds no handler.
     pub const ALL: &'static [Command] = &[
         Command::NewSheet,
         Command::NewText,
@@ -517,12 +481,9 @@ impl Command {
         Command::Licences,
     ];
 
-    /// The `WM_COMMAND` id this verb arrives as.
-    ///
-    /// Offset by 100 so that a control notification's id — the name box is 1, the editor 2 —
-    /// can never collide with a menu command's. Win32 puts both through the same message and
-    /// tells them apart by the high word, and this makes a mistake there visible rather than
-    /// silent.
+    /// The `WM_COMMAND` id this verb arrives as, offset by 100 so a control notification's id
+    /// (name box 1, editor 2) cannot collide with a menu command's: Win32 sends both in one
+    /// message, told apart by the high word, and this makes a mistake visible.
     pub fn id(self) -> u16 {
         let at = Self::ALL
             .iter()
@@ -576,10 +537,10 @@ impl Command {
 /// The first id a menu command may take. Below it are the child controls' ids.
 pub const FIRST_ID: u16 = 100;
 
-/// The first id of a spelling popup's own rows — a misspelt word's suggestions, then Ignore All
-/// and Add to Dictionary ([`SPELLING_IDS`] in all). Not commands: what they do depends on the
-/// word under the pointer, so they are numbered per popup, well clear of every [`Command::id`]
-/// and returned by `TrackPopupMenuEx` rather than posted as a `WM_COMMAND`.
+/// The first id of a spelling popup's rows — a misspelt word's suggestions, then Ignore All and
+/// Add to Dictionary ([`SPELLING_IDS`] in all). Not commands, since they depend on the word under
+/// the pointer: numbered per popup, clear of every [`Command::id`], and returned by
+/// `TrackPopupMenuEx` rather than posted.
 pub const SPELLING_FIRST_ID: u16 = 0x7000;
 pub const SPELLING_IDS: u16 = 10;
 
@@ -609,17 +570,10 @@ pub struct Menu {
     pub items: &'static [Item],
 }
 
-/// The menu bar.
-///
-/// Seven menus and nothing that is not a verb. Format holds every control of either pane's
-/// format strip even though the strips reach them too — those items *read and write* a property of
-/// the selection, exactly what a strip is for, but a menu they can also start from costs nothing,
-/// carries the keys, and is how the strip's verbs are reached from the keyboard. Each pane sees its
-/// own: bold, italic, a text colour and Clear are both panes', and `applies_to` keeps the rest to
-/// the one pane that has the property. View holds W6's three shared panes: the
-/// source, the check, and the two overlays only the grid can draw. What is deliberately absent:
-/// anything resembling a ribbon — `doc/sheet-shell.md`'s tab strip was removed for being one,
-/// and the argument carries.
+/// The menu bar: seven menus and nothing that is not a verb. Format carries every control of
+/// either pane's strip too — a menu they can also start from costs nothing, carries the keys and
+/// reaches them from the keyboard — each pane seeing its own through `applies_to`. View holds the
+/// source, the check and the overlays. Deliberately nothing ribbon-like.
 pub const MENUS: &[Menu] = &[
     Menu {
         title: "&File",
@@ -650,10 +604,9 @@ pub const MENUS: &[Menu] = &[
                 label: "Save &As…\tCtrl+Shift+S",
             },
             Item::Separator,
-            // The one non-ODF format (`doc/not-doing.md` §2), and File is where Windows puts
-            // Import and Export. Its own section, because importing is not another way of
-            // saving the document — and over a text document [`applies_to`] leaves both out,
-            // so this menu is the four file verbs and Exit there.
+            // The one non-ODF format (`doc/not-doing.md` §2), where Windows puts Import and
+            // Export, in its own section since importing is not a way of saving; over a text
+            // document [`applies_to`] leaves both out.
             Item::Verb {
                 command: Command::ImportCsv,
                 label: "&Import CSV…",
@@ -975,10 +928,9 @@ pub const MENUS: &[Menu] = &[
     Menu {
         title: "F&ormat",
         items: &[
-            // One menu over both panes, and `items_for` drops what the pane showing has no
-            // answer for — collapsing the separators it leaves, so each pane sees its own groups
-            // in the order its strip draws them: the weight of the text, its alignment, its
-            // colours, the number it shows, and Clear on its own.
+            // One menu over both panes; `items_for` drops what the showing pane has no answer for
+            // and collapses the separators left, so each pane sees its strip's groups in order:
+            // the text's weight, alignment, colours, the number shown, and Clear.
             Item::Verb {
                 command: Command::Bold,
                 label: "&Bold\tCtrl+B",
@@ -1233,10 +1185,8 @@ pub const MENUS: &[Menu] = &[
     },
 ];
 
-/// The label a command shows in whichever menu names it — the one copy of that string, so a
-/// context menu (W7) can put a verb next to its own spelling rather than a second one written
-/// down beside it. Carries its `\t`-separated accelerator too, since a context menu benefits
-/// from the reminder exactly as the menu bar's own does.
+/// The label a command shows in whichever menu names it — the one copy, so a context menu shows a
+/// verb by the bar's spelling, `\t`-separated accelerator included.
 pub fn label_for(command: Command) -> Option<&'static str> {
     MENUS
         .iter()
@@ -1247,15 +1197,10 @@ pub fn label_for(command: Command) -> Option<&'static str> {
         })
 }
 
-/// Every command that carries a `\t`-separated accelerator, as one line each — the name, a tab, and the key, which `dialog::show_list` draws as two columns — W7's "key list",
-/// the answer to `gtk::ShortcutsWindow` this shell can build with no resources and no dialog
-/// template: a plain read of the labels every menu item already has, so a shortcut shown here and
-/// a shortcut shown on the bar can never say two different things about the same command.
-///
-/// Read out of [`MENUS`] in the bar's own order rather than [`Command::ALL`]'s, which is the
-/// order a person tabbing through the menus meets them in — the more useful one for a reference
-/// list — and the mnemonic's `&` is stripped, since a keyboard shortcuts window is not itself
-/// navigated by one.
+/// Every command with a `\t`-separated accelerator, a line each — name, tab, key, which
+/// `dialog::show_list` draws as two columns: a read of the labels every item already has, so the
+/// list and the bar cannot disagree. In [`MENUS`]' order, the one a person meets them in, with the
+/// mnemonic's `&` stripped.
 pub fn shortcuts() -> Vec<String> {
     MENUS
         .iter()
@@ -1268,14 +1213,10 @@ pub fn shortcuts() -> Vec<String> {
         .collect()
 }
 
-/// Which verb a keystroke asks for, if any.
-///
-/// Consulted **before** the navigation keymap, which is the whole reason it exists as a separate
-/// question: Ctrl+S has to be Save even though `S` is a perfectly good key to type into a cell,
-/// and Ctrl+PageDown has to be "next sheet" even though PageDown is a motion.
-///
-/// Deliberately silent about Delete: clearing the selection is a verb, but the *key* only means
-/// it in Ready mode, and deciding that is `sheet/state.rs`'s job rather than this table's.
+/// Which verb a keystroke asks for, if any — consulted **before** the navigation keymap, so Ctrl+S
+/// is Save though `S` can be typed into a cell, and Ctrl+PageDown is "next sheet" though PageDown
+/// is a motion. Silent about Delete: clearing is a verb, but the key means it only in Ready mode,
+/// which is `sheet/state.rs`'s to decide.
 pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
     if mods.alt {
         return None;
@@ -1327,12 +1268,8 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
     }
 }
 
-/// What the window is showing, for the one question the menu bar asks of it.
-///
-/// A document *kind* was enough until the welcome screen arrived, and then it was not: a window
-/// showing [`crate::welcome`] holds no document at all, and answering "which kind" with a guess
-/// is exactly the guess that pane exists to stop making. So the menus ask this instead, and
-/// `DocumentKind` is one of its two arms rather than the whole question.
+/// What the window is showing, for the one question the menu bar asks of it: a document of some
+/// kind, or the welcome screen, which holds none — so the menus never have to guess a kind.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Surface {
     /// The welcome screen — no document, and so only the verbs that make or find one.
@@ -1349,12 +1286,8 @@ pub fn applies(command: Command, surface: Surface) -> bool {
     }
 }
 
-/// Which verbs mean anything with **no document open**.
-///
-/// A short list, and short on purpose: everything else in this shell acts on a document, and a
-/// File menu offering Save over nothing would be the greying problem back again in its original
-/// form. `Command::Welcome` is absent because you are already on it — a menu item that does nothing
-/// but confirm where you are is noise.
+/// Which verbs mean anything with **no document open** — a short list, since everything else acts
+/// on a document. `Command::Welcome` is absent: you are already on it.
 fn on_welcome(command: Command) -> bool {
     matches!(
         command,
@@ -1368,17 +1301,14 @@ fn on_welcome(command: Command) -> bool {
     )
 }
 
-/// Whether this verb means anything for a document of this kind — the half of "the menus are
-/// finished" that can be answered with no window at all. `win.rs`'s `build_menu` is the caller,
-/// through [`items_for`]/[`menu_has_items`]: a `false` here is why `Recalculate` is missing from
-/// the bar over a text document rather than shown and unclickable. State *within* a kind — Undo
+/// Whether this verb means anything for a document of this kind, answered with no window.
+/// `win.rs`'s `build_menu` asks through [`items_for`]/[`menu_has_items`], so `Recalculate` is
+/// missing over a text document rather than shown and unclickable. State *within* a kind — Undo
 /// with nothing to undo, Paste with an empty clipboard — is a separate question this does not
-/// answer, and W7 still owes it. A command silent about both kinds would be a command with
-/// nowhere to act, which is a different bug from the one this answers — that one is
-/// `Command::ALL` matching `MENUS`, checked below.
+/// answer, still owed. A command silent about both kinds is a different bug, caught by
+/// `Command::ALL` matching `MENUS` below.
 ///
-/// `Presentation` answers `false` to everything: this shell opens neither kind of pane for one
-/// (`opened` refuses the document before a `Pane` exists), so there is nothing it could mean.
+/// `Presentation` answers `false` to everything: no pane opens for one.
 pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
     use grind_core::DocumentKind::{Presentation, Spreadsheet, Text};
     match command {
@@ -1526,9 +1456,8 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::Paste
         | Command::ClearCells
         | Command::GoTo
-        // `App::project` and `App::lint` both reach either document type, so the two W6 verbs
-        // that are not overlays follow the universal group rather than either specific one — and
-        // so does the name overlay, since a bookmark is the text pane's own name anchor.
+        // `App::project` and `App::lint` reach either kind, so those two follow the universal
+        // group, as does the name overlay, a bookmark being the text pane's name anchor.
         | Command::ShowSource
         | Command::CheckDocument
         | Command::ToggleNames
@@ -1538,18 +1467,11 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
     }
 }
 
-/// One menu's items for this surface — a verb it has no answer for is **omitted**, not greyed,
-/// and a separator left with nothing either side of it (because everything around it was dropped)
-/// goes with it.
-///
-/// This replaced greying: a menu bar with every verb visible and half of them unclickable read
-/// as a text pane that still thought it was a grid, since the sheet's own six verbs (`Sheet`'s
-/// whole menu, `Recalculate`, `Cell Roles`) so outnumbered the universal ones that the &View
-/// and &Sheet menus looked identical open on either pane. `Sheet`/`Data` on the text pane can
-/// end up with nothing in them at all, which is
-/// [`menu_has_items`]'s question, asked before a menu is put in the bar at all. The welcome screen
-/// is the extreme case of the same rule: everything but `File` and `Help` empties out, and the
-/// bar over it is those two.
+/// One menu's items for this surface: a verb with no answer is **omitted**, not greyed, and a
+/// separator left with nothing either side goes too. Greying left the sheet's many verbs visible
+/// and dead over a text document, which looked like a text pane that still thought it was a grid.
+/// A menu can end up empty — [`menu_has_items`] is asked before it goes in the bar — and over the
+/// welcome screen only File and Help remain.
 pub fn items_for(menu: &Menu, surface: Surface) -> Vec<Item> {
     let mut items: Vec<Item> = Vec::with_capacity(menu.items.len());
     for item in menu.items {
@@ -1627,16 +1549,8 @@ mod tests {
         assert_eq!(command_for(u16::MAX), None);
     }
 
-    /// A Win32 menu underlines the letter after `&`, and a menu with two items claiming the
-    /// same one in the same menu makes Alt-navigation ambiguous.
-    ///
-    /// Checked **per surface** — over the items [`items_for`] actually shows on each pane — since
-    /// that is the only place two letters can collide: the grid's *Number Format* and the text
-    /// pane's *Font* are never on one menu, and a whole-table check would force one of them onto
-    /// a letter its own words do not have. Every item still needs a mnemonic on every surface it
-    /// appears on.
-    /// A spelling popup's rows are numbered by hand rather than from [`Command::ALL`], so they
-    /// must stay clear of every command — `TrackPopupMenuEx` hands back one number for both.
+    /// A spelling popup's rows are numbered by hand, so they must stay clear of every command:
+    /// `TrackPopupMenuEx` hands back one number for both.
     #[test]
     fn the_spelling_rows_never_collide_with_a_command() {
         let last = Command::ALL.iter().map(|c| c.id()).max().unwrap();
@@ -1677,6 +1591,9 @@ mod tests {
         assert_eq!(Command::RestyleChart.chart_kind(), None);
     }
 
+    /// A Win32 menu underlines the letter after `&`, and two items claiming one letter make Alt
+    /// navigation ambiguous. Checked **per surface**, over what [`items_for`] shows, since the
+    /// grid's *Number Format* and the text pane's *Font* never share a menu.
     #[test]
     fn every_menu_has_distinct_mnemonics() {
         let mnemonic = |label: &str| {
@@ -1936,8 +1853,8 @@ mod tests {
         assert!(applies_to(Command::ToggleNames, Text));
     }
 
-    /// The source and the check are W6's two verbs that are not overlays, and `App::project` /
-    /// `App::lint` reach both document types, so both panes get them.
+    /// `App::project` and `App::lint` reach both document types, so both panes get the source and
+    /// the check.
     #[test]
     fn the_source_and_the_check_reach_both_document_types() {
         use grind_core::DocumentKind::{Spreadsheet, Text};
@@ -1947,8 +1864,8 @@ mod tests {
         }
     }
 
-    /// Every command in a menu has a label a context menu (W7) can borrow, and it is the same
-    /// string the bar itself shows — there is no second copy for `label_for` to disagree with.
+    /// Every command in a menu has a label a context menu can borrow, and it is the bar's own
+    /// string.
     #[test]
     fn every_menu_command_has_a_label_and_it_is_the_bars_own() {
         for menu in MENUS {
@@ -2194,13 +2111,8 @@ mod tests {
         }
     }
 
-    /// A menu that keeps every one of its items for a kind is unchanged, order included — the
-    /// baseline `filtering_never_leaves_a_stray_separator` and the vanish/survive tests above
-    /// all lean on.
-    ///
-    /// `Help` rather than `File`, which used to be the example here: File carries the two CSV
-    /// verbs now, and they are the grid's, so it is no longer a menu with nothing to drop over
-    /// a text document. Help is — both of its items are about the *window*.
+    /// A menu keeping every item for a kind is unchanged, order included — the baseline the vanish
+    /// and survive tests lean on. Help, both of whose items are about the window.
     #[test]
     fn a_menu_with_nothing_to_drop_is_returned_whole() {
         use grind_core::DocumentKind::{Spreadsheet, Text};
@@ -2213,10 +2125,8 @@ mod tests {
         }
     }
 
-    /// And the one File loses: importing fields into cells and writing a range out are both the
-    /// grid's, so a text document's File menu is the file verbs and Exit — with no stray
-    /// separator left where the pair was (`filtering_never_leaves_a_stray_separator` is the
-    /// general rule; this is the case that first exercised it in *this* menu).
+    /// File loses the CSV pair over a text document — both the grid's — with no stray separator
+    /// left where it was.
     #[test]
     fn the_csv_pair_is_the_grids_and_leaves_the_file_menu_over_a_document_of_text() {
         use grind_core::DocumentKind::{Spreadsheet, Text};
@@ -2247,9 +2157,9 @@ mod tests {
         assert_eq!(kept, vec!["&File", "&Help"]);
     }
 
-    /// What `File` offers with nothing open: make one of each, find one, leave. Save, Save As and
-    /// the way back to the screen you are already on are gone — `items_for` drops them, and the
-    /// separator that used to sit between Open and Save goes with them.
+    /// With nothing open, File offers making one of each, finding one, and leaving; Save, Save As
+    /// and the way back to the welcome screen are dropped, with the separator between Open and
+    /// Save.
     #[test]
     fn file_offers_only_the_verbs_that_need_no_document() {
         let items = items_for(menu("&File"), Surface::Welcome);
@@ -2273,9 +2183,8 @@ mod tests {
         assert_ne!(items.last(), Some(&Item::Separator));
     }
 
-    /// Nothing that reads or writes a document is offered when there is none. The failure this
-    /// guards is the greying problem in its first form: a Save item on a window with nothing to
-    /// save, which W5b's own history says reads as a shell that has not noticed where it is.
+    /// Nothing that reads or writes a document is offered when there is none — a Save on a window
+    /// with nothing to save reads as a shell that has not noticed where it is.
     #[test]
     fn no_verb_that_needs_a_document_is_offered_without_one() {
         for command in [

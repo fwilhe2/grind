@@ -2,21 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Every sentence the notice bar says, as a pure function.
+//! Every sentence the notice bar says, as a pure function — tested on any host, since whether a
+//! message reads well, counts right and says what to do next needs no window.
 //!
-//! **Portable, and tested on any host**, like [`crate::menu`] and `sheet/state.rs`. A window is
-//! not needed to check whether a message reads well, counts correctly or says what to do next,
-//! and the plurals are exactly the sort of thing that is wrong for a year in a shell nobody can
-//! run on the development machine.
-//!
-//! The bar is for a **state the document is in**, never for an event that has happened —
-//! `ui_sheet_gtk` draws the same line between its banner and its toasts, and the reason is the
-//! same: a state stays true until something changes it, so it belongs in a surface that stays.
-//! That is why a failed save is a message box here (it is over as soon as it is read) and a
-//! recalculation this build refused to perform is a banner (it is true until F9).
-//!
-//! Every sentence ends by naming the way out, because a notice with no next action is one the
-//! reader can only dismiss.
+//! The bar is for a **state the document is in**, never an event: a state stays true until
+//! something changes it, so it belongs in a surface that stays. A failed save is a message box
+//! (over once read); a recalculation grind refused to perform is a banner (true until F9). Every
+//! sentence ends by naming the way out.
 
 /// `1 thing` / `4 things` — the whole of the pluralisation, in one place.
 fn counted(n: usize, singular: &str, plural: &str) -> String {
@@ -26,13 +18,10 @@ fn counted(n: usize, singular: &str, plural: &str) -> String {
     }
 }
 
-/// A recalculation that was **not** performed, because performing it would have replaced cached
-/// values this build cannot reproduce (`grind_sheet::Recalc::spoiled`).
-///
-/// The honest shape of the problem: the document uses a function outside the 110 of
-/// `doc/small-group.md`, so recalculating would turn a perfectly good saved number into
-/// `#NAME?`. Refusing the *edit* would make such a document read-only, which is worse, so the
-/// edit commits and this says what was skipped.
+/// A recalculation **not** performed, because it would have replaced cached values grind cannot
+/// reproduce (`grind_sheet::Recalc::spoiled`): the document uses a function outside those
+/// implemented, so recalculating would turn a good saved number into `#NAME?`. Refusing the *edit*
+/// would make the document read-only, so the edit commits and this says what was skipped.
 pub fn recalc_skipped(spoiled: usize) -> String {
     match spoiled {
         1 => "1 formula uses a function this build does not have — recalculating would replace \
@@ -62,11 +51,9 @@ pub fn recalculated(changed: usize, spoiled: usize) -> String {
     }
 }
 
-/// A rename that carried references with it — `doc/dsl.md` §6.5's first refactoring, D10.
-///
-/// Worth saying out loud, because it is the one edit here whose reach is larger than the thing
-/// that was edited: renaming a sheet rewrites every formula, named expression and chart range
-/// that named it, and a user who did not expect that needs to know it is one Ctrl+Z.
+/// A rename that carried references with it: renaming a sheet rewrites every formula, named
+/// expression and chart range that named it — an edit reaching past what was edited — and a user
+/// who did not expect that needs to know it is one Ctrl+Z.
 pub fn references_renamed(count: usize) -> String {
     format!(
         "{} rewritten to follow the rename. Ctrl+Z takes it back.",
@@ -96,11 +83,9 @@ pub fn exported(start: &str, end: &str, name: &str) -> String {
     format!("{start}:{end} exported to {name}. The document is unchanged.")
 }
 
-/// Data ▸ Explain Formula, asked about a cell that holds no formula — or one this build cannot
-/// parse, which from the reader's side is the same thing: there is no reading to show.
-///
-/// A notice rather than a message box, because the question was asked *about a cell* and this bar
-/// is where this window says things about the cell it is on.
+/// Data ▸ Explain Formula on a cell with no formula, or one that will not parse — the same to the
+/// reader: no reading to show. A notice, since the question was about the cell this bar talks
+/// about.
 pub fn nothing_to_explain(address: &str) -> String {
     format!("{address} holds no formula to explain. F2 opens the cell to write one.")
 }
@@ -361,9 +346,8 @@ mod tests {
         );
     }
 
-    /// Nothing to report is still a sentence: F9 on an up-to-date document must not look like a
-    /// key that did nothing. It is also the **one** notice with no action in it, which is why
-    /// the rule below has to name it rather than test for it.
+    /// F9 on an up-to-date document must not look like a key that did nothing. It is the **one**
+    /// notice with no action, which is why the rule below names it.
     #[test]
     fn a_recalculation_that_changed_nothing_still_says_so() {
         assert_eq!(
@@ -372,11 +356,9 @@ mod tests {
         );
     }
 
-    /// Every notice names the key that resolves it, which is the rule this module exists to
-    /// keep — a banner the reader can only stare at is one they learn to ignore.
-    ///
-    /// The two exceptions are above and each has a test of its own: a recalculation that
-    /// changed nothing, and an export, which leaves nothing behind to act on.
+    /// Every notice names the key that resolves it — a banner the reader can only stare at is one
+    /// they learn to ignore. The two exceptions have tests of their own: a recalculation that
+    /// changed nothing, and an export, which leaves nothing to act on.
     #[test]
     fn every_notice_names_the_way_out() {
         for text in [

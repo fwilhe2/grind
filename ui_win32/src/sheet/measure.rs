@@ -2,12 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Measuring a cell's text the way it is drawn: one engine, GDI, for both (decision 3).
-//!
-//! `grind_core::layout::wrap` breaks a wrapped cell and `grind_sheet::autoheight` sizes a row, and
-//! both ask a `Metrics`. This is this window's — the chart painter's and the wrapped cells' and
-//! the row heights' — so a label, a wrapped line and the row that holds it agree about how wide
-//! text is. Windows only: it needs a DC.
+//! Measuring a cell's text as it is drawn: GDI for both (decision 3). `grind_core::layout::wrap`
+//! breaks a wrapped cell and `grind_sheet::autoheight` sizes a row, both through a `Metrics`; this
+//! is the window's — for the chart painter, wrapped cells and row heights — so a label, a wrapped
+//! line and its row agree about width. Windows only: it needs a DC.
 
 #![cfg(windows)]
 

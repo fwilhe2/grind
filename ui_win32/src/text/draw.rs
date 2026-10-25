@@ -2,20 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A laid-out document, painted onto a device context.
-//!
-//! Two halves, the same split `sheet/draw.rs` makes: **what a line is made of is decided in
-//! portable code** — `grind_text::paint`'s, since the macOS page would have copied it: `pieces`
-//! cuts a line at every run boundary, `covered` and `band` say which part of it is selected,
-//! `bullet` says what marks a list item — and only putting pixels down needs Windows.
-//!
-//! The Windows half draws **run by run through `crate::metrics::Face`**, never with `DrawTextW`.
-//! That is decision 3 rather than a preference: the core placed every caret with GDI's own
-//! advance array, so the ink has to be placed with the same one or the caret and the glyph
-//! disagree. `Face::draw_run` is `ExtTextOutW` with exactly those advances.
-//!
-//! `paint` takes an `HDC` and a `Frame` and nothing about the window — no `HWND` — which is
-//! what makes `--render-to` a second caller rather than a second drawing path.
+//! A laid-out document painted onto a device context. **What a line is made of is portable** —
+//! `grind_text::paint`'s `pieces`, `covered`, `band` and `bullet` — and only putting pixels down
+//! needs Windows. The Windows half draws **run by run through `crate::metrics::Face`**, never
+//! `DrawTextW`: the core placed every caret with GDI's own advances, so the ink is placed with the
+//! same ones (`Face::draw_run`, decision 3). `paint` takes an `HDC` and a `Frame`, so
+//! `--render-to` is a second caller.
 
 /// The caret's width in pixels at 100%, and how far a selection's wash moves the ground towards
 /// the theme's selection colour. The wash matches the grid's, so the two panes look like one
@@ -23,14 +15,10 @@
 pub const CARET_W: f64 = 2.0;
 pub const WASH: f64 = 0.30;
 
-/// How far a table's rule moves the page towards the text's own ink — `ui_text_gtk`'s
-/// `Palette::rule`, the foreground at 28%, so a table is one weight in both desktop windows.
-///
-/// Deliberately not the grid pane's `grid_line`: that is the hairline of an *infinite* sheet and
-/// is meant to recede, where a table in a document is structure a reader follows across a row.
-/// Measured in the first frames that drew one, `grid_line` came out 228 on 255 — an empty table
-/// all but vanished, which was the bug this replaced in a quieter form. This one is quieter than
-/// the text and stronger than the furniture, in either palette.
+/// How far a table's rule moves the page towards the text's ink — the foreground at 28%, as the
+/// GNOME window draws one. Not the grid's `grid_line`, which is the hairline of an infinite sheet
+/// and recedes, where a table in a document is structure a reader follows; at `grid_line`'s weight
+/// an empty table all but vanished.
 pub const RULE_INK: f64 = 0.28;
 
 #[cfg(windows)]
@@ -56,11 +44,8 @@ mod windows_impl {
 
     use super::{CARET_W, WASH};
 
-    /// One block, ready to draw: where it goes, what is in it, and how its lines broke.
-    ///
-    /// The layout is a value the window computed and will throw away, which is the same contract
-    /// `App::get_viewport` offers for content — a shell that kept one would have a second copy of
-    /// the document's shape and no way to know when it went stale.
+    /// One block, ready to draw: where it goes, what is in it, and how its lines broke — computed
+    /// and thrown away, as `App::get_viewport` content is.
     pub struct Painted<'a> {
         pub slot: Slot,
         pub view: &'a BlockView,
@@ -101,22 +86,16 @@ mod windows_impl {
         pub font_px: i32,
         pub body_px: i32,
         pub face: &'a str,
-        /// Which strip control the pointer is over, if any — the whole of this pane's hover
-        /// feedback, and presentation state like the selection: the core is never told.
-        ///
-        /// A control with no fill of its own is invisible until you point at it, which is what
-        /// lets nine of them sit in a row without the strip looking like a wall of boxes. Without
-        /// this the row is dead under the pointer, which is the single thing that most makes a
-        /// custom-drawn window feel unlike the rest of the system.
+        /// Which strip control the pointer is over — this pane's hover feedback, presentation
+        /// state. A control with no fill of its own is invisible until pointed at, which lets nine
+        /// sit in a row without a wall of boxes; without hover the row is dead under the pointer.
         pub hover: Option<StripHit>,
         /// Which one is held down, if any — drawn a step quieter than a hover, and the reason
         /// this strip acts on *release*: a press you can take back has to look pressed first.
         pub pressed: Option<StripHit>,
-        /// Which of the strip's three buttons — Bold, Italic, Underline — apply to the selection,
-        /// or to the style the next character typed would carry when there is none. Presentation
-        /// state, computed by the caller for the same reason the selection is: the core is never
-        /// told which of its own answers a shell drew a button in response to. Bold, Italic,
-        /// Underline, Strike, Code — [`super::super::geom::Page::strip_buttons`]'s own order.
+        /// Which of the strip's toggles apply to the selection, or to the style the next character
+        /// typed would carry when there is none — Bold, Italic, Underline, Strike, Code,
+        /// [`super::super::geom::Page::strip_buttons`]' order. Presentation state.
         pub format: [bool; 5],
         /// The family and size the strip's two pickers show, already resolved to what
         /// `text_style_here` says the selection or the next keystroke agrees on — `None` draws
@@ -127,21 +106,17 @@ mod windows_impl {
         /// is what *Automatic* looks like.
         pub color: Option<&'a str>,
         pub highlight: Option<&'a str>,
-        /// `doc/view-modes.md`'s name overlay, this pane's answer to it — `:names`' equivalent
-        /// for a document with no cells. A bookmark contributes no characters of its own
-        /// (`doc/text-core.md` §3.6), so nothing a reader sees says it is there; `BlockView::marks`
-        /// is where the reader lives, the same list `grind text view --names` prints, and this is
-        /// that list drawn beside the text it anchors rather than spliced into it.
+        /// The name overlay for a document with no cells. A bookmark contributes no characters, so
+        /// nothing says it is there; `BlockView::marks` is the list `grind text view --names`
+        /// prints, drawn beside the text it anchors rather than spliced in.
         pub names: bool,
         /// The misspelt words in the blocks on screen (`App::misspellings`), less the one still
         /// being typed — drawn as a squiggle under each. Empty with spelling off.
         pub misspelt: &'a [grind_text::Misspelling],
     }
 
-    /// Draw one frame of the document onto `dc`.
-    ///
-    /// Every pixel of the client area is written, which is what lets `WM_ERASEBKGND` be answered
-    /// with "already done" — see `gdi::BackBuffer`.
+    /// Draw one frame of the document onto `dc`, writing every pixel of the client area, so
+    /// `WM_ERASEBKGND` can answer "already done" (`gdi::BackBuffer`).
     pub fn paint(dc: HDC, frame: &Frame) {
         let page = frame.page;
         let theme = frame.theme;
@@ -162,12 +137,10 @@ mod windows_impl {
         let body = page.body();
         let (column_x, _) = page.text_column();
 
-        // **The page** (W10): the document's own surface, standing on the window's backdrop.
-        // Drawn before anything on it and clipped to the body by hand, since GDI's clipping
-        // region is state on the DC and this file sets none — a card whose top is a thousand
-        // pixels above the window is what a document scrolled that far should have, and a
-        // `RoundRect` given those coordinates would put its corner off-screen, which is exactly
-        // right, but its *other* corner has to stay on.
+        // **The page**: the document's surface on the window's backdrop, drawn first and clipped
+        // to the body by hand, since this file sets no clip region. A card whose top is far above
+        // the window is right for a document scrolled that far, as long as its other corner stays
+        // on screen.
         {
             let card = page.page_card(frame.height);
             let radius = scale(crate::theme::space::RADIUS_SURFACE, page.dpi).round() as i32;
@@ -192,10 +165,9 @@ mod windows_impl {
                 );
             }
         }
-        // **A table's grid**, under its text — `ui_text_gtk`'s rule, at `RULE_INK`. Each edge is
-        // a one-pixel band *on* the box's outer line (right and bottom at `left + width` and
-        // `top + height`), which is where the neighbour's left and top edges are too: a shared
-        // edge is drawn twice onto the same pixels, and so stays one pixel.
+        // **A table's grid**, under its text, at `RULE_INK`. Each edge is a one-pixel band *on*
+        // the box's outer line, where the neighbour's edges are too, so a shared edge is drawn
+        // twice onto the same pixels and stays one pixel.
         let rule = scale(RULE, page.dpi).round().max(1.0) as i32;
         let rule_ink = theme.background.blend(theme.text, super::RULE_INK);
         for cell in frame.cells {
@@ -234,11 +206,9 @@ mod windows_impl {
                 .faces
                 .face(&painted.view.kind, painted.view.style.as_deref());
 
-            // A block that is a picture — optionally with its caption's text — is drawn as one
-            // rather than as the placeholder character `RunView::text` returns everywhere else
-            // (`grind_text::picture_of`'s own doc comment). Decoding happens here rather than in
-            // `text::geom::flow_of`'s picture hook a second time — `image.rs`'s own `ponytail`
-            // names the cost and the trigger for a cache.
+            // A picture block, optionally with its caption's text, is drawn as one rather than as
+            // the placeholder character `RunView::text` returns (`grind_text::picture_of`).
+            // Decoded here, not a second time in `text::geom::flow_of`'s hook.
             if let Some((image, caption)) = grind_text::picture_of(painted.view) {
                 let width = painted.slot.width;
                 if let Some(decoded) = crate::image::decode(&image.data) {
@@ -303,13 +273,10 @@ mod windows_impl {
                 }
 
                 for piece in pieces(&painted.view.runs, line.start, line.end) {
-                    // A run the document highlighted but gave no colour to is ODF's *automatic*
-                    // over that highlight, not over the page — the grid's own rule
-                    // (`theme::automatic_ink`), and the case that matters here is a yellow
-                    // highlight in a dark palette, where the theme's near-white ink vanishes.
-                    //
-                    // And a run the document *did* colour is lifted until it reads on the dark
-                    // page (`theme::document_ink`) — the navy word that vanished there.
+                    // A run highlighted but uncoloured is ODF's *automatic* over the highlight,
+                    // not the page (`theme::automatic_ink`) — the theme's near-white vanishes on a
+                    // yellow highlight in the dark palette. A run the document coloured is lifted
+                    // until it reads on the dark page (`theme::document_ink`).
                     let fill = piece
                         .props
                         .background
@@ -327,8 +294,8 @@ mod windows_impl {
                         theme,
                     );
                     // Every segment is placed at the x the **core** measured for its first
-                    // character, never at where the last one happened to end — which is what
-                    // makes a tab and a line break work: both are measured and neither is drawn.
+                    // character, never where the last ended — which makes a tab and a line break
+                    // work: both measured, neither drawn.
                     for (start, segment) in drawable(piece.start, piece.text) {
                         face.draw_run(
                             dc,
@@ -381,12 +348,9 @@ mod windows_impl {
                     );
                 }
 
-                // `doc/view-modes.md`'s name overlay: every bookmark anchored to a character on
-                // this line, drawn beside it rather than spliced into the text the way
-                // `grind text view --names` prints it — splicing here would move every offset
-                // after it, which is exactly the caret-and-ink disagreement decision 3 exists to
-                // rule out. Muted, the same "quieter, not louder" rule the grid's own name
-                // overlay follows.
+                // The name overlay: every bookmark on this line drawn beside it, not spliced into
+                // the text, which would move every offset after it — the caret-and-ink
+                // disagreement decision 3 rules out. Muted, like the grid's name overlay.
                 if frame.names {
                     for (offset, name) in &painted.view.marks {
                         if painted.layout.line_at(*offset) != number {
@@ -415,10 +379,8 @@ mod windows_impl {
         // it, and drawing them second is cheaper than clipping the loop above. The chrome is set
         // in the shell font at the shell's size — it is the *window* talking, not the document.
         if let Some(notice) = frame.banner.filter(|_| page.banner_h > 0.0) {
-            // An inset card with a stripe down its leading edge — the grid's own notice bar, to
-            // the pixel (W9 gave them the stripe, W10 the card): two panes in one window that say
-            // things in two different-looking bands are two programs in one binary, which is the
-            // thing `Pane` exists not to be.
+            // An inset card with a stripe down its leading edge, as the grid's notice bar is: two
+            // panes saying things in different-looking bands would be two programs in one binary.
             let body_font = Font::new(frame.face, frame.body_px, false);
             let _font = Selected::font(dc, &body_font);
             let card = crate::sheet::geom::card_in(page.banner(), page.dpi);
@@ -491,13 +453,10 @@ mod windows_impl {
         draw_strip(dc, page, theme, frame);
     }
 
-    /// The format strip: five toggles, pressed in when [`Frame::format`] says the property
-    /// applies, then the Family and Size pickers, the two colour swatches and *Clear*.
-    /// `doc/windows-shell.md`'s admission test for this surface — "a property of the
-    /// selection" — is exactly `App::char_style`, so this is the drawn half of what
-    /// `super::super::super::text_emphasise` and `super::super::super::text_format` already read
-    /// and write; a control only decides whether to wash its own ground or draw a swatch before
-    /// drawing the same label every one of its callers agrees on.
+    /// The format strip: five toggles, pressed when [`Frame::format`] says so, the Family and Size
+    /// pickers, the two colour swatches, and *Clear*. Its admission test — a property of the
+    /// selection — is exactly `App::char_style`, so this is the drawn half of what
+    /// `text_emphasise` and `text_format` read and write.
     fn draw_strip(dc: HDC, page: &Page, theme: Theme, frame: &Frame) {
         use crate::strip;
         use crate::theme::Interaction;

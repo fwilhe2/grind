@@ -2,26 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The "Check Document" dialog — D6, `doc/dsl.md` §4.3. **Portable, and tested on any host**:
-//! turning a [`Report`] into the strings a listbox can show is arithmetic over data, the same
-//! split every other file in this crate makes.
-//!
-//! There is no drawn pane here, unlike `ui_tui`'s `problems.rs` or the two GTK windows' own
-//! dialogs: `win.rs`'s `check_document` builds this list and hands it to `dialog::choose`, the
-//! same generic chooser popup `text_outline` and `text_block_kind_dialog` already use, because a
-//! second list widget for one more list would be a second way of showing what is really the same
-//! question — "pick one of these rows" — those two already answer. Every row is a jump: picking
-//! one hands `win.rs` back the [`Diagnostic`](grind_core::lint::Diagnostic) it came from, and `at`
-//! is an address either pane's own go-to machinery already understands.
+//! The Check Document dialog (`doc/dsl.md` §4.3) — portable: a [`Report`] turned into the strings
+//! a listbox shows. `win.rs`'s `check_document` hands the list to `dialog::choose`, the chooser
+//! the outline uses, rather than a second list widget. Every row is a jump: picking one hands back
+//! the [`Diagnostic`](grind_core::lint::Diagnostic) it came from, whose `at` either pane's go-to
+//! reads.
 
 use grind_core::lint::{Report, Severity};
 
 /// One line per finding: a severity mark, then the [`Diagnostic`](grind_core::lint::Diagnostic)'s
-/// own `Display`, which already reads `{at}: {severity}: {message} [{rule}]` — the shape every
-/// compiler in the world prints.
-///
-/// In the same order `Report`'s own `diagnostics` holds them (already sorted, worst first), so a
-/// row's position in this list is the index `dialog::choose` hands back.
+/// `Display` — `{at}: {severity}: {message} [{rule}]`, a compiler's shape. In `Report`'s own
+/// order, worst first, so a row's position is the index `dialog::choose` returns.
 pub fn rows(report: &Report) -> Vec<String> {
     report
         .diagnostics
@@ -30,8 +21,7 @@ pub fn rows(report: &Report) -> Vec<String> {
         .collect()
 }
 
-/// The same three glyphs `ui_tui::problems::mark` draws — chosen independently, for the same
-/// reason: a shell that could draw colour would use it, and a `LISTBOX` cannot.
+/// One glyph per severity, the terminal's three, since a `LISTBOX` cannot draw colour.
 pub fn mark(severity: Severity) -> char {
     match severity {
         Severity::Error => '!',

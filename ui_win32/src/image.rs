@@ -2,14 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Decoding an inserted picture's bytes into pixels — WIC, and the one namespace here that is
-//! not GDI or a dialog.
-//!
-//! `ui_text_gtk`'s `texture_of` reaches gdk-pixbuf's loaders through `gdk::Texture::from_bytes`;
-//! this is the same question asked of the platform this shell is on. **Decodes on every call**
-//! rather than caching — `ui_text_gtk`'s own `ponytail` on `texture_of` names the same trade,
-//! and the trigger for a cache is the same one: a document with a large picture whose repaint
-//! cost becomes visible, not before.
+//! Decoding an inserted picture's bytes into pixels, through WIC. **Decodes on every call** rather
+//! than caching; a cache is worth it when a large picture's repaint cost shows.
 
 use windows::Win32::Graphics::Gdi::HDC;
 use windows::Win32::Graphics::Imaging::{
@@ -38,10 +32,9 @@ fn stream(data: &[u8]) -> Option<IStream> {
     unsafe { SHCreateMemStream(Some(data)) }
 }
 
-/// The one frame this build reads — index 0, which is every still image and the first frame of
-/// an animated one. WIC has no opinion about a corrupt file or a format nobody's decoder
-/// understands beyond `Err`, which becomes `None` here the same way a bad element in the XML
-/// becomes `Ignore` rather than a failure (R5's tolerance, over a picture instead of markup).
+/// The one frame read — index 0, every still image and an animated one's first frame. WIC answers
+/// a corrupt file or unknown format with `Err`, which is `None` here (R5's tolerance, over a
+/// picture).
 fn frame(factory: &IWICImagingFactory, data: &[u8]) -> Option<IWICBitmapFrameDecode> {
     let stream = stream(data)?;
     // SAFETY: `factory` and `stream` are live COM objects; the decoder and frame are owned
@@ -74,11 +67,9 @@ pub fn size(data: &[u8]) -> Option<(u32, u32)> {
     (w > 0 && h > 0).then_some((w, h))
 }
 
-/// Decode `data` to premultiplied BGRA — what actually drawing the picture needs.
-///
-/// The format converter is WIC's own answer to "whatever this file's native pixel format is,
-/// give me the one GDI's `AlphaBlend` wants" — a paletted GIF, a CMYK JPEG and an indexed PNG
-/// all come out the same shape, so nothing above this reads a format tag.
+/// Decode `data` to premultiplied BGRA. WIC's format converter turns any native format — a
+/// paletted GIF, a CMYK JPEG, an indexed PNG — into the one `AlphaBlend` wants, so nothing above
+/// reads a format tag.
 pub fn decode(data: &[u8]) -> Option<Decoded> {
     let factory = factory()?;
     let frame = frame(&factory, data)?;

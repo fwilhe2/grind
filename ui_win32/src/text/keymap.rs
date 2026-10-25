@@ -2,30 +2,19 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Which key means what in the text pane, and where a word ends — as pure functions.
+//! Which key means what in the text pane, and where a word ends — pure functions, **no Windows
+//! types** and no second virtual-key table: [`crate::sheet::keymap::key_for`] makes the [`Key`],
+//! and this starts there.
 //!
-//! **No Windows types at all**, and not even a virtual-key table: [`crate::sheet::keymap::key_for`]
-//! already turns a `WM_KEYDOWN` into a [`Key`], and its constants are pinned against `winuser.h`
-//! by a `cfg(windows)` test there. A second table here would be a second thing to get wrong, so
-//! this module starts where that one stops — a [`Key`] and the modifiers, in, and what it means
-//! to a caret, out.
-//!
-//! ## The selection is presentation state
-//!
-//! An anchor and an active caret, and nothing else; the core is never told about it. A range
-//! reaches `App` as two [`Caret`]s when something is actually *done* to it — copying it, erasing
-//! it, formatting it — which is the same arrangement the grid has and the same one the other
-//! three shells have.
+//! The selection is presentation state: an anchor and an active caret, reaching `App` as two
+//! [`Caret`]s when something is done to it — copied, erased, formatted.
 
 use grind_text::Caret;
 
 use crate::sheet::keymap::{Key, Mods};
 
-/// What a motion moves by.
-///
-/// Every one of these is defined in terms of a **line** except the two that are defined in terms
-/// of characters, and that is `doc/text-layout.md`'s whole argument for Path C: Down, Home and End
-/// are meaningless without line breaking, and line breaking is `grind_core::layout`'s.
+/// What a motion moves by. Every one but the two by characters is defined in terms of a **line**,
+/// which is why line breaking is `grind_core::layout`'s (`doc/text-layout.md`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Motion {
     /// One character left or right, across a block boundary at either end.
@@ -57,19 +46,17 @@ pub enum Action {
     },
     /// Enter: one block becomes two.
     Split,
-    /// Tab or Shift+Tab. Structural where `grind_text::indent_kind` says there is structure to
-    /// change — it nests a list item, un-nests one, or starts a list at the front of a block —
-    /// and a literal `text:tab` character otherwise, which is what leaves the key free to mean
-    /// one in the middle of a sentence.
+    /// Tab or Shift+Tab: structural where `grind_text::indent_kind` says there is structure to
+    /// change — nesting, un-nesting, or starting a list at a block's front — and a literal
+    /// `text:tab` otherwise.
     Tab {
         back: bool,
     },
 }
 
-/// What a key means, or `None` for one this pane does not claim — which must go back to
-/// `DefWindowProc` so that Alt+F4, the system menu and Windows' own accelerators keep working.
-///
-/// `page` is how many lines a Page Up/Down moves, which the window knows and this does not.
+/// What a key means, or `None` for one this pane does not claim, which goes back to
+/// `DefWindowProc` so Alt+F4, the system menu and Windows' accelerators work. `page` is how many
+/// lines Page Up/Down moves, which the window knows.
 pub fn action_for(key: Key, mods: Mods, page: isize) -> Option<Action> {
     if mods.alt {
         return None;
@@ -100,10 +87,7 @@ pub fn action_for(key: Key, mods: Mods, page: isize) -> Option<Action> {
     }
 }
 
-/// The two ends of a selection, in document order.
-///
-/// A caret is a block and an offset, so "which is first" is a tuple comparison and not a
-/// subtraction — a later block always wins however long the earlier one is.
+/// The two ends of a selection, in document order — a tuple comparison of block and offset.
 pub fn ordered(anchor: Caret, active: Caret) -> (Caret, Caret) {
     match (anchor.block, anchor.offset) <= (active.block, active.offset) {
         true => (anchor, active),
@@ -111,15 +95,11 @@ pub fn ordered(anchor: Caret, active: Caret) -> (Caret, Caret) {
     }
 }
 
-/// Where the word boundary is, `offset` characters into `text`, going one way or the other.
-///
-/// Windows' own rule, which is not the same as vi's: moving **right** stops at the start of the
-/// next word (so repeated Ctrl+Right walks the beginnings), and moving **left** stops at the
-/// start of the word the caret is in or just past. Punctuation counts as a word so that walking
-/// through `a, b` does not skip the comma.
-///
-/// Returns `None` at the end of the block in that direction, which is the caller's cue to carry
-/// into the neighbouring block — the same shape [`grind_text::App::caret_line`] uses.
+/// Where the word boundary is, `offset` characters into `text`, one way or the other — Windows'
+/// rule: **right** stops at the next word's start, **left** at the start of the word the caret is
+/// in or just past, and punctuation counts as a word, so `a, b` does not skip the comma. `None` at
+/// the block's end in that direction, the cue to carry into the neighbour, as
+/// [`grind_text::App::caret_line`] does.
 pub fn word_boundary(text: &str, offset: usize, forward: bool) -> Option<usize> {
     let chars: Vec<char> = text.chars().collect();
     let mut at = offset.min(chars.len());

@@ -2,51 +2,34 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What colour everything is, how big it is, and which of the two sets Windows is asking for.
+//! What colour everything is, how big it is, and which of the two sets Windows asks for. The
+//! **tokens and the choice between them are portable** and tested on any host; only the registry
+//! read, the dark title bar and the rounded corner need Windows.
 //!
-//! Split the way the whole crate is: the **tokens and the choice between the two are portable**
-//! and tested on any host, and only the registry read, the dark title bar and the rounded window
-//! corner need Windows.
+//! ## Why there is a palette here
 //!
-//! ## Why there is a palette here at all
+//! The GTK window takes every colour from the theme; Win32 has no theme that works to ask.
+//! `GetSysColor` is the trap: its values have not followed light/dark since Windows 8 —
+//! `COLOR_WINDOW` is white on a Windows 11 machine set to dark — so a grid drawn from it is white
+//! inside a dark title bar. What Windows exposes is a **boolean**, `AppsUseLightTheme` under
+//! `HKCU\…\Themes\Personalize`, and every application following the system theme, Microsoft's
+//! included, reads it and supplies its own two palettes. Two exceptions, as in GTK: a colour the
+//! **document** chose is drawn as it is, and `grind_core::style::PALETTE` is what a shell offers.
 //!
-//! `doc/sheet-shell.md` is emphatic that the GTK window takes every colour from the theme and
-//! never writes a literal, and this file looks at first like a violation of that rule. It is
-//! not, because the rule's *reason* does not carry across: GTK has a theme to ask, with named
-//! colours that follow the user's choice, and Win32 does not have one that works.
+//! ## Where the numbers come from
 //!
-//! `GetSysColor` is the obvious candidate and it is a trap. Its values have not tracked the
-//! user's light/dark choice since Windows 8 — `COLOR_WINDOW` is white on a Windows 11 machine
-//! set to dark, because those constants are pinned to the old high-contrast-era semantics that
-//! desktop applications depend on. An application that asked it would draw a white grid inside
-//! a dark title bar. What Windows actually exposes is a **boolean** — `AppsUseLightTheme` under
-//! `HKCU\…\Themes\Personalize` — and every application that follows the system theme, Microsoft's
-//! own included, reads that and supplies its own two palettes. So that is what this does.
+//! **Fluent 2's neutral ramp**, resolved to opaque values: Fluent states most surface tokens as
+//! white or black at some alpha over the layer beneath (`ControlFillColorDefault` is `#FFFFFF` at
+//! 70% in light, 5.8% in dark), and `FillRect` has no alpha, so the composite is done once here —
+//! [`Rgb::blend`]'s move applied to the palette.
 //!
-//! Two exceptions, and they are the same two the GTK window makes: a colour the **document**
-//! chose is the document's and is drawn verbatim, and `grind_core::style::PALETTE` is the list a
-//! shell *offers*. Neither is theming.
-//!
-//! ## Where the numbers come from — *W10*
-//!
-//! The tables below are **Fluent 2's neutral ramp**, resolved to opaque values. Fluent states
-//! most of its surface tokens as a white or black at some alpha over the layer beneath
-//! (`ControlFillColorDefault` is `#FFFFFF` at 70% in light, `#FFFFFF` at 5.8% in dark, and so
-//! on), and GDI has no alpha in `FillRect` — so the composite is done once, here, and written
-//! down as the colour it comes out as. That is the same move [`Rgb::blend`] already made for the
-//! selection wash, applied to the whole palette.
-//!
-//! The consequence worth knowing: this shell has **three grounds and not one**. A window is a
-//! [`Theme::backdrop`] with the chrome on it, a [`Theme::background`] where the document is (the
-//! grid's paper, the text pane's page), and a [`Theme::card`] for the things you type in and
-//! click. Fluent calls those the base, a layer and a control fill; the whole reason the W9 chrome
-//! looked flat is that it had one ground for all three.
+//! So there are **three grounds**: [`Theme::backdrop`], the window with its chrome;
+//! [`Theme::background`], where the document is (the grid's paper, the text pane's page); and
+//! [`Theme::card`], what you type in and click — Fluent's base, layer and control fill.
 
-/// A colour, as the three bytes a document and a human both write it in.
-///
-/// Not a `COLORREF`: that is a Windows type with the components in the other order, and keeping
-/// this the right way round means the tables below can be read against a hex colour without
-/// mentally swapping the ends. [`Rgb::colorref`] does the swap, once.
+/// A colour as the three bytes a document and a human write it in — not a `COLORREF`, which has
+/// the components the other way round, so the tables read against a hex colour. [`Rgb::colorref`]
+/// swaps, once.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rgb(pub u8, pub u8, pub u8);
 
@@ -57,13 +40,10 @@ impl Rgb {
         u32::from(r) | (u32::from(g) << 8) | (u32::from(b) << 16)
     }
 
-    /// This colour `t` of the way towards another, per channel.
-    ///
-    /// The selection wash is what needs it, and needs it *here* rather than at the drawing
-    /// call: GDI has no alpha in `FillRect`, so "a translucent blue over whatever the cell
-    /// already is" has to be computed as an opaque colour before anything is filled. Doing the
-    /// arithmetic in portable code is what makes the wash over a document's own red the same
-    /// question as the wash over the theme's ground, and testable without a device context.
+    /// This colour `t` of the way towards another, per channel. The selection wash needs it here,
+    /// not at the drawing call: `FillRect` has no alpha, so "a translucent blue over whatever the
+    /// cell is" is an opaque colour computed first — in portable code, so a wash over a document's
+    /// red is testable without a device context.
     pub fn blend(self, other: Rgb, t: f64) -> Rgb {
         let t = t.clamp(0.0, 1.0);
         let mix = |a: u8, b: u8| (f64::from(a) + (f64::from(b) - f64::from(a)) * t).round() as u8;
@@ -79,11 +59,8 @@ impl Rgb {
         grind_core::color::parse(hex).map(Rgb::from)
     }
 
-    /// WCAG relative luminance — the perceptual weight of a colour, on 0.0 to 1.0.
-    ///
-    /// Public rather than a test helper because [`Rgb::contrast`] is what decides whether a
-    /// **user's own accent colour** is legible on this shell's grounds, and that decision has to
-    /// be made at run time on a machine nobody here can see (see [`accent_for`]).
+    /// WCAG relative luminance, 0.0 to 1.0. Public because [`Rgb::contrast`] decides at run time
+    /// whether a **user's own accent** is legible on these grounds ([`accent_for`]).
     pub fn luminance(self) -> f64 {
         grind_core::color::luminance(self.into())
     }
@@ -95,12 +72,10 @@ impl Rgb {
         grind_core::color::contrast(self.into(), other.into())
     }
 
-    /// Hue, saturation and lightness — the space a tint ramp is built in.
-    ///
-    /// Windows derives `AccentLight1..3` and `AccentDark1..3` from the accent the user picked by
-    /// moving its *lightness* and leaving the hue alone, which is why this is here rather than a
-    /// blend towards white: blending desaturates, and an accent that desaturates on a dark theme
-    /// stops looking like the colour the user chose.
+    /// Hue, saturation and lightness — the space a tint ramp is built in. Windows derives
+    /// `AccentLight1..3` and `AccentDark1..3` from the user's accent by moving its *lightness* and
+    /// keeping the hue; blending towards white desaturates, and an accent that desaturates stops
+    /// looking like the one chosen.
     pub fn hsl(self) -> (f64, f64, f64) {
         grind_core::color::hsl(self.into())
     }
@@ -136,29 +111,20 @@ pub enum Mode {
 /// which the icon and both GTK apps already use.
 pub const SUITE_BLUE: Rgb = Rgb(0x00, 0x74, 0xd9);
 
-/// The contrast a shape has to reach against the ground it is drawn on to count as visible.
-///
-/// WCAG's own floor for a non-text element. The accent is a one- to two-pixel line in places
-/// (the selection's edge, the bar under a header button), so this is exactly the number that
-/// decides whether a user's chosen accent can be used as it is or has to be moved.
+/// The contrast a shape must reach against its ground to count as visible — WCAG's floor for a
+/// non-text element, since the accent is a one- or two-pixel line in places (the selection's edge,
+/// a header button's bar).
 const VISIBLE: f64 = 3.0;
 
-/// The accent, as the tint of `base` that can actually be seen on `mode`'s ground.
+/// The accent, as the tint of `base` that can be seen on `mode`'s ground. The accent as the user
+/// picked it can vanish as a one-pixel edge; WinUI never paints `SystemAccentColor` on a surface
+/// but `SystemAccentColorDark1` on a light one and `SystemAccentColorLight2` on a dark one, tints
+/// chosen to read. This does the same, then keeps moving the lightness until [`Rgb::contrast`]
+/// against the ground clears [`VISIBLE`], since fixed steps promise nothing about a particular
+/// colour.
 ///
-/// **This is decision 9's answer, reversed in W10 and reversed for a stated reason.** W9 refused
-/// to read the system accent at all, because "half the values in that picker are colours a
-/// one-pixel selection edge disappears into". That is true of the accent *as the user picked it*
-/// and false of the accent as Windows itself draws it: WinUI never paints `SystemAccentColor`
-/// on a surface, it paints `SystemAccentColorDark1` on a light one and `SystemAccentColorLight2`
-/// on a dark one, and those are tints of the same hue at a lightness chosen to read. So this
-/// does the same thing — and then, because a ramp of fixed steps still cannot promise anything
-/// about a *particular* colour, it keeps moving the lightness until [`Rgb::contrast`] against
-/// the ground clears [`VISIBLE`].
-///
-/// The result is a function of the accent alone, so the whole of "does this shell work with the
-/// user's colour" is testable on a machine with no Windows and no user — see the sweep in this
-/// module's tests, which checks every hue at every lightness rather than the forty-eight swatches
-/// the Settings app happens to offer today.
+/// A function of the accent alone, so "does this work with the user's colour" is tested with no
+/// Windows and no user: the sweep in the tests checks every hue at every lightness.
 pub fn accent_for(base: Rgb, mode: Mode) -> Rgb {
     let ground = match mode {
         Mode::Light => LIGHT_GROUND,
@@ -197,16 +163,11 @@ pub fn accent_for(base: Rgb, mode: Mode) -> Rgb {
 const LIGHT_GROUND: Rgb = Rgb(0xff, 0xff, 0xff);
 const DARK_GROUND: Rgb = Rgb(0x2b, 0x2b, 0x2b);
 
-/// Every colour this shell draws with, other than the ones a document chose for itself.
-///
-/// A struct rather than a set of constants so that the drawing code takes the palette as an
-/// argument and cannot reach past it — which is what makes `--render-to` able to produce a dark
-/// screenshot on a light machine, and what would make a high-contrast palette a third table
-/// rather than a third code path.
-///
-/// **Three grounds** (W10), which is the shape of the whole thing and the part worth reading
-/// first: [`Theme::backdrop`] is the window, [`Theme::background`] is the document, and
-/// [`Theme::card`] is a control. Everything else is ink on one of those or a line between two.
+/// Every colour this shell draws with, other than a document's own. A struct taken as an argument,
+/// so the drawing code cannot reach past it — which lets `--render-to` draw a dark frame on a
+/// light machine, and would make high contrast a third table rather than a third code path.
+/// **Three grounds**: [`Theme::backdrop`] the window, [`Theme::background`] the document,
+/// [`Theme::card`] a control; everything else is ink on one of them or a line between two.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Theme {
     pub mode: Mode,
@@ -215,22 +176,19 @@ pub struct Theme {
     /// the format strip and the status bar all sit on it, and so does the surround the text
     /// pane's page floats in. Never the ground of anything the *document* owns.
     pub backdrop: Rgb,
-    /// The document's ground: the grid's paper, and the text pane's page. A layer *above* the
-    /// backdrop in both palettes — lighter in light mode and lighter in dark mode too, which is
-    /// Fluent's layering rather than an inversion, and is what makes the document read as a sheet
-    /// of something laid on the window.
+    /// The document's ground: the grid's paper and the text pane's page — a layer *above* the
+    /// backdrop in both palettes, lighter in light and dark alike, Fluent's layering rather than
+    /// an inversion.
     pub background: Rgb,
     /// A control's ground at rest: the name box, the formula bar, a strip button. Fluent's
     /// *ControlFillColorDefault*, composited onto the backdrop.
     pub card: Rgb,
-    /// The same control with the pointer on it, and pressed. Fluent's *Secondary* and *Tertiary*
-    /// control fills — and in the light palette the pressed one is **quieter** than the hover,
-    /// which is not a mistake: pressing recedes and hovering lifts.
+    /// The same control hovered, and pressed — Fluent's *Secondary* and *Tertiary* fills. In
+    /// light, pressed is quieter than hover on purpose: pressing recedes, hovering lifts.
     pub card_hover: Rgb,
     pub card_pressed: Rgb,
-    /// The ground a control with **no** fill of its own takes when the pointer is on it —
-    /// Fluent's *Subtle* fills, which is what a toggle in a strip uses so that a row of them
-    /// reads as one band until you point at one.
+    /// The ground a control with **no** fill takes under the pointer — Fluent's *Subtle* fills, so
+    /// a row of toggles reads as one band until one is pointed at.
     pub subtle_hover: Rgb,
     pub subtle_pressed: Rgb,
 
@@ -242,14 +200,10 @@ pub struct Theme {
     pub divider: Rgb,
     /// The hairlines between cells.
     pub grid_line: Rgb,
-    /// The hairlines **past the last row and column the document uses** — the same lines, drawn
-    /// quieter, so the sheet somebody wrote reads as the subject and the empty rest of an
-    /// infinite grid as the paper it is on.
-    ///
-    /// Not a border round the used range and not a different ground: both of those would be this
-    /// shell inventing a page boundary the document does not have. One tone of grey is the whole
-    /// of it, and `App::used_extent` — the same answer the status bar already reports — is where
-    /// the line falls.
+    /// The hairlines **past the document's last used row and column** — the same lines, quieter,
+    /// so what somebody wrote reads as the subject and the rest as paper. Not a border or a
+    /// different ground, which would invent a page boundary; `App::used_extent` is where the line
+    /// falls.
     pub grid_line_soft: Rgb,
 
     /// Text in a cell, or in a document, that has no colour of its own — Fluent's *TextFillColor
@@ -265,11 +219,10 @@ pub struct Theme {
     /// rather than fixed, because a user's accent can be any lightness at all.
     pub on_accent: Rgb,
 
-    /// The accent, painted neat: the outline round the selection, the bar under a selected header
-    /// button, a checked toggle, the argument being typed.
-    ///
-    /// **The user's own Windows accent** since W10, moved to whichever tint of it reads on this
-    /// palette's ground ([`accent_for`]), and the suite's blue when the system has not said.
+    /// The accent, painted neat: the selection's outline, a selected header button's bar, a
+    /// checked toggle, the argument being typed. **The user's own Windows accent**, moved to the
+    /// tint that reads on this palette ([`accent_for`]), or the suite's blue when the system says
+    /// nothing.
     pub accent: Rgb,
     /// The accent as a *ground* — a wash of it over the backdrop, quiet enough that
     /// [`Theme::accent`] itself is legible on top. A selected header button and a checked strip
@@ -289,10 +242,9 @@ pub struct Theme {
     /// which is what lets the ground behind it stay quiet enough to read a sentence on.
     pub banner_edge: Rgb,
 
-    /// The assist band under the strip while a formula is being typed — the completion offers and
-    /// the signature hint (`sheet/assist.rs`). Its own ground, tinted towards the accent rather
-    /// than towards the notice bar's amber, because it is *help while typing* and not a state the
-    /// document is in — the two can be up at once and must not read as the same thing.
+    /// The assist band's ground while a formula is typed (`sheet/assist.rs`) — tinted towards the
+    /// accent, not the notice bar's amber, since help while typing is not a state the document is
+    /// in and the two can be up at once.
     pub hint: Rgb,
     pub hint_text: Rgb,
 
@@ -339,13 +291,9 @@ const LIGHT: Theme = Theme {
     misspelt: Rgb(0xc4, 0x2b, 0x1c),
 };
 
-/// The dark palette. Not an inversion of the light one: the grid lines are *lighter* than the
-/// ground here and darker than it there, because a line has to be visible against what it sits
-/// on and inverting a light theme's greys puts them the wrong side of it.
-///
-/// The same holds for the layering. [`Theme::background`] is lighter than [`Theme::backdrop`] in
-/// **both** palettes — a document is a layer laid on the window, and a layer catches the light in
-/// Fluent whichever mode it is in.
+/// The dark palette — not an inversion of the light one: grid lines are *lighter* than the ground
+/// here and darker there, since a line must show against what it sits on. [`Theme::background`] is
+/// still lighter than [`Theme::backdrop`]: a layer catches the light in either mode.
 const DARK: Theme = Theme {
     mode: Mode::Dark,
     backdrop: Rgb(0x20, 0x20, 0x20),
@@ -376,18 +324,12 @@ const DARK: Theme = Theme {
     misspelt: Rgb(0xff, 0x99, 0xa4),
 };
 
-/// What colour `doc/view-modes.md`'s role overlay draws each [`grind_sheet::view::CellRole`] in
-/// — `CellRole::hue`, the core's table since the Mac made it a third copy: the
-/// financial-modelling convention it borrows (inputs blue, formulas the ordinary text colour,
-/// another sheet's a third hue) is a property of the *mode*, not of a toolkit, so every shell
-/// agrees on what a colour means.
-/// `None` for [`grind_sheet::view::CellRole::Empty`] — the one role drawn as nothing at all.
-///
-/// A name from `grind_core::style::PALETTE` rather than a literal, which is the one exception
-/// `doc/sheet-shell.md` names for a colour a shell *offers* — this mode offers a legend, not a
-/// document's own choice — for every role but the two that are not a hue at all: a formula's own
-/// marker is the theme's ordinary text colour, and a label's is the theme's tertiary ink, which
-/// is Fluent's own name for "present, but not what you are reading".
+/// The colour the role overlay draws each [`grind_sheet::view::CellRole`] in — `CellRole::hue`,
+/// the core's table, so every client agrees what a colour means (inputs blue, formulas the
+/// ordinary text colour, another sheet's a third hue); `None` for
+/// [`grind_sheet::view::CellRole::Empty`]. A `PALETTE` name rather than a literal, as a colour a
+/// shell offers, except the two roles that are not hues: a formula's marker is the theme's text
+/// colour, a label's its tertiary ink — Fluent's "present, but not what you are reading".
 pub fn role_color(role: grind_sheet::view::CellRole, theme: Theme) -> Option<Rgb> {
     use grind_sheet::view::Hue;
     match role.hue() {
@@ -405,11 +347,8 @@ impl Theme {
         Self::with_accent(mode, None)
     }
 
-    /// This palette with the user's accent colour, if the system named one.
-    ///
-    /// Everything downstream of the accent is derived here rather than at the drawing call, so
-    /// that a shell that reads `theme.accent_soft` cannot get one that does not go with
-    /// `theme.accent`.
+    /// This palette with the user's accent, if the system named one. Everything downstream of the
+    /// accent is derived here, so `theme.accent_soft` always goes with `theme.accent`.
     pub fn with_accent(mode: Mode, system: Option<Rgb>) -> Self {
         let base = match mode {
             Mode::Light => LIGHT,
@@ -425,10 +364,9 @@ impl Theme {
             // stay quiet enough that a header button's letter, drawn in `accent` on top of it, is
             // still readable. A tenth is what does that for every hue.
             accent_soft: base.backdrop.blend(accent, 0.14),
-            // The wash a selected cell's ground moves towards is the accent as the *user* chose
-            // it, not the tint — a wash is diluted to a fifth before it touches a cell, so the
-            // legibility argument that moves the neat colour does not apply to it, and using the
-            // tint here would make a light theme's selection paler than it should be.
+            // The selection wash moves towards the accent as the user chose it, not the tint: a
+            // wash is diluted to a fifth, so the legibility argument does not apply, and the tint
+            // would make a light theme's selection too pale.
             selection: system,
             on_accent: match accent.contrast(Rgb(0, 0, 0)) > accent.contrast(Rgb(0xff, 0xff, 0xff))
             {
@@ -439,17 +377,10 @@ impl Theme {
         }
     }
 
-    /// What the two registry values mean.
-    ///
-    /// `AppsUseLightTheme` is a `REG_DWORD`: 1 is light, 0 is dark, and **a missing value is
-    /// light**. The last part is the one that matters and it is not a guess — a fresh Wine
-    /// prefix has no `Personalize` key at all, which is exactly the case
-    /// `doc/windows-shell.md` names as leaving dark mode untested there.
-    ///
-    /// That value is `0xAABBGGRR` — the ends the other way round from every hex colour a human
-    /// writes, and the alpha byte meaningless — which is why the swap happens here, next to the
-    /// sentence that says so, rather than at the registry read where it would be one more
-    /// unexplained shift among the pointer casts.
+    /// What the two registry values mean. `AppsUseLightTheme` is a `REG_DWORD`: 1 light, 0 dark,
+    /// and **a missing value is light** — a fresh Wine prefix has no `Personalize` key at all.
+    /// `AccentColor` is `0xAABBGGRR` — the ends the other way round from a hex colour, the alpha
+    /// meaningless — so the swap is here, beside the sentence saying so.
     pub fn from_registry_values(theme: Option<u32>, accent: Option<u32>) -> Self {
         let mode = match theme {
             Some(0) => Mode::Dark,
@@ -466,22 +397,17 @@ impl Theme {
     }
 }
 
-/// The type ramp, in pixels at 100% — Fluent 2's, and the sizes are its own names.
-///
-/// Windows 11's body text is **14 epx**, not the 12 a Win32 window has drawn since 1995, and the
-/// single most dated thing about the W9 chrome was that everything in it was set at 13 or below.
-/// A ramp rather than one size is the other half: a status bar and a formula bar are not the same
-/// kind of text, and a window where they are set identically reads as undesigned.
+/// The type ramp, in pixels at 100% — Fluent 2's, by its own names. Windows 11's body text is **14
+/// epx**, not the 12 Win32 windows have drawn since 1995, and a status bar and a formula bar are
+/// not the same kind of text.
 pub mod text {
     /// *Caption* — a label on something else: the header bands, the status bar, a picker's
     /// caption. The one size below body, and never used for anything a person reads a sentence of.
     pub const CAPTION: f64 = 12.0;
     /// *Body* — the shell's own voice: the name box, the formula bar, the notice bar, a menu.
     pub const BODY: f64 = 14.0;
-    /// A cell's own text, which is **not** body: a grid is read by scanning a table, and a
-    /// document's own column widths were chosen against a size near this. Raising it is data
-    /// loss dressed as typography — the numbers stop fitting the columns the document sizes for
-    /// them, which a rendered frame said before this comment did.
+    /// A cell's own text, which is **not** body: a document's column widths were chosen against a
+    /// size near this, and raising it makes the numbers stop fitting the columns sized for them.
     pub const CELL: f64 = 13.0;
     /// Prose in the text pane. Larger than [`CELL`] on purpose: a spreadsheet is read by
     /// scanning and a document by reading, and every word processor there has ever been sets body
@@ -489,12 +415,9 @@ pub mod text {
     pub const PROSE: f64 = 15.0;
 }
 
-/// The spacing ramp, in pixels at 100% — Fluent's 4-pixel grid.
-///
-/// Every measurement in this shell's chrome is one of these or a small multiple, which is what
-/// stops the geometry drifting into arbitrary numbers as features arrive. The two radii are
-/// Fluent's own tokens and there are only two on purpose: 4 for anything you click or type in,
-/// 8 for a surface that holds other things.
+/// The spacing ramp, in pixels at 100% — Fluent's 4-pixel grid; every chrome measurement is one of
+/// these or a small multiple. Two radii, Fluent's: 4 for anything clicked or typed in, 8 for a
+/// surface holding other things.
 pub mod space {
     /// `controlCornerRadius`, and the corner of every field, button and swatch.
     pub const RADIUS: f64 = 4.0;
@@ -504,38 +427,26 @@ pub mod space {
     pub const GAP: f64 = 4.0;
     /// The gap between two *groups* of controls, and between a band's edge and what is in it.
     pub const GROUP: f64 = 12.0;
-    /// A control's height — Fluent's standard, and the reason the strips grew in W10.
+    /// A control's height — Fluent's standard.
     pub const CONTROL_H: f64 = 32.0;
 }
 
-/// The ink for text the document did **not** give a colour to, on a ground the document *did*
-/// choose — ODF's *automatic* colour, resolved.
-///
-/// The theme's own ink wherever that reads, which is every ordinary cell and every ordinary run;
-/// black or white, whichever reads better, where it does not. That last clause is not a nicety —
-/// it is what "automatic" means, and without it a dark theme draws its near-white text on the
-/// pale grey heading row a document chose for itself and the row becomes unreadable. A dark
-/// palette showed exactly that the first time one could be rendered at all (W10's `--dark`), and
-/// the light palette had the same bug waiting on any document with a dark fill.
-///
-/// The threshold is WCAG's floor for small text, because that is what this is.
+/// The ink for text the document gave no colour, on a ground the document *did* choose — ODF's
+/// *automatic* colour, resolved: the theme's ink where it reads, else black or white, whichever
+/// reads better. Without the second clause a dark theme draws near-white text on a pale heading
+/// row the document chose, and a light theme the reverse on a dark fill. The threshold is WCAG's
+/// floor for small text.
 pub fn automatic_ink(ground: Rgb, theme: Theme) -> Rgb {
     grind_core::color::automatic_ink(ground.into(), theme.text.into()).into()
 }
 
-/// The ink for a cell or a run, whatever the document chose — [`automatic_ink`] when it chose
-/// no colour, and its own colour otherwise, **lifted along its own hue until it reads when it
-/// lands on the theme's dark ground** (`grind_core::color::legible`).
-///
-/// That last clause is the half W10 did not have, and a dark frame shows why: a navy word the
-/// document chose for white paper is invisible on the dark page, in the grid and in the text
-/// pane alike. A lighter navy is still the document's navy. A colour on a fill the document chose
-/// itself, or anything in the light palette, is the document's decision about its own paper and
-/// is drawn as it is — `ui_sheet_gtk`'s `theme::ink` and `ui_web`'s `ink.rs` make the same three
-/// calls over the same arithmetic, so a document's colours read the same in every window.
-///
-/// `ground` is where the text lands: the document's own fill when it has one, the theme's
-/// ground (or a selection wash over it) when it does not; `filled` says which.
+/// The ink for a cell or a run: [`automatic_ink`] when the document chose no colour, else its own
+/// colour, **lifted along its hue until it reads when it lands on the theme's dark ground**
+/// (`grind_core::color::legible`) — a navy chosen for white paper is invisible on the dark page,
+/// and a lighter navy is still the document's. On a fill the document chose, or in the light
+/// palette, the colour is drawn as it is — every client's three rules over the same arithmetic.
+/// `ground` is where the text lands (the document's fill, or the theme's ground or a wash over
+/// it); `filled` says which.
 pub fn document_ink(own: Option<Rgb>, ground: Rgb, filled: bool, theme: Theme) -> Rgb {
     match own {
         // Automatic against wherever the text lands, the theme's ground or a selection wash
@@ -552,16 +463,11 @@ pub fn document_ink(own: Option<Rgb>, ground: Rgb, filled: bool, theme: Theme) -
     }
 }
 
-/// Which of the three grounds a strip control is standing on right now.
-///
-/// The whole of this shell's hover-and-press feedback, as a portable function: a control with a
-/// fill of its own moves between [`Theme::card`], [`Theme::card_hover`] and
-/// [`Theme::card_pressed`], and one without takes the *subtle* pair instead — transparent at
-/// rest, so that a row of toggles reads as one band until the pointer is on one of them.
-///
-/// `checked` outranks both, because a toggle that is on has to look on whether or not the pointer
-/// happens to be over it; it takes [`Theme::accent_soft`] and moves one step per state from
-/// there.
+/// Which of the three grounds a strip control stands on right now — the hover-and-press feedback
+/// as a portable function. A control with a fill moves between [`Theme::card`],
+/// [`Theme::card_hover`] and [`Theme::card_pressed`]; one without takes the *subtle* pair,
+/// transparent at rest. `checked` outranks both — a toggle that is on looks on wherever the
+/// pointer is — taking [`Theme::accent_soft`] and moving a step per state.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Interaction {
     #[default]
@@ -590,13 +496,9 @@ pub fn control_fill(theme: Theme, state: Interaction, checked: bool, filled: boo
     }
 }
 
-/// Which theme the user has chosen, read from the registry — the mode **and**, since W10, the
-/// accent colour.
-///
-/// Failure in any form — no key, no value, the wrong type — is the default rather than an error.
-/// A shell that refused to start because it could not learn a colour would be worse than one
-/// that started in the wrong one, and that goes double for the accent: no accent is the suite's
-/// own blue, which is what every `--render-to` frame and every Wine run gets.
+/// Which theme the user has chosen, from the registry — the mode and the accent. Any failure — no
+/// key, no value, the wrong type — is the default rather than an error: no accent is the suite's
+/// blue, which every `--render-to` frame and Wine run gets.
 #[cfg(windows)]
 pub fn current() -> Theme {
     Theme::from_registry_values(
@@ -641,17 +543,12 @@ fn read_dword(path: &str, name: &str) -> Option<u32> {
     }
 }
 
-/// Ask the compositor for the window chrome this theme wants: a dark title bar in dark mode, the
-/// **caption painted in the application's own backdrop**, and Windows 11's rounded corner.
-///
-/// The one piece of "native chrome" this shell asks for, and the only one it can get without a
-/// manifest. Deliberately best-effort in every part: each attribute fails on Windows builds older
-/// than itself and is largely inert under Wine, and in all of those cases the right response is
-/// the system's own title bar over our grid rather than a refusal to open.
-///
-/// Painting the caption is what makes the window read as one surface instead of as a document
-/// with a lid on it — it is what Explorer, Settings and Terminal all do, and it is the reason
-/// [`Theme::backdrop`] is a token rather than a shade of the header band.
+/// Ask the compositor for this theme's window chrome: a dark title bar in dark mode, the **caption
+/// painted in the application's backdrop**, and Windows 11's rounded corner — the one native
+/// chrome this shell asks for, best-effort throughout: each attribute fails on older builds and is
+/// mostly inert under Wine, and then the system's title bar stays. Painting the caption makes the
+/// window one surface, as Explorer, Settings and Terminal do, which is why [`Theme::backdrop`] is
+/// a token.
 #[cfg(windows)]
 pub fn apply_window_chrome(hwnd: windows::Win32::Foundation::HWND, theme: Theme) {
     dark_controls(hwnd, theme);
@@ -700,17 +597,13 @@ pub fn apply_window_chrome(hwnd: windows::Win32::Foundation::HWND, theme: Theme)
     }
 }
 
-/// The parts of the window Windows draws rather than this shell — the popup menus, the scroll
-/// bars — in the same palette as everything else.
-///
-/// **The one place this shell uses API Windows does not document**, and the reason is that there
-/// is no documented way to do it: a Win32 program's popup menus are light whatever the system's
-/// theme, and Notepad, Explorer and the Settings app are dark only because they call the same two
-/// `uxtheme` entry points this does (`SetPreferredAppMode`, ordinal 135, and `FlushMenuThemes`,
-/// 136), and give their scroll bars the theme class `DarkMode_Explorer`. Both have been stable
-/// since Windows 10 1809, which is what the build check is for — before it, ordinal 135 was not
-/// there to find. Every step is looked up rather than linked, so a Windows without them, or Wine,
-/// gets the light menus it had before and nothing worse.
+/// The parts of the window Windows draws — popup menus, scroll bars — in the same palette. **The
+/// one undocumented API this shell uses**, since there is no documented way: a Win32 program's
+/// popups are light whatever the theme, and Notepad, Explorer and Settings are dark only because
+/// they call `uxtheme`'s `SetPreferredAppMode` (ordinal 135) and `FlushMenuThemes` (136) and give
+/// scroll bars the `DarkMode_Explorer` class. Stable since Windows 10 1809, hence the build check;
+/// every step is looked up rather than linked, so an older Windows or Wine keeps light menus and
+/// nothing worse.
 #[cfg(windows)]
 fn dark_controls(hwnd: windows::Win32::Foundation::HWND, theme: Theme) {
     use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
@@ -916,10 +809,8 @@ mod tests {
         );
     }
 
-    /// `AccentColor` is stored the other way round from every hex colour a human writes, and the
-    /// alpha byte is meaningless. Getting this backwards would tint the whole window with the
-    /// user's accent read as its own complement, which is exactly the kind of bug that looks
-    /// deliberate.
+    /// `AccentColor` is stored ends-first from a hex colour, the alpha meaningless; backwards
+    /// would tint the window with the accent's complement, a bug that looks deliberate.
     #[test]
     fn the_accent_dword_is_read_ends_first() {
         // 0xAABBGGRR for a pure red.
@@ -930,11 +821,10 @@ mod tests {
         assert_eq!(theme.selection, Rgb(0x00, 0x00, 0xff));
     }
 
-    /// The unused part of the grid is drawn *quieter*, not differently: its hairline is nearer
-    /// the ground than the used one in both palettes — which, since the dark theme's lines are
-    /// lighter than its ground and the light theme's darker than its own, means the two soft
-    /// tones sit on opposite sides. Asserted as a distance rather than as "lighter", which is
-    /// what makes this one rule rather than two.
+    /// The unused part of the grid is drawn *quieter*: its hairline nearer the ground than the
+    /// used one in both palettes — so, with dark lines lighter than their ground and light ones
+    /// darker, the two soft tones sit on opposite sides. Asserted as a distance, which makes it
+    /// one rule.
     #[test]
     fn the_grid_fades_where_the_document_stops() {
         for theme in [Theme::of(Mode::Light), Theme::of(Mode::Dark)] {
@@ -953,9 +843,8 @@ mod tests {
         }
     }
 
-    /// **The three grounds are three grounds**, in both palettes: a document is a layer laid on
-    /// the window, and a control is a third thing again. If any two of them collapsed to one
-    /// value the whole W10 look would be W9's back again, and nothing else here would fail.
+    /// **The three grounds are three**, in both palettes: a document is a layer on the window and
+    /// a control a third thing; if two collapsed to one value, nothing else here would fail.
     #[test]
     fn the_document_and_the_window_are_different_surfaces() {
         for theme in palettes() {
@@ -1000,13 +889,9 @@ mod tests {
         }
     }
 
-    /// **The whole of decision 9, reversed and made checkable.** W9 would not read the user's
-    /// accent because some of the values in that picker cannot be seen on a grid. This asserts
-    /// that after [`accent_for`] *none* of them is: every hue at every lightness and both
-    /// saturations, on both grounds, clears the contrast floor a one-pixel line needs.
-    ///
-    /// A sweep rather than the forty-eight swatches Settings offers today, because the swatch
-    /// list is a fact about one Windows build and this is a fact about the function.
+    /// After [`accent_for`] **no** accent is invisible: every hue at every lightness and both
+    /// saturations, on both grounds, clears the floor a one-pixel line needs — a sweep, since the
+    /// forty-eight swatches Settings offers are a fact about one Windows build.
     #[test]
     fn any_accent_at_all_is_legible_once_it_has_been_tinted() {
         for hue in (0..360).step_by(5) {
@@ -1094,9 +979,8 @@ mod tests {
         );
     }
 
-    /// **Automatic is a colour that can be read**, on whatever ground the document chose — which
-    /// is the whole of what ODF means by leaving one out. The failing case is the ordinary one:
-    /// a document that fills its heading row pale grey and says nothing about the text.
+    /// **Automatic is a colour that can be read** on whatever ground the document chose — the
+    /// ordinary case being a heading row filled pale grey with nothing said about the text.
     #[test]
     fn automatic_ink_reads_on_whatever_the_document_chose() {
         for theme in palettes() {
@@ -1191,13 +1075,9 @@ mod tests {
     fn the_hint_band_is_readable_and_is_not_the_notice_bar() {
         for theme in [Theme::of(Mode::Light), Theme::of(Mode::Dark)] {
             assert_ne!(theme.hint, theme.banner, "{:?}", theme.mode);
-            // And it is quiet: a band drawn under the strip on every keystroke must not stand
-            // further off the chrome around it than the notice bar does, which is the loud one.
-            //
-            // Measured as a distance in **all three channels** rather than in luminance, and
-            // that is the point rather than a detail: an amber and a pale blue of the same
-            // lightness are not equally loud, and the first version of this test said the
-            // notice bar was the quieter of the two because it happened to weigh the same.
+            // And quiet: a band drawn under the strip every keystroke must not stand further off
+            // the chrome than the notice bar, the loud one. Measured in **all three channels**,
+            // not luminance: an amber and a pale blue of one lightness are not equally loud.
             let distance = |a: Rgb, b: Rgb| {
                 u32::from(a.0.abs_diff(b.0))
                     + u32::from(a.1.abs_diff(b.1))

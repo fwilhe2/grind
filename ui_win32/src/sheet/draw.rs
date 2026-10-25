@@ -2,19 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A viewport, painted onto a device context.
-//!
-//! Two halves, and the split is the same one the crate makes everywhere: **what a cell looks
-//! like is decided in portable code** ([`Appearance::of`], tested on any host) and only putting
-//! pixels down needs Windows. That matters more here than it looks — "a number is right-aligned
-//! unless the document says otherwise" is a rule about documents, not about GDI, and it is the
-//! sort of thing that quietly differs between shells when each one re-decides it in its own
-//! painting code.
-//!
-//! `paint` takes an `HDC` and a `Frame` and nothing else about the window — no `HWND` — which is
-//! what makes W2's `--render-to` a second caller rather than a second drawing path
-//! (`doc/windows-shell.md`, decision 5). It is not linked here because it does not exist off
-//! Windows, and this crate's documentation is built on Linux.
+//! A viewport painted onto a device context. **What a cell looks like is decided in portable
+//! code** ([`Appearance::of`], tested on any host); only putting pixels down needs Windows.
+//! `paint` takes an `HDC` and a `Frame` and nothing about the window, so `--render-to` is a second
+//! caller rather than a second drawing path (decision 5).
 
 use grind_sheet::look;
 use grind_sheet::model::CellValue;
@@ -25,21 +16,14 @@ use crate::theme::{Rgb, Theme};
 use super::geom::GridGeom;
 use super::keymap::Selection;
 
-/// How far a selected cell's ground moves towards [`Theme::selection`].
-///
-/// A wash rather than a fill, and the number is what makes that true: at 0.22 a document's own
-/// red is still red and still visibly selected. GDI has no alpha, so this is applied by
-/// [`Rgb::blend`] before anything is painted — see [`ground`].
+/// How far a selected cell's ground moves towards [`Theme::selection`]: at 0.22 a document's red
+/// is still red and visibly selected. GDI has no alpha, so [`Rgb::blend`] applies it before
+/// painting — see [`ground`].
 pub const WASH: f64 = 0.22;
 
-/// What colour a cell's ground is actually painted, once the selection is taken into account.
-///
-/// `None` means "paint nothing here" — the window's own background is already down, and filling
-/// it again per cell is work for no pixels.
-///
-/// The **active cell is never washed**, even inside a large selection. That is what makes it
-/// read as the cell the cursor is in rather than as one more selected cell, and it is the same
-/// choice `ui_sheet_gtk` makes ("the active cell left out of the wash").
+/// The colour a cell's ground is painted once the selection is taken into account; `None` is
+/// "paint nothing", the window's background being down already. The **active cell is never
+/// washed**, even inside a selection, so it reads as the cursor's cell.
 pub fn ground(background: Option<Rgb>, theme: Theme, selected: bool, active: bool) -> Option<Rgb> {
     match selected && !active {
         false => background,
@@ -82,12 +66,10 @@ impl Appearance {
             | usize::from(self.strike) << 3
     }
 
-    /// What the document asks for, with the spreadsheet's own defaults underneath.
-    ///
-    /// Where the text sits and whether it is bold or italic are `grind_sheet::look`'s rules —
-    /// numbers right, text left, a boolean or an error centred, unless the style says otherwise
-    /// — shared with every shell that draws a grid. What is this shell's is the colour, parsed
-    /// into GDI's [`Rgb`].
+    /// What the document asks for, with the spreadsheet's defaults underneath. Where text sits and
+    /// whether it is bold or italic are `grind_sheet::look`'s — numbers right, text left, a
+    /// boolean or an error centred, unless the style says otherwise; the colour, parsed into GDI's
+    /// [`Rgb`], is this shell's.
     pub fn of(value: &CellValue, style: Option<&CellStyle>) -> Self {
         Self {
             align: look::align(value, style),
@@ -106,17 +88,9 @@ impl Appearance {
     }
 }
 
-/// One cell's text as a single line, which is what a grid draws.
-///
-/// A cell's text can contain a line break — `text:line-break` inside a `text:p`, which the
-/// reader keeps as a `\n` — and GDI's `DT_SINGLELINE` draws a control character as a *box
-/// glyph* rather than ignoring it. That was visible on screen before this existed: the note in
-/// `examples/sample-sheet.sh`'s H2 came out as `rent increase□starting…`.
-///
-/// Every control character becomes a space rather than being dropped, so the two sides of a
-/// break stay two words. Where the second line *goes* is a wider question — a wrapped cell
-/// needs row auto-height, which is L3 and named as this shell's gap — so W1 shows the whole
-/// text on one line and elides it like any other.
+/// One cell's text as a single line. A cell's text can hold a line break (`text:line-break`, kept
+/// as `\n`), which `DT_SINGLELINE` draws as a box glyph, so every control character becomes a
+/// space, keeping the two sides two words. A wrapping cell is drawn line by line elsewhere.
 pub fn one_line(text: &str) -> std::borrow::Cow<'_, str> {
     match text.contains(|c: char| c.is_control()) {
         false => std::borrow::Cow::Borrowed(text),
@@ -152,12 +126,9 @@ mod windows_impl {
     use crate::theme::Interaction;
     use crate::theme::Rgb;
 
-    /// The padding between a cell's edge and its text, in pixels at 100%.
-    ///
-    /// Deliberately *not* raised with the bands below it, and a rendered frame is why: at six
-    /// pixels `3,710.00 €` no longer fit the column the document sizes for it and came back as
-    /// `3,710.0…`. A band's padding costs nothing but a band; a cell's is paid for in the
-    /// document's own numbers.
+    /// The padding between a cell's edge and its text, in pixels at 100%. Not raised with the
+    /// bands: at six pixels `3,710.00 €` stopped fitting the column the document sized for it. A
+    /// band's padding costs a band; a cell's is paid in the document's numbers.
     const PAD: f64 = 4.0;
 
     /// A wrapping cell's text: `grind_core::layout::wrap` breaks it at the column's width, each
@@ -281,11 +252,8 @@ mod windows_impl {
     /// returns, which is one character.
     const MARKER_W: f64 = 14.0;
 
-    /// What the format strip shows: the active cell's own style and number format, read fresh
-    /// for this frame, and where the pointer is on the strip.
-    ///
-    /// Presentation state like the selection — the core is never told which of its answers a
-    /// button was drawn pressed in response to.
+    /// What the format strip shows: the active cell's style and number format, read fresh for this
+    /// frame, and where the pointer is on the strip — presentation state.
     pub struct FormatStrip<'a> {
         pub style: &'a grind_sheet::style::CellStyle,
         /// The number picker's face — `sheet::format::face`, already worked out by the window.
@@ -316,24 +284,16 @@ mod windows_impl {
         /// since GDI draws no colour glyph and Windows has no flag emoji to draw anyway
         /// (`grind_spell::Setting::chip`). A click there chooses one.
         pub status_picker: &'a str,
-        /// What the name box shows — an address, or the name of the range if it has one.
-        ///
-        /// Drawn here rather than read out of the child `EDIT` control, and that is deliberate
-        /// on two counts: the box is a read-out until somebody types in it (the control is
-        /// created hidden and shown over this rectangle on demand), and `--render-to` has no
-        /// window at all, so anything only a control could draw would be missing from every
-        /// rendered frame.
+        /// What the name box shows — an address, or the range's name. Drawn here rather than by
+        /// the child `EDIT`, which is shown over this rectangle only while somebody types in it,
+        /// and because `--render-to` has no window to put a control in.
         pub name: &'a str,
-        /// What the formula bar shows: the active cell's input text — a formula in display
-        /// syntax, or the value as it would be typed back in.
-        ///
-        /// Drawn rather than held in a control, for the same two reasons the name box is: it is
-        /// a read-out until somebody types in it, and `--render-to` has no window at all.
+        /// What the formula bar shows: the active cell's input text, drawn rather than held in a
+        /// control for the name box's two reasons.
         pub formula: &'a str,
         /// Whether [`Frame::formula`] is the friendly *reading* of a formula rather than the text
-        /// that would be typed back in — which the bar says with its own badge rather than by
-        /// changing the ink, since a reading nobody can tell from an input is worse than no
-        /// reading at all.
+        /// that would be typed back in — said by the bar's badge, since a reading nobody can tell
+        /// from an input is worse than none.
         pub friendly: bool,
         /// The notice bar, or `None` when there is nothing to say. Its *height* is the
         /// geometry's, so a frame whose banner text is `Some` and whose `banner_h` is zero draws
@@ -344,11 +304,9 @@ mod windows_impl {
         pub hint: &'a [Piece],
         /// The selection, which is presentation state and never leaves the shell.
         pub selection: Selection,
-        /// The sheet's autofilter, if it has one — `App::filter`, drawn as one dropdown button
-        /// per cell of its heading row (`GridGeom::filter_button`), `ui_sheet_gtk`'s own
-        /// mirrored. Which rows it hides is not carried here: `relayout` already folded them
-        /// out of `geom.rows` before this frame was asked for, so there is nothing left to draw
-        /// differently about them.
+        /// The sheet's autofilter, if any — `App::filter`, drawn as a dropdown button per heading
+        /// cell (`GridGeom::filter_button`). The rows it hides are already folded out of
+        /// `geom.rows`.
         pub filter: Option<grind_sheet::Filter>,
         /// The sheet's charts and, for each, the data it draws — read fresh for this frame like
         /// everything else here (`sheet/chart.rs`).
@@ -366,35 +324,25 @@ mod windows_impl {
         pub used: (u32, u32),
         /// The size a **cell's** text is drawn at, already scaled for this monitor's DPI.
         pub font_px: i32,
-        /// The two chrome sizes, scaled the same way — `theme::text::CAPTION` for the header
-        /// bands and the status bar, `theme::text::BODY` for the strip and the two message bands.
-        ///
-        /// A ramp rather than one number (W10): a status bar and a formula bar are not the same
-        /// kind of text, and a window that sets them identically reads as undesigned.
+        /// The two chrome sizes, scaled the same way: `theme::text::CAPTION` for the header bands
+        /// and status bar, `theme::text::BODY` for the strip and the two message bands — a status
+        /// bar and a formula bar are not the same kind of text.
         pub caption_px: i32,
         pub body_px: i32,
         pub face: &'a str,
     }
 
-    /// Draw one frame of the grid onto `dc`.
-    ///
-    /// Every pixel of the client area is written, which is what lets `WM_ERASEBKGND` be
-    /// answered with "already done" — see `gdi::BackBuffer`.
-    /// Returns where the sheet tabs were drawn, which is what a click is tested against
-    /// (`crate::sheet::tabs::hit`) — the window keeps it, so a tab is exactly as clickable as it looks.
+    /// Draw one frame of the grid onto `dc`, writing every pixel of the client area, so
+    /// `WM_ERASEBKGND` can be answered "already done" (`gdi::BackBuffer`). Returns where the sheet
+    /// tabs were drawn, which a click is tested against (`crate::sheet::tabs::hit`).
     pub fn paint(dc: HDC, frame: &Frame) -> Vec<crate::sheet::tabs::Tab> {
         let g = frame.geom;
         let theme = frame.theme;
         let body = g.body();
 
-        // The two grounds (W10). The window is the *backdrop* and the grid is a **layer on it**:
-        // the paper the document is written on is a different surface from the chrome round it,
-        // which is Fluent's layering and the single change that most stops this window reading as
-        // a toolbar stack with a grid underneath.
-        //
-        // The header bands and the status bar are painted *after* the cells rather than before,
-        // so that a cell scrolled under a header cannot show through it — which is cheaper than
-        // clipping the cell loop and is why they are not painted here as well.
+        // Two grounds: the window is the *backdrop* and the grid a **layer on it**, the document's
+        // paper a different surface from the chrome round it. The header bands and status bar are
+        // painted after the cells, so a cell scrolled under a header cannot show through.
         gdi::fill(
             dc,
             0,
@@ -434,9 +382,8 @@ mod windows_impl {
         let caption = Font::new(frame.face, frame.caption_px, false);
         let caption_bold = Font::new(frame.face, frame.caption_px, true);
         let body_font = Font::new(frame.face, frame.body_px, false);
-        // `doc/view-modes.md`'s role overlay, smaller than the cell's own text so the marker
-        // reads as a margin note rather than a second value — `ui_sheet_gtk`'s own glyph is
-        // drawn at 0.7 of the cell's face for the same reason.
+        // The role overlay's marker, smaller than the cell's text, so it reads as a margin note
+        // rather than a second value.
         let marker_font = Font::new(
             frame.face,
             (f64::from(frame.font_px) * 0.7).round() as i32,
@@ -473,10 +420,9 @@ mod windows_impl {
                     if let Some(fill) = super::ground(look.background, theme, selected, active) {
                         gdi::fill(dc, left, top, right, bottom, fill);
                     }
-                    // The grid's own hairlines: the right and bottom edges of every cell, so
-                    // that adjacent cells share one line rather than drawing two. Past the used
-                    // extent they are drawn quieter — the empty rest of a sixteen-thousand-column
-                    // sheet is paper, and the part somebody wrote on is the subject.
+                    // The grid's hairlines: every cell's right and bottom edges, so neighbours
+                    // share one line. Past the used extent they are quieter — the empty rest of
+                    // the sheet is paper.
                     let (used_rows, used_cols) = frame.used;
                     let line = match row < used_rows && col < used_cols {
                         true => theme.grid_line,
@@ -498,11 +444,10 @@ mod windows_impl {
                         text_right = (button.x.round() as i32).max(left + 1);
                     }
 
-                    // The role overlay reserves a margin at the cell's leading edge for its own
-                    // marker rather than drawing over whatever the cell already shows — a label
-                    // cell is left-aligned text and the two would otherwise collide. `role` is
-                    // `None` both for a plain read and for an overlay that found nothing to say
-                    // about an empty cell, and neither wants the margin.
+                    // The role overlay reserves a margin at the cell's leading edge for its marker
+                    // rather than drawing over a left-aligned label. `role` is `None` for a plain
+                    // read and for an empty cell the overlay has nothing to say about; neither
+                    // wants the margin.
                     let role = frame
                         .viewport
                         .role(row, col)
@@ -542,14 +487,10 @@ mod windows_impl {
                     }
                     let _face = face(&look).map(|font| Selected::font(dc, font));
                     // A cell with no colour of its own gets ODF's *automatic* — the theme's ink
-                    // where that reads on whatever ground this cell ended up with, and black or
-                    // white where it does not. See `theme::automatic_ink`: a document that fills
-                    // its heading row and leaves the text alone is the ordinary case, and in a
-                    // dark palette the theme's near-white on that fill is unreadable.
-                    //
-                    // A colour it *did* choose is lifted until it reads when it lands on the
-                    // dark theme's own ground (`theme::document_ink`) — navy on the dark sheet
-                    // was the dark frame's other invisible text.
+                    // where it reads on this cell's ground, black or white where not
+                    // (`theme::automatic_ink`), or a filled heading row's text vanishes in the
+                    // dark palette. A colour it chose is lifted until it reads on the dark theme's
+                    // ground (`theme::document_ink`), so navy stays visible.
                     let ink = crate::theme::document_ink(
                         look.text,
                         super::ground(look.background, theme, selected, active)
@@ -557,9 +498,9 @@ mod windows_impl {
                         look.background.is_some(),
                         theme,
                     );
-                    // A wrapping text cell is broken at its column's width by the core's own
-                    // breaker, measured in the font it is drawn in, and drawn a line at a time;
-                    // what the row is not tall enough for is cut by the cell (L3 grew the row).
+                    // A wrapping text cell is broken at its column's width by the core's breaker,
+                    // measured in its own font, and drawn a line at a time; what the row cannot
+                    // hold is cut by the cell.
                     let style = frame.viewport.style(row, col);
                     if grind_sheet::look::wraps(style) && !grind_sheet::numfmt::is_number(value) {
                         let misspelt = match frame.formula_text.contains_key(&(row, col)) {
@@ -577,12 +518,10 @@ mod windows_impl {
                         );
                         continue;
                     }
-                    // A number that does not fit is **never** elided: `DrawTextW`'s ellipsis
-                    // turned `3,710.00 €` into `3,710.0…`, a magnitude with a digit missing.
-                    // Measured in the cell's own font (the bold one is selected above), against
-                    // exactly the room `draw_text` leaves — its padding either side and the one
-                    // pixel it keeps off the right edge — and drawn as `numfmt::overflow`'s
-                    // hashes, the rule every shell in the suite draws.
+                    // A number that does not fit is **never** elided — `DrawTextW`'s ellipsis made
+                    // `3,710.00 €` into `3,710.0…`, a magnitude short a digit. Measured in the
+                    // cell's own font against exactly the room `draw_text` leaves, and drawn as
+                    // `numfmt::overflow`'s hashes.
                     let pad = crate::sheet::geom::scale(PAD, g.dpi);
                     let room = f64::from(text_right - text_left) - 2.0 * pad.round() - 1.0;
                     let hashes;
@@ -746,10 +685,9 @@ mod windows_impl {
             }
         }
 
-        // The cells' own borders, after every cell so that a neighbour's fill cannot cover half of
-        // a line centred on the edge they share. `look::border_strokes` is the geometry — the
-        // Mac draws the same list — in points, so the cell goes in as points and the strokes come
-        // back to pixels; a hairline is one device pixel.
+        // The cells' own borders, after every cell so a neighbour's fill cannot cover half a line
+        // centred on their shared edge. `look::border_strokes` is the geometry, in points, so the
+        // cell goes in as points and strokes come back to pixels; a hairline is one device pixel.
         {
             let to_pt = 72.0 / (f64::from(g.dpi) * g.zoom);
             let to_px = f64::from(g.dpi) * g.zoom / 72.0;
@@ -853,10 +791,9 @@ mod windows_impl {
                 theme.backdrop,
             );
             let (start, end) = frame.selection.rect();
-            // A selected track's own button is marked twice: a tinted ground, and a bar of the
-            // accent along the edge it shares with the grid. The bar is what makes a wide
-            // selection legible at a glance — a tint alone is a colour, and a colour on a band
-            // that is already a colour reads as nothing much.
+            // A selected track's button is marked twice: a tinted ground, and an accent bar along
+            // the edge it shares with the grid — a tint on a band that is already a colour reads
+            // as nothing much.
             let bar = crate::sheet::geom::scale(HEADER_BAR, g.dpi)
                 .round()
                 .max(1.0) as i32;
@@ -934,13 +871,9 @@ mod windows_impl {
 
         draw_format(dc, frame);
 
-        // The strip under it, with the two read-outs in it: where the selection is, and
-        // what is in the cell.
-        //
-        // No line under it, and that is W10 rather than an omission: the strip, the header band
-        // and the status bar are all one surface now — the *backdrop* — and the only boundary
-        // worth drawing is the one where the document's own paper starts, which the header band
-        // closes above. A hairline between two bands of the same colour is a seam, not an edge.
+        // The strip with its two read-outs: where the selection is, and what is in the cell. No
+        // line under it: the strip, header band and status bar are one surface, the backdrop, and
+        // the only edge worth drawing is where the document's paper starts.
         {
             let _font = Selected::font(dc, &body_font);
             let strip = g.strip_rect();
@@ -992,10 +925,9 @@ mod windows_impl {
                     theme.card,
                     theme.stroke,
                 );
-                // The `fx` badge, which is the one piece of ornament on this strip and earns it
-                // twice: it says which of the two fields is the formula bar, and — drawn in the
-                // accent — that what follows is the *friendly reading* of a formula rather than
-                // the text that would be typed back in.
+                // The `fx` badge, the strip's one ornament: it says which field is the formula
+                // bar, and — in the accent — that what follows is a formula's friendly reading
+                // rather than its text.
                 let badge = crate::sheet::geom::scale(BADGE_W, g.dpi).round() as i32;
                 let ink = match frame.friendly {
                     true => theme.accent,
@@ -1038,13 +970,9 @@ mod windows_impl {
             }
         }
 
-        // The notice bar, if there is one. Under the strip and over the grid, which is where
-        // the eye goes next after the thing that caused it.
-        //
-        // **An inset card since W10, not a stripe across the window** — Fluent's `InfoBar` is a
-        // rounded rectangle with a margin round it, and the difference is most of why the band
-        // used to read as one more toolbar. The stripe down its leading edge survives the change
-        // and is what the two panes still have in common.
+        // The notice bar, under the strip and over the grid, where the eye goes after the thing
+        // that caused it — an inset card (Fluent's `InfoBar`) with a stripe down its leading edge,
+        // as in the text pane.
         if let Some(notice) = frame.banner.filter(|_| g.banner_h > 0.0) {
             let _font = Selected::font(dc, &body_font);
             let card = g.card_in(g.banner_rect());
@@ -1086,10 +1014,10 @@ mod windows_impl {
             );
         }
 
-        // The assist band, if a formula is being typed. Under the notice bar rather than
-        // instead of it: a formula that would not parse leaves a notice up *while the edit is
-        // still open*, which is exactly when a signature hint is worth most. An inset card too,
-        // and a quieter one — help while typing is not a state the document is in.
+        // The assist band while a formula is typed, under the notice bar rather than instead of
+        // it: a formula that will not parse leaves a notice up while the edit is open, when a
+        // signature hint is worth most. A quieter card — help while typing is not a state of the
+        // document.
         if g.hint_h > 0.0 && !frame.hint.is_empty() {
             let card = g.card_in(g.hint_rect());
             let (left, top, right, bottom) = card.edges();
@@ -1110,10 +1038,8 @@ mod windows_impl {
         }
 
         let tabs;
-        // The status bar: the sheet tabs on the left, where the selection is and what it adds up to
-        // on the right. Two ends rather than one long line, because the left half changes when
-        // the document does and the right half on every keystroke — and an eye that knows which
-        // side a number is on does not have to read the whole bar to find it.
+        // The status bar: sheet tabs on the left, where the selection is and what it adds up to on
+        // the right — the left changes with the document, the right every keystroke.
         {
             let _font = Selected::font(dc, &caption);
             let rect = g.status_rect();
@@ -1122,15 +1048,11 @@ mod windows_impl {
             // No hairline over it, for the same reason the strip has none under it: the grid's
             // paper stops exactly here and the change of surface *is* the edge.
             gdi::fill(dc, left, top, right, bottom, theme.backdrop);
-            // The right half is measured and placed first, and the tabs are given what is left
-            // over — so the two can never overlap, and it is a tab that is left out on a narrow
-            // window rather than the arithmetic.
-            //
-            // Two pads and two pixels of slack, which is not arithmetic for its own sake:
-            // `draw_text` insets its rectangle by the padding at both ends and by one further
-            // pixel, so a split placed at exactly the measured width leaves the string one pixel
-            // short of fitting and `DT_END_ELLIPSIS` replaces the whole of it with `…`. The
-            // rendered frame said so before this comment did.
+            // The right half is measured and placed first and the tabs get what is left, so they
+            // never overlap and a narrow window drops a tab rather than the arithmetic. Two pads
+            // and two pixels of slack: `draw_text` insets by the padding and one more pixel, and a
+            // split at exactly the measured width makes `DT_END_ELLIPSIS` replace the whole string
+            // with `…`.
             let pad_px = pad.round() as i32;
             // The spelling picker first, at the very end, in the ink a control has rather than
             // the read-out's quieter one: it is the one thing on this side to press.
@@ -1175,10 +1097,9 @@ mod windows_impl {
         tabs
     }
 
-    /// The sheet tabs, from the status bar's left edge up to `limit` (`super::tabs`). The sheet
-    /// on screen is a card with an accent bar under its name — the Fluent pivot's selected
-    /// state, the same mark the header buttons wear — and the others are its name alone in the
-    /// secondary ink, so the one on screen is found without reading. `+` is Add Sheet.
+    /// The sheet tabs, from the status bar's left edge up to `limit` (`super::tabs`). The sheet on
+    /// screen is a card with an accent bar under its name — Fluent's selected pivot, the mark the
+    /// header buttons wear — and the others are names in the secondary ink. `+` is Add Sheet.
     fn draw_tabs(
         dc: HDC,
         frame: &Frame,
@@ -1266,15 +1187,8 @@ mod windows_impl {
         }
     }
 
-    /// The select-all button in the corner of the two header bands.
-    ///
-    /// A triangle in the corner it points into, which is the convention every spreadsheet uses
-    /// and none of them owns. Drawn as rows of a filled right triangle rather than with
-    /// `Polygon`, because GDI would antialias neither and this needs no pen, no brush and no
-    /// second code path for the DIB target.
-    /// One autofilter dropdown button — `GridGeom::filter_button`'s square, a downward
-    /// triangle inside it. The same stacked-fill idiom [`corner`] uses rather than a `Polygon`
-    /// call, so there is one way this shell draws a triangle and not two.
+    /// One autofilter dropdown button — `GridGeom::filter_button`'s square with a downward
+    /// triangle, stacked fills like [`corner`]'s, so this shell draws a triangle one way.
     fn draw_filter_button(dc: HDC, rect: crate::sheet::geom::Rect, theme: Theme) {
         let (left, top, right, bottom) = rect.edges();
         gdi::fill(dc, left, top, right, bottom, theme.card);
@@ -1294,6 +1208,9 @@ mod windows_impl {
         }
     }
 
+    /// The select-all button in the corner of the two header bands: a triangle pointing into
+    /// the corner, every spreadsheet's convention, drawn as rows of fills rather than `Polygon`,
+    /// which would need a pen, a brush and a second path for the DIB target.
     fn corner(dc: HDC, frame: &Frame) {
         let g = frame.geom;
         let size = crate::sheet::geom::scale(7.0, g.dpi).round().max(3.0) as i32;
@@ -1316,11 +1233,9 @@ mod windows_impl {
         }
     }
 
-    /// The assist band's runs, laid left to right and stopping at the band's own edge.
-    ///
-    /// Measured and drawn with the same two fonts (`gdi::text_width` then `gdi::text_at`), which
-    /// is the rule `metrics.rs` follows for the text pane: a run placed by one engine and drawn
-    /// by another lands somewhere else.
+    /// The assist band's runs, left to right, stopping at the band's edge — measured and drawn
+    /// with the same fonts (`gdi::text_width`, `gdi::text_at`), or a run lands elsewhere than it
+    /// was placed.
     #[allow(clippy::too_many_arguments)]
     fn runs(
         dc: HDC,
@@ -1352,11 +1267,9 @@ mod windows_impl {
                     _ => regular,
                 },
             );
-            // Measured in the font it is about to be drawn in, and drawn through the same
-            // rectangle-and-ellipsis path every other label here uses — so the run that reaches
-            // the band's edge is cut with an `…` rather than running off the window, and every
-            // run is centred by one rule rather than two. The two extra pixels are slack for
-            // `draw_text`'s own one-pixel inset, which would otherwise elide a run that fits.
+            // Measured in the font about to draw it, through the rectangle-and-ellipsis path every
+            // label takes, so a run reaching the edge ends in `…` and all are centred one way. Two
+            // pixels of slack for `draw_text`'s one-pixel inset.
             let width = gdi::text_width(dc, text);
             draw_text(
                 dc,
@@ -1373,13 +1286,6 @@ mod windows_impl {
         }
     }
 
-    /// The outline round the selected rectangle.
-    ///
-    /// Four bars rather than a frame, each clipped to the body, because a selection is
-    /// routinely bigger than the window — clicking a column header selects a million rows, and
-    /// its bottom edge is twenty million pixels down. Each edge is drawn only where the body
-    /// actually reaches it, so the two sides of a tall selection are drawn and its bottom is
-    /// not, which is what the eye wants anyway.
     /// A merge's whole area, from its top-left cell's corner to its bottom-right cell's.
     fn merged_rect(frame: &Frame, m: &grind_sheet::Merged) -> crate::sheet::geom::Rect {
         let first = frame.geom.cell_rect(m.anchor.row, m.anchor.col);
@@ -1391,6 +1297,9 @@ mod windows_impl {
         }
     }
 
+    /// The outline round the selected rectangle: four bars clipped to the body rather than a frame,
+    /// since a whole-column selection's bottom edge is twenty million pixels down, and each edge
+    /// is drawn only where the body reaches it.
     fn outline(dc: HDC, frame: &Frame) {
         let g = frame.geom;
         let (start, mut end) = frame.selection.rect();
@@ -1432,15 +1341,10 @@ mod windows_impl {
         }
     }
 
-    /// `doc/view-modes.md`'s name overlay: an outline round every defined name's range, in the
-    /// theme's own ink moved towards the ground — muted rather than an accent, since this is a
-    /// label on the document's own structure and not a thing to act on the way the selection is.
-    /// Drawn the same whether the name covers one cell or many: a name binds to a *range*, and a
-    /// single cell is simply the range that happens to be one wide.
-    ///
-    /// `Viewport::names` is empty whenever the read did not ask for it, so this has nothing to
-    /// do and returns at once when the mode is off — the same "asked for fresh, never stored"
-    /// shape [`grind_sheet::Viewport::role`] follows.
+    /// The name overlay: an outline round every defined name's range, in the theme's ink moved
+    /// towards the ground — muted, a label on the document's structure rather than something to
+    /// act on — the same for one cell or many. `Viewport::names` is empty unless asked for, so
+    /// with the mode off this returns at once.
     fn draw_names(dc: HDC, frame: &Frame) {
         let g = frame.geom;
         let body = g.body();
@@ -1464,16 +1368,11 @@ mod windows_impl {
         }
     }
 
-    /// The format strip (`sheet/format.rs`): every control in [`format::CONTROLS`]' order, at the
-    /// rectangles `GridGeom::format_controls` gave it, painted by the same `crate::strip`
-    /// functions the text pane's strip uses — so a toggle, a swatch, a picker and a button are one
-    /// kind of thing in both panes.
-    ///
-    /// Bold's label is bold, Italic's italic, Underline's underlined and Strikethrough's struck,
-    /// as on the text strip: the control shows what it
-    /// does. The three alignments are **drawn** — four lines, ragged on the side they are not
-    /// aligned to, the icon every word processor and spreadsheet uses — rather than lettered,
-    /// since `L`, `C` and `R` name a direction without showing one.
+    /// The format strip (`sheet/format.rs`): every control in [`format::CONTROLS`]' order at
+    /// `GridGeom::format_controls`' rectangles, painted by the `crate::strip` functions the text
+    /// pane's strip uses. Each toggle's label shows what it does — bold, italic, underlined,
+    /// struck — and the three alignments are **drawn** as four ragged lines, since `L`, `C` and
+    /// `R` name a direction without showing one.
     fn draw_format(dc: HDC, frame: &Frame) {
         let g = frame.geom;
         let theme = frame.theme;
@@ -1626,20 +1525,10 @@ mod windows_impl {
         }
     }
 
-    /// One string, clipped to a rectangle, vertically centred and elided if it does not fit.
-    ///
-    /// `DT_END_ELLIPSIS` rather than letting the text run into the next cell: overflow into an
-    /// empty neighbour is a real spreadsheet behaviour and a named gap here rather than a
-    /// half-done one — it needs to know whether the neighbour is empty *and* to draw outside its
-    /// own cell's rectangle, which is W3's problem, not W1's.
-    /// Public to the crate because the text pane's chrome — its status bar and its notice bar —
-    /// is the same one line of text in a rectangle, and two spellings of "clipped, with an
-    /// ellipsis, in the theme's ink" is one too many.
     /// The squiggle under each misspelt word of a line `draw_text` has just drawn with the same
-    /// rectangle, alignment and padding — placed by measuring the text before the word and the
-    /// word itself in the DC's current font, the font it was drawn in, so the mark and the ink
-    /// agree. Text too long for its cell is drawn from the left and cut with an ellipsis, so the
-    /// marks are too, and none reaches past the ellipsis. `misspelt` counts characters of `text`.
+    /// rectangle, alignment and padding — placed by measuring the text before the word, and the
+    /// word, in the DC's current font, so mark and ink agree. Text cut with an ellipsis cuts its
+    /// marks too. `misspelt` counts characters of `text`.
     fn draw_squiggles(
         dc: HDC,
         text: &str,
@@ -1691,6 +1580,10 @@ mod windows_impl {
         }
     }
 
+    /// One string, clipped to a rectangle, vertically centred and elided if it does not fit —
+    /// `DT_END_ELLIPSIS` rather than running into the next cell, since overflow into an empty
+    /// neighbour is a named gap. Public to the crate: the text pane's status and notice bars are
+    /// the same one line in a rectangle.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_text(
         dc: HDC,
@@ -1713,19 +1606,14 @@ mod windows_impl {
         if rect.right <= rect.left {
             return;
         }
-        // **Not** `gdi::wide`, and the difference was visible on screen: `DrawTextW` in the
-        // `windows` crate takes a *slice* and uses its length as the character count, so a
-        // NUL-terminated buffer draws the terminator too — every label in the grid came out
-        // with a box glyph after it under Wine. The `…W` entry points that take a `PCWSTR` want
-        // the terminator; the ones that take a length do not.
+        // **Not** `gdi::wide`: `DrawTextW` in the `windows` crate takes a *slice* and its length
+        // as the count, so a NUL-terminated buffer draws the terminator as a box glyph. The `…W`
+        // entry points taking a `PCWSTR` want the terminator; those taking a length do not.
         let mut wide: Vec<u16> = super::one_line(text).encode_utf16().collect();
-        // Nothing to draw is a *return*, not a zero-length `DrawTextW`, and this one cost an
-        // afternoon: an empty `Vec<u16>` has no allocation, so `as_mut_ptr` hands back the
-        // dangling well-aligned address `2`, and Wine's `DrawTextW` dereferences the buffer
-        // before it looks at the count. The crash was an access violation reading address 2,
-        // inside a system DLL, with nothing of ours on the faulting frame. W1 and W2 never hit
-        // it because every string they drew had something in it; W3's formula bar is empty
-        // whenever the active cell is.
+        // Nothing to draw is a *return*, not a zero-length `DrawTextW`: an empty `Vec<u16>` has no
+        // allocation, so `as_mut_ptr` is the dangling address `2`, and Wine's `DrawTextW`
+        // dereferences the buffer before reading the count — an access violation inside a system
+        // DLL.
         if wide.is_empty() {
             return;
         }
@@ -1748,14 +1636,9 @@ mod windows_impl {
     }
 }
 
-/// The header band at 100%, in pixels — a design measurement, scaled for the monitor by
-/// `geom::scale` at the one place the geometry is built.
-///
-/// Every band here grew by two to four pixels in W9 and again in W10, and the reason is the same
-/// both times: the chrome was drawn at the smallest size its text fits in, which is a different
-/// thing from the size it reads at. W10's numbers are Fluent's own — a 32-pixel control with a
-/// 6-pixel surround is a 44-pixel strip — rather than a judgement about how it looks. Nothing
-/// else had to move, because every rectangle in `geom.rs` is expressed in these.
+/// The header band at 100%, in pixels — a design measurement, scaled by `geom::scale` where the
+/// geometry is built. The chrome's sizes are Fluent's own (a 32-pixel control with a 6-pixel
+/// surround is a 44-pixel strip), and every rectangle in `geom.rs` is expressed in these.
 pub const HEADER_H: f64 = 26.0;
 pub const HEADER_W: f64 = 48.0;
 /// The status bar's height at 100%.
@@ -1794,8 +1677,7 @@ mod tests {
         assert!(matches!(one_line("plain"), std::borrow::Cow::Borrowed(_)));
     }
 
-    /// `grind_sheet::look`'s rule, which this pane used to break for a boolean — it went right,
-    /// where `doc/sheet-shell.md` and every other grid centre one.
+    /// `grind_sheet::look`'s rule: a number right, a label left, a boolean centred.
     #[test]
     fn a_number_goes_right_a_label_left_and_a_boolean_in_the_middle() {
         assert_eq!(
@@ -1869,10 +1751,8 @@ mod tests {
         );
     }
 
-    /// A cell with no colour of its own follows the *theme*, so the same document is readable
-    /// in both. Resolving it to a literal here is the bug this asserts against.
     /// The selection is a *wash*, not a fill: a selected cell the document coloured keeps its
-    /// colour, and the active cell keeps its ground entirely so that it reads as the cursor.
+    /// colour, and the active cell keeps its ground, so it reads as the cursor.
     #[test]
     fn the_wash_covers_the_selection_and_spares_the_active_cell() {
         let theme = crate::theme::Theme::of(crate::theme::Mode::Light);

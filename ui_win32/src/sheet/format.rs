@@ -2,30 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The grid's **format strip** — what each control reads off the active cell, and what it writes
-//! over the selection. `doc/windows-shell.md` decision 4's admission test, applied at last to the
-//! pane it was written for: a control goes here when it **reads and writes a property of the
-//! selection**, and `CellStyle` + `numfmt::Format` bound what that can be.
+//! The grid's **format strip** — what each control reads off the active cell and writes over the
+//! selection. A control goes here when it **reads and writes a property of the selection**
+//! (decision 4), so `CellStyle` and `numfmt::Format` bound it. Portable; the window's half is the
+//! drawing and one `App::set_style` or `App::set_format` per click.
 //!
-//! **Portable, and tested on any host**, like everything under `sheet/` but `draw`. The window's
-//! half is the drawing and one `App::set_style` or `App::set_format` per click.
-//!
-//! It maps onto the core's vocabulary and adds nothing, which is `ui_sheet_gtk/src/formatting.rs`'s
-//! rule carried across: a bold button is one field of [`CellStyle`], the number picker offers
-//! exactly the kinds `numfmt::preset` builds, and a cell formatted from here and one formatted by
-//! `grind sheet style` / `grind sheet format` with the same arguments are the same document.
-//!
-//! What a toggle, a colour or a decimal step *writes* is `grind_sheet::format`'s — this file's
-//! own half until the macOS shell would have made a fourth copy of it (`doc/macos-shell.md`, M1),
-//! and the rules it carries (every read is of the active cell, a write is read-change-write, a
-//! style that sets nothing is no style) are written down there. What is left here is this
-//! window's strip: which controls it has, in which order and shape, what each is called, and the
-//! number picker's rows and face.
-//!
-//! Two controls the GNOME strip has are **not** here, and each is a named gap in
-//! `doc/windows-shell.md` rather than an omission: *Wrap*, because this window does not draw
-//! wrapped text yet and a toggle with no visible effect is worse than none; and *Borders*, which
-//! the GNOME strip lacks as well and this window does not draw either.
+//! It maps onto the core's vocabulary and adds nothing: a bold button is one field of
+//! [`CellStyle`], the number picker offers exactly `numfmt::preset`'s kinds, and a cell formatted
+//! here and by `grind sheet style`/`format` with the same arguments are the same document. What a
+//! toggle, a colour or a decimal step writes is `grind_sheet::format`'s; what is here is which
+//! controls the strip has, in which order and shape, what each is called, and the number picker's
+//! rows and face. Wrap and the borders are Format-menu verbs (`WrapText`, `BordersAll`) rather
+//! than strip controls.
 
 use grind_sheet::format::{Preset, Toggle};
 use grind_sheet::locale::Locale;
@@ -74,11 +62,9 @@ pub enum Shape {
     Button,
 }
 
-/// Every control, left to right, with its shape and whether a **new group** starts before it.
-///
-/// Five groups, and the grouping is the point (W10's rule for the text strip): the *weight* of
-/// the text, its *alignment*, its *colours*, the *number* it shows, and Clear on its own because
-/// it undoes all four. A separator is drawn wherever a group starts.
+/// Every control, left to right, with its shape and whether a **new group** starts before it. Five
+/// groups: the text's *weight*, its *alignment*, its *colours*, the *number* it shows, and Clear
+/// alone, undoing all four. A separator goes where a group starts.
 pub const CONTROLS: [(Control, Shape, bool); 15] = [
     (Control::Bold, Shape::Toggle, false),
     (Control::Italic, Shape::Toggle, false),
@@ -157,18 +143,15 @@ pub fn pressed(style: &CellStyle, control: Control) -> bool {
     control.toggle().is_some_and(|toggle| toggle.is_on(style))
 }
 
-/// The style a toggle writes over a cell styled `style` — [`Toggle::flipped`], with `None` inside
-/// when nothing is left set.
-///
-/// The outer `None` is for a control that is not a toggle, so a caller cannot write a style for a
-/// click this function has no answer to.
+/// The style a toggle writes over a cell styled `style` — [`Toggle::flipped`], `None` inside when
+/// nothing is left set. The outer `None` is a control that is not a toggle, so no style can be
+/// written for a click this has no answer to.
 pub fn toggled(style: &CellStyle, control: Control) -> Option<Option<CellStyle>> {
     control.toggle().map(|toggle| toggle.flipped(style))
 }
 
-/// The number formats the picker offers, as (label, preset) — `grind_sheet::format::Preset`,
-/// whose order is `ui_sheet_gtk`'s menu and `grind sheet format`'s positional argument, in this
-/// window's title case.
+/// The number formats the picker offers, as (label, preset) — `grind_sheet::format::Preset`, in
+/// `grind sheet format`'s order and this window's title case.
 pub const KINDS: [(&str, Preset); 9] = [
     ("General", Preset::General),
     ("Number", Preset::Number),
@@ -181,8 +164,8 @@ pub const KINDS: [(&str, Preset); 9] = [
     ("Text", Preset::Text),
 ];
 
-/// Which row of [`KINDS`] a cell formatted `format` is — the row the picker opens on. `None` for
-/// a format this build did not write, which no row may claim ([`Preset::of`]).
+/// Which row of [`KINDS`] a cell formatted `format` is — where the picker opens. `None` for a
+/// format the presets cannot spell, which no row may claim ([`Preset::of`]).
 pub fn kind_of(format: Option<&Format>) -> Option<usize> {
     let preset = Preset::of(format)?;
     KINDS.iter().position(|(_, p)| *p == preset)

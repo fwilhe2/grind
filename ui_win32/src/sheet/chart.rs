@@ -3,26 +3,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! The grid's charts — where a chart sits (portable) and putting its marks down (GDI).
+//! `grind_sheet::chart_paint` decides where every mark goes over a `Metrics`; this is a frame in
+//! pixels from the chart's ODF lengths, a `Metrics` measuring in the label's own font (decision
+//! 3), and one GDI call per mark.
 //!
-//! `grind_sheet::chart_paint` decides where every bar, point, slice and label of a chart goes,
-//! over a `Metrics`; the Mac draws the same list. This file is this window's half: a frame in
-//! pixels from the chart's ODF lengths, a `Metrics` that measures in the font the label will be
-//! drawn in (decision 3: one engine for measuring and drawing), and one GDI call per mark.
-//!
-//! Taking hold of one is `grind_sheet::chart_frame`'s behaviour (`doc/chart-handling.md`): a
-//! click selects it and it wears the accent and eight handles, the body moves it, a handle
-//! resizes it, and the keys and the right-click menu are the same as every other window's. The
-//! hit-testing and drag arithmetic below are portable and tested here; `win.rs` holds the state
-//! and `paint_held` draws the handles.
+//! Taking hold of one is `grind_sheet::chart_frame`'s behaviour (`doc/chart-handling.md`): a click
+//! selects it, it wears the accent and eight handles, the body moves it and a handle resizes it.
+//! The hit-testing and drag arithmetic are portable and tested here; `win.rs` holds the state and
+//! `paint_held` draws the handles.
 
 use grind_sheet::Chart;
 use grind_sheet::chart_frame::{self, Frame, Grip};
 
 use super::geom::{GridGeom, scale};
 
-/// A chart's frame in pixels from the corner of A1, at `dpi` and the grid's `zoom` — `draw:frame`'s own position and
-/// size, or `None` for a length this build cannot read, which is a chart it does not draw rather
-/// than one drawn in the wrong place.
+/// A chart's frame in pixels from A1's corner, at `dpi` and the grid's `zoom`, or `None` for a
+/// length that will not parse — not drawn rather than drawn in the wrong place.
 pub fn frame_of(chart: &Chart, dpi: u32, zoom: f64) -> Option<(f64, f64, f64, f64)> {
     let px = super::geom::mm_to_px(dpi);
     let length = |text: &str| grind_sheet::style::length_mm(text).map(|mm| px(mm) * zoom);
@@ -35,8 +31,8 @@ pub fn frame_of(chart: &Chart, dpi: u32, zoom: f64) -> Option<(f64, f64, f64, f6
     (w > 0.0 && h > 0.0).then_some((x, y, w, h))
 }
 
-/// Every chart's frame on the sheet in client pixels, where it is drawn — `None` for one with a
-/// length this build cannot read, which is a chart it neither draws nor lets anybody grab.
+/// Every chart's frame on the sheet in client pixels — `None` for one whose lengths will not
+/// parse, neither drawn nor grabbable.
 pub fn frames(charts: &[Chart], geom: &GridGeom) -> Vec<Option<Frame>> {
     let origin = geom.cell_rect(0, 0);
     charts

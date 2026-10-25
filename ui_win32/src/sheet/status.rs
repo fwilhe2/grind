@@ -2,28 +2,20 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What the two read-outs say: the name box, and the status bar.
-//!
-//! **Portable, and tested against a real `grind_sheet::App`** — which is the reason this is a
-//! file of its own rather than three lines in `win.rs`. `App` compiles and runs on Linux, so
-//! everything here can be asserted on the development machine against a document built in the
-//! test, with no window anywhere. What is left for the window is putting the string on screen.
-//!
-//! The aggregates are `grind_sheet::summary`'s — [`grind_sheet::App::preview`] over generated
-//! formulas, hoisted out of this file, `ui_sheet_gtk/src/chrome.rs` and `ui_tui` when the macOS
-//! shell was about to be the fourth caller (`doc/macos-shell.md`, M1) — and the name box's two
-//! halves and the status bar's quiet single cell are `grind_sheet::place`'s, hoisted from here and
-//! the GNOME window's `chrome.rs` when the Mac's name box would have been the third. What is left
-//! here is the formula bar's text and the names this window calls them by.
+//! What the read-outs say: the name box, the formula bar and the status bar — portable, tested
+//! against a real `grind_sheet::App`. The aggregates are `grind_sheet::summary`'s
+//! ([`grind_sheet::App::preview`] over generated formulas) and the name box and status bar's words
+//! `grind_sheet::place`'s; what is here is the formula bar's text and this window's names for
+//! them.
 
 use grind_sheet::{App, place};
 
 use super::keymap::Selection;
 
-/// The status bar's right-hand end: where the selection is and what it adds up to
-/// (`grind_sheet::place::status`, nothing for a single cell), then how the document spells a
-/// number (`grind_sheet::locale::badge`, `1.234,5 · de-DE`) — always there, so which sign is the
-/// decimal one is never a guess. Data ▸ Document Locale… changes it.
+/// The status bar's right end: where the selection is and what it adds up to
+/// (`grind_sheet::place::status`, nothing for one cell), then how the document spells a number
+/// (`grind_sheet::locale::badge`, `1.234,5 · de-DE`), always there. Data ▸ Document Locale…
+/// changes it.
 pub fn status_right(app: &App, sheet: usize, selection: Selection) -> String {
     place::status_and_numbers(app, sheet, selection)
 }
@@ -34,14 +26,10 @@ pub fn name_box_text(app: &App, sheet: usize, selection: Selection) -> String {
     place::name_box(app, sheet, selection)
 }
 
-/// What the formula bar shows: the active cell as it would be typed in.
-///
-/// [`grind_sheet::App::input_text`] and nothing else, which is the whole point of it being one
-/// line here rather than a rule of this shell's own: a formula comes back in **display syntax**
-/// (`=SUM(B2:B4)`, not ODF's `=SUM([.B2:.B4])`), a date comes back in the ISO spelling that can
-/// be typed straight back in, and text that would otherwise be read as a number comes back with
-/// its leading `\'`. What the bar shows is therefore exactly what
-/// [`grind_sheet::formula::display::to_input`] takes, and the two cannot drift.
+/// What the formula bar shows: the active cell as it would be typed —
+/// [`grind_sheet::App::input_text`]: a formula in display syntax, a date in its ISO spelling, text
+/// that would read as a number with its leading `\'` — exactly what
+/// [`grind_sheet::formula::display::to_input`] takes.
 pub fn formula_bar_text(app: &App, sheet: usize, selection: Selection) -> String {
     app.input_text(sheet, selection.active).unwrap_or_default()
 }

@@ -2,18 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! GDI handles that free themselves, and the off-screen surface everything is drawn onto.
-//!
-//! **Windows only.** There is nothing portable in here to test — which is the point of keeping
-//! it in one file: `doc/windows-shell.md` names "a leaked `HFONT` per keystroke" as the classic
-//! version of this shell's `unsafe` risk, and the mitigation is that no other file creates a
-//! GDI object at all.
-//!
-//! A GDI object is a process-wide resource with a hard limit (10 000 per process by default),
-//! and `DeleteObject` on a handle that is still *selected into a DC* silently does nothing —
-//! which is how a leak that looks like it was freed happens. Both types below therefore own
-//! their handle for a scope that is strictly inside the DC's, and [`Selected`] puts the
-//! previous object back before anything is deleted.
+//! GDI handles that free themselves, and the off-screen surface everything is drawn onto —
+//! **Windows only**, and the one file that creates a GDI object, which is the answer to "a leaked
+//! `HFONT` per keystroke". A GDI object is a process-wide resource with a hard limit (10 000 by
+//! default), and `DeleteObject` on a handle still *selected into a DC* silently does nothing; so
+//! both types here own their handle for a scope strictly inside the DC's, and [`Selected`] puts
+//! the previous object back before anything is deleted.
 
 #![cfg(windows)]
 
@@ -53,10 +47,8 @@ impl Drop for Brush {
     }
 }
 
-/// A pen that deletes itself.
-///
-/// One width and one colour, which is every line this shell draws that is not a filled
-/// rectangle — in practice the outline of a [`round_rect`], since everything else is a `fill`.
+/// A pen that deletes itself: one width and colour — in practice a [`round_rect`]'s outline, since
+/// everything else is a `fill`.
 pub struct Pen(HPEN);
 
 impl Pen {
@@ -82,11 +74,8 @@ impl Drop for Pen {
     }
 }
 
-/// A font that deletes itself.
-///
-/// Built from a face name, a height in pixels and a weight rather than from a `TextStyle`,
-/// because the mapping from one to the other is `metrics.rs`' job and this file is meant to stay
-/// the only place a handle is created rather than becoming the place decisions are made.
+/// A font that deletes itself, built from a face name, a pixel height and a weight; mapping a
+/// `TextStyle` onto those is `metrics.rs`' job.
 pub struct Font(HFONT);
 
 impl Font {
@@ -96,11 +85,8 @@ impl Font {
         Self::styled(face, height, bold, false, false, false)
     }
 
-    /// The same, with the three other `LOGFONTW` switches a run of text can ask for.
-    ///
-    /// Italic, underline and strikethrough are properties of the *font* in GDI rather than of a
-    /// separate drawing call, which is why the text pane gets all three for nothing where the GTK
-    /// window needed Pango attributes for the last two (W5, `metrics.rs`).
+    /// The same, with italic, underline and strikethrough, which GDI makes properties of the font
+    /// rather than separate drawing calls.
     pub fn styled(
         face: &str,
         height: i32,
@@ -142,10 +128,9 @@ impl Font {
         for (slot, unit) in log.lfFaceName.iter_mut().zip(face.encode_utf16()) {
             *slot = unit;
         }
-        // A `LOGFONTW` face name is 32 units *including* the terminator, and a longer name is
-        // simply truncated by the loop above — which would leave no NUL. Zeroed by
-        // `Default::default()` above, so the last slot is only ever written when the name is 31
-        // units or fewer; assert that rather than trust it.
+        // A `LOGFONTW` face name is 32 units including the terminator, and a longer name is
+        // truncated by the loop above, leaving no NUL; the last slot is written only for a name of
+        // 31 units or fewer, so this asserts it.
         log.lfFaceName[31] = 0;
         // SAFETY: `log` is a fully initialised local read only for the duration of the call.
         Self(unsafe { CreateFontIndirectW(&log) })
@@ -166,11 +151,8 @@ impl Drop for Font {
     }
 }
 
-/// An object selected into a DC for a scope, putting the previous one back on the way out.
-///
-/// This is the half that actually prevents the leak: `DeleteObject` on a selected handle fails
-/// quietly, so a font has to be *deselected* before it is dropped, and the only reliable way to
-/// pair those is a guard.
+/// An object selected into a DC for a scope, putting the previous one back on the way out — what
+/// prevents the leak, since `DeleteObject` on a selected handle fails quietly.
 pub struct Selected<'a> {
     dc: HDC,
     previous: HGDIOBJ,
@@ -210,12 +192,9 @@ impl Drop for Selected<'_> {
     }
 }
 
-/// An off-screen surface the size of the client area, blitted over the window in one move.
-///
-/// This is the whole of the flicker answer, and it is why `WM_ERASEBKGND` is answered with 1
-/// rather than left to `DefWindowProc`: the default erases the client area with the class brush
-/// *before* `WM_PAINT` runs, so a window that then draws its own background flashes it. Nothing
-/// is erased, every pixel is written here, and the blit replaces the lot at once.
+/// An off-screen surface the size of the client area, blitted over the window in one move — the
+/// flicker answer, and why `WM_ERASEBKGND` returns 1: the default erases with the class brush
+/// before `WM_PAINT`, and a window drawing its own background would flash it.
 pub struct BackBuffer {
     dc: HDC,
     bitmap: HBITMAP,
@@ -225,10 +204,8 @@ pub struct BackBuffer {
 }
 
 impl BackBuffer {
-    /// A surface compatible with `target`, of the given size.
-    ///
-    /// `None` when GDI declines — which happens when the window has been sized to nothing, and
-    /// the caller's response is to draw nothing at all rather than to fail.
+    /// A surface compatible with `target`, of the given size. `None` when GDI declines — a window
+    /// sized to nothing — and the caller then draws nothing.
     pub fn new(target: HDC, width: i32, height: i32) -> Option<Self> {
         if width <= 0 || height <= 0 {
             return None;
@@ -307,8 +284,8 @@ impl Drop for BackBuffer {
     }
 }
 
-/// Fill one rectangle. A free function rather than a method so that both the window path and
-/// (from W2) the DIB render path reach it the same way.
+/// Fill one rectangle — a free function, so the window path and the DIB render path reach it
+/// alike.
 pub fn fill(dc: HDC, left: i32, top: i32, right: i32, bottom: i32, colour: Rgb) {
     if right <= left || bottom <= top {
         return;
@@ -326,15 +303,10 @@ pub fn fill(dc: HDC, left: i32, top: i32, right: i32, bottom: i32, colour: Rgb) 
     }
 }
 
-/// One rectangle with rounded corners, filled and outlined.
-///
-/// The whole of this shell's softening: the name box, the formula bar and the assist band's chip
-/// are drawn with one, everything else is still a square `fill`. GDI has no antialiasing, so the
-/// corners are cut rather than smoothed — at the two- to four-pixel radius used here that reads
-/// as a rounded field and not as a staircase, and it costs one call rather than a bitmap.
-///
-/// A radius of zero, or a rectangle too small for the one asked for, comes out square: a corner
-/// bigger than the box it is cutting is how a field turns into an ellipse.
+/// One rectangle with rounded corners, filled and outlined — the name box, the formula bar and the
+/// assist band's chip; everything else is a square `fill`. GDI has no antialiasing, so the corners
+/// are cut, which at two to four pixels reads as rounded. A zero radius, or a rectangle too small
+/// for it, comes out square, or a field would turn into an ellipse.
 pub fn round_rect(dc: HDC, rect: RECT, radius: i32, fill: Rgb, border: Rgb) {
     let RECT {
         left,
@@ -360,16 +332,10 @@ pub fn round_rect(dc: HDC, rect: RECT, radius: i32, fill: Rgb, border: Rgb) {
     }
 }
 
-/// A small filled triangle pointing down, centred on `(x, y)` and `size` pixels across.
-///
-/// The chevron on a picker, and it is **drawn rather than typed** for a reason a rendered frame
-/// gave: `▾` (U+25BE) is not in every font GDI might substitute, and a picker whose chevron is a
-/// missing-glyph box says less than one with no chevron at all. The same is true of every other
-/// ornament character a shell is tempted to reach for — this file already draws the grid's corner
-/// triangle the same way and for the same reason.
-///
-/// Rows of one-pixel fills rather than `Polygon`, which needs a pen and a brush and would be
-/// aliased anyway; at the six-to-nine pixels used here the staircase is the shape.
+/// A small filled triangle pointing down, centred on `(x, y)`, `size` pixels across — a picker's
+/// chevron, **drawn rather than typed**: `▾` is not in every font GDI might substitute, and a
+/// missing-glyph box says less than no chevron. Rows of one-pixel fills rather than `Polygon`,
+/// which needs a pen and a brush and aliases anyway.
 pub fn triangle_down(dc: HDC, x: i32, y: i32, size: i32, colour: Rgb) {
     let half = (size / 2).max(1);
     let height = half; // a right-angled pair of slopes: as tall as it is half-wide
@@ -385,12 +351,8 @@ pub fn triangle_down(dc: HDC, x: i32, y: i32, size: i32, colour: Rgb) {
     }
 }
 
-/// How wide a string is in the DC's current font, in pixels.
-///
-/// What the drawing code needs to place one run of text after another — the assist band's
-/// signature, whose emphasised argument is a separate `TextOut` in a bolder font, and the status
-/// bar's two halves. Measuring and drawing therefore use one font and one engine, which is the
-/// same rule `metrics.rs` follows for the text pane and for the same reason.
+/// How wide a string is in the DC's current font, in pixels — for placing one run after another
+/// (the assist band's signature, the status bar's halves) with the font and engine that draw them.
 pub fn text_width(dc: HDC, text: &str) -> i32 {
     let wide: Vec<u16> = text.encode_utf16().collect();
     if wide.is_empty() {
@@ -416,10 +378,9 @@ pub fn line_height(dc: HDC) -> i32 {
     size.cy
 }
 
-/// A wavy line from `left` to `right` with its crests at `top`: steps of `step` pixels,
-/// alternately up and down, each a filled square — `FillRect` is the one primitive this painter
-/// trusts to land on the same pixels at every DPI, and a pen's diagonal does not. A misspelt
-/// word's mark, in the text pane and the grid alike (`doc/spelling.md`).
+/// A wavy line from `left` to `right`, crests at `top`: steps of `step` pixels, alternately up and
+/// down, each a filled square — `FillRect` lands on the same pixels at every DPI, where a pen's
+/// diagonal does not. A misspelt word's mark, in both panes.
 pub fn squiggle(dc: HDC, left: f64, right: f64, top: f64, step: f64, ink: Rgb) {
     let step = step.max(1.0).round() as i32;
     let (left, right, top) = (
@@ -452,18 +413,11 @@ pub fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-/// The shell font this machine actually has, asked once and remembered.
-///
-/// Windows 11's UI face is *Segoe UI Variable*, whose three optical sizes GDI sees as three
-/// families; `Text` is the one drawn between 12 and 24 pixels, which is every size in this
-/// shell's ramp. Windows 10 has none of them.
-///
-/// The reason this is a **probe** rather than a constant is that GDI does not fail when asked for
-/// a face it has not got — `CreateFontIndirectW` substitutes, silently, by a matching algorithm
-/// that has no reason to land on Segoe UI. `GetTextFaceW` cannot tell you either: it answers with
-/// the *logical* font's name, which is the one that was asked for. `EnumFontFamiliesExW` is the
-/// call that actually knows, because its callback runs once per installed face and not at all for
-/// one that is absent.
+/// The shell font this machine has, asked once. Windows 11's UI face is *Segoe UI Variable*, whose
+/// optical sizes GDI sees as three families; `Text` is drawn between 12 and 24 pixels, every size
+/// in this shell's ramp. Windows 10 has none. A **probe**, because GDI does not fail on a face it
+/// lacks — `CreateFontIndirectW` substitutes silently — and `GetTextFaceW` returns the name asked
+/// for; `EnumFontFamiliesExW`'s callback runs only for installed faces.
 pub fn ui_face() -> &'static str {
     static FACE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
     FACE.get_or_init(|| {
@@ -474,11 +428,8 @@ pub fn ui_face() -> &'static str {
     })
 }
 
-/// The face for text set at 20 pixels and over — a dialog's title.
-///
-/// *Segoe UI Variable Display* is the optical size Windows 11 draws its titles in; the *Text*
-/// size [`ui_face`] answers is drawn for 12 to 19 pixels and looks heavy-handed above that. The
-/// same probe, for the same reason: GDI substitutes rather than fails.
+/// The face for text at 20 pixels and over — a dialog's title: *Segoe UI Variable Display*, the
+/// optical size Windows 11 draws titles in. The same probe.
 pub fn display_face() -> &'static str {
     static FACE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
     FACE.get_or_init(|| {
@@ -554,10 +505,8 @@ pub fn paragraph(dc: HDC, text: &str, rect: RECT, ink: Rgb, measure: bool) -> i3
     }
 }
 
-/// A DC for measuring with no window behind it, and a font already selected into it.
-///
-/// What a modal needs *before* its window exists: how wide its buttons' words are and how tall its
-/// message is, at the size it will be drawn, since its size is decided from them.
+/// A DC for measuring with no window behind it, a font already selected — what a modal needs
+/// before its window exists, since its size comes from its words.
 pub struct Measure<'a> {
     dc: HDC,
     previous: HGDIOBJ,
@@ -678,19 +627,14 @@ fn has_face(name: &str) -> bool {
     answer
 }
 
-/// A drawing surface with **no window, no compositor and no display** — the whole of
-/// `--render-to` (`doc/windows-shell.md`, decision 5).
+/// A drawing surface with **no window, no compositor and no display** — `--render-to` (decision
+/// 5). `CreateCompatibleDC(None)` gives a memory DC derived from no window and `CreateDIBSection`
+/// pixels this process can read back, so a frame draws on a headless `windows-latest` runner or
+/// under Wine on Linux.
 ///
-/// `CreateCompatibleDC(None)` gives a memory DC that is not derived from any window, and
-/// `CreateDIBSection` gives it pixels this process can read back afterwards. That combination is
-/// why one frame can be drawn and written out on a headless `windows-latest` runner, and under
-/// Wine on a Linux one: nothing here asks the window manager for anything.
-///
-/// **24 bits per pixel, bottom-up**, and both halves are for the same reason — the bits a
-/// section hands back are then already in a `.bmp` file's own layout, so [`Dib::bmp`] is a
-/// 54-byte header in front of them rather than an encoder. A 32-bit section would have a fourth
-/// byte per pixel that GDI leaves undefined, which is exactly the thing a byte-for-byte
-/// comparison must not depend on.
+/// **24 bits per pixel, bottom-up**, so the section's bits are already a `.bmp`'s layout and
+/// [`Dib::bmp`] is a 54-byte header in front of them. A 32-bit section has a fourth byte GDI
+/// leaves undefined, which a byte-for-byte comparison must not depend on.
 pub struct Dib {
     dc: HDC,
     bitmap: HBITMAP,
@@ -757,15 +701,12 @@ impl Dib {
         self.dc
     }
 
-    /// The surface as the bytes of a `.bmp` file.
-    ///
-    /// No encoder and no dependency: a 14-byte file header, the 40-byte info header the section
-    /// was made with, and the bits themselves, which are already in the right order and the
-    /// right padding. That is also what makes the output *comparable* — two runs that drew the
-    /// same thing produce the same bytes, with nothing in the file that could differ.
+    /// The surface as a `.bmp` file: a 14-byte file header, the 40-byte info header the section
+    /// was made with, and the bits, already in order and padded. Nothing in it can differ between
+    /// two runs that drew the same thing.
     pub fn bmp(&self) -> Vec<u8> {
-        // GDI batches drawing calls; without this the bits may not have been written yet, and
-        // the frame would be missing whatever was still in the queue.
+        // GDI batches drawing calls; without this the bits may not have been written yet, and the
+        // frame would be missing whatever was still in the queue.
         // SAFETY: no arguments.
         unsafe {
             let _ = GdiFlush();
@@ -811,15 +752,10 @@ impl Drop for Dib {
     }
 }
 
-/// Composite a decoded picture onto `dc` — `image.rs`'s only caller, and the reason this is here
-/// rather than there: a source `HBITMAP` is a GDI object, and this file is the only one that
-/// creates one.
-///
+/// Composite a decoded picture onto `dc` — here because a source `HBITMAP` is a GDI object.
 /// `pixels` is `src_w * src_h * 4` bytes of **premultiplied** BGRA, top-down — WIC's
-/// `GUID_WICPixelFormat32bppPBGRA` is exactly that layout, which is why `image.rs` asks WIC for
-/// it rather than converting afterwards. `AlphaBlend` resamples when `w, h` differ from
-/// `src_w, src_h`, which is what lets a picture be drawn at less than its own pixels without a
-/// resampler this crate would then own.
+/// `GUID_WICPixelFormat32bppPBGRA`, which is why `image.rs` asks for it. `AlphaBlend` resamples
+/// when the sizes differ, so no resampler lives here.
 pub fn blit_image(
     dc: HDC,
     dest: crate::sheet::geom::Rect,
@@ -891,12 +827,10 @@ pub fn blit_image(
     }
 }
 
-/// Put an opaque picture onto a **printer's** `dc`, scaled into `dest` (left, top, width,
-/// height, in device pixels) — the page of a print job (`doc/pdf-export.md`).
-///
-/// `StretchDIBits` rather than [`blit_image`]'s `AlphaBlend`, which a printer driver is not
-/// obliged to support; a page is white paper under everything, so there is no alpha to blend.
-/// `pixels` is `size.0 * size.1 * 4` bytes of BGRA, top-down. No GDI object is created.
+/// Put an opaque picture onto a **printer's** `dc`, scaled into `dest` (left, top, width, height
+/// in device pixels) — a print job's page. `StretchDIBits`, since a printer driver need not
+/// support `AlphaBlend`, and paper has no alpha to blend. `pixels` is BGRA, top-down. No GDI
+/// object is created.
 pub fn print_image(dc: HDC, dest: (i32, i32, i32, i32), size: (u32, u32), pixels: &[u8]) -> bool {
     use windows::Win32::Graphics::Gdi::{SRCCOPY, StretchDIBits};
     let (Ok(w), Ok(h)) = (i32::try_from(size.0), i32::try_from(size.1)) else {
