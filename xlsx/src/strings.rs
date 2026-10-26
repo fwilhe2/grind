@@ -68,8 +68,8 @@ pub fn item(reader: &mut Reader<'_>) -> crate::Result<Item> {
 }
 
 /// `ST_Xstring`'s `_xHHHH_` escapes decoded, as the oracle does (`doc/xlsx-format.md` §2.6): a
-/// UTF-16 code unit each, pairs joined, `_x0000_` dropped, CR LF one line break, and anything
-/// malformed left as written.
+/// UTF-16 code unit each, pairs joined, control characters but tab, LF and CR dropped, as is an
+/// unpaired surrogate, CR LF one line break, and anything malformed left as written.
 pub fn unescape(text: &str) -> String {
     if !text.contains("_x") {
         return text.to_owned();
@@ -99,13 +99,14 @@ pub fn unescape(text: &str) -> String {
                 ),
                 _ => (char::from_u32(u32::from(first)), 7),
             };
-            if let Some(c) = decoded {
-                if c != '\0' && !(c == '\r' && bytes.get(at + used) == Some(&b'\n')) {
-                    out.push(c);
-                }
-                at += used;
-                continue;
+            if let Some(c) = decoded
+                && (!c.is_control() || matches!(c, '\t' | '\n' | '\r'))
+                && !(c == '\r' && bytes.get(at + used) == Some(&b'\n'))
+            {
+                out.push(c);
             }
+            at += used;
+            continue;
         }
         let c = text[at..].chars().next().unwrap();
         out.push(c);
@@ -138,7 +139,9 @@ mod tests {
             ("nul_x0000_end", "nulend"),
             ("short_x41_", "short_x41_"),
             ("bad_xZZZZ_", "bad_xZZZZ_"),
-            ("lone_xD83D_", "lone_xD83D_"),
+            ("lone_xD83D_", "lone"),
+            ("9_xDC05_", "9"),
+            ("Data_x001B_[32m1", "Data[32m1"),
             ("_x", "_x"),
         ] {
             assert_eq!(unescape(written), read, "{written}");

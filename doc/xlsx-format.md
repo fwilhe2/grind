@@ -242,9 +242,11 @@ the same for a shared one:
 | `x_x000D_` + LF + `y` | two paragraphs, `x` and `y` — CR LF is one line break |
 | `lf_x000A_lf`, `t_x0009_t` | two paragraphs; a tab |
 | `nul_x0000_end` | `nulend` |
+| `Data_x001B_[32m1` (rust_xlsxwriter's `escapes09.xlsx`) | `Data[32m1` — a control character goes |
 | `short_x41_`, `bad_xZZZZ_` | unchanged |
 
-An unpaired surrogate has no character and is left as written.
+An unpaired surrogate has no character, and the oracle drops it: PhpSpreadsheet's
+`issue.4724.xlsx` writes `9_xDC05_` and the oracle's cell is `9`.
 
 ---
 
