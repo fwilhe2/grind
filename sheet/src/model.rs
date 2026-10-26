@@ -863,6 +863,9 @@ pub struct Document {
     /// it. LibreOffice uses the opening machine's locale instead (measured), so this is
     /// deliberately where the two differ.
     pub locale: Option<grind_core::locale::Locale>,
+    /// `fo:font-size` on the default cell style — what a cell naming no size is set in — when it
+    /// is not [`crate::look::DEFAULT_FONT_PT`] (`doc/ods-format.md` §5.2).
+    pub default_font_size: Option<String>,
     /// The bytes this document was read from, if any (R6). Boxed: large and usually absent.
     pub source: Option<Box<crate::odf::source::Source>>,
     /// The projection this document was read from, if it was one (`doc/dsl.md` §3.1). A second
@@ -911,6 +914,7 @@ impl Default for Document {
             null_date: crate::formula::date::DEFAULT_NULL_DATE,
             null_year: crate::formula::date::DEFAULT_NULL_YEAR,
             locale: None,
+            default_font_size: None,
             source: None,
             projection_source: None,
             edits: Edits::default(),

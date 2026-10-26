@@ -1945,20 +1945,25 @@ fn rewrite_cells(
     out
 }
 
-/// `office:styles`, holding only the document's locale on the default cell style
-/// (`doc/ods-format.md` §5.2). `None` when the document states no locale (R3).
+/// `office:styles`, holding the document's locale and font size on the default cell style
+/// (`doc/ods-format.md` §5.2). `None` when the document states neither (R3).
 fn common_styles(doc: &Document) -> Option<String> {
     let mut inner = String::new();
+    let mut defaults = String::new();
     if let Some(locale) = doc.locale.as_ref() {
-        let country = match locale.country.is_empty() {
-            true => String::new(),
-            false => format!(" fo:country=\"{}\"", esc(&locale.country)),
-        };
+        let _ = write!(defaults, " fo:language=\"{}\"", esc(&locale.language));
+        if !locale.country.is_empty() {
+            let _ = write!(defaults, " fo:country=\"{}\"", esc(&locale.country));
+        }
+    }
+    if let Some(size) = doc.default_font_size.as_deref() {
+        let _ = write!(defaults, " fo:font-size=\"{}\"", esc(size));
+    }
+    if !defaults.is_empty() {
         let _ = write!(
             inner,
             "<style:default-style style:family=\"table-cell\">\
-             <style:text-properties fo:language=\"{}\"{country}/></style:default-style>",
-            esc(&locale.language)
+             <style:text-properties{defaults}/></style:default-style>"
         );
     }
     // Each conditional-format rule's style, once by name (`rule_style_name`).

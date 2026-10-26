@@ -208,6 +208,12 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
             want.locale, got.locale
         ));
     }
+    if want.default_font_size != got.default_font_size {
+        out.push(format!(
+            "{label}: default font size {:?}, back as {:?}",
+            want.default_font_size, got.default_font_size
+        ));
+    }
     for (i, (w, g)) in want.sheets.iter().zip(&got.sheets).enumerate() {
         if w.name != g.name {
             out.push(format!(
@@ -1091,6 +1097,27 @@ fn german() -> (String, Document) {
     ("german".to_owned(), doc)
 }
 
+/// A document whose default cell style is 11pt — an Excel workbook's Calibri 11 — with one cell
+/// naming no size and one naming its own.
+fn eleven_point() -> (String, Document) {
+    let mut doc = Document {
+        sheets: vec![Sheet::new("Sheet1")],
+        default_font_size: Some("11pt".into()),
+        ..Default::default()
+    };
+    let sheet = doc.sheet_mut(0).unwrap();
+    sheet.set(Pos::new(0, 0), CellValue::Text("default".into()));
+    sheet.set(Pos::new(1, 0), CellValue::Text("large".into()));
+    sheet.set_style(
+        Pos::new(1, 0),
+        CellStyle {
+            font_size: Some("16pt".into()),
+            ..Default::default()
+        },
+    );
+    ("eleven-point".to_owned(), doc)
+}
+
 fn cases() -> Vec<(String, Document)> {
     let n = |x: f64| CellValue::Number(x);
     let t = |s: &str| CellValue::Text(s.to_owned());
@@ -1125,6 +1152,7 @@ fn cases() -> Vec<(String, Document)> {
         charts(),
         counter_clockwise_pie(),
         german(),
+        eleven_point(),
         case(
             "numbers",
             &[

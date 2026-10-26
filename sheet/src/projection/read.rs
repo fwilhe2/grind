@@ -49,6 +49,8 @@ pub fn read(text: &str) -> Result<Document> {
                     )
                 })?);
             }
+            // What a cell naming no size is set in, when it is not 10pt.
+            "font-size" => doc.default_font_size = Some(text_arg(node, 0)?),
             "name" => {
                 let name = text_arg(node, 0)?;
                 let expression = text_arg(node, 1)?;

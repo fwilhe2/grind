@@ -70,8 +70,10 @@ pub fn widths(
     cols: Range<u32>,
     metrics: &dyn Metrics,
 ) -> Vec<(u32, Option<String>)> {
+    // The viewport's sizes are relative to the document's default, as 10pt is.
+    let scale = app.default_font_pt() / look::DEFAULT_FONT_PT;
     cols.map(|col| {
-        let widest = grind_sheet::fit::widest(app, sheet, col, metrics, &style_of);
+        let widest = grind_sheet::fit::widest(app, sheet, col, metrics, &style_of) * scale;
         (col, grind_sheet::fit::width(widest, PAD_PT, 25.4 / 72.0))
     })
     .collect()

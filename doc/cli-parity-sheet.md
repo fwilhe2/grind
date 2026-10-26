@@ -241,6 +241,8 @@ stops ratcheting.
 - `locale` — `grind sheet locale <file>` with no tag, which prints the document's locale or
   `none`; also `grind info`'s `locale` line and the `locale` field of every JSON document report,
   absent when the document states none
+- `default_font_pt` — `grind sheet project`'s `font-size` node, present when it is not 10pt;
+  `grind sheet fit` measures by it
 - `display_number` — not exposed: a spelling rather than a capability. It is
   `numfmt::spell_number` in the document's locale, for a number that is in no cell — a shell's
   status-bar sum. The CLI's one number in no cell is `grind sheet eval`'s, which prints a value

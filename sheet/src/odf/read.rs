@@ -212,6 +212,7 @@ impl Builder {
                 null_date: date::DEFAULT_NULL_DATE,
                 null_year: date::DEFAULT_NULL_YEAR,
                 locale: None,
+                default_font_size: None,
                 source: None,
                 projection_source: None,
                 edits: Default::default(),
@@ -1920,20 +1921,25 @@ impl Context<Builder> for Cell {
 
 // --- styles (§5) -----------------------------------------------------------------------
 
-/// `style:default-style style:family="table-cell"`: only the document's locale is read
-/// (`fo:language`/`fo:country`, verbatim). Its font size is read past — see [`Styles`].
+/// `style:default-style style:family="table-cell"`: the document's locale
+/// (`fo:language`/`fo:country`, verbatim) and its font size, where that is not 10pt.
 struct DefaultCellStyle;
 
 impl Context<Builder> for DefaultCellStyle {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
-        if name.is(Ns::Style, "text-properties")
-            && let Some(language) = attrs.get(Ns::Fo, "language")
-        {
+        if !name.is(Ns::Style, "text-properties") {
+            return None;
+        }
+        if let Some(language) = attrs.get(Ns::Fo, "language") {
             b.doc.locale = Some(Locale::new(
                 language,
                 attrs.get(Ns::Fo, "country").unwrap_or_default(),
             ));
         }
+        b.doc.default_font_size = attrs
+            .get(Ns::Fo, "font-size")
+            .filter(|size| crate::look::font_scale(Some(size)).is_some_and(|s| s != 1.0))
+            .map(str::to_owned);
         None
     }
 }
@@ -1942,11 +1948,6 @@ impl Context<Builder> for DefaultCellStyle {
 /// `table-cell` `style:style` (the link to a format and the cell's look), and a
 /// `table-column`/`table-row` style's size (§5.4). Everything else is dropped rather than
 /// half-kept.
-///
-/// ponytail: the default cell style's `fo:font-size="10pt"` is dropped, though LibreOffice states
-/// it there and again on each styled cell, so unstyled cells carry no size and get the shell's
-/// font. `ui_sheet_gtk` draws sizes relative to 10pt to cover for it, wrong for a document whose
-/// default differs. Reading it costs a writer and a projection node too (loops C and F).
 struct Styles;
 
 impl Context<Builder> for Styles {

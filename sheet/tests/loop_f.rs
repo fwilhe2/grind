@@ -484,6 +484,12 @@ fn differences(a: &Document, b: &Document) -> Vec<String> {
     if a.null_year != b.null_year {
         out.push(format!("null-year {} vs {}", a.null_year, b.null_year));
     }
+    if a.default_font_size != b.default_font_size {
+        out.push(format!(
+            "font-size {:?} vs {:?}",
+            a.default_font_size, b.default_font_size
+        ));
+    }
     if a.names != b.names {
         out.push(format!("named expressions {:?} vs {:?}", a.names, b.names));
     }

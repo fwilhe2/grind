@@ -651,6 +651,16 @@ wrong here before:
    1234.5678 under a `number:text-style` shows `1234.5678`. §16.27.28 is "the text of the cell",
    and a number has one. The bug this fixed was an empty cell for every number formatted `@`.
 
+**The document's own font size** is `fo:font-size` on the same default cell style's
+`style:text-properties` (rng:13403), the size every cell that names none is set in. LibreOffice
+writes `10pt` there in every document, and a document with no default style is 10pt in it too
+(`grind_sheet::look::DEFAULT_FONT_PT`). Measured 2026-10-26 (LibreOffice 26.8.1.1, PDF export,
+`pdftotext -bbox`): with `fo:font-size="14pt"` on the default style, an unstyled cell's words are
+15.6pt tall — set in 14pt. `Document::default_font_size` holds it when it is not 10pt, and the
+writer puts it back on the default style; a viewport resolves it onto each cell that names no
+size, so a shell drawing relative to 10pt draws it right. An `.xlsx`'s default font (the first
+`<font>`, Calibri 11 in every Excel workbook) arrives there.
+
 **The document's own language — where it lives, and what it does not do.** A document states
 its default language on the default *cell* style: `office:styles` →
 `style:default-style style:family="table-cell"` → `style:text-properties` with `fo:language` and

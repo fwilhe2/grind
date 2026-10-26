@@ -287,7 +287,8 @@ impl Viewport {
         }
     }
 
-    /// How one cell looks, or `None` for a plain cell and for one outside the viewport alike.
+    /// How one cell looks, or `None` for a plain cell and for one outside the viewport alike. Its
+    /// font size is relative to the document's default, as 10pt is to a shell's own font.
     pub fn style(&self, row: u32, col: u32) -> Option<&style::CellStyle> {
         self.styles.get(self.at(row, col)?)?.as_ref()
     }
@@ -1247,6 +1248,7 @@ impl App {
         // evaluates a rule (`doc/conditional-format.md` §2).
         let mut engine =
             (!s.rules().is_empty()).then(|| formula::eval::Engine::over_cached(&state.doc));
+        let default_pt = default_font_pt(&state.doc);
         let mut look = |pos: Pos| -> Option<style::CellStyle> {
             let own = s.style(pos);
             let applied = engine
@@ -1260,6 +1262,18 @@ impl App {
             // (`doc/ods-format.md` §5.2).
             if let Some(color) = s.format(pos).and_then(|f| f.color_of(&s.get(pos))) {
                 look.get_or_insert_with(Default::default).color = Some(color.to_owned());
+            }
+            // A shell sets a cell naming no size in its own font, and a size relative to 10pt
+            // in it (`look::font_scale`), so a document whose default is not 10pt has its sizes
+            // handed out relative to its own default (`doc/ods-format.md` §5.2).
+            if default_pt != look::DEFAULT_FONT_PT
+                && let Some(style) = look.as_mut()
+                && let Some(scale) = look::font_scale(style.font_size.as_deref())
+            {
+                style.font_size = Some(format!(
+                    "{}pt",
+                    scale * look::DEFAULT_FONT_PT * look::DEFAULT_FONT_PT / default_pt
+                ));
             }
             look
         };
@@ -1402,6 +1416,11 @@ impl App {
             state.doc.null_date,
             state.doc.locale.as_ref(),
         ))
+    }
+
+    /// What a cell naming no font size is set in, in points (`Document::default_font_size`).
+    pub fn default_font_pt(&self) -> f64 {
+        default_font_pt(&self.state.read().unwrap().doc)
     }
 
     /// How one cell looks, or `None` for a plain one — what a toolbar reads before
@@ -1761,6 +1780,11 @@ fn typed(
     input: &str,
 ) -> (Entered, Action, Option<Reading>) {
     typed_in(doc, sheet, pos, input, doc.locale.as_ref(), false)
+}
+
+fn default_font_pt(doc: &Document) -> f64 {
+    look::font_scale(doc.default_font_size.as_deref())
+        .map_or(look::DEFAULT_FONT_PT, |scale| scale * look::DEFAULT_FONT_PT)
 }
 
 /// A typed number, read the way the document spells one — `reading` is its locale, or `None`

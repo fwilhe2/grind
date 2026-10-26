@@ -4970,12 +4970,9 @@ mod imp {
     /// anything. Weight, slant and size only: the model carries no `fo:font-family`
     /// (`core/src/style.rs`).
     ///
-    /// **The size is a multiple of [`look::DEFAULT_FONT_PT`], not an absolute.** A document states
-    /// a size per cell in `fo:font-size` and for the rest in `style:default-style`, which is not
-    /// read (the `ponytail:` in [`grind_sheet::odf`]'s `Styles`); drawing `10pt` absolutely while
-    /// unstyled cells keep the widget's font shows one document in two sizes. Scaling makes "says
-    /// 10pt" and "says nothing" identical, and keeps the base as the user's UI font size, an
-    /// accessibility setting.
+    /// **The size is a multiple of [`look::DEFAULT_FONT_PT`], not an absolute**, so the base stays
+    /// the user's UI font size, an accessibility setting. A document whose default cell style is
+    /// not 10pt has that size spelled out on each cell by the viewport.
     ///
     /// `zoom` rides in the same attribute, since a second `scale` over a range replaces the first.
     /// A size larger than the row's default grows the row ([`imp::Grid::measure_rows`]), which is

@@ -126,6 +126,15 @@ fn settings(out: &mut Emitter, doc: &Document) {
         out.end();
         wrote = true;
     }
+    if let Some(size) = &doc.default_font_size {
+        if !wrote {
+            out.blank();
+        }
+        out.begin("font-size");
+        out.arg(size.as_str());
+        out.end();
+        wrote = true;
+    }
     if !doc.names.is_empty() && !wrote {
         out.blank();
     }

@@ -185,6 +185,14 @@
     ],
     "description": "The document's own locale, a language and optionally a country: how every number with no format, or with one naming no locale, is spelled and typed. Omitted when the document states none."
   },
+  "node: font-size": {
+    "scope": "kdl",
+    "prefix": "font-size",
+    "body": [
+      "font-size \"${1:11pt}\""
+    ],
+    "description": "What a cell naming no size is set in. Omitted at 10pt."
+  },
   "format part: number": {
     "scope": "kdl",
     "prefix": "number",
