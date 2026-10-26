@@ -125,6 +125,11 @@ pub fn read(
                         .filter(|v| v.is_finite() && *v > 0.0)
                 };
                 tracks.default_width = number("defaultColWidth");
+                // A default row height the author fixed is every row's that says nothing, as
+                // the oracle draws it (`doc/xlsx-format.md` §4.6); one Excel derived from the
+                // font is the height a shell gives a row anyway.
+                tracks.default_height =
+                    number("defaultRowHeight").filter(|_| attrs.flag("customHeight"));
                 tracks.sheet_width |= tracks.default_width.is_none()
                     && number("baseColWidth").is_some_and(|base| (base - 8.0).abs() > 1e-9);
             } else if name.is("sheetViews") {
@@ -369,6 +374,10 @@ struct Tracks {
     default_width: Option<f64>,
     /// Every `<col>` range, as `start..end`, so that the default goes only where none did.
     mentioned: Vec<std::ops::Range<u32>>,
+    /// `<sheetFormatPr defaultRowHeight>` under `customHeight`: every row's that states none.
+    default_height: Option<f64>,
+    /// The rows that state a height of their own, measured or set.
+    sized_rows: std::collections::BTreeSet<u32>,
     outline: bool,
     pane: bool,
     sheet_width: bool,
@@ -396,6 +405,13 @@ impl Tracks {
             for col in 0..used {
                 if !self.mentioned.iter().any(|range| range.contains(&col)) {
                     sheet.set_col_width(col, Some(col_width(width, self.digit)));
+                }
+            }
+        }
+        if let Some(height) = self.default_height {
+            for row in 0..sheet.used_rows() {
+                if !self.sized_rows.contains(&row) && sheet.row_height(row).is_none() {
+                    sheet.set_row_height(row, Some(format!("{height}pt")));
                 }
             }
         }
@@ -579,6 +595,9 @@ fn rows(
             .filter(|r| (1..=MAX_ROWS).contains(r))
             .map_or(next_row, |r| r - 1);
         row_geometry(sheet, row, attrs, report);
+        if attrs.plain("ht").is_some() {
+            tracks.sized_rows.insert(row);
+        }
         tracks.outline |= outlined(attrs);
         // A row's own style reaches the cells in it that name none — measured: the oracle draws
         // `geometry/rows.xlsx`'s A10, which has no `s`, in its row's bold. Only under
@@ -1377,6 +1396,37 @@ mod tests {
             assert_eq!(digit_px(Some(family), size), px, "{family} {size}");
         }
         assert_eq!(digit_px(None, 11.0), DIGIT_PX);
+    }
+
+    /// A fixed `defaultRowHeight` is every used row's that states no `ht`; a derived one is
+    /// nobody's.
+    #[test]
+    fn a_fixed_default_row_height_fills_the_rows_that_state_none() {
+        let rows = r#"<sheetData>
+                 <row r="1"><c r="A1"><v>1</v></c></row>
+                 <row r="2" ht="30"><c r="A2"><v>1</v></c></row>
+                 <row r="3" ht="40" customHeight="1"><c r="A3"><v>1</v></c></row>
+                 <row r="4"><c r="A4"><v>1</v></c></row>
+               </sheetData>"#;
+        let (sheet, _) = worksheet(
+            &format!(r#"<sheetFormatPr customHeight="1" defaultRowHeight="15.75"/>{rows}"#),
+            &Styles::default(),
+        );
+        assert_eq!(sheet.row_height(0), Some("15.75pt"));
+        assert_eq!(
+            sheet.row_height(1),
+            None,
+            "Excel measured it: a shell measures again"
+        );
+        assert_eq!(sheet.row_height(2), Some("40pt"));
+        assert_eq!(sheet.row_height(3), Some("15.75pt"));
+        assert_eq!(sheet.row_height(4), None, "past the sheet");
+
+        let (sheet, _) = worksheet(
+            &format!(r#"<sheetFormatPr defaultRowHeight="15"/>{rows}"#),
+            &Styles::default(),
+        );
+        assert_eq!(sheet.row_height(0), None);
     }
 
     /// `defaultColWidth` is every used column's that no `<col>` mentions — the model has no

@@ -570,6 +570,12 @@ Points, and the oracle agrees to its own rounding: 15 → 0.2083in, 7.5 → 0.10
 1.6772in, 409 → 5.6807in (`geometry/rows.xlsx`). Carried where `customHeight="1"`; a height
 without it is Excel's measurement of the row's content, which a shell makes again.
 
+`<sheetFormatPr customHeight="1" defaultRowHeight="15.75"/>` — a default the author fixed — is
+every row's that states no `ht`: the oracle's conversion of such a sheet (an online spreadsheet
+CMS's export, 2026-10-26, not vendored) gives all of them 0.2189in, 15.75pt, where its 10pt
+Arial would otherwise make them 0.178in. Without `customHeight` the default is Excel's
+measurement of the font, which a shell makes again.
+
 `ht="0" customHeight="1"`, not hidden: invisible in Excel. The oracle ignores the height and
 shows the row at the default. ODF's `style:row-height` is a `positiveLength` (the schema), so
 zero cannot be written; this filter hides the row and counts `Appearance::ZeroSize`. A hidden
