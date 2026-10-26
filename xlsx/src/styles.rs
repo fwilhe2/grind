@@ -23,6 +23,7 @@
 //! (`doc/xlsx-format.md` §4).
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use grind_sheet::model::NumberKind;
 use grind_sheet::numfmt::Format;
@@ -180,6 +181,8 @@ pub struct Styles {
     digit_px: Option<f64>,
     /// The default font's size in points; `None` where no part said.
     size: Option<f64>,
+    /// Per `<cellXfs>` entry: its style and number format as every cell naming it shares them.
+    shared: Vec<(Option<Arc<CellStyle>>, Option<Arc<Format>>)>,
 }
 
 impl Styles {
@@ -212,6 +215,18 @@ impl Styles {
     /// instead of it.
     pub fn dxf(&self, index: usize) -> Option<&Look> {
         self.dxfs.get(index)
+    }
+
+    /// The style a cell with `s="index"` carries, shared with every other cell naming it.
+    pub fn shared_style(&self, index: usize) -> Option<&Arc<CellStyle>> {
+        self.shared.get(index).and_then(|(style, _)| style.as_ref())
+    }
+
+    /// The number format a cell with `s="index"` carries, shared the same way.
+    pub fn shared_format(&self, index: usize) -> Option<&Arc<Format>> {
+        self.shared
+            .get(index)
+            .and_then(|(_, format)| format.as_ref())
     }
 
     /// The default font's size in points — what a cell naming none is set in.
@@ -461,7 +476,18 @@ impl Part {
             }
         }
         let dxfs = self.dxfs.iter().map(|d| dxf_look(d, &palette)).collect();
+        let shared = looks
+            .iter()
+            .zip(&xfs)
+            .map(|(look, xf): (&Look, &Translation)| {
+                (
+                    look.style.clone().map(Arc::new),
+                    xf.format.clone().map(Arc::new),
+                )
+            })
+            .collect();
         Styles {
+            shared,
             xfs,
             looks,
             dxfs,

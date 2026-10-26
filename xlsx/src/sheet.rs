@@ -853,9 +853,9 @@ fn store(
             .look(raw.s)
             .filter(|look| look.shows_when_empty())
         {
-            if let Some(style) = &look.style {
+            if let Some(style) = context.styles.shared_style(raw.s) {
                 report.styled += 1;
-                sheet.set_style(at, style.clone());
+                sheet.set_style_shared(at, style.clone());
             }
             for lost in look.lost.iter().filter(|lost| lost.shows_when_empty()) {
                 report.lose(*lost);
@@ -887,9 +887,9 @@ fn look(sheet: &mut Sheet, at: Pos, s: usize, context: &Context<'_>, report: &mu
     let Some(look) = context.styles.look(s) else {
         return;
     };
-    if let Some(style) = &look.style {
+    if let Some(style) = context.styles.shared_style(s) {
         report.styled += 1;
-        sheet.set_style(at, style.clone());
+        sheet.set_style_shared(at, style.clone());
     }
     for lost in &look.lost {
         report.lose(*lost);
@@ -906,9 +906,9 @@ fn look(sheet: &mut Sheet, at: Pos, s: usize, context: &Context<'_>, report: &mu
 /// the styles part, cloned here. A format that would misstate the number is not there to clone,
 /// and the cell shows its plain value; either way the loss is counted per cell.
 fn format(sheet: &mut Sheet, at: Pos, s: usize, context: &Context<'_>, report: &mut Report) {
-    if let Some(format) = context.styles.format(s) {
+    if let Some(format) = context.styles.shared_format(s) {
         report.formatted += 1;
-        sheet.set_format(at, format.clone());
+        sheet.set_format_shared(at, format.clone());
     }
     for lost in context.styles.lost(s) {
         *report.formats_lost.entry(*lost).or_default() += 1;
