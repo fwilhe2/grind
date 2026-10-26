@@ -835,10 +835,11 @@ fn cache_dir(version: &str) -> PathBuf {
 /// Convert whatever is not cached yet, in **one** `soffice` invocation — startup dominates, a
 /// couple of seconds each time against milliseconds per document once it is up. The private
 /// `UserInstallation` is not optional: without it this fights the developer's own running
-/// LibreOffice for the profile lock and either blocks or silently does nothing.
-fn convert(cache: &Path, pending: &[(String, PathBuf)]) {
+/// LibreOffice for the profile lock and either blocks or silently does nothing. False when the
+/// oracle failed on any of them.
+fn convert(cache: &Path, pending: &[(String, PathBuf)]) -> bool {
     if pending.is_empty() {
-        return;
+        return true;
     }
     let stage = cache.join("stage");
     let _ = std::fs::remove_dir_all(&stage);
@@ -868,8 +869,8 @@ fn convert(cache: &Path, pending: &[(String, PathBuf)]) {
         .args(&inputs)
         .status()
         .expect("soffice failed to start");
-    assert!(status.success(), "soffice exited with {status}");
     let _ = std::fs::remove_dir_all(&stage);
+    status.success()
 }
 
 // ---- the corpus ----
@@ -914,7 +915,7 @@ fn our_import_agrees_with_the_oracles() {
         .map(|f| (f.sha256.clone(), root.join(&f.file)))
         .collect();
     let converted_now = pending.len();
-    convert(&cache, &pending);
+    assert!(convert(&cache, &pending), "soffice failed");
 
     let mut compared = 0usize;
     let mut cells = 0usize;
@@ -987,4 +988,188 @@ fn our_import_agrees_with_the_oracles() {
         "{} disagreements with the oracle",
         failures.len()
     );
+}
+
+/// Loop D over a directory of workbooks from elsewhere — `GRIND_LOOP_D_CORPUS=<dir>`, skipped
+/// without it. Nothing there has a manifest, so this asserts only that every workbook the oracle
+/// converts imports, and prints the disagreements by class, most widespread first.
+///
+/// GRIND_LOOP_D_CORPUS=~/samples cargo test -p grind-xlsx --release --test loop_d outside -- --nocapture
+#[test]
+fn outside_corpus_against_the_oracle() {
+    let Some(dir) = std::env::var_os("GRIND_LOOP_D_CORPUS") else {
+        return;
+    };
+    let Some(version) = soffice_version() else {
+        eprintln!("skipping loop D outside: no soffice on PATH");
+        return;
+    };
+    let cache = cache_dir(&version);
+    std::fs::create_dir_all(&cache).unwrap();
+
+    let mut files = Vec::new();
+    let mut stack = vec![PathBuf::from(dir)];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("xlsx") || e.eq_ignore_ascii_case("xlsm"))
+            {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    let digests: Vec<(String, PathBuf)> = files
+        .iter()
+        .filter_map(|path| Some((sha256(path)?, path.clone())))
+        .collect();
+    let pending: Vec<(String, PathBuf)> = digests
+        .iter()
+        .filter(|(digest, _)| {
+            !cache.join(format!("{digest}.fods")).exists()
+                && !cache.join(format!("{digest}.unopened")).exists()
+        })
+        .cloned()
+        .collect();
+    // A workbook the oracle cannot open is remembered as such, rather than retried every run.
+    for chunk in pending.chunks(20) {
+        convert(&cache, chunk);
+        for (digest, _) in chunk {
+            if !cache.join(format!("{digest}.fods")).exists() {
+                let _ = std::fs::write(cache.join(format!("{digest}.unopened")), "");
+            }
+        }
+    }
+
+    let mut refused = Vec::new();
+    let mut compared = 0usize;
+    // class → (files, instances, examples)
+    let mut classes: BTreeMap<String, (std::collections::BTreeSet<String>, usize, Vec<String>)> =
+        BTreeMap::new();
+    let mut matched: BTreeMap<&str, usize> = BTreeMap::new();
+    for (digest, path) in &digests {
+        let theirs_path = cache.join(format!("{digest}.fods"));
+        let Ok(theirs) = grind_sheet::read_file(&theirs_path) else {
+            continue;
+        };
+        let file = path.display().to_string();
+        let (ours, report) = match grind_xlsx::import_bytes(&std::fs::read(path).unwrap()) {
+            Ok(pair) => pair,
+            Err(e) => {
+                refused.push(format!("{file}: {e}"));
+                continue;
+            }
+        };
+        compared += 1;
+        let defaults = Defaults::of(&std::fs::read_to_string(&theirs_path).unwrap_or_default());
+        for difference in differences(&ours, &theirs, &defaults, &report.renamed) {
+            if let Some(d) = DIVERGENCES.iter().find(|d| difference.explained_by(d)) {
+                *matched.entry(d.name).or_default() += 1;
+                continue;
+            }
+            let entry = classes.entry(difference.class()).or_default();
+            entry.0.insert(file.clone());
+            entry.1 += 1;
+            if entry.2.len() < 4 && !entry.2.iter().any(|e| e.starts_with(&file)) {
+                entry.2.push(format!("{file}: {}", difference.describe()));
+            }
+        }
+    }
+
+    eprintln!("loop D outside: {version}; {compared} workbooks compared");
+    for (name, count) in &matched {
+        eprintln!("  divergence ×{count}: {name}");
+    }
+    let mut ranked: Vec<_> = classes.into_iter().collect();
+    ranked.sort_by_key(|(_, (files, n, _))| std::cmp::Reverse((files.len(), *n)));
+    for (class, (files, n, examples)) in &ranked {
+        eprintln!("{class}: {} files, {n} times", files.len());
+        for example in examples {
+            eprintln!("    {example}");
+        }
+    }
+    for line in &refused {
+        eprintln!("  refused: {line}");
+    }
+    assert!(
+        refused.is_empty(),
+        "{} workbooks the oracle opens and we do not",
+        refused.len()
+    );
+}
+
+/// The cache's key, from `sha256sum` rather than a dependency for a loop that runs on request.
+fn sha256(path: &Path) -> Option<String> {
+    let out = Command::new("sha256sum").arg(path).output().ok()?;
+    let text = String::from_utf8(out.stdout).ok()?;
+    Some(text.split_whitespace().next()?.to_owned())
+}
+
+impl Difference {
+    /// A coarse name for what kind of disagreement this is, so a corpus's thousands of them
+    /// can be counted by cause.
+    fn class(&self) -> String {
+        match self {
+            Difference::Cell(_, _, a, b) => {
+                if a.value != b.value {
+                    let shape = |v: &CellValue| match v {
+                        CellValue::Empty => "empty",
+                        CellValue::Number(_) => "number",
+                        CellValue::Text(_) => "text",
+                        CellValue::Bool(_) => "bool",
+                    };
+                    format!(
+                        "cell value: ours {} theirs {}{}",
+                        shape(&a.value),
+                        shape(&b.value),
+                        if b.formula { " (formula)" } else { "" }
+                    )
+                } else if a.kind != b.kind {
+                    format!("cell kind: ours {:?} theirs {:?}", a.kind, b.kind)
+                } else {
+                    "cell display".to_owned()
+                }
+            }
+            Difference::Style(_, _, a, b) => {
+                let plain = CellStyle::default();
+                let (a, b) = (a.as_ref().unwrap_or(&plain), b.as_ref().unwrap_or(&plain));
+                let mut fields = Vec::new();
+                macro_rules! field {
+                    ($($f:ident),*) => {$(
+                        if a.$f != b.$f { fields.push(stringify!($f)); }
+                    )*};
+                }
+                field!(
+                    font_weight,
+                    font_style,
+                    font_size,
+                    color,
+                    background,
+                    align,
+                    vertical_align,
+                    wrap,
+                    underline,
+                    line_through,
+                    indent,
+                    rotation,
+                    borders
+                );
+                format!("style: {}", fields.join(","))
+            }
+            Difference::Track(_, track) => match (&track.axis, &track.what) {
+                (axis, TrackDifference::Size { .. }) => format!("{axis:?} size"),
+                (axis, TrackDifference::Hidden { ours, .. }) => {
+                    format!("{axis:?} hidden: ours {ours}")
+                }
+            },
+            Difference::OnlyOurs(_) => "sheet only ours".to_owned(),
+            Difference::OnlyTheirs(_) => "sheet only theirs".to_owned(),
+            Difference::Unreached(_) => "sheet unreached".to_owned(),
+        }
+    }
 }
