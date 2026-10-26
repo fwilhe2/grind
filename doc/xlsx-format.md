@@ -567,8 +567,10 @@ sheet — and no further.
 ### 4.6 Row height — `MEASURED`
 
 Points, and the oracle agrees to its own rounding: 15 → 0.2083in, 7.5 → 0.1043in, 120.75 →
-1.6772in, 409 → 5.6807in (`geometry/rows.xlsx`). Carried where `customHeight="1"`; a height
-without it is Excel's measurement of the row's content, which a shell makes again.
+1.6772in, 409 → 5.6807in (`geometry/rows.xlsx`). Carried as the row's own where
+`customHeight="1"`; a height without it is Excel's measurement of the row's content, carried as
+a measured height the content may outgrow, as LibreOffice's `style:use-optimal-row-height` is
+(`doc/ods-format.md` §5.4) — the oracle measures such a row again in its own fonts.
 
 `<sheetFormatPr customHeight="1" defaultRowHeight="15.75"/>` — a default the author fixed — is
 every row's that states no `ht`: the oracle's conversion of such a sheet (an online spreadsheet

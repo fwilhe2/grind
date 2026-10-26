@@ -770,7 +770,12 @@ fn tracks(mine: &Sheet, other: &Sheet) -> Vec<Track> {
     for (col, width) in mine.col_widths() {
         size(Axis::Column, col, Some(width), other.col_width(col));
     }
-    for (row, height) in mine.row_heights() {
+    // A measured height is Excel's measurement of the row, and the oracle's another in its own
+    // fonts (`doc/xlsx-format.md` §4.6): two measurements, not a size either chose.
+    for (row, height) in mine
+        .row_heights()
+        .filter(|(row, _)| !mine.row_measured(*row))
+    {
         size(Axis::Row, row, Some(height), other.row_height(row));
     }
     let hidden = |axis, a: Vec<u32>, b: Vec<u32>, out: &mut Vec<Track>| {

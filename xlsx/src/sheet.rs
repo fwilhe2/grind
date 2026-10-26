@@ -489,9 +489,9 @@ fn column(sheet: &mut Sheet, col: u32, track: Track, digit: f64, report: &mut Re
     }
 }
 
-/// A `<row>`'s height and hidden-ness. The height is carried only where the author set it
-/// (`customHeight`): otherwise it is Excel's measurement of what the row holds, which a shell
-/// makes again from the row's own content.
+/// A `<row>`'s height and hidden-ness. A height the author set (`customHeight`) is the row's; one
+/// without is Excel's measurement of what the row holds, carried as a measured height the content
+/// may outgrow ([`Sheet::row_measured`]), as LibreOffice's own measurements are.
 fn row_geometry(sheet: &mut Sheet, row: u32, attrs: &crate::xml::Attrs, report: &mut Report) {
     let height = attrs
         .plain("ht")
@@ -502,6 +502,7 @@ fn row_geometry(sheet: &mut Sheet, row: u32, attrs: &crate::xml::Attrs, report: 
         Some(ht) if ht > 0.0 && attrs.flag("customHeight") => {
             sheet.set_row_height(row, Some(format!("{ht}pt")));
         }
+        Some(ht) if ht > 0.0 => sheet.set_row_measured(row, format!("{ht}pt")),
         Some(ht) if ht == 0.0 && attrs.flag("customHeight") && !hidden => {
             sheet.set_row_hidden(row, true);
             report.lose(Appearance::ZeroSize);
@@ -1413,10 +1414,9 @@ mod tests {
             &Styles::default(),
         );
         assert_eq!(sheet.row_height(0), Some("15.75pt"));
-        assert_eq!(
-            sheet.row_height(1),
-            None,
-            "Excel measured it: a shell measures again"
+        assert!(
+            sheet.row_measured(1),
+            "Excel measured it: content may grow it"
         );
         assert_eq!(sheet.row_height(2), Some("40pt"));
         assert_eq!(sheet.row_height(3), Some("15.75pt"));
@@ -1473,9 +1473,9 @@ mod tests {
             &Styles::default(),
         );
         assert_eq!(sheet.row_height(0), Some("30pt"));
-        assert_eq!(
-            sheet.row_height(1),
-            None,
+        assert_eq!(sheet.row_height(1), Some("18.75pt"));
+        assert!(
+            sheet.row_measured(1) && !sheet.row_measured(0),
             "Excel's measurement, not the author's"
         );
         assert!(sheet.row_manually_hidden(2));
