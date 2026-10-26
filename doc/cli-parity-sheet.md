@@ -241,6 +241,7 @@ stops ratcheting.
 - `locale` — `grind sheet locale <file>` with no tag, which prints the document's locale or
   `none`; also `grind info`'s `locale` line and the `locale` field of every JSON document report,
   absent when the document states none
+- `measured_rows` — `grind sheet project`'s `measured=#true` on a `row`
 - `default_font_pt` — `grind sheet project`'s `font-size` node, present when it is not 10pt;
   `grind sheet fit` measures by it
 - `display_number` — not exposed: a spelling rather than a capability. It is

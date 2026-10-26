@@ -180,6 +180,9 @@ fn tracks(out: &mut Emitter, sheet: &Sheet) {
         out.begin("row");
         out.arg(i128::from(row) + 1);
         out.prop_some("height", heights.get(&row).copied());
+        if sheet.row_measured(row) {
+            out.prop("measured", true);
+        }
         if hidden_rows.contains(&row) {
             out.prop("hidden", true);
         }

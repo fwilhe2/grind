@@ -126,12 +126,17 @@ impl Grid {
         let grown = auto_heights(app, sheet, &grid, metrics);
         if !grown.is_empty() {
             let heights = app.row_heights(sheet).unwrap_or_default();
-            let mut sizes: Vec<(u32, f64)> = grown;
+            let measured = app.measured_rows(sheet).unwrap_or_default();
             // The document's own heights, and its hidden rows, go on after — `Sizes::new` keeps
-            // the last entry given for a row, so they win.
-            sizes.extend(heights.iter().filter_map(|(row, length)| {
-                Some((*row, grind_core::style::length_mm(length)? * PT_PER_MM))
-            }));
+            // the last entry given for a row, so they win, but for one that only measures its
+            // content, which keeps the taller.
+            let sized = heights
+                .iter()
+                .filter_map(|(row, length)| {
+                    Some((*row, grind_core::style::length_mm(length)? * PT_PER_MM))
+                })
+                .collect();
+            let mut sizes = grind_sheet::autoheight::heights(grown, sized, &measured);
             let mut hidden = app.manually_hidden_rows(sheet).unwrap_or_default();
             hidden.extend(app.hidden_rows(sheet).unwrap_or_default());
             sizes.extend(hidden.into_iter().map(|row| (row, 0.0)));

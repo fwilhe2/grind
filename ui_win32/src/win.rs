@@ -654,16 +654,21 @@ impl Sheet {
                 &metrics,
             );
             if !grown.is_empty() {
-                let mut sizes: Vec<(u32, f64)> = grown;
                 // The document's own heights, and its hidden rows, go on after — `Sizes::new`
-                // keeps the last entry given for a row, so they win.
+                // keeps the last entry given for a row, so they win, but for one that only
+                // measures its content, which keeps the taller.
                 let to_px = mm_to_px(dpi);
-                sizes.extend(heights.iter().filter_map(|(row, length)| {
-                    Some((
-                        *row,
-                        grind_core::style::length_mm(length).map(&to_px)? * zoom,
-                    ))
-                }));
+                let sized = heights
+                    .iter()
+                    .filter_map(|(row, length)| {
+                        Some((
+                            *row,
+                            grind_core::style::length_mm(length).map(&to_px)? * zoom,
+                        ))
+                    })
+                    .collect();
+                let measured = self.app.measured_rows(self.sheet).unwrap_or_default();
+                let mut sizes = grind_sheet::autoheight::heights(grown, sized, &measured);
                 sizes.extend(hidden_rows.iter().map(|row| (*row, 0.0)));
                 self.geom.rows = Sizes::new(row_h, MAX_ROWS, sizes);
             }

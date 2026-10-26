@@ -1452,7 +1452,7 @@ fn patched_row(
     let repeated = format!("{tp}:number-rows-repeated");
     let mut changes: Vec<(String, Option<String>)> = vec![(repeated, None)];
     if patch.height {
-        let style = pool.row_attr(sheet.row_height(row));
+        let style = pool.row_attr(sheet.row_size(row));
         changes.push((
             format!("{tp}:style-name"),
             tag_attr(&style, "table:style-name").map(str::to_owned),
@@ -2103,8 +2103,8 @@ struct Pool<'a> {
     /// The distinct column widths and row heights (§5.4), pooled the same way as `co{i}`/`ro{i}`.
     cols: Vec<&'a str>,
     col_index: HashMap<&'a str, usize>,
-    rows: Vec<&'a str>,
-    row_index: HashMap<&'a str, usize>,
+    rows: Vec<(&'a str, bool)>,
+    row_index: HashMap<(&'a str, bool), usize>,
     /// The style names restyled cells had in the file (`Scope::bases`), each once, and by sheet
     /// name and position which of them a cell had.
     bases: Vec<String>,
@@ -2188,9 +2188,10 @@ impl<'a> Pool<'a> {
                 if !row_written(row) {
                     continue;
                 }
+                let size = (height, sheet.row_measured(row));
                 let next = pool.rows.len();
-                if *pool.row_index.entry(height).or_insert(next) == next {
-                    pool.rows.push(height);
+                if *pool.row_index.entry(size).or_insert(next) == next {
+                    pool.rows.push(size);
                 }
             }
             if let Some(scope) = scope {
@@ -2340,9 +2341,9 @@ impl<'a> Pool<'a> {
         }
     }
 
-    /// The row twin of [`Pool::col_attr`].
-    fn row_attr(&self, height: Option<&str>) -> String {
-        match height.and_then(|h| self.row_index.get(h)) {
+    /// The row twin of [`Pool::col_attr`], for a [`Sheet::row_size`].
+    fn row_attr(&self, size: Option<(&str, bool)>) -> String {
+        match size.and_then(|size| self.row_index.get(&size)) {
             Some(i) => format!(" table:style-name=\"{}\"", self.ro(*i)),
             None => String::new(),
         }
@@ -2434,13 +2435,17 @@ impl<'a> Pool<'a> {
                 esc(width)
             );
         }
-        for (i, height) in self.rows.iter().enumerate() {
+        for (i, (height, measured)) in self.rows.iter().enumerate() {
             let _ = writeln!(
                 out,
                 "  <style:style style:name=\"{}\" style:family=\"table-row\">\
-                 <style:table-row-properties style:row-height=\"{}\"/></style:style>",
+                 <style:table-row-properties style:row-height=\"{}\"{}/></style:style>",
                 self.ro(i),
-                esc(height)
+                esc(height),
+                match measured {
+                    true => " style:use-optimal-row-height=\"true\"",
+                    false => "",
+                }
             );
         }
         out.push_str(" </office:automatic-styles>\n");
@@ -3192,13 +3197,13 @@ fn write_rows(
 
     let mut row = range.start;
     while row < range.end {
-        let height = sheet.row_height(row);
+        let height = sheet.row_size(row);
         // Interior blank rows collapse into one repeated row (§3.3). A row of a different height
         // or visibility stops the run, or that would spread down the sheet.
         let blank = (row..range.end)
             .take_while(|r| {
                 is_blank(*r)
-                    && sheet.row_height(*r) == height
+                    && sheet.row_size(*r) == height
                     && visibility.attr(*r) == visibility.attr(row)
             })
             .count() as u32;
@@ -3447,7 +3452,7 @@ fn write_row(
     let _ = write!(
         out,
         "    <table:table-row{}{}>",
-        pool.row_attr(sheet.row_height(row)),
+        pool.row_attr(sheet.row_size(row)),
         visibility
     );
     // Trailing empty cells are not written: unmentioned is empty (§3.3). Empty means not

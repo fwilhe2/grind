@@ -604,3 +604,33 @@ fn ruby_bases_and_fields_are_the_cells_text() {
     assert_eq!(cell(&d, 0, 0), text("小笠原"));
     assert_eq!(cell(&d, 0, 1), text("Sheet S"));
 }
+
+/// `style:use-optimal-row-height` marks a height as a measurement of the row, which a save keeps.
+#[test]
+fn an_optimal_row_height_is_a_measured_one_and_saved_as_one() {
+    let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  office:mimetype="application/vnd.oasis.opendocument.spreadsheet" office:version="1.4">
+ <office:automatic-styles>
+  <style:style style:name="ro1" style:family="table-row"><style:table-row-properties style:row-height="0.178in" style:use-optimal-row-height="true"/></style:style>
+  <style:style style:name="ro2" style:family="table-row"><style:table-row-properties style:row-height="0.5in" style:use-optimal-row-height="false"/></style:style>
+ </office:automatic-styles>
+ <office:body><office:spreadsheet><table:table table:name="S">
+  <table:table-row table:style-name="ro1"><table:table-cell office:value-type="string"><text:p>a</text:p></table:table-cell></table:table-row>
+  <table:table-row table:style-name="ro2"><table:table-cell office:value-type="string"><text:p>b</text:p></table:table-cell></table:table-row>
+ </table:table></office:spreadsheet></office:body></office:document>"#;
+    let d = read_bytes("t.fods", xml.as_bytes()).unwrap();
+    let s = d.sheet(0).unwrap();
+    assert!(s.row_measured(0) && !s.row_measured(1));
+    assert_eq!(s.row_height(0), Some("0.178in"));
+
+    let mut fresh = grind_sheet::Document::default();
+    fresh.sheets[0].set_row_measured(0, "0.178in".into());
+    fresh.sheets[0].set(grind_sheet::Pos::new(0, 0), CellValue::Number(1.0));
+    let bytes = grind_sheet::write_bytes(&fresh, grind_sheet::Form::Flat).unwrap();
+    let back = read_bytes("t.fods", &bytes).unwrap();
+    assert!(back.sheet(0).unwrap().row_measured(0));
+}

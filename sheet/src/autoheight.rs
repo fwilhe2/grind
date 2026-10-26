@@ -78,6 +78,25 @@ pub fn grown_rows(
     grown
 }
 
+/// The heights a grid gives its rows, in its own unit, for a `Sizes` that keeps the last entry
+/// per row: what [`grown_rows`] measured, then the document's own `sized` heights — each final,
+/// except a row in `measured` ([`crate::Sheet::row_measured`]), which keeps whichever is taller.
+pub fn heights(
+    grown: Vec<(u32, f64)>,
+    sized: Vec<(u32, f64)>,
+    measured: &std::collections::BTreeSet<u32>,
+) -> Vec<(u32, f64)> {
+    let tallest: std::collections::HashMap<u32, f64> = grown.iter().copied().collect();
+    let mut out = grown;
+    out.extend(sized.into_iter().map(|(row, height)| {
+        match (measured.contains(&row), tallest.get(&row)) {
+            (true, Some(grown)) => (row, height.max(*grown)),
+            _ => (row, height),
+        }
+    }));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,6 +125,19 @@ mod tests {
         assert_eq!(grown.len(), 1, "{grown:?}");
         assert_eq!(grown[0].0, 0, "only the styled, wrapping row");
         assert!(grown[0].1 > 5.0);
+    }
+
+    /// A measured height is a floor the content may raise; a chosen one is final.
+    #[test]
+    fn a_measured_row_grows_and_a_sized_one_does_not() {
+        let measured = std::collections::BTreeSet::from([1]);
+        let out = heights(
+            vec![(0, 40.0), (1, 40.0), (2, 10.0)],
+            vec![(0, 20.0), (1, 20.0), (2, 30.0)],
+            &measured,
+        );
+        let last = |row: u32| out.iter().rev().find(|(r, _)| *r == row).unwrap().1;
+        assert_eq!((last(0), last(1), last(2)), (20.0, 40.0, 30.0));
     }
 
     /// A line break grows a row with no style at all, as LibreOffice grows it.

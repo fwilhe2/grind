@@ -48,7 +48,7 @@ body — one or more document-level nodes — and it is executable, not illustra
 | `font-size` | `Document::default_font_size` — what a cell naming no size is set in (`doc/ods-format.md` §5.2). Omitted at 10pt | `font-size "11pt"` |
 | `name` | one entry of `Document::names` — §5.11's `table:named-expressions` | `name "tax_rate" "[$Sales.$B$1]"` |
 | `col` | `Sheet::col_widths` and `Sheet::hidden_cols` for one column, numbered from 1 | `sheet S { col 2 width="2.258cm" hidden=#true }` |
-| `row` | two things by position: `Sheet::row_heights` and `Sheet::manually_hidden_rows` at the sheet level, and one line of a grid inside an `at` | `sheet S { row 3 height="0.45cm" hidden=#true; at A1 { row Region 4200 #null } }` |
+| `row` | two things by position: `Sheet::row_heights` and `Sheet::manually_hidden_rows` at the sheet level — `measured=#true` when the height measures the row's content, which may outgrow it (`Sheet::row_measured`) — and one line of a grid inside an `at` | `sheet S { row 3 height="0.45cm" hidden=#true; at A1 { row Region 4200 #null } }` |
 | `at` | where a grid of plain values starts. Its rows carry `Sheet`'s cell values; `#null` is a hole | `sheet S { at B2 { row 4200 4800 } }` |
 | `cell` | one cell that carries more than a value — `Sheet::formulas`, `Sheet::kinds`, and the value beside them | `sheet S { cell B5 15400 formula="of:=SUM([.B2:.B4])"; cell A7 45123 date=#true; cell A8 0.5 time=#true }` |
 | `style` | one entry of `Sheet::styles`, over every cell of its range | `sheet S { style B1:C1 bold=#true italic=#true size="12pt" color="#ff4136" background=navy align=center valign=middle wrap=#true underline=#true strike=#true indent="0.265cm" rotate="45" border="0.5pt solid #000000" }` |
@@ -149,6 +149,7 @@ thing that grows.
 | `Sheet::styles` | `style` |
 | `Sheet::col_widths` | `col` |
 | `Sheet::row_heights` | `row` |
+| `Sheet::measured_rows` | `row` (its measured property) |
 | `Sheet::hidden_cols` | `col` |
 | `Sheet::manually_hidden_rows` | `row` |
 | `Sheet::filter` | `filter` |

@@ -8,7 +8,7 @@
 //! [`grind_sheet::App::get_viewport`] for, and how to keep the active cell on screen. **A column
 //! is as wide as the document says** ([`Tracks`]), widths accumulating from the scroll position.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use grind_sheet::Pos;
 use grind_sheet::style::length_mm;
@@ -126,10 +126,14 @@ impl Tracks {
         }
     }
 
-    /// With `grown`'s heights under any the document gave.
-    pub fn grown(mut self, grown: &[(u32, f64)]) -> Self {
+    /// With `grown`'s heights under any the document gave, and over a `measured` one they
+    /// outgrow (`grind_sheet::Sheet::row_measured`).
+    pub fn grown(mut self, grown: &[(u32, f64)], measured: &BTreeSet<u32>) -> Self {
         for (at, px) in grown {
-            self.sized.entry(*at).or_insert(*px);
+            let size = self.sized.entry(*at).or_insert(*px);
+            if measured.contains(at) {
+                *size = size.max(*px);
+            }
         }
         self
     }

@@ -174,6 +174,11 @@ pub struct Sheet {
     /// `style:row-height` per row — the twin of `col_widths`, same rules.
     #[serde(default)]
     row_heights: BTreeMap<u32, String>,
+    /// The rows of `row_heights` whose height measures what they hold rather than being chosen
+    /// (`style:use-optimal-row-height`, rng:12938): drawn at least that tall, and taller when what
+    /// they hold needs it, as LibreOffice re-measures them (`doc/ods-format.md` §5.4).
+    #[serde(default)]
+    measured_rows: BTreeSet<u32>,
     /// Columns hidden by hand (`table:visibility="collapse"`, §5.4); a column has no filter.
     #[serde(default)]
     hidden_cols: BTreeSet<u32>,
@@ -220,6 +225,7 @@ impl Sheet {
             styles: BTreeMap::new(),
             col_widths: BTreeMap::new(),
             row_heights: BTreeMap::new(),
+            measured_rows: BTreeSet::new(),
             hidden_cols: BTreeSet::new(),
             manually_hidden_rows: BTreeSet::new(),
             filter: None,
@@ -406,11 +412,35 @@ impl Sheet {
         };
     }
 
+    /// Set a height chosen for the row, or with `None` clear it.
     pub fn set_row_height(&mut self, row: u32, height: Option<String>) {
+        self.measured_rows.remove(&row);
         match height {
             Some(h) => self.row_heights.insert(row, h),
             None => self.row_heights.remove(&row),
         };
+    }
+
+    /// Give the row a height that measures its content ([`Sheet::row_measured`]).
+    pub fn set_row_measured(&mut self, row: u32, height: String) {
+        self.row_heights.insert(row, height);
+        self.measured_rows.insert(row);
+    }
+
+    /// The row's height and whether it measures the row's content, as a writer pools them.
+    pub fn row_size(&self, row: u32) -> Option<(&str, bool)> {
+        self.row_height(row)
+            .map(|height| (height, self.row_measured(row)))
+    }
+
+    /// Whether the row's height measures its content, which may outgrow it.
+    pub fn row_measured(&self, row: u32) -> bool {
+        self.measured_rows.contains(&row)
+    }
+
+    /// Every row whose height measures its content, in order.
+    pub fn measured_rows(&self) -> impl Iterator<Item = u32> + '_ {
+        self.measured_rows.iter().copied()
     }
 
     /// Every sized column, in order — what a renderer's prefix sums and the writer's pool

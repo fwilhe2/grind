@@ -305,6 +305,14 @@ fn differences(label: &str, want: &Document, got: &Document) -> Vec<String> {
             }
         }
         for (row, height) in w.row_heights() {
+            if w.row_measured(row) {
+                if !g.row_measured(row) {
+                    out.push(format!(
+                        "{label}: sheet {i} row {row} measured its content, back as chosen"
+                    ));
+                }
+                continue;
+            }
             if !same_length(height, g.row_height(row)) {
                 out.push(format!(
                     "{label}: sheet {i} row {row} was {height:?} high, back as {:?}",
@@ -845,6 +853,8 @@ fn tracks() -> (String, Document) {
     sheet.set_col_width(4, Some("5cm".into()));
     sheet.set_row_height(0, Some("14mm".into()));
     sheet.set_row_height(2, Some("21pt".into()));
+    // A height that only measures the row, which LibreOffice measures again.
+    sheet.set_row_measured(1, "8mm".into());
     ("tracks".to_owned(), doc)
 }
 

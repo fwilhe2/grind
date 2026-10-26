@@ -566,7 +566,7 @@ fn sheet_differences(a: &Sheet, b: &Sheet, out: &mut Vec<String>) {
     }
     let heights = |s: &Sheet| {
         s.row_heights()
-            .map(|(r, h)| (r, h.to_owned()))
+            .map(|(r, h)| (r, h.to_owned(), s.row_measured(r)))
             .collect::<Vec<_>>()
     };
     if heights(a) != heights(b) {

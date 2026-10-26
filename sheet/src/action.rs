@@ -52,11 +52,14 @@ pub enum Action {
         col: u32,
         width: Option<String>,
     },
-    /// A row's `style:row-height` — the twin of [`Action::SetColWidth`].
+    /// A row's `style:row-height` — the twin of [`Action::SetColWidth`] — and whether it measures
+    /// the row's content ([`Sheet::row_measured`]), which only an undo restores.
     SetRowHeight {
         sheet: usize,
         row: u32,
         height: Option<String>,
+        #[serde(default)]
+        measured: bool,
     },
     /// A column hidden or shown by hand (`table:visibility="collapse"`, §5.4).
     SetColHidden {
@@ -217,14 +220,24 @@ impl Document {
                     width: previous,
                 })
             }
-            Action::SetRowHeight { sheet, row, height } => {
+            Action::SetRowHeight {
+                sheet,
+                row,
+                height,
+                measured,
+            } => {
                 let s = self.sheet_mut(sheet)?;
                 let previous = s.row_height(row).map(str::to_owned);
-                s.set_row_height(row, height);
+                let was_measured = s.row_measured(row);
+                match height {
+                    Some(height) if measured => s.set_row_measured(row, height),
+                    height => s.set_row_height(row, height),
+                }
                 Some(Action::SetRowHeight {
                     sheet,
                     row,
                     height: previous,
+                    measured: was_measured,
                 })
             }
             Action::SetColHidden { sheet, col, hidden } => {

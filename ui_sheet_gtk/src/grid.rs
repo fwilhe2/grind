@@ -1737,12 +1737,22 @@ mod imp {
             let zoom = self.zoom.get();
             // The document's own heights are given *after* the measured ones, because
             // `Sizes::new` keeps the last entry for an index: a row the document sized keeps
-            // that size and clips, which is what an explicit height means.
-            let mut heights = self.auto_heights();
-            heights.extend(self.track_lengths(true));
+            // that size and clips, which is what an explicit height means — unless the height
+            // only measures the row, which its content may outgrow.
+            let sheet = self.sheet.get();
+            let measured = self
+                .app
+                .borrow()
+                .as_ref()
+                .and_then(|app| app.measured_rows(sheet).ok())
+                .unwrap_or_default();
+            let mut heights = grind_sheet::autoheight::heights(
+                self.auto_heights(),
+                self.track_lengths(true),
+                &measured,
+            );
             // Last, so a filtered or manually hidden row is hidden whatever height it was
             // given: zero, which `Sizes` keeps as a track that displaces nothing.
-            let sheet = self.sheet.get();
             if let Some(app) = self.app.borrow().as_ref() {
                 heights.extend(
                     app.hidden_rows(sheet)

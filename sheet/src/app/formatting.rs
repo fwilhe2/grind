@@ -119,6 +119,7 @@ impl App {
                     sheet,
                     row,
                     height: height.clone(),
+                    measured: false,
                 })
                 .collect::<Vec<_>>();
             self::apply_batch(state, sheet, updates)
@@ -159,6 +160,7 @@ impl App {
                         sheet,
                         row,
                         height: None,
+                        measured: false,
                     }),
             );
             self::apply_batch(state, sheet, updates)
@@ -245,6 +247,14 @@ impl App {
         let state = self.state.read().unwrap();
         let sheet = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
         Ok(sheet.col_widths().map(|(c, w)| (c, w.to_owned())).collect())
+    }
+
+    /// The rows of [`App::row_heights`] whose height measures their content, which a grid lets
+    /// them outgrow ([`crate::autoheight::heights`]).
+    pub fn measured_rows(&self, sheet: usize) -> Result<std::collections::BTreeSet<u32>> {
+        let state = self.state.read().unwrap();
+        let sheet = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+        Ok(sheet.measured_rows().collect())
     }
 
     /// The row twin of [`App::col_widths`].

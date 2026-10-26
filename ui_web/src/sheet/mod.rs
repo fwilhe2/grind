@@ -771,7 +771,10 @@ impl Ui {
             layout::CELL.cell_h,
             self.app.row_heights(self.sheet.get()).unwrap_or_default(),
         )
-        .grown(&self.grown())
+        .grown(
+            &self.grown(),
+            &self.app.measured_rows(self.sheet.get()).unwrap_or_default(),
+        )
     }
 
     fn grown(&self) -> Vec<(u32, f64)> {

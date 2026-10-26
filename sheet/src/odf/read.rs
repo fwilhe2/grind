@@ -6,7 +6,7 @@
 //! Everything else falls to `context::Ignore`. Contexts never talk to each other; all mutation
 //! goes through the shared [`Builder`].
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::filter::Filter;
 use crate::formula::date;
@@ -94,9 +94,12 @@ pub struct Builder {
     /// keeps of it: `style:column-width` or `style:row-height`, verbatim. One map for both
     /// families, because a `style:name` is unique across the document (§5.1).
     track_sizes: HashMap<String, String>,
+    /// The `table-row` styles whose height measures the row (`style:use-optimal-row-height`).
+    track_measured: HashSet<String>,
     /// `style:row-height` of the row being read, applied when the row ends because
-    /// `table:number-rows-repeated` decides how many rows it is for.
-    row_size: Option<String>,
+    /// `table:number-rows-repeated` decides how many rows it is for, and whether it measures
+    /// the row.
+    row_size: Option<(String, bool)>,
     /// `table:visibility="collapse"` on the row being read: hidden by hand. `"filter"` is the
     /// filter's, which [`crate::filter`] re-derives rather than trusts.
     row_hidden: bool,
@@ -240,6 +243,7 @@ impl Builder {
             row_style: None,
             col_decl: 0,
             track_sizes: HashMap::new(),
+            track_measured: HashSet::new(),
             row_size: None,
             row_hidden: false,
             filter: None,
@@ -552,8 +556,10 @@ impl Builder {
                 if row >= MAX_ROWS {
                     break;
                 }
-                if let Some(height) = &height {
-                    sheet.set_row_height(row, Some(height.clone()));
+                match &height {
+                    Some((height, true)) => sheet.set_row_measured(row, height.clone()),
+                    Some((height, false)) => sheet.set_row_height(row, Some(height.clone())),
+                    None => {}
                 }
                 if hidden {
                     sheet.set_row_hidden(row, true);
@@ -1535,10 +1541,10 @@ impl Context<Builder> for Table {
                     .get(Ns::Table, "default-cell-style-name")
                     .map(str::to_owned);
                 // §5.4: the row's own `style:style` is where its height lives.
-                b.row_size = attrs
-                    .get(Ns::Table, "style-name")
-                    .and_then(|name| b.track_sizes.get(name))
-                    .cloned();
+                b.row_size = attrs.get(Ns::Table, "style-name").and_then(|name| {
+                    let size = b.track_sizes.get(name)?.clone();
+                    Some((size, b.track_measured.contains(name)))
+                });
                 // Only `"collapse"` is hidden by hand; `"filter"` is recomputed by
                 // [`crate::filter`].
                 b.row_hidden = attrs.get(Ns::Table, "visibility") == Some("collapse");
@@ -2172,8 +2178,9 @@ impl Context<Builder> for CellStyleProps {
 }
 
 /// The property child of a `table-column` or `table-row` `style:style` (§5.4):
-/// `style:column-width` or `style:row-height`, verbatim. `style:use-optimal-*` is dropped —
-/// re-deriving a size needs text measurement — and the explicit size beside it carries the layout.
+/// `style:column-width` or `style:row-height`, verbatim, and for a row
+/// `style:use-optimal-row-height` ([`Sheet::row_measured`]). A column's optimal width is
+/// dropped: LibreOffice does not re-measure one on loading.
 struct TrackStyleProps {
     name: String,
 }
@@ -2187,6 +2194,11 @@ impl Context<Builder> for TrackStyleProps {
         };
         if let Some(size) = size {
             b.track_sizes.insert(self.name.clone(), size.to_owned());
+        }
+        if name.local == "table-row-properties"
+            && attrs.get(Ns::Style, "use-optimal-row-height") == Some("true")
+        {
+            b.track_measured.insert(self.name.clone());
         }
         Some(Box::new(super::context::Ignore))
     }

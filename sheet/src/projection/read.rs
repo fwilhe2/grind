@@ -85,8 +85,12 @@ fn sheet(node: &KdlNode, source: &mut Source) -> Result<Sheet> {
             }
             "row" => {
                 let row = track_index(child)?;
-                if let Some(height) = string_prop(child, "height") {
-                    sheet.set_row_height(row, Some(height));
+                match string_prop(child, "height") {
+                    Some(height) if bool_prop(child, "measured").unwrap_or(false) => {
+                        sheet.set_row_measured(row, height);
+                    }
+                    Some(height) => sheet.set_row_height(row, Some(height)),
+                    None => {}
                 }
                 if bool_prop(child, "hidden").unwrap_or(false) {
                     sheet.set_row_hidden(row, true);
