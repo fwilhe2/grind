@@ -1062,6 +1062,11 @@ fn outside_corpus_against_the_oracle() {
     let mut classes: BTreeMap<String, (std::collections::BTreeSet<String>, usize, Vec<String>)> =
         BTreeMap::new();
     let mut matched: BTreeMap<&str, usize> = BTreeMap::new();
+    // Files shown per class, one example each: `GRIND_LOOP_D_EXAMPLES`, four by default.
+    let examples: usize = std::env::var("GRIND_LOOP_D_EXAMPLES")
+        .ok()
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(4);
     for (digest, path) in &digests {
         let theirs_path = cache.join(format!("{digest}.fods"));
         let Ok(theirs) = grind_sheet::read_file(&theirs_path) else {
@@ -1085,7 +1090,7 @@ fn outside_corpus_against_the_oracle() {
             let entry = classes.entry(difference.class()).or_default();
             entry.0.insert(file.clone());
             entry.1 += 1;
-            if entry.2.len() < 4 && !entry.2.iter().any(|e| e.starts_with(&file)) {
+            if entry.2.len() < examples && !entry.2.iter().any(|e| e.starts_with(&file)) {
                 entry.2.push(format!("{file}: {}", difference.describe()));
             }
         }
