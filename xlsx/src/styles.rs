@@ -182,8 +182,11 @@ pub struct Styles {
     /// The default font's size in points; `None` where no part said.
     size: Option<f64>,
     /// Per `<cellXfs>` entry: its style and number format as every cell naming it shares them.
-    shared: Vec<(Option<Arc<CellStyle>>, Option<Arc<Format>>)>,
+    shared: Vec<Shared>,
 }
+
+/// One cell format's style and number format, shared by the cells naming it.
+type Shared = (Option<Arc<CellStyle>>, Option<Arc<Format>>);
 
 impl Styles {
     /// The kind a cell with `s="index"` holds — `None` for a plain number, and for an index
