@@ -226,6 +226,26 @@ either, and the file is a LibreOffice bug reproduction rather than something a s
 produced. Twelve of the fifteen expressions X2's translator refuses as unreadable across the
 whole 362-workbook corpus are in this one file.
 
+### 2.6 Escaped characters in strings — `SPEC` (§22.9.2.19), `MEASURED`
+
+`ST_Xstring` spells a character XML cannot carry as `_xHHHH_`, four hex digits of a UTF-16 code
+unit, and a literal `_x` that would read as one as `_x005F_x`. Measured 2026-10-26 against
+LibreOffice 26.8.1.1, in a `<t>` of an inline string, with calamine's `has_x000D_.xlsx` showing
+the same for a shared one:
+
+| Written | The oracle's cell |
+|---|---|
+| `a_x0041_b`, `e_x00E9_e` | `aAb`, `eée` |
+| `p_x000d_q` | `p`, CR, `q` — the hex is either case |
+| `s_xD83D__xDE00_s` | `s😀s` — two code units, one character |
+| `_x005F_x0041_`, `_x005f_x0041_` | `_x0041_` |
+| `x_x000D_` + LF + `y` | two paragraphs, `x` and `y` — CR LF is one line break |
+| `lf_x000A_lf`, `t_x0009_t` | two paragraphs; a tab |
+| `nul_x0000_end` | `nulend` |
+| `short_x41_`, `bad_xZZZZ_` | unchanged |
+
+An unpaired surrogate has no character and is left as written.
+
 ---
 
 ## 3. Number formats

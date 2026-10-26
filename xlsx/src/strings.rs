@@ -62,9 +62,56 @@ pub fn item(reader: &mut Reader<'_>) -> crate::Result<Item> {
         Ok(Handled::No)
     })?;
     Ok(Item {
-        text,
+        text: unescape(&text),
         rich: runs > 1,
     })
+}
+
+/// `ST_Xstring`'s `_xHHHH_` escapes decoded, as the oracle does (`doc/xlsx-format.md` §2.6): a
+/// UTF-16 code unit each, pairs joined, `_x0000_` dropped, CR LF one line break, and anything
+/// malformed left as written.
+pub fn unescape(text: &str) -> String {
+    if !text.contains("_x") {
+        return text.to_owned();
+    }
+    let bytes = text.as_bytes();
+    let unit = |at: usize| -> Option<u16> {
+        let candidate = bytes.get(at..at + 7)?;
+        if !(candidate.starts_with(b"_x") && candidate[6] == b'_') {
+            return None;
+        }
+        let hex = std::str::from_utf8(&candidate[2..6]).ok()?;
+        hex.bytes()
+            .all(|b| b.is_ascii_hexdigit())
+            .then(|| u16::from_str_radix(hex, 16).ok())
+            .flatten()
+    };
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    while at < text.len() {
+        if let Some(first) = unit(at) {
+            let (decoded, used) = match (first, unit(at + 7)) {
+                (0xD800..=0xDBFF, Some(second @ 0xDC00..=0xDFFF)) => (
+                    char::decode_utf16([first, second])
+                        .next()
+                        .and_then(Result::ok),
+                    14,
+                ),
+                _ => (char::from_u32(u32::from(first)), 7),
+            };
+            if let Some(c) = decoded {
+                if c != '\0' && !(c == '\r' && bytes.get(at + used) == Some(&b'\n')) {
+                    out.push(c);
+                }
+                at += used;
+                continue;
+            }
+        }
+        let c = text[at..].chars().next().unwrap();
+        out.push(c);
+        at += c.len_utf8();
+    }
+    out
 }
 
 #[cfg(test)]
@@ -75,6 +122,27 @@ mod tests {
 
     fn table(body: &str) -> Vec<Item> {
         read(format!(r#"<sst xmlns="{MAIN}" count="999" uniqueCount="1">{body}</sst>"#).as_bytes())
+    }
+
+    #[test]
+    fn escapes_decode_the_way_the_oracle_reads_them() {
+        for (written, read) in [
+            ("a_x0041_b", "aAb"),
+            ("e_x00E9_e", "eée"),
+            ("p_x000d_q", "p\rq"),
+            ("s_xD83D__xDE00_s", "s😀s"),
+            ("_x005F_x0041_", "_x0041_"),
+            ("_x005f_x0041_", "_x0041_"),
+            ("x_x000D_\ny", "x\ny"),
+            ("lf_x000A_lf", "lf\nlf"),
+            ("nul_x0000_end", "nulend"),
+            ("short_x41_", "short_x41_"),
+            ("bad_xZZZZ_", "bad_xZZZZ_"),
+            ("lone_xD83D_", "lone_xD83D_"),
+            ("_x", "_x"),
+        ] {
+            assert_eq!(unescape(written), read, "{written}");
+        }
     }
 
     #[test]
