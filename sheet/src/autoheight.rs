@@ -15,8 +15,8 @@ use crate::{App, look};
 /// below, so the pass cannot be limited to the screen. Past this every row keeps its height.
 pub const MAX_CELLS: u64 = 200_000;
 
-/// The rows to grow, and to what: each one's tallest cell that wraps or names a font size, plus
-/// `row_pad`, when taller than `row_h`. Plain cells are never laid out. `col_width`, `pad_x` and
+/// The rows to grow, and to what: each one's tallest cell that [`look::grows_row`] names, plus
+/// `row_pad`, when taller than `row_h`. Other cells are never laid out. `col_width`, `pad_x` and
 /// `metrics` are in the shell's unit. Rows hidden or sized by the document are the caller's to put
 /// back.
 pub fn grown_rows(
@@ -50,17 +50,15 @@ pub fn grown_rows(
                 }
                 span = col..merge.end.col + 1;
             }
-            let Some(style) = viewport.style(row, col) else {
+            let style = viewport.style(row, col);
+            let Some(text) = viewport
+                .text(row, col)
+                .filter(|text| look::grows_row(style, text))
+            else {
                 continue;
             };
-            let wrapping = look::wraps(Some(style));
-            if !wrapping && style.font_size.is_none() && style.rotation.is_none() {
-                continue;
-            }
-            let Some(text) = viewport.text(row, col).filter(|text| !text.is_empty()) else {
-                continue;
-            };
-            let text_style = look::text_style(Some(style));
+            let wrapping = look::wraps(style);
+            let text_style = look::text_style(style);
             // Width zero is `wrap`'s "do not wrap", for a cell here only for its larger face.
             let width = match wrapping {
                 true => (span.map(col_width).sum::<f64>() - 2.0 * pad_x).max(1.0) as f32,
@@ -108,6 +106,18 @@ mod tests {
         assert_eq!(grown.len(), 1, "{grown:?}");
         assert_eq!(grown[0].0, 0, "only the styled, wrapping row");
         assert!(grown[0].1 > 5.0);
+    }
+
+    /// A line break grows a row with no style at all, as LibreOffice grows it.
+    #[test]
+    fn a_line_break_grows_an_unstyled_row() {
+        let app = App::new();
+        app.enter(0, Pos::new(0, 0), "one\ntwo\nthree", RecalcMode::Document)
+            .unwrap();
+        assert_eq!(
+            grown_rows(&app, 0, &|_| 30.0, 0.0, 0.0, 1.0, &Fixed),
+            [(0, 3.0)]
+        );
     }
 
     /// Turned text needs the turned box: upright, a run of ten one-wide characters is ten tall.

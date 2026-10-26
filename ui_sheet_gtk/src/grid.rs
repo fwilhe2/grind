@@ -1792,9 +1792,8 @@ mod imp {
         }
 
         /// Natural heights for the rows that need one, measured once per document change. A row is
-        /// only grown: the default fits a line of the widget's font, so only a wrapping cell or a
-        /// bigger font can overflow it — both need a style, and an unstyled cell is skipped
-        /// without layout.
+        /// only grown: the default fits a line of the widget's font, so only a cell
+        /// `look::grows_row` names is laid out.
         fn auto_heights(&self) -> Vec<(u32, f64)> {
             if let Some(measured) = self.auto_rows.borrow().as_ref() {
                 return measured.clone();
@@ -1846,20 +1845,17 @@ mod imp {
                         }
                         span = col..merge.end.col + 1;
                     }
-                    let Some(style) = viewport.style(row, col) else {
+                    let style = viewport.style(row, col);
+                    let Some(text) = viewport
+                        .text(row, col)
+                        .filter(|text| look::grows_row(style, text))
+                    else {
                         continue;
                     };
-                    let wrapping = style.wrap.as_deref() == Some("wrap");
-                    if !wrapping && style.font_size.is_none() && style.rotation.is_none() {
-                        continue;
-                    }
-                    let Some(text) = viewport.text(row, col).filter(|t| !t.is_empty()) else {
-                        continue;
-                    };
-                    let text_style = look::text_style(Some(style));
+                    let wrapping = look::wraps(style);
+                    let text_style = look::text_style(style);
                     // A width of zero is `wrap`'s own "do not wrap" sentinel — one line per
-                    // mandatory break, which is what the un-wrapped case wants (a cell whose
-                    // only reason to be here is an oversized font).
+                    // mandatory break, which is what the un-wrapped case wants.
                     let width = match wrapping {
                         true => {
                             let across: f64 = span.map(|c| cols.size_of(c)).sum();
