@@ -524,12 +524,37 @@ padding — its widths are a fact about the converting machine, the way id 14's 
 (§3.1). Calibri itself is 5.58pt at 11pt, so the same workbook converted on a machine with
 Calibri or Carlito would come out a fifth narrower.
 
-This filter uses the specification's reading with its example's constant: `width × 7` pixels at
-96 dpi (`grind_xlsx::sheet::DIGIT_PX`), which makes Excel's default column 16.93 mm, two-thirds
-of an inch, and every width three-quarters of this oracle's. It has no font metrics — the core
-measures text only through a shell — so a workbook whose default font is not Calibri 11 is
-converted in Calibri's unit, a few percent off; the ponytail beside the constant has the
-upgrade. Loop D names the ratio.
+This filter uses the specification's reading: `width × MDW` pixels at 96 dpi, which makes
+Excel's default column 16.93 mm, two-thirds of an inch, and every width three-quarters of this
+oracle's. Loop D names the ratio.
+
+**Excel's MDW per font — `MEASURED` 2026-10-26** from Excel's own files. Excel stores a column
+dragged to *n* pixels as `n / MDW` truncated to a 256th, so with the right MDW `width × MDW` lies
+within `MDW/256` below a whole number for every `customWidth` column of a workbook. Over 280
+workbooks from public test corpora (Apache POI, ClosedXML, PhpSpreadsheet, calamine, pandas,
+exceljs) whose `docProps/app.xml` names Microsoft Excel, keyed on `<fonts>`' first font:
+
+| Default font | Workbooks | Consistent MDW | `round(digit em × pt × 96/72)` |
+|---|---|---|---|
+| Calibri 11 | 181 | 7 (128) | 0.5068 → 7.43 → 7 |
+| Arial 10 | 40 | 7 (35) | 0.5562 → 7.42 → 7 |
+| Arial 8 | 5 | 6 (5) | 5.93 → 6 |
+| Arial 11 | 7 | 8 (5) | 8.16 → 8 |
+| Arial 12, 16, 18 | 1 each | 9, 12, 13 | 8.90, 11.87, 13.35 |
+| Calibri 12 | 4 | 8 (2) | 8.11 → 8 |
+
+A count below the total is workbooks some other writer touched. Arial 8 rules out truncating
+instead of rounding. The digit's advance is read from the metric-compatible free fonts —
+Carlito for Calibri (1038/2048 em), Liberation Sans for Arial and Helvetica (1139/2048),
+Liberation Serif for Times New Roman (1024/2048), Caladea for Cambria (554/1000), Liberation Sans
+Narrow for Arial Narrow (934/2048), Liberation Mono for Courier New (1229/2048) — whose advance
+widths match by design. A default font outside that list keeps Calibri 11's seven
+(`grind_xlsx::sheet::DIGIT_PX`).
+
+Excel for Mac counts the same widths in points: `Microsoft Macintosh Excel` workbooks are
+consistent with MDW 6 for Calibri 11 (6 of 7), Calibri 12 (7 of 7) and Arial 10, and 5 for
+Calibri 10 — `round(digit em × pt)`, 72 dpi. The same file is a sixth wider on a Mac than on
+Windows; this filter takes the specification's 96 dpi whoever wrote the file.
 
 A hidden column at `width="0"` arrives from the oracle at its own default width; this filter
 hides it and gives it none. A `<col>` running further than `grind_sheet::MAX_TRACK_RUN` columns,

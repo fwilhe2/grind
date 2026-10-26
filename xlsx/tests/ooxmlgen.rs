@@ -1356,7 +1356,8 @@ fn the_style_fixtures_look_as_their_notes_say() {
 #[test]
 fn the_geometry_fixtures_size_and_hide_what_their_notes_say() {
     use grind_xlsx::Appearance;
-    use grind_xlsx::sheet::col_width;
+    // A Calibri 11 workbook, whose digit is seven pixels.
+    let col_width = |chars| grind_xlsx::sheet::col_width(chars, grind_xlsx::sheet::DIGIT_PX);
 
     let (columns, report) = import("geometry/columns.xlsx");
     let sheet = &columns.sheets[0];

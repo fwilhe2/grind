@@ -117,6 +117,9 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
         .and_then(|part| package.part(part))
         .map(|bytes| styles::read(&bytes, &theme))
         .unwrap_or_default();
+    let size = styles.default_size();
+    document.default_font_size =
+        (size != grind_sheet::look::DEFAULT_FONT_PT).then(|| format!("{size}pt"));
     let strings = book
         .strings_part
         .as_deref()

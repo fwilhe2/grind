@@ -93,7 +93,10 @@ pub fn read(
 ) {
     let mut reader = Reader::new(bytes);
     let mut shared = Shared::default();
-    let mut tracks = Tracks::default();
+    let mut tracks = Tracks {
+        digit: context.styles.digit_px(),
+        ..Tracks::default()
+    };
     let mut filter = None;
     let mut rules = crate::rules::Pending::default();
     if matches!(reader.root(), Ok(Some((ref root, _))) if root.is("worksheet")) {
@@ -293,24 +296,53 @@ fn apply_filter(sheet: &mut Sheet, filter: grind_sheet::Filter, null_date: i64) 
 
 /// ECMA-376 §18.3.1.13's unit for a column width: the maximum digit width of the default font, in
 /// pixels at 96 dpi. Seven is Calibri 11's — the spec's worked example, Excel's default since
-/// 2007.
-///
-/// ponytail: one constant for every workbook, since this crate has no font metrics; a 10pt Arial
-/// workbook is a few percent off. The oracle measures in whatever font the converting machine
-/// substitutes, so its widths are a fact about that machine (`doc/xlsx-format.md` §4.5). The
-/// upgrade is a measured table of digit widths keyed on the default font's `<name>` and `<sz>`.
+/// 2007 — and stands in for a font [`digit_px`] does not know.
 pub const DIGIT_PX: f64 = 7.0;
 
-/// A column width in characters, as the ODF length the model stores: `width × DIGIT_PX`
-/// pixels at 96 dpi. The width already includes Excel's padding — `9.140625` is its
-/// 64-pixel default column, which the UI calls 8.43 characters — so nothing is added.
-pub fn col_width(chars: f64) -> String {
-    mm_length(chars * DIGIT_PX * 25.4 / 96.0)
+/// The digit's advance, in em, of the fonts whose metrics are known, read from their
+/// metric-compatible free twins (`doc/xlsx-format.md` §4.5).
+const DIGIT_EM: &[(&str, f64)] = &[
+    ("Calibri", 1038.0 / 2048.0),
+    ("Carlito", 1038.0 / 2048.0),
+    ("Arial", 1139.0 / 2048.0),
+    ("Helvetica", 1139.0 / 2048.0),
+    ("Liberation Sans", 1139.0 / 2048.0),
+    ("Times New Roman", 1024.0 / 2048.0),
+    ("Liberation Serif", 1024.0 / 2048.0),
+    ("Cambria", 554.0 / 1000.0),
+    ("Caladea", 554.0 / 1000.0),
+    ("Arial Narrow", 934.0 / 2048.0),
+    ("Liberation Sans Narrow", 934.0 / 2048.0),
+    ("Courier New", 1229.0 / 2048.0),
+    ("Liberation Mono", 1229.0 / 2048.0),
+];
+
+/// Excel's maximum digit width for a default font of `family` at `size` points: the digit's
+/// advance at 96 dpi, rounded to a pixel — `MEASURED` against Excel's own widths.
+pub fn digit_px(family: Option<&str>, size: f64) -> f64 {
+    family
+        .and_then(|family| {
+            DIGIT_EM
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(family.trim()))
+        })
+        .map(|(_, em)| (em * size * 96.0 / 72.0).round())
+        .filter(|px| *px >= 1.0)
+        .unwrap_or(DIGIT_PX)
+}
+
+/// A column width in characters of `digit` pixels, as the ODF length the model stores, at 96
+/// dpi. The width already includes Excel's padding — `9.140625` is its 64-pixel default column,
+/// which the UI calls 8.43 characters — so nothing is added.
+pub fn col_width(chars: f64, digit: f64) -> String {
+    mm_length(chars * digit * 25.4 / 96.0)
 }
 
 /// What a sheet's tracks said beyond their sizes, collected across the whole part.
 #[derive(Default)]
 struct Tracks {
+    /// The default font's digit width, the unit of every column width ([`digit_px`]).
+    digit: f64,
     /// `<col>` runs longer than `MAX_TRACK_RUN`, applied once the sheet's extent is known.
     long: Vec<(u32, u32, Track)>,
     /// `<sheetFormatPr defaultColWidth>`: the width of every column no `<col>` mentions.
@@ -337,13 +369,13 @@ impl Tracks {
         let used = sheet.used_cols();
         for (start, end, track) in std::mem::take(&mut self.long) {
             for col in start..end.min(used) {
-                column(sheet, col, track, report);
+                column(sheet, col, track, self.digit, report);
             }
         }
         if let Some(width) = self.default_width {
             for col in 0..used {
                 if !self.mentioned.iter().any(|range| range.contains(&col)) {
-                    sheet.set_col_width(col, Some(col_width(width)));
+                    sheet.set_col_width(col, Some(col_width(width, self.digit)));
                 }
             }
         }
@@ -393,7 +425,7 @@ fn cols(
         tracks.mentioned.push(start..end);
         if end - start <= MAX_TRACK_RUN {
             for col in start..end {
-                column(sheet, col, track, report);
+                column(sheet, col, track, tracks.digit, report);
             }
         } else {
             // The sheet's background. Carried over the columns in use once they are known; the
@@ -406,9 +438,9 @@ fn cols(
     })
 }
 
-fn column(sheet: &mut Sheet, col: u32, track: Track, report: &mut Report) {
+fn column(sheet: &mut Sheet, col: u32, track: Track, digit: f64, report: &mut Report) {
     match track.size {
-        Some(width) if width > 0.0 => sheet.set_col_width(col, Some(col_width(width))),
+        Some(width) if width > 0.0 => sheet.set_col_width(col, Some(col_width(width, digit))),
         // `width="0"` on a column that is not hidden is invisible all the same.
         Some(_) if !track.hidden => {
             sheet.set_col_hidden(col, true);
@@ -1240,18 +1272,21 @@ mod tests {
             &Styles::default(),
         );
         // 9.140625 characters is Excel's 64-pixel default: two-thirds of an inch.
-        assert_eq!(sheet.col_width(0), Some(col_width(9.140625).as_str()));
-        assert_eq!(col_width(9.140625), "16.929mm");
+        assert_eq!(
+            sheet.col_width(0),
+            Some(col_width(9.140625, DIGIT_PX).as_str())
+        );
+        assert_eq!(col_width(9.140625, DIGIT_PX), "16.929mm");
         assert!(sheet.col_hidden(1) && sheet.col_hidden(2));
         assert_eq!(
             sheet.col_width(2),
-            Some(col_width(20.0).as_str()),
+            Some(col_width(20.0, DIGIT_PX).as_str()),
             "hidden, and sized"
         );
         assert!(sheet.col_hidden(3), "width 0 is invisible, so it is hidden");
         assert_eq!(sheet.col_width(3), None);
         // E:XFD reaches the columns the sheet uses — E and F — and no further.
-        assert_eq!(sheet.col_width(5), Some(col_width(12.0).as_str()));
+        assert_eq!(sheet.col_width(5), Some(col_width(12.0, DIGIT_PX).as_str()));
         assert_eq!(sheet.col_width(6), None);
         assert_eq!(report.appearance_lost[&Appearance::ZeroSize], 1);
         assert_eq!(
@@ -1259,6 +1294,25 @@ mod tests {
             1,
             "a width chosen for the whole sheet has no home"
         );
+    }
+
+    /// Excel's own widths, measured per default font (`doc/xlsx-format.md` §4.5).
+    #[test]
+    fn the_digit_is_the_default_fonts_rounded_to_a_pixel() {
+        for (family, size, px) in [
+            ("Calibri", 11.0, 7.0),
+            ("Calibri", 12.0, 8.0),
+            ("Arial", 8.0, 6.0),
+            ("Arial", 10.0, 7.0),
+            ("arial", 11.0, 8.0),
+            ("Arial", 12.0, 9.0),
+            ("Arial", 16.0, 12.0),
+            ("Arial", 18.0, 13.0),
+            ("Some Font Nobody Measured", 20.0, DIGIT_PX),
+        ] {
+            assert_eq!(digit_px(Some(family), size), px, "{family} {size}");
+        }
+        assert_eq!(digit_px(None, 11.0), DIGIT_PX);
     }
 
     /// `defaultColWidth` is every used column's that no `<col>` mentions — the model has no
@@ -1271,9 +1325,15 @@ mod tests {
                <sheetData><row r="1"><c r="C1"><v>1</v></c></row></sheetData>"#,
             &Styles::default(),
         );
-        assert_eq!(sheet.col_width(0), Some(col_width(11.53515625).as_str()));
+        assert_eq!(
+            sheet.col_width(0),
+            Some(col_width(11.53515625, DIGIT_PX).as_str())
+        );
         assert_eq!(sheet.col_width(1), None, "mentioned, and hidden at zero");
-        assert_eq!(sheet.col_width(2), Some(col_width(11.53515625).as_str()));
+        assert_eq!(
+            sheet.col_width(2),
+            Some(col_width(11.53515625, DIGIT_PX).as_str())
+        );
         assert_eq!(sheet.col_width(3), None, "past the sheet's content");
         assert!(report.appearance_lost.is_empty());
 

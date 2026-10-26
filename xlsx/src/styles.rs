@@ -176,6 +176,10 @@ pub struct Styles {
     looks: Vec<Look>,
     /// Per `<dxfs>` entry, in order: what a conditional-format rule naming it draws.
     dxfs: Vec<Look>,
+    /// The default font's maximum digit width, in pixels; `None` where no part said.
+    digit_px: Option<f64>,
+    /// The default font's size in points; `None` where no part said.
+    size: Option<f64>,
 }
 
 impl Styles {
@@ -208,6 +212,16 @@ impl Styles {
     /// instead of it.
     pub fn dxf(&self, index: usize) -> Option<&Look> {
         self.dxfs.get(index)
+    }
+
+    /// The default font's size in points — what a cell naming none is set in.
+    pub fn default_size(&self) -> f64 {
+        self.size.unwrap_or(DEFAULT_SIZE)
+    }
+
+    /// The unit of a column's width: the default font's digit, in pixels at 96 dpi.
+    pub fn digit_px(&self) -> f64 {
+        self.digit_px.unwrap_or(crate::sheet::DIGIT_PX)
     }
 }
 
@@ -392,6 +406,8 @@ impl Part {
                 .map_or(Resolved::Automatic, |c| palette.resolve(c)),
             family: default_font.family.clone(),
         };
+        let digit_px = Some(crate::sheet::digit_px(base.family.as_deref(), base.size));
+        let size = Some(base.size);
 
         let none = Fill::None;
         let blank = Border::default();
@@ -424,20 +440,34 @@ impl Part {
                 &palette,
             ));
         }
-        // The default cell format is the document's default: a cell saying the same carries
-        // nothing. (`sample.xlsx`'s named style puts `vertical="bottom"` on every cell.)
-        let base = looks
+        // A bottom on the default cell format is where text sits when nothing says
+        // (`grind_sheet::look::valign`), so no cell carries it — `sample.xlsx`'s named style puts
+        // it on every one. Anything else the default format sets is drawn on each cell: ODF has
+        // no document default for an alignment, a fill or a border.
+        let bottom = Some("bottom".to_owned());
+        if looks
             .first()
-            .and_then(|look: &Look| look.style.clone())
-            .unwrap_or_default();
-        for look in &mut looks {
-            if let Some(style) = look.style.take() {
-                let style = without(style, &base);
-                look.style = (!style.is_plain()).then_some(style);
+            .and_then(|l| l.style.as_ref())
+            .map(|s| &s.vertical_align)
+            == Some(&bottom)
+        {
+            for look in &mut looks {
+                if let Some(style) = look.style.as_mut().filter(|s| s.vertical_align == bottom) {
+                    style.vertical_align = None;
+                    if style.is_plain() {
+                        look.style = None;
+                    }
+                }
             }
         }
         let dxfs = self.dxfs.iter().map(|d| dxf_look(d, &palette)).collect();
-        Styles { xfs, looks, dxfs }
+        Styles {
+            xfs,
+            looks,
+            dxfs,
+            digit_px,
+            size,
+        }
     }
 }
 
@@ -576,35 +606,6 @@ fn dxf(reader: &mut Reader<'_>) -> crate::Result<Dxf> {
         Ok(Handled::Yes)
     })?;
     Ok(out)
-}
-
-/// `style` with every property equal to `base`'s taken out.
-fn without(mut style: CellStyle, base: &CellStyle) -> CellStyle {
-    let fields = [
-        (&mut style.font_weight, &base.font_weight),
-        (&mut style.font_style, &base.font_style),
-        (&mut style.font_size, &base.font_size),
-        (&mut style.color, &base.color),
-        (&mut style.background, &base.background),
-        (&mut style.align, &base.align),
-        (&mut style.vertical_align, &base.vertical_align),
-        (&mut style.wrap, &base.wrap),
-        (&mut style.underline, &base.underline),
-        (&mut style.indent, &base.indent),
-        (&mut style.rotation, &base.rotation),
-        (&mut style.line_through, &base.line_through),
-    ];
-    for (field, base) in fields {
-        if field.is_some() && field == base {
-            *field = None;
-        }
-    }
-    for (edge, base) in style.borders.iter_mut().zip(&base.borders) {
-        if edge.is_some() && edge == base {
-            *edge = None;
-        }
-    }
-    style
 }
 
 /// `<sz>` when a font states none: 11pt, the size Excel has given its default font since 2007
@@ -1194,6 +1195,25 @@ mod tests {
         assert_eq!(
             style(&styles, 2).and_then(|s| s.vertical_align),
             Some("top".into())
+        );
+    }
+
+    /// What else the default cell format sets is the cell's own: ODF's default cell is bottom-aligned
+    /// and unfilled, so a workbook top-aligning everything says so on every cell.
+    #[test]
+    fn a_default_cell_format_that_is_not_odfs_default_is_on_every_cell() {
+        let styles = part(
+            r#"<fonts><font/></fonts>
+               <fills><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/></patternFill></fill></fills>
+               <cellStyleXfs><xf><alignment vertical="top"/></xf></cellStyleXfs>"#,
+            r#"<xf xfId="0"/><xf xfId="0" fillId="1"/><xf xfId="0"><alignment vertical="bottom"/></xf>"#,
+        );
+        let top = Some("top".to_owned());
+        assert_eq!(style(&styles, 0).and_then(|s| s.vertical_align), top);
+        assert_eq!(style(&styles, 1).and_then(|s| s.vertical_align), top);
+        assert_eq!(
+            style(&styles, 2).and_then(|s| s.vertical_align),
+            Some("bottom".into())
         );
     }
 
