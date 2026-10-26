@@ -452,7 +452,17 @@ impl Defaults {
     /// search rather than a parse, because the style is one element whose shape the oracle
     /// writes the same way every time, and our own reader deliberately does not keep it.
     fn of(fods: &str) -> Self {
-        let Some(start) = fods.find(r#"style:name="Default" style:family="table-cell""#) else {
+        // What `Default` leaves unsaid, the default style says.
+        let fallback = Self::in_element(fods, r#"<style:default-style style:family="table-cell""#);
+        let own = Self::in_element(fods, r#"style:name="Default" style:family="table-cell""#);
+        Defaults {
+            size: own.size.or(fallback.size),
+            color: own.color.or(fallback.color),
+        }
+    }
+
+    fn in_element(fods: &str, opening: &str) -> Self {
+        let Some(start) = fods.find(opening) else {
             return Defaults::default();
         };
         let element = &fods[start..];
