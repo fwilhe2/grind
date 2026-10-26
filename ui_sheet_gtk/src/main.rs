@@ -1059,7 +1059,16 @@ impl Ui {
             ))
             .timeout(0)
             .build();
-        self.toasts.add_toast(notice.clone());
+        // Said only when the open is still going after a moment, or every small file flashes it.
+        let pending = Rc::new(Cell::new(true));
+        {
+            let (ui, notice, pending) = (self.clone(), notice.clone(), pending.clone());
+            glib::timeout_add_local_once(std::time::Duration::from_millis(400), move || {
+                if pending.get() {
+                    ui.toasts.add_toast(notice);
+                }
+            });
+        }
         self.set_busy(true);
         let ui = self.clone();
         let path = path.to_owned();
@@ -1087,6 +1096,7 @@ impl Ui {
                 Ok(Some((document, imported)))
             })
             .await;
+            pending.set(false);
             notice.dismiss();
             ui.set_busy(false);
             ui.opening.set(false);
