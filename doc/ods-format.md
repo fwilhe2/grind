@@ -656,7 +656,10 @@ wrong here before:
 writes `10pt` there in every document, and a document with no default style is 10pt in it too
 (`grind_sheet::look::DEFAULT_FONT_PT`). Measured 2026-10-26 (LibreOffice 26.8.1.1, PDF export,
 `pdftotext -bbox`): with `fo:font-size="14pt"` on the default style, an unstyled cell's words are
-15.6pt tall — set in 14pt. `Document::default_font_size` holds it when it is not 10pt, and the
+15.6pt tall — set in 14pt. **The named `Default` cell style outranks it**: with no default style
+and `fo:font-size="20pt"` on `style:style style:name="Default"`, an unstyled cell's words are
+22.3pt tall. Excel writes its `.ods` that way (11pt Calibri on `Default`, no default style), so
+the reader takes `Default`'s size, where it states one, as the document's. `Document::default_font_size` holds it when it is not 10pt, and the
 writer puts it back on the default style; a viewport resolves it onto each cell that names no
 size, so a shell drawing relative to 10pt draws it right. An `.xlsx`'s default font (the first
 `<font>`, Calibri 11 in every Excel workbook) arrives there.

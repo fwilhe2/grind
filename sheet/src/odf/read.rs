@@ -1953,6 +1953,14 @@ struct Styles;
 impl Context<Builder> for Styles {
     fn end(&mut self, b: &mut Builder) {
         b.resolve_maps();
+        // An unstyled cell is set in the `Default` cell style, which LibreOffice takes as the
+        // root of every cell's look (measured, `doc/ods-format.md` §5.2): its size, where it
+        // states one, is the document's.
+        if let Some(size) = b.inherited("Default").and_then(|look| look.font_size) {
+            b.doc.default_font_size = crate::look::font_scale(Some(&size))
+                .is_some_and(|scale| scale != 1.0)
+                .then_some(size);
+        }
     }
 
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {

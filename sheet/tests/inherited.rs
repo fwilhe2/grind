@@ -179,3 +179,32 @@ fn embedded_text_is_read_shown_and_written() {
             .contains(r#"<number:embedded-text number:position="7">) </number:embedded-text>"#)
     );
 }
+
+/// An unstyled cell is set in the named `Default` cell style, which outranks the default style
+/// (`doc/ods-format.md` §5.2) — the shape of an `.ods` Excel writes.
+#[test]
+fn the_default_cell_styles_size_is_the_documents() {
+    let cell =
+        r#"<table:table-cell office:value-type="string"><text:p>x</text:p></table:table-cell>"#;
+    let both = r#"<office:styles>
+        <style:default-style style:family="table-cell"><style:text-properties fo:font-size="14pt"/></style:default-style>
+        <style:style style:name="Default" style:family="table-cell"><style:text-properties fo:font-size="11pt"/></style:style>
+        </office:styles>"#;
+    assert_eq!(read(cell, both).default_font_size.as_deref(), Some("11pt"));
+    let only_default_style = r#"<office:styles>
+        <style:default-style style:family="table-cell"><style:text-properties fo:font-size="14pt"/></style:default-style>
+        </office:styles>"#;
+    assert_eq!(
+        read(cell, only_default_style).default_font_size.as_deref(),
+        Some("14pt")
+    );
+    let ten = r#"<office:styles>
+        <style:default-style style:family="table-cell"><style:text-properties fo:font-size="14pt"/></style:default-style>
+        <style:style style:name="Default" style:family="table-cell"><style:text-properties fo:font-size="10pt"/></style:style>
+        </office:styles>"#;
+    assert_eq!(
+        read(cell, ten).default_font_size,
+        None,
+        "10pt is no default"
+    );
+}
