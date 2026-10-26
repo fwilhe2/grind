@@ -4340,17 +4340,31 @@ mod imp {
                     }
 
                     // Text keeps going until it meets something, which is the other half
-                    // of the convention.
+                    // of the convention: rightwards from the start, leftwards from the end, and
+                    // both ways from the middle, as LibreOffice draws it…
                     let mut paint = cell;
+                    let blocked = |c: u32| {
+                        viewport.get(row, c).is_some_and(|v| !v.is_empty())
+                            || viewport.merge_at(row, c).is_some()
+                    };
                     // …except past a filter button, which is a control in the way.
-                    if !fits && align == Align::Left && !capped {
+                    if !fits && align != Align::Right && !capped {
                         let stop = (col + 1..fetch.end)
-                            .find(|c| {
-                                viewport.get(row, *c).is_some_and(|v| !v.is_empty())
-                                    || viewport.merge_at(row, *c).is_some()
-                            })
+                            .find(|c| blocked(*c))
                             .map_or(f.width + geom.scroll_x, |c| geom.cell_rect(row, c).x);
                         paint.w = (stop - cell.x).max(cell.w);
+                    }
+                    if !fits && align != Align::Left {
+                        let start = (fetch.start..col)
+                            .rev()
+                            .find(|c| blocked(*c))
+                            .map_or(geom.cell_rect(row, fetch.start).x, |c| {
+                                let r = geom.cell_rect(row, c);
+                                r.x + r.w
+                            })
+                            .min(cell.x);
+                        paint.w += paint.x - start;
+                        paint.x = start;
                     }
                     let pad = match align {
                         Align::Right => pad,
