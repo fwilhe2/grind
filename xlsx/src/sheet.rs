@@ -56,6 +56,10 @@ use crate::xml::{Handled, Reader, Spreadsheet as _};
 /// [`Report::over_budget`].
 pub const MAX_CELLS: usize = 4_000_000;
 
+/// Text one import will materialise, in bytes. A shared string is stored once and may be named by
+/// every cell, so a 100 KB package can ask for gigabytes; a text cell past it is over budget too.
+pub const MAX_TEXT_BYTES: usize = if cfg!(test) { 1 << 20 } else { 512 << 20 };
+
 /// What every sheet in one workbook reads its cells against.
 pub struct Context<'a> {
     pub strings: &'a [Item],
@@ -787,11 +791,16 @@ fn store(
         }
         return;
     }
-    if report.cells >= MAX_CELLS {
+    let text = match &value {
+        CellValue::Text(text) => text.len(),
+        _ => 0,
+    };
+    if report.cells >= MAX_CELLS || report.text_bytes + text > MAX_TEXT_BYTES {
         report.over_budget += 1;
         return;
     }
     report.cells += 1;
+    report.text_bytes += text;
     sheet.set(at, value);
     if let Some(kind) = kind {
         sheet.set_kind(at, kind);
@@ -1023,6 +1032,21 @@ mod tests {
         );
         assert_eq!(report.dropped[&Dropped::RichText], 2);
         assert_eq!(report.cells, 2, "an index past the table carries nothing");
+    }
+
+    #[test]
+    fn one_shared_string_named_by_every_cell_is_carried_only_up_to_the_text_budget() {
+        let strings = [Item {
+            text: "x".repeat(300 << 10),
+            rich: false,
+        }];
+        let cells: String = (1..=10)
+            .map(|row| format!(r#"<row r="{row}"><c r="A{row}" t="s"><v>0</v></c></row>"#))
+            .collect();
+        let (sheet, report) = sheet_of(&cells, &strings, &Styles::default(), false);
+        assert_eq!(report.cells, 3);
+        assert_eq!(report.over_budget, 7);
+        assert!(sheet.get(at("A4")).is_empty());
     }
 
     #[test]

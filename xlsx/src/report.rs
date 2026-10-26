@@ -73,6 +73,8 @@ pub struct Report {
     pub flavour: Flavour,
     pub sheets: usize,
     pub cells: usize,
+    /// Bytes of text those cells hold, against `sheet::MAX_TEXT_BYTES`.
+    pub text_bytes: usize,
     pub formulas: usize,
     /// Conditional-format rules carried as the model's one rule type (`rules.rs`). One that
     /// could not be is a `Dropped::ConditionalFormat`.
@@ -102,7 +104,7 @@ pub struct Report {
     /// ([`crate::styles::Appearance`] says which). Apart from [`Report::dropped`], since a missing
     /// construct and a missing piece of formatting are different sentences.
     pub appearance_lost: BTreeMap<crate::styles::Appearance, usize>,
-    /// Cells past `sheet::MAX_CELLS`, read and not carried. Not a [`Dropped`]: the model could
+    /// Cells past `sheet::MAX_CELLS` or `sheet::MAX_TEXT_BYTES`, read and not carried. Not a [`Dropped`]: the model could
     /// hold them, the bound is this filter's — but a loss all the same, which [`Report::lossless`]
     /// reports.
     pub over_budget: usize,
