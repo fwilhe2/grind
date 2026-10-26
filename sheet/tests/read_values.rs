@@ -592,3 +592,15 @@ fn a_date_we_cannot_parse_keeps_its_text_rather_than_losing_the_cell() {
     assert_eq!(cell(&d, 0, 1), num(7.0));
     assert_eq!(d.sheet(0).unwrap().kind(Pos::new(0, 0)), None);
 }
+
+/// A ruby's base is the cell's text and its reading is not, as the oracle shows `tdf129940.ods`;
+/// a field's cached text is the cell's too.
+#[test]
+fn ruby_bases_and_fields_are_the_cells_text() {
+    let d = doc(r#"<table:table table:name="S"><table:table-row>
+           <table:table-cell office:value-type="string"><text:p><text:ruby><text:ruby-base>小笠原</text:ruby-base><text:ruby-text>オガサワラ</text:ruby-text></text:ruby></text:p></table:table-cell>
+           <table:table-cell office:value-type="string"><text:p>Sheet <text:sheet-name>S</text:sheet-name></text:p></table:table-cell>
+           </table:table-row></table:table>"#);
+    assert_eq!(cell(&d, 0, 0), text("小笠原"));
+    assert_eq!(cell(&d, 0, 1), text("Sheet S"));
+}

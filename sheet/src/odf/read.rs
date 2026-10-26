@@ -2392,6 +2392,12 @@ impl Context<Builder> for Paragraph {
                 b.text.push('\n');
                 Some(Box::new(super::context::Ignore))
             }
+            // A note's text is not the cell's, nor is a ruby's reading over its base; any other
+            // inline element — a ruby's base, a field's cached text — holds the cell's characters.
+            (Ns::Text, "note" | "ruby-text") => None,
+            (Ns::Text, _) => Some(Box::new(Paragraph {
+                collapse: self.collapse,
+            })),
             _ => None,
         }
     }
