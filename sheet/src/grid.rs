@@ -13,8 +13,6 @@
 //! ponytail: text and bool share one `Other` block; splitting it is a one-variant change if a
 //! profile asks.
 //!
-//! ponytail: block lookup is a linear scan over blocks; add an offset index inside `find` if a
-//! column that alternates types every row ever shows up.
 
 use crate::model::CellValue;
 
@@ -100,16 +98,44 @@ impl Block {
     }
 }
 
-/// One column of one sheet.
+/// One column of one sheet. A column whose type alternates every row (dates mixed with dates
+/// typed as text) is a block per row, so blocks are found by binary search over where each ends.
 #[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(from = "Stored", into = "Stored")]
 pub struct Column {
     blocks: Vec<Block>,
+    /// One past the last row of each block, derived from `blocks`.
+    ends: Vec<u32>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Stored {
+    blocks: Vec<Block>,
+}
+
+impl From<Stored> for Column {
+    fn from(stored: Stored) -> Self {
+        let mut column = Column::default();
+        for block in stored.blocks {
+            column.push(block);
+        }
+        column.trim();
+        column
+    }
+}
+
+impl From<Column> for Stored {
+    fn from(column: Column) -> Self {
+        Stored {
+            blocks: column.blocks,
+        }
+    }
 }
 
 impl Column {
     /// One past the last row holding a value; trailing empties are never stored.
     pub fn len(&self) -> u32 {
-        self.blocks.iter().map(Block::len).sum()
+        self.ends.last().copied().unwrap_or(0)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -119,12 +145,11 @@ impl Column {
     /// The rows holding a value, one range per non-empty block, in order — one step per block,
     /// where a million empty rows are one block.
     pub fn occupied(&self) -> impl Iterator<Item = std::ops::Range<u32>> + '_ {
-        let mut at = 0;
-        self.blocks.iter().filter_map(move |block| {
-            let start = at;
-            at += block.len();
-            (block.kind() != Kind::Empty).then_some(start..at)
-        })
+        self.blocks
+            .iter()
+            .enumerate()
+            .filter(|(_, block)| block.kind() != Kind::Empty)
+            .map(|(i, _)| self.start(i)..self.ends[i])
     }
 
     pub fn get(&self, row: u32) -> CellValue {
@@ -142,10 +167,9 @@ impl Column {
             }
             let pad = row - self.len();
             if pad > 0 {
-                self.blocks.push(Block::Empty(pad));
+                self.push(Block::Empty(pad));
             }
-            self.blocks.push(Block::one(value));
-            self.normalize();
+            self.push(Block::one(value));
             return;
         };
 
@@ -160,48 +184,71 @@ impl Column {
             return;
         }
 
-        // Different kind: split the block around the target and splice the new one in.
+        // Different kind: split the block around the target and splice the new one in. Every
+        // other block keeps its rows, so only the neighbourhood needs normalising.
+        let start = self.start(bi);
         let mut head = self.blocks.remove(bi);
+        self.ends.remove(bi);
         let tail = head.split_off(off + 1); // rows after the target
         let _target = head.split_off(off); // the target itself, discarded
         let mut at = bi;
+        let mut end = start;
         for block in [head, Block::one(value), tail] {
             if block.len() > 0 {
+                end += block.len();
                 self.blocks.insert(at, block);
+                self.ends.insert(at, end);
                 at += 1;
             }
         }
-        self.normalize();
-    }
-
-    /// Locate `row`: which block holds it, and how far into that block it sits.
-    fn find(&self, row: u32) -> Option<(usize, u32)> {
-        let mut start = 0u32;
-        for (i, b) in self.blocks.iter().enumerate() {
-            let end = start + b.len();
-            if row < end {
-                return Some((i, row - start));
-            }
-            start = end;
-        }
-        None
-    }
-
-    /// Restore the invariants: no zero-length blocks, no two adjacent blocks of the same kind, no
-    /// trailing empty run. O(1) on a healthy column.
-    fn normalize(&mut self) {
-        self.blocks.retain(|b| b.len() > 0);
-        let mut i = 0;
-        while i + 1 < self.blocks.len() {
+        let mut i = bi.saturating_sub(1);
+        while i + 1 < self.blocks.len() && i <= at {
             if self.blocks[i].kind() == self.blocks[i + 1].kind() {
                 let next = self.blocks.remove(i + 1);
                 self.blocks[i].append(next);
+                self.ends.remove(i);
+                at -= 1;
             } else {
                 i += 1;
             }
         }
+        self.trim();
+    }
+
+    /// The first row of block `i`.
+    fn start(&self, i: usize) -> u32 {
+        i.checked_sub(1).map_or(0, |before| self.ends[before])
+    }
+
+    /// Locate `row`: which block holds it, and how far into that block it sits.
+    fn find(&self, row: u32) -> Option<(usize, u32)> {
+        let i = self.ends.partition_point(|&end| end <= row);
+        (i < self.blocks.len()).then(|| (i, row - self.start(i)))
+    }
+
+    /// Add a block at the end, into the last one when they are the same kind.
+    fn push(&mut self, block: Block) {
+        if block.len() == 0 {
+            return;
+        }
+        let end = self.len() + block.len();
+        match self.blocks.last_mut() {
+            Some(last) if last.kind() == block.kind() => {
+                last.append(block);
+                *self.ends.last_mut().unwrap() = end;
+            }
+            _ => {
+                self.blocks.push(block);
+                self.ends.push(end);
+            }
+        }
+    }
+
+    /// Drop a trailing empty run, which is never stored.
+    fn trim(&mut self) {
         while matches!(self.blocks.last(), Some(Block::Empty(_))) {
             self.blocks.pop();
+            self.ends.pop();
         }
     }
 }
@@ -210,9 +257,19 @@ impl Column {
 mod tests {
     use super::*;
 
-    /// Everything `normalize` promises.
+    /// Every invariant a column keeps after a write.
     #[track_caller]
     fn check(c: &Column) {
+        let mut end = 0;
+        let ends: Vec<u32> = c
+            .blocks
+            .iter()
+            .map(|b| {
+                end += b.len();
+                end
+            })
+            .collect();
+        assert_eq!(c.ends, ends, "stale ends for {:?}", c.blocks);
         assert!(
             c.blocks.iter().all(|b| b.len() > 0),
             "zero-length block: {:?}",
@@ -410,6 +467,12 @@ mod tests {
             reference[row as usize] = value;
 
             check(&c);
+            if step % 500 == 0 {
+                let json = serde_json::to_string(&c).unwrap();
+                let back: Column = serde_json::from_str(&json).unwrap();
+                check(&back);
+                assert_eq!(back, c, "serde round trip at step {step}");
+            }
             for (row, want) in reference.iter().enumerate() {
                 assert_eq!(
                     &c.get(row as u32),
