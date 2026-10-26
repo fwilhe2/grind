@@ -1837,11 +1837,14 @@ mod imp {
             for row in 0..used_rows {
                 let mut tallest: f32 = 0.0;
                 for col in 0..used_cols {
-                    // A merge is not measured against one column, and a row it spans is
-                    // not grown for it: the merge's own height is its rows', as LibreOffice
-                    // draws one.
-                    if viewport.merge_at(row, col).is_some() {
-                        continue;
+                    // A merge on one row is measured as wide as its columns; a taller one
+                    // grows none of its rows (`doc/ods-format.md` §5.4).
+                    let mut span = col..col + 1;
+                    if let Some(merge) = viewport.merge_at(row, col) {
+                        if merge.anchor != Pos::new(row, col) || merge.end.row != row {
+                            continue;
+                        }
+                        span = col..merge.end.col + 1;
                     }
                     let Some(style) = viewport.style(row, col) else {
                         continue;
@@ -1858,7 +1861,10 @@ mod imp {
                     // mandatory break, which is what the un-wrapped case wants (a cell whose
                     // only reason to be here is an oversized font).
                     let width = match wrapping {
-                        true => (cols.size_of(col) - 2.0 * PAD).max(1.0) as f32,
+                        true => {
+                            let across: f64 = span.map(|c| cols.size_of(c)).sum();
+                            (across - 2.0 * PAD).max(1.0) as f32
+                        }
                         false => 0.0,
                     };
                     let fragment = grind_core::layout::Fragment {

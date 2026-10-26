@@ -41,6 +41,15 @@ pub fn grown_rows(
     for row in 0..rows {
         let mut tallest: f64 = 0.0;
         for col in 0..cols {
+            // A merge on one row is measured as wide as its columns; a taller one grows none of
+            // its rows (`doc/ods-format.md` §5.4).
+            let mut span = col..col + 1;
+            if let Some(merge) = viewport.merge_at(row, col) {
+                if merge.anchor != crate::Pos::new(row, col) || merge.end.row != row {
+                    continue;
+                }
+                span = col..merge.end.col + 1;
+            }
             let Some(style) = viewport.style(row, col) else {
                 continue;
             };
@@ -54,7 +63,7 @@ pub fn grown_rows(
             let text_style = look::text_style(Some(style));
             // Width zero is `wrap`'s "do not wrap", for a cell here only for its larger face.
             let width = match wrapping {
-                true => (col_width(col) - 2.0 * pad_x).max(1.0) as f32,
+                true => (span.map(col_width).sum::<f64>() - 2.0 * pad_x).max(1.0) as f32,
                 false => 0.0,
             };
             let fragment = Fragment {
@@ -99,5 +108,30 @@ mod tests {
         assert_eq!(grown.len(), 1, "{grown:?}");
         assert_eq!(grown[0].0, 0, "only the styled, wrapping row");
         assert!(grown[0].1 > 5.0);
+    }
+
+    /// LibreOffice grows a row for a merge on it alone, measured across the merge, and no row for
+    /// a merge spanning two (`doc/ods-format.md` §5.4).
+    #[test]
+    fn a_merge_on_one_row_grows_it_and_a_taller_one_does_not() {
+        let app = App::new();
+        let words = "one two three four five six seven eight nine";
+        let style = crate::style::CellStyle {
+            wrap: Some("wrap".into()),
+            ..Default::default()
+        };
+        for row in [0, 2] {
+            app.enter(0, Pos::new(row, 0), words, RecalcMode::Document)
+                .unwrap();
+            app.set_style(0, Pos::new(row, 0), Pos::new(row, 0), Some(style.clone()))
+                .unwrap();
+        }
+        app.merge(0, Pos::new(0, 0), Pos::new(0, 3)).unwrap();
+        app.merge(0, Pos::new(2, 0), Pos::new(3, 3)).unwrap();
+        let narrow = grown_rows(&app, 0, &|_| 5.0, 1.0, 0.0, 1.0, &Fixed);
+        assert_eq!(narrow.iter().map(|g| g.0).collect::<Vec<_>>(), [0]);
+        // Four columns of 12 hold the line that one column of 12 would wrap.
+        let wide = grown_rows(&app, 0, &|_| 12.0, 1.0, 0.0, 1.0, &Fixed);
+        assert_eq!(wide, [], "laid out across the merge's columns");
     }
 }

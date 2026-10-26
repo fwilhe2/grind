@@ -752,6 +752,12 @@ A style applied to every cell of a column also comes back on the **column**
 which is why cell-style resolution has to consult the column default (§5.1) rather than the
 cell alone.
 
+**A merge grows its row when it spans only one** — `MEASURED` 2026-10-26 (LibreOffice 26.8.1.1,
+an `.xlsx` with 22pt bold text in `A1`, converted to `.fods`): merged over `A1:C1`, unmerged, and
+with or without Excel's stored `ht`, row 1 comes back at the same optimal 0.4555in; merged over
+`A1:C2`, rows 1 and 2 both stay at the default 0.2083in. A one-row merge is measured like a
+cell as wide as its columns; a taller one grows nothing.
+
 ---
 
 ## 6. LibreOffice-only extensions **[ODS]**
