@@ -570,7 +570,7 @@ impl Shared {
                 i64::from(at.row) - i64::from(base.row),
                 i64::from(at.col) - i64::from(base.col),
             );
-            store_formula(sheet, at, &moved, index, context, report);
+            store_formula(sheet, at, &moved, index, context, report, false);
         }
     }
 }
@@ -742,14 +742,15 @@ fn take_formula(
             {
                 shared.masters.insert(si, (at, expr.clone()));
             }
-            store_formula(sheet, at, &expr, index, context, report);
+            store_formula(sheet, at, &expr, index, context, report, true);
         }
         Err(refusal) => refuse(refusal, at, index, report),
     }
 }
 
-/// The formula in ODF syntax and the functions it names — or its refusal, when it names a name
-/// sheet-local here. Renamed sheets are followed first.
+/// The formula in ODF syntax and, where `scan` asks, the functions it names — or its refusal,
+/// when it names a name sheet-local here. Renamed sheets are followed first. A shared group's
+/// follower is not scanned: shifting moves references, never calls, and its master was.
 fn store_formula(
     sheet: &mut Sheet,
     at: Pos,
@@ -757,18 +758,30 @@ fn store_formula(
     index: usize,
     context: &Context<'_>,
     report: &mut Report,
+    scan: bool,
 ) {
     if names_in(expr).any(|name| context.names.is_local(index, name)) {
         refuse(Refusal::SheetLocalName, at, index, report);
         return;
     }
-    let expr = &crate::workbook::renamed(expr, context.renames);
+    let renamed;
+    let expr = match context.renames.is_empty() {
+        true => expr,
+        false => {
+            renamed = crate::workbook::renamed(expr, context.renames);
+            &renamed
+        }
+    };
     // `=` rather than `of:=`: both are legal (§5.2) and this is the spelling everything else
     // in the workspace stores, so an imported formula and a typed one are the same string.
     let text = format!("={expr}");
     // Asked of the text rather than of the tree, so that what is reported is what the document
     // now says — one walker, the core's, and no second idea of what a call is.
-    for name in funcs::used(&text).unwrap_or_default() {
+    let used = match scan {
+        true => funcs::used(&text).unwrap_or_default(),
+        false => Vec::new(),
+    };
+    for name in used {
         if !funcs::implemented().contains(&name.as_str()) {
             report.unknown_functions.insert(name);
         }
