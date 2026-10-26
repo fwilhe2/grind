@@ -91,15 +91,16 @@ pub fn border(value: &str) -> Result<String, String> {
     }
 }
 
-/// A border as its three parts — width in points, line style, colour — for comparing borders
-/// across a LibreOffice round trip, which re-quantises the width (`doc/ods-format.md` §5.4).
+/// A border as its three parts — width in points, line style, colour — for drawing it and for
+/// comparing borders across a LibreOffice round trip, which re-quantises the width
+/// (`doc/ods-format.md` §5.4). The width may be in any ODF unit: OpenOffice wrote `0.002cm`.
 /// `None` for anything else, including `"none"`.
 pub fn border_parts(border: &str) -> Option<(f64, &str, &str)> {
     let mut fields = border.split_whitespace();
     let width = fields.next()?;
     let style = fields.next()?;
     let color = fields.next()?;
-    let points = width.strip_suffix("pt")?.parse::<f64>().ok()?;
+    let points = length_mm(width)? * 72.0 / 25.4;
     Some((points, style, color))
 }
 
@@ -149,7 +150,9 @@ mod tests {
             Some((0.51, "solid", "#000000"))
         );
         assert_eq!(border_parts("none"), None);
-        assert_eq!(border_parts("0.5mm solid #000000"), None);
+        let (points, _, _) = border_parts("0.0138in solid #000000").unwrap();
+        assert!((points - 0.99).abs() < 0.01, "{points}");
+        assert_eq!(border_parts("0.5px solid #000000"), None);
     }
 
     #[test]
