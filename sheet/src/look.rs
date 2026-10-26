@@ -100,6 +100,21 @@ pub fn italic_style(style: Option<&str>) -> bool {
     matches!(style, Some("italic" | "oblique"))
 }
 
+/// How tall a row must be for `laid` set in a cell of `style`: its height, or for turned text the
+/// height of the turned box — `width·|sin θ| + height·|cos θ|`, LibreOffice's optimal height to
+/// within a point (`doc/ods-format.md` §5.4).
+pub fn needed_height(laid: &grind_core::layout::Layout, style: &CellStyle) -> f32 {
+    let height = laid.height();
+    match style.rotation_degrees().filter(|d| d % 180.0 != 0.0) {
+        Some(degrees) => {
+            let width = laid.lines().iter().map(|l| l.width).fold(0.0, f32::max);
+            let turn = degrees.to_radians() as f32;
+            width * turn.sin().abs() + height * turn.cos().abs()
+        }
+        None => height,
+    }
+}
+
 /// Whether a cell's text wraps at its column's width rather than running on — `fo:wrap-option`.
 pub fn wraps(style: Option<&CellStyle>) -> bool {
     style.is_some_and(|style| style.wrap.as_deref() == Some("wrap"))

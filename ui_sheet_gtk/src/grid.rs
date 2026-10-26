@@ -1850,7 +1850,7 @@ mod imp {
                         continue;
                     };
                     let wrapping = style.wrap.as_deref() == Some("wrap");
-                    if !wrapping && style.font_size.is_none() {
+                    if !wrapping && style.font_size.is_none() && style.rotation.is_none() {
                         continue;
                     }
                     let Some(text) = viewport.text(row, col).filter(|t| !t.is_empty()) else {
@@ -1873,7 +1873,7 @@ mod imp {
                     };
                     let laid_out =
                         grind_core::layout::wrap(std::slice::from_ref(&fragment), width, &metrics);
-                    tallest = tallest.max(laid_out.height());
+                    tallest = tallest.max(look::needed_height(&laid_out, style));
                 }
                 if f64::from(tallest) + ROW_PAD > default {
                     measured.push((row, (f64::from(tallest) + ROW_PAD).ceil()));

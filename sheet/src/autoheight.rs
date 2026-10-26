@@ -54,7 +54,7 @@ pub fn grown_rows(
                 continue;
             };
             let wrapping = look::wraps(Some(style));
-            if !wrapping && style.font_size.is_none() {
+            if !wrapping && style.font_size.is_none() && style.rotation.is_none() {
                 continue;
             }
             let Some(text) = viewport.text(row, col).filter(|text| !text.is_empty()) else {
@@ -71,7 +71,7 @@ pub fn grown_rows(
                 style: &text_style,
             };
             let laid = wrap(std::slice::from_ref(&fragment), width, metrics);
-            tallest = tallest.max(f64::from(laid.height()));
+            tallest = tallest.max(f64::from(look::needed_height(&laid, style)));
         }
         if tallest + row_pad > row_h {
             grown.push((row, (tallest + row_pad).ceil()));
@@ -108,6 +108,24 @@ mod tests {
         assert_eq!(grown.len(), 1, "{grown:?}");
         assert_eq!(grown[0].0, 0, "only the styled, wrapping row");
         assert!(grown[0].1 > 5.0);
+    }
+
+    /// Turned text needs the turned box: upright, a run of ten one-wide characters is ten tall.
+    #[test]
+    fn turned_text_grows_its_row_to_the_turned_box() {
+        let app = App::new();
+        app.enter(0, Pos::new(0, 0), "abcdefghij", RecalcMode::Document)
+            .unwrap();
+        let style = crate::style::CellStyle {
+            rotation: Some("90".into()),
+            ..Default::default()
+        };
+        app.set_style(0, Pos::new(0, 0), Pos::new(0, 0), Some(style))
+            .unwrap();
+        assert_eq!(
+            grown_rows(&app, 0, &|_| 3.0, 0.0, 0.0, 1.0, &Fixed),
+            [(0, 10.0)]
+        );
     }
 
     /// LibreOffice grows a row for a merge on it alone, measured across the merge, and no row for

@@ -758,6 +758,11 @@ with or without Excel's stored `ht`, row 1 comes back at the same optimal 0.4555
 `A1:C2`, rows 1 and 2 both stay at the default 0.2083in. A one-row merge is measured like a
 cell as wide as its columns; a taller one grows nothing.
 
+**Turned text grows its row to the turned box** — `MEASURED` the same day: `TextRotation = 45`
+in Calibri 11 at 45° (ClosedXML's `StyleAlignment.xlsx`, row 8) comes back 0.9016in, 64.9pt; the
+text is 79.4pt wide and its line 13.4pt tall in Carlito, Calibri's metric twin, and
+`79.4·sin 45° + 13.4·cos 45°` is 65.6pt.
+
 ---
 
 ## 6. LibreOffice-only extensions **[ODS]**
