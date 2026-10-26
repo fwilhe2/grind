@@ -211,10 +211,30 @@ fn merges(reader: &mut Reader<'_>, sheet: &mut Sheet, report: &mut Report) -> cr
             return Ok(Handled::Yes);
         }
         sheet.set_merge(anchor, Some(span));
+        frame(sheet, anchor, span.end(anchor));
         Ok(Handled::Yes)
     })?;
     Ok(())
 }
+
+/// Give a merge's top-left cell the right edge of the top-right cell and the bottom edge of the
+/// bottom-left one, as the oracle does: ODF draws a merged cell by its own style alone
+/// (`doc/xlsx-format.md` §4.10).
+fn frame(sheet: &mut Sheet, anchor: Pos, end: Pos) {
+    let edge = |pos: Pos, side: usize| sheet.style(pos).and_then(|s| s.borders[side].clone());
+    let mut style = sheet.style(anchor).cloned().unwrap_or_default();
+    if end.col > anchor.col {
+        style.borders[RIGHT] = edge(Pos::new(anchor.row, end.col), RIGHT);
+    }
+    if end.row > anchor.row {
+        style.borders[BOTTOM] = edge(Pos::new(end.row, anchor.col), BOTTOM);
+    }
+    sheet.set_style(anchor, style);
+}
+
+/// [`grind_sheet::style::EDGES`]' order.
+const RIGHT: usize = 1;
+const BOTTOM: usize = 3;
 
 /// `<autoFilter ref="A1:C9">` and its `<filterColumn>`s, as the model's filter. The model's
 /// vocabulary is a set of values per column, exactly `<filters><filter val="…"/>` matched on
@@ -1293,6 +1313,50 @@ mod tests {
             report.appearance_lost[&Appearance::SheetDefaultWidth],
             1,
             "a width chosen for the whole sheet has no home"
+        );
+    }
+
+    /// A merge's frame is the top-right cell's right edge and the bottom-left cell's bottom,
+    /// whatever the others say (`doc/xlsx-format.md` §4.10).
+    #[test]
+    fn a_merge_is_framed_by_the_cells_at_its_corners() {
+        let styles = crate::styles::read(
+            format!(
+                r#"<styleSheet xmlns="{}"><fonts><font/></fonts>
+                   <borders><border/>
+                     <border><right style="thick"/></border>
+                     <border><right style="thin"/><bottom style="thin"/></border>
+                     <border><bottom style="medium"/></border>
+                     <border><left style="thin"/><right style="thin"/></border></borders>
+                   <cellXfs><xf/><xf borderId="1"/><xf borderId="2"/><xf borderId="3"/><xf borderId="4"/></cellXfs>
+                   </styleSheet>"#,
+                crate::names::MAIN_T
+            )
+            .as_bytes(),
+            &[],
+        );
+        let (sheet, _) = worksheet(
+            r#"<sheetData>
+                 <row r="1"><c r="A1" s="4" t="inlineStr"><is><t>M</t></is></c><c r="C1" s="1"/></row>
+                 <row r="3"><c r="A3" s="3"/><c r="C3" s="2"/></row>
+               </sheetData>
+               <mergeCells><mergeCell ref="A1:C3"/></mergeCells>"#,
+            &styles,
+        );
+        let edges = sheet.style(at("A1")).unwrap().borders.clone();
+        let width = |edge: &Option<String>| {
+            edge.as_deref()
+                .and_then(grind_sheet::style::border_parts)
+                .map(|(w, _, _)| w)
+        };
+        assert!(width(&edges[0]).is_some(), "its own left");
+        assert_eq!(
+            width(&edges[1]),
+            width(&sheet.style(at("C1")).unwrap().borders[1])
+        );
+        assert_eq!(
+            width(&edges[3]),
+            width(&sheet.style(at("A3")).unwrap().borders[3])
         );
     }
 

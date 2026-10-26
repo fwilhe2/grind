@@ -632,6 +632,12 @@ a checklist (not vendored; `xlsx/tests/checklist.rs` rebuilds its shape):
 - Two `ref`s overlapping: `UNVERIFIED` whether Excel opens such a file. The import counts the
   second as `Dropped::MergedCells` rather than guessing which one was meant, which needs no
   answer.
+- **The frame of a merge** — `MEASURED` 2026-10-26 (LibreOffice 26.8.1.1, a hand-built `A1:C3`
+  merge whose cells carry different borders): the oracle's merged cell keeps the top-left
+  cell's left and top edges and takes its **right edge from the top-right cell** (`C1`'s, not
+  `C2`'s or `C3`'s) and its **bottom edge from the bottom-left cell** (`A3`'s, not `B3`'s or
+  `C3`'s). Excel draws a merge's outline from the cells along it; ODF draws a merged cell with
+  its own style alone, so the anchor carries all four.
 
 ### 4.11 Form-control checkboxes — `MEASURED`
 
