@@ -96,6 +96,8 @@ pub struct Builder {
     track_sizes: HashMap<String, String>,
     /// The `table-row` styles whose height measures the row (`style:use-optimal-row-height`).
     track_measured: HashSet<String>,
+    /// Each style name's format and look as cells share them ([`Builder::shared_look`]).
+    looks: HashMap<String, Look>,
     /// `style:row-height` of the row being read, applied when the row ends because
     /// `table:number-rows-repeated` decides how many rows it is for, and whether it measures
     /// the row.
@@ -200,9 +202,15 @@ struct RowCell {
     value: CellValue,
     formula: Option<String>,
     kind: Option<NumberKind>,
-    format: Option<Format>,
-    style: Option<CellStyle>,
+    format: Option<std::sync::Arc<Format>>,
+    style: Option<std::sync::Arc<CellStyle>>,
 }
+
+/// A style name's resolved format and look, shared by every cell that names it.
+type Look = (
+    Option<std::sync::Arc<Format>>,
+    Option<std::sync::Arc<CellStyle>>,
+);
 
 impl Builder {
     pub fn new() -> Self {
@@ -244,6 +252,7 @@ impl Builder {
             col_decl: 0,
             track_sizes: HashMap::new(),
             track_measured: HashSet::new(),
+            looks: HashMap::new(),
             row_size: None,
             row_hidden: false,
             filter: None,
@@ -300,6 +309,25 @@ impl Builder {
     fn resolve_style(&self, cell_style: Option<&str>, col: u32) -> Option<CellStyle> {
         let style = self.style_name(cell_style, col)?;
         self.inherited(style)
+    }
+
+    /// [`Builder::resolve_format`] and [`Builder::resolve_style`], resolved once per style name
+    /// and shared: a sheet of styled blanks is a million cells naming a handful of styles.
+    fn shared_look(&mut self, cell_style: Option<&str>, col: u32) -> Look {
+        let Some(name) = self.style_name(cell_style, col).map(str::to_owned) else {
+            return (None, None);
+        };
+        if let Some(look) = self.looks.get(&name) {
+            return look.clone();
+        }
+        let look = (
+            self.resolve_format(Some(&name), col)
+                .map(std::sync::Arc::new),
+            self.resolve_style(Some(&name), col)
+                .map(std::sync::Arc::new),
+        );
+        self.looks.insert(name, look.clone());
+        look
     }
 
     /// A style and its ancestors, nearest first. A chain that loops or runs deeper than any
@@ -598,10 +626,10 @@ impl Builder {
                     sheet.set_kind(pos, k);
                 }
                 if let Some(f) = &cell.format {
-                    sheet.set_format(pos, f.clone());
+                    sheet.set_format_shared(pos, f.clone());
                 }
                 if let Some(s) = &cell.style {
-                    sheet.set_style(pos, s.clone());
+                    sheet.set_style_shared(pos, s.clone());
                 }
             }
             self.budget = self.budget.saturating_sub(per_row);
@@ -1901,9 +1929,8 @@ impl Context<Builder> for Cell {
             return; // Nothing to write; the columns were claimed at start.
         }
 
-        // §5.1's indirection, resolved once per cell rather than once per repeat.
-        let format = b.resolve_format(self.style.as_deref(), self.start);
-        let style = b.resolve_style(self.style.as_deref(), self.start);
+        // §5.1's indirection, resolved once per style name.
+        let (format, style) = b.shared_look(self.style.as_deref(), self.start);
         // A blank whose own style says nothing — LibreOffice's plain `Default` — is no cell.
         if value.is_empty() && formula.is_none() && style.is_none() && format.is_none() {
             return;

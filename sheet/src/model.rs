@@ -6,6 +6,7 @@
 //! `a1.rs` is the only conversion.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -157,15 +158,14 @@ pub struct Sheet {
     /// Which cells hold a date or a time rather than a plain number ([`NumberKind`]).
     #[serde(with = "pairs")]
     kinds: BTreeMap<Pos, NumberKind>,
-    /// How each cell is displayed (`doc/ods-format.md` §5.2).
-    ///
-    /// ponytail: one [`Format`] clone per formatted cell rather than an index into a pool; pooling
-    /// happens on write (§5.3). Intern here when a profile blames the clones.
+    /// How each cell is displayed (`doc/ods-format.md` §5.2). Shared, so the cells one repeated
+    /// element covers hold one format between them ([`Sheet::set_format_shared`]); pooling into
+    /// styles happens on write (§5.3).
     #[serde(with = "pairs")]
-    formats: BTreeMap<Pos, Format>,
-    /// How each cell looks (§5.1), with `formats`' ponytail.
+    formats: BTreeMap<Pos, Arc<Format>>,
+    /// How each cell looks (§5.1), shared the same way.
     #[serde(with = "pairs")]
-    styles: BTreeMap<Pos, CellStyle>,
+    styles: BTreeMap<Pos, Arc<CellStyle>>,
     /// `style:column-width` per column as the document spelled it (`"2.258cm"`), parsed only by
     /// [`crate::style::length_mm`]. Sparse, and bounded on reading by `MAX_TRACK_RUN`: a long
     /// repeated run is the sheet's background width, not layout.
@@ -526,10 +526,15 @@ impl Sheet {
 
     /// The cell's number format, or `None` when it is displayed as its plain value.
     pub fn format(&self, pos: Pos) -> Option<&Format> {
-        self.formats.get(&pos)
+        self.formats.get(&pos).map(|f| &**f)
     }
 
     pub fn set_format(&mut self, pos: Pos, format: Format) {
+        self.formats.insert(pos, Arc::new(format));
+    }
+
+    /// [`Sheet::set_format`] with a format other cells may hold too.
+    pub fn set_format_shared(&mut self, pos: Pos, format: Arc<Format>) {
         self.formats.insert(pos, format);
     }
 
@@ -540,11 +545,16 @@ impl Sheet {
 
     /// The cell's styling, or `None` when it is drawn plainly.
     pub fn style(&self, pos: Pos) -> Option<&CellStyle> {
-        self.styles.get(&pos)
+        self.styles.get(&pos).map(|s| &**s)
     }
 
     /// A style that sets nothing is stored as none, so "plain" has one spelling.
     pub fn set_style(&mut self, pos: Pos, style: CellStyle) {
+        self.set_style_shared(pos, Arc::new(style));
+    }
+
+    /// [`Sheet::set_style`] with a style other cells may hold too.
+    pub fn set_style_shared(&mut self, pos: Pos, style: Arc<CellStyle>) {
         match style.is_plain() {
             true => self.styles.remove(&pos),
             false => self.styles.insert(pos, style),
@@ -557,12 +567,12 @@ impl Sheet {
 
     /// Every styled cell, in address order.
     pub fn styles(&self) -> impl Iterator<Item = (Pos, &CellStyle)> {
-        self.styles.iter().map(|(pos, s)| (*pos, s))
+        self.styles.iter().map(|(pos, s)| (*pos, &**s))
     }
 
     /// Every formatted cell, in address order — what the writer pools into styles.
     pub fn formats(&self) -> impl Iterator<Item = (Pos, &Format)> {
-        self.formats.iter().map(|(pos, f)| (*pos, f))
+        self.formats.iter().map(|(pos, f)| (*pos, &**f))
     }
 
     pub fn get(&self, pos: Pos) -> CellValue {
