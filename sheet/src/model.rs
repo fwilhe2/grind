@@ -192,8 +192,8 @@ pub struct Sheet {
     /// cell (rng:16102), keyed by that cell ([`Span`]). A covered cell keeps its own value and
     /// style, as LibreOffice keeps them, and is simply not drawn. No two merges overlap:
     /// [`Sheet::set_merge`] is only told about one that does not.
-    #[serde(default, with = "pairs")]
-    merges: BTreeMap<Pos, Span>,
+    #[serde(default)]
+    merges: Merges,
     /// Checkboxes, keyed by the cell each is drawn in (`doc/ods-format.md` §3.5) — the one form
     /// control this model carries ([`Checkbox`]).
     #[serde(default, with = "pairs")]
@@ -224,7 +224,7 @@ impl Sheet {
             manually_hidden_rows: BTreeSet::new(),
             filter: None,
             charts: Vec::new(),
-            merges: BTreeMap::new(),
+            merges: Merges::default(),
             checkboxes: BTreeMap::new(),
             rules: Vec::new(),
             origin: Provenance::default(),
@@ -283,15 +283,17 @@ impl Sheet {
 
     /// Every merged range, in address order of its top-left cell.
     pub fn merges(&self) -> impl Iterator<Item = (Pos, Span)> + '_ {
-        self.merges.iter().map(|(pos, span)| (*pos, *span))
+        self.merges
+            .by_anchor
+            .iter()
+            .map(|(pos, span)| (*pos, *span))
     }
 
     /// The merge `pos` is part of, as its top-left or a covered cell, with that merge's top-left
-    /// cell. A scan: a sheet has a handful of merges, and only anchors at or before `pos` can
-    /// reach it.
+    /// cell. Only anchors in the rows the tallest merge could reach down from are looked at.
     pub fn merge_at(&self, pos: Pos) -> Option<(Pos, Span)> {
         self.merges
-            .range(..=pos)
+            .reaching_down_to(pos.row, pos)
             .rev()
             .find(|(anchor, span)| span.contains(**anchor, pos))
             .map(|(anchor, span)| (*anchor, *span))
@@ -307,14 +309,19 @@ impl Sheet {
     /// ([`Sheet::merges_within`]).
     pub fn set_merge(&mut self, anchor: Pos, span: Option<Span>) {
         match span.filter(|span| !span.is_single()) {
-            Some(span) => self.merges.insert(anchor, span),
-            None => self.merges.remove(&anchor),
+            Some(span) => {
+                self.merges.tallest = self.merges.tallest.max(span.rows);
+                self.merges.by_anchor.insert(anchor, span)
+            }
+            None => self.merges.by_anchor.remove(&anchor),
         };
     }
 
     /// Every merge that overlaps the rectangle `start..=end`, by its top-left cell.
     pub fn merges_within(&self, start: Pos, end: Pos) -> Vec<(Pos, Span)> {
-        self.merges()
+        self.merges
+            .reaching_down_to(start.row, Pos::new(end.row, u32::MAX))
+            .map(|(anchor, span)| (*anchor, *span))
             .filter(|(anchor, span)| {
                 let last = span.end(*anchor);
                 anchor.row <= end.row
@@ -752,6 +759,46 @@ impl Link {
         let mut cell = crate::a1::reference(Some(sheet), self.pos, self.pos).start;
         cell.sheet_absolute = false;
         cell.to_string()
+    }
+}
+
+/// A sheet's merges by top-left cell, with the most rows any of them has spanned — an upper
+/// bound, never lowered on removal — so a lookup reads only anchors close enough above to reach.
+#[derive(Clone, Debug, Default)]
+struct Merges {
+    by_anchor: BTreeMap<Pos, Span>,
+    tallest: u32,
+}
+
+impl Merges {
+    /// The anchors from the first row a merge reaching `row` could start in, up to `last`.
+    fn reaching_down_to(
+        &self,
+        row: u32,
+        last: Pos,
+    ) -> std::collections::btree_map::Range<'_, Pos, Span> {
+        let first = row.saturating_sub(self.tallest.saturating_sub(1));
+        self.by_anchor.range(Pos::new(first, 0)..=last)
+    }
+}
+
+impl PartialEq for Merges {
+    fn eq(&self, other: &Self) -> bool {
+        self.by_anchor == other.by_anchor
+    }
+}
+
+impl Serialize for Merges {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        pairs::serialize(&self.by_anchor, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Merges {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let by_anchor: BTreeMap<Pos, Span> = pairs::deserialize(d)?;
+        let tallest = by_anchor.values().map(|span| span.rows).max().unwrap_or(0);
+        Ok(Merges { by_anchor, tallest })
     }
 }
 

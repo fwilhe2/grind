@@ -235,3 +235,36 @@ fn a_value_typed_under_a_files_merge_is_saved_and_the_merge_kept() {
     );
     assert_eq!(back.merge_at(0, p("C3")).unwrap(), Some((p("A3"), p("C3"))));
 }
+
+/// A lookup reads only the rows the tallest merge could reach down from, so a tall merge far above
+/// must still be found below a run of short ones, and a sheet read back from a session must know
+/// its tallest again.
+#[test]
+fn a_tall_merge_is_found_from_far_below_short_ones() {
+    let mut sheet = grind_sheet::Sheet::new("S");
+    sheet.set_merge(Pos::new(0, 5), Some(Span { cols: 1, rows: 500 }));
+    for row in 0..400 {
+        sheet.set_merge(Pos::new(row, 0), Some(Span { cols: 2, rows: 1 }));
+    }
+    sheet.set_merge(Pos::new(450, 1), Some(Span { cols: 3, rows: 2 }));
+
+    let tall = (Pos::new(0, 5), Span { cols: 1, rows: 500 });
+    assert_eq!(sheet.merge_at(Pos::new(499, 5)), Some(tall));
+    assert_eq!(sheet.merge_at(Pos::new(500, 5)), None);
+    assert_eq!(
+        sheet.merge_at(Pos::new(451, 3)),
+        Some((Pos::new(450, 1), Span { cols: 3, rows: 2 }))
+    );
+    assert_eq!(
+        sheet.merges_within(Pos::new(300, 4), Pos::new(300, 9)),
+        vec![tall]
+    );
+
+    let json = serde_json::to_string(&sheet).unwrap();
+    let back: grind_sheet::Sheet = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, sheet);
+    assert_eq!(back.merge_at(Pos::new(499, 5)), Some(tall));
+
+    sheet.set_merge(Pos::new(0, 5), None);
+    assert_eq!(sheet.merge_at(Pos::new(499, 5)), None);
+}
