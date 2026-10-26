@@ -684,6 +684,16 @@ fn differences(
     defaults: &Defaults,
     renamed: &[(String, String)],
 ) -> Vec<Difference> {
+    differences_with(ours, theirs, (&Defaults::default(), defaults), renamed)
+}
+
+/// [`differences`], with what each side's default cell looks like.
+fn differences_with(
+    ours: &Document,
+    theirs: &Document,
+    (own, defaults): (&Defaults, &Defaults),
+    renamed: &[(String, String)],
+) -> Vec<Difference> {
     let mut out = Vec::new();
     for other in &theirs.sheets {
         if !ours.sheets.iter().any(|s| s.name == other.name) {
@@ -716,7 +726,7 @@ fn differences(
             for col in 0..cols {
                 let pos = Pos::new(row, col);
                 let (a, b) = (
-                    cell(mine, pos, ours.null_date, &Defaults::default()),
+                    cell(mine, pos, ours.null_date, own),
                     cell(other, pos, theirs.null_date, defaults),
                 );
                 if !same_style(&a.style, &b.style) {
@@ -1024,11 +1034,11 @@ fn outside_corpus_against_the_oracle() {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
-            } else if path
-                .extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|e| e.eq_ignore_ascii_case("xlsx") || e.eq_ignore_ascii_case("xlsm"))
-            {
+            } else if path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                ["xlsx", "xlsm", "ods", "fods"]
+                    .iter()
+                    .any(|x| e.eq_ignore_ascii_case(x))
+            }) {
                 files.push(path);
             }
         }
@@ -1073,7 +1083,22 @@ fn outside_corpus_against_the_oracle() {
             continue;
         };
         let file = path.display().to_string();
-        let (ours, report) = match grind_xlsx::import_bytes(&std::fs::read(path).unwrap()) {
+        let bytes = std::fs::read(path).unwrap();
+        // An ODF file is read as it is: the comparison is then our reading of it against our
+        // reading of the oracle's re-save, which states everything it inherited.
+        let odf = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("ods") || e.eq_ignore_ascii_case("fods"));
+        let read = match odf {
+            true => grind_sheet::read_bytes(&file, &bytes)
+                .map(|doc| (doc, Vec::new()))
+                .map_err(|e| e.to_string()),
+            false => grind_xlsx::import_bytes(&bytes)
+                .map(|(doc, report)| (doc, report.renamed))
+                .map_err(|e| e.to_string()),
+        };
+        let (ours, renamed) = match read {
             Ok(pair) => pair,
             Err(e) => {
                 refused.push(format!("{file}: {e}"));
@@ -1082,7 +1107,11 @@ fn outside_corpus_against_the_oracle() {
         };
         compared += 1;
         let defaults = Defaults::of(&std::fs::read_to_string(&theirs_path).unwrap_or_default());
-        for difference in differences(&ours, &theirs, &defaults, &report.renamed) {
+        let mine = match odf {
+            true => Defaults::of(&std::fs::read_to_string(path).unwrap_or_default()),
+            false => Defaults::default(),
+        };
+        for difference in differences_with(&ours, &theirs, (&mine, &defaults), &renamed) {
             if let Some(d) = DIVERGENCES.iter().find(|d| difference.explained_by(d)) {
                 *matched.entry(d.name).or_default() += 1;
                 continue;
