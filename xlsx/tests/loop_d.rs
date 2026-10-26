@@ -644,12 +644,14 @@ impl Difference {
     fn describe(&self) -> String {
         match self {
             Difference::Cell(sheet, pos, a, b) => format!(
-                "{sheet}!{} is {:?} {:?}, the oracle's {:?} {:?}",
+                "{sheet}!{} is {:?} {:?} shown {:?}, the oracle's {:?} {:?} shown {:?}",
                 grind_sheet::a1::format(None, *pos),
                 a.value,
                 a.kind,
+                a.display,
                 b.value,
-                b.kind
+                b.kind,
+                b.display
             ),
             Difference::Style(sheet, pos, a, b) => format!(
                 "{sheet}!{} is styled {a:?}, the oracle's {b:?}",
