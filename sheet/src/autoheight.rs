@@ -16,7 +16,8 @@ use crate::{App, look};
 pub const MAX_CELLS: u64 = 200_000;
 
 /// The rows to grow, and to what: each one's tallest cell that [`look::grows_row`] names, plus
-/// `row_pad`, when taller than `row_h`. Other cells are never laid out. `col_width`, `pad_x` and
+/// `row_pad`, when taller than `row_h` — or, for a measured row, whatever it is, for [`heights`]
+/// to weigh against the row's own. Other cells are never laid out. `col_width`, `pad_x` and
 /// `metrics` are in the shell's unit. Rows hidden or sized by the document are the caller's to put
 /// back.
 pub fn grown_rows(
@@ -37,6 +38,8 @@ pub fn grown_rows(
     let Ok(viewport) = app.get_viewport(sheet, 0..rows, 0..cols) else {
         return Vec::new();
     };
+    // A measured row's floor is its own height, which [`heights`] compares, not `row_h`.
+    let measured = app.measured_rows(sheet).unwrap_or_default();
     let mut grown = Vec::new();
     for row in 0..rows {
         let mut tallest: f64 = 0.0;
@@ -71,7 +74,7 @@ pub fn grown_rows(
             let laid = wrap(std::slice::from_ref(&fragment), width, metrics);
             tallest = tallest.max(f64::from(look::needed_height(&laid, style)));
         }
-        if tallest + row_pad > row_h {
+        if tallest + row_pad > row_h || (tallest > 0.0 && measured.contains(&row)) {
             grown.push((row, (tallest + row_pad).ceil()));
         }
     }

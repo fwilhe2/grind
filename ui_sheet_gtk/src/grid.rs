@@ -1834,6 +1834,8 @@ mod imp {
             };
 
             let default = self.metrics.get().row_height;
+            // A measured row's floor is its own height, which `geom` weighs, not the default.
+            let measured_rows = app.measured_rows(sheet).unwrap_or_default();
             let cols = self.col_sizes();
             let context = self.obj().pango_context();
             let base = context.font_description().unwrap_or_default();
@@ -1881,7 +1883,9 @@ mod imp {
                         grind_core::layout::wrap(std::slice::from_ref(&fragment), width, &metrics);
                     tallest = tallest.max(look::needed_height(&laid_out, style));
                 }
-                if f64::from(tallest) + ROW_PAD > default {
+                if f64::from(tallest) + ROW_PAD > default
+                    || (tallest > 0.0 && measured_rows.contains(&row))
+                {
                     measured.push((row, (f64::from(tallest) + ROW_PAD).ceil()));
                 }
             }
