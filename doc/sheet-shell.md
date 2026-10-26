@@ -173,7 +173,8 @@ CLI: `sheet functions --long`.
   trailing `number-columns-repeated="16384"` must not become 16k entries.
 - **Reader**: widen the style filter to keep `table-column`/`table-row` families, taking
   only `style:column-width`/`style:row-height`; read the declarations' `table:style-name`.
-  `style:use-optimal-*` dropped, noted.
+  `style:use-optimal-row-height` kept as `Sheet::row_measured`, a height the content may
+  outgrow; `style:use-optimal-column-width` dropped.
 - **Writer**: pool distinct widths into `co{i}`/`ro{i}` automatic styles, emit
   `table:style-name` with repeats. R6: a width change sets `edits.only_values = false` —
   regenerate; splicing column elements is a later refinement.

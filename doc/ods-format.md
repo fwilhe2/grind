@@ -755,6 +755,14 @@ A style applied to every cell of a column also comes back on the **column**
 which is why cell-style resolution has to consult the column default (§5.1) rather than the
 cell alone.
 
+**`style:use-optimal-row-height="true"` is re-measured on loading** — `MEASURED` 2026-10-26
+(LibreOffice 26.8.1.1, its own corpus converted to `.fods`): `autoheight2rows.ods` stores
+0.2083in on rows holding five wrapped lines and comes back at 0.798in; across 304 of its own
+documents a row so marked comes back at whatever its content needs, taller or shorter than
+stored. A row without the flag keeps its height. The stored height is a measurement the content
+may outgrow (`Sheet::row_measured`); a column's `style:use-optimal-column-width` is not
+re-measured.
+
 **A merge grows its row when it spans only one** — `MEASURED` 2026-10-26 (LibreOffice 26.8.1.1,
 an `.xlsx` with 22pt bold text in `A1`, converted to `.fods`): merged over `A1:C1`, unmerged, and
 with or without Excel's stored `ht`, row 1 comes back at the same optimal 0.4555in; merged over
