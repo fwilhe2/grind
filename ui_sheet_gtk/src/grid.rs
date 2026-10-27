@@ -4288,10 +4288,12 @@ mod imp {
                     });
                     layout.set_text(text);
                     let (text_w, text_h) = layout.pixel_size();
-                    let fits = wrapping || f64::from(text_w) <= cell.w - 2.0 * pad - indent;
+                    let within = f64::from(text_w) <= cell.w - 2.0 * pad - indent;
+                    let fits = wrapping || within;
                     // A heading too wide for the room its button leaves keeps its *start*:
-                    // centred, it would lose a letter at each end and read as neither word.
-                    let align = match capped && !fits {
+                    // centred, it would lose a letter at each end and read as neither word. A
+                    // wrapped one too, when a word in it is wider than the room.
+                    let align = match capped && !within {
                         true => Align::Left,
                         false => align,
                     };
