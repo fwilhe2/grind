@@ -64,11 +64,22 @@ explicit decision, and it must survive loop C. Nothing moves because it was easy
 
 ### Presentation
 
+**A workbook from elsewhere is opened to be used, not reproduced** (decided 2026-10-27). Its
+values, formulas, formats, cell styles, merges, column widths and row heights come in as
+faithfully as the oracle can check them, and the comparison against LibreOffice's rendering
+goes on finding real misreadings. What does not come in is the rest of a producer's look: an
+imported sheet reads correctly and is drawn in this program's own way, and a difference that
+leaves the data usable is not a defect. The rows below are that line.
+
 | Not doing | Because |
 |---|---|
-| **Fonts** | LibreOffice rewrites `fo:font-family` into an `office:font-face-decls` reference, and nothing here can draw a glyph anyway (`doc/ods-format.md` §5.4). It comes back when a renderer exists, not before. |
+| **Fonts** | LibreOffice rewrites `fo:font-family` into an `office:font-face-decls` reference, and nothing here can draw a glyph anyway (`doc/ods-format.md` §5.4). It comes back when a renderer exists, not before. A grid draws every cell in the window's own font at the document's sizes, so a column Excel fitted tightly to Calibri can show a number as `###` until it is widened — accepted (2026-10-27). |
+| **Excel's table styles** | A `<tableStyleInfo>`'s banding and header colours are Excel's presets, defined as data in Ecma-376 and drawn by LibreOffice at render time rather than written into ODF. The table's cells, its own direct formatting and its autofilter come in; its preset look does not, and *Format as Table* restyles it in this program's own (2026-10-27). |
+| **Pictures in a sheet** | A logo or image placed over a sheet is a drawing layer on top of the grid, with an anchor and its own save path. An imported one is counted with its drawing (`Dropped::Drawing`); an `.ods` keeps its own on save, as it keeps everything it does not read (2026-10-27). |
+| **Formatting within a cell** | A cell is one value in one look: bold or coloured runs inside its text are read as their plain text, counted on import (`Dropped::RichText`), and an `.ods` keeps its own runs on save until the cell's text is replaced (2026-10-27). |
+| **Computing on opening what a file left uncomputed** | A formula saved without its result (ClosedXML, openpyxl and other generators write them so) opens blank until *Recalculate*. Opening evaluates nothing — the import's rule, and the one that keeps an unedited save byte for byte (2026-10-27). |
 | **Conditional formatting beyond one rule type** | The general form is a rule engine with its own evaluation order. The one rule type — *this formula is true here, so draw the cell this way* — is **in**, and built (2026-10-05, `doc/conditional-format.md`) (decided 2026-10-04: the first version of this row was read as excluding conditional formatting altogether, and a checklist whose ticks are nothing *but* a rule showed what that cost). Colour scales, data bars and icon sets stay here. |
-| **Draw objects beyond images** | Shapes, connectors, and their layout model are a drawing application. |
+| **Draw objects** | Shapes, connectors, text boxes and their layout model are a drawing application. |
 | **Pivot tables** | Revisit *once*, later, as `plan.md` says — and only against a real use, because the honest version is an aggregation engine plus a UI plus a serialisation format. |
 | **A chart type beyond bar, line, pie** | Three proved the mechanism holds no per-type special case (`doc/chart-format.md`); a fourth is taste until a real document asks for one. |
 | **A chart's subtitle or footer** | Each is `rng:optional` and each is its own layout problem. Read past and dropped, like any other unmodelled optional element (`doc/chart-format.md`). A chart's own **title and legend** left this row: a chart of two series with no legend is one nobody can read. |
