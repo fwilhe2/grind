@@ -658,6 +658,12 @@ fn a_number_style_naming_no_decimals_is_general() {
     let d = read_bytes("t.fods", xml.as_bytes()).unwrap();
     let s = d.sheet(0).unwrap();
     assert!(s.format(grind_sheet::Pos::new(0, 0)).is_none());
-    assert_eq!(grind_sheet::render(s, grind_sheet::Pos::new(0, 0), d.null_date), "2019");
-    assert_eq!(grind_sheet::render(s, grind_sheet::Pos::new(0, 1), d.null_date), "2019.0");
+    assert_eq!(
+        grind_sheet::render(s, grind_sheet::Pos::new(0, 0), d.null_date),
+        "2019"
+    );
+    assert_eq!(
+        grind_sheet::render(s, grind_sheet::Pos::new(0, 1), d.null_date),
+        "2019.0"
+    );
 }
