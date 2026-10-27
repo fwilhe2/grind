@@ -60,7 +60,9 @@ pub fn grown_rows(
             else {
                 continue;
             };
-            let wrapping = look::wraps(style);
+            // A number is never wrapped (`doc/ods-format.md` §5.2).
+            let wrapping =
+                look::wraps(style) && !viewport.get(row, col).is_some_and(crate::numfmt::is_number);
             let text_style = look::text_style(style);
             // Width zero is `wrap`'s "do not wrap", for a cell here only for its larger face.
             let width = match wrapping {

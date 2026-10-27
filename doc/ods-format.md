@@ -610,6 +610,9 @@ has `style:name` and is built from an ordered sequence of literal/format pieces:
   `123456789012` as `1E+11` and `1.23457E+11`, scientific once the whole part does not fit;
   `0.000123456` as `0.00012`. The same values under a format stating four decimals show `###`
   where they do not fit: only the General format narrows.
+  **A number is never wrapped** — `MEASURED` 2026-10-27 (LibreOffice 26.8.1.1, PDF export):
+  176702 under `#,##0` and 123456.789 with no format, each in a 0.35in column whose cell says
+  `fo:wrap-option="wrap"`, both show `###`, as they would without the wrap.
   **A `number:number` with no `number:decimal-places`, alone in its style, is General** —
   `MEASURED` 2026-10-27 (LibreOffice 26.8.1.1, PDF export): under
   `<number:number number:min-integer-digits="1"/>` 2019, 1234.5678 and 0.125 show as `2019`,

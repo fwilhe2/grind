@@ -1864,7 +1864,10 @@ mod imp {
                     else {
                         continue;
                     };
-                    let wrapping = look::wraps(style);
+                    let wrapping = look::wraps(style)
+                        && !viewport
+                            .get(row, col)
+                            .is_some_and(grind_sheet::numfmt::is_number);
                     let text_style = look::text_style(style);
                     // A width of zero is `wrap`'s own "do not wrap" sentinel — one line per
                     // mandatory break, which is what the un-wrapped case wants.
@@ -4261,7 +4264,10 @@ mod imp {
                         .and_then(look::by_style)
                         .unwrap_or_else(|| look::by_type(value));
                     let valign = look::valign(style);
-                    let wrapping = style.is_some_and(|s| s.wrap.as_deref() == Some("wrap"));
+                    // A number is never wrapped, wrapping or not: too wide, it is hashes, as
+                    // LibreOffice draws it (`doc/ods-format.md` §5.2).
+                    let wrapping = style.is_some_and(|s| s.wrap.as_deref() == Some("wrap"))
+                        && !grind_sheet::numfmt::is_number(value);
                     // An indent (`fo:margin-left`) moves the text in from the leading edge.
                     let indent = style
                         .and_then(|s| s.indent_mm())
