@@ -414,9 +414,10 @@ impl Format {
                         *decimals,
                         *min_decimals,
                         *min_int,
-                        // Text among the whole digits takes their grouping's place: LibreOffice
-                        // draws `1234567G890` for a grouped format with text at position 3.
-                        *grouping && embedded.iter().all(|e| e.position < 0),
+                        // Text among or in front of the whole digits takes their grouping's place:
+                        // LibreOffice draws `1234567G890` for a grouped format with text at
+                        // position 3, and `1,234,567X` with it at 0, after them.
+                        *grouping && embedded.iter().all(|e| e.position <= 0),
                         locale::separators(locale),
                     ),
                     embedded,
@@ -1185,6 +1186,15 @@ mod tests {
         assert_eq!(
             shows(embedded(1, 0, false, &[(0, "A")]), big),
             "1234567890A"
+        );
+        assert_eq!(
+            shows(embedded(1, 0, true, &[(0, "X")]), 1234567.0),
+            "1,234,567X",
+            "after the whole digits, the grouping stays"
+        );
+        assert_eq!(
+            shows(embedded(1, 0, true, &[(9, "X")]), 1234567.0),
+            "X1234567"
         );
         assert_eq!(
             shows(embedded(1, 0, false, &[(1, "B")]), big),

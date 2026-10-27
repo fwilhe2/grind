@@ -598,8 +598,10 @@ has `style:name` and is built from an ordered sequence of literal/format pieces:
   set among a `number:number`'s own digits, the way a telephone or ID format reads. Its
   `number:position` counts **whole digits to the text's right**: `0` puts it just before the
   decimal separator, `3` before the last three digits (`1234567C890`), and a position past the
-  number's first digit puts it in front (`F1234567890`); text at a non-negative position drops
-  the number's grouping (`1234567G890` under `number:grouping="true"`). A **negative** position
+  number's first digit puts it in front (`F1234567890`); text at a position above 0 drops
+  the number's grouping (`1234567G890` under `number:grouping="true"`, `X1234567` in front),
+  and text at 0 keeps it (`1,234,567X`, measured 2026-10-27) — how Excel's `#,##0_)` arrives
+  in its `.ods`, a space at position 0. A **negative** position
   reaches into the decimals — LibreOffice's extension, the schema's type being a plain integer
   — with `-p` after `p - 1` of them: `-2` shows 1.2345 as `1.2E345`, and LibreOffice's own
   conversion of `#,##0.000" "###" "###` is decimal-places 9, min 3, texts at `-4` and `-7`,
