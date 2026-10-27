@@ -610,6 +610,12 @@ has `style:name` and is built from an ordered sequence of literal/format pieces:
   `123456789012` as `1E+11` and `1.23457E+11`, scientific once the whole part does not fit;
   `0.000123456` as `0.00012`. The same values under a format stating four decimals show `###`
   where they do not fit: only the General format narrows.
+  **A `number:number` with no `number:decimal-places`, alone in its style, is General** —
+  `MEASURED` 2026-10-27 (LibreOffice 26.8.1.1, PDF export): under
+  `<number:number number:min-integer-digits="1"/>` 2019, 1234.5678 and 0.125 show as `2019`,
+  `1234.5678` and `0.125`, and with `number:grouping="true"` beside it 1234567.5 still shows as
+  `1234567.5`. Excel writes its `.ods` General this way (`N0`, on every cell). The reader takes it
+  as no format.
   **An absent `number:min-decimal-places` is `number:decimal-places`**, not zero —
   `MEASURED` (2026-10-06, LibreOffice 26.8): `decimal-places="2"` alone shows `1` as `1.00`,
   and only `min-decimal-places="0"` beside it shows `1`. The attribute is ODF 1.3's
