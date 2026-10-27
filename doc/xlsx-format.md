@@ -508,8 +508,10 @@ property at all; Excel's style dialog shows Alignment unticked for `Hyperlink`.
 
 A `<row s="…" customFormat="1">`'s style reaches every cell in the row that names none:
 `geometry/rows.xlsx` A10 has no `s` and the oracle draws it in its row's bold. `SPEC`
-(§18.3.1.73) for the `customFormat` condition. The same question for a `<col style>` is not
-measured and is not implemented.
+(§18.3.1.73) for the `customFormat` condition. **A `<col style>` reaches them too, below a row's**
+— `MEASURED` 2026-10-26 (rust_xlsxwriter's `row_col_format08.xlsx`, column A italic, with a row
+3 holding `A3` and `B3` with no `s` and a row 4 with `s` bold under `customFormat` holding `A4`
+with none): the oracle draws `A3` italic, `B3` plain and `A4` bold.
 
 **What the oracle writes on every cell.** Every automatic style it writes spells the defaults
 out — `fo:font-size="11pt"`, `fo:font-style="normal"`, `fo:font-weight`,
