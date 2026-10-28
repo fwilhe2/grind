@@ -378,6 +378,8 @@ struct Tracks {
     default_height: Option<f64>,
     /// The rows that state a height of their own, measured or set.
     sized_rows: std::collections::BTreeSet<u32>,
+    /// `<col style>` per `<col>` range: the cell format of a cell in it that names none.
+    col_styles: Vec<(std::ops::Range<u32>, usize)>,
     outline: bool,
     pane: bool,
     sheet_width: bool,
@@ -459,6 +461,9 @@ fn cols(
         };
         tracks.outline |= outlined(attrs);
         tracks.mentioned.push(start..end);
+        if let Some(style) = attrs.plain("style").and_then(|s| s.trim().parse().ok()) {
+            tracks.col_styles.push((start..end, style));
+        }
         if end - start <= MAX_TRACK_RUN {
             for col in start..end {
                 column(sheet, col, track, tracks.digit, report);
@@ -602,12 +607,14 @@ fn rows(
         tracks.outline |= outlined(attrs);
         // A row's own style reaches the cells in it that name none — measured: the oracle draws
         // `geometry/rows.xlsx`'s A10, which has no `s`, in its row's bold. Only under
-        // `customFormat`, which is what says the row's `s` is meant (§18.3.1.73).
+        // `customFormat`, which is what says the row's `s` is meant (§18.3.1.73). A column's
+        // style reaches them where the row has none (`doc/xlsx-format.md` §4.4).
         let row_style = attrs
             .flag("customFormat")
             .then(|| attrs.plain("s").and_then(|s| s.parse::<usize>().ok()))
             .flatten();
         let mut at = Pos::new(row, 0);
+        let col_styles = &tracks.col_styles;
         reader.children(|reader, name, attrs| {
             if !name.is("c") {
                 return Ok(Handled::No);
@@ -627,6 +634,12 @@ fn rows(
                     .plain("s")
                     .and_then(|s| s.parse().ok())
                     .or(row_style)
+                    .or_else(|| {
+                        col_styles
+                            .iter()
+                            .find(|(cols, _)| cols.contains(&at.col))
+                            .map(|(_, style)| *style)
+                    })
                     .unwrap_or(0),
             };
             let mut value = cell(reader)?;
@@ -1410,6 +1423,33 @@ mod tests {
             assert_eq!(digit_px(Some(family), size), px, "{family} {size}");
         }
         assert_eq!(digit_px(None, 11.0), DIGIT_PX);
+    }
+
+    /// A cell naming no format takes its row's, then its column's (`doc/xlsx-format.md` §4.4).
+    #[test]
+    fn a_cell_naming_no_format_takes_its_rows_then_its_columns() {
+        let styles = crate::styles::read(
+            format!(
+                r#"<styleSheet xmlns="{MAIN}"><fonts><font/><font><b/></font><font><i/></font></fonts>
+                   <cellXfs><xf/><xf fontId="1"/><xf fontId="2"/></cellXfs></styleSheet>"#
+            )
+            .as_bytes(),
+            &[],
+        );
+        let (sheet, _) = worksheet(
+            r#"<cols><col min="1" max="1" width="9" style="2"/></cols>
+               <sheetData>
+                 <row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>1</v></c><c r="C1" s="0"><v>1</v></c></row>
+                 <row r="2" s="1" customFormat="1"><c r="A2"><v>1</v></c></row>
+               </sheetData>"#,
+            &styles,
+        );
+        let italic = |a: &str| sheet.style(at(a)).and_then(|s| s.font_style.clone());
+        let bold = |a: &str| sheet.style(at(a)).and_then(|s| s.font_weight.clone());
+        assert_eq!(italic("A1"), Some("italic".into()));
+        assert_eq!(sheet.style(at("B1")), None);
+        assert_eq!(sheet.style(at("C1")), None, "its own format, the default");
+        assert_eq!((bold("A2"), italic("A2")), (Some("bold".into()), None));
     }
 
     /// A fixed `defaultRowHeight` is every used row's that states no `ht`; a derived one is

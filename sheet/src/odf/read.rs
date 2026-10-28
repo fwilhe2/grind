@@ -2054,6 +2054,7 @@ impl Context<Builder> for Styles {
             kind,
             locale,
             color: None,
+            general: false,
         }))
     }
 }
@@ -2238,6 +2239,9 @@ struct NumberStyle {
     locale: Option<Locale>,
     /// `fo:color` on its `style:text-properties` — a red negative's red (§5.2).
     color: Option<String>,
+    /// A `number:number` with no `number:decimal-places`, which alone is the General format
+    /// (`doc/ods-format.md` §5.2).
+    general: bool,
 }
 
 impl Context<Builder> for NumberStyle {
@@ -2300,6 +2304,7 @@ impl Context<Builder> for NumberStyle {
             _ => return None,
         };
         let number = matches!(part, Part::Number { .. });
+        self.general |= number && attrs.get(Ns::Number, "decimal-places").is_none();
         b.parts.push(part);
         match number {
             // Its `number:embedded-text` children are read onto it.
@@ -2309,6 +2314,11 @@ impl Context<Builder> for NumberStyle {
     }
 
     fn end(&mut self, b: &mut Builder) {
+        // General is no format at all: the number as it is, narrowed to its column.
+        if self.general && self.kind == Kind::Number && b.parts.len() == 1 && self.color.is_none() {
+            b.parts.clear();
+            return;
+        }
         let format = Format {
             kind: self.kind,
             parts: std::mem::take(&mut b.parts),

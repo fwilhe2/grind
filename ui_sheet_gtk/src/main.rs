@@ -2825,29 +2825,51 @@ fn save_name(path: Option<&Path>) -> String {
 }
 
 /// Draw one frame to a PNG and quit — `--render-to`. It waits a beat for the window to be mapped
-/// and allocated, or the grid would not know how many cells fit and the image would be blank.
+/// and allocated, or the grid would not know how many cells fit and the image would be blank, and
+/// then for a first frame: a large document's first layout can take longer than the beat.
 fn render_once(window: &adw::ApplicationWindow, target: PathBuf) {
-    let window = window.clone();
+    render_after(window.clone(), target, 20);
+}
+
+fn render_after(window: adw::ApplicationWindow, target: PathBuf, tries: u32) {
     glib::timeout_add_local_once(std::time::Duration::from_millis(600), move || {
         let width = window.width();
         let height = window.height();
         let paintable = gtk::WidgetPaintable::new(Some(&window));
         let snapshot = gtk::Snapshot::new();
         paintable.snapshot(&snapshot, f64::from(width), f64::from(height));
+        let Some(node) = snapshot.to_node() else {
+            match tries {
+                0 => {
+                    eprintln!("grind-sheet-gtk: --render-to: nothing was drawn");
+                    window.destroy();
+                }
+                _ => render_after(window, target, tries - 1),
+            }
+            return;
+        };
 
+        // The window's own renderer when it has one; otherwise a cairo renderer realized with no
+        // surface, which draws offscreen.
+        let offscreen = || {
+            let renderer = gtk::gsk::CairoRenderer::new();
+            renderer.realize(None::<&gtk::gdk::Surface>).ok()?;
+            Some(renderer.upcast::<gtk::gsk::Renderer>())
+        };
         let result = window
             .native()
             .and_then(|native| native.renderer())
-            .zip(snapshot.to_node())
-            .map(|(renderer, node)| renderer.render_texture(&node, None))
-            .ok_or_else(|| "the window has no renderer yet".to_owned())
+            .or_else(offscreen)
+            .map(|renderer| renderer.render_texture(&node, None))
+            .ok_or_else(|| "no renderer".to_owned())
             .and_then(|texture| texture.save_to_png(&target).map_err(|e| e.to_string()));
 
         match result {
             Ok(()) => println!("{}", target.display()),
             Err(error) => eprintln!("grind-sheet-gtk: --render-to: {error}"),
         }
-        window.close();
+        // Destroyed rather than closed: an imported workbook is unsaved, and closing would ask.
+        window.destroy();
     });
 }
 

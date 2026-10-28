@@ -295,6 +295,9 @@ struct Xf {
     fill: Option<usize>,
     border: Option<usize>,
     align: Option<Align>,
+    /// `applyAlignment="0"`: on a named style's entry, that the style sets no alignment, whatever
+    /// `<alignment>` it carries (`doc/xlsx-format.md` §4.4).
+    no_alignment: bool,
     parent: Option<usize>,
 }
 
@@ -445,6 +448,7 @@ impl Part {
             let align = xf.align.as_ref().or_else(|| {
                 self.style_xfs
                     .get(xf.parent.unwrap_or(0))
+                    .filter(|p| !p.no_alignment)
                     .and_then(|p| p.align.as_ref())
             });
             looks.push(look(
@@ -959,6 +963,7 @@ fn xfs(reader: &mut Reader<'_>) -> crate::Result<Vec<Xf>> {
             fill: id("fillId"),
             border: id("borderId"),
             align: None,
+            no_alignment: attrs.plain("applyAlignment").map(str::trim) == Some("0"),
             parent: id("xfId"),
         };
         reader.children(|_, name, attrs| {
@@ -1243,6 +1248,21 @@ mod tests {
         assert_eq!(
             style(&styles, 2).and_then(|s| s.vertical_align),
             Some("bottom".into())
+        );
+    }
+
+    /// Excel's `Hyperlink` style carries a top alignment it says it does not set (§4.4).
+    #[test]
+    fn a_style_that_sets_no_alignment_gives_none() {
+        let styles = part(
+            r#"<fonts><font/></fonts>
+               <cellStyleXfs><xf/><xf applyAlignment="0"><alignment vertical="top"/></xf><xf><alignment vertical="top"/></xf></cellStyleXfs>"#,
+            r#"<xf xfId="0"/><xf xfId="1" applyAlignment="1"/><xf xfId="2"/>"#,
+        );
+        assert_eq!(style(&styles, 1).and_then(|s| s.vertical_align), None);
+        assert_eq!(
+            style(&styles, 2).and_then(|s| s.vertical_align),
+            Some("top".into())
         );
     }
 

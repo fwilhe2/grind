@@ -634,3 +634,36 @@ fn an_optimal_row_height_is_a_measured_one_and_saved_as_one() {
     let back = read_bytes("t.fods", &bytes).unwrap();
     assert!(back.sheet(0).unwrap().row_measured(0));
 }
+
+/// A `number:number` with no decimal places of its own, alone in its style, is General — how Excel
+/// writes its `.ods` (`doc/ods-format.md` §5.2).
+#[test]
+fn a_number_style_naming_no_decimals_is_general() {
+    let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0"
+  office:mimetype="application/vnd.oasis.opendocument.spreadsheet" office:version="1.4">
+ <office:automatic-styles>
+  <number:number-style style:name="N0"><number:number number:min-integer-digits="1"/></number:number-style>
+  <number:number-style style:name="N1"><number:number number:decimal-places="1" number:min-integer-digits="1"/></number:number-style>
+  <style:style style:name="ce1" style:family="table-cell" style:data-style-name="N0"/>
+  <style:style style:name="ce2" style:family="table-cell" style:data-style-name="N1"/>
+ </office:automatic-styles>
+ <office:body><office:spreadsheet><table:table table:name="S"><table:table-row>
+  <table:table-cell table:style-name="ce1" office:value-type="float" office:value="2019"/>
+  <table:table-cell table:style-name="ce2" office:value-type="float" office:value="2019"/>
+ </table:table-row></table:table></office:spreadsheet></office:body></office:document>"#;
+    let d = read_bytes("t.fods", xml.as_bytes()).unwrap();
+    let s = d.sheet(0).unwrap();
+    assert!(s.format(grind_sheet::Pos::new(0, 0)).is_none());
+    assert_eq!(
+        grind_sheet::render(s, grind_sheet::Pos::new(0, 0), d.null_date),
+        "2019"
+    );
+    assert_eq!(
+        grind_sheet::render(s, grind_sheet::Pos::new(0, 1), d.null_date),
+        "2019.0"
+    );
+}

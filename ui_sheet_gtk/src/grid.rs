@@ -1834,8 +1834,6 @@ mod imp {
             };
 
             let default = self.metrics.get().row_height;
-            // A measured row's floor is its own height, which `geom` weighs, not the default.
-            let measured_rows = app.measured_rows(sheet).unwrap_or_default();
             let cols = self.col_sizes();
             let context = self.obj().pango_context();
             let base = context.font_description().unwrap_or_default();
@@ -1864,7 +1862,10 @@ mod imp {
                     else {
                         continue;
                     };
-                    let wrapping = look::wraps(style);
+                    let wrapping = look::wraps(style)
+                        && !viewport
+                            .get(row, col)
+                            .is_some_and(grind_sheet::numfmt::is_number);
                     let text_style = look::text_style(style);
                     // A width of zero is `wrap`'s own "do not wrap" sentinel — one line per
                     // mandatory break, which is what the un-wrapped case wants.
@@ -1883,9 +1884,7 @@ mod imp {
                         grind_core::layout::wrap(std::slice::from_ref(&fragment), width, &metrics);
                     tallest = tallest.max(look::needed_height(&laid_out, style));
                 }
-                if f64::from(tallest) + ROW_PAD > default
-                    || (tallest > 0.0 && measured_rows.contains(&row))
-                {
+                if f64::from(tallest) + ROW_PAD > default {
                     measured.push((row, (f64::from(tallest) + ROW_PAD).ceil()));
                 }
             }
@@ -4261,7 +4260,10 @@ mod imp {
                         .and_then(look::by_style)
                         .unwrap_or_else(|| look::by_type(value));
                     let valign = look::valign(style);
-                    let wrapping = style.is_some_and(|s| s.wrap.as_deref() == Some("wrap"));
+                    // A number is never wrapped, wrapping or not: too wide, it is hashes, as
+                    // LibreOffice draws it (`doc/ods-format.md` §5.2).
+                    let wrapping = style.is_some_and(|s| s.wrap.as_deref() == Some("wrap"))
+                        && !grind_sheet::numfmt::is_number(value);
                     // An indent (`fo:margin-left`) moves the text in from the leading edge.
                     let indent = style
                         .and_then(|s| s.indent_mm())
@@ -4286,10 +4288,12 @@ mod imp {
                     });
                     layout.set_text(text);
                     let (text_w, text_h) = layout.pixel_size();
-                    let fits = wrapping || f64::from(text_w) <= cell.w - 2.0 * pad - indent;
+                    let within = f64::from(text_w) <= cell.w - 2.0 * pad - indent;
+                    let fits = wrapping || within;
                     // A heading too wide for the room its button leaves keeps its *start*:
-                    // centred, it would lose a letter at each end and read as neither word.
-                    let align = match capped && !fits {
+                    // centred, it would lose a letter at each end and read as neither word. A
+                    // wrapped one too, when a word in it is wider than the room.
+                    let align = match capped && !within {
                         true => Align::Left,
                         false => align,
                     };

@@ -403,7 +403,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "crc32fast",
-        version: "1.5.2",
+        version: "1.5.3",
         licence: "MIT OR Apache-2.0",
         copyright: "Copyright (c) 2018 Sam Rijs, Alex Crichton and contributors",
         source: "https://github.com/srijs/rust-crc32fast",
@@ -1060,7 +1060,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "harfrust",
-        version: "0.15.0",
+        version: "0.13.3",
         licence: "MIT",
         copyright: "Copyright (c) HarfBuzz developers",
         source: "https://github.com/harfbuzz/harfrust",
@@ -1897,7 +1897,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "pulldown-cmark",
-        version: "0.13.4",
+        version: "0.13.5",
         licence: "MIT",
         copyright: "Copyright 2015 Google Inc.",
         source: "https://github.com/raphlinus/pulldown-cmark",
@@ -2113,7 +2113,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "rhai",
-        version: "1.26.1",
+        version: "1.27.0",
         licence: "MIT OR Apache-2.0",
         copyright: "By Jonathan Turner, Lukáš Hozda, Stephen Chung, jhwgh1968",
         source: "https://github.com/rhaiscript/rhai",
@@ -2122,7 +2122,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "rhai_codegen",
-        version: "3.2.0",
+        version: "3.3.0",
         licence: "MIT OR Apache-2.0",
         copyright: "Copyright (c) jhwgh1968, Stephen Chung",
         source: "https://github.com/rhaiscript/rhai",
@@ -2347,7 +2347,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "skrifa",
-        version: "0.46.2",
+        version: "0.49.0",
         licence: "MIT OR Apache-2.0",
         copyright: "Copyright 2019 Fontations Developers",
         source: "https://github.com/googlefonts/fontations",
@@ -3337,7 +3337,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "zip",
-        version: "9.0.4",
+        version: "9.0.5",
         licence: "MIT",
         copyright: "Copyright (c) 2014 Mathijs van de Nes",
         source: "https://github.com/zip-rs/zip2",

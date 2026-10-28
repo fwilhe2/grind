@@ -1974,8 +1974,9 @@ fn render_once(window: &gtk::Window, target: PathBuf, main: &adw::ApplicationWin
             Ok(()) => println!("{}", target.display()),
             Err(error) => eprintln!("grind-text-gtk: --render-to: {error}"),
         }
-        window.close();
-        main.close();
+        // Destroyed rather than closed: an imported document is unsaved, and closing would ask.
+        window.destroy();
+        main.destroy();
     });
 }
 

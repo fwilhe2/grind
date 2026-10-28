@@ -598,8 +598,10 @@ has `style:name` and is built from an ordered sequence of literal/format pieces:
   set among a `number:number`'s own digits, the way a telephone or ID format reads. Its
   `number:position` counts **whole digits to the text's right**: `0` puts it just before the
   decimal separator, `3` before the last three digits (`1234567C890`), and a position past the
-  number's first digit puts it in front (`F1234567890`); text at a non-negative position drops
-  the number's grouping (`1234567G890` under `number:grouping="true"`). A **negative** position
+  number's first digit puts it in front (`F1234567890`); text at a position above 0 drops
+  the number's grouping (`1234567G890` under `number:grouping="true"`, `X1234567` in front),
+  and text at 0 keeps it (`1,234,567X`, measured 2026-10-27) — how Excel's `#,##0_)` arrives
+  in its `.ods`, a space at position 0. A **negative** position
   reaches into the decimals — LibreOffice's extension, the schema's type being a plain integer
   — with `-p` after `p - 1` of them: `-2` shows 1.2345 as `1.2E345`, and LibreOffice's own
   conversion of `#,##0.000" "###" "###` is decimal-places 9, min 3, texts at `-4` and `-7`,
@@ -610,6 +612,15 @@ has `style:name` and is built from an ordered sequence of literal/format pieces:
   `123456789012` as `1E+11` and `1.23457E+11`, scientific once the whole part does not fit;
   `0.000123456` as `0.00012`. The same values under a format stating four decimals show `###`
   where they do not fit: only the General format narrows.
+  **A number is never wrapped** — `MEASURED` 2026-10-27 (LibreOffice 26.8.1.1, PDF export):
+  176702 under `#,##0` and 123456.789 with no format, each in a 0.35in column whose cell says
+  `fo:wrap-option="wrap"`, both show `###`, as they would without the wrap.
+  **A `number:number` with no `number:decimal-places`, alone in its style, is General** —
+  `MEASURED` 2026-10-27 (LibreOffice 26.8.1.1, PDF export): under
+  `<number:number number:min-integer-digits="1"/>` 2019, 1234.5678 and 0.125 show as `2019`,
+  `1234.5678` and `0.125`, and with `number:grouping="true"` beside it 1234567.5 still shows as
+  `1234567.5`. Excel writes its `.ods` General this way (`N0`, on every cell). The reader takes it
+  as no format.
   **An absent `number:min-decimal-places` is `number:decimal-places`**, not zero —
   `MEASURED` (2026-10-06, LibreOffice 26.8): `decimal-places="2"` alone shows `1` as `1.00`,
   and only `min-decimal-places="0"` beside it shows `1`. The attribute is ODF 1.3's
