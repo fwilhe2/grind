@@ -21,3 +21,6 @@
 # Claude Code's agent worktrees: a full checkout each, with its own `target/`. Local scratch,
 # never part of the repository — and REUSE would otherwise lint every build artefact in them.
 /.claude/worktrees/
+
+# What scripts/screenshots.sh writes by default.
+/screenshots/
