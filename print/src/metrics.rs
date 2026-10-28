@@ -11,11 +11,12 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
+use std::sync::Arc;
 
 use grind_core::layout::Metrics;
 use grind_core::style::{TextStyle, length_mm};
 
-use crate::fonts::{FaceId, Fonts, Match, Resolved};
+use crate::fonts::{Data, FaceId, Fonts, Match, Resolved};
 
 /// The size a run gets when it states none: Writer's default body text.
 pub const DEFAULT_SIZE: f32 = 12.0;
@@ -61,7 +62,8 @@ pub struct Typesetter {
     /// What kind of face each family the document declares is (`style:font-family-generic`), for
     /// falling back on a family that is not here ([`Fonts::resolve_hinted`]).
     generics: RefCell<HashMap<String, String>>,
-    shapers: RefCell<HashMap<FaceId, harfrust::ShaperData>>,
+    /// Each face as harfrust reads it, with its layout tables cached; `None` when it cannot.
+    shapers: RefCell<HashMap<FaceId, Option<harfrust::Font>>>,
     resolved: RefCell<BTreeMap<Asked, Resolved>>,
 }
 
@@ -109,21 +111,28 @@ impl Typesetter {
     pub fn shape(&self, text: &str, style: &TextStyle) -> Shaped {
         let (face, size) = self.face_of(style);
         let mut glyphs = Vec::new();
-        let bytes = self.fonts.face(face).bytes();
-        let index = self.fonts.face(face).index;
-        if let Ok(font) = harfrust::FontRef::from_index(bytes, index)
+        let mut shapers = self.shapers.borrow_mut();
+        let font = shapers.entry(face).or_insert_with(|| {
+            let found = self.fonts.face(face);
+            match &found.data {
+                Data::Static(bytes) => harfrust::Font::new(*bytes, found.index),
+                Data::Shared(bytes) => {
+                    let bytes: Arc<dyn AsRef<[u8]> + Send + Sync> = bytes.clone();
+                    harfrust::Font::new(bytes, found.index)
+                }
+            }
+        });
+        if let Some(font) = font.as_ref()
             && !text.is_empty()
         {
-            let mut shapers = self.shapers.borrow_mut();
-            let data = shapers
-                .entry(face)
-                .or_insert_with(|| harfrust::ShaperData::new(&font));
-            let shaper = data.shaper(&font).build();
-            let mut buffer = harfrust::UnicodeBuffer::new();
-            buffer.push_str(text);
-            buffer.guess_segment_properties();
-            let out = shaper.shape(buffer, harfrust::ShapeOptions::new());
-            let scale = size / f32::from(shaper.units_per_em().max(1) as u16);
+            let mut out = harfrust::Buffer::new();
+            out.push_str(text);
+            out.guess_segment_properties();
+            let shaper = harfrust::ShaperFont::new(font);
+            if harfrust::shape(&shaper, &mut out, harfrust::ShapeOptions::new()).is_err() {
+                return Shaped { face, size, glyphs };
+            }
+            let scale = size / f32::from(font.units_per_em().max(1));
             let infos = out.glyph_infos();
             // A cluster runs from its own byte to the next larger cluster's — they arrive in text
             // order for left-to-right text.
