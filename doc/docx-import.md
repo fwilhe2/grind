@@ -96,7 +96,7 @@ over XML.
 | `PAGE`, `NUMPAGES` | `text:page-number`, `text:page-count` | |
 | any other field | its cached result, as text | counted |
 | `w:footnoteReference`, `w:endnoteReference` | `text:note`, numbered as Word numbers them, a custom mark as its label (§2.5) | |
-| `w:tbl` | `table:table` with its grid's widths, `gridSpan`/`vMerge` as spans and covered cells, header rows, row heights, cell fill, borders (cell over table over table style), vertical alignment and margins | `emit.rs` |
+| `w:tbl` | `table:table` with its grid's widths, `gridSpan`/`vMerge` as spans and covered cells, header rows, row heights, a row Word may not split (`w:cantSplit`, `fo:keep-together="always"`), cell fill, borders (cell over table over table style), vertical alignment and margins | `emit.rs` |
 | `w:drawing` / `w:pict` holding a picture | `draw:frame`/`draw:image` with the bytes inline, at the extent's size, `as-char` when inline | |
 | each section's `w:sectPr` | a page layout and a master page per distinct page — size, margins and marginals — the first one `Standard`, which `grind_text` reads as the document's page; the default header and footer, the first-page pair under `w:titlePg` and the even-page pair under `w:evenAndOddHeaders` (ODF's left pages), a section with no reference showing the previous section's (§5.2, §5.4) | |
 | a later section | `fo:break-before="page"` on its first block when it starts a page, and `style:master-page-name` when its page differs | |

@@ -1126,6 +1126,9 @@ impl Writer<'_, '_> {
                     props::twips(height),
                 );
             }
+            if row.unsplit {
+                row_props.set("fo:keep-together", "always");
+            }
             let _ = write!(out, "{}<table:table-row", pad(inner));
             if !row_props.is_empty() {
                 let style = self.row_style(row_props);

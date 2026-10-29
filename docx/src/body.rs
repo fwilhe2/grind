@@ -134,6 +134,8 @@ pub struct Row {
     pub header: bool,
     /// `w:trHeight` in twips, and whether it is exact rather than a least height.
     pub height: Option<(i64, bool)>,
+    /// `w:cantSplit` (§17.4.6): the row is never broken across pages.
+    pub unsplit: bool,
     pub before: u32,
     pub after: u32,
     pub cells: Vec<Cell>,
@@ -1096,6 +1098,8 @@ fn read_row(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Row> {
                 r.children(|_, name, attrs| {
                     if name.w("tblHeader") {
                         row.header = attrs.on();
+                    } else if name.w("cantSplit") {
+                        row.unsplit = attrs.on();
                     } else if name.w("trHeight") {
                         if let Some(h) = attrs.int("val").filter(|h| *h > 0) {
                             row.height = Some((h, attrs.w("hRule") == Some("exact")));

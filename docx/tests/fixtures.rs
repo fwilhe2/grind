@@ -520,7 +520,7 @@ fn a_table_with_a_horizontal_and_a_vertical_merge() {
         <w:tr><w:trPr><w:tblHeader/></w:trPr>
           <w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>wide</w:t></w:r></w:p></w:tc>
           <w:tc><w:tcPr><w:vMerge w:val="restart"/><w:shd w:val="clear" w:fill="FFFF00"/></w:tcPr><w:p><w:r><w:t>tall</w:t></w:r></w:p></w:tc></w:tr>
-        <w:tr>
+        <w:tr><w:trPr><w:cantSplit/></w:trPr>
           <w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>
           <w:tc><w:p><w:r><w:t>b</w:t></w:r></w:p><w:p><w:r><w:t>b2</w:t></w:r></w:p></w:tc>
           <w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p/></w:tc></w:tr>
@@ -554,6 +554,7 @@ fn a_table_with_a_horizontal_and_a_vertical_merge() {
     let look = &doc.table_looks["Table1"];
     assert_eq!(look.columns.len(), 3);
     assert!(look.header_rows.contains(&0), "a repeated header row");
+    assert_eq!(look.kept_rows, [1].into(), "a row Word may not split");
     assert_eq!(
         look.cell(0, 2).and_then(|c| c.background.as_deref()),
         Some("#ffff00")
