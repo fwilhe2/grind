@@ -495,7 +495,14 @@ impl Builder {
         for paragraphs in self
             .master_marginals
             .values_mut()
-            .flat_map(|m| [m.header.as_mut(), m.footer.as_mut()])
+            .flat_map(|m| {
+                [
+                    m.header.as_mut(),
+                    m.footer.as_mut(),
+                    m.header_first.as_mut(),
+                    m.footer_first.as_mut(),
+                ]
+            })
             .flatten()
         {
             for paragraph in paragraphs {

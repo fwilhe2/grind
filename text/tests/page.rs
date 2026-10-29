@@ -426,6 +426,7 @@ fn a_headers_automatic_style_is_the_one_from_its_own_part() {
   <style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm"/></style:page-layout>
 </office:automatic-styles><office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1">
   <style:header><text:p text:style-name="MP1">Letterhead</text:p></style:header>
+  <style:header-first><text:p text:style-name="MP1">First letterhead</text:p></style:header-first>
 </style:master-page></office:master-styles></office:document-styles>"#
     );
     let content = format!(
@@ -459,4 +460,15 @@ fn a_headers_automatic_style_is_the_one_from_its_own_part() {
     );
     let body = app.paragraph(0).expect("a block").props;
     assert_eq!(body.text_align.as_deref(), Some("end"));
+    let first = app
+        .master("Standard")
+        .and_then(|m| m.first)
+        .expect("a first page");
+    let first = first.0.expect("its own header").paragraphs[0].style.clone();
+    let props = app.resolve_style(first.as_deref()).props;
+    assert_eq!(
+        props.text_align.as_deref(),
+        Some("center"),
+        "a first page's too"
+    );
 }
