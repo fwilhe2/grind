@@ -114,13 +114,23 @@ pub struct Builder {
     cell_styles: HashMap<String, (bool, crate::table_look::CellLook)>,
     /// Every table-column style's width in millimetres, and whether it was automatic.
     column_styles: HashMap<String, (bool, Option<f64>)>,
-    /// Every table-row style saying `fo:keep-together="always"`, and whether it was automatic.
-    kept_row_styles: HashMap<String, bool>,
+    /// Every table-row style that keeps its row together or gives it a height, and whether it was
+    /// automatic.
+    row_styles: HashMap<String, (bool, RowStyle)>,
     /// The level indents of the list or outline style being read.
     list_indents: std::collections::BTreeMap<u32, crate::numbering::LevelIndent>,
     /// Each table's look as read, by name — its column styles, heading rows and each cell's
     /// style — resolved once every style is known.
     table_pending: HashMap<String, PendingLook>,
+}
+
+/// What a table-row style says about its row.
+#[derive(Clone, Copy, Default)]
+struct RowStyle {
+    /// `fo:keep-together="always"`.
+    kept: bool,
+    /// `style:min-row-height`, or `style:row-height`, in millimetres.
+    height: Option<f64>,
 }
 
 /// A table's look before its styles are resolved.
@@ -241,7 +251,7 @@ impl Builder {
             section: None,
             cell_styles: HashMap::new(),
             column_styles: HashMap::new(),
-            kept_row_styles: HashMap::new(),
+            row_styles: HashMap::new(),
             table_pending: HashMap::new(),
             list_indents: std::collections::BTreeMap::new(),
         }
@@ -263,17 +273,32 @@ impl Builder {
                 .into_iter()
                 .filter_map(|(at, style)| Some((at, self.cell_styles.get(&style)?.1.clone())))
                 .collect();
-            let kept_rows = pending
-                .row_styles
-                .iter()
-                .filter(|(_, _, style)| self.kept_row_styles.contains_key(style))
-                .flat_map(|&(row, repeated, _)| row..row + repeated)
+            let styled_rows = || {
+                pending
+                    .row_styles
+                    .iter()
+                    .filter_map(|(row, repeated, style)| {
+                        let (_, style) = self.row_styles.get(style)?;
+                        Some((*row..row + repeated, *style))
+                    })
+            };
+            let kept_rows = styled_rows()
+                .filter(|(_, style)| style.kept)
+                .flat_map(|(rows, _)| rows)
+                .collect();
+            let row_heights = styled_rows()
+                .filter_map(|(rows, style)| {
+                    let height = style.height?;
+                    Some(rows.map(move |row| (row, height)))
+                })
+                .flatten()
                 .collect();
             let look = crate::table_look::TableLook {
                 columns,
                 header_rows: pending.header_rows,
                 cells,
                 kept_rows,
+                row_heights,
                 rows: pending.rows,
             };
             self.doc.table_looks.insert(name, look);
@@ -472,7 +497,7 @@ impl Builder {
         }
         self.cell_styles.retain(|_, (automatic, _)| !*automatic);
         self.column_styles.retain(|_, (automatic, _)| !*automatic);
-        self.kept_row_styles.retain(|_, automatic| !*automatic);
+        self.row_styles.retain(|_, (automatic, _)| !*automatic);
         self.paragraph_styles
             .retain(|_, (automatic, _)| !*automatic);
         self.list_styles.retain(|_, (automatic, _)| !*automatic);
@@ -1052,10 +1077,16 @@ impl Context<Builder> for TableStyleDef {
                 .and_then(grind_core::style::length_mm)
         };
         if self.family == TableFamily::Row && name.is(Ns::Style, "table-row-properties") {
-            if attrs.get(Ns::Fo, "keep-together") == Some("always")
-                && b.kept_row_styles.len() < MAX_STYLES
-            {
-                b.kept_row_styles.insert(self.name.clone(), self.automatic);
+            let style = RowStyle {
+                kept: attrs.get(Ns::Fo, "keep-together") == Some("always"),
+                height: attrs
+                    .get(Ns::Style, "min-row-height")
+                    .or_else(|| attrs.get(Ns::Style, "row-height"))
+                    .and_then(grind_core::style::length_mm),
+            };
+            if (style.kept || style.height.is_some()) && b.row_styles.len() < MAX_STYLES {
+                b.row_styles
+                    .insert(self.name.clone(), (self.automatic, style));
             }
         } else if self.family == TableFamily::Column
             && name.is(Ns::Style, "table-column-properties")

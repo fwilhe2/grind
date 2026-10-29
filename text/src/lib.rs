@@ -420,6 +420,12 @@ pub trait Faces {
         false
     }
 
+    /// The least height of `row` of the table named `table`, in the face's unit, where its style
+    /// states one.
+    fn row_height(&self, _table: &str, _row: u32) -> Option<f64> {
+        None
+    }
+
     /// Whether `row` of the table named `table` keeps together, moving whole to the next page
     /// rather than splitting between lines.
     fn row_kept(&self, _table: &str, _row: u32) -> bool {

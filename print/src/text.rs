@@ -2424,6 +2424,29 @@ mod tests {
         );
     }
 
+    /// A row's stated height is its least: an empty row of a form is as tall as its style says.
+    #[test]
+    fn a_row_is_at_least_as_tall_as_its_style_says() {
+        let app = styled_with(
+            "",
+            r#"<style:style style:name="Tall" style:family="table-row"><style:table-row-properties style:min-row-height="3cm"/></style:style>"#,
+            r#"<table:table table:name="T"><table:table-column/>
+                 <table:table-row table:style-name="Tall"><table:table-cell><text:p>a</text:p></table:table-cell></table:table-row>
+                 <table:table-row><table:table-cell><text:p>b</text:p></table:table-cell></table:table-row>
+               </table:table>"#,
+        );
+        let doc = typeset(&app, &setter(), &Options::default());
+        let at = |want: &str| {
+            texts(&doc.pages[0])
+                .into_iter()
+                .find(|t| t.2 == want)
+                .unwrap()
+                .1
+        };
+        let apart = at("b") - at("a");
+        assert!((apart - 72.0 * 3.0 / 2.54).abs() < 1.0, "{apart}");
+    }
+
     /// [`styled`], with `automatic` in `office:automatic-styles`.
     fn styled_with(styles: &str, automatic: &str, body: &str) -> App {
         let bytes = format!(

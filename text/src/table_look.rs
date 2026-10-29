@@ -40,6 +40,9 @@ pub struct TableLook {
     /// The rows whose style says `fo:keep-together="always"`: never split across pages
     /// (`doc/odt-format.md` §5c fact 25).
     pub kept_rows: BTreeSet<u32>,
+    /// Each row's least height in millimetres, where its style states one. A stated exact height
+    /// (`style:row-height`) is taken as a least one: text a row cannot hold is shown, not clipped.
+    pub row_heights: HashMap<u32, f64>,
     /// How many rows the table has, which is where its bottom border goes.
     pub rows: u32,
 }

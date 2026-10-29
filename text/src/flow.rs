@@ -590,6 +590,13 @@ fn lay_out_table(
             *height = height.min(pad[0] + pad[2]);
         }
     }
+    if let Some(name) = cells.first().map(|run| &run.cell.table) {
+        for (row, height) in heights.iter_mut().enumerate() {
+            if let Some(least) = faces.row_height(name, row as u32) {
+                *height = height.max(least);
+            }
+        }
+    }
     for run in &cells {
         let over = run.cell.rows_spanned.max(1) as usize;
         let first = run.cell.row as usize;
