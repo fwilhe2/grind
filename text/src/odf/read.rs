@@ -447,7 +447,15 @@ impl Builder {
     /// applies — where `doc/text-core.md`'s line between generated and named styles is drawn. An
     /// undeclared name is kept as a name rather than given invented formatting.
     fn open_span(&mut self, name: Option<&str>) {
-        let mut props = self.props.last().cloned().unwrap_or_default();
+        let props = self.props.last().cloned().unwrap_or_default();
+        let (kept, props) = self.span_look(name, props);
+        self.spans.push(kept);
+        self.props.push(props);
+    }
+
+    /// What a span named `name` inside formatting `props` adds: the named style it keeps, if any,
+    /// and the formatting with its automatic style layered on.
+    fn span_look(&self, name: Option<&str>, mut props: CharStyle) -> (Option<String>, CharStyle) {
         let kept = match name.and_then(|name| self.styles.get(name).map(|s| (name, s))) {
             Some((name, style)) if style.automatic => {
                 props.layer(&style.props);
@@ -463,8 +471,7 @@ impl Builder {
             Some((name, _)) => Some(name.to_owned()),
             None => name.map(str::to_owned),
         };
-        self.spans.push(kept.filter(|name| !name.is_empty()));
-        self.props.push(props);
+        (kept.filter(|name| !name.is_empty()), props)
     }
 
     fn close_span(&mut self) {
@@ -949,9 +956,9 @@ impl Context<Builder> for MarginalText {
         }
         b.marginal = Some(crate::marginal::Paragraph {
             style: attrs.get(Ns::Text, "style-name").map(str::to_owned),
-            parts: Vec::new(),
+            ..Default::default()
         });
-        Some(Box::new(MarginalInline { closes: true }))
+        Some(Box::new(MarginalInline::paragraph()))
     }
 
     fn end(&mut self, b: &mut Builder) {
@@ -976,14 +983,46 @@ impl Context<Builder> for MarginalText {
 struct MarginalInline {
     /// Whether this is the paragraph itself rather than a span inside it.
     closes: bool,
+    /// How its text looks.
+    look: crate::marginal::Look,
+}
+
+impl MarginalInline {
+    fn paragraph() -> Self {
+        MarginalInline {
+            closes: true,
+            look: Default::default(),
+        }
+    }
+
+    /// An element inside it whose text looks as its own does.
+    fn inner(&self) -> Self {
+        MarginalInline {
+            closes: false,
+            look: self.look.clone(),
+        }
+    }
 }
 
 impl Context<Builder> for MarginalInline {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         use crate::marginal::Part;
+        if name.is(Ns::Text, "span") {
+            let (name, props) =
+                b.span_look(attrs.get(Ns::Text, "style-name"), self.look.props.clone());
+            let names = [self.look.names.clone(), name].into_iter().flatten();
+            let names: Vec<String> = names.collect();
+            return Some(Box::new(MarginalInline {
+                closes: false,
+                look: crate::marginal::Look {
+                    names: (!names.is_empty()).then(|| names.join(" ")),
+                    props,
+                },
+            }));
+        }
         let paragraph = b.marginal.as_mut()?;
         match (name.ns, name.local.as_str()) {
-            (Ns::Text, "span" | "a") => return Some(Box::new(MarginalInline { closes: false })),
+            (Ns::Text, "a") => return Some(Box::new(self.inner())),
             // A line on the page — a fold mark, a rule — is the master's, its ends `svg:` lengths
             // from the corner.
             (Ns::Draw, "line") => {
@@ -1008,18 +1047,18 @@ impl Context<Builder> for MarginalInline {
                     });
                 }
             }
-            (Ns::Text, "page-number") => paragraph.parts.push(Part::PageNumber),
-            (Ns::Text, "page-count") => paragraph.parts.push(Part::PageCount),
-            (Ns::Text, "tab") => paragraph.push_text("\t"),
-            (Ns::Text, "line-break") => paragraph.push_text("\n"),
+            (Ns::Text, "page-number") => paragraph.push(Part::PageNumber, &self.look),
+            (Ns::Text, "page-count") => paragraph.push(Part::PageCount, &self.look),
+            (Ns::Text, "tab") => paragraph.push_text("\t", &self.look),
+            (Ns::Text, "line-break") => paragraph.push_text("\n", &self.look),
             (Ns::Text, "s") => {
                 let count = attrs.count(Ns::Text, "c", 1000) as usize;
-                paragraph.push_text(&" ".repeat(count));
+                paragraph.push_text(&" ".repeat(count), &self.look);
             }
             // Any other field — file name, date, chapter — shows its cached text. A note's body is
             // not the header's text, and nothing outside `text:` is text.
             (Ns::Text, local) if !matches!(local, "note" | "ruby-text") => {
-                return Some(Box::new(MarginalInline { closes: false }));
+                return Some(Box::new(self.inner()));
             }
             _ => {}
         }
@@ -1029,7 +1068,7 @@ impl Context<Builder> for MarginalInline {
 
     fn text(&mut self, text: &str, b: &mut Builder) {
         if let Some(paragraph) = b.marginal.as_mut() {
-            paragraph.push_text(text);
+            paragraph.push_text(text, &self.look);
         }
     }
     fn end(&mut self, b: &mut Builder) {
@@ -2447,9 +2486,9 @@ impl Context<Builder> for NoteBody {
         }
         b.marginal = Some(crate::marginal::Paragraph {
             style: attrs.get(Ns::Text, "style-name").map(str::to_owned),
-            parts: Vec::new(),
+            ..Default::default()
         });
-        Some(Box::new(MarginalInline { closes: true }))
+        Some(Box::new(MarginalInline::paragraph()))
     }
 }
 

@@ -219,6 +219,7 @@ had no width and therefore no lines.
 - `notes` — `grind text export-pdf` and `preview`, which set every footnote at the foot of the page its citation is on; `grind text view` shows a citation's mark in its paragraph
 - `marginals` — `grind text export-pdf` and `preview`, which draw the header and footer on every page; nothing prints them on their own
 - `resolve_style` — the same, for a header or footer paragraph's style
+- `shown` — the same, for how each piece of a header or footer paragraph looks
 - `first_page_marginals` — the same, for a first page set on a master page of its own (Writer's *First Page*)
 - `master` — the same, for every master page by name: a paragraph whose style names one opens a page on it anywhere (`doc/pdf-export.md` P8b), which `grind text export-pdf`, `pages` and `preview` draw
 - `rest_master` — the name of the master the body's pages are set on, read by the same three verbs

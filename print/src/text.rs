@@ -1037,7 +1037,18 @@ impl<'a> Marginal<'a> {
                     font_style: props.font_style,
                 };
                 let face = RoleFace::stating(setter, grind_text::look::Role::Body, stated);
-                (paragraph.clone(), face, align, ink, tabs)
+                let looks = paragraph
+                    .pieces(1, 1)
+                    .map(|(_, look)| look.map(|look| app.shown(look)).unwrap_or_default())
+                    .collect();
+                MarginalParagraph {
+                    paragraph: paragraph.clone(),
+                    looks,
+                    face,
+                    align,
+                    ink,
+                    tabs,
+                }
             })
             .collect();
         let mut out = Marginal {
@@ -1050,61 +1061,93 @@ impl<'a> Marginal<'a> {
         let content: f64 = out
             .paragraphs
             .iter()
-            .map(|(paragraph, face, _, _, tabs)| {
-                f64::from(out.wrap(&paragraph.text(1, 1), face, tabs).height())
-            })
+            .map(|paragraph| f64::from(out.wrap(paragraph, 1, 1).1.height()))
             .sum();
         out.height = content.max(pt(marginal.min_height));
         out
     }
 
+    /// `paragraph` as printed on page `page` of `pages`: its pieces' text, each with the look it
+    /// is set in, and its lines.
     fn wrap(
         &self,
-        text: &str,
-        face: &RoleFace<'_>,
-        tabs: &grind_core::layout::Tabs,
-    ) -> grind_core::layout::Layout {
-        let style = TextStyle::default();
-        grind_core::layout::wrap_tabbed(
-            &[Fragment {
+        paragraph: &MarginalParagraph<'_>,
+        page: usize,
+        pages: usize,
+    ) -> (Vec<(String, usize)>, grind_core::layout::Layout) {
+        let pieces: Vec<(String, usize)> = paragraph
+            .paragraph
+            .pieces(page, pages)
+            .enumerate()
+            .map(|(at, (text, _))| (text, at))
+            .collect();
+        let styles: Vec<TextStyle> = paragraph
+            .looks
+            .iter()
+            .map(grind_text::CharStyle::metrics)
+            .collect();
+        let plain = TextStyle::default();
+        let fragments: Vec<Fragment<'_>> = pieces
+            .iter()
+            .map(|(text, at)| Fragment {
                 text,
-                style: &style,
-            }],
+                style: styles.get(*at).unwrap_or(&plain),
+            })
+            .collect();
+        let layout = grind_core::layout::wrap_tabbed(
+            &fragments,
             self.width as f32,
-            face,
+            &paragraph.face,
             0.0,
-            tabs,
-        )
+            &paragraph.tabs,
+        );
+        (pieces, layout)
     }
 
     /// Draw it with its top at `(left, top)`, on page `page` of `pages`. Decoration to a tagged
     /// PDF: a header repeats on every page and is no part of the reading order.
     fn draw(&self, ops: &mut Vec<Op>, (left, top): (f64, f64), page: usize, pages: usize) {
         let mut y = top as f32;
-        for (paragraph, face, align, ink, tabs) in &self.paragraphs {
-            let text = paragraph.text(page, pages);
-            let layout = self.wrap(&text, face, tabs);
-            let chars: Vec<char> = text.chars().collect();
-            let style = face.style(&TextStyle::default());
-            let setter = face.setter();
+        for paragraph in &self.paragraphs {
+            let (pieces, layout) = self.wrap(paragraph, page, pages);
+            // Each character with the piece it belongs to.
+            let chars: Vec<(char, usize)> = pieces
+                .iter()
+                .flat_map(|(text, at)| text.chars().map(move |c| (c, *at)))
+                .collect();
+            let text: Vec<char> = chars.iter().map(|(c, _)| *c).collect();
+            let setter = paragraph.face.setter();
+            let look = |at: usize| paragraph.looks.get(chars[at].1);
             for line in layout.lines() {
                 let visible_end = (line.start..line.end)
                     .rev()
-                    .find(|&i| !chars[i].is_whitespace())
+                    .find(|&i| !text[i].is_whitespace())
                     .map_or(line.start, |i| i + 1);
                 let last = std::ptr::eq(line, layout.lines().last().unwrap_or(line));
                 let content =
-                    aligned_width(&layout, line, &chars, visible_end, last).min(self.width as f32);
-                let fit = align::fit(*align, self.width as f32, content, 0, true);
-                // Each stretch between tabs is drawn where the layout put it: a footer's
-                // `Seite 1 / 2` at the right-hand stop Writer's `Footer` style sets.
+                    aligned_width(&layout, line, &text, visible_end, last).min(self.width as f32);
+                let fit = align::fit(paragraph.align, self.width as f32, content, 0, true);
+                // Each stretch between tabs, and between pieces that look different, is drawn
+                // where the layout put it: a footer's `Seite 1 / 2` at the right-hand stop
+                // Writer's `Footer` style sets.
                 let mut from = line.start;
                 for at in line.start..=visible_end {
-                    if at < visible_end && chars[at] != '\t' && chars[at] != '\n' {
+                    let breaks = at == visible_end
+                        || matches!(text[at], '\t' | '\n')
+                        || (at > from && look(at) != look(from));
+                    if !breaks {
                         continue;
                     }
-                    let piece: String = chars[from..at].iter().collect();
+                    let piece: String = text[from..at].iter().collect();
                     if !piece.trim().is_empty() {
+                        let look = look(from);
+                        let style = paragraph
+                            .face
+                            .style(&look.map(grind_text::CharStyle::metrics).unwrap_or_default());
+                        let ink = look
+                            .and_then(|look| look.color.as_deref())
+                            .and_then(Rgb::parse)
+                            .unwrap_or(paragraph.ink);
                         let shaped = setter.shape(&piece, &style);
                         ops.push(Op::Text {
                             x: left as f32 + fit.offset + layout.x_at(from),
@@ -1113,11 +1156,15 @@ impl<'a> Marginal<'a> {
                             size: shaped.size,
                             glyphs: shaped.glyphs,
                             text: piece,
-                            color: *ink,
+                            color: ink,
                             mark: Mark::Decoration,
                         });
                     }
-                    from = at + 1;
+                    from = if at < visible_end && matches!(text[at], '\t' | '\n') {
+                        at + 1
+                    } else {
+                        at
+                    };
                 }
             }
             y += layout.height();
@@ -1125,14 +1172,16 @@ impl<'a> Marginal<'a> {
     }
 }
 
-/// One header or footer paragraph, with the face, alignment, ink and tab stops its style gives it.
-type MarginalParagraph<'a> = (
-    grind_text::marginal::Paragraph,
-    RoleFace<'a>,
-    Align,
-    Rgb,
-    grind_core::layout::Tabs,
-);
+/// One header or footer paragraph, with each piece's look, and the face, alignment, ink and tab
+/// stops its style gives it.
+struct MarginalParagraph<'a> {
+    paragraph: grind_text::marginal::Paragraph,
+    looks: Vec<grind_text::CharStyle>,
+    face: RoleFace<'a>,
+    align: Align,
+    ink: Rgb,
+    tabs: grind_core::layout::Tabs,
+}
 
 /// A picture block on paper: the picture at the size the document gives it, fitted to the
 /// measure, and its caption's lines under it.

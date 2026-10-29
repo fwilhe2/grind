@@ -9,8 +9,9 @@
 //! fact 9).
 //!
 //! A table's or a list's paragraphs are kept as the header's own, in order, and a master's
-//! first-page variants (`style:header-first`) beside its own. Not kept: character formatting,
-//! pictures, a table's grid, and the left-page variants (`style:header-left`).
+//! first-page variants (`style:header-first`) beside its own, and each piece's character
+//! formatting as a body run's. Not kept: pictures, a table's grid, and the left-page variants
+//! (`style:header-left`).
 
 /// One piece of a header or footer paragraph.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,32 +24,62 @@ pub enum Part {
     PageCount,
 }
 
+/// How a piece looks, as a body run does: its named character styles, space-separated, under its
+/// direct formatting ([`crate::paragraph::shown`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Look {
+    pub names: Option<String>,
+    pub props: crate::style::CharStyle,
+}
+
 /// One paragraph of a header or footer, and the paragraph style it names.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Paragraph {
     pub style: Option<String>,
     pub parts: Vec<Part>,
+    /// Each part's look, one per part; a part without one is unformatted.
+    pub looks: Vec<Look>,
 }
 
 impl Paragraph {
     /// Its text as printed on page `page` (from 1) of `pages`.
     pub fn text(&self, page: usize, pages: usize) -> String {
-        self.parts
-            .iter()
-            .map(|part| match part {
+        self.pieces(page, pages).map(|(text, _)| text).collect()
+    }
+
+    /// Each part's text on page `page` of `pages`, with its look.
+    pub fn pieces(
+        &self,
+        page: usize,
+        pages: usize,
+    ) -> impl Iterator<Item = (String, Option<&Look>)> {
+        let looks = self.looks.iter().map(Some).chain(std::iter::repeat(None));
+        self.parts.iter().zip(looks).map(move |(part, look)| {
+            let text = match part {
                 Part::Text(text) => text.clone(),
                 Part::PageNumber => page.to_string(),
                 Part::PageCount => pages.to_string(),
-            })
-            .collect()
+            };
+            (text, look)
+        })
     }
 
-    /// Append text, joining it to text already at the end.
-    pub(crate) fn push_text(&mut self, text: &str) {
-        match self.parts.last_mut() {
-            Some(Part::Text(last)) => last.push_str(text),
-            _ => self.parts.push(Part::Text(text.to_owned())),
+    /// Append a part that looks like `look`.
+    pub(crate) fn push(&mut self, part: Part, look: &Look) {
+        self.parts.push(part);
+        self.looks.push(look.clone());
+    }
+
+    /// Append text, joining it to text already at the end that looks the same.
+    pub(crate) fn push_text(&mut self, text: &str, look: &Look) {
+        if let (Some(Part::Text(last)), Some(last_look)) =
+            (self.parts.last_mut(), self.looks.last())
+            && last_look == look
+        {
+            last.push_str(text);
+            return;
         }
+        self.push(Part::Text(text.to_owned()), look);
     }
 }
 
@@ -84,13 +115,13 @@ mod tests {
     #[test]
     fn the_fields_take_the_pages_own_values() {
         let paragraph = Paragraph {
-            style: None,
             parts: vec![
                 Part::Text("Page ".into()),
                 Part::PageNumber,
                 Part::Text(" of ".into()),
                 Part::PageCount,
             ],
+            ..Default::default()
         };
         assert_eq!(paragraph.text(2, 11), "Page 2 of 11");
     }
@@ -98,18 +129,26 @@ mod tests {
     #[test]
     fn text_pushed_after_text_is_one_part() {
         let mut paragraph = Paragraph::default();
-        paragraph.push_text("a");
-        paragraph.push_text("b");
-        paragraph.parts.push(Part::PageNumber);
-        paragraph.push_text("c");
+        let plain = Look::default();
+        let named = Look {
+            names: Some("Emphasis".into()),
+            ..Default::default()
+        };
+        paragraph.push_text("a", &plain);
+        paragraph.push_text("b", &plain);
+        paragraph.push(Part::PageNumber, &plain);
+        paragraph.push_text("c", &plain);
+        paragraph.push_text("d", &named);
         assert_eq!(
             paragraph.parts,
             vec![
                 Part::Text("ab".into()),
                 Part::PageNumber,
-                Part::Text("c".into())
+                Part::Text("c".into()),
+                Part::Text("d".into())
             ]
         );
+        assert_eq!(paragraph.looks[3], named);
     }
 }
 

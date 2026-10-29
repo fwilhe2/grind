@@ -180,6 +180,47 @@ fn the_master_pages_header_and_footer_are_read() {
     assert!((footer.spacing - 4.0).abs() < 1e-9 && footer.min_height == 0.0);
 }
 
+/// A header's spans look as a body run's do: an automatic style's formatting resolved onto the
+/// piece, a named one kept by name, and a field inside a span formatted as the span is.
+#[test]
+fn a_headers_spans_keep_their_formatting() {
+    let styles = r#"<office:styles>
+  <style:style style:name="Emphasis" style:family="text"><style:text-properties fo:font-style="italic"/></style:style>
+</office:styles><office:automatic-styles>
+  <style:style style:name="T1" style:family="text"><style:text-properties fo:font-weight="bold"/></style:style>
+  <style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm"/></style:page-layout>
+</office:automatic-styles>
+<office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1">
+  <style:header><text:p>Plain <text:span text:style-name="Emphasis">said <text:span text:style-name="T1">loud <text:page-number>1</text:page-number></text:span></text:span></text:p></style:header>
+</style:master-page></office:master-styles>"#;
+    let app = grind_text::App::new();
+    app.open_bytes("x.fodt", &flat(styles)).expect("opens");
+    let header = app.marginals().0.expect("a header");
+    let shown: Vec<(String, Option<String>, Option<String>)> = header.paragraphs[0]
+        .pieces(4, 9)
+        .map(|(text, look)| {
+            let look = app.shown(look.expect("every piece has its look"));
+            (text, look.font_style, look.font_weight)
+        })
+        .collect();
+    let it = |text: &str, style: Option<&str>, weight: Option<&str>| {
+        (
+            text.to_owned(),
+            style.map(str::to_owned),
+            weight.map(str::to_owned),
+        )
+    };
+    assert_eq!(
+        shown,
+        vec![
+            it("Plain ", None, None),
+            it("said ", Some("italic"), None),
+            it("loud ", Some("italic"), Some("bold")),
+            it("4", Some("italic"), Some("bold")),
+        ]
+    );
+}
+
 /// LibreOffice wraps a header's paragraphs in a `text:section` when someone put one there
 /// (`sw/qa/extras/layout/data/tdf116848.odt`), and a field other than the page's number and count
 /// shows its cached text on paper as it does in the body: both are the header's own text.

@@ -65,6 +65,13 @@ impl App {
         }
     }
 
+    /// How a header or footer piece looking like `look` is shown: its named character styles
+    /// resolved under its direct formatting.
+    pub fn shown(&self, look: &marginal::Look) -> CharStyle {
+        let state = self.state.read().unwrap();
+        paragraph::shown(&state.doc.char_styles, look.names.as_deref(), &look.props)
+    }
+
     /// Every footnote and endnote with the index of the block it is cited in
     /// ([`Document::notes`]), read for printing.
     pub fn notes(&self) -> Vec<(usize, marginal::Note)> {
