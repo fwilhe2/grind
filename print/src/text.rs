@@ -1086,7 +1086,7 @@ impl<'a> Marginal<'a> {
             .iter()
             .map(|paragraph| {
                 let [above, _, below, _] = paragraph.room;
-                above + f64::from(out.wrap(paragraph, 1, 1).1.height()) + below
+                above + f64::from(paragraph.tall(&out.wrap(paragraph, 1, 1).1)) + below
             })
             .sum();
         out.height = content.max(pt(marginal.min_height));
@@ -1154,8 +1154,26 @@ impl<'a> Marginal<'a> {
             let (pieces, layout) = self.wrap(paragraph, page, pages);
             let measure = (self.width - indent - right).max(1.0) as f32;
             // Its pictures first, behind any text (`doc/odt-format.md` §5c fact 27).
-            let tall = layout.height();
-            for picture in &paragraph.paragraph.pictures {
+            let tall = paragraph.tall(&layout);
+            if let Some((row, foot)) = paragraph.row() {
+                // A row of pictures set as characters, sitting on the line's foot (§5c fact 29).
+                let fit = align::fit(paragraph.align, measure, row as f32, 0, true);
+                let mut x = left + indent + f64::from(fit.offset);
+                for picture in paragraph.paragraph.pictures.iter().filter(|p| p.inline) {
+                    let (width, height) = (pt(picture.width), pt(picture.height));
+                    ops.push(Op::Image {
+                        x: x as f32,
+                        y: y + (foot - height) as f32,
+                        width: width as f32,
+                        height: height as f32,
+                        mime: picture.mime.clone(),
+                        data: picture.data.clone(),
+                        mark: Mark::Decoration,
+                    });
+                    x += width;
+                }
+            }
+            for picture in paragraph.paragraph.pictures.iter().filter(|p| !p.inline) {
                 let (width, height) = (pt(picture.width), pt(picture.height));
                 let scale = pt(1.0);
                 let x = picture.across.start(
@@ -1238,7 +1256,7 @@ impl<'a> Marginal<'a> {
                     };
                 }
             }
-            y += layout.height() + below as f32;
+            y += tall + below as f32;
         }
     }
 }
@@ -1261,6 +1279,33 @@ struct MarginalParagraph<'a> {
     tabs: grind_core::layout::Tabs,
     /// Its margins — top, right, bottom, left — in points.
     room: [f64; 4],
+}
+
+impl MarginalParagraph<'_> {
+    /// The width and height, in points, of the row its pictures set as characters make when it
+    /// has no text besides; `None` otherwise, when they are not drawn.
+    fn row(&self) -> Option<(f64, f64)> {
+        let inline = self.paragraph.pictures.iter().filter(|p| p.inline);
+        let blank = self.paragraph.text(1, 1).trim().is_empty();
+        inline.clone().next().filter(|_| blank)?;
+        Some(inline.fold((0.0, 0.0), |(width, height), p| {
+            (width + pt(p.width), f64::max(height, pt(p.height)))
+        }))
+    }
+
+    /// How tall it is: its lines', or its row of pictures' — with the line's descent under them
+    /// when it holds a space.
+    fn tall(&self, layout: &grind_core::layout::Layout) -> f32 {
+        let Some((_, height)) = self.row() else {
+            return layout.height();
+        };
+        let mut tall = height as f32;
+        if !self.paragraph.text(1, 1).is_empty() {
+            let style = self.face.style(&TextStyle::default());
+            tall += layout.height() - grind_core::layout::Metrics::ascent(&self.face, &style);
+        }
+        tall
+    }
 }
 
 /// A picture block on paper: the picture at the size the document gives it, fitted to the
@@ -2314,6 +2359,60 @@ mod tests {
     /// `doc/odt-format.md` §5c fact 9: the header sits on the top margin and the footer on the
     /// bottom one, the body between them less their spacing, and the page fields are each
     /// page's own — Writer's 48 lines a page, `pg 2 of 3`.
+    /// §5c fact 29: pictures set as characters in a header paragraph with no text stand side by side
+    /// on its foot, aligned as it is, and make it as tall as the tallest.
+    #[test]
+    fn a_headers_pictures_set_as_characters_stand_in_a_row() {
+        let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+        let frame = |w: &str, h: &str| {
+            format!(
+                r#"<draw:frame text:anchor-type="as-char" svg:width="{w}" svg:height="{h}"><draw:image><office:binary-data>{png}</office:binary-data></draw:image></draw:frame>"#
+            )
+        };
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles>
+              <style:style style:name="C" style:family="paragraph"><style:paragraph-properties fo:text-align="center"/></style:style>
+              <style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="1cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/>
+                <style:header-style><style:header-footer-properties fo:min-height="0cm" fo:margin-bottom="0.5cm"/></style:header-style></style:page-layout>
+            </office:automatic-styles>
+            <office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1">
+              <style:header><text:p text:style-name="C">{}{}</text:p></style:header>
+            </style:master-page></office:master-styles>
+            <office:body><office:text><text:p>body</text:p></office:text></office:body></office:document>"#,
+            frame("4cm", "2cm"),
+            frame("3cm", "1cm"),
+        );
+        let app = App::new();
+        app.open_bytes("ac.fodt", bytes.as_bytes()).unwrap();
+        let doc = typeset(&app, &setter(), &Options::default());
+        let page = &doc.pages[0];
+        let images: Vec<(f32, f32, f32)> = page
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                Op::Image { x, y, height, .. } => Some((*x, *y, *height)),
+                _ => None,
+            })
+            .collect();
+        let cm = (72.0 / 2.54) as f32;
+        let near = |got: f32, want: f32| assert!((got - want).abs() < 0.01, "{got} vs {want}");
+        assert_eq!(images.len(), 2);
+        near(images[0].0, 7.0 * cm);
+        near(images[1].0, 11.0 * cm);
+        near(images[0].1 + images[0].2, 3.0 * cm);
+        near(images[1].1 + images[1].2, 3.0 * cm);
+        let body = texts(page)
+            .into_iter()
+            .find(|t| t.2 == "body")
+            .expect("body");
+        assert!(
+            body.1 > 3.5 * cm,
+            "below the header's 2 cm and its spacing: {}",
+            body.1
+        );
+    }
+
     /// §5c facts 27 and 28: a header's paragraphs spaced as the body's, an empty one a line tall,
     /// and its picture placed by its graphic style without taking room.
     #[test]

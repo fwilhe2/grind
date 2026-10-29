@@ -1096,19 +1096,18 @@ impl Context<Builder> for MarginalInline {
     }
 }
 
-/// A picture anchored to a header or footer paragraph (`doc/odt-format.md` §5c fact 27). One
-/// that is a character of its line, or that pushes text aside (`style:wrap="none"`), is not kept.
+/// A picture in a header or footer paragraph (`doc/odt-format.md` §5c facts 27 and 29). One that
+/// pushes text aside (`style:wrap="none"`) is not kept.
 struct MarginalFrame;
 
 impl MarginalFrame {
     /// Start reading the frame into [`Builder::marginal_picture`], if it is one kept.
     fn open(attrs: &Attrs, b: &mut Builder) -> Option<Self> {
-        if matches!(attrs.get(Ns::Text, "anchor-type"), Some("as-char") | None) {
-            return None;
-        }
+        let anchor = attrs.get(Ns::Text, "anchor-type")?;
+        let inline = anchor == "as-char";
         let style = attrs.get(Ns::Draw, "style-name");
         let field = |at| b.graphic_place(style, at).unwrap_or_default();
-        if field(0) == "none" {
+        if field(0) == "none" && !inline {
             return None;
         }
         let length = |local| {
@@ -1128,6 +1127,7 @@ impl MarginalFrame {
             height: length("height")?,
             across: placed(field(1), field(2), "x"),
             down: placed(field(3), field(4), "y"),
+            inline,
         };
         b.marginal_picture = Some(picture);
         Some(MarginalFrame)

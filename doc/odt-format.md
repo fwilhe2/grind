@@ -798,6 +798,12 @@ oracle turned out to be unable to answer the font questions (fact 4).
    `fo:line-height` makes its line half as tall again, `fo:margin-left` sets it in, and an empty
    paragraph is one line tall: 0.3 cm, 0.5 cm and 150 % put the second of two such paragraphs
    at 1.83 cm below the first's top, and an empty one after them pushed the next 0.49 cm down.
+29. **A picture set as a character in a header** — `MEASURED` (2026-10-29, 26.8). An `as-char`
+   picture is a character of its line, standing on the baseline: a centred paragraph holding
+   only a 4 × 2 cm and a 3 × 1 cm picture set them side by side, the pair centred (7 cm on a
+   17 cm text area started 5 cm in), their feet level, and the paragraph exactly 2 cm tall. A
+   space between them added the line's descent under them (0.09 cm at 12 pt); with words
+   around a picture the words stand on the same baseline.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

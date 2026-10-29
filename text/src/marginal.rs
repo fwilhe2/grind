@@ -10,8 +10,8 @@
 //!
 //! A table's or a list's paragraphs are kept as the header's own, in order, and a master's
 //! first-page variants (`style:header-first`) beside its own, and each piece's character
-//! formatting as a body run's, and the pictures anchored to a paragraph. Not kept: a picture set
-//! as a character, a table's grid, and the left-page variants (`style:header-left`).
+//! formatting as a body run's, and its pictures. Not kept: a table's grid, and the left-page
+//! variants (`style:header-left`).
 
 /// One piece of a header or footer paragraph.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,6 +53,9 @@ pub struct Picture {
     pub height: f64,
     pub across: Placed,
     pub down: Placed,
+    /// Set as a character of its line (`text:anchor-type="as-char"`), where `across` and `down`
+    /// say nothing.
+    pub inline: bool,
 }
 
 /// Where a picture goes along one axis: `style:horizontal-pos` or `style:vertical-pos`, the

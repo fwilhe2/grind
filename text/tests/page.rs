@@ -221,8 +221,9 @@ fn a_headers_spans_keep_their_formatting() {
     );
 }
 
-/// §5c fact 27: a picture anchored to a header paragraph is kept with where its graphic style,
-/// down its parents, places it; one set as a character, or pushing text aside, is not.
+/// §5c facts 27 and 29: a picture anchored to a header paragraph is kept with where its graphic
+/// style, down its parents, places it, and one set as a character as such; one pushing text aside
+/// is not.
 #[test]
 fn a_headers_anchored_picture_is_read_with_its_placement() {
     use grind_text::marginal::Placed;
@@ -244,7 +245,8 @@ fn a_headers_anchored_picture_is_read_with_its_placement() {
     let doc = read_bytes("x.fodt", made.as_bytes()).unwrap();
     let header = doc.header.expect("a header");
     let pictures = &header.paragraphs[0].pictures;
-    assert_eq!(pictures.len(), 1, "only the anchored, run-through one");
+    assert_eq!(pictures.len(), 2, "not the one with no wrap");
+    assert!(!pictures[0].inline && pictures[1].inline);
     let picture = &pictures[0];
     assert_eq!(picture.mime, "image/png");
     assert_eq!((picture.width, picture.height), (40.0, 20.0));
