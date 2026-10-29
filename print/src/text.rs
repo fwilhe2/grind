@@ -129,8 +129,19 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         .iter()
         .map(|column| (column as &dyn grind_text::Faces, column.width))
         .collect();
-    let body = &faces[0];
-    let picture = |view: &BlockView, measure: f64| figure(view, measure, body).map(|f| f.height);
+    // A caption is set in its paragraph's face.
+    let caption_face = |view: &BlockView| {
+        crate::faces::face_for(
+            &faces,
+            &blocks,
+            view.index,
+            &view.kind,
+            view.style.as_deref(),
+        )
+    };
+    let picture = |view: &BlockView, measure: f64| {
+        figure(view, measure, caption_face(view)).map(|f| f.height)
+    };
     // The document's own widows and orphans, and none where it states none — what Writer does
     // (`doc/odt-format.md` §5c, fact 3).
     let stated = app.paragraph_defaults();
@@ -192,8 +203,8 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                     continue;
                 };
                 let origin = (left + piece.left, top + piece.top);
-                if let Some(figure) = figure(view, piece.width, body) {
-                    figure.draw(&mut ops, origin, setter, body, piece.index);
+                if let Some(figure) = figure(view, piece.width, caption_face(view)) {
+                    figure.draw(&mut ops, origin, setter, caption_face(view), piece.index);
                     let length = view.runs.last().map_or(0, |run| run.end());
                     cover(caret(piece.index, 0), caret(piece.index, length));
                     continue;
@@ -1128,6 +1139,8 @@ type MarginalParagraph<'a> = (
 /// measure, and its caption's lines under it.
 struct Figure {
     width: f64,
+    /// The measure its caption is set at — the column's, whatever the picture's width.
+    measure: f64,
     picture: f64,
     mime: String,
     data: Arc<Vec<u8>>,
@@ -1160,6 +1173,7 @@ fn figure(view: &BlockView, measure: f64, body: &RoleFace<'_>) -> Option<Figure>
     });
     Some(Figure {
         width,
+        measure: measure.max(1.0),
         picture,
         mime: image.mime.clone(),
         data: Arc::new(image.data.clone()),
@@ -1239,7 +1253,7 @@ impl Figure {
         let Some(caption) = &self.caption else {
             return;
         };
-        let layout = caption_layout(caption, self.width.max(1.0), body);
+        let layout = caption_layout(caption, self.measure, body);
         let chars: Vec<char> = caption.chars().collect();
         let style = body.style(&TextStyle::default());
         let (face, size) = setter.face_of(&style);
@@ -1460,6 +1474,35 @@ mod tests {
             .count();
         assert_eq!(rules, 16, "four sides of four cells");
         assert!(texts(page).iter().any(|t| t.2 == "cell"));
+    }
+
+    /// A caption is set at the column's measure, which is what its height was taken at: under a
+    /// picture narrower than a word it was drawn a word to a line, over whatever came next.
+    #[test]
+    fn a_narrow_pictures_caption_is_set_at_the_measure() {
+        let app = doc(&[(BlockKind::Paragraph, "")]);
+        app.insert_image(
+            Caret {
+                block: 0,
+                offset: 0,
+            },
+            "image/png".into(),
+            b"\x89PNG\r\n\x1a\n".to_vec(),
+            Some("2mm".into()),
+            Some("3mm".into()),
+        )
+        .unwrap();
+        app.insert_text(
+            Caret {
+                block: 0,
+                offset: 1,
+            },
+            "a caption of eight short words in it",
+        )
+        .unwrap();
+        let page = &typeset(&app, &setter(), &Options::default()).pages[0];
+        let lines = texts(page).len();
+        assert_eq!(lines, 1, "{:?}", texts(page));
     }
 
     #[test]
