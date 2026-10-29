@@ -398,6 +398,12 @@ pub trait Faces {
         None
     }
 
+    /// Where the table named `table` sits across a text area `column` wide: its left edge from
+    /// the area's, and its width. `None`, the default, is the whole area.
+    fn table_span(&self, _table: &str, _column: f64) -> Option<(f64, f64)> {
+        None
+    }
+
     /// A cell's own padding — top, right, bottom, left — or `None` for the spacing's.
     fn cell_pad(&self, _table: &str, _row: u32, _column: u32) -> Option<[f64; 4]> {
         None

@@ -223,6 +223,10 @@ impl grind_text::Faces for TableLooks<'_> {
         points.iter().any(Option::is_some).then_some(points)
     }
 
+    fn table_span(&self, table: &str, column: f64) -> Option<(f64, f64)> {
+        self.0.get(table)?.placement.as_ref()?.span(column)
+    }
+
     /// A cell's padding, and above and below it the room its borders take: Writer stacks a
     /// row's top border, padding, content and padding, and the table's bottom border under its
     /// last row, but sets text in from a column's edge by the padding alone, whatever the border
@@ -354,6 +358,10 @@ impl grind_text::Faces for Column<'_> {
 
     fn columns(&self, table: &str) -> Option<Vec<Option<f64>>> {
         TableLooks(self.looks).columns(table)
+    }
+
+    fn table_span(&self, table: &str, column: f64) -> Option<(f64, f64)> {
+        TableLooks(self.looks).table_span(table, column)
     }
 
     fn cell_pad(&self, table: &str, row: u32, column: u32) -> Option<[f64; 4]> {

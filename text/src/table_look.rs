@@ -6,7 +6,8 @@
 //! showing and printing, never written (`doc/pdf-export.md`): a side table by table name beside
 //! the model's blocks, while a save carries the file's own table styles out (R6).
 //!
-//! Read from `style:table-column-properties`' `style:column-width` (rng:13627),
+//! Read from `style:table-properties`' width, margins and `table:align`,
+//! `style:table-column-properties`' `style:column-width` (rng:13627),
 //! `style:table-cell-properties`' `fo:background-color`, borders, padding,
 //! `style:border-line-width*` and `style:vertical-align` (rng:13710), and
 //! `table:table-header-rows` (rng:13931). Where a border is drawn and what room it takes is
@@ -45,6 +46,39 @@ pub struct TableLook {
     pub row_heights: HashMap<u32, f64>,
     /// How many rows the table has, which is where its bottom border goes.
     pub rows: u32,
+    /// Where its table style places it across the page, if it has one.
+    pub placement: Option<Placement>,
+}
+
+/// A table style's `style:table-properties`: `table:align`, `style:width` and the side margins,
+/// lengths in millimetres.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Placement {
+    /// `table:align` as spelled; absent reads as `margins`.
+    pub align: Option<String>,
+    pub width: Option<f64>,
+    pub margin_left: f64,
+    pub margin_right: f64,
+}
+
+impl Placement {
+    /// The table's left edge from the text area's and its width, in points, across a text area
+    /// `column` points wide (`doc/odt-format.md` §5c fact 26). `None` for `margins` with nothing
+    /// to say, which is the whole text area.
+    pub fn span(&self, column: f64) -> Option<(f64, f64)> {
+        let pt = grind_core::page::pt;
+        let width = self.width.map(pt).filter(|w| *w > 0.0);
+        match (self.align.as_deref(), width) {
+            (Some("left"), Some(width)) => Some((pt(self.margin_left), width)),
+            (Some("right"), Some(width)) => Some((column - width, width)),
+            (Some("center"), Some(width)) => Some(((column - width) / 2.0, width)),
+            _ if self.margin_left == 0.0 && self.margin_right == 0.0 => None,
+            _ => {
+                let left = pt(self.margin_left);
+                Some((left, (column - left - pt(self.margin_right)).max(1.0)))
+            }
+        }
+    }
 }
 
 /// The four sides of a cell, in [`CellLook::border`]'s order.
@@ -129,5 +163,34 @@ impl TableLook {
         self.cell(row, column)
             .and_then(|look| look.edge(BOTTOM))
             .map_or(0.0, |edge| edge.thickness)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Placement;
+
+    /// §5c fact 26's tables, on its 17 cm text area: each one's left edge and width in cm.
+    #[test]
+    fn a_table_sits_where_writer_puts_it() {
+        let cm = |pt: f64| (pt * 2.54 / 72.0 * 100.0).round() / 100.0;
+        let area = grind_core::page::pt(170.0);
+        let at = |align: Option<&str>, width: f64, left: f64, right: f64| {
+            let placement = Placement {
+                align: align.map(str::to_owned),
+                width: Some(width * 10.0),
+                margin_left: left * 10.0,
+                margin_right: right * 10.0,
+            };
+            placement.span(area).map(|(x, w)| (cm(x), cm(w)))
+        };
+        assert_eq!(at(Some("left"), 10.0, 2.0, 0.0), Some((2.0, 10.0)));
+        assert_eq!(at(Some("left"), 20.0, -2.0, 0.0), Some((-2.0, 20.0)));
+        assert_eq!(at(Some("center"), 10.0, 3.0, 0.0), Some((3.5, 10.0)));
+        assert_eq!(at(Some("center"), 20.0, 0.0, 0.0), Some((-1.5, 20.0)));
+        assert_eq!(at(Some("right"), 10.0, 0.0, 2.0), Some((7.0, 10.0)));
+        assert_eq!(at(Some("margins"), 10.0, 1.0, 3.0), Some((1.0, 13.0)));
+        assert_eq!(at(None, 20.0, -1.0, 0.0), Some((-1.0, 18.0)));
+        assert_eq!(at(None, 10.0, 0.0, 0.0), None, "the whole area");
     }
 }

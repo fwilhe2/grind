@@ -318,8 +318,8 @@ pub fn cell_x(cell: &Cell, columns: u32, column: f64) -> (f64, f64) {
 }
 
 /// [`cell_x`] for a table whose columns state widths (`widths`, `None` where a column states
-/// none): unstated columns share what is left, and a table wider than the column is scaled to fit,
-/// since paper has no sideways scroll.
+/// none): unstated columns share what is left, and the stated ones are scaled to fill the table's
+/// width, as Writer does (`doc/odt-format.md` §5c fact 26).
 pub fn cell_x_with(cell: &Cell, columns: u32, column: f64, widths: &[Option<f64>]) -> (f64, f64) {
     let count = columns.max(1) as usize;
     let stated: f64 = widths.iter().take(count).flatten().sum();
@@ -334,11 +334,7 @@ pub fn cell_x_with(cell: &Cell, columns: u32, column: f64, widths: &[Option<f64>
         .map(|i| widths.get(i).copied().flatten().unwrap_or(share))
         .collect();
     let total: f64 = each.iter().sum();
-    let scale = if total > column && total > 0.0 {
-        column / total
-    } else {
-        1.0
-    };
+    let scale = if total > 0.0 { column / total } else { 1.0 };
     let first = (cell.column as usize).min(count);
     let last = (first + cell.columns_spanned.max(1) as usize).min(count);
     let left: f64 = each[..first].iter().sum::<f64>() * scale;
@@ -346,8 +342,8 @@ pub fn cell_x_with(cell: &Cell, columns: u32, column: f64, widths: &[Option<f64>
     (left, width)
 }
 
-/// Where a cell sits across the column: by the table's widths when its face states them
-/// ([`Faces::columns`]), else equal shares.
+/// Where a cell sits across the column: inside the table's span ([`Faces::table_span`]), by its
+/// widths when its face states them ([`Faces::columns`]), else in equal shares.
 fn place_cell(
     faces: &dyn Faces,
     table: &str,
@@ -355,10 +351,12 @@ fn place_cell(
     columns: u32,
     column: f64,
 ) -> (f64, f64) {
-    match faces.columns(table) {
-        Some(widths) => cell_x_with(cell, columns, column, &widths),
-        None => cell_x(cell, columns, column),
-    }
+    let (offset, width) = faces.table_span(table, column).unwrap_or((0.0, column));
+    let (left, width) = match faces.columns(table) {
+        Some(widths) => cell_x_with(cell, columns, width, &widths),
+        None => cell_x(cell, columns, width),
+    };
+    (offset + left, width)
 }
 
 /// A cell's padding — top, right, bottom, left — its face's for it, or the spacing's all round.

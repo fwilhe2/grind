@@ -117,6 +117,8 @@ pub struct Builder {
     /// Every table-row style that keeps its row together or gives it a height, and whether it was
     /// automatic.
     row_styles: HashMap<String, (bool, RowStyle)>,
+    /// Every table style's placement, and whether it was automatic.
+    table_styles: HashMap<String, (bool, crate::table_look::Placement)>,
     /// The level indents of the list or outline style being read.
     list_indents: std::collections::BTreeMap<u32, crate::numbering::LevelIndent>,
     /// Each table's look as read, by name — its column styles, heading rows and each cell's
@@ -136,6 +138,7 @@ struct RowStyle {
 /// A table's look before its styles are resolved.
 #[derive(Default)]
 struct PendingLook {
+    style: Option<String>,
     columns: Vec<Option<String>>,
     header_rows: std::collections::BTreeSet<u32>,
     cells: Vec<((u32, u32), String)>,
@@ -252,6 +255,7 @@ impl Builder {
             cell_styles: HashMap::new(),
             column_styles: HashMap::new(),
             row_styles: HashMap::new(),
+            table_styles: HashMap::new(),
             table_pending: HashMap::new(),
             list_indents: std::collections::BTreeMap::new(),
         }
@@ -300,6 +304,11 @@ impl Builder {
                 kept_rows,
                 row_heights,
                 rows: pending.rows,
+                placement: pending
+                    .style
+                    .as_deref()
+                    .and_then(|style| self.table_styles.get(style))
+                    .map(|(_, placement)| placement.clone()),
             };
             self.doc.table_looks.insert(name, look);
         }
@@ -1064,6 +1073,7 @@ struct TableStyleDef {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum TableFamily {
+    Table,
     Cell,
     Column,
     Row,
@@ -1076,7 +1086,20 @@ impl Context<Builder> for TableStyleDef {
                 .get(Ns::Fo, local)
                 .and_then(grind_core::style::length_mm)
         };
-        if self.family == TableFamily::Row && name.is(Ns::Style, "table-row-properties") {
+        if self.family == TableFamily::Table && name.is(Ns::Style, "table-properties") {
+            let placement = crate::table_look::Placement {
+                align: attrs.get(Ns::Table, "align").map(str::to_owned),
+                width: attrs
+                    .get(Ns::Style, "width")
+                    .and_then(grind_core::style::length_mm),
+                margin_left: mm("margin-left").unwrap_or(0.0),
+                margin_right: mm("margin-right").unwrap_or(0.0),
+            };
+            if b.table_styles.len() < MAX_STYLES {
+                b.table_styles
+                    .insert(self.name.clone(), (self.automatic, placement));
+            }
+        } else if self.family == TableFamily::Row && name.is(Ns::Style, "table-row-properties") {
             let style = RowStyle {
                 kept: attrs.get(Ns::Fo, "keep-together") == Some("always"),
                 height: attrs
@@ -1381,6 +1404,7 @@ impl Context<Builder> for Styles {
             return Some(Box::new(GraphicStyleDef { name: declared }));
         }
         let family = match attrs.get(Ns::Style, "family") {
+            Some("table") => Some(TableFamily::Table),
             Some("table-cell") => Some(TableFamily::Cell),
             Some("table-column") => Some(TableFamily::Column),
             Some("table-row") => Some(TableFamily::Row),
@@ -1718,6 +1742,7 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         // table is a block, and its cells hold blocks.
         (Ns::Table, "table") => Some(Box::new(Table::open(
             attrs.get(Ns::Table, "name"),
+            attrs.get(Ns::Table, "style-name"),
             attrs.span(),
             b,
         ))),
@@ -1845,7 +1870,12 @@ struct Table {
 }
 
 impl Table {
-    fn open(name: Option<&str>, span: std::ops::Range<usize>, b: &mut Builder) -> Self {
+    fn open(
+        name: Option<&str>,
+        style: Option<&str>,
+        span: std::ops::Range<usize>,
+        b: &mut Builder,
+    ) -> Self {
         // `table:name` is optional (rng:15970), but the model tells tables apart by name, so a
         // unique one is generated.
         let name = match name.map(str::trim).filter(|name| !name.is_empty()) {
@@ -1876,6 +1906,7 @@ impl Table {
                 },
             );
         }
+        b.table_pending.entry(name.clone()).or_default().style = style.map(str::to_owned);
         b.tables.push(OpenTable {
             name,
             row: 0,

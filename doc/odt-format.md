@@ -768,6 +768,17 @@ oracle turned out to be unable to answer the font questions (fact 4).
    open again at the top of the next page. Stated `fo:keep-together="auto"` and no
    `style:table-row-properties` at all behave alike; `fo:keep-together="always"` on the row
    moves it whole to the next page.
+26. **Where a table sits across the page** — `MEASURED` (2026-10-29, 26.8, a generated document
+   of two-column tables on a 17 cm text area, columns half the stated `style:width` each). With
+   `table:align="left"` the table is `style:width` wide and starts `fo:margin-left` in from the
+   text area's left edge — a negative margin puts it in the page margin (−2 cm and 20 cm wide
+   ran from the paper's edge to 1 cm past the right margin). `"right"` ends it at the right edge
+   (10 cm wide started at 7 cm); `"center"` centres it on the text area, overflowing both sides
+   when wider (20 cm started 1.5 cm left of it). Both ignore the margins: a 2 cm
+   `fo:margin-right` did not move a right-aligned table, nor a 3 cm `fo:margin-left` a centred one. `"margins"`, and no `table:align` at all, ignore
+   `style:width`: the table runs from `fo:margin-left` to `fo:margin-right` in from the edges
+   (1 cm and 3 cm gave 13 cm; −1 cm and none gave 18 cm), its columns scaled to fill. A table
+   wider than the text area is never shrunk to it.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on
