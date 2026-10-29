@@ -210,6 +210,31 @@ fn a_headers_section_and_its_other_fields_are_read() {
     );
 }
 
+/// A Word header is often a one-row table — a reference in one cell, a logo in the next — and a
+/// list's items are paragraphs too: their text is the header's, in order, the grid and labels
+/// dropped.
+#[test]
+fn a_headers_table_and_list_are_read_as_its_paragraphs() {
+    use grind_text::marginal::Part;
+    let bytes = flat(
+        r#"<office:automatic-styles><style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm"/></style:page-layout></office:automatic-styles>
+<office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1">
+  <style:header><table:table xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" table:name="H"><table:table-column table:number-columns-repeated="2"/><table:table-row><table:table-cell><text:p>Ref: 42</text:p></table:table-cell><table:table-cell><text:p>Page <text:page-number>1</text:page-number></text:p></table:table-cell></table:table-row></table:table><text:list><text:list-item><text:p>item</text:p></text:list-item></text:list></style:header>
+</style:master-page></office:master-styles>"#,
+    );
+    let doc = read_bytes("x.fodt", &bytes).unwrap();
+    let header = doc.header.expect("a header");
+    let texts: Vec<_> = header.paragraphs.iter().map(|p| p.parts.clone()).collect();
+    assert_eq!(
+        texts,
+        [
+            vec![Part::Text("Ref: 42".into())],
+            vec![Part::Text("Page ".into()), Part::PageNumber],
+            vec![Part::Text("item".into())],
+        ]
+    );
+}
+
 #[test]
 fn a_document_with_no_header_or_footer_has_none_and_saves_unchanged() {
     let doc = read_bytes("x.fodt", &flat("")).unwrap();

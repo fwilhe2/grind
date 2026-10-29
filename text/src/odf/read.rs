@@ -838,18 +838,33 @@ impl Context<Builder> for MasterPage {
     }
 }
 
-/// A `style:header` or `style:footer`: its paragraphs, as text and page fields.
+/// A `style:header` or `style:footer`: its paragraphs, as text and page fields. Those in a
+/// table or a list are read in order as its own, the grid and the labels dropped — a Word
+/// header is often a one-row table holding a reference and a logo.
 struct MarginalText {
     master: String,
     header: bool,
-    /// Whether this is the header or footer itself rather than a `text:section` inside one;
-    /// LibreOffice wraps a header in a section when one was put there (`tdf116848.odt`).
+    /// Whether this is the header or footer itself rather than a `text:section`, table or list
+    /// inside one; LibreOffice wraps a header in a section when one was put there
+    /// (`tdf116848.odt`).
     top: bool,
 }
 
 impl Context<Builder> for MarginalText {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
-        if name.is(Ns::Text, "section") {
+        if matches!(
+            (name.ns, name.local.as_str()),
+            (Ns::Text, "section" | "list" | "list-item" | "list-header")
+                | (
+                    Ns::Table,
+                    "table"
+                        | "table-header-rows"
+                        | "table-rows"
+                        | "table-row-group"
+                        | "table-row"
+                        | "table-cell"
+                )
+        ) {
             return Some(Box::new(MarginalText {
                 master: self.master.clone(),
                 header: self.header,

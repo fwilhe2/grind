@@ -8,8 +8,9 @@
 //! and `text:page-count` (rng:8696, rng:8751) as fields filled per page (`doc/odt-format.md` §5c,
 //! fact 9).
 //!
-//! Not kept: character formatting, pictures and tables in a header, and the first-page and
-//! left-page variants (`style:header-first`, `style:header-left`).
+//! A table's or a list's paragraphs are kept as the header's own, in order. Not kept: character
+//! formatting, pictures, a table's grid, and the first-page and left-page variants
+//! (`style:header-first`, `style:header-left`).
 
 /// One piece of a header or footer paragraph.
 #[derive(Clone, Debug, PartialEq, Eq)]
