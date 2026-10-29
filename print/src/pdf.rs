@@ -303,8 +303,8 @@ fn list(items: &[Element], leaves: &Leaves) -> TagGroup {
     out
 }
 
-/// A run of one table's cells as `Table`, a `TR` per row, a `TD` per cell holding the content of
-/// every block in it.
+/// A run of one table's cells as `Table`, a `TR` per row, a `TD` per cell holding the label and
+/// content of every block in it.
 fn grid(cells: &[Element], leaves: &Leaves) -> TagGroup {
     use std::collections::BTreeMap;
     // Row, then column, then the cell's blocks in order — sorted by construction.
@@ -327,6 +327,7 @@ fn grid(cells: &[Element], leaves: &Leaves) -> TagGroup {
         for blocks in cells.values() {
             let mut td = TagGroup::new(Tag::TD);
             for block in blocks {
+                fill(&mut td, leaves.labels.get(block));
                 fill(&mut td, leaves.content.get(block));
             }
             tr.push(td);
@@ -477,6 +478,27 @@ mod tests {
             );
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A list inside a table cell: its bullets are tagged in the cell, or krilla refuses a
+    /// page whose marked content no structure element holds.
+    #[test]
+    fn a_list_in_a_table_cell_is_tagged_in_the_cell() {
+        let app = App::new();
+        app.open_bytes(
+            "cell.fodt",
+            br#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+                xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+                xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+                office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
+              <office:body><office:text><table:table table:name="T">
+                <table:table-column/><table:table-row><table:table-cell>
+                  <text:list><text:list-item><text:p>a bullet</text:p></text:list-item></text:list>
+                </table:table-cell></table:table-row>
+              </table:table></office:text></office:body></office:document>"#,
+        )
+        .unwrap();
+        assert!(pdf(&app).starts_with(b"%PDF-"));
     }
 
     #[test]
