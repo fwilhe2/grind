@@ -87,7 +87,7 @@ over XML.
 | `w:pStyle`, `w:rStyle` | a named `style:style` of family `paragraph` / `text`, `w:basedOn` as its parent, `w:name` capitalised as its display name, encoded `Heading 1` → `Heading_20_1` as LibreOffice spells one | `styles.rs` |
 | `w:docDefaults` | `style:default-style` | §3.3 |
 | `w:pPr`, `w:rPr` (direct) | an automatic style under the named one, pooled | `props.rs` |
-| numbered headings (a heading style's `w:numPr`) | `text:outline-style`, when one list numbers the headings level by level (§4.5) | otherwise counted |
+| numbered headings (a heading style's `w:numPr`) | `text:outline-style`, when one list numbers the headings level by level (§4.5); a heading any other list numbers is written inside that list, as LibreOffice writes it (`doc/odt-format.md` §5c fact 23) | |
 | `w:numPr` (direct or from the style) | a `text:list` of the right depth, with a `text:list-style` per `numId` — number format, prefix and suffix, levels shown, start value, indent, the bullet mapped out of Symbol/Wingdings (§4.3) — and `text:continue-list` across an interruption | `numbering.rs` |
 | `w:tab`, `w:br`, `w:cr`, spaces | `text:tab`, `text:line-break`, `text:s` | |
 | `w:br w:type="page"` | the paragraph split, the rest `fo:break-before="page"` (§2.4) | |
@@ -113,7 +113,7 @@ fatal under `--strict`: a comment with no text or on a footnote's, tracked chang
 paragraphs or rows (applied), a text box's position (its text follows the paragraph
 that anchors it), drawings that are not pictures, equations, embedded objects, linked pictures, a floating picture's position, fields
 and form fields and content controls (kept as their text), sections whose page differs,
-multi-column sections, heading numbers Word numbers by a list other than the headings' own, table-style
+multi-column sections, table-style
 banding, positioned paragraphs and tables (kept in the flow), macros (never executed), and the
 remainder of a part whose XML is damaged.
 

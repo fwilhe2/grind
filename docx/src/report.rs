@@ -45,8 +45,6 @@ pub enum Dropped {
     ContentControl,
     /// A section set in more than one column.
     Columns,
-    /// Numbering on a heading (`1.2 Methods`): the heading is kept, its number is not.
-    HeadingNumber,
     /// A table style's conditional formatting — banded rows, a bold first row.
     TableStyleCondition,
     /// A paragraph positioned on the page (`w:framePr`). Its text is kept where it stands.
@@ -74,7 +72,6 @@ impl Dropped {
             Dropped::FormField => "form field (kept as its text)",
             Dropped::ContentControl => "content control (kept as its text)",
             Dropped::Columns => "multi-column section",
-            Dropped::HeadingNumber => "heading number",
             Dropped::TableStyleCondition => "table style banding",
             Dropped::Frame => "positioned paragraph",
             Dropped::Macro => "macro",

@@ -14,7 +14,7 @@
 //! Minimal (R3): no `meta`, no `settings`, no font declarations, and only styles something uses.
 //! Deterministic: the same `.docx` imports to the same bytes.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 
 use grind_core::odf::xml::esc;
@@ -98,6 +98,7 @@ pub fn write(input: Input, report: &mut Report) -> String {
         row_styles: BTreeMap::new(),
         lists_seen: HashSet::new(),
         outline_list: None,
+        outline_levels: BTreeSet::new(),
         footnotes: 0,
         endnotes: 0,
         notes_written: 0,
@@ -131,6 +132,15 @@ pub fn write(input: Input, report: &mut Report) -> String {
     }
     let blocks = section_starts(&input.body, &input.sections, &master_of);
     w.outline_list = w.find_outline_list(&blocks);
+    w.outline_levels = blocks
+        .iter()
+        .filter_map(|block| match block {
+            Block::Para(para) => w.heading_number(para),
+            _ => None,
+        })
+        .filter(|&(num, _)| Some(num) == w.outline_list)
+        .map(|(_, ilvl)| ilvl)
+        .collect();
     w.blocks(&mut body, &blocks, 3);
     // A document ends in a paragraph: Word always has one after a table, the oracle adds one
     // to a body that ends in a table or holds nothing (`doc/docx-format.md` §2.6), and a body
@@ -361,6 +371,9 @@ struct Writer<'i, 'r> {
     row_styles: BTreeMap<Props, String>,
     /// The list that numbers the headings ([`Writer::find_outline_list`]).
     outline_list: Option<i64>,
+    /// The outline levels it numbers a heading at: only these place a label, so a heading Word
+    /// left unnumbered at any other level keeps its own indent.
+    outline_levels: BTreeSet<i64>,
     /// The lists already opened once, by numId — a later one continues it.
     lists_seen: HashSet<i64>,
     footnotes: usize,
@@ -436,28 +449,26 @@ impl Writer<'_, '_> {
     }
 
     /// `(numId, ilvl)` for a paragraph that is a list item — numbered directly or by its style,
-    /// with a numbering definition to show. A heading is never one: it keeps its level, and its
-    /// number is counted.
-    fn list_item(&mut self, para: &Para) -> Option<(i64, usize)> {
+    /// with a numbering definition to show. A heading is one only when a list other than the
+    /// headings' own numbers it.
+    fn list_item(&self, para: &Para) -> Option<(i64, usize)> {
         let (num, level) = self.numbering_of(para)?;
         let num = num?;
         if num == 0 || !self.input.numbering.lists.contains_key(&num) {
             return None;
         }
         if let Some(outline) = self.outline(para) {
-            // A heading keeps its level. Its number is the document's outline numbering when
-            // it is numbered by the list that numbers the headings (`outline_list`), at its own
-            // level; otherwise it is lost — unless it shows nothing anyway, which is how a
+            // A heading keeps its level. Numbered by the list that numbers the headings
+            // (`outline_list`) at its own level, the outline numbering shows its number; by any
+            // other, it is written inside that list, which numbers it instead
+            // (`doc/odt-format.md` §5c fact 23) — unless it shows nothing anyway, which is how a
             // document with outline numbering switched off says it.
             let ilvl = level.unwrap_or(0).clamp(0, 8);
             let by_outline = self.outline_list == Some(num) && ilvl == outline;
             let shown = self.input.numbering.lists[&num]
                 .level(ilvl as usize)
                 .is_some_and(|l| l.format != "none" && !l.text.is_empty());
-            if shown && !by_outline {
-                self.report.drop_one(Dropped::HeadingNumber);
-            }
-            return None;
+            return (shown && !by_outline).then_some((num, ilvl as usize));
         }
         Some((num, level.unwrap_or(0).clamp(0, 8) as usize))
     }
@@ -626,8 +637,10 @@ impl Writer<'_, '_> {
         }
         if let Some(level) = level {
             let _ = write!(out, " text:outline-level=\"{level}\"");
-            // A heading the outline numbering would number and Word did not stays unnumbered.
-            if self.unnumbered_at_numbered_level(para, level - 1) {
+            // A heading the outline numbering would number and Word did not stays unnumbered;
+            // one inside a list is the list's to number.
+            if self.unnumbered_at_numbered_level(para, level - 1) && self.list_item(para).is_none()
+            {
                 out.push_str(" text:is-list-header=\"true\"");
             }
         }
@@ -1423,10 +1436,17 @@ impl Writer<'_, '_> {
                     let _ = write!(attributes, " text:start-value=\"{}\"", level.start.max(0));
                 }
             }
-            let _ = writeln!(
-                out,
-                "   <text:outline-level-style text:level=\"{n}\"{attributes}/>"
-            );
+            let _ = match self.outline_levels.contains(&(i as i64)) {
+                true => writeln!(
+                    out,
+                    "   <text:outline-level-style text:level=\"{n}\"{attributes}>{}</text:outline-level-style>",
+                    label_position(level, n)
+                ),
+                false => writeln!(
+                    out,
+                    "   <text:outline-level-style text:level=\"{n}\"{attributes}/>"
+                ),
+            };
         }
         out.push_str("  </text:outline-style>\n");
     }
@@ -1438,14 +1458,7 @@ impl Writer<'_, '_> {
         let _ = writeln!(out, "  <text:list-style style:name=\"{name}\">");
         for (i, level) in list.levels.iter().enumerate() {
             let n = i + 1;
-            let left = level.left.unwrap_or(720 * n as i64);
-            let hanging = level.hanging.unwrap_or(360);
-            let position = format!(
-                "<style:list-level-properties text:list-level-position-and-space-mode=\"label-alignment\"><style:list-level-label-alignment text:label-followed-by=\"listtab\" text:list-tab-stop-position=\"{}\" fo:text-indent=\"{}\" fo:margin-left=\"{}\"/></style:list-level-properties>",
-                props::twips(left),
-                props::twips(-hanging),
-                props::twips(left)
-            );
+            let position = label_position(level, n);
             if level.format == "bullet" {
                 let bullet = numbering::bullet(&level.text);
                 let _ = writeln!(
@@ -1479,6 +1492,19 @@ impl Writer<'_, '_> {
         }
         out.push_str("  </text:list-style>\n");
     }
+}
+
+/// Where level `n`'s label and text go: Word's indent and hanging indent, the text at the tab
+/// after the label.
+fn label_position(level: &numbering::Level, n: usize) -> String {
+    let left = level.left.unwrap_or(720 * n as i64);
+    let hanging = level.hanging.unwrap_or(360);
+    format!(
+        "<style:list-level-properties text:list-level-position-and-space-mode=\"label-alignment\"><style:list-level-label-alignment text:label-followed-by=\"listtab\" text:list-tab-stop-position=\"{}\" fo:text-indent=\"{}\" fo:margin-left=\"{}\"/></style:list-level-properties>",
+        props::twips(left),
+        props::twips(-hanging),
+        props::twips(left)
+    )
 }
 
 /// Close lists until only `keep` remain open.

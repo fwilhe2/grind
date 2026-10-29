@@ -762,17 +762,39 @@ fn numbered_headings_become_the_outline_numbering() {
             BlockKind::Heading { level: 1 }
         ]
     );
-    assert!(
-        !report.dropped.contains_key(&Dropped::HeadingNumber),
-        "{:?}",
-        report.dropped
-    );
+    assert!(report.dropped.is_empty(), "{:?}", report.dropped);
     let (odf, _) = grind_docx::convert(&bytes).unwrap();
     let odf = String::from_utf8(odf).unwrap();
-    assert!(odf.contains(r#"<text:outline-level-style text:level="1" style:num-format="1" style:num-suffix="."/>"#), "{odf}");
+    assert!(odf.contains(r#"<text:outline-level-style text:level="1" style:num-format="1" style:num-suffix="."><style:list-level-properties text:list-level-position-and-space-mode="label-alignment"><style:list-level-label-alignment text:label-followed-by="listtab" text:list-tab-stop-position="36pt" fo:text-indent="-18pt" fo:margin-left="36pt"/>"#), "{odf}");
     assert!(
         odf.contains(r#"text:outline-level="1" text:is-list-header="true">Appendix"#),
         "{odf}"
+    );
+}
+
+/// A heading numbered by a list that is not the outline's — Word's numbered paragraphs, on a
+/// style based on a heading style — is written inside that list, which numbers it, as
+/// LibreOffice writes it; it stays a heading.
+#[test]
+fn a_heading_another_list_numbers_is_numbered_by_that_list() {
+    let s = styles(
+        r#"<w:style w:type="paragraph" w:styleId="Numbered"><w:name w:val="Numbered"/>
+             <w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="1"/></w:numPr><w:outlineLvl w:val="0"/></w:pPr></w:style>"#,
+    );
+    let body = r#"<w:p><w:pPr><w:pStyle w:val="Numbered"/></w:pPr><w:r><w:t>first</w:t></w:r></w:p>
+        <w:p><w:pPr><w:pStyle w:val="Numbered"/></w:pPr><w:r><w:t>second</w:t></w:r></w:p>"#;
+    let (doc, report) = import(&docx(body, &[s, numbering()]));
+    assert!(report.lossless(), "{:?}", report.dropped);
+    assert_eq!(
+        kinds(&doc),
+        [
+            BlockKind::Heading { level: 1 },
+            BlockKind::Heading { level: 1 }
+        ]
+    );
+    assert_eq!(
+        grind_text::numbering::labels(&doc, 2),
+        [Some("a)".to_owned()), Some("b)".to_owned())]
     );
 }
 
