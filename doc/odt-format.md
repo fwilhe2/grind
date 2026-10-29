@@ -742,6 +742,16 @@ oracle turned out to be unable to answer the font questions (fact 4).
    (4 cm) is ignored, as for a heading — but an **automatic** paragraph style's own
    `fo:margin-left="3cm" fo:text-indent="-1cm"` wins: label at 2 cm, and, the level's tab stop
    being behind the label, the text at the next stop, which here is the margin itself (3 cm).
+23. **A heading inside a list** — `MEASURED` (2026-10-29, the pinned image, a generated
+   document with an outline style `I)`/`A)` and a list style `1.`/`a)`, read with `pdftotext`).
+   A `text:h` in a `text:list-item` is numbered by **the list**, not the outline: at the list's
+   depth, whatever its `text:outline-level` (a level-2 heading as a list's first-level item showed
+   `3.`, one in a nested list `a)`), counted with the list's paragraphs as one more item (`1.`
+   heading, `2.` paragraph, `3.` heading), and through `text:continue-list` (`4.`). It does
+   **not** count in the outline: `I)`, then three headings in a list, then `II)`; a level-2
+   heading after them showed `A)`. A heading in a list naming no style shows no number at all,
+   neither the outline's nor a bullet. Word's paragraph numbering arrives this way when a
+   numbered style is based on a heading style (`doc/docx-import.md`).
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

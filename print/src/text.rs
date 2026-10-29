@@ -2452,6 +2452,48 @@ mod tests {
         }
     }
 
+    /// `doc/odt-format.md` §5c fact 23: a heading inside a list wears the list's number at the
+    /// list's depth, counted with its paragraphs, and the outline neither numbers nor counts it.
+    #[test]
+    fn a_heading_in_a_list_is_numbered_by_the_list() {
+        let placed = r#"<style:list-level-properties text:list-level-position-and-space-mode="label-alignment"><style:list-level-label-alignment text:label-followed-by="listtab" text:list-tab-stop-position="1cm" fo:text-indent="-1cm" fo:margin-left="1cm"/></style:list-level-properties>"#;
+        let app = styled(
+            &format!(
+                r#"<style:style style:name="H" style:family="paragraph"/>
+                   <text:outline-style style:name="Outline">
+                     <text:outline-level-style text:level="1" style:num-format="I" style:num-suffix=")">{placed}</text:outline-level-style>
+                     <text:outline-level-style text:level="2" style:num-format="A" style:num-suffix=")">{placed}</text:outline-level-style>
+                   </text:outline-style>
+                   <text:list-style style:name="L1">
+                     <text:list-level-style-number text:level="1" style:num-format="1" style:num-suffix=".">{placed}</text:list-level-style-number>
+                     <text:list-level-style-number text:level="2" style:num-format="a" style:num-suffix=")">{placed}</text:list-level-style-number>
+                   </text:list-style>"#
+            ),
+            r#"<text:h text:outline-level="1">OUTA</text:h>
+               <text:list xml:id="x1" text:style-name="L1">
+                 <text:list-item><text:h text:outline-level="1">LISTH1</text:h></text:list-item>
+                 <text:list-item><text:p>LISTP2</text:p></text:list-item>
+                 <text:list-item><text:h text:outline-level="2">LISTH3</text:h></text:list-item>
+                 <text:list-item><text:list><text:list-item><text:h text:outline-level="1">NESTH</text:h></text:list-item></text:list></text:list-item>
+               </text:list>
+               <text:h text:outline-level="1">OUTB</text:h>
+               <text:list text:continue-list="x1" text:style-name="L1">
+                 <text:list-item><text:h text:outline-level="1">LISTH4</text:h></text:list-item>
+               </text:list>
+               <text:list><text:list-item><text:h text:outline-level="1">NOSTYLE</text:h></text:list-item></text:list>
+               <text:h text:outline-level="2">OUTC</text:h>"#,
+        );
+        let doc = typeset(&app, &setter(), &Options::default());
+        let shown: Vec<String> = texts(&doc.pages[0]).into_iter().map(|t| t.2).collect();
+        assert_eq!(
+            shown,
+            [
+                "I)", "OUTA", "1.", "LISTH1", "2.", "LISTP2", "3.", "LISTH3", "a)", "NESTH", "II)",
+                "OUTB", "4.", "LISTH4", "NOSTYLE", "A)", "OUTC"
+            ]
+        );
+    }
+
     /// `doc/odt-format.md` §5c fact 22: a list item's label and text where its level puts
     /// them, an automatic style's own indents winning and a named style's not.
     #[test]

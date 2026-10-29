@@ -77,6 +77,9 @@ pub struct ListMark {
     pub header: bool,
     /// Whether this is the item's first block; a second paragraph in one item has no label.
     pub first: bool,
+    /// For a heading read inside a list, the list's depth: the list numbers it there, and the
+    /// outline neither numbers nor counts it (`doc/odt-format.md` §5c fact 23).
+    pub in_list: Option<u32>,
 }
 
 /// `n` in a `style:num-format`: arabic, lower or upper letters (`z` then `aa`), lower or upper
@@ -156,6 +159,19 @@ pub fn labels(doc: &Document, upto: usize) -> Vec<Option<String>> {
         if let BlockKind::Heading { level } = block.kind {
             previous.clear();
             let mark = doc.list_marks.get(&block.id);
+            if let Some(mark) = mark.filter(|mark| mark.in_list.is_some()) {
+                let style = mark.style.as_deref().and_then(|s| doc.list_styles.get(s));
+                out.push(match style {
+                    Some(_) if mark.header || !mark.first => Some(String::new()),
+                    Some(style) => {
+                        let level = mark.in_list.unwrap_or(1).max(1) as usize;
+                        let chain = counters.entry(mark.chain).or_default();
+                        Some(count(style, chain, level, Some(mark)))
+                    }
+                    None => Some(String::new()),
+                });
+                continue;
+            }
             out.push(match &doc.outline_style {
                 Some(_) if mark.is_some_and(|mark| mark.header) => Some(String::new()),
                 Some(style) => {

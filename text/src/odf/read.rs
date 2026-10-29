@@ -493,10 +493,14 @@ impl Builder {
         block.cell = self.cell.clone();
         block.generated = self.generating;
         block.section = self.section;
-        // Which list a list item is in, for its label (`crate::numbering`).
-        if let (BlockKind::ListItem { .. }, Some((style, chain))) =
-            (&block.kind, self.list_frames.last())
-        {
+        // Which list a list item, or a heading inside one, is in, for its label
+        // (`crate::numbering`).
+        let in_list = match block.kind {
+            BlockKind::ListItem { .. } => Some(None),
+            BlockKind::Heading { .. } if self.list_depth > 0 => Some(Some(self.list_depth)),
+            _ => None,
+        };
+        if let (Some(in_list), Some((style, chain))) = (in_list, self.list_frames.last()) {
             let (start, header, first) = match self.item.as_mut() {
                 Some((start, header, fresh)) => {
                     let first = std::mem::replace(fresh, false);
@@ -512,6 +516,7 @@ impl Builder {
                     start,
                     header,
                     first,
+                    in_list,
                 },
             );
         }
@@ -1534,7 +1539,10 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
             let start = attrs
                 .get(Ns::Text, "start-value")
                 .and_then(|v| v.trim().parse().ok());
-            if header || start.is_some() {
+            if let Some(mark) = b.doc.list_marks.get_mut(&id) {
+                mark.header |= header;
+                mark.start = start.or(mark.start);
+            } else if header || start.is_some() {
                 b.doc.list_marks.insert(
                     id,
                     crate::numbering::ListMark {
@@ -1543,6 +1551,7 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
                         start,
                         header,
                         first: true,
+                        in_list: None,
                     },
                 );
             }

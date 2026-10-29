@@ -99,6 +99,12 @@ impl App {
         let doc = &state.doc;
         let block = doc.blocks.get(index)?;
         let (style, level) = match block.kind {
+            BlockKind::Heading { .. }
+                if let Some(mark) = doc.list_marks.get(&block.id)
+                    && let Some(depth) = mark.in_list =>
+            {
+                (doc.list_styles.get(mark.style.as_deref()?)?, depth)
+            }
             BlockKind::Heading { level } => (doc.outline_style.as_ref()?, level),
             BlockKind::ListItem { depth } => {
                 let name = doc.list_marks.get(&block.id)?.style.as_deref()?;
