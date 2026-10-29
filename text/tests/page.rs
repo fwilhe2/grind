@@ -221,6 +221,46 @@ fn a_headers_spans_keep_their_formatting() {
     );
 }
 
+/// §5c fact 27: a picture anchored to a header paragraph is kept with where its graphic style,
+/// down its parents, places it; one set as a character, or pushing text aside, is not.
+#[test]
+fn a_headers_anchored_picture_is_read_with_its_placement() {
+    use grind_text::marginal::Placed;
+    let styles = r#"<office:styles>
+  <style:style style:name="Graphics" style:family="graphic"><style:graphic-properties style:vertical-pos="top" style:vertical-rel="paragraph"/></style:style>
+</office:styles><office:automatic-styles>
+  <style:style style:name="fr1" style:family="graphic" style:parent-style-name="Graphics"><style:graphic-properties style:wrap="run-through" style:horizontal-pos="right" style:horizontal-rel="page-content"/></style:style>
+  <style:style style:name="fr2" style:family="graphic"><style:graphic-properties style:wrap="none"/></style:style>
+  <style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm"/></style:page-layout>
+</office:automatic-styles>
+<office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1">
+  <style:header><text:p>Logo<draw:frame draw:style-name="fr1" text:anchor-type="paragraph" svg:x="1cm" svg:y="0.5cm" svg:width="4cm" svg:height="2cm"><draw:image><office:binary-data>iVBORw0KGgo=</office:binary-data></draw:image></draw:frame><draw:frame draw:style-name="fr1" text:anchor-type="as-char" svg:width="4cm" svg:height="2cm"><draw:image><office:binary-data>iVBORw0KGgo=</office:binary-data></draw:image></draw:frame><draw:frame draw:style-name="fr2" text:anchor-type="paragraph" svg:width="4cm" svg:height="2cm"><draw:image><office:binary-data>iVBORw0KGgo=</office:binary-data></draw:image></draw:frame></text:p></style:header>
+</style:master-page></office:master-styles>"#;
+    let made = String::from_utf8(flat(styles)).unwrap().replace(
+        "<office:document ",
+        "<office:document xmlns:draw=\"urn:oasis:names:tc:opendocument:xmlns:drawing:1.0\" \
+         xmlns:svg=\"urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0\" ",
+    );
+    let doc = read_bytes("x.fodt", made.as_bytes()).unwrap();
+    let header = doc.header.expect("a header");
+    let pictures = &header.paragraphs[0].pictures;
+    assert_eq!(pictures.len(), 1, "only the anchored, run-through one");
+    let picture = &pictures[0];
+    assert_eq!(picture.mime, "image/png");
+    assert_eq!((picture.width, picture.height), (40.0, 20.0));
+    let placed = |pos: &str, rel: &str, offset| Placed {
+        pos: pos.into(),
+        rel: rel.into(),
+        offset,
+    };
+    assert_eq!(picture.across, placed("right", "page-content", 10.0));
+    assert_eq!(
+        picture.down,
+        placed("top", "paragraph", 5.0),
+        "from its parent"
+    );
+}
+
 /// LibreOffice wraps a header's paragraphs in a `text:section` when someone put one there
 /// (`sw/qa/extras/layout/data/tdf116848.odt`), and a field other than the page's number and count
 /// shows its cached text on paper as it does in the body: both are the header's own text.

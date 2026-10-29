@@ -104,6 +104,10 @@ pub struct Builder {
     marginal_lines: Vec<crate::marginal::Line>,
     /// Each graphic style's stroke — `(width in mm, #rrggbb)` — for the lines a master draws.
     graphic_strokes: HashMap<String, (f64, String)>,
+    /// Each graphic style's placement of a frame, and the style it inherits from.
+    graphic_places: HashMap<String, GraphicPlace>,
+    /// The header or footer picture being read.
+    marginal_picture: Option<crate::marginal::Picture>,
     /// The citation of the note being read.
     citation: String,
     /// Whether the blocks being read are an index's generated entries ([`Block::generated`]).
@@ -249,6 +253,8 @@ impl Builder {
             marginal_done: Vec::new(),
             marginal_lines: Vec::new(),
             graphic_strokes: HashMap::new(),
+            graphic_places: HashMap::new(),
+            marginal_picture: None,
             citation: String::new(),
             generating: false,
             section: None,
@@ -1030,6 +1036,9 @@ impl Context<Builder> for MarginalInline {
         let paragraph = b.marginal.as_mut()?;
         match (name.ns, name.local.as_str()) {
             (Ns::Text, "a") => return Some(Box::new(self.inner())),
+            (Ns::Draw, "frame") => {
+                return MarginalFrame::open(attrs, b).map(|f| Box::new(f) as Ctx);
+            }
             // A line on the page — a fold mark, a rule — is the master's, its ends `svg:` lengths
             // from the corner.
             (Ns::Draw, "line") => {
@@ -1087,9 +1096,100 @@ impl Context<Builder> for MarginalInline {
     }
 }
 
+/// A picture anchored to a header or footer paragraph (`doc/odt-format.md` §5c fact 27). One
+/// that is a character of its line, or that pushes text aside (`style:wrap="none"`), is not kept.
+struct MarginalFrame;
+
+impl MarginalFrame {
+    /// Start reading the frame into [`Builder::marginal_picture`], if it is one kept.
+    fn open(attrs: &Attrs, b: &mut Builder) -> Option<Self> {
+        if matches!(attrs.get(Ns::Text, "anchor-type"), Some("as-char") | None) {
+            return None;
+        }
+        let style = attrs.get(Ns::Draw, "style-name");
+        let field = |at| b.graphic_place(style, at).unwrap_or_default();
+        if field(0) == "none" {
+            return None;
+        }
+        let length = |local| {
+            attrs
+                .get(Ns::Svg, local)
+                .and_then(grind_core::style::length_mm)
+        };
+        let placed = |pos: String, rel: String, offset| crate::marginal::Placed {
+            pos,
+            rel,
+            offset: length(offset).unwrap_or(0.0),
+        };
+        let picture = crate::marginal::Picture {
+            mime: String::new(),
+            data: Default::default(),
+            width: length("width")?,
+            height: length("height")?,
+            across: placed(field(1), field(2), "x"),
+            down: placed(field(3), field(4), "y"),
+        };
+        b.marginal_picture = Some(picture);
+        Some(MarginalFrame)
+    }
+}
+
+impl Context<Builder> for MarginalFrame {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if !name.is(Ns::Draw, "image") {
+            return None;
+        }
+        let Some(href) = attrs.get(Ns::Xlink, "href") else {
+            return Some(Box::new(ImageData));
+        };
+        let data = b.resolve_part(href)?;
+        if let Some(picture) = &mut b.marginal_picture {
+            picture.data = std::sync::Arc::new(data);
+        }
+        None
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        let Some(mut picture) = b.marginal_picture.take() else {
+            return;
+        };
+        let Some(mime) = crate::picture::mime(&picture.data) else {
+            return;
+        };
+        picture.mime = mime.to_owned();
+        if let Some(paragraph) = b.marginal.as_mut() {
+            paragraph.pictures.push(picture);
+        }
+    }
+}
+
 /// A `graphic` style: only its stroke, which is what a `draw:line` in a header is drawn with.
 struct GraphicStyleDef {
     name: String,
+    parent: Option<String>,
+}
+
+/// What a graphic style says about where its frame goes, as spelled: `style:wrap`, then
+/// `style:horizontal-pos`, `-rel`, `style:vertical-pos` and `-rel`.
+#[derive(Clone, Default)]
+struct GraphicPlace {
+    parent: Option<String>,
+    fields: [Option<String>; 5],
+}
+
+impl Builder {
+    /// Field `at` of [`GraphicPlace`] for the graphic style `name`, down its parents.
+    fn graphic_place(&self, name: Option<&str>, at: usize) -> Option<String> {
+        let mut name = name;
+        for _ in 0..crate::paragraph::MAX_DEPTH {
+            let place = self.graphic_places.get(name?)?;
+            if let Some(value) = &place.fields[at] {
+                return Some(value.clone());
+            }
+            name = place.parent.as_deref();
+        }
+        None
+    }
 }
 
 impl Context<Builder> for GraphicStyleDef {
@@ -1104,6 +1204,18 @@ impl Context<Builder> for GraphicStyleDef {
                 .unwrap_or("#000000")
                 .to_owned();
             b.graphic_strokes.insert(self.name.clone(), (width, color));
+            let get = |local| attrs.get(Ns::Style, local).map(str::to_owned);
+            let place = GraphicPlace {
+                parent: self.parent.clone(),
+                fields: [
+                    get("wrap"),
+                    get("horizontal-pos"),
+                    get("horizontal-rel"),
+                    get("vertical-pos"),
+                    get("vertical-rel"),
+                ],
+            };
+            b.graphic_places.insert(self.name.clone(), place);
         }
         None
     }
@@ -1447,7 +1559,10 @@ impl Context<Builder> for Styles {
         }
         if attrs.get(Ns::Style, "family") == Some("graphic") {
             let declared = attrs.get(Ns::Style, "name")?.to_owned();
-            return Some(Box::new(GraphicStyleDef { name: declared }));
+            return Some(Box::new(GraphicStyleDef {
+                name: declared,
+                parent: attrs.get(Ns::Style, "parent-style-name").map(str::to_owned),
+            }));
         }
         let family = match attrs.get(Ns::Style, "family") {
             Some("table") => Some(TableFamily::Table),
@@ -2680,9 +2795,12 @@ impl Context<Builder> for BinaryData {
     fn end(&mut self, b: &mut Builder) {
         use base64::Engine as _;
         let cleaned: String = self.base64.chars().filter(|c| !c.is_whitespace()).collect();
-        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(cleaned)
-            && let Some(pending) = &mut b.image
-        {
+        let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(cleaned) else {
+            return;
+        };
+        if let Some(picture) = &mut b.marginal_picture {
+            picture.data = std::sync::Arc::new(bytes);
+        } else if let Some(pending) = &mut b.image {
             pending.data = Some(bytes);
         }
     }

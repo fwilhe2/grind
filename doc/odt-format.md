@@ -779,6 +779,25 @@ oracle turned out to be unable to answer the font questions (fact 4).
    `style:width`: the table runs from `fo:margin-left` to `fo:margin-right` in from the edges
    (1 cm and 3 cm gave 13 cm; −1 cm and none gave 18 cm), its columns scaled to fill. A table
    wider than the text area is never shrunk to it.
+27. **A picture in a header or footer** — `MEASURED` (2026-10-29, 26.8, a 4 × 2 cm picture
+   anchored `paragraph` in the second paragraph of a header, page margins 2 cm left and right,
+   1 cm top). With `style:wrap` `run-through` or `parallel` it **takes no room**: the header's
+   paragraphs and the body sat exactly where they did without it. Where it goes is its graphic
+   style's: across, `style:horizontal-rel` `page` measures from the paper's edge,
+   `page-content` and `paragraph` from the text area's (a paragraph's own 3 cm indent did not
+   move it); `from-left` adds `svg:x`, `left`/`right`/`center` align it in that box. Down,
+   `paragraph` measures from the anchoring paragraph's top, `page` from the paper's, and
+   `page-content` from the **body's** text area — in a header and in a footer alike (1 cm top
+   margin, 2.48 cm of header and spacing: `svg:y="0.5cm"` put it at 2.98 cm); `from-top` adds
+   `svg:y`, `top`/`bottom`/`middle` align it in that box (`middle` of a paragraph centres it on
+   the paragraph's line). `style:wrap="none"` grew the header by less than the picture
+   overlapped it, which is not understood; an `as-char` picture is a character of its line.
+   Nor does any wrap move a header's text: six paragraphs after a 2 cm picture ran over it.
+28. **A header's paragraphs are spaced as the body's** — `MEASURED` (2026-10-29, 26.8). A
+   header paragraph's `fo:margin-top` and `fo:margin-bottom` add (fact 5), a 150 %
+   `fo:line-height` makes its line half as tall again, `fo:margin-left` sets it in, and an empty
+   paragraph is one line tall: 0.3 cm, 0.5 cm and 150 % put the second of two such paragraphs
+   at 1.83 cm below the first's top, and an empty one after them pushed the next 0.49 cm down.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

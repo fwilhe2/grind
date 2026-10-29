@@ -238,12 +238,24 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
             // The page's number within its run, and how many the run has: the whole document's
             // unless a paragraph's style restarted the numbering (`doc/pdf-export.md`).
             let (shown, count) = numbering[number];
+            let bottom = pt(geometry.height) - pt(geometry.bottom);
+            let body_bottom = footer
+                .as_ref()
+                .map_or(bottom, |footer| bottom - footer.height - footer.spacing);
+            let boxes = Boxes {
+                paper: (pt(geometry.width), pt(geometry.height)),
+                body: (top, body_bottom - top),
+            };
             if let Some(header) = header {
-                header.draw(&mut ops, (left, margin_top), shown, count);
+                header.draw(&mut ops, (left, margin_top), (shown, count), &boxes);
             }
             if let Some(footer) = footer {
-                let bottom = pt(geometry.height) - pt(geometry.bottom);
-                footer.draw(&mut ops, (left, bottom - footer.height), shown, count);
+                footer.draw(
+                    &mut ops,
+                    (left, bottom - footer.height),
+                    (shown, count),
+                    &boxes,
+                );
             }
             // Lines the master draws on the page itself, from its top-left corner.
             for line in &sheet.lines {
@@ -1036,7 +1048,17 @@ impl<'a> Marginal<'a> {
                     font_weight: props.font_weight,
                     font_style: props.font_style,
                 };
-                let face = RoleFace::stating(setter, grind_text::look::Role::Body, stated);
+                let line = crate::faces::LineRule::parse(props.line_height.as_deref());
+                let face =
+                    RoleFace::stating(setter, grind_text::look::Role::Body, stated).with_line(line);
+                let points =
+                    |value: &Option<String>| value.as_deref().and_then(length_mm).map_or(0.0, pt);
+                let room = [
+                    points(&props.margin_top),
+                    points(&props.margin_right),
+                    points(&props.margin_bottom),
+                    points(&props.margin_left),
+                ];
                 let looks = paragraph
                     .pieces(1, 1)
                     .map(|(_, look)| look.map(|look| app.shown(look)).unwrap_or_default())
@@ -1048,6 +1070,7 @@ impl<'a> Marginal<'a> {
                     align,
                     ink,
                     tabs,
+                    room,
                 }
             })
             .collect();
@@ -1061,7 +1084,10 @@ impl<'a> Marginal<'a> {
         let content: f64 = out
             .paragraphs
             .iter()
-            .map(|paragraph| f64::from(out.wrap(paragraph, 1, 1).1.height()))
+            .map(|paragraph| {
+                let [above, _, below, _] = paragraph.room;
+                above + f64::from(out.wrap(paragraph, 1, 1).1.height()) + below
+            })
             .sum();
         out.height = content.max(pt(marginal.min_height));
         out
@@ -1087,16 +1113,24 @@ impl<'a> Marginal<'a> {
             .map(grind_text::CharStyle::metrics)
             .collect();
         let plain = TextStyle::default();
-        let fragments: Vec<Fragment<'_>> = pieces
+        let mut fragments: Vec<Fragment<'_>> = pieces
             .iter()
             .map(|(text, at)| Fragment {
                 text,
                 style: styles.get(*at).unwrap_or(&plain),
             })
             .collect();
+        // An empty paragraph still has a line, as tall as its face's.
+        if fragments.is_empty() {
+            fragments.push(Fragment {
+                text: "",
+                style: &plain,
+            });
+        }
+        let [_, right, _, left] = paragraph.room;
         let layout = grind_core::layout::wrap_tabbed(
             &fragments,
-            self.width as f32,
+            (self.width - left - right).max(1.0) as f32,
             &paragraph.face,
             0.0,
             &paragraph.tabs,
@@ -1106,10 +1140,48 @@ impl<'a> Marginal<'a> {
 
     /// Draw it with its top at `(left, top)`, on page `page` of `pages`. Decoration to a tagged
     /// PDF: a header repeats on every page and is no part of the reading order.
-    fn draw(&self, ops: &mut Vec<Op>, (left, top): (f64, f64), page: usize, pages: usize) {
+    fn draw(
+        &self,
+        ops: &mut Vec<Op>,
+        (left, top): (f64, f64),
+        (page, pages): (usize, usize),
+        boxes: &Boxes,
+    ) {
         let mut y = top as f32;
         for paragraph in &self.paragraphs {
+            let [above, right, below, indent] = paragraph.room;
+            y += above as f32;
             let (pieces, layout) = self.wrap(paragraph, page, pages);
+            let measure = (self.width - indent - right).max(1.0) as f32;
+            // Its pictures first, behind any text (`doc/odt-format.md` §5c fact 27).
+            let tall = layout.height();
+            for picture in &paragraph.paragraph.pictures {
+                let (width, height) = (pt(picture.width), pt(picture.height));
+                let scale = pt(1.0);
+                let x = picture.across.start(
+                    scale,
+                    width,
+                    (0.0, boxes.paper.0),
+                    (left, self.width),
+                    (left, self.width),
+                );
+                let y = picture.down.start(
+                    scale,
+                    height,
+                    (0.0, boxes.paper.1),
+                    boxes.body,
+                    (f64::from(y), f64::from(tall)),
+                );
+                ops.push(Op::Image {
+                    x: x as f32,
+                    y: y as f32,
+                    width: width as f32,
+                    height: height as f32,
+                    mime: picture.mime.clone(),
+                    data: picture.data.clone(),
+                    mark: Mark::Decoration,
+                });
+            }
             // Each character with the piece it belongs to.
             let chars: Vec<(char, usize)> = pieces
                 .iter()
@@ -1124,9 +1196,8 @@ impl<'a> Marginal<'a> {
                     .find(|&i| !text[i].is_whitespace())
                     .map_or(line.start, |i| i + 1);
                 let last = std::ptr::eq(line, layout.lines().last().unwrap_or(line));
-                let content =
-                    aligned_width(&layout, line, &text, visible_end, last).min(self.width as f32);
-                let fit = align::fit(paragraph.align, self.width as f32, content, 0, true);
+                let content = aligned_width(&layout, line, &text, visible_end, last).min(measure);
+                let fit = align::fit(paragraph.align, measure, content, 0, true);
                 // Each stretch between tabs, and between pieces that look different, is drawn
                 // where the layout put it: a footer's `Seite 1 / 2` at the right-hand stop
                 // Writer's `Footer` style sets.
@@ -1150,7 +1221,7 @@ impl<'a> Marginal<'a> {
                             .unwrap_or(paragraph.ink);
                         let shaped = setter.shape(&piece, &style);
                         ops.push(Op::Text {
-                            x: left as f32 + fit.offset + layout.x_at(from),
+                            x: (left + indent) as f32 + fit.offset + layout.x_at(from),
                             y: y + line.top + layout.baseline(),
                             face: shaped.face,
                             size: shaped.size,
@@ -1167,9 +1238,16 @@ impl<'a> Marginal<'a> {
                     };
                 }
             }
-            y += layout.height();
+            y += layout.height() + below as f32;
         }
     }
+}
+
+/// The boxes a header's or footer's picture can be placed in besides the text area: the paper's
+/// width and height, and the body's top and height, in points.
+struct Boxes {
+    paper: (f64, f64),
+    body: (f64, f64),
 }
 
 /// One header or footer paragraph, with each piece's look, and the face, alignment, ink and tab
@@ -1181,6 +1259,8 @@ struct MarginalParagraph<'a> {
     align: Align,
     ink: Rgb,
     tabs: grind_core::layout::Tabs,
+    /// Its margins — top, right, bottom, left — in points.
+    room: [f64; 4],
 }
 
 /// A picture block on paper: the picture at the size the document gives it, fitted to the
@@ -2234,6 +2314,70 @@ mod tests {
     /// `doc/odt-format.md` §5c fact 9: the header sits on the top margin and the footer on the
     /// bottom one, the body between them less their spacing, and the page fields are each
     /// page's own — Writer's 48 lines a page, `pg 2 of 3`.
+    /// §5c facts 27 and 28: a header's paragraphs spaced as the body's, an empty one a line tall,
+    /// and its picture placed by its graphic style without taking room.
+    #[test]
+    fn a_headers_spacing_and_picture_are_writers() {
+        let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles>
+              <style:style style:name="N" style:family="paragraph"><style:text-properties fo:font-family="'Liberation Sans'" fo:font-size="12pt"/></style:style>
+              <style:style style:name="Sp" style:family="paragraph" style:parent-style-name="N"><style:paragraph-properties fo:margin-top="0.3cm" fo:margin-bottom="0.5cm" fo:margin-left="3cm"/></style:style>
+              <style:style style:name="fr" style:family="graphic"><style:graphic-properties style:wrap="run-through" style:horizontal-pos="center" style:horizontal-rel="page" style:vertical-pos="from-top" style:vertical-rel="paragraph"/></style:style>
+              <style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="1cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/>
+                <style:header-style><style:header-footer-properties fo:min-height="0cm" fo:margin-bottom="0.5cm"/></style:header-style></style:page-layout>
+            </office:automatic-styles>
+            <office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1">
+              <style:header><text:p text:style-name="Sp">spaced</text:p><text:p text:style-name="N"><draw:frame draw:style-name="fr" text:anchor-type="paragraph" svg:y="1cm" svg:width="4cm" svg:height="2cm"><draw:image><office:binary-data>{png}</office:binary-data></draw:image></draw:frame></text:p><text:p text:style-name="N">after</text:p></style:header>
+            </style:master-page></office:master-styles>
+            <office:body><office:text><text:p text:style-name="N">body</text:p></office:text></office:body></office:document>"#
+        );
+        let app = App::new();
+        app.open_bytes("hp.fodt", bytes.as_bytes()).unwrap();
+        let doc = typeset(&app, &setter(), &Options::default());
+        let page = &doc.pages[0];
+        let texts = texts(page);
+        let at = |want: &str| texts.iter().find(|t| t.2 == want).expect(want).clone();
+        let cm = 72.0 / 2.54;
+        let (spaced, after) = (at("spaced"), at("after"));
+        assert!(
+            (spaced.0 - 5.0 * cm).abs() < 0.01,
+            "set in by its margin: {}",
+            spaced.0
+        );
+        // Baseline to baseline: its line, its 0.5 cm below, and the empty paragraph's line.
+        let line = (after.1 - spaced.1 - 0.5 * cm) / 2.0;
+        assert!(
+            (line - 13.8).abs() < 0.2,
+            "the empty paragraph is a line tall: {line}"
+        );
+        let image = page
+            .ops
+            .iter()
+            .find_map(|op| match op {
+                Op::Image { x, y, width, .. } => Some((*x, *y, *width)),
+                _ => None,
+            })
+            .expect("the picture is drawn");
+        assert!(
+            (image.0 - 8.5 * cm).abs() < 0.01,
+            "centred on the paper: {}",
+            image.0
+        );
+        assert!((image.2 - 4.0 * cm).abs() < 0.01);
+        // 1 cm into its paragraph, which starts 0.3 cm, a line and 0.5 cm below the 1 cm margin.
+        let top = 2.8 * cm + line;
+        assert!((image.1 - top).abs() < 0.2, "{} vs {top}", image.1);
+        let body = at("body");
+        assert!(body.1 > after.1, "the picture takes no room");
+        assert!(
+            body.1 < image.1 + 2.0 * cm,
+            "the picture takes no room: {}",
+            body.1
+        );
+    }
+
     #[test]
     fn headers_and_footers_take_their_room_and_number_the_pages() {
         let lines: String = (1..=120)

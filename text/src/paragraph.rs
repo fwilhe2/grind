@@ -237,7 +237,7 @@ pub fn shown(
 }
 
 /// How deep a chain is followed before it counts as a cycle — far past Writer's deepest, four.
-const MAX_DEPTH: usize = 32;
+pub(crate) const MAX_DEPTH: usize = 32;
 
 /// The properties of a paragraph styled `name`: the default style's, then each style from the
 /// chain's root down to `name` laid over them. An undeclared name or a looping chain stops where

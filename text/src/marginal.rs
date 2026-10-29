@@ -10,8 +10,8 @@
 //!
 //! A table's or a list's paragraphs are kept as the header's own, in order, and a master's
 //! first-page variants (`style:header-first`) beside its own, and each piece's character
-//! formatting as a body run's. Not kept: pictures, a table's grid, and the left-page variants
-//! (`style:header-left`).
+//! formatting as a body run's, and the pictures anchored to a paragraph. Not kept: a picture set
+//! as a character, a table's grid, and the left-page variants (`style:header-left`).
 
 /// One piece of a header or footer paragraph.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,12 +33,61 @@ pub struct Look {
 }
 
 /// One paragraph of a header or footer, and the paragraph style it names.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Paragraph {
     pub style: Option<String>,
     pub parts: Vec<Part>,
     /// Each part's look, one per part; a part without one is unformatted.
     pub looks: Vec<Look>,
+    /// The pictures anchored to it, which take no room.
+    pub pictures: Vec<Picture>,
+}
+
+/// A picture anchored to a header or footer paragraph, placed by its graphic style
+/// (`doc/odt-format.md` §5c fact 27). Lengths in millimetres.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Picture {
+    pub mime: String,
+    pub data: std::sync::Arc<Vec<u8>>,
+    pub width: f64,
+    pub height: f64,
+    pub across: Placed,
+    pub down: Placed,
+}
+
+/// Where a picture goes along one axis: `style:horizontal-pos` or `style:vertical-pos`, the
+/// `-rel` box it is measured in, both as spelled, and `svg:x` or `svg:y`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Placed {
+    pub pos: String,
+    pub rel: String,
+    pub offset: f64,
+}
+
+impl Placed {
+    /// Where an extent `size` long starts, given the start and length of the box each `rel`
+    /// names — `paper`, the text area or the body's (`content`) and the paragraph's — in a unit
+    /// `scale` times a millimetre.
+    pub fn start(
+        &self,
+        scale: f64,
+        size: f64,
+        paper: (f64, f64),
+        content: (f64, f64),
+        paragraph: (f64, f64),
+    ) -> f64 {
+        let (from, length) = match self.rel.as_str() {
+            "page" => paper,
+            "paragraph" => paragraph,
+            _ => content,
+        };
+        match self.pos.as_str() {
+            "left" | "top" => from,
+            "right" | "bottom" => from + length - size,
+            "center" | "middle" => from + (length - size) / 2.0,
+            _ => from + self.offset * scale,
+        }
+    }
 }
 
 impl Paragraph {
