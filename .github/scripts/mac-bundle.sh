@@ -132,5 +132,13 @@ rm -rf "$stage"
 mkdir -p "$stage"
 cp -R "$app" "$stage/"
 ln -s /Applications "$stage/Applications"
-hdiutil create -quiet -volname Grind -srcfolder "$stage" -ov -format UDZO "$out/Grind.dmg"
+# A hosted runner's hdiutil now and then fails a create it then does fine; what it said goes in
+# the report, since a bare `set -e` exit leaves nothing to read.
+for attempt in 1 2 3; do
+    hdiutil create -quiet -volname Grind -srcfolder "$stage" -ov -format UDZO "$out/Grind.dmg" \
+        2> "$out/hdiutil.txt" && break
+    [ "$attempt" -lt 3 ] || fail "hdiutil create, three times: $(cat "$out/hdiutil.txt")"
+    say "hdiutil create failed (attempt $attempt), retrying: $(head -n 1 "$out/hdiutil.txt")"
+    sleep 10
+done
 say "Grind.dmg: $(du -h "$out/Grind.dmg" | cut -f1)"
