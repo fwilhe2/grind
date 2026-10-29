@@ -99,6 +99,7 @@ pub fn write(input: Input, report: &mut Report) -> String {
         lists_seen: HashSet::new(),
         outline_list: None,
         outline_levels: BTreeSet::new(),
+        table_spacing: Props::default(),
         footnotes: 0,
         endnotes: 0,
         notes_written: 0,
@@ -374,6 +375,8 @@ struct Writer<'i, 'r> {
     /// The outline levels it numbers a heading at: only these place a label, so a heading Word
     /// left unnumbered at any other level keeps its own indent.
     outline_levels: BTreeSet<i64>,
+    /// The spacing the style of the table being written gives the paragraphs in its cells.
+    table_spacing: Props,
     /// The lists already opened once, by numId — a later one continues it.
     lists_seen: HashSet<i64>,
     footnotes: usize,
@@ -610,6 +613,19 @@ impl Writer<'_, '_> {
             .and_then(|id| self.styles().odf_name(id))
             .map(str::to_owned);
         let mut direct = para.facts.props.clone();
+        // A table style's spacing is under the paragraph's own style chain and over the
+        // document's defaults (`doc/docx-format.md` §6.4).
+        if !self.table_spacing.is_empty() {
+            let chain = style_id
+                .as_deref()
+                .map(|id| styles::resolved(self.styles(), id))
+                .unwrap_or_default();
+            for (key, value) in &self.table_spacing.0 {
+                if chain.para.get(key).is_none() && direct.para.get(key).is_none() {
+                    direct.para.set(key, value.clone());
+                }
+            }
+        }
         if para.page_break_before {
             direct.para.set("fo:break-before", "page");
         }
@@ -985,6 +1001,16 @@ impl Writer<'_, '_> {
         if look.conditional {
             self.report.drop_one(Dropped::TableStyleCondition);
         }
+        let mut spacing = Props::default();
+        if let Some(id) = style_id.as_deref() {
+            let resolved = styles::resolved(self.styles(), id).para;
+            for key in TABLE_SPACING {
+                if let Some(value) = resolved.get(key) {
+                    spacing.set(key, value);
+                }
+            }
+        }
+        let outer = std::mem::replace(&mut self.table_spacing, spacing);
         for (k, v) in &table.look.borders {
             look.borders.insert(k, v.clone());
         }
@@ -1205,6 +1231,7 @@ impl Writer<'_, '_> {
             }
         }
         let _ = writeln!(out, "{}</table:table>", pad(depth));
+        self.table_spacing = outer;
     }
 
     fn cell_style(&mut self, props: Props) -> String {
@@ -1496,6 +1523,14 @@ impl Writer<'_, '_> {
         out.push_str("  </text:list-style>\n");
     }
 }
+
+/// What `w:spacing` sets, which is what a table style gives its cells' paragraphs.
+const TABLE_SPACING: [&str; 4] = [
+    "fo:margin-top",
+    "fo:margin-bottom",
+    "fo:line-height",
+    "style:line-height-at-least",
+];
 
 /// Where level `n`'s label and text go: Word's indent and hanging indent, the text at the tab
 /// after the label.

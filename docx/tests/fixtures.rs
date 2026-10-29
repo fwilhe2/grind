@@ -561,6 +561,35 @@ fn a_table_with_a_horizontal_and_a_vertical_merge() {
     );
 }
 
+/// `doc/docx-format.md` §6.4: a table style's spacing reaches its cells' paragraphs, under their
+/// own style chain — a style restating the defaults' value included — and over the defaults.
+#[test]
+fn a_table_styles_spacing_is_under_the_paragraph_styles() {
+    let s = styles(
+        r#"<w:docDefaults><w:pPrDefault><w:pPr><w:spacing w:after="200" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
+           <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
+           <w:style w:type="paragraph" w:styleId="Same"><w:name w:val="Same"/><w:pPr><w:spacing w:after="200"/></w:pPr></w:style>
+           <w:style w:type="table" w:styleId="Grid"><w:name w:val="Grid"/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:style>"#,
+    );
+    let body = r#"<w:tbl><w:tblPr><w:tblStyle w:val="Grid"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>
+        <w:tr><w:tc><w:p><w:r><w:t>plain</w:t></w:r></w:p></w:tc></w:tr>
+        <w:tr><w:tc><w:p><w:pPr><w:pStyle w:val="Same"/></w:pPr><w:r><w:t>same</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+        <w:p><w:r><w:t>after</w:t></w:r></w:p>"#;
+    let (doc, _) = import(&docx(body, &[s]));
+    let spacing = |text: &str| {
+        let block = doc.blocks.iter().find(|b| b.text() == text).unwrap();
+        let resolved = grind_text::paragraph::resolve(
+            &doc.paragraph_styles,
+            &doc.default_paragraph,
+            block.style.as_deref(),
+        );
+        (resolved.margin_bottom, resolved.line_height)
+    };
+    assert_eq!(spacing("plain"), (Some("0pt".into()), Some("100%".into())));
+    assert_eq!(spacing("same"), (Some("10pt".into()), Some("100%".into())));
+    assert_eq!(spacing("after"), (Some("10pt".into()), Some("115%".into())));
+}
+
 // ---- pages, marginals, notes, pictures ----
 
 #[test]

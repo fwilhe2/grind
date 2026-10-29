@@ -294,3 +294,14 @@ and below.
 A table with `w:tblpPr` is converted by the oracle into a table inside a frame; thirteen of
 `ooxmlimport/data`'s documents have one. This filter keeps it as a table in the flow and counts
 the position (`Dropped::Frame`).
+
+### 6.4 A table style's paragraph spacing — `MEASURED`
+
+A table style's `w:pPr` (§17.7.6) reaches the paragraphs in its cells. Measured 2026-10-29 on the
+pinned oracle with three one-column tables on a style stating `w:spacing w:after="0" w:line="240"`,
+over document defaults of `w:after="200" w:line="276"`: a cell paragraph in `Normal`, which states
+no spacing, is set single-spaced with nothing after (12.15 pt apart at 10 pt); one whose style
+states `w:after="400"` keeps its 20 pt after and still takes the table style's single line; one
+whose style states `w:after="200"` — the defaults' own value — keeps its 10 pt. Attribute by
+attribute, the table style's spacing is under the paragraph's style chain and over the document
+defaults. Only spacing was measured.
