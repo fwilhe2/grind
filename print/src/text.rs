@@ -82,7 +82,6 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     let breaks = block_breaks(app, &viewport);
     let mut indents: std::collections::HashMap<usize, f32> = viewport
         .iter()
-        .filter(|view| view.cell.is_none())
         .filter_map(|view| {
             let props = app.paragraph(view.index)?.props;
             let first = props.text_indent.as_deref().and_then(length_mm).map(pt)?;
@@ -2400,6 +2399,29 @@ mod tests {
     /// `office:text`, Liberation Serif 12 pt throughout.
     fn styled(styles: &str, body: &str) -> App {
         styled_with(styles, "", body)
+    }
+
+    /// A hanging indent in a table cell — Word's way of setting a title beside a logo — starts
+    /// its first line at the cell's edge, as it does in the body.
+    #[test]
+    fn a_first_line_indent_applies_in_a_table_cell() {
+        let app = styled(
+            r#"<style:style style:name="Hang" style:family="paragraph"><style:paragraph-properties fo:margin-left="3cm" fo:text-indent="-3cm"/></style:style>"#,
+            r#"<table:table table:name="T"><table:table-column/><table:table-row><table:table-cell>
+                 <text:p text:style-name="Hang">TITLE</text:p>
+               </table:table-cell></table:table-row></table:table>"#,
+        );
+        let doc = typeset(&app, &setter(), &Options::default());
+        let margin = 72.0 * 2.0 / 2.54;
+        let title = texts(&doc.pages[0])
+            .into_iter()
+            .find(|t| t.2 == "TITLE")
+            .unwrap();
+        assert!(
+            title.0 - margin < 10.0,
+            "{} from the margin",
+            title.0 - margin
+        );
     }
 
     /// [`styled`], with `automatic` in `office:automatic-styles`.
