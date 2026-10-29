@@ -43,19 +43,29 @@ pub struct Options {
 pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     setter.hint(app.font_generics());
     let default_geometry = options.paper.or(app.page()).unwrap_or_default();
-    // The flow is cut at one measure, the document's own: master pages of a document that state
-    // other margins are laid out at this width and drawn at their own left edge.
-    let width = pt(default_geometry.text_width());
     let (kinds, starts) = page_kinds(app);
     let sheets: Vec<Sheet<'_>> = kinds
         .iter()
-        .map(|kind| Sheet::lay_out(app, setter, kind, default_geometry, options, width))
+        .map(|kind| Sheet::lay_out(app, setter, kind, default_geometry, options))
         .collect();
+    // The widths text is set at: the document's own page first, then each master's that differs.
+    let width = pt(default_geometry.text_width());
+    let mut widths = vec![width];
+    for sheet in &sheets {
+        let own = pt(sheet.geometry.text_width());
+        if !widths.iter().any(|w| (w - own).abs() < 1e-6) {
+            widths.push(own);
+        }
+    }
     let slots: Vec<grind_text::page::Slot> = sheets
         .iter()
         .map(|sheet| grind_text::page::Slot {
             height: sheet.height,
             next: sheet.next,
+            measure: widths
+                .iter()
+                .position(|w| (w - pt(sheet.geometry.text_width())).abs() < 1e-6)
+                .unwrap_or(0),
         })
         .collect();
     let faces = role_faces(setter);
@@ -67,7 +77,6 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         .into_iter()
         .filter_map(|table| Some((table.clone(), app.table_look(&table)?)))
         .collect();
-    let across = flow::across_with(app, width, &SPACING, &crate::faces::TableLooks(&looks));
     let blocks = block_faces(app, setter, &viewport);
     let mut spacing = block_spacing(app, &viewport);
     let breaks = block_breaks(app, &viewport);
@@ -96,17 +105,30 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         &mut spacing,
         &mut indents,
     );
-    let column = Column {
-        indents: &indents,
-        tabs: &tabs,
-        looks: &looks,
-        faces: &faces,
-        blocks: &blocks,
-        spacing: &spacing,
-        breaks: &breaks,
-        width,
-        across: &across,
-    };
+    let across: Vec<_> = widths
+        .iter()
+        .map(|&width| flow::across_with(app, width, &SPACING, &crate::faces::TableLooks(&looks)))
+        .collect();
+    let columns: Vec<Column<'_>> = widths
+        .iter()
+        .zip(&across)
+        .map(|(&width, across)| Column {
+            indents: &indents,
+            tabs: &tabs,
+            looks: &looks,
+            faces: &faces,
+            blocks: &blocks,
+            spacing: &spacing,
+            breaks: &breaks,
+            width,
+            across,
+        })
+        .collect();
+    let column = &columns[0];
+    let measures: Vec<(&dyn grind_text::Faces, f64)> = columns
+        .iter()
+        .map(|column| (column as &dyn grind_text::Faces, column.width))
+        .collect();
     let body = &faces[0];
     let picture = |view: &BlockView, measure: f64| figure(view, measure, body).map(|f| f.height);
     // The document's own widows and orphans, and none where it states none — what Writer does
@@ -118,8 +140,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     };
     let pages = paginate_slots(
         app,
-        &column,
-        width,
+        &measures,
         &slots,
         (0, &starts),
         &SPACING,
@@ -188,8 +209,8 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                     });
                 }
                 let face = column.face(view.index, &view.kind, view.style.as_deref());
-                let first = grind_text::Faces::first_indent(&column, view.index);
-                let tabs = grind_text::Faces::tabs(&column, view.index);
+                let first = grind_text::Faces::first_indent(column, view.index);
+                let tabs = grind_text::Faces::tabs(column, view.index);
                 let label = labels.get(&view.index).copied();
                 let drawn = lines(
                     &mut ops,
@@ -295,7 +316,6 @@ impl<'a> Sheet<'a> {
         kind: &Kind,
         default: PageGeometry,
         options: &Options,
-        width: f64,
     ) -> Self {
         let master = kind.name.as_deref().and_then(|name| app.master(name));
         let geometry = options
@@ -306,6 +326,7 @@ impl<'a> Sheet<'a> {
             Some(master) => (master.header.clone(), master.footer.clone()),
             None => app.marginals(),
         };
+        let width = pt(geometry.text_width());
         let header = header.map(|m| Marginal::lay_out(app, setter, &m, width));
         let footer = footer.map(|m| Marginal::lay_out(app, setter, &m, width));
         let room = |m: &Option<Marginal<'_>>| m.as_ref().map_or(0.0, |m| m.height + m.spacing);
@@ -1886,6 +1907,44 @@ mod tests {
         };
         assert!(footer(0).contains("No. 1 of 1"), "{}", footer(0));
         assert!(footer(1).contains("No. 1 of 1"), "{}", footer(1));
+    }
+
+    /// A landscape section's text is set as wide as its own page, not at the portrait measure
+    /// the document opened on: the same paragraph takes fewer lines there.
+    #[test]
+    fn a_master_with_a_wider_page_sets_its_text_wider() {
+        let words = "word ".repeat(80);
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles>
+              <style:style style:name="Wide" style:family="paragraph" style:master-page-name="Landscape"/>
+              <style:page-layout style:name="pl1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/></style:page-layout>
+              <style:page-layout style:name="pl2"><style:page-layout-properties fo:page-width="29.7cm" fo:page-height="21cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/></style:page-layout>
+            </office:automatic-styles>
+            <office:master-styles>
+              <style:master-page style:name="Standard" style:page-layout-name="pl1"/>
+              <style:master-page style:name="Landscape" style:page-layout-name="pl2"/>
+            </office:master-styles>
+            <office:body><office:text>
+              <text:p>{words}</text:p><text:p text:style-name="Wide">{words}</text:p>
+            </office:text></office:body></office:document>"#
+        );
+        let app = App::new();
+        app.open_bytes("wide.fodt", bytes.as_bytes()).unwrap();
+        let doc = typeset(&app, &setter(), &Options::default());
+        assert_eq!(doc.pages.len(), 2);
+        assert!(doc.pages[1].width > doc.pages[0].width);
+        let lines = |page: usize| {
+            let mut ys: Vec<i32> = texts(&doc.pages[page]).iter().map(|t| t.1 as i32).collect();
+            ys.dedup();
+            ys.len()
+        };
+        assert!(
+            lines(1) < lines(0),
+            "{} lines wide, {} narrow",
+            lines(1),
+            lines(0)
+        );
     }
 
     /// A line a master draws — a fold mark — is on every page set on it, from the page's own

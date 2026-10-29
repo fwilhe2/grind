@@ -87,12 +87,14 @@ pub struct Page {
     pub restart: Option<u32>,
 }
 
-/// A kind of page for cutting purposes: its text area's height and the kind of page after it — a
-/// master page after its header and footer take their share (`grind-print`).
+/// A kind of page for cutting purposes: its text area's height, the kind of page after it — a
+/// master page after its header and footer take their share (`grind-print`) — and which of
+/// [`paginate_slots`]'s measures its text is set at.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Slot {
     pub height: f64,
     pub next: usize,
+    pub measure: usize,
 }
 
 /// Where a block starts a page of its own kind: its [`Slot`], and the number it restarts counting
@@ -137,13 +139,17 @@ pub fn paginate_first(
         Slot {
             height: first,
             next: 1,
+            measure: 0,
         },
-        Slot { height, next: 1 },
+        Slot {
+            height,
+            next: 1,
+            measure: 0,
+        },
     ];
     paginate_slots(
         app,
-        faces,
-        column,
+        &[(faces, column)],
         &slots,
         (0, &Starts::new()),
         spacing,
@@ -155,11 +161,13 @@ pub fn paginate_first(
 /// [`paginate`] over several kinds of page: the first on `slots[start]`, each next on the previous
 /// one's `next`, and a block in `starts` beginning a new page on its own slot — how a series of
 /// letters on one letterhead paginates.
-#[allow(clippy::too_many_arguments)]
+///
+/// `measures` are the widths text is set at, each with the faces that measure at it: a run of
+/// pages opened by a block in `starts` is laid out at its slot's measure — a landscape section's
+/// text as wide as its page.
 pub fn paginate_slots(
     app: &App,
-    faces: &dyn Faces,
-    column: f64,
+    measures: &[(&dyn Faces, f64)],
     slots: &[Slot],
     (start, starts): (usize, &Starts),
     spacing: &Spacing,
@@ -171,9 +179,34 @@ pub fn paginate_slots(
         top: 0.0,
         ..*spacing
     };
-    let laid = flow::lay_out(app, faces, column, &spacing, picture);
     let viewport = app.get_viewport(0..app.block_count());
-    let units = units(app, faces, &laid, &viewport, picture, spacing.cell_pad);
+    // The flow laid out at every measure; each unit is taken from the one its run of pages is set
+    // at. A run opens on a page of its own, so no page mixes two.
+    let laid: Vec<Vec<Unit>> = measures
+        .iter()
+        .map(|&(faces, column)| {
+            let laid = flow::lay_out(app, faces, column, &spacing, picture);
+            units(app, faces, &laid, &viewport, picture, spacing.cell_pad)
+        })
+        .collect();
+    let measure_of = |slot: usize| slots.get(slot).map_or(0, |s| s.measure).min(laid.len() - 1);
+    let mut measure = measure_of(start);
+    // Each unit, and where its run's flow sits against the run before it — what an empty page's
+    // origin moves by when a run starts on it.
+    let units: Vec<(&Unit, f64)> = (0..laid[0].len())
+        .map(|at| {
+            let before = measure;
+            if let Unit::Block { slot, .. } = &laid[0][at]
+                && let Some(&(slot_of, _)) = starts.get(&slot.index)
+            {
+                measure = measure_of(slot_of);
+            }
+            (
+                &laid[measure][at],
+                laid[measure][at].top() - laid[before][at].top(),
+            )
+        })
+        .collect();
     let mut cut = Cut {
         pages: vec![Page {
             slot: start,
@@ -187,7 +220,7 @@ pub fn paginate_slots(
     let mut break_pending = false;
     let mut heading: Vec<(&str, usize)> = Vec::new();
     let mut heading_closed = false;
-    for (at, unit) in units.iter().enumerate() {
+    for (at, &(unit, shift)) in units.iter().enumerate() {
         if std::mem::take(&mut break_pending) && !cut.fresh() {
             cut.turn(unit.top());
         }
@@ -202,8 +235,9 @@ pub fn paginate_slots(
                 // A block opening a page on its own master: a new page unless this one is empty,
                 // set on that master.
                 if let Some(&(slot_of, restart)) = starts.get(&slot.index) {
-                    if !cut.fresh() {
-                        cut.turn(lines.first().map_or(slot.top, |line| line.top));
+                    match cut.fresh() {
+                        true => cut.origin += shift,
+                        false => cut.turn(lines.first().map_or(slot.top, |line| line.top)),
                     }
                     cut.set_slot(slot_of, restart);
                 }
@@ -214,7 +248,7 @@ pub fn paginate_slots(
                 if *keep
                     && !cut.fresh()
                     && let (Some(last), Some(next)) = (lines.last(), units.get(at + 1))
-                    && next.lead(rules.orphans).max(last.bottom()) - cut.origin
+                    && next.0.lead(rules.orphans).max(last.bottom()) - cut.origin
                         > cut.page_height() + EPS
                 {
                     cut.turn(lines[0].top);
@@ -242,7 +276,7 @@ pub fn paginate_slots(
                 if *bottom - cut.origin > cut.room() + EPS && !cut.fresh() {
                     cut.turn(*top);
                     if !*header && heading.first().is_some_and(|&(t, _)| t == table.as_str()) {
-                        let first = heading.first().map_or(*top, |&(_, i)| units[i].top());
+                        let first = heading.first().map_or(*top, |&(_, i)| units[i].0.top());
                         let mut tall = 0.0;
                         for &(_, i) in &heading {
                             if let Unit::Row {
@@ -250,7 +284,7 @@ pub fn paginate_slots(
                                 cells,
                                 bottom,
                                 ..
-                            } = &units[i]
+                            } = units[i].0
                             {
                                 cut.place_row(slots, cells, first, true);
                                 tall = bottom - first;
