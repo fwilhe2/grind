@@ -293,6 +293,9 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
 struct Kind {
     /// The master's name, or `None` for the document's own default page.
     name: Option<String>,
+    /// Whether this is the first page of a run opening on the master, which wears the master's
+    /// first-page header and footer (`doc/odt-format.md` §5c fact 24).
+    first: bool,
     next: usize,
 }
 
@@ -323,7 +326,10 @@ impl<'a> Sheet<'a> {
             .or_else(|| master.as_ref().and_then(|m| m.geometry))
             .unwrap_or(default);
         let (header, footer) = match &master {
-            Some(master) => (master.header.clone(), master.footer.clone()),
+            Some(master) => match (&master.first, kind.first) {
+                (Some(first), true) => first.clone(),
+                _ => (master.header.clone(), master.footer.clone()),
+            },
             None => app.marginals(),
         };
         let width = pt(geometry.text_width());
@@ -352,17 +358,29 @@ impl<'a> Sheet<'a> {
 /// series is a letter's first paragraph, over and over, and each letter gets its letterhead.
 fn page_kinds(app: &App) -> (Vec<Kind>, grind_text::page::Starts) {
     let mut kinds: Vec<Kind> = Vec::new();
-    let slot_of = |kinds: &mut Vec<Kind>, name: Option<&str>| -> usize {
-        match kinds.iter().position(|kind| kind.name.as_deref() == name) {
+    let kind_of = |kinds: &mut Vec<Kind>, name: Option<&str>, first: bool| -> usize {
+        match kinds
+            .iter()
+            .position(|kind| kind.name.as_deref() == name && kind.first == first)
+        {
             Some(at) => at,
             None => {
                 kinds.push(Kind {
                     name: name.map(str::to_owned),
+                    first,
                     next: 0,
                 });
                 kinds.len() - 1
             }
         }
+    };
+    let slot_of = |kinds: &mut Vec<Kind>, name: Option<&str>| kind_of(kinds, name, false);
+    // A run opens on the master's first page where it has one.
+    let opening_of = |kinds: &mut Vec<Kind>, name: Option<&str>| {
+        let first = name
+            .and_then(|name| app.master(name))
+            .is_some_and(|master| master.first.is_some());
+        kind_of(kinds, name, first)
     };
     let viewport = app.get_viewport(0..app.block_count());
     let first = viewport
@@ -372,7 +390,7 @@ fn page_kinds(app: &App) -> (Vec<Kind>, grind_text::page::Starts) {
     let rest = app.rest_master();
     // The page the document opens on: what its first paragraph names, else the body's master.
     let opening = first.or_else(|| rest.clone());
-    slot_of(&mut kinds, opening.as_deref());
+    opening_of(&mut kinds, opening.as_deref());
     let mut starts = grind_text::page::Starts::new();
     for view in viewport.iter().filter(|view| view.cell.is_none()) {
         let Some(props) = app.paragraph(view.index).map(|resolved| resolved.props) else {
@@ -385,17 +403,18 @@ fn page_kinds(app: &App) -> (Vec<Kind>, grind_text::page::Starts) {
             .page_number
             .as_deref()
             .and_then(|n| n.trim().parse::<u32>().ok());
-        let at = slot_of(&mut kinds, Some(&name));
+        let at = opening_of(&mut kinds, Some(&name));
         starts.insert(view.index, (at, restart));
     }
-    // Each kind's successor: its master's `next-style-name`, else itself — and a successor may
-    // be a kind nothing else names, so this grows the list it walks.
+    // Each kind's successor: its master's `next-style-name`, else its own ordinary page — and a
+    // successor may be a kind nothing else names, so this grows the list it walks.
     let mut at = 0;
     while at < kinds.len() {
-        let next = match kinds[at].name.as_deref().and_then(|name| app.master(name)) {
+        let name = kinds[at].name.clone();
+        let next = match name.as_deref().and_then(|name| app.master(name)) {
             Some(master) => match master.next {
                 Some(next) if app.master(&next).is_some() => slot_of(&mut kinds, Some(&next)),
-                _ => at,
+                _ => slot_of(&mut kinds, name.as_deref()),
             },
             None => at,
         };
@@ -1945,6 +1964,58 @@ mod tests {
             lines(1),
             lines(0)
         );
+    }
+
+    /// `doc/odt-format.md` §5c fact 24: a master's first-page header is on the first page of
+    /// each run opening on it and its own header on the rest; with no first-page footer stated,
+    /// the first page has none.
+    #[test]
+    fn a_runs_first_page_wears_the_masters_first_page_header() {
+        let body = "<text:p>para</text:p>".repeat(70);
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles>
+              <style:style style:name="Again" style:family="paragraph" style:master-page-name="Standard"/>
+              <style:page-layout style:name="pl"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/></style:page-layout>
+            </office:automatic-styles>
+            <office:master-styles>
+              <style:master-page style:name="Standard" style:page-layout-name="pl">
+                <style:header><text:p>HEADREST</text:p></style:header>
+                <style:header-first><text:p>HEADFIRST</text:p></style:header-first>
+                <style:footer><text:p>FOOTREST</text:p></style:footer>
+              </style:master-page>
+            </office:master-styles>
+            <office:body><office:text>{body}<text:p text:style-name="Again">again</text:p>{body}</office:text></office:body></office:document>"#
+        );
+        let app = App::new();
+        app.open_bytes("first.fodt", bytes.as_bytes()).unwrap();
+        let doc = typeset(&app, &setter(), &Options::default());
+        let marginals: Vec<String> = doc
+            .pages
+            .iter()
+            .map(|page| {
+                let texts: Vec<String> = texts(page).into_iter().map(|t| t.2).collect();
+                let has = |want: &str| texts.iter().any(|t| t == want);
+                let again = match has("again") {
+                    true => "again ",
+                    false => "",
+                };
+                match (has("HEADFIRST"), has("HEADREST"), has("FOOTREST")) {
+                    (true, false, false) => format!("{again}first"),
+                    (false, true, true) => format!("{again}rest"),
+                    other => format!("{again}{other:?}"),
+                }
+            })
+            .collect();
+        assert!(marginals.len() >= 4, "{marginals:?}");
+        assert_eq!(marginals[0], "first");
+        assert_eq!(marginals[1], "rest");
+        let again = marginals
+            .iter()
+            .position(|m| m.starts_with("again"))
+            .unwrap();
+        assert_eq!(marginals[again], "again first", "{marginals:?}");
+        assert_eq!(marginals[again + 1], "rest", "{marginals:?}");
     }
 
     /// A line a master draws — a fold mark — is on every page set on it, from the page's own

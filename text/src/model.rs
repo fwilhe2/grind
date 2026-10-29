@@ -484,6 +484,13 @@ pub struct Master {
     pub geometry: Option<grind_core::page::PageGeometry>,
     pub header: Option<crate::marginal::Marginal>,
     pub footer: Option<crate::marginal::Marginal>,
+    /// The header and footer of the first page of every run of pages opening on it
+    /// (`style:header-first`, `style:footer-first`), where it states either; a missing one is none
+    /// (`doc/odt-format.md` §5c fact 24).
+    pub first: Option<(
+        Option<crate::marginal::Marginal>,
+        Option<crate::marginal::Marginal>,
+    )>,
     /// Lines drawn on every page set on it (`draw:line` in its header or footer).
     pub lines: Vec<crate::marginal::Line>,
     /// `style:next-style-name`; `None` is the master itself.

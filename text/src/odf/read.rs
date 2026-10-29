@@ -138,6 +138,9 @@ type Room = (f64, f64);
 struct Marginals {
     header: Option<Vec<crate::marginal::Paragraph>>,
     footer: Option<Vec<crate::marginal::Paragraph>>,
+    /// `style:header-first` and `style:footer-first`.
+    header_first: Option<Vec<crate::marginal::Paragraph>>,
+    footer_first: Option<Vec<crate::marginal::Paragraph>>,
     /// The `draw:line`s in either, which belong to the page rather than to a paragraph.
     lines: Vec<crate::marginal::Line>,
 }
@@ -333,17 +336,28 @@ impl Builder {
                     }
                 })
             };
+            let first = (marginals.header_first.is_some() || marginals.footer_first.is_some())
+                .then(|| {
+                    (
+                        marginal(marginals.header_first, header_room),
+                        marginal(marginals.footer_first, footer_room),
+                    )
+                });
             (
                 marginal(marginals.header, header_room),
                 marginal(marginals.footer, footer_room),
+                first,
             )
         };
         if let Some(rest) = &rest {
-            (self.doc.header, self.doc.footer) = marginals_of(rest);
+            (self.doc.header, self.doc.footer, _) = marginals_of(rest);
         }
         self.doc.first_page = first
             .filter(|first| rest.as_ref().is_some_and(|rest| rest.0 != first.0))
-            .map(|first| marginals_of(&first));
+            .map(|first| {
+                let (header, footer, _) = marginals_of(&first);
+                (header, footer)
+            });
 
         // Every master page by name, so a paragraph that starts a page on its own master anywhere
         // — a letter in a series — gets its page, header and footer (`crate::model::Master`).
@@ -352,13 +366,14 @@ impl Builder {
             .master_pages
             .iter()
             .map(|master| {
-                let (header, footer) = marginals_of(master);
+                let (header, footer, first) = marginals_of(master);
                 (
                     master.0.clone(),
                     crate::model::Master {
                         geometry: self.page_layouts.get(&master.1).copied(),
                         header,
                         footer,
+                        first,
                         lines: self
                             .master_marginals
                             .get(&master.0)
@@ -817,22 +832,33 @@ impl Context<Builder> for MasterStyles {
     }
 }
 
-/// One `style:master-page`: its header and footer (`crate::marginal`). The first-page and
-/// left-page variants are ignored.
+/// One `style:master-page`: its header and footer (`crate::marginal`), and its first page's.
+/// The left-page variants are ignored.
 struct MasterPage {
     name: String,
 }
 
+/// Which of a master page's headers and footers is being read.
+#[derive(Clone, Copy)]
+enum Place {
+    Header,
+    Footer,
+    HeaderFirst,
+    FooterFirst,
+}
+
 impl Context<Builder> for MasterPage {
     fn start_child(&mut self, name: &Name, _attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
-        let header = match (name.ns, name.local.as_str()) {
-            (Ns::Style, "header") => true,
-            (Ns::Style, "footer") => false,
+        let place = match (name.ns, name.local.as_str()) {
+            (Ns::Style, "header") => Place::Header,
+            (Ns::Style, "footer") => Place::Footer,
+            (Ns::Style, "header-first") => Place::HeaderFirst,
+            (Ns::Style, "footer-first") => Place::FooterFirst,
             _ => return None,
         };
         Some(Box::new(MarginalText {
             master: self.name.clone(),
-            header,
+            place,
             top: true,
         }))
     }
@@ -843,7 +869,7 @@ impl Context<Builder> for MasterPage {
 /// header is often a one-row table holding a reference and a logo.
 struct MarginalText {
     master: String,
-    header: bool,
+    place: Place,
     /// Whether this is the header or footer itself rather than a `text:section`, table or list
     /// inside one; LibreOffice wraps a header in a section when one was put there
     /// (`tdf116848.odt`).
@@ -867,7 +893,7 @@ impl Context<Builder> for MarginalText {
         ) {
             return Some(Box::new(MarginalText {
                 master: self.master.clone(),
-                header: self.header,
+                place: self.place,
                 top: false,
             }));
         }
@@ -889,10 +915,13 @@ impl Context<Builder> for MarginalText {
         let lines = std::mem::take(&mut b.marginal_lines);
         let marginals = b.master_marginals.entry(self.master.clone()).or_default();
         marginals.lines.extend(lines);
-        match self.header {
-            true => marginals.header = Some(paragraphs),
-            false => marginals.footer = Some(paragraphs),
-        }
+        let slot = match self.place {
+            Place::Header => &mut marginals.header,
+            Place::Footer => &mut marginals.footer,
+            Place::HeaderFirst => &mut marginals.header_first,
+            Place::FooterFirst => &mut marginals.footer_first,
+        };
+        *slot = Some(paragraphs);
     }
 }
 

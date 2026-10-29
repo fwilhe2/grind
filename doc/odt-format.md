@@ -752,6 +752,14 @@ oracle turned out to be unable to answer the font questions (fact 4).
    heading after them showed `A)`. A heading in a list naming no style shows no number at all,
    neither the outline's nor a bullet. Word's paragraph numbering arrives this way when a
    numbered style is based on a heading style (`doc/docx-import.md`).
+24. **A first page's own header and footer** — `MEASURED` (2026-10-29, the pinned image, a
+   generated document of two runs on one master with another master between them). A master's
+   `style:header-first` and `style:footer-first` are printed on the first page of **every run**
+   of pages that opens on it — page 1, and the page a paragraph naming the master again opens
+   after another master's page — and `style:header`/`style:footer` on the rest. Where a master
+   has either variant, a first page with no `-first` counterpart for the other carries none:
+   with only `style:header-first` stated, the first page had that header and **no** footer.
+   Word's `w:titlePg` arrives this way (`doc/docx-import.md`).
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on
