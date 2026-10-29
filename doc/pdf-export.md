@@ -265,8 +265,9 @@ The first PDF should arrive early, and fidelity should then go up one ratchet at
 * headings, lists with their bullets (`paint::bullet`, the same marks as the screen), tabs;
 * pagination: hard page breaks (`fo:break-before`/`after`), widows and orphans (the default when
   unstated is a P1 measurement, not an assumption), headings kept with the next paragraph, an image never split and scaled to
-  the text area if larger, table rows never split (a row taller than a page is the one case that
-  splits, by lines);
+  the text area if larger, a table row that does not fit split between lines and each part
+  drawn as a closed row, as Writer does (`doc/odt-format.md` §5c fact 25) — a heading row and a
+  row stating `fo:keep-together="always"` move whole;
 * tables as grids with their rules;
 * images (`Run::Image`: PNG/JPEG straight into the PDF; anything else counted in the report);
 * **PDF outline from the headings** (cheap, and the most-used navigation in a long PDF),

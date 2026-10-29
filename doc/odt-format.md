@@ -760,6 +760,14 @@ oracle turned out to be unable to answer the font questions (fact 4).
    has either variant, a first page with no `-first` counterpart for the other carries none:
    with only `style:header-first` stated, the first page had that header and **no** footer.
    Word's `w:titlePg` arrives this way (`doc/docx-import.md`).
+25. **A table row splits across pages** — `MEASURED` (2026-10-29, the pinned image, a
+   two-cell bordered row of 25 and 3 one-line paragraphs after 30 paragraphs). A row that does
+   not fit in what is left of a page is **split between lines**, not moved: page 1 took `A1`–`A21`
+   and all of `B1`–`B3`, page 2 `A22`–`A25` — though the whole row would have fitted on page 2.
+   Each part is drawn as a closed box: the cells' borders close under the last line taken and
+   open again at the top of the next page. Stated `fo:keep-together="auto"` and no
+   `style:table-row-properties` at all behave alike; `fo:keep-together="always"` on the row
+   moves it whole to the next page.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

@@ -419,6 +419,12 @@ pub trait Faces {
     fn header_row(&self, _table: &str, _row: u32) -> bool {
         false
     }
+
+    /// Whether `row` of the table named `table` keeps together, moving whole to the next page
+    /// rather than splitting between lines.
+    fn row_kept(&self, _table: &str, _row: u32) -> bool {
+        false
+    }
 }
 
 /// Every block set alike: one width, one provider — what the CLI (`Fixed` at `--width`) and a

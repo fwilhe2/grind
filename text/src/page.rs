@@ -16,8 +16,9 @@
 //!
 //! Space above a block at the top of a page is dropped.
 //!
-//! ponytail: a row taller than a page overflows rather than splitting by lines
-//! (`doc/pdf-export.md` §5).
+//! A table row that does not fit splits between lines, each part drawn as a closed row
+//! (`doc/odt-format.md` §5c fact 25) — unless it keeps together or is a heading row, which move
+//! whole and overflow a page they are taller than.
 
 use std::ops::Range;
 
@@ -262,6 +263,7 @@ pub fn paginate_slots(
                 cells,
                 table,
                 header,
+                kept,
             } => {
                 // The table's heading rows, kept to repeat on every page it continues on; its
                 // first non-heading row ends the list.
@@ -273,10 +275,14 @@ pub fn paginate_slots(
                 } else {
                     heading_closed = !*header;
                 }
-                if *bottom - cut.origin > cut.room() + EPS && !cut.fresh() {
-                    cut.turn(*top);
-                    if !*header && heading.first().is_some_and(|&(t, _)| t == table.as_str()) {
-                        let first = heading.first().map_or(*top, |&(_, i)| units[i].0.top());
+                // A new page for the row from the flow's `at` on, its table's heading rows
+                // repeated above it.
+                let repeats =
+                    !*header && heading.first().is_some_and(|&(t, _)| t == table.as_str());
+                let turn = |cut: &mut Cut<'_>, at: f64| {
+                    cut.turn(at);
+                    if repeats {
+                        let first = heading.first().map_or(at, |&(_, i)| units[i].0.top());
                         let mut tall = 0.0;
                         for &(_, i) in &heading {
                             if let Unit::Row {
@@ -286,14 +292,77 @@ pub fn paginate_slots(
                                 ..
                             } = units[i].0
                             {
-                                cut.place_row(slots, cells, first, true);
+                                let from = vec![0; slots.len()];
+                                cut.place_row(slots, &from, None, cells, (first, None), true);
                                 tall = bottom - first;
                             }
                         }
-                        cut.origin = top - tall;
+                        cut.origin = at - tall;
                     }
+                };
+                if *header || *kept {
+                    if *bottom - cut.origin > cut.room() + EPS && !cut.fresh() {
+                        turn(&mut cut, *top);
+                    }
+                    let from = vec![0; slots.len()];
+                    cut.place_row(slots, &from, None, cells, (*top, None), false);
+                    continue;
                 }
-                cut.place_row(slots, cells, cut.origin, false);
+                // Each block's first line not yet placed, and where the row's part on the
+                // current page starts in the flow.
+                let mut from = vec![0; slots.len()];
+                let mut part = *top;
+                let mut turned = false;
+                loop {
+                    let limit = cut.origin + cut.room();
+                    if *bottom <= limit + EPS {
+                        cut.place_row(slots, &from, None, cells, (part, None), false);
+                        break;
+                    }
+                    let take: Vec<usize> = slots
+                        .iter()
+                        .zip(&from)
+                        .map(|((_, lines), &start)| {
+                            lines[start..]
+                                .iter()
+                                .take_while(|line| line.bottom() + spacing.cell_pad <= limit + EPS)
+                                .count()
+                        })
+                        .collect();
+                    if take.iter().all(|&n| n == 0) && (cut.fresh() || turned) {
+                        // Not one line fits even on a page of its own: it overflows.
+                        cut.place_row(slots, &from, None, cells, (part, None), false);
+                        break;
+                    }
+                    if take.iter().any(|&n| n > 0) {
+                        let end: Vec<usize> = from.iter().zip(&take).map(|(f, t)| f + t).collect();
+                        let foot = slots
+                            .iter()
+                            .zip(from.iter().zip(&end))
+                            .filter(|(_, (f, e))| e > f)
+                            .map(|((_, lines), (_, &e))| lines[e - 1].bottom())
+                            .fold(part, f64::max)
+                            + spacing.cell_pad;
+                        cut.place_row(slots, &from, Some(&end), cells, (part, Some(foot)), false);
+                        from = end;
+                    }
+                    let rest = slots
+                        .iter()
+                        .zip(&from)
+                        .filter_map(|((_, lines), &start)| lines.get(start).map(|line| line.top))
+                        .fold(f64::INFINITY, f64::min);
+                    if rest.is_infinite() {
+                        // Every line placed; what is left is the row's own height, which a page
+                        // break may end.
+                        break;
+                    }
+                    part = match from.iter().all(|&start| start == 0) {
+                        true => *top,
+                        false => rest - spacing.cell_pad,
+                    };
+                    turn(&mut cut, part);
+                    turned = true;
+                }
             }
         }
     }
@@ -328,14 +397,16 @@ enum Unit {
         breaks: Breaks,
     },
     Row {
-        /// Each block in the row and how many lines it has.
-        slots: Vec<(flow::Slot, usize)>,
+        /// Each block in the row and its lines.
+        slots: Vec<(flow::Slot, Vec<Line>)>,
         top: f64,
         bottom: f64,
         cells: Vec<CellBox>,
         /// The table it is a row of, and whether it is one of that table's heading rows.
         table: String,
         header: bool,
+        /// Whether it moves whole rather than splitting between lines.
+        kept: bool,
     },
 }
 
@@ -349,12 +420,23 @@ impl Unit {
     }
 
     /// Where the part of this unit a heading above it must stay with ends: its first `orphans`
-    /// lines, or the whole row.
+    /// lines, a row's first line in each cell, or the whole of a row that does not split.
     fn lead(&self, orphans: usize) -> f64 {
         match self {
             Unit::Block { lines, .. } => lines
                 .get(orphans.clamp(1, lines.len().max(1)) - 1)
                 .map_or(0.0, Line::bottom),
+            Unit::Row {
+                bottom,
+                header: false,
+                kept: false,
+                slots,
+                ..
+            } => slots
+                .iter()
+                .filter_map(|(_, lines)| lines.first().map(Line::bottom))
+                .reduce(f64::max)
+                .map_or(*bottom, |lead| lead.min(*bottom)),
             Unit::Row { bottom, .. } => *bottom,
         }
     }
@@ -434,19 +516,20 @@ fn units(
                             ..
                         }),
                     ) => {
-                        slots.push((*slot, lines.len()));
+                        slots.push((*slot, lines));
                         *t = t.min(top);
                         *b = b.max(bottom);
                     }
                     _ => {
                         let header = faces.header_row(&key.0, key.1);
                         out.push(Unit::Row {
-                            slots: vec![(*slot, lines.len())],
+                            slots: vec![(*slot, lines)],
                             top,
                             bottom,
                             cells: Vec::new(),
                             table: key.0.clone(),
                             header,
+                            kept: faces.row_kept(&key.0, key.1),
                         });
                         row = Some(key);
                     }
@@ -527,30 +610,48 @@ impl Cut<'_> {
         self.page_height() - self.reserved
     }
 
-    /// Place a row's blocks and cells on the current page, flow coordinates taken from `origin`
-    /// (the page's for a row in place, the heading's first row for a repeat). `repeat` marks a
-    /// repeated heading.
+    /// Place a row's blocks — each one's lines from `from` to `to`, or to its last — and its
+    /// cells, cut to the part of the row from `part.0` in the flow to `part.1` or each cell's
+    /// own bottom. A repeated heading (`repeat`) is placed from its own first row's top; a row
+    /// in place from the page's origin.
     fn place_row(
         &mut self,
-        slots: &[(flow::Slot, usize)],
+        slots: &[(flow::Slot, Vec<Line>)],
+        from: &[usize],
+        to: Option<&[usize]>,
         cells: &[CellBox],
-        origin: f64,
+        (top, foot): (f64, Option<f64>),
         repeat: bool,
     ) {
+        let origin = if repeat { top } else { self.origin };
         let page = self.page();
-        for (slot, count) in slots {
+        for (at, (slot, lines)) in slots.iter().enumerate() {
+            let start = from.get(at).copied().unwrap_or(0);
+            let end = to.and_then(|to| to.get(at).copied()).unwrap_or(lines.len());
+            if start >= end {
+                continue;
+            }
+            let first = match start {
+                0 => slot.top,
+                _ => lines[start].top,
+            };
             page.pieces.push(Piece {
                 index: slot.index,
-                lines: 0..*count,
-                top: slot.top - origin,
+                lines: start..end,
+                top: first - origin,
                 left: slot.indent,
                 width: slot.width,
                 repeat,
             });
         }
-        page.cells.extend(cells.iter().map(|cell| CellBox {
-            top: cell.top - origin,
-            ..*cell
+        page.cells.extend(cells.iter().map(|cell| {
+            let from = cell.top.max(top);
+            let to = foot.unwrap_or_else(|| cell.bottom());
+            CellBox {
+                top: from - origin,
+                height: (to - from).max(0.0),
+                ..*cell
+            }
         }));
     }
 
@@ -747,7 +848,7 @@ mod tests {
     }
 
     #[test]
-    fn a_table_row_is_never_split_and_its_cells_go_with_it() {
+    fn a_row_of_one_line_cells_moves_whole_with_its_cells() {
         // Four lines, then a two-by-two table of one-line cells: the first row fits, the second
         // moves whole.
         let app = doc(&[para(4)]);
@@ -777,6 +878,63 @@ mod tests {
             "a row carried over starts at the top"
         );
         assert_eq!(pages[1].pieces[0].top, 0.0);
+    }
+
+    /// A one-row table after `before` lines: a cell of four lines beside one of one.
+    fn tall_row(before: usize) -> App {
+        let app = doc(&[para(before)]);
+        app.insert_table(1, 1, 2, Some("T".into())).unwrap();
+        for (block, text) in [(1, lines(4)), (2, "e".to_owned())] {
+            app.insert_text(Caret { block, offset: 0 }, &text).unwrap();
+        }
+        app
+    }
+
+    /// `doc/odt-format.md` §5c fact 25: a row that does not fit splits between lines, though it
+    /// would fit whole on the next page, and each part's cells close under it.
+    #[test]
+    fn a_row_that_does_not_fit_splits_between_lines() {
+        let pages = cut(&tall_row(3), 5.0, &TIGHT);
+        assert_eq!(
+            shape(&pages),
+            vec![vec![(0, 0..3), (1, 0..2), (2, 0..1)], vec![(1, 2..4)]]
+        );
+        let boxes = |page: &Page| -> Vec<(f64, f64)> {
+            page.cells.iter().map(|c| (c.top, c.height)).collect()
+        };
+        assert_eq!(boxes(&pages[0]), vec![(3.0, 2.0), (3.0, 2.0)]);
+        // The cell whose lines all fitted is drawn empty beside the rest, as Writer draws it.
+        assert_eq!(boxes(&pages[1]), vec![(0.0, 2.0), (0.0, 2.0)]);
+        assert_eq!(pages[1].pieces[0].top, 0.0);
+    }
+
+    /// A face whose every table row keeps together.
+    struct Kept;
+
+    impl Faces for Kept {
+        fn of(&self, _: usize, _: &BlockKind, _: Option<&str>) -> (f32, &dyn crate::Metrics) {
+            (10.0, &Fixed)
+        }
+        fn row_kept(&self, _table: &str, _row: u32) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn a_row_that_keeps_together_moves_whole() {
+        let pages = paginate(
+            &tall_row(3),
+            &Kept,
+            10.0,
+            5.0,
+            &TIGHT,
+            Rules::default(),
+            &|_, _| None,
+        );
+        assert_eq!(
+            shape(&pages),
+            vec![vec![(0, 0..3)], vec![(1, 0..4), (2, 0..1)]]
+        );
     }
 
     /// A face that answers [`Faces::breaks`] for some blocks.

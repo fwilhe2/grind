@@ -37,6 +37,9 @@ pub struct TableLook {
     pub header_rows: BTreeSet<u32>,
     /// Each styled cell's look, by `(row, column)`.
     pub cells: HashMap<(u32, u32), CellLook>,
+    /// The rows whose style says `fo:keep-together="always"`: never split across pages
+    /// (`doc/odt-format.md` §5c fact 25).
+    pub kept_rows: BTreeSet<u32>,
     /// How many rows the table has, which is where its bottom border goes.
     pub rows: u32,
 }

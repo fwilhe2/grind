@@ -251,6 +251,12 @@ impl grind_text::Faces for TableLooks<'_> {
             .get(table)
             .is_some_and(|look| look.header_rows.contains(&row))
     }
+
+    fn row_kept(&self, table: &str, row: u32) -> bool {
+        self.0
+            .get(table)
+            .is_some_and(|look| look.kept_rows.contains(&row))
+    }
 }
 
 /// The room a declared paragraph style gives its block on paper, in points: the flow's
@@ -351,6 +357,10 @@ impl grind_text::Faces for Column<'_> {
 
     fn header_row(&self, table: &str, row: u32) -> bool {
         TableLooks(self.looks).header_row(table, row)
+    }
+
+    fn row_kept(&self, table: &str, row: u32) -> bool {
+        TableLooks(self.looks).row_kept(table, row)
     }
 }
 

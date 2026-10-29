@@ -114,6 +114,8 @@ pub struct Builder {
     cell_styles: HashMap<String, (bool, crate::table_look::CellLook)>,
     /// Every table-column style's width in millimetres, and whether it was automatic.
     column_styles: HashMap<String, (bool, Option<f64>)>,
+    /// Every table-row style saying `fo:keep-together="always"`, and whether it was automatic.
+    kept_row_styles: HashMap<String, bool>,
     /// The level indents of the list or outline style being read.
     list_indents: std::collections::BTreeMap<u32, crate::numbering::LevelIndent>,
     /// Each table's look as read, by name — its column styles, heading rows and each cell's
@@ -127,6 +129,8 @@ struct PendingLook {
     columns: Vec<Option<String>>,
     header_rows: std::collections::BTreeSet<u32>,
     cells: Vec<((u32, u32), String)>,
+    /// Each styled row's first number, how many it stands for, and its style.
+    row_styles: Vec<(u32, u32, String)>,
     rows: u32,
 }
 
@@ -237,6 +241,7 @@ impl Builder {
             section: None,
             cell_styles: HashMap::new(),
             column_styles: HashMap::new(),
+            kept_row_styles: HashMap::new(),
             table_pending: HashMap::new(),
             list_indents: std::collections::BTreeMap::new(),
         }
@@ -258,10 +263,17 @@ impl Builder {
                 .into_iter()
                 .filter_map(|(at, style)| Some((at, self.cell_styles.get(&style)?.1.clone())))
                 .collect();
+            let kept_rows = pending
+                .row_styles
+                .iter()
+                .filter(|(_, _, style)| self.kept_row_styles.contains_key(style))
+                .flat_map(|&(row, repeated, _)| row..row + repeated)
+                .collect();
             let look = crate::table_look::TableLook {
                 columns,
                 header_rows: pending.header_rows,
                 cells,
+                kept_rows,
                 rows: pending.rows,
             };
             self.doc.table_looks.insert(name, look);
@@ -460,6 +472,7 @@ impl Builder {
         }
         self.cell_styles.retain(|_, (automatic, _)| !*automatic);
         self.column_styles.retain(|_, (automatic, _)| !*automatic);
+        self.kept_row_styles.retain(|_, automatic| !*automatic);
         self.paragraph_styles
             .retain(|_, (automatic, _)| !*automatic);
         self.list_styles.retain(|_, (automatic, _)| !*automatic);
@@ -1016,12 +1029,19 @@ impl Context<Builder> for GraphicStyleDef {
     }
 }
 
-/// A `table-cell` or `table-column` style: a cell's fill, borders, padding and vertical alignment,
-/// or a column's width (`crate::table_look`).
+/// A `table-cell`, `table-column` or `table-row` style: a cell's fill, borders, padding and
+/// vertical alignment, a column's width, or whether a row keeps together (`crate::table_look`).
 struct TableStyleDef {
     name: String,
-    column: bool,
+    family: TableFamily,
     automatic: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TableFamily {
+    Cell,
+    Column,
+    Row,
 }
 
 impl Context<Builder> for TableStyleDef {
@@ -1031,7 +1051,15 @@ impl Context<Builder> for TableStyleDef {
                 .get(Ns::Fo, local)
                 .and_then(grind_core::style::length_mm)
         };
-        if self.column && name.is(Ns::Style, "table-column-properties") {
+        if self.family == TableFamily::Row && name.is(Ns::Style, "table-row-properties") {
+            if attrs.get(Ns::Fo, "keep-together") == Some("always")
+                && b.kept_row_styles.len() < MAX_STYLES
+            {
+                b.kept_row_styles.insert(self.name.clone(), self.automatic);
+            }
+        } else if self.family == TableFamily::Column
+            && name.is(Ns::Style, "table-column-properties")
+        {
             let width = attrs
                 .get(Ns::Style, "column-width")
                 .and_then(grind_core::style::length_mm);
@@ -1039,7 +1067,7 @@ impl Context<Builder> for TableStyleDef {
                 b.column_styles
                     .insert(self.name.clone(), (self.automatic, width));
             }
-        } else if !self.column && name.is(Ns::Style, "table-cell-properties") {
+        } else if self.family == TableFamily::Cell && name.is(Ns::Style, "table-cell-properties") {
             let all = attrs.get(Ns::Fo, "border").map(str::to_owned);
             let side = |local: &str| {
                 attrs
@@ -1321,11 +1349,17 @@ impl Context<Builder> for Styles {
             let declared = attrs.get(Ns::Style, "name")?.to_owned();
             return Some(Box::new(GraphicStyleDef { name: declared }));
         }
-        if let Some(family @ ("table-cell" | "table-column")) = attrs.get(Ns::Style, "family") {
+        let family = match attrs.get(Ns::Style, "family") {
+            Some("table-cell") => Some(TableFamily::Cell),
+            Some("table-column") => Some(TableFamily::Column),
+            Some("table-row") => Some(TableFamily::Row),
+            _ => None,
+        };
+        if let Some(family) = family {
             let declared = attrs.get(Ns::Style, "name")?.to_owned();
             return Some(Box::new(TableStyleDef {
                 name: declared,
-                column: family == "table-column",
+                family,
                 automatic: self.automatic,
             }));
         }
@@ -1878,6 +1912,11 @@ impl Context<Builder> for Table {
                 );
                 let pending = b.table_pending.entry(row.table.clone()).or_default();
                 pending.rows = pending.rows.max(row.row + row.repeated);
+                if let Some(style) = attrs.get(Ns::Table, "style-name") {
+                    pending
+                        .row_styles
+                        .push((row.row, row.repeated, style.to_owned()));
+                }
                 if self.header {
                     pending.header_rows.extend(row.row..row.row + row.repeated);
                 }
