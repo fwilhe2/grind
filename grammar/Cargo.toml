@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-grammar"
+version = "0.0.0"
+description = "The built-in grammar and style checker (doc/grammar.md)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# The Checker trait this crate implements, and what a word is.
+grind-core = { path = "../core" }
+# The common words a paragraph's language is guessed from — without the dictionaries.
+grind-spell = { path = "../spell", default-features = false }

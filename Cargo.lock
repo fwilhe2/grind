@@ -1235,6 +1235,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "grind-grammar"
+version = "0.0.0"
+dependencies = [
+ "grind-core",
+ "grind-spell",
+]
+
+[[package]]
 name = "grind-lsp"
 version = "0.0.0"
 dependencies = [
