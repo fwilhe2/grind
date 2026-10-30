@@ -312,6 +312,9 @@ pub struct Column<'a> {
     /// What each block's paragraph style says about page breaks around it
     /// ([`grind_text::Faces::breaks`]); a block with nothing to say keeps the paginator's rules.
     pub breaks: &'a HashMap<usize, grind_text::page::Breaks>,
+    /// The border and padding above each boxed block, in points: what stays of its space above
+    /// at the top of a page ([`grind_text::Faces::kept_above`]).
+    pub insets: &'a HashMap<usize, f64>,
     /// Each block's first-line indent in points, where its paragraph style states one.
     pub indents: &'a HashMap<usize, f32>,
     /// Each block's tab stops in points, where its paragraph style places any.
@@ -348,6 +351,14 @@ impl grind_text::Faces for Column<'_> {
 
     fn breaks(&self, index: usize) -> Option<grind_text::page::Breaks> {
         self.breaks.get(&index).copied()
+    }
+
+    fn kept_above(&self, index: usize) -> (f64, f64) {
+        let above = self
+            .spacing
+            .get(&index)
+            .map_or(0.0, |room| room.space.above);
+        (self.insets.get(&index).copied().unwrap_or(0.0), above)
     }
 
     fn first_indent(&self, index: usize) -> f32 {
@@ -491,7 +502,9 @@ mod tests {
         let indents = HashMap::new();
         let tabs = HashMap::new();
         let looks = HashMap::new();
+        let insets = HashMap::new();
         let column = Column {
+            insets: &insets,
             indents: &indents,
             tabs: &tabs,
             looks: &looks,

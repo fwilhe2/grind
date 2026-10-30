@@ -415,6 +415,12 @@ pub trait Faces {
         0.0
     }
 
+    /// How much of the block's space above stays when it starts a page — one the text flowed
+    /// onto, and one after a page break (`doc/odt-format.md` §5c fact 34); none on screen.
+    fn kept_above(&self, _index: usize) -> (f64, f64) {
+        (0.0, 0.0)
+    }
+
     /// How much room the footnotes cited in the block take at the foot of its page, in the face's
     /// unit; zero on screen.
     fn footnote_room(&self, _index: usize) -> f64 {

@@ -844,6 +844,12 @@ oracle turned out to be unable to answer the font questions (fact 4).
    with 0.2 cm padding). `style:vertical-align="top"` sets the text from the top padding, `middle`
    halfway down the room the text leaves, and `bottom` with its last line on the bottom padding
    (two paragraphs ended 0.2 cm above the row's foot).
+34. **What stays above a paragraph that starts a page** — `MEASURED` (2026-10-30, 26.8, 0.5 cm
+   `fo:margin-top`, 2 pt border, 0.2 cm padding). A paragraph the text simply flowed onto a new
+   page loses its margin above (fact 6) but keeps its border and padding: its box started on the
+   top margin and its line 0.27 cm below. After a page break — `fo:break-before="page"` on it or
+   `fo:break-after="page"` on the paragraph before — it keeps its margin too: its line, or its
+   box, started 0.5 cm below the top margin, boxed or not.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

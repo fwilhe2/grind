@@ -14,7 +14,8 @@
 //! * *widows*: and carries at least this many to the next;
 //! * a heading is kept with what follows it.
 //!
-//! Space above a block at the top of a page is dropped.
+//! Space above a block at the top of a page is dropped, but for what its face keeps
+//! ([`Faces::kept_above`]).
 //!
 //! A table row that does not fit splits between lines, each part drawn as a closed row
 //! (`doc/odt-format.md` §5c fact 25) — unless it keeps together or is a heading row, which move
@@ -223,7 +224,7 @@ pub fn paginate_slots(
     let mut heading_closed = false;
     for (at, &(unit, shift)) in units.iter().enumerate() {
         if std::mem::take(&mut break_pending) && !cut.fresh() {
-            cut.turn(unit.top());
+            cut.turn(unit.broken_top());
         }
         match unit {
             Unit::Block {
@@ -232,18 +233,19 @@ pub fn paginate_slots(
                 keep,
                 breaks,
                 notes,
+                kept,
             } => {
                 // A block opening a page on its own master: a new page unless this one is empty,
                 // set on that master.
                 if let Some(&(slot_of, restart)) = starts.get(&slot.index) {
                     match cut.fresh() {
                         true => cut.origin += shift,
-                        false => cut.turn(lines.first().map_or(slot.top, |line| line.top)),
+                        false => cut.turn(unit.broken_top()),
                     }
                     cut.set_slot(slot_of, restart);
                 }
                 if breaks.page_before && !cut.fresh() {
-                    cut.turn(lines.first().map_or(slot.top, |line| line.top));
+                    cut.turn(unit.broken_top());
                 }
                 break_pending = breaks.page_after;
                 if *keep
@@ -252,9 +254,9 @@ pub fn paginate_slots(
                     && next.0.lead(rules.orphans).max(last.bottom()) - cut.origin
                         > cut.page_height() + EPS
                 {
-                    cut.turn(lines[0].top);
+                    cut.turn(lines[0].top - kept.0);
                 }
-                cut.block(slot, lines, rules, *notes);
+                cut.block(slot, lines, rules, *notes, kept.0);
             }
             Unit::Row {
                 slots,
@@ -395,6 +397,8 @@ enum Unit {
         /// Whether a page may not end on it: a heading, unless its style says otherwise.
         keep: bool,
         breaks: Breaks,
+        /// What stays of its space above when it starts a page: flowed onto one, after a break.
+        kept: (f64, f64),
     },
     Row {
         /// Each block in the row and its lines.
@@ -416,6 +420,15 @@ impl Unit {
         match self {
             Unit::Block { slot, lines, .. } => lines.first().map_or(slot.top, |line| line.top),
             Unit::Row { top, .. } => *top,
+        }
+    }
+
+    /// Where a page it starts after a page break begins in the flow: above it by what of its
+    /// space above stays.
+    fn broken_top(&self) -> f64 {
+        match self {
+            Unit::Block { kept, .. } => self.top() - kept.1,
+            Unit::Row { .. } => self.top(),
         }
     }
 
@@ -495,6 +508,7 @@ fn units(
                 let breaks = faces.breaks(slot.index).unwrap_or_default();
                 let heading = matches!(view.kind, crate::BlockKind::Heading { .. });
                 out.push(Unit::Block {
+                    kept: faces.kept_above(slot.index),
                     notes: faces.footnote_room(slot.index),
                     slot: *slot,
                     keep: breaks.keep_with_next.unwrap_or(heading),
@@ -656,7 +670,8 @@ impl Cut<'_> {
     }
 
     /// Place a block, splitting it between lines as often as it takes.
-    fn block(&mut self, slot: &flow::Slot, lines: &[Line], rules: Rules, notes: f64) {
+    /// Cut a block's lines into pages; a page it moves to whole starts `kept` above its first.
+    fn block(&mut self, slot: &flow::Slot, lines: &[Line], rules: Rules, notes: f64, kept: f64) {
         let mut start = 0;
         while start < lines.len() {
             let remaining = lines.len() - start;
@@ -696,7 +711,7 @@ impl Cut<'_> {
                 start += take;
             }
             if start < lines.len() {
-                self.turn(lines[start].top);
+                self.turn(lines[start].top - if start == 0 { kept } else { 0.0 });
             }
         }
     }

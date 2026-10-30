@@ -105,6 +105,11 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         &mut indents,
     );
     let frames = paragraph_frames(app, &viewport, &mut spacing);
+    let insets: HashMap<usize, f64> = frames
+        .iter()
+        .filter(|(_, frame)| !frame.open_above)
+        .map(|(&index, frame)| (index, frame.inset(grind_text::table_look::TOP)))
+        .collect();
     let across: Vec<_> = widths
         .iter()
         .map(|&width| flow::across_with(app, width, &SPACING, &crate::faces::TableLooks(&looks)))
@@ -113,6 +118,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         .iter()
         .zip(&across)
         .map(|(&width, across)| Column {
+            insets: &insets,
             indents: &indents,
             tabs: &tabs,
             looks: &looks,
@@ -682,9 +688,8 @@ impl Frame {
     /// `height` tall: the fill over the paragraph's own box, then each closed side's border
     /// inside its outer edge. A side open to a joined neighbour runs through the margins between
     /// them, and stops at the body's edge.
-    // ponytail: a box split by a page break is left open at the break, and a box starting a
-    // page keeps its top inset only because the space above is dropped first; Writer's
-    // behaviour at a break was not measured.
+    // ponytail: a box split by a page break is left open at the break; how Writer draws a box
+    // there was not measured.
     fn draw(
         &self,
         ops: &mut Vec<Op>,
@@ -3235,6 +3240,7 @@ mod tests {
               <style:style style:name="BX" style:family="paragraph" style:parent-style-name="B"><style:paragraph-properties fo:margin-top="0.3cm" fo:background-color="#0000ff"/></style:style>
               <style:style style:name="BNJ" style:family="paragraph" style:parent-style-name="B"><style:paragraph-properties style:join-border="false"/></style:style>
               <style:style style:name="G" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:background-color="#0000ff" fo:margin-left="1cm"/></style:style>
+              <style:style style:name="Break" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:break-before="page" fo:margin-top="0.5cm"/></style:style>
               <style:page-layout style:name="pm"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-left="2cm" fo:margin-right="2cm" fo:margin-top="2cm" fo:margin-bottom="2cm"/></style:page-layout>
             </office:automatic-styles>
             <office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm"/></office:master-styles>
@@ -3485,6 +3491,45 @@ mod tests {
             at("Bot") - at("Top"),
             slack - LINE,
             "the first a line above it",
+        );
+    }
+    /// §5c fact 34: at the top of a page a box keeps its border and padding, and after a page
+    /// break a paragraph keeps its margin too.
+    #[test]
+    fn a_paragraph_starting_a_page_keeps_its_box_and_after_a_break_its_margin() {
+        let lines: String = (0..51)
+            .map(|i| format!(r#"<text:p text:style-name="Standard">line{i}</text:p>"#))
+            .collect();
+        let inset = 2.0 + 0.2 * CM;
+        let flowed = typeset(
+            &boxed(&format!(
+                r#"{lines}<text:p text:style-name="B">Boxed</text:p>"#
+            )),
+            &setter(),
+            &Options::default(),
+        );
+        assert_eq!(flowed.pages.len(), 2);
+        let page = &flowed.pages[1];
+        let (strokes, _) = strokes_and_fills(page);
+        let top = strokes
+            .iter()
+            .flat_map(|s| [s.0.1, s.1.1])
+            .fold(f32::MAX, f32::min);
+        near(top, 2.0 * CM, "the box on the top margin");
+        let opening = texts(page)[0].clone();
+        assert_eq!(opening.2, "Boxed");
+        let forced = typeset(
+            &boxed(r#"<text:p text:style-name="Break">Broken</text:p>"#),
+            &setter(),
+            &Options::default(),
+        );
+        let first = texts(&flowed.pages[0])[0].1;
+        let broken = texts(&forced.pages[1])[0].1;
+        near(broken - first, 0.5 * CM, "its margin kept after the break");
+        near(
+            opening.1 - first,
+            inset,
+            "its border and padding kept at the top",
         );
     }
 }
