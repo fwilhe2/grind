@@ -781,19 +781,38 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Strin
         }
 
         #[cfg(feature = "grammar")]
-        TextCommand::Grammar { file, range, picky } => {
+        TextCommand::Grammar {
+            file,
+            range,
+            picky,
+            #[cfg(feature = "languagetool")]
+            builtin,
+            #[cfg(feature = "languagetool")]
+            languagetool,
+            #[cfg(feature = "languagetool")]
+            public_ok,
+        } => {
             let app = open_text(file)?;
-            app.set_checker(Some(std::sync::Arc::new(grind_grammar::Builtin {
-                picky: *picky,
-            })));
+            #[cfg(feature = "languagetool")]
+            let chosen =
+                crate::grammar::chosen(*picky, *builtin, languagetool.as_deref(), *public_ok)?;
+            #[cfg(not(feature = "languagetool"))]
+            let chosen = crate::grammar::chosen(*picky)?;
+            app.set_checker(chosen.checker.clone());
             let blocks = match range {
                 Some(range) => span(&app, range)?,
                 None => 0..app.block_count(),
             };
             let viewport = app.get_viewport(blocks.clone());
+            let flags = app.grammar(blocks);
+            #[cfg(feature = "languagetool")]
+            if let Some(error) = chosen.languagetool.as_ref().and_then(|lt| lt.error()) {
+                return Err(format!("LanguageTool: {error}"));
+            }
             text_lines(
-                app.grammar(blocks)
+                flags
                     .into_iter()
+                    .filter(|flag| !chosen.ignored.contains(&flag.finding.rule))
                     .map(|flag| {
                         let text = viewport
                             .iter()

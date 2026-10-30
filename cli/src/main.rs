@@ -15,6 +15,8 @@
 
 mod args;
 mod fit;
+#[cfg(feature = "grammar")]
+mod grammar;
 mod init;
 mod report;
 mod sheet;
@@ -579,6 +581,22 @@ fn run(cli: &Cli) -> Result<Report, String> {
             }
             text_lines(personal::words())
         }
+
+        #[cfg(feature = "languagetool")]
+        Top::Grammar {
+            choice,
+            with_builtin,
+            style,
+            ignore,
+            unignore,
+            check_server,
+        } => text_lines(grammar::setting(
+            choice.as_deref(),
+            *with_builtin,
+            style.as_deref(),
+            (ignore.as_deref(), unignore.as_deref()),
+            *check_server,
+        )?),
 
         Top::Convert { file, out } => match document_kind(file)? {
             DocumentKind::Spreadsheet => {

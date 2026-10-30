@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Grammar and style
 
-**Status: G0 done; G1, G2 and G3 under way (2026-10-30).** Two checkers behind one door, each optional: a **built-in**
+**Status: G0 done; G1, G2, G3 and G5 under way (2026-10-30).** Two checkers behind one door, each optional: a **built-in**
 checker, rules written here in plain Rust with no dependencies, small and always available; and
 an **integration with LanguageTool**, for whoever runs a LanguageTool server and wants the best
 checker there is. Either, both or neither may be on. This supersedes `doc/spelling.md` decision 7
@@ -84,8 +84,14 @@ two words is noise. Spelling covers them; grammar does not.
    2026-10-30). A cargo feature `languagetool` on `grind-cli` and on each shell, like `spell`
    and `pdf`, and on by default. `--no-default-features` still builds without it, and CI builds
    that too. At run time nothing is sent anywhere until the person names a server. There is
-   **no default server**. G5 still measures what the HTTP client adds (size, crates, licences)
-   and records it, as Harper was measured, so the cost is known rather than guessed.
+   **no default server**. What the HTTP client adds was measured (2026-10-30, a release
+   `grind` on Linux): **2.3 MB** stripped (42.6 MB against 40.4 MB without the feature), and
+   sixteen crates — `ureq` and its HTTP parts, `rustls`, `ring` and the certificate reading —
+   with three more each on Windows and macOS for their certificate stores. All are MIT, Apache-2.0,
+   ISC or BSD-3-Clause. Certificates are the **operating system's own** (`rustls-native-certs`),
+   not a bundled copy of Mozilla's: the bundled lists (`webpki-roots`, `webpki-root-certs`) are
+   CDLA-Permissive-2.0, which is not on the approved licences, and the system's store also
+   honours an organisation's own certificate authority.
 
 9. **Three kinds of server, chosen by name** (decided 2026-10-30):
    - **Self-hosted**: any URL, typically a container on this computer (§5, *Setting one up*).
@@ -285,7 +291,7 @@ through the same request and response code, §3.10).
 
 | Client | What it gets |
 |---|---|
-| `grind` | `grind text grammar [range] [--builtin] [--languagetool URL] [--language] [--picky]` lists findings (`--format json` too); `grind text correct` takes a span; `grind grammar [off\|builtin\|languagetool URL\|public\|premium] [--with-builtin]`, `grind grammar ignore <rule>`, `grind grammar check-server`. `grind lint` and `grind text lint` get rules `grammar` and `style`, **built-in only**, because a lint must answer the same twice and must not need the network. `--languagetool` opts in |
+| `grind` | `grind text grammar [range] [--picky] [--builtin \| --languagetool <url\|public\|premium>] [--public-ok]` lists findings, following the remembered setting unless told otherwise; `grind text correct` takes a finding's address and text; `grind grammar [builtin\|off\|<url>\|public\|premium] [--with-builtin] [--style on\|off] [--ignore RULE] [--unignore RULE] [--check-server]` sets and prints the setting. `grind lint` and `grind text lint` get rules `grammar` and `style`, **built-in only**, because a lint must answer the same twice and must not need the network. `--languagetool` opts in |
 | `grind-text-gtk` | The underlines, a popover with the message, replacements, *Ignore*, *Ignore rule* and *Why?*, a Grammar submenu under Spelling (Built-in, LanguageTool…, Style suggestions, Off), and a chip in the status bar saying which checker runs and where the text goes |
 | `grind-tui` | Blue underline, `]g`/`[g` to the next finding with the message on the status line, `:fix N`, `:grammar off\|builtin\|lt URL` |
 | `grind-win32`, `grind-mac` | Underline, context menu, the setting in the View/Edit ▸ Spelling menu (as spelling's are) |

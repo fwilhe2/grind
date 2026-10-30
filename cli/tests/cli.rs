@@ -1087,6 +1087,133 @@ fn the_built_in_grammar_checker_answers_from_the_command_line() {
     assert!(view.contains("I saw the cat."), "{view}");
 }
 
+/// A one-shot HTTP server for the LanguageTool tests: answers each request with `body`.
+#[cfg(feature = "languagetool")]
+fn languagetool_mock(answers: usize, body: &'static str) -> String {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for _ in 0..answers {
+            let Ok((stream, _)) = listener.accept() else {
+                return;
+            };
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut length = 0;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    break;
+                }
+                if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = v.trim().parse().unwrap_or(0);
+                }
+                if line == "\r\n" {
+                    break;
+                }
+            }
+            let mut request = vec![0; length];
+            let _ = reader.read_exact(&mut request);
+            let mut stream = stream;
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    url
+}
+
+/// `grind grammar` remembers which checker runs, and `grind text grammar` follows it; LanguageTool's
+/// findings come back with its rule ids (`doc/grammar.md`).
+#[cfg(feature = "languagetool")]
+#[test]
+fn the_grammar_setting_is_remembered_and_languagetool_asked_when_chosen() {
+    let home = Sandbox::new("grammar-setting");
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_grind"))
+            .args(args)
+            .env("XDG_CONFIG_HOME", home.path("config"))
+            .output()
+            .expect("the binary runs")
+    };
+    let out = |args: &[&str]| succeeds(run(args), args);
+    assert!(out(&["grammar"]).contains("builtin on"), "the default");
+    let answer = r#"{"matches":[{"message":"Agreement","offset":3,"length":2,"replacements":[{"value":"goes"}],"rule":{"id":"HE_VERB_AGR","description":"d","issueType":"grammar","category":{"id":"GRAMMAR","name":"Grammar"}}}]}"#;
+    let url = languagetool_mock(2, answer);
+    let now = out(&["grammar", &url, "--with-builtin"]);
+    assert!(
+        now.contains(&format!("languagetool {url}")) && now.contains("builtin on"),
+        "{now}"
+    );
+
+    let fodt = home.path("he.fodt");
+    out(&["text", "new", &s(&fodt)]);
+    out(&[
+        "text",
+        "type",
+        &s(&fodt),
+        "p1",
+        "He go home, and the the dog is fine.",
+    ]);
+    let found = out(&["text", "grammar", &s(&fodt)]);
+    assert!(found.contains("lt:HE_VERB_AGR"), "{found}");
+    assert!(found.contains("builtin:repeated-word"), "both ran: {found}");
+
+    out(&["grammar", "--ignore", "builtin:repeated-word"]);
+    let found = out(&["text", "grammar", &s(&fodt)]);
+    assert!(!found.contains("repeated-word"), "ignored: {found}");
+    assert!(
+        out(&["text", "grammar", &s(&fodt), "--builtin"])
+            .trim()
+            .is_empty()
+    );
+
+    let refused = run(&["text", "grammar", &s(&fodt), "--languagetool", "public"]);
+    assert!(
+        !refused.status.success(),
+        "the public server is not sent a whole file unasked"
+    );
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("--public-ok"));
+
+    out(&["grammar", "off"]);
+    assert!(
+        out(&["text", "grammar", &s(&fodt)]).trim().is_empty(),
+        "off is off"
+    );
+}
+
+/// `grind grammar --check-server` says what answers, before anyone wonders why nothing is found.
+#[cfg(feature = "languagetool")]
+#[test]
+fn check_server_reports_the_version_or_why_not() {
+    let url = languagetool_mock(
+        1,
+        r#"{"software":{"name":"LanguageTool","version":"6.8","buildDate":"x","apiVersion":1},"matches":[]}"#,
+    );
+    let home = Sandbox::new("grammar-check");
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_grind"))
+            .args(args)
+            .env("XDG_CONFIG_HOME", home.path("config"))
+            .output()
+            .expect("the binary runs")
+    };
+    succeeds(run(&["grammar", &url]), &["grammar"]);
+    let ok = succeeds(
+        run(&["grammar", "--check-server"]),
+        &["grammar", "--check-server"],
+    );
+    assert!(
+        ok.contains("LanguageTool 6.8") && ok.contains("checked on this computer"),
+        "{ok}"
+    );
+    succeeds(run(&["grammar", "http://127.0.0.1:9"]), &["grammar"]);
+    let down = run(&["grammar", "--check-server"]);
+    assert!(!down.status.success());
+}
+
 /// A script that fails says where, because a generator whose errors have no line number is a
 /// generator nobody debugs.
 #[test]

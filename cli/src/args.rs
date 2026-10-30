@@ -255,6 +255,35 @@ pub(crate) enum Top {
         remove: Option<String>,
     },
 
+    /// Print or set which grammar checker runs, and against what
+    ///
+    /// `builtin` is the checker built into grind, and the default. A server URL, `public` or
+    /// `premium` asks LanguageTool instead: a server you run (for one on this computer,
+    /// `docker run --rm -p 8010:8010 erikvl87/languagetool` and `http://localhost:8010`), its
+    /// free public server, or LanguageTool Premium with GRIND_LANGUAGETOOL_USER and
+    /// GRIND_LANGUAGETOOL_KEY set. Anything but your own computer is sent your text. `off` turns
+    /// grammar off. Remembered in $XDG_CONFIG_HOME/grind/grammar; with nothing to set, prints it.
+    #[cfg(feature = "languagetool")]
+    Grammar {
+        /// builtin, off, public, premium, or a LanguageTool server's URL
+        choice: Option<String>,
+        /// Keep the built-in checker on beside LanguageTool
+        #[arg(long)]
+        with_builtin: bool,
+        /// Style suggestions too (on) or not (off)
+        #[arg(long, value_name = "on|off")]
+        style: Option<String>,
+        /// Stop reporting this rule, as `grind text grammar` prints it
+        #[arg(long, value_name = "RULE")]
+        ignore: Option<String>,
+        /// Report this rule again
+        #[arg(long, value_name = "RULE")]
+        unignore: Option<String>,
+        /// Ask the LanguageTool server whether it answers, and which version it is
+        #[arg(long)]
+        check_server: bool,
+    },
+
     /// Convert between file formats — package, flat file and .grind
     ///
     /// The format comes from the output extension: .ods or .odt for the package (a zip), .fods or
@@ -845,6 +874,18 @@ pub(crate) enum TextCommand {
         /// Add the style suggestions, which are off by default
         #[arg(long)]
         picky: bool,
+        /// Use the built-in checker alone, whatever `grind grammar` says
+        #[cfg(feature = "languagetool")]
+        #[arg(long, conflicts_with = "languagetool")]
+        builtin: bool,
+        /// Ask LanguageTool this once: a server's URL, public or premium
+        #[cfg(feature = "languagetool")]
+        #[arg(long, value_name = "SERVER")]
+        languagetool: Option<String>,
+        /// Allow sending the whole document to LanguageTool's public server
+        #[cfg(feature = "languagetool")]
+        #[arg(long)]
+        public_ok: bool,
     },
 
     /// Print or set whether text documents are spell-checked, and in what
