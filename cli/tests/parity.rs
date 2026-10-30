@@ -58,6 +58,10 @@ const APPS: [App; 2] = [
                 include_str!("../../text/src/app/formatting.rs"),
             ),
             (
+                "text/src/app/grammar.rs",
+                include_str!("../../text/src/app/grammar.rs"),
+            ),
+            (
                 "text/src/app/layout.rs",
                 include_str!("../../text/src/app/layout.rs"),
             ),
@@ -192,6 +196,28 @@ fn the_parity_document_names_no_method_that_is_gone() {
                 methods.contains(&name),
                 "{} lists App::{name}, which no longer exists — delete the row",
                 app.parity_path
+            );
+        }
+    }
+}
+
+/// The vacuity guard for [`App::core`]: a file of `App` methods added under `src/app/` and not to
+/// the list above would leave its methods unchecked, which is how `grammar.rs` once passed.
+#[test]
+fn every_file_of_app_methods_is_read() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    for app in &APPS {
+        let dir = root.join(app.name).join("src/app");
+        for entry in std::fs::read_dir(&dir).expect("the app directory") {
+            let name = entry.expect("an entry").file_name();
+            let name = name.to_string_lossy();
+            if name == "mod.rs" || !name.ends_with(".rs") {
+                continue;
+            }
+            let path = format!("{}/src/app/{name}", app.name);
+            assert!(
+                app.core.iter().any(|(listed, _)| *listed == path),
+                "{path} holds App methods and is not in APPS — add it so its methods are checked"
             );
         }
     }
