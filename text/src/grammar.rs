@@ -34,25 +34,36 @@ impl Flag {
     }
 }
 
-/// Every finding `checker` makes in `block`, in `language` when the document states one.
-pub fn check_block(
-    block: &Block,
-    index: usize,
+/// Every finding `checker` makes in `blocks` — `(index, block)` — in `language` when the document
+/// states one, asked for all of them at once ([`Checker::check_all`]).
+pub fn check_blocks<'a>(
+    blocks: impl IntoIterator<Item = (usize, &'a Block)>,
     language: Option<&str>,
     checker: &dyn Checker,
 ) -> Vec<Flag> {
-    let text = block.text();
-    let skip = crate::spell::skipped(block);
-    let paragraph = Paragraph {
-        text: &text,
-        skip: &skip,
-        language,
-    };
-    grind_core::grammar::outside(checker.check(&paragraph), &skip)
+    let blocks: Vec<(usize, String, Vec<std::ops::Range<usize>>)> = blocks
         .into_iter()
-        .map(|finding| Flag {
-            block: index,
-            finding,
+        .map(|(index, block)| (index, block.text(), crate::spell::skipped(block)))
+        .collect();
+    let paragraphs: Vec<Paragraph<'_>> = blocks
+        .iter()
+        .map(|(_, text, skip)| Paragraph {
+            text,
+            skip,
+            language,
+        })
+        .collect();
+    checker
+        .check_all(&paragraphs)
+        .into_iter()
+        .zip(&blocks)
+        .flat_map(|(findings, (index, _, skip))| {
+            grind_core::grammar::outside(findings, skip)
+                .into_iter()
+                .map(|finding| Flag {
+                    block: *index,
+                    finding,
+                })
         })
         .collect()
 }

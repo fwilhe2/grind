@@ -10,9 +10,18 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+# The HTTP client, for a native binary. The browser shell turns it off and sends the same
+# requests through `fetch`.
+[features]
+default = ["native"]
+native = ["dep:ureq"]
+
 [dependencies]
 # What a finding is, and UTF-16 offsets, which LanguageTool counts in.
 grind-core = { path = "../core" }
 # A paragraph's language from its common words, to send each with its own.
 grind-spell = { path = "../spell", default-features = false }
 serde_json = "1"
+# A small blocking HTTP client with TLS in Rust (rustls), so `https://` to the public and
+# Premium servers needs no system library.
+ureq = { version = "3", optional = true }

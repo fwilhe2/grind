@@ -134,17 +134,15 @@ pub fn grammar(
     language: Option<&str>,
     report: &mut Report,
 ) {
-    for (index, block) in doc.blocks.iter().enumerate() {
-        for flag in crate::grammar::check_block(block, index, language, checker) {
-            let rule = match flag.finding.kind {
-                crate::grammar::Kind::Style => &STYLE,
-                _ => &GRAMMAR,
-            };
-            if options.wants(rule)
-                && !report.push(Diagnostic::new(rule, flag.address(), flag.finding.message))
-            {
-                return;
-            }
+    for flag in crate::grammar::check_blocks(doc.blocks.iter().enumerate(), language, checker) {
+        let rule = match flag.finding.kind {
+            crate::grammar::Kind::Style => &STYLE,
+            _ => &GRAMMAR,
+        };
+        if options.wants(rule)
+            && !report.push(Diagnostic::new(rule, flag.address(), flag.finding.message))
+        {
+            break;
         }
     }
     report.sort();

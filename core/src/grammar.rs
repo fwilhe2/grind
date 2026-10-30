@@ -57,6 +57,12 @@ pub struct Paragraph<'a> {
 pub trait Checker: Send + Sync {
     /// Every finding in `paragraph`, in any order.
     fn check(&self, paragraph: &Paragraph<'_>) -> Vec<Finding>;
+
+    /// Every finding in each of `paragraphs`, in their order — one at a time unless a checker
+    /// does better, as one that asks a server does with one request.
+    fn check_all(&self, paragraphs: &[Paragraph<'_>]) -> Vec<Vec<Finding>> {
+        paragraphs.iter().map(|p| self.check(p)).collect()
+    }
 }
 
 /// `findings` less any that touch a range of `skip`, sorted by where they start.

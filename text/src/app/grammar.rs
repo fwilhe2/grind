@@ -23,12 +23,10 @@ impl App {
         let state = self.state.read().unwrap();
         let end = blocks.end.min(state.doc.blocks.len());
         let start = blocks.start.min(end);
-        state.doc.blocks[start..end]
+        let blocks = state.doc.blocks[start..end]
             .iter()
             .enumerate()
-            .flat_map(|(i, block)| {
-                grammar::check_block(block, start + i, language.as_deref(), checker.as_ref())
-            })
-            .collect()
+            .map(|(i, block)| (start + i, block));
+        grammar::check_blocks(blocks, language.as_deref(), checker.as_ref())
     }
 }
