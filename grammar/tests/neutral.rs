@@ -136,3 +136,32 @@ fn a_list_label_or_a_smiley_is_not_an_unpaired_bracket() {
     nothing("Thanks :) see you", None);
     nothing("Paired (as here) and (here).", None);
 }
+
+/// What the gov.uk corpus drew that was not wrong (`doc/grammar.md` §6).
+#[test]
+fn names_symbols_abbreviations_and_labels_from_the_corpus_are_left_alone() {
+    nothing("Find it on GOV.UK or Gov.UK today.", Some("en-GB"));
+    nothing("Exposure value (LEP,d 85 dB).", Some("en-GB"));
+    nothing("Creative industries (inc. fashion design).", Some("en-GB"));
+    nothing("Quote the DfE ref. number here.", Some("en-GB"));
+    nothing("No more than 5 per cent. of the total.", Some("en-GB"));
+    nothing("Is it shared? e.g. by panels.", Some("en-GB"));
+    nothing("Points c) one and d) another.", Some("en-GB"));
+    nothing("First line\nd) the next", Some("en-GB"));
+}
+
+#[test]
+fn what_the_corpus_drew_that_was_wrong_is_still_found() {
+    assert_eq!(
+        found("A Local Governing Body,who is not one.", Some("en-GB")),
+        ["missing-space-after:,"]
+    );
+    assert_eq!(
+        found("You need a licence. or explain why.", Some("en-GB")),
+        ["sentence-start-lowercase:or"]
+    );
+    assert_eq!(
+        found("Read it (HSE - L26)).", Some("en-GB")),
+        ["unpaired-bracket:)"]
+    );
+}

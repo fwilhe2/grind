@@ -184,9 +184,15 @@ pub fn missing_space_after(tokens: &[Token], out: &mut Vec<Finding>) {
         if around.contains('/') || around.contains('@') || around.contains('=') {
             continue;
         }
+        // A one-letter side is a symbol's subscript or an initial (`LEP,d`, `J.Smith`).
+        if before.text.chars().count() < 2 || after.text.chars().count() < 2 {
+            continue;
+        }
         let starts_upper = after.text.chars().next().is_some_and(char::is_uppercase);
+        let all_caps = after.text.chars().all(|c| !c.is_lowercase());
         let wanted = match mark.text.as_str() {
-            "." => starts_upper && before.text.chars().count() > 1,
+            // `GOV.UK` is a name written so.
+            "." => starts_upper && !all_caps,
             "," | ";" | ":" | "!" | "?" => true,
             _ => false,
         };
@@ -207,7 +213,8 @@ pub fn missing_space_after(tokens: &[Token], out: &mut Vec<Finding>) {
 fn abbreviation(language: Option<Language>, word: &str) -> bool {
     const ENGLISH: &[&str] = &[
         "etc", "vs", "cf", "approx", "incl", "ca", "fig", "no", "nos", "vol", "pp", "ed", "eds",
-        "al", "resp", "esp", "min", "max", "dept", "est",
+        "al", "resp", "esp", "min", "max", "dept", "est", "inc", "ref", "cent", "para", "paras",
+        "approx", "dr", "mr", "mrs", "ms", "st",
     ];
     const GERMAN: &[&str] = &[
         "bzw", "usw", "ggf", "vgl", "evtl", "bspw", "inkl", "ca", "nr", "abs", "bzgl", "sog", "ff",
@@ -241,6 +248,10 @@ pub fn sentence_start_lowercase(
         {
             continue;
         }
+        // A word with a full stop straight after it is an abbreviation's start (`e.g.`).
+        if word.text.chars().count() < 2 {
+            continue;
+        }
         let mut chars = word.text.chars();
         let first = chars.next().unwrap_or(' ');
         if !first.is_lowercase() || chars.any(char::is_uppercase) {
@@ -271,7 +282,6 @@ pub fn sentence_start_lowercase(
 /// starting the paragraph) and not a smiley (`:)`).
 pub fn unpaired_bracket(tokens: &[Token], out: &mut Vec<Finding>) {
     let mut open: Vec<&Token> = Vec::new();
-    let first = tokens.iter().position(|t| t.sort != Sort::Space);
     for (at, token) in tokens.iter().enumerate() {
         let smiley = at > 0 && matches!(tokens[at - 1].text.as_str(), ":" | ";");
         match token.text.as_str() {
@@ -280,8 +290,7 @@ pub fn unpaired_bracket(tokens: &[Token], out: &mut Vec<Finding>) {
                 if open.pop().is_some() {
                     continue;
                 }
-                let label = first.is_some_and(|f| f + 1 == at && tokens[f].is_word());
-                if !label {
+                if !label(tokens, at) {
                     out.push(unpaired(token));
                 }
             }
@@ -289,6 +298,24 @@ pub fn unpaired_bracket(tokens: &[Token], out: &mut Vec<Finding>) {
         }
     }
     out.extend(open.into_iter().map(unpaired));
+}
+
+/// Whether the `)` at `at` closes a list label: a word of at most two characters, or a roman
+/// numeral, standing on its own — at the paragraph's or a line's start, or after a space.
+fn label(tokens: &[Token], at: usize) -> bool {
+    let Some(word) = at.checked_sub(1).map(|i| &tokens[i]) else {
+        return false;
+    };
+    let short = word.text.chars().count() <= 2
+        || word
+            .text
+            .chars()
+            .all(|c| matches!(c, 'i' | 'v' | 'x' | 'I' | 'V' | 'X'));
+    let alone = match at.checked_sub(2).map(|i| &tokens[i]) {
+        None => true,
+        Some(before) => before.sort == Sort::Space || before.text == "\n",
+    };
+    word.is_word() && short && alone
 }
 
 fn unpaired(token: &Token) -> Finding {
