@@ -1244,6 +1244,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "grind-languagetool"
+version = "0.0.0"
+dependencies = [
+ "grind-core",
+ "grind-spell",
+ "serde_json",
+]
+
+[[package]]
 name = "grind-lsp"
 version = "0.0.0"
 dependencies = [

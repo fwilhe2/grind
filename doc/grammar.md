@@ -197,10 +197,12 @@ through the same request and response code, §3.10).
   the server's per-request size (20 KB on the free tier, unlimited on one's own server), and
   the findings are split back by offset. A paragraph being typed in is not sent until typing
   pauses (about 800 ms), and never more than one request is in flight per document.
-- **Offsets.** The API documents them as "characters" without saying which. LanguageTool is
-  Java, so they are expected to be **UTF-16 code units**. G5 verifies this with a non-BMP
-  character before converting to the core's character offsets. Until then the client refuses
-  a paragraph it cannot map rather than guessing.
+- **Offsets** — `MEASURED` (2026-10-30, LanguageTool 6.8 in the `erikvl87/languagetool` image).
+  The API documents them as "characters"; they are **UTF-16 code units** (`go` after an emoji
+  came back at 6, where it is the fifth character), counted over **everything sent, markup
+  included** (a match after a markup item counted the markup's length). The client converts
+  them to characters per paragraph, and drops a match that crosses a paragraph's end or falls
+  inside markup.
 - **Mapping a match.** `rule.id` → `lt:<id>`. `rule.category.id` and `rule.issueType` → our four
   kinds (`TYPOGRAPHY` → typography, `STYLE`/`REDUNDANCY`/`PLAIN_ENGLISH` → style,
   `PUNCTUATION` → punctuation, everything else → grammar). `message`, the first five

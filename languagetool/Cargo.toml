@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-languagetool"
+version = "0.0.0"
+description = "The LanguageTool client: grammar checked by a LanguageTool server (doc/grammar.md)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# What a finding is, and UTF-16 offsets, which LanguageTool counts in.
+grind-core = { path = "../core" }
+# A paragraph's language from its common words, to send each with its own.
+grind-spell = { path = "../spell", default-features = false }
+serde_json = "1"
