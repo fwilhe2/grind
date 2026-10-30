@@ -830,6 +830,23 @@ pub(crate) enum TextCommand {
         add: Option<String>,
     },
 
+    /// Print what the grammar checker finds, one finding a line
+    ///
+    /// Each line is where the finding starts, its rule, its kind (grammar, punctuation,
+    /// typography or style), the text it covers, what is wrong, and what it might be instead.
+    /// `grind text correct` takes the address, the covered text and a replacement. Each
+    /// paragraph is checked in the language the document states, else the one its common words
+    /// suggest. Nothing is written to the document.
+    #[cfg(feature = "grammar")]
+    Grammar {
+        file: PathBuf,
+        /// Blocks to check, e.g. p3 or p3:p9 — the whole document when left out
+        range: Option<String>,
+        /// Add the style suggestions, which are off by default
+        #[arg(long)]
+        picky: bool,
+    },
+
     /// Print or set whether text documents are spell-checked, and in what
     ///
     /// `off` turns spelling off in every text window and for `grind lint`, and keeps it off

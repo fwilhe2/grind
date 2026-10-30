@@ -1199,6 +1199,7 @@ dependencies = [
  "grind-build",
  "grind-core",
  "grind-docx",
+ "grind-grammar",
  "grind-lsp",
  "grind-print",
  "grind-sheet",

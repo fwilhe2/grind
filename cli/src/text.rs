@@ -780,6 +780,42 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Strin
             )
         }
 
+        #[cfg(feature = "grammar")]
+        TextCommand::Grammar { file, range, picky } => {
+            let app = open_text(file)?;
+            app.set_checker(Some(std::sync::Arc::new(grind_grammar::Builtin {
+                picky: *picky,
+            })));
+            let blocks = match range {
+                Some(range) => span(&app, range)?,
+                None => 0..app.block_count(),
+            };
+            let viewport = app.get_viewport(blocks.clone());
+            text_lines(
+                app.grammar(blocks)
+                    .into_iter()
+                    .map(|flag| {
+                        let text = viewport
+                            .iter()
+                            .find(|view| view.index == flag.block)
+                            .map(|view| view.text.as_str())
+                            .unwrap_or_default();
+                        let range = flag.finding.range.clone();
+                        let covered: String =
+                            text.chars().skip(range.start).take(range.len()).collect();
+                        format!(
+                            "{}\t{}\t{}\t{covered}\t{}\t{}",
+                            flag.address(),
+                            flag.finding.rule,
+                            flag.finding.kind.as_str(),
+                            flag.finding.message,
+                            flag.finding.replacements.join(", ")
+                        )
+                    })
+                    .collect(),
+            )
+        }
+
         TextCommand::Correct {
             file,
             at: address,

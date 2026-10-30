@@ -1055,6 +1055,36 @@ fn the_remembered_spelling_setting_is_one_line_per_kind_of_document() {
     );
 }
 
+/// `grind text grammar` lists what the built-in checker finds, one finding a line, and a
+/// finding's span is corrected by `grind text correct` (`doc/grammar.md`).
+#[cfg(feature = "grammar")]
+#[test]
+fn the_built_in_grammar_checker_answers_from_the_command_line() {
+    let dir = Sandbox::new("text-grammar");
+    let fodt = dir.path("notes.fodt");
+    succeeds(grind(&["text", "new", &s(&fodt)]), &["text", "new"]);
+    succeeds(
+        grind(&["text", "type", &s(&fodt), "p1", "I saw the the cat."]),
+        &["text", "type"],
+    );
+    let found = succeeds(grind(&["text", "grammar", &s(&fodt)]), &["text", "grammar"]);
+    let line = found.lines().next().unwrap_or_default();
+    let fields: Vec<&str> = line.split('\t').collect();
+    assert_eq!(
+        fields[..4],
+        ["p1+9", "builtin:repeated-word", "grammar", " the"],
+        "{found}"
+    );
+    succeeds(
+        grind(&["text", "correct", &s(&fodt), "p1+9", " the", ""]),
+        &["text", "correct"],
+    );
+    let after = succeeds(grind(&["text", "grammar", &s(&fodt)]), &["text", "grammar"]);
+    assert!(after.trim().is_empty(), "{after}");
+    let view = succeeds(grind(&["text", "view", &s(&fodt)]), &["text", "view"]);
+    assert!(view.contains("I saw the cat."), "{view}");
+}
+
 /// A script that fails says where, because a generator whose errors have no line number is a
 /// generator nobody debugs.
 #[test]
