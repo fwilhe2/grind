@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Grammar and style
 
-**Status: G0 done; G1, G2, G3 and G5 under way (2026-10-30).** Two checkers behind one door, each optional: a **built-in**
+**Status: G0–G5 built (2026-10-30); G6 and G7 not yet, see §10.** Two checkers behind one door, each optional: a **built-in**
 checker, rules written here in plain Rust with no dependencies, small and always available; and
 an **integration with LanguageTool**, for whoever runs a LanguageTool server and wants the best
 checker there is. Either, both or neither may be on. This supersedes `doc/spelling.md` decision 7
@@ -332,4 +332,11 @@ None is open.
 
 ## 10. Gaps, named
 
-Empty until something is built.
+- **Choosing a server in a window.** The GNOME window follows `grind grammar`'s setting and
+  switches the built-in checker and style, but has no dialog to name a server; and while the
+  public server is in use it says where the text goes in a toast, not in the clearly visible
+  link back its terms ask for.
+- **The other shells** (G7): the terminal, Windows, the Mac and the browser have no grammar yet.
+- **Loop G′** (G6): the built-in checker against LanguageTool over a corpus, not yet run.
+- **No recall evidence for the built-in rules.** Every corpus so far was edited prose, which
+  shows the rules keep quiet, not what they catch.

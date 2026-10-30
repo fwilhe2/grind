@@ -152,6 +152,11 @@ fn main() -> ExitCode {
     }
 }
 
+/// How long typing pauses before LanguageTool is asked about it.
+const GRAMMAR_PAUSE: std::time::Duration = std::time::Duration::from_millis(800);
+/// How long a server that did not answer is left before it is asked again.
+const GRAMMAR_RETRY: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// The window and the pieces that have to be told when something changes.
 ///
 /// Everything here is presentation. The document lives in `App`.
@@ -204,6 +209,15 @@ struct Ui {
     /// came to for this document (`doc/spelling.md`).
     spelling: Cell<grind_spell::Setting>,
     checked: Cell<Option<grind_spell::Choice>>,
+    /// The LanguageTool client when the grammar setting names a server, asked off the main
+    /// thread for the paragraphs the core says are unanswered (`doc/grammar.md` decision 10).
+    languagetool: RefCell<Option<Arc<grind_languagetool::LanguageTool>>>,
+    /// The pause after an edit before LanguageTool is asked, restarted by each edit.
+    grammar_timer: RefCell<Option<glib::SourceId>>,
+    /// A request is out: never more than one at a time.
+    grammar_busy: Cell<bool>,
+    /// The last failure shown, so a server that stays down is reported once.
+    grammar_failure: RefCell<Option<String>>,
 }
 
 impl Ui {
@@ -347,6 +361,10 @@ impl Ui {
                 grind_core::DocumentKind::Text,
             )),
             checked: Cell::new(None),
+            languagetool: RefCell::new(None),
+            grammar_timer: RefCell::new(None),
+            grammar_busy: Cell::new(false),
+            grammar_failure: RefCell::new(None),
         });
         ui.wire(application);
         ui.check_spelling();
@@ -372,6 +390,7 @@ impl Ui {
                     ui.dirty.set(!ui.loading.replace(false));
                     ui.doc.invalidate();
                     ui.refresh();
+                    ui.schedule_grammar(GRAMMAR_PAUSE);
                 }
             }
         ));
@@ -714,7 +733,106 @@ impl Ui {
             false => None,
         };
         self.app.set_checker(checker);
+        let client = match setting.languagetool.as_ref().map(|choice| choice.server()) {
+            Some(Ok(server)) => {
+                let ignored = setting
+                    .ignored
+                    .iter()
+                    .filter_map(|rule| rule.strip_prefix("lt:"))
+                    .map(str::to_owned)
+                    .collect();
+                self.toast(&format!(
+                    "Grammar checked by LanguageTool — {}",
+                    server.describe()
+                ));
+                Some(Arc::new(
+                    grind_languagetool::LanguageTool::new(server, setting.style).ignoring(ignored),
+                ))
+            }
+            Some(Err(why)) => {
+                self.toast(&format!("LanguageTool is not asked: {why}"));
+                None
+            }
+            None => None,
+        };
+        self.app.set_background_grammar(client.is_some());
+        self.languagetool.replace(client);
+        self.grammar_failure.replace(None);
         self.doc.queue_draw();
+        self.schedule_grammar(std::time::Duration::ZERO);
+    }
+
+    /// Ask LanguageTool after `pause`, unless another edit comes first.
+    fn schedule_grammar(self: &Rc<Self>, pause: std::time::Duration) {
+        if self.languagetool.borrow().is_none() {
+            return;
+        }
+        if let Some(timer) = self.grammar_timer.take() {
+            timer.remove();
+        }
+        let timer = glib::timeout_add_local_once(
+            pause,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move || {
+                    ui.grammar_timer.take();
+                    ui.ask_grammar();
+                }
+            ),
+        );
+        self.grammar_timer.replace(Some(timer));
+    }
+
+    /// Send LanguageTool the paragraphs it has not answered for, off the main thread, and hand
+    /// its answer to the core. A failure keeps them unanswered, says so once, and tries again
+    /// later.
+    fn ask_grammar(self: &Rc<Self>) {
+        let Some(client) = self.languagetool.borrow().clone() else {
+            return;
+        };
+        if self.grammar_busy.get() {
+            return;
+        }
+        let pending = self.app.grammar_pending(0..self.app.block_count());
+        if pending.is_empty() {
+            return;
+        }
+        self.grammar_busy.set(true);
+        glib::spawn_future_local(glib::clone!(
+            #[strong(rename_to = ui)]
+            self,
+            async move {
+                let asked = gio::spawn_blocking(move || {
+                    let paragraphs: Vec<_> = pending.iter().map(|p| p.paragraph()).collect();
+                    let found = grind_core::grammar::Checker::check_all(&*client, &paragraphs);
+                    let keys: Vec<u64> = pending.iter().map(|p| p.key).collect();
+                    (keys, found, client.error())
+                })
+                .await;
+                ui.grammar_busy.set(false);
+                let Ok((keys, found, failure)) = asked else {
+                    return;
+                };
+                match failure {
+                    None => {
+                        for (key, findings) in keys.into_iter().zip(found) {
+                            ui.app.grammar_found(key, findings);
+                        }
+                        ui.grammar_failure.replace(None);
+                        ui.doc.queue_draw();
+                        ui.schedule_grammar(GRAMMAR_PAUSE);
+                    }
+                    Some(why) => {
+                        if ui.grammar_failure.borrow().as_deref() != Some(why.as_str()) {
+                            ui.toast(&format!("LanguageTool did not answer: {why}"));
+                            ui.grammar_failure.replace(Some(why));
+                        }
+                        ui.schedule_grammar(GRAMMAR_RETRY);
+                    }
+                }
+            }
+        ));
     }
 
     /// While the language is only a guess — a new document, or one stating none — guess again
