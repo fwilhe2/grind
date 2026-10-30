@@ -446,6 +446,29 @@ fn guess(app: &(impl Spelled + ?Sized), desktop: Option<Language>) -> Option<Lan
     grind_core::spell::guess(&sample, &lexicons).map(|at| fallback[at])
 }
 
+/// The language one paragraph is in, judged by its common words alone ([`Common`]), so it loads
+/// no dictionary: `None` unless one language's words occur at least twice and more often than
+/// any other's. What decides which language's grammar rules run on it (`doc/grammar.md`
+/// decision 4).
+pub fn paragraph_language(text: &str) -> Option<Language> {
+    let words: Vec<String> = grind_core::spell::words(text)
+        .into_iter()
+        .map(|range| text.chars().skip(range.start).take(range.len()).collect())
+        .collect();
+    let mut counts: Vec<(usize, Language)> = Language::ALL
+        .iter()
+        .map(|&language| {
+            let common = Common(language);
+            (words.iter().filter(|w| common.knows(w)).count(), language)
+        })
+        .collect();
+    counts.sort_by_key(|&(count, _)| std::cmp::Reverse(count));
+    match counts.as_slice() {
+        [(best, language), (next, _), ..] if *best >= 2 && best > next => Some(*language),
+        _ => None,
+    }
+}
+
 /// A [`Lexicon`] that knows only a language's commonest short words — articles, pronouns,
 /// particles, the forms of *to be* — chosen to be that language's alone where they can be: `la`
 /// is French, Spanish and Italian at once and is in none of the lists, `die` and `und` are only
@@ -911,6 +934,29 @@ pub mod personal {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_paragraph_is_given_a_language_only_when_its_common_words_say_so_clearly() {
+        assert_eq!(
+            paragraph_language("The cat is on the mat, and it is happy."),
+            Some(Language::English)
+        );
+        assert_eq!(
+            paragraph_language("Ich glaube, dass die Katze auf der Matte ist."),
+            Some(Language::German)
+        );
+        assert_eq!(
+            paragraph_language("Quarterly report"),
+            None,
+            "no common word"
+        );
+        assert_eq!(paragraph_language("See the Anhang."), None, "only one");
+        assert_eq!(
+            paragraph_language("the und the die"),
+            None,
+            "a tie is not a language"
+        );
+    }
     use super::*;
     use grind_text::{App, BlockKind};
 
