@@ -10,6 +10,7 @@
 mod client;
 pub mod request;
 mod server;
+pub mod setting;
 
 #[cfg(feature = "native")]
 pub use client::LanguageTool;

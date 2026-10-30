@@ -751,8 +751,9 @@ pub fn ensure(app: &(impl Spelled + ?Sized)) {
 }
 
 /// `$XDG_CONFIG_HOME/grind` (`~/.config/grind`, or `%APPDATA%\grind` on Windows) — where the
-/// person's own spelling files live, or `None` with no home directory to put them in.
-fn config_dir() -> Option<PathBuf> {
+/// person's own files live — spelling's, and grammar's beside them — or `None` with no home
+/// directory to put them in.
+pub fn config_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
