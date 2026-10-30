@@ -832,6 +832,14 @@ oracle turned out to be unable to answer the font questions (fact 4).
    `true`: all 1.5 cm). Paragraphs of different named styles keep their space, even with equal
    properties or one the other's parent. The first of a run keeps its space above, the last its
    space below.
+32. **A right tab stop past the paragraph's right edge** — `MEASURED` (2026-10-30, 26.8, a 17 cm
+   text area, `Guidance<tab>2` under a dotted right stop). A stop a hair past the edge — Word's
+   `6.6937in` for a 17 cm area, 17.002 cm — is kept: the `2` ended at the stop, in the margin,
+   on the same line. A stop further out is held **16.8 pt past the edge**: 18 cm and 25 cm both
+   ended the `2` at 555.4 pt, 16.8 pt past a 538.6 pt edge, at 12 pt and at 24 pt alike, and with
+   a 3 cm `fo:margin-right` 16.8 pt past that paragraph's own edge. Why 16.8 pt is not known. A
+   **left** stop past the edge is another matter, not built: its leader ran on to the stop, past
+   the paper's edge at 25 cm, and the text after it went to the next line.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

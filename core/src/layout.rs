@@ -291,6 +291,10 @@ impl Tabs {
     }
 }
 
+/// How far past the end of a line a right tab stop is still kept, in points (`doc/odt-format.md`
+/// §5c fact 32).
+const RIGHT_STOP_REACH: f32 = 16.8;
+
 /// [`wrap_indented`], with every tab character advanced to the stop `tabs` gives it on its own
 /// line — which depends on where the line starts, so tabs are placed *while* breaking rather than
 /// measured once beforehand.
@@ -364,7 +368,10 @@ pub fn wrap_tabbed(
     //
     // A tab whose stop is past the end of the line costs nothing there: the text after it
     // breaks onto the next line rather than taking the text before the tab with it.
-    let place = |start: usize, end: usize, origin: f32, out: &mut Vec<f32>| {
+    //
+    // A right stop past the end is kept up to `RIGHT_STOP_REACH` past it, and the text set against
+    // it hangs there: the answer is how far, which fitting the line leaves out.
+    let place = |start: usize, end: usize, origin: f32, out: &mut Vec<f32>| -> f32 {
         let room = if width > 0.0 {
             width - origin
         } else {
@@ -373,12 +380,20 @@ pub fn wrap_tabbed(
         out.clear();
         out.push(0.0);
         let mut x = 0.0_f32;
+        let mut hang = 0.0_f32;
         for i in start..end {
             let step = match chars[i] {
                 '\t' => match tabs.next(origin + x) {
                     None => advance[i],
-                    Some(stop) if stop.position - origin > room + 1e-3 => 0.0,
+                    Some(stop)
+                        if stop.position - origin > room + 1e-3
+                            && stop.align != TabAlign::Right =>
+                    {
+                        0.0
+                    }
                     Some(stop) => {
+                        let position = (stop.position - origin).min(room + RIGHT_STOP_REACH);
+                        hang = (position - room).max(0.0);
                         // What lines up against the stop: the text after the tab, to the next
                         // tab or the line's end, trailing spaces aside — or to the decimal sign.
                         let mut run = 0.0_f32;
@@ -399,7 +414,7 @@ pub fn wrap_tabbed(
                             TabAlign::Center => visible / 2.0,
                             TabAlign::Right | TabAlign::Decimal(_) => visible,
                         };
-                        (stop.position - origin - lead - x).max(0.0)
+                        (position - lead - x).max(0.0)
                     }
                 },
                 _ => advance[i],
@@ -407,16 +422,17 @@ pub fn wrap_tabbed(
             x += step;
             out.push(x);
         }
+        hang
     };
     let scratch = std::cell::RefCell::new(Vec::new());
     let span = |from: usize, to: usize, first_line: bool| match tabbed {
         false => xs[to] - xs[from],
         true => {
             let mut out = scratch.borrow_mut();
-            place(from, to, if first_line { first } else { 0.0 }, &mut out);
+            let hang = place(from, to, if first_line { first } else { 0.0 }, &mut out);
             // Text right-aligned at a stop on the margin ends *at* the margin, which the
             // arithmetic of getting there may overshoot by a rounding error.
-            out.last().copied().unwrap_or(0.0) - 1e-3
+            out.last().copied().unwrap_or(0.0) - hang - 1e-3
         }
     };
 
@@ -866,6 +882,22 @@ mod tests {
         let layout = tabbed("a\tb\tc", 0.0, 0.0, &tabs);
         assert_eq!(layout.x_at(2), 10.0, "its own stop, not the interval's 4");
         assert_eq!(layout.x_at(4), 12.0, "then the interval past the last stop");
+    }
+
+    /// `doc/odt-format.md` §5c fact 32: a right stop past the line's end is kept, up to 16.8 past
+    /// it, and what stands against it hangs there without breaking the line.
+    #[test]
+    fn a_right_stop_past_the_end_of_the_line_is_kept_a_little_way_out() {
+        let at = |position| Tabs {
+            stops: vec![stop(position, TabAlign::Right)],
+            interval: 0.0,
+        };
+        let near = tabbed("Guidance\t2", 40.0, 0.0, &at(41.0));
+        assert_eq!(near.lines().len(), 1);
+        assert_eq!(near.x_at(9), 40.0, "ending at the stop");
+        let far = tabbed("Guidance\t2", 40.0, 0.0, &at(100.0));
+        assert_eq!(far.lines().len(), 1);
+        assert!((far.x_at(9) - 55.8).abs() < 1e-3, "{}", far.x_at(9));
     }
 
     #[test]
