@@ -98,3 +98,49 @@ fn each_paragraph_is_checked_in_the_language_the_document_states() {
         "the checker guesses"
     );
 }
+
+/// Knows no word at all, so every word spelling checks is reported.
+struct Nothing;
+
+impl grind_text::spell::Lexicon for Nothing {
+    fn knows(&self, _: &str) -> bool {
+        false
+    }
+    fn suggest(&self, _: &str) -> Vec<String> {
+        Vec::new()
+    }
+    fn language(&self) -> &str {
+        "en-US"
+    }
+}
+
+/// A fenced code block is not prose: neither grammar nor spelling reads it, as neither reads a
+/// run of code (`doc/spelling.md` decision 3).
+#[test]
+fn a_code_block_is_not_checked() {
+    let app = App::new();
+    app.import_markdown(
+        0,
+        "Some xx prose.\n\n```\nlet xx = foo;\n```\n",
+        &grind_text::commonmark::nowhere,
+    )
+    .unwrap();
+    let code = (0..app.block_count())
+        .find(|&i| {
+            app.get_viewport(i..i + 1)
+                .iter()
+                .any(|v| v.text.contains("let"))
+        })
+        .expect("the code block");
+    app.set_checker(Some(Arc::new(Doubles::default())));
+    let flags = app.grammar(0..app.block_count());
+    assert_eq!(flags.len(), 1, "only the prose: {flags:?}");
+    assert_ne!(flags[0].block, code);
+    app.set_lexicon(Some(Arc::new(Nothing)));
+    let words: Vec<_> = app
+        .misspellings(0..app.block_count())
+        .into_iter()
+        .filter(|m| m.block == code)
+        .collect();
+    assert!(words.is_empty(), "{words:?}");
+}

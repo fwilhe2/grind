@@ -4,7 +4,8 @@
 
 //! Spelling in a text document (`doc/spelling.md`): where a block's words are, which runs are not
 //! prose, and where a misspelling is reported. What a word is is `grind_core::spell`'s,
-//! re-exported. Not prose: a link's text, a monospace run (`` `code` ``), a field or a footnote.
+//! re-exported. Not prose: a code block, a link's text, a monospace run (`` `code` ``), a field
+//! or a footnote.
 
 use std::ops::Range;
 
@@ -62,9 +63,12 @@ fn prose_run(props: &CharStyle, href: Option<&str>) -> bool {
         || family.contains("consol"))
 }
 
-/// The character ranges of `block` that are not prose: runs [`prose_run`] refuses, and runs that
-/// are not text (a field, a footnote).
+/// The character ranges of `block` that are not prose: a code block whole, runs [`prose_run`]
+/// refuses, and runs that are not text (a field, a footnote).
 pub(crate) fn skipped(block: &Block) -> Vec<Range<usize>> {
+    if block.style.as_deref() == Some(crate::markdown::PREFORMATTED) {
+        return std::iter::once(0..block.len()).collect();
+    }
     let mut out = Vec::new();
     let mut at = 0;
     for run in &block.runs {

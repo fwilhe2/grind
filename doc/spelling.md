@@ -41,10 +41,10 @@ asks for one language (decision 4).
 3. **What is checked is narrower than "every word"**, because a checker stops being believed the
    third time it underlines `ODF`. Skipped: anything with a digit, anything all in capitals, a
    capital inside a word (`OpenDocument`, `iPhone`), one letter, a link's text, a run in a
-   monospace face (what `` `code` `` types), and a chunk carrying `://`, `@`, `/`, `\`, `_`, `=`
-   or an inner `.` — a URL, an address, a path, an identifier, `e.g.`. A word joins across one
-   apostrophe or hyphen between letters; a hyphenated word is right when the whole is or every
-   part is; `’` is checked as `'`.
+   monospace face (what `` `code` `` types), a fenced code block (`Preformatted Text`), and a
+   chunk carrying `://`, `@`, `/`, `\`, `_`, `=` or an inner `.` — a URL, an address, a path,
+   an identifier, `e.g.`. A word joins across one apostrophe or hyphen between letters; a
+   hyphenated word is right when the whole is or every part is; `’` is checked as `'`.
 
 4. **Every language, unless one is asked for.** By default a word is right when any dictionary
    this build has knows it (`grind_spell::Speller::every`): a German letter quoting an English
