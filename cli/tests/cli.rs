@@ -1067,6 +1067,8 @@ fn the_built_in_grammar_checker_answers_from_the_command_line() {
         grind(&["text", "type", &s(&fodt), "p1", "I saw the the cat."]),
         &["text", "type"],
     );
+    let lint = succeeds(grind(&["text", "lint", &s(&fodt)]), &["text", "lint"]);
+    assert!(lint.contains("grammar"), "lint reports it too: {lint}");
     let found = succeeds(grind(&["text", "grammar", &s(&fodt)]), &["text", "grammar"]);
     let line = found.lines().next().unwrap_or_default();
     let fields: Vec<&str> = line.split('\t').collect();

@@ -65,14 +65,31 @@ pub const MISSPELT: Rule = Rule {
     what: "a word the spelling dictionary does not know",
 };
 
+/// What a grammar checker finds that is not a matter of style (`doc/grammar.md`). Runs only with
+/// a checker attached ([`grammar`]); a warning, like [`MISSPELT`].
+pub const GRAMMAR: Rule = Rule {
+    id: "grammar",
+    severity: Severity::Warning,
+    what: "a grammar, punctuation or typography finding",
+};
+
+/// What a grammar checker suggests as a matter of style — a hint, so only when asked for.
+pub const STYLE: Rule = Rule {
+    id: "style",
+    severity: Severity::Hint,
+    what: "a style suggestion",
+};
+
 /// Every rule this application has. The order is the order `grind text lint --rules` prints.
-pub const RULES: [Rule; 6] = [
+pub const RULES: [Rule; 8] = [
     HEADING_SKIP,
     UNKNOWN_BOOKMARK,
     UNDECLARED_STYLE,
     OFF_PALETTE,
     UNSPELLABLE,
     MISSPELT,
+    GRAMMAR,
+    STYLE,
 ];
 
 /// Check a document against every rule `options` wants — all but [`MISSPELT`], which needs a
@@ -106,6 +123,31 @@ pub fn lint_with(doc: &Document, options: &Options, lexicon: Option<&dyn Lexicon
     }
     report.sort();
     report
+}
+
+/// Add what `checker` finds to `report`: [`STYLE`] for style, [`GRAMMAR`] for the rest. Each block
+/// is checked in `language`, the one the document states, or none for the checker to guess.
+pub fn grammar(
+    doc: &Document,
+    options: &Options,
+    checker: &dyn crate::grammar::Checker,
+    language: Option<&str>,
+    report: &mut Report,
+) {
+    for (index, block) in doc.blocks.iter().enumerate() {
+        for flag in crate::grammar::check_block(block, index, language, checker) {
+            let rule = match flag.finding.kind {
+                crate::grammar::Kind::Style => &STYLE,
+                _ => &GRAMMAR,
+            };
+            if options.wants(rule)
+                && !report.push(Diagnostic::new(rule, flag.address(), flag.finding.message))
+            {
+                return;
+            }
+        }
+    }
+    report.sort();
 }
 
 /// `p12` — the address of a block, through `loc::format`, the one 0↔1 conversion.

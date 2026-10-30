@@ -533,6 +533,8 @@ by a test") made mechanical rather than promised.
 | A colour outside `style::PALETTE` | `off-palette` | both, as a hint, off by default |
 | A construct the projection cannot spell | `unspellable` | both — the bijectivity guard, as a diagnostic. Charts for the sheet, images for text |
 | A word the spelling dictionary does not know | `misspelt` | both — a warning, and only when a dictionary is attached (`doc/spelling.md`): a build without `grind-spell` has the rule and never fires it, and in a spreadsheet only typed text is checked and `grind sheet spelling off` silences it |
+| A grammar, punctuation or typography finding | `grammar` | text — a warning, from the built-in checker (`doc/grammar.md`); a build without `grind-grammar` has the rule and never fires it. With `--hints` the checker's opt-in rules run too |
+| A style suggestion | `style` | text — a hint, off by default, from the same checker's style rules |
 
 Two rows of the original table became two rules rather than one (`empty-reference` and
 `missing-sheet`): they share a sentence and nothing else — one is an error and the other is a

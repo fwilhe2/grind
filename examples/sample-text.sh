@@ -392,6 +392,23 @@ else
     say "spell: not in this build (compiled without the spell feature)"
 fi
 
+# --- grammar ----------------------------------------------------------------------------------
+# `doc/grammar.md`. The built-in checker: each finding with its address, its rule and the text it
+# covers, so `correct` takes them back as they came. `lint` lists them too. A feature, hence the
+# check.
+
+if "$GRIND" text grammar --help >/dev/null 2>&1; then
+    say "grammar: what the built-in checker finds, and correcting one"
+    grammar="$out/grammar.fodt"
+    text new "$grammar" --force >/dev/null
+    text set "$grammar" p1 'It is the the best of plans , and its a good one.' >/dev/null
+    text grammar "$grammar"
+    text correct "$grammar" p1+9 ' the' ''
+    text grammar "$grammar"
+else
+    say "grammar: not in this build (compiled without the grammar feature)"
+fi
+
 # --- build: a document generated from a script -------------------------------------------------
 # `doc/dsl.md` layer 1, D7. `examples/report.rhai` says a section per region once and lets the
 # loop write them, with the same inline notation this document was typed with. The arrow points

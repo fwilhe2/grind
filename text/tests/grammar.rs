@@ -144,3 +144,65 @@ fn a_code_block_is_not_checked() {
         .collect();
     assert!(words.is_empty(), "{words:?}");
 }
+
+/// Flags `xx` as grammar and `yy` as style.
+struct Kinds;
+
+impl Checker for Kinds {
+    fn check(&self, paragraph: &Paragraph<'_>) -> Vec<Finding> {
+        let mut out = Vec::new();
+        for (needle, kind) in [("xx", Kind::Grammar), ("yy", Kind::Style)] {
+            if let Some(at) = paragraph.text.find(needle) {
+                let start = paragraph.text[..at].chars().count();
+                out.push(Finding {
+                    range: start..start + 2,
+                    rule: format!("test:{needle}"),
+                    kind,
+                    message: format!("{needle} found"),
+                    replacements: Vec::new(),
+                    url: None,
+                });
+            }
+        }
+        out
+    }
+}
+
+/// `grind lint` reports grammar as a warning and style as a hint, only with a checker attached.
+#[test]
+fn lint_reports_grammar_as_a_warning_and_style_as_a_hint() {
+    let app = fodt("", "<text:p>one xx two yy</text:p>");
+    let options = grind_core::lint::Options {
+        hints: true,
+        off: Vec::new(),
+    };
+    let ids = |app: &App| -> Vec<(String, String)> {
+        app.lint(&options)
+            .diagnostics
+            .iter()
+            .map(|d| (d.rule.to_owned(), d.at.clone()))
+            .filter(|(rule, _)| rule == "grammar" || rule == "style")
+            .collect()
+    };
+    assert!(ids(&app).is_empty(), "no checker, no findings");
+    app.set_checker(Some(Arc::new(Kinds)));
+    assert_eq!(
+        ids(&app),
+        [
+            ("grammar".to_owned(), "p1+4".to_owned()),
+            ("style".to_owned(), "p1+11".to_owned())
+        ]
+    );
+    let quiet = grind_core::lint::Options {
+        hints: false,
+        off: Vec::new(),
+    };
+    let warnings: Vec<_> = app
+        .lint(&quiet)
+        .diagnostics
+        .iter()
+        .map(|d| d.rule.to_owned())
+        .filter(|rule| rule == "grammar" || rule == "style")
+        .collect();
+    assert_eq!(warnings, ["grammar"], "style is a hint");
+}

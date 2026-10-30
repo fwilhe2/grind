@@ -50,13 +50,22 @@ fn open_text(file: &Path) -> Result<TextApp, String> {
 
 /// [`open_text`], with spelling checked the way the person has said text documents should be
 /// (`grind text spelling`) — by default in the document's own language, when this build has the
-/// dictionaries — what `lint` opens with, so its `misspelt` rule has something to ask. A
-/// document in a language there is no dictionary for is linted without spelling, silently:
-/// `grind text spell` is where that is worth saying.
-fn open_text_checked(file: &Path) -> Result<TextApp, String> {
+/// dictionaries — and grammar checked by the built-in checker: what `lint` opens with, so its
+/// `misspelt`, `grammar` and `style` rules have something to ask. A document in a language there
+/// is no dictionary for is linted without spelling, silently: `grind text spell` is where that
+/// is worth saying.
+fn open_text_checked(file: &Path, hints: bool) -> Result<TextApp, String> {
     let app = open_text(file)?;
     #[cfg(feature = "spell")]
     let _ = grind_spell::preference::load(DocumentKind::Text).apply(&app);
+    // The built-in checker, its opt-in rules with the hints: what `--hints` asks for is the
+    // fuller look.
+    #[cfg(feature = "grammar")]
+    app.set_checker(Some(std::sync::Arc::new(grind_grammar::Builtin {
+        picky: hints,
+    })));
+    #[cfg(not(feature = "grammar"))]
+    let _ = hints;
     Ok(app)
 }
 
@@ -408,7 +417,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
                     check_spelling(&app);
                     app.lint(&options)
                 }
-                DocumentKind::Text => open_text_checked(file)?.lint(&options),
+                DocumentKind::Text => open_text_checked(file, *hints)?.lint(&options),
                 kind => return Err(unsupported(file, Some(kind))),
             };
             Ok(lint_report(file, findings))

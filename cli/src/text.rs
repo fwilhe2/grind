@@ -543,7 +543,7 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Strin
             true => Ok(rule_list(&grind_text::lint::RULES)),
             false => Ok(lint_report(
                 file,
-                open_text_checked(file)?.lint(&lint_options(*hints, off)),
+                open_text_checked(file, *hints)?.lint(&lint_options(*hints, off)),
             )),
         },
 
