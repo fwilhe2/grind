@@ -529,33 +529,67 @@ fn block_faces<'a>(
 }
 
 /// The space above and below every block whose paragraph style the document declares, in points —
-/// added, as Writer adds them (`doc/odt-format.md` §5c, fact 5). A margin with no length (a
+/// added, as Writer adds them (`doc/odt-format.md` §5c, fact 5), and taken out between
+/// neighbours of one style under contextual spacing (fact 31). A margin with no length (a
 /// percentage of an unread parent) counts as none.
 fn block_spacing(
     app: &App,
     viewport: &grind_text::Viewport,
 ) -> std::collections::HashMap<usize, crate::faces::Room> {
     let points = |value: &Option<String>| value.as_deref().and_then(length_mm).map_or(0.0, pt);
-    viewport
-        .iter()
-        .filter_map(|view| {
-            let resolved = app.paragraph(view.index)?;
-            // A block in a table too: Writer spaces a cell's paragraphs by their own margins,
-            // inside the cell's padding (`doc/odt-format.md` §5c fact 18).
-            resolved.declared.then(|| {
-                let props = &resolved.props;
-                let room = crate::faces::Room {
-                    space: grind_text::flow::Space {
-                        above: points(&props.margin_top),
-                        below: points(&props.margin_bottom),
-                        left: points(&props.margin_left),
-                    },
-                    right: points(&props.margin_right),
-                };
-                (view.index, room)
-            })
-        })
-        .collect()
+    let mut spacing: HashMap<usize, crate::faces::Room> = HashMap::new();
+    // The block before: what contextual spacing compares.
+    struct Before {
+        index: usize,
+        named: Option<String>,
+        contextual: bool,
+        cell: Option<(String, u32, u32)>,
+    }
+    let mut before: Option<Before> = None;
+    for view in viewport.iter() {
+        let Some(resolved) = app.paragraph(view.index).filter(|r| r.declared) else {
+            before = None;
+            continue;
+        };
+        // A block in a table too: Writer spaces a cell's paragraphs by their own margins,
+        // inside the cell's padding (`doc/odt-format.md` §5c fact 18).
+        let props = &resolved.props;
+        let mut room = crate::faces::Room {
+            space: grind_text::flow::Space {
+                above: points(&props.margin_top),
+                below: points(&props.margin_bottom),
+                left: points(&props.margin_left),
+            },
+            right: points(&props.margin_right),
+        };
+        let cell = view
+            .cell
+            .as_ref()
+            .map(|cell| (cell.table.clone(), cell.row, cell.column));
+        let contextual = props.contextual();
+        if let Some(before) = &before
+            && before.index + 1 == view.index
+            && before.cell == cell
+            && before.named.is_some()
+            && before.named == resolved.named
+            && before.contextual
+        {
+            if let Some(above) = spacing.get_mut(&before.index) {
+                above.space.below = 0.0;
+            }
+            if contextual {
+                room.space.above = 0.0;
+            }
+        }
+        before = Some(Before {
+            index: view.index,
+            named: resolved.named.clone(),
+            contextual,
+            cell,
+        });
+        spacing.insert(view.index, room);
+    }
+    spacing
 }
 
 /// Each boxed paragraph's frame, by block index, with its borders and padding added to the room
@@ -3367,5 +3401,53 @@ mod tests {
         near(w, 16.0 * CM, "to the text area's right");
         near(y, 2.0 * CM + LINE, "the paragraph's top");
         near(h, LINE, "one line");
+    }
+    /// §5c fact 31: no space between neighbours of the same named style where contextual spacing
+    /// says so — the first's below by its own flag, the second's above by both.
+    #[test]
+    fn contextual_spacing_drops_the_space_between_paragraphs_of_one_style() {
+        let gaps = |body: &str| -> Vec<f32> {
+            let bytes = format!(
+                r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+                <office:styles>
+                  <style:style style:name="Standard" style:family="paragraph"><style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm" fo:line-height="100%"/><style:text-properties fo:font-size="12pt" fo:font-family="'Liberation Sans'"/></style:style>
+                  <style:style style:name="C" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:margin-top="0.5cm" fo:margin-bottom="1cm" style:contextual-spacing="true"/></style:style>
+                  <style:style style:name="D" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:margin-top="0.5cm" fo:margin-bottom="1cm" style:contextual-spacing="true"/></style:style>
+                </office:styles>
+                <office:automatic-styles>
+                  <style:style style:name="P1" style:family="paragraph" style:parent-style-name="C"><style:paragraph-properties fo:text-align="end"/></style:style>
+                  <style:style style:name="Off" style:family="paragraph" style:parent-style-name="C"><style:paragraph-properties fo:margin-top="0.5cm" fo:margin-bottom="1cm" style:contextual-spacing="false"/></style:style>
+                </office:automatic-styles>
+                <office:body><office:text><text:p text:style-name="Standard">Before</text:p>{body}<text:p text:style-name="Standard">After</text:p></office:text></office:body></office:document>"##
+            );
+            let app = App::new();
+            app.open_bytes("cs.fodt", bytes.as_bytes()).unwrap();
+            let doc = typeset(&app, &setter(), &Options::default());
+            let ys: Vec<f32> = texts(&doc.pages[0]).iter().map(|t| t.1).collect();
+            ys.windows(2).map(|w| (w[1] - w[0] - LINE) / CM).collect()
+        };
+        let p = |style: &str| format!(r#"<text:p text:style-name="{style}">x</text:p>"#);
+        let near_all = |got: Vec<f32>, want: &[f32], what: &str| {
+            assert_eq!(got.len(), want.len(), "{what}: {got:?}");
+            for (g, w) in got.iter().zip(want) {
+                assert!((g - w).abs() < 0.02, "{what}: {got:?} vs {want:?}");
+            }
+        };
+        near_all(
+            gaps(&(p("C") + &p("C") + &p("P1"))),
+            &[0.5, 0.0, 0.0, 1.0],
+            "one style",
+        );
+        near_all(gaps(&(p("C") + &p("D"))), &[0.5, 1.5, 1.0], "two styles");
+        near_all(
+            gaps(&(p("C") + &p("Off"))),
+            &[0.5, 0.5, 1.0],
+            "the first's flag",
+        );
+        near_all(
+            gaps(&(p("Off") + &p("C"))),
+            &[0.5, 1.5, 1.0],
+            "the second's alone",
+        );
     }
 }
