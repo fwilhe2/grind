@@ -67,3 +67,33 @@ pub fn check_blocks<'a>(
         })
         .collect()
 }
+
+/// A paragraph a checker that answers later has not answered yet: its text, what is not prose,
+/// and its language, with the key its answer is kept under ([`crate::App::grammar_found`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Pending {
+    pub key: u64,
+    pub text: String,
+    pub skip: Vec<std::ops::Range<usize>>,
+    pub language: Option<String>,
+}
+
+impl Pending {
+    pub fn paragraph(&self) -> Paragraph<'_> {
+        Paragraph {
+            text: &self.text,
+            skip: &self.skip,
+            language: self.language.as_deref(),
+        }
+    }
+}
+
+/// The key an answer for `block` is kept under: its text, what is not prose, and its language.
+pub fn key(block: &Block, language: Option<&str>) -> (u64, String, Vec<std::ops::Range<usize>>) {
+    use std::hash::{Hash, Hasher};
+    let text = block.text();
+    let skip = crate::spell::skipped(block);
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (&text, &skip, language).hash(&mut hasher);
+    (hasher.finish(), text, skip)
+}

@@ -484,6 +484,9 @@ pub struct App {
     lexicon: RwLock<Option<Arc<dyn spell::Lexicon>>>,
     /// The grammar checker ([`App::set_checker`]), beside the lexicon.
     checker: RwLock<Option<Arc<dyn grammar::Checker>>>,
+    /// A checker that answers later's findings, by [`grammar::key`] — `None` when there is none
+    /// ([`App::set_background_grammar`]).
+    background: RwLock<Option<std::collections::HashMap<u64, Vec<grammar::Finding>>>>,
 }
 
 impl App {

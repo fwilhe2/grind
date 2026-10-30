@@ -206,3 +206,58 @@ fn lint_reports_grammar_as_a_warning_and_style_as_a_hint() {
         .collect();
     assert_eq!(warnings, ["grammar"], "style is a hint");
 }
+
+/// LanguageTool answers later (`doc/grammar.md` decision 10): the app lists the paragraphs not yet
+/// answered, keeps each answer by the text it was for, and shows it beside the built-in
+/// checker's — winning where both found something — until that text changes.
+#[test]
+fn a_late_checkers_answers_are_kept_by_the_text_they_were_for() {
+    let app = fodt("", "<text:p>one xx two</text:p><text:p>plain</text:p>");
+    app.set_checker(Some(Arc::new(Doubles::default())));
+    assert!(
+        app.grammar_pending(0..2).is_empty(),
+        "nothing asked for yet"
+    );
+    app.set_background_grammar(true);
+    let pending = app.grammar_pending(0..2);
+    assert_eq!(pending.len(), 2);
+    assert_eq!(pending[0].text, "one xx two");
+    let late = |range: std::ops::Range<usize>, rule: &str| Finding {
+        range,
+        rule: rule.into(),
+        kind: Kind::Grammar,
+        message: "late".into(),
+        replacements: Vec::new(),
+        url: None,
+    };
+    // An answer overlapping the built-in `xx` (4..6) wins; one elsewhere joins it.
+    app.grammar_found(pending[0].key, vec![late(4..7, "lt:A"), late(0..3, "lt:B")]);
+    app.grammar_found(pending[1].key, Vec::new());
+    assert!(app.grammar_pending(0..2).is_empty(), "both answered");
+    let rules: Vec<String> = app
+        .grammar(0..2)
+        .into_iter()
+        .map(|f| f.finding.rule)
+        .collect();
+    assert_eq!(rules, ["lt:B", "lt:A"]);
+    // An edit makes the paragraph pending again, and its old answer is not shown for new text.
+    app.correct(
+        Caret {
+            block: 0,
+            offset: 0,
+        },
+        "one",
+        "1",
+    )
+    .unwrap();
+    let pending = app.grammar_pending(0..2);
+    assert_eq!(pending.len(), 1);
+    let rules: Vec<String> = app
+        .grammar(0..2)
+        .into_iter()
+        .map(|f| f.finding.rule)
+        .collect();
+    assert_eq!(rules, ["test:xx"], "the built-in one only");
+    app.set_background_grammar(false);
+    assert!(app.grammar_pending(0..2).is_empty());
+}
