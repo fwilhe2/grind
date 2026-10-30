@@ -65,6 +65,37 @@ pub trait Checker: Send + Sync {
     }
 }
 
+/// Several checkers as one: each paragraph checked by all of them, and where two findings
+/// overlap the later checker's wins — so the built-in checker's quick answer gives way to
+/// LanguageTool's where both have something to say (`doc/grammar.md` §5).
+pub struct Both(pub Vec<std::sync::Arc<dyn Checker>>);
+
+impl Checker for Both {
+    fn check(&self, paragraph: &Paragraph<'_>) -> Vec<Finding> {
+        self.check_all(std::slice::from_ref(paragraph))
+            .pop()
+            .unwrap_or_default()
+    }
+
+    fn check_all(&self, paragraphs: &[Paragraph<'_>]) -> Vec<Vec<Finding>> {
+        let mut out: Vec<Vec<Finding>> = vec![Vec::new(); paragraphs.len()];
+        for checker in &self.0 {
+            for (mine, later) in out.iter_mut().zip(checker.check_all(paragraphs)) {
+                mine.retain(|f| {
+                    !later
+                        .iter()
+                        .any(|l| f.range.start < l.range.end && l.range.start < f.range.end)
+                });
+                mine.extend(later);
+            }
+        }
+        for findings in &mut out {
+            findings.sort_by_key(|f| (f.range.start, f.range.end));
+        }
+        out
+    }
+}
+
 /// `findings` less any that touch a range of `skip`, sorted by where they start.
 pub fn outside(mut findings: Vec<Finding>, skip: &[Range<usize>]) -> Vec<Finding> {
     findings.retain(|f| {
@@ -89,6 +120,48 @@ mod tests {
             replacements: Vec::new(),
             url: None,
         }
+    }
+
+    struct Fixed(Vec<Range<usize>>, &'static str);
+
+    impl Checker for Fixed {
+        fn check(&self, _: &Paragraph<'_>) -> Vec<Finding> {
+            self.0
+                .iter()
+                .map(|r| Finding {
+                    rule: self.1.into(),
+                    ..at(r.clone())
+                })
+                .collect()
+        }
+    }
+
+    #[test]
+    fn of_two_checkers_the_later_wins_where_their_findings_overlap() {
+        use std::sync::Arc;
+        let both = Both(vec![
+            Arc::new(Fixed(vec![0..3, 10..12], "first")),
+            Arc::new(Fixed(vec![2..5, 20..22], "second")),
+        ]);
+        let paragraph = Paragraph {
+            text: "",
+            skip: &[],
+            language: None,
+        };
+        let found: Vec<(Range<usize>, String)> = both
+            .check_all(&[paragraph])
+            .remove(0)
+            .into_iter()
+            .map(|f| (f.range, f.rule))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                (2..5, "second".to_owned()),
+                (10..12, "first".to_owned()),
+                (20..22, "second".to_owned())
+            ]
+        );
     }
 
     #[test]
