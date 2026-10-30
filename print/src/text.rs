@@ -3450,4 +3450,41 @@ mod tests {
             "the second's alone",
         );
     }
+    /// §5c fact 33: a cell's text at the top, halfway down, or with its last line on the bottom
+    /// padding, as `style:vertical-align` says.
+    #[test]
+    fn a_cells_text_sits_down_its_row_as_its_style_says() {
+        let bytes = r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
+<office:styles><style:style style:name="Standard" style:family="paragraph"><style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm" fo:line-height="100%"/><style:text-properties fo:font-size="12pt" fo:font-family="'Liberation Sans'"/></style:style></office:styles>
+<office:automatic-styles>
+<style:style style:name="R" style:family="table-row"><style:table-row-properties style:min-row-height="3cm"/></style:style>
+<style:style style:name="CT" style:family="table-cell"><style:table-cell-properties style:vertical-align="top" fo:padding="0.2cm" fo:border="0.5pt solid #000000"/></style:style>
+<style:style style:name="CM" style:family="table-cell"><style:table-cell-properties style:vertical-align="middle" fo:padding="0.2cm" fo:border="0.5pt solid #000000"/></style:style>
+<style:style style:name="CB" style:family="table-cell"><style:table-cell-properties style:vertical-align="bottom" fo:padding="0.2cm" fo:border="0.5pt solid #000000"/></style:style>
+<style:page-layout style:name="pm"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-left="2cm" fo:margin-right="2cm" fo:margin-top="2cm" fo:margin-bottom="2cm"/></style:page-layout></office:automatic-styles>
+<office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm"/></office:master-styles>
+<office:body><office:text><table:table table:name="T"><table:table-column table:number-columns-repeated="3"/><table:table-row table:style-name="R">
+<table:table-cell table:style-name="CT"><text:p text:style-name="Standard">Top</text:p></table:table-cell>
+<table:table-cell table:style-name="CM"><text:p text:style-name="Standard">Mid</text:p></table:table-cell>
+<table:table-cell table:style-name="CB"><text:p text:style-name="Standard">Bot</text:p><text:p text:style-name="Standard">Two</text:p></table:table-cell>
+</table:table-row></table:table><text:p text:style-name="Standard">After</text:p></office:text></office:body></office:document>"##;
+        let app = App::new();
+        app.open_bytes("va.fodt", bytes.as_bytes()).unwrap();
+        let doc = typeset(&app, &setter(), &Options::default());
+        let texts = texts(&doc.pages[0]);
+        let at = |want: &str| texts.iter().find(|t| t.2 == want).expect(want).1;
+        // A 3 cm row, 0.2 cm padding and a 0.5 pt border above and below: what the text leaves.
+        let slack = 3.0 * CM - 0.4 * CM - 1.0 - LINE;
+        near(at("Mid") - at("Top"), slack / 2.0, "halfway down");
+        near(
+            at("Two") - at("Top"),
+            slack,
+            "the last line on the bottom padding",
+        );
+        near(
+            at("Bot") - at("Top"),
+            slack - LINE,
+            "the first a line above it",
+        );
+    }
 }

@@ -243,11 +243,13 @@ impl grind_text::Faces for TableLooks<'_> {
         ])
     }
 
-    fn cell_centred(&self, table: &str, row: u32, column: u32) -> bool {
-        self.0
-            .get(table)
-            .and_then(|look| look.cell(row, column))
-            .is_some_and(|cell| cell.vertical_align.as_deref() == Some("middle"))
+    fn cell_drop(&self, table: &str, row: u32, column: u32) -> f64 {
+        let look = self.0.get(table).and_then(|look| look.cell(row, column));
+        match look.and_then(|cell| cell.vertical_align.as_deref()) {
+            Some("middle") => 0.5,
+            Some("bottom") => 1.0,
+            _ => 0.0,
+        }
     }
 
     fn header_row(&self, table: &str, row: u32) -> bool {
@@ -368,8 +370,8 @@ impl grind_text::Faces for Column<'_> {
         TableLooks(self.looks).cell_pad(table, row, column)
     }
 
-    fn cell_centred(&self, table: &str, row: u32, column: u32) -> bool {
-        TableLooks(self.looks).cell_centred(table, row, column)
+    fn cell_drop(&self, table: &str, row: u32, column: u32) -> f64 {
+        TableLooks(self.looks).cell_drop(table, row, column)
     }
 
     fn header_row(&self, table: &str, row: u32) -> bool {

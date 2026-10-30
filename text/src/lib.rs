@@ -409,9 +409,10 @@ pub trait Faces {
         None
     }
 
-    /// Whether a cell's text is centred vertically in its row (`style:vertical-align`).
-    fn cell_centred(&self, _table: &str, _row: u32, _column: u32) -> bool {
-        false
+    /// How far down the room its row leaves a cell's text sits: `0` at the top, `0.5` halfway,
+    /// `1` at the bottom (`style:vertical-align`).
+    fn cell_drop(&self, _table: &str, _row: u32, _column: u32) -> f64 {
+        0.0
     }
 
     /// How much room the footnotes cited in the block take at the foot of its page, in the face's

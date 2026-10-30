@@ -840,6 +840,10 @@ oracle turned out to be unable to answer the font questions (fact 4).
    a 3 cm `fo:margin-right` 16.8 pt past that paragraph's own edge. Why 16.8 pt is not known. A
    **left** stop past the edge is another matter, not built: its leader ran on to the stop, past
    the paper's edge at 25 cm, and the text after it went to the next line.
+33. **A cell's text down its row** — `MEASURED` (2026-10-30, 26.8, a 3 cm row of three cells
+   with 0.2 cm padding). `style:vertical-align="top"` sets the text from the top padding, `middle`
+   halfway down the room the text leaves, and `bottom` with its last line on the bottom padding
+   (two paragraphs ended 0.2 cm above the row's foot).
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

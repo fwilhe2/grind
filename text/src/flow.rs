@@ -628,10 +628,10 @@ fn lay_out_table(
             height,
             first: run.blocks.first().copied().unwrap_or(0),
         });
-        // A cell whose face centres it vertically puts its text halfway down the room left.
+        // A cell whose face aligns it vertically puts its text that far down the room left.
         let slack = (height - text(run) - pad[0] - pad[2]).max(0.0);
-        let centred = faces.cell_centred(&run.cell.table, run.cell.row, run.cell.column);
-        let mut at = cell_top + pad[0] + if centred { slack / 2.0 } else { 0.0 };
+        let drop = faces.cell_drop(&run.cell.table, run.cell.row, run.cell.column);
+        let mut at = cell_top + pad[0] + slack * drop;
         for &index in &run.blocks {
             let Some(view) = viewport.get(index) else {
                 continue;
