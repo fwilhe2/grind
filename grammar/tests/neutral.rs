@@ -76,3 +76,63 @@ fn doubled_punctuation_is_found_and_an_ellipsis_is_not() {
     nothing("Wait... what?!", None);
     nothing("Well…", None);
 }
+
+#[test]
+fn a_missing_space_after_punctuation_is_found() {
+    assert_eq!(
+        found("It ended.Then it began.", None),
+        ["missing-space-after:."]
+    );
+    assert_eq!(
+        found("Red,green and blue.", None),
+        ["missing-space-after:,"]
+    );
+    assert_eq!(found("Why?Because.", None), ["missing-space-after:?"]);
+}
+
+#[test]
+fn punctuation_inside_a_number_an_address_or_an_abbreviation_is_not() {
+    nothing("It costs 1,50 or 3.14 at 10:30.", None);
+    nothing("See e.g. the guide, i.e. this one.", None);
+    nothing("Mail ann@example.org or visit www.example.org/help.", None);
+    nothing("Open lib.rs and README.md now.", None);
+    nothing("Rule z.B. gilt, d.h. immer.", Some("de-DE"));
+    nothing("John 3:16 says so.", None);
+}
+
+#[test]
+fn a_sentence_starting_in_lowercase_is_found() {
+    assert_eq!(
+        found("It rained. then it stopped.", None),
+        ["sentence-start-lowercase:then"]
+    );
+    assert_eq!(
+        found("Really? yes.", None),
+        ["sentence-start-lowercase:yes"]
+    );
+}
+
+#[test]
+fn a_lowercase_word_after_an_abbreviation_or_a_number_is_not_a_sentence_start() {
+    nothing("Fruit, e.g. apples, etc. and more.", Some("en-US"));
+    nothing("Bring tools, i.e. a hammer.", Some("en-US"));
+    nothing("Am 3. oktober war es.", Some("de-DE"));
+    nothing("Das ist z. B. gut, bzw. besser.", Some("de-DE"));
+    nothing("Buy an iPhone. iPads too.", None);
+    nothing("Wait... then go.", None);
+    nothing("He said, “Go.” then left.", None);
+}
+
+#[test]
+fn an_unpaired_bracket_is_found() {
+    assert_eq!(found("See the note (below.", None), ["unpaired-bracket:("]);
+    assert_eq!(found("It works) well.", None), ["unpaired-bracket:)"]);
+}
+
+#[test]
+fn a_list_label_or_a_smiley_is_not_an_unpaired_bracket() {
+    nothing("a) the first point", None);
+    nothing("1) the first point", None);
+    nothing("Thanks :) see you", None);
+    nothing("Paired (as here) and (here).", None);
+}

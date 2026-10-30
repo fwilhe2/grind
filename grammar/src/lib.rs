@@ -32,6 +32,9 @@ impl Checker for Builtin {
         neutral::space_before_punctuation(&tokens, language, &mut out);
         neutral::double_space(&tokens, self.picky, &mut out);
         neutral::repeated_punctuation(&tokens, &mut out);
+        neutral::missing_space_after(&tokens, &mut out);
+        neutral::sentence_start_lowercase(&tokens, language, &mut out);
+        neutral::unpaired_bracket(&tokens, &mut out);
         out
     }
 }
