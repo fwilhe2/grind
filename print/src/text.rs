@@ -104,6 +104,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         &mut spacing,
         &mut indents,
     );
+    let frames = paragraph_frames(app, &viewport, &mut spacing);
     let across: Vec<_> = widths
         .iter()
         .map(|&width| flow::across_with(app, width, &SPACING, &crate::faces::TableLooks(&looks)))
@@ -222,6 +223,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 let first = grind_text::Faces::first_indent(column, view.index);
                 let tabs = grind_text::Faces::tabs(column, view.index);
                 let label = labels.get(&view.index).copied();
+                let under = ops.len();
                 let drawn = lines(
                     &mut ops,
                     app,
@@ -231,8 +233,22 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                     (first, &tabs, label),
                     origin,
                 );
-                if let (Some((from, to)), false) = (drawn, piece.repeat) {
-                    cover(caret(piece.index, from), caret(piece.index, to));
+                if let (Some(frame), Some(drawn)) = (frames.get(&view.index), &drawn) {
+                    let room = spacing.get(&view.index).copied().unwrap_or_default();
+                    let body = (top, top + sheet.height);
+                    let mut boxed = Vec::new();
+                    frame.draw(
+                        &mut boxed,
+                        piece,
+                        origin,
+                        (drawn.height, drawn.last),
+                        room,
+                        body,
+                    );
+                    ops.splice(under..under, boxed);
+                }
+                if let (Some(drawn), false) = (drawn, piece.repeat) {
+                    cover(caret(piece.index, drawn.from), caret(piece.index, drawn.to));
                 }
             }
             // The page's number within its run, and how many the run has: the whole document's
@@ -542,6 +558,167 @@ fn block_spacing(
         .collect()
 }
 
+/// Each boxed paragraph's frame, by block index, with its borders and padding added to the room
+/// it takes (`doc/odt-format.md` §5c fact 30). A paragraph joins the box of the one before it
+/// when they sit together — both outside a table or in the same cell — and their borders, padding
+/// and side margins are equal, unless either says `style:join-border="false"`; no border or
+/// padding is taken between them.
+fn paragraph_frames(
+    app: &App,
+    viewport: &grind_text::Viewport,
+    spacing: &mut HashMap<usize, crate::faces::Room>,
+) -> HashMap<usize, Frame> {
+    let props: Vec<Option<grind_text::paragraph::ParagraphProps>> = viewport
+        .iter()
+        .map(|view| {
+            let resolved = app.paragraph(view.index)?;
+            resolved.declared.then_some(resolved.props)
+        })
+        .collect();
+    let views: Vec<&BlockView> = viewport.iter().collect();
+    let looks: Vec<_> = props
+        .iter()
+        .map(|props| props.as_ref().and_then(|props| props.look()))
+        .collect();
+    let joined = |at: usize| -> bool {
+        let (Some(a), Some(b)) = (&props[at], &props[at + 1]) else {
+            return false;
+        };
+        let (Some(first), Some(second)) = (&looks[at], &looks[at + 1]) else {
+            return false;
+        };
+        let (va, vb) = (views[at], views[at + 1]);
+        let cell = |view: &BlockView| {
+            view.cell
+                .as_ref()
+                .map(|cell| (cell.table.clone(), cell.row, cell.column))
+        };
+        let length = |value: &Option<String>| value.as_deref().and_then(length_mm).unwrap_or(0.0);
+        vb.index == va.index + 1
+            && cell(va) == cell(vb)
+            && a.joins()
+            && b.joins()
+            && first.border == second.border
+            && first.padding == second.padding
+            && length(&a.margin_left) == length(&b.margin_left)
+            && length(&a.margin_right) == length(&b.margin_right)
+    };
+    let mut frames = HashMap::new();
+    for (at, look) in looks.iter().enumerate() {
+        let Some(look) = look else {
+            continue;
+        };
+        let Some(room) = spacing.get_mut(&views[at].index) else {
+            continue;
+        };
+        let frame = Frame {
+            look: look.clone(),
+            open_above: at > 0 && joined(at - 1),
+            open_below: at + 1 < views.len() && joined(at),
+        };
+        let inset = |side: usize| frame.inset(side);
+        use grind_text::table_look::{BOTTOM, LEFT, RIGHT, TOP};
+        room.space.left += inset(LEFT);
+        room.right += inset(RIGHT);
+        if !frame.open_above {
+            room.space.above += inset(TOP);
+        }
+        if !frame.open_below {
+            room.space.below += inset(BOTTOM);
+        }
+        frames.insert(views[at].index, frame);
+    }
+    frames
+}
+
+/// A paragraph's box: its look, and whether it runs on into the paragraph above or below.
+struct Frame {
+    look: grind_text::table_look::CellLook,
+    open_above: bool,
+    open_below: bool,
+}
+
+impl Frame {
+    /// The room `side`'s border and padding take, in points.
+    fn inset(&self, side: usize) -> f64 {
+        self.look.edge(side).map_or(0.0, |edge| edge.thickness) + pt(self.look.padding[side])
+    }
+
+    /// Draw the box round one piece of its paragraph, whose lines start at `(x, y)` and are
+    /// `height` tall: the fill over the paragraph's own box, then each closed side's border
+    /// inside its outer edge. A side open to a joined neighbour runs through the margins between
+    /// them, and stops at the body's edge.
+    // ponytail: a box split by a page break is left open at the break, and a box starting a
+    // page keeps its top inset only because the space above is dropped first; Writer's
+    // behaviour at a break was not measured.
+    fn draw(
+        &self,
+        ops: &mut Vec<Op>,
+        piece: &Piece,
+        (x, y): (f64, f64),
+        (height, last): (f64, bool),
+        room: crate::faces::Room,
+        (body_top, body_bottom): (f64, f64),
+    ) {
+        use grind_text::table_look::{BOTTOM, LEFT, RIGHT, TOP};
+        let first = piece.lines.start == 0;
+        let (x0, x1) = (x - self.inset(LEFT), x + piece.width + self.inset(RIGHT));
+        let closed_top = first && !self.open_above;
+        let closed_bottom = last && !self.open_below;
+        let y0 = match (first, self.open_above) {
+            (false, _) => y,
+            (true, false) => y - self.inset(TOP),
+            (true, true) => (y - room.space.above).max(body_top),
+        };
+        let y1 = match (last, self.open_below) {
+            (false, _) => y + height,
+            (true, false) => y + height + self.inset(BOTTOM),
+            (true, true) => (y + height + room.space.below).min(body_bottom),
+        };
+        if let Some(fill) = self.look.background.as_deref().and_then(Rgb::parse) {
+            let top = if first { y - self.inset(TOP) } else { y };
+            let bottom = if last {
+                y + height + self.inset(BOTTOM)
+            } else {
+                y + height
+            };
+            ops.push(Op::Rect {
+                x: x0 as f32,
+                y: top as f32,
+                width: (x1 - x0) as f32,
+                height: (bottom - top) as f32,
+                color: fill,
+            });
+        }
+        for (side, closed) in [
+            (TOP, closed_top),
+            (RIGHT, true),
+            (BOTTOM, closed_bottom),
+            (LEFT, true),
+        ] {
+            let Some(edge) = self.look.edge(side).filter(|_| closed) else {
+                continue;
+            };
+            let color = Rgb::parse(&edge.color).unwrap_or(Rgb::BLACK);
+            for &(offset, width) in &edge.lines {
+                let at = offset + width / 2.0;
+                let (from, to) = match side {
+                    TOP => ((x0, y0 + at), (x1, y0 + at)),
+                    BOTTOM => ((x0, y1 - at), (x1, y1 - at)),
+                    LEFT => ((x0 + at, y0), (x0 + at, y1)),
+                    _ => ((x1 - at, y0), (x1 - at, y1)),
+                };
+                ops.push(Op::Line {
+                    from: (from.0 as f32, from.1 as f32),
+                    to: (to.0 as f32, to.1 as f32),
+                    width: width as f32,
+                    color,
+                });
+            }
+        }
+    }
+}
+
 /// Where each numbered heading's number and each list item's label go, by block index — across
 /// from the block's own left edge, in points — after setting the block's left margin and
 /// first-line indent as its level places them (`doc/odt-format.md` §5c facts 20 and 22,
@@ -790,8 +967,17 @@ fn rules(ops: &mut Vec<Op>, cell: &CellBox, left: f64, top: f64) {
     }
 }
 
+/// What [`lines`] drew of a block: the character offsets the piece runs between, how tall its
+/// lines are, and whether they end the block.
+struct Drawn {
+    from: usize,
+    to: usize,
+    height: f64,
+    last: bool,
+}
+
 /// One piece of a block: its lines, each cut where its formatting changes, and the bullet in
-/// front of a list item's first line. Answers the character offsets the piece runs between.
+/// front of a list item's first line.
 fn lines(
     ops: &mut Vec<Op>,
     app: &App,
@@ -800,7 +986,7 @@ fn lines(
     face: &RoleFace<'_>,
     (first, tabs, label): (f32, &grind_core::layout::Tabs, Option<f64>),
     (left, top): (f64, f64),
-) -> Option<(usize, usize)> {
+) -> Option<Drawn> {
     let layout = app
         .layout_block_tabbed(view.index, piece.width as f32, face, first, tabs)
         .ok()?;
@@ -1007,7 +1193,12 @@ fn lines(
             }
         }
     }
-    Some(span)
+    Some(Drawn {
+        from: span.0,
+        to: span.1,
+        height: f64::from(last.top + last.height - first_top),
+        last: piece.lines.end >= count,
+    })
 }
 
 /// A header or footer laid out once for every page: each paragraph in the face and alignment its
@@ -2997,5 +3188,184 @@ mod tests {
         assert_eq!(typeset.pages.len(), 1);
         assert!(typeset.pages[0].ops.is_empty());
         assert_eq!((typeset.pages[0].start, typeset.pages[0].end), (None, None));
+    }
+    /// A flat document of 12 pt Liberation Sans paragraphs between `Before` and `After`, on 2 cm
+    /// margins, with the boxed styles §5c fact 30 was measured with.
+    fn boxed(body: &str) -> App {
+        let bytes = format!(
+            r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:styles><style:style style:name="Standard" style:family="paragraph"><style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm" fo:line-height="100%"/><style:text-properties fo:font-size="12pt" fo:font-family="'Liberation Sans'"/></style:style></office:styles>
+            <office:automatic-styles>
+              <style:style style:name="B" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:border="2pt solid #ff0000" fo:padding="0.2cm"/></style:style>
+              <style:style style:name="BM" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:border="2pt solid #ff0000" fo:padding="0.2cm" fo:margin-left="1cm" fo:margin-right="2cm" fo:margin-top="0.5cm" fo:margin-bottom="0.5cm"/></style:style>
+              <style:style style:name="BX" style:family="paragraph" style:parent-style-name="B"><style:paragraph-properties fo:margin-top="0.3cm" fo:background-color="#0000ff"/></style:style>
+              <style:style style:name="BNJ" style:family="paragraph" style:parent-style-name="B"><style:paragraph-properties style:join-border="false"/></style:style>
+              <style:style style:name="G" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:background-color="#0000ff" fo:margin-left="1cm"/></style:style>
+              <style:page-layout style:name="pm"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-left="2cm" fo:margin-right="2cm" fo:margin-top="2cm" fo:margin-bottom="2cm"/></style:page-layout>
+            </office:automatic-styles>
+            <office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm"/></office:master-styles>
+            <office:body><office:text><text:p text:style-name="Standard">Before</text:p>{body}<text:p text:style-name="Standard">After</text:p></office:text></office:body></office:document>"##
+        );
+        let app = App::new();
+        app.open_bytes("boxed.fodt", bytes.as_bytes()).unwrap();
+        app
+    }
+
+    type Stroke = ((f32, f32), (f32, f32), f32);
+
+    /// The red strokes on a page, as `(from, to, width)`, and its blue fills as `(x, y, w, h)`.
+    fn strokes_and_fills(page: &crate::ops::Page) -> (Vec<Stroke>, Vec<[f32; 4]>) {
+        let mut strokes = Vec::new();
+        let mut fills = Vec::new();
+        for op in &page.ops {
+            match op {
+                Op::Line {
+                    from,
+                    to,
+                    width,
+                    color,
+                } if *color == Rgb(0xff, 0, 0) => strokes.push((*from, *to, *width)),
+                Op::Rect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                } if *color == Rgb(0, 0, 0xff) => fills.push([*x, *y, *width, *height]),
+                _ => {}
+            }
+        }
+        (strokes, fills)
+    }
+
+    const CM: f32 = (72.0 / 2.54) as f32;
+    const LINE: f32 = 13.8;
+
+    fn near(got: f32, want: f32, what: &str) {
+        assert!((got - want).abs() < 0.3, "{what}: {got} vs {want}");
+    }
+
+    /// §5c fact 30: borders and padding take room inside the margins, and the box is closed.
+    #[test]
+    fn a_bordered_paragraph_is_boxed_inside_its_margins() {
+        let doc = typeset(
+            &boxed(r#"<text:p text:style-name="BM">Boxed</text:p>"#),
+            &setter(),
+            &Options::default(),
+        );
+        let page = &doc.pages[0];
+        let texts = texts(page);
+        let at = |want: &str| texts.iter().find(|t| t.2 == want).expect(want).clone();
+        let (before, boxed, after) = (at("Before"), at("Boxed"), at("After"));
+        let inset = 2.0 + 0.2 * CM;
+        near(
+            boxed.0,
+            3.0 * CM + inset,
+            "set in by its margin, border and padding",
+        );
+        near(
+            boxed.1 - before.1,
+            LINE + 0.5 * CM + inset,
+            "down by its margin, border and padding",
+        );
+        near(
+            after.1 - boxed.1,
+            LINE + inset + 0.5 * CM,
+            "the next below the box and the margin",
+        );
+        let (strokes, _) = strokes_and_fills(page);
+        assert_eq!(strokes.len(), 4, "a closed box: {strokes:?}");
+        let top = 2.0 * CM + LINE + 0.5 * CM;
+        let xs = strokes.iter().flat_map(|s| [s.0.0, s.1.0]);
+        let ys = strokes.iter().flat_map(|s| [s.0.1, s.1.1]);
+        near(
+            xs.clone().fold(f32::MAX, f32::min),
+            3.0 * CM,
+            "the box's left",
+        );
+        near(xs.fold(f32::MIN, f32::max), 17.0 * CM, "the box's right");
+        near(ys.clone().fold(f32::MAX, f32::min), top, "the box's top");
+        near(
+            ys.fold(f32::MIN, f32::max),
+            top + LINE + 2.0 * inset,
+            "the box's bottom",
+        );
+    }
+
+    /// §5c fact 30: equal neighbours share one box, the margins between them inside it, and
+    /// `style:join-border="false"` or a different margin keeps them apart.
+    #[test]
+    fn equal_bordered_paragraphs_join_into_one_box() {
+        let inset = 2.0 + 0.2 * CM;
+        let horizontal = |doc: &Document| {
+            let (strokes, fills) = strokes_and_fills(&doc.pages[0]);
+            let mut ys: Vec<f32> = strokes
+                .iter()
+                .filter(|s| (s.0.1 - s.1.1).abs() < 1e-3)
+                .map(|s| s.0.1)
+                .collect();
+            ys.sort_by(f32::total_cmp);
+            (ys, fills)
+        };
+        let joined = typeset(
+            &boxed(
+                r#"<text:p text:style-name="B">First</text:p><text:p text:style-name="BX">Second</text:p>"#,
+            ),
+            &setter(),
+            &Options::default(),
+        );
+        let texts = texts(&joined.pages[0]);
+        let at = |want: &str| texts.iter().find(|t| t.2 == want).expect(want).clone();
+        near(
+            at("Second").1 - at("First").1,
+            LINE + 0.3 * CM,
+            "no border between them, the margin inside",
+        );
+        let (ys, fills) = horizontal(&joined);
+        assert_eq!(ys.len(), 2, "one top and one bottom: {ys:?}");
+        near(
+            ys[1] - ys[0],
+            2.0 * LINE + 0.3 * CM + 2.0 * inset - 2.0,
+            "one box round both",
+        );
+        // The second's fill covers the box it would have on its own, reaching into the first's.
+        assert_eq!(fills.len(), 1, "{fills:?}");
+        near(fills[0][2], 17.0 * CM, "across the box");
+        let ascent = at("First").1 - (2.0 * CM + LINE + inset);
+        near(
+            fills[0][1],
+            at("Second").1 - ascent - inset,
+            "its own top inset above its line",
+        );
+        near(fills[0][3], LINE + 2.0 * inset, "its line and both insets");
+
+        let apart =
+            |body: &str| horizontal(&typeset(&boxed(body), &setter(), &Options::default())).0;
+        let ys = apart(
+            r#"<text:p text:style-name="BNJ">First</text:p><text:p text:style-name="BNJ">Second</text:p>"#,
+        );
+        assert_eq!(ys.len(), 4, "two closed boxes: {ys:?}");
+        let ys = apart(
+            r#"<text:p text:style-name="B">First</text:p><text:p text:style-name="BM">Second</text:p>"#,
+        );
+        assert_eq!(ys.len(), 4, "a different margin, two boxes: {ys:?}");
+    }
+
+    /// §5c fact 30: a background with no border or padding covers the margins' span and the line.
+    #[test]
+    fn a_paragraphs_background_covers_its_box() {
+        let doc = typeset(
+            &boxed(r#"<text:p text:style-name="G">Shaded</text:p>"#),
+            &setter(),
+            &Options::default(),
+        );
+        let (strokes, fills) = strokes_and_fills(&doc.pages[0]);
+        assert!(strokes.is_empty());
+        assert_eq!(fills.len(), 1);
+        let [x, y, w, h] = fills[0];
+        near(x, 3.0 * CM, "from the left margin");
+        near(w, 16.0 * CM, "to the text area's right");
+        near(y, 2.0 * CM + LINE, "the paragraph's top");
+        near(h, LINE, "one line");
     }
 }

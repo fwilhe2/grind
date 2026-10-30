@@ -228,7 +228,11 @@ fn a_paragraphs_border_padding_and_background_resolve_side_by_side() {
     let own = app.paragraph(1).unwrap().props;
     let look = own.look().expect("a box");
     assert_eq!(look.border[0].as_deref(), Some("none"), "its own top");
-    assert_eq!(look.border[2].as_deref(), Some("2pt solid #ff0000"), "the parent's bottom");
+    assert_eq!(
+        look.border[2].as_deref(),
+        Some("2pt solid #ff0000"),
+        "the parent's bottom"
+    );
     assert_eq!(look.padding, [2.0, 2.0, 2.0, 5.0]);
     assert!(!own.joins());
 }
