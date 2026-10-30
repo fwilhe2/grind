@@ -99,7 +99,9 @@ asks for one language (decision 4).
 6. **A correction is an edit in the core**: `App::correct(at, word, with)`, one undo step, the
    word's formatting kept, refused when the word is no longer where it was found.
 
-7. **No grammar checker** (decided 2026-10-17). [Harper](https://github.com/Automattic/harper)
+7. **No grammar checker** (decided 2026-10-17; **superseded 2026-10-30** by `doc/grammar.md`, a
+   built-in checker of our own plus an optional LanguageTool, which answers the three reasons
+   below). [Harper](https://github.com/Automattic/harper)
    (Automattic, Apache-2.0, pure Rust, English only) was the candidate, and it was measured
    before it was turned down — `harper-core 2.13.0`, default features off, a release build:
 
