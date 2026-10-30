@@ -8,13 +8,23 @@ use grind_grammar::Builtin;
 /// Every finding in `text`, as `rule:covered` — the rule without its prefix, and the text it
 /// covers — in order.
 pub fn found(text: &str, language: Option<&str>) -> Vec<String> {
+    check(Builtin::default(), text, language)
+}
+
+/// [`found`], with the style rules on.
+#[allow(dead_code)]
+pub fn found_picky(text: &str, language: Option<&str>) -> Vec<String> {
+    check(Builtin { picky: true }, text, language)
+}
+
+fn check(builtin: Builtin, text: &str, language: Option<&str>) -> Vec<String> {
     let paragraph = Paragraph {
         text,
         skip: &[],
         language,
     };
     let chars: Vec<char> = text.chars().collect();
-    let mut findings = Builtin::default().check(&paragraph);
+    let mut findings = builtin.check(&paragraph);
     findings.sort_by_key(|f| f.range.start);
     findings
         .into_iter()

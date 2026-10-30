@@ -5,7 +5,7 @@
 //! The rules that run on every paragraph, whatever its language (`doc/grammar.md` §4).
 
 mod common;
-use common::{found, nothing};
+use common::{found, found_picky, nothing};
 
 #[test]
 fn a_word_twice_is_found_with_the_space_before_the_second() {
@@ -50,14 +50,23 @@ fn a_space_before_punctuation_that_belongs_there_is_not() {
 #[test]
 fn two_spaces_between_words_are_found() {
     assert_eq!(found("One  two.", None), ["double-space:  "]);
-    assert_eq!(found("End.  Next one.", None), ["double-space:  "]);
 }
 
 #[test]
-fn spaces_at_a_line_end_or_before_a_tab_are_not() {
+fn spaces_that_lay_a_line_out_are_not() {
     nothing("Name\tValue", None);
     nothing("Ends here.  ", None);
     nothing("  Indented.", None);
+    nothing("Day       Month       Year", None);
+    nothing("Office  \u{2610}", None);
+    nothing("6.1  Are instructions displayed?", None);
+    nothing("The above named does         does not", None);
+}
+
+#[test]
+fn two_spaces_after_a_sentence_are_a_style_finding() {
+    nothing("End.  Next one.", None);
+    assert_eq!(found_picky("End.  Next one.", None), ["double-space:  "]);
 }
 
 #[test]

@@ -30,7 +30,11 @@ pub fn repeated_word(tokens: &[Token], language: Option<Language>, out: &mut Vec
         let [first, space, second] = window else {
             continue;
         };
-        if !(first.is_word() && space.is_plain_space() && second.is_word()) {
+        if !(first.is_word()
+            && space.is_plain_space()
+            && space.range.len() <= 2
+            && second.is_word())
+        {
             continue;
         }
         let word = second.lower();
@@ -88,28 +92,34 @@ pub fn space_before_punctuation(
     }
 }
 
-/// Two or more spaces between words, or after a sentence: one is enough. Spaces that start or
-/// end a line, and a tab, are left alone.
-pub fn double_space(tokens: &[Token], out: &mut Vec<Finding>) {
-    for window in tokens.windows(3) {
+/// Exactly two spaces between two words. More is a line laid out by hand (a form's `Day
+/// Month Year`), and two after a sentence's end is a typing convention, so that one is a style
+/// finding (`picky`).
+pub fn double_space(tokens: &[Token], picky: bool, out: &mut Vec<Finding>) {
+    for (at, window) in tokens.windows(3).enumerate() {
         let [before, space, after] = window else {
             continue;
         };
-        if space.is_plain_space()
-            && space.range.len() > 1
-            && before.sort != Sort::Space
-            && after.sort != Sort::Space
-            && before.text != "\n"
-            && after.text != "\n"
-        {
-            out.push(crate::finding(
-                "double-space",
-                Kind::Typography,
-                (space, space),
-                "More than one space".to_owned(),
-                vec![" ".to_owned()],
-            ));
+        if !(space.is_plain_space() && space.range.len() == 2 && after.is_word()) {
+            continue;
         }
+        let between_words = before.is_word() && !before.text.chars().any(char::is_numeric);
+        let after_sentence = matches!(before.text.as_str(), "." | "!" | "?")
+            && at > 0
+            && tokens[at - 1].is_word()
+            && !tokens[at - 1].text.chars().any(char::is_numeric);
+        let kind = match (between_words, after_sentence && picky) {
+            (true, _) => Kind::Typography,
+            (false, true) => Kind::Style,
+            (false, false) => continue,
+        };
+        out.push(crate::finding(
+            "double-space",
+            kind,
+            (space, space),
+            "More than one space".to_owned(),
+            vec![" ".to_owned()],
+        ));
     }
 }
 

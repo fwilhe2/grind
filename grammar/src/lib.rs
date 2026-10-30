@@ -30,7 +30,7 @@ impl Checker for Builtin {
         let mut out = Vec::new();
         neutral::repeated_word(&tokens, language, &mut out);
         neutral::space_before_punctuation(&tokens, language, &mut out);
-        neutral::double_space(&tokens, &mut out);
+        neutral::double_space(&tokens, self.picky, &mut out);
         neutral::repeated_punctuation(&tokens, &mut out);
         out
     }
