@@ -164,6 +164,7 @@ oracle image pinned by digest in `ci/libreoffice-image`. Loops A and B want a Li
 | D, D″ | our import against the oracle's conversion | `xlsx/tests/loop_d.rs`, `docx/tests/loop_d.rs` |
 | E | generated formulas, evaluated by us and by LibreOffice | `sheet/tests/loop_e.rs`, `doc/differential-fuzz.md` |
 | F | project → read back is the same model | `sheet/tests/loop_f.rs`, `text/tests/loop_f.rs` |
+| G′ | the built-in grammar checker against LanguageTool (`GRIND_LANGUAGETOOL_URL`; its server-free half always runs) | `grammar/tests/loop_g_prime.rs`, `doc/grammar.md` §6 |
 
 These never skip: `sheet/tests/kb.rs` (R7, plus R2/R3/R6), `text/tests/libreoffice.rs` (vendored
 Writer documents in both forms), `xlsx/tests/ooxmlgen.rs` (Open XML SDK workbooks with a manifest
