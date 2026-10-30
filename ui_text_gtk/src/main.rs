@@ -350,6 +350,7 @@ impl Ui {
         });
         ui.wire(application);
         ui.check_spelling();
+        ui.check_grammar();
         ui.refresh();
         ui
     }
@@ -518,6 +519,37 @@ impl Ui {
         ));
         self.window.add_action(&spelling);
 
+        // Grammar's two switches, remembered in the same file `grind grammar` writes
+        // (`doc/grammar.md` decision 5).
+        let setting = grind_languagetool::setting::Setting::load();
+        for (name, on) in [
+            ("check-grammar", setting.builtin),
+            ("grammar-style", setting.style),
+        ] {
+            let action = gio::SimpleAction::new_stateful(name, None, &on.to_variant());
+            action.connect_activate(glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |action, _| {
+                    let on = !action
+                        .state()
+                        .and_then(|s| s.get::<bool>())
+                        .unwrap_or(false);
+                    action.set_state(&on.to_variant());
+                    let mut setting = grind_languagetool::setting::Setting::load();
+                    match action.name().as_str() {
+                        "check-grammar" => setting.builtin = on,
+                        _ => setting.style = on,
+                    }
+                    if let Err(why) = setting.save() {
+                        ui.toast(&format!("The setting was not remembered: {why}"));
+                    }
+                    ui.check_grammar();
+                }
+            ));
+            self.window.add_action(&action);
+        }
+
         // Moving the cursor in the source selects the block that line projects — §6.2's map in
         // the direction that has to be built rather than assumed. `notify::cursor-position`
         // rather than a key handler, so a click, a drag and an arrow all reach it.
@@ -668,6 +700,21 @@ impl Ui {
                 self.toast(&format!("Spelling is not checked: {why}"));
             }
         }
+    }
+
+    /// Attach the built-in grammar checker as the remembered setting says, with the person's
+    /// ignored rules left undrawn (`doc/grammar.md`).
+    fn check_grammar(self: &Rc<Self>) {
+        let setting = grind_languagetool::setting::Setting::load();
+        self.doc.set_grammar_ignored(setting.ignored.clone());
+        let checker: Option<Arc<dyn grind_core::grammar::Checker>> = match setting.builtin {
+            true => Some(Arc::new(grind_grammar::Builtin {
+                picky: setting.style,
+            })),
+            false => None,
+        };
+        self.app.set_checker(checker);
+        self.doc.queue_draw();
     }
 
     /// While the language is only a guess — a new document, or one stating none — guess again
@@ -1719,6 +1766,10 @@ fn primary_menu() -> gio::Menu {
     );
     spelling.append_section(None, &words);
     structure.append_submenu(Some("Spelling"), &spelling);
+    let grammar = gio::Menu::new();
+    grammar.append(Some("Check Grammar"), Some("win.check-grammar"));
+    grammar.append(Some("Style Suggestions"), Some("win.grammar-style"));
+    structure.append_submenu(Some("Grammar"), &grammar);
     menu.append_section(None, &structure);
 
     let view = gio::Menu::new();
@@ -2069,7 +2120,11 @@ mod tests {
                 // The three stateful readings are added beside the table, not in it.
                 if matches!(
                     action.as_str(),
-                    "win.show-names" | "win.show-source" | "win.spell-language"
+                    "win.show-names"
+                        | "win.show-source"
+                        | "win.spell-language"
+                        | "win.check-grammar"
+                        | "win.grammar-style"
                 ) {
                     continue;
                 }
@@ -2078,6 +2133,19 @@ mod tests {
                     "{menu} names {action}, which nothing declares"
                 );
             }
+        }
+    }
+
+    /// Grammar has its two switches beside Spelling: the built-in checker, and its style rules
+    /// (`doc/grammar.md` §7).
+    #[test]
+    fn the_primary_menu_switches_grammar_and_its_style_rules() {
+        let actions = menu_actions(primary_menu().upcast_ref());
+        for wanted in ["win.check-grammar", "win.grammar-style"] {
+            assert!(
+                actions.iter().any(|a| a == wanted),
+                "{wanted} in {actions:?}"
+            );
         }
     }
 

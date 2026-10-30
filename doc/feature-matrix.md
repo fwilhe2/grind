@@ -442,6 +442,9 @@ There is no dialog.
 | Word count | ● | ● | ● | ● | ● | ● |
 | Misspelt words listed, with addresses (`doc/spelling.md`) | ● | ● | ● | ● ʷˢ | ● | ● |
 | Misspelt words underlined, suggestions, Add to Dictionary | ◐ ˢᵖ | ● | ● ˢᵖ | ● ʷˢ | ● ˢᵖ | ● ˢᵖ |
+| Grammar findings listed, with addresses (`doc/grammar.md`) | ● ᵍᵐ | ● | ○ | ○ | ○ | ○ |
+| Grammar findings underlined, corrected from the menu, Ignore Rule | — | ● ᵍᵐ | ○ | ○ | ○ | ○ |
+| Grammar by a LanguageTool server | ● ᵍᵐ | ○ | ○ | ○ | ○ | ○ |
 | **Character formatting** | | | | | | |
 | Bold, italic, underline | ● | ● | ● | ● | ● | ● |
 | Strikethrough | ● | ● | ● | ● | ● | ● |
@@ -494,6 +497,7 @@ resolution. Every preview anywhere is `grind_print::raster` of the display list 
 written from, except the Mac's, which is the PDF. The terminal cannot show a page at all.
 
 ˢᵖ `grind text spell --suggest` prints what each word might have been and `--add` keeps one; there is nothing to underline on a terminal's standard output. **Amended 2026-10-07:** `grind-tui` underlines in red, `]`/`[` step between the words with suggestions on the status line, `:fix N` takes one and `:spell ignore|add|auto|<lang>|off` does the rest; `grind-win32` draws a Fluent-red squiggle, leads its context menu with suggestions, Ignore All and Add to Dictionary, binds F7 to the next word and has View ▸ Spelling Language…; `grind-mac` draws the dotted red underline, leads the page's context menu with suggestions, Ignore Spelling and Learn Spelling, and has Edit ▸ Spelling ▸ Check Document Now (⌘;) and Spelling Language… (2026-10-07, type-checked only; not guessing again as a document grows is its gap, `doc/spelling.md`). The two shells share the GTK window's choice and guess-again rule through `grind_spell::{Setting, reguess}`.
+ᵍᵐ **Added 2026-10-30: grammar** (`doc/grammar.md`). The built-in checker (`grind-grammar`): rules for every language, English and German, run per paragraph in the language its own words show. `grind text grammar` lists findings and `grind text correct` takes one back; `grind lint` reports `grammar` and `style`. LanguageTool (self-hosted, public or Premium) from the CLI through `grind grammar` and `grind text grammar --languagetool`. The GNOME window underlines the built-in checker's findings (blue, dotted for style), leads the right-click menu with the message, the replacements and *Ignore Rule*, and has Grammar ▸ *Check Grammar* and *Style Suggestions*, remembered; it does not yet ask LanguageTool.
 
 ᵃ Visual mode (`v`), which is the same anchor-plus-caret model under vi's spelling.
 ᵇ `o` opens a paragraph below, `X` deletes the block, `:move <address>` puts it elsewhere.

@@ -1398,6 +1398,8 @@ version = "0.0.0"
 dependencies = [
  "async-channel",
  "grind-core",
+ "grind-grammar",
+ "grind-languagetool",
  "grind-open",
  "grind-print",
  "grind-spell",

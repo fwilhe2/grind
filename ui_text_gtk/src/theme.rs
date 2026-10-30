@@ -36,6 +36,9 @@ pub struct Palette {
     /// A misspelt word's wavy underline — the theme's own error colour, the red libadwaita
     /// uses for a field that will not take what was typed.
     pub misspelt: gdk::RGBA,
+    /// A grammar or punctuation finding's wavy underline — the theme's accent, blue by default,
+    /// so it is never mistaken for spelling's red (`doc/grammar.md` decision 2).
+    pub grammar: gdk::RGBA,
 }
 
 impl Palette {
@@ -70,6 +73,7 @@ impl Palette {
             selection: with_alpha(accent, 0.35),
             rule: with_alpha(foreground, 0.28),
             misspelt: named(widget, "error_color").unwrap_or(gdk::RGBA::new(0.88, 0.11, 0.14, 1.0)),
+            grammar: accent,
         }
     }
 }

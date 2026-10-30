@@ -52,6 +52,13 @@ impl Doc {
         self.queue_draw();
     }
 
+    /// Leave these grammar rules undrawn — the person's ignored ones (`doc/grammar.md`
+    /// decision 5).
+    pub fn set_grammar_ignored(&self, rules: Vec<String>) {
+        self.imp().grammar_ignored.replace(rules);
+        self.queue_draw();
+    }
+
     /// The document changed: forget everything measured from it and repaint. Called from the
     /// observer, so it covers this widget's own edits too (rule 3).
     pub fn invalidate(&self) {
@@ -251,6 +258,33 @@ pub fn spelling_menu_model(suggestions: &[String]) -> gtk::gio::Menu {
     model
 }
 
+/// The grammar section leading the right-click menu over a finding: what is wrong (not an action),
+/// each replacement as `grammar.correct` with it as the target, then Ignore Rule.
+pub fn grammar_menu_model(finding: &grind_text::grammar::Finding) -> gtk::gio::Menu {
+    let model = gtk::gio::Menu::new();
+    let what = gtk::gio::Menu::new();
+    what.append(Some(&finding.message), Some("grammar.none"));
+    model.append_section(None, &what);
+    let offered = gtk::gio::Menu::new();
+    for with in finding.replacements.iter().take(SUGGESTIONS) {
+        let label = match with.trim().is_empty() {
+            true if with.is_empty() => "Remove".to_owned(),
+            true => "One Space".to_owned(),
+            false => with.clone(),
+        };
+        let item = gtk::gio::MenuItem::new(Some(&label), None);
+        item.set_action_and_target_value(Some("grammar.correct"), Some(&with.to_variant()));
+        offered.append_item(&item);
+    }
+    if offered.n_items() > 0 {
+        model.append_section(None, &offered);
+    }
+    let keep = gtk::gio::Menu::new();
+    keep.append(Some("Ignore Rule"), Some("grammar.ignore"));
+    model.append_section(None, &keep);
+    model
+}
+
 /// A picture's bytes decoded for painting — what the page draws, and what the Alt Text dialog
 /// shows.
 pub fn texture(image: &grind_text::ImageView) -> Option<gtk::gdk::Texture> {
@@ -355,6 +389,11 @@ mod imp {
         /// The misspelt word the right-click menu was opened on — what `spell.correct`,
         /// `spell.ignore` and `spell.add` act on.
         pub spot: RefCell<Option<grind_text::Misspelling>>,
+        /// The grammar finding the right-click menu was opened on — what `grammar.correct` and
+        /// `grammar.ignore` act on.
+        pub grammar_spot: RefCell<Option<grind_text::grammar::Flag>>,
+        /// The grammar rules the person ignores, which are not drawn.
+        pub grammar_ignored: RefCell<Vec<String>>,
     }
 
     // Spelled out rather than derived: neither `Caret` nor `ScrollablePolicy` has a
@@ -387,6 +426,8 @@ mod imp {
                 menu: std::cell::OnceCell::new(),
                 speller: RefCell::new(None),
                 spot: RefCell::new(None),
+                grammar_spot: RefCell::new(None),
+                grammar_ignored: RefCell::new(Vec::new()),
             }
         }
     }
@@ -610,6 +651,31 @@ mod imp {
             none.set_enabled(false);
             spell.add_action(&none);
             widget.insert_action_group("spell", Some(&spell));
+
+            // The grammar half, the same way: the finding is this widget's (`grammar_spot`).
+            let grammar = gtk::gio::SimpleActionGroup::new();
+            let correct = gtk::gio::SimpleAction::new("correct", Some(glib::VariantTy::STRING));
+            correct.connect_activate(glib::clone!(
+                #[weak(rename_to = doc)]
+                widget,
+                move |_, with| {
+                    if let Some(with) = with.and_then(|v| v.get::<String>()) {
+                        doc.imp().correct_grammar(&with);
+                    }
+                }
+            ));
+            grammar.add_action(&correct);
+            let ignore = gtk::gio::SimpleAction::new("ignore", None);
+            ignore.connect_activate(glib::clone!(
+                #[weak(rename_to = doc)]
+                widget,
+                move |_, _| doc.imp().ignore_grammar_rule()
+            ));
+            grammar.add_action(&ignore);
+            let none = gtk::gio::SimpleAction::new("none", None);
+            none.set_enabled(false);
+            grammar.add_action(&none);
+            widget.insert_action_group("grammar", Some(&grammar));
         }
     }
 
@@ -688,6 +754,15 @@ mod imp {
                 false => Vec::new(),
             };
             let misspelt_ink = palette.misspelt;
+            // Grammar findings, but not one ending at the caret: that is still being typed.
+            let flagged: Vec<grind_text::grammar::Flag> = self
+                .grammar_flags(first.index..last.index + 1)
+                .into_iter()
+                .filter(|f| {
+                    selection.is_some()
+                        || !(f.block == caret.block && f.finding.range.end == caret.offset)
+                })
+                .collect();
 
             for slot in slots {
                 let Some(block) = viewport.get(slot.index) else {
@@ -811,6 +886,35 @@ mod imp {
                                 y + f64::from(line.top + line.height) - 2.0,
                                 misspelt_ink,
                             );
+                        }
+                    }
+                }
+
+                // A grammar finding: a wavy line in the accent for grammar and punctuation, a
+                // dotted one in the dimmed ink for typography and style (`doc/grammar.md`
+                // decision 2). An empty one (a missing comma) is marked across its neighbours.
+                for flag in flagged.iter().filter(|f| f.block == slot.index) {
+                    let range = &flag.finding.range;
+                    let (from, to) = match range.is_empty() {
+                        true => (range.start.saturating_sub(1), range.end + 1),
+                        false => (range.start, range.end),
+                    };
+                    let quiet = matches!(
+                        flag.finding.kind,
+                        grind_text::grammar::Kind::Typography | grind_text::grammar::Kind::Style
+                    );
+                    for line in layout.lines() {
+                        if let Some((left, right)) =
+                            grind_text::paint::band(&layout, line, from, to)
+                        {
+                            let (left, right) = (x + f64::from(left), x + f64::from(right));
+                            let under = y + f64::from(line.top + line.height) - 1.0;
+                            match quiet {
+                                true => dotted(snapshot, left, right, under, palette.dim),
+                                false => {
+                                    squiggle(snapshot, left, right, under - 1.0, palette.grammar)
+                                }
+                            }
                         }
                     }
                 }
@@ -1225,8 +1329,14 @@ mod imp {
                 let spelling = super::spelling_menu_model(&app.suggest(&wrong.word));
                 model.insert_section(0, None, &spelling);
             }
+            // A grammar finding under the point leads, ahead of a misspelling inside it.
+            let finding = self.caret_at(x, y).and_then(|caret| self.grammar_at(caret));
+            if let Some(flag) = &finding {
+                model.insert_section(0, None, &super::grammar_menu_model(&flag.finding));
+            }
             menu.set_menu_model(Some(&model));
             self.spot.replace(spot);
+            self.grammar_spot.replace(finding);
             if let Some(caret) = self.caret_at(x, y) {
                 let inside = self
                     .selection()
@@ -1248,6 +1358,82 @@ mod imp {
                 .misspellings(caret.block..caret.block + 1)
                 .into_iter()
                 .find(|m| m.offset <= caret.offset && caret.offset <= m.offset + m.len)
+        }
+
+        /// Every grammar finding in `blocks` but the ignored rules'.
+        pub fn grammar_flags(
+            &self,
+            blocks: std::ops::Range<usize>,
+        ) -> Vec<grind_text::grammar::Flag> {
+            let Some(app) = self.app() else {
+                return Vec::new();
+            };
+            let ignored = self.grammar_ignored.borrow();
+            app.grammar(blocks)
+                .into_iter()
+                .filter(|flag| !ignored.contains(&flag.finding.rule))
+                .collect()
+        }
+
+        /// The grammar finding at a caret, if one covers it.
+        pub fn grammar_at(&self, caret: Caret) -> Option<grind_text::grammar::Flag> {
+            self.grammar_flags(caret.block..caret.block + 1)
+                .into_iter()
+                .find(|flag| {
+                    flag.finding.range.start <= caret.offset
+                        && caret.offset <= flag.finding.range.end
+                })
+        }
+
+        /// Replace the finding the menu was opened on with `with` — one undo step, in the core,
+        /// refused if its text has changed since.
+        pub fn correct_grammar(&self, with: &str) {
+            let Some(flag) = self.grammar_spot.take() else {
+                return;
+            };
+            let Some(app) = self.app() else { return };
+            let range = flag.finding.range.clone();
+            let covered: String = app
+                .get_viewport(flag.block..flag.block + 1)
+                .get(flag.block)
+                .map(|view| {
+                    view.text
+                        .chars()
+                        .skip(range.start)
+                        .take(range.len())
+                        .collect()
+                })
+                .unwrap_or_default();
+            match app.correct(flag.caret(), &covered, with) {
+                Ok(()) => {
+                    self.anchor.set(None);
+                    self.move_caret(
+                        Caret {
+                            offset: range.start + with.chars().count(),
+                            ..flag.caret()
+                        },
+                        true,
+                    );
+                }
+                Err(error) => self.notice(error.to_string()),
+            }
+        }
+
+        /// Stop drawing the rule of the finding the menu was opened on, and remember that.
+        fn ignore_grammar_rule(&self) {
+            let Some(flag) = self.grammar_spot.take() else {
+                return;
+            };
+            let rule = flag.finding.rule;
+            let mut setting = grind_languagetool::setting::Setting::load();
+            if !setting.ignored.contains(&rule) {
+                setting.ignored.push(rule.clone());
+                if let Err(error) = setting.save() {
+                    self.notice(format!("Could not remember ignoring {rule}: {error}"));
+                }
+            }
+            self.grammar_ignored.borrow_mut().push(rule);
+            self.obj().queue_draw();
         }
 
         /// Replace the word the menu was opened on with `with` — one undo step, in the core.
@@ -1758,6 +1944,16 @@ mod imp {
         snapshot.append_stroke(&path.to_path(), &gtk::gsk::Stroke::new(1.0), &ink);
     }
 
+    /// A dotted underline from `left` to `right` on `y` — a typography or style finding's mark,
+    /// quieter than a squiggle.
+    fn dotted(snapshot: &gtk::Snapshot, left: f64, right: f64, y: f64, ink: gtk::gdk::RGBA) {
+        let mut at = left;
+        while at + 1.0 <= right {
+            snapshot.append_color(&ink, &rect(at, y, 1.5, 1.5));
+            at += 3.0;
+        }
+    }
+
     fn draw_at(
         snapshot: &gtk::Snapshot,
         layout: &pango::Layout,
@@ -1891,6 +2087,10 @@ mod tests {
         (
             "a Title style is drawn in a larger face than the body",
             a_title_style_is_drawn_in_a_larger_face_than_the_body,
+        ),
+        (
+            "a grammar finding is offered in the menu and corrected",
+            a_grammar_finding_is_offered_in_the_menu_and_corrected,
         ),
         (
             "a picture with a caption reserves room for both",
@@ -2486,6 +2686,58 @@ mod tests {
             faces.of(&BlockKind::Paragraph, Some("Title")).height()
                 > faces.of(&BlockKind::Paragraph, None).height(),
             "a title reads larger than a plain paragraph"
+        );
+    }
+
+    /// The built-in checker's finding under the caret leads the right-click menu with its message,
+    /// its replacement and Ignore Rule; taking the replacement is one edit in the core, and an
+    /// ignored rule is not drawn (`doc/grammar.md` §7).
+    fn a_grammar_finding_is_offered_in_the_menu_and_corrected() {
+        let (doc, app) = shell(&["I saw the the cat on the mat."]);
+        app.set_checker(Some(std::sync::Arc::new(grind_grammar::Builtin::default())));
+        let imp = doc.imp();
+        let flag = imp
+            .grammar_at(Caret {
+                block: 0,
+                offset: 11,
+            })
+            .expect("the finding under the caret");
+        assert_eq!(flag.finding.rule, "builtin:repeated-word");
+        let model = grammar_menu_model(&flag.finding);
+        let actions: Vec<String> = (0..model.n_items())
+            .flat_map(|section| {
+                let items = model.item_link(section, "section").expect("a section");
+                (0..items.n_items())
+                    .filter_map(|i| {
+                        items
+                            .item_attribute_value(i, "action", Some(glib::VariantTy::STRING))
+                            .and_then(|v| v.get::<String>())
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert_eq!(
+            actions,
+            ["grammar.none", "grammar.correct", "grammar.ignore"]
+        );
+        doc.set_grammar_ignored(vec!["builtin:repeated-word".to_owned()]);
+        assert!(
+            imp.grammar_at(Caret {
+                block: 0,
+                offset: 11
+            })
+            .is_none(),
+            "ignored"
+        );
+        doc.set_grammar_ignored(Vec::new());
+        imp.grammar_spot.replace(Some(flag));
+        imp.correct_grammar("");
+        assert_eq!(
+            app.get_viewport(0..1)
+                .get(0)
+                .map(|v| v.text.clone())
+                .as_deref(),
+            Some("I saw the cat on the mat.")
         );
     }
 

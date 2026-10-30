@@ -34,6 +34,9 @@ grind-text = { path = "../text" }
 grind-print = { path = "../print" }
 # Spelling (doc/spelling.md): the dictionaries, attached to the `App` on every open.
 grind-spell = { path = "../spell" }
+# The built-in grammar checker, and the remembered grammar setting (doc/grammar.md).
+grind-grammar = { path = "../grammar" }
+grind-languagetool = { path = "../languagetool" }
 # The same two toolkit versions `ui_sheet_gtk` pins, for the same reasons — see its `Cargo.toml`.
 # Nothing here may drift from that shell: cargo unifies them into one crate either way.
 libadwaita = { version = "0.7", features = ["v1_5"] }
