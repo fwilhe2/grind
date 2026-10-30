@@ -1377,6 +1377,9 @@ impl Context<Builder> for ParagraphStyleDef {
             props.padding = sides("padding");
             props.background_color = get("background-color");
             props.join_border = attrs.get(Ns::Style, "join-border").map(str::to_owned);
+            props.contextual_spacing = attrs
+                .get(Ns::Style, "contextual-spacing")
+                .map(str::to_owned);
             return Some(Box::new(TabStopsDef));
         } else if name.is(Ns::Style, "text-properties") {
             // The family as a run's is read: the font-face reference resolved, the XSL-FO quoting

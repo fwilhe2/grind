@@ -62,6 +62,7 @@ impl App {
                 name,
             ),
             declared: name.is_some_and(|n| state.doc.paragraph_styles.contains_key(n)),
+            named: paragraph::named(&state.doc.paragraph_styles, name),
         }
     }
 
@@ -154,6 +155,7 @@ impl App {
                 style,
             ),
             declared: style.is_some_and(|name| state.doc.paragraph_styles.contains_key(name)),
+            named: paragraph::named(&state.doc.paragraph_styles, style),
         })
     }
 }

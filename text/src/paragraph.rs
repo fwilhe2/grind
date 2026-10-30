@@ -52,6 +52,8 @@ pub struct ParagraphProps {
     pub background_color: Option<String>,
     /// `style:join-border`: whether the box joins the next paragraph's equal one.
     pub join_border: Option<String>,
+    /// `style:contextual-spacing`: no space between this and a neighbour of the same named style.
+    pub contextual_spacing: Option<String>,
     // `style:text-properties` — the four that change how wide text is
     pub font_family: Option<String>,
     pub font_size: Option<String>,
@@ -76,20 +78,28 @@ impl ParagraphProps {
             (Some(child), _) => Some(child.to_owned()),
             (None, base) => base.map(str::to_owned),
         };
+        // Space above, space below and contextual spacing are inherited as one
+        // (`doc/odt-format.md` §5c fact 31).
+        if over.margin_top.is_some()
+            || over.margin_bottom.is_some()
+            || over.contextual_spacing.is_some()
+        {
+            self.margin_top.clone_from(&over.margin_top);
+            self.margin_bottom.clone_from(&over.margin_bottom);
+            self.contextual_spacing.clone_from(&over.contextual_spacing);
+        }
         let sides = self.border.iter_mut().zip(&over.border);
         for (mine, theirs) in sides.chain(self.padding.iter_mut().zip(&over.padding)) {
             if theirs.is_some() {
                 mine.clone_from(theirs);
             }
         }
-        let fields: [(&mut Option<String>, &Option<String>); 20] = [
+        let fields: [(&mut Option<String>, &Option<String>); 18] = [
             (&mut self.background_color, &over.background_color),
             (&mut self.join_border, &over.join_border),
             (&mut self.color, &over.color),
             (&mut self.language, &over.language),
             (&mut self.country, &over.country),
-            (&mut self.margin_top, &over.margin_top),
-            (&mut self.margin_bottom, &over.margin_bottom),
             (&mut self.margin_left, &over.margin_left),
             (&mut self.margin_right, &over.margin_right),
             (&mut self.text_indent, &over.text_indent),
@@ -145,6 +155,11 @@ impl ParagraphProps {
         let drawn = (0..4).any(|side| look.edge(side).is_some());
         (drawn || look.background.is_some() || look.padding.iter().any(|&pad| pad > 0.0))
             .then_some(look)
+    }
+
+    /// Whether this paragraph drops its space next to a neighbour of the same named style.
+    pub fn contextual(&self) -> bool {
+        self.contextual_spacing.as_deref() == Some("true")
     }
 
     /// Whether this paragraph's box may join the next one's (`style:join-border`, `true` unless
@@ -230,6 +245,8 @@ fn relative_size(percent: &str, base: &str) -> Option<String> {
 pub struct Resolved {
     pub props: ParagraphProps,
     pub declared: bool,
+    /// The named style the block is in: its own, or the one its automatic style derives from.
+    pub named: Option<String>,
 }
 
 /// One `style:style` of family `paragraph`, as the document declared it.
@@ -305,6 +322,19 @@ pub fn resolve(
         out.layer(&style.props);
     }
     out
+}
+
+/// The first named style down `name`'s chain: `name` itself unless it is an automatic style.
+pub fn named(styles: &HashMap<String, ParagraphStyle>, name: Option<&str>) -> Option<String> {
+    let mut at = name;
+    for _ in 0..MAX_DEPTH {
+        let style = styles.get(at?)?;
+        if !style.automatic {
+            return at.map(str::to_owned);
+        }
+        at = style.parent.as_deref();
+    }
+    None
 }
 
 #[cfg(test)]

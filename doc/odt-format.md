@@ -818,6 +818,20 @@ oracle turned out to be unable to answer the font questions (fact 4).
    a 1.51 cm box, and with 0.5 cm margins round each, 2.51 cm). A differing background does not
    prevent the join, nor a differing margin-top; a differing left or right margin does, and so
    does `style:join-border="false"` — two boxes, each closed, the second right under the first.
+31. **Space above and below is inherited as one, with contextual spacing** — `MEASURED`
+   (2026-10-30, 26.8, Liberation Sans 12 pt, styles under a parent `N` with
+   `fo:margin-top="0.5cm" fo:margin-bottom="1cm"`). A style stating any of `fo:margin-top`,
+   `fo:margin-bottom` and `style:contextual-spacing` replaces all three of its parent's: a child
+   stating only `fo:margin-top="0.3cm"` had **no** space below, and one stating only
+   `style:contextual-spacing="true"` had none above or below. `fo:margin-left`, `fo:margin-right`
+   and `fo:text-indent` are inherited one by one (a child stating only a left margin kept its
+   parent's right margin and first-line indent). With contextual spacing, two consecutive
+   paragraphs **of the same named style** — an automatic style counts as its parent — lose space
+   between them: the first's space below goes when the first states it, and the second's space
+   above goes only when both do (`true` then `false`: 0.5 cm left between them; `false` then
+   `true`: all 1.5 cm). Paragraphs of different named styles keep their space, even with equal
+   properties or one the other's parent. The first of a run keeps its space above, the last its
+   space below.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

@@ -247,3 +247,53 @@ fn a_paragraph_with_no_border_padding_or_background_has_no_box() {
     );
     assert_eq!(transparent.paragraph(0).unwrap().props.look(), None);
 }
+
+/// §5c fact 31: the space above, the space below and contextual spacing are inherited as one.
+#[test]
+fn space_above_and_below_and_contextual_spacing_are_inherited_together() {
+    let app = app(
+        r#"<office:styles>
+  <style:style style:name="N" style:family="paragraph">
+    <style:paragraph-properties fo:margin-top="0.5cm" fo:margin-bottom="1cm" fo:margin-left="2cm" fo:margin-right="3cm" fo:text-indent="1cm"/>
+  </style:style>
+  <style:style style:name="Top" style:family="paragraph" style:parent-style-name="N">
+    <style:paragraph-properties fo:margin-top="0.3cm" fo:margin-left="4cm"/>
+  </style:style>
+  <style:style style:name="Flag" style:family="paragraph" style:parent-style-name="N">
+    <style:paragraph-properties style:contextual-spacing="true"/>
+  </style:style>
+</office:styles>
+<office:automatic-styles>
+  <style:style style:name="P1" style:family="paragraph" style:parent-style-name="Flag">
+    <style:paragraph-properties fo:text-align="end"/>
+  </style:style>
+</office:automatic-styles>"#,
+        r#"<text:p text:style-name="Top">a</text:p><text:p text:style-name="P1">b</text:p><text:p text:style-name="N">c</text:p>"#,
+    );
+    let top = app.paragraph(0).unwrap().props;
+    assert_eq!(top.margin_top.as_deref(), Some("0.3cm"));
+    assert_eq!(top.margin_bottom, None, "not the parent's 1cm");
+    assert_eq!(top.margin_left.as_deref(), Some("4cm"));
+    assert_eq!(
+        top.margin_right.as_deref(),
+        Some("3cm"),
+        "inherited on its own"
+    );
+    assert_eq!(
+        top.text_indent.as_deref(),
+        Some("1cm"),
+        "inherited on its own"
+    );
+    let flagged = app.paragraph(1).unwrap();
+    assert_eq!(flagged.props.margin_top, None);
+    assert_eq!(flagged.props.margin_bottom, None);
+    assert!(flagged.props.contextual());
+    assert_eq!(
+        flagged.named.as_deref(),
+        Some("Flag"),
+        "an automatic style's parent"
+    );
+    let plain = app.paragraph(2).unwrap();
+    assert!(!plain.props.contextual());
+    assert_eq!(plain.named.as_deref(), Some("N"));
+}
