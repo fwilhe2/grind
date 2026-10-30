@@ -45,6 +45,13 @@ pub struct ParagraphProps {
     pub tab_stop_distance: Option<String>,
     /// `style:tab-stops`, in order. A style stating its own replaces its parent's set whole.
     pub tab_stops: Option<Vec<TabStop>>,
+    /// `fo:border-top`, `-right`, `-bottom`, `-left`, each from `fo:border` where unstated.
+    pub border: [Option<String>; 4],
+    /// `fo:padding-top` and the rest, in the same order, each from `fo:padding` where unstated.
+    pub padding: [Option<String>; 4],
+    pub background_color: Option<String>,
+    /// `style:join-border`: whether the box joins the next paragraph's equal one.
+    pub join_border: Option<String>,
     // `style:text-properties` — the four that change how wide text is
     pub font_family: Option<String>,
     pub font_size: Option<String>,
@@ -69,7 +76,15 @@ impl ParagraphProps {
             (Some(child), _) => Some(child.to_owned()),
             (None, base) => base.map(str::to_owned),
         };
-        let fields: [(&mut Option<String>, &Option<String>); 18] = [
+        let sides = self.border.iter_mut().zip(&over.border);
+        for (mine, theirs) in sides.chain(self.padding.iter_mut().zip(&over.padding)) {
+            if theirs.is_some() {
+                mine.clone_from(theirs);
+            }
+        }
+        let fields: [(&mut Option<String>, &Option<String>); 20] = [
+            (&mut self.background_color, &over.background_color),
+            (&mut self.join_border, &over.join_border),
             (&mut self.color, &over.color),
             (&mut self.language, &over.language),
             (&mut self.country, &over.country),
@@ -107,6 +122,35 @@ impl ParagraphProps {
             self.tab_stops.clone_from(&over.tab_stops);
         }
         self.font_size = size;
+    }
+}
+
+impl ParagraphProps {
+    /// The paragraph's box as a cell's look (`doc/odt-format.md` §5c fact 30): its borders,
+    /// padding and fill. `None` when it draws nothing and takes no room.
+    pub fn look(&self) -> Option<crate::table_look::CellLook> {
+        let background = self
+            .background_color
+            .clone()
+            .filter(|color| color.trim() != "transparent");
+        let look = crate::table_look::CellLook {
+            background,
+            border: self.border.clone(),
+            padding: self
+                .padding
+                .each_ref()
+                .map(|pad| pad.as_deref().and_then(length_mm).unwrap_or(0.0).max(0.0)),
+            ..Default::default()
+        };
+        let drawn = (0..4).any(|side| look.edge(side).is_some());
+        (drawn || look.background.is_some() || look.padding.iter().any(|&pad| pad > 0.0))
+            .then_some(look)
+    }
+
+    /// Whether this paragraph's box may join the next one's (`style:join-border`, `true` unless
+    /// stated otherwise).
+    pub fn joins(&self) -> bool {
+        self.join_border.as_deref() != Some("false")
     }
 }
 

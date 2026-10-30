@@ -804,6 +804,20 @@ oracle turned out to be unable to answer the font questions (fact 4).
    17 cm text area started 5 cm in), their feet level, and the paragraph exactly 2 cm tall. A
    space between them added the line's descent under them (0.09 cm at 12 pt); with words
    around a picture the words stand on the same baseline.
+30. **A paragraph's border and background** — `MEASURED` (2026-10-29, 26.8, Liberation Sans
+   12 pt, a 0.49 cm line, on a 17 cm text area). A paragraph's box runs across from
+   `fo:margin-left` to `fo:margin-right` and down from below its `fo:margin-top`; its borders
+   and `fo:padding` take room on every side, inside the margins: `fo:border="2pt solid"` with
+   0.2 cm padding made a 1.03 cm box round one line, its text 0.27 cm in from the box's left
+   edge, and the next paragraph started below the box and the paragraph's margin-bottom. A side
+   with no border takes only its padding (a top border alone and no padding moved the line down
+   by the border's 2 pt and nothing else). `fo:background-color` fills the box inside the
+   borders, padding included. **Consecutive paragraphs join into one box** when their borders,
+   padding and left and right margins are equal: no border or padding between them, the first's
+   margin-bottom and the second's margin-top inside the box (two joined one-line paragraphs made
+   a 1.51 cm box, and with 0.5 cm margins round each, 2.51 cm). A differing background does not
+   prevent the join, nor a differing margin-top; a differing left or right margin does, and so
+   does `style:join-border="false"` — two boxes, each closed, the second right under the first.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

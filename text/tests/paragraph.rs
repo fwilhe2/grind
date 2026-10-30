@@ -202,3 +202,44 @@ fn a_named_character_style_is_shown_and_measured_as_it_says() {
         .clone();
     assert_eq!(plain.shown, plain.props);
 }
+
+#[test]
+fn a_paragraphs_border_padding_and_background_resolve_side_by_side() {
+    let app = app(
+        r##"<office:styles>
+  <style:style style:name="Boxed" style:family="paragraph">
+    <style:paragraph-properties fo:border="2pt solid #ff0000" fo:padding="0.2cm" fo:background-color="#0000ff"/>
+  </style:style>
+</office:styles>
+<office:automatic-styles>
+  <style:style style:name="P1" style:family="paragraph" style:parent-style-name="Boxed">
+    <style:paragraph-properties fo:border-top="none" fo:padding-left="0.5cm" style:join-border="false"/>
+  </style:style>
+</office:automatic-styles>"##,
+        r#"<text:p text:style-name="Boxed">a</text:p><text:p text:style-name="P1">b</text:p>"#,
+    );
+    let boxed = app.paragraph(0).unwrap().props;
+    let look = boxed.look().expect("a box");
+    assert_eq!(look.border[0].as_deref(), Some("2pt solid #ff0000"));
+    assert_eq!(look.border[3].as_deref(), Some("2pt solid #ff0000"));
+    assert_eq!(look.padding, [2.0; 4]);
+    assert_eq!(look.background.as_deref(), Some("#0000ff"));
+    assert!(boxed.joins());
+    let own = app.paragraph(1).unwrap().props;
+    let look = own.look().expect("a box");
+    assert_eq!(look.border[0].as_deref(), Some("none"), "its own top");
+    assert_eq!(look.border[2].as_deref(), Some("2pt solid #ff0000"), "the parent's bottom");
+    assert_eq!(look.padding, [2.0, 2.0, 2.0, 5.0]);
+    assert!(!own.joins());
+}
+
+#[test]
+fn a_paragraph_with_no_border_padding_or_background_has_no_box() {
+    let plain = app(CHAIN, r#"<text:p text:style-name="P1">plain</text:p>"#);
+    assert_eq!(plain.paragraph(0).unwrap().props.look(), None);
+    let transparent = app(
+        r#"<office:automatic-styles><style:style style:name="T" style:family="paragraph"><style:paragraph-properties fo:background-color="transparent" fo:border="none" fo:padding="0cm"/></style:style></office:automatic-styles>"#,
+        r#"<text:p text:style-name="T">plain</text:p>"#,
+    );
+    assert_eq!(transparent.paragraph(0).unwrap().props.look(), None);
+}

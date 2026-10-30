@@ -1369,6 +1369,14 @@ impl Context<Builder> for ParagraphStyleDef {
             props.orphans = get("orphans");
             props.tab_stop_distance = attrs.get(Ns::Style, "tab-stop-distance").map(str::to_owned);
             props.page_number = attrs.get(Ns::Style, "page-number").map(str::to_owned);
+            let sides = |all: &str| {
+                ["top", "right", "bottom", "left"]
+                    .map(|side| get(&format!("{all}-{side}")).or_else(|| get(all)))
+            };
+            props.border = sides("border");
+            props.padding = sides("padding");
+            props.background_color = get("background-color");
+            props.join_border = attrs.get(Ns::Style, "join-border").map(str::to_owned);
             return Some(Box::new(TabStopsDef));
         } else if name.is(Ns::Style, "text-properties") {
             // The family as a run's is read: the font-face reference resolved, the XSL-FO quoting
