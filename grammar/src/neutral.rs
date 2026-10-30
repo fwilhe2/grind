@@ -226,7 +226,8 @@ fn abbreviation(language: Option<Language>, word: &str) -> bool {
     ];
     const GERMAN: &[&str] = &[
         "bzw", "usw", "ggf", "vgl", "evtl", "bspw", "inkl", "ca", "nr", "abs", "bzgl", "sog", "ff",
-        "zzgl", "ggü", "mind", "max", "min", "allg", "insb", "jh", "str", "tel",
+        "zzgl", "ggü", "mind", "max", "min", "allg", "insb", "jh", "str", "tel", "übers", "königl",
+        "verl", "aufl", "bearb", "hrsg", "geogr",
     ];
     let lists: &[&[&str]] = match language {
         Some(Language::English) => &[ENGLISH],
@@ -237,14 +238,41 @@ fn abbreviation(language: Option<Language>, word: &str) -> bool {
     lists.iter().any(|list| list.contains(&word.as_str()))
 }
 
-/// `It rained. then`: a lowercase word after a sentence's end. Not after an abbreviation, a
-/// number (`3. Oktober`) or an ellipsis, nor a word with a capital inside (`iPhone`).
+/// Whether `word`, followed by a full stop, is more likely an abbreviation than a sentence's last
+/// word: one listed, a number (`3. Oktober`), a Roman numeral (`Jakob VI.`), or any word of four
+/// letters or fewer that is not a common last word — German abbreviates freely (`hrsg.`,
+/// `kais.`, `zus.`), and no list keeps up.
+fn abbreviated(language: Option<Language>, word: &str) -> bool {
+    const LAST_ENGLISH: &[&str] = &[
+        "it", "is", "was", "too", "now", "yet", "me", "him", "her", "us", "them", "out", "up",
+        "off", "in", "day", "way", "end", "one", "all", "own", "new", "do", "so", "go", "be",
+    ];
+    const LAST_GERMAN: &[&str] = &[
+        "ist", "war", "hat", "sind", "kann", "wird", "auch", "mehr", "noch", "hier", "da", "so",
+        "sein", "aus", "ab", "an", "zu", "vor", "mit", "ein", "um", "weg", "los", "gut", "neu",
+        "tun", "sie", "ihn", "uns", "euch", "mich", "dich", "es", "er", "wir", "ihr", "dar",
+    ];
+    let lower = word.to_lowercase();
+    let last = match language {
+        Some(Language::English) => LAST_ENGLISH.contains(&lower.as_str()),
+        Some(Language::German) => LAST_GERMAN.contains(&lower.as_str()),
+        _ => LAST_ENGLISH.contains(&lower.as_str()) || LAST_GERMAN.contains(&lower.as_str()),
+    };
+    let roman = word.chars().all(|c| "IVXLCDM".contains(c));
+    word.chars().any(char::is_numeric)
+        || roman
+        || abbreviation(language, word)
+        || (word.chars().count() <= 4 && !last)
+}
+
+/// `It rained. then`: a lowercase word after a sentence's end. Not after what is
+/// [`abbreviated`] or an ellipsis, nor a word with a capital inside (`iPhone`).
 pub fn sentence_start_lowercase(
     tokens: &[Token],
     language: Option<Language>,
     out: &mut Vec<Finding>,
 ) {
-    for window in tokens.windows(4) {
+    for (at, window) in tokens.windows(4).enumerate() {
         let [before, end, space, word] = window else {
             continue;
         };
@@ -256,8 +284,11 @@ pub fn sentence_start_lowercase(
         {
             continue;
         }
-        // A word with a full stop straight after it is an abbreviation's start (`e.g.`).
-        if word.text.chars().count() < 2 {
+        // A word with a full stop straight after it is an abbreviation's start (`e.g.`), or a
+        // domain's (`forum.de`).
+        let dotted = tokens.get(at + 4).is_some_and(|t| t.text == ".")
+            && tokens.get(at + 5).is_some_and(Token::is_word);
+        if word.text.chars().count() < 2 || dotted {
             continue;
         }
         let mut chars = word.text.chars();
@@ -267,11 +298,7 @@ pub fn sentence_start_lowercase(
         if !first.is_lowercase() || !has_capital || chars.any(char::is_uppercase) {
             continue;
         }
-        if end.text == "."
-            && (before.text.chars().count() == 1
-                || before.text.chars().any(char::is_numeric)
-                || abbreviation(language, &before.text))
-        {
+        if end.text == "." && abbreviated(language, &before.text) {
             continue;
         }
         let capital: String = first

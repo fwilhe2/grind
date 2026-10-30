@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Grammar and style
 
-**Status: G0 done; G1 and G2 under way (2026-10-30).** Two checkers behind one door, each optional: a **built-in**
+**Status: G0 done; G1, G2 and G3 under way (2026-10-30).** Two checkers behind one door, each optional: a **built-in**
 checker, rules written here in plain Rust with no dependencies, small and always available; and
 an **integration with LanguageTool**, for whoever runs a LanguageTool server and wants the best
 checker there is. Either, both or neither may be on. This supersedes `doc/spelling.md` decision 7
@@ -261,6 +261,14 @@ through the same request and response code, §3.10).
   which stays a finding because the gov.uk corpus's `set out in in Part VI` was a real one.
   None of the English rules fired on the gov.uk corpus at all: it shows they keep quiet on
   edited English, not what they catch, which is loop G′'s to show.
+
+- **German**: thirty random German Wikipedia articles (22,000 words, fetched as plain text,
+  never committed). The German rules found nothing in them, which is right for edited prose. The
+  language-neutral `sentence-start-lowercase` drew 15, all after an abbreviation German writes
+  freely (`hrsg.`, `kais.`, `zus.`, `Rs.`, `Jakob VI.`) or before a domain (`forum.de`). A word of
+  four letters or fewer before a full stop is now taken as an abbreviation unless it is a common
+  last word (`ist`, `war`, `it`, `now`), and so is a Roman numeral. That dropped all 15, at the
+  price of one real gov.uk finding (`and so on. being`).
 
 - **Loop G′: the built-in against LanguageTool**, where a server is available
   (`GRIND_LANGUAGETOOL_URL`, skipped with a notice without one, as loops A and B skip). Over the

@@ -7,6 +7,8 @@
 
 use std::ops::Range;
 
+use grind_core::grammar::{Finding, Kind};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sort {
     Word,
@@ -86,4 +88,77 @@ pub fn tokens(text: &str, skip: &[Range<usize>]) -> Vec<Token> {
         at += 1;
     }
     out
+}
+
+/// The index of the word after `tokens[at]`, when one or two plain spaces are all between.
+pub fn next_word(tokens: &[Token], at: usize) -> Option<usize> {
+    let space = tokens.get(at + 1)?;
+    let word = tokens.get(at + 2)?;
+    (space.is_plain_space() && space.range.len() <= 2 && word.is_word()).then_some(at + 2)
+}
+
+/// The index of the word before `tokens[at]`, the same way.
+pub fn previous_word(tokens: &[Token], at: usize) -> Option<usize> {
+    let space = tokens.get(at.checked_sub(1)?)?;
+    let word = tokens.get(at.checked_sub(2)?)?;
+    (space.is_plain_space() && space.range.len() <= 2 && word.is_word()).then_some(at - 2)
+}
+
+/// Whether `tokens[at]` starts a sentence: nothing but spaces and opening marks before it back
+/// to the paragraph's start or a sentence's end.
+pub fn starts_sentence(tokens: &[Token], at: usize) -> bool {
+    for token in tokens[..at].iter().rev() {
+        match token.sort {
+            Sort::Space => continue,
+            Sort::Mark if matches!(token.text.as_str(), "(" | "\u{201c}" | "\u{2018}" | "\"") => {
+                continue;
+            }
+            Sort::Mark => return matches!(token.text.as_str(), "." | "!" | "?" | "\n"),
+            Sort::Word | Sort::Opaque => return false,
+        }
+    }
+    true
+}
+
+/// `word` with its first letter as `like`'s: `An` for `an` after `A`.
+pub fn cased(word: &str, like: &str) -> String {
+    match like.chars().next().is_some_and(char::is_uppercase) {
+        true => {
+            let mut chars = word.chars();
+            chars
+                .next()
+                .map(|c| c.to_uppercase().chain(chars).collect())
+                .unwrap_or_default()
+        }
+        false => word.to_owned(),
+    }
+}
+
+/// Each word `first` followed by `second`, as `(index of first, index of second)`, both
+/// compared in lowercase.
+pub fn pairs<'a>(
+    tokens: &'a [Token],
+    first: &'a [&str],
+    second: &'a [&str],
+) -> impl Iterator<Item = (usize, usize)> + 'a {
+    (0..tokens.len()).filter_map(move |at| {
+        let word = &tokens[at];
+        if !word.is_word() || !first.contains(&word.lower().replace('\u{2019}', "'").as_str()) {
+            return None;
+        }
+        let next = next_word(tokens, at)?;
+        second
+            .contains(&tokens[next].lower().as_str())
+            .then_some((at, next))
+    })
+}
+
+pub fn replace(rule: &str, token: &Token, with: &str, message: &str, out: &mut Vec<Finding>) {
+    out.push(crate::finding(
+        rule,
+        Kind::Grammar,
+        (token, token),
+        message.to_owned(),
+        vec![cased(with, &token.text)],
+    ));
 }

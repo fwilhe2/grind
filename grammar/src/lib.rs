@@ -7,6 +7,7 @@
 //! by default.
 
 mod english;
+mod german;
 mod neutral;
 mod tokens;
 
@@ -46,6 +47,10 @@ impl Checker for Builtin {
             english::your_welcome(&tokens, &mut out);
             english::their_is(&tokens, &mut out);
             english::lowercase_i(&tokens, &mut out);
+        }
+        if language == Some(Language::German) {
+            german::seid_seit(&tokens, &mut out);
+            german::comma_before_conjunction(&tokens, &mut out);
         }
         out
     }
