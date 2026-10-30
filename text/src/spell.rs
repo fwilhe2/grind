@@ -64,7 +64,7 @@ fn prose_run(props: &CharStyle, href: Option<&str>) -> bool {
 
 /// The character ranges of `block` that are not prose: runs [`prose_run`] refuses, and runs that
 /// are not text (a field, a footnote).
-fn skipped(block: &Block) -> Vec<Range<usize>> {
+pub(crate) fn skipped(block: &Block) -> Vec<Range<usize>> {
     let mut out = Vec::new();
     let mut at = 0;
     for run in &block.runs {

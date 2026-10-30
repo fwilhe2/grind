@@ -6,6 +6,7 @@
 //! document, reading it, editing its text and history are in the crate root.
 
 mod formatting;
+mod grammar;
 mod layout;
 mod spelling;
 mod structure;

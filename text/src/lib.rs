@@ -40,6 +40,7 @@ pub mod caret;
 pub mod find;
 pub mod flow;
 pub mod format;
+pub mod grammar;
 pub mod look;
 pub mod markdown;
 pub mod page;
@@ -481,6 +482,8 @@ pub struct App {
     /// The dictionary spelling is checked against ([`App::set_lexicon`]), beside the document
     /// rather than in it.
     lexicon: RwLock<Option<Arc<dyn spell::Lexicon>>>,
+    /// The grammar checker ([`App::set_checker`]), beside the lexicon.
+    checker: RwLock<Option<Arc<dyn grammar::Checker>>>,
 }
 
 impl App {
