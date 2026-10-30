@@ -26,9 +26,19 @@ pub struct LanguageTool {
 impl LanguageTool {
     /// A checker asking `server`, with its style rules when `picky`.
     pub fn new(server: Server, picky: bool) -> Self {
+        // The system's certificates; one it cannot read is left out rather than failing all.
+        let roots: Vec<ureq::tls::Certificate<'static>> = rustls_native_certs::load_native_certs()
+            .certs
+            .into_iter()
+            .map(|der| ureq::tls::Certificate::from_der(der.as_ref()).to_owned())
+            .collect();
+        let tls = ureq::tls::TlsConfig::builder()
+            .root_certs(ureq::tls::RootCerts::new_with_certs(&roots))
+            .build();
         let agent = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(10)))
             .http_status_as_error(false)
+            .tls_config(tls)
             .build()
             .into();
         LanguageTool {
@@ -109,6 +119,25 @@ impl LanguageTool {
                 body.chars().take(200).collect::<String>()
             )),
         }
+    }
+}
+
+impl LanguageTool {
+    /// Whether the server answers, and what it is: `LanguageTool 6.8`.
+    pub fn probe(&self) -> Result<String, String> {
+        let form = [
+            ("text".to_owned(), "Hello.".to_owned()),
+            ("language".to_owned(), "en-US".to_owned()),
+        ];
+        let answer = self.post(&form)?;
+        let answer: serde_json::Value = serde_json::from_str(&answer)
+            .map_err(|e| format!("{} is not a LanguageTool server: {e}", self.server.host()))?;
+        let software = &answer["software"];
+        Ok(format!(
+            "{} {}",
+            software["name"].as_str().unwrap_or("LanguageTool"),
+            software["version"].as_str().unwrap_or("?")
+        ))
     }
 }
 
