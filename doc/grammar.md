@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Grammar and style
 
-**Status: G0–G5 built (2026-10-30); G6 and G7 not yet, see §10.** Two checkers behind one door, each optional: a **built-in**
+**Status: G0–G6 built (2026-10-30); G7, the other shells, not yet — see §10.** Two checkers behind one door, each optional: a **built-in**
 checker, rules written here in plain Rust with no dependencies, small and always available; and
 an **integration with LanguageTool**, for whoever runs a LanguageTool server and wants the best
 checker there is. Either, both or neither may be on. This supersedes `doc/spelling.md` decision 7
@@ -283,6 +283,17 @@ through the same request and response code, §3.10).
   same corpus: a finding of ours that LanguageTool does not make is a **suspected false
   positive**, and is reviewed. A finding of LanguageTool's that a built-in rule could make is
   the **backlog**. The loop is a report and a `FLOOR` on agreement, not an equality.
+- **Loop G′, first run** (2026-10-30, `grammar/tests/loop_g_prime.rs`, LanguageTool 6.8 in the
+  container). Forty-seven sentences written for it (`grammar/tests/data/samples.txt`, CC0):
+  31 with one slip each, 16 correct but tempting. The built-in checker found 17 of the 31 and
+  nothing in the 16. Both found 12. The built-in checker alone found 5 that LanguageTool missed
+  (`better then`, `its a`, `it's own`, a lone `i`, `ended.Then`), all real slips, so
+  LanguageTool is not a superset and running both is worth it. LanguageTool alone found 9, the
+  backlog: verb agreement (`He go`, `They was`, `She don't`, `has went`), `informations`,
+  `discuss about`, `more taller`, `if I would have known`, and German `die die Bücher`, which the
+  built-in checker leaves alone on purpose because `Frauen, die die Bücher lasen` is right.
+  Floors: 17 caught, 12 agreed, and no finding at all in a correct sentence.
+
 - **The client** is tested against a local mock (`std::net::TcpListener` answering canned JSON):
   offsets past a non-BMP character, a batch split back into paragraphs, a stale answer dropped,
   429 and timeouts. No test in CI reaches the network.
@@ -337,6 +348,5 @@ None is open.
   public server is in use it says where the text goes in a toast, not in the clearly visible
   link back its terms ask for.
 - **The other shells** (G7): the terminal, Windows, the Mac and the browser have no grammar yet.
-- **Loop G′** (G6): the built-in checker against LanguageTool over a corpus, not yet run.
-- **No recall evidence for the built-in rules.** Every corpus so far was edited prose, which
-  shows the rules keep quiet, not what they catch.
+- **Recall is measured on a small written set only** (loop G′'s 31 slips). The backlog there —
+  agreement above all — is the next set of rules worth writing.

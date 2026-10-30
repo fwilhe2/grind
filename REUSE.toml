@@ -199,6 +199,13 @@ SPDX-License-Identifier = "AGPL-3.0-or-later"
 # The Word import filter's vendored documents (doc/docx-import.md): written by LibreOffice from
 # this suite's own CC0 text fixtures and `examples/sample-text.sh`'s output, so they carry the
 # fixtures' terms. A header inside a .docx is not possible — it is a zip.
+# The grammar samples (doc/grammar.md §6): sentences written for loop G′, data like every other
+# fixture here.
+[[annotations]]
+path = "grammar/tests/data/**"
+SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+SPDX-License-Identifier = "CC0-1.0"
+
 [[annotations]]
 path = "docx/tests/data/**"
 SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"

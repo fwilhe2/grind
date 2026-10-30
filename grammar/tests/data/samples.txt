@@ -1,0 +1,49 @@
+# Sentences for loop G′ (doc/grammar.md §6): one per line, `E en|` with one deliberate slip,
+# `C en|` correct but meant to tempt a checker. Written for this project.
+E en|We will meet at the the station after lunch.
+E en|She bought a apple and a pear at the market.
+E en|It was an long day for everyone in the office.
+E en|You could of told me about the change earlier.
+E en|This plan is better then the one we had last year.
+E en|I think its a good idea to start with the budget.
+E en|The cat licked it's own paws after the meal.
+E en|Their is a problem with the printer on the second floor.
+E en|Thanks for coming! Your welcome to stay for dinner.
+E en|Yesterday i went to the library to return the books.
+E en|The report is finished , and the figures are correct.
+E en|The meeting ended.Then everyone went home for the day.
+E en|The results are clear. then we can plan the next step.
+E en|He go to work by bus every morning of the week.
+E en|They was happy with the results of the survey.
+E en|She don't like the new layout of the website.
+E en|Each of the students have a copy of the book.
+E en|The informations in this report are out of date.
+E en|We should discuss about the plan at the next meeting.
+E en|The team have finished there work for the week.
+E en|He is more taller than his brother and his sister.
+E en|Please send me the the latest version of the file.
+E en|If I would have known, I would have come earlier.
+E en|The childrens are playing in the garden behind the house.
+E en|She has went to the shop to buy some bread and milk.
+C en|He said that that was the end of the matter for now.
+C en|She had had enough of the noise by the evening.
+C en|It took an hour to reach the university by train.
+C en|A European union of states is a one-way street, some say.
+C en|Spend more, then rest for a while before the next task.
+C en|The firm and its staff moved to a new building in May.
+C en|Take vitamin A and vitamin E with the evening meal.
+C en|The ratio of ascent to descent is 1825 : 443 for this face.
+C en|See e.g. the guide on GOV.UK, i.e. the one for employers.
+C en|An MBA and an FAQ page are on the list for this year.
+E de|Ich weiß dass es heute regnet und die Straße nass ist.
+E de|Er blieb zu Hause weil er krank war und Fieber hatte.
+E de|Ich glaube, ihr seit heute zu spät zur Arbeit gekommen.
+E de|Ich bin seid gestern in der Stadt und bleibe noch.
+E de|Wir haben die die Bücher in der Bibliothek gelesen.
+E de|Das ist ein Test , der nicht bestanden wurde.
+C de|Ich weiß, dass es heute regnet und die Straße nass ist.
+C de|Es regnet, so dass die Straße nass ist und glänzt.
+C de|Er ging, ohne dass es jemand merkte, und kam nicht wieder.
+C de|Nur weil es regnet, ist die Straße nicht immer nass.
+C de|Er ist ihr seit Jahren ein treuer Freund und Helfer.
+C de|Das Buch wurde hrsg. von der Stadt und ist sehr gut.

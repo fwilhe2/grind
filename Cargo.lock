@@ -1263,6 +1263,7 @@ name = "grind-grammar"
 version = "0.0.0"
 dependencies = [
  "grind-core",
+ "grind-languagetool",
  "grind-spell",
 ]
 
