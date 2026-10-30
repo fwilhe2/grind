@@ -27,3 +27,43 @@ fn a_word_twice_that_is_right_twice_is_not() {
     nothing("Version 2 2 times.", None);
     nothing("the, the", None);
 }
+
+#[test]
+fn a_space_before_punctuation_is_found() {
+    assert_eq!(found("Yes , please.", None), ["space-before-punctuation: "]);
+    assert_eq!(found("The end .", None), ["space-before-punctuation: "]);
+    assert_eq!(
+        found("Really ?", Some("en-US")),
+        ["space-before-punctuation: "]
+    );
+}
+
+#[test]
+fn a_space_before_punctuation_that_belongs_there_is_not() {
+    nothing("Vraiment ? Oui ; bien sûr !", Some("fr-FR"));
+    nothing("And so on ...", None);
+    nothing("It costs .50 a piece.", None);
+    nothing("Thanks :)", None);
+    nothing("(see below)", None);
+}
+
+#[test]
+fn two_spaces_between_words_are_found() {
+    assert_eq!(found("One  two.", None), ["double-space:  "]);
+    assert_eq!(found("End.  Next one.", None), ["double-space:  "]);
+}
+
+#[test]
+fn spaces_at_a_line_end_or_before_a_tab_are_not() {
+    nothing("Name\tValue", None);
+    nothing("Ends here.  ", None);
+    nothing("  Indented.", None);
+}
+
+#[test]
+fn doubled_punctuation_is_found_and_an_ellipsis_is_not() {
+    assert_eq!(found("Stop!! Now.", None), ["repeated-punctuation:!!"]);
+    assert_eq!(found("Red,, green.", None), ["repeated-punctuation:,,"]);
+    nothing("Wait... what?!", None);
+    nothing("Well…", None);
+}
