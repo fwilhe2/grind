@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Grammar and style
 
-**Status: planned, G0 done (2026-10-30); nothing else built.** Two checkers behind one door, each optional: a **built-in**
+**Status: G0 done; G1 and G2 under way (2026-10-30).** Two checkers behind one door, each optional: a **built-in**
 checker, rules written here in plain Rust with no dependencies, small and always available; and
 an **integration with LanguageTool**, for whoever runs a LanguageTool server and wants the best
 checker there is. Either, both or neither may be on. This supersedes `doc/spelling.md` decision 7
@@ -238,6 +238,20 @@ through the same request and response code, §3.10).
   samples, run through `grind text grammar --builtin`. Findings are counted per rule, and a
   sample of each rule's findings is judged by hand before it is on by default (§4's 9 in 10).
   The counts go in this document, as spelling's measurements did.
+- **What the corpus measured** (2026-10-30, the 257 gov.uk documents, English, with a few
+  Welsh). Each rule's findings were read in context (all of them where there were few, a sample
+  of 20–25 otherwise), before and after the fixes they prompted. Each fix is now a test.
+
+  | Rule | Findings | Right | What changed |
+  |---|---|---|---|
+  | `double-space` | 907 → 86 | 19 of 20 sampled | Runs of three or more lay out forms (`Day   Month   Year`), and two after a sentence is a typing convention: now exactly two between words, two after a sentence only as style |
+  | `space-before-punctuation` | 20 | 20 | — (`Location :`, `Article 119 .`, a letter's `Dear ,`) |
+  | `repeated-word` | 4 → 3 | 3 | A form's `does         does not` choice: at most two spaces between |
+  | `repeated-punctuation` | 3 | 3 | — (`::`, `??`) |
+  | `missing-space-after` | 63 → 2 | 2 | Every full stop was `GOV.UK`; `LEP,d` is a symbol |
+  | `sentence-start-lowercase` | 14 → 5 | 5 | `inc.`, `ref.`, `per cent.` are abbreviations; `? e.g.` is not a sentence |
+  | `unpaired-bracket` | 73 → 62 | about 6 of 25 | Labels like `d)` after a line break are fine; most of the rest close in a later paragraph or cell, which one paragraph cannot see. **Opt-in** (picky) |
+
 - **Loop G′: the built-in against LanguageTool**, where a server is available
   (`GRIND_LANGUAGETOOL_URL`, skipped with a notice without one, as loops A and B skip). Over the
   same corpus: a finding of ours that LanguageTool does not make is a **suspected false

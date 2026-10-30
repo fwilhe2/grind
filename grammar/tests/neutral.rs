@@ -123,10 +123,16 @@ fn a_lowercase_word_after_an_abbreviation_or_a_number_is_not_a_sentence_start() 
     nothing("He said, “Go.” then left.", None);
 }
 
+/// Opt-in: a bracket is often closed a paragraph or a table cell later, which one paragraph
+/// cannot see (`doc/grammar.md` §6).
 #[test]
-fn an_unpaired_bracket_is_found() {
-    assert_eq!(found("See the note (below.", None), ["unpaired-bracket:("]);
-    assert_eq!(found("It works) well.", None), ["unpaired-bracket:)"]);
+fn an_unpaired_bracket_is_found_when_asked_for() {
+    assert_eq!(
+        found_picky("See the note (below.", None),
+        ["unpaired-bracket:("]
+    );
+    assert_eq!(found_picky("It works) well.", None), ["unpaired-bracket:)"]);
+    nothing("See the note (below.", None);
 }
 
 #[test]
@@ -161,7 +167,7 @@ fn what_the_corpus_drew_that_was_wrong_is_still_found() {
         ["sentence-start-lowercase:or"]
     );
     assert_eq!(
-        found("Read it (HSE - L26)).", Some("en-GB")),
+        found_picky("Read it (HSE - L26)).", Some("en-GB")),
         ["unpaired-bracket:)"]
     );
 }

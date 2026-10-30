@@ -34,7 +34,9 @@ impl Checker for Builtin {
         neutral::repeated_punctuation(&tokens, &mut out);
         neutral::missing_space_after(&tokens, &mut out);
         neutral::sentence_start_lowercase(&tokens, language, &mut out);
-        neutral::unpaired_bracket(&tokens, &mut out);
+        if self.picky {
+            neutral::unpaired_bracket(&tokens, &mut out);
+        }
         out
     }
 }
