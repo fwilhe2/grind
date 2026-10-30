@@ -446,7 +446,7 @@ fn guess(app: &(impl Spelled + ?Sized), desktop: Option<Language>) -> Option<Lan
     grind_core::spell::guess(&sample, &lexicons).map(|at| fallback[at])
 }
 
-/// The language one paragraph is in, judged by its common words alone ([`Common`]), so it loads
+/// The language one paragraph is in, judged by its common words alone (`Common`), so it loads
 /// no dictionary: `None` unless one language's words occur at least twice and more often than
 /// any other's. What decides which language's grammar rules run on it (`doc/grammar.md`
 /// decision 4).
