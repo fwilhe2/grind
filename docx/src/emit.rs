@@ -626,6 +626,12 @@ impl Writer<'_, '_> {
                 }
             }
         }
+        let mut under = self.styles().defaults.clone();
+        under.para.layer(&self.table_spacing);
+        if let Some(id) = style_id.as_deref() {
+            under.layer(&styles::resolved(self.styles(), id));
+        }
+        complete_spacing(&mut direct.para, &under.para);
         if para.page_break_before {
             direct.para.set("fo:break-before", "page");
         }
@@ -1307,6 +1313,17 @@ impl Writer<'_, '_> {
                 let _ = write!(out, " style:default-outline-level=\"{}\"", level + 1);
             }
             let mut props = style.props.clone();
+            if style.kind == Kind::Paragraph {
+                let mut under = self.styles().defaults.clone();
+                if let Some(parent) = style
+                    .based_on
+                    .as_deref()
+                    .filter(|p| styles.get(p).is_some_and(|p| p.kind == style.kind))
+                {
+                    under.layer(&styles::resolved(styles, parent));
+                }
+                complete_spacing(&mut props.para, &under.para);
+            }
             if style.kind == Kind::Character {
                 props.para = Props::default();
                 props.tabs = None;
@@ -1521,6 +1538,27 @@ impl Writer<'_, '_> {
             }
         }
         out.push_str("  </text:list-style>\n");
+    }
+}
+
+/// Word inherits the space above and below one by one, and ODF's readers take them with
+/// contextual spacing as one unit (`doc/odt-format.md` §5c fact 31): where `props` states part of
+/// it, the rest is what `under` — everything it would inherit — says.
+fn complete_spacing(props: &mut Props, under: &Props) {
+    const UNIT: [&str; 3] = [
+        "fo:margin-top",
+        "fo:margin-bottom",
+        "style:contextual-spacing",
+    ];
+    if !UNIT.iter().any(|key| props.get(key).is_some()) {
+        return;
+    }
+    for key in UNIT {
+        if props.get(key).is_none()
+            && let Some(value) = under.get(key)
+        {
+            props.set(key, value);
+        }
     }
 }
 

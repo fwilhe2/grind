@@ -271,6 +271,39 @@ fn direct_paragraph_formatting_is_an_automatic_style_under_the_named_one() {
     );
 }
 
+/// Word inherits the space above and below one by one; ODF's readers take them, with contextual
+/// spacing, as one (`doc/odt-format.md` §5c fact 31) — so a style or a paragraph stating part of
+/// it carries the rest of what Word would inherit.
+#[test]
+fn space_stated_on_one_side_keeps_the_other_inherited() {
+    let s = styles(
+        r#"<w:docDefaults><w:pPrDefault><w:pPr><w:spacing w:after="160"/></w:pPr></w:pPrDefault></w:docDefaults>
+           <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:pPr><w:spacing w:before="120"/></w:pPr></w:style>
+           <w:style w:type="paragraph" w:styleId="List"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/><w:pPr><w:contextualSpacing/></w:pPr></w:style>"#,
+    );
+    let body = r#"<w:p><w:pPr><w:pStyle w:val="List"/></w:pPr><w:r><w:t>item</w:t></w:r></w:p>
+        <w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>tight</w:t></w:r></w:p>"#;
+    let (doc, _) = import(&docx(body, &[s]));
+    let spacing = |text: &str| {
+        let block = doc.blocks.iter().find(|b| b.text() == text).unwrap();
+        let resolved = grind_text::paragraph::resolve(
+            &doc.paragraph_styles,
+            &doc.default_paragraph,
+            block.style.as_deref(),
+        );
+        let contextual = resolved.contextual();
+        (resolved.margin_top, resolved.margin_bottom, contextual)
+    };
+    assert_eq!(
+        spacing("item"),
+        (Some("6pt".into()), Some("8pt".into()), true)
+    );
+    assert_eq!(
+        spacing("tight"),
+        (Some("6pt".into()), Some("0pt".into()), false)
+    );
+}
+
 #[test]
 fn run_formatting_is_carried_character_by_character() {
     let body = r#"<w:p>
