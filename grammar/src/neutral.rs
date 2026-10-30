@@ -12,7 +12,7 @@ use crate::tokens::{Sort, Token};
 /// Words a language rightly writes twice in a row: `that that`, `had had`, `die die`. Where the
 /// language is unknown every list counts.
 fn doubled(language: Option<Language>, word: &str) -> bool {
-    const ENGLISH: &[&str] = &["that", "had", "is"];
+    const ENGLISH: &[&str] = &["that", "had", "is", "at"];
     const GERMAN: &[&str] = &["die", "der", "das", "den", "dem", "sie"];
     let lists: &[&[&str]] = match language {
         Some(Language::English) => &[ENGLISH],
@@ -75,7 +75,8 @@ pub fn space_before_punctuation(
         let next_char = after.and_then(|t| t.text.chars().next());
         let belongs = match mark.text.as_str() {
             ";" | ":" | "!" | "?" if language == Some(Language::French) => true,
-            ":" => matches!(next_char, Some(')' | '(')),
+            // A smiley, or a ratio set with a space either side (`1825 : 443`).
+            ":" => matches!(next_char, Some(')' | '(')) || after.is_some_and(Token::is_plain_space),
             // An ellipsis, a number (`.50`), or a name (`.xlsx`) right after.
             "." => next_char.is_some_and(|c| c == '.' || c.is_alphanumeric()),
             "," | ";" | "!" | "?" => false,
@@ -135,7 +136,10 @@ pub fn repeated_punctuation(tokens: &[Token], out: &mut Vec<Finding>) {
             .iter()
             .take_while(|t| t.sort == Sort::Mark && t.text == first.text)
             .count();
-        if run > 1 && matches!(first.text.as_str(), "," | ";" | ":" | "!" | "?") {
+        // `formula::trace`: a path, not doubled punctuation.
+        let joining =
+            at > 0 && tokens[at - 1].is_word() && tokens.get(at + run).is_some_and(Token::is_word);
+        if run > 1 && !joining && matches!(first.text.as_str(), "," | ";" | ":" | "!" | "?") {
             out.push(crate::finding(
                 "repeated-punctuation",
                 Kind::Punctuation,
@@ -195,7 +199,9 @@ pub fn missing_space_after(tokens: &[Token], out: &mut Vec<Finding>) {
         let wanted = match mark.text.as_str() {
             // `GOV.UK` is a name written so.
             "." => starts_upper && !all_caps,
-            "," | ";" | ":" | "!" | "?" => true,
+            // `chart:axis` is a namespace; `Note:This` is not.
+            ":" => starts_upper,
+            "," | ";" | "!" | "?" => true,
             _ => false,
         };
         if wanted {
@@ -256,7 +262,9 @@ pub fn sentence_start_lowercase(
         }
         let mut chars = word.text.chars();
         let first = chars.next().unwrap_or(' ');
-        if !first.is_lowercase() || chars.any(char::is_uppercase) {
+        // A letter with no capital (`ᵖ`, a footnote key) does not start a sentence.
+        let has_capital = first.to_uppercase().next() != Some(first);
+        if !first.is_lowercase() || !has_capital || chars.any(char::is_uppercase) {
             continue;
         }
         if end.text == "."

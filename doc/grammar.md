@@ -252,6 +252,16 @@ through the same request and response code, §3.10).
   | `sentence-start-lowercase` | 14 → 5 | 5 | `inc.`, `ref.`, `per cent.` are abbreviations; `? e.g.` is not a sentence |
   | `unpaired-bracket` | 73 → 62 | about 6 of 25 | Labels like `d)` after a line break are fine; most of the rest close in a later paragraph or cell, which one paragraph cannot see. **Opt-in** (picky) |
 
+- **Our own `doc/*.md`**, imported as Markdown: 725 findings at first, nearly all code. A
+  fenced block was checked as prose (now skipped whole, for spelling too) and the punctuation
+  inside a code run was read beside its prose (now one opaque token). After those and the fixes
+  they showed (`::` in a path, `chart:axis`, `.xlsx`, `an rng`, `a Unicode`, `ᵖ` footnote keys,
+  `1825 : 443`), the rest is 21 lowercase sentence starts, most of them this project writing
+  *grind* in lowercase on purpose, and a few `in in`s after a phrasal verb (`moved in in July`),
+  which stays a finding because the gov.uk corpus's `set out in in Part VI` was a real one.
+  None of the English rules fired on the gov.uk corpus at all: it shows they keep quiet on
+  edited English, not what they catch, which is loop G′'s to show.
+
 - **Loop G′: the built-in against LanguageTool**, where a server is available
   (`GRIND_LANGUAGETOOL_URL`, skipped with a notice without one, as loops A and B skip). Over the
   same corpus: a finding of ours that LanguageTool does not make is a **suspected false

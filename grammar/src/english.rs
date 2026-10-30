@@ -65,7 +65,18 @@ fn vowel_sound(word: &str) -> Option<bool> {
         return None;
     }
     let lower = word.to_lowercase();
+    // A word with no vowel is said as letters (`an rng`), like an abbreviation.
+    if !lower.chars().any(|c| "aeiouy".contains(c)) {
+        return None;
+    }
     let starts = |prefixes: &[&str]| prefixes.iter().any(|p| lower.starts_with(p));
+    // `un-` before a word (`unimportant`, `uninformed`) against `uni-` (`unicode`, `unit`).
+    if starts(&["unim", "unin"]) {
+        return Some(true);
+    }
+    if starts(&["unid"]) {
+        return None;
+    }
     if starts(&["hour", "honest", "honour", "honor", "heir"]) {
         return Some(true);
     }
@@ -74,8 +85,7 @@ fn vowel_sound(word: &str) -> Option<bool> {
         return None;
     }
     if starts(&[
-        "one", "once", "eu", "ewe", "unique", "unit", "union", "univers", "uniform", "unicorn",
-        "unif", "unison", "use", "usu", "uti", "ura", "ure", "uro", "ubiq",
+        "one", "once", "eu", "ewe", "uni", "use", "usu", "uti", "ura", "ure", "uro", "ubiq",
     ]) {
         return Some(false);
     }

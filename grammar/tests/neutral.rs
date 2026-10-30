@@ -192,3 +192,26 @@ fn a_file_name_after_a_space_is_not_punctuation() {
     nothing("This is the plan for reading .xlsx files.", None);
     nothing("Edit the .grind file in any editor.", None);
 }
+
+/// What our own docs drew that was code or notation, not prose (`doc/grammar.md` §6).
+#[test]
+fn paths_namespaces_and_footnote_keys_are_left_alone() {
+    nothing("It returns formula::trace::Trace here.", None);
+    nothing("The element chart:axis takes chart:dimension.", None);
+    nothing(
+        "It is checked against the dictionaries. ᵖᵐ Where it says so.",
+        None,
+    );
+}
+
+#[test]
+fn a_colon_before_a_capital_still_wants_a_space() {
+    assert_eq!(found("Note:This is it.", None), ["missing-space-after::"]);
+}
+
+#[test]
+fn a_ratio_written_with_spaces_is_not_a_space_before_a_colon() {
+    nothing("The ascent : descent ratio is 1825 : 443 here.", None);
+    nothing("Time taken (Hrs : Mins)", None);
+    assert_eq!(found("Location :", None), ["space-before-punctuation: "]);
+}

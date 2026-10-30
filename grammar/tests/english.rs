@@ -110,3 +110,15 @@ fn an_abbreviation_takes_either_article() {
 fn a_paragraph_without_a_common_english_word_is_not_checked_as_english() {
     nothing("I ate a apple.", EN);
 }
+
+#[test]
+fn a_word_said_as_letters_or_a_uni_word_takes_its_sound() {
+    nothing("It is SPEC with an rng line in the file.", EN);
+    nothing("It is a Unicode algorithm and a unicycle.", EN);
+    nothing("It is an unimportant and an uninformed view.", EN);
+}
+
+#[test]
+fn a_particle_before_its_preposition_is_not_a_repeated_word() {
+    nothing("It is how the palette was looked at at all.", EN);
+}
