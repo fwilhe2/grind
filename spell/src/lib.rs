@@ -451,6 +451,28 @@ fn guess(app: &(impl Spelled + ?Sized), desktop: Option<Language>) -> Option<Lan
 /// any other's. What decides which language's grammar rules run on it (`doc/grammar.md`
 /// decision 4).
 pub fn paragraph_language(text: &str) -> Option<Language> {
+    match common_counts(text).as_slice() {
+        [(best, language), (next, _), ..] if *best >= 2 && best > next => Some(*language),
+        _ => None,
+    }
+}
+
+/// Whether `text` could be in `language` by its common words: at least one in every eight
+/// words is `language`'s, and no other language's occur more often. What lets a document's stated language stand for a short
+/// paragraph, and refuse it for one in a language this suite does not know (Welsh in a form
+/// that states `en-GB`).
+pub fn paragraph_supports(text: &str, language: Language) -> bool {
+    let words = grind_core::spell::words(text).len();
+    let counts = common_counts(text);
+    let mine = counts
+        .iter()
+        .find(|(_, l)| *l == language)
+        .map_or(0, |(n, _)| *n);
+    mine > 0 && mine * 8 >= words && counts.iter().all(|(n, _)| *n <= mine)
+}
+
+/// How many of each language's common words `text` has, most first.
+fn common_counts(text: &str) -> Vec<(usize, Language)> {
     let words: Vec<String> = grind_core::spell::words(text)
         .into_iter()
         .map(|range| text.chars().skip(range.start).take(range.len()).collect())
@@ -463,10 +485,7 @@ pub fn paragraph_language(text: &str) -> Option<Language> {
         })
         .collect();
     counts.sort_by_key(|&(count, _)| std::cmp::Reverse(count));
-    match counts.as_slice() {
-        [(best, language), (next, _), ..] if *best >= 2 && best > next => Some(*language),
-        _ => None,
-    }
+    counts
 }
 
 /// A [`Lexicon`] that knows only a language's commonest short words — articles, pronouns,
@@ -934,6 +953,21 @@ pub mod personal {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_short_paragraph_supports_a_stated_language_only_with_a_word_of_it() {
+        assert!(paragraph_supports("Complete the form.", Language::English));
+        assert!(!paragraph_supports("Ewch i gwestiwn 19", Language::English));
+        assert!(!paragraph_supports(
+            "Ich weiß, dass die Katze schläft.",
+            Language::English
+        ));
+        // Welsh `at` is an English common word too; one in twelve words is not English.
+        assert!(!paragraph_supports(
+            "10. A fydd angen cymorth arnoch i gael mynediad at safle gwaith?",
+            Language::English
+        ));
+    }
 
     #[test]
     fn a_paragraph_is_given_a_language_only_when_its_common_words_say_so_clearly() {

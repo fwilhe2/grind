@@ -13,6 +13,9 @@ pub enum Sort {
     Space,
     /// One character that is neither: punctuation, a symbol, a line break.
     Mark,
+    /// A range the paragraph says is not prose — a run of code, a link — taken whole, so no rule
+    /// reads inside it or matches it as a word.
+    Opaque,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -38,9 +41,16 @@ impl Token {
     }
 }
 
-pub fn tokens(text: &str) -> Vec<Token> {
+pub fn tokens(text: &str, skip: &[Range<usize>]) -> Vec<Token> {
     let chars: Vec<char> = text.chars().collect();
-    let words = grind_core::spell::words(text);
+    let skipped = |range: &Range<usize>| {
+        skip.iter()
+            .any(|s| s.start < range.end && range.start < s.end)
+    };
+    let words: Vec<Range<usize>> = grind_core::spell::words(text)
+        .into_iter()
+        .filter(|word| !skipped(word))
+        .collect();
     let mut out = Vec::new();
     let mut at = 0;
     let mut next_word = words.iter().peekable();
@@ -50,6 +60,12 @@ pub fn tokens(text: &str) -> Vec<Token> {
         sort,
     };
     while at < chars.len() {
+        if let Some(opaque) = skip.iter().find(|s| s.start <= at && at < s.end) {
+            let end = opaque.end.min(chars.len());
+            out.push(piece(at..end, Sort::Opaque));
+            at = end;
+            continue;
+        }
         if let Some(word) = next_word.peek()
             && word.start == at
         {

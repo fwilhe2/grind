@@ -57,7 +57,8 @@ pub fn repeated_word(tokens: &[Token], language: Option<Language>, out: &mut Vec
 }
 
 /// `word ,`: plain spaces between a word and the punctuation after it. French sets a space
-/// before `;:!?`, an ellipsis may stand apart, `.50` is a number and ` :)` a smiley.
+/// before `;:!?`, an ellipsis may stand apart, `.50` is a number, `.xlsx` a name and ` :)` a
+/// smiley.
 pub fn space_before_punctuation(
     tokens: &[Token],
     language: Option<Language>,
@@ -75,7 +76,8 @@ pub fn space_before_punctuation(
         let belongs = match mark.text.as_str() {
             ";" | ":" | "!" | "?" if language == Some(Language::French) => true,
             ":" => matches!(next_char, Some(')' | '(')),
-            "." => next_char.is_some_and(|c| c == '.' || c.is_numeric()),
+            // An ellipsis, a number (`.50`), or a name (`.xlsx`) right after.
+            "." => next_char.is_some_and(|c| c == '.' || c.is_alphanumeric()),
             "," | ";" | "!" | "?" => false,
             _ => true,
         };

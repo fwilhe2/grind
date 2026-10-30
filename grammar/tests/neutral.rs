@@ -5,7 +5,7 @@
 //! The rules that run on every paragraph, whatever its language (`doc/grammar.md` §4).
 
 mod common;
-use common::{found, found_picky, nothing};
+use common::{found, found_picky, found_skipping, nothing};
 
 #[test]
 fn a_word_twice_is_found_with_the_space_before_the_second() {
@@ -170,4 +170,25 @@ fn what_the_corpus_drew_that_was_wrong_is_still_found() {
         found_picky("Read it (HSE - L26)).", Some("en-GB")),
         ["unpaired-bracket:)"]
     );
+}
+
+/// A range the document says is not prose — a run of code, a link — is one opaque piece: no rule
+/// reads punctuation inside it or treats it as a word (`doc/grammar.md` decision 1).
+#[test]
+fn a_skipped_range_is_opaque_to_every_rule() {
+    // `the .xlsx file`, with `.xlsx` a run of code.
+    assert!(found_skipping("Open the .xlsx file.", 9..14).is_empty());
+    // `every # and ? in it`, with `?` code.
+    assert!(found_skipping("Every # and ? is a digit.", 12..13).is_empty());
+    // A rule still fires beside it, on what is prose.
+    assert_eq!(
+        found_skipping("Open the the .xlsx file.", 13..18),
+        ["repeated-word: the"]
+    );
+}
+
+#[test]
+fn a_file_name_after_a_space_is_not_punctuation() {
+    nothing("This is the plan for reading .xlsx files.", None);
+    nothing("Edit the .grind file in any editor.", None);
 }

@@ -17,10 +17,25 @@ pub fn found_picky(text: &str, language: Option<&str>) -> Vec<String> {
     check(Builtin { picky: true }, text, language)
 }
 
+/// [`found`], with `skip` not prose — as a run of code is in a document.
+#[allow(dead_code)]
+pub fn found_skipping(text: &str, skip: std::ops::Range<usize>) -> Vec<String> {
+    check_with(Builtin::default(), text, None, &[skip])
+}
+
 fn check(builtin: Builtin, text: &str, language: Option<&str>) -> Vec<String> {
+    check_with(builtin, text, language, &[])
+}
+
+fn check_with(
+    builtin: Builtin,
+    text: &str,
+    language: Option<&str>,
+    skip: &[std::ops::Range<usize>],
+) -> Vec<String> {
     let paragraph = Paragraph {
         text,
-        skip: &[],
+        skip,
         language,
     };
     let chars: Vec<char> = text.chars().collect();
