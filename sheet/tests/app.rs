@@ -41,7 +41,7 @@ fn a_new_app_has_one_empty_sheet() {
     assert_eq!(app.sheet_count(), 1);
     assert_eq!(app.sheet_name(0).unwrap(), "Sheet1");
     assert_eq!(app.used_extent(0).unwrap(), (0, 0));
-    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Empty);
+    assert_eq!(value_at(&app, 0, p(0, 0)).unwrap(), CellValue::Empty);
     assert!(!app.can_undo());
     assert!(!app.can_redo());
 }
@@ -49,7 +49,7 @@ fn a_new_app_has_one_empty_sheet() {
 #[test]
 fn a_bad_sheet_index_is_an_error_not_a_panic() {
     let app = App::new();
-    assert!(app.get(9, p(0, 0)).is_err());
+    assert!(value_at(&app, 9, p(0, 0)).is_err());
     assert!(app.set_cell(9, p(0, 0), 1.0).is_err());
     assert!(app.get_viewport(9, 0..1, 0..1).is_err());
     assert!(app.sheet_name(9).is_err());
@@ -104,19 +104,19 @@ fn undo_and_redo_walk_the_history_both_ways() {
     app.set_cell(0, p(0, 0), 1.0).unwrap();
     app.set_cell(0, p(0, 0), 2.0).unwrap();
 
-    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Number(2.0));
+    assert_eq!(value_at(&app, 0, p(0, 0)).unwrap(), CellValue::Number(2.0));
     assert!(app.undo());
-    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Number(1.0));
+    assert_eq!(value_at(&app, 0, p(0, 0)).unwrap(), CellValue::Number(1.0));
     assert!(app.undo());
-    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Empty);
+    assert_eq!(value_at(&app, 0, p(0, 0)).unwrap(), CellValue::Empty);
 
     assert!(!app.undo(), "nothing left to undo");
     assert!(!app.can_undo());
 
     assert!(app.redo());
-    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Number(1.0));
+    assert_eq!(value_at(&app, 0, p(0, 0)).unwrap(), CellValue::Number(1.0));
     assert!(app.redo());
-    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Number(2.0));
+    assert_eq!(value_at(&app, 0, p(0, 0)).unwrap(), CellValue::Number(2.0));
     assert!(!app.redo(), "nothing left to redo");
 }
 
@@ -196,7 +196,7 @@ fn a_formula_carries_its_cached_value_and_undoes_as_one() {
 
     // The value is computed on the way in — a formula stored without one renders blank in
     // LibreOffice (doc/ods-format.md §4).
-    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Number(3.0));
+    assert_eq!(value_at(&app, 0, p(2, 0)).unwrap(), CellValue::Number(3.0));
     assert_eq!(
         app.formula(0, p(2, 0)).unwrap().as_deref(),
         Some("=SUM([.A1:.A2])")
@@ -209,10 +209,10 @@ fn a_formula_carries_its_cached_value_and_undoes_as_one() {
         None,
         "formula and value undo together"
     );
-    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Empty);
+    assert_eq!(value_at(&app, 0, p(2, 0)).unwrap(), CellValue::Empty);
 
     assert!(app.redo());
-    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Number(3.0));
+    assert_eq!(value_at(&app, 0, p(2, 0)).unwrap(), CellValue::Number(3.0));
 }
 
 #[test]
@@ -223,7 +223,7 @@ fn clearing_a_formula_keeps_the_value_it_computed() {
     app.clear_formula(0, p(1, 0)).unwrap();
 
     assert_eq!(app.formula(0, p(1, 0)).unwrap(), None);
-    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(8.0));
+    assert_eq!(value_at(&app, 0, p(1, 0)).unwrap(), CellValue::Number(8.0));
 
     assert!(app.undo());
     assert_eq!(
@@ -238,26 +238,35 @@ fn recalc_is_one_undo_step_and_a_no_op_when_nothing_changed() {
     app.set_cell(0, p(0, 0), 1.0).unwrap();
     app.set_formula(0, p(1, 0), "=[.A1]+10").unwrap();
     app.set_formula(0, p(2, 0), "=[.A2]+100").unwrap();
-    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Number(111.0));
+    assert_eq!(
+        value_at(&app, 0, p(2, 0)).unwrap(),
+        CellValue::Number(111.0)
+    );
 
     // Change the input the two formulas depend on, without touching them.
     app.set_cell(0, p(0, 0), 2.0).unwrap();
     assert_eq!(
-        app.get(0, p(1, 0)).unwrap(),
+        value_at(&app, 0, p(1, 0)).unwrap(),
         CellValue::Number(11.0),
         "stale until a recalculation"
     );
 
     assert_eq!(app.recalc().unwrap().changed, 2, "both dependents changed");
-    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(12.0));
-    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Number(112.0));
+    assert_eq!(value_at(&app, 0, p(1, 0)).unwrap(), CellValue::Number(12.0));
+    assert_eq!(
+        value_at(&app, 0, p(2, 0)).unwrap(),
+        CellValue::Number(112.0)
+    );
 
     assert_eq!(app.recalc().unwrap().changed, 0, "already current");
 
     // One step back undoes the whole recalculation, not its last cell.
     assert!(app.undo());
-    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(11.0));
-    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Number(111.0));
+    assert_eq!(value_at(&app, 0, p(1, 0)).unwrap(), CellValue::Number(11.0));
+    assert_eq!(
+        value_at(&app, 0, p(2, 0)).unwrap(),
+        CellValue::Number(111.0)
+    );
 }
 
 /// This engine implements a subset of OpenFormula, so recalculating a document that uses
@@ -282,13 +291,16 @@ fn recalc_counts_the_values_it_spoiled() {
     assert_eq!(recalc.changed, 1);
     assert_eq!(recalc.spoiled, 1, "a real value became an error");
     assert_eq!(
-        app.get(0, p(2, 0)).unwrap(),
+        value_at(&app, 0, p(2, 0)).unwrap(),
         CellValue::Text("#NAME?".into())
     );
 
     // One step back, because the whole recalculation is one action.
     assert!(app.undo());
-    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Number(169.625));
+    assert_eq!(
+        value_at(&app, 0, p(2, 0)).unwrap(),
+        CellValue::Number(169.625)
+    );
 }
 
 #[test]
@@ -306,7 +318,7 @@ fn a_recalculated_error_is_stored_as_its_name() {
     // The only shape CellValue has for an error, and what LibreOffice writes into text:p
     // (doc/ods-format.md §6) — so it round-trips through our own reader.
     assert_eq!(
-        app.get(0, p(0, 0)).unwrap(),
+        value_at(&app, 0, p(0, 0)).unwrap(),
         CellValue::Text("#DIV/0!".into())
     );
 }
@@ -329,9 +341,12 @@ fn a_session_carries_history_between_apps() {
 
     assert!(second.can_undo());
     assert!(second.undo());
-    assert_eq!(second.get(0, p(0, 0)).unwrap(), CellValue::Number(1.0));
+    assert_eq!(
+        value_at(&second, 0, p(0, 0)).unwrap(),
+        CellValue::Number(1.0)
+    );
     assert!(second.undo());
-    assert_eq!(second.get(0, p(0, 0)).unwrap(), CellValue::Empty);
+    assert_eq!(value_at(&second, 0, p(0, 0)).unwrap(), CellValue::Empty);
     assert!(!second.undo());
 }
 
@@ -371,6 +386,69 @@ fn every_change_notifies_the_observer() {
     assert_eq!(counter.0.load(Ordering::SeqCst), 3);
 }
 
+#[test]
+fn a_failed_or_empty_operation_notifies_nobody() {
+    let app = App::new();
+    let counter = Arc::new(Counter(AtomicUsize::new(0)));
+    app.set_observer(counter.clone());
+
+    assert!(app.set_cell(9, p(0, 0), 1.0).is_err(), "no sheet 9");
+    assert!(app.enter(9, p(0, 0), "1", RecalcMode::Document).is_err());
+    assert!(app.remove_sheet(0).is_err(), "the last sheet stays");
+    assert!(!app.undo(), "nothing to undo");
+    assert!(!app.redo(), "nothing to redo");
+    assert!(!app.clear_name("nothing_by_this_name"));
+    assert_eq!(counter.0.load(Ordering::SeqCst), 0);
+
+    app.set_cell(0, p(0, 0), 1.0).unwrap();
+    assert_eq!(counter.0.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_viewport_past_the_limit_is_refused_before_anything_is_read() {
+    use grind_sheet::{Error, MAX_ROWS, MAX_VIEWPORT_CELLS};
+    let app = App::new();
+    let refused = |rows: std::ops::Range<u32>, cols: std::ops::Range<u32>| match app
+        .get_viewport(0, rows, cols)
+    {
+        Err(Error::TooLarge { asked, limit }) => (asked, limit),
+        other => panic!("expected TooLarge, got {other:?}"),
+    };
+    // Every span a `u32` can hold, multiplied without overflowing on any target.
+    assert_eq!(
+        refused(0..u32::MAX, 0..u32::MAX),
+        (
+            u64::from(u32::MAX) * u64::from(u32::MAX),
+            MAX_VIEWPORT_CELLS
+        )
+    );
+    assert_eq!(
+        refused(0..MAX_ROWS + 1, 0..1),
+        (MAX_VIEWPORT_CELLS + 1, MAX_VIEWPORT_CELLS)
+    );
+    assert_eq!(refused(0..1024, 0..1025).0, 1024 * 1025);
+    // Checked before the sheet, so a size the caller got wrong is the error it hears.
+    assert!(matches!(
+        app.get_viewport(9, 0..u32::MAX, 0..2),
+        Err(Error::TooLarge { .. })
+    ));
+    let message = app
+        .get_viewport(0, 0..u32::MAX, 0..2)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        message.contains(&MAX_VIEWPORT_CELLS.to_string()),
+        "{message}"
+    );
+
+    // Wide but within the limit, and an inverted range, read normally.
+    let row = app.get_viewport(0, 0..1, 0..16_384).unwrap();
+    assert_eq!(row.cols, 0..16_384);
+    #[allow(clippy::reversed_empty_ranges)]
+    let inverted = app.get_viewport(0, 5..2, 3..1).unwrap();
+    assert!(inverted.rows.is_empty() && inverted.cols.is_empty());
+}
+
 /// An observer reads the app from inside the notification — exactly what a shell does when
 /// it repaints. If the write lock were still held while notifying, this would hang forever
 /// instead of failing, so it is the one test worth having before there is any UI at all.
@@ -382,8 +460,8 @@ struct Reader {
 impl Observer for Reader {
     fn changed(&self) {
         let app = self.app.lock().unwrap().clone().expect("app wired up");
-        // Both a point read and a viewport read: each takes the state lock.
-        let value = app.get(0, p(0, 0)).unwrap();
+        // Each read takes the state lock.
+        let value = value_at(&app, 0, p(0, 0)).unwrap();
         let _ = app.get_viewport(0, 0..4, 0..4).unwrap();
         let _ = app.can_undo();
         self.saw.lock().unwrap().push(value);
@@ -435,7 +513,10 @@ fn the_app_is_shareable_across_threads() {
 
     assert_eq!(app.used_extent(0).unwrap(), (50, 4));
     for t in 0..4u32 {
-        assert_eq!(app.get(0, p(49, t)).unwrap(), CellValue::Number(49.0));
+        assert_eq!(
+            value_at(&app, 0, p(49, t)).unwrap(),
+            CellValue::Number(49.0)
+        );
     }
 }
 
@@ -486,7 +567,7 @@ fn renaming_a_sheet_carries_every_reference_that_named_it() {
     )
     .unwrap();
 
-    let before = app.get(0, p(0, 0)).unwrap();
+    let before = value_at(&app, 0, p(0, 0)).unwrap();
     let rewritten = app.rename_sheet(1, "Figures").unwrap();
     assert!(
         rewritten >= 3,
@@ -514,7 +595,7 @@ fn renaming_a_sheet_carries_every_reference_that_named_it() {
 
     // The value is untouched: what the reference is *called* changed, not what it reads. So
     // nothing went stale, which is the whole point of the refactoring.
-    assert_eq!(app.get(0, p(0, 0)).unwrap(), before);
+    assert_eq!(value_at(&app, 0, p(0, 0)).unwrap(), before);
     assert_eq!(app.stale().changed, 0, "nothing disagrees with its formula");
 
     // **One undo step**, however many references it touched (`doc/plan.md` rule 2).
@@ -604,12 +685,12 @@ fn undoing_a_sheet_deletion_brings_the_cells_back() {
     assert!(app.undo());
     assert_eq!(app.sheet_count(), 2);
     assert_eq!(app.sheet_name(1).unwrap(), "Data");
-    assert_eq!(app.get(1, p(4, 2)).unwrap(), CellValue::Number(42.0));
+    assert_eq!(value_at(&app, 1, p(4, 2)).unwrap(), CellValue::Number(42.0));
     assert_eq!(
         app.formula(1, p(5, 2)).unwrap().as_deref(),
         Some("=[.C5]*2")
     );
-    assert_eq!(app.get(1, p(5, 2)).unwrap(), CellValue::Number(84.0));
+    assert_eq!(value_at(&app, 1, p(5, 2)).unwrap(), CellValue::Number(84.0));
 }
 
 /// Removing a sheet shifts every later index, and the undo stack holds entries recorded in
@@ -626,7 +707,7 @@ fn undo_survives_the_index_shift_a_removal_causes() {
     assert!(app.undo()); // puts Middle back, so Last is sheet 2 again
     assert!(app.undo()); // clears Last.A1, addressed as sheet 2
     assert_eq!(app.sheet_count(), 3);
-    assert_eq!(app.get(2, p(0, 0)).unwrap(), CellValue::Empty);
+    assert_eq!(value_at(&app, 2, p(0, 0)).unwrap(), CellValue::Empty);
 }
 
 /// A deleted sheet has to survive the session file too, or `--session` would undo a deletion
@@ -647,7 +728,7 @@ fn a_deleted_sheet_survives_a_session_round_trip() {
     assert!(restored.undo());
     assert_eq!(restored.sheet_count(), 2);
     assert_eq!(
-        restored.get(1, p(0, 0)).unwrap(),
+        value_at(&restored, 1, p(0, 0)).unwrap(),
         CellValue::Text("kept".into())
     );
 }
@@ -676,12 +757,12 @@ fn enter_reads_what_was_typed_the_way_every_spreadsheet_does() {
         let outcome = app.enter(0, p(row, 0), input, RecalcMode::No).unwrap();
         assert_eq!(outcome.kind, kind, "{input}");
         assert_eq!(outcome.cells, 1);
-        assert_eq!(app.get(0, p(row, 0)).unwrap(), value, "{input}");
+        assert_eq!(value_at(&app, 0, p(row, 0)).unwrap(), value, "{input}");
     }
 
     let outcome = app.enter(0, p(6, 0), "=[.A1]*2", RecalcMode::No).unwrap();
     assert_eq!(outcome.kind, Entered::Formula);
-    assert_eq!(app.get(0, p(6, 0)).unwrap(), CellValue::Number(25.0));
+    assert_eq!(value_at(&app, 0, p(6, 0)).unwrap(), CellValue::Number(25.0));
     assert_eq!(
         app.formula(0, p(6, 0)).unwrap().as_deref(),
         Some("=[.A1]*2")
@@ -697,7 +778,7 @@ fn typing_over_a_formula_removes_it() {
     app.enter(0, p(0, 0), "=1+1", RecalcMode::No).unwrap();
     app.enter(0, p(0, 0), "7", RecalcMode::No).unwrap();
     assert_eq!(app.formula(0, p(0, 0)).unwrap(), None);
-    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Number(7.0));
+    assert_eq!(value_at(&app, 0, p(0, 0)).unwrap(), CellValue::Number(7.0));
 
     // And one undo puts both back.
     assert!(app.undo());
@@ -711,7 +792,7 @@ fn an_edit_and_its_ripple_undo_together() {
     let app = App::new();
     app.set_cell(0, p(0, 0), 1.0).unwrap();
     app.set_formula(0, p(1, 0), "=[.A1]*10").unwrap();
-    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(10.0));
+    assert_eq!(value_at(&app, 0, p(1, 0)).unwrap(), CellValue::Number(10.0));
 
     let outcome = app.enter(0, p(0, 0), "5", RecalcMode::Document).unwrap();
     assert_eq!(
@@ -721,12 +802,12 @@ fn an_edit_and_its_ripple_undo_together() {
             spoiled: 0
         }
     );
-    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(50.0));
+    assert_eq!(value_at(&app, 0, p(1, 0)).unwrap(), CellValue::Number(50.0));
 
     assert!(app.undo());
-    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Number(1.0));
+    assert_eq!(value_at(&app, 0, p(0, 0)).unwrap(), CellValue::Number(1.0));
     assert_eq!(
-        app.get(0, p(1, 0)).unwrap(),
+        value_at(&app, 0, p(1, 0)).unwrap(),
         CellValue::Number(10.0),
         "one undo, both cells"
     );
@@ -746,7 +827,7 @@ fn a_deferred_recalculation_is_owed_then_paid_into_the_same_undo_entry() {
 
     let outcome = app.enter(0, p(0, 0), "5", RecalcMode::Document).unwrap();
     assert_eq!(outcome.recalc, None, "nothing was recalculated");
-    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(10.0));
+    assert_eq!(value_at(&app, 0, p(1, 0)).unwrap(), CellValue::Number(10.0));
     assert!(app.take_recalc_owed());
     assert!(!app.take_recalc_owed(), "taking clears it");
 
@@ -763,11 +844,11 @@ fn a_deferred_recalculation_is_owed_then_paid_into_the_same_undo_entry() {
             spoiled: 0
         })
     );
-    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(50.0));
+    assert_eq!(value_at(&app, 0, p(1, 0)).unwrap(), CellValue::Number(50.0));
 
     assert!(app.undo());
-    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Number(1.0));
-    assert_eq!(app.get(0, p(1, 0)).unwrap(), CellValue::Number(10.0));
+    assert_eq!(value_at(&app, 0, p(0, 0)).unwrap(), CellValue::Number(1.0));
+    assert_eq!(value_at(&app, 0, p(1, 0)).unwrap(), CellValue::Number(10.0));
     assert!(app.undo(), "the next undo is the formula's own");
     assert_eq!(app.formula(0, p(1, 0)).unwrap(), None);
 }
@@ -789,12 +870,12 @@ fn an_edit_that_would_spoil_a_cell_still_commits_without_recalculating() {
         "and it says how much is now out of date"
     );
     assert_eq!(
-        app.get(0, p(0, 0)).unwrap(),
+        value_at(&app, 0, p(0, 0)).unwrap(),
         CellValue::Number(6.0),
         "the edit stands"
     );
     assert_eq!(
-        app.get(0, p(1, 0)).unwrap(),
+        value_at(&app, 0, p(1, 0)).unwrap(),
         CellValue::Number(5.0),
         "the cached value was not replaced with #NAME?"
     );
@@ -819,7 +900,7 @@ fn preview_writes_nothing_notifies_nobody_and_records_no_history() {
         "only the one edit is in the history"
     );
     assert_eq!(
-        app.get(0, p(9, 9)).unwrap(),
+        value_at(&app, 0, p(9, 9)).unwrap(),
         CellValue::Empty,
         "nothing stored"
     );
@@ -858,7 +939,7 @@ fn trace_writes_nothing_notifies_nobody_records_no_history_and_agrees_with_previ
         "only the one edit is in the history"
     );
     assert_eq!(
-        app.get(0, p(9, 9)).unwrap(),
+        value_at(&app, 0, p(9, 9)).unwrap(),
         CellValue::Empty,
         "nothing stored"
     );
@@ -906,7 +987,7 @@ fn an_overlay_is_typed_like_input_and_reaches_through_formulas() {
     let t = app.trace(0, p(9, 9), "=A2+1", &overlay).unwrap();
     assert_eq!(t.value, Value::Number(-1.0), "A1 → A2 → here");
     assert_eq!(
-        app.get(0, p(1, 0)).unwrap(),
+        value_at(&app, 0, p(1, 0)).unwrap(),
         CellValue::Number(8.0),
         "the document is as it was"
     );
@@ -931,15 +1012,15 @@ fn clearing_a_range_is_one_undo_step_and_takes_the_formulas_with_it() {
         2,
         "only the two"
     );
-    assert_eq!(app.get(0, p(1, 1)).unwrap(), CellValue::Empty);
+    assert_eq!(value_at(&app, 0, p(1, 1)).unwrap(), CellValue::Empty);
     assert_eq!(app.formula(0, p(1, 1)).unwrap(), None);
     assert_eq!(
-        app.get(0, p(3, 3)).unwrap(),
+        value_at(&app, 0, p(3, 3)).unwrap(),
         CellValue::Text("far away".into())
     );
 
     assert!(app.undo());
-    assert_eq!(app.get(0, p(0, 0)).unwrap(), CellValue::Number(1.0));
+    assert_eq!(value_at(&app, 0, p(0, 0)).unwrap(), CellValue::Number(1.0));
     assert_eq!(
         app.formula(0, p(1, 1)).unwrap().as_deref(),
         Some("=[.A1]+1")
@@ -961,12 +1042,12 @@ fn a_pasted_rectangle_lands_cell_by_cell_in_one_step() {
         .unwrap();
     assert_eq!(outcome.cells, 3);
     assert_eq!(outcome.kind, Entered::Number, "the anchor's kind");
-    assert_eq!(app.get(0, p(1, 1)).unwrap(), CellValue::Number(1.0));
-    assert_eq!(app.get(0, p(1, 2)).unwrap(), CellValue::Number(2.0));
-    assert_eq!(app.get(0, p(2, 1)).unwrap(), CellValue::Number(2.0));
+    assert_eq!(value_at(&app, 0, p(1, 1)).unwrap(), CellValue::Number(1.0));
+    assert_eq!(value_at(&app, 0, p(1, 2)).unwrap(), CellValue::Number(2.0));
+    assert_eq!(value_at(&app, 0, p(2, 1)).unwrap(), CellValue::Number(2.0));
 
     assert!(app.undo());
-    assert_eq!(app.get(0, p(1, 1)).unwrap(), CellValue::Empty);
+    assert_eq!(value_at(&app, 0, p(1, 1)).unwrap(), CellValue::Empty);
     assert!(!app.can_undo());
 }
 
@@ -993,16 +1074,16 @@ fn a_fill_shifts_relative_references_and_copies_plain_values() {
         "the relative axis moved, the absolute one did not"
     );
     // A3 = A2 + $B$1, and A2 itself now holds the filled formula's own result (11).
-    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Number(21.0));
+    assert_eq!(value_at(&app, 0, p(2, 0)).unwrap(), CellValue::Number(21.0));
 
     assert!(app.undo());
-    assert_eq!(app.get(0, p(2, 0)).unwrap(), CellValue::Empty);
+    assert_eq!(value_at(&app, 0, p(2, 0)).unwrap(), CellValue::Empty);
 
     let plain = app
         .fill(0, p(1, 2), p(1, 3), p(1, 3), RecalcMode::No)
         .unwrap();
     assert_eq!(plain.kind, Entered::Number);
-    assert_eq!(app.get(0, p(1, 3)).unwrap(), CellValue::Number(99.0));
+    assert_eq!(value_at(&app, 0, p(1, 3)).unwrap(), CellValue::Number(99.0));
 }
 
 #[test]
@@ -1033,7 +1114,7 @@ fn what_an_editor_shows_enters_back_as_the_same_cell() {
         app.enter(0, p(row, 0), input, RecalcMode::No).unwrap();
     }
     for (row, input) in cells {
-        let before = app.get(0, p(row, 0)).unwrap();
+        let before = value_at(&app, 0, p(row, 0)).unwrap();
         let shown = app.input_text(0, p(row, 0)).unwrap();
         // The one step a shell always takes: what an editor holds is display form, and
         // `enter` takes the canonical syntax the file stores.
@@ -1043,7 +1124,7 @@ fn what_an_editor_shows_enters_back_as_the_same_cell() {
         };
         app.enter(0, p(row, 0), &typed, RecalcMode::No).unwrap();
         assert_eq!(
-            app.get(0, p(row, 0)).unwrap(),
+            value_at(&app, 0, p(row, 0)).unwrap(),
             before,
             "{input} showed as {shown:?}"
         );
@@ -1081,10 +1162,10 @@ fn a_date_formatted_cell_is_edited_as_a_date_not_a_serial() {
         "the editor should show the date, not its serial"
     );
 
-    let before = app.get(0, p(0, 0)).unwrap();
+    let before = value_at(&app, 0, p(0, 0)).unwrap();
     app.enter(0, p(0, 0), &shown, RecalcMode::No).unwrap();
     assert_eq!(
-        app.get(0, p(0, 0)).unwrap(),
+        value_at(&app, 0, p(0, 0)).unwrap(),
         before,
         "re-entering what was shown must round-trip"
     );
@@ -1331,4 +1412,14 @@ fn a_fresh_sheet_name_is_the_first_free_one() {
         "Sheet4",
         "and sheet3 counts as Sheet3"
     );
+}
+
+/// One cell's value, read as everything outside the core reads cells: a 1×1 viewport.
+fn value_at(
+    app: &grind_sheet::App,
+    sheet: usize,
+    pos: grind_sheet::Pos,
+) -> grind_sheet::Result<grind_sheet::CellValue> {
+    let view = app.get_viewport(sheet, pos.row..pos.row + 1, pos.col..pos.col + 1)?;
+    Ok(view.get(pos.row, pos.col).cloned().unwrap_or_default())
 }

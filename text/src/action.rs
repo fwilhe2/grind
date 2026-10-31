@@ -67,7 +67,17 @@ impl Document {
                 // produced.
                 let mut inverses = Vec::with_capacity(actions.len());
                 for action in actions {
-                    inverses.push(self.apply(action)?);
+                    match self.apply(action) {
+                        Some(inverse) => inverses.push(inverse),
+                        // Half a batch would be a change with no inverse to undo it: take back
+                        // what applied, so a failed batch leaves the blocks as they were.
+                        None => {
+                            for inverse in inverses.into_iter().rev() {
+                                self.apply(inverse);
+                            }
+                            return None;
+                        }
+                    }
                 }
                 inverses.reverse();
                 Action::Batch(inverses)
@@ -103,6 +113,28 @@ mod tests {
             doc.blocks.push(block);
         }
         doc
+    }
+
+    /// A batch whose later action does not apply leaves nothing of the earlier ones behind.
+    #[test]
+    fn a_batch_that_fails_partway_is_taken_back() {
+        let before = doc(&["a", "b"]);
+        let mut d = before.clone();
+        let extra = para(&mut d, "new");
+        let batch = Action::Batch(vec![
+            Action::InsertBlock {
+                index: 0,
+                block: Box::new(extra.clone()),
+            },
+            Action::RemoveBlock { index: 0 },
+            Action::SetBlock {
+                index: 1,
+                block: Box::new(extra),
+            },
+            Action::RemoveBlock { index: 9 },
+        ]);
+        assert!(d.apply(batch).is_none());
+        assert_eq!(d.blocks, before.blocks);
     }
 
     /// Applying the inverse returns to the start, for every variant.

@@ -77,10 +77,16 @@ fn a_value_under_a_merge_is_kept_and_comes_back_on_unmerge() {
     let back = App::new();
     back.open_bytes("book.fods", &bytes).unwrap();
     assert_eq!(back.merges(0).unwrap(), vec![(p("B2"), p("D2"))]);
-    assert_eq!(back.get(0, p("C2")).unwrap(), CellValue::Number(42.0));
+    assert_eq!(
+        value_at(&back, 0, p("C2")).unwrap(),
+        CellValue::Number(42.0)
+    );
     assert_eq!(back.unmerge(0, p("C2"), p("C2")).unwrap(), 1);
     assert_eq!(back.merges(0).unwrap(), vec![]);
-    assert_eq!(back.get(0, p("C2")).unwrap(), CellValue::Number(42.0));
+    assert_eq!(
+        value_at(&back, 0, p("C2")).unwrap(),
+        CellValue::Number(42.0)
+    );
 }
 
 #[test]
@@ -225,12 +231,12 @@ fn a_value_typed_under_a_files_merge_is_saved_and_the_merge_kept() {
     let back = App::new();
     back.open_bytes("q.fods", &saved).unwrap();
     assert_eq!(
-        back.get(0, p("B4")).unwrap(),
+        value_at(&back, 0, p("B4")).unwrap(),
         CellValue::Text("hidden".into())
     );
     assert_eq!(back.merge_at(0, p("B4")).unwrap(), Some((p("A4"), p("B4"))));
     assert_eq!(
-        back.get(0, p("A3")).unwrap(),
+        value_at(&back, 0, p("A3")).unwrap(),
         CellValue::Text("Cards".into())
     );
     assert_eq!(back.merge_at(0, p("C3")).unwrap(), Some((p("A3"), p("C3"))));
@@ -267,4 +273,14 @@ fn a_tall_merge_is_found_from_far_below_short_ones() {
 
     sheet.set_merge(Pos::new(0, 5), None);
     assert_eq!(sheet.merge_at(Pos::new(499, 5)), None);
+}
+
+/// One cell's value, read as everything outside the core reads cells: a 1×1 viewport.
+fn value_at(
+    app: &grind_sheet::App,
+    sheet: usize,
+    pos: grind_sheet::Pos,
+) -> grind_sheet::Result<grind_sheet::CellValue> {
+    let view = app.get_viewport(sheet, pos.row..pos.row + 1, pos.col..pos.col + 1)?;
+    Ok(view.get(pos.row, pos.col).cloned().unwrap_or_default())
 }

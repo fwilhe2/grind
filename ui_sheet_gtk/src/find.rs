@@ -458,10 +458,7 @@ mod tests {
             app.input_text(0, Pos::new(1, 1)).unwrap(),
             "=SUM(B1)*2+SUM(B1)"
         );
-        assert_eq!(
-            app.get(0, Pos::new(1, 1)).unwrap(),
-            grind_sheet::CellValue::Number(9.0)
-        );
+        assert_eq!(app.value_text(0, Pos::new(1, 1)).unwrap(), "9");
         assert!(app.undo(), "one undo step");
         assert_eq!(app.input_text(0, Pos::new(1, 1)).unwrap(), "=SUM(B1)");
 

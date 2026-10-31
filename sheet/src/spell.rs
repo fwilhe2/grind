@@ -188,20 +188,23 @@ mod tests {
         assert!(app.correct(0, at("B1"), 0, "x", "y").is_err(), "not text");
         app.correct(0, at("A1"), 3, "recieve", "receive").unwrap();
         assert_eq!(
-            app.get(0, at("A1")).unwrap(),
+            value_at(&app, 0, at("A1")).unwrap(),
             CellValue::Text("We receive 12".to_owned())
         );
-        assert_eq!(app.get(0, at("B1")).unwrap(), CellValue::Number(13.0));
+        assert_eq!(
+            value_at(&app, 0, at("B1")).unwrap(),
+            CellValue::Number(13.0)
+        );
         app.undo();
         assert_eq!(
-            app.get(0, at("A1")).unwrap(),
+            value_at(&app, 0, at("A1")).unwrap(),
             CellValue::Text("We recieve 12".to_owned())
         );
         // A correction that looks like a number stays the text it was typed as.
         let app = app_with_text("Twelv");
         app.correct(0, at("A1"), 0, "Twelv", "12").unwrap();
         assert_eq!(
-            app.get(0, at("A1")).unwrap(),
+            value_at(&app, 0, at("A1")).unwrap(),
             CellValue::Text("12".to_owned())
         );
     }
@@ -219,5 +222,15 @@ mod tests {
         app.set_locale(crate::locale::Locale::parse("de-DE"))
             .unwrap();
         assert_eq!(app.stated_language().as_deref(), Some("de-DE"));
+    }
+
+    /// One cell's value, read as everything outside the core reads cells: a 1×1 viewport.
+    fn value_at(
+        app: &crate::App,
+        sheet: usize,
+        pos: crate::Pos,
+    ) -> crate::Result<crate::CellValue> {
+        let view = app.get_viewport(sheet, pos.row..pos.row + 1, pos.col..pos.col + 1)?;
+        Ok(view.get(pos.row, pos.col).cloned().unwrap_or_default())
     }
 }

@@ -71,7 +71,7 @@ impl Drop for Sandbox {
 fn at(app: &App, address: &str) -> CellValue {
     let reference = grind_sheet::a1::parse(address).expect("an address");
     let (sheet, pos, _) = grind_sheet::a1::resolve(app, &reference).expect("a place");
-    app.get(sheet, pos).expect("a cell")
+    value_at(app, sheet, pos).expect("a cell")
 }
 
 /// The feature, in the shape it was asked for: the numbers in a file, the shape in the script.
@@ -318,4 +318,14 @@ fn a_template_supplies_the_styles_a_generated_letter_names() {
         .expect("refused")
         .to_string();
     assert!(error.contains(".."), "{error}");
+}
+
+/// One cell's value, read as everything outside the core reads cells: a 1×1 viewport.
+fn value_at(
+    app: &grind_sheet::App,
+    sheet: usize,
+    pos: grind_sheet::Pos,
+) -> grind_sheet::Result<grind_sheet::CellValue> {
+    let view = app.get_viewport(sheet, pos.row..pos.row + 1, pos.col..pos.col + 1)?;
+    Ok(view.get(pos.row, pos.col).cloned().unwrap_or_default())
 }

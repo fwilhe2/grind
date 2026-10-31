@@ -35,8 +35,10 @@ every line of this plan:
 
 - The shell is a renderer and an event forwarder owning nothing. Selection, scroll and an
   in-progress edit are presentation state; everything else is a missing core capability.
-- Reads go through `App::get_viewport`. Undo/redo lives in the core. The core pushes;
-  the shell repaints from the observer, never a poll or timer.
+- Reads go through `App::get_viewport`, bounded by `MAX_VIEWPORT_CELLS` (one whole column);
+  there is no single-cell value getter. Undo/redo lives in the core. The core pushes, after a
+  change and never after a refused one; the shell repaints from the observer, never a poll or
+  timer.
 - **Whatever the GUI can do, the CLI can do** — every capability below lands core-first,
   CLI in the same change, GUI last, and `cli/tests/parity.rs` fails the build otherwise.
 - Every feature survives a LibreOffice round-trip (loop C), widths included.

@@ -76,8 +76,12 @@ pub enum Error {
     /// Something true of any ODF document, not just a spreadsheet.
     Odf(grind_core::Error),
     NoSuchSheet(usize),
-    /// A request whose size is the problem — see [`MAX_FORMATTED_CELLS`].
-    TooLarge(u64),
+    /// A request whose size is the problem: `asked` against the `limit` it passed —
+    /// [`MAX_FORMATTED_CELLS`], [`MAX_TRACK_RUN`] or [`MAX_VIEWPORT_CELLS`].
+    TooLarge {
+        asked: u64,
+        limit: u64,
+    },
     /// A sheet operation ODF has no spelling for: a name another sheet already has, an
     /// empty one, or removing the document's last sheet.
     BadSheet(String),
@@ -93,11 +97,12 @@ impl fmt::Display for Error {
         match self {
             Error::Odf(e) => write!(f, "{e}"),
             Error::NoSuchSheet(i) => write!(f, "no such sheet: {i}"),
-            Error::TooLarge(n) => write!(
-                f,
-                "{n} is more than one command may cover at once \
-                 ({MAX_FORMATTED_CELLS} cells, {MAX_TRACK_RUN} rows or columns)"
-            ),
+            Error::TooLarge { asked, limit } => {
+                write!(
+                    f,
+                    "{asked} is more than one request may cover at once (at most {limit})"
+                )
+            }
             Error::BadSheet(e) => write!(f, "{e}"),
             Error::Formula(e) => write!(f, "{e}"),
             Error::Stale(e) => write!(f, "{e}"),
@@ -147,6 +152,10 @@ pub const MAX_FORMATTED_CELLS: u64 = 1 << 16;
 /// ponytail: a document that really sizes 2000 columns loses them past the cap. A per-sheet
 /// default size would keep them, when a file needs it.
 pub const MAX_TRACK_RUN: u32 = 1024;
+
+/// How many cells one [`App::get_viewport`] may read: one whole column, the largest read the core
+/// makes itself (a column fit, a filter's values, a chart series). A screen is a few thousand.
+pub const MAX_VIEWPORT_CELLS: u64 = MAX_ROWS as u64;
 
 /// One calculated cell, as an explorer lists it ([`App::calculations`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -362,6 +371,9 @@ impl Viewport {
     }
 }
 
+/// What an [`App::mutate`] closure returns, as its `Err`, when it changed nothing.
+struct Unchanged;
+
 #[derive(Default)]
 struct State {
     doc: Document,
@@ -404,17 +416,25 @@ impl App {
     }
 
     /// Mutate, then notify with the write lock released: an observer calls straight back in to
-    /// re-read (`an_observer_may_read_the_app_without_deadlocking`).
-    fn mutate<R>(&self, f: impl FnOnce(&mut State) -> R) -> R {
+    /// re-read (`an_observer_may_read_the_app_without_deadlocking`). `Err` from `f` means it left
+    /// the state as it was, so nothing is bumped, dropped or notified; `Ok` is a change.
+    fn mutate<T, E>(
+        &self,
+        f: impl FnOnce(&mut State) -> std::result::Result<T, E>,
+    ) -> std::result::Result<T, E> {
         let result = {
             let mut state = self.state.write().unwrap();
             let result = f(&mut state);
-            state.version += 1;
+            if result.is_ok() {
+                state.version += 1;
+                // Under the write lock, so no reader of the new document is handed the old one's.
+                *self.analysis.write().unwrap() = None;
+            }
             result
         };
-        // Before notifying, so an observer reading back in is not handed the old analysis.
-        *self.analysis.write().unwrap() = None;
-        self.notify();
+        if result.is_ok() {
+            self.notify();
+        }
         result
     }
 
@@ -898,7 +918,10 @@ impl App {
                 edits.push(typed(&state.doc, hit.sheet, hit.pos, &input).1);
             }
             if edits.len() as u64 > MAX_FORMATTED_CELLS {
-                return Err(Error::TooLarge(edits.len() as u64));
+                return Err(Error::TooLarge {
+                    asked: edits.len() as u64,
+                    limit: MAX_FORMATTED_CELLS,
+                });
             }
             let cells = edits.len();
             let recalc = match cells {
@@ -1003,7 +1026,10 @@ impl App {
         let rows = u64::from(end.row.saturating_sub(start.row)) + 1;
         let cols = u64::from(end.col.saturating_sub(start.col)) + 1;
         if rows.saturating_mul(cols) > MAX_FORMATTED_CELLS {
-            return Err(Error::TooLarge(rows.saturating_mul(cols)));
+            return Err(Error::TooLarge {
+                asked: rows.saturating_mul(cols),
+                limit: MAX_FORMATTED_CELLS,
+            });
         }
         Ok((start.row..=end.row)
             .flat_map(move |row| (start.col..=end.col).map(move |col| Pos::new(row, col))))
@@ -1068,9 +1094,9 @@ impl App {
             let state = self.state.read().unwrap();
             (state.version, recalculated_with(&state.doc, progress))
         };
-        self.mutate(|state| {
+        let written = self.mutate(|state| {
             if state.version != version {
-                return Ok(None);
+                return Err(Unchanged);
             }
             state.recalc_owed = false;
             let changed = updates.len();
@@ -1089,8 +1115,9 @@ impl App {
                 }
                 state.redo.clear();
             }
-            Ok(Some(Recalc { changed, spoiled }))
-        })
+            Ok(Recalc { changed, spoiled })
+        });
+        Ok(written.ok())
     }
 
     /// How many formula cells hold a value that recalculating would change, and how many of those
@@ -1110,33 +1137,36 @@ impl App {
     pub fn undo(&self) -> bool {
         self.mutate(|state| {
             let Some(action) = state.undo.pop() else {
-                return false;
+                return Err(Unchanged);
             };
             // The inverse of an inverse is the original, so this is also the redo entry.
-            match state.doc.apply(action) {
+            // An entry that no longer applies is dropped: the history changed, the document not.
+            Ok(match state.doc.apply(action) {
                 Some(inverse) => {
                     state.redo.push(inverse);
                     true
                 }
                 None => false,
-            }
+            })
         })
+        .unwrap_or(false)
     }
 
     /// Redo the last undone change. `false` if there was nothing to redo.
     pub fn redo(&self) -> bool {
         self.mutate(|state| {
             let Some(action) = state.redo.pop() else {
-                return false;
+                return Err(Unchanged);
             };
-            match state.doc.apply(action) {
+            Ok(match state.doc.apply(action) {
                 Some(inverse) => {
                     state.undo.push(inverse);
                     true
                 }
                 None => false,
-            }
+            })
         })
+        .unwrap_or(false)
     }
 
     pub fn can_undo(&self) -> bool {
@@ -1204,14 +1234,8 @@ impl App {
 
     // --- reading ---
 
-    pub fn get(&self, sheet: usize, pos: Pos) -> Result<CellValue> {
-        let state = self.state.read().unwrap();
-        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
-        Ok(s.get(pos))
-    }
-
-    /// Read a rectangle — the only way a shell reads cells: `get_viewport_with(…,
-    /// Overlays::NONE)`.
+    /// Read a rectangle — the only way anything outside the crate reads cells, one cell being a
+    /// 1×1 rectangle: `get_viewport_with(…, Overlays::NONE)`.
     pub fn get_viewport(
         &self,
         sheet: usize,
@@ -1224,7 +1248,8 @@ impl App {
     /// Read a rectangle with `doc/view-modes.md`'s derived overlays. Roles and name anchors need a
     /// document-wide analysis, built once per document state and cached, so a shell that draws
     /// neither does not pay. Nothing is written (`sheet/tests/view_modes.rs` asserts it on the
-    /// bytes).
+    /// bytes). More than [`MAX_VIEWPORT_CELLS`] is [`Error::TooLarge`], checked before anything is
+    /// allocated; an inverted range is empty.
     pub fn get_viewport_with(
         &self,
         sheet: usize,
@@ -1232,12 +1257,21 @@ impl App {
         cols: Range<u32>,
         overlays: view::Overlays,
     ) -> Result<Viewport> {
-        let state = self.state.read().unwrap();
-        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
         // An inverted range is a caller bug, not a panic: normalise it to empty.
         let rows = rows.start..rows.end.max(rows.start);
         let cols = cols.start..cols.end.max(cols.start);
-        let size = ((rows.end - rows.start) as usize) * ((cols.end - cols.start) as usize);
+        // Both spans fit in 32 bits, so the product cannot overflow 64.
+        let asked = u64::from(rows.end - rows.start) * u64::from(cols.end - cols.start);
+        if asked > MAX_VIEWPORT_CELLS {
+            return Err(Error::TooLarge {
+                asked,
+                limit: MAX_VIEWPORT_CELLS,
+            });
+        }
+        // Not truncating: `MAX_VIEWPORT_CELLS` fits in a 32-bit `usize`.
+        let size = asked as usize;
+        let state = self.state.read().unwrap();
+        let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
         let mut cells = Vec::with_capacity(size);
         let mut texts = Vec::with_capacity(size);
         let mut styles = Vec::with_capacity(size);
@@ -1576,9 +1610,10 @@ impl App {
     /// inverse carries the value it restores, and one naming a missing sheet fails to apply
     /// ([`App::undo`] returns `false`).
     pub fn restore_session(&self, session: Session) {
-        self.mutate(|state| {
+        let _ = self.mutate(|state| {
             state.undo = session.undo;
             state.redo = session.redo;
+            Ok::<_, Unchanged>(())
         });
     }
 }
@@ -2260,5 +2295,42 @@ impl grind_core::spell::Spelled for App {
 
     fn sample(&self) -> Vec<String> {
         spell::sample(&self.state.read().unwrap().doc)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn version(app: &App) -> u64 {
+        app.state.read().unwrap().version
+    }
+
+    fn analysis(app: &App) -> Option<Arc<view::Analysis>> {
+        app.analysis.read().unwrap().clone()
+    }
+
+    /// `recalc_in_place` writes only when the version did not move, and the analysis is rebuilt
+    /// only when it was dropped: an edit that changed nothing must touch neither.
+    #[test]
+    fn a_failed_edit_leaves_the_version_and_the_analysis_alone() {
+        let app = App::new();
+        app.set_cell(0, Pos::new(0, 0), 1.0).unwrap();
+        app.get_viewport_with(0, 0..2, 0..2, view::Overlays::ALL)
+            .unwrap();
+        let (before, cached) = (version(&app), analysis(&app).expect("built by the read"));
+
+        assert!(app.set_cell(9, Pos::new(0, 0), 2.0).is_err());
+        assert!(app.set_formula(9, Pos::new(0, 0), "=1").is_err());
+        assert!(app.rename_sheet(0, "").is_err());
+        assert!(!app.redo());
+        assert!(!app.clear_name("absent"));
+
+        assert_eq!(version(&app), before);
+        assert!(Arc::ptr_eq(&cached, &analysis(&app).unwrap()));
+
+        assert!(app.undo());
+        assert_eq!(version(&app), before + 1);
+        assert!(analysis(&app).is_none());
     }
 }

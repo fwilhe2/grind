@@ -191,13 +191,12 @@ stops ratcheting.
 
 ## Reading
 
-- `get` — `grind sheet get`
 - `find` — `grind sheet find <needle>`, one `Sheet1.B2<TAB>input text` line per cell;
   `--match-case`, `--whole-cell`, `--sheet <name>` and `--in <range>` narrow it — the last
   is how a find bar's *Replace* reaches the one cell it is on. What it searches is each
   cell's input text — the formula bar's — so `SUM` finds `=SUM(B2:B9)`
 - `get_viewport` — `grind sheet view` (its display text is what `view` prints; `--raw` prints the
-  stored values instead)
+  stored values instead), and `grind sheet get`, which is one cell's viewport
 - `get_viewport_with` — `grind sheet view --roles` / `--names` / `--formulas`, which print
   `doc/view-modes.md`'s derived overlays instead of the values: what each cell *is*, what it is
   *called*, and what computes it. `--format json` carries every column of every cell at once, so

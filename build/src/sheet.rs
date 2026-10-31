@@ -1030,9 +1030,11 @@ fn cell(app: &App, sheet: usize, pos: Pos, cell: &Cell) -> Result<(), String> {
 fn sum_above(app: &App, sheet: usize, pos: Pos) -> Result<String, String> {
     let filled = |row: u32| -> Result<bool, String> {
         let at = Pos::new(row, pos.col);
-        let value = app.get(sheet, at).map_err(say)?;
+        let cell = app
+            .get_viewport(sheet, row..row + 1, pos.col..pos.col + 1)
+            .map_err(say)?;
         let formula = app.formula(sheet, at).map_err(say)?;
-        Ok(matches!(value, CellValue::Number(_)) || formula.is_some())
+        Ok(matches!(cell.get(row, pos.col), Some(CellValue::Number(_))) || formula.is_some())
     };
     let mut top = None;
     let mut row = pos.row;

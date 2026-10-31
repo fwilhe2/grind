@@ -202,9 +202,12 @@ Things that bite if forgotten:
 Shared Core / Native Shell. All state and logic live in the core crates; every shell is a
 renderer and event forwarder that owns nothing. Rules that are cheap now and expensive to break:
 
-1. **Reads go through `App::get_viewport`.** No getter hands out the whole document.
+1. **Reads go through `App::get_viewport`.** No getter hands out the whole document, and the
+   spreadsheet has no single-cell value getter: one cell is a 1×1 viewport. A sheet viewport
+   past `MAX_VIEWPORT_CELLS` is `Error::TooLarge`; a text viewport clamps to the document.
 2. **Undo/redo lives in the core.** `Document::apply` returns the action's inverse.
-3. **The core pushes, shells never poll.** `App::mutate` drops the write lock before notifying.
+3. **The core pushes, shells never poll.** `App::mutate` drops the write lock before notifying,
+   and notifies only when its closure returns `Ok`: an `Err` must leave the state untouched.
 4. **Whatever any GUI can do, the CLI can do** (R9, held by `cli/tests/parity.rs` against the
    two `doc/cli-parity-*.md` files).
 5. **No filesystem assumptions.** Every `*_file` has a `*_bytes` twin.

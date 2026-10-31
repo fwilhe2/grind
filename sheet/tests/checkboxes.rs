@@ -76,13 +76,28 @@ fn ticking_writes_the_linked_cell_and_the_count_follows() {
     // holds — and what ticking writes back, so a sum over them still counts.
     app.enter(0, Pos::new(6, 2), "=SUM([.E2:.E4])", RecalcMode::Document)
         .unwrap();
-    assert_eq!(app.get(0, Pos::new(6, 2)).unwrap(), CellValue::Number(1.0));
+    assert_eq!(
+        value_at(&app, 0, Pos::new(6, 2)).unwrap(),
+        CellValue::Number(1.0)
+    );
     assert!(app.toggle_checkbox(0, Pos::new(2, 1)).unwrap());
-    assert_eq!(app.get(0, Pos::new(2, 4)).unwrap(), CellValue::Number(1.0));
-    assert_eq!(app.get(0, Pos::new(6, 2)).unwrap(), CellValue::Number(2.0));
+    assert_eq!(
+        value_at(&app, 0, Pos::new(2, 4)).unwrap(),
+        CellValue::Number(1.0)
+    );
+    assert_eq!(
+        value_at(&app, 0, Pos::new(6, 2)).unwrap(),
+        CellValue::Number(2.0)
+    );
     assert!(app.undo());
-    assert_eq!(app.get(0, Pos::new(2, 4)).unwrap(), CellValue::Number(0.0));
-    assert_eq!(app.get(0, Pos::new(6, 2)).unwrap(), CellValue::Number(1.0));
+    assert_eq!(
+        value_at(&app, 0, Pos::new(2, 4)).unwrap(),
+        CellValue::Number(0.0)
+    );
+    assert_eq!(
+        value_at(&app, 0, Pos::new(6, 2)).unwrap(),
+        CellValue::Number(1.0)
+    );
     assert!(
         app.toggle_checkbox(0, Pos::new(5, 5)).is_err(),
         "no checkbox there"
@@ -93,7 +108,10 @@ fn ticking_writes_the_linked_cell_and_the_count_follows() {
         .set_checkbox(0, Pos::new(0, 0), Some(linked(0, 1)))
         .unwrap();
     fresh.toggle_checkbox(0, Pos::new(0, 0)).unwrap();
-    assert_eq!(fresh.get(0, Pos::new(0, 1)).unwrap(), CellValue::Bool(true));
+    assert_eq!(
+        value_at(&fresh, 0, Pos::new(0, 1)).unwrap(),
+        CellValue::Bool(true)
+    );
 }
 
 /// R6: an untouched save is the file; ticking is one value; adding one is one element in the
@@ -140,7 +158,10 @@ fn saving_changes_only_the_checkboxes_that_changed() {
         .map(|(p, _)| *p)
         .collect();
     assert_eq!(at, [Pos::new(2, 1), Pos::new(3, 1), Pos::new(4, 1)]);
-    assert_eq!(back.get(0, Pos::new(2, 4)).unwrap(), CellValue::Number(1.0));
+    assert_eq!(
+        value_at(&back, 0, Pos::new(2, 4)).unwrap(),
+        CellValue::Number(1.0)
+    );
 }
 
 /// A document of our own writes checkboxes the schema's way, in both forms, and reads them back.
@@ -249,4 +270,14 @@ fn renaming_a_sheet_carries_the_checkboxes_links() {
         summary[0].1.link.as_ref().and_then(|l| l.sheet.as_deref()),
         Some("Jobs")
     );
+}
+
+/// One cell's value, read as everything outside the core reads cells: a 1×1 viewport.
+fn value_at(
+    app: &grind_sheet::App,
+    sheet: usize,
+    pos: grind_sheet::Pos,
+) -> grind_sheet::Result<grind_sheet::CellValue> {
+    let view = app.get_viewport(sheet, pos.row..pos.row + 1, pos.col..pos.col + 1)?;
+    Ok(view.get(pos.row, pos.col).cloned().unwrap_or_default())
 }

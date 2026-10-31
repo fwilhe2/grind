@@ -398,7 +398,7 @@ fn the_checkboxes_are_linked_to_the_ticks() {
     assert_eq!(view.checkbox(4, 1), Some(true), "E5 is TRUE");
     assert_eq!(view.checkbox(5, 1), Some(false));
     app.toggle_checkbox(0, p(5, 1)).unwrap();
-    assert_eq!(app.get(0, p(5, 4)).unwrap(), CellValue::Bool(true));
+    assert_eq!(value_at(&app, 0, p(5, 4)).unwrap(), CellValue::Bool(true));
 }
 
 /// The rules that tick a row green, and the two thresholds on the summary: carried, in
@@ -451,4 +451,14 @@ fn the_merges_survive_the_conversion() {
         back.sheets[0].style(p(3, 2)),
         document.sheets[0].style(p(3, 2))
     );
+}
+
+/// One cell's value, read as everything outside the core reads cells: a 1×1 viewport.
+fn value_at(
+    app: &grind_sheet::App,
+    sheet: usize,
+    pos: grind_sheet::Pos,
+) -> grind_sheet::Result<grind_sheet::CellValue> {
+    let view = app.get_viewport(sheet, pos.row..pos.row + 1, pos.col..pos.col + 1)?;
+    Ok(view.get(pos.row, pos.col).cloned().unwrap_or_default())
 }

@@ -17,7 +17,7 @@ fn empty() -> App {
 
 fn value(app: &App, address: &str) -> CellValue {
     let (sheet, pos, _) = resolve(app, address);
-    app.get(sheet, pos).unwrap()
+    value_at(app, sheet, pos).unwrap()
 }
 
 fn resolve(app: &App, address: &str) -> (usize, Pos, Pos) {
@@ -333,4 +333,14 @@ fn a_file_bigger_than_one_paste_is_refused_by_name() {
     assert!(error.contains("70000"), "{error}");
     // And nothing landed: the size check runs before the document is touched.
     assert_eq!(value(&app, "A1"), CellValue::Empty);
+}
+
+/// One cell's value, read as everything outside the core reads cells: a 1×1 viewport.
+fn value_at(
+    app: &grind_sheet::App,
+    sheet: usize,
+    pos: grind_sheet::Pos,
+) -> grind_sheet::Result<grind_sheet::CellValue> {
+    let view = app.get_viewport(sheet, pos.row..pos.row + 1, pos.col..pos.col + 1)?;
+    Ok(view.get(pos.row, pos.col).cloned().unwrap_or_default())
 }

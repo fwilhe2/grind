@@ -206,7 +206,7 @@ impl App {
     pub fn clear_name(&self, name: &str) -> bool {
         self.mutate(|state| {
             if !state.doc.names.contains_key(&name.to_lowercase()) {
-                return false;
+                return Err(Unchanged);
             }
             let inverse = state
                 .doc
@@ -217,8 +217,9 @@ impl App {
                 .expect("a name addresses no sheet");
             state.undo.push(inverse);
             state.redo.clear();
-            true
+            Ok(())
         })
+        .is_ok()
     }
 
     /// Every named expression, name and expression alike (§5.11).

@@ -106,11 +106,11 @@ fn a_range_narrows_it_to_a_rectangle_and_replace_to_one_cell() {
     let done = app.replace(&one, "Plums", RecalcMode::No).unwrap();
     assert_eq!(done.cells, 1);
     assert_eq!(
-        app.get(0, p("A1")).unwrap(),
+        value_at(&app, 0, p("A1")).unwrap(),
         CellValue::Text("Apples".into())
     );
     assert_eq!(
-        app.get(1, p("A1")).unwrap(),
+        value_at(&app, 1, p("A1")).unwrap(),
         CellValue::Text("Plums are red".into())
     );
 
@@ -139,21 +139,21 @@ fn replace_is_one_undo_step_across_sheets() {
     assert_eq!(done.cells, 2);
     assert!(done.refused.is_empty());
     assert_eq!(
-        app.get(0, p("A1")).unwrap(),
+        value_at(&app, 0, p("A1")).unwrap(),
         CellValue::Text("Plums".into())
     );
     assert_eq!(
-        app.get(1, p("A1")).unwrap(),
+        value_at(&app, 1, p("A1")).unwrap(),
         CellValue::Text("Plums are red".into())
     );
 
     assert!(app.undo());
     assert_eq!(
-        app.get(0, p("A1")).unwrap(),
+        value_at(&app, 0, p("A1")).unwrap(),
         CellValue::Text("Apples".into())
     );
     assert_eq!(
-        app.get(1, p("A1")).unwrap(),
+        value_at(&app, 1, p("A1")).unwrap(),
         CellValue::Text("apples are red".into())
     );
 }
@@ -167,7 +167,7 @@ fn a_replaced_formula_is_still_a_formula_and_recalculates() {
         .unwrap();
     assert_eq!(done.cells, 1);
     assert_eq!(app.input_text(0, p("B3")).unwrap(), "=SUM(B1:B2)+B4");
-    assert_eq!(app.get(0, p("B3")).unwrap(), CellValue::Number(17.0));
+    assert_eq!(value_at(&app, 0, p("B3")).unwrap(), CellValue::Number(17.0));
 }
 
 #[test]
@@ -179,8 +179,14 @@ fn replaced_text_is_read_by_the_typing_rule() {
     app.replace(&Search::new("7"), "8", RecalcMode::No).unwrap();
     // A number stays a number, and a text cell that looks like one stays text: its input
     // text carries the `'` that says so, and the replace goes through that same rule.
-    assert_eq!(app.get(0, p("A1")).unwrap(), CellValue::Number(124.0));
-    assert_eq!(app.get(0, p("A2")).unwrap(), CellValue::Text("008".into()));
+    assert_eq!(
+        value_at(&app, 0, p("A1")).unwrap(),
+        CellValue::Number(124.0)
+    );
+    assert_eq!(
+        value_at(&app, 0, p("A2")).unwrap(),
+        CellValue::Text("008".into())
+    );
 }
 
 #[test]
@@ -197,7 +203,17 @@ fn a_formula_the_replace_would_break_is_refused_and_the_rest_still_happens() {
     // C1 is text, so its replace is just text, and it still happens.
     assert_eq!(done.cells, 1);
     assert_eq!(
-        app.get(0, p("C1")).unwrap(),
+        value_at(&app, 0, p("C1")).unwrap(),
         CellValue::Text("see SUMB1:B2)".into())
     );
+}
+
+/// One cell's value, read as everything outside the core reads cells: a 1×1 viewport.
+fn value_at(
+    app: &grind_sheet::App,
+    sheet: usize,
+    pos: grind_sheet::Pos,
+) -> grind_sheet::Result<grind_sheet::CellValue> {
+    let view = app.get_viewport(sheet, pos.row..pos.row + 1, pos.col..pos.col + 1)?;
+    Ok(view.get(pos.row, pos.col).cloned().unwrap_or_default())
 }

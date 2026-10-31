@@ -357,9 +357,19 @@ fn a_byte_order_mark_does_not_shift_a_save() {
         let back = App::new();
         back.open_bytes(&name, &out).expect("reopens");
         assert_eq!(
-            back.get(0, Pos::new(0, 0)).unwrap(),
+            value_at(&back, 0, Pos::new(0, 0)).unwrap(),
             grind_sheet::CellValue::Number(7.0),
             "{name}"
         );
     }
+}
+
+/// One cell's value, read as everything outside the core reads cells: a 1×1 viewport.
+fn value_at(
+    app: &grind_sheet::App,
+    sheet: usize,
+    pos: grind_sheet::Pos,
+) -> grind_sheet::Result<grind_sheet::CellValue> {
+    let view = app.get_viewport(sheet, pos.row..pos.row + 1, pos.col..pos.col + 1)?;
+    Ok(view.get(pos.row, pos.col).cloned().unwrap_or_default())
 }

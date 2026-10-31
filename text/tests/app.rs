@@ -75,6 +75,42 @@ fn an_observer_may_read_the_app_without_deadlocking() {
 }
 
 #[test]
+fn a_failed_or_empty_operation_notifies_nobody() {
+    struct Counter(AtomicUsize);
+    impl Observer for Counter {
+        fn changed(&self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    // One empty paragraph and no history.
+    let app = App::new();
+    let counter = Arc::new(Counter(AtomicUsize::new(0)));
+    app.set_observer(counter.clone());
+
+    let at = |block, offset| Caret { block, offset };
+    assert!(app.erase(at(0, 1), at(0, 0)).is_err(), "runs backwards");
+    assert!(app.join_block(0).is_err(), "nothing follows the only block");
+    assert!(app.set_text(9, "x").is_err());
+    assert!(!app.undo(), "nothing to undo");
+    assert!(!app.redo(), "nothing to redo");
+    assert_eq!(counter.0.load(Ordering::SeqCst), 0);
+
+    app.set_text(0, "x").unwrap();
+    assert_eq!(counter.0.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_viewport_is_clamped_to_the_document_however_much_is_asked() {
+    let app = app(&["a", "b", "c"]);
+    let all = app.get_viewport(0..usize::MAX);
+    assert_eq!((all.blocks.clone(), all.len()), (0..3, 3));
+    assert!(app.get_viewport(usize::MAX..usize::MAX).is_empty());
+    #[allow(clippy::reversed_empty_ranges)]
+    let inverted = app.get_viewport(2..1);
+    assert!(inverted.is_empty());
+}
+
+#[test]
 fn a_viewport_is_a_window_and_reading_past_the_end_is_not_an_error() {
     let app = app(&["a", "b", "c"]);
     let view = app.get_viewport(1..2);

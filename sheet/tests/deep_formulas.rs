@@ -44,7 +44,7 @@ fn formulas_at_the_limits_evaluate_and_past_them_are_errors() {
         }
         app.recalc().expect("recalculates");
         for (row, (_, want)) in cells.iter().enumerate() {
-            let got = app.get(0, Pos::new(row as u32, 0)).expect("reads");
+            let got = value_at(&app, 0, Pos::new(row as u32, 0)).expect("reads");
             match want {
                 Some(n) => assert_eq!(got, CellValue::Number(*n), "row {row}"),
                 // An error value, which a cell holds as its name.
@@ -52,4 +52,14 @@ fn formulas_at_the_limits_evaluate_and_past_them_are_errors() {
             }
         }
     });
+}
+
+/// One cell's value, read as everything outside the core reads cells: a 1×1 viewport.
+fn value_at(
+    app: &grind_sheet::App,
+    sheet: usize,
+    pos: grind_sheet::Pos,
+) -> grind_sheet::Result<grind_sheet::CellValue> {
+    let view = app.get_viewport(sheet, pos.row..pos.row + 1, pos.col..pos.col + 1)?;
+    Ok(view.get(pos.row, pos.col).cloned().unwrap_or_default())
 }

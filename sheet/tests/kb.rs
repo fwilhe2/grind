@@ -198,7 +198,7 @@ fn a_document_of_formulas_with_no_cached_values_recalculates() {
     app.recalc().unwrap();
     assert_eq!(app.used_extent(0).unwrap(), (18, 1));
     let played: Vec<String> = (0..18)
-        .map(|row| match app.get(0, Pos::new(row, 0)).unwrap() {
+        .map(|row| match value_at(&app, 0, Pos::new(row, 0)).unwrap() {
             grind_sheet::CellValue::Text(t) => t,
             grind_sheet::CellValue::Number(n) => format!("{n}"),
             other => panic!("row {} is {other:?}", row + 1),
@@ -691,7 +691,7 @@ fn the_default_palette_is_the_one_the_sample_document_uses() {
     for row in 0..rows {
         for col in 0..cols {
             let pos = Pos::new(row, col);
-            let grind_sheet::CellValue::Text(label) = app.get(0, pos).unwrap() else {
+            let grind_sheet::CellValue::Text(label) = value_at(&app, 0, pos).unwrap() else {
                 continue;
             };
             let Some(expected) = grind_sheet::style::palette(&label) else {
@@ -749,4 +749,14 @@ fn a_save_that_would_drop_an_annotation_is_refused() {
     app.set_cell(0, Pos::new(1, 0), 42.0).unwrap();
     let saved = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
     assert!(saved.contains("<office:annotation><text:p>checked</text:p></office:annotation>"));
+}
+
+/// One cell's value, read as everything outside the core reads cells: a 1×1 viewport.
+fn value_at(
+    app: &grind_sheet::App,
+    sheet: usize,
+    pos: grind_sheet::Pos,
+) -> grind_sheet::Result<grind_sheet::CellValue> {
+    let view = app.get_viewport(sheet, pos.row..pos.row + 1, pos.col..pos.col + 1)?;
+    Ok(view.get(pos.row, pos.col).cloned().unwrap_or_default())
 }

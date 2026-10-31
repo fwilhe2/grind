@@ -137,7 +137,10 @@ impl App {
         rows: Range<u32>,
     ) -> Result<usize> {
         if widths.len() as u64 > u64::from(MAX_TRACK_RUN) {
-            return Err(Error::TooLarge(widths.len() as u64));
+            return Err(Error::TooLarge {
+                asked: widths.len() as u64,
+                limit: MAX_TRACK_RUN.into(),
+            });
         }
         let widths = widths
             .into_iter()
@@ -171,7 +174,10 @@ impl App {
     /// (`table:visibility="collapse"`), as one undo step bounded by [`MAX_TRACK_RUN`].
     pub fn set_col_hidden(&self, sheet: usize, cols: Range<u32>, hidden: bool) -> Result<usize> {
         if cols.len() as u64 > u64::from(MAX_TRACK_RUN) {
-            return Err(Error::TooLarge(cols.len() as u64));
+            return Err(Error::TooLarge {
+                asked: cols.len() as u64,
+                limit: MAX_TRACK_RUN.into(),
+            });
         }
         self.mutate(|state| {
             if state.doc.sheet(sheet).is_none() {
@@ -193,7 +199,10 @@ impl App {
     /// The row twin of [`App::set_col_hidden`].
     pub fn set_row_hidden(&self, sheet: usize, rows: Range<u32>, hidden: bool) -> Result<usize> {
         if rows.len() as u64 > u64::from(MAX_TRACK_RUN) {
-            return Err(Error::TooLarge(rows.len() as u64));
+            return Err(Error::TooLarge {
+                asked: rows.len() as u64,
+                limit: MAX_TRACK_RUN.into(),
+            });
         }
         self.mutate(|state| {
             if state.doc.sheet(sheet).is_none() {
@@ -229,7 +238,10 @@ impl App {
     /// A track size as it will be stored: bounded, and a length something can measure.
     fn track_size(&self, tracks: u64, size: Option<String>) -> Result<Option<String>> {
         if tracks > u64::from(MAX_TRACK_RUN) {
-            return Err(Error::TooLarge(tracks));
+            return Err(Error::TooLarge {
+                asked: tracks,
+                limit: MAX_TRACK_RUN.into(),
+            });
         }
         match size {
             Some(size) => match style::length_mm(&size) {

@@ -3879,7 +3879,7 @@ mod tests {
         assert!(app.status.contains("Receive"), "{}", app.status);
         app.run_command("fix 1");
         assert_eq!(
-            app.core.get(0, Pos::new(0, 0)).unwrap(),
+            value_at(&app.core, 0, Pos::new(0, 0)).unwrap(),
             CellValue::Text("Receive it".to_owned())
         );
         assert_eq!(underlined(&mut app), "");
@@ -3908,7 +3908,7 @@ mod tests {
         assert!(before.contains("[ ]"), "{before}");
         press(&mut app, KeyCode::Char(' '));
         assert_eq!(
-            app.core.get(0, Pos::new(0, 3)).unwrap(),
+            value_at(&app.core, 0, Pos::new(0, 3)).unwrap(),
             CellValue::Bool(true)
         );
         let after = super::tests::screen(&mut app, 60, 8).join("\n");
@@ -4025,7 +4025,7 @@ mod tests {
         press(&mut app, KeyCode::Char('i'));
         type_str(&mut app, "42");
         press(&mut app, KeyCode::Enter);
-        assert_eq!(app.core.get(0, Pos::new(0, 0)).unwrap(), 42.0.into());
+        assert_eq!(value_at(&app.core, 0, Pos::new(0, 0)).unwrap(), 42.0.into());
         // Enter walked down after committing.
         assert_eq!(app.active, Pos::new(1, 0));
     }
@@ -4041,7 +4041,7 @@ mod tests {
             "commit must not have succeeded"
         );
         assert_eq!(
-            app.core.get(0, Pos::new(0, 0)).unwrap(),
+            value_at(&app.core, 0, Pos::new(0, 0)).unwrap(),
             grind_sheet::CellValue::Empty
         );
     }
@@ -4054,7 +4054,7 @@ mod tests {
         press(&mut app, KeyCode::Esc);
         assert!(matches!(app.mode, Mode::Normal));
         assert_eq!(
-            app.core.get(0, Pos::new(0, 0)).unwrap(),
+            value_at(&app.core, 0, Pos::new(0, 0)).unwrap(),
             grind_sheet::CellValue::Empty
         );
     }
@@ -4079,11 +4079,11 @@ mod tests {
         press(&mut app, KeyCode::Char('k')); // back onto A1
         press(&mut app, KeyCode::Char('x'));
         assert_eq!(
-            app.core.get(0, Pos::new(0, 0)).unwrap(),
+            value_at(&app.core, 0, Pos::new(0, 0)).unwrap(),
             grind_sheet::CellValue::Empty
         );
         press(&mut app, KeyCode::Char('u'));
-        assert_eq!(app.core.get(0, Pos::new(0, 0)).unwrap(), 5.0.into());
+        assert_eq!(value_at(&app.core, 0, Pos::new(0, 0)).unwrap(), 5.0.into());
     }
 
     #[test]
@@ -4669,16 +4669,16 @@ mod tests {
         assert_eq!(app.status, "replaced in 1 cell(s)");
         // A number stays a number, and the formula reading it was recalculated in the same step.
         assert_eq!(
-            app.core.get(0, Pos::new(1, 1)).unwrap(),
+            value_at(&app.core, 0, Pos::new(1, 1)).unwrap(),
             CellValue::Number(1300.0)
         );
         assert_eq!(
-            app.core.get(0, Pos::new(2, 1)).unwrap(),
+            value_at(&app.core, 0, Pos::new(2, 1)).unwrap(),
             CellValue::Number(2600.0)
         );
         assert!(app.core.undo());
         assert_eq!(
-            app.core.get(0, Pos::new(1, 1)).unwrap(),
+            value_at(&app.core, 0, Pos::new(1, 1)).unwrap(),
             CellValue::Number(1200.0)
         );
 
@@ -4755,8 +4755,8 @@ mod tests {
         press(&mut app, KeyCode::Char('j'));
         press(&mut app, KeyCode::Char('j'));
         app.run_command("down");
-        assert_eq!(app.core.get(0, Pos::new(1, 1)).unwrap(), 30.0.into());
-        assert_eq!(app.core.get(0, Pos::new(2, 1)).unwrap(), 40.0.into());
+        assert_eq!(value_at(&app.core, 0, Pos::new(1, 1)).unwrap(), 30.0.into());
+        assert_eq!(value_at(&app.core, 0, Pos::new(2, 1)).unwrap(), 40.0.into());
         assert!(app.status.starts_with("filled"), "{}", app.status);
     }
 
@@ -4916,7 +4916,7 @@ mod tests {
         press(&mut app, KeyCode::Char('j'));
         app.run_command("across");
         assert_eq!(
-            app.core.get(0, Pos::new(2, 1)).unwrap(),
+            value_at(&app.core, 0, Pos::new(2, 1)).unwrap(),
             30.0.into(),
             "{}",
             app.status
@@ -4929,7 +4929,7 @@ mod tests {
         assert_eq!(app.register, "20\n30");
         app.run_command("value");
         assert_eq!(app.core.formula(0, Pos::new(2, 1)).unwrap(), None);
-        assert_eq!(app.core.get(0, Pos::new(2, 1)).unwrap(), 30.0.into());
+        assert_eq!(value_at(&app.core, 0, Pos::new(2, 1)).unwrap(), 30.0.into());
 
         app.active = Pos::new(0, 0);
         app.run_command("filter");
@@ -5067,7 +5067,7 @@ mod tests {
         // Enter is not the list's key: it commits, as it always does.
         type_str(&mut app, "1;2)");
         press(&mut app, KeyCode::Enter);
-        assert_eq!(app.core.get(0, Pos::new(0, 0)).unwrap(), 3.0.into());
+        assert_eq!(value_at(&app.core, 0, Pos::new(0, 0)).unwrap(), 3.0.into());
     }
 
     /// Escape with a list up is "not that completion", not "throw the edit away".
@@ -5119,12 +5119,12 @@ mod tests {
         assert!(app.core.filter(0).unwrap().is_some(), "{}", app.status);
         assert_eq!(app.core.names().len(), 1, "{}", app.status);
         assert_eq!(
-            app.core.get(0, Pos::new(2, 0)).unwrap(),
+            value_at(&app.core, 0, Pos::new(2, 0)).unwrap(),
             CellValue::Text("Total".to_owned()),
             "the totals row lands right after the selection"
         );
         assert_eq!(
-            app.core.get(0, Pos::new(2, 1)).unwrap(),
+            value_at(&app.core, 0, Pos::new(2, 1)).unwrap(),
             CellValue::Number(1200.0),
             "and sums the one numeric column"
         );
@@ -5139,7 +5139,7 @@ mod tests {
         app.anchor = Some(Pos::new(1, 1));
         app.run_command("format-table --totals max");
         assert_eq!(
-            app.core.get(0, Pos::new(2, 0)).unwrap(),
+            value_at(&app.core, 0, Pos::new(2, 0)).unwrap(),
             CellValue::Text("Maximum".to_owned()),
             "{}",
             app.status
@@ -5362,5 +5362,15 @@ mod tests {
         press(&mut app, KeyCode::Enter);
         assert_eq!(app.core.sheet_count(), 1);
         assert_eq!(app.sheet, 0);
+    }
+
+    /// One cell's value, read as everything outside the core reads cells: a 1×1 viewport.
+    fn value_at(
+        app: &grind_sheet::App,
+        sheet: usize,
+        pos: grind_sheet::Pos,
+    ) -> grind_sheet::Result<grind_sheet::CellValue> {
+        let view = app.get_viewport(sheet, pos.row..pos.row + 1, pos.col..pos.col + 1)?;
+        Ok(view.get(pos.row, pos.col).cloned().unwrap_or_default())
     }
 }

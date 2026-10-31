@@ -216,7 +216,13 @@ pub fn fill_lines(start: Pos, end: Pos, down: bool) -> Vec<(Pos, Pos, Pos)> {
 /// ponytail: a data edge across a sparse million-row sheet is a million point reads; the fix is a
 /// used-extent walk in the core.
 pub fn occupied(app: &App, sheet: usize) -> impl Fn(Pos) -> bool + '_ {
-    move |pos| app.get(sheet, pos).is_ok_and(|value| !value.is_empty())
+    move |pos| {
+        let state = app.state.read().unwrap();
+        state
+            .doc
+            .sheet(sheet)
+            .is_some_and(|s| !s.get(pos).is_empty())
+    }
 }
 
 /// Select All: everything `sheet` uses, with the active cell at A1 so the view goes home. An empty

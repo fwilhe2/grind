@@ -466,6 +466,9 @@ impl Faces for Uniform<'_> {
     }
 }
 
+/// What an [`App::mutate`] closure returns, as its `Err`, when it changed nothing.
+struct Unchanged;
+
 #[derive(Default)]
 struct State {
     doc: Document,
@@ -499,15 +502,20 @@ impl App {
     }
 
     /// Mutate, then notify with the write lock released: an observer calls straight back in to
-    /// re-read.
-    fn mutate<R>(&self, f: impl FnOnce(&mut State) -> R) -> R {
+    /// re-read. `Err` from `f` means it left the state as it was, and nobody is notified.
+    fn mutate<T, E>(
+        &self,
+        f: impl FnOnce(&mut State) -> std::result::Result<T, E>,
+    ) -> std::result::Result<T, E> {
         let result = {
             let mut state = self.state.write().unwrap();
             f(&mut state)
         };
-        let observer = self.observer.read().unwrap().clone();
-        if let Some(observer) = observer {
-            observer.changed();
+        if result.is_ok() {
+            let observer = self.observer.read().unwrap().clone();
+            if let Some(observer) = observer {
+                observer.changed();
+            }
         }
         result
     }
@@ -553,8 +561,9 @@ impl App {
 
     // --- reading ---
 
-    /// Read a run of blocks — the only way a shell reads content. Asking past the end comes back
-    /// short.
+    /// Read a run of blocks — the only way a shell reads content. Clamped to the document, so it
+    /// is never larger than what the document already holds and needs no limit of its own:
+    /// asking past the end, `0..usize::MAX` included, comes back short.
     pub fn get_viewport(&self, blocks: Range<usize>) -> Viewport {
         let state = self.state.read().unwrap();
         let end = blocks.end.min(state.doc.blocks.len());
@@ -1141,33 +1150,35 @@ impl App {
     pub fn undo(&self) -> bool {
         self.mutate(|state| {
             let Some(action) = state.undo.pop() else {
-                return false;
+                return Err(Unchanged);
             };
             // The inverse of an inverse is the original, so this is also the redo entry.
-            match state.doc.apply(action) {
+            Ok(match state.doc.apply(action) {
                 Some(inverse) => {
                     state.redo.push(inverse);
                     true
                 }
                 None => false,
-            }
+            })
         })
+        .unwrap_or(false)
     }
 
     /// Redo the last undone change. `false` if there was nothing to redo.
     pub fn redo(&self) -> bool {
         self.mutate(|state| {
             let Some(action) = state.redo.pop() else {
-                return false;
+                return Err(Unchanged);
             };
-            match state.doc.apply(action) {
+            Ok(match state.doc.apply(action) {
                 Some(inverse) => {
                     state.undo.push(inverse);
                     true
                 }
                 None => false,
-            }
+            })
         })
+        .unwrap_or(false)
     }
 
     pub fn can_undo(&self) -> bool {

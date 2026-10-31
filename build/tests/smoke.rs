@@ -20,7 +20,7 @@ fn spreadsheet(source: &str) -> App {
 fn at(app: &App, address: &str) -> CellValue {
     let reference = grind_sheet::a1::parse(address).expect("an address");
     let (sheet, pos, _) = grind_sheet::a1::resolve(app, &reference).expect("a place");
-    app.get(sheet, pos).expect("a cell")
+    value_at(app, sheet, pos).expect("a cell")
 }
 
 fn error(source: &str) -> String {
@@ -452,4 +452,14 @@ fn check_parses_and_never_runs() {
 
 fn runs_badly_once() -> &'static str {
     "throw \"ran\";"
+}
+
+/// One cell's value, read as everything outside the core reads cells: a 1×1 viewport.
+fn value_at(
+    app: &grind_sheet::App,
+    sheet: usize,
+    pos: grind_sheet::Pos,
+) -> grind_sheet::Result<grind_sheet::CellValue> {
+    let view = app.get_viewport(sheet, pos.row..pos.row + 1, pos.col..pos.col + 1)?;
+    Ok(view.get(pos.row, pos.col).cloned().unwrap_or_default())
 }
