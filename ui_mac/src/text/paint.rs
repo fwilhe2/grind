@@ -61,6 +61,8 @@ pub struct Palette {
     pub dark: bool,
     /// A misspelt word's dots — `systemRedColor`.
     pub misspelt: Rgb,
+    /// A grammar finding's dots — `systemGreenColor`, AppKit's own mark for grammar.
+    pub grammar: Rgb,
 }
 
 impl Palette {
@@ -70,6 +72,7 @@ impl Palette {
         accent: (0x00, 0x7a, 0xff),
         dark: false,
         misspelt: (0xff, 0x3b, 0x30),
+        grammar: (0x34, 0xc7, 0x59),
     };
     pub const DARK: Palette = Palette {
         page: (0x1e, 0x1e, 0x1e),
@@ -77,6 +80,7 @@ impl Palette {
         accent: (0x0a, 0x84, 0xff),
         dark: true,
         misspelt: (0xff, 0x45, 0x3a),
+        grammar: (0x30, 0xd1, 0x58),
     };
 
     /// The ink most of the way to the page — a label that is present and not read.
@@ -124,6 +128,8 @@ pub struct Frame<'a> {
     /// View ▸ Names: each bookmark's name in the margin beside its line.
     pub names: bool,
     pub palette: &'a Palette,
+    /// The grammar rules the person ignores, which are not drawn (`doc/grammar.md`).
+    pub ignored: &'a [String],
 }
 
 /// A block's runs with a composition spliced in at `at`, in `props` — the pieces
@@ -237,6 +243,17 @@ pub fn frame(frame: &Frame) -> Vec<Op> {
         .misspellings(first.index..last.index + 1)
         .into_iter()
         .filter(|m| selection.is_some() || !m.being_typed(state.caret))
+        .collect();
+    // The grammar findings in view, the same way: none without a checker, and not one ending
+    // at the caret while it is typed. The ignored rules' are left out by the pane.
+    let flagged: Vec<grind_text::grammar::Flag> = app
+        .grammar(first.index..last.index + 1)
+        .into_iter()
+        .filter(|f| !frame.ignored.contains(&f.finding.rule))
+        .filter(|f| {
+            selection.is_some()
+                || !(f.block == state.caret.block && f.finding.range.end == state.caret.offset)
+        })
         .collect();
     for slot in visible {
         let Some(block) = viewport.get(slot.index) else {
@@ -432,6 +449,29 @@ pub fn frame(frame: &Frame) -> Vec<Op> {
                     dot += 2.0 * SPELL_DOT;
                 }
             }
+            // A grammar finding's dots, the same way in green — muted for typography and
+            // style. One covering nothing (a missing comma) dots the character before it.
+            for flag in flagged.iter().filter(|f| f.block == slot.index) {
+                let range = &flag.finding.range;
+                let from = range.start.saturating_sub(usize::from(range.is_empty()));
+                let Some((left, right)) = band(&layout, line, from, range.end) else {
+                    continue;
+                };
+                let color = match flag.finding.kind {
+                    grind_text::grammar::Kind::Typography | grind_text::grammar::Kind::Style => {
+                        palette.muted()
+                    }
+                    _ => palette.grammar,
+                };
+                let mut dot = x + f64::from(left);
+                while dot < x + f64::from(right) {
+                    ops.push(Op::Fill {
+                        rect: Rect::new(dot, top + height - SPELL_DOT, SPELL_DOT, SPELL_DOT),
+                        color,
+                    });
+                    dot += 2.0 * SPELL_DOT;
+                }
+            }
             // The name overlay: every bookmark on this line named in the margin — never spliced
             // into the text, which would move every offset after it, and never over the ink.
             // Muted: a label, not a control.
@@ -579,6 +619,7 @@ mod tests {
             decoder: &picture::Undecoded,
             names: false,
             palette: &Palette::LIGHT,
+            ignored: &[],
         })
     }
 
@@ -635,6 +676,25 @@ mod tests {
             // `recieve` is characters 3 to 10 of a column at 100, one unit each.
             assert!((103.0..110.0).contains(&dot.x), "{dot:?}");
             assert_eq!(dot.y, top + 1.0 - SPELL_DOT);
+        }
+    }
+
+    /// `doc/grammar.md`: a grammar finding is dotted the Mac's way — green, as AppKit marks
+    /// grammar beside spelling's red — across exactly what it covers; nothing without a checker.
+    #[test]
+    fn a_grammar_finding_is_dotted_in_green_under_what_it_covers() {
+        let setup = setup(&["we saw the the cat and the dog"]);
+        let green = Palette::LIGHT.grammar;
+        assert!(fills(&draw(&setup, &Page::default()), green).is_empty());
+
+        setup
+            .app
+            .set_checker(Some(std::sync::Arc::new(grind_grammar::Builtin::default())));
+        let dots = fills(&draw(&setup, &Page::default()), green);
+        assert!(!dots.is_empty());
+        for dot in &dots {
+            // ` the` (the second) is characters 10 to 14, one unit each.
+            assert!((110.0..114.0).contains(&dot.x), "{dot:?}");
         }
     }
 
@@ -843,6 +903,7 @@ mod tests {
                 decoder: &picture::Undecoded,
                 names,
                 palette: &Palette::LIGHT,
+                ignored: &[],
             });
             runs(&ops)
         };
@@ -901,6 +962,7 @@ mod tests {
                 decoder,
                 names: false,
                 palette: &Palette::LIGHT,
+                ignored: &[],
             })
         };
         let images: Vec<Rect> = draw(&Square)

@@ -27,6 +27,11 @@ grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
 # Spelling (doc/spelling.md): the dictionaries, attached before Check Document runs.
 grind-spell = { path = "../spell" }
+# The built-in grammar checker, and the grammar setting and LanguageTool's requests — sent
+# through the system's curl rather than the crate's own client, whose TLS would not cross-check
+# from Linux (doc/grammar.md).
+grind-grammar = { path = "../grammar" }
+grind-languagetool = { path = "../languagetool", default-features = false }
 # File ▸ Export as PDF… and Print… (doc/pdf-export.md): the bundled faces, and the Mac's own for a
 # family a document names, which fontdb finds in the system's font directories.
 grind-print = { path = "../print" }

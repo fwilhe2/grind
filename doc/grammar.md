@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Grammar and style
 
-**Status: G0–G6 built (2026-10-30); G7, the other shells, not yet — see §10.** Two checkers behind one door, each optional: a **built-in**
+**Status: G0–G7 built (2026-10-31): every client checks grammar; see §10 for what is left.** Two checkers behind one door, each optional: a **built-in**
 checker, rules written here in plain Rust with no dependencies, small and always available; and
 an **integration with LanguageTool**, for whoever runs a LanguageTool server and wants the best
 checker there is. Either, both or neither may be on. This supersedes `doc/spelling.md` decision 7
@@ -47,13 +47,15 @@ two words is noise. Spelling covers them; grammar does not.
    the paragraph (0-based, as everywhere in the core). A rule id stable enough to be ignored by
    name (`builtin:repeated-word`, `lt:EN_A_VS_AN`). The kind is one of **grammar**,
    **punctuation**, **typography** or **style**, and the kind decides the underline: grammar and
-   punctuation in the theme's blue, typography and style dotted and quieter. Spelling's red
-   stays spelling's alone. A replacement may be empty, which means "delete this".
+   punctuation in the theme's blue, typography and style dotted and quieter — the Mac keeps
+   AppKit's own green dots for grammar. Spelling's red stays spelling's alone. A replacement may
+   be empty, which means "delete this".
 
-3. **A correction is an edit in the core.** `App::correct` is generalised from a word to a span:
-   `App::replace_span(at, expected, with)`. It is one undo step, keeps the formatting of the
-   first character replaced, and is refused when the text at `at` is no longer `expected`. The
-   refusal matters for LanguageTool, whose answer can arrive after the person typed on.
+3. **A correction is an edit in the core.** `App::correct(at, expected, with)` — spelling's,
+   which already replaced any span and not only a word. It is one undo step, keeps the
+   formatting of the first character replaced, and is refused when the text at `at` is no
+   longer `expected`. The refusal matters for LanguageTool, whose answer can arrive after the
+   person typed on.
 
 4. **Language per paragraph, guessed cheaply.** A language-specific rule runs only where the
    paragraph's language is known: the language the document states, else a guess **per
@@ -306,7 +308,7 @@ through the same request and response code, §3.10).
 | `grind-text-gtk` | The underlines, a popover with the message, replacements, *Ignore*, *Ignore rule* and *Why?*, a Grammar submenu under Spelling (Built-in, LanguageTool…, Style suggestions, Off), and a chip in the status bar saying which checker runs and where the text goes |
 | `grind-tui` | The underline (blue, grey for style; spelling's red kept), `}`/`{` to the next or previous finding with the message and numbered replacements on the status line, `:fix N`, `:grammar [on\|off\|style on\|off\|ignore\|<url>\|public\|premium]` remembered; LanguageTool asked on a thread once typing pauses, the event loop woken for its answer only while one is wanted |
 | `grind-win32` | The squiggle in the accent (dotted for style); a finding leads the context menu with its message, replacements and *Ignore Rule*; Ctrl+F7 to the next finding; View ▸ *Check Grammar* and *Grammar Style Suggestions*, remembered. LanguageTool is asked through **WinHTTP**, not the crate's own client: `ring`'s C would not cross-check from Linux, as `win32.yml` does, and WinHTTP brings the system's certificates and proxy |
-| `grind-mac` | Underline, context menu, the setting in the Edit ▸ Spelling menu (as spelling's are) |
+| `grind-mac` | Green dots under a finding — AppKit's own mark for grammar, so the Mac keeps it rather than the accent (muted for style); the finding leads the context menu with its message, replacements and *Ignore Grammar Rule*; Edit ▸ Spelling ▸ *Check Grammar With Spelling* (AppKit's name), *Grammar Style Suggestions*, *Next Grammar Finding* (⌥⌘;), remembered. LanguageTool through the system's `curl`, on a thread, the answer taken on the caret's blink — `ring` would not type-check for this target from Linux either. Type-checked; the drawing and `curl` are tested on Linux |
 | `grind-web` | The built-in checker in the wasm module: the underline, the palette's rows for the finding at the caret (replacements, *Ignore this rule*), *Go to the next grammar finding*, *Grammar: check / off / style suggestions*, remembered in `localStorage` (`grind.grammar`); *Grammar: LanguageTool server…* (an address, or `public`) asked through `fetch` once typing pauses — Premium is not offered, since the page keeps no key |
 | `grind lsp` | Nothing at first: projection files are code, not prose |
 
@@ -348,7 +350,8 @@ None is open.
   switches the built-in checker and style, but has no dialog to name a server; and while the
   public server is in use it says where the text goes in a toast, not in the clearly visible
   link back its terms ask for.
-- **The other shells** (G7): the Mac has no grammar yet.
+- **The Mac has never run it**: type-checked and its portable half tested, like the rest of
+  that shell, until a run on GitHub's macOS runners (`scripts/mac-remote.sh`).
 - **Premium in the browser**: not offered, since the page keeps no key.
 - **Recall is measured on a small written set only** (loop G′'s 31 slips). The backlog there —
   agreement above all — is the next set of rules worth writing.

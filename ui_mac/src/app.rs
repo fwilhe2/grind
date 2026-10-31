@@ -284,6 +284,12 @@ impl Delegate {
                 }
                 return;
             }
+            Command::Grammar(verb) => {
+                if let Some(page) = self.front_document().and_then(|document| document.page()) {
+                    page.grammar(verb, self.mtm());
+                }
+                return;
+            }
             Command::Spell(spell) => {
                 if let Some(page) = self.front_document().and_then(|document| document.page()) {
                     page.spell(spell, self.mtm());

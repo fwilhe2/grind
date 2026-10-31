@@ -75,6 +75,9 @@ pub enum Command {
     /// Spelling on a page (`doc/spelling.md`): the next misspelt word, the language, and the
     /// context menu's rows over a misspelt word.
     Spell(Spell),
+    /// Grammar on a page (`doc/grammar.md`): the next finding, the switches, and the context
+    /// menu's rows over a finding.
+    Grammar(Grammar),
     /// The text's own colour — a [`PALETTE`] entry by index, or `None` for *Automatic*.
     TextColor(Option<u8>),
     /// A cell's fill, or a run's highlight — a [`PALETTE`] entry, or `None` for none.
@@ -213,6 +216,26 @@ pub enum Track {
     Fit,
 }
 
+/// What a grammar command does — Edit ▸ Spelling's grammar items and the page's context-menu
+/// rows over a finding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Grammar {
+    /// Select the next grammar finding after the caret, wrapping.
+    Next,
+    /// *Check Grammar With Spelling* — AppKit's own name: the built-in checker on or off,
+    /// remembered as `grind grammar` remembers it.
+    Toggle,
+    /// The checker's style suggestions on or off, remembered the same way.
+    Style,
+    /// The finding under the pointer's rule left alone from now on.
+    Ignore,
+    /// The finding under the pointer replaced by its replacement at this index.
+    Correct(u8),
+}
+
+/// How many replacements the context menu offers for a grammar finding.
+pub const REPLACEMENTS: u8 = 5;
+
 /// What a spelling command does — Edit ▸ Spelling's two items and the page's context-menu rows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Spell {
@@ -304,6 +327,13 @@ impl Command {
             Command::Spell(Spell::Learn),
         ]);
         all.extend((0..SUGGESTIONS).map(|i| Command::Spell(Spell::Correct(i))));
+        all.extend([
+            Command::Grammar(Grammar::Next),
+            Command::Grammar(Grammar::Toggle),
+            Command::Grammar(Grammar::Style),
+            Command::Grammar(Grammar::Ignore),
+        ]);
+        all.extend((0..REPLACEMENTS).map(|i| Command::Grammar(Grammar::Correct(i))));
         all.extend([
             Command::Currency(0),
             Command::Currency(1),
@@ -424,6 +454,7 @@ impl Command {
         matches!(
             self,
             Command::Spell(Spell::Ignore | Spell::Learn | Spell::Correct(_))
+                | Command::Grammar(Grammar::Ignore | Grammar::Correct(_))
         )
     }
 
@@ -466,6 +497,8 @@ impl Command {
             | Command::ParagraphStyle => text,
             // A paragraph's words and a text cell's are checked alike (`doc/spelling.md`).
             Command::Spell(_) => sheet || text,
+            // Grammar is for documents, never a spreadsheet's labels (`doc/grammar.md` §1).
+            Command::Grammar(_) => text,
             Command::AddSheet
             | Command::RenameSheet
             | Command::DeleteSheet
@@ -870,6 +903,21 @@ static SPELLING: Menu = Menu {
             "Check Spelling While Typing",
             None,
             Command::Spell(Spell::Toggle),
+        ),
+        command(
+            "Check Grammar With Spelling",
+            None,
+            Command::Grammar(Grammar::Toggle),
+        ),
+        command(
+            "Grammar Style Suggestions",
+            None,
+            Command::Grammar(Grammar::Style),
+        ),
+        command(
+            "Next Grammar Finding",
+            key(";", OPT_CMD),
+            Command::Grammar(Grammar::Next),
         ),
     ],
 };
@@ -1320,6 +1368,35 @@ mod tests {
                 assert!(selector.ends_with(':'), "{title}: an action takes a sender");
             }
         }
+    }
+
+    /// Grammar's rows sit under Edit ▸ Spelling, by AppKit's own name for the switch, and mean
+    /// something only on a page (`doc/grammar.md`).
+    #[test]
+    fn grammar_has_its_rows_in_the_spelling_menu_for_text_alone() {
+        let items = entries();
+        for (title, command) in [
+            (
+                "Check Grammar With Spelling",
+                Command::Grammar(Grammar::Toggle),
+            ),
+            (
+                "Grammar Style Suggestions",
+                Command::Grammar(Grammar::Style),
+            ),
+            ("Next Grammar Finding", Command::Grammar(Grammar::Next)),
+        ] {
+            assert!(
+                items
+                    .iter()
+                    .any(|(t, _, a)| *t == title && *a == Action::Command(command)),
+                "{title}"
+            );
+            assert!(command.applies(DocumentKind::Text));
+            assert!(!command.applies(DocumentKind::Spreadsheet));
+        }
+        assert!(Command::Grammar(Grammar::Correct(0)).is_made_on_opening());
+        assert!(Command::Grammar(Grammar::Ignore).is_made_on_opening());
     }
 
     #[test]

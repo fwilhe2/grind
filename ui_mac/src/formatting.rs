@@ -283,6 +283,8 @@ impl TextPane {
             Command::Spell(crate::menu::Spell::Toggle) => {
                 self.spelling.get() != grind_spell::Setting::Off
             }
+            Command::Grammar(crate::menu::Grammar::Toggle) => self.grammar.borrow().builtin,
+            Command::Grammar(crate::menu::Grammar::Style) => self.grammar.borrow().style,
             _ => {
                 let (kind, style) = self.block_kind();
                 page::checked(command, &self.here(), &kind, style.as_deref())

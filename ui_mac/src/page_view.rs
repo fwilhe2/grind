@@ -103,6 +103,15 @@ pub struct TextPane {
             Retained<objc2::runtime::NSObject>,
         )>,
     >,
+    /// Grammar (`grammar.rs`): the remembered setting, the finding the context menu was opened
+    /// over, the LanguageTool server to ask with what each request says, the answer of the
+    /// request out, and when the document last changed.
+    pub(crate) grammar: RefCell<grind_languagetool::setting::Setting>,
+    pub(crate) grammar_offer: RefCell<Option<grind_text::grammar::Flag>>,
+    pub(crate) languagetool:
+        RefCell<Option<(grind_languagetool::Server, grind_languagetool::Options)>>,
+    pub(crate) asking: RefCell<Option<Arc<std::sync::Mutex<Option<crate::grammar::Answer>>>>>,
+    pub(crate) edited_at: Cell<Instant>,
 }
 
 /// Set for a drive, whose snapshots must not depend on when they were taken: the caret stays lit
@@ -117,7 +126,7 @@ fn now() -> Duration {
 
 impl TextPane {
     pub fn new(app: Arc<App>) -> Rc<TextPane> {
-        Rc::new(TextPane {
+        let pane = Rc::new(TextPane {
             app,
             text: CoreText::new(BASE_PT),
             state: RefCell::new(Page::default()),
@@ -142,7 +151,14 @@ impl TextPane {
             speller: RefCell::new(None),
             offers: RefCell::new(None),
             spelling_picker: RefCell::new(None),
-        })
+            grammar: RefCell::new(grind_languagetool::setting::Setting::load()),
+            grammar_offer: RefCell::new(None),
+            languagetool: RefCell::new(None),
+            asking: RefCell::new(None),
+            edited_at: Cell::new(Instant::now()),
+        });
+        pane.check_grammar();
+        pane
     }
 
     /// What to do when the document changes — the document marks itself edited.
@@ -238,6 +254,7 @@ impl TextPane {
     /// The document changed and nothing is holding the state: put the caret somewhere real, lay
     /// out, resize, redraw, and mark the document edited.
     fn settle(&self) {
+        self.edited_at.set(Instant::now());
         self.state.borrow_mut().clamp(&self.app);
         self.reflow();
         self.fit();
@@ -320,6 +337,7 @@ impl TextPane {
     /// A tick: the caret's rectangle drawn again when it went out or came back — that rectangle
     /// only, so a long document is not repainted twice a second.
     fn blink_caret(&self) {
+        self.tick_grammar();
         let mut blink = self.blink.get();
         if !blink.tick(now()) {
             return;
@@ -499,6 +517,7 @@ impl TextPane {
             accent: rgb(&NSColor::controlAccentColor()),
             dark: color::luminance(page) < 0.5,
             misspelt: rgb(&NSColor::systemRedColor()),
+            grammar: rgb(&NSColor::systemGreenColor()),
         }
     }
 
@@ -638,6 +657,7 @@ define_class!(
                     decoder: &render::ImageDecoder,
                     names: pane.names.get(),
                     palette: &palette,
+                    ignored: &pane.grammar.borrow().ignored,
                 })
             });
             let Some(context) = NSGraphicsContext::currentContext() else {
@@ -728,6 +748,8 @@ define_class!(
             // text view (`spelling.rs`).
             let caret = pane.state.borrow().caret;
             crate::spelling::lead_menu(pane, &menu, caret, self.mtm());
+            // A grammar finding there leads, ahead of a misspelling inside it.
+            crate::grammar::lead_menu(pane, &menu, caret, self.mtm());
             Some(menu)
         }
 

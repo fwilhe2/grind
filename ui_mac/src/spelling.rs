@@ -471,7 +471,11 @@ pub fn lead_menu(pane: &TextPane, menu: &NSMenu, caret: Caret, mtm: MainThreadMa
 }
 
 /// One row: a command's item, or a disabled one with no action.
-fn item(title: &str, command: Option<Command>, mtm: MainThreadMarker) -> Retained<NSMenuItem> {
+pub(crate) fn item(
+    title: &str,
+    command: Option<Command>,
+    mtm: MainThreadMarker,
+) -> Retained<NSMenuItem> {
     let action = command.map(|_| crate::app::selector(COMMAND_SELECTOR));
     // SAFETY: the selector names an action method, which takes one sender argument.
     let made = unsafe {

@@ -34,6 +34,8 @@ mod chart_preview;
 mod clipboard;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod code;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod curl;
 #[cfg(target_os = "macos")]
 mod describe;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
@@ -46,6 +48,8 @@ mod editor;
 mod find_bar;
 #[cfg(target_os = "macos")]
 mod formatting;
+#[cfg(target_os = "macos")]
+mod grammar;
 #[cfg(target_os = "macos")]
 mod grid_view;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
@@ -277,6 +281,7 @@ fn render_to(opening: &Opening) -> Result<(), String> {
                 decoder: &render::ImageDecoder,
                 names: false,
                 palette: &palette,
+                ignored: &[],
             });
             let (w, h, rgba) = render::bitmap(FRAME.0, FRAME.1, SCALE, |context| {
                 render::draw(context, &ops, &fonts)
