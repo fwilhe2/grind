@@ -1994,32 +1994,19 @@ impl Ui {
     /// Backspace: the character before the caret, and at the front of a block the boundary
     /// itself — which is what [`App::erase`] across one already does.
     fn erase_back(&self) {
-        let caret = self.caret.get();
-        let from = self.stepped(-1);
-        if from == caret {
-            return;
-        }
-        match self.app.erase(from, caret) {
-            Ok(_) => self.set_caret(from),
-            Err(error) => self.set_message(error.to_string()),
-        }
+        self.erase_to(self.stepped(-1));
     }
 
     fn erase_forward(&self) {
+        self.erase_to(self.stepped(1));
+    }
+
+    fn erase_to(&self, other: Caret) {
         let caret = self.caret.get();
-        let to = match caret.offset < self.block_len(caret.block) {
-            true => Caret {
-                block: caret.block,
-                offset: caret.offset + 1,
-            },
-            false if caret.block + 1 < self.app.block_count() => Caret {
-                block: caret.block + 1,
-                offset: 0,
-            },
-            false => return,
-        };
-        if let Err(error) = self.app.erase(caret, to) {
-            self.set_message(error.to_string());
+        match grind_text::caret::erase_to(&self.app, caret, other) {
+            Ok(at) if at != caret => self.set_caret(at),
+            Ok(_) => {}
+            Err(error) => self.set_message(error.to_string()),
         }
     }
 

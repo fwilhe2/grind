@@ -8028,41 +8028,14 @@ fn text_erase(hwnd: HWND, forward: bool) {
             // At a block's edge the character to remove is the *break* between two blocks, which
             // is `erase` across the boundary rather than a join: one verb, one undo step, and no
             // second rule about what happens to the kinds.
-            let (from, to) = match forward {
-                true if at.offset < text.block_len(at.block) => (
-                    at,
-                    Caret {
-                        block: at.block,
-                        offset: at.offset + 1,
-                    },
-                ),
-                true if at.block + 1 < text.app.block_count() => (
-                    at,
-                    Caret {
-                        block: at.block + 1,
-                        offset: 0,
-                    },
-                ),
-                false if at.offset > 0 => (
-                    Caret {
-                        block: at.block,
-                        offset: at.offset - 1,
-                    },
-                    at,
-                ),
-                false if at.block > 0 => (
-                    Caret {
-                        block: at.block - 1,
-                        offset: text.block_len(at.block - 1),
-                    },
-                    at,
-                ),
+            let other = grind_text::caret::step(&text.app, at, if forward { 1 } else { -1 });
+            if other == at {
                 // The very start or the very end of the document: nothing to erase, and nothing
                 // to say about it either.
-                _ => return,
-            };
-            match text.app.erase(from, to) {
-                Ok(_) => {
+                return;
+            }
+            match grind_text::caret::erase_to(&text.app, at, other) {
+                Ok(from) => {
                     text.place(from, false);
                     text.caret_on = true;
                     text.say(None);

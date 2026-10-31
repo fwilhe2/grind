@@ -1672,13 +1672,15 @@ mod imp {
             // No selection, but perhaps an anchor a click left at the caret — which an edit
             // must not leave behind, or the next one erases across it (`consume_selection`).
             self.anchor.set(None);
+            self.erase_to(&app, self.stepped(&app, -1));
+        }
+
+        /// Erase from the caret to where a motion landed, and put the caret at the earlier end.
+        fn erase_to(&self, app: &App, other: Caret) {
             let caret = self.caret.get();
-            let from = self.stepped(&app, -1);
-            if from == caret {
-                return;
-            }
-            match app.erase(from, caret) {
-                Ok(_) => self.move_caret(from, true),
+            match grind_text::caret::erase_to(app, caret, other) {
+                Ok(at) if at != caret => self.move_caret(at, true),
+                Ok(_) => {}
                 Err(error) => self.notice(error.to_string()),
             }
         }
@@ -1694,16 +1696,7 @@ mod imp {
                 };
             }
             self.anchor.set(None);
-            let caret = self.caret.get();
-            let target = self.word_stepped(&app, delta);
-            let (from, to) = (caret.min(target), caret.max(target));
-            if from == to {
-                return;
-            }
-            match app.erase(from, to) {
-                Ok(_) => self.move_caret(from, true),
-                Err(error) => self.notice(error.to_string()),
-            }
+            self.erase_to(&app, self.word_stepped(&app, delta));
         }
 
         pub fn erase_forward(&self) {
@@ -1717,21 +1710,7 @@ mod imp {
                 return;
             }
             self.anchor.set(None);
-            let caret = self.caret.get();
-            let to = match caret.offset < self.block_len(&app, caret.block) {
-                true => Caret {
-                    block: caret.block,
-                    offset: caret.offset + 1,
-                },
-                false if caret.block + 1 < app.block_count() => Caret {
-                    block: caret.block + 1,
-                    offset: 0,
-                },
-                false => return,
-            };
-            if let Err(error) = app.erase(caret, to) {
-                self.notice(error.to_string());
-            }
+            self.erase_to(&app, self.stepped(&app, 1));
         }
 
         // --- the caret ---

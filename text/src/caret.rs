@@ -61,6 +61,19 @@ pub fn step(app: &App, at: Caret, delta: i32) -> Caret {
     caret
 }
 
+/// Erase between `at` and wherever a motion from it landed, in either order — Backspace and
+/// Delete by a character, a word or a line — and return where the caret goes: the earlier of
+/// the two. Across a block boundary the boundary goes too ([`App::erase`]). At the ends of the
+/// document the motion goes nowhere, nothing is erased and `at` comes back.
+pub fn erase_to(app: &App, at: Caret, other: Caret) -> crate::Result<Caret> {
+    if other == at {
+        return Ok(at);
+    }
+    let (from, to) = (at.min(other), at.max(other));
+    app.erase(from, to)?;
+    Ok(from)
+}
+
 /// One word right (`delta` positive) or left: the far edge of a word in this block — its end going
 /// right, its start going left — or the end of this block, then the near end of the next.
 pub fn word(app: &App, at: Caret, delta: i32) -> Caret {
@@ -146,6 +159,32 @@ mod tests {
         );
         assert_eq!(step(&app, START, -1), START, "the document's start");
         assert_eq!(end(&app), at(2, 1));
+    }
+
+    /// Backspace and Delete as every shell does them: a step, then [`erase_to`].
+    #[test]
+    fn erasing_toward_a_step_takes_one_character_or_one_boundary() {
+        let app = app(&["ab", "c"]);
+        let back = |at: Caret| erase_to(&app, at, step(&app, at, -1)).unwrap();
+        let forward = |at: Caret| erase_to(&app, at, step(&app, at, 1)).unwrap();
+
+        assert_eq!(forward(at(0, 0)), at(0, 0), "Delete keeps the caret");
+        assert_eq!(app.input_text(0).unwrap(), "b");
+        assert_eq!(
+            back(at(1, 0)),
+            at(0, 1),
+            "Backspace at a block's front joins it"
+        );
+        assert_eq!(app.block_count(), 1);
+        assert_eq!(app.input_text(0).unwrap(), "bc");
+
+        let before = app.can_redo();
+        assert_eq!(back(START), START, "nothing before the start");
+        assert_eq!(forward(end(&app)), end(&app), "nothing after the end");
+        assert_eq!(app.input_text(0).unwrap(), "bc");
+        assert_eq!(app.can_redo(), before);
+        assert!(app.undo() && app.undo());
+        assert_eq!(app.input_text(0).unwrap(), "ab", "one undo step each");
     }
 
     #[test]

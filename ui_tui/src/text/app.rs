@@ -829,31 +829,18 @@ impl App {
     /// `x`, and Delete in Insert mode: erase the character *at* the caret, joining the next
     /// block when there is no character left to erase.
     fn erase_forward(&mut self) {
-        let to = match self.caret.offset < self.block_len(self.caret.block) {
-            true => Caret {
-                block: self.caret.block,
-                offset: self.caret.offset + 1,
-            },
-            false if self.caret.block + 1 < self.core.block_count() => Caret {
-                block: self.caret.block + 1,
-                offset: 0,
-            },
-            false => return,
-        };
-        if let Err(e) = self.core.erase(self.caret, to) {
-            self.status = e.to_string();
-        }
+        self.erase_to(self.stepped(1));
     }
 
     /// Backspace: erase the character *before* the caret, and at the front of a block join it
     /// onto the one above — which is what `App::erase` across a boundary already does.
     fn erase_back(&mut self) {
-        let from = self.stepped(-1);
-        if from == self.caret {
-            return;
-        }
-        match self.core.erase(from, self.caret) {
-            Ok(_) => self.caret = from,
+        self.erase_to(self.stepped(-1));
+    }
+
+    fn erase_to(&mut self, other: Caret) {
+        match grind_text::caret::erase_to(&self.core, self.caret, other) {
+            Ok(at) => self.caret = at,
             Err(e) => self.status = e.to_string(),
         }
     }

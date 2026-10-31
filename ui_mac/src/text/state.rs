@@ -357,8 +357,7 @@ impl Page {
             // The very start or end of the document: nothing to erase.
             return Ok(());
         }
-        let (from, to) = (at.min(other), at.max(other));
-        app.erase(from, to).map_err(|error| error.to_string())?;
+        let from = caret::erase_to(app, at, other).map_err(|error| error.to_string())?;
         self.place(from, false);
         Ok(())
     }
