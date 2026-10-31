@@ -398,6 +398,22 @@ pub fn squiggle(dc: HDC, left: f64, right: f64, top: f64, step: f64, ink: Rgb) {
     }
 }
 
+/// A dotted line from `left` to `right` with its dots' tops on `top`: a quieter mark than
+/// [`squiggle`], for a grammar finding of typography or style.
+pub fn dotted(dc: HDC, left: f64, right: f64, top: f64, dot: f64, ink: Rgb) {
+    let dot = dot.max(1.0).round() as i32;
+    let (left, right, top) = (
+        left.round() as i32,
+        right.round() as i32,
+        top.round() as i32,
+    );
+    let mut x = left;
+    while x + dot <= right {
+        fill(dc, x, top, x + dot, top + dot, ink);
+        x += dot * 2;
+    }
+}
+
 /// The client area, as GDI measures it.
 pub fn client_rect(hwnd: HWND) -> RECT {
     let mut rect = RECT::default();

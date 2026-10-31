@@ -305,7 +305,8 @@ through the same request and response code, §3.10).
 | `grind` | `grind text grammar [range] [--picky] [--builtin \| --languagetool <url\|public\|premium>] [--public-ok]` lists findings, following the remembered setting unless told otherwise; `grind text correct` takes a finding's address and text; `grind grammar [builtin\|off\|<url>\|public\|premium] [--with-builtin] [--style on\|off] [--ignore RULE] [--unignore RULE] [--check-server]` sets and prints the setting. `grind lint` and `grind text lint` get rules `grammar` and `style`, **built-in only**, because a lint must answer the same twice and must not need the network. `--languagetool` opts in |
 | `grind-text-gtk` | The underlines, a popover with the message, replacements, *Ignore*, *Ignore rule* and *Why?*, a Grammar submenu under Spelling (Built-in, LanguageTool…, Style suggestions, Off), and a chip in the status bar saying which checker runs and where the text goes |
 | `grind-tui` | The underline (blue, grey for style; spelling's red kept), `}`/`{` to the next or previous finding with the message and numbered replacements on the status line, `:fix N`, `:grammar [on\|off\|style on\|off\|ignore\|<url>\|public\|premium]` remembered; LanguageTool asked on a thread once typing pauses, the event loop woken for its answer only while one is wanted |
-| `grind-win32`, `grind-mac` | Underline, context menu, the setting in the View/Edit ▸ Spelling menu (as spelling's are) |
+| `grind-win32` | The squiggle in the accent (dotted for style); a finding leads the context menu with its message, replacements and *Ignore Rule*; Ctrl+F7 to the next finding; View ▸ *Check Grammar* and *Grammar Style Suggestions*, remembered. LanguageTool is asked through **WinHTTP**, not the crate's own client: `ring`'s C would not cross-check from Linux, as `win32.yml` does, and WinHTTP brings the system's certificates and proxy |
+| `grind-mac` | Underline, context menu, the setting in the Edit ▸ Spelling menu (as spelling's are) |
 | `grind-web` | The built-in checker in the wasm module: the underline, the palette's rows for the finding at the caret (replacements, *Ignore this rule*), *Go to the next grammar finding*, *Grammar: check / off / style suggestions*, remembered in `localStorage` (`grind.grammar`); *Grammar: LanguageTool server…* (an address, or `public`) asked through `fetch` once typing pauses — Premium is not offered, since the page keeps no key |
 | `grind lsp` | Nothing at first: projection files are code, not prose |
 
@@ -347,7 +348,7 @@ None is open.
   switches the built-in checker and style, but has no dialog to name a server; and while the
   public server is in use it says where the text goes in a toast, not in the clearly visible
   link back its terms ask for.
-- **The other shells** (G7): Windows and the Mac have no grammar yet.
+- **The other shells** (G7): the Mac has no grammar yet.
 - **Premium in the browser**: not offered, since the page keeps no key.
 - **Recall is measured on a small written set only** (loop G′'s 31 slips). The backlog there —
   agreement above all — is the next set of rules worth writing.

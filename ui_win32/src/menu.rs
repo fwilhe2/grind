@@ -320,6 +320,12 @@ pub enum Command {
     /// The personal dictionary (`grind_spell::personal`): the words every spelling check
     /// accepts, listed, added to and taken from — the same list `grind words` keeps.
     PersonalDictionary,
+    /// Ctrl+F7: select the next grammar finding and offer its replacements (`doc/grammar.md`).
+    NextGrammarFinding,
+    /// The built-in grammar checker off or on, and its style suggestions — remembered in the
+    /// grammar setting `grind grammar` writes. The word processor's alone.
+    ToggleGrammar,
+    GrammarStyle,
     /// Shift+F7 — spelling off, or back on to the last language it was on in: LibreOffice's
     /// *Automatic Spell Checking* key. Over a spreadsheet it is remembered, so off stays off in
     /// every spreadsheet until it is turned back on (`doc/spelling.md`, "In a spreadsheet").
@@ -473,6 +479,9 @@ impl Command {
         Command::SpellingLanguage,
         Command::PersonalDictionary,
         Command::ToggleSpelling,
+        Command::NextGrammarFinding,
+        Command::ToggleGrammar,
+        Command::GrammarStyle,
         Command::ToggleRoles,
         Command::ToggleFormulas,
         Command::ZoomIn,
@@ -546,6 +555,11 @@ pub const FIRST_ID: u16 = 100;
 /// `TrackPopupMenuEx` rather than posted.
 pub const SPELLING_FIRST_ID: u16 = 0x7000;
 pub const SPELLING_IDS: u16 = 10;
+
+/// The first id of a grammar popup's rows — a finding's replacements, then Ignore Rule
+/// ([`GRAMMAR_IDS`] in all) — numbered the way spelling's are, after them.
+pub const GRAMMAR_FIRST_ID: u16 = 0x7100;
+pub const GRAMMAR_IDS: u16 = 8;
 
 /// Which command a `WM_COMMAND` id names, or `None` for one that is not a menu command.
 pub fn command_for(id: u16) -> Option<Command> {
@@ -1141,6 +1155,18 @@ pub const MENUS: &[Menu] = &[
                 command: Command::PersonalDictionary,
                 label: "Personal &Dictionary…",
             },
+            Item::Verb {
+                command: Command::ToggleGrammar,
+                label: "Check &Grammar",
+            },
+            Item::Verb {
+                command: Command::NextGrammarFinding,
+                label: "Next Grammar &Finding\tCtrl+F7",
+            },
+            Item::Verb {
+                command: Command::GrammarStyle,
+                label: "Grammar St&yle Suggestions",
+            },
             Item::Separator,
             Item::Verb {
                 command: Command::ToggleRoles,
@@ -1267,6 +1293,7 @@ pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
         (Key::F8, false, false) => Some(Command::CheckDocument),
         (Key::F7, false, false) => Some(Command::NextMisspelling),
         (Key::F7, false, true) => Some(Command::ToggleSpelling),
+        (Key::F7, true, false) => Some(Command::NextGrammarFinding),
         (Key::Char('F'), true, false) => Some(Command::Find),
         (Key::Char('H'), true, false) => Some(Command::Replace),
         (Key::F3, false, false) => Some(Command::FindNext),
@@ -1439,7 +1466,11 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::ExportMarkdown
         | Command::ExportPdf
         | Command::PrintPreview
-        | Command::Print => matches!(kind, Text),
+        | Command::Print
+        // Grammar is for documents, never a spreadsheet's labels (`doc/grammar.md` §1).
+        | Command::NextGrammarFinding
+        | Command::ToggleGrammar
+        | Command::GrammarStyle => matches!(kind, Text),
         // Spelling checks a paragraph's words and a text cell's alike (`doc/spelling.md`).
         Command::NextMisspelling
         | Command::SpellingLanguage
@@ -1559,6 +1590,26 @@ mod tests {
 
     /// A spelling popup's rows are numbered by hand, so they must stay clear of every command:
     /// `TrackPopupMenuEx` hands back one number for both.
+    /// Grammar is the word processor's alone (`doc/grammar.md`), and its popup rows are numbered
+    /// clear of every command and of spelling's.
+    #[test]
+    fn the_grammar_commands_and_rows_are_the_word_processors() {
+        let last = Command::ALL.iter().map(|c| c.id()).max().unwrap();
+        assert!(last < GRAMMAR_FIRST_ID);
+        const { assert!(SPELLING_FIRST_ID + SPELLING_IDS <= GRAMMAR_FIRST_ID) };
+        for id in GRAMMAR_FIRST_ID..GRAMMAR_FIRST_ID + GRAMMAR_IDS {
+            assert_eq!(command_for(id), None);
+        }
+        for command in [
+            Command::NextGrammarFinding,
+            Command::ToggleGrammar,
+            Command::GrammarStyle,
+        ] {
+            assert!(applies_to(command, grind_core::DocumentKind::Text));
+            assert!(!applies_to(command, grind_core::DocumentKind::Spreadsheet));
+        }
+    }
+
     #[test]
     fn the_spelling_rows_never_collide_with_a_command() {
         let last = Command::ALL.iter().map(|c| c.id()).max().unwrap();
@@ -1684,6 +1735,7 @@ mod tests {
             (Key::F8, Mods::default(), Command::CheckDocument),
             (Key::F7, Mods::default(), Command::NextMisspelling),
             (Key::F7, shift, Command::ToggleSpelling),
+            (Key::F7, ctrl, Command::NextGrammarFinding),
         ] {
             assert_eq!(accelerator(key, mods), Some(want), "{key:?}");
             assert!(verbs.contains(&want), "{want:?} is in no menu");

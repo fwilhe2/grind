@@ -55,19 +55,20 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow, DispatchMessageW,
     EN_CHANGE, EN_KILLFOCUS, ES_AUTOHSCROLL, GWLP_USERDATA, GetCursorPos, GetMessageW, GetParent,
     GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IDC_SIZEALL,
-    IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, LoadCursorW, MF_BYCOMMAND, MF_CHECKED,
-    MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MoveWindow, PostMessageW,
-    PostQuitMessage, RegisterClassW, SB_BOTTOM, SB_HORZ, SB_LINEDOWN, SB_LINEUP, SB_PAGEDOWN,
-    SB_PAGEUP, SB_THUMBPOSITION, SB_THUMBTRACK, SB_TOP, SB_VERT, SCROLLINFO, SCROLLINFO_MASK,
-    SIF_PAGE, SIF_POS, SIF_RANGE, SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetCursor, SetWindowLongPtrW, SetWindowPos,
-    SetWindowTextW, ShowWindow, SystemParametersInfoW, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-    TrackPopupMenuEx, TranslateMessage, WHEEL_DELTA, WM_APP, WM_CHAR, WM_CLOSE, WM_COMMAND,
-    WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
-    WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_INITMENUPOPUP, WM_KEYDOWN, WM_KILLFOCUS,
-    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
-    WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE,
-    WM_VSCROLL, WNDCLASSW, WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
+    IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, KillTimer, LoadCursorW, MF_BYCOMMAND,
+    MF_CHECKED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MoveWindow,
+    PostMessageW, PostQuitMessage, RegisterClassW, SB_BOTTOM, SB_HORZ, SB_LINEDOWN, SB_LINEUP,
+    SB_PAGEDOWN, SB_PAGEUP, SB_THUMBPOSITION, SB_THUMBTRACK, SB_TOP, SB_VERT, SCROLLINFO,
+    SCROLLINFO_MASK, SIF_PAGE, SIF_POS, SIF_RANGE, SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW,
+    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetCursor, SetTimer,
+    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW,
+    TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenuEx, TranslateMessage, WHEEL_DELTA, WM_APP,
+    WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY,
+    WM_DPICHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_INITMENUPOPUP,
+    WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+    WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WM_SETFOCUS, WM_SETFONT,
+    WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, WM_VSCROLL, WNDCLASSW, WS_CHILD, WS_HSCROLL,
+    WS_OVERLAPPEDWINDOW, WS_VSCROLL,
 };
 // Focus and mouse capture are Windows' input API rather than its window-management one, which
 // is where its own metadata puts them.
@@ -157,6 +158,8 @@ const WM_CHILD_KEY: u32 = WM_APP + 1;
 
 /// "The document changed", posted by [`Changed`].
 const WM_DOC_CHANGED: u32 = WM_APP + 2;
+/// Posted by LanguageTool's thread when its answer is in the text pane's slot.
+const WM_GRAMMAR: u32 = WM_APP + 3;
 
 /// The frame `--render-to` draws, in pixels at 96 dpi — fixed, since a size that could differ
 /// between two runs would show up as a drawing change.
@@ -889,9 +892,95 @@ struct Text {
     spelling: grind_spell::Setting,
     checked: Option<grind_spell::Choice>,
     speller: Option<std::sync::Arc<grind_spell::Speller>>,
+    /// Grammar (`doc/grammar.md`): the remembered setting, and the LanguageTool server it names
+    /// with what each request says besides the text. `asking` holds the answer of the request
+    /// out, filled on its thread and taken when `WM_GRAMMAR` says it has come.
+    grammar: grind_languagetool::setting::Setting,
+    languagetool: Option<(grind_languagetool::Server, grind_languagetool::Options)>,
+    asking: Option<std::sync::Arc<std::sync::Mutex<Option<GrammarAnswer>>>>,
 }
 
+/// What a LanguageTool round comes back with: each paragraph's key and findings, or why not.
+type GrammarAnswer = Result<Vec<(u64, Vec<grind_text::grammar::Finding>)>, String>;
+
 impl Text {
+    /// Attach the built-in checker as [`Text::grammar`] says, and name the LanguageTool server
+    /// to ask — on open and whenever the setting changes.
+    fn check_grammar(&mut self) {
+        let setting = &self.grammar;
+        let checker: Option<std::sync::Arc<dyn grind_core::grammar::Checker>> =
+            match setting.builtin {
+                true => Some(std::sync::Arc::new(grind_grammar::Builtin {
+                    picky: setting.style,
+                })),
+                false => None,
+            };
+        self.app.set_checker(checker);
+        self.languagetool = match setting.languagetool.as_ref().map(|c| c.server()) {
+            Some(Ok(server)) => {
+                let options = grind_languagetool::Options {
+                    picky: setting.style,
+                    disabled_rules: setting
+                        .ignored
+                        .iter()
+                        .filter_map(|rule| rule.strip_prefix("lt:"))
+                        .map(str::to_owned)
+                        .collect(),
+                    max_chars: server.max_chars(),
+                };
+                Some((server, options))
+            }
+            Some(Err(why)) => {
+                self.say(Some(format!("LanguageTool is not asked: {why}")));
+                None
+            }
+            None => None,
+        };
+        self.app.set_background_grammar(self.languagetool.is_some());
+        self.asking = None;
+    }
+
+    /// Change the grammar setting, remember it, and apply it.
+    fn set_grammar(&mut self, change: impl FnOnce(&mut grind_languagetool::setting::Setting)) {
+        change(&mut self.grammar);
+        if let Err(why) = self.grammar.save() {
+            self.say(Some(format!("The setting was not remembered: {why}")));
+        }
+        self.check_grammar();
+    }
+
+    /// Every grammar finding in `blocks`, but the ignored rules'.
+    fn grammar_flags(&self, blocks: std::ops::Range<usize>) -> Vec<grind_text::grammar::Flag> {
+        self.app
+            .grammar(blocks)
+            .into_iter()
+            .filter(|flag| !self.grammar.ignored.contains(&flag.finding.rule))
+            .collect()
+    }
+
+    /// The grammar finding at `at`, if one covers it.
+    fn grammar_at(&self, at: Caret) -> Option<grind_text::grammar::Flag> {
+        self.grammar_flags(at.block..at.block + 1)
+            .into_iter()
+            .find(|f| f.finding.range.start <= at.offset && at.offset <= f.finding.range.end)
+    }
+
+    /// What a finding covers, as text.
+    fn covered(&self, flag: &grind_text::grammar::Flag) -> String {
+        let range = flag.finding.range.clone();
+        self.app
+            .get_viewport(flag.block..flag.block + 1)
+            .get(flag.block)
+            .map(|view| {
+                view.text
+                    .chars()
+                    .skip(range.start)
+                    .take(range.len())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Choose a spelling setting, remember it for every text document, and apply it.
     fn set_spelling(&mut self, setting: grind_spell::Setting) {
         self.spelling = setting;
@@ -1355,8 +1444,12 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
         spelling: grind_spell::preference::load(DocumentKind::Text),
         checked: None,
         speller: None,
+        grammar: grind_languagetool::setting::Setting::load(),
+        languagetool: None,
+        asking: None,
     };
     text.check_spelling();
+    text.check_grammar();
     // The report's sentence on the notice bar, where a state the document is in belongs.
     if let Some(imported) = imported {
         text.imported = Some(PathBuf::from(imported.name));
@@ -1814,7 +1907,16 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
         }
         // The document changed under us, posted by `Changed`. Every path that edits arrives
         // here, which is what makes the title's `*` impossible to forget.
+        WM_GRAMMAR => {
+            grammar_answered(hwnd);
+            LRESULT(0)
+        }
+        WM_TIMER if wparam.0 == GRAMMAR_TIMER => {
+            ask_grammar(hwnd);
+            LRESULT(0)
+        }
         WM_DOC_CHANGED => {
+            schedule_grammar(hwnd);
             // SAFETY: one borrow, released before the title is set.
             let title = unsafe {
                 with_pane(hwnd, |pane| {
@@ -2044,7 +2146,7 @@ fn build_menu(hwnd: HWND) {
     // SAFETY: one borrow, for the kind and the two overlay checkmarks; nothing inside dispatches.
     // The role overlay has no meaning on the text pane (`CellRole` is the grid's alone), so it
     // reads `false` there rather than a second flag nothing ever sets.
-    let (surface, roles_on, names_on, friendly_on, formulas_on, spelling_on) = unsafe {
+    let (surface, roles_on, names_on, friendly_on, formulas_on, spelling_on, grammar) = unsafe {
         with_pane(hwnd, |pane| {
             let surface = pane.surface();
             match pane {
@@ -2055,6 +2157,7 @@ fn build_menu(hwnd: HWND) {
                     sheet.friendly,
                     sheet.formulas,
                     sheet.spelling != grind_spell::Setting::Off,
+                    (false, false),
                 ),
                 Pane::Text(text) => (
                     surface,
@@ -2063,14 +2166,23 @@ fn build_menu(hwnd: HWND) {
                     false,
                     false,
                     text.spelling != grind_spell::Setting::Off,
+                    (text.grammar.builtin, text.grammar.style),
                 ),
                 // No document, so none of the checkmarks means anything — and `items_for`
                 // leaves every menu they live in out of the bar anyway.
-                Pane::Welcome(_) => (surface, false, false, false, false, false),
+                Pane::Welcome(_) => (surface, false, false, false, false, false, (false, false)),
             }
         })
     }
-    .unwrap_or((menu::Surface::Welcome, false, false, false, false, false));
+    .unwrap_or((
+        menu::Surface::Welcome,
+        false,
+        false,
+        false,
+        false,
+        false,
+        (false, false),
+    ));
     // SAFETY: every label buffer outlives the `AppendMenuW` that reads it — Windows copies the
     // string — and the bar belongs to the window from `SetMenu` until it is destroyed with it.
     unsafe {
@@ -2108,6 +2220,8 @@ fn build_menu(hwnd: HWND) {
                             Command::ToggleFriendly => Some(friendly_on),
                             Command::ToggleFormulas => Some(formulas_on),
                             Command::ToggleSpelling => Some(spelling_on),
+                            Command::ToggleGrammar => Some(grammar.0),
+                            Command::GrammarStyle => Some(grammar.1),
                             _ => None,
                         };
                         if let Some(checked) = checked {
@@ -2292,6 +2406,22 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
                 .collect(),
             None => commands.to_vec(),
         };
+        // A grammar finding under the pointer leads, ahead of a misspelling inside it.
+        // SAFETY: one borrow, released before the popup.
+        let finding = unsafe {
+            with_text(hwnd, |text| {
+                let caret = match keyboard {
+                    true => text.caret,
+                    false => text.caret_at(f64::from(client.x), f64::from(client.y))?,
+                };
+                text.grammar_at(caret)
+            })
+        }
+        .flatten();
+        if let Some(flag) = finding {
+            grammar_popup(hwnd, at, flag, &with_alt);
+            return;
+        }
         spelling_popup(hwnd, at, wrong, &with_alt);
         return;
     }
@@ -4070,7 +4200,11 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::ExportMarkdown
         | Command::ExportPdf
         | Command::PrintPreview
-        | Command::Print => {}
+        | Command::Print
+        // Grammar is for documents, never a spreadsheet's labels.
+        | Command::NextGrammarFinding
+        | Command::ToggleGrammar
+        | Command::GrammarStyle => {}
         Command::NextMisspelling => sheet_next_misspelling(hwnd),
         Command::SpellingLanguage => sheet_spelling_language(hwnd),
         Command::PersonalDictionary => personal_dictionary(hwnd),
@@ -6297,6 +6431,261 @@ fn text_toggle_spelling(hwnd: HWND) {
     text_refresh(hwnd);
 }
 
+/// View ▸ Check Grammar and Grammar Style Suggestions: change the remembered setting, apply it.
+fn text_set_grammar(hwnd: HWND, change: impl FnOnce(&mut grind_languagetool::setting::Setting)) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    unsafe {
+        with_text(hwnd, |text| text.set_grammar(change));
+    }
+    build_menu(hwnd);
+    text_refresh(hwnd);
+    schedule_grammar(hwnd);
+}
+
+/// Ctrl+F7 — select the next grammar finding after the caret, wrapping, and open its popup.
+fn text_next_grammar(hwnd: HWND) {
+    // SAFETY: one borrow, released before the popup's nested message loop.
+    let found = unsafe {
+        with_text(hwnd, |text| {
+            let all = text.grammar_flags(0..usize::MAX);
+            let carets: Vec<Caret> = all.iter().map(|f| f.caret()).collect();
+            let (_, at) = text::keymap::ordered(text.anchor, text.caret);
+            let Some(index) = grind_text::find::step(&carets, at, grind_text::find::Towards::Next)
+            else {
+                text.say(Some("No grammar findings".to_owned()));
+                return None;
+            };
+            let flag = all[index].clone();
+            text.place(flag.caret(), false);
+            text.place(
+                Caret {
+                    block: flag.block,
+                    offset: flag.finding.range.end,
+                },
+                true,
+            );
+            text.caret_on = true;
+            text.say(Some(flag.finding.message.clone()));
+            Some(flag)
+        })
+    }
+    .flatten();
+    text_refresh(hwnd);
+    let Some(flag) = found else {
+        return;
+    };
+    let geometry = unsafe { with_text(hwnd, |text| text.caret_geometry()) }.flatten();
+    let mut at = match geometry {
+        Some((x, y, _, height)) => POINT { x, y: y + height },
+        None => POINT { x: 0, y: 0 },
+    };
+    // SAFETY: `hwnd` is this window's and `at` is a live local.
+    unsafe {
+        let _ = ClientToScreen(hwnd, &mut at);
+    }
+    grammar_popup(hwnd, at, flag, &[]);
+}
+
+/// A popup over a grammar finding: its message (not a row to pick), its replacements, Ignore
+/// Rule, and `commands` under — the text pane's context menu and Ctrl+F7's.
+fn grammar_popup(hwnd: HWND, at: POINT, flag: grind_text::grammar::Flag, commands: &[Command]) {
+    // SAFETY: one borrow, released before the popup.
+    let covered = unsafe { with_text(hwnd, |text| text.covered(&flag)) }.unwrap_or_default();
+    let offers: Vec<String> = flag
+        .finding
+        .replacements
+        .iter()
+        .take(usize::from(menu::GRAMMAR_IDS - 1))
+        .cloned()
+        .collect();
+    let ignore = menu::GRAMMAR_FIRST_ID + menu::GRAMMAR_IDS - 1;
+    // SAFETY: the popup is built and destroyed within this block, and `TrackPopupMenuEx` is the
+    // one nested message loop in it — nothing is borrowed across it.
+    let picked = unsafe {
+        let Ok(popup) = CreatePopupMenu() else {
+            return;
+        };
+        let append = |flags, id: u16, label: &str| {
+            let label = gdi::wide(label);
+            let _ = AppendMenuW(popup, flags, usize::from(id), PCWSTR(label.as_ptr()));
+        };
+        append(MF_STRING | MF_GRAYED, 0, &flag.finding.message);
+        let _ = AppendMenuW(popup, MF_SEPARATOR, 0, PCWSTR::null());
+        for (i, with) in offers.iter().enumerate() {
+            let label = match with.is_empty() {
+                true => format!("Remove \u{201c}{covered}\u{201d}"),
+                false => with.clone(),
+            };
+            append(MF_STRING, menu::GRAMMAR_FIRST_ID + i as u16, &label);
+        }
+        append(MF_STRING, ignore, "&Ignore Rule");
+        if !commands.is_empty() {
+            let _ = AppendMenuW(popup, MF_SEPARATOR, 0, PCWSTR::null());
+        }
+        for command in commands {
+            if let Some(label) = menu::label_for(*command) {
+                append(MF_STRING, command.id(), label);
+            }
+        }
+        let result = TrackPopupMenuEx(
+            popup,
+            (TPM_RETURNCMD | TPM_RIGHTBUTTON).0,
+            at.x,
+            at.y,
+            hwnd,
+            None,
+        );
+        let _ = DestroyMenu(popup);
+        result.0 as u16
+    };
+    match picked {
+        0 => {}
+        id if id == ignore => {
+            let rule = flag.finding.rule.clone();
+            // SAFETY: a fresh borrow, taken after the popup has closed.
+            unsafe {
+                with_text(hwnd, |text| {
+                    text.set_grammar(|g| g.ignored.push(rule.clone()));
+                    text.say(Some(format!("{rule} is ignored")));
+                });
+            }
+            text_refresh(hwnd);
+        }
+        id if (menu::GRAMMAR_FIRST_ID..ignore).contains(&id) => {
+            let Some(with) = offers
+                .get(usize::from(id - menu::GRAMMAR_FIRST_ID))
+                .cloned()
+            else {
+                return;
+            };
+            // SAFETY: a fresh borrow, taken after the popup has closed.
+            unsafe {
+                with_text(hwnd, |text| {
+                    match text.app.correct(flag.caret(), &covered, &with) {
+                        Ok(()) => {
+                            let end = Caret {
+                                block: flag.block,
+                                offset: flag.finding.range.start + with.chars().count(),
+                            };
+                            text.place(end, false);
+                            text.say(None);
+                        }
+                        Err(error) => text.say(Some(error.to_string())),
+                    }
+                });
+            }
+            text_refresh(hwnd);
+        }
+        id => {
+            if let Some(command) = menu::command_for(id) {
+                do_command(hwnd, command);
+            }
+        }
+    }
+}
+
+/// The timer that waits for typing to pause before LanguageTool is asked, and how long.
+const GRAMMAR_TIMER: usize = 0x6772;
+const GRAMMAR_PAUSE_MS: u32 = 800;
+
+/// Ask LanguageTool once typing pauses — restarting the wait on every change — when a server is
+/// named (`doc/grammar.md` decision 10).
+fn schedule_grammar(hwnd: HWND) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    let wanted = unsafe { with_text(hwnd, |text| text.languagetool.is_some()) }.unwrap_or(false);
+    if wanted {
+        // SAFETY: `hwnd` is this window's; a timer of the same id replaces the last.
+        unsafe {
+            let _ = SetTimer(Some(hwnd), GRAMMAR_TIMER, GRAMMAR_PAUSE_MS, None);
+        }
+    }
+}
+
+/// The pause is over: send the unanswered paragraphs on a thread of their own, which posts
+/// [`WM_GRAMMAR`] back with the answer.
+fn ask_grammar(hwnd: HWND) {
+    // SAFETY: `hwnd` is this window's.
+    unsafe {
+        let _ = KillTimer(Some(hwnd), GRAMMAR_TIMER);
+    }
+    // SAFETY: one borrow; nothing inside dispatches.
+    let round = unsafe {
+        with_text(hwnd, |text| {
+            if text.asking.is_some() {
+                return None;
+            }
+            let (server, options) = text.languagetool.clone()?;
+            let pending = text.app.grammar_pending(0..usize::MAX);
+            if pending.is_empty() {
+                return None;
+            }
+            let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+            text.asking = Some(slot.clone());
+            Some((server, options, pending, slot))
+        })
+    }
+    .flatten();
+    let Some((server, options, pending, slot)) = round else {
+        return;
+    };
+    // An HWND is not `Send`; its value is, and it is only posted to.
+    let window = hwnd.0 as isize;
+    std::thread::spawn(move || {
+        let paragraphs: Vec<_> = pending.iter().map(|p| p.paragraph()).collect();
+        let mut answered: Vec<Vec<grind_text::grammar::Finding>> = vec![Vec::new(); pending.len()];
+        let mut failure = None;
+        for batch in grind_languagetool::batches(&paragraphs, &options) {
+            match crate::winhttp::post(&server, &batch.form).and_then(|a| batch.findings(&a)) {
+                Ok(found) => {
+                    for (at, finding) in found {
+                        answered[at].push(finding);
+                    }
+                }
+                Err(why) => failure = Some(why),
+            }
+        }
+        let answer = match failure {
+            None => Ok(pending.iter().map(|p| p.key).zip(answered).collect()),
+            Some(why) => Err(why),
+        };
+        if let Ok(mut slot) = slot.lock() {
+            *slot = Some(answer);
+        }
+        // SAFETY: posting to a window that may have closed is harmless; nothing is borrowed.
+        unsafe {
+            let _ = PostMessageW(
+                Some(HWND(window as *mut _)),
+                WM_GRAMMAR,
+                WPARAM(0),
+                LPARAM(0),
+            );
+        }
+    });
+}
+
+/// LanguageTool's answer has come: hand it to the core and repaint, or say why not.
+fn grammar_answered(hwnd: HWND) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    unsafe {
+        with_text(hwnd, |text| {
+            let Some(slot) = text.asking.take() else {
+                return;
+            };
+            let answer = slot.lock().ok().and_then(|mut s| s.take());
+            match answer {
+                Some(Ok(found)) => {
+                    for (key, findings) in found {
+                        text.app.grammar_found(key, findings);
+                    }
+                }
+                Some(Err(why)) => text.say(Some(format!("LanguageTool did not answer: {why}"))),
+                None => {}
+            }
+        });
+    }
+    text_refresh(hwnd);
+}
+
 /// Edit ▸ Replace… — what, then with what, then `App::replace` over every sheet in one undo
 /// step. Two prompts rather than a dialog of its own, since `dialog::prompt` is the one text
 /// question this shell has and a replace is two words; neither is asked with anything borrowed.
@@ -6726,6 +7115,8 @@ fn adopt(hwnd: HWND, pane: Pane) {
     // once at `WM_CREATE`.
     build_menu(hwnd);
     refresh(hwnd);
+    // A text document LanguageTool is named for is asked about as it arrives.
+    schedule_grammar(hwnd);
 }
 
 /// A new, empty document of the kind the caller names — either kind, from either pane.
@@ -6888,6 +7279,9 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::SpellingLanguage
         | Command::PersonalDictionary
         | Command::ToggleSpelling
+        | Command::NextGrammarFinding
+        | Command::ToggleGrammar
+        | Command::GrammarStyle
         | Command::Print
         | Command::ShowSource
         | Command::CheckDocument
@@ -7892,6 +8286,9 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::SpellingLanguage => text_spelling_language(hwnd),
         Command::PersonalDictionary => personal_dictionary(hwnd),
         Command::ToggleSpelling => text_toggle_spelling(hwnd),
+        Command::NextGrammarFinding => text_next_grammar(hwnd),
+        Command::ToggleGrammar => text_set_grammar(hwnd, |g| g.builtin = !g.builtin),
+        Command::GrammarStyle => text_set_grammar(hwnd, |g| g.style = !g.style),
         Command::Print => text_print(hwnd),
         Command::ShowSource => show_source(hwnd),
         Command::CheckDocument => check_document(hwnd),
@@ -9062,6 +9459,17 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
             .collect(),
         _ => Vec::new(),
     };
+    let flagged: Vec<grind_text::grammar::Flag> = match (blocks.first(), blocks.last()) {
+        (Some(first), Some(last)) => state
+            .grammar_flags(first.slot.index..last.slot.index + 1)
+            .into_iter()
+            .filter(|f| {
+                from != to
+                    || !(f.block == state.caret.block && f.finding.range.end == state.caret.offset)
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
     let style = text_style_here(state);
     text::draw::paint(
         dc,
@@ -9090,6 +9498,7 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
             highlight: style.background.as_deref(),
             names: state.show_names,
             misspelt: &misspelt,
+            flagged: &flagged,
         },
     );
 }

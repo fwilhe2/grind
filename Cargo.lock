@@ -1461,6 +1461,8 @@ version = "0.0.0"
 dependencies = [
  "embed-resource",
  "grind-core",
+ "grind-grammar",
+ "grind-languagetool",
  "grind-open",
  "grind-print",
  "grind-sheet",

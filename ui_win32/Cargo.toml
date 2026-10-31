@@ -40,6 +40,11 @@ grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
 # Spelling (doc/spelling.md): the dictionaries, attached before Check Document runs.
 grind-spell = { path = "../spell" }
+# The built-in grammar checker, and the grammar setting and LanguageTool's requests — sent
+# through WinHTTP rather than its own client, whose TLS would not cross-check from Linux
+# (doc/grammar.md).
+grind-grammar = { path = "../grammar" }
+grind-languagetool = { path = "../languagetool", default-features = false }
 # Export PDF (doc/pdf-export.md): the bundled faces, and the machine's for a family a document
 # names, which fontdb finds in Windows' own font directory.
 grind-print = { path = "../print" }
@@ -59,6 +64,8 @@ grind-print = { path = "../print" }
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
+    # LanguageTool's requests (`winhttp.rs`, doc/grammar.md).
+    "Win32_Networking_WinHttp",
     "Win32_Graphics_Gdi",
     # WIC: decoding an inserted picture's bytes into pixels `AlphaBlend` can composite —
     # `image.rs`'s whole reason to exist, and the one namespace here that is not GDI.

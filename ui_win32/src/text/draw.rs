@@ -113,6 +113,9 @@ mod windows_impl {
         /// The misspelt words in the blocks on screen (`App::misspellings`), less the one still
         /// being typed — drawn as a squiggle under each. Empty with spelling off.
         pub misspelt: &'a [grind_text::Misspelling],
+        /// The grammar findings on screen, less one ending at the caret while typing — a
+        /// squiggle in the accent under each, dotted for typography and style.
+        pub flagged: &'a [grind_text::grammar::Flag],
     }
 
     /// Draw one frame of the document onto `dc`, writing every pixel of the client area, so
@@ -330,6 +333,33 @@ mod windows_impl {
                             scale(2.0, page.dpi),
                             theme.misspelt,
                         );
+                    }
+                }
+
+                // A grammar finding's mark, the same way, in the accent rather than spelling's
+                // red; a finding covering nothing (a missing comma) marks the character before.
+                for flag in frame
+                    .flagged
+                    .iter()
+                    .filter(|f| f.block == painted.slot.index)
+                {
+                    let range = &flag.finding.range;
+                    let from = range.start.saturating_sub(usize::from(range.is_empty()));
+                    let Some((left, right)) = band(&painted.layout, line, from, range.end) else {
+                        continue;
+                    };
+                    let (left, right) = (x + f64::from(left), x + f64::from(right));
+                    let top = line_top + f64::from(line.height) - scale(3.0, page.dpi);
+                    match matches!(
+                        flag.finding.kind,
+                        grind_text::grammar::Kind::Typography | grind_text::grammar::Kind::Style
+                    ) {
+                        true => {
+                            gdi::dotted(dc, left, right, top, scale(1.5, page.dpi), theme.accent)
+                        }
+                        false => {
+                            gdi::squiggle(dc, left, right, top, scale(2.0, page.dpi), theme.accent)
+                        }
                     }
                 }
 
