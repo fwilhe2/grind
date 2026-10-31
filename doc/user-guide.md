@@ -471,6 +471,8 @@ grind never writes the key to a file.
 
 `grind grammar builtin` goes back to the built-in checker, and `grind grammar off` turns grammar off altogether. `grind grammar` on its own prints what is set. The setting is yours, kept in `~/.config/grind/grammar`, and the windows and the terminal follow it. They ask LanguageTool shortly after you stop typing, only about the paragraphs that changed, and say where your text goes. If the server does not answer, grind says so once and tries again later. In the terminal, `:grammar http://localhost:8010` or `:grammar public` sets it as well.
 
+**From a window.** The word processor's **Grammar** submenu, the View menu on Windows and the Spelling menu on the Mac have **LanguageTool Server…**. Type the address (`localhost:8010` is enough), `public` or `premium`, and the window uses it at once; the word processor also says whether the server answers. `off` turns LanguageTool off again, and in the word processor an empty field does too. It is the same setting `grind grammar` writes.
+
 The browser has a setting of its own: the palette's **Grammar: LanguageTool server…** asks for an address or `public`, and **Grammar: LanguageTool off** stops asking. A server on your computer must allow the page to ask it (LanguageTool's `--allow-origin` option), which the container above does. Premium is not offered in the browser, because the page keeps no keys.
 
 # 6. Using grind in a terminal
