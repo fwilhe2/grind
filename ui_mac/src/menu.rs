@@ -227,6 +227,8 @@ pub enum Grammar {
     Toggle,
     /// The checker's style suggestions on or off, remembered the same way.
     Style,
+    /// *LanguageTool Server…* — the server `grind grammar` remembers, asked for and applied.
+    Server,
     /// The finding under the pointer's rule left alone from now on.
     Ignore,
     /// The finding under the pointer replaced by its replacement at this index.
@@ -331,6 +333,7 @@ impl Command {
             Command::Grammar(Grammar::Next),
             Command::Grammar(Grammar::Toggle),
             Command::Grammar(Grammar::Style),
+            Command::Grammar(Grammar::Server),
             Command::Grammar(Grammar::Ignore),
         ]);
         all.extend((0..REPLACEMENTS).map(|i| Command::Grammar(Grammar::Correct(i))));
@@ -435,6 +438,7 @@ impl Command {
                 | Command::ParagraphStyle
                 | Command::Spell(Spell::Language)
                 | Command::Spell(Spell::Dictionary)
+                | Command::Grammar(Grammar::Server)
         )
     }
 
@@ -919,6 +923,11 @@ static SPELLING: Menu = Menu {
             key(";", OPT_CMD),
             Command::Grammar(Grammar::Next),
         ),
+        command(
+            "LanguageTool Server…",
+            None,
+            Command::Grammar(Grammar::Server),
+        ),
     ],
 };
 
@@ -1385,6 +1394,7 @@ mod tests {
                 Command::Grammar(Grammar::Style),
             ),
             ("Next Grammar Finding", Command::Grammar(Grammar::Next)),
+            ("LanguageTool Server…", Command::Grammar(Grammar::Server)),
         ] {
             assert!(
                 items

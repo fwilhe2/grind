@@ -73,6 +73,35 @@ impl TextPane {
         self.act_on(|_, _, _| Ok(()));
     }
 
+    /// *LanguageTool Server…* — asked for, remembered, and where the text goes said.
+    fn choose_server(&self, mtm: MainThreadMarker) {
+        let current = self.grammar.borrow().languagetool.clone();
+        let Some(typed) = prompt::ask(
+            mtm,
+            "LanguageTool Server",
+            "An address such as http://localhost:8010, public, premium (with \
+             GRIND_LANGUAGETOOL_USER and GRIND_LANGUAGETOOL_KEY set), or off.",
+            "Use",
+            current.as_ref().map_or("", |choice| choice.tag()),
+        ) else {
+            return;
+        };
+        let choice = match grind_languagetool::setting::Choice::answer(&typed) {
+            Ok(choice) => choice,
+            Err(why) => return prompt::tell(mtm, "Not a LanguageTool server.", &why),
+        };
+        self.set_grammar(|g| g.languagetool = choice.clone(), mtm);
+        match choice.map(|choice| choice.server()) {
+            Some(Ok(server)) => prompt::tell(
+                mtm,
+                "Grammar checked by LanguageTool.",
+                &format!("{} — {}.", server.base(), server.describe()),
+            ),
+            Some(Err(why)) => prompt::tell(mtm, "LanguageTool is not asked.", &why),
+            None => {}
+        }
+    }
+
     /// Every grammar finding in `blocks`, but the ignored rules'.
     fn grammar_flags(&self, blocks: std::ops::Range<usize>) -> Vec<Flag> {
         let ignored = self.grammar.borrow().ignored.clone();
@@ -112,6 +141,7 @@ impl TextPane {
             Grammar::Toggle => self.set_grammar(|g| g.builtin = !g.builtin, mtm),
             Grammar::Style => self.set_grammar(|g| g.style = !g.style, mtm),
             Grammar::Next => self.next_grammar(mtm),
+            Grammar::Server => self.choose_server(mtm),
             Grammar::Ignore => {
                 let Some(flag) = self.grammar_offer.borrow_mut().take() else {
                     return;
