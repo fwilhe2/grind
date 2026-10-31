@@ -33,6 +33,24 @@ impl Choice {
         }
     }
 
+    /// What a window's *LanguageTool Server…* is answered with: empty or `off` is no server, and a
+    /// host typed without its scheme (`localhost:8010`) is taken as `http://`.
+    pub fn answer(typed: &str) -> Result<Option<Choice>, String> {
+        let typed = typed.trim();
+        if typed.is_empty() || typed == "off" {
+            return Ok(None);
+        }
+        let bare_host = typed.contains(':') && !typed.contains("://") && !typed.contains(' ');
+        match bare_host {
+            true => Choice::parse(&format!("http://{typed}")),
+            false => Choice::parse(typed),
+        }
+        .map(Some)
+        .ok_or_else(|| {
+            format!("{typed}? An address such as http://localhost:8010, public or premium")
+        })
+    }
+
     pub fn tag(&self) -> &str {
         match self {
             Choice::SelfHosted(url) => url,

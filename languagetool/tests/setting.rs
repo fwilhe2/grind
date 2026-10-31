@@ -64,3 +64,16 @@ fn premium_needs_its_key_from_the_environment() {
         Ok(grind_languagetool::Server::Public)
     );
 }
+
+#[test]
+fn what_a_dialog_is_answered_with_becomes_a_choice_or_off() {
+    assert_eq!(Choice::answer(""), Ok(None));
+    assert_eq!(Choice::answer("  off "), Ok(None));
+    assert_eq!(Choice::answer("public"), Ok(Some(Choice::Public)));
+    assert_eq!(Choice::answer("premium"), Ok(Some(Choice::Premium)));
+    let local = Some(Choice::SelfHosted("http://localhost:8010".to_owned()));
+    assert_eq!(Choice::answer("http://localhost:8010"), Ok(local.clone()));
+    // A host and port as people type them, without the scheme.
+    assert_eq!(Choice::answer("localhost:8010"), Ok(local));
+    assert!(Choice::answer("lt server").is_err());
+}

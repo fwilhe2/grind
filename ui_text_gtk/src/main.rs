@@ -1363,6 +1363,52 @@ impl Ui {
         );
     }
 
+    /// *LanguageTool Server…* — the server `grind grammar` remembers, asked for here.
+    fn choose_languagetool(self: &Rc<Self>) {
+        let current = grind_languagetool::setting::Setting::load().languagetool;
+        self.ask(
+            "LanguageTool Server",
+            "An address such as http://localhost:8010, public for LanguageTool's own server, or \
+             premium with GRIND_LANGUAGETOOL_USER and GRIND_LANGUAGETOOL_KEY set. Empty turns \
+             LanguageTool off.",
+            current.as_ref().map_or("", |choice| choice.tag()),
+            |ui, typed| ui.use_languagetool(&typed),
+        );
+    }
+
+    /// The server `typed` names remembered and applied at once, then asked whether it answers.
+    fn use_languagetool(self: &Rc<Self>, typed: &str) {
+        use grind_languagetool::setting::{Choice, Setting};
+        let choice = match Choice::answer(typed) {
+            Ok(choice) => choice,
+            Err(why) => return self.toast(&why),
+        };
+        let mut setting = Setting::load();
+        setting.languagetool = choice.clone();
+        if let Err(why) = setting.save() {
+            self.toast(&format!("The setting was not remembered: {why}"));
+        }
+        self.check_grammar();
+        let Some(server) = choice.and_then(|choice| choice.server().ok()) else {
+            return;
+        };
+        glib::spawn_future_local(glib::clone!(
+            #[strong(rename_to = ui)]
+            self,
+            async move {
+                let probe = gio::spawn_blocking(move || {
+                    grind_languagetool::LanguageTool::new(server, false).probe()
+                })
+                .await;
+                match probe {
+                    Ok(Ok(version)) => ui.toast(&format!("{version} answers")),
+                    Ok(Err(why)) => ui.toast(&format!("LanguageTool did not answer: {why}")),
+                    Err(_) => {}
+                }
+            }
+        ));
+    }
+
     /// *Paragraph Style Name…* — `App::set_style` over the touched blocks; empty removes it.
     fn name_style(self: &Rc<Self>) {
         let current = self
@@ -1757,6 +1803,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("paragraph-up", &[][..], |ui| ui.shift_paragraphs(true)),
         ("paragraph-down", &[][..], |ui| ui.shift_paragraphs(false)),
         ("paragraph-delete", &[][..], |ui| ui.delete_paragraphs()),
+        ("languagetool", &[][..], |ui| ui.choose_languagetool()),
         ("bookmark", &[][..], |ui| ui.add_bookmark()),
         ("style-name", &[][..], |ui| ui.name_style()),
         ("indent", &[][..], |ui| ui.indent(1)),
@@ -1887,6 +1934,7 @@ fn primary_menu() -> gio::Menu {
     let grammar = gio::Menu::new();
     grammar.append(Some("Check Grammar"), Some("win.check-grammar"));
     grammar.append(Some("Style Suggestions"), Some("win.grammar-style"));
+    grammar.append(Some("LanguageTool Server…"), Some("win.languagetool"));
     structure.append_submenu(Some("Grammar"), &grammar);
     menu.append_section(None, &structure);
 
@@ -2254,12 +2302,12 @@ mod tests {
         }
     }
 
-    /// Grammar has its two switches beside Spelling: the built-in checker, and its style rules
-    /// (`doc/grammar.md` §7).
+    /// Grammar has its two switches beside Spelling, the built-in checker and its style rules, and
+    /// the LanguageTool server (`doc/grammar.md` §7).
     #[test]
-    fn the_primary_menu_switches_grammar_and_its_style_rules() {
+    fn the_primary_menu_switches_grammar_and_names_a_languagetool_server() {
         let actions = menu_actions(primary_menu().upcast_ref());
-        for wanted in ["win.check-grammar", "win.grammar-style"] {
+        for wanted in ["win.check-grammar", "win.grammar-style", "win.languagetool"] {
             assert!(
                 actions.iter().any(|a| a == wanted),
                 "{wanted} in {actions:?}"
