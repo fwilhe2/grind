@@ -1431,6 +1431,8 @@ version = "0.0.0"
 dependencies = [
  "base64 0.23.1",
  "grind-core",
+ "grind-grammar",
+ "grind-languagetool",
  "grind-open",
  "grind-print",
  "grind-sheet",

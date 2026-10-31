@@ -283,6 +283,8 @@ pub struct Ui {
     /// The word the palette last found, which F3 and Shift+F3 step through and Replace offers
     /// back.
     needle: RefCell<String>,
+    /// The grammar rules the person ignores, which are not drawn (`crate::grammar`).
+    grammar_ignored: RefCell<Vec<String>>,
 }
 
 impl Ui {
@@ -320,7 +322,9 @@ impl Ui {
             alt_at: Cell::new(None),
             message: RefCell::new(String::new()),
             needle: RefCell::new(String::new()),
+            grammar_ignored: RefCell::new(Vec::new()),
         });
+        ui.apply_grammar(&crate::grammar::load());
         wire(&ui)?;
         Ok(ui)
     }
@@ -394,6 +398,7 @@ impl Ui {
         // The words the checker underlines — none until a dictionary is attached
         // (`crate::spelling`), which is also what turning spelling off is.
         let wrong = self.app.misspellings(0..self.app.block_count());
+        let flagged = self.grammar_flags(0..self.app.block_count());
 
         self.dom.flow.set_text_content(None);
         for block in viewport.iter() {
@@ -461,7 +466,7 @@ impl Ui {
                     &row,
                     block,
                     line.start..line.end,
-                    (&selection, &wrong),
+                    (&selection, &wrong, &flagged),
                     here,
                 )?;
                 // A bookmark contributes no characters (`doc/view-modes.md` §3.6), so with the
@@ -528,7 +533,11 @@ impl Ui {
         row: &Element,
         block: &BlockView,
         line: std::ops::Range<usize>,
-        (selection, wrong): (&Option<(Caret, Caret)>, &[grind_text::Misspelling]),
+        (selection, wrong, flagged): (
+            &Option<(Caret, Caret)>,
+            &[grind_text::Misspelling],
+            &[grind_text::grammar::Flag],
+        ),
         caret: Option<usize>,
     ) -> Result<(), JsValue> {
         let text: Vec<char> = block.text.chars().collect();
@@ -569,13 +578,35 @@ impl Ui {
             .map(|w| w.offset..w.offset + w.len)
             .filter(|word| caret != Some(word.end))
             .collect();
-        for piece in runs::cut_spelled(
+        // The grammar findings, the same way; one covering nothing (a missing comma) marks the
+        // character before it.
+        let flagged: Vec<(std::ops::Range<usize>, bool)> = flagged
+            .iter()
+            .filter(|f| f.block == block.index)
+            .filter(|f| caret != Some(f.finding.range.end))
+            .map(|f| {
+                let range = &f.finding.range;
+                let quiet = matches!(
+                    f.finding.kind,
+                    grind_text::grammar::Kind::Typography | grind_text::grammar::Kind::Style
+                );
+                (
+                    range.start.saturating_sub(usize::from(range.is_empty()))..range.end,
+                    quiet,
+                )
+            })
+            .collect();
+        let marks = runs::Marks {
+            misspelt: &misspelt,
+            flagged: &flagged,
+        };
+        for piece in runs::cut_marked(
             line.clone(),
             &block.runs,
             within,
             caret,
             &anchors_here,
-            &misspelt,
+            &marks,
         ) {
             if anchors_here.contains(&piece.range.start) {
                 let tick = self.dom.document.create_element("span")?;
@@ -801,7 +832,8 @@ impl Ui {
     /// What the palette offers for a query that is not a verb: a heading, a bookmark or an address
     /// to jump to — the outline and the go-to field in one box.
     pub fn targets(&self, query: &str) -> Vec<Entry> {
-        let mut out = self.spelling_entries(query);
+        let mut out = self.grammar_entries(query);
+        out.extend(self.spelling_entries(query));
         out.extend(self.heading_targets(query));
         out
     }
@@ -925,6 +957,97 @@ impl Ui {
             true => format!("{} \u{2014} no suggestion", wrong.word),
             false => format!("{} \u{2014} {}", wrong.word, suggestions.join(", ")),
         });
+    }
+
+    // --- grammar (`crate::grammar`) ---
+
+    /// Attach the built-in checker as `setting` says, and leave its ignored rules undrawn.
+    pub fn apply_grammar(&self, setting: &grind_languagetool::setting::Setting) {
+        let checker: Option<Arc<dyn grind_core::grammar::Checker>> = match setting.builtin {
+            true => Some(Arc::new(grind_grammar::Builtin {
+                picky: setting.style,
+            })),
+            false => None,
+        };
+        self.app.set_checker(checker);
+        self.grammar_ignored.replace(setting.ignored.clone());
+    }
+
+    fn grammar_flags(&self, blocks: std::ops::Range<usize>) -> Vec<grind_text::grammar::Flag> {
+        let ignored = self.grammar_ignored.borrow();
+        self.app
+            .grammar(blocks)
+            .into_iter()
+            .filter(|flag| !ignored.contains(&flag.finding.rule))
+            .collect()
+    }
+
+    /// The grammar finding the caret is in, if any.
+    pub fn grammar_here(&self) -> Option<grind_text::grammar::Flag> {
+        let at = self.caret.get();
+        self.grammar_flags(at.block..at.block + 1)
+            .into_iter()
+            .find(|f| f.finding.range.start <= at.offset && at.offset <= f.finding.range.end)
+    }
+
+    /// What a finding covers, as text.
+    fn covered(&self, flag: &grind_text::grammar::Flag) -> String {
+        let range = flag.finding.range.clone();
+        self.app
+            .get_viewport(flag.block..flag.block + 1)
+            .get(flag.block)
+            .map(|view| {
+                view.text
+                    .chars()
+                    .skip(range.start)
+                    .take(range.len())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn grammar_entries(&self, query: &str) -> Vec<Entry> {
+        let Some(flag) = self.grammar_here() else {
+            return Vec::new();
+        };
+        crate::grammar::offers(&flag.finding, &self.covered(&flag), query)
+    }
+
+    /// Replace the finding at the caret with its `n`th replacement — one undo step.
+    pub fn fix_grammar(&self, n: usize) {
+        let Some(flag) = self.grammar_here() else {
+            return self.set_message("No grammar finding here".to_owned());
+        };
+        let Some(with) = flag.finding.replacements.get(n).cloned() else {
+            return self.set_message(format!("No replacement {} here", n + 1));
+        };
+        let covered = self.covered(&flag);
+        match self.app.correct(flag.caret(), &covered, &with) {
+            Ok(()) => {
+                self.set_caret(Caret {
+                    block: flag.block,
+                    offset: flag.finding.range.start + with.chars().count(),
+                });
+                self.set_message(format!(
+                    "\u{201c}{covered}\u{201d} \u{2192} \u{201c}{with}\u{201d}"
+                ));
+            }
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    /// Put the caret on the next grammar finding, wrapping round the end, and say what is wrong.
+    pub fn next_grammar(&self) {
+        let all = self.grammar_flags(0..self.app.block_count());
+        let at = self.caret.get();
+        let after = |f: &grind_text::grammar::Flag| {
+            (f.block, f.finding.range.start) > (at.block, at.offset)
+        };
+        let Some(flag) = all.iter().find(|f| after(f)).or_else(|| all.first()) else {
+            return self.set_message("No grammar findings".to_owned());
+        };
+        self.set_caret(flag.caret());
+        self.set_message(flag.finding.message.clone());
     }
 
     // --- whole paragraphs ---

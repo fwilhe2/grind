@@ -1071,6 +1071,28 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   await settle();
   check("all languages forgets the choice", dom.window.localStorage.getItem("grind.spelling.text"), null);
 
+  // --- grammar (doc/grammar.md) ---------------------------------------------------------
+  //
+  // The built-in checker underlines in blue, steps to a finding, fixes it from the palette, and
+  // its switch is remembered for this browser.
+  const flagged = () => [...document.querySelectorAll("#flow .gram")].map((el) => el.textContent);
+  await openFile("grammar.fodt", FODT.replace("One paragraph.", "We saw the the cat on the mat."));
+  await settle();
+  check("a grammar finding is underlined", flagged(), [" the"]);
+  await command("Go to the next grammar finding");
+  check("the next finding is gone to and said", byId("message").textContent.includes("twice"), true);
+  palette("k", { ctrlKey: true });
+  check("the palette offers its fix", paletteRows().some((row) => row.includes("Remove")), true);
+  paletteType("remove");
+  paletteEnter();
+  await frame();
+  check("picking it fixes it", blocks(), ["Title", "We saw the cat on the mat."]);
+  check("and nothing is flagged", flagged(), []);
+  await command("Grammar: off");
+  check("the switch is remembered",
+    dom.window.localStorage.getItem("grind.grammar").includes("builtin off"), true);
+  await command("Grammar: check");
+
   // A spreadsheet is checked the same way, in the text its cells hold.
   await openFile("misspelt.fods", FODS.replace("from a file", "recieve it"));
   await settle();

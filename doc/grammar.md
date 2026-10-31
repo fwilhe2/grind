@@ -306,7 +306,7 @@ through the same request and response code, §3.10).
 | `grind-text-gtk` | The underlines, a popover with the message, replacements, *Ignore*, *Ignore rule* and *Why?*, a Grammar submenu under Spelling (Built-in, LanguageTool…, Style suggestions, Off), and a chip in the status bar saying which checker runs and where the text goes |
 | `grind-tui` | The underline (blue, grey for style; spelling's red kept), `}`/`{` to the next or previous finding with the message and numbered replacements on the status line, `:fix N`, `:grammar [on\|off\|style on\|off\|ignore\|<url>\|public\|premium]` remembered; LanguageTool asked on a thread once typing pauses, the event loop woken for its answer only while one is wanted |
 | `grind-win32`, `grind-mac` | Underline, context menu, the setting in the View/Edit ▸ Spelling menu (as spelling's are) |
-| `grind-web` | The built-in checker in the wasm module; LanguageTool through `fetch` to a server started with `--allow-origin`; settings in `localStorage` |
+| `grind-web` | The built-in checker in the wasm module: the underline, the palette's rows for the finding at the caret (replacements, *Ignore this rule*), *Go to the next grammar finding*, *Grammar: check / off / style suggestions*, remembered in `localStorage` (`grind.grammar`) |
 | `grind lsp` | Nothing at first: projection files are code, not prose |
 
 `doc/feature-matrix.md` gets a *Grammar* row and `doc/cli-parity-text.md` the verbs, so
@@ -347,6 +347,7 @@ None is open.
   switches the built-in checker and style, but has no dialog to name a server; and while the
   public server is in use it says where the text goes in a toast, not in the clearly visible
   link back its terms ask for.
-- **The other shells** (G7): Windows, the Mac and the browser have no grammar yet.
+- **The other shells** (G7): Windows and the Mac have no grammar yet, and the browser does not
+  ask LanguageTool (it would `fetch` a server started with `--allow-origin`).
 - **Recall is measured on a small written set only** (loop G′'s 31 slips). The backlog there —
   agreement above all — is the next set of rules worth writing.

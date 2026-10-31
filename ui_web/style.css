@@ -742,6 +742,20 @@ input[type="text"] {
   font-style: italic;
 }
 
+/* A grammar finding (`doc/grammar.md`): the accent's wavy line, never spelling's red; a
+   typography or style finding a quiet dotted one. Spelling's `.wrong` is declared after, so a
+   misspelt word inside a finding keeps its red. */
+.run.gram {
+  text-decoration: underline wavy #3584e4;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  text-decoration-skip-ink: none;
+}
+
+.run.gram.quiet {
+  text-decoration: underline dotted #888;
+}
+
 /* A word the spell checker does not know (`doc/spelling.md`): a wavy red line under it and
    nothing else — it never changes the text or the metrics, so the caret stays where it is. The
    cells of a grid draw the same line under the same words. */

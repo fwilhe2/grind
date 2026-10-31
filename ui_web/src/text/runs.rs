@@ -24,6 +24,17 @@ pub struct Piece {
     pub selected: bool,
     /// Whether it is (part of) a word the spell checker underlines.
     pub wrong: bool,
+    /// Whether it is (part of) a grammar finding, and if so whether a quiet one (typography or
+    /// style).
+    pub grammar: Option<bool>,
+}
+
+/// What a line is marked with besides its formatting: the misspelt words, and the grammar
+/// findings with whether each is quiet — all in the block's offsets.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Marks<'a> {
+    pub misspelt: &'a [Range<usize>],
+    pub flagged: &'a [(Range<usize>, bool)],
 }
 
 /// Cut `line` into pieces. `runs` are the block's, in order; `selection` is in the same offsets
@@ -37,19 +48,20 @@ pub fn cut(
     caret: Option<usize>,
     anchors: &[usize],
 ) -> Vec<Piece> {
-    cut_spelled(line, runs, selection, caret, anchors, &[])
+    cut_marked(line, runs, selection, caret, anchors, &Marks::default())
 }
 
-/// [`cut`], with the misspelt words of the block — in the same offsets — each a boundary at
-/// both ends, so the wavy underline starts and stops exactly on the word.
-pub fn cut_spelled(
+/// [`cut`], with the misspelt words and grammar findings of the block — in the same offsets —
+/// each a boundary at both ends, so an underline starts and stops exactly on what it marks.
+pub fn cut_marked(
     line: Range<usize>,
     runs: &[RunView],
     selection: Option<Range<usize>>,
     caret: Option<usize>,
     anchors: &[usize],
-    misspelt: &[Range<usize>],
+    marks: &Marks<'_>,
 ) -> Vec<Piece> {
+    let misspelt = marks.misspelt;
     if line.start >= line.end {
         return Vec::new();
     }
@@ -73,7 +85,10 @@ pub fn cut_spelled(
     for at in anchors {
         mark(*at);
     }
-    for word in misspelt {
+    for word in misspelt
+        .iter()
+        .chain(marks.flagged.iter().map(|(range, _)| range))
+    {
         mark(word.start);
         mark(word.end);
     }
@@ -97,6 +112,11 @@ pub fn cut_spelled(
                 wrong: misspelt
                     .iter()
                     .any(|word| word.start <= start && end <= word.end),
+                grammar: marks
+                    .flagged
+                    .iter()
+                    .find(|(range, _)| range.start <= start && end <= range.end)
+                    .map(|(_, quiet)| *quiet),
             }
         })
         .collect()
@@ -128,6 +148,9 @@ pub fn classes(piece: &Piece) -> String {
     }
     if piece.selected {
         class.push_str(" sel");
+    }
+    if let Some(quiet) = piece.grammar {
+        class.push_str(if quiet { " gram quiet" } else { " gram" });
     }
     if piece.wrong {
         class.push_str(" wrong");
@@ -186,11 +209,38 @@ mod tests {
         }
     }
 
+    /// A grammar finding is a stretch of its own, drawn in the accent — or quietly, for style
+    /// (`doc/grammar.md` decision 2).
+    #[test]
+    fn a_grammar_finding_is_cut_out_of_the_line_and_marked() {
+        let runs = [run(0, "the the cat sat", CharStyle::default())];
+        let flagged = [(3..7, false), (12..15, true)];
+        let marks = Marks {
+            misspelt: &[],
+            flagged: &flagged,
+        };
+        let pieces = cut_marked(0..15, &runs, None, None, &[], &marks);
+        assert_eq!(
+            pieces.iter().map(|p| p.range.clone()).collect::<Vec<_>>(),
+            vec![0..3, 3..7, 7..12, 12..15]
+        );
+        assert_eq!(
+            pieces.iter().map(|p| p.grammar).collect::<Vec<_>>(),
+            [None, Some(false), None, Some(true)]
+        );
+        assert_eq!(classes(&pieces[1]), "run gram");
+        assert_eq!(classes(&pieces[3]), "run gram quiet");
+    }
+
     #[test]
     fn a_misspelt_word_is_cut_out_of_the_line_and_marked() {
         let runs = [run(0, "a wrongg word", CharStyle::default())];
         let word: Range<usize> = 2..8;
-        let pieces = cut_spelled(0..13, &runs, None, None, &[], std::slice::from_ref(&word));
+        let marks = Marks {
+            misspelt: std::slice::from_ref(&word),
+            flagged: &[],
+        };
+        let pieces = cut_marked(0..13, &runs, None, None, &[], &marks);
         assert_eq!(
             pieces.iter().map(|p| p.range.clone()).collect::<Vec<_>>(),
             vec![0..2, 2..8, 8..13]
@@ -298,6 +348,7 @@ mod tests {
             href: None,
             selected: false,
             wrong: false,
+            grammar: None,
         };
         let inline = css(&piece, false);
         assert!(inline.contains("color:#ff4136;"), "{inline}");

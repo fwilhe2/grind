@@ -559,6 +559,30 @@ pub const TEXT: &[Command] = &[
         "",
         false,
     ),
+    // --- grammar (`doc/grammar.md`): the built-in checker, remembered for this browser ---
+    cmd(
+        "grammar.next",
+        "Go to the next grammar finding",
+        "Grammar",
+        "",
+        false,
+    ),
+    cmd("grammar.on", "Grammar: check", "Grammar", "", false),
+    cmd("grammar.off", "Grammar: off", "Grammar", "", false),
+    cmd(
+        "grammar.style-on",
+        "Grammar: style suggestions too",
+        "Grammar",
+        "",
+        false,
+    ),
+    cmd(
+        "grammar.style-off",
+        "Grammar: no style suggestions",
+        "Grammar",
+        "",
+        false,
+    ),
     // Markdown, the word processor's CSV: read in before the caret's block, written out from the
     // selection (or the whole document). A download names itself, so no dialect to choose.
     cmd(

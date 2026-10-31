@@ -23,6 +23,7 @@
 pub mod about;
 pub mod code;
 pub mod command;
+pub mod grammar;
 pub mod ink;
 mod keys;
 pub mod palette;
@@ -599,6 +600,7 @@ impl Shell {
             "edit.copy-value" => self.copy_value(),
             "edit.paste" => self.paste_in(),
             id if id.starts_with("spell.") => self.run_spelling(id),
+            id if id.starts_with("grammar.") => self.run_grammar(id),
             "view.source" => self.toggle_source(),
             "view.problems" => self.toggle_problems(),
             "sheet.calculations" => self.find_calculations(),
