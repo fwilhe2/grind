@@ -583,6 +583,20 @@ pub const TEXT: &[Command] = &[
         "",
         false,
     ),
+    cmd(
+        "grammar.languagetool",
+        "Grammar: LanguageTool server…",
+        "Grammar",
+        "",
+        false,
+    ),
+    cmd(
+        "grammar.languagetool-off",
+        "Grammar: LanguageTool off",
+        "Grammar",
+        "",
+        false,
+    ),
     // Markdown, the word processor's CSV: read in before the caret's block, written out from the
     // selection (or the whole document). A download names itself, so no dialect to choose.
     cmd(

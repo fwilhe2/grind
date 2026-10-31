@@ -285,6 +285,12 @@ pub struct Ui {
     needle: RefCell<String>,
     /// The grammar rules the person ignores, which are not drawn (`crate::grammar`).
     grammar_ignored: RefCell<Vec<String>>,
+    /// The LanguageTool server the setting names, with what each request says besides the text;
+    /// whether a request is out; and how many paints there have been, which is what tells a
+    /// pause in typing (`crate::grammar::after_paint`).
+    languagetool: RefCell<Option<(grind_languagetool::Server, grind_languagetool::Options)>>,
+    asking: Cell<bool>,
+    painted: Cell<u64>,
 }
 
 impl Ui {
@@ -323,6 +329,9 @@ impl Ui {
             message: RefCell::new(String::new()),
             needle: RefCell::new(String::new()),
             grammar_ignored: RefCell::new(Vec::new()),
+            languagetool: RefCell::new(None),
+            asking: Cell::new(false),
+            painted: Cell::new(0),
         });
         ui.apply_grammar(&crate::grammar::load());
         wire(&ui)?;
@@ -367,6 +376,8 @@ impl Ui {
         if let Err(error) = self.render() {
             web_sys::console::error_1(&error);
         }
+        self.painted.set(self.painted.get() + 1);
+        crate::grammar::after_paint();
     }
 
     // --- rendering ---
@@ -971,6 +982,52 @@ impl Ui {
         };
         self.app.set_checker(checker);
         self.grammar_ignored.replace(setting.ignored.clone());
+        // Premium needs a key this page does not keep; the setting may still name it.
+        let server = setting
+            .languagetool
+            .as_ref()
+            .filter(|choice| **choice != grind_languagetool::setting::Choice::Premium)
+            .and_then(|choice| choice.server().ok());
+        let remote = server.map(|server| {
+            let options = grind_languagetool::Options {
+                picky: setting.style,
+                disabled_rules: setting
+                    .ignored
+                    .iter()
+                    .filter_map(|rule| rule.strip_prefix("lt:"))
+                    .map(str::to_owned)
+                    .collect(),
+                max_chars: server.max_chars(),
+            };
+            (server, options)
+        });
+        self.app.set_background_grammar(remote.is_some());
+        self.languagetool.replace(remote);
+    }
+
+    /// Whether a LanguageTool server is named.
+    pub fn asks_languagetool(&self) -> bool {
+        self.languagetool.borrow().is_some()
+    }
+
+    pub fn languagetool(
+        &self,
+    ) -> Option<(grind_languagetool::Server, grind_languagetool::Options)> {
+        self.languagetool.borrow().clone()
+    }
+
+    /// How many paints there have been.
+    pub fn painted(&self) -> u64 {
+        self.painted.get()
+    }
+
+    /// Mark a request out, unless one already is.
+    pub fn start_asking(&self) -> bool {
+        !self.asking.replace(true)
+    }
+
+    pub fn done_asking(&self) {
+        self.asking.set(false);
     }
 
     fn grammar_flags(&self, blocks: std::ops::Range<usize>) -> Vec<grind_text::grammar::Flag> {

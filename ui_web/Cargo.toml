@@ -88,6 +88,8 @@ features = [
   "Navigator",
   "Node",
   "Response",
+  # A request with a body: LanguageTool's form, sent through `fetch` (`grammar.rs`).
+  "RequestInit",
   # The remembered spelling setting (`spelling.rs`), per kind of document.
   "Storage",
   "SvgElement",

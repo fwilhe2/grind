@@ -74,7 +74,22 @@ dom.window.HTMLAnchorElement.prototype.click = function () {
 
 // The dictionaries spelling is checked with (`ui_web/src/spelling.rs`) are fetched from
 // `dictionaries/` beside the page; here that is the repository's own copy.
-dom.window.fetch = async (url) => {
+// A LanguageTool server is answered here too: every ` go ` in what was sent is HE_VERB_AGR, at
+// the UTF-16 offset LanguageTool would give, over markup and text alike.
+const languagetool = [];
+dom.window.fetch = async (url, init) => {
+  if (String(url).endsWith("/v2/check")) {
+    const form = new URLSearchParams(init.body);
+    languagetool.push(form);
+    const sent = JSON.parse(form.get("data")).annotation.map((a) => a.text ?? a.markup).join("");
+    const matches = [];
+    for (let at = sent.indexOf(" go "); at >= 0; at = sent.indexOf(" go ", at + 1)) {
+      matches.push({ message: "Agreement", offset: at + 1, length: 2, replacements: [{ value: "goes" }],
+        rule: { id: "HE_VERB_AGR", description: "d", category: { id: "GRAMMAR", name: "G" } } });
+    }
+    const answer = JSON.stringify({ matches });
+    return { ok: true, status: 200, text: async () => answer };
+  }
   const file = path.join(here, "..", "spell/dictionaries", path.basename(String(url)));
   if (!fs.existsSync(file)) return { ok: false, status: 404 };
   const text = fs.readFileSync(file, "utf8");
@@ -1092,6 +1107,22 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("the switch is remembered",
     dom.window.localStorage.getItem("grind.grammar").includes("builtin off"), true);
   await command("Grammar: check");
+
+  // LanguageTool, asked through fetch once typing pauses, its answer drawn beside the built-in
+  // checker's. The address is what a person types at the prompt.
+  dom.window.prompt = () => "http://localhost:8010";
+  await openFile("lt.fodt", FODT.replace("One paragraph.", "He go to the the shop."));
+  await command("Grammar: LanguageTool server");
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await frame();
+  check("LanguageTool is asked, with its spelling off",
+    languagetool.length > 0 && languagetool.at(-1).get("disabledCategories"), "TYPOS");
+  check("and its finding is drawn beside the built-in one", flagged(), ["go", " the"]);
+  check("the server is remembered",
+    dom.window.localStorage.getItem("grind.grammar").includes("languagetool http://localhost:8010"), true);
+  await command("Grammar: LanguageTool off");
+  check("and forgotten", dom.window.localStorage.getItem("grind.grammar").includes("languagetool off"), true);
+  check("its findings go with it", flagged(), [" the"]);
 
   // A spreadsheet is checked the same way, in the text its cells hold.
   await openFile("misspelt.fods", FODS.replace("from a file", "recieve it"));
