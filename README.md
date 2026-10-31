@@ -12,7 +12,7 @@ I'm a software developer and a long-time Linux user. I love and appreciate the f
 
 But I've also gotten frustrated with the LibreOffice user experience. Don't get me wrong, the project has done so much for the free desktop, and it is great software that solves real problems. But the UX shows its age, and the community overall seems not to welcome change. I can never remember how to make Excel-like tables in Calc, and that is not my fault, this is a common operation that should be simple, but Calc makes it hard for some reason.
 
-I know, many people will close this repo once they discover it is 'slop'. I don't want to argue if AI agents can possible be used in ethical ways, but this human written readme should tell you something: This is a passion project. I would not have the time and energy to do this in any different way, an office suite is just way too complex for that.
+I know, many people will close this repo once they discover it is 'slop'. I don't want to argue if AI agents can possibly be used in ethical ways, but this human written readme should tell you something: This is a passion project. I would not have the time and energy to do this in any different way, an office suite is just way too complex for that.
 
 # Project Status
 
@@ -20,7 +20,7 @@ No release exists yet. A spreadsheet and a word processor are included, the spre
 
 # Approach
 
-This project has clients for Linux, Windows, Mac, the Browser (using WebAssembly), a TUI and a CLI. It does purposefully not use any cross-platform toolkit, it exists as a proof of an idea: AI Agents enable a new way of building software, native for each platform. This was possible before but almost no one did it for economical reasons. Not enough benefit for the cost. With AI Agents, this calculation changes.
+This project has clients for Linux, Windows, Mac, the Browser (using WebAssembly), a TUI and a CLI. It does purposefully not use any cross-platform toolkit, it exists as a proof of an idea: AI Agents enable a new way of building software, native for each platform. This was possible before but almost no one did it for economic reasons. Not enough benefit for the cost. With AI Agents, this calculation changes.
 
 ## Human and AI Authorship
 
