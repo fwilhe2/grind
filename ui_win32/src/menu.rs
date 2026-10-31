@@ -326,6 +326,8 @@ pub enum Command {
     /// grammar setting `grind grammar` writes. The word processor's alone.
     ToggleGrammar,
     GrammarStyle,
+    /// The LanguageTool server `grind grammar` remembers, asked for and applied at once.
+    LanguageToolServer,
     /// Shift+F7 — spelling off, or back on to the last language it was on in: LibreOffice's
     /// *Automatic Spell Checking* key. Over a spreadsheet it is remembered, so off stays off in
     /// every spreadsheet until it is turned back on (`doc/spelling.md`, "In a spreadsheet").
@@ -482,6 +484,7 @@ impl Command {
         Command::NextGrammarFinding,
         Command::ToggleGrammar,
         Command::GrammarStyle,
+        Command::LanguageToolServer,
         Command::ToggleRoles,
         Command::ToggleFormulas,
         Command::ZoomIn,
@@ -1167,6 +1170,10 @@ pub const MENUS: &[Menu] = &[
                 command: Command::GrammarStyle,
                 label: "Grammar St&yle Suggestions",
             },
+            Item::Verb {
+                command: Command::LanguageToolServer,
+                label: "LanguageTool Ser&ver…",
+            },
             Item::Separator,
             Item::Verb {
                 command: Command::ToggleRoles,
@@ -1470,7 +1477,8 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         // Grammar is for documents, never a spreadsheet's labels (`doc/grammar.md` §1).
         | Command::NextGrammarFinding
         | Command::ToggleGrammar
-        | Command::GrammarStyle => matches!(kind, Text),
+        | Command::GrammarStyle
+        | Command::LanguageToolServer => matches!(kind, Text),
         // Spelling checks a paragraph's words and a text cell's alike (`doc/spelling.md`).
         Command::NextMisspelling
         | Command::SpellingLanguage
@@ -1604,6 +1612,7 @@ mod tests {
             Command::NextGrammarFinding,
             Command::ToggleGrammar,
             Command::GrammarStyle,
+            Command::LanguageToolServer,
         ] {
             assert!(applies_to(command, grind_core::DocumentKind::Text));
             assert!(!applies_to(command, grind_core::DocumentKind::Spreadsheet));

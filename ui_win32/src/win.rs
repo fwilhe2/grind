@@ -928,6 +928,10 @@ impl Text {
                         .collect(),
                     max_chars: server.max_chars(),
                 };
+                self.say(Some(format!(
+                    "Grammar checked by LanguageTool — {}",
+                    server.describe()
+                )));
                 Some((server, options))
             }
             Some(Err(why)) => {
@@ -4204,7 +4208,8 @@ fn do_command(hwnd: HWND, command: Command) {
         // Grammar is for documents, never a spreadsheet's labels.
         | Command::NextGrammarFinding
         | Command::ToggleGrammar
-        | Command::GrammarStyle => {}
+        | Command::GrammarStyle
+        | Command::LanguageToolServer => {}
         Command::NextMisspelling => sheet_next_misspelling(hwnd),
         Command::SpellingLanguage => sheet_spelling_language(hwnd),
         Command::PersonalDictionary => personal_dictionary(hwnd),
@@ -6442,6 +6447,29 @@ fn text_set_grammar(hwnd: HWND, change: impl FnOnce(&mut grind_languagetool::set
     schedule_grammar(hwnd);
 }
 
+/// *LanguageTool Server…* — asked for, remembered for `grind grammar` too, and asked at once.
+fn text_choose_languagetool(hwnd: HWND) {
+    // SAFETY: one borrow; nothing inside dispatches.
+    let current = unsafe { with_text(hwnd, |text| text.grammar.languagetool.clone()) }.flatten();
+    let Some(typed) = dialog::prompt(
+        hwnd,
+        "LanguageTool Server",
+        "An address such as http://localhost:8010, public, premium (with \
+         GRIND_LANGUAGETOOL_USER and GRIND_LANGUAGETOOL_KEY set), or off",
+        current.as_ref().map_or("", |choice| choice.tag()),
+    ) else {
+        return;
+    };
+    match grind_languagetool::setting::Choice::answer(&typed) {
+        Ok(choice) => text_set_grammar(hwnd, |g| g.languagetool = choice),
+        Err(why) => {
+            // SAFETY: as above.
+            unsafe { with_text(hwnd, |text| text.say(Some(why))) };
+            text_refresh(hwnd);
+        }
+    }
+}
+
 /// Ctrl+F7 — select the next grammar finding after the caret, wrapping, and open its popup.
 fn text_next_grammar(hwnd: HWND) {
     // SAFETY: one borrow, released before the popup's nested message loop.
@@ -7282,6 +7310,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::NextGrammarFinding
         | Command::ToggleGrammar
         | Command::GrammarStyle
+        | Command::LanguageToolServer
         | Command::Print
         | Command::ShowSource
         | Command::CheckDocument
@@ -8289,6 +8318,7 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::NextGrammarFinding => text_next_grammar(hwnd),
         Command::ToggleGrammar => text_set_grammar(hwnd, |g| g.builtin = !g.builtin),
         Command::GrammarStyle => text_set_grammar(hwnd, |g| g.style = !g.style),
+        Command::LanguageToolServer => text_choose_languagetool(hwnd),
         Command::Print => text_print(hwnd),
         Command::ShowSource => show_source(hwnd),
         Command::CheckDocument => check_document(hwnd),
