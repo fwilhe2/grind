@@ -65,6 +65,7 @@ const NOT_SHIPPED: &[&str] = &[
     "xlsx/tests/",
     "docx/tests/",
     "print/tests/",
+    "grammar/tests/",
     // The container recipe: it builds an image of `grind`, and nothing of it is in one.
     "Containerfile.distroless-cli",
 ];
