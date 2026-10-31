@@ -89,6 +89,8 @@ Press **Ctrl+O** to open a document. grind opens:
 
 grind decides what a file is by reading it, not by its name. An Excel workbook, a Word document, a CSV or a Markdown file is converted into a **new, unsaved document**. The original file is never changed, and a message tells you what, if anything, could not be carried over. grind reads these formats but does not write Excel or Word files.
 
+**Recent documents.** The windows' open dialog lists the documents you used last under **Recent**; on Windows they are also added to the system's recent documents. The terminal's welcome pane lists the last nine, and the keys `1` to `9` open them. The browser keeps a copy of the last four documents you opened or saved, because a web page cannot reopen a file from your disk; they are on its welcome pane and in the command palette, and **Forget the recent documents** removes them.
+
 ## 2.5 Saving documents
 
 Press **Ctrl+S** to save. A document without a name asks for one. In the word processor, **Ctrl+Shift+S** saves under a new name.
@@ -214,6 +216,8 @@ To draw a chart, select the table, including its headings, and choose **Insert a
 
 A chart sits on the sheet. Click it to select it, drag it to move it, and drag one of its eight handles to resize it. **Shift** on a corner handle keeps the proportions. **Delete** removes the selected chart, the arrow keys nudge it, and **Esc** lets go.
 
+To change a chart after it is made, right-click it and choose **Edit Chart…**. The dialog changes the kind (bar, line or pie), the title, the legend, the cells it reads from, and the axes' titles, labels and gridlines, with a preview as you go. Colours of a series or of a single bar or slice are set with `grind sheet chart-style`. In the browser the palette offers **Change the chart…**, and the Windows and Mac programs have a Chart menu that does the same in words.
+
 ## 3.12 Seeing what a spreadsheet is made of
 
 A table of numbers does not show which numbers somebody typed and which a formula calculated. grind can show it.
@@ -246,6 +250,38 @@ Press **F8** for **Check the Document**. grind lists problems such as a formula 
 ## 3.15 CSV files
 
 Opening a CSV or TSV file makes a new spreadsheet from it. To read a CSV file into the spreadsheet you have, use **Import CSV**; to write a range out, use **Export CSV**. grind finds the delimiter from the file's content. Fields that look like numbers become numbers, and a field such as `007` stays text.
+
+## 3.16 Merging, hiding and turning cells
+
+**Merging.** Select a range, right-click it and choose **Merge Cells**: its top-left cell is drawn across the whole range, for a title over a table. What the other cells held is kept out of sight and comes back with **Unmerge Cells**.
+
+**Hiding rows and columns.** Right-click a row number or a column letter and choose **Hide Row** or **Hide Column**; with several selected, **Hide Rows** or **Hide Columns**. A small marker shows where they are; click it to show them again. Calculations still use hidden cells.
+
+**Row heights.** A row grows by itself to hold wrapped or turned text. **Fit Row Height** in the command palette gives rows back to their content after you changed them by hand.
+
+**Turning text.** The **Text Rotation** button on the format bar turns the text of the selected cells: angled up or down, rotated to read upwards or downwards, or back to **No Rotation**. It is useful for narrow column headings.
+
+## 3.17 Checkboxes
+
+A cell can hold a **checkbox** that shows whether another cell is TRUE or FALSE. Click it, or select its cell and press **Space**, to tick or untick it; the linked cell changes with it, so formulas can count what is ticked. Every program draws and ticks checkboxes. To add one, use the command line:
+
+```
+$ grind sheet checkbox orders.fods E3 --link F3
+```
+
+## 3.18 Filters and tables
+
+**Filtering rows.** Select a table, including its headings, and choose **Filter Rows** from its context menu. Each heading gets a small button; click one and choose which values to show. Rows that do not match are hidden, not deleted, and calculations still use them. Choose **Filter Rows** again to remove the filter.
+
+**Formatting as a table.** **Format as Table…** in the context menu does several things in one step: it adds the filter buttons, shades every other row, can add a **totals** row under the table with a sum, average, count, minimum or maximum for each column, and gives the range a name such as `Table1`, which formulas can use. Everything it adds is ordinary formatting, so you can change any part of it afterwards. One **Ctrl+Z** undoes all of it.
+
+![A table with a merged title, filter buttons, banded rows, a totals row, a conditional-format rule and checkboxes](user-guide.images/img-210db701c536ebff.png)
+
+## 3.19 Conditional formatting
+
+A **rule** draws cells differently while a formula is true: for example, every quantity over 10 in yellow, or a whole row in green once it is paid. Select the cells, right-click and choose **Conditional Formatting…**. Write the condition for the top-left cell, such as `=B3>10`, and pick how the cells should look; grind moves the condition to every other cell the way filling moves a formula. A cell can have several rules, and the first one that holds is the one you see. The same dialog lists the sheet's rules and removes them.
+
+In the terminal the commands are `:rule yellow =B3>10`, `:rules` and `:rule!`; in the browser the palette lists them under **Rules**.
 
 # 4. Working with text documents
 
@@ -339,22 +375,26 @@ Markdown is a plain-text notation for headings, lists and emphasis. A `.md` file
 
 A Word document (`.docx`) opens as a new, unsaved text document. Headings, lists, tables, pictures, headers, footers and the page come across. A message names anything that does not. Save the result as an ODF document.
 
-# 5. Spelling
+## 4.9 Moving and deleting paragraphs
+
+Right-click a paragraph and choose **Move Paragraph Up** or **Move Paragraph Down** to swap it with its neighbour, or **Delete Paragraph** to remove it. With several paragraphs selected, they move or go together. Each is one step for **Ctrl+Z**. A heading moved this way leaves its section behind; to move a whole section, use `grind text move` (section 8.3).
+
+# 5. Spelling and grammar
 
 grind checks spelling as you type, in text documents and in the text of spreadsheet cells. A word grind does not know gets a red wavy line. The word you are still typing is left alone until you finish it.
 
 ## 5.1 Languages
 
-grind checks English (US), German, French, Spanish, Italian, Portuguese (Portugal) and Polish. A document is checked in one language at a time. The status bar of the word processor shows which.
+grind checks English (US), German, French, Spanish, Italian, Portuguese (Portugal) and Polish.
 
-The language is **Automatic** unless you choose one. grind then uses the language the document states, if it states one, and otherwise judges from the words in it.
+Unless you choose otherwise, spelling is checked in **All languages**: a word is right if any of the seven dictionaries knows it, so a French name in an English letter is not marked. Suggestions come from the document's main language: the one the document states, or else the one most of its words are in.
 
-To choose, open **Spelling Language**:
+To check in one language alone, or to turn spelling off, use the **language picker** at the right-hand end of the status bar. It shows a globe for all languages, the flag of the language's country for one, or **Off**; click it to choose. On Windows and in the terminal it shows letters instead, `ALL` or `DE`. The same choice is in the menus:
 
-- In the spreadsheet window, it is in the View menu (the eye button), next to **Check Spelling**, which turns spelling on and off (**Shift+F7**). The command palette has **Spelling Language…** as well.
+- In the spreadsheet window, the View menu (the eye button) has **Spelling Language**, next to **Check Spelling**, which turns spelling on and off (**Shift+F7**).
 - In the word processor window, it is the **Spelling** submenu of the main menu.
-- In the browser, the command palette lists **Spelling: automatic**, **Spelling: off** and one entry for each language.
-- In the terminal, type `:spell de`, `:spell auto` or `:spell off`.
+- In the browser, the command palette lists **Spelling: all languages**, **Spelling: off** and one entry for each language.
+- In the terminal, type `:spell de`, `:spell auto` (all languages) or `:spell off`.
 
 Your choice is remembered, separately for spreadsheets and for text documents, and it holds for every document you open until you change it. It is your setting, and it is never written into a document. If you turn spelling off, it stays off.
 
@@ -367,6 +407,71 @@ Right-click a misspelt word. The menu lists suggestions; choose one to replace t
 In the browser, put the cursor in the word and press **Ctrl+K**: the palette lists the suggestions, **Ignore** and **Add to your dictionary**, and **Go to the next misspelling**. The browser fetches a language's dictionary the first time it needs it, so the first check in a language takes a moment.
 
 In a spreadsheet only typed text is checked: never a number, a date or the result of a formula.
+
+## 5.3 Your personal dictionary
+
+Words you keep with **Add to Dictionary** go into your **personal dictionary**. It holds for every document and every language, and it is never written into a document. To see it, remove a word or add one by hand, open **Personal Dictionary…**: in the word processor it is in the **Spelling** submenu, in the spreadsheet window in the View menu and under the language picker. In the browser the palette has **Spelling: your dictionary…** and **Spelling: add a word to your dictionary…**. In the terminal, `:dict` lists the words, and `:dict add word` and `:dict rm word` change the list. From the command line:
+
+```
+$ grind words
+$ grind words --add Hunspell
+$ grind words --remove Hunspell
+```
+
+The windows, the terminal and the command line share one list, kept in a file of yours (`~/.config/grind/words`). The browser keeps its own.
+
+## 5.4 Grammar
+
+grind also checks grammar in text documents. A built-in checker looks for common mistakes in English and German: a word written twice, *its* where *it's* is meant, *then* for *than*, *a* before a vowel sound, a missing comma before *dass* or *weil*, a space before a full stop, and more. Each paragraph is checked in the language its own words are in. The checker is on unless you turn it off, and nothing leaves your computer.
+
+A finding gets a blue wavy line, and a suggestion about style a dotted one (the Mac marks them with green dots). Right-click it: the menu starts with what is wrong and what it could be instead, and choosing one replaces the text. **Ignore Rule** stops that kind of finding from being reported, in every document, until you report it again (section 10).
+
+![The word processor window, with grammar findings underlined in an English and a German paragraph](user-guide.images/img-3d040213d44ab340.png)
+
+**Style suggestions** point out wordiness rather than mistakes: *in order to* where *to* will do, *at this point in time*, too many *very*s, a sentence of more than 40 words. They are off unless you turn them on.
+
+- In the word processor window, the main menu has a **Grammar** submenu with **Check Grammar**, which turns grammar on and off, and **Style Suggestions**.
+- On Windows, the View menu has **Check Grammar** and **Grammar Style Suggestions**, and **Ctrl+F7** goes to the next finding.
+- On the Mac, the Spelling menu has **Check Grammar With Spelling**, **Grammar Style Suggestions** and **Next Grammar Finding** (**Option+Cmd+;**).
+- In the browser, the palette has **Grammar: check**, **Grammar: off** and **Grammar: style suggestions too**. With the cursor in a finding, **Ctrl+K** lists its replacements and **Ignore this rule**.
+- In the terminal, `}` and `{` go to the next and previous finding and show what is wrong on the status line; `:fix 1` takes the first replacement. `:grammar off`, `:grammar on` and `:grammar style on` are the switches.
+
+Your choices are remembered for every document.
+
+## 5.5 LanguageTool
+
+The built-in checker is small on purpose. For a much fuller check, in many more languages, grind can ask **LanguageTool**, a free grammar checker that runs as a server. You can run it on your own computer, use LanguageTool's public server, or use a LanguageTool Premium account. Until you set one up, grind does not ask it.
+
+**On your own computer.** With Podman or Docker installed, start a server:
+
+```
+$ podman run -d --rm --name grind-lt -p 8010:8010 docker.io/erikvl87/languagetool
+```
+
+The image is made by the community, not by LanguageTool; any LanguageTool server will do. Then tell grind where it is, and check that it answers:
+
+```
+$ grind grammar http://localhost:8010 --with-builtin
+$ grind grammar --check-server
+```
+
+`--with-builtin` keeps the built-in checker on as well. Its findings appear at once and LanguageTool's a moment later; where both mark the same words, LanguageTool's is the one shown. Your text stays on your computer.
+
+**LanguageTool's public server.** `grind grammar public` needs no setup, but your text is sent to LanguageTool over the internet, and the server takes only a limited amount of text a minute. On the command line, a whole document is sent there only with `--public-ok`.
+
+**LanguageTool Premium.** Put your account's user name and API key in the environment, then choose it:
+
+```
+$ export GRIND_LANGUAGETOOL_USER=you@example.com
+$ export GRIND_LANGUAGETOOL_KEY=your-api-key
+$ grind grammar premium
+```
+
+grind never writes the key to a file.
+
+`grind grammar builtin` goes back to the built-in checker, and `grind grammar off` turns grammar off altogether. `grind grammar` on its own prints what is set. The setting is yours, kept in `~/.config/grind/grammar`, and the windows and the terminal follow it. They ask LanguageTool shortly after you stop typing, only about the paragraphs that changed, and say where your text goes. If the server does not answer, grind says so once and tries again later. In the terminal, `:grammar http://localhost:8010` or `:grammar public` sets it as well.
+
+The browser has a setting of its own: the palette's **Grammar: LanguageTool server…** asks for an address or `public`, and **Grammar: LanguageTool off** stops asking. A server on your computer must allow the page to ask it (LanguageTool's `--allow-origin` option), which the container above does. Premium is not offered in the browser, because the page keeps no keys.
 
 # 6. Using grind in a terminal
 
@@ -419,6 +524,27 @@ Type `:` and a command, then **Enter**.
 | `:lint` | Check the document |
 | `:source` | Show the document as plain text |
 
+## 6.3 More commands
+
+| **Command or key** | **What it does** |
+| --- | --- |
+| `}`, `{` | Next and previous grammar finding (text) |
+| `:grammar off` | Grammar off; `:grammar on`, `:grammar style on`, and `:grammar ignore` for the rule at the cursor (text) |
+| `:grammar http://localhost:8010` | Ask LanguageTool as well (section 5.5) |
+| `:dict` | Your personal dictionary; `:dict add word`, `:dict rm word` |
+| `:move p12` | Move this block before p12 (text) |
+| `:print` | Print the document, through the system's `lp` (text) |
+| `:merge`, `:unmerge` | Merge the selected cells, or undo the merge |
+| `:hide`, `:show` | Hide or show the selected columns; `:hide rows` and `:show rows` for rows |
+| `:rotate up` | Turn the text: `45`, `up`, `down` or `none` |
+| `:filter` | Filter buttons over the table; again to remove them |
+| `:format-table --totals` | Format the table, with a totals row |
+| `:rule yellow =B3>10` | A conditional format; `:rules` lists them, `:rule!` removes them |
+| Space | Tick or untick a checkbox |
+| `:welcome` | Back to the welcome pane |
+
+`y` copies to the system clipboard as well, in terminals that allow it, so you can paste into other programs. `:help` lists every command.
+
 # 7. Using grind in the browser
 
 ![A spreadsheet in the browser](user-guide.images/img-faf768ac6516e543.png)
@@ -434,6 +560,12 @@ Press **Ctrl+K**, or click **Commands**, type a few letters of what you want, an
 Click **Open…**, or drop a file anywhere on the page. **Save** downloads a copy to your downloads folder. It cannot write over the file you opened, because a web page has no access to your files.
 
 Your documents never leave your computer: the page reads and writes them itself. Your spelling choices and your own word list are kept by the browser for this page only, and clearing the page's data clears them.
+
+## 7.3 Shortcuts and recent documents
+
+**F1** lists the page's keyboard shortcuts. What the windows do from menus is in the palette: for example **Merge cells**, **Hide row(s)**, **Rotate text up**, **Filter rows**, **Format as table**, **Format as table with totals…**, **Conditional format for the selection…**, **Change the chart…** and the **Grammar** commands (section 5.4).
+
+The page keeps a copy of the last four documents you opened or saved, up to about 750 KB each, in the browser's storage. The welcome pane lists them, and in the palette they are **Open** and the document's name. **Forget the recent documents** removes them.
 
 # 8. The command line
 
@@ -514,6 +646,47 @@ $ grind sheet spelling off
 
 The first command lists the misspelt words in a document, with suggestions. `grind text spelling` and `grind sheet spelling` set the remembered language for each kind of document, the same setting the windows use. Without a value they print the current one.
 
+## 8.6 Grammar from the command line
+
+```
+$ grind text grammar letter.fodt
+p2+75   builtin:repeated-word   grammar   the   “the” twice
+p3+8    builtin:its-it's        grammar   its   “it's”: it is   it's
+$ grind text correct letter.fodt p3+8 its "it's"
+$ grind text grammar letter.fodt --picky
+$ grind text grammar letter.fodt --languagetool http://localhost:8010
+```
+
+Each line is where a finding starts, its rule, its kind, the text it covers, what is wrong and what it could be instead. `grind text correct` makes one change, and refuses if the text there is no longer what you named. `--picky` adds style suggestions. `--languagetool` asks a server this once, whatever is set; `--builtin` uses the built-in checker alone. `grind lint` reports the built-in checker's findings too, so a script can stop on them. Section 5.5 shows how `grind grammar` sets the checker, and `grind grammar --ignore` with a rule's name stops reporting it.
+
+## 8.7 More commands
+
+Every command has `--help`. Beyond those above, these are worth knowing:
+
+| **Command** | **What it does** |
+| --- | --- |
+| `grind sheet clear` | Empty a cell or a range |
+| `grind sheet height`, `grind sheet fit` | Set row heights, or fit rows and columns to their content |
+| `grind sheet hide` | Hide or, with `--unhide`, show columns or rows |
+| `grind sheet merge` | Merge a range, or with `--unmerge` undo it |
+| `grind sheet checkbox` | Add a checkbox, tick it, or take it away |
+| `grind sheet filter` | Filter rows by their values |
+| `grind sheet format-table` | Format a range as a table, with an optional totals row |
+| `grind sheet rule` | Add, list or remove conditional formats |
+| `grind sheet remove` | Delete a sheet |
+| `grind sheet fmt` | Print a formula in its tidy form |
+| `grind sheet correct`, `grind text correct` | Replace one misspelt word |
+| `grind sheet chart-add`, `chart-edit`, `chart-list`, `chart-remove`, `chart-reshape`, `chart-style` | Add, change, list, remove, move and colour charts |
+| `grind text insert`, `grind text delete`, `grind text move` | Add, delete and move blocks |
+| `grind text split`, `grind text join` | Split a block in two, or join it with the next |
+| `grind text erase` | Erase characters, keeping the blocks |
+| `grind text image`, `grind text alt` | Insert a picture, and give it alternative text |
+| `grind text caret` | Move a caret by lines and print where it lands |
+| `grind text words` | Count words and characters |
+| `grind words` | Your personal dictionary |
+| `grind project` | Print any document in its plain-text form |
+| `grind licences` | The third-party components grind is built from, and their licences |
+
 # 9. Automating work
 
 ## 9.1 Scripts that build documents
@@ -553,6 +726,12 @@ $ grind sheet project book.ods
 
 You can edit the `.grind` file in any text editor and open it again in grind. A change to one cell changes one line of the file, which makes the form useful for reviewing a spreadsheet somebody else made and for keeping documents in a version-control system such as Git.
 
+## 9.5 Writing scripts in an editor
+
+`grind init` sets up a directory for writing scripts and plain-text documents in an editor: a starter script with its data and tests, and settings, snippets and recommended extensions for VS Code. In a git repository it also lets `git diff` show the cells that changed in a spreadsheet. It never overwrites a file you changed.
+
+`grind lsp` is a language server: point your editor's language client at it, and it shows problems on the right line, a formula's result beside it, and completion for functions and names. `grind definitions` prints what an editor needs to complete a script's functions.
+
 # 10. Troubleshooting
 
 **A file does not open.** Check what the file is with `grind info` followed by the file name. Password-protected files cannot be opened. A flat file is plain text, so a damaged one can be read in a text editor.
@@ -563,7 +742,11 @@ You can edit the `.grind` file in any text editor and open it again in grind. A 
 
 **Numbers look wrong.** Check the document's locale (section 3.10). `1.234` is one thousand two hundred thirty-four in German and one and a bit in English.
 
-**Spelling underlines almost every word.** The document is being checked in the wrong language. Choose the right one, or **Automatic** (section 5.1).
+**Spelling underlines almost every word.** The document is being checked in one language that is not its own. Choose the right one, or **All languages** (section 5.1).
+
+**Grammar marks something that is right.** Right-click it and choose **Ignore Rule**. To have the rule reported again, run `grind grammar` to see the rules you ignored, and `grind grammar --unignore` with the rule's name. Style suggestions can be turned off on their own (section 5.4).
+
+**LanguageTool finds nothing.** Run `grind grammar --check-server`: it says whether the server answers, and which version it is. Check that the container is running (`podman ps`). In the browser, the server must be started with `--allow-origin`.
 
 **A document looks different in another program.** Programs can draw the same ODF slightly differently, and a font that is not installed is replaced. To share exactly how a page looks, export a PDF.
 
@@ -603,6 +786,8 @@ These are the shortcuts of the Linux windows. In the word processor, **Ctrl+?** 
 | F9 | Recalculate |  |
 | Shift+F7 | Spelling on and off |  |
 | Ctrl+? |  | List of shortcuts |
+
+**In the other programs.** In the browser, **F1** lists the shortcuts. In the terminal, `]` and `[` go to the next and previous misspelt word, `}` and `{` to the next and previous grammar finding. On Windows, **F7** goes to the next misspelt word and **Ctrl+F7** to the next grammar finding; on the Mac, **Option+Cmd+;** goes to the next grammar finding.
 
 # Appendix B: Glossary
 

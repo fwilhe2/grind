@@ -223,7 +223,7 @@ through the same request and response code, §3.10).
   built-in one is dropped, so one phrase never carries two underlines.
 - **Setting one up.** The guide offers three routes, simplest first:
   1. **A container.** `docker run --rm -p 8010:8010 erikvl87/languagetool` (or `podman run`),
-     then `grind grammar languagetool http://localhost:8010`. This is a community image
+     then `grind grammar http://localhost:8010`. This is a community image
      (Erik van Leeuwen, LGPL-2.1), not one LanguageTool publishes. It takes `Java_Xmx` for
      memory and an n-gram directory mounted at `/ngrams` for LanguageTool's better
      confusion-word rules. The guide names the image and its version as tested, and says what
@@ -233,8 +233,8 @@ through the same request and response code, §3.10).
   3. **LanguageTool's server jar** with Java 8 or later.
 
   `--allow-origin` is what the browser shell needs (the container sets it). `grind grammar
-  check-server` asks `/v2/languages` and reports the version and languages, the first thing to
-  try when it does not work.
+  --check-server` checks one sentence and reports the version and where the text goes, the
+  first thing to try when it does not work.
 - **Proving it against a real server.** G5's offset check and loop G′ run against the
   container, started by `scripts/` the way `soffice-docker` starts the LibreOffice oracle, so
   "a server is available" means "podman or docker is".
@@ -324,7 +324,7 @@ through the same request and response code, §3.10).
 | **G2** | `grind-grammar` with the language-neutral rules and English; `grind text grammar`; lint rules | Fixtures per rule; corpus precision measured and recorded; `sample-text.sh` gains a line |
 | **G3** | German rules | As G2, on German text — which needs a German corpus first, the gov.uk one being English |
 | **G4** | GTK text shell | Rendered by `--render-to`; the popover's actions walked |
-| **G5** | `grind-languagetool`, the default feature, `--languagetool`, `grind grammar check-server`, the public server's throttle and notice | Mock-server tests; UTF-16 offsets verified against the container; binary size, crates and licences measured and recorded; the `--no-default-features` build still passing |
+| **G5** | `grind-languagetool`, the default feature, `--languagetool`, `grind grammar --check-server`, the public server's throttle and notice | Mock-server tests; UTF-16 offsets verified against the container; binary size, crates and licences measured and recorded; the `--no-default-features` build still passing |
 | **G6** | Loop G′ | The report over the corpus, a first `FLOOR`, and the backlog in §10 |
 | **G7** | TUI, Windows, Mac, browser | A filled feature-matrix row each |
 
