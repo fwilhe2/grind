@@ -205,6 +205,7 @@ fn prepare(kind: DocumentKind, path: Option<PathBuf>) -> io::Result<Pane> {
             Ok(Pane::Text(Box::new(
                 text::app::App::new(core, redraw, path)
                     .spelling()
+                    .grammar()
                     .noticed(imported),
             )))
         }

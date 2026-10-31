@@ -29,6 +29,11 @@ Word processor:
   :fix N         :fix <word>       — replace the misspelt word here with suggestion N, or that
   :spell [auto|<lang>|off]         — which language: en de fr es it pt pl; :spell ignore and
                                       :spell add accept a word
+  }  {                             — the next or previous grammar finding; :fix N takes its
+                                      Nth replacement
+  :grammar [on|off|style on|off|ignore|<url>|public|premium]
+                                   — the grammar checker: the built-in one, LanguageTool too,
+                                      or off; ignore stops drawing the rule here
   :dict          :dict add|rm WORD — your own dictionary: Enter on a word removes it
   :outline       — every heading, indented; Enter goes to one
   :table [rows cols]                — a table before this block, drawn as a grid

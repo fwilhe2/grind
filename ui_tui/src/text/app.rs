@@ -315,6 +315,10 @@ pub struct App {
     speller: Option<Arc<grind_spell::Speller>>,
     /// [`RedrawFlag::edits`] as of the last time the language was reconsidered.
     spelling_seen: u64,
+    /// Grammar: the remembered setting (`doc/grammar.md` decision 5), and whether `:grammar`
+    /// writes it — on for a pane opened on a file, off in a test.
+    grammar: grind_languagetool::setting::Setting,
+    remember_grammar: bool,
 }
 
 impl App {
@@ -361,7 +365,29 @@ impl App {
             checked: None,
             speller: None,
             spelling_seen: 0,
+            grammar: grind_languagetool::setting::Setting {
+                builtin: false,
+                ..Default::default()
+            },
+            remember_grammar: false,
         }
+    }
+
+    /// Check grammar as the person last said — the remembered setting — and remember what
+    /// `:grammar` chooses from here on. What a pane opened on a file does.
+    pub fn grammar(mut self) -> Self {
+        self.grammar = grind_languagetool::setting::Setting::load();
+        self.remember_grammar = true;
+        self.check_grammar();
+        self
+    }
+
+    /// Check grammar under `setting`, remembering nothing: what a test wants.
+    #[cfg(test)]
+    fn grammar_in(mut self, setting: grind_languagetool::setting::Setting) -> Self {
+        self.grammar = setting;
+        self.check_grammar();
+        self
     }
 
     /// Start checking spelling as the person last said text documents should be checked — the
@@ -478,6 +504,7 @@ impl App {
             Action::Plain => self.set_selection_style(&CharStyle::default(), "plain"),
             Action::Next(forward) => self.step_match(forward),
             Action::Misspelt(forward) => self.step_misspelt(forward),
+            Action::Grammar(forward) => self.step_grammar(forward),
             Action::Escape => {
                 self.anchor = None;
                 // Escape puts the search away as well as the selection: a document still marked
@@ -995,6 +1022,8 @@ impl App {
                 self.status = crate::dict::command(cmd[5..].trim(), self.speller.as_deref());
             }
             _ if cmd.starts_with("fix ") => self.cmd_fix(cmd[4..].trim()),
+            "grammar" => self.cmd_grammar(""),
+            _ if cmd.starts_with("grammar ") => self.cmd_grammar(cmd[8..].trim()),
             "plain" => self.set_selection_style(&CharStyle::default(), "plain"),
             "find" => self.cmd_find(""),
             "mark!" => self.cmd_unmark(),
@@ -1675,7 +1704,11 @@ impl App {
     /// `]` offered, or by the word given, one undo step (`App::correct`).
     fn cmd_fix(&mut self, with: &str) {
         let Some(wrong) = self.misspelt_here() else {
-            self.status = "no misspelt word here \u{2014} ] goes to the next".to_string();
+            if let Some(flag) = self.grammar_here() {
+                self.fix_grammar(&flag, with);
+                return;
+            }
+            self.status = "nothing to fix here \u{2014} ] or } goes to the next".to_string();
             return;
         };
         let with = match with.parse::<usize>() {
@@ -1717,6 +1750,180 @@ impl App {
                 Err(e) => format!("{} is ignored, but not saved: {e}", wrong.word),
             },
         };
+    }
+
+    // --- grammar (`doc/grammar.md`) ---
+
+    /// Attach the built-in checker as [`App::grammar`] says, or none.
+    fn check_grammar(&mut self) {
+        let checker: Option<Arc<dyn grind_core::grammar::Checker>> = match self.grammar.builtin {
+            true => Some(Arc::new(grind_grammar::Builtin {
+                picky: self.grammar.style,
+            })),
+            false => None,
+        };
+        self.core.set_checker(checker);
+        self.redraw.raise();
+    }
+
+    /// Every grammar finding in `blocks`, but the ignored rules'.
+    fn grammar_flags(&self, blocks: Range<usize>) -> Vec<grind_text::grammar::Flag> {
+        self.core
+            .grammar(blocks)
+            .into_iter()
+            .filter(|flag| !self.grammar.ignored.contains(&flag.finding.rule))
+            .collect()
+    }
+
+    /// The grammar finding the caret is in, if any.
+    fn grammar_here(&self) -> Option<grind_text::grammar::Flag> {
+        let at = self.caret;
+        self.grammar_flags(at.block..at.block + 1)
+            .into_iter()
+            .find(|f| f.finding.range.start <= at.offset && at.offset <= f.finding.range.end)
+    }
+
+    fn grammar_on(&self) -> bool {
+        self.grammar.builtin || self.grammar.languagetool.is_some()
+    }
+
+    /// `}` / `{` — put the caret on the next or previous grammar finding, wrapping, and say what
+    /// is wrong and what it might be.
+    fn step_grammar(&mut self, forward: bool) {
+        if !self.grammar_on() {
+            self.status = "grammar is off \u{2014} :grammar on turns it on".to_string();
+            return;
+        }
+        let all = self.grammar_flags(0..usize::MAX);
+        let carets: Vec<Caret> = all.iter().map(|f| f.caret()).collect();
+        let towards = match forward {
+            true => grind_text::find::Towards::Next,
+            false => grind_text::find::Towards::Previous,
+        };
+        let Some(at) = grind_text::find::step(&carets, self.caret, towards) else {
+            self.status = "no grammar findings".to_string();
+            return;
+        };
+        self.caret = carets[at];
+        self.anchor = None;
+        self.goal_x = None;
+        let finding = &all[at].finding;
+        let offers: Vec<String> = finding
+            .replacements
+            .iter()
+            .take(5)
+            .enumerate()
+            .map(|(i, with)| match with.trim().is_empty() {
+                true => format!("{} (remove)", i + 1),
+                false => format!("{} {with}", i + 1),
+            })
+            .collect();
+        self.status = format!(
+            "{} of {}: {} \u{2014} {}  (:fix N, :grammar ignore)",
+            at + 1,
+            all.len(),
+            finding.message,
+            match offers.is_empty() {
+                true => "no replacement".to_string(),
+                false => offers.join("  "),
+            }
+        );
+    }
+
+    /// `:fix N` or `:fix text` on a grammar finding: its Nth replacement, or the text given.
+    fn fix_grammar(&mut self, flag: &grind_text::grammar::Flag, with: &str) {
+        let with = match with.parse::<usize>() {
+            Ok(n) => match flag.finding.replacements.get(n.wrapping_sub(1)) {
+                Some(with) => with.clone(),
+                None => {
+                    self.status = format!("no replacement {n} here");
+                    return;
+                }
+            },
+            Err(_) => with.to_string(),
+        };
+        let range = flag.finding.range.clone();
+        let covered: String = self
+            .core
+            .get_viewport(flag.block..flag.block + 1)
+            .get(flag.block)
+            .map(|view| {
+                view.text
+                    .chars()
+                    .skip(range.start)
+                    .take(range.len())
+                    .collect()
+            })
+            .unwrap_or_default();
+        match self.core.correct(flag.caret(), &covered, &with) {
+            Ok(()) => {
+                self.caret = Caret {
+                    block: flag.block,
+                    offset: range.start + with.chars().count(),
+                };
+                self.anchor = None;
+                self.goal_x = None;
+                self.status = format!("\u{201c}{covered}\u{201d} \u{2192} \u{201c}{with}\u{201d}");
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// `:grammar` — which checker, and against what; `:grammar on|off`, `style on|off`, a
+    /// LanguageTool server (`<url>`, `public`, `premium`), and `ignore` for the finding here.
+    fn cmd_grammar(&mut self, arg: &str) {
+        use grind_languagetool::setting::Choice;
+        let mut words = arg.split_whitespace();
+        match (words.next(), words.next()) {
+            (None, _) => {
+                self.status = match (self.grammar.builtin, &self.grammar.languagetool) {
+                    (false, None) => "grammar is off \u{2014} :grammar on turns it on".to_string(),
+                    (true, None) => "grammar by the built-in checker".to_string(),
+                    (builtin, Some(choice)) => format!(
+                        "grammar by LanguageTool ({}){}",
+                        choice.tag(),
+                        if builtin {
+                            " and the built-in checker"
+                        } else {
+                            ""
+                        }
+                    ),
+                };
+                return;
+            }
+            (Some("on"), _) => self.grammar.builtin = true,
+            (Some("off"), _) => {
+                self.grammar.builtin = false;
+                self.grammar.languagetool = None;
+            }
+            (Some("style"), Some(on)) => self.grammar.style = on == "on",
+            (Some("ignore"), _) => {
+                let Some(flag) = self.grammar_here() else {
+                    self.status = "no grammar finding here \u{2014} } goes to the next".to_string();
+                    return;
+                };
+                self.grammar.ignored.push(flag.finding.rule.clone());
+                self.status = format!("{} is ignored", flag.finding.rule);
+            }
+            (Some(word), _) => match Choice::parse(word) {
+                Some(choice) => self.grammar.languagetool = Some(choice),
+                None => {
+                    self.status = format!(
+                        "{word}? \u{2014} :grammar on|off|style on|off|ignore|<url>|public|premium"
+                    );
+                    return;
+                }
+            },
+        }
+        if self.remember_grammar
+            && let Err(e) = self.grammar.save()
+        {
+            self.status = format!("not remembered: {e}");
+        }
+        self.check_grammar();
+        if !arg.starts_with("ignore") {
+            self.cmd_grammar("");
+        }
     }
 
     /// `:s/old/new/` — every occurrence, one undo step, because that is what `App::replace` is.
@@ -2108,13 +2315,29 @@ impl App {
         line: Range<usize>,
         selection: &Option<(Caret, Caret)>,
         caret: Option<usize>,
-        misspelt: &[grind_text::Misspelling],
+        (misspelt, flagged): (&[grind_text::Misspelling], &[grind_text::grammar::Flag]),
     ) -> Vec<Span<'static>> {
         let marks = self.find.spans(view.index);
         let misspelt: Vec<Range<usize>> = misspelt
             .iter()
             .filter(|m| m.block == view.index)
             .map(|m| m.offset..m.offset + m.len)
+            .collect();
+        // A finding covering nothing (a missing comma) is marked on the character before it.
+        let flagged: Vec<(Range<usize>, bool)> = flagged
+            .iter()
+            .filter(|f| f.block == view.index)
+            .map(|f| {
+                let range = f.finding.range.clone();
+                let quiet = matches!(
+                    f.finding.kind,
+                    grind_text::grammar::Kind::Typography | grind_text::grammar::Kind::Style
+                );
+                match range.is_empty() {
+                    true => (range.start.saturating_sub(1)..range.end, quiet),
+                    false => (range, quiet),
+                }
+            })
             .collect();
         let chars: Vec<char> = view.text.chars().collect();
         // The selection, clipped to this block — it may start pages above and end below.
@@ -2150,7 +2373,11 @@ impl App {
             mark(caret);
             mark(caret + 1);
         }
-        for span in marks.iter().chain(&misspelt) {
+        for span in marks
+            .iter()
+            .chain(&misspelt)
+            .chain(flagged.iter().map(|(range, _)| range))
+        {
             mark(span.start);
             mark(span.end);
         }
@@ -2202,6 +2429,16 @@ impl App {
             // A misspelt word is underlined in red. A terminal that cannot colour an underline
             // draws it in the text's ink, like the document's own underline; `]` says which words
             // they are.
+            // A grammar finding is underlined in blue, a style one in grey; spelling's red is
+            // drawn after, so a misspelt word inside a finding stays red.
+            if let Some((_, quiet)) = flagged
+                .iter()
+                .find(|(span, _)| span.start <= start && end <= span.end)
+            {
+                style = style
+                    .add_modifier(Modifier::UNDERLINED)
+                    .underline_color(if *quiet { Color::DarkGray } else { Color::Blue });
+            }
             if misspelt
                 .iter()
                 .any(|span| span.start <= start && end <= span.end)
@@ -2328,6 +2565,21 @@ impl App {
                 _ => Vec::new(),
             };
 
+        // Grammar findings, but not one ending at the caret while typing.
+        let flagged: Vec<grind_text::grammar::Flag> =
+            match (touched.iter().min(), touched.iter().max()) {
+                (Some(lo), Some(hi)) => self
+                    .grammar_flags(*lo..hi + 1)
+                    .into_iter()
+                    .filter(|f| {
+                        !(typing
+                            && f.block == self.caret.block
+                            && f.finding.range.end == self.caret.offset)
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+
         let mut lines = Vec::with_capacity(self.height);
         for row in &rows {
             lines.push(match row {
@@ -2367,7 +2619,7 @@ impl App {
                         range.clone(),
                         &selection,
                         caret,
-                        &misspelt,
+                        (&misspelt, &flagged),
                     ));
                     // With `:names` on, a block holding a bookmark says so after its text, not
                     // inside it: a mark inside the line would be an offset the caret counts
@@ -2399,7 +2651,7 @@ impl App {
                                         range.clone(),
                                         &selection,
                                         caret,
-                                        &misspelt,
+                                        (&misspelt, &flagged),
                                     )
                                 }
                                 None => Vec::new(),
@@ -3747,6 +3999,60 @@ mod tests {
         assert!(!underlined(&mut app, 4));
         press(&mut app, KeyCode::Char(']'));
         assert!(app.status.contains("spelling is off"), "{}", app.status);
+    }
+
+    /// Grammar (`doc/grammar.md` §7): the built-in checker's finding is underlined in blue, `}`
+    /// goes to it with the message and replacements on the status line, `:fix 1` takes the
+    /// first, `:grammar ignore` stops drawing its rule, and `:grammar off` stops it all.
+    #[test]
+    fn a_grammar_finding_is_underlined_stepped_to_and_fixed() {
+        let mut app = app(&["We saw the the cat on the mat.", "All good here."])
+            .grammar_in(grind_languagetool::setting::Setting::default());
+        let underline = |app: &mut App, col: u16| {
+            let mut terminal = Terminal::new(TestBackend::new(50, 6)).unwrap();
+            terminal.draw(|frame| app.draw(frame)).unwrap();
+            let style = terminal.backend().buffer()[(GUTTER + col, 1)].style();
+            style
+                .add_modifier
+                .contains(Modifier::UNDERLINED)
+                .then_some(style.underline_color)
+        };
+        assert_eq!(
+            underline(&mut app, 11),
+            Some(Some(Color::Blue)),
+            "the second the"
+        );
+        assert_eq!(underline(&mut app, 0), None);
+
+        press(&mut app, KeyCode::Char('}'));
+        assert_eq!(
+            app.caret,
+            Caret {
+                block: 0,
+                offset: 10
+            }
+        );
+        assert!(app.status.contains("twice"), "{}", app.status);
+        assert!(app.status.contains("1 (remove)"), "{}", app.status);
+
+        app.run_command("fix 1");
+        assert_eq!(
+            app.core.get_viewport(0..1).get(0).unwrap().text,
+            "We saw the cat on the mat."
+        );
+        press(&mut app, KeyCode::Char('u'));
+        app.caret = Caret {
+            block: 0,
+            offset: 11,
+        };
+        app.run_command("grammar ignore");
+        assert_eq!(underline(&mut app, 11), None, "its rule is ignored");
+        press(&mut app, KeyCode::Char('}'));
+        assert!(app.status.contains("no grammar findings"), "{}", app.status);
+
+        app.run_command("grammar off");
+        press(&mut app, KeyCode::Char('}'));
+        assert!(app.status.contains("grammar is off"), "{}", app.status);
     }
 
     #[test]

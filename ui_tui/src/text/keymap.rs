@@ -61,6 +61,9 @@ pub enum Action {
     /// status line (`doc/spelling.md`). vi's own `]s`/`[s` without the `s`: this map has no
     /// second key to wait for, and nothing else here claims a bracket.
     Misspelt(bool),
+    /// `}` / `{` — the next or previous grammar finding, with what is wrong and what it might be
+    /// on the status line (`doc/grammar.md`): the brackets' neighbours, for spelling's neighbour.
+    Grammar(bool),
     /// `Esc` — leave Visual mode without doing anything to what was selected.
     Escape,
 }
@@ -106,6 +109,8 @@ pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<
         KeyCode::Char('N') => Some(Action::Next(false)),
         KeyCode::Char(']') => Some(Action::Misspelt(true)),
         KeyCode::Char('[') => Some(Action::Misspelt(false)),
+        KeyCode::Char('}') => Some(Action::Grammar(true)),
+        KeyCode::Char('{') => Some(Action::Grammar(false)),
         KeyCode::Char('u') => Some(Action::Undo),
         KeyCode::Char('r') if ctrl => Some(Action::Redo),
         KeyCode::Char(':') => Some(Action::Command),
