@@ -254,11 +254,32 @@ trait Shell {
     fn take_switch(&mut self) -> Option<app::Switch>;
     /// The redraw flag the loop waits on.
     fn redraw(&self) -> Arc<RedrawFlag>;
+    /// Whether work in the background wants the loop to wake without a key.
+    fn waiting(&self) -> bool {
+        false
+    }
+    /// Collect or start that work.
+    fn tick(&mut self) {}
 }
 
 macro_rules! shell {
     ($t:ty) => {
+        shell!(@impl $t, {});
+    };
+    // A shell with work in the background forwards `waiting` and `tick` too.
+    ($t:ty, background) => {
+        shell!(@impl $t, {
+            fn waiting(&self) -> bool {
+                <$t>::waiting(self)
+            }
+            fn tick(&mut self) {
+                <$t>::tick(self);
+            }
+        });
+    };
+    (@impl $t:ty, { $($background:tt)* }) => {
         impl Shell for $t {
+            $($background)*
             fn draw(&mut self, frame: &mut ratatui::Frame<'_>) {
                 <$t>::draw(self, frame);
             }
@@ -282,7 +303,7 @@ macro_rules! shell {
 }
 
 shell!(sheet::app::App);
-shell!(text::app::App);
+shell!(text::app::App, background);
 shell!(welcome::Welcome);
 
 fn event_loop<S: Shell>(terminal: &mut Tui, shell: &mut S) -> io::Result<Option<app::Switch>> {
@@ -290,10 +311,15 @@ fn event_loop<S: Shell>(terminal: &mut Tui, shell: &mut S) -> io::Result<Option<
     // The terminal is shared by successive panes, and the last one's picture is still on it.
     terminal.clear()?;
     while !shell.should_quit() {
+        shell.tick();
         if redraw.take() {
             terminal.draw(|frame| shell.draw(frame))?;
         }
-        // Block until something happens; a TUI has no reason to spin.
+        // Block until something happens; a TUI has no reason to spin — unless an answer from the
+        // background is wanted, which it is woken for five times a second.
+        if shell.waiting() && !event::poll(std::time::Duration::from_millis(200))? {
+            continue;
+        }
         match event::read()? {
             Event::Key(key) => shell.on_key(key),
             Event::Paste(text) => shell.on_paste(&text),
