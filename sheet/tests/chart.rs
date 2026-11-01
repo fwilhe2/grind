@@ -264,6 +264,39 @@ fn a_chart_survives_a_save_and_reopen_in_both_forms() {
     }
 }
 
+/// An edit that leaves a sheet's charts alone splices its `table:shapes` back as they were,
+/// still pointing at `Object 1/` — so the package keeps that directory too.
+#[test]
+fn an_unrelated_edit_keeps_a_packaged_chart() {
+    let app = App::new();
+    filled(&app);
+    app.add_chart(
+        0,
+        &spec(
+            ChartKind::Bar,
+            Some("A2:A4"),
+            &[("B2:B4", Some("B1"))],
+            ChartAxis::default(),
+            ChartAxis::default(),
+        ),
+        "1cm",
+        "2cm",
+        "10cm",
+        "8cm",
+    )
+    .unwrap();
+    let bytes = app.save_bytes(Form::Package).expect("writes");
+
+    let edited = App::new();
+    edited.open_bytes("test.ods", &bytes).expect("reads");
+    edited.set_col_hidden(0, 3..4, true).unwrap();
+    let bytes = edited.save_bytes(Form::Package).expect("writes");
+
+    let reopened = App::new();
+    reopened.open_bytes("test.ods", &bytes).expect("reads");
+    assert_eq!(reopened.charts(0).unwrap().len(), 1);
+}
+
 /// A user-assigned colour is a sticky override: it survives a save and reopen exactly, even
 /// though the writer regenerates the chart's own document from scratch every time
 /// (`doc/chart-format.md`).

@@ -72,18 +72,36 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
         };
     }
 
+    let origin = source.filter(|source| source.body.is_some());
+    // The chart directories this save replaces: a table's own only when the table is gone or its
+    // charts are written again — a spliced table keeps its `table:shapes`, which still point there.
+    let dropped: Vec<String> = match (origin, source) {
+        (Some(origin), _) => origin
+            .tables
+            .iter()
+            .enumerate()
+            .filter(|(ti, _)| {
+                doc.sheets
+                    .iter()
+                    .find(|s| s.origin.table == Some(*ti))
+                    .is_none_or(|s| s.origin.charts)
+            })
+            .flat_map(|(_, t)| t.charts.iter().cloned())
+            .collect(),
+        (None, Some(source)) => source.chart_parts.clone(),
+        (None, None) => Vec::new(),
+    };
     // Directories a regenerated chart must not take: everything already in the package except
-    // the charts this build read, which the regenerated ones replace.
+    // the ones it replaces.
     let original = source.and_then(|source| source.package.as_deref());
-    let taken: HashSet<String> = match (original, source) {
-        (Some(original), Some(source)) => package::entry_names(original)
+    let taken: HashSet<String> = match original {
+        Some(original) => package::entry_names(original)
             .into_iter()
             .filter_map(|name| name.split_once('/').map(|(dir, _)| dir.to_owned()))
-            .filter(|dir| !source.chart_parts.contains(dir))
+            .filter(|dir| !dropped.contains(dir))
             .collect(),
-        _ => HashSet::new(),
+        None => HashSet::new(),
     };
-    let origin = source.filter(|source| source.body.is_some());
     let (generated, objects) = content(doc, form, &taken, origin);
     let content =
         match source.and_then(|source| envelope::merge(&source.bytes, generated.as_bytes())) {
@@ -156,11 +174,7 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
                 added.extend(package::subdocument_entries(sub));
             }
             Ok(envelope::repackage(
-                original,
-                &content,
-                &replace,
-                &source.chart_parts,
-                &added,
+                original, &content, &replace, &dropped, &added,
             )?)
         }
         (Form::Package, _, _) => {

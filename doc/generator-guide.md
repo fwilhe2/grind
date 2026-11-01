@@ -648,6 +648,7 @@ directory under `examples/`, and a script reads its data from the directory it i
 | `examples/darlehen/` | one repayment schedule per scenario as live formulas, with a chart each and a comparison sheet |
 | `examples/notenbuch/` | a grade book whose weights and grade scale are cells the formulas look up; the tests are the boundaries |
 | `examples/loc/` | a document that lives in git as a build product |
+| `examples/cve/` | grype scans as a workbook to filter: findings, distinct vulnerabilities and packages, counted by severity, with a wrapper (`cve.sh`) that adds the filters and colours a script cannot say |
 
 `cli/tests/cli.rs` builds **every** script it finds under `examples/` and runs the tests of each
 one that has any, so a new example needs no entry in a list. All the data is made up. Numbers in a letter

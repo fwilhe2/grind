@@ -1,0 +1,6 @@
+{
+  "scans": [
+    { "name": "base", "file": "base.json" },
+    { "name": "app", "file": "app.json" }
+  ]
+}
