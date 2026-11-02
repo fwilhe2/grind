@@ -78,8 +78,9 @@ const NOT_SHIPPED: &[&str] = &[
 /// a starter script, its data and editor settings. CC0 so that a project started from them owes
 /// nothing to this one's licence — a model somebody writes by editing the starter is theirs, not
 /// a derivative of AGPL code. `examples/` and `.vscode/` are MIT for the same reason with a line
-/// of credit kept; the READMEs, CONTRIBUTING.md and CLAUDE.md are prose, so CC-BY-4.0, and the
-/// AppStream metainfo is CC0 because the format asks for a permissive `metadata_license`.
+/// of credit kept; the READMEs, CONTRIBUTING.md, CLAUDE.md and AGENTS.md are prose, so
+/// CC-BY-4.0, and the AppStream metainfo is CC0 because the format asks for a permissive
+/// `metadata_license`.
 const OURS_OTHERWISE: &[&str] = &[
     "cli/templates/",
     "examples/",
@@ -87,6 +88,7 @@ const OURS_OTHERWISE: &[&str] = &[
     "README",
     "CONTRIBUTING.md",
     "CLAUDE.md",
+    "AGENTS.md",
     "editors/vscode/README.md",
     "ui_sheet_gtk/data/io.github.fwilhe2.Sheet.metainfo.xml",
     "ui_text_gtk/data/io.github.fwilhe2.Text.metainfo.xml",
