@@ -243,7 +243,7 @@ Press **Ctrl+F** to search. grind searches what the cells show, and moves to eac
 
 ## 3.14 Checking a spreadsheet
 
-Press **F8** for **Check the Document**. grind lists problems such as a formula that gives an error, a reference to an empty cell, a saved value that is out of date, or a misspelt word. Click an entry to go to the cell.
+Press **F8** for **Check the Document**. grind lists problems such as a formula that gives an error, a reference to an empty cell, a saved value that is out of date, or a misspelt word. It also finds mistakes inside formulas: a number typed over one cell of a formula filled down a column, a total whose range stops one row short, and a rate typed into a formula when a named cell already holds it. Click an entry to go to the cell.
 
 ## 3.15 CSV files
 

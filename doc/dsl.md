@@ -530,11 +530,24 @@ by a test") made mechanical rather than promised.
 | A formula referencing an empty cell | `empty-reference` | sheet — single-cell references only; an empty cell inside a range is ordinary |
 | A formula referencing a deleted sheet | `missing-sheet` | sheet — an error, and `doc/not-doing.md` §3's known bug seen from the other side |
 | A cell whose cached value disagrees with its formula | `stale-value` | sheet — loop B's check, pointed at one document |
+| A cell breaking the formula filled either side of it | `inconsistent-formula` | sheet — the overwritten formula, typed number or edited one. A row or column whose neighbours break there too (a subtotal row), one that breaks on the next line as well (a column of shares between totals) and two formulas taking turns are patterns, and left alone |
+| A range one cell short of the numbers it sums | `short-range` | sheet — `SUM`, `AVERAGE`, `COUNT`, `COUNTA`, `MIN`, `MAX`, `PRODUCT`, `MEDIAN` over a one-wide range, where the cell just outside is a typed number with the look of the one just inside and the line ends there. A cell several formulas leave out is a chosen boundary |
+| A number in a formula that a named cell holds | `hard-coded-input` | sheet — `doc/view-modes.md` §4.2's magic constant inside formula text; fractions only (`19%` counts as `0.19`), since a whole number is as often a count or an argument |
+| A computed cell nothing reads, mid-calculation | `unread-result` | sheet — a hint, off by default: the formula beside it reads everything it reads and is not its fill. Sheets with a chart are skipped |
 | A colour outside `style::PALETTE` | `off-palette` | both, as a hint, off by default |
 | A construct the projection cannot spell | `unspellable` | both — the bijectivity guard, as a diagnostic. Charts for the sheet, images for text |
 | A word the spelling dictionary does not know | `misspelt` | both — a warning, and only when a dictionary is attached (`doc/spelling.md`): a build without `grind-spell` has the rule and never fires it, and in a spreadsheet only typed text is checked and `grind sheet spelling off` silences it |
 | A grammar, punctuation or typography finding | `grammar` | text — a warning, from the built-in checker (`doc/grammar.md`); a build without `grind-grammar` has the rule and never fires it. With `--hints` the checker's opt-in rules run too |
 | A style suggestion | `style` | text — a hint, off by default, from the same checker's style rules |
+
+The four formula rules were measured on 2026-11-02 over 1,130 `.ods`/`.fods` files —
+LibreOffice's `sc/qa` corpus, this repository's and public government workbooks — before they
+were switched on, and each exception in their rows is a false alarm that measurement found.
+Outside LibreOffice's function tests, whose sheets put unrelated formulas in a line on purpose,
+`inconsistent-formula` fires in 6 files and `short-range` in 2, and what it finds there reads as
+real: a `5000` typed over a filled `SUM`, `=SUM([.D24];[.D27])` between two `SUM`s of
+`24:27`, a `MAX` reading 33 rows fewer than its neighbours. `hard-coded-input` fires in none of
+them, and `unread-result` in 30 — which is why it is a hint.
 
 Two rows of the original table became two rules rather than one (`empty-reference` and
 `missing-sheet`): they share a sentence and nothing else — one is an error and the other is a

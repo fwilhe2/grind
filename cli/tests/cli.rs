@@ -2248,6 +2248,10 @@ fn lint_reports_what_a_document_says_about_itself_and_writes_nothing() {
         "stale-value",
         "missing-sheet",
         "empty-reference",
+        "inconsistent-formula",
+        "short-range",
+        "hard-coded-input",
+        "unread-result",
         "unspellable",
     ] {
         assert!(rules.contains(id), "--rules omits {id}:\n{rules}");

@@ -619,6 +619,14 @@ cp "$book" "$out/stale.fods"
 sheet set "$out/stale.fods" B2 1 >/dev/null
 sheet lint "$out/stale.fods" || true       # an error exits non-zero, so CI can gate on it
 
+# The two mistakes that survive every review: a number typed over one cell of a filled formula,
+# and a total whose range stops a row short. Each finding names the formula that was meant.
+say "lint: a number typed over a filled formula, and a sum one row short"
+cp "$book" "$out/mistakes.fods"
+sheet set "$out/mistakes.fods" D4 250 >/dev/null
+sheet set "$out/mistakes.fods" C8 '=SUM([.C2:.C6])' >/dev/null
+sheet lint "$out/mistakes.fods" --off misspelt --off unspellable --off stale-value
+
 # --- spelling: the words in text cells -------------------------------------------------------
 # `doc/spelling.md`, "In a spreadsheet". Only typed text is checked — never a number, a date or a
 # formula's result — and every misspelt word comes with its cell and where in it the word starts,
