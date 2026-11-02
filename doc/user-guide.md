@@ -1,18 +1,18 @@
 # grind User Guide
 
-Draft of 16 October 2026. grind has no release yet. This guide describes the software as it is built today, and says so where a program lacks a feature or works differently.
+This guide explains how to use grind’s spreadsheet and text document programs. Some features vary by platform; the relevant sections identify those differences.
 
 # 1. About this guide
 
 ## 1.1 Who this guide is for
 
-This guide is for people who write letters and reports, keep budgets and lists in spreadsheets, and want their files in an open format. You do not need to be a programmer. Chapters 1 to 7 cover everyday work in the windows, the terminal and the browser. Chapters 8 and 9 show how to repeat work from the command line and with scripts, and you can skip them until you need them.
+This guide covers everyday tasks in spreadsheets and text documents, followed by instructions for the terminal, browser, command line and scripts. The command-line and scripting sections are optional.
 
 ## 1.2 What grind is
 
-grind is an office suite with two kinds of document: **spreadsheets** and **text documents**. Both are saved in the OpenDocument Format (ODF), the international standard that LibreOffice, Collabora Office and many other programs read and write. A document you make in grind is not locked to grind.
+grind is an office suite with two kinds of document: **spreadsheets** and **text documents**. Both use the OpenDocument Format (ODF), which LibreOffice and other office programs can open and edit. The same files work in other ODF-compatible office programs.
 
-The suite comes as several programs that share one engine. A formula, a spelling rule or a page layout means the same thing in all of them, and a document made in one opens in all the others.
+The programs share document formats and core editing features. A document saved in one program can be opened in another.
 
 | **Program** | **What it is** | **Runs on** |
 | --- | --- | --- |
@@ -22,21 +22,19 @@ The suite comes as several programs that share one engine. A formula, a spelling
 | grind web | Both kinds of document, in a browser tab | Any current browser |
 | grind for Windows | Both kinds of document, in one window | Windows |
 | grind for Mac | Both kinds of document, in one window | macOS |
-| grind | The command line, with every function | Linux, macOS, Windows |
+| grind | Command-line document editor | Linux, macOS, Windows |
 
-Which program you use is a matter of taste. Most screenshots in this guide show the Linux windows and the browser.
+Choose the program that fits your platform and workflow. Most screenshots show the Linux desktop programs and the browser.
 
-## 1.3 What grind does differently
-
-Four things set grind apart from other office suites.
+## 1.3 Key features
 
 **You can see what is data and what is a calculation.** A spreadsheet can mark every cell as an input, a formula or a label, and show the whole document as readable text. Section 3.12 explains how.
 
 **Formulas can be read in plain English.** `=SUM(B2:B7)` can be shown as *Sum(Number: B2:B7)*, and a long formula can be explained step by step.
 
-**Everything works from the command line.** Every function of every program is also a command, for people, for shell scripts and for other programs.
+**Use the command line to inspect and edit documents.** Scripts can repeat common tasks.
 
-**Repetitive documents are built by scripts, not macros.** grind has no macros, and never will. Instead, a small script can build a document from data, such as a letter for each person on a list.
+**Generate documents from data with scripts.** For example, a script can create a letter for each person in a list.
 
 ## 1.4 Conventions used in this guide
 
@@ -56,9 +54,9 @@ $ grind-text-gtk letter.fodt
 $ grind-tui report.fodt
 ```
 
-The terminal program, `grind-tui`, reads the file to see whether it is a spreadsheet or a text document, so one command opens both. To start an empty text document in it, type `grind-tui --text`.
+The terminal program, `grind-tui`, identifies a spreadsheet or text document from its contents. To start a new text document, run `grind-tui --text`.
 
-The Windows and Mac programs, and the browser version, open on a welcome screen with three choices: a new spreadsheet, a new text document, or a document you already have.
+The Windows and Mac programs and the browser open to a welcome screen. Choose a new spreadsheet, a new text document or an existing document.
 
 ## 2.2 The spreadsheet window
 
@@ -97,12 +95,12 @@ Press **Ctrl+S** to save. A document without a name asks for one. In the word pr
 
 grind writes ODF in two forms:
 
-- A **flat** file (`.fods`, `.fodt`) is one readable text file. grind offers it first, because it works well with version control and because you can open it in a text editor if you ever need to.
+- **A flat file** (`.fods` or `.fodt`) is a single readable text file. This format is useful for version control.
 - A **package** (`.ods`, `.odt`) is a compressed archive, which is what most other programs save by default.
 
 Both open in every program that reads ODF. Choose the form by the extension you give the file.
 
-When you save a document that another program made, grind keeps everything it does not understand itself, and writes it back unchanged. Saving a document never makes it worse: if grind could not write something back faithfully, it refuses to save rather than lose it.
+When you save a document created in another program, grind preserves content and formatting it does not support. If grind cannot preserve that content, it refuses to save the document.
 
 ## 2.6 Undo and redo
 
@@ -166,13 +164,13 @@ grind implements the functions of the OpenFormula standard's core set, plus many
 
 To browse them, choose **Functions…** from the main menu or the command palette. The list gives each function a plain-English name, a category and a short description. In a terminal, `grind sheet functions` prints the same list.
 
-If a document uses a function that grind does not implement, the cell keeps the value it was saved with, and grind tells you which cells are affected.
+If a document uses an unsupported function, grind keeps the saved result in the cell and reports which cells are affected.
 
 ## 3.6 Reading a formula in plain English
 
 The formula bar can show a formula as a sentence. `=ROUND(A1; 2)` reads as *Round(Value: A1, Digits: 2)*, and `=SUM(B2:B7)` as *Sum(Number: B2:B7)*. This only changes how the formula is shown, never the formula itself. Turn it on and off with **Read Formulas as Sentences** in the View menu.
 
-For a long, nested formula, choose **Explain This Formula**. It shows the formula taken apart, one function at a time, with the value of each part.
+Choose **Explain This Formula** to see each part of a nested formula and the value it produces.
 
 ## 3.7 Filling, copying and clearing
 
@@ -220,7 +218,7 @@ To change a chart after it is made, right-click it and choose **Edit Chart…**.
 
 ## 3.12 Seeing what a spreadsheet is made of
 
-A table of numbers does not show which numbers somebody typed and which a formula calculated. grind can show it.
+Use cell roles to distinguish entered values, formulas, labels and errors in a spreadsheet.
 
 ![Cell roles: inputs in blue, calculations and labels marked](user-guide.images/img-4e49585c801b138b.png)
 
@@ -347,7 +345,7 @@ A bookmark or a section address keeps pointing at the same place when you edit a
 
 ## 4.5 Pages, print preview and PDF
 
-While you write, a document is one continuous column. grind lays it out on pages when you print or export it.
+The editor displays text in one continuous column. grind lays out pages when you open print preview, print or export to PDF.
 
 ![Print preview of a letter on A4](user-guide.images/img-d2c972610d028941.png)
 
@@ -359,7 +357,7 @@ While you write, a document is one continuous column. grind lays it out on pages
 
 The pages are those the document states: the paper size, the margins, and the header and footer with their page numbers. A document that states no page is printed on A4. grind prints only on the international ISO paper sizes, such as A4 and A5.
 
-The same document always produces the same PDF. The PDF has an outline of the headings, and it is tagged, so screen readers can read it.
+The PDF includes an outline based on the document headings and is tagged for screen readers.
 
 ## 4.6 Headers, footers and letterheads
 
@@ -381,7 +379,7 @@ Right-click a paragraph and choose **Move Paragraph Up** or **Move Paragraph Dow
 
 # 5. Spelling and grammar
 
-grind checks spelling as you type, in text documents and in the text of spreadsheet cells. A word grind does not know gets a red wavy line. The word you are still typing is left alone until you finish it.
+Spelling is checked as you type in text documents and spreadsheet cells. Words that are not in the selected dictionaries have a red wavy underline. The word you are typing is checked after you finish it.
 
 ## 5.1 Languages
 
@@ -396,7 +394,7 @@ To check in one language alone, or to turn spelling off, use the **language pick
 - In the browser, the command palette lists **Spelling: all languages**, **Spelling: off** and one entry for each language.
 - In the terminal, type `:spell de`, `:spell auto` (all languages) or `:spell off`.
 
-Your choice is remembered, separately for spreadsheets and for text documents, and it holds for every document you open until you change it. It is your setting, and it is never written into a document. If you turn spelling off, it stays off.
+The selected spelling language applies to all documents of that type until you change it. The setting is stored on your computer, not in the document. Turning spelling off keeps it off until you choose another setting.
 
 ## 5.2 Correcting a word
 
@@ -422,13 +420,13 @@ The windows, the terminal and the command line share one list, kept in a file of
 
 ## 5.4 Grammar
 
-grind also checks grammar in text documents. A built-in checker looks for common mistakes in English and German: a word written twice, *its* where *it's* is meant, *then* for *than*, *a* before a vowel sound, a missing comma before *dass* or *weil*, a space before a full stop, and more. Each paragraph is checked in the language its own words are in. The checker is on unless you turn it off, and nothing leaves your computer.
+The built-in grammar checker looks for common errors in English and German, including repeated words, commonly confused words, missing commas and extra spaces. It checks each paragraph using the language detected in that paragraph. Grammar checking is on by default and runs on your computer.
 
 A finding gets a blue wavy line, and a suggestion about style a dotted one (the Mac marks them with green dots). Right-click it: the menu starts with what is wrong and what it could be instead, and choosing one replaces the text. **Ignore Rule** stops that kind of finding from being reported, in every document, until you report it again (section 10).
 
 ![The word processor window, with grammar findings underlined in an English and a German paragraph](user-guide.images/img-3d040213d44ab340.png)
 
-**Style suggestions** point out wordiness rather than mistakes: *in order to* where *to* will do, *at this point in time*, too many *very*s, a sentence of more than 40 words. They are off unless you turn them on.
+**Style suggestions** flag wordy phrases, repeated intensifiers and sentences longer than 40 words. They are off by default.
 
 - In the word processor window, the main menu has a **Grammar** submenu with **Check Grammar**, which turns grammar on and off, and **Style Suggestions**.
 - On Windows, the View menu has **Check Grammar** and **Grammar Style Suggestions**, and **Ctrl+F7** goes to the next finding.
@@ -477,7 +475,7 @@ The browser has a setting of its own: the palette's **Grammar: LanguageTool serv
 
 # 6. Using grind in a terminal
 
-`grind-tui` runs in any terminal. It works like the editor vi: the keyboard is in one of a few **modes**.
+`grind-tui` runs in a terminal and uses a vi-style keyboard with separate **modes** for navigation, typing, selection and commands.
 
 | **Mode** | **For** | **Enter it with** |
 | --- | --- | --- |
@@ -561,7 +559,7 @@ Press **Ctrl+K**, or click **Commands**, type a few letters of what you want, an
 
 Click **Open…**, or drop a file anywhere on the page. **Save** downloads a copy to your downloads folder. It cannot write over the file you opened, because a web page has no access to your files.
 
-Your documents never leave your computer: the page reads and writes them itself. Your spelling choices and your own word list are kept by the browser for this page only, and clearing the page's data clears them.
+The browser processes documents locally and downloads a copy when you save. It does not upload a document when you open or save it. If you use LanguageTool’s public server for grammar checking, the selected text is sent to that service (section 5.5). Spelling settings and your personal dictionary are stored in the browser; clearing the page’s data removes them.
 
 ## 7.3 Shortcuts and recent documents
 
@@ -571,7 +569,7 @@ The page keeps a copy of the last four documents you opened or saved, up to abou
 
 # 8. The command line
 
-Every function of grind is also a command. This is useful for repeating a job, for working on a server, and for checking a file without opening it.
+Use the command line to inspect, edit, convert and check documents without opening an editor. Commands can also be used in scripts.
 
 ## 8.1 The shape of a command
 
@@ -581,7 +579,7 @@ $ grind <area> <verb> <file> [arguments]
 
 The area is `sheet` for spreadsheets and `text` for text documents. A few verbs work on any document and find out what it is by reading it: `info`, `lint`, `convert` and `project`.
 
-Each command reads the file, does one thing and writes the file back. Two options work with every command: `--dry-run` shows what a command would do without writing anything, and `--format json` gives the answer in a form other programs can read. Add `--help` to any command for a full description.
+Editing commands write changes to the file. Read-only commands display information without changing it. Use `--dry-run` to preview an edit without saving it, `--format json` for machine-readable output, and `--help` for command details.
 
 ## 8.2 A spreadsheet from the command line
 
@@ -693,16 +691,16 @@ Every command has `--help`. Beyond those above, these are worth knowing:
 
 ## 9.1 Scripts that build documents
 
-A script is a small text file that describes a document. It is written in a simple language called Rhai. A script cannot read your files, use the network or start programs. It can read one data file in JSON format from its own folder. Because of these limits, the same script and data always produce exactly the same document.
+A Rhai script describes a document to generate. It cannot read arbitrary files, access the network or start programs. It can read one JSON data file from its own folder, so the same script and data produce the same document.
 
 ```
 $ grind build budget.rhai -o budget.fods
 $ grind test budget.rhai
 ```
 
-`grind build` builds the document. `grind test` runs the checks written into the script, such as "the total is the sum of the rows", and reports any that fail.
+`grind build` creates the document. `grind test` runs the checks in the script and reports any failures.
 
-Scripts suit documents you make again and again from changing data: a monthly report, a loan schedule, a grade book, or a letter to each person on a list. The `examples` folder has a working script for each of these.
+Scripts are useful for documents generated repeatedly from changing data, such as monthly reports, loan schedules, grade books or letters. The `examples` folder contains working scripts.
 
 ## 9.2 A letter to each person on a list
 
@@ -716,7 +714,7 @@ The template is an ordinary text document with the page, the letterhead and the 
 
 ## 9.3 Checking documents automatically
 
-`grind lint` looks for the mistakes people make in spreadsheets and documents: a formula that gives an error, a saved value that is out of date, a style that does not exist, a misspelt word. It never changes the document, and it ends with an error when it finds one, so it can check documents automatically.
+`grind lint` checks spreadsheets and text documents for issues such as formula errors, stale results, missing styles and spelling mistakes. It does not change the document. The command returns an error if it finds a problem, so it can be used in automated checks.
 
 ## 9.4 The plain-text form
 
@@ -726,13 +724,13 @@ The `.grind` form writes a document as readable text. A spreadsheet becomes a li
 $ grind sheet project book.ods
 ```
 
-You can edit the `.grind` file in any text editor and open it again in grind. A change to one cell changes one line of the file, which makes the form useful for reviewing a spreadsheet somebody else made and for keeping documents in a version-control system such as Git.
+Edit a `.grind` file in a text editor, then open it in grind. Spreadsheet cells are stored on separate lines, so version-control tools such as Git can show which cells changed.
 
 ## 9.5 Writing scripts in an editor
 
-`grind init` sets up a directory for writing scripts and plain-text documents in an editor: a starter script with its data and tests, and settings, snippets and recommended extensions for VS Code. In a git repository it also lets `git diff` show the cells that changed in a spreadsheet. It never overwrites a file you changed.
+`grind init` prepares a directory for scripts and plain-text documents. It can add a starter script, data and tests, along with editor settings and snippets for VS Code. In a Git repository, it also configures `git diff` to show spreadsheet cell changes. It preserves files you have edited.
 
-`grind lsp` is a language server: point your editor's language client at it, and it shows problems on the right line, a formula's result beside it, and completion for functions and names. `grind definitions` prints what an editor needs to complete a script's functions.
+`grind lsp` provides language-server support in compatible editors, including diagnostics, formula results and completion for functions and names. `grind definitions` prints the function definitions used for script completion.
 
 # 10. Troubleshooting
 
