@@ -106,6 +106,33 @@ pub(crate) enum Top {
         as_read: bool,
     },
 
+    /// Show what changed between two versions of a document
+    ///
+    /// Compares what the documents say rather than how their files spell it. For a spreadsheet:
+    /// the cells whose formula or value was edited, apart from the cells that only compute
+    /// something else as a result, sheets added, removed or renamed, restyled cells and names. For
+    /// a text document: blocks added (+), removed (-), changed (~, word by word, with [-removed-]
+    /// and {+added+} words), moved (>) and reformatted (*). A removed block is numbered as it was
+    /// in the earlier version, every other one as it is in the later. Both files must be the same
+    /// kind.
+    ///
+    /// To have git use it, add `*.ods diff=grind` — and the same for .fods, .odt and .fodt — to
+    /// `.gitattributes`, and run:
+    ///
+    ///   git config diff.grind.command "grind diff --git"
+    Diff {
+        /// The earlier version and the later one; with --git, the seven arguments git passes
+        #[arg(required = true, num_args = 2..)]
+        files: Vec<PathBuf>,
+        /// Take the arguments git passes to a diff command: path, then the old file, its hash and
+        /// mode, then the new file, its hash and mode
+        #[arg(long)]
+        git: bool,
+        /// Exit with status 1 when the documents differ, as `diff` does
+        #[arg(long)]
+        exit_code: bool,
+    },
+
     /// Build a document from a script
     ///
     /// Runs a Rhai script that returns a document, and writes it. The output's extension picks the

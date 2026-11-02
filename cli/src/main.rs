@@ -14,6 +14,7 @@
 //! format.
 
 mod args;
+mod diff;
 mod fit;
 #[cfg(feature = "grammar")]
 mod grammar;
@@ -424,6 +425,13 @@ fn run(cli: &Cli) -> Result<Report, String> {
             };
             Ok(lint_report(file, findings))
         }
+
+        // Two files of one kind, compared by their core; neither is written.
+        Top::Diff {
+            files,
+            git,
+            exit_code,
+        } => Ok(Report::Diff(diff::run(files, *git, *exit_code)?)),
 
         // The same function the two application verbs call, so the three cannot print three
         // different projections of one file.

@@ -56,6 +56,8 @@ pub enum Report {
     Components(Vec<ComponentReport>),
     /// What `grind init` wrote, kept and set (`doc/init.md`).
     Init(crate::init::InitReport),
+    /// What changed between two versions of a document.
+    Diff(crate::diff::DiffReport),
 }
 
 /// One third-party component, as `grind licences --list` prints it.
@@ -645,6 +647,7 @@ impl Report {
     pub fn failed(&self) -> bool {
         matches!(self, Report::Lint(lint) if lint.failed())
             || matches!(self, Report::Tests(tests) if tests.failed > 0)
+            || matches!(self, Report::Diff(diff) if diff.failed())
             || self.import_refused()
     }
 
@@ -731,6 +734,7 @@ impl Report {
                 }
             }
             Report::Init(init) => init.print_text(),
+            Report::Diff(diff) => diff.print_text(),
             Report::Components(components) => {
                 for c in components {
                     println!("{}\t{}\t{}\t{}", c.name, c.version, c.licence, c.source);

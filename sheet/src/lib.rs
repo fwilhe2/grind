@@ -31,6 +31,7 @@ pub mod table_format;
 
 // In and out: ODF, CSV, the projection, and lint.
 pub mod csv;
+pub mod diff;
 pub mod lint;
 pub mod odf;
 pub mod projection;
@@ -1529,6 +1530,16 @@ impl App {
             report.locate_in(source);
         }
         report
+    }
+
+    /// What changed from `before` to this document, cell by cell ([`diff`]). A read of both.
+    pub fn diff(&self, before: &App) -> diff::Diff {
+        if std::ptr::eq(self, before) {
+            return diff::Diff::default();
+        }
+        let after = self.state.read().unwrap();
+        let earlier = before.state.read().unwrap();
+        diff::diff(&earlier.doc, &after.doc)
     }
 
     /// Every calculated cell in the document, sheet by sheet and address by address — plain

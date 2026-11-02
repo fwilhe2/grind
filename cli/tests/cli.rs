@@ -2591,3 +2591,84 @@ fn fit_sizes_columns_to_their_text_and_rows_to_their_content() {
     ok(&["fit", &f]);
     assert_eq!(ok(&["height", &f, "1:2"]), "", "the whole sheet");
 }
+
+/// `grind diff` compares what two versions say: the edited cell apart from what it recomputed,
+/// a block changed word by word, git's seven arguments, and `--exit-code` for scripts.
+#[test]
+fn diff_shows_what_changed_between_two_versions() {
+    let dir = Sandbox::new("diff");
+    let (before, after) = (dir.path("before.fods"), dir.path("after.fods"));
+    let (b, a) = (s(&before), s(&after));
+    ok(&["new", &b]);
+    ok(&["set", &b, "A1", "2"]);
+    ok(&["set", &b, "A2", "=[.A1]*2"]);
+    ok(&["recalc", &b]);
+    std::fs::copy(&before, &after).expect("copied");
+
+    let untouched = std::fs::read(&before).expect("there");
+    assert!(ok_top(&["diff", &b, &a]).contains("no differences"));
+    ok(&["set", &a, "A1", "5", "--recalc"]);
+    let shown = ok_top(&["diff", &b, &a]);
+    assert!(shown.contains("~ A1: 2 → 5"), "{shown}");
+    assert!(
+        shown.contains("1 computed cell changed as a result: A2"),
+        "{shown}"
+    );
+
+    let json = ok_top(&["--format", "json", "diff", &b, &a]);
+    assert_eq!(field(&json, "same"), "false");
+    assert!(json.contains("\"recomputed\":[{\"at\":\"A2\""), "{json}");
+
+    // A diff is not a failure unless asked to be one, as with `git diff --exit-code`.
+    assert!(!grind(&["diff", "--exit-code", &b, &a]).status.success());
+    assert!(grind(&["diff", "--exit-code", &b, &b]).status.success());
+    assert_eq!(
+        std::fs::read(&before).expect("there"),
+        untouched,
+        "a diff writes nothing"
+    );
+
+    // Git passes a path, then the old file, hash and mode, then the new; `/dev/null` for a side
+    // that does not exist.
+    let git = ok_top(&[
+        "diff",
+        "--git",
+        "book.fods",
+        &b,
+        "0000",
+        "100644",
+        &a,
+        "1111",
+        "100644",
+    ]);
+    assert!(git.starts_with("book.fods (spreadsheet)"), "{git}");
+    assert!(git.contains("~ A1: 2 → 5"), "{git}");
+    let added = ok_top(&[
+        "diff",
+        "--git",
+        "book.fods",
+        "/dev/null",
+        ".",
+        ".",
+        &a,
+        "1111",
+        "100644",
+    ]);
+    assert!(added.contains("added: the whole document"), "{added}");
+
+    // A text document, word by word.
+    let (tb, ta) = (dir.path("before.fodt"), dir.path("after.fodt"));
+    let (tb, ta) = (s(&tb), s(&ta));
+    ok_top(&["text", "new", &tb]);
+    ok_top(&["text", "set", &tb, "p1", "The quick brown fox."]);
+    std::fs::copy(&tb, &ta).expect("copied");
+    ok_top(&["text", "set", &ta, "p1", "The slow brown fox."]);
+    let words = ok_top(&["diff", &tb, &ta]);
+    assert!(
+        words.contains("~ p1 paragraph: The [-quick-]{+slow+} brown fox."),
+        "{words}"
+    );
+
+    // Two kinds of document are not two versions of one.
+    assert!(!grind(&["diff", &b, &ta]).status.success());
+}

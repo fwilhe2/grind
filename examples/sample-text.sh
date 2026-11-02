@@ -268,6 +268,10 @@ cp "$out/sample.grind" "$out/sample-before.grind"
 text type "$out/sample.grind" p2 "Still " >/dev/null
 diff -u "$out/sample-before.grind" "$out/sample.grind" | tail -n +3 || true
 
+# And the same keystroke as `grind diff` reads it: the block, and the words that changed in it.
+say "diff: the words a keystroke changed"
+"$GRIND" diff "$out/sample-before.grind" "$out/sample.grind"
+
 # The suite-level verb reads the kind out of the file, which is what git needs to diff a package:
 # with `*.odt diff=grind` in .gitattributes and `git config diff.grind.textconv "grind project"`,
 # `git diff` shows an edited .odt as the blocks that changed (doc/init.md §3.8).

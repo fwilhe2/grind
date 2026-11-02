@@ -577,7 +577,7 @@ Use the command line to inspect, edit, convert and check documents without openi
 $ grind <area> <verb> <file> [arguments]
 ```
 
-The area is `sheet` for spreadsheets and `text` for text documents. A few verbs work on any document and find out what it is by reading it: `info`, `lint`, `convert` and `project`.
+The area is `sheet` for spreadsheets and `text` for text documents. A few verbs work on any document and find out what it is by reading it: `info`, `lint`, `diff`, `convert` and `project`.
 
 Editing commands write changes to the file. Read-only commands display information without changing it. Use `--dry-run` to preview an edit without saving it, `--format json` for machine-readable output, and `--help` for command details.
 
@@ -628,13 +628,14 @@ A block is addressed as in the window: `p12`, `#intro` or `§2.1`.
 ```
 $ grind info report.fodt
 $ grind lint report.fodt
+$ grind diff book-before.fods book.fods
 $ grind convert book.fods book.ods
 $ grind convert book.fods book.grind
 $ grind sheet import workbook.xlsx workbook.fods
 $ grind text import letter.docx letter.fodt
 ```
 
-`grind info` tells you what a document is and what is in it. `grind lint` checks it and ends with an error when it finds one, so you can use it in a script. `grind convert` changes between the package, the flat file and the `.grind` form. The two `import` commands convert an Excel workbook or a Word document into ODF.
+`grind info` tells you what a document is and what is in it. `grind lint` checks it and ends with an error when it finds one, so you can use it in a script. `grind convert` changes between the package, the flat file and the `.grind` form. The two `import` commands convert an Excel workbook or a Word document into ODF. `grind diff` shows what changed between two versions of a document: in a spreadsheet the cells whose formula or value was edited, apart from those that only compute something else as a result; in a text document the paragraphs added, removed, moved or reworded, word by word. To have `git diff` use it, add `*.ods diff=grind`, and the same for `.fods`, `.odt` and `.fodt`, to `.gitattributes`, and run `git config diff.grind.command "grind diff --git"`.
 
 ## 8.5 Spelling from the command line
 

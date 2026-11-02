@@ -30,6 +30,7 @@ pub mod table_look;
 
 // In and out: ODF, Markdown, the projection, and lint.
 pub mod commonmark;
+pub mod diff;
 pub mod lint;
 pub mod odf;
 pub mod projection;
@@ -755,6 +756,16 @@ impl App {
             counts.headings += usize::from(block.outline_level().is_some());
         }
         counts
+    }
+
+    /// What changed from `before` to this document, block by block ([`diff`]). A read of both.
+    pub fn diff(&self, before: &App) -> diff::Diff {
+        if std::ptr::eq(self, before) {
+            return diff::Diff::default();
+        }
+        let after = self.state.read().unwrap();
+        let earlier = before.state.read().unwrap();
+        diff::diff(&earlier.doc, &after.doc)
     }
 
     /// Check the document against [`lint`]'s rules (`doc/dsl.md` §4.3). A read: nothing is stored.

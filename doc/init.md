@@ -223,6 +223,12 @@ The catch, and why this is a design decision rather than a template line: **`tex
 repository it is run in (and does, when that is a git repository), and the README line it prints
 tells collaborators the one command. This needs I0's suite-level `grind project`.
 
+The same attribute takes a second setting: `git config diff.grind.command "grind diff --git"`
+hands git's two versions to `grind diff`, which prints the cells whose formula or value was
+edited, apart from the cells that only recomputed, and a changed paragraph word by word. Git runs
+it for `git diff`, and for `git log -p` and `git show` only with `--ext-diff`; everywhere else,
+and under `--no-ext-diff`, the `textconv` projection still serves. `init` sets only `textconv`.
+
 ### 3.9 "Later, a VS Code extension that calculates values inline" — three challenges
 
 **(a) For a `.grind`, the values are already inline.** A cached value is part of the

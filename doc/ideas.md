@@ -6,7 +6,9 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Ideas — a document you can read like code
 
-**Status: candidates, unbuilt, nothing decided.** Not normative for anything. `doc/plan.md`'s
+**Status: candidates; 1 and 2 built on 2026-11-02** (`grind diff`, `sheet/src/diff.rs`,
+`text/src/diff.rs`; the four formula rules in `sheet/src/lint.rs`, measured in `doc/dsl.md`
+§4.3), the rest unbuilt and undecided. Not normative for anything. `doc/plan.md`'s
 requirements, `doc/not-doing.md` and the architecture rules in `CLAUDE.md` outrank every word
 here; each item becomes a design document of its own before it becomes code.
 

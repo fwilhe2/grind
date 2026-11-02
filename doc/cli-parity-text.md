@@ -169,6 +169,9 @@ had no width and therefore no lines.
 
 ## Reading
 
+- `diff` — `grind diff <before> <after>`, the suite-level verb, which reads the kind out of both
+  files; block by block: added, removed, moved, reformatted, and a changed block word by word.
+  `--format json` for scripts and `--exit-code` to fail when they differ
 - `get_viewport` — `grind text view [<range>]`, one block per line; `--marks` prefixes each with
   its address and kind, and `--names` writes each bookmark in where it anchors, as `‹intro›`
   (`doc/view-modes.md` §3.6). That last one is not decoration: a bookmark contributes no

@@ -80,7 +80,7 @@ reuse lint                                     # CI gates on it
 ```
 
 `grind` is the CLI: `grind <app> <verb>`, plus suite-level verbs that read the kind from the file
-(`info`, `convert`, `lint`, `project`) and three with no document (`build`, `test`, `init`).
+(`info`, `convert`, `lint`, `project`, `diff`) and three with no document (`build`, `test`, `init`).
 
 ```sh
 cargo run -p grind-cli -- sheet new book.ods

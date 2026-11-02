@@ -191,6 +191,10 @@ stops ratcheting.
 
 ## Reading
 
+- `diff` — `grind diff <before> <after>`, the suite-level verb, which reads the kind out of both
+  files; cell by cell: edits apart from the cells they recomputed, sheets added, removed and
+  renamed, restyled ranges and names. `--format json` for scripts and `--exit-code` to fail when
+  they differ
 - `find` — `grind sheet find <needle>`, one `Sheet1.B2<TAB>input text` line per cell;
   `--match-case`, `--whole-cell`, `--sheet <name>` and `--in <range>` narrow it — the last
   is how a find bar's *Replace* reaches the one cell it is on. What it searches is each

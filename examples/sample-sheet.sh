@@ -494,6 +494,10 @@ printf 'changed lines: %s of %s\n' \
   "$(diff "$out/before.fods" "$out/sample.fods" | grep -c '^[<>]')" \
   "$(wc -l < "$out/before.fods")"
 
+# What the edit *means*, rather than which lines moved: `grind diff` reads both versions.
+say "diff: the same edit, as the cell it changed"
+"$GRIND" diff "$out/before.fods" "$out/sample.fods"
+
 # B8 is `=SUM([.B2:.B7])`, so the edit above left the document disagreeing with itself: the
 # formula is one claim and its cached value is another, and ODF has no dirty bit to write.
 # The warning on stderr is the only thing standing between that and a file everyone —

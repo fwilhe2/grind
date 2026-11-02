@@ -653,6 +653,19 @@ impl Sheet {
 
     /// Every cell holding typed text — a text value and no formula — in reading order: what
     /// spelling checks (`doc/spelling.md`). One step per occupied cell.
+    /// Every cell holding a value or a formula.
+    pub(crate) fn holding(&self) -> BTreeSet<Pos> {
+        let mut out: BTreeSet<Pos> = self.formulas.keys().copied().collect();
+        for (col, column) in self.cols.iter().enumerate() {
+            for row in column.occupied().flatten() {
+                if !column.get(row).is_empty() {
+                    out.insert(Pos::new(row, col as u32));
+                }
+            }
+        }
+        out
+    }
+
     pub fn text_cells(&self) -> Vec<(Pos, String)> {
         let mut out = Vec::new();
         for (col, column) in self.cols.iter().enumerate() {
