@@ -44,7 +44,8 @@ krilla = { version = "=0.8.2", default-features = false, features = ["raster-ima
 # fonts into usvg's own database by bytes, so the second copy costs size and nothing else —
 # accepted 2026-10-06; one again when krilla-svg moves. usvg's `text` feature brings its own shaper for an
 # SVG's labels — a second shaper in the binary, named and accepted, since a chart without its
-# labels is not the chart.
+# labels is not the chart. The three move together; `.github/dependabot.yml` holds usvg and resvg
+# back until krilla-svg does.
 krilla-svg = "=0.8.1"
 resvg = { version = "=0.47.0", default-features = false, features = ["text"] }
 usvg = { version = "=0.47.0", default-features = false, features = ["text"] }

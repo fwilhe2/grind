@@ -9,6 +9,20 @@ updates:
     schedule:
       interval: 'weekly'
       time: '01:00'
+    # usvg and resvg wait for krilla-svg. krilla-svg 0.8.1 (the newest, 2026-06-04) depends on
+    # usvg ^0.47 and resvg ^0.47, and its public API takes `usvg::Tree`. grind-print builds that
+    # tree with its own usvg (`print/src/svg.rs`) and hands it to krilla-svg (PDF) and to resvg
+    # (`print/src/raster.rs`, preview), so all three must resolve to one usvg. Bumping usvg or
+    # resvg alone gives two usvg copies and E0308 "mismatched types" (#71, #72: 0.47 → 0.49).
+    # REMINDER: check each month whether krilla-svg has a release on a newer usvg
+    # (https://crates.io/crates/krilla-svg/versions); krilla-svg is not ignored, so its own
+    # Dependabot PR is also the signal. Then drop this ignore and move krilla-svg, usvg and resvg
+    # together in print/Cargo.toml.
+    ignore:
+      - dependency-name: 'usvg'
+        versions: ['>= 0.48']
+      - dependency-name: 'resvg'
+        versions: ['>= 0.48']
     groups:
       # Group all dependencies by with minor or patch version updates into one
       # PR with production and development dependencies grouped into separate
