@@ -6,31 +6,44 @@ name: dependabot-third-party
 
 # `core/tests/third_party.rs` rewrites `core/src/third_party/data.rs` and fails when a dependency
 # was added, removed or bumped (doc/third-party.md). A Dependabot bump always does that, so its
-# pull request could never be green without a human committing the regenerated file. This runs
-# the test on Dependabot's branch and commits what it rewrote.
+# pull request could never be green without a human committing the regenerated file. This
+# regenerates it on Dependabot's branch and commits it.
 #
-# `pull_request_target` because a `pull_request` run for Dependabot gets a read-only token. That
-# is safe here only because the job is guarded on the actor and runs the *bump's* code, which is
-# a lockfile change and nothing else; never widen the `if`.
-#
-# A push made with the default `GITHUB_TOKEN` starts no workflow, so ci would never re-run on the
-# new commit. Set the repository's **Dependabot** secret `PUSH_TOKEN` to a PAT (or a GitHub App
-# token) with `contents: write`; without it the commit is still made but ci must be re-run by hand.
+# Why it is shaped like this:
+# - `pull_request_target`, because a `pull_request` run for Dependabot gets a read-only token.
+# - The push uses the **Dependabot** secret `PUSH_TOKEN`: a fine-grained PAT on this repository
+#   only, `Contents: read and write` and nothing else. A push with `GITHUB_TOKEN` makes ci's runs
+#   wait for a manual approval. Without the secret the commit is still made that way.
+# - `regenerate` compiles the bumped crates (their `build.rs` runs), so it gets no secret, a
+#   read-only token and no stored credentials. `commit` holds the token and never runs PR code:
+#   it checks out the exact SHA `regenerate` built and copies in one file.
+# - The `if` admits only a pull request Dependabot opened, on a `dependabot/` branch of this
+#   repository, in an event Dependabot itself caused. Forks cannot push branches here, and
+#   Dependabot secrets are given only to runs Dependabot triggered. Never widen it.
 on:
-  pull_request_target:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] -- guarded and split, see above
+    types: [opened, reopened, synchronize]
 
-permissions:
-  contents: write
+permissions: {}
+
+concurrency:
+  group: dependabot-third-party-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   regenerate:
-    if: github.actor == 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository
+    # `github.actor` alone is spoofable; here it only narrows the non-spoofable author check.
+    if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'dependabot/') # zizmor: ignore[bot-conditions]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          token: ${{ secrets.PUSH_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -38,14 +51,46 @@ jobs:
           save-if: false
       # The test rewrites the file as it fails, so the failure is the expected outcome here.
       - run: cargo test --locked -p grind-core --test third_party || true
-      - name: Commit the regenerated list
+      - id: diff
         run: |
           if git diff --quiet -- core/src/third_party/data.rs; then
             echo "third-party list already current"
-            exit 0
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+      - if: steps.diff.outputs.changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: third-party-data
+          path: core/src/third_party/data.rs
+          retention-days: 1
+
+  commit:
+    needs: regenerate
+    if: needs.regenerate.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: third-party-data
+          path: ${{ runner.temp }}/third-party
+      # The push fast-forwards the SHA that was built, so a branch that moved in between makes it
+      # fail rather than overwrite.
+      - name: Commit the regenerated list
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          TOKEN: ${{ secrets.PUSH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          cp "$RUNNER_TEMP/third-party/data.rs" core/src/third_party/data.rs
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add core/src/third_party/data.rs
           git commit -m "Regenerate the third-party list"
-          git push
+          git push "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
