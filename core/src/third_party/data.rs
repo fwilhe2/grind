@@ -1960,7 +1960,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "pulldown-cmark",
-        version: "0.13.5",
+        version: "0.13.6",
         licence: "MIT",
         copyright: "Copyright 2015 Google Inc.",
         source: "https://github.com/raphlinus/pulldown-cmark",
@@ -2257,7 +2257,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "rustls-native-certs",
-        version: "0.8.4",
+        version: "0.8.5",
         licence: "Apache-2.0 OR ISC OR MIT",
         copyright: "",
         source: "https://github.com/rustls/rustls-native-certs",
@@ -2815,7 +2815,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "typed-path",
-        version: "0.12.3",
+        version: "0.13.0",
         licence: "MIT OR Apache-2.0",
         copyright: "By Chip Senkbeil <chip@senkbeil.org>",
         source: "https://github.com/chipsenkbeil/typed-path",
@@ -2950,7 +2950,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "unicode-width",
-        version: "0.2.2",
+        version: "0.2.3",
         licence: "MIT OR Apache-2.0",
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/unicode-rs/unicode-width",
@@ -3526,7 +3526,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "zip",
-        version: "9.0.5",
+        version: "9.1.3",
         licence: "MIT",
         copyright: "Copyright (c) 2014 Mathijs van de Nes",
         source: "https://github.com/zip-rs/zip2",
