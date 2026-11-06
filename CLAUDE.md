@@ -162,7 +162,7 @@ oracle image pinned by digest in `ci/libreoffice-image`. Loops A and B want a Li
 | B | formula parse, display round-trip, evaluation matches the cached value | `sheet/tests/corpus_parse.rs`, `corpus_eval.rs` |
 | C | write → `soffice` → read back is identical, both directions | `sheet/tests/roundtrip.rs`, `text/tests/roundtrip.rs` |
 | D, D″ | our import against the oracle's conversion | `xlsx/tests/loop_d.rs`, `docx/tests/loop_d.rs` |
-| D (Euro-Office) | loop D with Euro-Office's `x2t` as the oracle (`scripts/euro-office-tests.sh`, image in `ci/euro-office-image`; not in CI) | `xlsx/tests/loop_d_euro_office.rs` |
+| D, D″ (Euro-Office) | loops D and D″ with Euro-Office's `x2t` as the oracle (`scripts/euro-office-tests.sh`, image in `ci/euro-office-image`; not in CI) | `xlsx/tests/loop_d_euro_office.rs`, `docx/tests/loop_d_euro_office.rs` |
 | E | generated formulas, evaluated by us and by LibreOffice | `sheet/tests/loop_e.rs`, `doc/differential-fuzz.md` |
 | F | project → read back is the same model | `sheet/tests/loop_f.rs`, `text/tests/loop_f.rs` |
 | G′ | the built-in grammar checker against LanguageTool (`GRIND_LANGUAGETOOL_URL`; its server-free half always runs) | `grammar/tests/loop_g_prime.rs`, `doc/grammar.md` §6 |

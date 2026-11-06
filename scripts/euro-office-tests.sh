@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Run the tests that ask Euro-Office (loop D's second oracle) against the image pinned in
+# Run the tests that ask Euro-Office (loops D and D″, second oracle) against the image pinned in
 # ci/euro-office-image. Needs Docker; arguments go to `cargo test` after the test selection.
 #
 #   scripts/euro-office-tests.sh
@@ -13,4 +13,4 @@ cd "$(dirname "$0")/.."
 
 docker pull -q "$(cat ci/euro-office-image)"
 export PATH="$PWD/scripts/euro-office-docker:$PATH"
-exec cargo test -p grind-xlsx --test loop_d_euro_office "$@"
+exec cargo test -p grind-xlsx -p grind-docx --test loop_d_euro_office "$@"

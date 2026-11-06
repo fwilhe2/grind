@@ -1070,6 +1070,12 @@ losing what it read:
 So for xlsx it is a weak oracle for display and a useful second opinion for values, styles and
 geometry. Where it and LibreOffice agree against this import, that is a strong signal.
 
+Word import has the same loop (`docx/tests/loop_d_euro_office.rs`, `doc/docx-import.md`). On
+2026-11-06 the vendored documents all agree or diverge by name. Of LibreOffice's 169 Word
+documents, 145 are accounted for (93 agree), against LibreOffice's own 152. Euro-Office writes
+a heading as a `text:p` in a list, drops `<w:br/>`, and frames floating tables, text boxes and
+linked pictures.
+
 **Loop A′ runs in CI and costs nothing to get there** — it needs no oracle and no display,
 only the corpus, and `ci.yml`'s `corpus` job already sparse-checks out `sc/qa/unit/data`,
 which is the directory `xlsx/` sits in. The loop is a test file and no workflow change. Loop D
