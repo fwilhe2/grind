@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Euro-Office's converter, run out of the pinned image (ci/euro-office-image), with the
+# arguments `soffice` takes so a test can ask either oracle the same way:
+#
+#   x2t --version
+#   x2t --convert-to ods|odt|xlsx|docx --outdir <dir> <file>...
+#
+# One container converts every file, because its start dominates. The document server inside the
+# image is never started: x2t is a plain program that reads one parameter file per conversion.
+# The host's temp directory is mounted at the same path and nothing else, as for soffice
+# (scripts/soffice-docker/soffice), so inputs and outputs live there.
+set -euo pipefail
+
+image=$(cat "$(dirname "$(readlink -f "$0")")/../../ci/euro-office-image")
+
+if [ "${1:-}" = --version ]; then
+    echo "Euro-Office ${image##*@}"
+    exit 0
+fi
+
+to= outdir=
+while [ $# -gt 0 ]; do
+    case $1 in
+        --convert-to) to=$2; shift 2 ;;
+        --outdir) outdir=$2; shift 2 ;;
+        --) shift; break ;;
+        -*) echo "x2t: unknown option $1" >&2; exit 2 ;;
+        *) break ;;
+    esac
+done
+[ -n "$to" ] && [ -n "$outdir" ] && [ $# -gt 0 ] || {
+    echo "usage: x2t --convert-to <ext> --outdir <dir> <file>..." >&2
+    exit 2
+}
+# x2t's own format numbers, measured against the pinned image.
+case $to in
+    docx) code=65 ;;
+    odt) code=67 ;;
+    xlsx) code=257 ;;
+    ods) code=259 ;;
+    *) echo "x2t: cannot convert to $to" >&2; exit 2 ;;
+esac
+
+tmp=$(cd "${TMPDIR:-/tmp}" && pwd -P)
+outdir=$(mkdir -p "$outdir" && cd "$outdir" && pwd -P)
+case $outdir/ in "$tmp"/*) ;; *) echo "x2t: --outdir must be under $tmp" >&2; exit 2 ;; esac
+work=$(mktemp -d "$tmp/x2t.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+
+# One parameter file per input, and a script that runs x2t on each; a file x2t fails on is
+# reported, the rest still converted, and the exit status says whether any failed.
+xml() { sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
+echo fail=0 > "$work/run.sh"
+n=0
+for file in "$@"; do
+    case $file in /*) ;; *) file=$PWD/$file ;; esac
+    case $file in "$tmp"/*) ;; *) echo "x2t: $file is not under $tmp" >&2; exit 2 ;; esac
+    base=$(basename "$file"); base=${base%.*}
+    mkdir -p "$work/t$n"
+    cat > "$work/p$n.xml" <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<TaskQueueDataConvert>
+<m_sFileFrom>$(printf %s "$file" | xml)</m_sFileFrom>
+<m_sFileTo>$(printf %s "$outdir/$base.$to" | xml)</m_sFileTo>
+<m_nFormatTo>$code</m_nFormatTo>
+<m_sTempDir>$work/t$n</m_sTempDir>
+<m_bIsNoBase64>true</m_bIsNoBase64>
+</TaskQueueDataConvert>
+XML
+    printf '/var/www/euro-office/documentserver/server/FileConverter/bin/x2t %q >/dev/null || { echo "x2t: %s failed ($?)" >&2; fail=1; }\n' \
+        "$work/p$n.xml" "$base" >> "$work/run.sh"
+    n=$((n + 1))
+done
+echo 'exit $fail' >> "$work/run.sh"
+
+# `label=disable` for the reason scripts/soffice-docker/soffice gives.
+docker run --rm \
+    --security-opt label=disable \
+    --user "$(id -u):$(id -g)" \
+    -v "$tmp:$tmp" \
+    -e "HOME=$tmp" \
+    -e "TMPDIR=$tmp" \
+    -w "$tmp" \
+    --entrypoint sh \
+    "$image" \
+    "$work/run.sh"

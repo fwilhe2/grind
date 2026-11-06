@@ -1047,6 +1047,29 @@ cache is keyed by the manifest's SHA-256 and the oracle's version string, and li
 directory because that is what the pinned oracle's shim mounts. It runs in CI's `oracle` job
 beside loops C and E, and in `scripts/soffice-tests.sh`.
 
+**A second oracle, Euro-Office** (`xlsx/tests/loop_d_euro_office.rs`). The same comparison
+(`xlsx/tests/oracle/mod.rs`), with Euro-Office's converter in LibreOffice's place and its own
+divergences. Its converter is `x2t`, a plain program inside the document server's image
+(`ghcr.io/euro-office/documentserver`, pinned by digest in `ci/euro-office-image`). It reads
+one XML parameter file per conversion, and the server, its database and JWT are never started.
+`scripts/euro-office-docker/x2t` wraps it with `soffice`'s arguments (`--convert-to ods --outdir
+<dir> <files>`), one container for all files, the temp directory mounted as for `soffice`.
+`scripts/euro-office-tests.sh` pulls the pin and runs the loop. It is not in CI: the image is
+about 7 GB.
+
+What it is worth, measured on 2026-11-06 over the generated corpus: 77 of 78 workbooks compared,
+0 disagreements, 30 named divergences, one workbook x2t aborts on (`values/types.xlsx`). In
+every divergence, LibreOffice agrees with this import. Most are Euro-Office's ODS *export*
+losing what it read:
+
+- number formats lose sections, literal positions and `#` digits;
+- a time is written as `T06:00:00` rather than an `xsd:duration`;
+- a date or time style is referenced but never written;
+- `date1904` is ignored.
+
+So for xlsx it is a weak oracle for display and a useful second opinion for values, styles and
+geometry. Where it and LibreOffice agree against this import, that is a strong signal.
+
 **Loop A′ runs in CI and costs nothing to get there** — it needs no oracle and no display,
 only the corpus, and `ci.yml`'s `corpus` job already sparse-checks out `sc/qa/unit/data`,
 which is the directory `xlsx/` sits in. The loop is a test file and no workflow change. Loop D
