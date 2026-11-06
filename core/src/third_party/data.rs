@@ -430,7 +430,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "crc32fast",
-        version: "1.5.3",
+        version: "1.5.4",
         licence: "MIT OR Apache-2.0",
         copyright: "Copyright (c) 2018 Sam Rijs, Alex Crichton and contributors",
         source: "https://github.com/srijs/rust-crc32fast",
@@ -2779,12 +2779,12 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "toml_datetime",
-        version: "1.1.1+spec-1.1.0",
+        version: "1.1.3+spec-1.1.0",
         licence: "MIT OR Apache-2.0",
-        copyright: "Copyright (c) Individual contributors",
+        copyright: "Copyright Individual contributors",
         source: "https://github.com/toml-rs/toml",
         kind: Kind::Crate,
-        notices: &[9, 10],
+        notices: &[32, 10],
     },
     Component {
         name: "toml_edit",
@@ -2797,12 +2797,12 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "toml_parser",
-        version: "1.1.3+spec-1.1.0",
+        version: "1.1.5+spec-1.1.0",
         licence: "MIT OR Apache-2.0",
-        copyright: "Copyright (c) Individual contributors",
+        copyright: "Copyright Individual contributors",
         source: "https://github.com/toml-rs/toml",
         kind: Kind::Crate,
-        notices: &[9, 10],
+        notices: &[32, 10],
     },
     Component {
         name: "ttf-parser",
@@ -2968,7 +2968,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "ureq",
-        version: "3.5.0",
+        version: "3.5.1",
         licence: "MIT OR Apache-2.0",
         copyright: "Copyright (c) 2019 Martin Algesten",
         source: "https://github.com/algesten/ureq",
@@ -2977,7 +2977,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "ureq-proto",
-        version: "0.6.5",
+        version: "0.7.1",
         licence: "MIT OR Apache-2.0",
         copyright: "Copyright 2022 Martin Algesten",
         source: "https://github.com/algesten/ureq-proto",
@@ -3526,7 +3526,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "zip",
-        version: "9.1.3",
+        version: "9.3.0",
         licence: "MIT",
         copyright: "Copyright (c) 2014 Mathijs van de Nes",
         source: "https://github.com/zip-rs/zip2",
