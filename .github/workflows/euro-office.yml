@@ -1,0 +1,50 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Loops D and D″ against the second oracle, Euro-Office (`doc/xlsx-import.md`, "A second
+# oracle"): the same comparisons as `ci.yml`'s `oracle` and `corpus` jobs, with Euro-Office's
+# `x2t` in LibreOffice's place, out of the image pinned in `ci/euro-office-image`.
+#
+# **Dispatch only.** The image is about 7 GB, which is too much to pull on every push for a
+# second opinion; run it after touching an import filter, or when the pin moves.
+#
+#   gh workflow run euro-office.yml
+
+name: euro-office
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  loop-d:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      # The image unpacks to about 7 GB beside a debug build of the workspace; the runner's
+      # preinstalled toolchains for other languages are the room for it.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: linux-debug
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: docker pull -q "$(cat ci/euro-office-image)" && echo "$PWD/scripts/euro-office-docker" >> "$GITHUB_PATH"
+      # Word's own documents for loop D″'s corpus half: only the directory it reads, not the
+      # whole of `sw/qa` that `ci.yml`'s `corpus` job takes.
+      - run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/LibreOffice/core.git /tmp/lo-core
+          git -C /tmp/lo-core sparse-checkout set sw/qa/extras/ooxmlimport/data
+      - name: Loop D, Euro-Office
+        run: cargo test --locked -p grind-xlsx --test loop_d_euro_office -- --nocapture
+      - name: Loop D″, Euro-Office
+        run: cargo test --locked -p grind-docx --test loop_d_euro_office -- --nocapture
+        env:
+          GRIND_LO_CORPUS: /tmp/lo-core

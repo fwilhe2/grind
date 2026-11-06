@@ -1054,8 +1054,8 @@ divergences. Its converter is `x2t`, a plain program inside the document server'
 one XML parameter file per conversion, and the server, its database and JWT are never started.
 `scripts/euro-office-docker/x2t` wraps it with `soffice`'s arguments (`--convert-to ods --outdir
 <dir> <files>`), one container for all files, the temp directory mounted as for `soffice`.
-`scripts/euro-office-tests.sh` pulls the pin and runs the loop. It is not in CI: the image is
-about 7 GB.
+`scripts/euro-office-tests.sh` pulls the pin and runs the loop. In CI it runs only on dispatch
+(`.github/workflows/euro-office.yml`), because the image is about 7 GB.
 
 What it is worth, measured on 2026-11-06 over the generated corpus: 77 of 78 workbooks compared,
 0 disagreements, 30 named divergences, one workbook x2t aborts on (`values/types.xlsx`). In
