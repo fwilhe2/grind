@@ -57,7 +57,7 @@ tiny-skia = { version = "0.12", default-features = false, features = ["std", "si
 [dev-dependencies]
 # A second opinion: our PDF rasterised by a PDF renderer, held against our own raster of the
 # same page. Same authors as krilla; a test dependency only.
-hayro = "0.8"
+hayro = "0.9"
 
 # Reading a PDF back to check what was written: its pages and their sizes.
 hayro-syntax = "0.9"
