@@ -66,7 +66,7 @@ fn prose_run(props: &CharStyle, href: Option<&str>) -> bool {
 /// The character ranges of `block` that are not prose: a code block whole, runs [`prose_run`]
 /// refuses, and runs that are not text (a field, a footnote).
 pub(crate) fn skipped(block: &Block) -> Vec<Range<usize>> {
-    if block.style.as_deref() == Some(crate::markdown::PREFORMATTED) {
+    if crate::markdown::is_preformatted(block.style.as_deref()) {
         return std::iter::once(0..block.len()).collect();
     }
     let mut out = Vec::new();

@@ -1236,7 +1236,7 @@ fn apply_notation(block: &mut Block, caret: &mut usize) -> Option<CharStyle> {
     if markdown::is_fence(&text, *caret) {
         block.runs = without(block, 0, *caret);
         *caret = 0;
-        block.style = match block.style.as_deref() == Some(markdown::PREFORMATTED) {
+        block.style = match markdown::is_preformatted(block.style.as_deref()) {
             true => None,
             false => Some(markdown::PREFORMATTED.to_owned()),
         };

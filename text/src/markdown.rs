@@ -48,6 +48,12 @@ pub const MONOSPACE: &str = "monospace";
 /// The named paragraph style a fenced block gets — ODF's code paragraph, as LibreOffice writes it.
 pub const PREFORMATTED: &str = "Preformatted Text";
 
+/// Whether a paragraph style is [`PREFORMATTED`], as grind spells it or as LibreOffice encodes it
+/// (`Preformatted_20_Text`).
+pub fn is_preformatted(style: Option<&str>) -> bool {
+    style.is_some_and(|s| s == PREFORMATTED || crate::style::readable_name(s) == PREFORMATTED)
+}
+
 impl Emphasis {
     /// The formatting to write, as the character style the core takes.
     pub fn style(self) -> CharStyle {

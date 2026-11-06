@@ -55,7 +55,7 @@ impl Role {
         match (style, kind) {
             (Some("Title"), _) => Role::Title,
             (Some("Subtitle"), _) => Role::Subtitle,
-            (Some(crate::markdown::PREFORMATTED), _) => Role::Code,
+            (style, _) if crate::markdown::is_preformatted(style) => Role::Code,
             (_, BlockKind::Heading { level }) => {
                 Role::Heading((*level).clamp(1, HEADING_SCALE.len() as u32) as u8)
             }
