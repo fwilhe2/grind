@@ -327,9 +327,20 @@ pub fn picture_anchor(_: &grind_docx::Report, ours: &[Seen], theirs: &[Seen]) ->
 }
 
 /// A text box whose paragraphs follow their anchor here and are a frame in the oracle's: theirs is
-/// ours with those blocks taken out.
+/// ours with those blocks taken out. Pictures (U+FFFC) are set aside first, since a shape group
+/// holding the box can hold a picture too, and the oracle frames the group whole.
 pub fn text_box(report: &grind_docx::Report, ours: &[Seen], theirs: &[Seen]) -> bool {
+    let strip = |blocks: &[Seen]| -> Vec<Seen> {
+        blocks
+            .iter()
+            .map(|b| Seen {
+                text: normalise(&b.text.replace('\u{fffc}', "")),
+                ..b.clone()
+            })
+            .collect()
+    };
     report.dropped.contains_key(&grind_docx::Dropped::TextBox) && {
+        let (ours, theirs) = (strip(ours), strip(theirs));
         let mut rest = ours.iter();
         theirs.iter().all(|b| rest.any(|a| a == b))
     }

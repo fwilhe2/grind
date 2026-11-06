@@ -134,6 +134,17 @@ this filter splits the paragraph at the break.
 the mark itself — a `w:sym` there — and takes **no number**: the next ordinary footnote is 1.
 The custom mark becomes the citation (`text:note-citation text:label`).
 
+**How notes count** — `MEASURED`. `word/settings.xml` can state each kind's numbering
+format: `<w:endnotePr><w:numFmt w:val="decimal"/>`, and the same under `w:footnotePr`.
+`ooxmlimport/data/tdf129659.docx` states decimal for its endnotes. LibreOffice and Euro-Office
+both cite them `1` and `2`, not the lower-case Roman numerals Word uses when nothing is stated.
+This filter counts each kind in its stated format, or else in decimal for footnotes and
+lower-case Roman for endnotes. As for list labels (§4), a format with no spelling here counts in
+decimal.
+
+The same file also states `w:endnotePr` in its `w:sectPr`, with the same value. Which one wins
+when the section and the settings differ is `UNVERIFIED`, and the section's is not read.
+
 ### 2.6 A document ends in a paragraph — `MEASURED`
 
 The oracle, reading this filter's ODF of `ooxmlimport/data/table_width.docx` (whose body ends in
@@ -181,6 +192,15 @@ level is **not** one: `ooxmlimport/data/tdf104167.docx`'s style `12` is called `
 no `w:outlineLvl`, and the oracle reads its paragraph as a paragraph. Word's own saves write the
 level into every heading style (seen in every Word document in the corpus with headings that
 this filter reads as headings), so the name is never needed.
+
+**An `w:outlineLvl` outside 0–9 is ignored, not body text** — `MEASURED`.
+`sw/qa/extras/ooxmlexport/data/tdf143692_outlineLevelTortureTest.docx`: the style
+`illegal-3Heading1` states `-3` over `Heading1`, a paragraph in `Heading1` states `-2` directly,
+and `illegal25CN3` states `25` over a style at level 2. LibreOffice and Euro-Office both read
+the first two as level-1 headings and the third as a level-3 one. LibreOffice's test for the file
+says so in its comments: "illegal value is ignored, so inherit from Heading 1", "illegal does not
+mean body level, it means inherit from style" (`sw/qa/extras/ooxmlexport/ooxmlexport16.cxx:364`, `:368`).
+So the level is the nearest *legal* one, stated on the paragraph or up the style chain.
 
 ### 3.3 The defaults when there are none — `MEASURED`
 
@@ -235,6 +255,24 @@ filter writes the list that numbers the headings — the one most of them are nu
 one of them at the list level of its outline level — as ODF's `text:outline-style`, and the
 oracle's text of *our* ODF reads the same. A heading at a numbered level that Word left
 unnumbered is written `text:is-list-header="true"`.
+
+### 4.6 Body level stops the headings' numbering — `MEASURED`
+
+A paragraph style can inherit a heading style's numbering through `w:basedOn` and still state
+body level, `w:outlineLvl w:val="9"`:
+- `tdf143692_outlineLevelTortureTest.docx`'s `noInheritCN3`, over `ListParagraph`, which
+  states list 18 and level 2;
+- `tdf154319-ToC_with_s_and_d.docx`'s `TOCHeading` ("Contents"), over the numbered `Heading1`.
+
+Neither states a `w:numPr` of its own. LibreOffice and Euro-Office both read such a paragraph
+as a plain paragraph, neither heading nor list item. So when a style's nearest legal level is 9
+and the style its `w:numId` comes from is a heading, the style gives no numbering at all.
+Numbering stated on the paragraph itself still counts.
+
+Inheritance without body level is unchanged: `tdf141966_chapterNumberTortureTest.docx`'s
+`InheritOnly42` states no `w:numPr` and is numbered, "2nd.ii in MS Word 2010/2016"
+(`ooxmlexport16.cxx:332`). Whether body level stops numbering inherited from a style that is *not* a heading is
+`UNVERIFIED`: no corpus document has one.
 
 ---
 
@@ -305,3 +343,12 @@ states `w:after="400"` keeps its 20 pt after and still takes the table style's s
 whose style states `w:after="200"` — the defaults' own value — keeps its 10 pt. Attribute by
 attribute, the table style's spacing is under the paragraph's style chain and over the document
 defaults. Only spacing was measured.
+
+### 6.5 Rows and cells inside content controls — `SPEC`
+
+A `w:sdt` can stand where a row or a cell would: between `w:tbl` and `w:tr`, and between `w:tr`
+and `w:tc` (§17.5.2, the row- and cell-level structured document tags). Their `w:sdtContent`
+holds rows or cells, and can hold further `w:sdt`. A repeating section does this: in
+`ooxmlimport/data/tdf168567.docx`, a `w15:repeatingSection` control holds a
+`w15:repeatingSectionItem` control, which holds the row. This filter reads the rows and cells
+through any depth of them.

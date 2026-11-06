@@ -463,6 +463,30 @@ fn a_content_control_is_read_through() {
     );
 }
 
+/// A repeating section wraps its items' rows in content controls inside content controls.
+#[test]
+fn rows_and_cells_inside_nested_content_controls_are_read() {
+    let body = r#"<w:tbl><w:tr><w:tc><w:p><w:r><w:t>head</w:t></w:r></w:p></w:tc></w:tr>
+        <w:sdt><w:sdtPr><w15:repeatingSection/></w:sdtPr><w:sdtContent>
+          <w:sdt><w:sdtPr><w15:repeatingSectionItem/></w:sdtPr><w:sdtContent>
+            <w:tr><w:sdt><w:sdtContent><w:sdt><w:sdtContent>
+              <w:tc><w:p><w:r><w:t>item</w:t></w:r></w:p></w:tc>
+            </w:sdtContent></w:sdt></w:sdtContent></w:sdt></w:tr>
+          </w:sdtContent></w:sdt>
+        </w:sdtContent></w:sdt></w:tbl>"#;
+    let body = body.replace(
+        "<w:tbl>",
+        r#"<w:tbl xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">"#,
+    );
+    let (doc, _) = import(&docx(&body, &[]));
+    let cells: Vec<_> = doc
+        .blocks
+        .iter()
+        .filter_map(|b| Some(((b.cell.as_ref()?.row, b.cell.as_ref()?.column), b.text())))
+        .collect();
+    assert_eq!(cells, [((0, 0), "head".into()), ((1, 0), "item".into())]);
+}
+
 // ---- lists ----
 
 fn numbering() -> (&'static str, &'static str, Vec<u8>) {
@@ -689,6 +713,39 @@ fn a_footnote_is_set_where_it_is_cited() {
         "The source.",
         "no separator, no leading space"
     );
+}
+
+/// Endnotes count in lower-case Roman unless the settings say otherwise.
+#[test]
+fn notes_count_in_the_format_the_settings_state() {
+    let notes = || {
+        (
+            "word/endnotes.xml",
+            "endnotes",
+            format!(
+                r#"<w:endnotes xmlns:w="{W}">
+                     <w:endnote w:id="1"><w:p><w:r><w:t>one</w:t></w:r></w:p></w:endnote>
+                     <w:endnote w:id="2"><w:p><w:r><w:t>two</w:t></w:r></w:p></w:endnote>
+                   </w:endnotes>"#
+            )
+            .into_bytes(),
+        )
+    };
+    let settings = (
+        "word/settings.xml",
+        "settings",
+        format!(
+            r#"<w:settings xmlns:w="{W}"><w:endnotePr><w:numFmt w:val="decimal"/></w:endnotePr></w:settings>"#
+        )
+        .into_bytes(),
+    );
+    let body = r#"<w:p><w:r><w:endnoteReference w:id="1"/></w:r><w:r><w:endnoteReference w:id="2"/></w:r></w:p>"#;
+    let citations =
+        |doc: &Document| -> Vec<String> { doc.notes.iter().map(|n| n.citation.clone()).collect() };
+    let (plain, _) = import(&docx(body, &[notes()]));
+    assert_eq!(citations(&plain), ["i", "ii"]);
+    let (stated, _) = import(&docx(body, &[notes(), settings]));
+    assert_eq!(citations(&stated), ["1", "2"]);
 }
 
 #[test]

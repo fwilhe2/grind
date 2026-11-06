@@ -151,6 +151,14 @@ last because a text box's text is shown here and not by the oracle's frame) and 
 paragraph, page breaks inside a table cell, Hebrew list numbers computed by fields, a
 bibliography — each a construct rather than a crash.
 
+On 2026-11-06, with Euro-Office as a second oracle, five documents both oracles read differently
+from this filter were fixed or explained, and loop D″ stands at 157 of 169 (108 agree):
+- outline levels outside 0–9 are ignored (`doc/docx-format.md` §3.2);
+- body level stops a heading style's numbering (§4.6);
+- rows inside nested content controls are read (§6.5);
+- endnotes count in the format the settings state (§2.5);
+- a picture in the same shape group as a text box is set aside with it in the comparison.
+
 ---
 
 ## Milestones

@@ -111,6 +111,7 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
         .map(|bytes| settings(&bytes))
         .unwrap_or_default();
     let default_tab = settings.default_tab;
+    let note_formats = settings.note_formats.clone();
     if rels
         .iter()
         .any(|rel| rel.target.ends_with("vbaproject.bin"))
@@ -247,6 +248,7 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
         pages,
         footnotes,
         endnotes,
+        note_formats,
         anchors,
         default_tab,
         fonts: fonts_table,
@@ -371,6 +373,8 @@ struct Settings {
     default_tab: Option<i64>,
     /// `w:evenAndOddHeaders` — even pages have headers and footers of their own.
     even_and_odd: bool,
+    /// `w:footnotePr/w:numFmt` and `w:endnotePr/w:numFmt`: how each kind of note counts.
+    note_formats: emit::NoteFormats,
 }
 
 fn settings(bytes: &[u8]) -> Settings {
@@ -379,11 +383,25 @@ fn settings(bytes: &[u8]) -> Settings {
     if !matches!(reader.root(), Ok(Some(_))) {
         return out;
     }
-    let _ = reader.children(|_, name, attrs| {
+    let _ = reader.children(|r, name, attrs| {
         if name.ns == Ns::Word {
             match name.local.as_str() {
                 "defaultTabStop" => out.default_tab = attrs.int("val"),
                 "evenAndOddHeaders" => out.even_and_odd = attrs.on(),
+                kind @ ("footnotePr" | "endnotePr") => {
+                    let mut format = None;
+                    r.children(|_, name, attrs| {
+                        if name.w("numFmt") {
+                            format = attrs.val().map(str::to_owned);
+                        }
+                        Ok(Handled::No)
+                    })?;
+                    match kind {
+                        "footnotePr" => out.note_formats.footnotes = format,
+                        _ => out.note_formats.endnotes = format,
+                    }
+                    return Ok(Handled::Yes);
+                }
                 _ => {}
             }
         }

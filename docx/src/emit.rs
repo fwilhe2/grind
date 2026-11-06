@@ -37,6 +37,7 @@ pub struct Input<'a> {
     pub pages: Vec<Page>,
     pub footnotes: HashMap<String, Vec<Block>>,
     pub endnotes: HashMap<String, Vec<Block>>,
+    pub note_formats: NoteFormats,
     /// Hidden bookmarks some hyperlink points at — kept; the rest of Word's `_`-names are not.
     pub anchors: HashSet<String>,
     /// `w:defaultTabStop`, in twips.
@@ -47,6 +48,13 @@ pub struct Input<'a> {
     pub comments: HashMap<String, Comment>,
     /// Each font's generic family, from `word/fontTable.xml`.
     pub fonts: Vec<(String, &'static str)>,
+}
+
+/// Each kind of note's `w:numFmt`, as `word/settings.xml` states it (`doc/docx-format.md` §2.5).
+#[derive(Clone, Debug, Default)]
+pub struct NoteFormats {
+    pub footnotes: Option<String>,
+    pub endnotes: Option<String>,
 }
 
 /// One comment: who, when, and what it says.
@@ -596,9 +604,10 @@ impl Writer<'_, '_> {
             .or_else(|| self.styles().default_paragraph.clone())
     }
 
-    /// The paragraph's outline level, 0-based, if it is a heading.
+    /// The paragraph's outline level, 0-based, if it is a heading. An illegal level stated on
+    /// the paragraph is ignored, so its style's counts (`doc/docx-format.md` §3.2).
     fn outline(&self, para: &Para) -> Option<i64> {
-        match para.facts.outline {
+        match para.facts.outline.filter(|level| (0..=9).contains(level)) {
             Some(level) => (0..9).contains(&level).then_some(level),
             None => self
                 .style_id(para)
@@ -883,11 +892,13 @@ impl Writer<'_, '_> {
             Some(mark) => mark.to_owned(),
             None if endnote => {
                 self.endnotes += 1;
-                roman(self.endnotes)
+                let format = self.input.note_formats.endnotes.as_deref();
+                count(self.endnotes, format.unwrap_or("lowerRoman"))
             }
             None => {
                 self.footnotes += 1;
-                self.footnotes.to_string()
+                let format = self.input.note_formats.footnotes.as_deref();
+                count(self.footnotes, format.unwrap_or("decimal"))
             }
         };
         self.report.notes += 1;
@@ -1819,6 +1830,15 @@ fn is_date_time(date: &str) -> bool {
         && [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18]
             .iter()
             .all(|&i| b[i].is_ascii_digit())
+}
+
+/// `n` in a `w:numFmt`: Roman numerals in either case, anything else in decimal (§2.5).
+fn count(n: usize, format: &str) -> String {
+    match format {
+        "lowerRoman" => roman(n),
+        "upperRoman" => roman(n).to_uppercase(),
+        _ => n.to_string(),
+    }
 }
 
 /// Lower-case roman numerals — Word's default endnote numbering.

@@ -1072,7 +1072,7 @@ geometry. Where it and LibreOffice agree against this import, that is a strong s
 
 Word import has the same loop (`docx/tests/loop_d_euro_office.rs`, `doc/docx-import.md`). On
 2026-11-06 the vendored documents all agree or diverge by name. Of LibreOffice's 169 Word
-documents, 145 are accounted for (93 agree), against LibreOffice's own 152. Euro-Office writes
+documents, 148 are accounted for (94 agree), against LibreOffice's own 157. Euro-Office writes
 a heading as a `text:p` in a list, drops `<w:br/>`, and frames floating tables, text boxes and
 linked pictures.
 

@@ -97,17 +97,22 @@ impl Styles {
         out
     }
 
-    /// The outline level a paragraph in this style has, 0-based, if it is a heading: stated
-    /// (`w:outlineLvl`) somewhere up the chain. Level 9 is "body text" and no heading.
+    /// The outline level a paragraph in this style has, 0-based, if it is a heading: the
+    /// nearest legal one (0–9) stated up the chain, an illegal one being ignored. Level 9 is
+    /// "body text" and no heading (`doc/docx-format.md` §3.2).
     ///
     /// A style *named* `heading 1` that states no level is not a heading — measured against the
-    /// oracle (`doc/docx-format.md` §3.2); Word itself writes the level into every heading
-    /// style it saves, so the name is never needed for a document Word wrote.
+    /// oracle (§3.2); Word itself writes the level into every heading style it saves, so the
+    /// name is never needed for a document Word wrote.
     pub fn outline(&self, id: &str) -> Option<i64> {
+        self.stated_outline(id)
+            .filter(|level| (0..9).contains(level))
+    }
+
+    fn stated_outline(&self, id: &str) -> Option<i64> {
         self.chain(id)
             .into_iter()
-            .find_map(|style| style.outline)
-            .filter(|level| (0..9).contains(level))
+            .find_map(|style| style.outline.filter(|level| (0..=9).contains(level)))
     }
 
     /// The numbering a paragraph in this style has, `(numId, ilvl)`, if any style up the
@@ -116,8 +121,18 @@ impl Styles {
     /// The two halves resolve **separately** up the chain: a `heading 2` style that states only
     /// `w:ilvl="1"` takes its `w:numId` from the `heading 1` it is based on — how Word's own
     /// numbered-heading styles are commonly written (`doc/docx-format.md` §4.4).
+    ///
+    /// A style at body level stated below a heading style gets none of that heading's
+    /// numbering (§4.6).
     pub fn numbering(&self, id: &str) -> Option<(Option<i64>, Option<i64>)> {
         let chain = self.chain(id);
+        let from = chain
+            .iter()
+            .find(|s| s.numbering.is_some_and(|(n, _)| n.is_some()));
+        if self.stated_outline(id) == Some(9) && from.is_some_and(|s| self.outline(&s.id).is_some())
+        {
+            return None;
+        }
         let num = chain.iter().find_map(|s| s.numbering.and_then(|(n, _)| n));
         let level = chain.iter().find_map(|s| s.numbering.and_then(|(_, l)| l));
         (num.is_some() || level.is_some()).then_some((num, level))
@@ -513,6 +528,38 @@ mod tests {
         assert_eq!(s.outline("berschrift2"), None);
         assert_eq!(s.outline("Mine"), Some(1), "inherited");
         assert_eq!(s.outline("Body"), None, "level 9 is body text");
+    }
+
+    /// An illegal level is ignored and the inherited one counts (§3.2).
+    #[test]
+    fn an_illegal_level_is_ignored() {
+        let s = styles(
+            r#"<w:style w:type="paragraph" w:styleId="H"><w:pPr><w:outlineLvl w:val="0"/></w:pPr></w:style>
+               <w:style w:type="paragraph" w:styleId="Minus"><w:basedOn w:val="H"/><w:pPr><w:outlineLvl w:val="-3"/></w:pPr></w:style>
+               <w:style w:type="paragraph" w:styleId="Big"><w:basedOn w:val="H"/><w:pPr><w:outlineLvl w:val="25"/></w:pPr></w:style>"#,
+        );
+        assert_eq!(s.outline("Minus"), Some(0));
+        assert_eq!(s.outline("Big"), Some(0));
+    }
+
+    /// Body level stated below a numbered heading style takes none of its numbering; a style
+    /// that only inherits keeps it (§4.6).
+    #[test]
+    fn body_level_stops_a_headings_numbering() {
+        let s = styles(
+            r#"<w:style w:type="paragraph" w:styleId="H"><w:pPr><w:numPr><w:numId w:val="11"/></w:numPr><w:outlineLvl w:val="0"/></w:pPr></w:style>
+               <w:style w:type="paragraph" w:styleId="TOCHeading"><w:basedOn w:val="H"/><w:pPr><w:outlineLvl w:val="9"/></w:pPr></w:style>
+               <w:style w:type="paragraph" w:styleId="Inherit"><w:basedOn w:val="H"/></w:style>
+               <w:style w:type="paragraph" w:styleId="L"><w:pPr><w:numPr><w:numId w:val="4"/></w:numPr></w:pPr></w:style>
+               <w:style w:type="paragraph" w:styleId="BodyL"><w:basedOn w:val="L"/><w:pPr><w:outlineLvl w:val="9"/></w:pPr></w:style>"#,
+        );
+        assert_eq!(s.numbering("TOCHeading"), None);
+        assert_eq!(s.numbering("Inherit"), Some((Some(11), None)));
+        assert_eq!(
+            s.numbering("BodyL"),
+            Some((Some(4), None)),
+            "a list that is no heading's is unchanged"
+        );
     }
 
     #[test]

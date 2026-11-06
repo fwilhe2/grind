@@ -24,9 +24,9 @@ use std::process::Command;
 use oracle::{BlockDivergence, Divergence, Oracle};
 
 /// The ratchet on the LibreOffice corpus, measured 2026-11-06 against the image in
-/// `ci/euro-office-image`: 145 of 169 accounted for, 93 agreeing outright. **Raise it, never
+/// `ci/euro-office-image`: 148 of 169 accounted for, 94 agreeing outright. **Raise it, never
 /// lower it.** The vendored documents are held to more: every one agrees or diverges by name.
-const FLOOR: usize = 145;
+const FLOOR: usize = 148;
 
 /// Where Euro-Office's conversion of a whole document differs from ours: the constructs
 /// LibreOffice also shows differently (`loop_d.rs`), each confirmed in Euro-Office's own `.odt`

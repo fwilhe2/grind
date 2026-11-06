@@ -1067,24 +1067,48 @@ fn read_table(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Table> {
                 })?;
             }
             "tr" => table.rows.push(read_row(r, ctx)?),
-            "sdt" => {
-                content_of_sdt(r, |r| {
-                    r.children(|r, name, _| {
-                        if name.w("tr") {
-                            table.rows.push(read_row(r, ctx)?);
-                            Ok(Handled::Yes)
-                        } else {
-                            Ok(Handled::No)
-                        }
-                    })
-                })?;
-            }
+            "sdt" => rows_of_sdt(r, ctx, &mut table.rows)?,
             _ => return Ok(Handled::No),
         }
         Ok(Handled::Yes)
     })?;
     table.look = own;
     Ok(table)
+}
+
+/// The rows inside a row-level content control, which may hold further ones: a repeating
+/// section wraps each of its items in its own (`ooxmlimport/data/tdf168567.docx`).
+fn rows_of_sdt(r: &mut Reader, ctx: &mut Ctx, rows: &mut Vec<Row>) -> grind_ooxml::Result<()> {
+    content_of_sdt(r, |r| {
+        r.children(|r, name, _| {
+            if name.w("tr") {
+                rows.push(read_row(r, ctx)?);
+            } else if name.w("sdt") {
+                rows_of_sdt(r, ctx, rows)?;
+            } else {
+                return Ok(Handled::No);
+            }
+            Ok(Handled::Yes)
+        })
+    })?;
+    Ok(())
+}
+
+/// The cells inside a cell-level content control, nested ones included.
+fn cells_of_sdt(r: &mut Reader, ctx: &mut Ctx, cells: &mut Vec<Cell>) -> grind_ooxml::Result<()> {
+    content_of_sdt(r, |r| {
+        r.children(|r, name, _| {
+            if name.w("tc") {
+                cells.push(read_cell(r, ctx)?);
+            } else if name.w("sdt") {
+                cells_of_sdt(r, ctx, cells)?;
+            } else {
+                return Ok(Handled::No);
+            }
+            Ok(Handled::Yes)
+        })
+    })?;
+    Ok(())
 }
 
 fn read_row(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Row> {
@@ -1113,18 +1137,7 @@ fn read_row(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Row> {
                 })?;
             }
             "tc" => row.cells.push(read_cell(r, ctx)?),
-            "sdt" => {
-                content_of_sdt(r, |r| {
-                    r.children(|r, name, _| {
-                        if name.w("tc") {
-                            row.cells.push(read_cell(r, ctx)?);
-                            Ok(Handled::Yes)
-                        } else {
-                            Ok(Handled::No)
-                        }
-                    })
-                })?;
-            }
+            "sdt" => cells_of_sdt(r, ctx, &mut row.cells)?,
             _ => return Ok(Handled::No),
         }
         Ok(Handled::Yes)

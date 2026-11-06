@@ -36,12 +36,10 @@ use std::process::Command;
 use oracle::{Divergence, Oracle};
 
 /// The ratchet on the LibreOffice corpus: documents accounted for — every block agreeing, or
-/// differing only by a named divergence. Measured on 2026-10-06 against LibreOffice 26.8 and the
-/// pinned 26.2 alike: 152 of 167, 103 agreeing outright (text boxes moved twenty documents from
-/// the first count to the second: their text is shown here and not by the oracle's frames).
-/// **Raise it, never lower it.** The vendored documents are held to more: every one agrees or diverges by
-/// name.
-const FLOOR: usize = 152;
+/// differing only by a named divergence. Measured on 2026-11-06 against the pinned 26.2: 157 of
+/// 169, 108 agreeing outright. **Raise it, never lower it.** The vendored documents are held to
+/// more: every one agrees or diverges by name.
+const FLOOR: usize = 157;
 
 const DIVERGENCES: &[Divergence] = &[
     Divergence {
@@ -77,7 +75,8 @@ const DIVERGENCES: &[Divergence] = &[
         name: "a text box's text",
         why: "a text box's paragraphs follow the paragraph that anchors it here, since the text \
               model has nowhere to float them; the oracle keeps them in a frame, which this \
-              suite's reader shows as nothing — so theirs is ours with those blocks taken out",
+              suite's reader shows as nothing — so theirs is ours with those blocks taken out, \
+              and with a picture in the same shape group set aside (tdf126426.docx)",
         is: oracle::text_box,
     },
 ];
