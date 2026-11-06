@@ -60,4 +60,4 @@ tiny-skia = { version = "0.12", default-features = false, features = ["std", "si
 hayro = "0.8"
 
 # Reading a PDF back to check what was written: its pages and their sizes.
-hayro-syntax = "0.8"
+hayro-syntax = "0.9"
