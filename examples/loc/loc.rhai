@@ -99,6 +99,9 @@ let row_h = 0.7;
 let header_h = 1.2;
 let title_h = 1.2;
 let middle = style().valign("middle");
+// A right-aligned date against a left-aligned hash reads as one word where a viewer pads cells
+// thinly (`2026-08-16bb34e3c`); centred, the two columns keep apart.
+let centred = style().align("center");
 
 /// A table's header row: white on the ink, centred, wrapping a long name onto two lines.
 fn header(s, cells, ink, height) {
@@ -153,6 +156,7 @@ by_crate.format(span(by_crate, 1, 2, n, crate_total), count);
 banding(by_crate, 1, n, crate_total + 1, band);
 by_crate.style(span(by_crate, 1, crate_total, n, crate_total), style().bold());
 by_crate.style(span(by_crate, 1, 0, n, crate_total), middle);
+by_crate.style(span(by_crate, 1, 0, n, 1), centred);
 by_crate.height(`2:${n + 40}`, `${row_h}cm`);
 by_crate.width("A:A", "2.8cm");
 by_crate.width("B:B", "2.2cm");
@@ -255,6 +259,7 @@ growth.style(span(growth, facts, 3, facts + 4, 3), style().bold().color(ink).ali
 growth.style(growth.at(facts, 5), style().italic().color("gray"));
 
 growth.style(span(growth, 0, 0, last, delta), middle);
+growth.style(span(growth, first, 0, last, 2), centred);
 growth.height("1:1", `${title_h}cm`);
 growth.height(`2:${top}`, `${row_h}cm`);
 growth.height(`${first + 1}:${last + 1}`, `${row_h}cm`);
