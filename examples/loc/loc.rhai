@@ -93,9 +93,12 @@ let count = format("number").grouping();
 let share = format("percent").decimals(1);
 
 // Every row gets a height, because a chart is placed in centimetres and has to know where the
-// table above it ends.
-let row_h = 0.5;
-let header_h = 1.0;
+// table above it ends. 0.7cm is a line of text with room above and below, and the height a
+// row with none of its own has in grind, so the empty rows under a table match the ones in it.
+let row_h = 0.7;
+let header_h = 1.3;
+let title_h = 1.5;
+let middle = style().valign("middle");
 
 /// A table's header row: white on the ink, centred, wrapping a long name onto two lines.
 fn header(s, cells, ink, height) {
@@ -149,7 +152,8 @@ by_crate.format(span(by_crate, 1, 0, n, 0), "date");
 by_crate.format(span(by_crate, 1, 2, n, crate_total), count);
 banding(by_crate, 1, n, crate_total + 1, band);
 by_crate.style(span(by_crate, 1, crate_total, n, crate_total), style().bold());
-by_crate.height(`2:${n + 1}`, `${row_h}cm`);
+by_crate.style(span(by_crate, 1, 0, n, crate_total), middle);
+by_crate.height(`2:${n + 40}`, `${row_h}cm`);
 by_crate.width("A:A", "2.8cm");
 by_crate.width("B:B", "1.9cm");
 by_crate.width(span(by_crate, 0, 2, 0, crate_total), "2.5cm");
@@ -250,15 +254,19 @@ growth.style(span(growth, facts, 0, facts + 4, 2), style().color("gray"));
 growth.style(span(growth, facts, 3, facts + 4, 3), style().bold().color(ink).align("right"));
 growth.style(growth.at(facts, 5), style().italic().color("gray"));
 
-growth.height("1:1", "1.2cm");
+growth.style(span(growth, 0, 0, last, delta), middle);
+growth.height("1:1", `${title_h}cm`);
 growth.height(`2:${top}`, `${row_h}cm`);
 growth.height(`${first + 1}:${last + 1}`, `${row_h}cm`);
+// And the rows under it, down past the charts: a shell's own default row is its font's, not
+// this, and a grid that changes pitch below the table looks broken.
+growth.height(`${last + 2}:${last + 40}`, `${row_h}cm`);
 growth.width("A:A", "2.8cm");
 growth.width("B:C", "1.9cm");
 growth.width(span(growth, 0, a0, 0, delta), "2.6cm");
 
 // Under the table: how it grew, and what it is made of now.
-let below = `${1.2 + (top - 1) * row_h + header_h + n * row_h + 0.6}cm`;
+let below = `${title_h + (top - 1) * row_h + header_h + n * row_h + 0.6}cm`;
 let grew = chart("line")
     .title("Lines of Rust by area")
     .categories(span(growth, first, 0, last, 0))
