@@ -9,6 +9,7 @@
 mod english;
 mod german;
 mod neutral;
+pub mod setting;
 mod tokens;
 
 use grind_core::grammar::{Checker, Finding, Kind, Paragraph};

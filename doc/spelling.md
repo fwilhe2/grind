@@ -100,8 +100,8 @@ asks for one language (decision 4).
    word's formatting kept, refused when the word is no longer where it was found.
 
 7. **No grammar checker** (decided 2026-10-17; **superseded 2026-10-30** by `doc/grammar.md`, a
-   built-in checker of our own plus an optional LanguageTool, which answers the three reasons
-   below). [Harper](https://github.com/Automattic/harper)
+   built-in checker of our own, which answers the three reasons below; the optional
+   LanguageTool it also had was removed on 2026-11-07). [Harper](https://github.com/Automattic/harper)
    (Automattic, Apache-2.0, pure Rust, English only) was the candidate, and it was measured
    before it was turned down — `harper-core 2.13.0`, default features off, a release build:
 

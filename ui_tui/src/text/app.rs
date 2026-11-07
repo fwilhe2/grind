@@ -317,33 +317,9 @@ pub struct App {
     spelling_seen: u64,
     /// Grammar: the remembered setting (`doc/grammar.md` decision 5), and whether `:grammar`
     /// writes it — on for a pane opened on a file, off in a test.
-    grammar: grind_languagetool::setting::Setting,
+    grammar: grind_grammar::setting::Setting,
     remember_grammar: bool,
-    /// LanguageTool, when the setting names a server, asked on a thread of its own for the
-    /// paragraphs the core says are unanswered (`doc/grammar.md` decision 10).
-    languagetool: Option<Arc<grind_languagetool::LanguageTool>>,
-    /// The request out, if one is: one at a time.
-    asking: Option<std::sync::mpsc::Receiver<Asked>>,
-    /// [`RedrawFlag::edits`] as last seen, and when it last moved: LanguageTool is asked once
-    /// typing pauses.
-    grammar_seen: u64,
-    edited_at: std::time::Instant,
-    /// After a server did not answer: what it said, shown once, and when to try again.
-    grammar_failure: Option<String>,
-    retry_at: Option<std::time::Instant>,
 }
-
-/// What a LanguageTool request comes back with: each paragraph's key and findings, or why not.
-type Asked = (
-    Vec<u64>,
-    Vec<Vec<grind_text::grammar::Finding>>,
-    Option<String>,
-);
-
-/// How long typing pauses before LanguageTool is asked, and how long a server that did not
-/// answer is left alone.
-const GRAMMAR_PAUSE: std::time::Duration = std::time::Duration::from_millis(800);
-const GRAMMAR_RETRY: std::time::Duration = std::time::Duration::from_secs(30);
 
 impl App {
     pub fn new(core: Arc<CoreApp>, redraw: Arc<RedrawFlag>, path: Option<PathBuf>) -> Self {
@@ -389,24 +365,18 @@ impl App {
             checked: None,
             speller: None,
             spelling_seen: 0,
-            grammar: grind_languagetool::setting::Setting {
+            grammar: grind_grammar::setting::Setting {
                 builtin: false,
                 ..Default::default()
             },
             remember_grammar: false,
-            languagetool: None,
-            asking: None,
-            grammar_seen: 0,
-            edited_at: std::time::Instant::now(),
-            grammar_failure: None,
-            retry_at: None,
         }
     }
 
     /// Check grammar as the person last said — the remembered setting — and remember what
     /// `:grammar` chooses from here on. What a pane opened on a file does.
     pub fn grammar(mut self) -> Self {
-        self.grammar = grind_languagetool::setting::Setting::load();
+        self.grammar = grind_grammar::setting::Setting::load();
         self.remember_grammar = true;
         self.check_grammar();
         self
@@ -414,7 +384,7 @@ impl App {
 
     /// Check grammar under `setting`, remembering nothing: what a test wants.
     #[cfg(test)]
-    fn grammar_in(mut self, setting: grind_languagetool::setting::Setting) -> Self {
+    fn grammar_in(mut self, setting: grind_grammar::setting::Setting) -> Self {
         self.grammar = setting;
         self.check_grammar();
         self
@@ -1780,100 +1750,7 @@ impl App {
             false => None,
         };
         self.core.set_checker(checker);
-        self.languagetool = match self.grammar.languagetool.as_ref().map(|c| c.server()) {
-            Some(Ok(server)) => {
-                let ignored = self
-                    .grammar
-                    .ignored
-                    .iter()
-                    .filter_map(|rule| rule.strip_prefix("lt:"))
-                    .map(str::to_owned)
-                    .collect();
-                Some(Arc::new(
-                    grind_languagetool::LanguageTool::new(server, self.grammar.style)
-                        .ignoring(ignored),
-                ))
-            }
-            Some(Err(why)) => {
-                self.status = format!("LanguageTool is not asked: {why}");
-                None
-            }
-            None => None,
-        };
-        self.core
-            .set_background_grammar(self.languagetool.is_some());
-        self.asking = None;
-        self.grammar_failure = None;
-        self.retry_at = None;
-        // Ask straight away for what is already there.
-        self.grammar_seen = self.redraw.edits();
-        self.edited_at = std::time::Instant::now() - GRAMMAR_PAUSE;
         self.redraw.raise();
-    }
-
-    /// Whether an answer from LanguageTool is wanted — what makes the event loop wake without a
-    /// key, and only then.
-    pub fn waiting(&self) -> bool {
-        self.languagetool.is_some()
-            && (self.asking.is_some() || !self.core.grammar_pending(0..usize::MAX).is_empty())
-    }
-
-    /// Take LanguageTool's answer if it has come, or ask it once typing has paused.
-    pub fn tick(&mut self) {
-        if let Some(asking) = &self.asking {
-            let Ok((keys, found, failure)) = asking.try_recv() else {
-                if matches!(
-                    asking.try_recv(),
-                    Err(std::sync::mpsc::TryRecvError::Disconnected)
-                ) {
-                    self.asking = None;
-                }
-                return;
-            };
-            self.asking = None;
-            match failure {
-                None => {
-                    for (key, findings) in keys.into_iter().zip(found) {
-                        self.core.grammar_found(key, findings);
-                    }
-                    self.grammar_failure = None;
-                }
-                Some(why) => {
-                    if self.grammar_failure.as_deref() != Some(why.as_str()) {
-                        self.status = format!("LanguageTool did not answer: {why}");
-                        self.grammar_failure = Some(why);
-                    }
-                    self.retry_at = Some(std::time::Instant::now() + GRAMMAR_RETRY);
-                }
-            }
-            self.redraw.raise();
-            return;
-        }
-        let Some(client) = self.languagetool.clone() else {
-            return;
-        };
-        let now = std::time::Instant::now();
-        let edits = self.redraw.edits();
-        if edits != self.grammar_seen {
-            self.grammar_seen = edits;
-            self.edited_at = now;
-            return;
-        }
-        if now - self.edited_at < GRAMMAR_PAUSE || self.retry_at.is_some_and(|at| now < at) {
-            return;
-        }
-        let pending = self.core.grammar_pending(0..usize::MAX);
-        if pending.is_empty() {
-            return;
-        }
-        let (send, receive) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let paragraphs: Vec<_> = pending.iter().map(|p| p.paragraph()).collect();
-            let found = grind_core::grammar::Checker::check_all(&*client, &paragraphs);
-            let keys = pending.iter().map(|p| p.key).collect();
-            let _ = send.send((keys, found, client.error()));
-        });
-        self.asking = Some(receive);
     }
 
     /// Every grammar finding in `blocks`, but the ignored rules'.
@@ -1894,7 +1771,7 @@ impl App {
     }
 
     fn grammar_on(&self) -> bool {
-        self.grammar.builtin || self.grammar.languagetool.is_some()
+        self.grammar.builtin
     }
 
     /// `}` / `{` — put the caret on the next or previous grammar finding, wrapping, and say what
@@ -1979,33 +1856,20 @@ impl App {
         }
     }
 
-    /// `:grammar` — which checker, and against what; `:grammar on|off`, `style on|off`, a
-    /// LanguageTool server (`<url>`, `public`, `premium`), and `ignore` for the finding here.
+    /// `:grammar` — whether the checker runs: `:grammar on|off`, `style on|off`, and `ignore`
+    /// for the finding here.
     fn cmd_grammar(&mut self, arg: &str) {
-        use grind_languagetool::setting::Choice;
         let mut words = arg.split_whitespace();
         match (words.next(), words.next()) {
             (None, _) => {
-                self.status = match (self.grammar.builtin, &self.grammar.languagetool) {
-                    (false, None) => "grammar is off \u{2014} :grammar on turns it on".to_string(),
-                    (true, None) => "grammar by the built-in checker".to_string(),
-                    (builtin, Some(choice)) => format!(
-                        "grammar by LanguageTool ({}){}",
-                        choice.tag(),
-                        if builtin {
-                            " and the built-in checker"
-                        } else {
-                            ""
-                        }
-                    ),
+                self.status = match self.grammar.builtin {
+                    false => "grammar is off \u{2014} :grammar on turns it on".to_string(),
+                    true => "grammar by the built-in checker".to_string(),
                 };
                 return;
             }
             (Some("on"), _) => self.grammar.builtin = true,
-            (Some("off"), _) => {
-                self.grammar.builtin = false;
-                self.grammar.languagetool = None;
-            }
+            (Some("off"), _) => self.grammar.builtin = false,
             (Some("style"), Some(on)) => self.grammar.style = on == "on",
             (Some("ignore"), _) => {
                 let Some(flag) = self.grammar_here() else {
@@ -2015,15 +1879,10 @@ impl App {
                 self.grammar.ignored.push(flag.finding.rule.clone());
                 self.status = format!("{} is ignored", flag.finding.rule);
             }
-            (Some(word), _) => match Choice::parse(word) {
-                Some(choice) => self.grammar.languagetool = Some(choice),
-                None => {
-                    self.status = format!(
-                        "{word}? \u{2014} :grammar on|off|style on|off|ignore|<url>|public|premium"
-                    );
-                    return;
-                }
-            },
+            (Some(word), _) => {
+                self.status = format!("{word}? \u{2014} :grammar on|off|style on|off|ignore");
+                return;
+            }
         }
         if self.remember_grammar
             && let Err(e) = self.grammar.save()
@@ -4117,7 +3976,7 @@ mod tests {
     #[test]
     fn a_grammar_finding_is_underlined_stepped_to_and_fixed() {
         let mut app = app(&["We saw the the cat on the mat.", "All good here."])
-            .grammar_in(grind_languagetool::setting::Setting::default());
+            .grammar_in(grind_grammar::setting::Setting::default());
         let underline = |app: &mut App, col: u16| {
             let mut terminal = Terminal::new(TestBackend::new(50, 6)).unwrap();
             terminal.draw(|frame| app.draw(frame)).unwrap();
@@ -4163,65 +4022,6 @@ mod tests {
         app.run_command("grammar off");
         press(&mut app, KeyCode::Char('}'));
         assert!(app.status.contains("grammar is off"), "{}", app.status);
-    }
-
-    /// A one-shot HTTP server answering LanguageTool's way.
-    fn languagetool_mock(body: &'static str) -> String {
-        use std::io::{BufRead, BufReader, Read, Write};
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        std::thread::spawn(move || {
-            let (stream, _) = listener.accept().unwrap();
-            let mut reader = BufReader::new(stream.try_clone().unwrap());
-            let mut length = 0;
-            loop {
-                let mut line = String::new();
-                reader.read_line(&mut line).unwrap();
-                if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
-                    length = v.trim().parse().unwrap();
-                }
-                if line == "\r\n" {
-                    break;
-                }
-            }
-            let mut request = vec![0; length];
-            reader.read_exact(&mut request).unwrap();
-            let mut stream = stream;
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            )
-            .unwrap();
-        });
-        url
-    }
-
-    /// With a LanguageTool server named, the pane asks it in the background and draws its answer
-    /// beside the built-in checker's, without the keys ever waiting (`doc/grammar.md` decision 10).
-    #[test]
-    fn languagetool_is_asked_in_the_background_and_its_answer_drawn() {
-        let url = languagetool_mock(
-            r#"{"matches":[{"message":"Agreement","offset":3,"length":2,"replacements":[{"value":"goes"}],"rule":{"id":"HE_VERB_AGR","description":"d","category":{"id":"GRAMMAR","name":"G"}}}]}"#,
-        );
-        let mut app =
-            app(&["He go to the the market."]).grammar_in(grind_languagetool::setting::Setting {
-                languagetool: Some(grind_languagetool::setting::Choice::SelfHosted(url)),
-                ..Default::default()
-            });
-        assert!(app.waiting(), "an answer is wanted");
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while app.waiting() && std::time::Instant::now() < deadline {
-            app.tick();
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        assert!(!app.waiting(), "answered");
-        let rules: Vec<String> = app
-            .grammar_flags(0..1)
-            .into_iter()
-            .map(|f| f.finding.rule)
-            .collect();
-        assert_eq!(rules, ["lt:HE_VERB_AGR", "builtin:repeated-word"]);
     }
 
     #[test]

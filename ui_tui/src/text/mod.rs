@@ -31,9 +31,9 @@ Word processor:
                                       :spell add accept a word
   }  {                             — the next or previous grammar finding; :fix N takes its
                                       Nth replacement
-  :grammar [on|off|style on|off|ignore|<url>|public|premium]
-                                   — the grammar checker: the built-in one, LanguageTool too,
-                                      or off; ignore stops drawing the rule here
+  :grammar [on|off|style on|off|ignore]
+                                   — the grammar checker, on or off; ignore stops drawing the
+                                      rule here
   :dict          :dict add|rm WORD — your own dictionary: Enter on a word removes it
   :outline       — every heading, indented; Enter goes to one
   :table [rows cols]                — a table before this block, drawn as a grid

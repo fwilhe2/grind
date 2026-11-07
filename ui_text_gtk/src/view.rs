@@ -1425,7 +1425,7 @@ mod imp {
                 return;
             };
             let rule = flag.finding.rule;
-            let mut setting = grind_languagetool::setting::Setting::load();
+            let mut setting = grind_grammar::setting::Setting::load();
             if !setting.ignored.contains(&rule) {
                 setting.ignored.push(rule.clone());
                 if let Err(error) = setting.save() {

@@ -208,11 +208,8 @@ had no width and therefore no lines.
   would not carry, and a misspelt word. `--rules` lists them, `--off <rule>` silences one, and an *error*-severity
   finding exits non-zero. Nothing is written
 - `set_lexicon` — `grind text spell` and `grind text lint`, which attach `grind_spell`'s dictionary for the document's language (`doc/spelling.md`); `--language` names one
-- `set_checker` — `grind text grammar` and `grind text lint`, which attach the built-in checker, LanguageTool or both as `grind grammar` remembers (`doc/grammar.md`); `--builtin` and `--languagetool` say otherwise this once
+- `set_checker` — `grind text grammar` and `grind text lint`, which attach the built-in checker with the style level `grind grammar` remembers (`doc/grammar.md`)
 - `grammar` — `grind text grammar [range]`, one finding a line with its address, rule, kind and the text it covers
-- `set_background_grammar` — not exposed: the CLI waits for LanguageTool's answer through `set_checker`; this is for a window, which must not wait on the network (`doc/grammar.md` decision 10)
-- `grammar_pending` — not exposed: the same — what a window's worker sends LanguageTool; `grind text grammar --languagetool` sends every paragraph at once
-- `grammar_found` — not exposed: the same — where a window's worker hands LanguageTool's answer back
 - `spelling_language` — `grind text spell`, which prints the language it checks in, and why, on stderr
 - `language` — `grind text spell` without `--language`: the language the document states is the second thing asked
 - `misspellings` — `grind text spell [range]`, one `p12+40<TAB>word` line per misspelt word, and `grind text lint`'s `misspelt` rule

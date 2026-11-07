@@ -4,8 +4,7 @@
 
 //! Grammar's generic half (`doc/grammar.md`): what a finding is and the [`Checker`] a checker is
 //! handed in through, as spelling's [`crate::spell::Lexicon`] is. An application decides what a
-//! paragraph is and which of its ranges are not prose; `grind-grammar` and `grind-languagetool`
-//! hold the checkers.
+//! paragraph is and which of its ranges are not prose; `grind-grammar` holds the checker.
 
 use std::ops::Range;
 
@@ -34,7 +33,7 @@ impl Kind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Finding {
     pub range: Range<usize>,
-    /// Stable enough to be ignored by name: `builtin:repeated-word`, `lt:EN_A_VS_AN`.
+    /// Stable enough to be ignored by name: `builtin:repeated-word`.
     pub rule: String,
     pub kind: Kind,
     pub message: String,
@@ -52,48 +51,10 @@ pub struct Paragraph<'a> {
     pub language: Option<&'a str>,
 }
 
-/// A grammar checker that answers at once. `Send + Sync` because an `App` holds one behind its
-/// lock.
+/// A grammar checker. `Send + Sync` because an `App` holds one behind its lock.
 pub trait Checker: Send + Sync {
     /// Every finding in `paragraph`, in any order.
     fn check(&self, paragraph: &Paragraph<'_>) -> Vec<Finding>;
-
-    /// Every finding in each of `paragraphs`, in their order — one at a time unless a checker
-    /// does better, as one that asks a server does with one request.
-    fn check_all(&self, paragraphs: &[Paragraph<'_>]) -> Vec<Vec<Finding>> {
-        paragraphs.iter().map(|p| self.check(p)).collect()
-    }
-}
-
-/// Several checkers as one: each paragraph checked by all of them, and where two findings
-/// overlap the later checker's wins — so the built-in checker's quick answer gives way to
-/// LanguageTool's where both have something to say (`doc/grammar.md` §5).
-pub struct Both(pub Vec<std::sync::Arc<dyn Checker>>);
-
-impl Checker for Both {
-    fn check(&self, paragraph: &Paragraph<'_>) -> Vec<Finding> {
-        self.check_all(std::slice::from_ref(paragraph))
-            .pop()
-            .unwrap_or_default()
-    }
-
-    fn check_all(&self, paragraphs: &[Paragraph<'_>]) -> Vec<Vec<Finding>> {
-        let mut out: Vec<Vec<Finding>> = vec![Vec::new(); paragraphs.len()];
-        for checker in &self.0 {
-            for (mine, later) in out.iter_mut().zip(checker.check_all(paragraphs)) {
-                mine.retain(|f| {
-                    !later
-                        .iter()
-                        .any(|l| f.range.start < l.range.end && l.range.start < f.range.end)
-                });
-                mine.extend(later);
-            }
-        }
-        for findings in &mut out {
-            findings.sort_by_key(|f| (f.range.start, f.range.end));
-        }
-        out
-    }
 }
 
 /// `findings` less any that touch a range of `skip`, sorted by where they start.
@@ -120,48 +81,6 @@ mod tests {
             replacements: Vec::new(),
             url: None,
         }
-    }
-
-    struct Fixed(Vec<Range<usize>>, &'static str);
-
-    impl Checker for Fixed {
-        fn check(&self, _: &Paragraph<'_>) -> Vec<Finding> {
-            self.0
-                .iter()
-                .map(|r| Finding {
-                    rule: self.1.into(),
-                    ..at(r.clone())
-                })
-                .collect()
-        }
-    }
-
-    #[test]
-    fn of_two_checkers_the_later_wins_where_their_findings_overlap() {
-        use std::sync::Arc;
-        let both = Both(vec![
-            Arc::new(Fixed(vec![0..3, 10..12], "first")),
-            Arc::new(Fixed(vec![2..5, 20..22], "second")),
-        ]);
-        let paragraph = Paragraph {
-            text: "",
-            skip: &[],
-            language: None,
-        };
-        let found: Vec<(Range<usize>, String)> = both
-            .check_all(&[paragraph])
-            .remove(0)
-            .into_iter()
-            .map(|f| (f.range, f.rule))
-            .collect();
-        assert_eq!(
-            found,
-            [
-                (2..5, "second".to_owned()),
-                (10..12, "first".to_owned()),
-                (20..22, "second".to_owned())
-            ]
-        );
     }
 
     #[test]

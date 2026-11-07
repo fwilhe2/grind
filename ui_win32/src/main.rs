@@ -67,8 +67,6 @@ mod gdi;
 mod image;
 #[cfg(windows)]
 mod win;
-#[cfg(windows)]
-mod winhttp;
 
 use std::path::Path;
 

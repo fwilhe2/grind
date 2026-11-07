@@ -29,8 +29,8 @@ phase 10.
 boilerplate (R3); `calcext:` opt-in, outranked by R2 (R4); LibreOffice's files read, unknown
 properties inert (R5); writing changes as little XML as possible (R6); eight named documents
 that must load, vendored in `sheet/tests/data/kb/` (R7). `doc/suite.md` adds R8–R10, `doc/dsl.md`
-R11. Strictness on the way out, tolerance on the way in: several R7 files are schema-invalid and
-must still load.
+R11, `doc/local-only.md` R12 (grind talks to no other computer). Strictness on the way out,
+tolerance on the way in: several R7 files are schema-invalid and must still load.
 
 ## The README is the author's
 
@@ -61,7 +61,7 @@ semantics never are.
 | ODF itself | `doc/OpenDocument-v1.4-schema.rng` (Part 3), `doc/OpenDocument-v1.4-os-part4-formula.html` (Part 4) |
 | Scope lines | `doc/small-group.md` (functions), `doc/function-coverage.md` (the evidence for going past it), `doc/text-core.md` (text elements), `doc/not-doing.md` (the product line) |
 | Format notes | `doc/ods-format.md`, `doc/odt-format.md`, `doc/chart-format.md`, `doc/xlsx-format.md`, `doc/docx-format.md` |
-| Core design | `doc/text-layout.md` (layout in the core, Path C), `doc/view-modes.md`, `doc/flat-first.md` (in doubt, write the flat form), `doc/conditional-format.md`, `doc/formula-workbench.md`, `doc/spelling.md`, `doc/pdf-export.md` (paper is ISO 216, A4 by default), `doc/chart-handling.md` |
+| Core design | `doc/local-only.md` (no network, R12), `doc/text-layout.md` (layout in the core, Path C), `doc/view-modes.md`, `doc/flat-first.md` (in doubt, write the flat form), `doc/conditional-format.md`, `doc/formula-workbench.md`, `doc/spelling.md`, `doc/pdf-export.md` (paper is ISO 216, A4 by default), `doc/chart-handling.md` |
 | Projection and generator | `doc/dsl.md`, `doc/projection-sheet.md`, `doc/projection-text.md`, `doc/generator-spec.md`, `doc/projection-guide.md`, `doc/generator-guide.md`, `doc/editor-setup.md`, `doc/init.md` |
 | Import filters | `doc/xlsx-import.md`, `doc/docx-import.md` |
 | Shells | `doc/sheet-shell.md` (its "Four surfaces" governs the GTK chrome), `doc/text-shell.md`, `doc/tui-shell.md`, `doc/web-shell.md`, `doc/windows-shell.md`, `doc/macos-shell.md` |
@@ -165,7 +165,7 @@ oracle image pinned by digest in `ci/libreoffice-image`. Loops A and B want a Li
 | D, D″ (Euro-Office) | loops D and D″ with Euro-Office's `x2t` as the oracle (`scripts/euro-office-tests.sh`, image in `ci/euro-office-image`; CI on dispatch, `euro-office.yml`) | `xlsx/tests/loop_d_euro_office.rs`, `docx/tests/loop_d_euro_office.rs` |
 | E | generated formulas, evaluated by us and by LibreOffice | `sheet/tests/loop_e.rs`, `doc/differential-fuzz.md` |
 | F | project → read back is the same model | `sheet/tests/loop_f.rs`, `text/tests/loop_f.rs` |
-| G′ | the built-in grammar checker against LanguageTool (`GRIND_LANGUAGETOOL_URL`; its server-free half always runs) | `grammar/tests/loop_g_prime.rs`, `doc/grammar.md` §6 |
+| G′ | the built-in grammar checker over written slips and tempting correct sentences, with a `FLOOR` | `grammar/tests/loop_g_prime.rs`, `doc/grammar.md` §6 |
 
 These never skip: `sheet/tests/kb.rs` (R7, plus R2/R3/R6), `text/tests/libreoffice.rs` (vendored
 Writer documents in both forms), `xlsx/tests/ooxmlgen.rs` (Open XML SDK workbooks with a manifest
@@ -219,7 +219,8 @@ renderer and event forwarder that owns nothing. Rules that are cheap now and exp
    hold it; their `REFUSED` lists are a ratchet.
 
 **R8: no document type's vocabulary reaches `grind-core`** (`core/tests/generic.rs`). **R11:
-nothing that opens a document depends on `grind-build`** (`build/tests/manifest.rs`).
+nothing that opens a document depends on `grind-build`** (`build/tests/manifest.rs`). **R12: no
+network, not even as an option** (`cli/tests/local_only.rs`).
 
 | Crate | Directory | Holds |
 |---|---|---|

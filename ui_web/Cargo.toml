@@ -32,10 +32,9 @@ grind-text = { path = "../text" }
 # of word lists — the page fetches the one language it needs from `dictionaries/`
 # (`grind_spell::Language::provide`), the way it fetches the PDF fonts.
 grind-spell = { path = "../spell", default-features = false }
-# The built-in grammar checker, and the grammar setting and LanguageTool's requests without its
-# HTTP client: the page sends them through `fetch` (doc/grammar.md decision 10).
+# The built-in grammar checker, and the remembered grammar setting (doc/grammar.md).
 grind-grammar = { path = "../grammar" }
-grind-languagetool = { path = "../languagetool", default-features = false }
+
 # The recent documents' bytes, kept as text in `localStorage`.
 base64 = "0.23"
 wasm-bindgen = "0.2"
@@ -88,8 +87,6 @@ features = [
   "Navigator",
   "Node",
   "Response",
-  # A request with a body: LanguageTool's form, sent through `fetch` (`grammar.rs`).
-  "RequestInit",
   # The remembered spelling setting (`spelling.rs`), per kind of document.
   "Storage",
   "SvgElement",

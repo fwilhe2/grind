@@ -4,33 +4,25 @@
 
 //! Grammar on the page (`doc/grammar.md`): Edit ▸ Spelling's *Check Grammar With Spelling*,
 //! *Grammar Style Suggestions* and *Next Grammar Finding* (⌥⌘;), the rows leading the context
-//! menu over a finding — its message, its replacements and *Ignore Grammar Rule* — and
-//! LanguageTool asked through `curl` on a thread, its answer taken on the caret's blink.
+//! menu over a finding — its message, its replacements and *Ignore Grammar Rule*.
 
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
 
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSMenu, NSMenuItem};
 
-use grind_languagetool::setting::Setting;
+use grind_grammar::setting::Setting;
 use grind_text::Caret;
-use grind_text::grammar::{Finding, Flag};
+use grind_text::grammar::Flag;
 
 use crate::menu::{Command, Grammar, REPLACEMENTS};
 use crate::page_view::TextPane;
 use crate::prompt;
 use crate::spelling::item;
 
-/// What a LanguageTool round comes back with: each paragraph's key and findings, or why not.
-pub(crate) type Answer = Result<Vec<(u64, Vec<Finding>)>, String>;
-
-/// How long typing pauses before LanguageTool is asked.
-const PAUSE: Duration = Duration::from_millis(800);
-
 impl TextPane {
-    /// Attach the built-in checker as the remembered setting says, and name the LanguageTool
-    /// server to ask — when the pane is made and whenever the setting changes.
+    /// Attach the built-in checker as the remembered setting says — when the pane is made and
+    /// whenever the setting changes.
     pub(crate) fn check_grammar(&self) {
         let setting = self.grammar.borrow().clone();
         let checker: Option<Arc<dyn grind_core::grammar::Checker>> = match setting.builtin {
@@ -40,27 +32,6 @@ impl TextPane {
             false => None,
         };
         self.app.set_checker(checker);
-        let remote = setting
-            .languagetool
-            .as_ref()
-            .and_then(|choice| choice.server().ok())
-            .map(|server| {
-                let options = grind_languagetool::Options {
-                    picky: setting.style,
-                    disabled_rules: setting
-                        .ignored
-                        .iter()
-                        .filter_map(|rule| rule.strip_prefix("lt:"))
-                        .map(str::to_owned)
-                        .collect(),
-                    max_chars: server.max_chars(),
-                };
-                (server, options)
-            });
-        self.app.set_background_grammar(remote.is_some());
-        *self.languagetool.borrow_mut() = remote;
-        *self.asking.borrow_mut() = None;
-        self.edited_at.set(Instant::now() - PAUSE);
     }
 
     /// Change the remembered setting, and apply it.
@@ -71,35 +42,6 @@ impl TextPane {
         }
         self.check_grammar();
         self.act_on(|_, _, _| Ok(()));
-    }
-
-    /// *LanguageTool Server…* — asked for, remembered, and where the text goes said.
-    fn choose_server(&self, mtm: MainThreadMarker) {
-        let current = self.grammar.borrow().languagetool.clone();
-        let Some(typed) = prompt::ask(
-            mtm,
-            "LanguageTool Server",
-            "An address such as http://localhost:8010, public, premium (with \
-             GRIND_LANGUAGETOOL_USER and GRIND_LANGUAGETOOL_KEY set), or off.",
-            "Use",
-            current.as_ref().map_or("", |choice| choice.tag()),
-        ) else {
-            return;
-        };
-        let choice = match grind_languagetool::setting::Choice::answer(&typed) {
-            Ok(choice) => choice,
-            Err(why) => return prompt::tell(mtm, "Not a LanguageTool server.", &why),
-        };
-        self.set_grammar(|g| g.languagetool = choice.clone(), mtm);
-        match choice.map(|choice| choice.server()) {
-            Some(Ok(server)) => prompt::tell(
-                mtm,
-                "Grammar checked by LanguageTool.",
-                &format!("{} — {}.", server.base(), server.describe()),
-            ),
-            Some(Err(why)) => prompt::tell(mtm, "LanguageTool is not asked.", &why),
-            None => {}
-        }
     }
 
     /// Every grammar finding in `blocks`, but the ignored rules'.
@@ -141,7 +83,6 @@ impl TextPane {
             Grammar::Toggle => self.set_grammar(|g| g.builtin = !g.builtin, mtm),
             Grammar::Style => self.set_grammar(|g| g.style = !g.style, mtm),
             Grammar::Next => self.next_grammar(mtm),
-            Grammar::Server => self.choose_server(mtm),
             Grammar::Ignore => {
                 let Some(flag) = self.grammar_offer.borrow_mut().take() else {
                     return;
@@ -195,60 +136,6 @@ impl TextPane {
                 true,
             );
             Ok(())
-        });
-    }
-
-    /// On the caret's blink: take LanguageTool's answer if it has come, or ask it once typing
-    /// has paused — one request at a time, on a thread of its own.
-    pub(crate) fn tick_grammar(&self) {
-        let slot = self.asking.borrow().clone();
-        if let Some(slot) = slot {
-            let answer = slot.lock().ok().and_then(|mut s| s.take());
-            let Some(answer) = answer else {
-                return;
-            };
-            *self.asking.borrow_mut() = None;
-            if let Ok(found) = answer {
-                for (key, findings) in found {
-                    self.app.grammar_found(key, findings);
-                }
-                self.act_on(|_, _, _| Ok(()));
-            }
-            return;
-        }
-        let Some((server, options)) = self.languagetool.borrow().clone() else {
-            return;
-        };
-        if self.edited_at.get().elapsed() < PAUSE {
-            return;
-        }
-        let pending = self.app.grammar_pending(0..usize::MAX);
-        if pending.is_empty() {
-            return;
-        }
-        let slot: Arc<Mutex<Option<Answer>>> = Arc::new(Mutex::new(None));
-        *self.asking.borrow_mut() = Some(slot.clone());
-        std::thread::spawn(move || {
-            let paragraphs: Vec<_> = pending.iter().map(|p| p.paragraph()).collect();
-            let mut answered: Vec<Vec<Finding>> = vec![Vec::new(); pending.len()];
-            let mut failure = None;
-            for batch in grind_languagetool::batches(&paragraphs, &options) {
-                match crate::curl::post(&server, &batch.form).and_then(|a| batch.findings(&a)) {
-                    Ok(found) => {
-                        for (at, finding) in found {
-                            answered[at].push(finding);
-                        }
-                    }
-                    Err(why) => failure = Some(why),
-                }
-            }
-            let answer = match failure {
-                None => Ok(pending.iter().map(|p| p.key).zip(answered).collect()),
-                Some(why) => Err(why),
-            };
-            if let Ok(mut slot) = slot.lock() {
-                *slot = Some(answer);
-            }
         });
     }
 }

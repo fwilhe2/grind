@@ -436,43 +436,6 @@ A finding gets a blue wavy line, and a suggestion about style a dotted one (the 
 
 Your choices are remembered for every document.
 
-## 5.5 LanguageTool
-
-The built-in checker is small on purpose. For a much fuller check, in many more languages, grind can ask **LanguageTool**, a free grammar checker that runs as a server. You can run it on your own computer, use LanguageTool's public server, or use a LanguageTool Premium account. Until you set one up, grind does not ask it.
-
-**On your own computer.** With Podman or Docker installed, start a server:
-
-```
-$ podman run -d --rm --name grind-lt -p 8010:8010 docker.io/erikvl87/languagetool
-```
-
-The image is made by the community, not by LanguageTool; any LanguageTool server will do. Then tell grind where it is, and check that it answers:
-
-```
-$ grind grammar http://localhost:8010 --with-builtin
-$ grind grammar --check-server
-```
-
-`--with-builtin` keeps the built-in checker on as well. Its findings appear at once and LanguageTool's a moment later; where both mark the same words, LanguageTool's is the one shown. Your text stays on your computer.
-
-**LanguageTool's public server.** `grind grammar public` needs no setup, but your text is sent to LanguageTool over the internet, and the server takes only a limited amount of text a minute. On the command line, a whole document is sent there only with `--public-ok`.
-
-**LanguageTool Premium.** Put your account's user name and API key in the environment, then choose it:
-
-```
-$ export GRIND_LANGUAGETOOL_USER=you@example.com
-$ export GRIND_LANGUAGETOOL_KEY=your-api-key
-$ grind grammar premium
-```
-
-grind never writes the key to a file.
-
-`grind grammar builtin` goes back to the built-in checker, and `grind grammar off` turns grammar off altogether. `grind grammar` on its own prints what is set. The setting is yours, kept in `~/.config/grind/grammar`, and the windows and the terminal follow it. They ask LanguageTool shortly after you stop typing, only about the paragraphs that changed, and say where your text goes. If the server does not answer, grind says so once and tries again later. In the terminal, `:grammar http://localhost:8010` or `:grammar public` sets it as well.
-
-**From a window.** The word processor's **Grammar** submenu, the View menu on Windows and the Spelling menu on the Mac have **LanguageTool Server…**. Type the address (`localhost:8010` is enough), `public` or `premium`, and the window uses it at once; the word processor also says whether the server answers. `off` turns LanguageTool off again, and in the word processor an empty field does too. It is the same setting `grind grammar` writes.
-
-The browser has a setting of its own: the palette's **Grammar: LanguageTool server…** asks for an address or `public`, and **Grammar: LanguageTool off** stops asking. A server on your computer must allow the page to ask it (LanguageTool's `--allow-origin` option), which the container above does. Premium is not offered in the browser, because the page keeps no keys.
-
 # 6. Using grind in a terminal
 
 `grind-tui` runs in a terminal and uses a vi-style keyboard with separate **modes** for navigation, typing, selection and commands.
@@ -530,7 +493,6 @@ Type `:` and a command, then **Enter**.
 | --- | --- |
 | `}`, `{` | Next and previous grammar finding (text) |
 | `:grammar off` | Grammar off; `:grammar on`, `:grammar style on`, and `:grammar ignore` for the rule at the cursor (text) |
-| `:grammar http://localhost:8010` | Ask LanguageTool as well (section 5.5) |
 | `:dict` | Your personal dictionary; `:dict add word`, `:dict rm word` |
 | `:move p12` | Move this block before p12 (text) |
 | `:print` | Print the document, through the system's `lp` (text) |
@@ -559,7 +521,7 @@ Press **Ctrl+K**, or click **Commands**, type a few letters of what you want, an
 
 Click **Open…**, or drop a file anywhere on the page. **Save** downloads a copy to your downloads folder. It cannot write over the file you opened, because a web page has no access to your files.
 
-The browser processes documents locally and downloads a copy when you save. It does not upload a document when you open or save it. If you use LanguageTool’s public server for grammar checking, the selected text is sent to that service (section 5.5). Spelling settings and your personal dictionary are stored in the browser; clearing the page’s data removes them.
+The browser processes documents locally and downloads a copy when you save. It does not upload a document when you open or save it. Spelling settings and your personal dictionary are stored in the browser; clearing the page’s data removes them.
 
 ## 7.3 Shortcuts and recent documents
 
@@ -655,10 +617,9 @@ p2+75   builtin:repeated-word   grammar   the   “the” twice
 p3+8    builtin:its-it's        grammar   its   “it's”: it is   it's
 $ grind text correct letter.fodt p3+8 its "it's"
 $ grind text grammar letter.fodt --picky
-$ grind text grammar letter.fodt --languagetool http://localhost:8010
 ```
 
-Each line is where a finding starts, its rule, its kind, the text it covers, what is wrong and what it could be instead. `grind text correct` makes one change, and refuses if the text there is no longer what you named. `--picky` adds style suggestions. `--languagetool` asks a server this once, whatever is set; `--builtin` uses the built-in checker alone. `grind lint` reports the built-in checker's findings too, so a script can stop on them. Section 5.5 shows how `grind grammar` sets the checker, and `grind grammar --ignore` with a rule's name stops reporting it.
+Each line is where a finding starts, its rule, its kind, the text it covers, what is wrong and what it could be instead. `grind text correct` makes one change, and refuses if the text there is no longer what you named. `--picky` adds style suggestions. `grind lint` reports the built-in checker's findings too, so a script can stop on them. `grind grammar off` turns grammar off in every window, and `grind grammar --ignore` with a rule's name stops reporting it.
 
 ## 8.7 More commands
 
@@ -746,8 +707,6 @@ Edit a `.grind` file in a text editor, then open it in grind. Spreadsheet cells 
 **Spelling underlines almost every word.** The document is being checked in one language that is not its own. Choose the right one, or **All languages** (section 5.1).
 
 **Grammar marks something that is right.** Right-click it and choose **Ignore Rule**. To have the rule reported again, run `grind grammar` to see the rules you ignored, and `grind grammar --unignore` with the rule's name. Style suggestions can be turned off on their own (section 5.4).
-
-**LanguageTool finds nothing.** Run `grind grammar --check-server`: it says whether the server answers, and which version it is. Check that the container is running (`podman ps`). In the browser, the server must be started with `--allow-origin`.
 
 **A document looks different in another program.** Programs can draw the same ODF slightly differently, and a font that is not installed is replaced. To share exactly how a page looks, export a PDF.
 

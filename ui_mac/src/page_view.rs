@@ -103,15 +103,10 @@ pub struct TextPane {
             Retained<objc2::runtime::NSObject>,
         )>,
     >,
-    /// Grammar (`grammar.rs`): the remembered setting, the finding the context menu was opened
-    /// over, the LanguageTool server to ask with what each request says, the answer of the
-    /// request out, and when the document last changed.
-    pub(crate) grammar: RefCell<grind_languagetool::setting::Setting>,
+    /// Grammar (`grammar.rs`): the remembered setting, and the finding the context menu was
+    /// opened over.
+    pub(crate) grammar: RefCell<grind_grammar::setting::Setting>,
     pub(crate) grammar_offer: RefCell<Option<grind_text::grammar::Flag>>,
-    pub(crate) languagetool:
-        RefCell<Option<(grind_languagetool::Server, grind_languagetool::Options)>>,
-    pub(crate) asking: RefCell<Option<Arc<std::sync::Mutex<Option<crate::grammar::Answer>>>>>,
-    pub(crate) edited_at: Cell<Instant>,
 }
 
 /// Set for a drive, whose snapshots must not depend on when they were taken: the caret stays lit
@@ -151,11 +146,8 @@ impl TextPane {
             speller: RefCell::new(None),
             offers: RefCell::new(None),
             spelling_picker: RefCell::new(None),
-            grammar: RefCell::new(grind_languagetool::setting::Setting::load()),
+            grammar: RefCell::new(grind_grammar::setting::Setting::load()),
             grammar_offer: RefCell::new(None),
-            languagetool: RefCell::new(None),
-            asking: RefCell::new(None),
-            edited_at: Cell::new(Instant::now()),
         });
         pane.check_grammar();
         pane
@@ -254,7 +246,6 @@ impl TextPane {
     /// The document changed and nothing is holding the state: put the caret somewhere real, lay
     /// out, resize, redraw, and mark the document edited.
     fn settle(&self) {
-        self.edited_at.set(Instant::now());
         self.state.borrow_mut().clamp(&self.app);
         self.reflow();
         self.fit();
@@ -337,7 +328,6 @@ impl TextPane {
     /// A tick: the caret's rectangle drawn again when it went out or came back — that rectangle
     /// only, so a long document is not repainted twice a second.
     fn blink_caret(&self) {
-        self.tick_grammar();
         let mut blink = self.blink.get();
         if !blink.tick(now()) {
             return;

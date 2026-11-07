@@ -35,7 +35,6 @@ mod clipboard;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod code;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
-mod curl;
 #[cfg(target_os = "macos")]
 mod describe;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]

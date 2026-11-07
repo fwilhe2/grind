@@ -181,13 +181,15 @@ pub fn start() -> Result<(), JsValue> {
 }
 
 /// The `doc` parameter of a query string, still percent-encoded — which is the form `fetch`
-/// wants, so nothing here decodes it.
+/// wants, so nothing here decodes it. Only a path beside the page: never another host
+/// (`doc/local-only.md`).
 fn doc_param(search: &str) -> Option<String> {
     search
         .trim_start_matches('?')
         .split('&')
         .find_map(|pair| pair.strip_prefix("doc="))
         .filter(|url| !url.is_empty())
+        .filter(|url| !url.contains(':') && !url.starts_with(['/', '\\']))
         .map(str::to_owned)
 }
 
@@ -2050,6 +2052,13 @@ mod tests {
         );
         assert_eq!(doc_param(""), None);
         assert_eq!(doc_param("?doc="), None);
+        for elsewhere in [
+            "https://example.org/a.ods",
+            "//example.org/a.ods",
+            "\\\\host/a.ods",
+        ] {
+            assert_eq!(doc_param(&format!("?doc={elsewhere}")), None, "{elsewhere}");
+        }
     }
 
     /// One rule for both document types: flat XML is named by an `f`, everything else is a
