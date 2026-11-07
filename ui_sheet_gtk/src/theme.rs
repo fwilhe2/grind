@@ -232,13 +232,21 @@ pub fn ink(color: Option<&str>, fill: Option<&str>, palette: &Palette) -> gdk::R
         // than through three bytes and back — a theme's ink need not be 8-bit.
         (None, None) => palette.foreground,
         (Some(own), Some(_)) => own,
-        _ => rgba(grind_core::color::document_ink(
-            own.map(rgb8),
-            fill.map(rgb8),
-            rgb8(palette.background),
-            rgb8(palette.foreground),
-            is_dark(palette),
-        )),
+        _ => {
+            let ink = grind_core::color::document_ink(
+                own.map(rgb8),
+                fill.map(rgb8),
+                rgb8(palette.background),
+                rgb8(palette.foreground),
+                is_dark(palette),
+            );
+            // The theme's ink kept on a fill is the theme's ink, alpha and all: Adwaita's is
+            // translucent, and the opaque three bytes made every shaded row a shade bolder.
+            match own.is_none() && ink == rgb8(palette.foreground) {
+                true => palette.foreground,
+                false => rgba(ink),
+            }
+        }
     }
 }
 
@@ -378,6 +386,16 @@ mod tests {
         }
         // The silver heading row that started it: white theme ink gives way to black.
         assert_eq!(ink(None, Some("#dddddd"), &dark), gdk::RGBA::BLACK);
+    }
+
+    /// A shaded row's text is the same ink as the row above it, translucency included, so the
+    /// banding is a ground and not a heavier face.
+    #[test]
+    fn the_themes_ink_on_a_light_fill_is_the_themes_ink() {
+        let translucent = gdk::RGBA::new(0.0, 0.0, 0.024, 0.8);
+        let light = ground(gdk::RGBA::WHITE, translucent);
+        assert_eq!(ink(None, Some("#eef3f8"), &light), translucent);
+        assert_eq!(ink(None, None, &light), translucent);
     }
 
     /// Roles are read by colour first, so two sharing one is the mode failing at its job.
