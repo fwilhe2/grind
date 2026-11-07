@@ -350,7 +350,11 @@ mod tests {
         }
         let grid = Grid::measured(&app, 0, &Body);
         assert!(grid.rows.size_of(0) > ROW_H, "{}", grid.rows.size_of(0));
-        assert_eq!(grid.rows.size_of(1), (10.0 * PT_PER_MM).round(), "whole points");
+        assert_eq!(
+            grid.rows.size_of(1),
+            (10.0 * PT_PER_MM).round(),
+            "whole points"
+        );
         assert_eq!(grid.rows.size_of(2), ROW_H, "an empty row");
         assert_eq!(
             Grid::of(&app, 0).rows.size_of(0),
