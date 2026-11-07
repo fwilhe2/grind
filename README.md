@@ -34,73 +34,42 @@ In spreadsheets, it is often not obvious which cells contain data and which cont
 
 Here is an example:
 
-`grind spreadsheet`
+```
+grind spreadsheet
 
+// A spreadsheet written by hand — the starter `grind init --template sheet` writes.
+//
+// This file *is* the spreadsheet, in the form that lives in git: every cell is a line, so a
+// change is a line of diff. Open it in grind's window, or turn it into a file LibreOffice opens.
 
+// A name makes a formula say what it means. Names are the document's, so they sit outside
+// every sheet.
+name monthly "[$Costs.$B$2:.$B$4]"
 
-``// A spreadsheet written by hand — the starter `grind init --template sheet` writes.``
+sheet Costs {
+    col 1 width="4cm"
 
-`//`
+    // `at` says where a grid of plain values starts; each `row` is one line of the sheet.
+    at A1 {
+        row Item       Monthly  Yearly
+        row Rent       1450     #null
+        row Utilities  180.5    #null
+        row Internet   49.99    #null
+    }
 
-`// This file *is* the spreadsheet, in the form that lives in git: every cell is a line, so a`
+    // A `cell` is one cell that carries more than a value — here a formula, and no answer.
+    cell C2 "=[.B2]*12"
+    cell C3 "=[.B3]*12"
+    cell C4 "=[.B4]*12"
+    cell A5 Total
+    cell B5 "=SUM(monthly)"
+    cell C5 "=SUM([.C2:.C4])"
 
-`// change is a line of diff. Open it in grind's window, or turn it into a file LibreOffice opens.`
-
-
-
-`// A name makes a formula say what it means. Names are the document's, so they sit outside`
-
-`// every sheet.`
-
-`name monthly "[$Costs.$B$2:.$B$4]"`
-
-
-
-`sheet Costs {`
-
-    `col 1 width="4cm"`
-
-
-
-    ``// `at` says where a grid of plain values starts; each `row` is one line of the sheet.``
-
-    `at A1 {`
-
-        `row Item       Monthly  Yearly`
-
-        `row Rent       1450     #null`
-
-        `row Utilities  180.5    #null`
-
-        `row Internet   49.99    #null`
-
-    `}`
-
-
-
-    ``// A `cell` is one cell that carries more than a value — here a formula, and no answer.``
-
-    `cell C2 "=[.B2]*12"`
-
-    `cell C3 "=[.B3]*12"`
-
-    `cell C4 "=[.B4]*12"`
-
-    `cell A5 Total`
-
-    `cell B5 "=SUM(monthly)"`
-
-    `cell C5 "=SUM([.C2:.C4])"`
-
-
-
-    `style A1:C1 bold=#true background=silver`
-
-    `style A5:C5 bold=#true`
-
-    `format B2:C5 currency decimals=2 symbol="$"`
-
-`}`
+    style A1:C1 bold=#true background=silver
+    style A5:C5 bold=#true
+    format B2:C5 currency decimals=2 symbol="$"
+}
+```
 
 ## 2. Formulas in plain English
 
@@ -110,15 +79,13 @@ So, instead of `=FV(Loan.B7/12;10*12;-Loan.B6)`
 
 grind will show you this:
 
-`Future Value(`
-
-  `Rate: Loan.B7/12,`
-
-  `Number Of Periods: 10*12,`
-
-  `Payment: -Loan.B6`
-
-`)`
+```
+Future Value(
+  Rate: Loan.B7/12,
+  Number Of Periods: 10*12,
+  Payment: -Loan.B6
+)
+```
 
 ## 3. A domain specific language to generate documents
 
@@ -126,41 +93,26 @@ Based on [rhai](https://rhai.rs/), an embedded scripting language you can genera
 
 Example:
 
-`// A script is a sequence of statements, and **its value is the value of its last expression**.`
+```
+// A script is a sequence of statements, and **its value is the value of its last expression**.
+// That value has to be a document, which is why the last line is a bare `s`: returning a sheet
+// means a one-sheet spreadsheet.
 
-``// That value has to be a document, which is why the last line is a bare `s`: returning a sheet``
+let s = sheet("Sales");
 
-`// means a one-sheet spreadsheet.`
+// A header is a row that is bold. `push` takes a bare array or a `row(…)`; the second is what
+// you want when the row needs an adjective.
+s.push(row(["Region", "Q1", "Q2"]).bold());
 
+s.push(["North", 4200, 4800]);
+s.push(["South", 3100, 3300]);
 
+// `sum_above()` is told nothing: it sums the contiguous run of numbers directly above wherever
+// it lands, which is an AutoSum's rule and the only one that does not reach up into a header.
+s.push(row(["Total", sum_above(), sum_above()]).bold());
 
-`let s = sheet("Sales");`
-
-
-
-``// A header is a row that is bold. `push` takes a bare array or a `row(…)`; the second is what``
-
-`// you want when the row needs an adjective.`
-
-`s.push(row(["Region", "Q1", "Q2"]).bold());`
-
-
-
-`s.push(["North", 4200, 4800]);`
-
-`s.push(["South", 3100, 3300]);`
-
-
-
-``// `sum_above()` is told nothing: it sums the contiguous run of numbers directly above wherever``
-
-`// it lands, which is an AutoSum's rule and the only one that does not reach up into a header.`
-
-`s.push(row(["Total", sum_above(), sum_above()]).bold());`
-
-
-
-`s`
+s
+```
 
 ## 4. A CLI that can do everything
 
