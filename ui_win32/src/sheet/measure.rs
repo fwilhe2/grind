@@ -29,13 +29,11 @@ pub struct CellMetrics<'a> {
 }
 
 impl CellMetrics<'_> {
+    /// A size is a multiple of the cell font, as it is drawn (`Appearance::scale`), not an
+    /// absolute: the cell font is the user's.
     pub fn font(&self, style: &TextStyle) -> Font {
-        let points = style
-            .font_size
-            .as_deref()
-            .and_then(|size| size.strip_suffix("pt"))
-            .and_then(|size| size.parse::<f64>().ok())
-            .unwrap_or(self.default_pt);
+        let points = self.default_pt
+            * grind_sheet::look::font_scale(style.font_size.as_deref()).unwrap_or(1.0);
         let px = (points * f64::from(self.dpi) * self.zoom / 72.0).round() as i32;
         Font::styled(
             self.face,

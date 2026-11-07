@@ -48,6 +48,8 @@ pub struct Appearance {
     pub strike: bool,
     /// `fo:margin-left`, in millimetres — zero for none.
     pub indent_mm: f64,
+    /// `fo:font-size` as a multiple of the cell font (`look::font_scale`) — one for none.
+    pub scale: f64,
     /// `None` means "the theme's ink" — a cell without a colour of its own has to follow the
     /// user's light/dark choice, and baking the theme's value in here would make a document
     /// that was opened in light mode unreadable when the theme changed under it.
@@ -78,6 +80,7 @@ impl Appearance {
             underline: style.is_some_and(CellStyle::is_underlined),
             strike: style.is_some_and(CellStyle::is_struck),
             indent_mm: style.and_then(CellStyle::indent_mm).unwrap_or(0.0),
+            scale: look::font_scale(style.and_then(|s| s.font_size.as_deref())).unwrap_or(1.0),
             text: style.and_then(|s| s.color.as_deref()).and_then(Rgb::parse),
             // `transparent` is a real value and it means *no fill*, not black.
             background: match style.and_then(|s| s.background.as_deref()) {
@@ -387,6 +390,20 @@ mod windows_impl {
                 })),
             }
         };
+        // A cell at a size of its own gets a font of its own: a frame has a title or two, not
+        // a column of them.
+        let sized = |look: &Appearance| -> Option<Font> {
+            (look.scale != 1.0).then(|| {
+                Font::styled(
+                    frame.face,
+                    ((f64::from(frame.font_px) * look.scale).round() as i32).max(6),
+                    look.bold,
+                    look.italic,
+                    look.underline,
+                    look.strike,
+                )
+            })
+        };
         // The chrome's own two sizes — see `Frame::caption_px`. Built once per frame, like every
         // other font here, because creating one per label would be visible on every keystroke.
         let caption = Font::new(frame.face, frame.caption_px, false);
@@ -410,6 +427,7 @@ mod windows_impl {
         // as a line, because a zero-width column is not a boundary.
         {
             let _font = Selected::font(dc, &regular);
+            let mut spills: Vec<Spill> = Vec::new();
             for row in g.visible_rows() {
                 for col in g.visible_cols() {
                     let rect = g.cell_rect(row, col);
@@ -495,7 +513,11 @@ mod windows_impl {
                     if text.is_empty() {
                         continue;
                     }
-                    let _face = face(&look).map(|font| Selected::font(dc, font));
+                    let own = sized(&look);
+                    let _face = own
+                        .as_ref()
+                        .or_else(|| face(&look))
+                        .map(|font| Selected::font(dc, font));
                     // A cell with no colour of its own gets ODF's *automatic* — the theme's ink
                     // where it reads on this cell's ground, black or white where not
                     // (`theme::automatic_ink`), or a filled heading row's text vanishes in the
@@ -570,6 +592,45 @@ mod windows_impl {
                             (text_left + px.round() as i32).min(text_right)
                         }
                     };
+                    // Text too wide keeps going until it meets something — rightwards from the
+                    // start, leftwards from the end, both ways from the middle — as LibreOffice
+                    // draws it. A number never does, and a filter button is in the way. Drawn
+                    // after every cell, or the next one's ground would paint over it.
+                    let room = f64::from(text_right - text_left) - 2.0 * pad.round() - 1.0;
+                    if !grind_sheet::numfmt::is_number(value)
+                        && text_right == right
+                        && f64::from(gdi::text_width(dc, text)) > room
+                    {
+                        let cols = g.visible_cols();
+                        let blocked = |c: u32| {
+                            frame.viewport.get(row, c).is_some_and(|v| !v.is_empty())
+                                || frame.viewport.merge_at(row, c).is_some()
+                        };
+                        let edge = |c: u32| g.cell_rect(row, c).edges();
+                        let reach_right = match look.align {
+                            Align::Right => right,
+                            _ => (col + 1..cols.end)
+                                .find(|c| blocked(*c))
+                                .map_or(edge(cols.end - 1).2, |c| edge(c).0),
+                        };
+                        let reach_left = match look.align {
+                            Align::Left => text_left,
+                            _ => (cols.start..col)
+                                .rev()
+                                .find(|c| blocked(*c))
+                                .map_or(edge(cols.start).0, |c| edge(c).2)
+                                .min(text_left),
+                        };
+                        spills.push(Spill {
+                            text: text.to_owned(),
+                            look,
+                            ink,
+                            cell: (text_left, right),
+                            reach: (reach_left, top, reach_right, bottom),
+                            pad,
+                        });
+                        continue;
+                    }
                     draw_text(
                         dc, text, text_left, top, text_right, bottom, look.align, ink, pad,
                     );
@@ -587,6 +648,14 @@ mod windows_impl {
                         );
                     }
                 }
+            }
+            for spill in &spills {
+                let own = sized(&spill.look);
+                let _face = own
+                    .as_ref()
+                    .or_else(|| face(&spill.look))
+                    .map(|font| Selected::font(dc, font));
+                spill.draw(dc);
             }
         }
 
@@ -618,7 +687,11 @@ mod windows_impl {
                 if text.is_empty() {
                     continue;
                 }
-                let _face = face(&look).map(|font| Selected::font(dc, font));
+                let own = sized(&look);
+                let _face = own
+                    .as_ref()
+                    .or_else(|| face(&look))
+                    .map(|font| Selected::font(dc, font));
                 let ink = crate::theme::document_ink(
                     look.text,
                     ground.unwrap_or(theme.background),
@@ -1595,10 +1668,46 @@ mod windows_impl {
         }
     }
 
-    /// One string, clipped to a rectangle, vertically centred and elided if it does not fit —
-    /// `DT_END_ELLIPSIS` rather than running into the next cell, since overflow into an empty
-    /// neighbour is a named gap. Public to the crate: the text pane's status and notice bars are
-    /// the same one line in a rectangle.
+    /// A cell's text wider than the cell, drawn over the empty neighbours it runs into.
+    struct Spill {
+        text: String,
+        look: Appearance,
+        ink: Rgb,
+        /// The cell's own left (after any marker and indent) and right edges.
+        cell: (i32, i32),
+        /// How far the text may run: left, top, right, bottom.
+        reach: (i32, i32, i32, i32),
+        pad: f64,
+    }
+
+    impl Spill {
+        /// In the DC's current font, cut where the run meets something rather than elided.
+        fn draw(&self, dc: HDC) {
+            let pad = self.pad.round() as i32;
+            let (reach_left, top, reach_right, bottom) = self.reach;
+            let (left, right) = self.cell;
+            let (from, to) = match self.look.align {
+                Align::Left => (left + pad, reach_right),
+                Align::Right => (reach_left, right - pad - 1),
+                Align::Center => {
+                    let middle = (left + right) / 2;
+                    let half = (middle - reach_left).min(reach_right - middle);
+                    (middle - half, middle + half)
+                }
+            };
+            let rect = RECT {
+                left: from,
+                top,
+                right: to,
+                bottom,
+            };
+            draw_line(dc, &self.text, rect, self.look.align, self.ink, false);
+        }
+    }
+
+    /// One string, clipped to a rectangle, vertically centred and elided if it does not fit.
+    /// Public to the crate: the text pane's status and notice bars are the same one line in a
+    /// rectangle.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_text(
         dc: HDC,
@@ -1612,12 +1721,17 @@ mod windows_impl {
         pad: f64,
     ) {
         let pad = pad.round() as i32;
-        let mut rect = RECT {
+        let rect = RECT {
             left: left + pad,
             top,
             right: (right - pad - 1).max(left + pad),
             bottom,
         };
+        draw_line(dc, text, rect, align, colour, true);
+    }
+
+    /// `text` on one line in `rect`, clipped to it, elided with `…` when `elide` says so.
+    fn draw_line(dc: HDC, text: &str, mut rect: RECT, align: Align, colour: Rgb, elide: bool) {
         if rect.right <= rect.left {
             return;
         }
@@ -1635,7 +1749,10 @@ mod windows_impl {
         let format = DT_SINGLELINE
             | DT_VCENTER
             | DT_NOPREFIX
-            | DT_END_ELLIPSIS
+            | match elide {
+                true => DT_END_ELLIPSIS,
+                false => Default::default(),
+            }
             | match align {
                 Align::Left => DT_LEFT,
                 Align::Right => DT_RIGHT,
