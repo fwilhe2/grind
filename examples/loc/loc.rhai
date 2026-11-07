@@ -96,8 +96,8 @@ let share = format("percent").decimals(1);
 // table above it ends. 0.7cm is a line of text with room above and below, and the height a
 // row with none of its own has in grind, so the empty rows under a table match the ones in it.
 let row_h = 0.7;
-let header_h = 1.3;
-let title_h = 1.5;
+let header_h = 1.2;
+let title_h = 1.2;
 let middle = style().valign("middle");
 
 /// A table's header row: white on the ink, centred, wrapping a long name onto two lines.
