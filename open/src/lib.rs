@@ -130,6 +130,29 @@ pub fn import(name: &str, bytes: &[u8], resolve: &Resolve<'_>) -> Option<Result<
     })
 }
 
+/// The text of a file this build opens, ODF or imported, in reading order: a text document's
+/// blocks one per line ([`grind_text::Document::text`]), a spreadsheet's sheets row by row
+/// ([`grind_sheet::Document::text`]). `None` for bytes it does not open. Reads nothing but
+/// `bytes`: a Markdown file's pictures are not looked for.
+pub fn text(name: &str, bytes: &[u8]) -> Option<Result<String, String>> {
+    let (kind, imported) = match import(name, bytes, &nowhere) {
+        Some(Ok(imported)) => (imported.kind, Some(imported.odf)),
+        Some(Err(e)) => return Some(Err(e)),
+        None => (grind_core::kind(bytes)?, None),
+    };
+    let odf = imported.as_deref().unwrap_or(bytes);
+    let text = match kind {
+        DocumentKind::Text => grind_text::read_bytes(name, odf)
+            .map(|doc| doc.text())
+            .map_err(|e| e.to_string()),
+        DocumentKind::Spreadsheet => grind_sheet::read_bytes(name, odf)
+            .map(|doc| doc.text())
+            .map_err(|e| e.to_string()),
+        DocumentKind::Presentation => return None,
+    };
+    Some(text.map_err(|e| format!("{name}: {e}")))
+}
+
 /// [`import`] for a file on disk: named after its path, a Markdown file's pictures found beside
 /// it.
 pub fn import_file(path: &Path, bytes: &[u8]) -> Option<Result<Imported, String>> {
@@ -231,6 +254,61 @@ mod tests {
         let core = grind_text::App::new();
         core.open_bytes(&imported.name, &imported.odf).unwrap();
         assert_eq!(core.block_count(), 2);
+    }
+
+    #[test]
+    fn text_comes_from_odf_and_from_every_import_in_reading_order() {
+        let mut doc = grind_text::Document::empty();
+        for line in ["Kontoauszug", "Saldo 1.234,56"] {
+            let id = doc.next_id();
+            let mut block =
+                grind_text::model::Block::new(id, grind_text::model::BlockKind::Paragraph);
+            block.runs.push(grind_text::model::Run::plain(line));
+            doc.blocks.push(block);
+        }
+        let odt = grind_text::write_bytes(&doc, grind_core::Form::Package).unwrap();
+        assert_eq!(
+            text("statement.odt", &odt).unwrap().unwrap(),
+            "Kontoauszug\nSaldo 1.234,56"
+        );
+
+        let csv = text("prices.csv", b"item,price\nbread,2.5\n,\nmilk\n")
+            .unwrap()
+            .unwrap();
+        let mut lines = csv.lines().skip(1);
+        assert_eq!(lines.next(), Some("item\tprice"));
+        assert_eq!(lines.next(), Some("bread\t2.5"));
+        assert_eq!(lines.next(), Some("milk"), "an empty row is left out");
+
+        let md = text("notes.md", b"# Hi\n\nsome *text*\n").unwrap().unwrap();
+        assert_eq!(md, "Hi\nsome text");
+
+        assert_eq!(text("notes.txt", b"plain"), None);
+        assert_eq!(text("x.pdf", b"%PDF-1.7"), None);
+    }
+
+    #[cfg(feature = "xlsx")]
+    #[test]
+    fn a_workbooks_text_is_what_its_cells_show() {
+        let bytes = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../xlsx/tests/data/sample.xlsx"
+        ))
+        .unwrap();
+        let text = text("budget.xlsx", &bytes).unwrap().unwrap();
+        assert!(text.contains("Region"), "{text}");
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn a_word_documents_text_includes_its_headings() {
+        let bytes = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../docx/tests/data/sample.docx"
+        ))
+        .unwrap();
+        let text = text("letter.docx", &bytes).unwrap().unwrap();
+        assert!(text.lines().any(|l| l == "Field Notes"), "{text}");
     }
 
     #[test]

@@ -988,6 +988,41 @@ impl Document {
     pub fn sheet_mut(&mut self, i: usize) -> Option<&mut Sheet> {
         self.sheets.get_mut(i)
     }
+
+    /// The whole document as plain text, for search rather than display: each sheet's name on a
+    /// line, then a line per row holding a value, its values as they display, separated by tabs.
+    /// Only cells holding a value are visited, so a wide, sparse sheet costs what it holds.
+    pub fn text(&self) -> String {
+        let mut out = String::new();
+        for sheet in &self.sheets {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(&sheet.name);
+            let mut rows: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+            for (col, column) in sheet.cols.iter().enumerate() {
+                for row in column.occupied().flatten() {
+                    rows.entry(row).or_default().push(col as u32);
+                }
+            }
+            for (row, cols) in rows {
+                out.push('\n');
+                for (i, col) in cols.into_iter().enumerate() {
+                    if i > 0 {
+                        out.push('\t');
+                    }
+                    let pos = Pos::new(row, col);
+                    out.push_str(&crate::render_in(
+                        sheet,
+                        pos,
+                        self.null_date,
+                        self.locale.as_ref(),
+                    ));
+                }
+            }
+        }
+        out
+    }
 }
 
 #[cfg(test)]
