@@ -140,7 +140,8 @@ pub use gdi_half::{paint, paint_held, paint_in};
 mod gdi_half {
     use windows::Win32::Foundation::{COLORREF, POINT, RECT};
     use windows::Win32::Graphics::Gdi::{
-        HDC, IntersectClipRect, Polygon, Polyline, RestoreDC, SaveDC, SetTextColor, TextOutW,
+        DeleteObject, HDC, HGDIOBJ, IntersectClipRect, Polygon, Polyline, RestoreDC, SaveDC,
+        SelectObject, SetTextColor, TextOutW,
     };
 
     use grind_sheet::chart_paint::{self, Colours, Mark};
@@ -311,6 +312,7 @@ mod gdi_half {
                 style,
                 color,
                 clip,
+                turn,
             } => {
                 let wide: Vec<u16> = text.encode_utf16().collect();
                 if wide.is_empty() {
@@ -330,7 +332,29 @@ mod gdi_half {
                         clip.bottom().round() as i32,
                     );
                     SetTextColor(dc, COLORREF(rgb(color).colorref()));
+                    // A turned name: the same face with an escapement, which GDI turns about the
+                    // reference point — the box's top-left, as `Mark::Text` says.
+                    let turned = (turn != 0.0).then(|| {
+                        use windows::Win32::Graphics::Gdi::{
+                            CreateFontIndirectW, GetCurrentObject, GetObjectW, LOGFONTW, OBJ_FONT,
+                        };
+                        let mut log = LOGFONTW::default();
+                        GetObjectW(
+                            GetCurrentObject(dc, OBJ_FONT),
+                            std::mem::size_of::<LOGFONTW>() as i32,
+                            Some((&mut log as *mut LOGFONTW).cast()),
+                        );
+                        let tenths = (turn * 10.0).round() as i32;
+                        log.lfEscapement = tenths;
+                        log.lfOrientation = tenths;
+                        let font = CreateFontIndirectW(&log);
+                        (font, SelectObject(dc, HGDIOBJ(font.0)))
+                    });
                     let _ = TextOutW(dc, x.round() as i32, top.round() as i32, &wide);
+                    if let Some((font, previous)) = turned {
+                        SelectObject(dc, previous);
+                        let _ = DeleteObject(HGDIOBJ(font.0));
+                    }
                     let _ = RestoreDC(dc, saved);
                 }
             }

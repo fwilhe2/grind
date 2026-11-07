@@ -273,6 +273,7 @@ pub fn draw(
                 style,
                 color,
                 clip,
+                turn: 0.0,
             } => Op::Text {
                 x,
                 top,
@@ -281,6 +282,34 @@ pub fn draw(
                 color,
                 clip: rect(clip),
             },
+            // Turned about its box's top-left corner; `Op::Turned` turns about the middle, which
+            // is that corner plus half the box, turned.
+            Mark::Text {
+                x,
+                top,
+                text,
+                style,
+                color,
+                clip,
+                turn,
+            } => {
+                let w = paint::width(metrics, &text, &style);
+                let h = f64::from(metrics.line_height(&style));
+                let (sin, cos) = turn.to_radians().sin_cos();
+                Op::Turned {
+                    centre: (
+                        x + cos * w / 2.0 + sin * h / 2.0,
+                        top - sin * w / 2.0 + cos * h / 2.0,
+                    ),
+                    degrees: turn,
+                    w,
+                    h,
+                    text,
+                    style,
+                    color,
+                    clip: rect(clip),
+                }
+            }
             Mark::Path {
                 points,
                 fill,

@@ -110,15 +110,14 @@ fn names_and_plot(marks: &[Mark]) -> (Vec<(f64, f64, String)>, f64, f64) {
     (names, x, w)
 }
 
-/// Every category keeps a name, centred under its own band and shortened to fit it, so no name
-/// is skipped and the one that shows is never under the neighbouring group.
+/// Names that fit their bands stay level, whole and centred under their own bars.
 #[test]
-fn every_category_is_named_under_its_own_bars_and_shortened_to_fit() {
+fn names_that_fit_stay_level_under_their_own_bars() {
     let (chart, data) = budget();
     let marks = chart_paint::draw(
         &chart,
         &data,
-        Rect::new(0.0, 0.0, 330.0, 200.0),
+        Rect::new(0.0, 0.0, 600.0, 200.0),
         &colours(),
         &Letters,
     );
@@ -131,17 +130,62 @@ fn every_category_is_named_under_its_own_bars_and_shortened_to_fit() {
             ((left + right) / 2.0 - centre).abs() < 0.01,
             "{text} is off its band"
         );
-        assert!(right - left <= step, "{text} is wider than its band");
+        assert_eq!(text, &data.categories[i]);
+    }
+    assert!(
+        marks
+            .iter()
+            .all(|mark| !matches!(mark, Mark::Text { turn, .. } if *turn != 0.0))
+    );
+}
+
+/// Names wider than their bands are turned rather than cut, each whole and ending under its own
+/// bars.
+#[test]
+fn names_too_wide_for_their_bands_are_turned_whole() {
+    let (chart, data) = budget();
+    let marks = chart_paint::draw(
+        &chart,
+        &data,
+        Rect::new(0.0, 0.0, 330.0, 200.0),
+        &colours(),
+        &Letters,
+    );
+    let (_, plot_x, plot_w) = names_and_plot(&marks);
+    let turned: Vec<(f64, &str)> = marks
+        .iter()
+        .filter_map(|mark| match mark {
+            Mark::Text { x, text, turn, .. } if *turn == chart_paint::TURN_DEGREES => {
+                Some((*x, text.as_str()))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(turned.len(), 6, "{turned:?}");
+    let step = plot_w / 6.0;
+    let s = std::f64::consts::FRAC_1_SQRT_2;
+    for (i, (x, text)) in turned.iter().enumerate() {
+        assert_eq!(*text, data.categories[i]);
+        let w = chart_paint::width(&Letters, text, &TextStyle::default());
+        let end = x + s * (w + 12.0 / 2.0);
+        let centre = plot_x + (i as f64 + 0.5) * step;
         assert!(
-            data.categories[i].starts_with(text.trim_end_matches('…')),
-            "{text}"
+            (end - centre).abs() < 0.01,
+            "{text} ends at {end}, not {centre}"
         );
     }
-    assert!(names.iter().any(|(_, _, t)| t.ends_with('…')), "{names:?}");
-    assert!(
-        names.iter().any(|(_, _, t)| t == "Leisure"),
-        "a name that fits stays whole"
-    );
+}
+
+/// Turned names closer than a line apart would overlap, so some are left out; their room is
+/// capped, so a very long name cannot take the plot.
+#[test]
+fn turned_names_keep_a_line_apart_and_a_share_of_the_height() {
+    let names = chart_paint::category_names(300.0, 10.0, 12.0, 200.0, 4.0, 4.0);
+    assert!(names.turned);
+    assert_eq!(names.every, 2, "10 apart turned is 7 across; a line is 12");
+    assert!(names.depth <= 200.0 * 0.3 + 4.0 + 0.01, "{names:?}");
+    let level = chart_paint::category_names(30.0, 50.0, 12.0, 200.0, 4.0, 4.0);
+    assert_eq!((level.turned, level.every, level.depth), (false, 1, 16.0));
 }
 
 #[test]

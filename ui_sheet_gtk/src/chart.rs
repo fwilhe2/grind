@@ -236,6 +236,8 @@ struct Layout {
     /// The value axis' own scale — [`grind_sheet::axis_ticks`], so the top of the plot is a
     /// round number rather than whatever the largest bar happened to be.
     ticks: Ticks,
+    /// How the category names under the plot are set: level, or turned when one is too wide.
+    names: grind_sheet::chart_paint::CategoryNames,
     /// The band the chart's own title is drawn in, when it has one and there is room.
     title: Option<Rect>,
     /// Every legend entry, placed — empty when the chart has no legend, or no room for one.
@@ -471,8 +473,22 @@ fn layout(rect: Rect, chart: &Chart, data: &ChartData, measure: &Measure) -> Lay
     if x_axis.label.is_some() {
         bottom += LABEL_SPACE;
     }
+    let band = (rect.w - left - INSET).max(0.0) / category_count(data).max(1) as f64;
+    let widest = data
+        .categories
+        .iter()
+        .map(|name| measure(name).0)
+        .fold(0.0, f64::max);
+    let names = grind_sheet::chart_paint::category_names(
+        widest,
+        band,
+        tick_h,
+        rect.h,
+        TICK_GAP,
+        TICK_CLEARANCE,
+    );
     if x_axis.tick_labels {
-        bottom += tick_h + TICK_GAP;
+        bottom += names.depth;
     }
     // The topmost y tick label is centred on the top of the plot, so half of it sits above —
     // room for that, or it is clipped by the frame.
@@ -490,6 +506,7 @@ fn layout(rect: Rect, chart: &Chart, data: &ChartData, measure: &Measure) -> Lay
         },
         axes: rect,
         ticks,
+        names,
         title,
         legend,
     }
@@ -576,23 +593,37 @@ fn draw_ticks(
         }
     }
     if x_axis.tick_labels {
-        let room = plot.w / category_count(data).max(1) as f64 - TICK_CLEARANCE;
+        use grind_sheet::chart_paint::{TURN_DEGREES, shorten, turned_origin};
+        let names = layout.names;
         for (i, x) in category_ticks(layout, data).into_iter().enumerate() {
+            if i % names.every != 0 {
+                continue;
+            }
             let Some(text) = data.categories.get(i).filter(|t| !t.is_empty()) else {
                 continue;
             };
-            let Some(text) = grind_sheet::chart_paint::shorten(text, room, |t| measure(t).0) else {
+            let Some(text) = shorten(text, names.room, |t| measure(t).0) else {
                 continue;
             };
-            let (w, _) = measure(&text);
-            place(
-                widget,
-                snapshot,
-                &text,
-                x - w / 2.0,
-                plot.y + plot.h + TICK_GAP,
-                paint.foreground,
-            );
+            let (w, h) = measure(&text);
+            match names.turned {
+                true => {
+                    let (x, y) = turned_origin(x, plot.y + plot.h, TICK_GAP, w, h);
+                    snapshot.save();
+                    snapshot.translate(&graphene::Point::new(x as f32, y as f32));
+                    snapshot.rotate(-TURN_DEGREES as f32);
+                    place(widget, snapshot, &text, 0.0, 0.0, paint.foreground);
+                    snapshot.restore();
+                }
+                false => place(
+                    widget,
+                    snapshot,
+                    &text,
+                    x - w / 2.0,
+                    plot.y + plot.h + TICK_GAP,
+                    paint.foreground,
+                ),
+            }
         }
     }
 }

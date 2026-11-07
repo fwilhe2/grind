@@ -63,7 +63,8 @@ pub enum Mark {
         rect: Rect,
         color: Rgb,
     },
-    /// One line of text whose box starts at `(x, top)`, drawn only inside `clip`.
+    /// One line of text whose box starts at `(x, top)`, turned `turn` degrees counter-clockwise
+    /// about that corner, drawn only inside `clip`.
     Text {
         x: f64,
         top: f64,
@@ -71,6 +72,7 @@ pub enum Mark {
         style: TextStyle,
         color: Rgb,
         clip: Rect,
+        turn: f64,
     },
     /// A polygon: filled when `fill` is set, stroked with `(colour, width)` when `stroke` is.
     Path {
@@ -99,6 +101,66 @@ pub fn shorten(text: &str, room: f64, width: impl Fn(&str) -> f64) -> Option<Str
         .filter(|start| !start.is_empty())
         .map(|start| format!("{start}…"))
         .find(|cut| width(cut) <= room)
+}
+
+/// How a category axis sets its names: level, each within its own band, or turned
+/// [`TURN_DEGREES`] when one is wider than its band — as LibreOffice turns them — rather than cut
+/// to `b…`, `co…`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CategoryNames {
+    /// Whether the names are turned.
+    pub turned: bool,
+    /// How wide a name may be before it is shortened ([`shorten`]).
+    pub room: f64,
+    /// How far below the plot the names reach, their gap from it included.
+    pub depth: f64,
+    /// Every how many'th name is drawn: turned names closer than a line apart would overlap,
+    /// so some are left out, as LibreOffice leaves them out.
+    pub every: usize,
+}
+
+/// The angle, counter-clockwise, a turned category name is set at.
+pub const TURN_DEGREES: f64 = 45.0;
+/// The most of a chart's height turned names may take.
+const TURN_SHARE: f64 = 0.3;
+
+/// How the names under a plot are set: `widest` the widest name, `band` one category's width,
+/// `line` a line's height, `height` the chart's frame, `gap` the space between plot and names,
+/// and `clearance` the least space between two level names.
+pub fn category_names(
+    widest: f64,
+    band: f64,
+    line: f64,
+    height: f64,
+    gap: f64,
+    clearance: f64,
+) -> CategoryNames {
+    let level = (band - clearance).max(0.0);
+    if widest <= level || band <= 0.0 {
+        return CategoryNames {
+            turned: false,
+            room: level,
+            depth: line + gap,
+            every: 1,
+        };
+    }
+    let s = std::f64::consts::FRAC_1_SQRT_2;
+    let room = widest.min((height * TURN_SHARE / s - line).max(0.0));
+    CategoryNames {
+        turned: true,
+        room,
+        depth: s * (room + line) + gap,
+        every: (line / (band * s)).ceil().max(1.0) as usize,
+    }
+}
+
+/// Where a name `w` wide and `h` tall goes, turned [`TURN_DEGREES`] about its box's top-left
+/// corner, so that it ends under `tick` and its top corner is `gap` below `bottom`: the top-left
+/// of its box before turning.
+pub fn turned_origin(tick: f64, bottom: f64, gap: f64, w: f64, h: f64) -> (f64, f64) {
+    let s = std::f64::consts::FRAC_1_SQRT_2;
+    let anchor = (tick, bottom + gap + s * h / 2.0);
+    (anchor.0 - s * (w + h / 2.0), anchor.1 + s * (w - h / 2.0))
 }
 
 /// How far the plot is inset from the frame.
@@ -178,6 +240,10 @@ impl Painter<'_> {
     }
 
     fn text(&mut self, x: f64, top: f64, text: &str, style: TextStyle, color: Rgb) {
+        self.turned(x, top, text, style, color, 0.0);
+    }
+
+    fn turned(&mut self, x: f64, top: f64, text: &str, style: TextStyle, color: Rgb, turn: f64) {
         self.ops.push(Mark::Text {
             x,
             top,
@@ -185,6 +251,7 @@ impl Painter<'_> {
             style,
             color,
             clip: self.clip,
+            turn,
         });
     }
 
@@ -329,8 +396,16 @@ impl Painter<'_> {
         if x_axis.label.is_some() {
             bottom += tick_h + TICK_GAP;
         }
+        let band = (frame.w - left - INSET).max(0.0) / category_count(self.data).max(1) as f64;
+        let widest_name = self
+            .data
+            .categories
+            .iter()
+            .map(|name| self.text_w(name, &style))
+            .fold(0.0, f64::max);
+        let names = category_names(widest_name, band, tick_h, frame.h, TICK_GAP, TICK_GAP);
         if x_axis.tick_labels {
-            bottom += tick_h + TICK_GAP;
+            bottom += names.depth;
         }
         let plot = Rect::new(
             frame.x + left,
@@ -359,22 +434,30 @@ impl Painter<'_> {
             }
         }
         if x_axis.tick_labels {
-            let room = plot.w / category_count(self.data).max(1) as f64 - TICK_GAP;
             for (i, x) in category_x(self.data, plot).into_iter().enumerate() {
+                if i % names.every != 0 {
+                    continue;
+                }
                 let Some(label) = self.data.categories.get(i).filter(|t| !t.is_empty()) else {
                     continue;
                 };
-                let Some(label) = shorten(label, room, |t| self.text_w(t, &style)) else {
+                let Some(label) = shorten(label, names.room, |t| self.text_w(t, &style)) else {
                     continue;
                 };
                 let w = self.text_w(&label, &style);
-                self.text(
-                    x - w / 2.0,
-                    plot.bottom() + TICK_GAP,
-                    &label,
-                    style.clone(),
-                    ink,
-                );
+                match names.turned {
+                    true => {
+                        let (x, top) = turned_origin(x, plot.bottom(), TICK_GAP, w, tick_h);
+                        self.turned(x, top, &label, style.clone(), ink, TURN_DEGREES);
+                    }
+                    false => self.text(
+                        x - w / 2.0,
+                        plot.bottom() + TICK_GAP,
+                        &label,
+                        style.clone(),
+                        ink,
+                    ),
+                }
             }
         }
         if let Some(label) = &x_axis.label {

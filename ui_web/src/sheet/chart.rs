@@ -49,7 +49,7 @@ pub fn svg(chart: &Chart, data: &ChartData, w: f64, h: f64) -> String {
             ChartKind::Line => lines(&mut out, chart, data, &ticks, plot),
             ChartKind::Pie => pie(&mut out, chart, data, plot),
         }
-        ticks_text(&mut out, &x_axis, &y_axis, data, &ticks, plot);
+        ticks_text(&mut out, &x_axis, &y_axis, data, &ticks, (plot, h));
     }
     titles(&mut out, &x_axis, &y_axis, w, h);
     out.push_str("</g></svg>");
@@ -225,7 +225,7 @@ fn plot_rect(
         bottom += TITLE_SPACE;
     }
     if x_axis.tick_labels {
-        bottom += TICK_H + TICK_GAP;
+        bottom += names(data, w - left - INSET, h).depth;
     }
     // The topmost tick label is centred on the plot's own top edge, so half of it is above.
     let top = INSET
@@ -239,6 +239,18 @@ fn plot_rect(
         (w - left - INSET).max(0.0),
         (h - bottom - top).max(0.0),
     )
+}
+
+/// How the category names are set under a plot `width` wide in a frame `height` tall — level, or
+/// turned when one is too wide (`chart_paint::category_names`), widths estimated, not measured.
+fn names(data: &ChartData, width: f64, height: f64) -> grind_sheet::chart_paint::CategoryNames {
+    let widest = data
+        .categories
+        .iter()
+        .map(|name| name.chars().count() as f64 * TICK_CHAR_W)
+        .fold(0.0, f64::max);
+    let band = width.max(0.0) / category_count(data).max(1) as f64;
+    grind_sheet::chart_paint::category_names(widest, band, TICK_H, height, TICK_GAP, TICK_GAP)
 }
 
 fn max_value(data: &ChartData) -> f64 {
@@ -398,7 +410,7 @@ fn ticks_text(
     y_axis: &ChartAxis,
     data: &ChartData,
     ticks: &grind_sheet::Ticks,
-    plot: Plot,
+    (plot, height): (Plot, f64),
 ) {
     if y_axis.tick_labels {
         for value in &ticks.values {
@@ -412,21 +424,37 @@ fn ticks_text(
         }
     }
     if x_axis.tick_labels {
-        // Each name shortened to its own band, the width estimated rather than measured.
-        let room = plot.2 / category_count(data).max(1) as f64 - TICK_GAP;
+        use grind_sheet::chart_paint::{TURN_DEGREES, shorten, turned_origin};
+        let names = names(data, plot.2, height);
         let width = |t: &str| t.chars().count() as f64 * TICK_CHAR_W;
         for (i, x) in category_x(data, plot).into_iter().enumerate() {
+            if i % names.every != 0 {
+                continue;
+            }
             let Some(text) = data.categories.get(i).filter(|t| !t.is_empty()) else {
                 continue;
             };
-            let Some(text) = grind_sheet::chart_paint::shorten(text, room, width) else {
+            let Some(text) = shorten(text, names.room, width) else {
                 continue;
             };
-            out.push_str(&format!(
-                "<text class=\"tick\" text-anchor=\"middle\" x=\"{x:.1}\" y=\"{:.1}\">{}</text>",
-                plot.1 + plot.3 + TICK_GAP + TICK_H * 0.8,
-                escape(&text)
-            ));
+            match names.turned {
+                // Set from its box's top-left, turned about it; SVG text sits on its baseline,
+                // most of a line below that corner.
+                true => {
+                    let (x, y) = turned_origin(x, plot.1 + plot.3, TICK_GAP, width(&text), TICK_H);
+                    out.push_str(&format!(
+                        "<text class=\"tick\" x=\"{x:.1}\" y=\"{:.1}\" transform=\"rotate({:.0} {x:.1} {y:.1})\">{}</text>",
+                        y + TICK_H * 0.8,
+                        -TURN_DEGREES,
+                        escape(&text)
+                    ));
+                }
+                false => out.push_str(&format!(
+                    "<text class=\"tick\" text-anchor=\"middle\" x=\"{x:.1}\" y=\"{:.1}\">{}</text>",
+                    plot.1 + plot.3 + TICK_GAP + TICK_H * 0.8,
+                    escape(&text)
+                )),
+            }
         }
     }
 }
