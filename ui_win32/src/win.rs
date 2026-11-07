@@ -608,8 +608,9 @@ impl Sheet {
             header_w: scale(draw::HEADER_W, dpi),
             header_h: scale(draw::HEADER_H, dpi),
             status_h: scale(draw::STATUS_H, dpi),
-            // Every cell track is built from the document's lengths and then scaled by the zoom —
-            // the arithmetic downstream stays in one space (`Sizes::scaled`).
+            // Every cell track is built from the document's lengths, scaled by the zoom — the
+            // arithmetic downstream stays in one space (`Sizes::scaled`) — and snapped to whole
+            // pixels, or equal rows are drawn a pixel apart.
             cols: Sizes::from_lengths(
                 scale(draw::COL_W, dpi),
                 MAX_COLS,
@@ -617,7 +618,8 @@ impl Sheet {
                 &hidden_cols,
                 mm_to_px(dpi),
             )
-            .scaled(self.geom.zoom),
+            .scaled(self.geom.zoom)
+            .snapped(),
             rows: Sizes::from_lengths(
                 scale(draw::ROW_H, dpi),
                 MAX_ROWS,
@@ -625,7 +627,8 @@ impl Sheet {
                 &hidden_rows,
                 mm_to_px(dpi),
             )
-            .scaled(self.geom.zoom),
+            .scaled(self.geom.zoom)
+            .snapped(),
             first_row: self.geom.first_row,
             first_col: self.geom.first_col,
             width,
@@ -673,7 +676,7 @@ impl Sheet {
                 let measured = self.app.measured_rows(self.sheet).unwrap_or_default();
                 let mut sizes = grind_sheet::autoheight::heights(grown, sized, &measured);
                 sizes.extend(hidden_rows.iter().map(|row| (*row, 0.0)));
-                self.geom.rows = Sizes::new(row_h, MAX_ROWS, sizes);
+                self.geom.rows = Sizes::new(row_h, MAX_ROWS, sizes).snapped();
             }
         }
         // A window that grew may now show past the last row; clamp rather than leave the view
