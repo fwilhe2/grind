@@ -846,6 +846,8 @@ input[type="text"] {
    it (`doc/ods-format.md` §5.1); the headers keep the middle. */
 .grid td.cell {
   vertical-align: bottom;
+  /* Every digit one width, so right-aligned numbers line up down a column. */
+  font-variant-numeric: tabular-nums;
 }
 
 /* Turned text (`style:rotation-angle`), about the cell's middle and kept inside it. */

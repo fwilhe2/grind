@@ -493,6 +493,7 @@ pub fn frame(frame: &Frame) -> Vec<Op> {
                             bold: false,
                             italic: false,
                             family: Family::System,
+                            tabular: false,
                         },
                         color: palette.muted(),
                         underline: false,

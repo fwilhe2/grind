@@ -139,6 +139,7 @@ objc2-pdf-kit = { version = "0.3", default-features = false, features = [
 ] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = [
     "std",
+    "CFArray",
     "CFAttributedString",
     "CFCGTypes",
     "CFDictionary",
@@ -157,7 +158,9 @@ objc2-core-text = { version = "0.3", default-features = false, features = [
     "std",
     "objc2-core-graphics",
     "CTFont",
+    "CTFontDescriptor",
     "CTFontTraits",
     "CTLine",
     "CTStringAttributes",
+    "SFNTLayoutTypes",
 ] }

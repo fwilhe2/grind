@@ -56,6 +56,9 @@ pub struct Font {
     pub bold: bool,
     pub italic: bool,
     pub family: Family,
+    /// Every digit one width, so right-aligned numbers line up down a column. San Francisco's
+    /// digits are proportional unless asked.
+    pub tabular: bool,
 }
 
 impl Font {
@@ -69,6 +72,7 @@ impl Font {
             bold: look::bold_weight(style.font_weight.as_deref()),
             italic: look::italic_style(style.font_style.as_deref()),
             family: Family::System,
+            tabular: true,
         }
     }
 }
@@ -89,15 +93,18 @@ mod mac {
     use super::{Family, Font};
     use crate::text::face;
     use objc2_core_foundation::{
-        CFAttributedString, CFBoolean, CFDictionary, CFIndex, CFRetained, CFString, CFType, CGFloat,
+        CFArray, CFAttributedString, CFBoolean, CFDictionary, CFIndex, CFNumber, CFRetained,
+        CFString, CFType, CGFloat,
     };
     use objc2_core_text::{
-        CTFont, CTFontSymbolicTraits, CTFontUIFontType, CTLine, kCTFontAttributeName,
-        kCTForegroundColorFromContextAttributeName,
+        CTFont, CTFontDescriptor, CTFontSymbolicTraits, CTFontUIFontType, CTLine,
+        kCTFontAttributeName, kCTFontFeatureSelectorIdentifierKey, kCTFontFeatureSettingsAttribute,
+        kCTFontFeatureTypeIdentifierKey, kCTForegroundColorFromContextAttributeName,
+        kMonospacedNumbersSelector, kNumberSpacingType,
     };
 
-    /// What a made font is kept under: its size's bits, bold, italic and family.
-    type FontKey = (u64, bool, bool, Family);
+    /// What a made font is kept under: its size's bits, bold, italic, family and figures.
+    type FontKey = (u64, bool, bool, Family, bool);
 
     /// Fonts by size and face, and the lines set in them, cached by the whole [`Font`]: a paint
     /// measures hundreds of pieces in a handful of faces, and a `CTFont` per piece would be most
@@ -122,6 +129,7 @@ mod mac {
                 font.bold,
                 font.italic,
                 font.family.clone(),
+                font.tabular,
             );
             if let Some(made) = self.fonts.borrow().get(&key) {
                 return made.clone();
@@ -199,8 +207,47 @@ mod mac {
         }
     }
 
-    /// A CoreText font for `font`: the family first, then the weight and slant over it.
+    /// A CoreText font for `font`: the family first, then the weight and slant over it, then
+    /// its figures.
     fn make(font: &Font) -> CFRetained<CTFont> {
+        let made = styled(font);
+        match font.tabular {
+            true => tabular(&made),
+            false => made,
+        }
+    }
+
+    /// `font` with monospaced numbers: the AAT number-spacing feature, which is how AppKit's
+    /// `monospacedDigitSystemFont` asks San Francisco for it.
+    fn tabular(font: &CTFont) -> CFRetained<CTFont> {
+        // SAFETY: the keys are constants CoreText exports for a feature setting and the feature
+        // settings attribute; the values are the numbers and the array of one setting CoreText
+        // documents for them. A size of zero keeps the font's own, a null matrix is the identity.
+        unsafe {
+            let (kind, selector) = (
+                CFNumber::new_i32(kNumberSpacingType),
+                CFNumber::new_i32(kMonospacedNumbersSelector as i32),
+            );
+            let setting = CFDictionary::<CFString, CFNumber>::from_slices(
+                &[
+                    kCTFontFeatureTypeIdentifierKey,
+                    kCTFontFeatureSelectorIdentifierKey,
+                ],
+                &[&kind, &selector],
+            );
+            let settings =
+                CFArray::<CFDictionary<CFString, CFNumber>>::from_retained_objects(&[setting]);
+            let attributes = CFDictionary::<CFString, CFType>::from_slices(
+                &[kCTFontFeatureSettingsAttribute],
+                &[settings.as_ref()],
+            );
+            let descriptor = CTFontDescriptor::with_attributes(attributes.as_opaque());
+            font.copy_with_attributes(0.0, null(), Some(&descriptor))
+        }
+    }
+
+    /// `font`'s family at its size, bold and italic as it says.
+    fn styled(font: &Font) -> CFRetained<CTFont> {
         let size = font.size as CGFloat;
         // SAFETY: a null language means the user's own, which is what the UI fonts follow, and a
         // null matrix is the identity; both are documented.

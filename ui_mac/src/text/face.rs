@@ -62,6 +62,7 @@ pub fn font(role: Role, run: &TextStyle) -> Font {
         bold: role.bold() || bold_weight(run.font_weight.as_deref()),
         italic: role.italic() || italic_style(run.font_style.as_deref()),
         family,
+        tabular: false,
     }
 }
 
@@ -174,7 +175,8 @@ mod tests {
                 size: BODY_PT,
                 bold: false,
                 italic: false,
-                family: Family::System
+                family: Family::System,
+                tabular: false,
             }
         );
         let h1 = font(Role::Heading(1), &TextStyle::default());
