@@ -22,14 +22,78 @@
     <text:h text:outline-level="2">Human and AI Authorship</text:h>
     <text:p>This readme is fully human written. Source code, docs in the <text:span text:style-name="T1">docs</text:span><text:s/>directory and all other content are AI authored.</text:p>
     <text:h text:outline-level="1">Novel Features</text:h>
-    <text:p>1. View source</text:p>
+    <text:h text:outline-level="2">1. View source</text:h>
     <text:p>In spreadsheets, it is often not obvious which cells contain data and which contain code (formulas). Authors may decide to use styles to signal this, but that is not more than a convention. Grind has a plain-text projection of its OpenDocument format which make it simple to review and audit spreadsheets.</text:p>
-    <text:p>2. Formulas in plain English</text:p>
+    <text:p>Here is an example:</text:p>
+    <text:p><text:span text:style-name="T1">grind spreadsheet</text:span></text:p>
+    <text:p/>
+    <text:p><text:span text:style-name="T1">// A spreadsheet written by hand — the starter `grind init --template sheet` writes.</text:span></text:p>
+    <text:p><text:span text:style-name="T1">//</text:span></text:p>
+    <text:p><text:span text:style-name="T1">// This file *is* the spreadsheet, in the form that lives in git: every cell is a line, so a</text:span></text:p>
+    <text:p><text:span text:style-name="T1">// change is a line of diff. Open it in grind&apos;s window, or turn it into a file LibreOffice opens.</text:span></text:p>
+    <text:p/>
+    <text:p><text:span text:style-name="T1">// A name makes a formula say what it means. Names are the document&apos;s, so they sit outside</text:span></text:p>
+    <text:p><text:span text:style-name="T1">// every sheet.</text:span></text:p>
+    <text:p><text:span text:style-name="T1">name monthly &quot;[$Costs.$B$2:.$B$4]&quot;</text:span></text:p>
+    <text:p/>
+    <text:p><text:span text:style-name="T1">sheet Costs {</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="4"/>col 1 width=&quot;4cm&quot;</text:span></text:p>
+    <text:p/>
+    <text:p><text:span text:style-name="T1"><text:s text:c="4"/>// `at` says where a grid of plain values starts; each `row` is one line of the sheet.</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="4"/>at A1 {</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="8"/>row Item <text:s text:c="6"/>Monthly <text:s/>Yearly</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="8"/>row Rent <text:s text:c="6"/>1450 <text:s text:c="4"/>#null</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="8"/>row Utilities <text:s/>180.5 <text:s text:c="3"/>#null</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="8"/>row Internet <text:s text:c="2"/>49.99 <text:s text:c="3"/>#null</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="4"/>}</text:span></text:p>
+    <text:p/>
+    <text:p><text:span text:style-name="T1"><text:s text:c="4"/>// A `cell` is one cell that carries more than a value — here a formula, and no answer.</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="4"/>cell C2 &quot;=[.B2]*12&quot;</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="4"/>cell C3 &quot;=[.B3]*12&quot;</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="4"/>cell C4 &quot;=[.B4]*12&quot;</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="4"/>cell A5 Total</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="4"/>cell B5 &quot;=SUM(monthly)&quot;</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="4"/>cell C5 &quot;=SUM([.C2:.C4])&quot;</text:span></text:p>
+    <text:p/>
+    <text:p><text:span text:style-name="T1"><text:s text:c="4"/>style A1:C1 bold=#true background=silver</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="4"/>style A5:C5 bold=#true</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="4"/>format B2:C5 currency decimals=2 symbol=&quot;$&quot;</text:span></text:p>
+    <text:p><text:span text:style-name="T1">}</text:span></text:p>
+    <text:h text:outline-level="2">2. Formulas in plain English</text:h>
     <text:p>Grind can show spreadsheet formulas in a way that is more self documenting compared to other spreadsheet software.</text:p>
-    <text:p>3. A domain specific language to generate documents</text:p>
+    <text:p>So, instead of <text:span text:style-name="T1">=FV(Loan.B7/12;10*12;-Loan.B6)</text:span></text:p>
+    <text:p>grind will show you this:</text:p>
+    <text:p><text:span text:style-name="T1">Future Value(</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="2"/>Rate: Loan.B7/12,</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="2"/>Number Of Periods: 10*12,</text:span></text:p>
+    <text:p><text:span text:style-name="T1"><text:s text:c="2"/>Payment: -Loan.B6</text:span></text:p>
+    <text:p><text:span text:style-name="T1">)</text:span></text:p>
+    <text:h text:outline-level="2">3. A domain specific language to generate documents</text:h>
     <text:p>Based on <text:a xlink:href="https://rhai.rs/">rhai</text:a>, an embedded scripting language you can generate spreadsheets based on dynamic data without the need for a Turing complete language. Grind does not have any macro support and never will, but many macro use-cases might be replaced with rhai scripts.</text:p>
-    <text:p>4. A CLI that can do everything</text:p>
+    <text:p>Example:</text:p>
+    <text:p><text:span text:style-name="T1">// A script is a sequence of statements, and **its value is the value of its last expression**.</text:span></text:p>
+    <text:p><text:span text:style-name="T1">// That value has to be a document, which is why the last line is a bare `s`: returning a sheet</text:span></text:p>
+    <text:p><text:span text:style-name="T1">// means a one-sheet spreadsheet.</text:span></text:p>
+    <text:p/>
+    <text:p><text:span text:style-name="T1">let s = sheet(&quot;Sales&quot;);</text:span></text:p>
+    <text:p/>
+    <text:p><text:span text:style-name="T1">// A header is a row that is bold. `push` takes a bare array or a `row(…)`; the second is what</text:span></text:p>
+    <text:p><text:span text:style-name="T1">// you want when the row needs an adjective.</text:span></text:p>
+    <text:p><text:span text:style-name="T1">s.push(row([&quot;Region&quot;, &quot;Q1&quot;, &quot;Q2&quot;]).bold());</text:span></text:p>
+    <text:p/>
+    <text:p><text:span text:style-name="T1">s.push([&quot;North&quot;, 4200, 4800]);</text:span></text:p>
+    <text:p><text:span text:style-name="T1">s.push([&quot;South&quot;, 3100, 3300]);</text:span></text:p>
+    <text:p/>
+    <text:p><text:span text:style-name="T1">// `sum_above()` is told nothing: it sums the contiguous run of numbers directly above wherever</text:span></text:p>
+    <text:p><text:span text:style-name="T1">// it lands, which is an AutoSum&apos;s rule and the only one that does not reach up into a header.</text:span></text:p>
+    <text:p><text:span text:style-name="T1">s.push(row([&quot;Total&quot;, sum_above(), sum_above()]).bold());</text:span></text:p>
+    <text:p/>
+    <text:p><text:span text:style-name="T1">s</text:span></text:p>
+    <text:h text:outline-level="2">4. A CLI that can do everything</text:h>
     <text:p>The cli is a first class citizen, no matter if it is used by a human, in shell scripts or by AI Agents.</text:p>
+    <text:p>Discover what it can do using <text:span text:style-name="T1">grind --help</text:span></text:p>
+    <text:h text:outline-level="2">And more</text:h>
+    <text:p>Check out the (ai authored) <text:a xlink:href="doc/user-guide.md">user guide for more features</text:a>.</text:p>
     <text:h text:outline-level="1">License</text:h>
     <text:p>The application is licensed under GNU Affero General Public License v3 or later. Full text in <text:a xlink:href="./LICENSES">LICENSES</text:a>.</text:p>
     <text:p>Sample code is licensed under MIT.</text:p>
