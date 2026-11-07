@@ -632,8 +632,10 @@ pub fn axis_ticks(max: f64) -> Ticks {
     }
 }
 
-/// How many intervals [`axis_ticks`] aims for.
-const TICK_TARGET: f64 = 5.0;
+/// The most intervals [`axis_ticks`] aims for. Six rather than five: at five, 100,679 needs a
+/// step of 50,000 and an axis to 150,000, a third of the plot empty; at six it is 20,000s to
+/// 120,000.
+const TICK_TARGET: f64 = 6.0;
 
 /// One pie slice's arc in screen radians — 0 at three o'clock, positive clockwise on a y-down
 /// surface. `sweep` is signed by the pie's direction. `point` is the slice's position in the
@@ -717,6 +719,10 @@ pub struct ChartData {
     pub kind: ChartKind,
     pub categories: Vec<String>,
     pub series: Vec<(String, Vec<f64>)>,
+    /// How the value axis spells a tick: the first series' own number format, in the document's
+    /// locale, as LibreOffice links an axis to its source — `150,000`, not `150000`. `None` for
+    /// general, a date or a time, and [`ChartData::tick_label`]'s plain spelling stands.
+    pub value_format: Option<(crate::numfmt::Format, Option<crate::locale::Locale>)>,
 }
 
 impl ChartData {
@@ -747,12 +753,58 @@ impl ChartData {
             };
             series.push((label, values));
         }
+        let value_format = match chart.series.first() {
+            Some(first) => value_format(app, &first.values)?,
+            None => None,
+        };
         Ok(ChartData {
             kind: chart.kind,
             categories,
             series,
+            value_format,
         })
     }
+
+    /// One tick of the value axis, spelled in [`ChartData::value_format`] when that tells every
+    /// tick apart — a format with no decimals would spell 0.5-steps `0, 1, 1, 2` — else as
+    /// [`Ticks::label`] does.
+    pub fn tick_label(&self, ticks: &Ticks, value: f64) -> String {
+        let Some((format, locale)) = &self.value_format else {
+            return ticks.label(value);
+        };
+        let spell = |v: f64| format.render_in(&CellValue::Number(v), 0, locale.as_ref());
+        let distinct = ticks
+            .values
+            .windows(2)
+            .all(|pair| spell(pair[0]) != spell(pair[1]));
+        match distinct {
+            true => spell(value),
+            false => ticks.label(value),
+        }
+    }
+}
+
+/// The number format of a range's first number, for [`ChartData::value_format`].
+fn value_format(
+    app: &App,
+    range: &str,
+) -> Result<Option<(crate::numfmt::Format, Option<crate::locale::Locale>)>> {
+    use crate::numfmt::Kind;
+    let (sheet, start, stop) = resolve_range(app, range)?;
+    let viewport = app.get_viewport(sheet, start.row..stop.row + 1, start.col..stop.col + 1)?;
+    let first = (start.row..=stop.row)
+        .flat_map(|row| (start.col..=stop.col).map(move |col| Pos::new(row, col)))
+        .find(|pos| matches!(viewport.get(pos.row, pos.col), Some(CellValue::Number(_))));
+    let Some(pos) = first else { return Ok(None) };
+    Ok(app
+        .format_at(sheet, pos)?
+        .filter(|format| {
+            matches!(
+                format.kind,
+                Kind::Number | Kind::Percentage | Kind::Currency
+            )
+        })
+        .map(|format| (format, app.locale())))
 }
 
 /// A range's displayed text, one entry per cell in reading order.
@@ -993,11 +1045,33 @@ mod tests {
         assert_eq!(guessed.spec.categories, None);
     }
 
+    /// The value axis is spelled as its source is — grouped thousands, a percentage — unless that
+    /// spelling would show two ticks the same.
+    #[test]
+    fn a_tick_is_spelled_in_the_series_own_format() {
+        use crate::numfmt::{Kind, preset};
+        let with = |format| ChartData {
+            value_format: Some((format, None)),
+            ..pie_of(&[1.0])
+        };
+        let ticks = axis_ticks(150_000.0);
+        assert_eq!(pie_of(&[1.0]).tick_label(&ticks, 150_000.0), "150000");
+        let grouped = with(preset(Kind::Number, 0, true, ""));
+        assert_eq!(grouped.tick_label(&ticks, 150_000.0), "150,000");
+        let share = with(preset(Kind::Percentage, 0, false, ""));
+        assert_eq!(share.tick_label(&axis_ticks(0.5), 0.2), "20%");
+        // Halves in a format with no decimals would read 0, 1, 1, 2.
+        let halves = axis_ticks(2.0);
+        assert_eq!(halves.step, 0.5);
+        assert_eq!(grouped.tick_label(&halves, 1.5), "1.5");
+    }
+
     fn pie_of(values: &[f64]) -> ChartData {
         ChartData {
             kind: ChartKind::Pie,
             categories: Vec::new(),
             series: vec![("".into(), values.to_vec())],
+            value_format: None,
         }
     }
 
@@ -1074,6 +1148,12 @@ mod tests {
         chart.series = vec![s];
         assert_eq!(effective_color(&chart, 0, Some(0)), series_color(0));
         assert_eq!(effective_color(&chart, 0, Some(1)), "#123456");
+    }
+
+    #[test]
+    fn an_axis_does_not_waste_a_third_of_its_plot() {
+        let ticks = axis_ticks(100_679.0);
+        assert_eq!((ticks.step, ticks.max()), (20_000.0, 120_000.0));
     }
 
     #[test]

@@ -169,6 +169,7 @@ mod tests {
             kind,
             categories: vec!["Q1".into(), "Q2".into()],
             series: vec![("Sales".into(), vec![10.0, 20.0])],
+            value_format: None,
         }
     }
 

@@ -311,7 +311,7 @@ impl Painter<'_> {
         let widest = ticks
             .values
             .iter()
-            .map(|value| self.text_w(&ticks.label(*value), &style))
+            .map(|value| self.text_w(&self.data.tick_label(&ticks, *value), &style))
             .fold(0.0, f64::max);
 
         let mut left = INSET;
@@ -352,7 +352,7 @@ impl Painter<'_> {
         let ink = self.palette.header_ink;
         if y_axis.tick_labels {
             for value in &ticks.values {
-                let label = ticks.label(*value);
+                let label = self.data.tick_label(&ticks, *value);
                 let x = plot.x - TICK_GAP - self.text_w(&label, &style);
                 let y = value_y(*value, &ticks, plot) - tick_h / 2.0;
                 self.text(x, y, &label, style.clone(), ink);

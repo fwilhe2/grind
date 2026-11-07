@@ -40,7 +40,7 @@ pub fn svg(chart: &Chart, data: &ChartData, w: f64, h: f64) -> String {
     out.push_str(&format!("<g transform=\"translate({x0:.1} {y0:.1})\">"));
     let ticks = axis_ticks(max_value(data));
     let (x_axis, y_axis) = axes(chart, data);
-    let plot = plot_rect(&x_axis, &y_axis, &ticks, w, h);
+    let plot = plot_rect(&x_axis, &y_axis, data, &ticks, w, h);
 
     if plot.2 > 0.0 && plot.3 > 0.0 {
         grid(&mut out, &x_axis, &y_axis, data, &ticks, plot);
@@ -198,6 +198,7 @@ type Plot = (f64, f64, f64, f64);
 fn plot_rect(
     x_axis: &ChartAxis,
     y_axis: &ChartAxis,
+    data: &ChartData,
     ticks: &grind_sheet::Ticks,
     w: f64,
     h: f64,
@@ -205,7 +206,7 @@ fn plot_rect(
     let widest = ticks
         .values
         .iter()
-        .map(|value| ticks.label(*value).chars().count())
+        .map(|value| data.tick_label(ticks, *value).chars().count())
         .max()
         .unwrap_or(1) as f64;
 
@@ -406,7 +407,7 @@ fn ticks_text(
                 "<text class=\"tick\" text-anchor=\"end\" x=\"{:.1}\" y=\"{:.1}\">{}</text>",
                 plot.0 - TICK_GAP,
                 y + TICK_H / 3.0,
-                escape(&ticks.label(*value))
+                escape(&data.tick_label(ticks, *value))
             ));
         }
     }
@@ -477,6 +478,7 @@ mod tests {
             kind,
             categories: vec!["CDU".into(), "SPD".into()],
             series: vec![("Votes".into(), vec![90.0, 60.0])],
+            value_format: None,
         }
     }
 
@@ -529,6 +531,7 @@ mod tests {
             plot_rect(
                 &axes(&chart, &data).0,
                 &axes(&chart, &data).1,
+                &data,
                 &axis_ticks(90.0),
                 300.0,
                 200.0,
@@ -536,6 +539,7 @@ mod tests {
             plot_rect(
                 &ChartAxis::bare(),
                 &ChartAxis::bare(),
+                &data,
                 &axis_ticks(90.0),
                 300.0,
                 200.0,
@@ -556,6 +560,7 @@ mod tests {
                 ("Sales <net>".into(), vec![1.0, 2.0]),
                 ("Costs".into(), vec![3.0, 4.0]),
             ],
+            value_format: None,
         };
         let mut plain = chart(ChartKind::Bar);
         plain.series.push(plain.series[0].clone());
@@ -583,13 +588,22 @@ mod tests {
     #[test]
     fn an_axis_that_carries_nothing_gives_the_plot_the_whole_frame() {
         let ticks = axis_ticks(90.0);
-        let bare = plot_rect(&ChartAxis::bare(), &ChartAxis::bare(), &ticks, 300.0, 200.0);
+        let data = data(ChartKind::Bar);
+        let bare = plot_rect(
+            &ChartAxis::bare(),
+            &ChartAxis::bare(),
+            &data,
+            &ticks,
+            300.0,
+            200.0,
+        );
         let dressed = plot_rect(
             &ChartAxis::default(),
             &ChartAxis {
                 label: Some("Votes".into()),
                 ..ChartAxis::default()
             },
+            &data,
             &ticks,
             300.0,
             200.0,

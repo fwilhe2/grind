@@ -449,7 +449,7 @@ fn layout(rect: Rect, chart: &Chart, data: &ChartData, measure: &Measure) -> Lay
     let (tick_w, tick_h) = ticks
         .values
         .iter()
-        .map(|value| measure(&ticks.label(*value)))
+        .map(|value| measure(&data.tick_label(&ticks, *value)))
         .fold((0.0_f64, 0.0_f64), |(w, h), (tw, th)| {
             (w.max(tw), h.max(th))
         });
@@ -562,7 +562,7 @@ fn draw_ticks(
     let plot = layout.plot;
     if y_axis.tick_labels {
         for value in &layout.ticks.values {
-            let text = layout.ticks.label(*value);
+            let text = data.tick_label(&layout.ticks, *value);
             let (w, h) = measure(&text);
             // Right-aligned against the plot's own left edge, centred on the tick.
             place(
@@ -1032,6 +1032,7 @@ mod tests {
             kind: ChartKind::Bar,
             categories: vec!["a".into(), "b".into()],
             series: vec![("Votes".into(), vec![100.0, 80.0])],
+            value_format: None,
         };
         // The middle of the first bar, near its bottom (a full-height bar).
         let laid = layout(FRAME, &chart, &data, &measure);
@@ -1062,6 +1063,7 @@ mod tests {
             kind: ChartKind::Line,
             categories: vec!["a".into(), "b".into()],
             series: vec![("Votes".into(), vec![100.0, 0.0])],
+            value_format: None,
         };
         // At its first point, the line sits at the top of the plot (the max value, which is
         // also a tick — `axis_ticks(100)` tops out at exactly 100).
@@ -1078,6 +1080,7 @@ mod tests {
             kind: ChartKind::Pie,
             categories: vec!["a".into(), "b".into()],
             series: vec![("Votes".into(), vec![1.0, 1.0])],
+            value_format: None,
         };
         let plot = layout(FRAME, &chart, &data, &measure).plot;
         let cx = plot.x + plot.w / 2.0;
@@ -1092,6 +1095,7 @@ mod tests {
             kind,
             categories: vec!["a".into(), "b".into()],
             series: vec![("Votes".into(), vec![100.0, 80.0])],
+            value_format: None,
         }
     }
 
@@ -1153,6 +1157,7 @@ mod tests {
                 ("Sales".into(), vec![100.0, 80.0]),
                 ("Costs".into(), vec![40.0, 30.0]),
             ],
+            value_format: None,
         }
     }
 
@@ -1267,6 +1272,7 @@ mod tests {
             categories: vec!["a".into()],
             // 90 ticks up to 100, so the bar is nine tenths of the plot rather than all of it.
             series: vec![("Votes".into(), vec![90.0])],
+            value_format: None,
         };
         let laid = layout(FRAME, &chart, &data, &measure);
         assert_eq!(laid.ticks.max(), 100.0);

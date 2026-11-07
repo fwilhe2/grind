@@ -74,6 +74,7 @@ fn budget() -> (Chart, ChartData) {
                 vec![1825.0, 612.0, 180.0, 238.0, 0.0, 400.0],
             ),
         ],
+        value_format: None,
     };
     (chart, data)
 }
