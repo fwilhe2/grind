@@ -431,7 +431,13 @@ mod tests {
             page,
             &hayro::RenderCache::new(),
             &hayro::hayro_interpret::InterpreterSettings::default(),
-            &hayro::RenderSettings::default(),
+            // Outline against outline: hinting snaps hayro's glyphs to the pixel grid, and a
+            // cached glyph is reused at a rounded position; this preview does neither.
+            &hayro::RenderSettings {
+                hinting: false,
+                glyph_caching: false,
+                ..hayro::RenderSettings::default()
+            },
             &hayro::PixmapSettings {
                 bg_color: hayro::vello_cpu::color::palette::css::WHITE,
                 ..hayro::PixmapSettings::default()
