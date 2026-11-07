@@ -257,6 +257,15 @@ Facts that are easy to get wrong:
 - `CharStyle` is direct formatting only: automatic styles are resolved onto runs, named styles
   stay names.
 
+### Outside this repository
+
+[clerk](https://github.com/fwilhe2/clerk), the document organizer, takes grind's crates as a git
+dependency on `main` — `grind-open`, and through it `grind-core`, `grind-sheet` and `grind-text`
+— to read documents' text. Nothing is published to crates.io; clerk's `Cargo.lock` pins a grind
+commit and moves only when clerk runs `cargo update -p grind-open`. Public items are still
+removed rather than deprecated here, but a change to one clerk calls breaks clerk at its next
+update: check `../clerk` for callers, and name the change in the commit message.
+
 ## Conventions
 
 - **Comments must earn their place.** Say what the code and its names cannot, and stay true when
