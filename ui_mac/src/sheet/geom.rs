@@ -110,8 +110,10 @@ impl Grid {
         let (used_rows, used_cols) = app.used_extent(sheet).unwrap_or((0, 0));
         let mm = |mm: f64| mm * PT_PER_MM;
         Grid {
-            cols: Sizes::from_lengths(COL_W, MAX_COLS, &widths, &hidden_cols, mm),
-            rows: Sizes::from_lengths(ROW_H, MAX_ROWS, &heights, &hidden_rows, mm),
+            // Whole points, which are whole pixels at any backing scale: a length rarely is one
+            // (0.7cm is 19.84pt), and equal rows would land on different pixels.
+            cols: Sizes::from_lengths(COL_W, MAX_COLS, &widths, &hidden_cols, mm).snapped(),
+            rows: Sizes::from_lengths(ROW_H, MAX_ROWS, &heights, &hidden_rows, mm).snapped(),
             shown_cols: used_cols.saturating_add(MARGIN_COLS).min(MAX_COLS),
             shown_rows: used_rows.saturating_add(MARGIN_ROWS).min(MAX_ROWS),
         }
@@ -140,7 +142,7 @@ impl Grid {
             let mut hidden = app.manually_hidden_rows(sheet).unwrap_or_default();
             hidden.extend(app.hidden_rows(sheet).unwrap_or_default());
             sizes.extend(hidden.into_iter().map(|row| (row, 0.0)));
-            grid.rows = Sizes::new(ROW_H, MAX_ROWS, sizes);
+            grid.rows = Sizes::new(ROW_H, MAX_ROWS, sizes).snapped();
         }
         grid
     }
@@ -348,7 +350,7 @@ mod tests {
         }
         let grid = Grid::measured(&app, 0, &Body);
         assert!(grid.rows.size_of(0) > ROW_H, "{}", grid.rows.size_of(0));
-        assert!((grid.rows.size_of(1) - 10.0 * PT_PER_MM).abs() < 1e-9);
+        assert_eq!(grid.rows.size_of(1), (10.0 * PT_PER_MM).round(), "whole points");
         assert_eq!(grid.rows.size_of(2), ROW_H, "an empty row");
         assert_eq!(
             Grid::of(&app, 0).rows.size_of(0),

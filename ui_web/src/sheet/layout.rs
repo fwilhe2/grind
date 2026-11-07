@@ -115,12 +115,13 @@ pub struct Tracks {
 
 impl Tracks {
     /// Build from the core's `(index, length)` pairs. A length that will not parse is the default,
-    /// not zero.
+    /// not zero. Whole pixels: a length rarely is one (0.7cm is 26.46px), and a browser lays equal
+    /// rows of 26.46px out 26 and 27 pixels tall by turns.
     pub fn new(default: f64, sized: impl IntoIterator<Item = (u32, String)>) -> Self {
         Tracks {
             sized: sized
                 .into_iter()
-                .filter_map(|(at, length)| Some((at, length_mm(&length)? * PX_PER_MM)))
+                .filter_map(|(at, length)| Some((at, (length_mm(&length)? * PX_PER_MM).round())))
                 .collect(),
             default,
         }
@@ -130,6 +131,7 @@ impl Tracks {
     /// outgrow (`grind_sheet::Sheet::row_measured`).
     pub fn grown(mut self, grown: &[(u32, f64)], measured: &BTreeSet<u32>) -> Self {
         for (at, px) in grown {
+            let px = &px.ceil();
             let size = self.sized.entry(*at).or_insert(*px);
             if measured.contains(at) {
                 *size = size.max(*px);
