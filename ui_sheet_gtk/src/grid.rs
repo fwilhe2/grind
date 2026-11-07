@@ -1770,8 +1770,10 @@ mod imp {
                         .map(|row| (row, 0.0)),
                 );
             }
-            let mut rows = Sizes::new(m.row_height, MAX_ROWS, heights).scaled(zoom);
-            let mut cols = self.col_sizes().scaled(zoom);
+            let mut rows = Sizes::new(m.row_height, MAX_ROWS, heights)
+                .scaled(zoom)
+                .snapped();
+            let mut cols = self.col_sizes().scaled(zoom).snapped();
             // A resize in progress is painted before it is stored, so the whole grid reflows
             // under the pointer rather than a guide line standing in for it. It arrives in
             // screen pixels, which is why it goes on after the zoom rather than before.
@@ -1787,20 +1789,20 @@ mod imp {
                 _ => {}
             }
             GridGeom {
-                header_w: m.header_w * zoom,
-                header_h: m.header_h * zoom,
+                header_w: (m.header_w * zoom).round(),
+                header_h: (m.header_h * zoom).round(),
                 rows,
                 cols,
                 scroll_x: self
                     .hadjustment
                     .borrow()
                     .as_ref()
-                    .map_or(0.0, gtk::Adjustment::value),
+                    .map_or(0.0, |a| a.value().round()),
                 scroll_y: self
                     .vadjustment
                     .borrow()
                     .as_ref()
-                    .map_or(0.0, gtk::Adjustment::value),
+                    .map_or(0.0, |a| a.value().round()),
             }
         }
 
@@ -4299,6 +4301,7 @@ mod imp {
                         true => Align::Left,
                         false => align,
                     };
+                    align_lines(&layout, wrapping, align, text_w);
 
                     // A number that does not fit is never truncated — a wrong magnitude read as
                     // right is worse than no reading. Decided by the value, not its alignment: as
@@ -4414,6 +4417,7 @@ mod imp {
             // or the headers inherit it.
             layout.set_attributes(None);
             layout.set_width(-1);
+            layout.set_alignment(pango::Alignment::Left);
         }
 
         /// The box of the checkbox drawn in a cell, in widget space — `None` when there is none.
@@ -4551,6 +4555,7 @@ mod imp {
                     (w, h) = layout.pixel_size();
                     align = Align::Right;
                 }
+                align_lines(layout, wrapping, align, w);
                 let pad = match align {
                     Align::Right => pad,
                     _ => lead,
@@ -5072,6 +5077,20 @@ mod imp {
     /// too, so a cell is drawn and measured at one size (`doc/text-layout.md` decision 3).
     pub(super) fn scale_of(font_size: Option<&str>) -> Option<f64> {
         look::font_scale(font_size)
+    }
+
+    /// Each line of a wrapped cell aligned as the cell is, inside the block [`draw_text`] places:
+    /// narrowed to its widest line, `width` (which breaks the same lines), so the block's left
+    /// edge is the layout's. Unwrapped text is one line and only resets the alignment.
+    fn align_lines(layout: &pango::Layout, wrapping: bool, align: Align, width: i32) {
+        layout.set_alignment(match (wrapping, align) {
+            (true, Align::Center) => pango::Alignment::Center,
+            (true, Align::Right) => pango::Alignment::Right,
+            _ => pango::Alignment::Left,
+        });
+        if wrapping {
+            layout.set_width(width.max(1) * pango::SCALE);
+        }
     }
 
     /// Draw `layout` aligned within `cell`, clipped to `paint` — which is the same

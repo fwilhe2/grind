@@ -132,6 +132,24 @@ impl Sizes {
         )
     }
 
+    /// The same axis on whole device pixels: every size rounded, a visible track kept at least one
+    /// wide. A length rarely is a whole number of pixels (0.5cm is 18.9px at 96dpi), and a grid
+    /// that keeps the fraction draws equal rows alternately one pixel apart and blurs its lines.
+    pub fn snapped(&self) -> Self {
+        let snap = |size: f64| match size {
+            0.0 => 0.0,
+            size => size.round().max(1.0),
+        };
+        Self::new(
+            snap(self.default),
+            self.count,
+            self.sizes
+                .iter()
+                .map(|(i, size)| (*i, snap(*size)))
+                .collect(),
+        )
+    }
+
     /// The same axis with one track resized — what a resize drag paints before it commits.
     pub fn with(&self, index: u32, size: f64) -> Self {
         let mut sizes = self.sizes.clone();
@@ -291,6 +309,17 @@ mod tests {
             Sizes::new(80.0, 100, vec![(1, 20.0), (3, 200.0)]).total() * 1.5
         );
         assert_eq!(s.at(s.offset_of(3) + 1.0), 3);
+    }
+
+    /// Equal lengths stay equal on screen, and a hidden track stays hidden.
+    #[test]
+    fn snapping_keeps_equal_tracks_equal_and_hidden_ones_hidden() {
+        let s = Sizes::new(24.0, 100, vec![(1, 18.9), (2, 18.9), (3, 0.0), (4, 0.2)]).snapped();
+        assert_eq!(s.size_of(1), 19.0);
+        assert_eq!(s.size_of(2), 19.0);
+        assert!(s.is_hidden(3));
+        assert_eq!(s.size_of(4), 1.0);
+        assert_eq!(s.offset_of(5), 24.0 + 19.0 + 19.0 + 0.0 + 1.0);
     }
 
     /// A single hidden track is its own one-track run, and is not confused with its (visible)
