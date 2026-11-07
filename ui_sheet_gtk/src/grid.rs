@@ -470,8 +470,8 @@ mod tests {
     #[test]
     fn a_cell_at_the_default_size_is_drawn_like_a_cell_with_no_size() {
         assert_eq!(imp::font_scale(&sized("10pt")), Some(1.0));
-        assert!(imp::font(None, 1.0).is_none());
-        assert!(imp::font(Some(&sized("10pt")), 1.0).is_none());
+        let plain = imp::font(None, 1.0).to_str();
+        assert_eq!(imp::font(Some(&sized("10pt")), 1.0).to_str(), plain);
     }
 
     /// Every other size is that one scaled, so the base stays the user's own UI font.
@@ -479,7 +479,10 @@ mod tests {
     fn a_cell_size_is_a_multiple_of_the_default_and_never_an_absolute() {
         assert_eq!(imp::font_scale(&sized("20pt")), Some(2.0));
         assert_eq!(imp::font_scale(&sized("5pt")), Some(0.5));
-        assert!(imp::font(Some(&sized("20pt")), 1.0).is_some());
+        assert_ne!(
+            imp::font(Some(&sized("20pt")), 1.0).to_str(),
+            imp::font(None, 1.0).to_str()
+        );
         // Nothing this model can resolve against the right base: a percentage inherits from
         // a style that is not read, and no spreadsheet writes a font size in centimetres.
         assert_eq!(imp::font_scale(&sized("120%")), None);
@@ -1838,7 +1841,11 @@ mod imp {
             let context = self.obj().pango_context();
             let base = context.font_description().unwrap_or_default();
             let metrics = SheetMetrics {
-                layout: pango::Layout::new(&context),
+                layout: {
+                    let layout = pango::Layout::new(&context);
+                    layout.set_attributes(Some(&tabular()));
+                    layout
+                },
                 context,
                 base,
             };
@@ -1924,10 +1931,7 @@ mod imp {
         }
 
         /// What a *cell's* layout draws with — [`font`] at the current zoom.
-        fn cell_attrs(
-            &self,
-            style: Option<&grind_sheet::style::CellStyle>,
-        ) -> Option<pango::AttrList> {
+        fn cell_attrs(&self, style: Option<&grind_sheet::style::CellStyle>) -> pango::AttrList {
             font(style, self.zoom.get())
         }
 
@@ -2384,10 +2388,8 @@ mod imp {
                 .borrow()
                 .as_ref()
                 .and_then(|app| app.style_at(self.sheet.get(), pos).ok().flatten());
-            if let Some(cell) = self.cell_attrs(style.as_ref()) {
-                for attribute in cell.attributes() {
-                    attrs.insert(attribute);
-                }
+            for attribute in self.cell_attrs(style.as_ref()).attributes() {
+                attrs.insert(attribute);
             }
             self.editor.set_attributes(Some(&attrs));
         }
@@ -3105,7 +3107,7 @@ mod imp {
                     let Some(text) = viewport.text(row, col).filter(|t| !t.is_empty()) else {
                         continue;
                     };
-                    layout.set_attributes(font(viewport.style(row, col), 1.0).as_ref());
+                    layout.set_attributes(Some(&font(viewport.style(row, col), 1.0)));
                     layout.set_text(text);
                     width = width.max(f64::from(layout.pixel_size().0));
                 }
@@ -4241,7 +4243,7 @@ mod imp {
                         None => viewport.misspelt(row, col),
                         Some(_) => &[],
                     };
-                    layout.set_attributes(self.cell_attrs(style).as_ref());
+                    layout.set_attributes(Some(&self.cell_attrs(style)));
                     // In role mode the colour says what the cell *is*, and the document's
                     // own text colour is suppressed with its fill (§4.5). The font is not:
                     // bold is structure a reader put there, not a second colour channel.
@@ -4508,7 +4510,7 @@ mod imp {
                     None => viewport.misspelt(m.anchor.row, m.anchor.col),
                     Some(_) => &[],
                 };
-                layout.set_attributes(self.cell_attrs(style).as_ref());
+                layout.set_attributes(Some(&self.cell_attrs(style)));
                 let role = self
                     .overlays
                     .get()
@@ -5000,8 +5002,7 @@ mod imp {
     // the style — is `grind_sheet::look`'s, shared with every shell that draws a grid.
     use grind_sheet::look::{self, Align, VAlign};
 
-    /// A cell's font as Pango attributes, or `None` when neither the cell nor the zoom says
-    /// anything. Weight, slant and size only: the model carries no `fo:font-family`
+    /// A cell's font as Pango attributes: [`tabular`] figures, then weight, slant and size: the model carries no `fo:font-family`
     /// (`core/src/style.rs`).
     ///
     /// **The size is a multiple of [`look::DEFAULT_FONT_PT`], not an absolute**, so the base stays
@@ -5014,9 +5015,8 @@ mod imp {
     pub(super) fn font(
         style: Option<&grind_sheet::style::CellStyle>,
         zoom: f64,
-    ) -> Option<pango::AttrList> {
-        let attrs = pango::AttrList::new();
-        let mut any = false;
+    ) -> pango::AttrList {
+        let attrs = tabular();
         if let Some(weight) = style.and_then(|s| s.font_weight.as_deref()) {
             let weight = match weight {
                 "bold" => Some(pango::Weight::Bold),
@@ -5027,7 +5027,6 @@ mod imp {
             };
             if let Some(weight) = weight {
                 attrs.insert(pango::AttrInt::new_weight(weight));
-                any = true;
             }
         }
         if let Some(slant) = style.and_then(|s| s.font_style.as_deref()) {
@@ -5039,23 +5038,27 @@ mod imp {
             };
             if let Some(slant) = slant {
                 attrs.insert(pango::AttrInt::new_style(slant));
-                any = true;
             }
         }
         if style.is_some_and(|s| s.is_underlined()) {
             attrs.insert(pango::AttrInt::new_underline(pango::Underline::Single));
-            any = true;
         }
         if style.is_some_and(|s| s.is_struck()) {
             attrs.insert(pango::AttrInt::new_strikethrough(true));
-            any = true;
         }
         let scale = zoom * style.and_then(font_scale).unwrap_or(1.0);
         if scale != 1.0 {
             attrs.insert(pango::AttrFloat::new_scale(scale));
-            any = true;
         }
-        any.then_some(attrs)
+        attrs
+    }
+
+    /// Tabular figures: every digit one width, so right-aligned numbers line up in a column.
+    /// The UI font's digits are proportional by default.
+    pub(super) fn tabular() -> pango::AttrList {
+        let attrs = pango::AttrList::new();
+        attrs.insert(pango::AttrFontFeatures::new("tnum"));
+        attrs
     }
 
     /// A cell's `fo:font-size` as a multiple of [`look::DEFAULT_FONT_PT`], or `None`. Only a
@@ -5108,7 +5111,9 @@ mod imp {
             VAlign::Middle => cell.y + (cell.h - text_h) / 2.0,
             VAlign::Bottom => cell.y + cell.h - pad / 2.0 - text_h,
         };
-        (x, y)
+        // Track sizes are lengths (0.5cm is 18.9px), so cell edges fall between pixels; text
+        // placed there is antialiased differently row to row and every other row looks bold.
+        (x.round(), y.round())
     }
 
     /// The wavy underline under each misspelt word of a cell `draw_text` has just drawn with the
