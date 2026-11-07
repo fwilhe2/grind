@@ -381,7 +381,11 @@ mod tests {
         assert_eq!(lines("0.2cm"), 1, "never less than one");
         assert_eq!(lines("1.4cm"), 3);
         assert_eq!(lines("0.7cm"), 1, "room around one line is one line");
-        assert_eq!(lines("0.86cm"), 2, "what LibreOffice gives two lines of 10pt");
+        assert_eq!(
+            lines("0.86cm"),
+            2,
+            "what LibreOffice gives two lines of 10pt"
+        );
         assert_eq!(lines("50cm"), MAX_LINES);
         assert_eq!(lines("tall"), 1);
         assert_eq!(lines(&row_length(3)), 3);
