@@ -25,6 +25,7 @@ use grind_core::utf16;
 use grind_sheet::find::{self, Search, Towards};
 use grind_sheet::format::{self, Toggle};
 use grind_sheet::formula::{display, lex};
+use grind_sheet::look::{self, Align, VAlign};
 use grind_sheet::numfmt::{self, Kind};
 use grind_sheet::style::{CellStyle, EDGES};
 use grind_sheet::{App, CellValue, ChartKind, Filter, Form, Pos, RecalcMode, a1, csv};
@@ -401,6 +402,8 @@ impl Ui {
         // Every number drawn, to be checked once the rows are in the page — only then has the
         // browser laid them out and can say whether one overflows (`hash_overflowing`).
         let mut numbers: Vec<(web_sys::Element, Vec<String>)> = Vec::new();
+        // And every plain text cell, which may run into its empty neighbours (`spill`).
+        let mut texts: Vec<(web_sys::Element, Align, VAlign)> = Vec::new();
         for row in rows.clone() {
             let line = self.dom.document.create_element("tr")?;
             if hidden.contains(&row) {
@@ -525,6 +528,23 @@ impl Ui {
                     };
                     numbers.push((cell.clone(), narrower));
                 }
+                let filtered = filter.as_ref().is_some_and(|filter| {
+                    filter.buttons
+                        && row == filter.start.row
+                        && (filter.start.col..=filter.end.col).contains(&col)
+                });
+                if !numeric
+                    && merge.is_none()
+                    && !(active && editing)
+                    && !filtered
+                    && !text.is_empty()
+                    && !look::wraps(style)
+                    && style.and_then(CellStyle::rotation_degrees).is_none()
+                    && viewport.checkbox(pos.row, pos.col).is_none()
+                {
+                    let value = viewport.get(row, col).unwrap_or(&CellValue::Empty);
+                    texts.push((cell.clone(), look::align(value, style), look::valign(style)));
+                }
                 // Both overlays as two attributes and no extra elements: the stylesheet draws the
                 // marker and the hint with `content: attr(…)`. In role mode the document's own
                 // colours are suppressed (`doc/view-modes.md` §4.5).
@@ -585,6 +605,7 @@ impl Ui {
             self.dom.body.append_child(&line)?;
         }
         hash_overflowing(&numbers)?;
+        spill(&texts)?;
 
         self.render_charts(&widths, &heights)?;
         self.render_tabs()?;
@@ -3622,6 +3643,87 @@ fn hash_overflowing(cells: &[(web_sys::Element, Vec<String>)]) -> Result<(), JsV
         let hash = (f64::from(cell.scroll_width()) - PADDING) / 10.0;
         let room = f64::from(client) - PADDING;
         cell.set_text_content(Some(&grind_sheet::numfmt::overflow(room, hash)));
+    }
+    Ok(())
+}
+
+/// Text too wide for its cell runs on into the empty cells beside it — rightwards from the start,
+/// leftwards from the end, both ways from the middle — and stops at the first that is not, as
+/// every other window draws it. A `<td>` clips, so the content moves into a `.spill` span placed
+/// over that run; measured after layout like [`hash_overflowing`], and a no-op under jsdom.
+fn spill(cells: &[(web_sys::Element, Align, VAlign)]) -> Result<(), JsValue> {
+    /// `.grid td`'s `padding: 0 4px`, one side.
+    const PAD: i32 = 4;
+    /// How far the empty cells after (or before) `cell` reach, in pixels.
+    fn run(cell: &web_sys::Element, forward: bool) -> i32 {
+        let mut reach = 0;
+        let mut next = match forward {
+            true => cell.next_element_sibling(),
+            false => cell.previous_element_sibling(),
+        };
+        while let Some(neighbour) = next {
+            let empty = neighbour.class_list().contains("cell")
+                && neighbour.child_element_count() == 0
+                && neighbour.text_content().unwrap_or_default().is_empty()
+                && !neighbour.has_attribute("colspan");
+            if !empty {
+                break;
+            }
+            reach += neighbour
+                .dyn_ref::<HtmlElement>()
+                .map_or(0, HtmlElement::offset_width);
+            next = match forward {
+                true => neighbour.next_element_sibling(),
+                false => neighbour.previous_element_sibling(),
+            };
+        }
+        reach
+    }
+    for (cell, align, valign) in cells {
+        let (scroll, client) = (cell.scroll_width(), cell.client_width());
+        if client <= 0 || scroll <= client {
+            continue;
+        }
+        let room = client - 2 * PAD;
+        let (left, width) = match align {
+            Align::Left => (PAD, room + run(cell, true)),
+            Align::Right => {
+                let more = run(cell, false);
+                (PAD - more, room + more)
+            }
+            Align::Center => {
+                let more = run(cell, true).min(run(cell, false));
+                (PAD - more, room + 2 * more)
+            }
+        };
+        let document = cell.owner_document().ok_or("no document")?;
+        let span = document.create_element("span")?;
+        span.set_class_name("spill");
+        span.set_attribute(
+            "style",
+            &format!(
+                "left:{left}px;width:{width}px;align-items:{};justify-content:{}",
+                match valign {
+                    VAlign::Top => "flex-start",
+                    VAlign::Middle => "center",
+                    VAlign::Bottom => "flex-end",
+                },
+                match align {
+                    Align::Left => "flex-start",
+                    Align::Center => "center",
+                    Align::Right => "flex-end",
+                },
+            ),
+        )?;
+        // One inline box inside the flex one, so the spaces around a misspelt word's own span
+        // are not trimmed as the edges of separate flex items.
+        let line = document.create_element("span")?;
+        while let Some(child) = cell.first_child() {
+            line.append_child(&child)?;
+        }
+        span.append_child(&line)?;
+        cell.append_child(&span)?;
+        cell.class_list().add_1("spilling")?;
     }
     Ok(())
 }

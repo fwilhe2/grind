@@ -366,6 +366,23 @@ input[type="text"] {
   position: relative;
 }
 
+/* Text running on into its empty neighbours (`spill`): the cell stops clipping, and the span
+   holding the text is placed over the run, above the neighbours' own grounds. */
+.grid td.spilling {
+  overflow: visible;
+}
+
+.spill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 /* A heading with a button keeps clear of it: the text is clipped where the button begins,
    and ellipsed so that a clipped heading says it is one. Its alignment is the document's. */
 .grid td.has-filter {

@@ -249,7 +249,7 @@ borders, which that window does not draw either.
 | **Drawn**: borders | — | ● ᵉ | ◐ ᵇᵈ | ● | ● ʷᵇ | ● ³ |
 | **Drawn**: wrapped text | — | ● | ● ˡⁿ | ● | ● ʷʷ | ● ¹ |
 | **Drawn**: a number too wide for its column is `###`, never cut (`numfmt::overflow`) | — | ● | ● | ● | ● | ● |
-| **Drawn**: text too wide runs into empty neighbours, a number never does | — | ● | ○ | ○ | ● | ● |
+| **Drawn**: text too wide runs into empty neighbours, a number never does | — | ● | ○ | ● | ● | ● |
 | **Drawn**: a cell's own font size | — | ● | ○ | ● | ● | ● |
 | **Drawn**: tabular figures, so a column of numbers lines up | — | ● | ● | ● | ● ᵗⁿ | ● |
 | **Drawn**: a plain number (the General format) narrows to its column first — fewer decimals, then scientific (`Viewport::narrower`) | — | ● | ● | ● | ● | ● |
