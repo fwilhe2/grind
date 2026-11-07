@@ -26,7 +26,7 @@ use std::fmt::Write as _;
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
-use crate::markdown::{MONOSPACE, PREFORMATTED};
+use crate::markdown::{MONOSPACE, PREFORMATTED, is_preformatted};
 use crate::model::{Block, BlockKind, Cell, Document, Run};
 use crate::style::CharStyle;
 
@@ -628,6 +628,11 @@ fn fold(blocks: &[Block], pictures: &mut Out) -> String {
     let mut previous_item = false;
     while i < blocks.len() {
         let block = &blocks[i];
+        // Markdown has no empty paragraph: a blank line is only a separator.
+        if is_blank(block) {
+            i += 1;
+            continue;
+        }
         let item = matches!(block.kind, BlockKind::ListItem { .. }) && block.cell.is_none();
         if !out.is_empty() {
             out.push_str(if item && previous_item { "\n" } else { "\n\n" });
@@ -640,11 +645,7 @@ fn fold(blocks: &[Block], pictures: &mut Out) -> String {
                 .map_or(blocks.len(), |n| i + n);
             out.push_str(&table(&blocks[i..end], pictures));
             i = end;
-        } else if block.style.as_deref() == Some(PREFORMATTED) {
-            let end = blocks[i..]
-                .iter()
-                .position(|b| b.style.as_deref() != Some(PREFORMATTED) || b.cell.is_some())
-                .map_or(blocks.len(), |n| i + n);
+        } else if let Some(end) = code_block(blocks, i) {
             out.push_str(&fence(&blocks[i..end]));
             i = end;
         } else {
@@ -672,6 +673,62 @@ fn one(block: &Block, pictures: &mut Out) -> String {
         }
         BlockKind::Paragraph => escape_start(&inline(&block.runs, pictures)),
     }
+}
+
+/// Where the code block starting at `i` ends, if one does: a run of code lines with the empty
+/// paragraphs between them. Lines of monospace are a block only when there is more than one line,
+/// so a paragraph that is one command stays `` `inline` ``; a preformatted style is a block alone.
+fn code_block(blocks: &[Block], i: usize) -> Option<usize> {
+    if !is_code_line(&blocks[i]) {
+        return None;
+    }
+    let mut end = i + 1;
+    for (j, block) in blocks.iter().enumerate().skip(i + 1) {
+        if is_code_line(block) {
+            end = j + 1;
+        } else if !is_blank(block) {
+            break;
+        }
+    }
+    let group = &blocks[i..end];
+    let block = group.len() > 1
+        || group.iter().any(|b| {
+            is_preformatted(b.style.as_deref()) || b.runs.iter().any(|r| matches!(r, Run::Break))
+        });
+    block.then_some(end)
+}
+
+/// A preformatted paragraph, or one whose every visible character is monospace and unlinked.
+fn is_code_line(block: &Block) -> bool {
+    if block.cell.is_some() {
+        return false;
+    }
+    if is_preformatted(block.style.as_deref()) {
+        return true;
+    }
+    block.kind == BlockKind::Paragraph
+        && !is_blank(block)
+        && block.runs.iter().all(|run| match run {
+            Run::Text {
+                text, props, href, ..
+            } => {
+                text.trim().is_empty()
+                    || (href.is_none()
+                        && props
+                            .font_family
+                            .as_deref()
+                            .is_some_and(|f| f.eq_ignore_ascii_case(MONOSPACE)))
+            }
+            Run::Tab | Run::Break | Run::Bookmark { .. } => true,
+            Run::Image { .. } | Run::Kept { .. } => false,
+        })
+}
+
+fn is_blank(block: &Block) -> bool {
+    block.kind == BlockKind::Paragraph
+        && block.cell.is_none()
+        && !is_preformatted(block.style.as_deref())
+        && block.text().trim().is_empty()
 }
 
 fn fence(blocks: &[Block]) -> String {
@@ -1056,6 +1113,177 @@ mod tests {
         ];
         let back = document(&write(&[block]), &nowhere);
         assert_eq!(back.blocks[0].text(), "Wow!here");
+    }
+
+    fn mono(text: &str) -> Run {
+        Run::Text {
+            text: text.to_owned(),
+            style: None,
+            props: CharStyle {
+                font_family: Some(MONOSPACE.to_owned()),
+                ..CharStyle::default()
+            },
+            href: None,
+        }
+    }
+
+    fn para(runs: Vec<Run>) -> Block {
+        let mut block = Block::new(crate::model::BlockId(1), BlockKind::Paragraph);
+        block.runs = runs;
+        block
+    }
+
+    /// One paragraph per line, every character monospace — how code is typed with `` ` `` and
+    /// how `README.fodt` carries its samples.
+    fn code(lines: &[&str]) -> Vec<Block> {
+        lines
+            .iter()
+            .map(|l| para(if l.is_empty() { vec![] } else { vec![mono(l)] }))
+            .collect()
+    }
+
+    #[test]
+    fn monospace_paragraphs_are_one_fence_with_their_blank_lines_and_indentation() {
+        let mut blocks = vec![para(vec![Run::plain("Example:")])];
+        blocks.extend(code(&["sheet Costs {", "", "    col 1 width=\"4cm\"", "}"]));
+        blocks.push(para(vec![Run::plain("After.")]));
+        assert_eq!(
+            write(&blocks),
+            "Example:\n\n```\nsheet Costs {\n\n    col 1 width=\"4cm\"\n}\n```\n\nAfter.\n"
+        );
+    }
+
+    #[test]
+    fn markdown_inside_a_fence_is_left_as_written() {
+        let blocks = code(&[
+            "// its **value** is *this*",
+            "# not a heading",
+            "- not a list",
+            "a_b [c](d) <e> & | \\",
+        ]);
+        let written = write(&blocks);
+        assert_eq!(
+            written,
+            "```\n// its **value** is *this*\n# not a heading\n- not a list\na_b [c](d) <e> & | \\\n```\n"
+        );
+        let back = document(&written, &nowhere);
+        let lines: Vec<String> = back.blocks.iter().map(Block::text).collect();
+        assert_eq!(lines, blocks.iter().map(Block::text).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_fence_inside_the_code_gets_a_longer_fence() {
+        let blocks = code(&["```rust", "x", "```"]);
+        assert_eq!(write(&blocks), "````\n```rust\nx\n```\n````\n");
+        let back = document(&write(&blocks), &nowhere);
+        assert_eq!(back.blocks.len(), 3);
+        assert_eq!(back.blocks[0].text(), "```rust");
+    }
+
+    #[test]
+    fn a_line_break_in_code_is_a_line_of_the_fence() {
+        let blocks = [para(vec![
+            mono("a()"),
+            Run::Break,
+            mono("  b()"),
+            Run::Tab,
+            mono("c"),
+        ])];
+        assert_eq!(write(&blocks), "```\na()\n  b()\tc\n```\n");
+    }
+
+    #[test]
+    fn one_line_of_code_alone_stays_inline() {
+        assert_eq!(write(&code(&["cargo test"])), "`cargo test`\n");
+        // And code within prose is a span, not a block.
+        let blocks = [
+            para(vec![
+                Run::plain("Run "),
+                mono("cargo test"),
+                Run::plain(" now"),
+            ]),
+            para(vec![Run::plain("then "), mono("cargo fmt")]),
+        ];
+        assert_eq!(write(&blocks), "Run `cargo test` now\n\nthen `cargo fmt`\n");
+    }
+
+    #[test]
+    fn empty_paragraphs_around_code_stay_outside_the_fence() {
+        let mut blocks = code(&["", "a", "b", "", ""]);
+        blocks.push(para(vec![Run::plain("text")]));
+        assert_eq!(write(&blocks), "```\na\nb\n```\n\ntext\n");
+    }
+
+    #[test]
+    fn two_code_samples_apart_are_two_fences() {
+        let mut blocks = code(&["a", "b"]);
+        blocks.push(para(vec![Run::plain("between")]));
+        blocks.extend(code(&["c", "d"]));
+        assert_eq!(
+            write(&blocks),
+            "```\na\nb\n```\n\nbetween\n\n```\nc\nd\n```\n"
+        );
+    }
+
+    #[test]
+    fn code_meets_a_heading_and_a_list_cleanly() {
+        let mut heading = Block::new(crate::model::BlockId(1), BlockKind::Heading { level: 2 });
+        heading.runs = vec![Run::plain("Code")];
+        let mut item = Block::new(crate::model::BlockId(1), BlockKind::ListItem { depth: 1 });
+        item.runs = vec![Run::plain("item")];
+        let mut blocks = vec![heading];
+        blocks.extend(code(&["x", "y"]));
+        blocks.push(item);
+        let written = write(&blocks);
+        assert_eq!(written, "## Code\n\n```\nx\ny\n```\n\n- item\n");
+        let back = document(&written, &nowhere);
+        assert_eq!(
+            kinds(&back),
+            [
+                "Heading { level: 2 }:Code",
+                "Paragraph:x",
+                "Paragraph:y",
+                "ListItem { depth: 1 }:item"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_link_in_monospace_is_not_code() {
+        let mut linked = mono("docs");
+        if let Run::Text { href, .. } = &mut linked {
+            *href = Some("http://a.b".to_owned());
+        }
+        let blocks = [para(vec![linked]), para(vec![mono("x")])];
+        assert_eq!(write(&blocks), "[`docs`](http://a.b)\n\n`x`\n");
+    }
+
+    #[test]
+    fn libre_office_s_preformatted_style_is_a_fence() {
+        let mut blocks = code(&["a", "b"]);
+        for block in &mut blocks {
+            block.runs = vec![Run::plain(block.text())];
+            block.style = Some("Preformatted_20_Text".to_owned());
+        }
+        let one = &mut blocks[..1];
+        assert_eq!(write(one), "```\na\n```\n", "even a single line");
+        assert_eq!(write(&blocks), "```\na\nb\n```\n");
+    }
+
+    #[test]
+    fn preformatted_and_monospace_lines_together_are_one_fence() {
+        let mut blocks = code(&["a", "", "b"]);
+        blocks[1].style = Some(PREFORMATTED.to_owned());
+        blocks[2].style = Some(PREFORMATTED.to_owned());
+        assert_eq!(write(&blocks), "```\na\n\nb\n```\n");
+    }
+
+    #[test]
+    fn a_fence_s_own_blank_lines_survive_the_round_trip() {
+        let source = "```\n\n  a\n\n```\n";
+        let doc = document(source, &nowhere);
+        assert_eq!(doc.blocks.len(), 3);
+        assert_eq!(write(&doc.blocks), source);
     }
 
     #[test]
