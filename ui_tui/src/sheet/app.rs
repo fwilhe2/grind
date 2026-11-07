@@ -3028,6 +3028,8 @@ impl App {
                     },
                 )];
                 let mut index = 0;
+                // What text running on from a cell to the left still has to show, cell by cell.
+                let mut carry: Vec<(String, bool)> = Vec::new();
                 while index < cols.len() {
                     let (c, width) = &cols[index];
                     index += 1;
@@ -3035,6 +3037,7 @@ impl App {
                     // screen, on the first of its rows on screen, and nothing in the cells it
                     // covers.
                     if let Some(m) = viewport.as_ref().and_then(|v| v.merge_at(r, *c)) {
+                        carry.clear();
                         let mut span = usize::from(*width);
                         while let Some((next, w)) = cols.get(index)
                             && *next <= m.end.col
@@ -3195,16 +3198,65 @@ impl App {
                                 .collect(),
                             _ => Vec::new(),
                         };
-                    for (piece, marked) in geom::pad_marked(
-                        text,
-                        width,
-                        alignment(cell, numeric),
-                        match numeric {
-                            true => geom::Fit::Number,
-                            false => geom::Fit::Text,
-                        },
-                        &marks,
-                    ) {
+                    // Text too wide runs on into the empty cells to its right, as every other
+                    // window draws it, and each of them shows its share in its own style. A
+                    // number never does.
+                    let empty = |c: u32| {
+                        viewport.as_ref().is_none_or(|v| {
+                            v.get(r, c).is_none_or(CellValue::is_empty)
+                                && v.merge_at(r, c).is_none()
+                                && v.checkbox(r, c).is_none()
+                        }) && !(self.formulas
+                            && self
+                                .core
+                                .formula(self.sheet, Pos::new(r, c))
+                                .ok()
+                                .flatten()
+                                .is_some())
+                    };
+                    let pieces = match text.is_empty() && !carry.is_empty() {
+                        true => {
+                            let (here, rest) =
+                                geom::split_pieces(std::mem::take(&mut carry), width);
+                            carry = rest;
+                            here
+                        }
+                        false => {
+                            carry.clear();
+                            let reach = match k == 0
+                                && lines.is_none()
+                                && !numeric
+                                && alignment(cell, numeric) == Align::Left
+                                && unicode_width::UnicodeWidthStr::width(text) >= width
+                            {
+                                true => cols[index..]
+                                    .iter()
+                                    .take_while(|(next, _)| empty(*next))
+                                    .map(|(_, w)| usize::from(*w))
+                                    .sum(),
+                                false => 0,
+                            };
+                            let all = geom::pad_marked(
+                                text,
+                                width + reach,
+                                alignment(cell, numeric),
+                                match numeric {
+                                    true => geom::Fit::Number,
+                                    false => geom::Fit::Text,
+                                },
+                                &marks,
+                            );
+                            match reach {
+                                0 => all,
+                                _ => {
+                                    let (here, rest) = geom::split_pieces(all, width);
+                                    carry = rest;
+                                    here
+                                }
+                            }
+                        }
+                    };
+                    for (piece, marked) in pieces {
                         let style = match marked {
                             true => style
                                 .add_modifier(Modifier::UNDERLINED)

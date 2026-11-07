@@ -83,13 +83,15 @@ pub fn length(cells: u16) -> String {
     mm_length(f64::from(cells.max(1)) * MM_PER_CELL)
 }
 
-/// A row `length` tall as terminal lines: one per default row's height, at least one and at most
-/// [`MAX_LINES`]; one for a length that will not parse.
+/// A row `length` tall as terminal lines: the default rows that fit in it, at least one and at
+/// most [`MAX_LINES`]; one for a length that will not parse. A fifth of a row's slack, because a
+/// row sized for n lines of text is a little under n default rows (each holds its own padding),
+/// and a row given room around one line is still one line here, where a line has no padding.
 pub fn lines(length: &str) -> usize {
     length_mm(length)
         .filter(|mm| mm.is_finite() && *mm > 0.0)
         .map_or(1, |mm| {
-            ((mm / grind_sheet::model::DEFAULT_ROW_MM).round() as usize).clamp(1, MAX_LINES)
+            ((mm / grind_sheet::model::DEFAULT_ROW_MM + 0.2).floor() as usize).clamp(1, MAX_LINES)
         })
 }
 
@@ -312,16 +314,74 @@ pub fn pad_marked(
     pieces
 }
 
+/// Pieces of a cell's line, each saying whether it is marked — what [`pad_marked`] gives.
+pub type Pieces = Vec<(String, bool)>;
+
+/// [`pad_marked`]'s pieces cut after `width` terminal cells: what one cell of a run shows, and
+/// what is left for the cells after it — how text runs on into its empty neighbours.
+pub fn split_pieces(pieces: Pieces, width: usize) -> (Pieces, Pieces) {
+    let (mut here, mut rest) = (Vec::new(), Vec::new());
+    let mut used = 0usize;
+    for (piece, marked) in pieces {
+        let (mut head, mut tail) = (String::new(), String::new());
+        for c in piece.chars() {
+            let w = c.width().unwrap_or(0);
+            match tail.is_empty() && used + w <= width {
+                true => {
+                    used += w;
+                    head.push(c);
+                }
+                false => tail.push(c),
+            }
+        }
+        if !head.is_empty() {
+            here.push((head, marked));
+        }
+        if !tail.is_empty() {
+            rest.push((tail, marked));
+        }
+    }
+    // A wide character that would straddle the cut goes after it; the cell keeps its width.
+    if used < width {
+        here.push((" ".repeat(width - used), false));
+    }
+    (here, rest)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use unicode_width::UnicodeWidthStr;
+
+    /// A run is cut cell by cell, marks kept on both sides, and every cell is its own width.
+    #[test]
+    fn a_run_is_cut_into_its_cells() {
+        let all = pad_marked(
+            "Growth since 2026",
+            20,
+            Align::Left,
+            Fit::Text,
+            &[std::ops::Range { start: 0, end: 6 }],
+        );
+        let (here, rest) = split_pieces(all, 8);
+        assert_eq!(
+            here,
+            vec![("Growth".to_owned(), true), (" s".to_owned(), false)]
+        );
+        let (next, rest) = split_pieces(rest, 8);
+        assert_eq!(next, vec![("ince 202".to_owned(), false)]);
+        let (last, rest) = split_pieces(rest, 4);
+        assert_eq!(last, vec![("6   ".to_owned(), false)]);
+        assert!(rest.is_empty());
+    }
 
     #[test]
     fn a_rows_height_is_whole_lines_of_the_default_row() {
         assert_eq!(lines("0.452cm"), 1);
         assert_eq!(lines("0.2cm"), 1, "never less than one");
         assert_eq!(lines("1.4cm"), 3);
+        assert_eq!(lines("0.7cm"), 1, "room around one line is one line");
+        assert_eq!(lines("0.86cm"), 2, "what LibreOffice gives two lines of 10pt");
         assert_eq!(lines("50cm"), MAX_LINES);
         assert_eq!(lines("tall"), 1);
         assert_eq!(lines(&row_length(3)), 3);

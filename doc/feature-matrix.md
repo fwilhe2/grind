@@ -249,11 +249,12 @@ borders, which that window does not draw either.
 | **Drawn**: borders | — | ● ᵉ | ◐ ᵇᵈ | ● | ● ʷᵇ | ● ³ |
 | **Drawn**: wrapped text | — | ● | ● ˡⁿ | ● | ● ʷʷ | ● ¹ |
 | **Drawn**: a number too wide for its column is `###`, never cut (`numfmt::overflow`) | — | ● | ● | ● | ● | ● |
-| **Drawn**: text too wide runs into empty neighbours, a number never does | — | ● | ○ | ● | ● | ● |
+| **Drawn**: text too wide runs into empty neighbours, a number never does | — | ● | ◐ ˢᵖ | ● | ● | ● |
 | **Drawn**: a cell's own font size | — | ● | ○ | ● | ● | ● |
 | **Drawn**: tabular figures, so a column of numbers lines up | — | ● | ● | ● | ● ᵗⁿ | ● |
 | **Drawn**: a plain number (the General format) narrows to its column first — fewer decimals, then scientific (`Viewport::narrower`) | — | ● | ● | ● | ● | ● |
 
+ˢᵖ Left-aligned text only, rightwards: a row is drawn cell by cell from the left, so centred or right-aligned text that would run leftwards is cut with `…` (2026-11-07).
 ᵗⁿ Segoe UI's digits are one width already, and GDI has no OpenType features to ask with; a Wine render checked it (2026-11-07).
 ᵃ **Closed 2026-10-02.** A *Borders* toggle in the format bar writes `format::bordered` — a hairline on every edge, or none — over the selection, the same call the terminal, the browser and the Mac make; a per-edge width or colour is still `grind sheet style --border`'s.
 ᵇ `:format number [n]` takes a decimal count, `:format currency [eur|usd|gbp]` one of the three
