@@ -894,6 +894,15 @@ oracle turned out to be unable to answer the font questions (fact 4).
    the text area (both centres within 2 pt of it), and the caption's line started about 6 pt
    below the picture: the picture's paragraph is the picture's height (fact 29) and its
    margin-bottom lies between it and the caption.
+41. **A picture bullet** — `MEASURED` (2026-11-08, 26.8, a generated list whose level is a
+   `text:list-level-style-image` holding a 10 × 10 px PNG as `office:binary-data`, with
+   `style:vertical-pos="middle" style:vertical-rel="char"`, Liberation Sans 12 pt). The picture
+   is drawn `fo:width` × `fo:height` (0.688 cm and 0.2 cm both kept) where a label starts, and
+   with `text:label-followed-by="nothing"` the text starts straight after it (20.5 pt after a
+   0.688 cm picture — about 1 pt more than its width, not understood). It is centred on the
+   middle of the text: its centre 4.2–4.5 pt above the baseline. A picture taller than the line
+   makes it taller: the 0.688 cm one made a 20.5 pt line where the others were 13.8 pt, the
+   text 3.4 pt lower in it; the 0.2 cm one changed nothing.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

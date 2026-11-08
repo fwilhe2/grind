@@ -106,20 +106,7 @@ impl App {
         let state = self.state.read().unwrap();
         let doc = &state.doc;
         let block = doc.blocks.get(index)?;
-        let (style, level) = match block.kind {
-            BlockKind::Heading { .. }
-                if let Some(mark) = doc.list_marks.get(&block.id)
-                    && let Some(depth) = mark.in_list =>
-            {
-                (doc.list_styles.get(mark.style.as_deref()?)?, depth)
-            }
-            BlockKind::Heading { level } => (doc.outline_style.as_ref()?, level),
-            BlockKind::ListItem { depth } => {
-                let name = doc.list_marks.get(&block.id)?.style.as_deref()?;
-                (doc.list_styles.get(name)?, depth)
-            }
-            _ => return None,
-        };
+        let (style, level) = list_level(doc, block)?;
         let mut indent = style.indents.get(&level.max(1)).cloned()?;
         if let Some(direct) = block
             .style
@@ -135,6 +122,15 @@ impl App {
             }
         }
         Some(indent)
+    }
+
+    /// The picture the block at `index`'s list level draws for its label, if it is a picture
+    /// bullet (`doc/odt-format.md` §5c fact 41).
+    pub fn level_picture(&self, index: usize) -> Option<numbering::LevelPicture> {
+        let state = self.state.read().unwrap();
+        let doc = &state.doc;
+        let (style, level) = list_level(doc, doc.blocks.get(index)?)?;
+        style.pictures.get(&level.max(1)).cloned()
     }
 
     /// What kind of face each declared font family is ([`Document::font_generics`]).
@@ -157,5 +153,27 @@ impl App {
             declared: style.is_some_and(|name| state.doc.paragraph_styles.contains_key(name)),
             named: paragraph::named(&state.doc.paragraph_styles, style),
         })
+    }
+}
+
+/// The list style and level a block's label comes from: a heading's outline level, or the level
+/// of the list it is read in.
+fn list_level<'a>(
+    doc: &'a crate::Document,
+    block: &crate::Block,
+) -> Option<(&'a numbering::ListStyle, u32)> {
+    match block.kind {
+        BlockKind::Heading { .. }
+            if let Some(mark) = doc.list_marks.get(&block.id)
+                && let Some(depth) = mark.in_list =>
+        {
+            Some((doc.list_styles.get(mark.style.as_deref()?)?, depth))
+        }
+        BlockKind::Heading { level } => Some((doc.outline_style.as_ref()?, level)),
+        BlockKind::ListItem { depth } => {
+            let name = doc.list_marks.get(&block.id)?.style.as_deref()?;
+            Some((doc.list_styles.get(name)?, depth))
+        }
+        _ => None,
     }
 }

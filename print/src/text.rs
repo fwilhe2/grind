@@ -238,7 +238,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 let face = column.face(view.index, &view.kind, view.style.as_deref());
                 let first = grind_text::Faces::first_indent(column, view.index);
                 let tabs = grind_text::Faces::tabs(column, view.index);
-                let label = labels.get(&view.index).copied();
+                let label = labels.get(&view.index);
                 let under = ops.len();
                 let drawn = lines(
                     &mut ops,
@@ -820,7 +820,7 @@ fn level_labels(
     (faces, blocks): (&[RoleFace<'_>], &HashMap<usize, RoleFace<'_>>),
     spacing: &mut HashMap<usize, crate::faces::Room>,
     indents: &mut HashMap<usize, f32>,
-) -> HashMap<usize, f64> {
+) -> HashMap<usize, Label> {
     let mut labels = HashMap::new();
     for view in viewport.iter().filter(|view| view.cell.is_none()) {
         let label = match view.kind {
@@ -866,7 +866,26 @@ fn level_labels(
                         .map(|glyph| f64::from(glyph.x_advance))
                         .sum()
                 };
-                let end = margin + indent + wide(label);
+                // A picture bullet takes its own width, and makes the line taller where it is
+                // taller than the text's middle leaves room for (§5c fact 41).
+                let length_pt = |value: &Option<String>| length(value).unwrap_or(0.0);
+                let bullet = app.level_picture(view.index).map(|picture| Bullet {
+                    width: length_pt(&picture.width),
+                    height: length_pt(&picture.height),
+                    picture,
+                });
+                if let (Some(bullet), Some(room)) = (&bullet, spacing.get_mut(&view.index)) {
+                    let ascent = f64::from(grind_core::layout::Metrics::ascent(face, &style));
+                    let line = f64::from(grind_core::layout::Metrics::line_height(face, &style));
+                    let middle = (ascent - (line - ascent)) / 2.0;
+                    room.space.above += (middle + bullet.height / 2.0 - ascent).max(0.0);
+                    room.space.below += (bullet.height / 2.0 - middle - (line - ascent)).max(0.0);
+                }
+                let end = margin
+                    + indent
+                    + bullet
+                        .as_ref()
+                        .map_or_else(|| wide(label), |bullet| bullet.width);
                 let text = match level.followed_by.as_deref() {
                     Some("space") => end + wide(" "),
                     Some("nothing") => end,
@@ -883,7 +902,13 @@ fn level_labels(
                         }
                     },
                 };
-                labels.insert(view.index, margin + indent - applied);
+                labels.insert(
+                    view.index,
+                    Label {
+                        x: margin + indent - applied,
+                        bullet,
+                    },
+                );
                 text - applied
             }
         };
@@ -893,6 +918,22 @@ fn level_labels(
         };
     }
     labels
+}
+
+/// Where a block's label goes, across from its own left edge in points, and the picture drawn
+/// there instead of text when its level is a picture bullet.
+struct Label {
+    x: f64,
+    bullet: Option<Bullet>,
+}
+
+/// A picture bullet at the size its level states, in points.
+// ponytail: the room it adds is added above and below the paragraph, which is exact for the
+// one-line paragraph it usually heads; a longer one gets the extra under its last line.
+struct Bullet {
+    picture: grind_text::numbering::LevelPicture,
+    width: f64,
+    height: f64,
 }
 
 /// Every block whose paragraph style says something about page breaks around it: a break before or
@@ -1070,7 +1111,7 @@ fn lines(
     view: &BlockView,
     piece: &Piece,
     face: &RoleFace<'_>,
-    (first, tabs, label): (f32, &grind_core::layout::Tabs, Option<f64>),
+    (first, tabs, label): (f32, &grind_core::layout::Tabs, Option<&Label>),
     (left, top): (f64, f64),
 ) -> Option<Drawn> {
     let layout = app
@@ -1125,7 +1166,30 @@ fn lines(
         // A numbered heading's number or a list item's label, where its level puts it
         // ([`level_labels`]).
         if at == 0
-            && let (Some(number), Some(dx)) = (view.number().or(view.mark()), label)
+            && let Some(Label {
+                x: dx,
+                bullet: Some(bullet),
+            }) = label
+        {
+            let style = face.style(&TextStyle::default());
+            let ascent = grind_core::layout::Metrics::ascent(face, &style);
+            let descent = grind_core::layout::Metrics::line_height(face, &style) - ascent;
+            let middle = baseline - (ascent - descent) / 2.0;
+            ops.push(Op::Image {
+                x: (left + dx) as f32,
+                y: middle - bullet.height as f32 / 2.0,
+                width: bullet.width as f32,
+                height: bullet.height as f32,
+                mime: bullet.picture.mime.clone(),
+                data: bullet.picture.data.clone(),
+                mark: match (piece.repeat, &view.kind) {
+                    (true, _) => Mark::Decoration,
+                    (false, _) => Mark::Label(view.index),
+                },
+            });
+        } else if at == 0
+            && let (Some(number), Some(&Label { x: dx, .. })) =
+                (view.number().or(view.mark()), label)
         {
             let style = face.style(&TextStyle::default());
             let (id, size) = setter.face_of(&style);
@@ -2015,6 +2079,84 @@ mod tests {
         let page = &typeset(&app, &setter(), &Options::default()).pages[0];
         let lines = texts(page).len();
         assert_eq!(lines, 1, "{:?}", texts(page));
+    }
+
+    /// `doc/odt-format.md` §5c fact 41: a picture bullet is drawn at its stated size where the
+    /// label starts, centred on the text's middle, the text straight after it, and its line made
+    /// taller by it.
+    #[test]
+    fn a_picture_bullet_is_drawn_in_front_of_its_item() {
+        let item = |list: &str| {
+            format!(
+                r#"<text:list text:style-name="{list}"><text:list-item><text:p text:style-name="P">Note</text:p></text:list-item></text:list>"#
+            )
+        };
+        let level = |name: &str, size: &str| {
+            format!(
+                r#"<text:list-style style:name="{name}"><text:list-level-style-image text:level="1"><office:binary-data>iVBORw0KGgo=</office:binary-data><style:list-level-properties text:list-level-position-and-space-mode="label-alignment" style:vertical-pos="middle" style:vertical-rel="char" fo:width="{size}" fo:height="{size}"><style:list-level-label-alignment text:label-followed-by="nothing"/></style:list-level-properties></text:list-level-style-image></text:list-style>"#
+            )
+        };
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:styles><style:style style:name="P" style:family="paragraph"/>{big}{small}</office:styles>
+            <office:body><office:text><text:p text:style-name="P">above</text:p>{one}<text:p text:style-name="P">between</text:p>{two}<text:p text:style-name="P">after</text:p></office:text></office:body></office:document>"#,
+            big = level("Big", "0.688cm"),
+            small = level("Small", "0.2cm"),
+            one = item("Big"),
+            two = item("Small"),
+        );
+        let app = App::new();
+        app.open_bytes("bullet.fodt", bytes.as_bytes()).unwrap();
+        let page = &typeset(&app, &setter(), &Options::default()).pages[0];
+        let images: Vec<(f32, f32, f32, f32)> = page
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                Op::Image {
+                    x,
+                    y,
+                    width,
+                    height,
+                    ..
+                } => Some((*x, *y, *width, *height)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(images.len(), 2, "{images:?}");
+        let cm = (72.0 / 2.54) as f32;
+        let (x, y, width, height) = images[0];
+        assert!((width - 0.688 * cm).abs() < 0.01 && (height - 0.688 * cm).abs() < 0.01);
+        let texts = texts(page);
+        let at = |word: &str| texts.iter().find(|t| t.2 == word).unwrap().clone();
+        let notes: Vec<_> = texts.iter().filter(|t| t.2 == "Note").collect();
+        assert!(
+            (x - at("above").0).abs() < 0.01,
+            "the picture where the label starts"
+        );
+        assert!(
+            (notes[0].0 - (x + width)).abs() < 0.01,
+            "the text straight after it"
+        );
+        let middle = y + height / 2.0;
+        let above_baseline = notes[0].1 - middle;
+        assert!(
+            (3.5..5.0).contains(&above_baseline),
+            "centred {above_baseline} above"
+        );
+        let pitch = |a: &str, b: f32| b - at(a).1;
+        let plain = notes[1].1 - at("between").1;
+        assert!(
+            pitch("above", notes[0].1) > plain + 2.5,
+            "the big one moves its text down"
+        );
+        assert!(
+            at("between").1 - notes[0].1 > plain + 2.0,
+            "and the line after it"
+        );
+        assert!(
+            (at("after").1 - notes[1].1 - plain).abs() < 0.01,
+            "a small one does not"
+        );
     }
 
     /// `doc/odt-format.md` §5c fact 40: Writer's captioned picture, in a centred style with

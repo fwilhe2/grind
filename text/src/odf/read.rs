@@ -127,6 +127,9 @@ pub struct Builder {
     table_styles: HashMap<String, (bool, crate::table_look::Placement)>,
     /// The level indents of the list or outline style being read.
     list_indents: std::collections::BTreeMap<u32, crate::numbering::LevelIndent>,
+    /// The list style's picture bullets read so far, and the one being read.
+    list_pictures: std::collections::BTreeMap<u32, crate::numbering::LevelPicture>,
+    level_picture: Option<crate::numbering::LevelPicture>,
     /// Each table's look as read, by name — its column styles, heading rows and each cell's
     /// style — resolved once every style is known.
     table_pending: HashMap<String, PendingLook>,
@@ -270,6 +273,8 @@ impl Builder {
             table_styles: HashMap::new(),
             table_pending: HashMap::new(),
             list_indents: std::collections::BTreeMap::new(),
+            list_pictures: std::collections::BTreeMap::new(),
+            level_picture: None,
         }
     }
 
@@ -1586,6 +1591,7 @@ impl Context<Builder> for Styles {
             let declared = attrs.get(Ns::Style, "name")?.to_owned();
             b.list_levels.clear();
             b.list_indents.clear();
+            b.list_pictures.clear();
             return Some(Box::new(ListStyleDef {
                 name: declared,
                 automatic: self.automatic,
@@ -1595,6 +1601,7 @@ impl Context<Builder> for Styles {
         if name.is(Ns::Text, "outline-style") {
             b.list_levels.clear();
             b.list_indents.clear();
+            b.list_pictures.clear();
             return Some(Box::new(ListStyleDef {
                 name: String::new(),
                 automatic: false,
@@ -1683,7 +1690,18 @@ impl Context<Builder> for ListStyleDef {
                     .unwrap_or_default()
                     .to_owned(),
             ),
-            (Ns::Text, "list-level-style-image") => Level::Bullet(String::new()),
+            (Ns::Text, "list-level-style-image") => {
+                // `xlink:href` into the package, or inline `office:binary-data`.
+                let data = attrs
+                    .get(Ns::Xlink, "href")
+                    .and_then(|href| b.resolve_part(href))
+                    .unwrap_or_default();
+                b.level_picture = Some(crate::numbering::LevelPicture {
+                    data: std::sync::Arc::new(data),
+                    ..Default::default()
+                });
+                Level::Bullet(String::new())
+            }
             (Ns::Text, "list-level-style-number" | "outline-level-style") => {
                 let get = |ns, local| attrs.get(ns, local).unwrap_or_default().to_owned();
                 Level::Number {
@@ -1704,13 +1722,14 @@ impl Context<Builder> for ListStyleDef {
             _ => return None,
         };
         b.list_levels.insert(level, style);
-        Some(Box::new(LevelProps { level }))
+        Some(Box::new(LevelProps { level, outer: true }))
     }
 
     fn end(&mut self, b: &mut Builder) {
         let style = crate::numbering::ListStyle {
             levels: std::mem::take(&mut b.list_levels),
             indents: std::mem::take(&mut b.list_indents),
+            pictures: std::mem::take(&mut b.list_pictures),
         };
         if self.outline {
             b.doc.outline_style = Some(style);
@@ -1725,12 +1744,24 @@ impl Context<Builder> for ListStyleDef {
 /// `style:list-level-label-alignment`, which places the label and the text (rng:13281).
 struct LevelProps {
     level: u32,
+    /// Whether this is the level style itself rather than its `style:list-level-properties`.
+    outer: bool,
 }
 
 impl Context<Builder> for LevelProps {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.is(Ns::Office, "binary-data") && b.level_picture.is_some() {
+            return Some(Box::new(BinaryData::default()));
+        }
         if name.is(Ns::Style, "list-level-properties") {
-            return Some(Box::new(LevelProps { level: self.level }));
+            if let Some(picture) = &mut b.level_picture {
+                picture.width = attrs.get(Ns::Fo, "width").map(str::to_owned);
+                picture.height = attrs.get(Ns::Fo, "height").map(str::to_owned);
+            }
+            return Some(Box::new(LevelProps {
+                level: self.level,
+                outer: false,
+            }));
         }
         if name.is(Ns::Style, "list-level-label-alignment") {
             let get = |ns, local| attrs.get(ns, local).map(str::to_owned);
@@ -1745,6 +1776,18 @@ impl Context<Builder> for LevelProps {
             );
         }
         None
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        if !self.outer {
+            return;
+        }
+        if let Some(mut picture) = b.level_picture.take()
+            && let Some(mime) = crate::picture::mime(&picture.data)
+        {
+            picture.mime = mime.to_owned();
+            b.list_pictures.insert(self.level, picture);
+        }
     }
 }
 
@@ -2853,6 +2896,8 @@ impl Context<Builder> for BinaryData {
             return;
         };
         if let Some(picture) = &mut b.marginal_picture {
+            picture.data = std::sync::Arc::new(bytes);
+        } else if let Some(picture) = &mut b.level_picture {
             picture.data = std::sync::Arc::new(bytes);
         } else if let Some(pending) = &mut b.image {
             pending.data = Some(bytes);

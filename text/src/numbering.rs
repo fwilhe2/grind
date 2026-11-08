@@ -28,6 +28,8 @@ use crate::model::{BlockId, BlockKind, Document};
 pub struct ListStyle {
     pub levels: BTreeMap<u32, Level>,
     pub indents: BTreeMap<u32, LevelIndent>,
+    /// Each `text:list-level-style-image` level's picture, which a printer draws for its label.
+    pub pictures: BTreeMap<u32, LevelPicture>,
 }
 
 /// One level's `style:list-level-label-alignment` (rng:13281), verbatim: the paragraph's left
@@ -39,6 +41,16 @@ pub struct LevelIndent {
     pub text_indent: Option<String>,
     pub tab: Option<String>,
     pub followed_by: Option<String>,
+}
+
+/// A picture bullet (`text:list-level-style-image`, rng:17675): its bytes, sniffed type, and
+/// `fo:width` and `fo:height` from its `style:list-level-properties`, verbatim.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LevelPicture {
+    pub mime: String,
+    pub data: std::sync::Arc<Vec<u8>>,
+    pub width: Option<String>,
+    pub height: Option<String>,
 }
 
 /// One `text:list-level-style-*`.
