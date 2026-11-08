@@ -371,3 +371,40 @@ fn alt_text_wants_a_picture_at_the_caret() {
     };
     assert!(app.set_image_alt(at, Some("x".to_owned()), None).is_err());
 }
+
+/// A picture made a link — `draw:a` round the inner frame, as the Calc Guide links one to the
+/// workbook it shows — still reads as the picture, with its caption.
+#[test]
+fn a_linked_picture_in_a_captioned_frame_is_still_the_picture() {
+    use base64::Engine as _;
+    let base64 = base64::engine::general_purpose::STANDARD.encode(PIXELS);
+    let bytes = format!(
+        r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"
+  xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
+  office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:body><office:text>
+    <text:p><draw:frame text:anchor-type="as-char"><draw:text-box>
+      <text:p><draw:a xlink:type="simple" xlink:href="https://example.invalid/book.ods"><draw:frame text:anchor-type="as-char" svg:width="8cm" svg:height="4cm"><draw:image draw:mime-type="image/png"><office:binary-data>{base64}</office:binary-data></draw:image></draw:frame></draw:a></text:p>
+      <text:p>Figure 1: A linked picture</text:p>
+    </draw:text-box></draw:frame></text:p>
+  </office:text></office:body>
+</office:document>"#
+    );
+    let doc = odf::read(bytes.as_bytes()).expect("parses");
+    let Run::Image { data, .. } = image_run(&doc) else {
+        unreachable!()
+    };
+    assert_eq!(data, PIXELS);
+    let caption: String = doc.blocks[0]
+        .runs
+        .iter()
+        .filter_map(|run| match run {
+            Run::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(caption, "Figure 1: A linked picture");
+}

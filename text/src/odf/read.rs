@@ -2936,7 +2936,9 @@ impl Context<Builder> for Frame {
                 }
             }
             // The caption's plain text only (`doc/text-core.md`).
-            (Ns::Draw, "text-box") => Some(Box::new(TextBoxSearch)),
+            (Ns::Draw, "text-box") => Some(Box::new(TextBoxSearch {
+                in_paragraph: false,
+            })),
             (Ns::Svg, "title") => Some(Box::new(AltText::default())),
             (Ns::Svg, "desc") => Some(Box::new(AltText {
                 long: true,
@@ -3005,18 +3007,30 @@ impl Context<Builder> for AltText {
 /// `draw:text-box` — a frame's caption: read to find an image LibreOffice nests inside it and to
 /// keep the caption's plain text (character data, and a `text:sequence`'s computed value,
 /// rng:8655).
-struct TextBoxSearch;
+struct TextBoxSearch {
+    /// Whether this is inside one of its paragraphs: the indentation between them is no caption.
+    in_paragraph: bool,
+}
 
 impl Context<Builder> for TextBoxSearch {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         match (name.ns, name.local.as_str()) {
-            (Ns::Text, "p" | "h" | "sequence") => Some(Box::new(TextBoxSearch)),
+            (Ns::Text, "p" | "h" | "sequence" | "span") => {
+                Some(Box::new(TextBoxSearch { in_paragraph: true }))
+            }
+            // A picture made a link is wrapped in `draw:a` (rng:4299); the link is not kept.
+            (Ns::Draw, "a") => Some(Box::new(TextBoxSearch {
+                in_paragraph: self.in_paragraph,
+            })),
             (Ns::Draw, "frame") => Some(open_frame(attrs, b)),
             _ => None,
         }
     }
 
     fn text(&mut self, text: &str, b: &mut Builder) {
+        if !self.in_paragraph {
+            return;
+        }
         if let Some(pending) = &mut b.image {
             pending.caption.push_str(text);
         }
