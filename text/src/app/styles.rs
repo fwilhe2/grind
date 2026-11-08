@@ -46,6 +46,12 @@ impl App {
         self.state.read().unwrap().doc.masters.get(name).cloned()
     }
 
+    /// Whether two paragraphs' spaces below and above add, or the larger is kept
+    /// ([`model::Document::paragraph_spaces_add`]).
+    pub fn paragraph_spaces_add(&self) -> bool {
+        self.state.read().unwrap().doc.paragraph_spaces_add
+    }
+
     /// The name of the master the document's ordinary pages are set on, if it has any.
     pub fn rest_master(&self) -> Option<String> {
         self.state.read().unwrap().doc.rest_master.clone()

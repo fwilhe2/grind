@@ -862,9 +862,10 @@ pub struct Root;
 impl Context<Builder> for Root {
     fn start_child(&mut self, name: &Name, _a: &Attrs, _b: &mut Builder) -> Option<Ctx> {
         match (name.ns, name.local.as_str()) {
-            (Ns::Office, "document" | "document-content" | "document-styles") => {
-                Some(Box::new(Root))
-            }
+            (
+                Ns::Office,
+                "document" | "document-content" | "document-styles" | "document-settings",
+            ) => Some(Box::new(Root)),
             (Ns::Office, "body") => Some(Box::new(Body)),
             // Automatic styles are generated and may be resolved into direct formatting; named
             // ones keep their names.
@@ -872,7 +873,47 @@ impl Context<Builder> for Root {
             (Ns::Office, "styles") => Some(Box::new(Styles { automatic: false })),
             (Ns::Office, "font-face-decls") => Some(Box::new(FontFaces)),
             (Ns::Office, "master-styles") => Some(Box::new(MasterStyles)),
+            (Ns::Office, "settings") => Some(Box::new(Settings { item: None })),
             _ => None,
+        }
+    }
+}
+
+/// `office:settings` (`settings.xml`, or the flat form's): only `AddParaTableSpacing` in
+/// `ooo:configuration-settings` is read (`doc/odt-format.md` §5c fact 46).
+struct Settings {
+    /// Whether this is that `config:config-item`, gathering its text.
+    item: Option<String>,
+}
+
+impl Context<Builder> for Settings {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
+        match (name.ns, name.local.as_str()) {
+            (Ns::Config, "config-item-set")
+                if attrs.get(Ns::Config, "name") == Some("ooo:configuration-settings") =>
+            {
+                Some(Box::new(Settings { item: None }))
+            }
+            (Ns::Config, "config-item")
+                if attrs.get(Ns::Config, "name") == Some("AddParaTableSpacing") =>
+            {
+                Some(Box::new(Settings {
+                    item: Some(String::new()),
+                }))
+            }
+            _ => None,
+        }
+    }
+
+    fn text(&mut self, text: &str, _b: &mut Builder) {
+        if let Some(item) = &mut self.item {
+            item.push_str(text);
+        }
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        if let Some(item) = &self.item {
+            b.doc.paragraph_spaces_add = item.trim() != "false";
         }
     }
 }

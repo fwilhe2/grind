@@ -32,6 +32,14 @@ pub fn read(bytes: &[u8]) -> Result<Document> {
         source.package = Some(bytes.to_vec());
     }
     builder.doc.source = Some(Box::new(source));
+    // `settings.xml`, for the few settings that change the layout; its loss costs nothing more.
+    if let Some(settings) = package::part(bytes, "settings.xml") {
+        let _ = context::parse(
+            std::io::Cursor::new(settings),
+            Box::new(read::Root),
+            &mut builder,
+        );
+    }
     // `styles.xml` first, so a named style defined there is known when a paragraph references it.
     // A part that will not parse costs its styles, not the document.
     if let Some(styles) = package::styles_xml(bytes) {

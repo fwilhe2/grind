@@ -591,6 +591,10 @@ pub struct Document {
     /// starts a page on it (`doc/pdf-export.md`). Read for printing.
     pub masters: BTreeMap<String, Master>,
     pub rest_master: Option<String>,
+    /// Whether two paragraphs' spaces below and above add, as they do unless the settings turn
+    /// `AddParaTableSpacing` off, when the larger is kept (`doc/odt-format.md` §5c fact 46).
+    /// Read for printing, never written.
+    pub paragraph_spaces_add: bool,
     /// The next id to hand out, never reused, so a stale [`BlockId`] stays stale.
     next_id: u64,
     /// The file this document was read from, and where its blocks are in it (R6); `None` for a
@@ -642,6 +646,7 @@ impl Document {
             first_page: None,
             masters: BTreeMap::new(),
             rest_master: None,
+            paragraph_spaces_add: true,
             footer: None,
             next_id: 0,
             source: None,

@@ -84,6 +84,9 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         .collect();
     let blocks = block_faces(app, setter, &viewport);
     let mut spacing = block_spacing(app, &viewport);
+    if !app.paragraph_spaces_add() {
+        keep_the_larger_space(&viewport, &mut spacing);
+    }
     let breaks = block_breaks(app, &viewport);
     let mut indents: std::collections::HashMap<usize, f32> = viewport
         .iter()
@@ -1002,6 +1005,28 @@ struct Bullet {
     picture: grind_text::numbering::LevelPicture,
     width: f64,
     height: f64,
+}
+
+/// Two paragraphs one after the other, outside tables, kept the larger of the first's space below
+/// and the second's above apart rather than both (`doc/odt-format.md` §5c fact 46): the first's
+/// below shrinks by the second's above.
+fn keep_the_larger_space(
+    viewport: &grind_text::Viewport,
+    spacing: &mut HashMap<usize, crate::faces::Room>,
+) {
+    let views: Vec<&BlockView> = viewport.iter().collect();
+    for pair in views.windows(2) {
+        let [first, second] = pair else { continue };
+        if first.cell.is_some() || second.cell.is_some() || second.index != first.index + 1 {
+            continue;
+        }
+        let Some(above) = spacing.get(&second.index).map(|room| room.space.above) else {
+            continue;
+        };
+        if let Some(room) = spacing.get_mut(&first.index) {
+            room.space.below = (room.space.below - above).max(0.0);
+        }
+    }
 }
 
 /// Every block whose paragraph style says something about page breaks around it: a break before or
@@ -3337,6 +3362,33 @@ mod tests {
             "{first_x}"
         );
         assert!((second_x - 56.6929).abs() < 0.01, "{second_x}");
+    }
+
+    /// `doc/odt-format.md` §5c fact 46: with `AddParaTableSpacing` off, two paragraphs are the
+    /// larger of their spaces apart rather than both; with it on, both.
+    #[test]
+    fn add_para_table_spacing_off_keeps_the_larger_space() {
+        let gap = |setting: &str| {
+            let bytes = format!(
+                r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+                <office:settings><config:config-item-set config:name="ooo:configuration-settings"><config:config-item config:name="AddParaTableSpacing" config:type="boolean">{setting}</config:config-item></config:config-item-set></office:settings>
+                <office:styles>
+                  <style:style style:name="A" style:family="paragraph"><style:paragraph-properties fo:margin-bottom="1cm"/></style:style>
+                  <style:style style:name="B" style:family="paragraph"><style:paragraph-properties fo:margin-top="0.5cm"/></style:style>
+                </office:styles>
+                <office:body><office:text><text:p text:style-name="A">one</text:p><text:p text:style-name="B">two</text:p></office:text></office:body></office:document>"#
+            );
+            let app = App::new();
+            app.open_bytes("s.fodt", bytes.as_bytes()).unwrap();
+            let texts = texts(&typeset(&app, &setter(), &Options::default()).pages[0]);
+            texts[1].1 - texts[0].1
+        };
+        let cm = (72.0 / 2.54) as f32;
+        let (both, larger) = (gap("true"), gap("false"));
+        assert!(
+            (both - larger - 0.5 * cm).abs() < 0.01,
+            "{both} and {larger}"
+        );
     }
 
     /// `doc/odt-format.md` §5c fact 45: a style stating the automatic font colour prints black

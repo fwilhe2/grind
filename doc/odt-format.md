@@ -933,6 +933,15 @@ oracle turned out to be unable to answer the font questions (fact 4).
    `fo:color` under a `Heading` parent stating `fo:color="#007c3c"`; its text printed black, not
    the parent's green. The stated automatic colour replaces an inherited one, as in a cell
    style (`doc/ods-format.md`); on white paper it is black.
+46. **`AddParaTableSpacing` off: the larger space, not both** — `MEASURED` (2026-11-08, 26.8, the
+   Calc Guide's own styles under a body of a few paragraphs, the setting flipped in its
+   `settings.xml`; the Guide's own 26.2 PDF agrees). With
+   `<config:config-item config:name="AddParaTableSpacing">false</config:config-item>` in
+   `ooo:configuration-settings`, the space between two paragraphs is the **larger** of the first's
+   `fo:margin-bottom` and the second's `fo:margin-top`, not their sum (fact 5): 6 pt below and
+   11.9 pt above left 11.9 pt; a paragraph's border and padding still take their room besides.
+   With `true` — and with the setting absent, as fact 5 measured — they add. Between a paragraph
+   and a table, either way, they add.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

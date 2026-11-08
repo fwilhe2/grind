@@ -47,6 +47,9 @@ pub enum Ns {
     /// `xml:` — the namespace the `xml` prefix is bound to by XML itself, which carries
     /// `xml:id`, the identifier a `draw:control` points at.
     Xml,
+    /// `config:` — the application settings in `settings.xml` (`office:settings`), some of which
+    /// change how a document lays out.
+    Config,
     Other,
 }
 
@@ -66,6 +69,7 @@ pub const CHART: &str = "urn:oasis:names:tc:opendocument:xmlns:chart:1.0";
 pub const FORM: &str = "urn:oasis:names:tc:opendocument:xmlns:form:1.0";
 /// Bound to the `xml` prefix by the XML specification itself, never declared in a document.
 pub const XML: &str = "http://www.w3.org/XML/1998/namespace";
+pub const CONFIG: &str = "urn:oasis:names:tc:opendocument:xmlns:config:1.0";
 
 impl Ns {
     pub fn from_uri(uri: &str) -> Ns {
@@ -84,6 +88,7 @@ impl Ns {
             CHART => Ns::Chart,
             FORM => Ns::Form,
             XML => Ns::Xml,
+            CONFIG => Ns::Config,
             _ => Ns::Other,
         }
     }
