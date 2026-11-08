@@ -2,21 +2,25 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Builds the browser shell (ui_web/build.sh) and serves ui_web/dist with
-# static-web-server (https://static-web-server.net) on its distroless image —
-# the page is static, so nothing here needs a shell, a package manager or root.
+# The browser shell and `grind serve` behind it (doc/server.md), on a distroless image: the
+# page, the `grind` binary, and nothing else — no shell, no package manager, no root.
 #
 #   docker build -f ui_web/Dockerfile -t grind-web .
-#   docker run --rm -p 8080:80 grind-web
+#   docker run --rm --init --network host -v "$PWD/documents:/documents:z" grind-web
 #
-# The build stage needs the full repo (grind-web depends on grind-core, grind-sheet,
-# grind-text), so the context for `docker build` must be the repository root.
+# `grind serve` listens on 127.0.0.1 only (doc/local-only.md), so a published port (`-p`)
+# cannot reach it: the container shares the host's network, and the page is at
+# http://127.0.0.1:8080/ on that host. ui_web/deploy/kubernetes.yaml reaches it through a proxy
+# in the same pod instead. `--init` because grind as PID 1 does not stop on SIGTERM.
+#
+# There is no git in the image, so the page offers no history: run `grind serve` itself over a
+# git repository for that.
+#
+# The context is the repository root: the page and the binary are built from one tree, which
+# is what keeps them the same build.
 
-FROM docker.io/rust:1-slim-bookworm AS build
+FROM docker.io/rust:1-bookworm AS build
 
-# wasm-bindgen's CLI must match the crate version cargo resolves (ui_web/build.sh
-# checks this at dev time too); read it from the lockfile so the image can never
-# drift from what actually gets compiled.
 RUN rustup target add wasm32-unknown-unknown
 
 WORKDIR /src
@@ -32,15 +36,15 @@ RUN version="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock \
     && cargo install wasm-bindgen-cli --version "$version" --locked
 
 COPY . .
-RUN ./ui_web/build.sh release
+RUN ./ui_web/build.sh release && cargo build --release --locked -p grind-cli
 
-# static-web-server's own image: distroless, so no shell and no package manager —
-# only the binary, CA certs and this build's static files go in.
-FROM docker.io/joseluisq/static-web-server:2
+# Bookworm, as the build stage, so the binary asks for no newer glibc than this has.
+FROM gcr.io/distroless/cc-debian12:nonroot
 
-COPY --from=build /src/ui_web/dist /public
+COPY --from=build /src/target/release/grind /usr/bin/grind
+# Where `grind serve` looks for the page when it is given no --page.
+COPY --from=build /src/ui_web/dist /usr/share/grind/web
 
-ENV SERVER_ROOT=/public \
-    SERVER_PORT=80
-
-EXPOSE 80
+VOLUME /documents
+ENTRYPOINT ["/usr/bin/grind"]
+CMD ["serve", "/documents", "--port", "8080"]

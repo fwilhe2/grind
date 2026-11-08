@@ -56,10 +56,10 @@ still builds a `grind` with none of it.
   generator stays something a person runs.
 - **AGPL §13**: a server is exactly where it applies. The About dialog already carries the build
   stamp; the server adds a source link to `hello` and the page shows it.
-- **Deployment**: a second image, `grind-server` (`server/Containerfile`), beside the unchanged
-  static `grind-web`, and `server/deploy/compose.yaml` with the documents as a host directory —
-  the first deployment of this project that has state to back up. Loopback-only means host
-  networking: `-p` would forward to an address the server does not listen on.
+- **Deployment**: the `grind-web` image is the page and `grind serve` (`ui_web/Dockerfile`,
+  distroless, so without `git` and without history); `doc/web-shell.md` § Deployment has the
+  Compose, Podman and Kubernetes samples. Loopback-only means host networking for a container,
+  and a proxy in the pod for Kubernetes.
 
 ## 3. What it can do
 
@@ -358,9 +358,11 @@ runs the whole API with no socket; `listen.rs` adds one real request over loopba
   server…*, *Delete from the server…*, *Download a copy* and *Earlier versions…* — a version
   opens as a document of the tab (saving downloads it) and *Restore:* puts it back. A server's
   document is not copied into the browser's recent list.
-- **Deployment**: `server/Containerfile` builds the page and `grind` from one tree, puts the page
-  where `grind serve` looks without `--page` (`/usr/share/grind/web`), and carries `git`;
-  `container.yml` builds, smoke-tests and publishes `ghcr.io/fwilhe2/grind-server`.
+- **Deployment**: `ui_web/Dockerfile` builds the page and `grind` from one tree onto distroless,
+  with the page where `grind serve` looks without `--page` (`/usr/share/grind/web`);
+  `container.yml` builds, smoke-tests and publishes it as `ghcr.io/fwilhe2/grind-web`, which
+  until then was the static page alone. Checked with Podman: a save through the container lands
+  in the host directory, owned by the host user, and survives the container's restart.
 
 Not done in this pass: share links (`…/d/{id}`), the library's search and lint (Tier 3), the
 `.deb` carrying the page (a packaged `grind serve` without `--page` answers the API only), and

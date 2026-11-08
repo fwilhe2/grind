@@ -190,9 +190,10 @@ and the function samples (`sheet/tests/function_samples.rs`).
 A binary is built once per platform, and everything that has something to say about it is a
 later step in the same job. Debug checks (`ci.yml`, `gtk.yml`, `win32.yml`, `macos.yml`) and
 release artifacts (`artifacts.yml`) are the two tiers. `container.yml` builds the images (the
-CLI, the static page, the server); `documents.yml`, `screenshots.yml` and `mac-drive.yml` compile nothing and use published
-binaries; `mac-session.yml` and `euro-office.yml` are dispatch-only; `dependabot-third-party.yml` commits the
-regenerated licence list on Dependabot's branches.
+CLI, and the page with `grind serve`); `documents.yml`, `screenshots.yml` and `mac-drive.yml`
+compile nothing and use published binaries; `mac-session.yml` and `euro-office.yml` are
+dispatch-only; `dependabot-third-party.yml` commits the regenerated licence list on Dependabot's
+branches.
 
 Things that bite if forgotten:
 
