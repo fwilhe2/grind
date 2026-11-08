@@ -952,8 +952,9 @@ impl Ui {
         );
     }
 
-    /// Follow a link: `#name` is a bookmark in this document and a jump, anything else is
-    /// handed to the desktop, which knows what opens a URL.
+    /// Follow a link: `#name` is a bookmark in this document and a jump; a web or mail address is
+    /// handed to the desktop, which knows what opens it. Any other scheme (`file:`, `smb:`, an
+    /// application's own) came from the document, so it is shown and asked about first.
     fn follow(self: &Rc<Self>, href: &str) {
         if href.starts_with('#') {
             match view::caret_of(&self.app, href) {
@@ -962,6 +963,36 @@ impl Ui {
             }
             return;
         }
+        if opens_without_asking(href) {
+            return self.launch(href);
+        }
+        let dialog = adw::AlertDialog::new(
+            Some("Open This Link?"),
+            Some(&format!(
+                "It is not a web or mail address, and opening it may start another program:\n\n{href}"
+            )),
+        );
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("open", "Open");
+        dialog.set_default_response(Some("cancel"));
+        dialog.set_close_response("cancel");
+        let href = href.to_owned();
+        dialog.choose(
+            &self.window,
+            gio::Cancellable::NONE,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |response| {
+                    if response == "open" {
+                        ui.launch(&href);
+                    }
+                }
+            ),
+        );
+    }
+
+    fn launch(self: &Rc<Self>, href: &str) {
         gtk::UriLauncher::new(href).launch(
             Some(&self.window),
             gio::Cancellable::NONE,
@@ -2031,9 +2062,39 @@ fn render_once(window: &gtk::Window, target: PathBuf, main: &adw::ApplicationWin
     });
 }
 
+/// A link the desktop is handed on a click: the web and mail, by their scheme, in any case.
+fn opens_without_asking(href: &str) -> bool {
+    href.split_once(':').is_some_and(|(scheme, _)| {
+        ["http", "https", "mailto"]
+            .iter()
+            .any(|known| scheme.eq_ignore_ascii_case(known))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_web_and_mail_open_without_asking() {
+        for href in [
+            "https://example.org/a",
+            "HTTP://example.org",
+            "mailto:someone@example.org",
+        ] {
+            assert!(opens_without_asking(href), "{href}");
+        }
+        for href in [
+            "file:///etc/passwd",
+            "smb://host/share",
+            "javascript:x",
+            "ms-settings:",
+            "example.org",
+            "",
+        ] {
+            assert!(!opens_without_asking(href), "{href}");
+        }
+    }
 
     /// The status bar's vocabulary — the one thing in this file that is not a widget call.
     #[test]

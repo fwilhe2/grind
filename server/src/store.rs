@@ -114,7 +114,7 @@ impl Store {
         let name = self.name_of(id)?;
         self.check_version(&name, Some(if_match))?;
         check_bytes(&name, bytes)?;
-        write_atomically(&self.root.join(&name), bytes)?;
+        grind_core::atomic::write(self.root.join(&name), bytes)?;
         self.commit(&[&name], &format!("Save {name}"));
         self.entry(id, &name)
     }
@@ -127,7 +127,7 @@ impl Store {
         if path.exists() {
             return Err(Refusal::Exists(name.to_owned()));
         }
-        write_atomically(&path, bytes)?;
+        grind_core::atomic::write(&path, bytes)?;
         let mut index = self.scan()?;
         let id = match index.docs.iter().find(|(_, n)| *n == name) {
             Some((id, _)) => id.clone(),
@@ -211,7 +211,7 @@ impl Store {
         let name = self.name_of(id)?;
         self.check_version(&name, Some(if_match))?;
         check_bytes(&name, &bytes)?;
-        write_atomically(&self.root.join(&name), &bytes)?;
+        grind_core::atomic::write(self.root.join(&name), &bytes)?;
         self.commit(&[&name], &format!("Restore {name} to {}", &rev[..7]));
         self.entry(id, &name)
     }
@@ -221,9 +221,20 @@ impl Store {
     fn name_of(&self, id: &str) -> Result<String, Refusal> {
         let index = self.load_index();
         match index.docs.get(id) {
-            Some(name) if self.root.join(name).is_file() => Ok(name.clone()),
-            _ => self.scan()?.docs.get(id).cloned().ok_or(Refusal::NotFound),
+            Some(name) if self.holds(name) => Ok(name.clone()),
+            _ => match self.scan()?.docs.get(id) {
+                Some(name) if self.holds(name) => Ok(name.clone()),
+                _ => Err(Refusal::NotFound),
+            },
         }
+    }
+
+    /// A regular file below the root, reached through no symbolic link: a save writes through a
+    /// link, so a document swapped for one must not be written as the place it points to.
+    fn holds(&self, name: &str) -> bool {
+        let path = self.root.join(name);
+        path.symlink_metadata().is_ok_and(|meta| meta.is_file())
+            && path.canonicalize().is_ok_and(|real| real == path)
     }
 
     fn load_index(&self) -> Index {
@@ -235,7 +246,7 @@ impl Store {
 
     fn save_index(&self, index: &Index) -> Result<(), Refusal> {
         let bytes = serde_json::to_vec_pretty(index).map_err(|e| Refusal::Failed(e.to_string()))?;
-        write_atomically(&self.index_path(), &bytes).map_err(Refusal::from)
+        grind_core::atomic::write(self.index_path(), &bytes).map_err(Refusal::from)
     }
 
     fn index_path(&self) -> PathBuf {
@@ -380,14 +391,6 @@ fn check_bytes(name: &str, bytes: &[u8]) -> Result<(), Refusal> {
             .map_err(|e| e.to_string()),
     };
     read.or_else(unreadable)
-}
-
-/// Written beside, then renamed over: a reader never sees half a document.
-fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let file = path.file_name().unwrap_or_default().to_string_lossy();
-    let temporary = path.with_file_name(format!(".{file}.grind-saving"));
-    std::fs::write(&temporary, bytes)?;
-    std::fs::rename(&temporary, path)
 }
 
 /// FNV-1a over the bytes, quoted as HTTP wants a tag: the same file is the same tag across

@@ -133,7 +133,7 @@ pub fn print(ui: &Rc<Ui>) {
         std::process::id(),
         glib::monotonic_time()
     ));
-    if let Err(error) = std::fs::write(&file, bytes) {
+    if let Err(error) = write_private(&file, &bytes) {
         return ui.toast(&format!("Could not print: {error}"));
     }
     gtk::PrintDialog::new().print_file(
@@ -155,6 +155,17 @@ pub fn print(ui: &Rc<Ui>) {
             }
         ),
     );
+}
+
+/// A new file only its owner can read: the temporary directory is shared, and the PDF is the
+/// document.
+fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    options.open(path)?.write_all(bytes)
 }
 
 /// File ▸ Print Preview — every page as it prints, in a window of its own.

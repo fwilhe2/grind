@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! M0's probe: the four facts `doc/macos-shell.md` rests on, measured on a real Mac.
+//! The probe: the four facts `doc/macos-shell.md` rests on, measured on a real Mac.
 //!
 //! **Not the shell, and never shipped.** It's an example so that `cargo build` never builds it.
 //! It is also type-checked and linted from Linux with the rest of the crate

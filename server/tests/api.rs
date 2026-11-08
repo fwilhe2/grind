@@ -425,3 +425,73 @@ fn in_a_git_work_tree_every_save_is_a_commit() {
         "Delete plan.fods"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_save_keeps_the_files_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = Dir::new("mode");
+    let path = dir.0.join("private.fods");
+    let original = data("sheet/tests/data/kb/minimal-with-styles.fods");
+    std::fs::write(&path, &original).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let server = Server::new(&dir.0, None, &[]).unwrap();
+    let id = id_of(&server, "private.fods");
+    let put = send("PUT", &format!("/api/v1/docs/{id}"))
+        .with_header("If-Match", "*")
+        .with_body(edit_a1(&original, "7"));
+    assert_eq!(server.handle(&put).status, 200);
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "a private document became readable to others");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_document_swapped_for_a_link_is_not_written_through_it() {
+    let dir = Dir::new("swap");
+    let outside = Dir::new("swap-outside");
+    let original = data("sheet/tests/data/kb/minimal-with-styles.fods");
+    std::fs::write(dir.0.join("budget.fods"), &original).unwrap();
+    std::fs::write(outside.0.join("other.fods"), &original).unwrap();
+    let server = Server::new(&dir.0, None, &[]).unwrap();
+    let id = id_of(&server, "budget.fods");
+
+    // The index knows the name; the file under it is now a link out of the store.
+    std::fs::remove_file(dir.0.join("budget.fods")).unwrap();
+    std::os::unix::fs::symlink(outside.0.join("other.fods"), dir.0.join("budget.fods")).unwrap();
+    let put = send("PUT", &format!("/api/v1/docs/{id}"))
+        .with_header("If-Match", "*")
+        .with_body(edit_a1(&original, "7"));
+    assert_eq!(server.handle(&put).status, 404);
+    assert_eq!(
+        server.handle(&get(&format!("/api/v1/docs/{id}"))).status,
+        404
+    );
+    assert_eq!(
+        std::fs::read(outside.0.join("other.fods")).unwrap(),
+        original,
+        "the save went out of the store"
+    );
+}
+
+#[test]
+fn a_name_that_is_a_pathspec_commits_only_itself() {
+    if Command::new("git").arg("--version").output().is_err() {
+        eprintln!("no git: skipped");
+        return;
+    }
+    let dir = Dir::new("pathspec");
+    git(&dir.0, &["init", "-q"]);
+    git(&dir.0, &["config", "user.name", "Test"]);
+    git(&dir.0, &["config", "user.email", "test@example.invalid"]);
+    git(&dir.0, &["config", "commit.gpgsign", "false"]);
+    let sheet = data("sheet/tests/data/kb/minimal-with-styles.fods");
+    std::fs::write(dir.0.join("untracked.fods"), &sheet).unwrap();
+    let server = Server::new(&dir.0, None, &[]).unwrap();
+
+    let made =
+        server.handle(&send("POST", "/api/v1/docs?name=%3A(glob)*.fods").with_body(sheet.clone()));
+    assert_eq!(made.status, 201);
+    let committed = git(&dir.0, &["show", "--name-only", "--format=", "HEAD"]);
+    assert_eq!(committed.trim(), ":(glob)*.fods");
+}

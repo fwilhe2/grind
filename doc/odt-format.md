@@ -192,7 +192,7 @@ attributes are `text-a-attlist` (rng:16463), where `xlink:href` carries the targ
 
 **This is the named-range analogue**, and the reason `grind_text::loc` can offer `#intro` as
 an address that survives editing: the anchor moves with the text because it *is* in the text.
-Nothing has to be kept in step, which is the same argument `core/src/filter.rs` makes for not
+Nothing has to be kept in step, which is the same argument `sheet/src/filter.rs` makes for not
 storing which rows a filter hides.
 
 ---

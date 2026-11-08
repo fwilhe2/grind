@@ -19,7 +19,7 @@ Three decisions taken up front:
 
 - **Formulas display and are typed in A1 display form** — `=SUM(B2:B4)` on screen, ODF
   `of:=SUM([.B2:.B4])` in the file, converted losslessly by the same lexer trick
-  `cli/src/a1.rs` already uses for addresses. The argument separator stays `;`.
+  `sheet/src/a1.rs` uses for addresses. The argument separator stays `;`.
 - **Recalculation is automatic when safe**: an edit recalculates its dependents in the
   same undo step, unless doing so would spoil a cell (a function this build lacks) — then
   the edit lands, the recalc is skipped, and a banner says why. The CLI's honesty with a

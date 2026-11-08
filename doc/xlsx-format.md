@@ -101,7 +101,7 @@ Every URI written from memory was right, and two things were found that had not 
    — note the lower-case `officedocument`, which matches nothing in either family. So
    `Flavour::Mixed` is a real answer rather than a hypothetical one, and a misspelt type must
    come back "unrecognised, therefore ignored" rather than be guessed at. Both are tests in
-   `xlsx/src/names.rs`.
+   `ooxml/src/names.rs`.
 
 ### 1.3 Markup compatibility — `SPEC`
 
@@ -460,7 +460,7 @@ ink, and the cell is counted as `Dropped::ThemeColor`, which is what that kind m
 **Strict's DrawingML namespace is `UNVERIFIED`.** The Transitional one,
 `http://schemas.openxmlformats.org/drawingml/2006/main`, is read out of `colors.xlsx`; no
 workbook this project holds has a Strict theme, so a Strict theme is not read and its colours
-are counted as unresolved. `xlsx/src/names.rs` has the reason beside the constant.
+are counted as unresolved. `ooxml/src/names.rs` has the reason beside the constant.
 
 ### 4.3 Borders — `MEASURED`
 

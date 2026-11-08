@@ -54,7 +54,9 @@ impl Git {
     }
 
     fn run(&self, args: &[&str]) -> Result<Vec<u8>, String> {
+        // A document may be named `:(glob)*.fods`; as a pathspec that would be every document.
         let out = Command::new("git")
+            .arg("--literal-pathspecs")
             .arg("-C")
             .arg(&self.dir)
             .args(&self.identity)

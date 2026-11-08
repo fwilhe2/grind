@@ -163,7 +163,7 @@ the *regenerating* writer must produce valid ODF for the subset it owns.
 **R6 (minimal diffs) is worth more for text than it was for the spreadsheet, and is the single
 strongest reason to do this at all.** A `.fodt` that changes one line of XML when one paragraph
 is edited is a word-processor document that lives in git like a source file. Nothing else in
-this category does that. The retain-and-splice machinery in `core/src/odf/source.rs` already
+this category does that. The retain-and-splice machinery in `sheet/src/odf/source.rs` already
 does exactly this per `table:table-cell`; per `text:p` is the same trick against a different
 element, and it is what protects every unmodelled construct in an opened document for free.
 
@@ -314,7 +314,7 @@ load and a mismatch is a plain error.
 ## Addressing text — `loc.rs`, the `a1.rs` analogue
 
 The spreadsheet got a gift: A1 notation is normative, universally understood, and already
-specified. `core/src/a1.rs` is the workspace's only 0↔1 conversion and every shell leans on it.
+specified. `sheet/src/a1.rs` is the spreadsheet's only 0↔1 conversion and every shell leans on it.
 
 Text has no such gift, so the address vocabulary has to be **invented, written down, and kept in
 one module** — `grind_text::loc`, held to exactly the rules `a1.rs` is held to: the only 0↔1

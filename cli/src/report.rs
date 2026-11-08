@@ -581,7 +581,7 @@ pub struct TextDocumentReport {
     pub can_redo: bool,
 }
 
-/// The page a text document prints on (`doc/pdf-export.md` P2).
+/// The page a text document prints on (`doc/pdf-export.md`).
 #[derive(Debug, Serialize)]
 pub struct PageReport {
     /// The ISO 216 name when it is one (`"A4"`), either way up.
