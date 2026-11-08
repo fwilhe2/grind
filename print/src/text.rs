@@ -182,6 +182,12 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 (sheet.geometry, sheet.top, &sheet.header, &sheet.footer);
             let (left, margin_top) = (pt(geometry.left), pt(geometry.top));
             let mut ops = Vec::new();
+            ops.extend(
+                sheet
+                    .background
+                    .as_ref()
+                    .and_then(|background| background_op(background, geometry)),
+            );
             let mut span: Option<(Caret, Caret)> = None;
             let mut cover = |from: Caret, to: Caret| {
                 span = Some(match span {
@@ -349,6 +355,33 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     }
 }
 
+/// A page's background picture, behind everything on it: over the whole paper, or at its size
+/// with its corner on the paper's bottom-right one (`doc/odt-format.md` §5c fact 44).
+/// The other reference points were not measured, and such a picture is not drawn.
+fn background_op(
+    background: &grind_text::model::PageBackground,
+    paper: PageGeometry,
+) -> Option<Op> {
+    let (width, height) = (pt(paper.width), pt(paper.height));
+    let (x, y, w, h) = match &background.placed {
+        None => (0.0, 0.0, width, height),
+        Some((w, h, at)) if at == "bottom-right" => {
+            let (w, h) = (pt(*w), pt(*h));
+            (width - w, height - h, w, h)
+        }
+        Some(_) => return None,
+    };
+    Some(Op::Image {
+        x: x as f32,
+        y: y as f32,
+        width: w as f32,
+        height: h as f32,
+        mime: background.mime.clone(),
+        data: background.data.clone(),
+        mark: Mark::Decoration,
+    })
+}
+
 /// One kind of page the document is set on: a master page, resolved.
 struct Kind {
     /// The master's name, or `None` for the document's own default page.
@@ -372,6 +405,7 @@ struct Sheet<'a> {
     geometry: PageGeometry,
     /// What the master draws on every page: fold marks, a rule (`draw:line` in its header).
     lines: Vec<grind_text::marginal::Line>,
+    background: Option<grind_text::model::PageBackground>,
     header: Option<Marginal<'a>>,
     footer: Option<Marginal<'a>>,
     /// Where the body starts down the page, and how tall it is — in points.
@@ -417,6 +451,7 @@ impl<'a> Sheet<'a> {
         Sheet {
             geometry,
             lines: master.as_ref().map(|m| m.lines.clone()).unwrap_or_default(),
+            background: master.as_ref().and_then(|m| m.background.clone()),
             header,
             footer,
             top,
@@ -3673,6 +3708,61 @@ mod tests {
                 "I)", "OUTA", "1.", "LISTH1", "2.", "LISTP2", "3.", "LISTH3", "a)", "NESTH", "II)",
                 "OUTB", "4.", "LISTH4", "NOSTYLE", "A)", "OUTC"
             ]
+        );
+    }
+
+    /// `doc/odt-format.md` §5c fact 44: a stretched background covers the paper, and one not
+    /// repeated sits at its stated size in the paper's bottom-right corner — both behind the text.
+    #[test]
+    fn a_pages_background_picture_is_drawn_behind_it() {
+        let layout = |name: &str, fill: &str| {
+            format!(
+                r#"<style:page-layout style:name="{name}"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm" draw:fill="bitmap" {fill}><style:background-image><office:binary-data>iVBORw0KGgo=</office:binary-data></style:background-image></style:page-layout-properties></style:page-layout>"#
+            )
+        };
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles>
+              <style:style style:name="OnCorner" style:family="paragraph" style:master-page-name="Corner"/>
+              {cover}{corner}
+            </office:automatic-styles>
+            <office:master-styles>
+              <style:master-page style:name="Standard" style:page-layout-name="cover"/>
+              <style:master-page style:name="Corner" style:page-layout-name="corner"/>
+            </office:master-styles>
+            <office:body><office:text><text:p>cover</text:p><text:p text:style-name="OnCorner">corner</text:p></office:text></office:body></office:document>"#,
+            cover = layout("cover", r#"style:repeat="stretch""#),
+            corner = layout(
+                "corner",
+                r#"style:repeat="no-repeat" draw:fill-image-width="10cm" draw:fill-image-height="5cm" draw:fill-image-ref-point="bottom-right""#
+            ),
+        );
+        let app = App::new();
+        app.open_bytes("bg.fodt", bytes.as_bytes()).unwrap();
+        let doc = typeset(&app, &setter(), &Options::default());
+        assert_eq!(doc.pages.len(), 2);
+        let cm = (72.0 / 2.54) as f32;
+        let first = |page: &crate::ops::Page| match page.ops.first() {
+            Some(Op::Image {
+                x,
+                y,
+                width,
+                height,
+                ..
+            }) => (*x, *y, *width, *height),
+            other => panic!("{other:?}"),
+        };
+        let (w, h) = (doc.pages[0].width, doc.pages[0].height);
+        let near = |a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)| {
+            [a.0 - b.0, a.1 - b.1, a.2 - b.2, a.3 - b.3]
+                .iter()
+                .all(|d| d.abs() < 0.01)
+        };
+        assert!(near(first(&doc.pages[0]), (0.0, 0.0, w, h)));
+        let corner = first(&doc.pages[1]);
+        assert!(
+            near(corner, (w - 10.0 * cm, h - 5.0 * cm, 10.0 * cm, 5.0 * cm)),
+            "{corner:?}"
         );
     }
 

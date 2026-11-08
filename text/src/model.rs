@@ -499,10 +499,23 @@ pub struct Master {
     )>,
     /// `style:page-usage` on its page layout (rng:12225).
     pub usage: PageUsage,
+    /// The picture its page layout prints behind the page.
+    pub background: Option<PageBackground>,
     /// Lines drawn on every page set on it (`draw:line` in its header or footer).
     pub lines: Vec<crate::marginal::Line>,
     /// `style:next-style-name`; `None` is the master itself.
     pub next: Option<String>,
+}
+
+/// A page layout's background picture (`draw:fill="bitmap"` with a `style:background-image`,
+/// rng:12248): covering the paper, or at a stated size in a corner (`doc/odt-format.md` §5c
+/// fact 44). Lengths in millimetres.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PageBackground {
+    pub mime: String,
+    pub data: std::sync::Arc<Vec<u8>>,
+    /// `None` is `style:repeat="stretch"`; otherwise the size and `draw:fill-image-ref-point`.
+    pub placed: Option<(f64, f64, String)>,
 }
 
 /// Which pages a page layout is for (`style:page-usage`, rng:12225): every page, only left or

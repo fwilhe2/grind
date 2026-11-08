@@ -920,6 +920,14 @@ oracle turned out to be unable to answer the font questions (fact 4).
    heading shows as a space. With no outline numbering, `number-and-name` showed the name alone.
    The Calc Guide's odd-page footer holds its field in an `as-char` frame with no `svg:width`
    whose text box is printed in the footer's line.
+44. **A page's background picture** — `MEASURED` (2026-11-08, 26.2, the LibreOffice Calc
+   Guide's own PDF, `pdfimages -list` and a 72 dpi raster). A page layout with
+   `draw:fill="bitmap"` and a `style:background-image` (its `draw:fill-image-name` naming the
+   same picture) prints it behind the page. With `style:repeat="stretch"` it covers the whole
+   paper, margins included (the cover's 2480 × 3507 px at 300 ppi on A4). With `no-repeat`,
+   `draw:fill-image-width` and `-height` of 9.999 cm and `draw:fill-image-ref-point="bottom-right"`
+   it is drawn 10 cm square (1181 px at 300 ppi) with its corner on the **paper's** bottom-right
+   corner, not the margins'. Tiling and the other reference points were not measured.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

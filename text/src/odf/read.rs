@@ -71,6 +71,9 @@ pub struct Builder {
     page_layouts: HashMap<String, grind_core::page::PageGeometry>,
     /// Each page layout's `style:page-usage`, where it states one.
     page_usage: HashMap<String, crate::model::PageUsage>,
+    /// Each page layout's background picture, and the one being read.
+    page_backgrounds: HashMap<String, crate::model::PageBackground>,
+    page_background: Option<crate::model::PageBackground>,
     /// Every paragraph style read so far, and whether it was automatic; `styles.xml`'s automatic
     /// ones are forgotten before `content.xml` is read, like [`Builder::styles`]'.
     paragraph_styles: HashMap<String, (bool, crate::paragraph::ParagraphStyle)>,
@@ -245,6 +248,8 @@ impl Builder {
             package: None,
             page_layouts: HashMap::new(),
             page_usage: HashMap::new(),
+            page_backgrounds: HashMap::new(),
+            page_background: None,
             paragraph_styles: HashMap::new(),
             tab_stops: None,
             list_styles: HashMap::new(),
@@ -453,6 +458,7 @@ impl Builder {
                         first,
                         left,
                         usage: self.page_usage.get(&master.1).copied().unwrap_or_default(),
+                        background: self.page_backgrounds.get(&master.1).cloned(),
                         lines: self
                             .master_marginals
                             .get(&master.0)
@@ -1580,8 +1586,72 @@ impl Context<Builder> for PageLayout {
             let page =
                 grind_core::page::PageGeometry::from_properties(|local| attrs.get(Ns::Fo, local));
             b.page_layouts.insert(self.name.clone(), page);
+            if attrs.get(Ns::Draw, "fill") == Some("bitmap") {
+                let length = |local| {
+                    attrs
+                        .get(Ns::Draw, local)
+                        .and_then(grind_core::style::length_mm)
+                };
+                let placed = match attrs.get(Ns::Style, "repeat") {
+                    Some("no-repeat") => Some((
+                        length("fill-image-width"),
+                        length("fill-image-height"),
+                        attrs
+                            .get(Ns::Draw, "fill-image-ref-point")
+                            .unwrap_or_default()
+                            .to_owned(),
+                    )),
+                    _ => None,
+                };
+                let placed = match placed {
+                    Some((Some(width), Some(height), at)) => Some((width, height, at)),
+                    Some(_) => return None,
+                    None => None,
+                };
+                b.page_background = Some(crate::model::PageBackground {
+                    placed,
+                    ..Default::default()
+                });
+                return Some(Box::new(PageLayoutProps {
+                    layout: self.name.clone(),
+                }));
+            }
         }
         None
+    }
+}
+
+/// A bitmap-filled `style:page-layout-properties`, for its `style:background-image`: an
+/// `xlink:href` into the package or inline `office:binary-data`.
+struct PageLayoutProps {
+    layout: String,
+}
+
+impl Context<Builder> for PageLayoutProps {
+    fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if !name.is(Ns::Style, "background-image") {
+            return None;
+        }
+        match attrs.get(Ns::Xlink, "href") {
+            Some(href) => {
+                let data = b.resolve_part(href)?;
+                if let Some(background) = &mut b.page_background {
+                    background.data = std::sync::Arc::new(data);
+                }
+                None
+            }
+            None => Some(Box::new(ImageData)),
+        }
+    }
+
+    fn end(&mut self, b: &mut Builder) {
+        if let Some(mut background) = b.page_background.take()
+            && let Some(mime) = crate::picture::mime(&background.data)
+            && b.page_backgrounds.len() < MAX_STYLES
+        {
+            background.mime = mime.to_owned();
+            b.page_backgrounds.insert(self.layout.clone(), background);
+        }
     }
 }
 
@@ -2931,6 +3001,8 @@ impl Context<Builder> for BinaryData {
             picture.data = std::sync::Arc::new(bytes);
         } else if let Some(picture) = &mut b.level_picture {
             picture.data = std::sync::Arc::new(bytes);
+        } else if let Some(background) = &mut b.page_background {
+            background.data = std::sync::Arc::new(bytes);
         } else if let Some(pending) = &mut b.image {
             pending.data = Some(bytes);
         }
