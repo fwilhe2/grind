@@ -491,10 +491,30 @@ pub struct Master {
         Option<crate::marginal::Marginal>,
         Option<crate::marginal::Marginal>,
     )>,
+    /// The header and footer of a left page, where it states either (`style:header-left`,
+    /// `style:footer-left`); a missing one is the plain one (`doc/odt-format.md` §5c fact 35).
+    pub left: Option<(
+        Option<crate::marginal::Marginal>,
+        Option<crate::marginal::Marginal>,
+    )>,
+    /// `style:page-usage` on its page layout (rng:12225).
+    pub usage: PageUsage,
     /// Lines drawn on every page set on it (`draw:line` in its header or footer).
     pub lines: Vec<crate::marginal::Line>,
     /// `style:next-style-name`; `None` is the master itself.
     pub next: Option<String>,
+}
+
+/// Which pages a page layout is for (`style:page-usage`, rng:12225): every page, only left or
+/// only right ones, or both with the margins swapped on a left page (`doc/odt-format.md` §5c
+/// facts 35 and 36).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PageUsage {
+    #[default]
+    All,
+    Left,
+    Right,
+    Mirrored,
 }
 
 /// A text document.

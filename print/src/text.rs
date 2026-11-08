@@ -59,13 +59,18 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     }
     let slots: Vec<grind_text::page::Slot> = sheets
         .iter()
-        .map(|sheet| grind_text::page::Slot {
+        .zip(&kinds)
+        .map(|(sheet, kind)| grind_text::page::Slot {
             height: sheet.height,
-            next: sheet.next,
+            next: kind.next,
             measure: widths
                 .iter()
                 .position(|w| (w - pt(sheet.geometry.text_width())).abs() < 1e-6)
                 .unwrap_or(0),
+            master: kind.master,
+            plain: kind.plain,
+            left: kind.left_twin,
+            hand: kind.hand,
         })
         .collect();
     let faces = role_faces(setter);
@@ -338,9 +343,17 @@ struct Kind {
     /// The master's name, or `None` for the document's own default page.
     name: Option<String>,
     /// Whether this is the first page of a run opening on the master, which wears the master's
-    /// first-page header and footer (`doc/odt-format.md` §5c fact 24).
+    /// first-page header and footer (`doc/odt-format.md` §5c facts 24 and 37).
     first: bool,
+    /// Whether it is a left page (fact 35).
+    left: bool,
     next: usize,
+    /// [`grind_text::page::Slot`]'s: the master by number, this kind as a plain page and as a
+    /// left one, and the only hand its pages may be on.
+    master: usize,
+    plain: usize,
+    left_twin: usize,
+    hand: Option<grind_text::page::Hand>,
 }
 
 /// A kind of page, laid out: its geometry, its header and footer, and what is left for the body.
@@ -353,7 +366,6 @@ struct Sheet<'a> {
     /// Where the body starts down the page, and how tall it is — in points.
     top: f64,
     height: f64,
-    next: usize,
 }
 
 impl<'a> Sheet<'a> {
@@ -369,13 +381,22 @@ impl<'a> Sheet<'a> {
             .paper
             .or_else(|| master.as_ref().and_then(|m| m.geometry))
             .unwrap_or(default);
+        let mut geometry = geometry;
         let (header, footer) = match &master {
-            Some(master) => match (&master.first, kind.first) {
-                (Some(first), true) => first.clone(),
+            Some(master) => match (&master.first, &master.left) {
+                (Some(first), _) if kind.first => first.clone(),
+                (_, Some(left)) if kind.left => left.clone(),
                 _ => (master.header.clone(), master.footer.clone()),
             },
             None => app.marginals(),
         };
+        if kind.left
+            && master
+                .as_ref()
+                .is_some_and(|m| m.usage == grind_text::PageUsage::Mirrored)
+        {
+            std::mem::swap(&mut geometry.left, &mut geometry.right);
+        }
         let width = pt(geometry.text_width());
         let header = header.map(|m| Marginal::lay_out(app, setter, &m, width));
         let footer = footer.map(|m| Marginal::lay_out(app, setter, &m, width));
@@ -389,7 +410,6 @@ impl<'a> Sheet<'a> {
             footer,
             top,
             height,
-            next: kind.next,
         }
     }
 }
@@ -402,30 +422,33 @@ impl<'a> Sheet<'a> {
 /// series is a letter's first paragraph, over and over, and each letter gets its letterhead.
 fn page_kinds(app: &App) -> (Vec<Kind>, grind_text::page::Starts) {
     let mut kinds: Vec<Kind> = Vec::new();
-    let kind_of = |kinds: &mut Vec<Kind>, name: Option<&str>, first: bool| -> usize {
-        match kinds
-            .iter()
-            .position(|kind| kind.name.as_deref() == name && kind.first == first)
-        {
+    let kind_of = |kinds: &mut Vec<Kind>, name: Option<&str>, first: bool, left: bool| -> usize {
+        match kinds.iter().position(|kind| {
+            kind.name.as_deref() == name && kind.first == first && kind.left == left
+        }) {
             Some(at) => at,
             None => {
                 kinds.push(Kind {
                     name: name.map(str::to_owned),
                     first,
+                    left,
                     next: 0,
+                    master: 0,
+                    plain: 0,
+                    left_twin: 0,
+                    hand: None,
                 });
                 kinds.len() - 1
             }
         }
     };
-    let slot_of = |kinds: &mut Vec<Kind>, name: Option<&str>| kind_of(kinds, name, false);
     // A run opens on the master's first page where it has one.
-    let opening_of = |kinds: &mut Vec<Kind>, name: Option<&str>| {
-        let first = name
-            .and_then(|name| app.master(name))
-            .is_some_and(|master| master.first.is_some());
-        kind_of(kinds, name, first)
+    let has_first = |name: Option<&str>| {
+        name.and_then(|name| app.master(name))
+            .is_some_and(|master| master.first.is_some())
     };
+    let opening_of =
+        |kinds: &mut Vec<Kind>, name: Option<&str>| kind_of(kinds, name, has_first(name), false);
     let viewport = app.get_viewport(0..app.block_count());
     let first = viewport
         .iter()
@@ -450,19 +473,47 @@ fn page_kinds(app: &App) -> (Vec<Kind>, grind_text::page::Starts) {
         let at = opening_of(&mut kinds, Some(&name));
         starts.insert(view.index, (at, restart));
     }
-    // Each kind's successor: its master's `next-style-name`, else its own ordinary page — and a
-    // successor may be a kind nothing else names, so this grows the list it walks.
+    // Each kind's successor — its master's `next-style-name`, else its own ordinary page, a first
+    // page only when the master changes (fact 37) — and its plain and left twins. These may be
+    // kinds nothing else names, so this grows the list it walks.
+    let mut masters: Vec<Option<String>> = Vec::new();
     let mut at = 0;
     while at < kinds.len() {
         let name = kinds[at].name.clone();
-        let next = match name.as_deref().and_then(|name| app.master(name)) {
-            Some(master) => match master.next {
-                Some(next) if app.master(&next).is_some() => slot_of(&mut kinds, Some(&next)),
-                _ => slot_of(&mut kinds, name.as_deref()),
-            },
-            None => at,
+        let master = name.as_deref().and_then(|name| app.master(name));
+        let next = match master.as_ref().and_then(|m| m.next.clone()) {
+            Some(next)
+                if next.as_str() != name.as_deref().unwrap_or_default()
+                    && app.master(&next).is_some() =>
+            {
+                kind_of(&mut kinds, Some(&next), has_first(Some(&next)), false)
+            }
+            _ => kind_of(&mut kinds, name.as_deref(), false, false),
         };
-        kinds[at].next = next;
+        let (first, left) = (kinds[at].first, kinds[at].left);
+        let plain = kind_of(&mut kinds, name.as_deref(), false, left);
+        let differs = master
+            .as_ref()
+            .is_some_and(|m| m.left.is_some() || m.usage == grind_text::PageUsage::Mirrored);
+        let left_twin = match differs {
+            true => kind_of(&mut kinds, name.as_deref(), first, true),
+            false => at,
+        };
+        let hand = master.as_ref().and_then(|m| match m.usage {
+            grind_text::PageUsage::Left => Some(grind_text::page::Hand::Left),
+            grind_text::PageUsage::Right => Some(grind_text::page::Hand::Right),
+            _ => None,
+        });
+        let number = match masters.iter().position(|m| *m == name) {
+            Some(number) => number,
+            None => {
+                masters.push(name.clone());
+                masters.len() - 1
+            }
+        };
+        let kind = &mut kinds[at];
+        (kind.next, kind.plain, kind.left_twin) = (next, plain, left_twin);
+        (kind.master, kind.hand) = (number, hand);
         at += 1;
     }
     (kinds, starts)
@@ -472,25 +523,16 @@ fn page_kinds(app: &App) -> (Vec<Kind>, grind_text::page::Starts) {
 /// paragraph's style restarted the numbering (`style:page-number`), in which case the pages
 /// from there to the next restart are — so "page 1 of 2" is a letter's own, in a series.
 fn numbering(pages: &[grind_text::page::Page]) -> Vec<(usize, usize)> {
-    let mut runs: Vec<(usize, usize)> = Vec::new(); // (first page index, first number)
-    for (at, page) in pages.iter().enumerate() {
-        if at == 0 || page.restart.is_some() {
-            runs.push((at, page.restart.map_or(1, |n| n as usize)));
+    // From the back, each run's last number carried to its first page.
+    let mut shown = vec![(0, 0); pages.len()];
+    let mut last = 0;
+    for (at, page) in pages.iter().enumerate().rev() {
+        if at + 1 == pages.len() || pages[at + 1].restart.is_some() {
+            last = page.number as usize;
         }
+        shown[at] = (page.number as usize, last);
     }
-    pages
-        .iter()
-        .enumerate()
-        .map(|(at, _)| {
-            let run = runs
-                .iter()
-                .rposition(|(first, _)| *first <= at)
-                .unwrap_or(0);
-            let (first, number) = runs[run];
-            let end = runs.get(run + 1).map_or(pages.len(), |(next, _)| *next);
-            (number + at - first, number + end - first - 1)
-        })
-        .collect()
+    shown
 }
 
 /// A face for every block whose paragraph style says something about its text: all four properties
@@ -2442,9 +2484,10 @@ mod tests {
         assert!((top - first).abs() < 0.01, "{top} against {first}");
     }
 
-    /// `doc/odt-format.md` §5c fact 24: a master's first-page header is on the first page of
-    /// each run opening on it and its own header on the rest; with no first-page footer stated,
-    /// the first page has none.
+    /// `doc/odt-format.md` §5c facts 24 and 37: a master's first-page header is on the
+    /// document's first page and its own header on the rest; with no first-page footer stated,
+    /// the first page has none. A paragraph naming the master its page is on opens a page that
+    /// is not a first one.
     #[test]
     fn a_runs_first_page_wears_the_masters_first_page_header() {
         let body = "<text:p>para</text:p>".repeat(70);
@@ -2490,8 +2533,68 @@ mod tests {
             .iter()
             .position(|m| m.starts_with("again"))
             .unwrap();
-        assert_eq!(marginals[again], "again first", "{marginals:?}");
+        assert_eq!(marginals[again], "again rest", "{marginals:?}");
         assert_eq!(marginals[again + 1], "rest", "{marginals:?}");
+    }
+
+    /// `doc/odt-format.md` §5c facts 35–37 on one document: a mirrored master swaps the margins
+    /// of an even page and puts its left footer there; a master reached by another's
+    /// `next-style-name` opens on its first-page footer even on a left page; a paragraph naming
+    /// the master its page is on opens a plain page; and a right-only master skips a number.
+    #[test]
+    fn left_pages_mirror_and_a_right_only_master_skips_a_number() {
+        let bytes = r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles>
+              <style:style style:name="Break" style:family="paragraph"><style:paragraph-properties fo:break-before="page"/></style:style>
+              <style:style style:name="OnA" style:family="paragraph" style:master-page-name="A"/>
+              <style:style style:name="OnB" style:family="paragraph" style:master-page-name="B"/>
+              <style:style style:name="OnR" style:family="paragraph" style:master-page-name="R"/>
+              <style:page-layout style:name="pm" style:page-usage="mirrored"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="4cm" fo:margin-right="1cm"/></style:page-layout>
+              <style:page-layout style:name="pr" style:page-usage="right"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="4cm" fo:margin-right="1cm"/></style:page-layout>
+            </office:automatic-styles>
+            <office:master-styles>
+              <style:master-page style:name="A" style:page-layout-name="pm" style:next-style-name="B"><style:footer><text:p>A</text:p></style:footer></style:master-page>
+              <style:master-page style:name="B" style:page-layout-name="pm">
+                <style:footer><text:p>B <text:page-number/></text:p></style:footer>
+                <style:footer-left><text:p>left B <text:page-number/></text:p></style:footer-left>
+                <style:footer-first><text:p>first B <text:page-number/></text:p></style:footer-first>
+              </style:master-page>
+              <style:master-page style:name="R" style:page-layout-name="pr" style:next-style-name="B"><style:footer><text:p>R <text:page-number/></text:p></style:footer></style:master-page>
+            </office:master-styles>
+            <office:body><office:text>
+              <text:p text:style-name="OnA">one</text:p><text:p text:style-name="Break">two</text:p>
+              <text:p text:style-name="Break">three</text:p><text:p text:style-name="OnB">four</text:p>
+              <text:p text:style-name="OnR">five</text:p><text:p text:style-name="Break">six</text:p>
+            </office:text></office:body></office:document>"#;
+        let app = App::new();
+        app.open_bytes("hands.fodt", bytes.as_bytes()).unwrap();
+        let doc = typeset(&app, &setter(), &Options::default());
+        let cm = 72.0 / 2.54;
+        let pages: Vec<(f32, String)> = doc
+            .pages
+            .iter()
+            .map(|page| {
+                let texts = texts(page);
+                let words: Vec<String> = texts.iter().map(|t| t.2.clone()).collect();
+                (texts[0].0, words.join(" "))
+            })
+            .collect();
+        let expected = [
+            (4.0, "one A"),
+            (1.0, "two first B 2"),
+            (4.0, "three B 3"),
+            (1.0, "four left B 4"),
+            (4.0, "five R 5"),
+            (1.0, "six first B 6"),
+        ];
+        assert_eq!(pages.len(), expected.len(), "{pages:?}");
+        for ((x, words), (margin, want)) in pages.iter().zip(expected) {
+            assert_eq!(words.split_whitespace().collect::<Vec<_>>().join(" "), want);
+            assert!(
+                (x - (margin * cm) as f32).abs() < 0.01,
+                "{want}: {x} against {margin} cm"
+            );
+        }
     }
 
     /// A line a master draws — a fold mark — is on every page set on it, from the page's own

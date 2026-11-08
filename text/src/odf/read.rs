@@ -69,6 +69,8 @@ pub struct Builder {
     package: Option<Vec<u8>>,
     /// Every `style:page-layout` read so far, by name.
     page_layouts: HashMap<String, grind_core::page::PageGeometry>,
+    /// Each page layout's `style:page-usage`, where it states one.
+    page_usage: HashMap<String, crate::model::PageUsage>,
     /// Every paragraph style read so far, and whether it was automatic; `styles.xml`'s automatic
     /// ones are forgotten before `content.xml` is read, like [`Builder::styles`]'.
     paragraph_styles: HashMap<String, (bool, crate::paragraph::ParagraphStyle)>,
@@ -162,6 +164,9 @@ struct Marginals {
     /// `style:header-first` and `style:footer-first`.
     header_first: Option<Vec<crate::marginal::Paragraph>>,
     footer_first: Option<Vec<crate::marginal::Paragraph>>,
+    /// `style:header-left` and `style:footer-left`.
+    header_left: Option<Vec<crate::marginal::Paragraph>>,
+    footer_left: Option<Vec<crate::marginal::Paragraph>>,
     /// The `draw:line`s in either, which belong to the page rather than to a paragraph.
     lines: Vec<crate::marginal::Line>,
 }
@@ -236,6 +241,7 @@ impl Builder {
             frame_depth: 0,
             package: None,
             page_layouts: HashMap::new(),
+            page_usage: HashMap::new(),
             paragraph_styles: HashMap::new(),
             tab_stops: None,
             list_styles: HashMap::new(),
@@ -395,19 +401,33 @@ impl Builder {
                         marginal(marginals.footer_first, footer_room),
                     )
                 });
+            let left =
+                (marginals.header_left.is_some() || marginals.footer_left.is_some()).then(|| {
+                    (
+                        marginal(
+                            marginals.header_left.or(marginals.header.clone()),
+                            header_room,
+                        ),
+                        marginal(
+                            marginals.footer_left.or(marginals.footer.clone()),
+                            footer_room,
+                        ),
+                    )
+                });
             (
                 marginal(marginals.header, header_room),
                 marginal(marginals.footer, footer_room),
                 first,
+                left,
             )
         };
         if let Some(rest) = &rest {
-            (self.doc.header, self.doc.footer, _) = marginals_of(rest);
+            (self.doc.header, self.doc.footer, _, _) = marginals_of(rest);
         }
         self.doc.first_page = first
             .filter(|first| rest.as_ref().is_some_and(|rest| rest.0 != first.0))
             .map(|first| {
-                let (header, footer, _) = marginals_of(&first);
+                let (header, footer, _, _) = marginals_of(&first);
                 (header, footer)
             });
 
@@ -418,7 +438,7 @@ impl Builder {
             .master_pages
             .iter()
             .map(|master| {
-                let (header, footer, first) = marginals_of(master);
+                let (header, footer, first, left) = marginals_of(master);
                 (
                     master.0.clone(),
                     crate::model::Master {
@@ -426,6 +446,8 @@ impl Builder {
                         header,
                         footer,
                         first,
+                        left,
+                        usage: self.page_usage.get(&master.1).copied().unwrap_or_default(),
                         lines: self
                             .master_marginals
                             .get(&master.0)
@@ -507,6 +529,8 @@ impl Builder {
                     m.footer.as_mut(),
                     m.header_first.as_mut(),
                     m.footer_first.as_mut(),
+                    m.header_left.as_mut(),
+                    m.footer_left.as_mut(),
                 ]
             })
             .flatten()
@@ -899,8 +923,8 @@ impl Context<Builder> for MasterStyles {
     }
 }
 
-/// One `style:master-page`: its header and footer (`crate::marginal`), and its first page's.
-/// The left-page variants are ignored.
+/// One `style:master-page`: its header and footer (`crate::marginal`), and its first and left
+/// pages'.
 struct MasterPage {
     name: String,
 }
@@ -912,6 +936,8 @@ enum Place {
     Footer,
     HeaderFirst,
     FooterFirst,
+    HeaderLeft,
+    FooterLeft,
 }
 
 impl Context<Builder> for MasterPage {
@@ -921,6 +947,8 @@ impl Context<Builder> for MasterPage {
             (Ns::Style, "footer") => Place::Footer,
             (Ns::Style, "header-first") => Place::HeaderFirst,
             (Ns::Style, "footer-first") => Place::FooterFirst,
+            (Ns::Style, "header-left") => Place::HeaderLeft,
+            (Ns::Style, "footer-left") => Place::FooterLeft,
             _ => return None,
         };
         Some(Box::new(MarginalText {
@@ -987,6 +1015,8 @@ impl Context<Builder> for MarginalText {
             Place::Footer => &mut marginals.footer,
             Place::HeaderFirst => &mut marginals.header_first,
             Place::FooterFirst => &mut marginals.footer_first,
+            Place::HeaderLeft => &mut marginals.header_left,
+            Place::FooterLeft => &mut marginals.footer_left,
         };
         *slot = Some(paragraphs);
     }
@@ -1531,6 +1561,17 @@ impl Context<Builder> for Styles {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         if name.is(Ns::Style, "page-layout") {
             let name = attrs.get(Ns::Style, "name")?.to_owned();
+            let usage = match attrs.get(Ns::Style, "page-usage") {
+                Some("left") => Some(crate::model::PageUsage::Left),
+                Some("right") => Some(crate::model::PageUsage::Right),
+                Some("mirrored") => Some(crate::model::PageUsage::Mirrored),
+                _ => None,
+            };
+            if let Some(usage) = usage
+                && b.page_usage.len() < MAX_STYLES
+            {
+                b.page_usage.insert(name.clone(), usage);
+            }
             return Some(Box::new(PageLayout { name }));
         }
         if name.is(Ns::Style, "default-style")

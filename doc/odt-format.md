@@ -857,7 +857,9 @@ oracle turned out to be unable to answer the font questions (fact 4).
    page is a **right page when its number is odd** and a left page when it is even — its
    number, not its place in the file: a page restarted at 1 in the second place was a right
    page. A left page wears the master's `style:footer-left` (and `style:header-left`) whatever
-   the layout's `style:page-usage`; a master stating none puts its `style:footer` there. With
+   the layout's `style:page-usage`; each one a master does not state is its plain counterpart
+   (with `style:header-left` stated and no `style:footer-left`, page 2 wore the left header and
+   the plain footer) — unlike fact 24's first page, where a missing one is none. With
    `style:page-usage="mirrored"` a left page also swaps the left and right margins (its text
    started 1 cm in); with `all`, the default, it keeps them.
 36. **A page of the wrong hand skips a number** — `MEASURED` (2026-11-08, 26.8, as fact 35). On

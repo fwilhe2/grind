@@ -87,6 +87,8 @@ pub struct Page {
     pub slot: usize,
     /// Set when this page starts a run of page numbers again: the number it is counted as.
     pub restart: Option<u32>,
+    /// The number the page is printed as, from 1; it decides whether it is a left page.
+    pub number: u32,
 }
 
 /// A kind of page for cutting purposes: its text area's height, the kind of page after it — a
@@ -97,6 +99,37 @@ pub struct Slot {
     pub height: f64,
     pub next: usize,
     pub measure: usize,
+    /// Which master page it is: a block naming the master its page is already on opens a page
+    /// that is not a first one (`doc/odt-format.md` §5c fact 37) — the slot `plain`.
+    pub master: usize,
+    pub plain: usize,
+    /// The same kind of page on a left page — an even number (fact 35) — itself where they
+    /// do not differ.
+    pub left: usize,
+    /// The only hand it may be on, if one: a page of the other hand skips a number (fact 36).
+    pub hand: Option<Hand>,
+}
+
+/// A page's hand: `Right` pages are odd-numbered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hand {
+    Left,
+    Right,
+}
+
+impl Slot {
+    /// A kind of page with no hand and no variants: itself as its first, plain and left page.
+    pub fn single(at: usize, height: f64, next: usize, measure: usize) -> Self {
+        Slot {
+            height,
+            next,
+            measure,
+            master: at,
+            plain: at,
+            left: at,
+            hand: None,
+        }
+    }
 }
 
 /// Where a block starts a page of its own kind: its [`Slot`], and the number it restarts counting
@@ -137,18 +170,7 @@ pub fn paginate_first(
     rules: Rules,
     picture: &dyn Fn(&BlockView, f64) -> Option<f64>,
 ) -> Vec<Page> {
-    let slots = [
-        Slot {
-            height: first,
-            next: 1,
-            measure: 0,
-        },
-        Slot {
-            height,
-            next: 1,
-            measure: 0,
-        },
-    ];
+    let slots = [Slot::single(0, first, 1, 0), Slot::single(1, height, 1, 0)];
     paginate_slots(
         app,
         &[(faces, column)],
@@ -218,6 +240,7 @@ pub fn paginate_slots(
         slots,
         reserved: 0.0,
     };
+    cut.set_slot(start, None);
     // A page break after the block before: the next unit starts a page wherever it is.
     let mut break_pending = false;
     let mut heading: Vec<(&str, usize)> = Vec::new();
@@ -600,19 +623,42 @@ impl Cut<'_> {
     /// Start a new page whose top is the flow's `at`.
     fn turn(&mut self, at: f64) {
         let next = self.slots[self.pages.last().map_or(0, |page| page.slot)].next;
-        self.pages.push(Page {
-            slot: next,
-            ..Page::default()
-        });
+        self.pages.push(Page::default());
+        self.set_slot(next, None);
         self.origin = at;
         self.reserved = 0.0;
     }
 
-    /// Set the current page, which has nothing on it, on another kind of page.
+    /// Set the current page, which has nothing on it, on another kind of page, numbered on from
+    /// the page before it or from `restart`: a first page only after another master's, a left
+    /// page's variant on an even number, and a number skipped for a page of the wrong hand.
     fn set_slot(&mut self, slot: usize, restart: Option<u32>) {
+        let before = self.pages.len().checked_sub(2).map(|at| &self.pages[at]);
+        let slot = match before {
+            Some(before) if self.slots[before.slot].master == self.slots[slot].master => {
+                self.slots[slot].plain
+            }
+            _ => slot,
+        };
+        let mut number = restart.unwrap_or_else(|| before.map_or(1, |page| page.number + 1));
+        let hand = |number: u32| match number % 2 {
+            0 => Hand::Left,
+            _ => Hand::Right,
+        };
+        if self.slots[slot]
+            .hand
+            .is_some_and(|only| only != hand(number))
+        {
+            number += 1;
+        }
+        let slot = match hand(number) {
+            Hand::Left => self.slots[slot].left,
+            Hand::Right => slot,
+        };
         let page = self.page();
         page.slot = slot;
         page.restart = restart;
+        page.number = number;
     }
 
     /// How tall the current page's text area is.
@@ -793,7 +839,13 @@ mod tests {
     fn a_document_with_no_blocks_is_one_empty_page() {
         let app = doc(&[]);
         assert_eq!(app.block_count(), 0);
-        assert_eq!(cut(&app, 5.0, &TIGHT), vec![Page::default()]);
+        assert_eq!(
+            cut(&app, 5.0, &TIGHT),
+            vec![Page {
+                number: 1,
+                ..Page::default()
+            }]
+        );
     }
 
     #[test]

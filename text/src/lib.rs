@@ -56,8 +56,8 @@ pub use grind_core::layout::{self, Fixed, Layout, Metrics};
 pub use grind_core::{DocumentKind, Error, Form, Observer, Result, kind};
 pub use loc::{Caret, Loc, Target};
 pub use model::{
-    Block, BlockId, BlockKind, Cell, Document, MAX_LIST_DEPTH, NAMED_STYLES, ParagraphDefaults,
-    Run, indent_kind, named_style_for,
+    Block, BlockId, BlockKind, Cell, Document, MAX_LIST_DEPTH, NAMED_STYLES, PageUsage,
+    ParagraphDefaults, Run, indent_kind, named_style_for,
 };
 pub use spell::{Lexicon, Misspelling};
 pub use style::CharStyle;
