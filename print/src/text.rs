@@ -952,16 +952,24 @@ fn level_labels(
                     room.space.above += (middle + bullet.height / 2.0 - ascent).max(0.0);
                     room.space.below += (bullet.height / 2.0 - middle - (line - ascent)).max(0.0);
                 }
-                let end = margin
-                    + indent
-                    + bullet
-                        .as_ref()
-                        .map_or_else(|| wide(label), |bullet| bullet.width);
+                let label_wide = bullet
+                    .as_ref()
+                    .map_or_else(|| wide(label), |bullet| bullet.width);
+                // Placed at the indent by the level's alignment, and its tab to the stop past it,
+                // else the margin past it, else a default stop (§5c fact 48).
+                let start = margin + indent
+                    - match level.label_align.as_deref() {
+                        Some("end") => label_wide,
+                        Some("center") => label_wide / 2.0,
+                        _ => 0.0,
+                    };
+                let end = start + label_wide;
                 let text = match level.followed_by.as_deref() {
                     Some("space") => end + wide(" "),
                     Some("nothing") => end,
                     _ => match length(&level.tab) {
                         Some(tab) if tab > end => tab,
+                        _ if margin > end => margin,
                         _ => {
                             let interval = app
                                 .paragraph(view.index)
@@ -976,7 +984,7 @@ fn level_labels(
                 labels.insert(
                     view.index,
                     Label {
-                        x: margin + indent - applied,
+                        x: start - applied,
                         bullet,
                     },
                 );
@@ -3917,6 +3925,73 @@ mod tests {
         assert_eq!(labels.len(), 2);
         assert!((labels[0] - cm(5.0)).abs() < 0.05, "{labels:?}");
         assert!((labels[1] - cm(1.0)).abs() < 0.05, "{labels:?}");
+    }
+
+    /// `doc/odt-format.md` §5c fact 48: a label aligned to its end or centre at the indent, and
+    /// the text after its tab at the stop past it, else the margin past it, else a default stop.
+    #[test]
+    fn a_labels_tab_goes_to_the_stop_then_the_margin_then_a_default() {
+        let level = |name: &str, align: &str, margin: &str, indent: &str, tab: &str| {
+            format!(
+                r#"<text:list-style style:name="{name}"><text:list-level-style-number text:level="1" style:num-suffix=")" style:num-format="1"><style:list-level-properties text:list-level-position-and-space-mode="label-alignment" fo:text-align="{align}"><style:list-level-label-alignment text:label-followed-by="listtab" text:list-tab-stop-position="{tab}" fo:text-indent="{indent}" fo:margin-left="{margin}"/></style:list-level-properties></text:list-level-style-number></text:list-style>"#
+            )
+        };
+        let styles = [
+            level("E", "end", "1.5cm", "-0.25cm", "0.25cm"),
+            level("S", "start", "1.5cm", "-0.25cm", "0.25cm"),
+            level("C", "start", "3cm", "-1cm", "0.25cm"),
+            level("D", "start", "3cm", "-1cm", "4cm"),
+            level("G", "center", "1.5cm", "-0.25cm", "0.25cm"),
+        ]
+        .concat();
+        let body: String = ["E", "S", "C", "D", "G"]
+            .iter()
+            .map(|n| {
+                format!(
+                    r#"<text:list text:style-name="{n}"><text:list-item><text:p text:style-name="Standard">{n}x</text:p></text:list-item></text:list>"#
+                )
+            })
+            .collect();
+        let app = styled_with(&styles, "", &body);
+        let doc = typeset(&app, &setter(), &Options::default());
+        let margin = 72.0 * 2.0 / 2.54;
+        let cm = |cm: f32| cm * 72.0 / 2.54;
+        let texts = texts(&doc.pages[0]);
+        let x = |word: &str| texts.iter().find(|t| t.2 == word).unwrap().0 - margin;
+        let labels: Vec<f32> = texts
+            .iter()
+            .filter(|t| t.2 == "1)")
+            .map(|t| t.0 - margin)
+            .collect();
+        assert_eq!(labels.len(), 5, "{texts:?}");
+        let label = cm(0.38);
+        for (at, want) in [
+            (0, cm(1.25) - label),
+            (1, cm(1.25)),
+            (2, cm(2.0)),
+            (3, cm(2.0)),
+            (4, cm(1.25) - label / 2.0),
+        ] {
+            assert!(
+                (labels[at] - want).abs() < 1.0,
+                "label {at} at {}, Writer's {want}",
+                labels[at]
+            );
+        }
+        for (word, want) in [
+            ("Ex", 1.5),
+            ("Sx", 2.75),
+            ("Cx", 3.0),
+            ("Dx", 4.0),
+            ("Gx", 1.5),
+        ] {
+            assert!(
+                (x(word) - cm(want)).abs() < 0.05,
+                "{word} at {}, Writer's {}",
+                x(word),
+                cm(want)
+            );
+        }
     }
 
     /// `doc/odt-format.md` §5c fact 22: a list item's label and text where its level puts

@@ -948,6 +948,16 @@ oracle turned out to be unable to answer the font questions (fact 4).
    2 cm: its line started 2 cm above the bottom margin plus the 0.5 cm spacing (26.2 cm down A4),
    and the body ended 2 cm above the bottom margin; the header's body started 4 cm down, not
    4.5 cm. Content taller than the minimum less the spacing grows it as fact 9 says.
+48. **Where a list label's tab goes, and a label aligned to its end** — `MEASURED` (2026-11-08,
+   26.8, one-level lists in `label-alignment` mode followed by `listtab`, Liberation Sans 12 pt,
+   positions from the text area's left edge). The label is placed at `fo:margin-left` plus
+   `fo:text-indent` by the level's `fo:text-align` on `style:list-level-properties`: `start` begins
+   it there, `end` ends it there (`1)` ran 0.88–1.25 cm for 1.5 cm and −0.25 cm) and `center`
+   centres it (1.07–1.44 cm). The text after it starts at `text:list-tab-stop-position` when that
+   is past the label's end (a 4 cm stop with a 3 cm margin: 4 cm); else at the paragraph's
+   `fo:margin-left` when that is past it (a 0.25 cm stop: 3 cm, 1.5 cm, 1 cm); else at the next
+   default stop counted from the margin (a `start` label ending at 1.63 cm past a 1.5 cm margin:
+   2.75 cm). The Calc Guide's numbered lists end their labels at the indent so.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

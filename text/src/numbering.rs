@@ -41,6 +41,9 @@ pub struct LevelIndent {
     pub text_indent: Option<String>,
     pub tab: Option<String>,
     pub followed_by: Option<String>,
+    /// `fo:text-align` on `style:list-level-properties`: how the label sits at its place —
+    /// `start`, `end` or `center` (`doc/odt-format.md` §5c fact 48).
+    pub label_align: Option<String>,
 }
 
 /// A picture bullet (`text:list-level-style-image`, rng:17675): its bytes, sniffed type, and

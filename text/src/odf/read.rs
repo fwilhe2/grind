@@ -1870,7 +1870,11 @@ impl Context<Builder> for ListStyleDef {
             _ => return None,
         };
         b.list_levels.insert(level, style);
-        Some(Box::new(LevelProps { level, outer: true }))
+        Some(Box::new(LevelProps {
+            level,
+            outer: true,
+            align: None,
+        }))
     }
 
     fn end(&mut self, b: &mut Builder) {
@@ -1894,6 +1898,8 @@ struct LevelProps {
     level: u32,
     /// Whether this is the level style itself rather than its `style:list-level-properties`.
     outer: bool,
+    /// The properties' `fo:text-align`, which places the label.
+    align: Option<String>,
 }
 
 impl Context<Builder> for LevelProps {
@@ -1909,6 +1915,7 @@ impl Context<Builder> for LevelProps {
             return Some(Box::new(LevelProps {
                 level: self.level,
                 outer: false,
+                align: attrs.get(Ns::Fo, "text-align").map(str::to_owned),
             }));
         }
         if name.is(Ns::Style, "list-level-label-alignment") {
@@ -1920,6 +1927,7 @@ impl Context<Builder> for LevelProps {
                     text_indent: get(Ns::Fo, "text-indent"),
                     tab: get(Ns::Text, "list-tab-stop-position"),
                     followed_by: get(Ns::Text, "label-followed-by"),
+                    label_align: self.align.clone(),
                 },
             );
         }
