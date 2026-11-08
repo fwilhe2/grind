@@ -38,6 +38,10 @@ pub struct ParagraphProps {
     /// `style:master-page-name` on the style: the master page a paragraph in it starts. Empty is
     /// none.
     pub master_page: Option<String>,
+    /// `style:list-style-name` on the style: the list style its paragraphs are items of. Empty
+    /// is none; a style naming one places its items by its own indents (`doc/odt-format.md` §5c
+    /// fact 42).
+    pub list_style: Option<String>,
     /// `style:page-number` on the style: `auto`, or the number the page it starts restarts the
     /// counting at (`doc/pdf-export.md`).
     pub page_number: Option<String>,
@@ -121,6 +125,9 @@ impl ParagraphProps {
         }
         if over.master_page.is_some() {
             self.master_page.clone_from(&over.master_page);
+        }
+        if over.list_style.is_some() {
+            self.list_style.clone_from(&over.list_style);
         }
         if over.page_number.is_some() {
             self.page_number.clone_from(&over.page_number);

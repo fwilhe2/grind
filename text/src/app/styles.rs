@@ -100,14 +100,32 @@ impl App {
     /// Where the block at `index`'s label and text go, as its list level states
     /// ([`numbering::LevelIndent`]): a heading's outline level, a list item's level of its list's
     /// style. `None` otherwise, or where nothing is placed. The level's margin and first-line
-    /// indent give way to the paragraph's direct ones, never to a named style's
-    /// (`doc/odt-format.md` §5c facts 20 and 22).
+    /// indent give way to the paragraph's direct ones, and to a named style's only where it
+    /// names the list style itself (`doc/odt-format.md` §5c facts 20, 22 and 42).
     pub fn level_indent(&self, index: usize) -> Option<numbering::LevelIndent> {
         let state = self.state.read().unwrap();
         let doc = &state.doc;
         let block = doc.blocks.get(index)?;
         let (style, level) = list_level(doc, block)?;
         let mut indent = style.indents.get(&level.max(1)).cloned()?;
+        // A style naming the list style itself places its items by its own indents (fact 42).
+        let resolved = crate::paragraph::resolve(
+            &doc.paragraph_styles,
+            &doc.default_paragraph,
+            block.style.as_deref(),
+        );
+        if resolved
+            .list_style
+            .as_deref()
+            .is_some_and(|name| !name.is_empty())
+        {
+            if let Some(margin) = &resolved.margin_left {
+                indent.margin_left = Some(margin.clone());
+            }
+            if let Some(first) = &resolved.text_indent {
+                indent.text_indent = Some(first.clone());
+            }
+        }
         if let Some(direct) = block
             .style
             .as_deref()

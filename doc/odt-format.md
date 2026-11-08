@@ -903,6 +903,14 @@ oracle turned out to be unable to answer the font questions (fact 4).
    middle of the text: its centre 4.2–4.5 pt above the baseline. A picture taller than the line
    makes it taller: the 0.688 cm one made a 20.5 pt line where the others were 13.8 pt, the
    text 3.4 pt lower in it; the 0.2 cm one changed nothing.
+42. **A paragraph style naming the list style** — `MEASURED` (2026-11-08, 26.8, fact 22's
+   sample). Where a named paragraph style states `style:list-style-name` itself, its
+   `fo:margin-left` and `fo:text-indent` win over the list level's, as an automatic style's do in
+   fact 22: a level placing its label at 1 cm, under a style stating the list and a 5 cm margin
+   with no indent, put `1.` at 5 cm, while the same list under a named style stating only the
+   5 cm margin put it at 1 cm. A picture bullet's level stating no margin at all, under a style
+   naming it with a 1 cm margin, drew the picture 1 cm in; named only by the `text:list`, at the
+   margin. The Calc Guide's Note, Tip and Caution headings are set this way.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

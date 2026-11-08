@@ -3643,6 +3643,33 @@ mod tests {
         );
     }
 
+    /// `doc/odt-format.md` §5c fact 42: a named style that names the list style itself places
+    /// its items by its own margin and indent; one that does not is placed by the level.
+    #[test]
+    fn a_style_naming_its_list_style_places_the_item() {
+        let app = styled_with(
+            r#"<style:style style:name="Listed" style:family="paragraph" style:list-style-name="L"><style:paragraph-properties fo:margin-left="5cm" fo:text-indent="0cm"/></style:style>
+               <style:style style:name="Named" style:family="paragraph"><style:paragraph-properties fo:margin-left="5cm" fo:text-indent="0cm"/></style:style>
+               <text:list-style style:name="L">
+                 <text:list-level-style-number text:level="1" style:num-suffix="." style:num-format="1"><style:list-level-properties text:list-level-position-and-space-mode="label-alignment"><style:list-level-label-alignment text:label-followed-by="listtab" text:list-tab-stop-position="2cm" fo:text-indent="-1cm" fo:margin-left="2cm"/></style:list-level-properties></text:list-level-style-number>
+               </text:list-style>"#,
+            "",
+            r#"<text:list text:style-name="L"><text:list-item><text:p text:style-name="Listed">Aa</text:p></text:list-item></text:list>
+               <text:list text:style-name="L"><text:list-item><text:p text:style-name="Named">Bb</text:p></text:list-item></text:list>"#,
+        );
+        let doc = typeset(&app, &setter(), &Options::default());
+        let margin = 72.0 * 2.0 / 2.54;
+        let cm = |cm: f32| cm * 72.0 / 2.54;
+        let labels: Vec<f32> = texts(&doc.pages[0])
+            .into_iter()
+            .filter(|t| t.2 == "1.")
+            .map(|t| t.0 - margin)
+            .collect();
+        assert_eq!(labels.len(), 2);
+        assert!((labels[0] - cm(5.0)).abs() < 0.05, "{labels:?}");
+        assert!((labels[1] - cm(1.0)).abs() < 0.05, "{labels:?}");
+    }
+
     /// `doc/odt-format.md` §5c fact 22: a list item's label and text where its level puts
     /// them, an automatic style's own indents winning and a named style's not.
     #[test]

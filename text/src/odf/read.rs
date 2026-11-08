@@ -1651,6 +1651,7 @@ impl Context<Builder> for Styles {
                         .get(Ns::Style, "master-page-name")
                         .filter(|m| !m.is_empty())
                         .map(str::to_owned),
+                    list_style: attrs.get(Ns::Style, "list-style-name").map(str::to_owned),
                     ..Default::default()
                 },
             }));
