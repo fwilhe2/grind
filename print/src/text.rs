@@ -2412,6 +2412,36 @@ mod tests {
         );
     }
 
+    /// A paragraph that opens a page of another width after a page break starts at that page's
+    /// top, however much taller the text before it was at the other width.
+    #[test]
+    fn a_page_opened_after_a_break_on_a_wider_master_starts_at_its_top() {
+        let words = "word ".repeat(400);
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles>
+              <style:style style:name="After" style:family="paragraph"><style:paragraph-properties fo:break-after="page"/></style:style>
+              <style:style style:name="Wide" style:family="paragraph" style:master-page-name="Wide"/>
+              <style:page-layout style:name="pl1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="4cm" fo:margin-right="4cm"/></style:page-layout>
+              <style:page-layout style:name="pl2"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="1cm" fo:margin-right="1cm"/></style:page-layout>
+            </office:automatic-styles>
+            <office:master-styles>
+              <style:master-page style:name="Standard" style:page-layout-name="pl1"/>
+              <style:master-page style:name="Wide" style:page-layout-name="pl2"/>
+            </office:master-styles>
+            <office:body><office:text>
+              <text:p>{words}</text:p><text:p text:style-name="After">end</text:p><text:p text:style-name="Wide">top</text:p>
+            </office:text></office:body></office:document>"#
+        );
+        let app = App::new();
+        app.open_bytes("shift.fodt", bytes.as_bytes()).unwrap();
+        let doc = typeset(&app, &setter(), &Options::default());
+        let first = texts(&doc.pages[0])[0].1;
+        let last = doc.pages.last().unwrap();
+        let top = texts(last).iter().find(|t| t.2 == "top").unwrap().1;
+        assert!((top - first).abs() < 0.01, "{top} against {first}");
+    }
+
     /// `doc/odt-format.md` §5c fact 24: a master's first-page header is on the first page of
     /// each run opening on it and its own header on the rest; with no first-page footer stated,
     /// the first page has none.

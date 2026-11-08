@@ -223,8 +223,9 @@ pub fn paginate_slots(
     let mut heading: Vec<(&str, usize)> = Vec::new();
     let mut heading_closed = false;
     for (at, &(unit, shift)) in units.iter().enumerate() {
+        // At the previous run's measure: a run opening on this page shifts it below.
         if std::mem::take(&mut break_pending) && !cut.fresh() {
-            cut.turn(unit.broken_top());
+            cut.turn(unit.broken_top() - shift);
         }
         match unit {
             Unit::Block {
