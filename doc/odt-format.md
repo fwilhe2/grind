@@ -630,7 +630,7 @@ oracle turned out to be unable to answer the font questions (fact 4).
    `center` centres a line between the margins and `end` puts it against the right one.
 9. **Headers and footers** (26.8.1.1): a master page's `style:header` is set from the page's
    **top margin** down, and the body starts below it by the header's own height (its content's,
-   or `fo:min-height` when that is more) plus its `fo:margin-bottom` from
+   or `fo:min-height` less the spacing when that is more — fact 47) plus its `fo:margin-bottom` from
    `style:header-style/style:header-footer-properties`; a `style:footer` ends at the **bottom
    margin**, and the body ends above it by its height plus its `fo:margin-top`. With 2 cm
    margins, one 12 pt line in each and 0.5 cm spacing, an A4 page holds 48 body lines where it
@@ -942,6 +942,12 @@ oracle turned out to be unable to answer the font questions (fact 4).
    11.9 pt above left 11.9 pt; a paragraph's border and padding still take their room besides.
    With `true` — and with the setting absent, as fact 5 measured — they add. Between a paragraph
    and a table, either way, they add.
+47. **A header's or footer's `fo:min-height` counts its spacing** — `MEASURED` (2026-11-08, 26.8,
+   2 cm margins, one 12 pt line in a footer with `fo:min-height="2cm" fo:margin-top="0.5cm"`, and
+   the same as a header with `fo:margin-bottom`). The footer and its spacing together took the
+   2 cm: its line started 2 cm above the bottom margin plus the 0.5 cm spacing (26.2 cm down A4),
+   and the body ended 2 cm above the bottom margin; the header's body started 4 cm down, not
+   4.5 cm. Content taller than the minimum less the spacing grows it as fact 9 says.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

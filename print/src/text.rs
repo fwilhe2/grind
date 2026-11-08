@@ -1451,7 +1451,7 @@ fn lines(
 struct Marginal<'a> {
     paragraphs: Vec<MarginalParagraph<'a>>,
     width: f64,
-    /// The header's own height, its content's or its `fo:min-height`, in points.
+    /// The header's own height, its content's or its `fo:min-height` less its spacing, in points.
     height: f64,
     spacing: f64,
 }
@@ -1532,7 +1532,8 @@ impl<'a> Marginal<'a> {
                 above + f64::from(paragraph.tall(&out.wrap(paragraph, (1, 1), &[]).1)) + below
             })
             .sum();
-        out.height = content.max(pt(marginal.min_height));
+        // `fo:min-height` counts the spacing (`doc/odt-format.md` §5c fact 47).
+        out.height = content.max(pt(marginal.min_height) - out.spacing);
         out
     }
 
@@ -3362,6 +3363,24 @@ mod tests {
             "{first_x}"
         );
         assert!((second_x - 56.6929).abs() < 0.01, "{second_x}");
+    }
+
+    /// `doc/odt-format.md` §5c fact 47: a header's `fo:min-height` counts its spacing — 2 cm
+    /// with 0.5 cm below starts the body 2 cm under the top margin, not 2.5 cm.
+    #[test]
+    fn a_headers_min_height_counts_its_spacing() {
+        let bytes = r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles><style:page-layout style:name="pm"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/><style:header-style><style:header-footer-properties fo:min-height="2cm" fo:margin-bottom="0.5cm"/></style:header-style><style:footer-style><style:header-footer-properties fo:min-height="2cm" fo:margin-top="0.5cm"/></style:footer-style></style:page-layout></office:automatic-styles>
+            <office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm"><style:header><text:p>HEAD</text:p></style:header><style:footer><text:p>FOOT</text:p></style:footer></style:master-page></office:master-styles>
+            <office:body><office:text><text:p>body</text:p></office:text></office:body></office:document>"#;
+        let app = App::new();
+        app.open_bytes("h.fodt", bytes.as_bytes()).unwrap();
+        let page = &typeset(&app, &setter(), &Options::default()).pages[0];
+        let texts = texts(page);
+        let y = |w: &str| texts.iter().find(|t| t.2 == w).unwrap().1;
+        let cm = (72.0 / 2.54) as f32;
+        assert!((y("body") - y("HEAD") - 2.0 * cm).abs() < 0.01, "{texts:?}");
+        assert!(((29.7 - 2.0 - 1.5) * cm - (y("FOOT") - (y("HEAD") - 2.0 * cm))).abs() < 0.01);
     }
 
     /// `doc/odt-format.md` §5c fact 46: with `AddParaTableSpacing` off, two paragraphs are the
