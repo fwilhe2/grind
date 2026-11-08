@@ -282,11 +282,21 @@ listens.
   so the page is at `http://127.0.0.1:8080/` on that machine and on no other. The documents are a
   host directory, written as the host's user.
 - `ui_web/deploy/kubernetes.yaml` puts a **Caddy sidecar** in the pod. It shares the pod's
-  loopback, listens on the pod's address (8081), compresses (grind sends the 3 MB module as it
-  is) and hands every request to grind. grind is told the public host name with `--host`,
-  because it refuses requests addressed to any name it was not given; the probes send
-  `Host: localhost` for the same reason. The documents are a PersistentVolumeClaim, so the
-  Deployment is one replica, replaced with `Recreate` rather than rolled.
+  loopback, listens on the pod's address (8081), asks for a **login** and hands every request to
+  grind. The login is there because whoever reaches the Service could otherwise read, overwrite
+  and delete every document: grind's own checks (the Host, the page's header, the Origin) stop
+  another site's page, not a program. The user and bcrypt hash are a Secret made with `kubectl`,
+  never in the file, so the pod does not start without one. grind is told the public host name
+  with `--host`, because it refuses requests addressed to any name it was not given. The probes
+  cannot reach loopback and must not need the login, so Caddy has a second port (8082) outside
+  the Service, with its own `/healthz` and grind's `api/v1/hello` and nothing else; grind's
+  probes sit on grind's container, so a grind that stops answering is the one restarted, and send
+  `Host: localhost`. The documents are a PersistentVolumeClaim, so the Deployment is one replica,
+  replaced with `Recreate` rather than rolled.
+- **Compression** is grind's: `ui_web/build.sh release` writes a gzip twin beside each module,
+  script, stylesheet, font and dictionary, and `grind serve` sends it to a browser that takes
+  gzip, so every sample serves the module at about a quarter of its size.
+- grind exits on SIGTERM by its own handler, so as a container's PID 1 it needs no `--init`.
 - `httproute.yaml` (Gateway API) and `ingress.yaml` (Ingress API) reach that Service from
   outside the cluster, one of the two per cluster. `ingress-nginx` is retired (end of life
   31 March 2026, no security fixes), which is why the Gateway API file is the default and the
@@ -295,9 +305,9 @@ listens.
   documents as a local directory — the pod, the proxy and the probes, without a cluster.
 
 `cli/tests/deploy.rs` holds the samples to each other and to the workflow: the image
-`container.yml` publishes, grind on loopback with the proxy the only port, the probes' Host, one
-replica over one claim, and both containers unprivileged and read-only under the `restricted`
-Pod Security Standard.
+`container.yml` publishes, grind on loopback with the proxy the only ports, the login, the probes'
+port and Host, one replica over one claim, and both containers unprivileged and read-only under
+the `restricted` Pod Security Standard.
 
 `.github/workflows/container.yml`'s `web-image` job builds this image on every push to `main`, one
 leg per architecture on a runner of its own architecture rather than under qemu, `load: true` so

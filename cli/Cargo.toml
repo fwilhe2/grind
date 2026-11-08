@@ -36,7 +36,7 @@ grammar = ["dep:grind-grammar"]
 # crates; on by default because an editor that cannot find it helps nobody.
 lsp = ["dep:grind-lsp"]
 # `grind serve` (doc/server.md): the browser version and a directory of documents, on 127.0.0.1.
-server = ["dep:grind-server"]
+server = ["dep:grind-server", "dep:signal-hook"]
 
 [dependencies]
 # The suite-level half: `kind`, `Form`, and what a lint diagnostic is — the vocabulary a
@@ -62,6 +62,10 @@ grind-server = { path = "../server", optional = true }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[target.'cfg(unix)'.dependencies]
+# `grind serve` as a container's PID 1 gets no default action for SIGTERM.
+signal-hook = { version = "0.3", optional = true, default-features = false, features = ["iterator"] }
 
 # Read by `cargo deb` (artifacts.yml). No runtime deps beyond libc: `grind-sheet` is
 # format-neutral plumbing, not a system library.

@@ -10,9 +10,9 @@
 //! `kubernetes.yaml` — plus the two ways to reach that Service from outside a cluster,
 //! `httproute.yaml` (Gateway API) and `ingress.yaml` (Ingress API), of which a given cluster
 //! wants one. All of them are copy-and-run instructions rather than prose, which is exactly what
-//! makes them rot silently: the image tag lives in `.github/workflows/container.yml`, the port
-//! and the health endpoint are settings of the running server, and nothing about a stale sample
-//! fails until somebody pastes it into a terminal. A sample nobody runs is `doc/plan.md` rule 4's
+//! makes them rot silently: the image tag lives in `.github/workflows/container.yml`, the ports
+//! and the probed path are grind's and the proxy's, and nothing about a stale sample fails until
+//! somebody pastes it into a terminal. A sample nobody runs is `doc/plan.md` rule 4's
 //! UI-only feature in another costume.
 //!
 //! What is checked here is only the agreement *between files* — the things one edit can break
@@ -107,10 +107,6 @@ fn grind_is_reached_on_loopback_and_only_there() {
         !compose.contains("ports:"),
         "compose.yaml publishes a port grind does not listen on"
     );
-    assert!(
-        compose.contains("init: true"),
-        "grind as PID 1 does not stop on SIGTERM"
-    );
 
     let kubernetes = live_lines(KUBERNETES);
     assert!(
@@ -125,31 +121,90 @@ fn grind_is_reached_on_loopback_and_only_there() {
         kubernetes.contains(":8081 {") && kubernetes.contains("containerPort: 8081"),
         "the proxy listens on a port its container does not declare"
     );
+    assert!(
+        kubernetes.contains(":8082 {") && kubernetes.contains("containerPort: 8082"),
+        "the probes' port is not the proxy's"
+    );
     assert_eq!(
         kubernetes.matches("containerPort:").count(),
-        1,
-        "only the proxy declares a port; grind has nothing to offer the pod's address"
+        2,
+        "only the proxy declares ports; grind has nothing to offer the pod's address"
     );
 }
 
 #[test]
-fn the_probes_ask_grind_through_the_proxy() {
-    // The kubelet probes the pod's address, which only the proxy is on, and with the pod's IP as
-    // the Host, which grind refuses — so each probe names a host grind answers to.
-    assert_eq!(
-        KUBERNETES.matches("path: /api/v1/hello").count(),
-        2,
-        "kubernetes.yaml should probe the server from both the readiness and the liveness probe"
+fn the_proxy_asks_for_a_login() {
+    // Whoever reaches the Service could otherwise read, overwrite and delete every document:
+    // grind's own checks stop another site's page, not a program.
+    let kubernetes = live_lines(KUBERNETES);
+    let site = &kubernetes[kubernetes.find(":8081 {").expect("the proxy's site")..];
+    let site = &site[..site.find("\n    }").expect("the site's end")];
+    assert!(
+        site.contains("basic_auth {") && site.contains("{$GRIND_USER} {$GRIND_PASSWORD_HASH}"),
+        "the Service's port no longer asks for a login"
     );
     assert_eq!(
-        KUBERNETES.matches("value: localhost").count(),
+        kubernetes.matches("name: grind-web-login").count(),
+        2,
+        "the login's user and hash are not both read from the grind-web-login Secret"
+    );
+    // The Secret is made with kubectl, so no password is in the file.
+    assert!(
+        !kubernetes.contains("kind: Secret"),
+        "kubernetes.yaml carries a Secret; the login is made with kubectl, not committed"
+    );
+    // The probes' port is outside the Service and forwards one read-only path.
+    let probe = &kubernetes[kubernetes.find(":8082 {").expect("the probes' site")..];
+    let probe = &probe[..probe.find("\n    }").expect("the probes' site's end")];
+    assert_eq!(
+        probe.matches("reverse_proxy").count(),
+        1,
+        "the probes' port forwards more than api/v1/hello"
+    );
+    assert!(probe.contains("handle /api/v1/hello {"));
+    assert!(
+        !kubernetes.contains("targetPort: probe") && !kubernetes.contains("targetPort: 8082"),
+        "the Service reaches the probes' port, which has no login"
+    );
+}
+
+#[test]
+fn grinds_probes_are_on_grinds_container() {
+    // The kubelet restarts the container whose probe failed, so a probe of grind belongs to
+    // grind's container. It goes through the proxy's probe port, since the pod's address cannot
+    // reach loopback, with a Host grind answers to.
+    let grind = &KUBERNETES[..KUBERNETES
+        .find("- name: proxy")
+        .expect("the proxy container")];
+    assert_eq!(
+        grind.matches("path: /api/v1/hello").count(),
+        2,
+        "grind's container should carry both the readiness and the liveness probe"
+    );
+    assert_eq!(grind.matches("port: 8082").count(), 2);
+    assert_eq!(
+        grind.matches("value: localhost").count(),
         2,
         "a probe without `Host: localhost` is refused by grind as another site's request"
+    );
+    let proxy = &KUBERNETES[KUBERNETES.find("- name: proxy").unwrap()..];
+    assert!(
+        proxy.contains("path: /healthz") && !proxy.contains("/api/v1/hello"),
+        "the proxy's own probe should ask the proxy, not grind"
     );
     // There is no shell in a distroless image, so an `exec` probe cannot work here.
     assert!(
         !KUBERNETES.contains("exec:"),
         "an exec probe cannot run in a distroless image; use httpGet"
+    );
+}
+
+#[test]
+fn the_proxy_is_pinned() {
+    // The request path, so a reschedule must not pick up another Caddy.
+    assert!(
+        KUBERNETES.contains("image: docker.io/library/caddy:2.11.9@sha256:"),
+        "kubernetes.yaml's proxy is not pinned to a digest"
     );
 }
 

@@ -332,6 +332,21 @@ fn the_page_is_served_and_nothing_beside_it() {
     }
     assert_eq!(server.handle(&send("PUT", "/index.html")).status, 405);
 
+    // A `.gz` beside a file is that file, for a browser that takes gzip.
+    std::fs::write(page.0.join("grind_web_bg.wasm.gz"), b"\x1f\x8b").unwrap();
+    let compressed =
+        server.handle(&get("/grind_web_bg.wasm").with_header("Accept-Encoding", "gzip, br"));
+    assert_eq!(compressed.body, b"\x1f\x8b");
+    assert_eq!(compressed.header("Content-Encoding"), Some("gzip"));
+    assert_eq!(compressed.header("Content-Type"), Some("application/wasm"));
+    assert_eq!(compressed.header("Vary"), Some("Accept-Encoding"));
+    for refused in ["", "br", "gzip;q=0", "identity"] {
+        let plain =
+            server.handle(&get("/grind_web_bg.wasm").with_header("Accept-Encoding", refused));
+        assert_eq!(plain.body, b"\0asm", "{refused:?}");
+        assert_eq!(plain.header("Content-Encoding"), None, "{refused:?}");
+    }
+
     let bare = Server::new(&dir.0, None, &[]).unwrap();
     assert_eq!(bare.handle(&get("/")).status, 404);
     assert_eq!(bare.handle(&get("/api/v1/hello")).status, 200);

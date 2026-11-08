@@ -574,7 +574,7 @@ ui_web/deploy/podman.sh kube ~/Documents    # the Kubernetes sample, at http://l
 ui_web/deploy/podman.sh kube-down
 ```
 
-Without a folder it serves `documents` in the current directory, and makes it if needed.
+Without a folder it serves `documents` in the current directory, and makes it if needed. `kube` asks for a login too, and prints the password it made for it.
 
 **Docker Compose.** `ui_web/deploy/compose.yaml` does the same with Docker:
 
@@ -586,7 +586,7 @@ docker compose -f ui_web/deploy/compose.yaml down
 
 `GRIND_DOCUMENTS` names another folder, and `GRIND_UID` and `GRIND_GID` the user the files belong to (1000 by default). Under rootless Podman, `podman compose` needs its service started with `PODMAN_USERNS=keep-id`; `podman.sh` needs nothing.
 
-**Kubernetes.** `ui_web/deploy/kubernetes.yaml` runs one pod with the documents on a persistent volume and a small proxy beside grind, which is what the cluster reaches. `httproute.yaml` or `ingress.yaml` makes it reachable from outside; put your host name there and in the `--host` of `kubernetes.yaml`. Back up the volume: it is the only copy of the documents.
+**Kubernetes.** `ui_web/deploy/kubernetes.yaml` runs one pod with the documents on a persistent volume and a small proxy beside grind, which is what the cluster reaches. `httproute.yaml` or `ingress.yaml` makes it reachable from outside; put your host name there and in the `--host` of `kubernetes.yaml`. It asks for a login: create the Secret named at the top of `kubernetes.yaml`, with a password of your choosing, and the pod starts once it exists. Back up the volume: it is the only copy of the documents.
 
 # 8. The command line
 

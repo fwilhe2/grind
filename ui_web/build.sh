@@ -86,5 +86,12 @@ cp "$root"/print/fonts/*.ttf "$dist/fonts/"
 mkdir -p "$dist/dictionaries"
 cp "$root"/spell/dictionaries/*.aff "$root"/spell/dictionaries/*.dic "$dist/dictionaries/"
 
+# A gzip twin of every text and module file, which `grind serve` sends to a browser that takes
+# it: the release module is about a quarter of its size compressed.
+if [ "$profile" = release ]; then
+    find "$dist" -type f \( -name '*.wasm' -o -name '*.js' -o -name '*.html' -o -name '*.css' \
+        -o -name '*.ttf' -o -name '*.aff' -o -name '*.dic' \) -exec gzip -9 -k -n {} +
+fi
+
 echo "ui_web/dist is ready — serve it, do not open index.html from disk:"
 echo "  python3 -m http.server --directory ui_web/dist 8000"

@@ -105,9 +105,9 @@ def cmd_record(args: argparse.Namespace) -> int:
         if s.is_file():
             record["stripped"] = s.stat().st_size
 
-    # Only meaningful for something served over HTTP. `ui_web/Dockerfile` puts `dist/` behind
-    # static-web-server, so the number a browser actually downloads is the compressed one and
-    # the raw size overstates the cost by roughly four to one.
+    # Only meaningful for something served over HTTP. `ui_web/build.sh` writes a gzip twin of
+    # each module and `grind serve` sends it, so the number a browser actually downloads is the
+    # compressed one and the raw size overstates the cost by roughly four to one.
     if args.gzip:
         record["gzip"] = len(gzip.compress(path.read_bytes(), 9))
 
