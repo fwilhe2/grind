@@ -104,7 +104,11 @@ impl Server {
     fn api(&self, request: &Request, rest: &str) -> Response {
         let store = self.store.lock().unwrap_or_else(|e| e.into_inner());
         let segments: Vec<&str> = rest.split('/').collect();
-        let method = request.method.as_str();
+        // A HEAD is a GET whose body the HTTP layer drops: what it is for is the `ETag`.
+        let method = match request.method.as_str() {
+            "HEAD" => "GET",
+            method => method,
+        };
         let if_match = request.header("If-Match");
         let result = match (method, segments.as_slice()) {
             ("GET", ["hello"]) => return hello(&store),
