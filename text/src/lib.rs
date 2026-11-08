@@ -252,13 +252,21 @@ pub struct ImageView {
 /// [`App::insert_image`] makes in an empty paragraph, and how an ODF frame-inside-a-frame reads
 /// (`doc/odt-format.md`). A shell draws it as a picture; an image mid-sentence still draws as
 /// `\u{fffc}` (`doc/text-shell.md`).
+///
+/// A caption may be several runs — a field numbers Writer's `Figure 3:` — and is the block's
+/// text after the picture.
 pub fn picture_of(block: &BlockView) -> Option<(&ImageView, Option<&str>)> {
     match block.runs.as_slice() {
         [run] => run.image.as_ref().map(|image| (image, None)),
-        [run, caption] if caption.image.is_none() => run
-            .image
-            .as_ref()
-            .map(|image| (image, Some(caption.text.as_str()))),
+        [run, rest @ ..] if rest.iter().all(|run| run.image.is_none()) => {
+            let image = run.image.as_ref()?;
+            let from = block
+                .text
+                .char_indices()
+                .nth(rest[0].start)
+                .map_or(block.text.len(), |(at, _)| at);
+            Some((image, Some(&block.text[from..])))
+        }
         _ => None,
     }
 }
@@ -1621,7 +1629,7 @@ mod tests {
             id: BlockId(0),
             kind: BlockKind::Paragraph,
             style: None,
-            text: String::new(),
+            text: runs.iter().map(|run| run.text.as_str()).collect(),
             runs,
             styled: false,
             marks: Vec::new(),
@@ -1644,6 +1652,20 @@ mod tests {
         let view = block(vec![image_run("image/png"), text_run(1, "A caption")]);
         let (_, caption) = picture_of(&view).expect("reads as a picture");
         assert_eq!(caption, Some("A caption"));
+    }
+
+    /// A caption holding a field — Writer's `Figure 3:` numbering — is several runs, and all of
+    /// them are the caption.
+    #[test]
+    fn an_image_then_several_runs_is_a_picture_with_all_of_them_as_its_caption() {
+        let view = block(vec![
+            image_run("image/png"),
+            text_run(1, "Figure "),
+            text_run(8, "3"),
+            text_run(9, ": Calc"),
+        ]);
+        let (_, caption) = picture_of(&view).expect("reads as a picture");
+        assert_eq!(caption, Some("Figure 3: Calc"));
     }
 
     #[test]
