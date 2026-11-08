@@ -2436,6 +2436,8 @@ fn inline_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         }
         (Ns::Text, "a") => {
             b.href = attrs.get(Ns::Xlink, "href").map(str::to_owned);
+            // Its own style styles its text as a span's would (`doc/odt-format.md` §5c fact 39).
+            b.open_span(attrs.get(Ns::Text, "style-name"));
             Some(Box::new(Hyperlink))
         }
         (Ns::Text, "s") => {
@@ -2848,5 +2850,6 @@ impl Context<Builder> for Hyperlink {
 
     fn end(&mut self, b: &mut Builder) {
         b.href = None;
+        b.close_span();
     }
 }

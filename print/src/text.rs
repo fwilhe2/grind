@@ -2884,6 +2884,26 @@ mod tests {
         assert_eq!(colour("see "), Some(Rgb::BLACK));
     }
 
+    /// `doc/odt-format.md` §5c fact 39: a link's own character style is drawn — here red and
+    /// not underlined.
+    #[test]
+    fn a_links_own_style_wins_over_the_unstyled_look() {
+        let bytes = r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:styles><style:style style:name="Plain_20_link" style:family="text"><style:text-properties fo:color="#ff0000" style:text-underline-style="none"/></style:style></office:styles>
+            <office:body><office:text>
+              <text:p>see <text:a xlink:href="https://example.invalid/" text:style-name="Plain_20_link">there</text:a></text:p>
+            </office:text></office:body></office:document>"##;
+        let app = App::new();
+        app.open_bytes("l.fodt", bytes.as_bytes()).unwrap();
+        let page = &typeset(&app, &setter(), &Options::default()).pages[0];
+        let colour = page.ops.iter().find_map(|op| match op {
+            Op::Text { text, color, .. } if text == "there" => Some(*color),
+            _ => None,
+        });
+        assert_eq!(colour, Some(Rgb(0xff, 0, 0)));
+        assert!(!page.ops.iter().any(|op| matches!(op, Op::Line { .. })));
+    }
+
     /// A table drawn as its document says: its own column widths, each cell's fill, borders and
     /// padding, and its heading row again at the top of every page it continues on.
     #[test]

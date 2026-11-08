@@ -759,6 +759,7 @@ oracle turned out to be unable to answer the font questions (fact 4).
    after another master's page — and `style:header`/`style:footer` on the rest. Where a master
    has either variant, a first page with no `-first` counterpart for the other carries none:
    with only `style:header-first` stated, the first page had that header and **no** footer.
+   Which pages count as first is fact 37.
    Word's `w:titlePg` arrives this way (`doc/docx-import.md`).
 25. **A table row splits across pages** — `MEASURED` (2026-10-29, the pinned image, a
    two-cell bordered row of 25 and 3 one-line paragraphs after 30 paragraphs). A row that does
@@ -850,6 +851,39 @@ oracle turned out to be unable to answer the font questions (fact 4).
    top margin and its line 0.27 cm below. After a page break — `fo:break-before="page"` on it or
    `fo:break-after="page"` on the paragraph before — it keeps its margin too: its line, or its
    box, started 0.5 cm below the top margin, boxed or not.
+35. **Left and right pages** — `MEASURED` (2026-11-08, 26.8, generated documents on a page
+   layout with 4 cm left and 1 cm right margins, a master with `style:footer`,
+   `style:footer-left` and `style:footer-first`, pages forced by `fo:break-before="page"`). A
+   page is a **right page when its number is odd** and a left page when it is even — its
+   number, not its place in the file: a page restarted at 1 in the second place was a right
+   page. A left page wears the master's `style:footer-left` (and `style:header-left`) whatever
+   the layout's `style:page-usage`; a master stating none puts its `style:footer` there. With
+   `style:page-usage="mirrored"` a left page also swaps the left and right margins (its text
+   started 1 cm in); with `all`, the default, it keeps them.
+36. **A page of the wrong hand skips a number** — `MEASURED` (2026-11-08, 26.8, as fact 35). On
+   a layout with `style:page-usage="right"` every page is numbered odd — three pages showed 1, 3
+   and 5 — and on `left` every page even, the first 2. A paragraph opening a `right` master on
+   what would be page 2 opened page 3, and the page after it, back on a mirrored master, was 4.
+   The PDF holds only the printed pages: the skipped numbers are blank pages Writer leaves out
+   of it.
+37. **Which page is a first page** — `MEASURED` (2026-11-08, 26.8, as fact 35), refining fact
+   24. A page wears its master's `style:footer-first` when it is the document's first page or
+   the page before it was on another master — reached by a paragraph naming the master or by
+   the previous master's `style:next-style-name` alike (a master `A` whose next is `B` gave page
+   2 `B`'s first-page footer). A paragraph naming the master **its own page is already on**
+   opens a new page, but not a first one: it wore `style:footer` (or, on page 2,
+   `style:footer-left`), restarted page number or not. A first page that is a left page wears
+   the first-page footer and still has its margins mirrored.
+38. **A header's or footer's paragraph box** — `MEASURED` (2026-11-08, 26.8, a footer paragraph
+   with `fo:border-top="2pt solid"`, 4 cm and 1 cm page margins). It is drawn as fact 30 draws
+   the body's: the rule ran from the text area's left edge to its right (16 cm), the border and
+   `fo:padding` take room inside the footer, and the footer still ends on the bottom margin —
+   the line sat where it sat with no border, the rule 2 pt above it, and with 0.3 cm padding
+   both moved up by the bottom padding.
+39. **A hyperlink's own character style** — `MEASURED` (2026-11-08, 26.8). The `text:style-name`
+   on a `text:a` styles its text as a span's would: a style stating `fo:color="#ff0000"` and
+   `style:text-underline-style="none"` drew the link red and not underlined. Fact 12's navy and
+   underline are only what a link gets where nothing states them.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on
