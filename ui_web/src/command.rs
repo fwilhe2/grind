@@ -717,6 +717,44 @@ pub const WELCOME: &[Command] = &[
     cmd("doc.open", "Open document…", "Start", "Ctrl+O", true),
 ];
 
+/// What `grind serve` adds over an open document (`server.rs`). With no server these are not in the
+/// palette at all.
+pub const SERVER: &[Command] = &[cmd(
+    "server.save-as",
+    "Save to the server as…",
+    "Server",
+    "",
+    false,
+)];
+
+/// And over a document that came from it.
+pub const SERVER_LINKED: &[Command] = &[
+    cmd("server.download", "Download a copy", "Server", "", false),
+    cmd(
+        "server.rename",
+        "Rename on the server…",
+        "Server",
+        "",
+        false,
+    ),
+    cmd(
+        "server.delete",
+        "Delete from the server…",
+        "Server",
+        "",
+        false,
+    ),
+];
+
+/// And when the server keeps its history.
+pub const SERVER_HISTORY: &[Command] = &[cmd(
+    "server.history",
+    "Earlier versions…",
+    "Server",
+    "",
+    false,
+)];
+
 /// `const fn` so the tables above stay readable — a struct literal per row is the same
 /// information three times as tall.
 const fn cmd(

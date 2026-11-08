@@ -223,6 +223,28 @@ pub(crate) enum Top {
     /// checked, never run. Point your editor's language client at `grind lsp`.
     Lsp,
 
+    /// Serve a directory of documents to the browser version of grind, on this computer only
+    ///
+    /// Opens http://127.0.0.1:8080/ (or --port): the browser version, which lists the documents
+    /// in DIR, opens them, and saves them back in place. Any .ods, .fods, .odt or .fodt below DIR
+    /// is listed; any other program editing those files sees the same documents. When DIR is in a
+    /// git repository, every save is a commit, and the page shows a document's history and can
+    /// restore an earlier version. It listens on 127.0.0.1 only: no other computer can reach it
+    /// unless you put a reverse proxy in front of it yourself, and then --host names it.
+    Serve {
+        /// The directory of documents
+        dir: PathBuf,
+        /// The port on 127.0.0.1; 0 picks a free one
+        #[arg(long, default_value_t = 8080)]
+        port: u16,
+        /// The built browser version (a ui_web/dist); without it, the one installed with grind
+        #[arg(long, value_name = "DIR")]
+        page: Option<PathBuf>,
+        /// Another name requests may be addressed to: your reverse proxy's
+        #[arg(long = "host", value_name = "NAME")]
+        hosts: Vec<String>,
+    },
+
     /// Set up a directory for writing scripts and projections in an editor
     ///
     /// Writes a starter — by default a script that builds a spreadsheet (model.rhai, with its

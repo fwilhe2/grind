@@ -25,6 +25,14 @@ SPDX-License-Identifier: CC-BY-4.0
   wasm module, dictionaries, fonts, a `?doc=` path. An absolute URL is refused (`doc_param` in
   `ui_web/src/lib.rs`), and `ui_web/smoke.sh` fails on any fetch that leaves the page's own
   files.
+- **`grind serve`** (`doc/server.md`, decided 2026-11-08) is a listener, not a client, and it
+  listens on `127.0.0.1` with no option to name another address: the person's own browser on
+  the person's own computer. Another computer reaches it only through a reverse proxy the person
+  runs themselves, which grind does not ship. It sends nothing anywhere, and refuses a request
+  addressed to a name it was not given or written by another site's page. The page's writes to
+  it are relative `api/v1/` paths from one module, `ui_web/src/server.rs`. The guard holds all of
+  it: one bind, with the loopback address written into it, and `tiny_http` depended on by
+  `grind-server` alone.
 - **Tests and tools** are not what grind ships. The LibreOffice and Euro-Office oracles run in
   containers, the corpora are downloaded by scripts, CI fetches crates. A test may serve itself
   on loopback; the guard leaves `tests/` directories alone.

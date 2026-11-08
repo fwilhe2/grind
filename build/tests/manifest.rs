@@ -47,6 +47,7 @@ const READERS: [(&str, &str); 19] = [
     // compiled and never run — the check arrives from the CLI through `grind_lsp::Host`, which
     // is exactly the shape that keeps an evaluator out of here (doc/init.md I5).
     ("lsp", include_str!("../../lsp/Cargo.toml")),
+    ("server", include_str!("../../server/Cargo.toml")),
     // What opening a file means in every shell: the import filters' front door.
     ("open", include_str!("../../open/Cargo.toml")),
     (

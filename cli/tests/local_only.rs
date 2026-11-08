@@ -5,6 +5,7 @@
 //! R12's guard (`doc/local-only.md`): nothing grind builds talks to another computer. Three
 //! ways that could come back — a client crate in the lockfile, a platform's network API turned
 //! on in a manifest, a socket or a spawned downloader in the code — and one check for each.
+//! `grind serve` is the one listener, and the last check holds it to the loopback address.
 
 use std::path::{Path, PathBuf};
 
@@ -94,10 +95,80 @@ fn no_manifest_turns_on_a_network_api_and_no_code_opens_a_socket() {
             false => &code_words,
         };
         for word in words {
-            if text.contains(word) {
+            // The page's writes to the server that served it: one module, relative paths only.
+            let page_writes = match *word {
+                "\"RequestInit\"" => relative.ends_with("ui_web/Cargo.toml"),
+                "fetch_with_str_and_init" => relative.ends_with("ui_web/src/server.rs"),
+                _ => false,
+            };
+            if text.contains(word) && !page_writes {
                 offences.push(format!("{}: {word}", relative.display()));
             }
         }
     }
     assert!(offences.is_empty(), "{offences:#?}");
+}
+
+/// `grind serve` listens, and only on 127.0.0.1: one call that binds, in one file, with the
+/// address written into it — there is no option that could name another.
+#[test]
+fn the_one_listener_is_on_loopback() {
+    let mut all = Vec::new();
+    files(&root(), &mut all);
+    let mut binds = Vec::new();
+    for path in &all {
+        let text = std::fs::read_to_string(path).unwrap_or_default();
+        let relative = path.strip_prefix(root()).unwrap_or(path);
+        if relative.components().any(|c| c.as_os_str() == "tests") {
+            continue;
+        }
+        let is_manifest = path.file_name().is_some_and(|n| n == "Cargo.toml");
+        if is_manifest && text.contains("tiny_http") && !relative.ends_with("server/Cargo.toml") {
+            binds.push(format!("{}: depends on tiny_http", relative.display()));
+        }
+        if is_manifest {
+            continue;
+        }
+        for word in [
+            "Server::http(",
+            "Server::https(",
+            "Server::from_listener(",
+            "0.0.0.0",
+        ] {
+            for (n, line) in text.lines().enumerate() {
+                if line.contains(word) {
+                    binds.push(format!("{}:{}: {}", relative.display(), n + 1, line.trim()));
+                }
+            }
+        }
+    }
+    let loopback = "server/src/lib.rs:";
+    assert!(
+        binds.len() == 1
+            && binds[0].starts_with(loopback)
+            && binds[0].contains("tiny_http::Server::http((\"127.0.0.1\", "),
+        "{binds:#?}"
+    );
+}
+
+/// The page's writes go to the address that served it: relative paths under `api/v1/`, and no
+/// URL with a scheme anywhere in the module that sends them.
+#[test]
+fn the_page_writes_only_beside_itself() {
+    let server = std::fs::read_to_string(root().join("ui_web/src/server.rs")).unwrap();
+    assert!(server.contains("const API: &str = \"api/v1/\";"));
+    assert!(
+        !server.contains("://"),
+        "a URL with a scheme in ui_web/src/server.rs"
+    );
+    let calls: Vec<&str> = server
+        .lines()
+        .filter(|line| line.contains("fetch_with_str_and_init("))
+        .collect();
+    assert_eq!(calls.len(), 1, "{calls:#?}");
+    assert!(
+        calls[0].contains("format!(\"{API}{path}\")"),
+        "{}",
+        calls[0]
+    );
 }

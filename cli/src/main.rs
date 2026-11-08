@@ -325,6 +325,16 @@ fn main() -> ExitCode {
     if let Top::Lsp = cli.command {
         return lsp();
     }
+    // The server runs until killed, and says where it is on stderr as it starts.
+    if let Top::Serve {
+        dir,
+        port,
+        page,
+        hosts,
+    } = &cli.command
+    {
+        return serve(dir, *port, page.clone(), hosts);
+    }
     match run(&cli) {
         Ok(report) => {
             report.print(cli.format);
@@ -375,6 +385,44 @@ fn lsp() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// `grind serve`. The page is `--page`, or the one installed beside the binary.
+#[cfg(feature = "server")]
+fn serve(dir: &Path, port: u16, page: Option<PathBuf>, hosts: &[String]) -> ExitCode {
+    let page = page.or_else(|| {
+        let exe = std::env::current_exe().ok()?;
+        let installed = exe.parent()?.parent()?.join("share/grind/web");
+        installed.join("index.html").is_file().then_some(installed)
+    });
+    let shown = dir.display().to_string();
+    let options = grind_server::Options {
+        dir: dir.to_owned(),
+        port,
+        page: page.clone(),
+        hosts: hosts.to_vec(),
+    };
+    let ready = |port| {
+        eprintln!("grind serve: {shown} at http://127.0.0.1:{port}/");
+        if page.is_none() {
+            eprintln!(
+                "grind serve: no browser version installed, so only the API answers (--page)"
+            );
+        }
+    };
+    match grind_server::serve(options, ready) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(message) => {
+            eprintln!("grind serve: {message}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(not(feature = "server"))]
+fn serve(_: &Path, _: u16, _: Option<PathBuf>, _: &[String]) -> ExitCode {
+    eprintln!("grind: this build has no server (built without the `server` feature)");
+    ExitCode::FAILURE
 }
 
 #[cfg(not(feature = "lsp"))]
@@ -545,6 +593,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
 
         // Handled in `main`, before anything that prints: the server owns stdout.
         Top::Lsp => unreachable!("`main` runs the language server itself"),
+        Top::Serve { .. } => unreachable!("`main` runs the server itself"),
 
         // No document and no script: a directory around them (`doc/init.md`).
         Top::Init {

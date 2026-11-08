@@ -320,6 +320,8 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("nor is Save, with nothing to save", byId("save").hidden, true);
   check("it offers three ways to get a document",
         document.querySelectorAll("#welcome .welcome-card").length, 3);
+  // No server answered the probe (`ui_web/src/server.rs`), so the page says nothing about one.
+  check("and nothing about a server that is not there", byId("welcome-server").hidden, true);
 
   // The palette over it offers those three and nothing that needs a document.
   palette("k", { ctrlKey: true });
