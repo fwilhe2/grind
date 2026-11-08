@@ -151,7 +151,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         )
     };
     let picture = |view: &BlockView, measure: f64| {
-        figure(view, measure, caption_face(view)).map(|f| f.height)
+        figure(view, measure, caption_face(view), figure_look(app, view)).map(|f| f.height)
     };
     // The document's own widows and orphans, and none where it states none — what Writer does
     // (`doc/odt-format.md` §5c, fact 3).
@@ -214,7 +214,12 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                     continue;
                 };
                 let origin = (left + piece.left, top + piece.top);
-                if let Some(figure) = figure(view, piece.width, caption_face(view)) {
+                if let Some(figure) = figure(
+                    view,
+                    piece.width,
+                    caption_face(view),
+                    figure_look(app, view),
+                ) {
                     figure.draw(&mut ops, origin, setter, caption_face(view), piece.index);
                     let length = view.runs.last().map_or(0, |run| run.end());
                     cover(caret(piece.index, 0), caret(piece.index, length));
@@ -1619,13 +1624,22 @@ struct Figure {
     data: Arc<Vec<u8>>,
     caption: Option<String>,
     height: f64,
+    /// Its paragraph's alignment, which places the picture and each caption line, and the
+    /// space between them (`doc/odt-format.md` §5c fact 40).
+    align: Align,
+    gap: f64,
 }
 
 /// A block's figure, when it is a picture whose size the document states. Paper is physical, so
 /// `svg:width` and `svg:height` are exactly right here, where a screen ignores them. A picture
 /// with no stated size is measured as text (ponytail: a natural size needs decoding its pixels,
 /// the shells' `Decoder`, which this crate lacks).
-fn figure(view: &BlockView, measure: f64, body: &RoleFace<'_>) -> Option<Figure> {
+fn figure(
+    view: &BlockView,
+    measure: f64,
+    body: &RoleFace<'_>,
+    (align, gap): (Align, f64),
+) -> Option<Figure> {
     let (image, caption) = picture_of(view)?;
     let length = |value: &Option<String>| value.as_deref().and_then(length_mm).map(pt);
     // The size the document gives it, or — for a picture that states none, as one imported
@@ -1642,7 +1656,7 @@ fn figure(view: &BlockView, measure: f64, body: &RoleFace<'_>) -> Option<Figure>
     let picture = h * width / w;
     let caption = caption.map(str::to_owned).filter(|c| !c.trim().is_empty());
     let below = caption.as_deref().map_or(0.0, |text| {
-        CAPTION_GAP + f64::from(caption_layout(text, measure, body).height())
+        gap + f64::from(caption_layout(text, measure, body).height())
     });
     Some(Figure {
         width,
@@ -1652,7 +1666,26 @@ fn figure(view: &BlockView, measure: f64, body: &RoleFace<'_>) -> Option<Figure>
         data: Arc::new(image.data.clone()),
         caption,
         height: picture + below,
+        align,
+        gap,
     })
+}
+
+/// How a picture block's paragraph sets it: its alignment, and the space between picture and
+/// caption — the style's own below and above, as Writer's picture and caption paragraphs share
+/// the frame's (`doc/odt-format.md` §5c fact 40). A block whose style is not declared gets the
+/// start and [`CAPTION_GAP`].
+// ponytail: the frame's inner paragraphs' own styles are not kept; theirs is assumed.
+fn figure_look(app: &App, view: &BlockView) -> (Align, f64) {
+    let Some(resolved) = app.paragraph(view.index).filter(|r| r.declared) else {
+        return (Align::parse(None), CAPTION_GAP);
+    };
+    let props = resolved.props;
+    let points = |value: &Option<String>| value.as_deref().and_then(length_mm).map_or(0.0, pt);
+    (
+        Align::parse(props.text_align.as_deref()),
+        points(&props.margin_bottom) + points(&props.margin_top),
+    )
 }
 
 /// A PNG's, a JPEG's or a GIF's own width and height in pixels, read from its header — `None`
@@ -1714,8 +1747,11 @@ impl Figure {
         body: &RoleFace<'_>,
         block: usize,
     ) {
+        let offset = |width: f64| {
+            f64::from(align::fit(self.align, self.measure as f32, width as f32, 0, true).offset)
+        };
         ops.push(Op::Image {
-            x: x as f32,
+            x: (x + offset(self.width)) as f32,
             y: y as f32,
             width: self.width as f32,
             height: self.picture as f32,
@@ -1732,13 +1768,16 @@ impl Figure {
         let (face, size) = setter.face_of(&style);
         for line in layout.lines() {
             let text: String = chars[line.start..line.end].iter().collect();
-            let top = (y + self.picture + CAPTION_GAP) as f32 + line.top;
+            let text = text.trim_end().to_owned();
+            let top = (y + self.picture + self.gap) as f32 + line.top;
+            let glyphs = setter.shape(&text, &style).glyphs;
+            let wide: f32 = glyphs.iter().map(|g| g.x_advance).sum();
             ops.push(Op::Text {
-                x: x as f32,
+                x: (x + offset(f64::from(wide))) as f32,
                 y: top + layout.baseline(),
                 face,
                 size,
-                glyphs: setter.shape(&text, &style).glyphs,
+                glyphs,
                 text,
                 color: Rgb::BLACK,
                 mark: Mark::Content(block),
@@ -1976,6 +2015,63 @@ mod tests {
         let page = &typeset(&app, &setter(), &Options::default()).pages[0];
         let lines = texts(page).len();
         assert_eq!(lines, 1, "{:?}", texts(page));
+    }
+
+    /// `doc/odt-format.md` §5c fact 40: Writer's captioned picture, in a centred style with
+    /// space below, is centred with its caption, the style's space between them.
+    #[test]
+    fn a_captioned_picture_is_centred_with_its_caption_as_its_style_says() {
+        let bytes = r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:styles><style:style style:name="Figure" style:family="paragraph"><style:paragraph-properties fo:text-align="center" fo:margin-top="0cm" fo:margin-bottom="0.5cm"/></style:style></office:styles>
+            <office:automatic-styles><style:page-layout style:name="pm"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/></style:page-layout></office:automatic-styles>
+            <office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm"/></office:master-styles>
+            <office:body><office:text>
+              <text:p text:style-name="Figure"><draw:frame text:anchor-type="as-char"><draw:text-box fo:min-width="0.041cm">
+                <text:p text:style-name="Figure"><draw:frame text:anchor-type="as-char" svg:width="4cm" svg:height="2cm"><draw:image draw:mime-type="image/png"><office:binary-data>iVBORw0KGgo=</office:binary-data></draw:image></draw:frame></text:p>
+                <text:p text:style-name="Figure">Figure 1: Caption</text:p>
+              </draw:text-box></draw:frame></text:p>
+            </office:text></office:body></office:document>"#;
+        let app = App::new();
+        app.open_bytes("fig.fodt", bytes.as_bytes()).unwrap();
+        let page = &typeset(&app, &setter(), &Options::default()).pages[0];
+        let cm = 72.0 / 2.54;
+        let centre = (10.5 * cm) as f32;
+        let (x, y, width, height) = page
+            .ops
+            .iter()
+            .find_map(|op| match op {
+                Op::Image {
+                    x,
+                    y,
+                    width,
+                    height,
+                    ..
+                } => Some((*x, *y, *width, *height)),
+                _ => None,
+            })
+            .unwrap();
+        assert!((x + width / 2.0 - centre).abs() < 0.01, "picture at {x}");
+        let caption = page
+            .ops
+            .iter()
+            .find_map(|op| match op {
+                Op::Text { x, y, glyphs, .. } => {
+                    Some((*x, *y, glyphs.iter().map(|g| g.x_advance).sum::<f32>()))
+                }
+                _ => None,
+            })
+            .unwrap();
+        assert!(
+            (caption.0 + caption.2 / 2.0 - centre).abs() < 0.01,
+            "caption at {}",
+            caption.0
+        );
+        // The caption's baseline sits a line's ascent below the gap: under 1.5 lines of 12 pt.
+        let gap = caption.1 - (y + height);
+        assert!(
+            gap > (0.5 * cm) as f32 && gap < (0.5 * cm) as f32 + 14.0,
+            "caption baseline {gap} below the picture"
+        );
     }
 
     #[test]

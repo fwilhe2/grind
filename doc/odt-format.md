@@ -886,6 +886,14 @@ oracle turned out to be unable to answer the font questions (fact 4).
    on a `text:a` styles its text as a span's would: a style stating `fo:color="#ff0000"` and
    `style:text-underline-style="none"` drew the link red and not underlined. Fact 12's navy and
    underline are only what a link gets where nothing states them.
+40. **A captioned picture** — `MEASURED` (2026-11-08, 26.2, the LibreOffice Calc Guide's own
+   PDF, read with `pdftotext -bbox` and a 50 dpi raster). Writer's captioned picture is an
+   `as-char` `draw:frame` holding a `draw:text-box` of two paragraphs — the picture, `as-char`,
+   and the caption — all three paragraphs styled `Figure` (`fo:text-align="center"`,
+   `fo:margin-bottom="0.21cm"`, italic). A 4.4 cm picture and its caption were each centred on
+   the text area (both centres within 2 pt of it), and the caption's line started about 6 pt
+   below the picture: the picture's paragraph is the picture's height (fact 29) and its
+   margin-bottom lies between it and the caption.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on
