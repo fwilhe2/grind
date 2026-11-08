@@ -177,7 +177,7 @@ jobs:
       - name: Smoke test the served page
         run: |
           mkdir -p "$RUNNER_TEMP/documents" && chmod 777 "$RUNNER_TEMP/documents"
-          docker run -d --rm --init --name grind-web-smoke --network host \
+          docker run -d --rm --name grind-web-smoke --network host \
             -v "$RUNNER_TEMP/documents:/documents" "$IMAGE:latest-${{ matrix.arch }}"
           timeout 10 sh -c 'until curl -sf http://127.0.0.1:8080/api/v1/hello; do sleep 0.5; done'
           curl -sf http://127.0.0.1:8080/index.html >/dev/null

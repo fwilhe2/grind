@@ -32,8 +32,6 @@ name: grind-web
 # The two services differ only in where the image comes from, so the rest is written once.
 x-web: &web
   network_mode: host
-  # grind as PID 1 would not stop on SIGTERM; the init process forwards it.
-  init: true
   # The documents' owner, so a file the server writes is yours on the host. 1000 is the first
   # user on most Linux systems; `id -u` and `id -g` say yours.
   user: "${GRIND_UID:-1000}:${GRIND_GID:-1000}"
@@ -50,7 +48,8 @@ x-web: &web
     resources:
       limits:
         cpus: "1.0"
-        memory: 256M
+        # A save of up to 64 MB is held, and read as a document to be checked, in memory.
+        memory: 1G
   restart: unless-stopped
 
 services:

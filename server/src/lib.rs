@@ -174,11 +174,35 @@ impl Server {
         let Some(relative) = page_path(&request.path) else {
             return Response::error(404, "not found");
         };
-        match std::fs::read(root.join(&relative)) {
-            Ok(bytes) => Response::bytes(200, content_type(&relative), bytes),
-            Err(_) => Response::error(404, "not found"),
-        }
+        let path = root.join(&relative);
+        let mut gz = path.clone().into_os_string();
+        gz.push(".gz");
+        let response = match accepts_gzip(request).then(|| std::fs::read(&gz)) {
+            Some(Ok(bytes)) => Response::bytes(200, content_type(&relative), bytes)
+                .with("Content-Encoding", "gzip"),
+            _ => match std::fs::read(&path) {
+                Ok(bytes) => Response::bytes(200, content_type(&relative), bytes),
+                Err(_) => return Response::error(404, "not found"),
+            },
+        };
+        response.with("Vary", "Accept-Encoding")
     }
+}
+
+/// Whether `Accept-Encoding` lists gzip without `q=0`.
+fn accepts_gzip(request: &Request) -> bool {
+    request.header("Accept-Encoding").is_some_and(|value| {
+        value.split(',').any(|coding| {
+            let mut parts = coding.split(';').map(str::trim);
+            let name = parts.next().unwrap_or("");
+            let refused = parts.any(|p| {
+                p.strip_prefix("q=")
+                    .and_then(|q| q.parse::<f32>().ok())
+                    .is_some_and(|q| q == 0.0)
+            });
+            (name.eq_ignore_ascii_case("gzip") || name == "*") && !refused
+        })
+    })
 }
 
 fn hello(store: &Store) -> Response {

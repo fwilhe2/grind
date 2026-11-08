@@ -66,9 +66,8 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-prod
 
     # Nothing here configures compression, and that is deliberate rather than an
-    # omission: the pod already compresses (the proxy's `encode` in kubernetes.yaml),
-    # and a proxy does not re-compress a response that
-    # arrives with a Content-Encoding. Where a controller does have gzip or brotli
+    # omission: grind already sends the compressed twin `ui_web/build.sh` writes, and a
+    # proxy does not re-compress a response that arrives with a Content-Encoding. Where a controller does have gzip or brotli
     # settings they are its own ConfigMap rather than a per-Ingress annotation, so a
     # line here would be ignored rather than obeyed.
 spec:

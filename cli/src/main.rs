@@ -410,6 +410,11 @@ fn serve(dir: &Path, port: u16, page: Option<PathBuf>, hosts: &[String]) -> Exit
             );
         }
     };
+    #[cfg(unix)]
+    if let Err(message) = stop_on_signal() {
+        eprintln!("grind serve: {message}");
+        return ExitCode::FAILURE;
+    }
     match grind_server::serve(options, ready) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
@@ -417,6 +422,21 @@ fn serve(dir: &Path, port: u16, page: Option<PathBuf>, hosts: &[String]) -> Exit
             ExitCode::FAILURE
         }
     }
+}
+
+/// Exit on SIGTERM and SIGINT. As PID 1 in a container a signal with no handler is ignored, so
+/// without this a stop waits out the grace period. Every save is a rename, so exiting is safe.
+#[cfg(all(feature = "server", unix))]
+fn stop_on_signal() -> Result<(), String> {
+    use signal_hook::consts::{SIGINT, SIGTERM};
+    let mut signals = signal_hook::iterator::Signals::new([SIGTERM, SIGINT])
+        .map_err(|e| format!("cannot handle signals: {e}"))?;
+    std::thread::spawn(move || {
+        if signals.forever().next().is_some() {
+            std::process::exit(0);
+        }
+    });
+    Ok(())
 }
 
 #[cfg(not(feature = "server"))]

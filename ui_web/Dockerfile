@@ -6,12 +6,12 @@
 # page, the `grind` binary, and nothing else — no shell, no package manager, no root.
 #
 #   docker build -f ui_web/Dockerfile -t grind-web .
-#   docker run --rm --init --network host -v "$PWD/documents:/documents:z" grind-web
+#   docker run --rm --network host -v "$PWD/documents:/documents:z" grind-web
 #
 # `grind serve` listens on 127.0.0.1 only (doc/local-only.md), so a published port (`-p`)
 # cannot reach it: the container shares the host's network, and the page is at
 # http://127.0.0.1:8080/ on that host. ui_web/deploy/kubernetes.yaml reaches it through a proxy
-# in the same pod instead. `--init` because grind as PID 1 does not stop on SIGTERM.
+# in the same pod instead.
 #
 # There is no git in the image, so the page offers no history: run `grind serve` itself over a
 # git repository for that.
