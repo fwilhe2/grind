@@ -130,6 +130,8 @@ fn the_library_is_the_directory() {
         Some(grind_server::etag(&opened.body).as_str())
     );
     assert_eq!(server.handle(&get("/api/v1/docs/nope")).status, 404);
+    let head = Request::new("HEAD", &format!("/api/v1/docs/{id}")).with_header("Host", "localhost");
+    assert_eq!(server.handle(&head).header("ETag"), opened.header("ETag"));
 }
 
 #[test]

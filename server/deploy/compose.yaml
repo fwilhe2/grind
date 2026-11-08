@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# `grind serve` with Docker Compose: the browser shell at http://127.0.0.1:8080/ on this
+# computer, over the documents in ./documents beside this file.
+#
+#   mkdir -p server/deploy/documents      # first, or Docker makes it, owned by root
+#   docker compose -f server/deploy/compose.yaml up -d --build
+#   docker compose -f server/deploy/compose.yaml down
+#
+# The documents are a directory on the host, not a volume Docker keeps: every other grind — the
+# CLI, the desktop windows — opens the same files, and backing up is copying the directory. Make
+# it a git repository (`git init documents`) and every save is a commit with a history the page
+# shows.
+#
+# The server listens on 127.0.0.1 only, so the container shares the host's network instead of
+# publishing a port: nothing here is reachable from another computer. A reverse proxy you run
+# yourself is how it would be, with `--host` naming the proxy's address.
+
+name: grind-server
+
+services:
+  server:
+    image: grind-server:local
+    build:
+      context: ../..
+      dockerfile: server/Containerfile
+    network_mode: host
+    # `grind` as PID 1 would not stop on SIGTERM; the init process forwards it.
+    init: true
+    # The documents' owner, so a file the server writes is yours on the host. 1000 is the first
+    # user on most Linux systems; `id -u` and `id -g` say yours.
+    # Rootless Podman maps that number to a subordinate uid instead, which cannot write the
+    # directory: there, run the service with `PODMAN_USERNS=keep-id`.
+    user: "${GRIND_UID:-1000}:${GRIND_GID:-1000}"
+    volumes:
+      # `:z` relabels for SELinux (Fedora, RHEL) and is ignored elsewhere.
+      - "${GRIND_DOCUMENTS:-./documents}:/documents:z"
+    # Nothing but the documents is written: git's temporary files go to the tmpfs.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - "no-new-privileges:true"
+    restart: unless-stopped
