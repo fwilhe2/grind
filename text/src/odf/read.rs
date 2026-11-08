@@ -1463,7 +1463,12 @@ impl Context<Builder> for ParagraphStyleDef {
             props.font_size = get("font-size");
             props.font_weight = get("font-weight");
             props.font_style = get("font-style");
-            props.color = get("color");
+            // The automatic colour stated replaces an inherited one, and is black on paper
+            // (`doc/odt-format.md` §5c fact 45).
+            props.color = get("color").or_else(|| {
+                (attrs.get(Ns::Style, "use-window-font-color") == Some("true"))
+                    .then(|| "#000000".to_owned())
+            });
             props.language = get("language");
             props.country = get("country");
         }

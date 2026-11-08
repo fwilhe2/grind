@@ -3339,6 +3339,29 @@ mod tests {
         assert!((second_x - 56.6929).abs() < 0.01, "{second_x}");
     }
 
+    /// `doc/odt-format.md` §5c fact 45: a style stating the automatic font colour prints black
+    /// under a parent stating a colour.
+    #[test]
+    fn a_styles_automatic_colour_replaces_its_parents() {
+        let bytes = r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:styles>
+              <style:style style:name="Heading" style:family="paragraph"><style:text-properties fo:color="#007c3c"/></style:style>
+              <style:style style:name="Subtitle" style:family="paragraph" style:parent-style-name="Heading"><style:text-properties style:use-window-font-color="true"/></style:style>
+            </office:styles>
+            <office:body><office:text><text:p text:style-name="Heading">green</text:p><text:p text:style-name="Subtitle">black</text:p></office:text></office:body></office:document>"##;
+        let app = App::new();
+        app.open_bytes("c.fodt", bytes.as_bytes()).unwrap();
+        let page = &typeset(&app, &setter(), &Options::default()).pages[0];
+        let colour = |want: &str| {
+            page.ops.iter().find_map(|op| match op {
+                Op::Text { text, color, .. } if text == want => Some(*color),
+                _ => None,
+            })
+        };
+        assert_eq!(colour("green"), Some(Rgb(0, 0x7c, 0x3c)));
+        assert_eq!(colour("black"), Some(Rgb::BLACK));
+    }
+
     /// A paragraph style's colour colours its text where the run states none, and a link with no
     /// colour of its own is drawn as Writer draws an unstyled one: navy and underlined.
     #[test]

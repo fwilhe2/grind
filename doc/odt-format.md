@@ -928,6 +928,11 @@ oracle turned out to be unable to answer the font questions (fact 4).
    `draw:fill-image-width` and `-height` of 9.999 cm and `draw:fill-image-ref-point="bottom-right"`
    it is drawn 10 cm square (1181 px at 300 ppi) with its corner on the **paper's** bottom-right
    corner, not the margins'. Tiling and the other reference points were not measured.
+45. **The automatic font colour in a paragraph style** — `MEASURED` (2026-11-08, 26.2, the
+   Calc Guide's own PDF). Its `Subtitle` style states `style:use-window-font-color="true"` and no
+   `fo:color` under a `Heading` parent stating `fo:color="#007c3c"`; its text printed black, not
+   the parent's green. The stated automatic colour replaces an inherited one, as in a cell
+   style (`doc/ods-format.md`); on white paper it is black.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on
