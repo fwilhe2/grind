@@ -87,18 +87,18 @@ spec:
   hostnames:
     - grind.example.com
   rules:
-    # No path match, no filter, no rewrite: the whole host goes to the Service, which
-    # is what a static bundle wants. Two things this application does *not* need,
-    # and they are the usual reason a route for a web app grows:
+    # No path match, no filter, no rewrite: the whole host goes to the Service — the page
+    # and `api/v1/` alike. The host name here must also be the `--host` in
+    # kubernetes.yaml, or grind refuses the requests. Two things this application does
+    # *not* need, and they are the usual reason a route for a web app grows:
     #
     #   * **No SPA fallback.** There is no client-side router — a document is opened
     #     through the browser's file picker or named in the query string (`?doc=`),
     #     which never reaches the server as a path. Every URL that should work is a
     #     real file in the image, so a 404 is a genuine 404.
     #
-    #   * **No request-size or upload setting.** Nothing is ever posted here. The
-    #     document is read and written by the browser; the pod hands out four static
-    #     files and nothing else.
+    #   * **No request-size setting**, as long as the controller sets no limit of its own
+    #     below grind's: a save sends the whole document, and grind takes up to 64 MB.
     - backendRefs:
         - name: grind-web
           port: 80
@@ -127,10 +127,9 @@ spec:
             statusCode: 301
 # Serving it under a path of an existing host — https://example.com/grind/ — rather
 # than on a host of its own works, and needs no change to the image: every asset
-# reference in the page is relative (`style.css`, `./grind_web.js`), so the page loads
-# from whatever prefix it was fetched under. Verified by serving the image's own
-# /public out of a `grind/` subdirectory and requesting all four files through the
-# prefix. The pod knows nothing about the prefix, so strip it on the way in:
+# reference in the page is relative (`style.css`, `./grind_web.js`, `api/v1/`), so the
+# page loads, and finds its server, from whatever prefix it was fetched under. The pod
+# knows nothing about the prefix, so strip it on the way in:
 #
 #   rules:
 #     - matches:

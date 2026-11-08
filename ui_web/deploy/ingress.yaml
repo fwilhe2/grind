@@ -44,9 +44,11 @@
 #     a real file in the image, so a 404 is a genuine 404 and no
 #     `try_files $uri /index.html` equivalent is wanted.
 #
-#   * **No body-size or upload configuration.** Nothing is ever posted to this
-#     server. The document a person opens is read by the browser and saved by the
-#     browser; the pod only ever hands out four static files.
+#   * **No body-size configuration**, as long as the controller sets no limit of its
+#     own below grind's: a save sends the whole document, and grind takes up to 64 MB.
+#
+# The host name below must also be the `--host` in kubernetes.yaml, or grind refuses
+# the requests.
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -60,13 +62,12 @@ metadata:
     # cert-manager, if that is how this cluster gets certificates — this annotation is
     # cert-manager's own and means the same thing to every ingress controller. Delete
     # both it and the `tls:` block below if TLS is terminated further out (a cloud load
-    # balancer, a service mesh) — but then also turn SERVER_SECURITY_HEADERS off in
-    # kubernetes.yaml, since it sends an HSTS header a plain-HTTP host cannot honour.
+    # balancer, a service mesh).
     cert-manager.io/cluster-issuer: letsencrypt-prod
 
     # Nothing here configures compression, and that is deliberate rather than an
-    # omission: the pod already compresses (kubernetes.yaml's
-    # SERVER_COMPRESSION_LEVEL), and a proxy does not re-compress a response that
+    # omission: the pod already compresses (the proxy's `encode` in kubernetes.yaml),
+    # and a proxy does not re-compress a response that
     # arrives with a Content-Encoding. Where a controller does have gzip or brotli
     # settings they are its own ConfigMap rather than a per-Ingress annotation, so a
     # line here would be ignored rather than obeyed.
@@ -96,10 +97,8 @@ spec:
                   name: http
 # Serving it under a path of an existing host — https://example.com/grind/ — rather
 # than on a host of its own works too, and needs no change to the image: every asset
-# reference in the page is relative (`style.css`, `./grind_web.js`), so the page
-# loads from whatever prefix it was fetched under. Verified by serving the image's
-# own /public out of a `grind/` subdirectory and requesting all four files through
-# the prefix.
+# reference in the page is relative (`style.css`, `./grind_web.js`, `api/v1/`), so
+# the page loads, and finds its server, from whatever prefix it was fetched under.
 #
 # This is the part the Ingress API has no word for. The pod knows nothing about the
 # prefix, so it has to be stripped on the way in, and stripping a prefix is every

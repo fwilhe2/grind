@@ -519,15 +519,74 @@ Press **Ctrl+K**, or click **Commands**, type a few letters of what you want, an
 
 ## 7.2 Opening and saving
 
-Click **Open…**, or drop a file anywhere on the page. **Save** downloads a copy to your downloads folder. It cannot write over the file you opened, because a web page has no access to your files.
+Click **Open…**, or drop a file anywhere on the page. **Save** downloads a copy to your downloads folder. It cannot write over the file you opened, because a web page has no access to your files. When grind serves the page from a folder of your documents, Save writes back to the document's file instead (section 7.4).
 
-The browser processes documents locally and downloads a copy when you save. It does not upload a document when you open or save it. Spelling settings and your personal dictionary are stored in the browser; clearing the page’s data removes them.
+The browser processes documents locally and downloads a copy when you save. It does not upload a document when you open or save it, unless grind serves the page from a folder of your documents (section 7.4). Spelling settings and your personal dictionary are stored in the browser; clearing the page’s data removes them.
 
 ## 7.3 Shortcuts and recent documents
 
 **F1** lists the page's keyboard shortcuts. What the windows do from menus is in the palette: for example **Merge cells**, **Hide row(s)**, **Rotate text up**, **Filter rows**, **Format as table**, **Format as table with totals…**, **Conditional format for the selection…**, **Change the chart…** and the **Grammar** commands (section 5.4).
 
 The page keeps a copy of the last four documents you opened or saved, up to about 750 KB each, in the browser's storage. The welcome pane lists them, and in the palette they are **Open** and the document's name. **Forget the recent documents** removes them.
+
+## 7.4 Keeping your documents in one place
+
+The browser version can also be served by grind itself, from a folder of your documents. Then the page opens those documents and saves them back where they are, instead of downloading copies:
+
+```
+grind serve ~/Documents
+```
+
+Open `http://127.0.0.1:8080/` in your browser. The page lists every spreadsheet and text document in the folder and below it (`.ods`, `.fods`, `.odt`, `.fodt`) on its welcome pane under **On this server**. Click one to open it. **Save** and **Ctrl+S** write it back to its file. `--port` picks another port, and `--port 0` picks a free one and prints it.
+
+The documents stay ordinary files. The windows, the terminal and the command line open the same files, and a change made in any of them is what the page sees next.
+
+**When somebody saved first.** If the file changed since you opened it, from another tab, another program or another person, Save does not overwrite it silently. It asks whether to replace that version with yours. Answer no, and nothing is saved: download a copy or save under another name instead.
+
+**Commands.** With a server, the command palette (**Ctrl+K**) adds:
+
+| **Command** | **What it does** |
+| --- | --- |
+| Save to the server as… | Put the open document in the folder under a new name; Save then writes there |
+| Rename on the server… | Give the document another name, in the same folder |
+| Delete from the server… | Move it into the folder's `.grind/trash/`, which keeps it |
+| Download a copy | Save to your downloads folder, as without a server |
+| Earlier versions… | List the document's versions, when the folder is a git repository |
+
+A new document starts in the browser, as always; **Save to the server as…** puts it in the folder. **Welcome screen** in the palette goes back to the list.
+
+**History.** When the folder is a git repository (`git init ~/Documents`), every save is a commit. **Earlier versions…** lists them, newest first. **Version:** opens one as a copy in the page, and **Restore:** makes it the current version again, as a save of its own. Your other git tools see the same history.
+
+**Only on this computer.** `grind serve` answers on `127.0.0.1` and nowhere else, so no other computer can reach it, and it refuses requests made by other web pages. To use it from another device, put a reverse proxy you run yourself in front of it, and tell grind the name it is reached under with `--host`.
+
+Without `grind serve`, the page works exactly as before: everything in sections 7.1 to 7.3 needs no server.
+
+## 7.5 Running it in a container
+
+The image `ghcr.io/fwilhe2/grind-web` holds the browser version and `grind serve`, and nothing else. Because grind only listens on `127.0.0.1`, the container shares your computer's network instead of publishing a port, and the page is at `http://127.0.0.1:8080/`. The container has no git, so it offers no history; run `grind serve` directly for that.
+
+**Podman.** The script `ui_web/deploy/podman.sh`, in grind's source, runs it with rootless Podman and writes the files as your own user:
+
+```
+ui_web/deploy/podman.sh run ~/Documents     # serve a folder; Ctrl+C stops it
+ui_web/deploy/podman.sh build               # build the image from the source instead
+ui_web/deploy/podman.sh kube ~/Documents    # the Kubernetes sample, at http://localhost:8081/
+ui_web/deploy/podman.sh kube-down
+```
+
+Without a folder it serves `documents` in the current directory, and makes it if needed.
+
+**Docker Compose.** `ui_web/deploy/compose.yaml` does the same with Docker:
+
+```
+mkdir -p ui_web/deploy/documents
+docker compose -f ui_web/deploy/compose.yaml up -d
+docker compose -f ui_web/deploy/compose.yaml down
+```
+
+`GRIND_DOCUMENTS` names another folder, and `GRIND_UID` and `GRIND_GID` the user the files belong to (1000 by default). Under rootless Podman, `podman compose` needs its service started with `PODMAN_USERNS=keep-id`; `podman.sh` needs nothing.
+
+**Kubernetes.** `ui_web/deploy/kubernetes.yaml` runs one pod with the documents on a persistent volume and a small proxy beside grind, which is what the cluster reaches. `httproute.yaml` or `ingress.yaml` makes it reachable from outside; put your host name there and in the `--host` of `kubernetes.yaml`. Back up the volume: it is the only copy of the documents.
 
 # 8. The command line
 

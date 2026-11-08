@@ -1191,11 +1191,87 @@
     <text:h text:outline-level="2">7.1 The command palette</text:h>
     <text:p>Press <text:span text:style-name="T1">Ctrl+K</text:span>, or click <text:span text:style-name="T1">Commands</text:span>, type a few letters of what you want, and press <text:span text:style-name="T1">Enter</text:span>. The palette holds every command that has no button. It is also the way to go somewhere: type an address such as <text:span text:style-name="T2">B12</text:span><text:s/>or <text:span text:style-name="T2">p12</text:span>, the name of a sheet, a named range, a heading or a bookmark.</text:p>
     <text:h text:outline-level="2">7.2 Opening and saving</text:h>
-    <text:p>Click <text:span text:style-name="T1">Open…</text:span>, or drop a file anywhere on the page. <text:span text:style-name="T1">Save</text:span><text:s/>downloads a copy to your downloads folder. It cannot write over the file you opened, because a web page has no access to your files.</text:p>
-    <text:p>The browser processes documents locally and downloads a copy when you save. It does not upload a document when you open or save it. Spelling settings and your personal dictionary are stored in the browser; clearing the page’s data removes them.</text:p>
+    <text:p>Click <text:span text:style-name="T1">Open…</text:span>, or drop a file anywhere on the page. <text:span text:style-name="T1">Save</text:span><text:s/>downloads a copy to your downloads folder. It cannot write over the file you opened, because a web page has no access to your files. When grind serves the page from a folder of your documents, Save writes back to the document&apos;s file instead (section 7.4).</text:p>
+    <text:p>The browser processes documents locally and downloads a copy when you save. It does not upload a document when you open or save it, unless grind serves the page from a folder of your documents (section 7.4). Spelling settings and your personal dictionary are stored in the browser; clearing the page’s data removes them.</text:p>
     <text:h text:outline-level="2">7.3 Shortcuts and recent documents</text:h>
     <text:p><text:span text:style-name="T1">F1</text:span><text:s/>lists the page&apos;s keyboard shortcuts. What the windows do from menus is in the palette: for example <text:span text:style-name="T1">Merge cells</text:span>, <text:span text:style-name="T1">Hide row(s)</text:span>, <text:span text:style-name="T1">Rotate text up</text:span>, <text:span text:style-name="T1">Filter rows</text:span>, <text:span text:style-name="T1">Format as table</text:span>, <text:span text:style-name="T1">Format as table with totals…</text:span>, <text:span text:style-name="T1">Conditional format for the selection…</text:span>, <text:span text:style-name="T1">Change the chart…</text:span><text:s/>and the <text:span text:style-name="T1">Grammar</text:span><text:s/>commands (section 5.4).</text:p>
     <text:p>The page keeps a copy of the last four documents you opened or saved, up to about 750 KB each, in the browser&apos;s storage. The welcome pane lists them, and in the palette they are <text:span text:style-name="T1">Open</text:span><text:s/>and the document&apos;s name. <text:span text:style-name="T1">Forget the recent documents</text:span><text:s/>removes them.</text:p>
+    <text:h text:outline-level="2">7.4 Keeping your documents in one place</text:h>
+    <text:p>The browser version can also be served by grind itself, from a folder of your documents. Then the page opens those documents and saves them back where they are, instead of downloading copies:</text:p>
+    <text:p text:style-name="Preformatted Text">grind serve ~/Documents</text:p>
+    <text:p>Open <text:span text:style-name="T2">http://127.0.0.1:8080/</text:span><text:s/>in your browser. The page lists every spreadsheet and text document in the folder and below it (<text:span text:style-name="T2">.ods</text:span>, <text:span text:style-name="T2">.fods</text:span>, <text:span text:style-name="T2">.odt</text:span>, <text:span text:style-name="T2">.fodt</text:span>) on its welcome pane under <text:span text:style-name="T1">On this server</text:span>. Click one to open it. <text:span text:style-name="T1">Save</text:span><text:s/>and <text:span text:style-name="T1">Ctrl+S</text:span><text:s/>write it back to its file. <text:span text:style-name="T2">--port</text:span><text:s/>picks another port, and <text:span text:style-name="T2">--port 0</text:span><text:s/>picks a free one and prints it.</text:p>
+    <text:p>The documents stay ordinary files. The windows, the terminal and the command line open the same files, and a change made in any of them is what the page sees next.</text:p>
+    <text:p><text:span text:style-name="T1">When somebody saved first.</text:span><text:s/>If the file changed since you opened it, from another tab, another program or another person, Save does not overwrite it silently. It asks whether to replace that version with yours. Answer no, and nothing is saved: download a copy or save under another name instead.</text:p>
+    <text:p><text:span text:style-name="T1">Commands.</text:span><text:s/>With a server, the command palette (<text:span text:style-name="T1">Ctrl+K</text:span>) adds:</text:p>
+    <table:table table:name="Table16">
+     <table:table-column table:number-columns-repeated="2"/>
+     <table:table-row>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T1">Command</text:span></text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p><text:span text:style-name="T1">What it does</text:span></text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Save to the server as…</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Put the open document in the folder under a new name; Save then writes there</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Rename on the server…</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Give the document another name, in the same folder</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Delete from the server…</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Move it into the folder&apos;s <text:span text:style-name="T2">.grind/trash/</text:span>, which keeps it</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Download a copy</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>Save to your downloads folder, as without a server</text:p>
+      </table:table-cell>
+     </table:table-row>
+     <table:table-row>
+      <table:table-cell>
+       <text:p>Earlier versions…</text:p>
+      </table:table-cell>
+      <table:table-cell>
+       <text:p>List the document&apos;s versions, when the folder is a git repository</text:p>
+      </table:table-cell>
+     </table:table-row>
+    </table:table>
+    <text:p>A new document starts in the browser, as always; <text:span text:style-name="T1">Save to the server as…</text:span><text:s/>puts it in the folder. <text:span text:style-name="T1">Welcome screen</text:span><text:s/>in the palette goes back to the list.</text:p>
+    <text:p><text:span text:style-name="T1">History.</text:span><text:s/>When the folder is a git repository (<text:span text:style-name="T2">git init ~/Documents</text:span>), every save is a commit. <text:span text:style-name="T1">Earlier versions…</text:span><text:s/>lists them, newest first. <text:span text:style-name="T1">Version:</text:span><text:s/>opens one as a copy in the page, and <text:span text:style-name="T1">Restore:</text:span><text:s/>makes it the current version again, as a save of its own. Your other git tools see the same history.</text:p>
+    <text:p><text:span text:style-name="T1">Only on this computer.</text:span><text:s/><text:span text:style-name="T2">grind serve</text:span><text:s/>answers on <text:span text:style-name="T2">127.0.0.1</text:span><text:s/>and nowhere else, so no other computer can reach it, and it refuses requests made by other web pages. To use it from another device, put a reverse proxy you run yourself in front of it, and tell grind the name it is reached under with <text:span text:style-name="T2">--host</text:span>.</text:p>
+    <text:p>Without <text:span text:style-name="T2">grind serve</text:span>, the page works exactly as before: everything in sections 7.1 to 7.3 needs no server.</text:p>
+    <text:h text:outline-level="2">7.5 Running it in a container</text:h>
+    <text:p>The image <text:span text:style-name="T2">ghcr.io/fwilhe2/grind-web</text:span><text:s/>holds the browser version and <text:span text:style-name="T2">grind serve</text:span>, and nothing else. Because grind only listens on <text:span text:style-name="T2">127.0.0.1</text:span>, the container shares your computer&apos;s network instead of publishing a port, and the page is at <text:span text:style-name="T2">http://127.0.0.1:8080/</text:span>. The container has no git, so it offers no history; run <text:span text:style-name="T2">grind serve</text:span><text:s/>directly for that.</text:p>
+    <text:p><text:span text:style-name="T1">Podman.</text:span><text:s/>The script <text:span text:style-name="T2">ui_web/deploy/podman.sh</text:span>, in grind&apos;s source, runs it with rootless Podman and writes the files as your own user:</text:p>
+    <text:p text:style-name="Preformatted Text">ui_web/deploy/podman.sh run ~/Documents <text:s text:c="4"/># serve a folder; Ctrl+C stops it</text:p>
+    <text:p text:style-name="Preformatted Text">ui_web/deploy/podman.sh build <text:s text:c="14"/># build the image from the source instead</text:p>
+    <text:p text:style-name="Preformatted Text">ui_web/deploy/podman.sh kube ~/Documents <text:s text:c="3"/># the Kubernetes sample, at http://localhost:8081/</text:p>
+    <text:p text:style-name="Preformatted Text">ui_web/deploy/podman.sh kube-down</text:p>
+    <text:p>Without a folder it serves <text:span text:style-name="T2">documents</text:span><text:s/>in the current directory, and makes it if needed.</text:p>
+    <text:p><text:span text:style-name="T1">Docker Compose.</text:span><text:s/><text:span text:style-name="T2">ui_web/deploy/compose.yaml</text:span><text:s/>does the same with Docker:</text:p>
+    <text:p text:style-name="Preformatted Text">mkdir -p ui_web/deploy/documents</text:p>
+    <text:p text:style-name="Preformatted Text">docker compose -f ui_web/deploy/compose.yaml up -d</text:p>
+    <text:p text:style-name="Preformatted Text">docker compose -f ui_web/deploy/compose.yaml down</text:p>
+    <text:p><text:span text:style-name="T2">GRIND_DOCUMENTS</text:span><text:s/>names another folder, and <text:span text:style-name="T2">GRIND_UID</text:span><text:s/>and <text:span text:style-name="T2">GRIND_GID</text:span><text:s/>the user the files belong to (1000 by default). Under rootless Podman, <text:span text:style-name="T2">podman compose</text:span><text:s/>needs its service started with <text:span text:style-name="T2">PODMAN_USERNS=keep-id</text:span>; <text:span text:style-name="T2">podman.sh</text:span><text:s/>needs nothing.</text:p>
+    <text:p><text:span text:style-name="T1">Kubernetes.</text:span><text:s/><text:span text:style-name="T2">ui_web/deploy/kubernetes.yaml</text:span><text:s/>runs one pod with the documents on a persistent volume and a small proxy beside grind, which is what the cluster reaches. <text:span text:style-name="T2">httproute.yaml</text:span><text:s/>or <text:span text:style-name="T2">ingress.yaml</text:span><text:s/>makes it reachable from outside; put your host name there and in the <text:span text:style-name="T2">--host</text:span><text:s/>of <text:span text:style-name="T2">kubernetes.yaml</text:span>. Back up the volume: it is the only copy of the documents.</text:p>
     <text:h text:outline-level="1">8. The command line</text:h>
     <text:p>Use the command line to inspect, edit, convert and check documents without opening an editor. Commands can also be used in scripts.</text:p>
     <text:h text:outline-level="2">8.1 The shape of a command</text:h>

@@ -28,7 +28,8 @@ SPDX-License-Identifier: CC-BY-4.0
 - **`grind serve`** (`doc/server.md`, decided 2026-11-08) is a listener, not a client, and it
   listens on `127.0.0.1` with no option to name another address: the person's own browser on
   the person's own computer. Another computer reaches it only through a reverse proxy the person
-  runs themselves, which grind does not ship. It sends nothing anywhere, and refuses a request
+  runs: the Kubernetes sample puts Caddy in the pod for that, a separate program in a separate
+  container, and grind itself still listens on loopback alone. It sends nothing anywhere, and refuses a request
   addressed to a name it was not given or written by another site's page. The page's writes to
   it are relative `api/v1/` paths from one module, `ui_web/src/server.rs`. The guard holds all of
   it: one bind, with the loopback address written into it, and `tiny_http` depended on by

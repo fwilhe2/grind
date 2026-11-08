@@ -78,7 +78,7 @@ fn both_samples_deploy_the_image_the_workflow_publishes() {
 fn the_source_build_is_the_dockerfile_the_workflow_builds() {
     // The compose file's `source` profile and the workflow's `web-image` job must build the
     // same thing the same way: this Dockerfile, with the repository root as the context,
-    // because grind-web depends on grind-core, grind-sheet and grind-text.
+    // because the page and grind are built from one tree.
     assert!(
         WORKFLOW.contains("file: ./ui_web/Dockerfile"),
         "container.yml no longer builds ui_web/Dockerfile"
@@ -94,45 +94,59 @@ fn the_source_build_is_the_dockerfile_the_workflow_builds() {
 }
 
 #[test]
-fn the_port_served_is_the_port_published_and_probed() {
-    // The image's own default is 80, and both samples override it — a container that runs as a
-    // non-root user cannot bind a privileged port. Every other number in the sample has to
-    // follow that one, and each of these is a different file's idea of it.
+fn grind_is_reached_on_loopback_and_only_there() {
+    // `grind serve` listens on 127.0.0.1 alone (doc/local-only.md). A published port forwards to
+    // an address it is not on, so Compose shares the host's network, and Kubernetes puts a proxy
+    // in the pod: the Service's port is the proxy's, and grind's own container declares none.
+    let compose = live_lines(COMPOSE);
     assert!(
-        COMPOSE.contains(r#"SERVER_PORT: "8080""#),
-        "compose.yaml no longer sets SERVER_PORT"
+        compose.contains("network_mode: host"),
+        "compose.yaml must use the host's network"
     );
     assert!(
-        COMPOSE.contains(r#"- "8080:8080""#),
-        "compose.yaml publishes a port the server is not listening on"
+        !compose.contains("ports:"),
+        "compose.yaml publishes a port grind does not listen on"
+    );
+    assert!(
+        compose.contains("init: true"),
+        "grind as PID 1 does not stop on SIGTERM"
     );
 
+    let kubernetes = live_lines(KUBERNETES);
     assert!(
-        KUBERNETES.contains("containerPort: 8080"),
-        "kubernetes.yaml's containerPort disagrees with SERVER_PORT"
+        kubernetes.contains(r#"args: ["serve", "/documents", "--port", "8080", "--host", "#),
+        "kubernetes.yaml's grind no longer serves /documents on the port the proxy forwards to"
     );
     assert!(
-        KUBERNETES.contains("name: SERVER_PORT") && KUBERNETES.contains(r#"value: "8080""#),
-        "kubernetes.yaml no longer sets SERVER_PORT to the port it declares"
+        kubernetes.contains("reverse_proxy 127.0.0.1:8080"),
+        "the proxy no longer forwards to grind's loopback port"
+    );
+    assert!(
+        kubernetes.contains(":8081 {") && kubernetes.contains("containerPort: 8081"),
+        "the proxy listens on a port its container does not declare"
+    );
+    assert_eq!(
+        kubernetes.matches("containerPort:").count(),
+        1,
+        "only the proxy declares a port; grind has nothing to offer the pod's address"
     );
 }
 
 #[test]
-fn the_probes_have_the_endpoint_that_answers_them() {
-    // /health is a 404 unless SERVER_HEALTH is set, so a probe without it fails every pod.
-    // Measured against the published image, not assumed.
-    assert!(
-        KUBERNETES.contains("name: SERVER_HEALTH"),
-        "kubernetes.yaml probes /health without enabling it; every pod would fail readiness"
+fn the_probes_ask_grind_through_the_proxy() {
+    // The kubelet probes the pod's address, which only the proxy is on, and with the pod's IP as
+    // the Host, which grind refuses — so each probe names a host grind answers to.
+    assert_eq!(
+        KUBERNETES.matches("path: /api/v1/hello").count(),
+        2,
+        "kubernetes.yaml should probe the server from both the readiness and the liveness probe"
     );
     assert_eq!(
-        KUBERNETES.matches("path: /health").count(),
+        KUBERNETES.matches("value: localhost").count(),
         2,
-        "kubernetes.yaml should probe /health from both the readiness and the liveness probe"
+        "a probe without `Host: localhost` is refused by grind as another site's request"
     );
-
-    // There is no shell in a distroless image, so an `exec` probe cannot work here — the
-    // kubelet's own httpGet is the only kind that needs nothing inside the container.
+    // There is no shell in a distroless image, so an `exec` probe cannot work here.
     assert!(
         !KUBERNETES.contains("exec:"),
         "an exec probe cannot run in a distroless image; use httpGet"
@@ -140,17 +154,40 @@ fn the_probes_have_the_endpoint_that_answers_them() {
 }
 
 #[test]
+fn the_documents_are_one_servers() {
+    // Two servers over one directory would take each other's saves for somebody else's.
+    let kubernetes = live_lines(KUBERNETES);
+    for required in [
+        "replicas: 1",
+        "type: Recreate",
+        "kind: PersistentVolumeClaim",
+        "claimName: grind-documents",
+        "mountPath: /documents",
+        "fsGroup: 65532",
+    ] {
+        assert!(
+            kubernetes.contains(required),
+            "kubernetes.yaml no longer says `{required}`"
+        );
+    }
+    assert!(
+        !kubernetes.contains("PodDisruptionBudget"),
+        "a budget of one available pod over one replica blocks every node drain"
+    );
+    assert!(
+        COMPOSE.contains(":/documents:z"),
+        "compose.yaml no longer mounts the documents"
+    );
+}
+
+#[test]
 fn the_pod_is_unprivileged_and_read_only() {
     // The namespace enforces the `restricted` Pod Security Standard, so a pod spec that loses
     // one of these stops being admitted rather than quietly running with more than it needs.
-    // The container was verified to need nothing writable and no capability at all.
     for required in [
         "pod-security.kubernetes.io/enforce: restricted",
         "runAsNonRoot: true",
-        "readOnlyRootFilesystem: true",
-        "allowPrivilegeEscalation: false",
         "type: RuntimeDefault",
-        r#"drop: ["ALL"]"#,
     ] {
         assert!(
             KUBERNETES.contains(required),
@@ -158,8 +195,20 @@ fn the_pod_is_unprivileged_and_read_only() {
              Pod Security Standard requires of it"
         );
     }
+    // Both containers, each of them.
+    for required in [
+        "readOnlyRootFilesystem: true",
+        "allowPrivilegeEscalation: false",
+        r#"drop: ["ALL"]"#,
+    ] {
+        assert_eq!(
+            KUBERNETES.matches(required).count(),
+            2,
+            "kubernetes.yaml says `{required}` of fewer than both containers"
+        );
+    }
 
-    for required in ["read_only: true", r#"user: "65532:65532""#, "- ALL"] {
+    for required in ["read_only: true", "- ALL", "no-new-privileges:true"] {
         assert!(
             COMPOSE.contains(required),
             "compose.yaml no longer says `{required}`"
@@ -200,6 +249,19 @@ fn both_routing_samples_point_at_the_service_that_exists() {
         INGRESS.contains("name: http"),
         "ingress.yaml no longer names the Service's http port"
     );
+
+    // grind answers only to the names it was given, so the routes' host must be one of them.
+    let host = r#""--host", "grind.example.com""#;
+    assert!(
+        KUBERNETES.contains(host),
+        "kubernetes.yaml's --host is not the routes' host"
+    );
+    for (name, sample) in [("httproute.yaml", HTTPROUTE), ("ingress.yaml", INGRESS)] {
+        assert!(
+            live_lines(sample).contains("grind.example.com"),
+            "ui_web/deploy/{name} serves a host kubernetes.yaml's --host does not name"
+        );
+    }
 }
 
 #[test]
