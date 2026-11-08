@@ -911,6 +911,15 @@ oracle turned out to be unable to answer the font questions (fact 4).
    5 cm margin put it at 1 cm. A picture bullet's level stating no margin at all, under a style
    naming it with a 1 cm margin, drew the picture 1 cm in; named only by the `text:list`, at the
    margin. The Calc Guide's Note, Tip and Caution headings are set this way.
+43. **A chapter field in a footer** — `MEASURED` (2026-11-08, 26.8, level-1 and level-2
+   headings over three pages, a footer holding `text:chapter` with `text:display="name"` at
+   `text:outline-level="1"` and with `number-and-name` at level 2). It shows the text of the
+   **last** heading of that outline level or above that starts on the page or before it: page 1
+   showed the level-1 heading 2.4 cm down it, and a page holding two level-1 headings the second.
+   A level-2 field showed a level-1 heading until a level-2 one came. A `text:line-break` in the
+   heading shows as a space. With no outline numbering, `number-and-name` showed the name alone.
+   The Calc Guide's odd-page footer holds its field in an `as-char` frame with no `svg:width`
+   whose text box is printed in the footer's line.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

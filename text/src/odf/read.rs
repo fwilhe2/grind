@@ -1027,6 +1027,20 @@ impl Context<Builder> for MarginalText {
     }
 }
 
+/// An `as-char` `draw:frame` in a header or footer paragraph holding a `draw:text-box`: its
+/// paragraphs' content joins the paragraph it stands in.
+struct MarginalTextBox(MarginalInline);
+
+impl Context<Builder> for MarginalTextBox {
+    fn start_child(&mut self, name: &Name, _attrs: &Attrs, _b: &mut Builder) -> Option<Ctx> {
+        match (name.ns, name.local.as_str()) {
+            (Ns::Draw, "text-box") => Some(Box::new(MarginalTextBox(self.0.inner()))),
+            (Ns::Text, "p" | "h") => Some(Box::new(self.0.inner())),
+            _ => None,
+        }
+    }
+}
+
 /// The inside of a header or footer paragraph, and of every span in it.
 struct MarginalInline {
     /// Whether this is the paragraph itself rather than a span inside it.
@@ -1071,8 +1085,25 @@ impl Context<Builder> for MarginalInline {
         let paragraph = b.marginal.as_mut()?;
         match (name.ns, name.local.as_str()) {
             (Ns::Text, "a") => return Some(Box::new(self.inner())),
+            // A frame set as a character with no picture size is a text box whose paragraphs
+            // print in the line: the Calc Guide's footer holds its chapter field so.
             (Ns::Draw, "frame") => {
+                if attrs.get(Ns::Text, "anchor-type") == Some("as-char")
+                    && attrs.get(Ns::Svg, "width").is_none()
+                {
+                    return Some(Box::new(MarginalTextBox(self.inner())));
+                }
                 return MarginalFrame::open(attrs, b).map(|f| Box::new(f) as Ctx);
+            }
+            (Ns::Text, "chapter")
+                if attrs.get(Ns::Text, "display") == Some("name")
+                    && let Some(level) = attrs
+                        .get(Ns::Text, "outline-level")
+                        .and_then(|l| l.trim().parse::<u32>().ok())
+                        .filter(|l| (1..=10).contains(l)) =>
+            {
+                paragraph.push(Part::Chapter(level), &self.look);
+                return None;
             }
             // A line on the page — a fold mark, a rule — is the master's, its ends `svg:` lengths
             // from the corner.

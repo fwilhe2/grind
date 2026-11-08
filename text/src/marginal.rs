@@ -22,6 +22,9 @@ pub enum Part {
     PageNumber,
     /// `text:page-count`: how many pages the document prints on.
     PageCount,
+    /// `text:chapter` showing a name (rng:8596): the last heading of this outline level or
+    /// above begun by the page (`doc/odt-format.md` §5c fact 43).
+    Chapter(u32),
 }
 
 /// How a piece looks, as a body run does: its named character styles, space-separated, under its
@@ -99,18 +102,33 @@ impl Paragraph {
         self.pieces(page, pages).map(|(text, _)| text).collect()
     }
 
-    /// Each part's text on page `page` of `pages`, with its look.
+    /// Each part's text on page `page` of `pages`, with its look; a chapter field is empty.
     pub fn pieces(
         &self,
         page: usize,
         pages: usize,
     ) -> impl Iterator<Item = (String, Option<&Look>)> {
+        self.pieces_in(page, pages, &[])
+    }
+
+    /// [`Paragraph::pieces`] with the page's chapters: the heading each outline level from 1
+    /// shows there.
+    pub fn pieces_in<'a>(
+        &'a self,
+        page: usize,
+        pages: usize,
+        chapters: &'a [String],
+    ) -> impl Iterator<Item = (String, Option<&'a Look>)> {
         let looks = self.looks.iter().map(Some).chain(std::iter::repeat(None));
         self.parts.iter().zip(looks).map(move |(part, look)| {
             let text = match part {
                 Part::Text(text) => text.clone(),
                 Part::PageNumber => page.to_string(),
                 Part::PageCount => pages.to_string(),
+                Part::Chapter(level) => chapters
+                    .get((*level as usize).saturating_sub(1))
+                    .cloned()
+                    .unwrap_or_default(),
             };
             (text, look)
         })

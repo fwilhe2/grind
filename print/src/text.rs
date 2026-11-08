@@ -170,6 +170,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         &picture,
     );
     let numbering = numbering(&pages);
+    let chapters = chapters(&pages, &viewport);
 
     let mut outline = Vec::new();
     let pages = pages
@@ -279,13 +280,18 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 body: (top, body_bottom - top),
             };
             if let Some(header) = header {
-                header.draw(&mut ops, (left, margin_top), (shown, count), &boxes);
+                header.draw(
+                    &mut ops,
+                    (left, margin_top),
+                    (shown, count, &chapters[number]),
+                    &boxes,
+                );
             }
             if let Some(footer) = footer {
                 footer.draw(
                     &mut ops,
                     (left, bottom - footer.height),
-                    (shown, count),
+                    (shown, count, &chapters[number]),
                     &boxes,
                 );
             }
@@ -522,6 +528,33 @@ fn page_kinds(app: &App) -> (Vec<Kind>, grind_text::page::Starts) {
         at += 1;
     }
     (kinds, starts)
+}
+
+/// The heading each outline level shows on each page — the last of that level or above begun
+/// on it or before it (`doc/odt-format.md` §5c fact 43) — its line breaks as spaces.
+fn chapters(pages: &[grind_text::page::Page], viewport: &grind_text::Viewport) -> Vec<Vec<String>> {
+    let mut current = vec![String::new(); 10];
+    pages
+        .iter()
+        .map(|page| {
+            for piece in page
+                .pieces
+                .iter()
+                .filter(|p| p.lines.start == 0 && !p.repeat)
+            {
+                if let Some(view) = viewport.get(piece.index)
+                    && let BlockKind::Heading { level } = view.kind
+                    && view.cell.is_none()
+                {
+                    let name = view.text.replace('\n', " ");
+                    for shown in current.iter_mut().skip((level as usize).max(1) - 1) {
+                        shown.clone_from(&name);
+                    }
+                }
+            }
+            current.clone()
+        })
+        .collect()
 }
 
 /// Each page's number and the last number of its run: the whole document is one run unless a
@@ -1436,7 +1469,7 @@ impl<'a> Marginal<'a> {
             .iter()
             .map(|paragraph| {
                 let [above, _, below, _] = paragraph.room;
-                above + f64::from(paragraph.tall(&out.wrap(paragraph, 1, 1).1)) + below
+                above + f64::from(paragraph.tall(&out.wrap(paragraph, (1, 1), &[]).1)) + below
             })
             .sum();
         out.height = content.max(pt(marginal.min_height));
@@ -1448,12 +1481,12 @@ impl<'a> Marginal<'a> {
     fn wrap(
         &self,
         paragraph: &MarginalParagraph<'_>,
-        page: usize,
-        pages: usize,
+        (page, pages): (usize, usize),
+        chapters: &[String],
     ) -> (Vec<(String, usize)>, grind_core::layout::Layout) {
         let pieces: Vec<(String, usize)> = paragraph
             .paragraph
-            .pieces(page, pages)
+            .pieces_in(page, pages, chapters)
             .enumerate()
             .map(|(at, (text, _))| (text, at))
             .collect();
@@ -1494,14 +1527,14 @@ impl<'a> Marginal<'a> {
         &self,
         ops: &mut Vec<Op>,
         (left, top): (f64, f64),
-        (page, pages): (usize, usize),
+        (page, pages, chapters): (usize, usize, &[String]),
         boxes: &Boxes,
     ) {
         let mut y = top as f32;
         for paragraph in &self.paragraphs {
             let [above, right, below, indent] = paragraph.room;
             y += above as f32;
-            let (pieces, layout) = self.wrap(paragraph, page, pages);
+            let (pieces, layout) = self.wrap(paragraph, (page, pages), chapters);
             let measure = (self.width - indent - right).max(1.0) as f32;
             let tall = paragraph.tall(&layout);
             if let Some(frame) = &paragraph.frame {
@@ -3641,6 +3674,38 @@ mod tests {
                 "OUTB", "4.", "LISTH4", "NOSTYLE", "A)", "OUTC"
             ]
         );
+    }
+
+    /// `doc/odt-format.md` §5c fact 43: a footer's chapter field — here in an `as-char` frame's
+    /// text box, as the Calc Guide sets it — shows the last level-1 heading begun by its page.
+    #[test]
+    fn a_footers_chapter_field_shows_the_pages_chapter() {
+        let bytes = r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles>
+              <style:style style:name="Break" style:family="paragraph"><style:paragraph-properties fo:break-before="page"/></style:style>
+              <style:page-layout style:name="pm"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/></style:page-layout>
+            </office:automatic-styles>
+            <office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm"><style:footer>
+              <text:p><draw:frame text:anchor-type="as-char"><draw:text-box><text:p><text:chapter text:display="name" text:outline-level="1">cached</text:chapter></text:p></draw:text-box></draw:frame> | <text:page-number/></text:p>
+            </style:footer></style:master-page></office:master-styles>
+            <office:body><office:text>
+              <text:p>before</text:p><text:h text:outline-level="1">Alpha<text:line-break/>Beta</text:h><text:p>one</text:p>
+              <text:p text:style-name="Break">two</text:p><text:h text:outline-level="1">Gamma</text:h><text:p>three</text:p><text:h text:outline-level="1">Delta</text:h>
+            </office:text></office:body></office:document>"#;
+        let app = App::new();
+        app.open_bytes("chapter.fodt", bytes.as_bytes()).unwrap();
+        let doc = typeset(&app, &setter(), &Options::default());
+        let footer = |page: usize| {
+            let texts = texts(&doc.pages[page]);
+            let bottom = texts.iter().map(|t| t.1).fold(0.0, f32::max);
+            texts
+                .iter()
+                .filter(|t| (t.1 - bottom).abs() < 0.01)
+                .map(|t| t.2.clone())
+                .collect::<String>()
+        };
+        assert_eq!(footer(0), "Alpha Beta | 1");
+        assert_eq!(footer(1), "Delta | 2");
     }
 
     /// `doc/odt-format.md` §5c fact 42: a named style that names the list style itself places
