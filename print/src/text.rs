@@ -1307,6 +1307,12 @@ impl<'a> Marginal<'a> {
             .map(|paragraph| {
                 let resolved = app.resolve_style(paragraph.style.as_deref());
                 let props = resolved.props;
+                // Its box, drawn as a body paragraph's and never joined (§5c fact 38).
+                let frame = props.look().map(|look| Frame {
+                    look,
+                    open_above: false,
+                    open_below: false,
+                });
                 let align = Align::parse(props.text_align.as_deref());
                 let ink = props
                     .color
@@ -1325,11 +1331,13 @@ impl<'a> Marginal<'a> {
                     RoleFace::stating(setter, grind_text::look::Role::Body, stated).with_line(line);
                 let points =
                     |value: &Option<String>| value.as_deref().and_then(length_mm).map_or(0.0, pt);
+                let inset = |side| frame.as_ref().map_or(0.0, |frame| frame.inset(side));
+                use grind_text::table_look::{BOTTOM, LEFT, RIGHT, TOP};
                 let room = [
-                    points(&props.margin_top),
-                    points(&props.margin_right),
-                    points(&props.margin_bottom),
-                    points(&props.margin_left),
+                    points(&props.margin_top) + inset(TOP),
+                    points(&props.margin_right) + inset(RIGHT),
+                    points(&props.margin_bottom) + inset(BOTTOM),
+                    points(&props.margin_left) + inset(LEFT),
                 ];
                 let looks = paragraph
                     .pieces(1, 1)
@@ -1343,6 +1351,7 @@ impl<'a> Marginal<'a> {
                     ink,
                     tabs,
                     room,
+                    frame,
                 }
             })
             .collect();
@@ -1425,8 +1434,26 @@ impl<'a> Marginal<'a> {
             y += above as f32;
             let (pieces, layout) = self.wrap(paragraph, page, pages);
             let measure = (self.width - indent - right).max(1.0) as f32;
-            // Its pictures first, behind any text (`doc/odt-format.md` §5c fact 27).
             let tall = paragraph.tall(&layout);
+            if let Some(frame) = &paragraph.frame {
+                let piece = Piece {
+                    index: 0,
+                    lines: 0..layout.lines().len(),
+                    top: 0.0,
+                    left: 0.0,
+                    width: f64::from(measure),
+                    repeat: false,
+                };
+                frame.draw(
+                    ops,
+                    &piece,
+                    (left + indent, f64::from(y)),
+                    (f64::from(tall), true),
+                    crate::faces::Room::default(),
+                    (f64::from(y), f64::from(y + tall)),
+                );
+            }
+            // Its pictures first, behind any text (`doc/odt-format.md` §5c fact 27).
             if let Some((row, foot)) = paragraph.row() {
                 // A row of pictures set as characters, sitting on the line's foot (§5c fact 29).
                 let fit = align::fit(paragraph.align, measure, row as f32, 0, true);
@@ -1549,8 +1576,9 @@ struct MarginalParagraph<'a> {
     align: Align,
     ink: Rgb,
     tabs: grind_core::layout::Tabs,
-    /// Its margins — top, right, bottom, left — in points.
+    /// Its margins — top, right, bottom, left — with its box's border and padding, in points.
     room: [f64; 4],
+    frame: Option<Frame>,
 }
 
 impl MarginalParagraph<'_> {
@@ -2595,6 +2623,55 @@ mod tests {
                 "{want}: {x} against {margin} cm"
             );
         }
+    }
+
+    /// `doc/odt-format.md` §5c fact 38: a footer paragraph's top border is drawn across the
+    /// text area, above its line, and the footer still ends on the bottom margin — its text
+    /// where it was without the border, and padding taking room inside it.
+    #[test]
+    fn a_footer_paragraphs_border_is_drawn_inside_the_footer() {
+        let footer = |props: &str| {
+            let bytes = format!(
+                r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+                <office:styles><style:style style:name="Ruled" style:family="paragraph"><style:paragraph-properties {props}/></style:style></office:styles>
+                <office:automatic-styles><style:page-layout style:name="pm"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="4cm" fo:margin-right="1cm"/></style:page-layout></office:automatic-styles>
+                <office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm"><style:footer><text:p text:style-name="Ruled">foot</text:p></style:footer></style:master-page></office:master-styles>
+                <office:body><office:text><text:p>body</text:p></office:text></office:body></office:document>"##
+            );
+            let app = App::new();
+            app.open_bytes("f.fodt", bytes.as_bytes()).unwrap();
+            let page = typeset(&app, &setter(), &Options::default())
+                .pages
+                .remove(0);
+            let foot = texts(&page).into_iter().find(|t| t.2 == "foot").unwrap();
+            let rule = page.ops.iter().find_map(|op| match op {
+                Op::Line {
+                    from, to, width, ..
+                } => Some((*from, *to, *width)),
+                _ => None,
+            });
+            (foot.0, foot.1, rule)
+        };
+        let cm = (72.0 / 2.54) as f32;
+        let (_, plain, none) = footer(r#"fo:margin-top="0cm""#);
+        assert_eq!(none, None);
+        let (x, y, rule) = footer(
+            r##"fo:border-top="2pt solid #ff0000" fo:border-bottom="none" fo:padding="0cm""##,
+        );
+        assert!((y - plain).abs() < 0.01, "{y} against {plain}");
+        let (from, to, width) = rule.unwrap();
+        assert!((from.0 - 4.0 * cm).abs() < 0.01 && (to.0 - 20.0 * cm).abs() < 0.01);
+        assert!((width - 2.0).abs() < 0.01);
+        assert!(
+            from.1 < y,
+            "the rule above the line: {} against {y}",
+            from.1
+        );
+        let (padded_x, padded_y, _) = footer(
+            r##"fo:border-top="2pt solid #ff0000" fo:border-bottom="none" fo:padding="0.3cm""##,
+        );
+        assert!((padded_y - (plain - 0.3 * cm)).abs() < 0.01, "{padded_y}");
+        assert!((padded_x - (x + 0.3 * cm)).abs() < 0.01, "{padded_x}");
     }
 
     /// A line a master draws — a fold mark — is on every page set on it, from the page's own
