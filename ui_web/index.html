@@ -352,11 +352,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </span>
           </button>
         </div>
+        <!-- Filled only when `grind serve` answered the page's probe (src/server.rs). -->
+        <section id="welcome-server" class="welcome-recent" aria-label="Documents on this server" hidden>
+          <h2 class="welcome-recent-title">On this server</h2>
+          <div id="welcome-server-list" class="welcome-recent-list"></div>
+        </section>
         <section id="welcome-recent" class="welcome-recent" aria-label="Recent documents" hidden>
           <h2 class="welcome-recent-title">Recent, kept in this browser</h2>
           <div id="welcome-recent-list" class="welcome-recent-list"></div>
         </section>
-        <p class="welcome-hint">
+        <p id="welcome-hint" class="welcome-hint">
           Or drop a file anywhere on this page. Nothing you open is uploaded: it is read,
           edited and saved in this tab.
         </p>

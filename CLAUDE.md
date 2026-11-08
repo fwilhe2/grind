@@ -23,6 +23,8 @@ phase 10.
 - **Import filters**, one way in and never out: `.xlsx` (`grind-xlsx`), `.docx` (`grind-docx`).
 - **Shells**: GTK (one per document type), terminal, browser, Windows, macOS (built, not yet run
   on a Mac). `doc/feature-matrix.md` is which client can do what.
+- **`grind serve`** — a directory of documents behind the browser shell, on 127.0.0.1 only; the
+  page probes for it and is the static page without it (`doc/server.md`).
 
 `doc/plan.md`'s "The requirements" (R1–R7) is normative: independence and ODF-native semantics
 (R1); everything written validates against the RELAX NG schema (R2, `jing -i`); minimal
@@ -80,7 +82,8 @@ reuse lint                                     # CI gates on it
 ```
 
 `grind` is the CLI: `grind <app> <verb>`, plus suite-level verbs that read the kind from the file
-(`info`, `convert`, `lint`, `project`, `diff`) and three with no document (`build`, `test`, `init`).
+(`info`, `convert`, `lint`, `project`, `diff`) and four with no document (`build`, `test`, `init`,
+`serve`).
 
 ```sh
 cargo run -p grind-cli -- sheet new book.ods
@@ -95,9 +98,11 @@ cargo run -p grind-cli -- build examples/budget.rhai -o book.fods
 cargo run -p grind-cli -- test examples/budget.rhai
 cargo run -p grind-cli -- lint examples/quote.grind
 cargo run -p grind-cli -- lsp
+cargo run -p grind-cli -- serve ~/Documents --page ui_web/dist    # http://127.0.0.1:8080/
 ```
 
-The import filters, PDF, spelling and the language server are cargo features, on by default.
+The import filters, PDF, spelling, the language server and the server are cargo features, on by
+default.
 CI also builds and tests `-p grind-cli --no-default-features`, because "it still compiles
 without it" rots silently.
 
@@ -112,7 +117,8 @@ cargo run -p grind-sheet-gtk -- book.fods                 # needs libgtk-4-dev +
 cargo run -p grind-text-gtk -- report.fodt                #   and is not a default member
 cargo run -p grind-sheet-gtk -- book.fods --render-to /tmp/grid.png   # one frame, then exit
 cargo run -p grind-tui -- book.fods                       # one binary, both document types
-ui_web/build.sh && ui_web/smoke.sh                        # wasm32 + a matched wasm-bindgen-cli; jsdom
+ui_web/build.sh && ui_web/smoke.sh                        # wasm32 + a matched wasm-bindgen-cli; jsdom,
+                                                          #   then the page against `grind serve`
 ```
 
 `--render-to` is how a custom-drawn widget gets an assertable output; a drawing refactor is
@@ -183,8 +189,8 @@ and the function samples (`sheet/tests/function_samples.rs`).
 
 A binary is built once per platform, and everything that has something to say about it is a
 later step in the same job. Debug checks (`ci.yml`, `gtk.yml`, `win32.yml`, `macos.yml`) and
-release artifacts (`artifacts.yml`) are the two tiers. `container.yml` builds the images;
-`documents.yml`, `screenshots.yml` and `mac-drive.yml` compile nothing and use published
+release artifacts (`artifacts.yml`) are the two tiers. `container.yml` builds the images (the
+CLI, the static page, the server); `documents.yml`, `screenshots.yml` and `mac-drive.yml` compile nothing and use published
 binaries; `mac-session.yml` and `euro-office.yml` are dispatch-only; `dependabot-third-party.yml` commits the
 regenerated licence list on Dependabot's branches.
 
@@ -235,6 +241,7 @@ network, not even as an option** (`cli/tests/local_only.rs`).
 | `grind-print` | `print/` | PDF export and print preview; the only crate with a font stack |
 | `grind-spell` | `spell/` | Hunspell dictionaries and the speller |
 | `grind-lsp` | `lsp/` | The language server (`grind lsp`) |
+| `grind-server` | `server/` | `grind serve`: the page, the store, git history; loopback only |
 | `grind-cli` | `cli/` | The `grind` binary |
 | `grind-sheet-gtk`, `grind-text-gtk` | `ui_sheet_gtk/`, `ui_text_gtk/` | The GTK shells |
 | `grind-tui` | `ui_tui/` | The terminal shell |

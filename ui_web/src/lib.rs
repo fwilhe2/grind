@@ -29,6 +29,7 @@ mod keys;
 pub mod palette;
 pub mod problems;
 mod recent;
+mod server;
 pub mod sheet;
 pub mod spelling;
 pub mod swatch;
@@ -146,6 +147,10 @@ pub fn start() -> Result<(), JsValue> {
         csv_words: RefCell::new(String::new()),
         sheet_speller: RefCell::new(None),
         text_speller: RefCell::new(None),
+        offers: RefCell::new(None),
+        backend: RefCell::new(server::Backend::Local),
+        library: RefCell::new(Vec::new()),
+        versions: RefCell::new(Vec::new()),
     });
 
     // The page's own two "declared in Rust, used in CSS" numbers — see each function.
@@ -167,6 +172,9 @@ pub fn start() -> Result<(), JsValue> {
     // as soon as the bytes arrive — a fetch is asynchronous, so this is on screen for the length
     // of it either way, which is the honest thing for it to be.
     shell.show(Mode::Welcome)?;
+
+    // A server is asked for, never assumed: with none this is the static page it always was.
+    spawn_local(shell.clone().probe());
 
     // `?doc=<url>` opens that document at startup — the page's own address is the only way
     // to point this shell at a file without a picker.
@@ -236,6 +244,11 @@ struct Chrome {
     /// The welcome pane's recent documents (`recent`), and the list they are drawn into.
     welcome_recent: HtmlElement,
     welcome_recent_list: HtmlElement,
+    /// The server's library, when `grind serve` answered (`server.rs`), and the line under the
+    /// cards, which says where documents go.
+    welcome_server: HtmlElement,
+    welcome_server_list: HtmlElement,
+    welcome_hint: HtmlElement,
     /// The status bar's own line. Written straight to only on the welcome pane, which has no
     /// `Ui` to hold a message and repaint it; both document panes write theirs in their render.
     message: HtmlElement,
@@ -256,6 +269,9 @@ impl Chrome {
             welcome_pane: element(document, "welcome")?,
             welcome_recent: element(document, "welcome-recent")?,
             welcome_recent_list: element(document, "welcome-recent-list")?,
+            welcome_server: element(document, "welcome-server")?,
+            welcome_server_list: element(document, "welcome-server-list")?,
+            welcome_hint: element(document, "welcome-hint")?,
             preview_pane: element(document, "preview")?,
             preview_title: element(document, "preview-title")?,
             preview_pages: element(document, "preview-pages")?,
@@ -316,6 +332,14 @@ struct Shell {
     /// still arriving.
     sheet_speller: RefCell<Option<Arc<grind_spell::Speller>>>,
     text_speller: RefCell<Option<Arc<grind_spell::Speller>>>,
+    /// What `grind serve` offers, once its probe answered; `None` is the page on its own.
+    offers: RefCell<Option<server::Offers>>,
+    /// Where the open document came from, so Save knows where it goes.
+    backend: RefCell<server::Backend>,
+    /// The server's documents, as last listed.
+    library: RefCell<Vec<server::Doc>>,
+    /// The open document's earlier versions, once asked for.
+    versions: RefCell<Vec<server::Version>>,
 }
 
 /// The bundled fonts' file names under `fonts/`: `grind_print::fonts::BUNDLED_NAMES`, which
@@ -426,6 +450,7 @@ impl Shell {
         self.dom.welcome_pane.set_hidden(!welcome);
         if welcome {
             self.fill_recent()?;
+            self.fill_library()?;
         }
         self.dom.formula_bar.set_hidden(!sheet);
         self.dom.tabs.set_hidden(!sheet);
@@ -483,6 +508,7 @@ impl Shell {
             }
         }
         let welcome = self.mode.get() == Mode::Welcome;
+        entries.extend(self.server_entries(query, welcome));
         entries.extend(recent::entries(query, &recent::names(), welcome));
         // The personal dictionary's words, once the query reaches for them (`spelling::forget`).
         entries.extend(
@@ -536,7 +562,16 @@ impl Shell {
             "doc.welcome" => {
                 let _ = self.show(Mode::Welcome);
             }
-            "doc.save" => self.save(),
+            "doc.save" => match self.remote() {
+                Some(_) => spawn_local(self.clone().save_remote(false)),
+                None => self.save(),
+            },
+            "server.download" => self.save(),
+            "server.save-as" => spawn_local(self.clone().save_as_remote()),
+            "server.rename" => spawn_local(self.clone().rename_remote()),
+            "server.delete" => spawn_local(self.clone().delete_remote()),
+            "server.history" => spawn_local(self.clone().history()),
+            id if id.starts_with("server.") => self.run_server(id),
             "doc.forget-recent" => {
                 recent::forget();
                 let _ = self.fill_recent();
@@ -1219,6 +1254,11 @@ impl Shell {
     /// (`grind_core::kind`): both readers are tolerant, and a spreadsheet handed to the text
     /// reader would be an empty document rather than an error.
     fn open(&self, name: String, bytes: &[u8]) {
+        self.open_from(name, bytes, server::Backend::Local);
+    }
+
+    /// [`Shell::open`], saying where Save will put it.
+    fn open_from(&self, name: String, bytes: &[u8], backend: server::Backend) {
         // An import arrives as the flat ODF document it became, under the name it will
         // download as.
         let (name, bytes, summary) = match grind_open::import(&name, bytes, &grind_open::nowhere) {
@@ -1241,7 +1281,12 @@ impl Shell {
         };
         match opened {
             Ok(mode) => {
-                recent::note(&name, bytes);
+                // A server's document is kept by the server, not copied into this browser.
+                if backend == server::Backend::Local {
+                    recent::note(&name, bytes);
+                }
+                *self.backend.borrow_mut() = backend;
+                self.versions.borrow_mut().clear();
                 *self.name.borrow_mut() = name.clone();
                 // A document arriving closes the code view: what is on screen is a projection of
                 // the document that just went away.
@@ -1265,16 +1310,7 @@ impl Shell {
     /// document comes back as the file it was with those paragraphs replaced.
     fn save(&self) {
         let name = self.document_name();
-        let form = form_of(&name);
-        let bytes = match self.mode.get() {
-            Mode::Sheet => self.sheet.save_bytes(form),
-            Mode::Text => self.text.save_bytes(form),
-            // Nothing open. The Save button is off the bar on this pane and the palette has no
-            // row for it, so this is only reachable by Ctrl+S — which gets a sentence rather
-            // than a download of an empty document nobody asked to make.
-            Mode::Welcome => Err("There is no document to save yet".to_owned()),
-        };
-        let bytes = match bytes {
+        let bytes = match self.document_bytes(&name) {
             Ok(bytes) => bytes,
             Err(error) => return self.set_message(error),
         };
@@ -1284,6 +1320,19 @@ impl Shell {
                 self.set_message(format!("Saved {name} to your downloads"))
             }
             Err(_) => self.set_message(format!("The browser refused to download {name}")),
+        }
+    }
+
+    /// The open document written in the form `name` asks for.
+    fn document_bytes(&self, name: &str) -> Result<Vec<u8>, String> {
+        let form = form_of(name);
+        match self.mode.get() {
+            Mode::Sheet => self.sheet.save_bytes(form),
+            Mode::Text => self.text.save_bytes(form),
+            // Nothing open. The Save button is off the bar on this pane and the palette has no
+            // row for it, so this is only reachable by Ctrl+S — which gets a sentence rather
+            // than a download of an empty document nobody asked to make.
+            Mode::Welcome => Err("There is no document to save yet".to_owned()),
         }
     }
 
@@ -1382,6 +1431,8 @@ impl Shell {
         }
         // Untitled, so a download names itself after the kind — `document_name`'s two constants.
         self.name.borrow_mut().clear();
+        *self.backend.borrow_mut() = server::Backend::Local;
+        self.versions.borrow_mut().clear();
         // Both readings close with the document they were of.
         *self.source.borrow_mut() = None;
         *self.problems.borrow_mut() = None;
@@ -1391,6 +1442,344 @@ impl Shell {
         self.set_message(String::new());
         spelling::spawn(Some(kind), false);
     }
+}
+
+/// What `grind serve` adds (`server.rs`). Nothing here runs unless its probe answered.
+impl Shell {
+    async fn probe(self: Rc<Self>) {
+        match server::probe().await {
+            Ok(Some(offers)) => {
+                *self.offers.borrow_mut() = Some(offers);
+                self.dom.welcome_hint.set_text_content(Some(
+                    "Or drop a file anywhere on this page. A document from this server is saved \
+                     back to it; anything else stays in this tab until you save it to the server.",
+                ));
+                self.refresh_library().await;
+            }
+            Ok(None) => {}
+            Err(skew) => self.set_message(skew),
+        }
+    }
+
+    async fn refresh_library(&self) {
+        match server::list().await {
+            Ok(docs) => *self.library.borrow_mut() = docs,
+            Err(error) => self.set_message(format!("The server's documents: {error}")),
+        }
+        if self.mode.get() == Mode::Welcome
+            && let Err(error) = self.fill_library()
+        {
+            web_sys::console::error_1(&error);
+        }
+    }
+
+    /// One button a document on the server, each running `server.open:<n>`.
+    fn fill_library(&self) -> Result<(), JsValue> {
+        let library = self.library.borrow();
+        self.dom
+            .welcome_server
+            .set_hidden(self.offers.borrow().is_none());
+        self.dom.welcome_server_list.set_inner_html("");
+        if library.is_empty() {
+            let empty = self.dom.document.create_element("p")?;
+            empty.set_class_name("welcome-server-empty");
+            empty.set_text_content(Some(
+                "No documents yet — start one above, then save it to the server.",
+            ));
+            self.dom.welcome_server_list.append_child(&empty)?;
+        }
+        for (n, doc) in library.iter().enumerate() {
+            let button: HtmlButtonElement =
+                self.dom.document.create_element("button")?.dyn_into()?;
+            button.set_type("button");
+            button.set_text_content(Some(&doc.name));
+            button
+                .dataset()
+                .set("command", &format!("server.open:{n}"))?;
+            self.dom.welcome_server_list.append_child(&button)?;
+        }
+        Ok(())
+    }
+
+    /// The palette's server rows: the verbs that apply, the library, and the open document's
+    /// versions once they were asked for.
+    fn server_entries(&self, query: &str, welcome: bool) -> Vec<Entry> {
+        let Some(offers) = self.offers.borrow().clone() else {
+            return Vec::new();
+        };
+        let mut entries = Vec::new();
+        if !welcome {
+            entries.extend(command::filter(command::SERVER, query));
+            if self.remote().is_some() {
+                entries.extend(command::filter(command::SERVER_LINKED, query));
+                if offers.history {
+                    entries.extend(command::filter(command::SERVER_HISTORY, query));
+                }
+            }
+        }
+        let needle = query.trim().to_lowercase();
+        if welcome || !needle.is_empty() {
+            for (n, doc) in self.library.borrow().iter().enumerate() {
+                let title = format!("Open {}", doc.name);
+                if title.to_lowercase().contains(&needle) {
+                    entries.push(Entry::target(format!("server.open:{n}"), title, "Server"));
+                }
+            }
+        }
+        for (n, version) in self.versions.borrow().iter().enumerate() {
+            let described = server::describe(version);
+            for (id, verb) in [("server.version", "Version"), ("server.restore", "Restore")] {
+                let title = format!("{verb}: {described}");
+                if title.to_lowercase().contains(&needle) {
+                    entries.push(Entry::target(format!("{id}:{n}"), title, "Server"));
+                }
+            }
+        }
+        entries
+    }
+
+    /// The open document's place on the server, if it has one.
+    fn remote(&self) -> Option<(String, String)> {
+        match &*self.backend.borrow() {
+            server::Backend::Remote { id, etag } => Some((id.clone(), etag.clone())),
+            server::Backend::Local => None,
+        }
+    }
+
+    /// The rows that carry an index: a library document, a version, a restore.
+    fn run_server(self: &Rc<Self>, id: &str) {
+        let Some((verb, n)) = id.split_once(':') else {
+            return;
+        };
+        let Ok(n) = n.parse::<usize>() else { return };
+        match verb {
+            "server.open" => {
+                let doc = self.library.borrow().get(n).cloned();
+                match doc {
+                    Some(doc) => spawn_local(self.clone().open_remote(doc)),
+                    None => self.set_message("That document is no longer listed".to_owned()),
+                }
+            }
+            "server.version" | "server.restore" => {
+                let version = self.versions.borrow().get(n).cloned();
+                let Some(version) = version else { return };
+                match verb {
+                    "server.version" => spawn_local(self.clone().open_version(version)),
+                    _ => spawn_local(self.clone().restore_version(version)),
+                }
+            }
+            _ => {}
+        }
+    }
+
+    async fn open_remote(self: Rc<Self>, doc: server::Doc) {
+        if self.can_undo()
+            && !confirm(&format!(
+                "Open {}? Unsaved changes to the document you have will be lost.",
+                doc.name
+            ))
+        {
+            return;
+        }
+        match server::get(&doc.id).await {
+            Ok((bytes, etag)) => self.open_from(
+                doc.name.clone(),
+                &bytes,
+                server::Backend::Remote { id: doc.id, etag },
+            ),
+            Err(error) => self.set_message(format!("{}: {error}", doc.name)),
+        }
+    }
+
+    /// Write the open document back over the version it was opened at — or, when `overwrite`,
+    /// over whatever is there now.
+    async fn save_remote(self: Rc<Self>, overwrite: bool) {
+        let Some((id, etag)) = self.remote() else {
+            return;
+        };
+        let name = self.document_name();
+        let bytes = match self.document_bytes(&name) {
+            Ok(bytes) => bytes,
+            Err(error) => return self.set_message(error),
+        };
+        let over = if overwrite { "*" } else { etag.as_str() };
+        match server::put(&id, over, &bytes).await {
+            Ok(etag) => {
+                *self.backend.borrow_mut() = server::Backend::Remote { id, etag };
+                self.set_message(format!("Saved {name} on the server"));
+                self.refresh_library().await;
+            }
+            Err(server::Refused::Stale) => {
+                let replace = confirm(&format!(
+                    "Somebody saved {name} on the server since you opened it. Replace their \
+                     version with yours?"
+                ));
+                match replace {
+                    true => Box::pin(self.save_remote(true)).await,
+                    false => self.set_message(format!(
+                        "{name} is not saved. Download a copy, or save it to the server under \
+                         another name."
+                    )),
+                }
+            }
+            Err(server::Refused::Said(why)) => self.set_message(format!("Not saved: {why}")),
+        }
+    }
+
+    /// Put the open document on the server as a new one, which is then where Save goes.
+    async fn save_as_remote(self: Rc<Self>) {
+        let current = self.document_name();
+        let suggested = current.rsplit('/').next().unwrap_or(&current).to_owned();
+        let Some(name) = ask("Save to the server as", &suggested) else {
+            return;
+        };
+        let bytes = match self.document_bytes(&name) {
+            Ok(bytes) => bytes,
+            Err(error) => return self.set_message(error),
+        };
+        match server::create(&name, &bytes).await {
+            Ok(doc) => {
+                *self.name.borrow_mut() = doc.name.clone();
+                *self.backend.borrow_mut() = server::Backend::Remote {
+                    id: doc.id,
+                    etag: doc.etag,
+                };
+                self.versions.borrow_mut().clear();
+                self.set_message(format!("Saved {} on the server", doc.name));
+                self.refresh_library().await;
+            }
+            Err(why) => self.set_message(format!("Not saved: {why}")),
+        }
+    }
+
+    async fn rename_remote(self: Rc<Self>) {
+        let Some((id, etag)) = self.remote() else {
+            return;
+        };
+        let current = self.document_name();
+        let file = current.rsplit('/').next().unwrap_or(&current).to_owned();
+        let Some(name) = ask("Rename on the server to", &file) else {
+            return;
+        };
+        match server::rename(&id, &etag, &name).await {
+            Ok(doc) => {
+                *self.name.borrow_mut() = doc.name.clone();
+                *self.backend.borrow_mut() = server::Backend::Remote {
+                    id: doc.id,
+                    etag: doc.etag,
+                };
+                self.set_message(format!("Renamed to {}", doc.name));
+                self.refresh_library().await;
+            }
+            Err(server::Refused::Stale) => self.set_message(format!(
+                "Somebody saved {current} since you opened it; open it again to rename it"
+            )),
+            Err(server::Refused::Said(why)) => self.set_message(format!("Not renamed: {why}")),
+        }
+    }
+
+    /// Delete the document from the server. What is on screen stays, as a document of this tab.
+    async fn delete_remote(self: Rc<Self>) {
+        let Some((id, etag)) = self.remote() else {
+            return;
+        };
+        let name = self.document_name();
+        if !confirm(&format!(
+            "Delete {name} from the server? It stays open here until you close the tab."
+        )) {
+            return;
+        }
+        match server::delete(&id, &etag).await {
+            Ok(()) => {
+                *self.backend.borrow_mut() = server::Backend::Local;
+                self.versions.borrow_mut().clear();
+                self.set_message(format!("Deleted {name} from the server"));
+                self.refresh_library().await;
+            }
+            Err(server::Refused::Stale) => self.set_message(format!(
+                "Somebody saved {name} since you opened it, so it was not deleted"
+            )),
+            Err(server::Refused::Said(why)) => self.set_message(format!("Not deleted: {why}")),
+        }
+    }
+
+    /// Fetch the open document's versions, then show them in the palette.
+    async fn history(self: Rc<Self>) {
+        let Some((id, _)) = self.remote() else {
+            return;
+        };
+        match server::history(&id).await {
+            Ok(versions) if versions.is_empty() => {
+                self.set_message("The server has no earlier versions of this document".to_owned())
+            }
+            Ok(versions) => {
+                *self.versions.borrow_mut() = versions;
+                self.open_palette_with("Version: ");
+            }
+            Err(why) => self.set_message(format!("Earlier versions: {why}")),
+        }
+    }
+
+    /// An earlier version, opened as a document of this tab: saving it downloads it, and putting
+    /// it back is Restore.
+    async fn open_version(self: Rc<Self>, version: server::Version) {
+        let Some((id, _)) = self.remote() else {
+            return;
+        };
+        let name = server::version_name(&self.document_name(), &version.rev);
+        match server::at(&id, &version.rev).await {
+            Ok(bytes) => self.open_from(name, &bytes, server::Backend::Local),
+            Err(why) => self.set_message(format!("{name}: {why}")),
+        }
+    }
+
+    async fn restore_version(self: Rc<Self>, version: server::Version) {
+        let Some((id, etag)) = self.remote() else {
+            return;
+        };
+        let name = self.document_name();
+        if !confirm(&format!(
+            "Put back {name} as it was at {}? Unsaved changes here are replaced.",
+            server::describe(&version)
+        )) {
+            return;
+        }
+        let restored = match server::restore(&id, &etag, &version.rev).await {
+            Ok(doc) => doc,
+            Err(server::Refused::Stale) => {
+                return self.set_message(format!(
+                    "Somebody saved {name} since you opened it; open it again to restore a version"
+                ));
+            }
+            Err(server::Refused::Said(why)) => {
+                return self.set_message(format!("Not restored: {why}"));
+            }
+        };
+        self.refresh_library().await;
+        match server::get(&restored.id).await {
+            Ok((bytes, etag)) => {
+                self.open_from(
+                    restored.name.clone(),
+                    &bytes,
+                    server::Backend::Remote {
+                        id: restored.id,
+                        etag,
+                    },
+                );
+                self.set_message(format!("Restored {}", restored.name));
+            }
+            Err(why) => self.set_message(format!("{}: {why}", restored.name)),
+        }
+    }
+}
+
+/// A line of text from the person, `None` when they cancel or leave it empty.
+fn ask(question: &str, default: &str) -> Option<String> {
+    let answer = web_sys::window()?
+        .prompt_with_message_and_default(question, default)
+        .ok()??;
+    let answer = answer.trim().to_owned();
+    (!answer.is_empty()).then_some(answer)
 }
 
 /// Run a command from a pane — the same path a palette row and a toolbar button take.
@@ -1635,6 +2024,20 @@ fn wire_toolbar(shell: &Rc<Shell>) -> Result<(), JsValue> {
             .and_then(|button| button.dataset().get("command"));
         if let Some(command) = command {
             on_list.run(&command);
+        }
+    })?;
+
+    let library = shell.dom.welcome_server_list.clone();
+    let on_library = shell.clone();
+    listen(&library, "click", move |event: Event| {
+        let command = event
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+            .and_then(|t| t.closest("button").ok().flatten())
+            .and_then(|t| t.dyn_into::<HtmlElement>().ok())
+            .and_then(|button| button.dataset().get("command"));
+        if let Some(command) = command {
+            on_library.run(&command);
         }
     })?;
 

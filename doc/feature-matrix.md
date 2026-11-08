@@ -69,6 +69,7 @@ numbered, under each table, so they cannot collide with the lettered ones.
 | Key list / help | ● | ● | ● | ● | ● ᵈ | ● | ● ⁵ |
 | About / build stamp | ● | ● | ● | ● ʰ | ● ʷᵃ | ● | ● ⁶ |
 | Recent files | — | ● | ● | ● ᵗʳ | ● ʷᶜ | ● ʷʳ | ● |
+| A library on `grind serve` — open, save back, history (`doc/server.md`) | ● ˢᵛ | — ˢᵛ | — ˢᵛ | — ˢᵛ | ● ʷˢ | — ˢᵛ | — ˢᵛ |
 | Opening the *other* document kind | ● ᵉ | ● ᶠ | ● ᵉ | ● | ● | ● | ● |
 | Assertable headless output | stdout | `--render-to` PNG | `--render-to` PNG | `TestBackend` | `smoke.js` (jsdom) | `--render-to` BMP | `--render-to` PNG, `--drive` |
 | `.deb` + `.rpm` | ● | ● | ● | ● | — | — | — ⁷ |
@@ -101,6 +102,8 @@ CLI matters most exactly where a GUI's whole output is colour.
 ᵗʳ The welcome pane lists the nine most recent, `1` to `9`, from `$XDG_STATE_HOME/grind/recent` — every file opened or written (2026-10-25, checked in a pty).
 ʷᶜ The browser keeps a *copy* of the four last opened or saved, each up to 768 KiB, in `localStorage` — a page has no path to reopen — listed on the welcome pane and in the palette, with *Forget the recent documents* (2026-10-25, smoke-checked).
 ʷʳ Every document opened or saved is handed to `SHAddToRecentDocs`, so it is in the taskbar jump list and every file dialog's Recent — the platform's own list, with none of ours (2026-10-02; build-checked only).
+ˢᵛ The library is a directory of files, so every client that opens a file opens a document in it, and `git log` is its history; only the browser needs the server to reach them.
+ʷˢ Only when `grind serve` served the page: the welcome pane lists its documents, Save writes back (412 → *replace theirs?*), and the palette adds *Save to the server as…*, rename, delete, *Download a copy* and, in a git work tree, *Earlier versions…* with restore (2026-11-08, `smoke-server.js`).
 ʷᵃ *About this build* in the palette says `grind_core::build_info::describe` on the message line — no dialog to put it in (2026-10-02).
 
 **Mac.** ¹ An untitled document saves flat: the document answers `fods` or `fodt` itself (M10),

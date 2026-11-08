@@ -235,6 +235,14 @@ long number widened its column rather than being cut at it. The table is given t
 `###` — `hash_overflowing`, measured once the rows are in the page, over
 `grind_sheet::numfmt::overflow` (`doc/feature-matrix.md` §5).
 
+## A server behind it
+
+The page is static and stays so. When `grind serve DIR` served it, a probe of `api/v1/hello`
+finds the server, and the page gains a library, Save that writes back, and history — through
+`src/server.rs`, the one module that sends anything but a plain GET. With no server, nothing
+about one is shown (`smoke.js` checks that; `smoke-server.js` drives the page against a real
+`grind serve`). `doc/server.md` is the design and the protocol.
+
 ## How to see it
 
 ```sh

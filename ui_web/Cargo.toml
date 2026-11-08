@@ -66,6 +66,8 @@ features = [
   "EventTarget",
   "File",
   "FileList",
+  # The one header read back from a response: a document's version (`server.rs`).
+  "Headers",
   "HtmlAnchorElement",
   "HtmlButtonElement",
   "HtmlCanvasElement",
@@ -86,6 +88,8 @@ features = [
   "MouseEvent",
   "Navigator",
   "Node",
+  # A write to the server that served the page, and nowhere else (`server.rs`).
+  "RequestInit",
   "Response",
   # The remembered spelling setting (`spelling.rs`), per kind of document.
   "Storage",

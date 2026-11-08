@@ -6,7 +6,8 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # A server behind the browser shell
 
-**Status: plan, unbuilt, nothing decided until the open questions at the end are answered.**
+**Status: SV0–SV3 built 2026-11-08 (§11); SV4 onwards a plan.** §10's questions are answered
+there.
 `doc/web-shell.md` stays normative for `ui_web/`; `doc/web-storage.md` is the record of what the
 page can keep *without* a server, and this document is the other half of its *Remote storage,
 later* and *What neither option does* sections. `doc/plan.md`'s R1–R7 and the architecture rules
@@ -42,10 +43,12 @@ the way `grind lsp` is behind `lsp`. The code is its own crate, **`grind-server`
 `grind-cli` is a thin arm over it. One binary, no second thing to package; `--no-default-features`
 still builds a `grind` with none of it.
 
-- **Stack**: `axum` on `tokio`, its built-in WebSocket for live sessions. Plumbing, so it can be
-  lazy (`CLAUDE.md`: format-neutral plumbing can be). It is the largest dependency this workspace
-  would add to the CLI — **measure it** (`artifacts.yml` already reports sizes) and, if it moves
-  the 3.6 MB figure too far, ship the feature off by default and enable it in the container image.
+- **Stack**: `tiny_http`, synchronous, a thread per request. Plumbing, so it can be lazy
+  (`CLAUDE.md`). Chosen over the `axum`/`tokio` this section first named once the server became
+  loopback-only (§5): a person's own documents need no async runtime, and `hyper` and `h2` are
+  on R12's list of client crates. Measured, stripped release `grind`: 41,185,880 bytes with the
+  feature, 40,680,264 without — 1.2 %, so it is on by default. SV5's WebSocket is a decision
+  of its own: `tungstenite` is on the same list.
 - **It serves the page.** `grind serve` serves a `dist/` (`--dist`, defaulting to one embedded in
   or installed beside the binary) as well as `/api/v1/`. That is what makes same-origin free, and
   it means **the page and the server are always the same build** (§5.4).
@@ -53,9 +56,10 @@ still builds a `grind` with none of it.
   generator stays something a person runs.
 - **AGPL §13**: a server is exactly where it applies. The About dialog already carries the build
   stamp; the server adds a source link to `hello` and the page shows it.
-- **Deployment**: a second image, `grind-server`, beside the unchanged static `grind-web` —
-  `ui_web/deploy/` grows a `compose.yaml` variant with a volume, the first deployment of this
-  project that has state to back up.
+- **Deployment**: a second image, `grind-server` (`server/Containerfile`), beside the unchanged
+  static `grind-web`, and `server/deploy/compose.yaml` with the documents as a host directory —
+  the first deployment of this project that has state to back up. Loopback-only means host
+  networking: `-p` would forward to an address the server does not listen on.
 
 ## 3. What it can do
 
@@ -240,8 +244,9 @@ with a sequencer it is a dozen lines and a property test.
 
 A home server first. In order:
 
-1. **No authentication**, bound to `127.0.0.1` by default; `--listen 0.0.0.0:8080` is an explicit
-   choice. A name for presence is asked once and kept in `localStorage`.
+1. **No authentication**, bound to `127.0.0.1` and nothing else — no option names another address
+   (R12, `doc/local-only.md`). Another computer is a reverse proxy the person runs, named with
+   `--host`. A name for presence is asked once and kept in `localStorage`.
 2. **A trusted header** from a reverse proxy (`--user-header Remote-User` — Authelia,
    oauth2-proxy, Tailscale serve all set one). grind stores no passwords and builds no login page.
 3. Per-document read-only links (a random token in `…/d/{id}?k=…`) if sharing outside the
@@ -304,17 +309,59 @@ where the core gains a layer, and it should not start until SV1 has been lived w
 - **Scale.** One process, one machine, documents in memory while open — a household or a team,
   not a SaaS.
 
-## 10. Open questions
+## 10. Open questions — answered 2026-11-08
 
-1. **Is live editing the goal, or the store?** SV1–SV3 are a week's shape; SV4–SV6 are a phase.
-   If the real need is "my documents on every device", stop after SV3.
-2. **Same origin only, or a Pages-hosted page talking to a home server?** The second needs CORS,
-   a token in the browser and a skew policy, and is not in the milestones.
-3. **`server` on by default in `grind`**, or only in the container image? Decided by SV3's size
-   measurement.
-4. **Git as the history**, or the server's own snapshots? Git is recommended because it is what
-   the flat form and R6 were built to make good; it makes `git` a runtime dependency of Tier 2.
-5. **A CLI edit to a live document** — lock and refuse (recommended first), or route through the
-   server?
-6. **Who are the users** — one person on several devices, a household, a small team? It decides
-   §5.
+1. **The store first**: SV0–SV3 are built; live editing waits until the store has been lived
+   with.
+2. **Same origin only.** A page hosted elsewhere talking to a home server is not planned.
+3. **`server` is on by default** in `grind` — §2's measurement.
+4. **Git as the history**, run as the `git` executable; without a work tree there is none.
+5. **Still open**, and only a question once a document can be live (SV5).
+6. **The person's own computer.** The server is loopback-only by R12; anything wider is their
+   reverse proxy.
+
+## 11. As built (SV0–SV3)
+
+`server/` (`grind-server`), reached as `grind serve DIR [--port N] [--page DIST] [--host NAME]`.
+`Server::handle` is a function from a request value to a response value, so `server/tests/api.rs`
+runs the whole API with no socket; `listen.rs` adds one real request over loopback.
+
+| Request | Answer |
+|---|---|
+| `GET api/v1/hello` | `protocol`, `commit`, `build`, `offers` (`store`, and `history` in a work tree), `source` |
+| `GET api/v1/docs` | `{"docs": [{id, name, kind, size, modified, etag}]}`, every `.ods`/`.fods`/`.odt`/`.fodt` below `DIR` |
+| `GET api/v1/docs/{id}` | the bytes, with `ETag` |
+| `PUT api/v1/docs/{id}` | `If-Match` required (428 without; `*` is "replace theirs"); 412 with the current `ETag` when stale |
+| `POST api/v1/docs?name=N` | a new document in `DIR` itself; 409 when it exists, 400 for a name with a slash or another extension |
+| `PATCH api/v1/docs/{id}` `{"name"}` | rename in place; the extension may not change, since the form is in the bytes |
+| `DELETE api/v1/docs/{id}` | moves the file into `.grind/trash/`, which keeps it when there is no history to |
+| `GET …/{id}/history`, `GET …/{id}/at/{rev}`, `POST …/{id}/restore` `{"rev"}` | `git log --follow`, `git show`, and a save of the old bytes; 404 without a work tree |
+
+- **A version is a hash of the bytes** (FNV-1a), not an mtime, so another program writing the
+  file is a new version and the next stale save is a 412 — the "other writers" case needs no
+  watcher.
+- **A write is checked, then written as sent.** The bytes must be the kind and form the name says
+  and must read; then they are written atomically. The page's bytes already are the core's
+  `save_bytes` against the bytes the server served, so R6 and rule 7 are held where the document
+  was edited; re-saving them on the server would be the identity. `a_save_from_the_page_is_the_file_the_cli_would_write`
+  compares the file with the same edit made through the core.
+- **Every save is a commit** of that path only (`git commit -- path`), under the repository's
+  identity or `grind serve`'s when it has none; `.grind/` ignores itself from inside. Twenty
+  one-cell saves are twenty one-line commits (`in_a_git_work_tree_every_save_is_a_commit`).
+- **Loopback is not a wall.** Every page the person's browser opens can reach `127.0.0.1`, so the
+  server answers only requests addressed to `localhost`, `127.0.0.1` or a `--host` name (DNS
+  rebinding is a 421), and a write needs the page's `X-Grind-Request` header and, when the
+  browser sends an `Origin`, one of those names (a forged form is a 403).
+- **The page** probes on start (`ui_web/src/server.rs`). A different `commit` is a different
+  build: the page says so and talks to nothing. With a server it lists the library on the welcome
+  pane, Save writes back, and the palette adds *Save to the server as…*, *Rename on the
+  server…*, *Delete from the server…*, *Download a copy* and *Earlier versions…* — a version
+  opens as a document of the tab (saving downloads it) and *Restore:* puts it back. A server's
+  document is not copied into the browser's recent list.
+- **Deployment**: `server/Containerfile` builds the page and `grind` from one tree, puts the page
+  where `grind serve` looks without `--page` (`/usr/share/grind/web`), and carries `git`;
+  `container.yml` builds, smoke-tests and publishes `ghcr.io/fwilhe2/grind-server`.
+
+Not done in this pass: share links (`…/d/{id}`), the library's search and lint (Tier 3), the
+`.deb` carrying the page (a packaged `grind serve` without `--page` answers the API only), and
+an editor's name on a commit.

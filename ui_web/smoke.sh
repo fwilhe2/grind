@@ -3,7 +3,8 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Run the browser-boundary smoke test (ui_web/smoke.js).
+# Run the browser-boundary smoke test (ui_web/smoke.js), then the same page against a real
+# `grind serve` (ui_web/smoke-server.js).
 #
 # Builds the module for node rather than the web — the same `.wasm`, different glue
 # — and drives it against index.html in jsdom. No browser involved, so this runs
@@ -38,3 +39,30 @@ if [ ! -d "$root/ui_web/node_modules/jsdom" ]; then
 fi
 
 node "$root/ui_web/smoke.js"
+
+# The same page with `grind serve` behind it (doc/server.md), over a git repository so its
+# history is exercised too.
+cargo build -q -p grind-cli
+grind="${CARGO_TARGET_DIR:-$root/target}/debug/grind"
+store="$(mktemp -d)"
+log="$store.log"
+trap 'kill "${server:-0}" 2>/dev/null; rm -rf "$store" "$log"' EXIT
+git -C "$store" init -q
+git -C "$store" config user.name Smoke
+git -C "$store" config user.email smoke@example.invalid
+git -C "$store" config commit.gpgsign false
+cp "$root/sheet/tests/data/kb/minimal-with-styles.fods" "$store/budget.fods"
+git -C "$store" add budget.fods
+git -C "$store" commit -q -m "Add budget.fods"
+"$grind" serve "$store" --port 0 2>"$log" &
+server=$!
+for _ in $(seq 100); do
+    port="$(sed -n 's|.*http://127.0.0.1:\([0-9]*\)/.*|\1|p' "$log")"
+    [ -n "$port" ] && break
+    sleep 0.1
+done
+if [ -z "$port" ]; then
+    cat "$log" >&2
+    exit 1
+fi
+GRIND_SMOKE_PORT="$port" GRIND_SMOKE_DIR="$store" node "$root/ui_web/smoke-server.js"

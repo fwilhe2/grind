@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "grind-server"
+version = "0.0.0"
+description = "A directory of documents behind the browser shell, on the loopback address only — doc/server.md"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+grind-core = { path = "../core" }
+grind-sheet = { path = "../sheet" }
+grind-text = { path = "../text" }
+# Synchronous and small: a person's own documents on their own computer need no async runtime,
+# and this brings no HTTP client, no TLS and no WebSocket (`cli/tests/local_only.rs`).
+tiny_http = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
