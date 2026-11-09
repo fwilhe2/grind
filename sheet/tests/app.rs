@@ -637,6 +637,10 @@ fn entering_a_formula_that_cannot_mean_what_it_says_is_refused() {
     assert!(refused("=S2*2").ends_with("write [.S2]"));
     assert!(refused("=SUM(A1:b3)").ends_with("write [.A1:.B3]"));
     assert!(refused("=Data.A1").ends_with("write [Data.A1]"));
+    assert!(refused("=maxifs([.A1:.A2];[.A1:.A2];1)").ends_with("writes it COM.MICROSOFT.MAXIFS"));
+    // Excel's CEILING is not ODF's, which is a function of its own.
+    app.enter(0, p(0, 0), "=CEILING(1.5)", RecalcMode::Document)
+        .unwrap();
     let message = app
         .enter_range(
             0,

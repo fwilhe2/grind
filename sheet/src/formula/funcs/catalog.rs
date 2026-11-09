@@ -224,6 +224,18 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.17",
     },
     FuncInfo {
+        name: "COM.MICROSOFT.MAXIFS",
+        signature: "COM.MICROSOFT.MAXIFS( Reference M ; Reference R1 ; Criterion C1 [ ; Reference R2 ; Criterion C2 ]... )",
+        brief: "Excel's MAXIFS: the largest number in M where every range meets its criterion, 0 if none does.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.MINIFS",
+        signature: "COM.MICROSOFT.MINIFS( Reference M ; Reference R1 ; Criterion C1 [ ; Reference R2 ; Criterion C2 ]... )",
+        brief: "Excel's MINIFS: the smallest number in M where every range meets its criterion, 0 if none does.",
+        section: "6.18",
+    },
+    FuncInfo {
         name: "CONCATENATE",
         signature: "CONCATENATE( { Text T } + )",
         brief: "Concatenate the text strings",

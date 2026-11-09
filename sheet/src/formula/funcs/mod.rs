@@ -111,6 +111,8 @@ const BEYOND: &[&str] = &[
     "COLUMN",
     "COM.MICROSOFT.CEILING",
     "COM.MICROSOFT.FLOOR",
+    "COM.MICROSOFT.MAXIFS",
+    "COM.MICROSOFT.MINIFS",
     "CONCATENATE",
     "COUNTIFS",
     "EDATE",
@@ -226,6 +228,8 @@ const NAMES: &[&str] = &[
     "MEDIAN",
     "RANK",
     "SMALL",
+    "COM.MICROSOFT.MAXIFS",
+    "COM.MICROSOFT.MINIFS",
     // text (§6.20)
     "EXACT",
     "FIND",

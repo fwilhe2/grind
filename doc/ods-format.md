@@ -374,7 +374,7 @@ is schema-legal but shows blank/0 until the next recalculation.
 Named ranges: `table:named-expressions` (document- or sheet-scoped) contains
 `table:named-range table:name="Foo" table:cell-range-address="Sheet1.$A$1:.$A$10" table:base-cell-address="Sheet1.$A$1"`. Formulas reference it by bare name: `of:=SUM(Foo)`.
 
-### 4.1 What functions do where Part 4 is silent — `MEASURED` (2026-10-12 and 2026-10-18, LibreOffice 26.8.1.1)
+### 4.1 What functions do where Part 4 is silent — `MEASURED` (2026-10-12, 2026-10-18 and 2026-11-09, LibreOffice 26.8)
 
 The functions `doc/small-group.md`'s second half admits are implemented from Part 4; this is
 the list of what the spec leaves open and the oracle answered, so the code can cite a
@@ -410,6 +410,8 @@ table:use-regular-expressions="false"/>` — the reading this build gives every 
 | `MEDIAN`, `LARGE`, `SMALL` over no numbers | `#VALUE!` | silent | `#VALUE!` (not `AVERAGE`'s `#DIV/0!`) |
 | `RANK(7;…)` (absent), `RANK(30;[text only])` | `#N/A`, `#VALUE!` | "an Error" | `#N/A` for a value not in the data, compared exactly; `#VALUE!` for data with no numbers |
 | `SUMIFS(…;[.A1:.A6];…)` against a 7-row range, `SUMIFS(5;…)`, `SUMIFS(R;R1)` | `Err:502`, `Err:511` | "an Error" | `#VALUE!` for ranges of different shapes (the summed one included), a constant where a range belongs, and a range without its criterion |
+| `SUMIF`, `SUMIFS`, `AVERAGEIF`, `AVERAGEIFS` with `#DIV/0!` in a matched cell of the summed range (measured 2026-11-09, 26.8.2.2) | `#DIV/0!` | "the values of type Number", silent on errors; §6.3.7 keeps errors in a number sequence | the error; one in a cell that did not match is skipped |
+| `COM.MICROSOFT.MAXIFS`, `COM.MICROSOFT.MINIFS` (measured 2026-11-09, 26.8.2.2) | 0 when nothing matches; text is skipped, a matched error is the answer, and a typed `TRUE` counts as 1 — saved back as the number 1, since the oracle has no logical type; `Err:502` for ranges of different shapes or a constant range, `Err:511` for a range without its criterion | not Part 4 | as measured, with `SUMIFS`' `#VALUE!` for both refusals, and a logical left out as `MIN` and `SUMIFS` leave it (§6.3.7: a distinct logical is not in a number sequence; one read from the oracle's file is a number already); a bare `MAXIFS(…)` is `#NAME?` to the oracle, so these are the only spellings |
 | `WEEKNUM(DATE(2026;12;31))`, `WEEKNUM(DATE(2026;12;28);2)` | 1, 1 | "the week containing January 1 is the first week" | week 1 — the days of late December that share a week with the *next* January 1 belong to it, read literally (Excel says 53) |
 | `WEEKNUM(…;0)`, `WEEKNUM(…;3)` | `Err:502` | `Mode` in {1, 2, 11…17, 21, 150} | `#NUM!`, as `WEEKDAY`'s bad type already is; a fractional mode truncates |
 | `WORKDAY(D;N;H;Workdays)` | `Err:504` — no fourth parameter | §6.10.23 defines it | **the spec**: the fourth parameter works as `NETWORKDAYS`' does (which LibreOffice does accept) |
@@ -418,7 +420,7 @@ table:use-regular-expressions="false"/>` — the reading this build gives every 
 | `CEILING(-2.5;2)`, `FLOOR(2.5;-2)`, `CEILING(-2.5;2;1)` | `Err:502` | "shall have the same sign" | `#NUM!`, whatever the Mode — the domain error, and what Excel's own `CEILING` answers to the same refusal |
 | `CEILING(;2)`, `CEILING([empty];2)` | 0 | "if … N … is zero, the result is zero" | 0: an empty N is a zero here, unlike `MROUND`'s, because the oracle says so |
 | `CEILING(-2.5;;1)`, `FLOOR(-2.5;;1)` | -3, -2 | Mode ≠ 0 rounds the magnitude | as specified; an empty Significance is still ±1 with N's sign, and `CEILING(2.5;;)` is 3 |
-| `COM.MICROSOFT.CEILING(-2.5;2)`, `COM.MICROSOFT.FLOOR(-2.5;2)` | -2, -4 | not Part 4 | the name LibreOffice writes Excel's two-parameter functions under; not implemented, and `CEILING` is not them |
+| `COM.MICROSOFT.CEILING(-2.5;2)`, `COM.MICROSOFT.FLOOR(-2.5;2)` | -2, -4 | not Part 4 | the name LibreOffice writes Excel's two-parameter functions under; implemented as Excel's, and `CEILING` is not them |
 | `SUBTOTAL(9;[.B1:.B7];[.G1:.G4])` | the sum over both | one `Sequence` | several references, as Excel allows |
 | `SUBTOTAL(9;5;"7")`, `SUBTOTAL(2;[.B1:.B7]*1)` | `#VALUE!` | NumberSequence | `#VALUE!`: a sequence that is not a reference |
 | `SUBTOTAL(0;…)`, `(12;…)`, `(100;…)`, `(112;…)`, `(;…)` | `Err:502` | Table 28 | `#VALUE!`; `9.7` and `"9"` are 9, truncated and converted |

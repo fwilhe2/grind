@@ -160,7 +160,7 @@ Arguments are separated by a semicolon. When you press **Enter**, the cell shows
 
 ## 3.5 Functions
 
-grind implements the functions of the OpenFormula standard's core set, plus many common ones beyond it: 139 functions in all, among them `SUM`, `AVERAGE`, `COUNTIF`, `SUMIF`, `IF`, `VLOOKUP`, `ROUND`, `DATE`, `TODAY`, `PMT`, `TEXT` functions such as `LEFT` and `CONCATENATE`, and many more.
+grind implements the functions of the OpenFormula standard's core set, plus many common ones beyond it: 146 functions in all, among them `SUM`, `AVERAGE`, `COUNTIF`, `SUMIF`, `IF`, `VLOOKUP`, `ROUND`, `DATE`, `TODAY`, `PMT`, `TEXT` functions such as `LEFT` and `CONCATENATE`, and many more.
 
 To browse them, choose **Functions…** from the main menu or the command palette. The list gives each function a plain-English name, a category and a short description. In a terminal, `grind sheet functions` prints the same list.
 

@@ -735,6 +735,125 @@ fn the_ifs_functions_refuse_ranges_of_different_shapes() {
     assert_eq!(error("=COUNTIFS([.A1:.A7])"), FormulaError::Value);
 }
 
+/// The oracle's document for Excel's `MAXIFS` and `MINIFS`, and for what a matched error does,
+/// which [`table`] has no cell for:
+///
+/// | | A | B | C | D |
+/// |---|---|---|---|---|
+/// | 1 | x | 5 | 1 | -3 |
+/// | 2 | x | 9 | 2 | -7 |
+/// | 3 | y | 100 | 3 | -1 |
+/// | 4 | x | "12" | 4 | -9 |
+/// | 5 | x | TRUE | 5 | |
+/// | 6 | y | 3 | 6 | |
+/// | 7 | x | | 7 | |
+/// | 8 | x | =1/0 | 8 | |
+fn mixed(formula: &str) -> Value {
+    use CellValue::{Number as N, Text as T};
+    let mut sheet = Sheet::new("P");
+    let a = ["x", "x", "y", "x", "x", "y", "x", "x"];
+    let b = [
+        N(5.0),
+        N(9.0),
+        N(100.0),
+        T("12".into()),
+        CellValue::Bool(true),
+        N(3.0),
+    ];
+    for (r, a) in a.iter().enumerate() {
+        let row = r as u32;
+        sheet.set(Pos::new(row, 0), T((*a).into()));
+        if let Some(b) = b.get(r) {
+            sheet.set(Pos::new(row, 1), b.clone());
+        }
+        sheet.set(Pos::new(row, 2), N(f64::from(row + 1)));
+    }
+    sheet.set_formula(Pos::new(7, 1), "=1/0".into());
+    for (r, d) in [-3.0, -7.0, -1.0, -9.0].into_iter().enumerate() {
+        sheet.set(Pos::new(r as u32, 3), N(d));
+    }
+    let document = Document {
+        sheets: vec![sheet],
+        ..Default::default()
+    };
+    Engine::new(&document).eval(formula, Address::new(0, Pos::new(20, 5)))
+}
+
+#[track_caller]
+fn mixed_is(formula: &str, want: Value) {
+    assert_eq!(mixed(formula), want, "{formula}");
+}
+
+#[test]
+fn excels_maxifs_and_minifs_take_the_extreme_of_what_matched() {
+    let n = Value::Number;
+    // Text in the range is skipped, and so is a logical: the oracle answers 1 for MINIFS
+    // because it has no logical type and saves TRUE as 1, and §6.3.7 leaves a distinct
+    // logical out of a number sequence, as MIN does.
+    mixed_is("=COM.MICROSOFT.MAXIFS([.B1:.B6];[.A1:.A6];\"x\")", n(9.0));
+    mixed_is("=COM.MICROSOFT.MINIFS([.B1:.B6];[.A1:.A6];\"x\")", n(5.0));
+    mixed_is("=MIN([.B1:.B2];[.B4:.B5])", n(5.0));
+    mixed_is("=COM.MICROSOFT.MAXIFS([.B1:.B7];[.A1:.A7];\"x\")", n(9.0));
+    // Nothing matched is 0, for either; all-negative numbers are not floored at 0.
+    mixed_is("=COM.MICROSOFT.MAXIFS([.B1:.B6];[.A1:.A6];\"z\")", n(0.0));
+    mixed_is("=COM.MICROSOFT.MINIFS([.B1:.B6];[.A1:.A6];\"z\")", n(0.0));
+    mixed_is("=COM.MICROSOFT.MAXIFS([.D1:.D4];[.A1:.A4];\"x\")", n(-3.0));
+    mixed_is("=COM.MICROSOFT.MINIFS([.D1:.D8];[.A1:.A8];\"x\")", n(-9.0));
+    mixed_is("=COM.MICROSOFT.MAXIFS([.D1:.D8];[.A1:.A8];\"y\")", n(-1.0));
+    // Every criterion at one position, wildcards, blanks and case as SUMIFS has them.
+    mixed_is(
+        "=COM.MICROSOFT.MAXIFS([.C1:.C8];[.A1:.A8];\"x\";[.C1:.C8];\"<5\")",
+        n(4.0),
+    );
+    mixed_is("=COM.MICROSOFT.MINIFS([.C1:.C8];[.B1:.B8];\">4\")", n(1.0));
+    mixed_is("=COM.MICROSOFT.MAXIFS([.C1:.C8];[.A1:.A8];\"x*\")", n(8.0));
+    mixed_is("=COM.MICROSOFT.MAXIFS([.C1:.C8];[.A1:.A8];\"X\")", n(8.0));
+    mixed_is("=COM.MICROSOFT.MAXIFS([.C1:.C8];[.A1:.A8];[.E1])", n(0.0));
+    mixed_is("=COM.MICROSOFT.MAXIFS([.C1:.C8];[.B1:.B8];\"\")", n(7.0));
+    mixed_is("=COM.MICROSOFT.MINIFS([.C1:.C8];[.B1:.B8];\"<>\")", n(1.0));
+    mixed_is("=COM.MICROSOFT.MAXIFS([.C1:.D8];[.A1:.B8];\"x\")", n(8.0));
+    // A matched error is the answer, one that did not match is skipped.
+    let div = Value::Error(FormulaError::DivZero);
+    mixed_is(
+        "=COM.MICROSOFT.MAXIFS([.B1:.B8];[.A1:.A8];\"x\")",
+        div.clone(),
+    );
+    mixed_is("=COM.MICROSOFT.MAXIFS([.B1:.B8];[.A1:.A8];\"y\")", n(100.0));
+    mixed_is(
+        "=COM.MICROSOFT.MAXIFS([.B1:.B8];[.A1:.A8];\"x\";[.C1:.C8];\"<>8\")",
+        n(9.0),
+    );
+    // Err:502 and Err:511 to the oracle; #VALUE!, as SUMIFS answers both.
+    let value = Value::Error(FormulaError::Value);
+    for refused in [
+        "=COM.MICROSOFT.MAXIFS([.C1:.C8];[.A1:.A7];\"x\")",
+        "=COM.MICROSOFT.MAXIFS([.C1:.C8];[.A1:.A8])",
+        "=COM.MICROSOFT.MAXIFS(5;[.A1:.A8];\"x\")",
+        "=COM.MICROSOFT.MAXIFS([.C1:.C8])",
+        "=COM.MICROSOFT.MAXIFS([.C1:.C8];[.A1:.A8];\"x\";[.C1:.C8])",
+    ] {
+        mixed_is(refused, value.clone());
+    }
+    // The oracle reads only the prefixed spelling.
+    mixed_is(
+        "=MAXIFS([.C1:.C8];[.A1:.A8];\"x\")",
+        Value::Error(FormulaError::Name),
+    );
+}
+
+#[test]
+fn a_matched_error_is_what_sumif_and_its_kin_answer() {
+    // §6.3.7 keeps an error in a number sequence, and the oracle answers it (§4.1).
+    let div = Value::Error(FormulaError::DivZero);
+    mixed_is("=SUMIFS([.B1:.B8];[.A1:.A8];\"x\")", div.clone());
+    mixed_is("=AVERAGEIFS([.B1:.B8];[.A1:.A8];\"x\")", div.clone());
+    mixed_is("=SUMIF([.A1:.A8];\"x\";[.B1:.B8])", div.clone());
+    mixed_is("=AVERAGEIF([.A1:.A8];\"x\";[.B1:.B8])", div);
+    // 5 + 9: TRUE is a logical, which a sum leaves out (§6.3.7), as above.
+    mixed_is("=SUMIFS([.B1:.B6];[.A1:.A6];\"x\")", Value::Number(14.0));
+    mixed_is("=SUMIF([.A1:.A8];\"y\";[.B1:.B8])", Value::Number(103.0));
+}
+
 // Serial numbers below are the document's default epoch, 1899-12-30: 46053 is 2026-01-31,
 // 46380 is 2026-12-24 (a Thursday).
 

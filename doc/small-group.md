@@ -295,6 +295,18 @@ same name.
   and without them an imported workbook's `CEILING` would recalculate to `#NAME?`. Three of
   LibreOffice's test documents carry each. Decided 2026-10-18.
 
+- `COM.MICROSOFT.MAXIFS` — §6.18
+- `COM.MICROSOFT.MINIFS` — §6.18
+
+  **Evidence:** `grind-xlsx` already imports Excel's `MAXIFS` and `MINIFS` under these names,
+  as the oracle does, so an imported workbook that used either recalculated to `#NAME?`; and a
+  script asking for the largest value under a condition had no way to say it. Neither is in
+  ODF 1.4, and the oracle reads only these spellings: a bare `MAXIFS(…)` in an ODF file is
+  `#NAME?` there too. No new machinery — `SUMIFS`'s matching with a largest or smallest in
+  place of the sum. Measured against LibreOffice 26.8 (`doc/ods-format.md` §4.1): 0 when nothing
+  matches, text in the range is skipped, and a matched error is the answer — which `SUMIFS` and
+  its kin now give too. Decided 2026-11-09.
+
 ---
 
 ## Attribution

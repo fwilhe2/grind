@@ -88,6 +88,10 @@ End-of-term marks for two classes. One English mark is missing and one was recor
 | `AVERAGEIFS` | `=AVERAGEIFS(Marks.E2:E11;Marks.B2:B11;"7B";Marks.C2:C11;">=60")` | 81 | Science in 7B, among those with at least 60 in maths |
 | `MAX` | `=MAX(Marks.C2:E11)` | 97 | The best mark in any subject |
 | `MIN` | `=MIN(Marks.C2:C11)` | 47 | The lowest maths mark |
+| `COM.MICROSOFT.MAXIFS` | `=COM.MICROSOFT.MAXIFS(Marks.C2:C11;Marks.B2:B11;"7B")` | 91 | Excel's MAXIFS: the best maths mark in 7B |
+| `COM.MICROSOFT.MAXIFS` | `=COM.MICROSOFT.MAXIFS(Marks.D2:D11;Marks.B2:B11;"7B";Marks.E2:E11;"<80")` | 68 | Best English mark in 7B among science marks under 80: the note is skipped |
+| `COM.MICROSOFT.MINIFS` | `=COM.MICROSOFT.MINIFS(Marks.E2:E11;Marks.B2:B11;"7A")` | 70 | Excel's MINIFS: the lowest science mark in 7A |
+| `COM.MICROSOFT.MINIFS` | `=COM.MICROSOFT.MINIFS(Marks.C2:C11;Marks.B2:B11;"8A")` | 0 | There is no class 8A: nothing matches, and the answer is 0 |
 | `LARGE` | `=LARGE(Marks.C2:C11;3)` | 88 | Third-best maths mark |
 | `SMALL` | `=SMALL(Marks.E2:E11;2)` | 59 | Second-lowest science mark |
 | `MEDIAN` | `=MEDIAN(Marks.C2:C11)` | 75 | The middle maths mark |

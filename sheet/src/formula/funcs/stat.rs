@@ -18,6 +18,8 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "AVERAGEIFS" => super::criterion::several(args, super::criterion::Mode::Average),
         "MAX" => extreme(args, true),
         "MIN" => extreme(args, false),
+        "COM.MICROSOFT.MAXIFS" => super::criterion::several(args, super::criterion::Mode::Max),
+        "COM.MICROSOFT.MINIFS" => super::criterion::several(args, super::criterion::Mode::Min),
         // §6.18.82/§6.18.84: the sample forms divide by n-1, the population forms by n.
         "VAR" => moment(args, true, false),
         "VARP" => moment(args, false, false),

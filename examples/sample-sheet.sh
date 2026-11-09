@@ -158,7 +158,11 @@ run set "$book" L11 'Rent, to the next 250'
 run set "$book" M11 '=CEILING([.C2];250)'
 run set "$book" L13 'Food and fares, the old way'
 run set "$book" M13 '=SUMPRODUCT(([.A2:.A7]="Groceries")+([.A2:.A7]="Transport");[.C2:.C7])'   # SUMIFS before there was one
-sheet view "$book" L1:M13
+run set "$book" L14 'Biggest spend after housing'
+run set "$book" M14 '=COM.MICROSOFT.MAXIFS([.C2:.C7];[.A2:.A7];"<>Housing")'   # Excel's MAXIFS, as ODF spells it
+run set "$book" L15 'Smallest spend'
+run set "$book" M15 '=COM.MICROSOFT.MINIFS([.C2:.C7];[.C2:.C7];">0")'          # the refund is not spending
+sheet view "$book" L1:M15
 
 say "number formats: display only, the value never moves"
 run format "$book" B2:C8 currency --symbol '€' --grouping --decimals 2

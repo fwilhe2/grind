@@ -28,7 +28,7 @@ use super::super::value::{FormulaError, Value};
 use super::super::wildcard;
 use super::Args;
 
-/// What the three conditional functions do with the cells that matched.
+/// What a conditional function does with the cells that matched.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Mode {
     /// `COUNTIF` (§6.13.9) — how many matched, whatever they hold.
@@ -37,6 +37,46 @@ pub enum Mode {
     Sum,
     /// `AVERAGEIF` (§6.18.5).
     Average,
+    /// Excel's `MAXIFS`, as `COM.MICROSOFT.MAXIFS`.
+    Max,
+    /// Excel's `MINIFS`, as `COM.MICROSOFT.MINIFS`.
+    Min,
+}
+
+/// What the matched cells came to so far. A matched error is the answer (§6.3.7: a number
+/// sequence includes the errors in its cells), as LibreOffice's are (`doc/ods-format.md` §4.1).
+#[derive(Default)]
+struct Tally {
+    matched: usize,
+    numbers: Vec<f64>,
+}
+
+impl Tally {
+    fn take(&mut self, value: Value) -> Result<(), FormulaError> {
+        self.matched += 1;
+        match value {
+            Value::Number(n) => self.numbers.push(n),
+            Value::Error(e) => return Err(e),
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// What a [`Mode`] makes of the cells that matched: how many, the sum, mean, largest or
+    /// smallest of their numbers — of which there may be none.
+    fn finish(self, mode: Mode) -> Result<Value, FormulaError> {
+        let total = || self.numbers.iter().sum::<f64>();
+        let extreme = |pick: fn(f64, f64) -> f64| self.numbers.iter().copied().reduce(pick);
+        Ok(match mode {
+            Mode::Count => Value::number(self.matched as f64),
+            Mode::Sum => Value::number(total()),
+            Mode::Average if self.numbers.is_empty() => return Err(FormulaError::DivZero),
+            Mode::Average => Value::number(total() / self.numbers.len() as f64),
+            // Nothing matched, or nothing that matched is a number: 0, as the oracle answers.
+            Mode::Max => Value::number(extreme(f64::max).unwrap_or(0.0)),
+            Mode::Min => Value::number(extreme(f64::min).unwrap_or(0.0)),
+        })
+    }
 }
 
 /// `COUNTIF`, `SUMIF` and `AVERAGEIF`, which differ only in [`Mode`]. The optional summed range is
@@ -53,16 +93,13 @@ pub fn conditional(args: &mut Args, mode: Mode) -> Result<Value, FormulaError> {
         None
     };
 
-    let mut matched = 0usize;
-    let mut counted = 0usize;
-    let mut total = 0.0;
+    let mut tally = Tally::default();
     for (r, row) in range.rows.clone().enumerate() {
         for (c, col) in range.cols.clone().enumerate() {
             let cell = args.value_at(Address::new(range.sheet, Pos::new(row, col)));
             if !criterion.matches(&cell) {
                 continue;
             }
-            matched += 1;
             let value = match &values {
                 None => cell,
                 Some(area) => args.value_at(Address::new(
@@ -70,24 +107,10 @@ pub fn conditional(args: &mut Args, mode: Mode) -> Result<Value, FormulaError> {
                     Pos::new(area.rows.start + r as u32, area.cols.start + c as u32),
                 )),
             };
-            if let Value::Number(n) = value {
-                counted += 1;
-                total += n;
-            }
+            tally.take(value)?;
         }
     }
-    finish(mode, matched, counted, total)
-}
-
-/// What a [`Mode`] makes of the cells that matched: how many, the sum of their numbers, or
-/// the mean of those numbers — of which there may be none.
-fn finish(mode: Mode, matched: usize, counted: usize, total: f64) -> Result<Value, FormulaError> {
-    Ok(match mode {
-        Mode::Count => Value::number(matched as f64),
-        Mode::Sum => Value::number(total),
-        Mode::Average if counted == 0 => return Err(FormulaError::DivZero),
-        Mode::Average => Value::number(total / counted as f64),
-    })
+    tally.finish(mode)
 }
 
 /// The `i`th argument read as a criterion. A blank criterion cell means 0 (§4.11.8), while the
@@ -126,7 +149,7 @@ pub fn several(args: &mut Args, mode: Mode) -> Result<Value, FormulaError> {
         return Err(FormulaError::Value);
     }
 
-    let (mut matched, mut counted, mut total) = (0usize, 0usize, 0.0);
+    let mut tally = Tally::default();
     for r in 0..rows as u32 {
         for c in 0..cols as u32 {
             let at = |area: &super::super::eval::Area| {
@@ -141,16 +164,13 @@ pub fn several(args: &mut Args, mode: Mode) -> Result<Value, FormulaError> {
             {
                 continue;
             }
-            matched += 1;
-            if let Some(area) = &values
-                && let Value::Number(n) = args.value_at(at(area))
-            {
-                counted += 1;
-                total += n;
-            }
+            tally.take(match &values {
+                Some(area) => args.value_at(at(area)),
+                None => Value::Empty,
+            })?;
         }
     }
-    finish(mode, matched, counted, total)
+    tally.finish(mode)
 }
 
 pub struct Criterion {

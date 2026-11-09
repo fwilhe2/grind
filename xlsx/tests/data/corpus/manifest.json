@@ -1,7 +1,7 @@
 {
   "generator": "ooxmlgen 0.2.0",
   "schema": "https://github.com/fwilhe2/ooxmlgen \u2014 corpus manifest v1",
-  "generated": "2026-10-18T12:39:02Z",
+  "generated": "2026-11-09T17:43:44Z",
   "fixtures": [
     {
       "file": "document/autofilter.xlsx",
@@ -12956,17 +12956,133 @@
               "t": "s",
               "raw": "41",
               "kind": "Text",
-              "value": "LARGE"
+              "value": "COM.MICROSOFT.MAXIFS"
             },
             {
               "ref": "B9",
               "t": "s",
               "raw": "42",
               "kind": "Text",
-              "value": "=LARGE(Marks!C2:C11,3)"
+              "value": "=_xlfn.MAXIFS(Marks!C2:C11,Marks!B2:B11,\u00227B\u0022)"
             },
             {
               "ref": "C9",
+              "raw": "91",
+              "kind": "Number",
+              "value": "91",
+              "excel": "_xlfn.MAXIFS(Marks!C2:C11,Marks!B2:B11,\u00227B\u0022)",
+              "formula": "COM.MICROSOFT.MAXIFS([Marks.C2:.C11];[Marks.B2:.B11];\u00227B\u0022)"
+            },
+            {
+              "ref": "D9",
+              "t": "s",
+              "raw": "43",
+              "kind": "Text",
+              "value": "Excel\u0027s MAXIFS: the best maths mark in 7B"
+            },
+            {
+              "ref": "A10",
+              "t": "s",
+              "raw": "41",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.MAXIFS"
+            },
+            {
+              "ref": "B10",
+              "t": "s",
+              "raw": "44",
+              "kind": "Text",
+              "value": "=_xlfn.MAXIFS(Marks!D2:D11,Marks!B2:B11,\u00227B\u0022,Marks!E2:E11,\u0022\u003C80\u0022)"
+            },
+            {
+              "ref": "C10",
+              "raw": "68",
+              "kind": "Number",
+              "value": "68",
+              "excel": "_xlfn.MAXIFS(Marks!D2:D11,Marks!B2:B11,\u00227B\u0022,Marks!E2:E11,\u0022\u003C80\u0022)",
+              "formula": "COM.MICROSOFT.MAXIFS([Marks.D2:.D11];[Marks.B2:.B11];\u00227B\u0022;[Marks.E2:.E11];\u0022\u003C80\u0022)"
+            },
+            {
+              "ref": "D10",
+              "t": "s",
+              "raw": "45",
+              "kind": "Text",
+              "value": "Best English mark in 7B among science marks under 80: the note is skipped"
+            },
+            {
+              "ref": "A11",
+              "t": "s",
+              "raw": "46",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.MINIFS"
+            },
+            {
+              "ref": "B11",
+              "t": "s",
+              "raw": "47",
+              "kind": "Text",
+              "value": "=_xlfn.MINIFS(Marks!E2:E11,Marks!B2:B11,\u00227A\u0022)"
+            },
+            {
+              "ref": "C11",
+              "raw": "70",
+              "kind": "Number",
+              "value": "70",
+              "excel": "_xlfn.MINIFS(Marks!E2:E11,Marks!B2:B11,\u00227A\u0022)",
+              "formula": "COM.MICROSOFT.MINIFS([Marks.E2:.E11];[Marks.B2:.B11];\u00227A\u0022)"
+            },
+            {
+              "ref": "D11",
+              "t": "s",
+              "raw": "48",
+              "kind": "Text",
+              "value": "Excel\u0027s MINIFS: the lowest science mark in 7A"
+            },
+            {
+              "ref": "A12",
+              "t": "s",
+              "raw": "46",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.MINIFS"
+            },
+            {
+              "ref": "B12",
+              "t": "s",
+              "raw": "49",
+              "kind": "Text",
+              "value": "=_xlfn.MINIFS(Marks!C2:C11,Marks!B2:B11,\u00228A\u0022)"
+            },
+            {
+              "ref": "C12",
+              "raw": "0",
+              "kind": "Number",
+              "value": "0",
+              "excel": "_xlfn.MINIFS(Marks!C2:C11,Marks!B2:B11,\u00228A\u0022)",
+              "formula": "COM.MICROSOFT.MINIFS([Marks.C2:.C11];[Marks.B2:.B11];\u00228A\u0022)"
+            },
+            {
+              "ref": "D12",
+              "t": "s",
+              "raw": "50",
+              "kind": "Text",
+              "value": "There is no class 8A: nothing matches, and the answer is 0"
+            },
+            {
+              "ref": "A13",
+              "t": "s",
+              "raw": "51",
+              "kind": "Text",
+              "value": "LARGE"
+            },
+            {
+              "ref": "B13",
+              "t": "s",
+              "raw": "52",
+              "kind": "Text",
+              "value": "=LARGE(Marks!C2:C11,3)"
+            },
+            {
+              "ref": "C13",
               "raw": "88",
               "kind": "Number",
               "value": "88",
@@ -12974,28 +13090,28 @@
               "formula": "LARGE([Marks.C2:.C11];3)"
             },
             {
-              "ref": "D9",
+              "ref": "D13",
               "t": "s",
-              "raw": "43",
+              "raw": "53",
               "kind": "Text",
               "value": "Third-best maths mark"
             },
             {
-              "ref": "A10",
+              "ref": "A14",
               "t": "s",
-              "raw": "44",
+              "raw": "54",
               "kind": "Text",
               "value": "SMALL"
             },
             {
-              "ref": "B10",
+              "ref": "B14",
               "t": "s",
-              "raw": "45",
+              "raw": "55",
               "kind": "Text",
               "value": "=SMALL(Marks!E2:E11,2)"
             },
             {
-              "ref": "C10",
+              "ref": "C14",
               "raw": "59",
               "kind": "Number",
               "value": "59",
@@ -13003,28 +13119,28 @@
               "formula": "SMALL([Marks.E2:.E11];2)"
             },
             {
-              "ref": "D10",
+              "ref": "D14",
               "t": "s",
-              "raw": "46",
+              "raw": "56",
               "kind": "Text",
               "value": "Second-lowest science mark"
             },
             {
-              "ref": "A11",
+              "ref": "A15",
               "t": "s",
-              "raw": "47",
+              "raw": "57",
               "kind": "Text",
               "value": "MEDIAN"
             },
             {
-              "ref": "B11",
+              "ref": "B15",
               "t": "s",
-              "raw": "48",
+              "raw": "58",
               "kind": "Text",
               "value": "=MEDIAN(Marks!C2:C11)"
             },
             {
-              "ref": "C11",
+              "ref": "C15",
               "raw": "75",
               "kind": "Number",
               "value": "75",
@@ -13032,28 +13148,28 @@
               "formula": "MEDIAN([Marks.C2:.C11])"
             },
             {
-              "ref": "D11",
+              "ref": "D15",
               "t": "s",
-              "raw": "49",
+              "raw": "59",
               "kind": "Text",
               "value": "The middle maths mark"
             },
             {
-              "ref": "A12",
+              "ref": "A16",
               "t": "s",
-              "raw": "50",
+              "raw": "60",
               "kind": "Text",
               "value": "RANK"
             },
             {
-              "ref": "B12",
+              "ref": "B16",
               "t": "s",
-              "raw": "51",
+              "raw": "61",
               "kind": "Text",
               "value": "=RANK(Marks!C4,Marks!C2:C11)"
             },
             {
-              "ref": "C12",
+              "ref": "C16",
               "raw": "2",
               "kind": "Number",
               "value": "2",
@@ -13061,28 +13177,28 @@
               "formula": "RANK([Marks.C4];[Marks.C2:.C11])"
             },
             {
-              "ref": "D12",
+              "ref": "D16",
               "t": "s",
-              "raw": "52",
+              "raw": "62",
               "kind": "Text",
               "value": "Chloe\u0027s place in maths, best first"
             },
             {
-              "ref": "A13",
+              "ref": "A17",
               "t": "s",
-              "raw": "50",
+              "raw": "60",
               "kind": "Text",
               "value": "RANK"
             },
             {
-              "ref": "B13",
+              "ref": "B17",
               "t": "s",
-              "raw": "53",
+              "raw": "63",
               "kind": "Text",
               "value": "=RANK(Marks!C9,Marks!C2:C11,1)"
             },
             {
-              "ref": "C13",
+              "ref": "C17",
               "raw": "1",
               "kind": "Number",
               "value": "1",
@@ -13090,28 +13206,28 @@
               "formula": "RANK([Marks.C9];[Marks.C2:.C11];1)"
             },
             {
-              "ref": "D13",
+              "ref": "D17",
               "t": "s",
-              "raw": "54",
+              "raw": "64",
               "kind": "Text",
               "value": "Hugo\u0027s place in maths, counted from the bottom"
             },
             {
-              "ref": "A14",
+              "ref": "A18",
               "t": "s",
-              "raw": "55",
+              "raw": "65",
               "kind": "Text",
               "value": "STDEV"
             },
             {
-              "ref": "B14",
+              "ref": "B18",
               "t": "s",
-              "raw": "56",
+              "raw": "66",
               "kind": "Text",
               "value": "=STDEV(Marks!C2:C11)"
             },
             {
-              "ref": "C14",
+              "ref": "C18",
               "raw": "15.7483685222029",
               "kind": "Number",
               "value": "15.7483685222029",
@@ -13119,28 +13235,28 @@
               "formula": "STDEV([Marks.C2:.C11])"
             },
             {
-              "ref": "D14",
+              "ref": "D18",
               "t": "s",
-              "raw": "57",
+              "raw": "67",
               "kind": "Text",
               "value": "Spread of the maths marks, as a sample"
             },
             {
-              "ref": "A15",
+              "ref": "A19",
               "t": "s",
-              "raw": "58",
+              "raw": "68",
               "kind": "Text",
               "value": "STDEVP"
             },
             {
-              "ref": "B15",
+              "ref": "B19",
               "t": "s",
-              "raw": "59",
+              "raw": "69",
               "kind": "Text",
               "value": "=STDEVP(Marks!C2:C11)"
             },
             {
-              "ref": "C15",
+              "ref": "C19",
               "raw": "14.9402141885583",
               "kind": "Number",
               "value": "14.9402141885583",
@@ -13148,28 +13264,28 @@
               "formula": "STDEVP([Marks.C2:.C11])"
             },
             {
-              "ref": "D15",
+              "ref": "D19",
               "t": "s",
-              "raw": "60",
+              "raw": "70",
               "kind": "Text",
               "value": "The same, treating the classes as the whole population"
             },
             {
-              "ref": "A16",
+              "ref": "A20",
               "t": "s",
-              "raw": "61",
+              "raw": "71",
               "kind": "Text",
               "value": "VAR"
             },
             {
-              "ref": "B16",
+              "ref": "B20",
               "t": "s",
-              "raw": "62",
+              "raw": "72",
               "kind": "Text",
               "value": "=VAR(Marks!E2:E11)"
             },
             {
-              "ref": "C16",
+              "ref": "C20",
               "raw": "217.733333333333",
               "kind": "Number",
               "value": "217.733333333333",
@@ -13177,28 +13293,28 @@
               "formula": "VAR([Marks.E2:.E11])"
             },
             {
-              "ref": "D16",
+              "ref": "D20",
               "t": "s",
-              "raw": "63",
+              "raw": "73",
               "kind": "Text",
               "value": "Variance of the science marks, as a sample"
             },
             {
-              "ref": "A17",
+              "ref": "A21",
               "t": "s",
-              "raw": "64",
+              "raw": "74",
               "kind": "Text",
               "value": "VARP"
             },
             {
-              "ref": "B17",
+              "ref": "B21",
               "t": "s",
-              "raw": "65",
+              "raw": "75",
               "kind": "Text",
               "value": "=VARP(Marks!E2:E11)"
             },
             {
-              "ref": "C17",
+              "ref": "C21",
               "raw": "195.96",
               "kind": "Number",
               "value": "195.96",
@@ -13206,9 +13322,9 @@
               "formula": "VARP([Marks.E2:.E11])"
             },
             {
-              "ref": "D17",
+              "ref": "D21",
               "t": "s",
-              "raw": "66",
+              "raw": "76",
               "kind": "Text",
               "value": "The same, as a population"
             }
@@ -13222,8 +13338,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 4122,
-      "sha256": "d30e3b54f14173a4c0520868e3b2fb9049d1ed7b4dbeea43f1bc3577ec753e66"
+      "bytes": 4409,
+      "sha256": "86c1f6ebd1ba581a6dbb76364e23bef5d6b45ec5d81dec585695ccad9b139fe6"
     },
     {
       "file": "functions/text.xlsx",
