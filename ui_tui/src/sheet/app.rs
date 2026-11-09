@@ -4613,7 +4613,7 @@ mod tests {
             .enter(
                 0,
                 Pos::new(2, 1),
-                "=ROUND(SUM(B2:B2);2)",
+                "=ROUND(SUM([.B2:.B2]);2)",
                 RecalcMode::Document,
             )
             .unwrap();

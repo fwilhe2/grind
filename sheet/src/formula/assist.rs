@@ -391,14 +391,16 @@ fn signature_band(name: &str, argument: usize, friendly: bool) -> Vec<Piece> {
 }
 
 /// What the formula bar shows for a cell when the friendly view is on:
-/// [`friendly::explain_inline`], as `grind sheet fmt --friendly --inline` prints. `None` for
-/// anything that is not a formula or will not parse, and the bar shows its own text. A reading
-/// only; nothing writes it back.
+/// [`friendly::explain_inline`], as `grind sheet fmt --friendly --inline` prints. `text` is what
+/// the bar holds, in display form, converted before it is read: in stored form a bare `A1` is a
+/// name. `None` for anything that is not a formula or will not parse, and the bar shows its own
+/// text. A reading only; nothing writes it back.
 pub fn friendly_line(text: &str) -> Option<String> {
     if !text.starts_with('=') {
         return None;
     }
-    friendly::explain_inline(text).ok()
+    let canonical = super::display::from_display(text).ok()?;
+    friendly::explain_inline(&canonical).ok()
 }
 
 /// Every function this build implements, one line each: name, plain-English alias, category and
@@ -694,6 +696,11 @@ mod tests {
         // Not a formula, and a formula that will not parse: the bar's own text is the answer.
         assert_eq!(friendly_line("12"), None);
         assert_eq!(friendly_line("=SUM("), None);
+        // The bar's own spelling: a reference, not a name.
+        assert_eq!(
+            friendly_line("=SUM(A1:A2)").as_deref(),
+            Some("Sum(Number: A1:A2)")
+        );
     }
 
     #[test]
