@@ -224,6 +224,9 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> 
             if let Some(note) = outcome.note(app.locale().as_ref()) {
                 eprintln!("grind: {note}");
             }
+            if !*text {
+                unknown_functions(&value);
+            }
             finish(&app, cli, file, true)
         }
 
@@ -373,6 +376,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> 
             let (sheet, pos, _) = single(&app, address)?;
             // What `set` would refuse is an error here too, not a `#NAME?` that hides why.
             app.check_formula(formula).say()?;
+            unknown_functions(formula);
             // A read, not an edit: nothing is stored and nothing is written.
             let mut entries = Vec::new();
             for entry in with {
@@ -1186,55 +1190,52 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> 
         }
 
         Command::Functions { long, filter } => {
-            let names = grind_sheet::formula::funcs::implemented();
+            use grind_sheet::formula::{friendly, funcs};
             let matches = |name: &str| {
                 filter
                     .as_ref()
                     .is_none_or(|f| name.to_uppercase().contains(&f.to_uppercase()))
             };
-            // The catalog is the same list with the spec's own summary and syntax beside
-            // each name — what a GUI's autocomplete offers, so the two cannot disagree.
-            let mut lines: Vec<String> = match long {
-                true => grind_sheet::formula::funcs::catalog()
-                    .iter()
-                    .filter(|info| matches(info.name))
-                    .map(|info| {
-                        // The friendly signature carries the alias in its head, so it is one
-                        // column rather than two: `Present Value(Rate; Number Of Periods; …)`.
-                        let friendly = grind_sheet::formula::friendly::signature(info.name)
-                            .map(|(head, params)| format!("{head}({})", params.join("; ")))
-                            .unwrap_or_else(|| info.name.to_owned());
-                        let category = grind_sheet::formula::funcs::category(info);
-                        format!(
-                            "{}\t{friendly}\t{category}\t{}\t§{}",
-                            info.signature, info.brief, info.section
-                        )
-                    })
-                    .collect(),
-                false => names
-                    .iter()
-                    .filter(|n| matches(n))
-                    .map(|n| (*n).to_owned())
-                    .collect(),
-            };
-            lines.sort();
-            let beyond = grind_sheet::formula::funcs::beyond_small_group();
-            // Not "138 of 110": the Small Group is the conformance claim and the functions
+            // The catalog is what a GUI's autocomplete offers, so the two cannot disagree.
+            let mut functions: Vec<report::FunctionReport> = funcs::catalog()
+                .iter()
+                .filter(|info| matches(info.name))
+                .map(|info| report::FunctionReport {
+                    name: info.name,
+                    syntax: info.signature,
+                    // The alias is the head: `Present Value(Rate; Number Of Periods; …)`.
+                    call: friendly::signature(info.name)
+                        .map(|(head, params)| format!("{head}({})", params.join("; ")))
+                        .unwrap_or_else(|| info.name.to_owned()),
+                    category: funcs::category(info),
+                    summary: info.brief,
+                    section: info.section,
+                })
+                .collect();
+            functions.sort_by_key(|f| f.name);
+            // Not "146 of 110": the Small Group is the conformance claim and the functions
             // moved in beside it are counted apart, or the line reads as broken arithmetic.
-            let mut summary = format!(
-                "{} of the Small Group's {}",
-                names.len() - beyond.len(),
-                grind_sheet::formula::funcs::SMALL_GROUP
-            );
-            if !beyond.is_empty() {
-                summary.push_str(&format!(
-                    " — plus {} beyond it: {}",
-                    beyond.len(),
-                    beyond.join(", ")
-                ));
-            }
-            lines.push(summary);
-            Ok(Report::Text(TextReport { lines }))
+            let coverage = filter.is_none().then(|| {
+                let beyond = funcs::beyond_small_group();
+                let mut line = format!(
+                    "{} of the Small Group's {}",
+                    funcs::implemented().len() - beyond.len(),
+                    funcs::SMALL_GROUP
+                );
+                if !beyond.is_empty() {
+                    line.push_str(&format!(
+                        " — plus {} beyond it: {}",
+                        beyond.len(),
+                        beyond.join(", ")
+                    ));
+                }
+                line
+            });
+            Ok(Report::Functions(report::FunctionsReport {
+                functions,
+                coverage,
+                long: *long,
+            }))
         }
 
         Command::ChartAdd {
@@ -1652,6 +1653,23 @@ fn laid_out(
 
 /// `eval --trace`: the formula in display syntax, one sub-expression a line indented by its
 /// depth, and each one's answer in a column — `App::trace`, read top to bottom.
+/// Name, on standard error, each function a formula calls that this build does not have: the
+/// formula is stored or evaluated all the same, and reads #NAME?.
+fn unknown_functions(input: &str) {
+    if !input.starts_with('=') {
+        return;
+    }
+    let implemented = grind_sheet::formula::funcs::implemented();
+    for name in grind_sheet::formula::funcs::used(input).unwrap_or_default() {
+        if !implemented.contains(&name.as_str()) {
+            eprintln!(
+                "grind: {name} is not a function grind has, so this reads #NAME?; \
+                 `grind sheet functions` lists the ones it has"
+            );
+        }
+    }
+}
+
 fn traced(
     app: &App,
     sheet: usize,

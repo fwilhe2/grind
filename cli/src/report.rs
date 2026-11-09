@@ -58,6 +58,32 @@ pub enum Report {
     Init(crate::init::InitReport),
     /// What changed between two versions of a document.
     Diff(crate::diff::DiffReport),
+    /// `grind sheet functions`.
+    Functions(FunctionsReport),
+}
+
+/// The functions `grind sheet functions` lists, and what they amount to.
+#[derive(Debug, Serialize)]
+pub struct FunctionsReport {
+    pub functions: Vec<FunctionReport>,
+    /// The conformance claim; standard error in text, so standard output is only the list.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coverage: Option<String>,
+    /// Text prints every field of a row rather than its name.
+    #[serde(skip)]
+    pub long: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FunctionReport {
+    pub name: &'static str,
+    /// The specification's own syntax line.
+    pub syntax: &'static str,
+    /// The same call with readable parameter names.
+    pub call: String,
+    pub category: &'static str,
+    pub summary: &'static str,
+    pub section: &'static str,
 }
 
 /// One third-party component, as `grind licences --list` prints it.
@@ -735,6 +761,20 @@ impl Report {
             }
             Report::Init(init) => init.print_text(),
             Report::Diff(diff) => diff.print_text(),
+            Report::Functions(report) => {
+                for f in &report.functions {
+                    match report.long {
+                        true => println!(
+                            "{}\t{}\t{}\t{}\t§{}",
+                            f.syntax, f.call, f.category, f.summary, f.section
+                        ),
+                        false => println!("{}", f.name),
+                    }
+                }
+                if let Some(coverage) = &report.coverage {
+                    eprintln!("{coverage}");
+                }
+            }
             Report::Components(components) => {
                 for c in components {
                     println!("{}\t{}\t{}\t{}", c.name, c.version, c.licence, c.source);

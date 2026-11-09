@@ -12,6 +12,46 @@ fn long_version() -> &'static str {
     VERSION.get_or_init(|| grind_sheet::build_info::describe_version(env!("CARGO_PKG_VERSION")))
 }
 
+/// The formula language, for every command that takes a formula: the one thing a script cannot
+/// guess, since it is not the syntax a spreadsheet's formula bar shows.
+const FORMULA_SYNTAX: &str = "\
+Formula syntax:
+  A formula is OpenFormula, the formula language of the ODF standard: what an .ods file
+  stores and LibreOffice writes. It is not Excel's syntax, nor what a formula bar shows.
+  grind takes it and prints it verbatim, so four rules matter:
+
+  1. Every reference is in brackets, and every cell address in it starts with a dot.
+       [.A1]              A1 on the formula's own sheet
+       [Data.A1]          A1 on the sheet Data
+       ['Q1 Sales'.A1]    a sheet name with spaces or punctuation, in single quotes
+       [.A1:.B9]          a range: the second end has its own dot
+       [Data.A1:.B9]      a range on another sheet; the second end inherits the sheet
+       [.$A$1]            absolute column and row, which fill leaves alone
+       [.A:.A]  [.2:.5]   whole columns, whole rows
+     Column letters are capitals. A bare A1 is not a reference, and is refused.
+  2. Arguments are separated by ; never by ,     =ROUND([.A1];2)
+  3. A decimal point is a dot, in every locale:  =[.A1]*1.5
+  4. A function Excel has and ODF does not is written with COM.MICROSOFT. in front:
+       =COM.MICROSOFT.MAXIFS([.C2:.C9];[.A2:.A9];\"east\")
+
+  Text is in double quotes, a quote inside it doubled: =\"say \"\"hi\"\"\". TRUE() and FALSE()
+  are written as calls. A criterion (COUNTIF, SUMIFS, ...) is text such as \">=10\", \"<>\" or
+  \"east*\", where * and ? are wildcards. Operators: + - * / ^ & % = <> < <= > >=.
+
+  A formula that does not parse, or one with a bare cell address, is refused with what to
+  write instead, and nothing is stored. A function grind does not have is stored and reads
+  #NAME?; `grind sheet functions` lists the ones it has.
+
+Examples:
+  grind sheet set book.ods C2 '=[.A2]*[.B2]'
+  grind sheet set book.ods Summary.B1 '=SUM([Data.B2:.B100])'
+  grind sheet set book.ods D1 '=SUMIFS([.C2:.C9];[.A2:.A9];\"east\";[.B2:.B9];\">100\")'
+  grind sheet eval book.ods A1 '=AVERAGE([Data.B2:.B100])'   evaluate without storing
+  grind sheet fmt --from-display '=SUM(B2:B4)'                prints =SUM([.B2:.B4])
+  grind sheet functions --long --filter IFS                   how to call each function
+
+  In a shell, put a formula in single quotes: $ [ ] ; and \" mean something there.";
+
 #[derive(Parser)]
 #[command(
     name = "grind",
@@ -48,6 +88,11 @@ pub(crate) struct Cli {
 #[derive(Subcommand)]
 pub(crate) enum Top {
     /// Spreadsheets — cells, formulas, sheets, number formats
+    ///
+    /// A cell is addressed as A1, a cell on another sheet as Data.A1, a range as B2:D40 or
+    /// Data.B2:D40, whole columns as C:C. Those addresses are arguments; inside a formula,
+    /// references are written in OpenFormula's brackets instead, as below.
+    #[command(after_long_help = FORMULA_SYNTAX)]
     Sheet {
         #[command(subcommand)]
         command: Command,
@@ -1117,13 +1162,16 @@ pub(crate) enum Command {
 
     /// Set a cell's value or formula
     ///
-    /// A leading '=' makes it a formula and a leading apostrophe forces text; otherwise the
-    /// value is taken as a number, TRUE or FALSE, or text. "-" reads the value from stdin.
+    /// A leading '=' makes it a formula, in OpenFormula syntax (below), and a leading apostrophe
+    /// forces text; otherwise the value is taken as a number, TRUE or FALSE, or text. "-" reads
+    /// the value from stdin. `get --formula` prints a formula back as stored.
+    #[command(after_long_help = FORMULA_SYNTAX)]
     Set {
         file: PathBuf,
         /// Cell address, e.g. A1 or Data.B2
         address: String,
-        /// The value; hyphen-leading values are taken literally, so -1 is a number
+        /// The value, or a formula such as '=SUM([.B2:.B4])'; hyphen-leading values are taken
+        /// literally, so -1 is a number
         #[arg(allow_hyphen_values = true)]
         value: String,
         /// Store the value as text, whatever it looks like
@@ -1136,7 +1184,9 @@ pub(crate) enum Command {
 
     /// Fill a rectangle from tab-separated rows
     ///
-    /// Each cell is read the way `set` reads its value. "-" reads the rows from stdin.
+    /// Each cell is read the way `set` reads its value, a formula in OpenFormula syntax (below).
+    /// "-" reads the rows from stdin.
+    #[command(after_long_help = FORMULA_SYNTAX)]
     Paste {
         file: PathBuf,
         /// Where the first cell goes, e.g. B2
@@ -1251,12 +1301,14 @@ pub(crate) enum Command {
     /// Evaluate a formula against the document without storing anything
     ///
     /// The address is where the formula would sit, which is what its relative references
-    /// are relative to.
+    /// are relative to, and the sheet [.A1] means. Prints the value; a formula `set` would
+    /// refuse is the same error here.
+    #[command(after_long_help = FORMULA_SYNTAX)]
     Eval {
         file: PathBuf,
-        /// Cell address the formula would live at, e.g. B5
+        /// Cell address the formula would live at, e.g. B5 or Data.B5
         address: String,
-        /// The formula, e.g. '=SUM([.B2:.B4])'
+        /// The formula, in OpenFormula syntax, e.g. '=SUM([.B2:.B4])'
         #[arg(allow_hyphen_values = true)]
         formula: String,
         /// Take the formula apart: every sub-expression on its own line, indented by depth,
@@ -1619,7 +1671,9 @@ pub(crate) enum Command {
     /// Parse a formula and print it back in normalised form
     ///
     /// Stored form brackets its references — =SUM([.B2:.B4]) — and display form, what a
-    /// formula bar shows, does not: =SUM(B2:B4). The two convert losslessly.
+    /// formula bar shows, does not: =SUM(B2:B4). The two convert losslessly, so
+    /// --from-display turns a formula written the familiar way into one `set` takes.
+    #[command(after_long_help = FORMULA_SYNTAX)]
     Fmt {
         /// The formula, e.g. '=SUM([.A1:.A2])'
         #[arg(allow_hyphen_values = true)]
@@ -1743,8 +1797,28 @@ pub(crate) enum Command {
     },
 
     /// List the OpenFormula functions grind implements
+    ///
+    /// One name per line, spelled as a formula calls it; how many of the standard's core set
+    /// that is goes to standard error. A name not listed reads #NAME? in a formula.
+    ///
+    /// --long prints five tab-separated fields per function: the call as the standard writes
+    /// it, the same call with readable parameter names, the category, a one-line summary, and
+    /// the section of the standard that defines it. --format json gives every function as an
+    /// object with those fields (name, syntax, call, category, summary, section), --long or not.
+    ///
+    /// Reading the syntax: each parameter is a type, then a name. `[ … ]` is optional,
+    /// `[ … ]...` may repeat, `{ … } +` is one or more; `A|B` takes either. Number, Integer,
+    /// Text and Logical are values, which may be a cell; Reference is a cell or range and
+    /// cannot be a constant; NumberSequence and NumberSequenceList take numbers, ranges or
+    /// both; Criterion is a value or text such as ">=10"; DateParam is a date. Arguments are
+    /// separated by `;`, so
+    ///
+    ///   SUMIFS( Reference R ; Reference R1 ; Criterion C1 [ ; Reference R2 ; Criterion C2 ]... )
+    ///
+    /// is called as =SUMIFS([.C2:.C9];[.A2:.A9];"east";[.B2:.B9];">100").
+    #[command(after_long_help = FORMULA_SYNTAX)]
     Functions {
-        /// Print each one's signature, summary and specification section
+        /// Print each one's syntax, a readable call, its category, summary and section
         #[arg(long)]
         long: bool,
         /// Only functions whose name contains this

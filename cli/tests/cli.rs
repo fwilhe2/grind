@@ -1324,6 +1324,8 @@ fn the_sample_script_still_builds_its_document() {
     assert_eq!(ok(&["get", &book, "M12", "--raw"]).trim(), "792.19");
     // The same two rows, chosen by a condition rather than by a filter.
     assert_eq!(ok(&["get", &book, "M13", "--raw"]).trim(), "792.19");
+    assert_eq!(ok(&["get", &book, "M14", "--raw"]).trim(), "612.34");
+    assert_eq!(ok(&["get", &book, "M15", "--raw"]).trim(), "179.85");
     // A styled and formatted header, and a currency cell whose value is untouched.
     assert_eq!(ok(&["get", &book, "B2", "--raw"]).trim(), "1800");
     assert!(ok(&["get", &book, "B2"]).contains('\u{20ac}'));
@@ -1991,17 +1993,67 @@ fn fmt_normalises_a_formula_without_touching_a_document() {
 
 #[test]
 fn functions_lists_what_this_build_implements() {
-    let out = ok(&["functions"]);
-    assert!(out.contains("SUM"));
-    assert!(out.contains("of the Small Group's 110"), "{out}");
+    let output = sheet(&["functions"]);
+    let out = String::from_utf8_lossy(&output.stdout);
+    // Standard output is the list alone, one callable name per line, so a script can loop
+    // over it; the claim goes to standard error.
+    assert!(out.lines().all(|name| !name.contains(' ')), "{out}");
+    assert!(out.lines().any(|name| name == "SUM"));
+    assert!(out.lines().any(|name| name == "COM.MICROSOFT.MAXIFS"));
+    assert!(!out.contains("BESSELJ"), "not in the Small Group");
+    let summary = String::from_utf8_lossy(&output.stderr);
+    assert!(summary.contains("of the Small Group's 110"), "{summary}");
     // The functions moved in by explicit decision are counted apart from the claim, so the
-    // summary is never the nonsense "138 of 110".
-    let summary = out.lines().last().unwrap_or_default();
-    assert!(summary.contains(" beyond it: "), "{out}");
+    // summary is never the nonsense "146 of 110".
+    assert!(summary.contains(" beyond it: "), "{summary}");
     for name in ["COLUMN", "IFERROR", "ROW"] {
         assert!(summary.contains(name), "{name} missing from {summary}");
     }
-    assert!(!out.contains("BESSELJ"), "not in the Small Group");
+    let filtered = sheet(&["functions", "--filter", "ifs"]);
+    assert!(filtered.stderr.is_empty(), "a filtered list makes no claim");
+}
+
+#[test]
+fn functions_as_json_are_objects_with_their_syntax() {
+    let out = grind(&[
+        "--format",
+        "json",
+        "sheet",
+        "functions",
+        "--filter",
+        "SUMIFS",
+    ]);
+    let json = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(field(&json, "name"), "SUMIFS");
+    assert!(
+        field(&json, "syntax").starts_with("SUMIFS( Reference R ;"),
+        "{json}"
+    );
+    assert_eq!(field(&json, "section"), "6.16.63");
+}
+
+/// `--help` is how a script's author, or an agent, learns the formula language: each command
+/// that takes a formula says what it is and how a reference, a range and a separator are written.
+#[test]
+fn the_help_of_every_command_taking_a_formula_teaches_its_syntax() {
+    for command in [
+        &["sheet", "--help"][..],
+        &["sheet", "set", "--help"],
+        &["sheet", "eval", "--help"],
+        &["sheet", "paste", "--help"],
+        &["sheet", "fmt", "--help"],
+        &["sheet", "functions", "--help"],
+    ] {
+        let help = succeeds(grind(command), command);
+        for needle in [
+            "OpenFormula",
+            "[Data.A1:.B9]",
+            "separated by ;",
+            "COM.MICROSOFT.",
+        ] {
+            assert!(help.contains(needle), "{command:?} --help lacks {needle}");
+        }
+    }
 }
 
 #[test]
