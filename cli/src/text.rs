@@ -100,7 +100,7 @@ fn kind_of(heading: Option<u32>, list: Option<u32>) -> Result<grind_text::BlockK
     }
 }
 
-pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, String> {
+pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failure> {
     match command {
         #[cfg(feature = "docx")]
         TextCommand::Import {
@@ -110,7 +110,7 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Strin
             strict,
         } => {
             if output.exists() && !force {
-                return Err(format!("{} exists; pass --force", output.display()));
+                return Err(format!("{} exists; pass --force", output.display()).into());
             }
             let (document, report) = grind_docx::import_file(input).map_err(|e| e.to_string())?;
             let refused = *strict && !report.lossless();
@@ -133,7 +133,7 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Strin
 
         TextCommand::New { file, force } => {
             if file.exists() && !force {
-                return Err(format!("{} exists; pass --force", file.display()));
+                return Err(format!("{} exists; pass --force", file.display()).into());
             }
             finish_text(&TextApp::new(), cli, file, true)
         }
@@ -414,7 +414,7 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Strin
                 title: None,
             };
             if !(1.0..=1200.0).contains(dpi) {
-                return Err(format!("--dpi {dpi}: between 1 and 1200"));
+                return Err(format!("--dpi {dpi}: between 1 and 1200").into());
             }
             let index = page.checked_sub(1).ok_or("pages are counted from 1")?;
             let raster = grind_print::preview(
@@ -650,7 +650,7 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Strin
             if *remove {
                 let (from, to) = match (from == to, link_at(from)?) {
                     (true, Some(link)) => (link.from, link.to),
-                    (true, None) => return Err(format!("no link at {range}")),
+                    (true, None) => return Err(format!("no link at {range}").into()),
                     (false, _) => (from, to),
                 };
                 let changed = app.set_link(from, to, None).map_err(|e| e.to_string())?;
@@ -678,7 +678,7 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Strin
                 );
             };
             if from == to {
-                return Err(format!("{range} is a caret; link a range of characters"));
+                return Err(format!("{range} is a caret; link a range of characters").into());
             }
             let changed = app
                 .set_link(from, to, Some(target))

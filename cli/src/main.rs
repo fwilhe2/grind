@@ -15,6 +15,7 @@
 
 mod args;
 mod diff;
+mod failure;
 mod fit;
 #[cfg(feature = "grammar")]
 mod grammar;
@@ -25,6 +26,7 @@ mod text;
 
 use args::*;
 use clap::{Parser, Subcommand, ValueEnum};
+use failure::Failure;
 use grind_core::lint::{Options as LintOptions, Report as LintFindings, Rule, Severity};
 use grind_sheet::a1;
 use grind_sheet::formula::lex::column_name;
@@ -44,10 +46,10 @@ use std::process::ExitCode;
 use text::*;
 
 /// Open a text document, refusing one that is not.
-fn open_text(file: &Path) -> Result<TextApp, String> {
+fn open_text(file: &Path) -> Result<TextApp, Failure> {
     let app = TextApp::new();
     app.open_file(file)
-        .map_err(|e| format!("{}: {e}", file.display()))?;
+        .map_err(|e| Failure::unreadable(format!("{}: {e}", file.display())))?;
     Ok(app)
 }
 
@@ -75,7 +77,7 @@ fn open_text_checked(file: &Path, hints: bool) -> Result<TextApp, String> {
 /// `grind <app> spelling [setting]`: print, or set and then print, the remembered spelling setting
 /// for one kind of document — the same file the windows read and write.
 #[cfg(feature = "spell")]
-fn spelling_setting(kind: DocumentKind, setting: &Option<String>) -> Result<Report, String> {
+fn spelling_setting(kind: DocumentKind, setting: &Option<String>) -> Result<Report, Failure> {
     use grind_spell::{Setting, preference};
     if let Some(tag) = setting {
         let chosen = Setting::from_tag(tag).ok_or_else(|| {
@@ -108,7 +110,7 @@ fn write_series(
     series_as: Option<&str>,
     no_recalc: bool,
     cli: &Cli,
-) -> Result<Report, String> {
+) -> Result<Report, Failure> {
     use grind_build::Artifact;
     let kind = all[0].1.kind();
     let ext = match (series_as, kind) {
@@ -119,13 +121,15 @@ fn write_series(
     if !matches!(ext, "fodt" | "odt" | "fods" | "ods" | "grind" | "pdf") {
         return Err(format!(
             "{ext:?} is not something a series is written as: fodt, odt, fods, ods, grind or pdf"
-        ));
+        )
+        .into());
     }
     if dir.extension().is_some() {
         return Err(format!(
             "{} has an extension, and a series is written into a directory: one file per document",
             dir.display()
-        ));
+        )
+        .into());
     }
     if !cli.dry_run {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -155,7 +159,7 @@ fn write_series(
                             .map_err(|e| format!("{}: {e}", path.display()))?;
                     }
                     #[cfg(not(feature = "pdf"))]
-                    return Err("this build has no PDF export".to_owned());
+                    return Err("this build has no PDF export".into());
                 }
                 _ => {
                     if !cli.dry_run {
@@ -187,7 +191,7 @@ fn at(app: &TextApp, address: &str) -> Result<usize, String> {
 }
 
 /// A plain list of lines, which is most of what `grind text` prints.
-fn text_lines(lines: Vec<String>) -> Result<Report, String> {
+fn text_lines(lines: Vec<String>) -> Result<Report, Failure> {
     Ok(Report::Text(TextReport { lines }))
 }
 
@@ -203,12 +207,13 @@ const PROJECTION_SNIPPETS: &str = include_str!("../../.vscode/grind-projection.c
 fn as_read_report(
     file: &Path,
     anchors: Vec<grind_core::projection::Anchor>,
-) -> Result<Report, String> {
+) -> Result<Report, Failure> {
     if anchors.is_empty() {
         return Err(format!(
             "{} was not read from a projection; --as-read describes a .grind as written",
             file.display()
-        ));
+        )
+        .into());
     }
     let text = std::fs::read_to_string(file)
         .map_err(|e| format!("cannot read {}: {e}", file.display()))?;
@@ -238,7 +243,7 @@ fn project_report(
     projection: &grind_sheet::projection::Projection,
     tokens: bool,
     anchors: bool,
-) -> Result<Report, String> {
+) -> Result<Report, Failure> {
     let text = projection.text();
     // The line a byte offset is on, 1-based — the number an editor puts in its gutter, so that
     // a span map printed here can be fed straight to one.
@@ -276,7 +281,7 @@ fn project_report(
 }
 
 /// Save if anything changed, then report — `finish`'s twin for text documents.
-fn finish_text(app: &TextApp, cli: &Cli, file: &Path, changed: bool) -> Result<Report, String> {
+fn finish_text(app: &TextApp, cli: &Cli, file: &Path, changed: bool) -> Result<Report, Failure> {
     let written = changed && !cli.dry_run;
     if written {
         app.save_file(file).map_err(|e| e.to_string())?;
@@ -319,7 +324,15 @@ fn data_root(script: &Path, data: Option<&Path>) -> Result<grind_build::Director
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    let cli = match Cli::try_parse_from(&args) {
+        Ok(cli) => cli,
+        Err(e) if e.use_stderr() && failure::wants_json(&args) => {
+            failure::usage(&e).print(Format::Json);
+            return ExitCode::from(failure::USAGE);
+        }
+        Err(e) => e.exit(),
+    };
     // The language server owns stdout for as long as it runs: nothing may be printed around
     // it, so it never reaches the report below.
     if let Top::Lsp = cli.command {
@@ -338,17 +351,18 @@ fn main() -> ExitCode {
     match run(&cli) {
         Ok(report) => {
             report.print(cli.format);
-            // Only `lint` can fail this way, and only on an *error*-severity finding — so CI
-            // can gate on a document contradicting itself without every warning breaking a
-            // build (`report::LintReport::failed`).
+            // A check that ran and found something — an *error*-severity lint finding, not a
+            // warning, so CI can gate on a document contradicting itself — is its own status;
+            // `diff --exit-code` keeps git's 1.
             match report.failed() {
-                true => ExitCode::FAILURE,
+                true if matches!(report, Report::Diff(_)) => ExitCode::FAILURE,
+                true => ExitCode::from(failure::CHECK_FAILED),
                 false => ExitCode::SUCCESS,
             }
         }
-        Err(message) => {
-            eprintln!("grind: {message}");
-            ExitCode::FAILURE
+        Err(failure) => {
+            failure.print(cli.format);
+            ExitCode::from(failure.exit_code())
         }
     }
 }
@@ -451,7 +465,7 @@ fn lsp() -> ExitCode {
     ExitCode::FAILURE
 }
 
-fn run(cli: &Cli) -> Result<Report, String> {
+fn run(cli: &Cli) -> Result<Report, Failure> {
     match &cli.command {
         Top::Sheet { command } => run_sheet(command, cli),
         Top::Text { command } => run_text(command, cli),
@@ -475,7 +489,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 report.page = Some(report::PageReport::new(app.page()));
                 Ok(Report::TextDocument(report))
             }
-            kind => Err(unsupported(file, Some(kind))),
+            kind => Err(unsupported(file, Some(kind)).into()),
         },
 
         // The suite-level third: the kind decides which application's rules run, and the
@@ -489,7 +503,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
                     app.lint(&options)
                 }
                 DocumentKind::Text => open_text_checked(file, *hints)?.lint(&options),
-                kind => return Err(unsupported(file, Some(kind))),
+                kind => return Err(unsupported(file, Some(kind)).into()),
             };
             Ok(lint_report(file, findings))
         }
@@ -523,7 +537,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
                     false => project_report(&app.project(), *tokens, *anchors),
                 }
             }
-            kind => Err(unsupported(file, Some(kind))),
+            kind => Err(unsupported(file, Some(kind)).into()),
         },
 
         // The one verb that runs a script, and the only place in the suite that links an
@@ -537,8 +551,9 @@ fn run(cli: &Cli) -> Result<Report, String> {
             no_recalc,
             data,
         } => {
-            let source = std::fs::read_to_string(script)
-                .map_err(|e| format!("cannot read {}: {e}", script.display()))?;
+            let source = std::fs::read_to_string(script).map_err(|e| {
+                Failure::unreadable(format!("cannot read {}: {e}", script.display()))
+            })?;
             // Data comes from one directory a *person* named — `--data`, or the one the script
             // is in, which is what makes `json("prices.json")` mean the file beside it. The
             // walls around it are `grind_build::Directory`'s, not this file's (doc/dsl.md §2).
@@ -547,8 +562,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 &source,
                 &script.display().to_string(),
                 std::rc::Rc::new(root),
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
             match built {
                 grind_build::Artifact::Series(all) => {
                     write_series(&all, out, series_as.as_deref(), *no_recalc, cli)
@@ -576,15 +590,15 @@ fn run(cli: &Cli) -> Result<Report, String> {
         // The same script, built the same way, and its `test_` functions called with what it
         // built. Nothing is written; a failed test is the command's failure (`Report::failed`).
         Top::Test { script, data } => {
-            let source = std::fs::read_to_string(script)
-                .map_err(|e| format!("cannot read {}: {e}", script.display()))?;
+            let source = std::fs::read_to_string(script).map_err(|e| {
+                Failure::unreadable(format!("cannot read {}: {e}", script.display()))
+            })?;
             let root = data_root(script, data.as_deref())?;
             let tests = grind_build::test::run(
                 &source,
                 &script.display().to_string(),
                 std::rc::Rc::new(root),
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
             Ok(Report::Tests(report::TestsReport::new(
                 &show_path(script),
                 &tests,
@@ -654,7 +668,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
             if let Some(word) = remove
                 && !personal::remove(word).map_err(|e| e.to_string())?
             {
-                return Err(format!("{word:?} is not in your dictionary"));
+                return Err(format!("{word:?} is not in your dictionary").into());
             }
             text_lines(personal::words())
         }
@@ -680,7 +694,7 @@ fn run(cli: &Cli) -> Result<Report, String> {
                 let app = open_text(file)?;
                 finish_text(&app, cli, out, true)
             }
-            kind => Err(unsupported(file, Some(kind))),
+            kind => Err(unsupported(file, Some(kind)).into()),
         },
     }
 }
@@ -726,9 +740,10 @@ fn rule_list(rules: &[Rule]) -> Report {
 }
 
 /// What kind of document a file holds, read from its bytes.
-fn document_kind(file: &Path) -> Result<DocumentKind, String> {
-    let bytes = std::fs::read(file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
-    grind_sheet::kind(&bytes).ok_or_else(|| unsupported(file, None))
+fn document_kind(file: &Path) -> Result<DocumentKind, Failure> {
+    let bytes = std::fs::read(file)
+        .map_err(|e| Failure::unreadable(format!("cannot read {}: {e}", file.display())))?;
+    grind_sheet::kind(&bytes).ok_or_else(|| Failure::unreadable(unsupported(file, None)))
 }
 
 /// The diagnostic for a document this build has no application for — and, when there is one,
@@ -759,8 +774,9 @@ fn check_spelling(app: &App) {
     let _ = app;
 }
 
-fn open_as(file: &Path, wanted: DocumentKind, cli: &Cli) -> Result<App, String> {
-    let bytes = std::fs::read(file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
+fn open_as(file: &Path, wanted: DocumentKind, cli: &Cli) -> Result<App, Failure> {
+    let bytes = std::fs::read(file)
+        .map_err(|e| Failure::unreadable(format!("cannot read {}: {e}", file.display())))?;
     match grind_sheet::kind(&bytes) {
         Some(kind) if kind == wanted => load(file, cli),
         Some(kind) => Err(format!(
@@ -771,8 +787,9 @@ fn open_as(file: &Path, wanted: DocumentKind, cli: &Cli) -> Result<App, String> 
                 Some(command) => format!("; try `grind {command}`"),
                 None => String::new(),
             }
-        )),
-        None => Err(format!("{}: not an OpenDocument file", file.display())),
+        )
+        .into()),
+        None => Err(format!("{}: not an OpenDocument file", file.display()).into()),
     }
 }
 
@@ -802,10 +819,10 @@ fn kind(style: Style) -> numfmt::Kind {
 }
 
 /// Open the document and, if a session file was named, resume its history.
-fn load(file: &Path, cli: &Cli) -> Result<App, String> {
+fn load(file: &Path, cli: &Cli) -> Result<App, Failure> {
     let app = App::new();
     app.open_file(file)
-        .map_err(|e| format!("{}: {e}", file.display()))?;
+        .map_err(|e| Failure::unreadable(format!("{}: {e}", file.display())))?;
     if let Some(path) = &cli.session
         && path.exists()
     {
@@ -833,7 +850,7 @@ fn load(file: &Path, cli: &Cli) -> Result<App, String> {
 /// Group, a document is free to use any of Part 4's other ~370 functions, and recalculating
 /// one that does turns good cached values into `#NAME?`. Choosing that is the user's, which
 /// is what a separate command means.
-fn finish(app: &App, cli: &Cli, file: &Path, changed: bool) -> Result<Report, String> {
+fn finish(app: &App, cli: &Cli, file: &Path, changed: bool) -> Result<Report, Failure> {
     let written = changed && !cli.dry_run;
     if written {
         app.save_file(file).say()?;

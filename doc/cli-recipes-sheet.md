@@ -15,8 +15,11 @@ Three facts the rest of the page leans on:
   calls is a loop of round trips (~200 in 0.8 s on a debug build — fine for a report, not for
   a bulk import of 100 000 rows).
 - Mutating commands print a document report on stdout. In a script that means `>/dev/null`.
-- Errors go to stderr and never to stdout, in either format, and exit non-zero. `--format
-  json` therefore parses or the command failed; there is no error object to check for.
+- Errors go to stderr and never to stdout, in either format, and exit non-zero: 1 for input
+  the command refuses, 2 for a malformed command line, 3 for a file it cannot read, 4 for a
+  check that ran and failed (`lint`, `test`, `--strict`). Under `--format json` the error is
+  one object on stderr — `{"error":{"kind":"refused","message":"…"},"exit":1}`, with `"at"`
+  for a script's line and column — so stdout parses or is empty.
 
 ## Build a sheet from a CSV
 

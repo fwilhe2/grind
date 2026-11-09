@@ -20,7 +20,7 @@ fn load_checked(file: &Path, cli: &Cli) -> Result<App, String> {
     Ok(app)
 }
 
-pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> {
+pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure> {
     match command {
         #[cfg(feature = "xlsx")]
         Command::Import {
@@ -30,7 +30,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> 
             strict,
         } => {
             if output.exists() && !force {
-                return Err(format!("{} exists; pass --force", output.display()));
+                return Err(format!("{} exists; pass --force", output.display()).into());
             }
             let (document, report) = grind_xlsx::import_file(input).map_err(|e| e.to_string())?;
             // A strict import that lost something writes nothing: a pipeline told to fail on a
@@ -59,7 +59,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> 
             locale,
         } => {
             if file.exists() && !force {
-                return Err(format!("{} exists; pass --force", file.display()));
+                return Err(format!("{} exists; pass --force", file.display()).into());
             }
             let app = App::new();
             // Born with its locale rather than given one, so a new document opens with nothing
@@ -105,7 +105,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> 
             let app = load(file, cli)?;
             let reference = a1::parse(address).say()?;
             if !a1::is_single(&reference) {
-                return Err(format!("{address}: get takes one cell, not a range"));
+                return Err(format!("{address}: get takes one cell, not a range").into());
             }
             let (sheet, pos, _) = a1::resolve(&app, &reference).say()?;
             if *formula {
@@ -734,7 +734,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> 
                     None => 0,
                 };
                 if *number == 0 {
-                    return Err("rules are numbered from 1".to_owned());
+                    return Err("rules are numbered from 1".to_owned().into());
                 }
                 app.remove_rule(sheet, number - 1).say()?;
                 return finish(&app, cli, file, true);
@@ -795,7 +795,8 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> 
                 return Err(
                     "a rule has to draw something: give it --background, --color, \
                             --bold, --italic, --underline, --strike, --size or --border"
-                        .to_owned(),
+                        .to_owned()
+                        .into(),
                 );
             }
             let condition = condition
@@ -841,7 +842,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> 
             if *delete {
                 let removed = app.clear_name(name);
                 if !removed {
-                    return Err(format!("no such name: {name}"));
+                    return Err(format!("no such name: {name}").into());
                 }
                 return finish(&app, cli, file, true);
             }
@@ -912,7 +913,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> 
                     .ok_or_else(|| format!("{item}: expected COLUMN=VALUE"))?;
                 let (_, at, _) = single(&app, &format!("{column}1"))?;
                 if at.col < start.col || at.col > end.col {
-                    return Err(format!("{column} is outside {range}"));
+                    return Err(format!("{column} is outside {range}").into());
                 }
                 filter
                     .keep
@@ -1061,7 +1062,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> 
                 // A qualified range names its own sheet; an unqualified one is on each checked.
                 if reference.start.sheet.is_some() {
                     if only.is_some_and(|only| only != on) {
-                        return Err(format!("{range} is not on the sheet --sheet names"));
+                        return Err(format!("{range} is not on the sheet --sheet names").into());
                     }
                     only = Some(on);
                 }
@@ -1091,7 +1092,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> 
             let app = load(file, cli)?;
             let reference = a1::parse(address).say()?;
             if !a1::is_single(&reference) {
-                return Err(format!("{address}: correct takes one cell, not a range"));
+                return Err(format!("{address}: correct takes one cell, not a range").into());
             }
             let (sheet, pos, _) = a1::resolve(&app, &reference).say()?;
             let offset = match at {
@@ -1269,13 +1270,15 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> 
                         grind_sheet::chart::resolve_range(&app, &qualified).say()?;
                     let guessed = app.suggest_chart(on, start, end, None).say()?;
                     if guessed.spec.series.is_empty() && series.is_empty() {
-                        return Err(format!("nothing in {range} is a number to chart"));
+                        return Err(format!("nothing in {range} is a number to chart").into());
                     }
                     guessed.spec
                 }
                 None => {
                     if series.is_empty() {
-                        return Err("give the chart a --series, or a table --from".to_owned());
+                        return Err("give the chart a --series, or a table --from"
+                            .to_owned()
+                            .into());
                     }
                     grind_sheet::ChartSpec::new(
                         r#type
@@ -1871,7 +1874,7 @@ fn shown(
     address: &str,
     style: bool,
     format: bool,
-) -> Result<Report, String> {
+) -> Result<Report, Failure> {
     let (sheet, pos, _) = single(app, address)?;
     Ok(Report::CellStyle(Box::new(report::CellStyleReport {
         path: file.display().to_string(),

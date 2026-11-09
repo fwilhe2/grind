@@ -93,7 +93,22 @@ Writing a script:
         decide what it is by reading it.\n\n\
         Each invocation loads the file, applies one command and writes it back. Pass \
         --session to carry undo history across invocations; without it every command starts \
-        with empty history."
+        with empty history.",
+    after_long_help = "\
+Exit status:
+  0  done
+  1  refused: the input was read and the command cannot do what it asks — a formula that
+     does not parse, a sheet that does not exist; also a script that stopped with an error
+  2  the command line itself: an unknown command or flag, a missing argument
+  3  a file named on the command line cannot be read, or is not a document the command opens
+  4  a check ran and failed: lint found an error, a test failed, a --strict import would lose
+     something
+  diff --exit-code exits 1 when the documents differ, as git diff does.
+
+  With --format json, a failure is one JSON object on standard error:
+    {\"error\":{\"kind\":\"refused\",\"message\":\"…\"},\"exit\":1}
+  kind is refused, script, usage or unreadable; a script's failure adds
+  \"at\":{\"file\":…,\"line\":…,\"column\":…}."
 )]
 pub(crate) struct Cli {
     #[command(subcommand)]
@@ -145,8 +160,8 @@ pub(crate) enum Top {
 
     /// Check a document for problems, whatever kind it is
     ///
-    /// Runs the spreadsheet or the text document checks, depending on the file. Exits non-zero
-    /// when it finds an error.
+    /// Runs the spreadsheet or the text document checks, depending on the file. Exits with
+    /// status 4 when it finds an error.
     Lint {
         file: PathBuf,
         /// Report the house-style hints too, which are off by default
@@ -251,8 +266,8 @@ pub(crate) enum Top {
     /// Builds the document exactly as `grind build` does, recalculates it, and calls every
     /// function in the script whose name starts with `test_` with the document it built —
     /// `fn test_total(d) { assert_eq(d.cell("B6").value, 15400); }`. Each failure is reported
-    /// with the line of the assertion that failed, and the command fails if any test did, or if
-    /// the script defines none. Nothing is written.
+    /// with the line of the assertion that failed. The command exits with status 4 if any test
+    /// failed, and fails if the script defines none. Nothing is written.
     #[command(after_long_help = SCRIPT_PRIMER)]
     Test {
         /// The script to test
@@ -460,8 +475,8 @@ pub(crate) enum TextCommand {
         /// Overwrite the output if it already exists
         #[arg(long)]
         force: bool,
-        /// Fail, and write nothing, if the conversion lost anything at all. The report is
-        /// printed either way, so it says what.
+        /// Fail with status 4, and write nothing, if the conversion lost anything at all. The
+        /// report is printed either way, so it says what.
         #[arg(long)]
         strict: bool,
     },
@@ -913,7 +928,7 @@ pub(crate) enum TextCommand {
     ///
     /// A skipped heading level, a link to a bookmark that does not exist, a style name the
     /// document never declares, and anything a `.grind` of it would leave out. Nothing is written.
-    /// Exits non-zero when it finds an error.
+    /// Exits with status 4 when it finds an error.
     Lint {
         file: PathBuf,
         /// Report the house-style hints too, which are off by default
@@ -1056,7 +1071,7 @@ pub(crate) enum Command {
         /// Overwrite the output if it already exists
         #[arg(long)]
         force: bool,
-        /// Fail, and write nothing, if the conversion lost anything at all — a construct, a
+        /// Fail with status 4, and write nothing, if the conversion lost anything at all — a construct, a
         /// formula, a piece of a format or a look, a defined name, a sheet's spelling. The
         /// report is printed either way, so it says what.
         #[arg(long)]
@@ -1176,8 +1191,8 @@ pub(crate) enum Command {
     ///
     /// A cached value that disagrees with its formula, a formula naming a sheet that is gone or
     /// reading a cell that is empty, and anything a `.grind` of the document would leave out, each
-    /// with its address. Nothing is written. Exits non-zero when it finds an error; warnings and
-    /// hints do not.
+    /// with its address. Nothing is written. Exits with status 4 when it finds an error; warnings
+    /// and hints do not.
     Lint {
         file: PathBuf,
         /// Report the house-style hints too, which are off by default

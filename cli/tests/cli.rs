@@ -230,6 +230,56 @@ fn eval_reads_the_document_and_refuses_what_set_refuses() {
     );
 }
 
+/// Each status `grind --help` documents, and the JSON a failure is under `--format json`: what a
+/// script branches on instead of reading the sentence.
+#[test]
+fn a_failure_has_a_documented_status_and_a_json_form() {
+    let dir = Sandbox::new("exit");
+    let book = s(&dir.path("book.fods"));
+    ok(&["new", &book]);
+    let script = dir.path("typo.rhai");
+    std::fs::write(&script, "let s = sheet(\"S\");\ns.pushh([1]);\ns").unwrap();
+    let failing = dir.path("failing.rhai");
+    std::fs::write(
+        &failing,
+        "fn test_one(d) { assert_eq(1, 2); }\nlet s = sheet(\"S\");\ns.push([1]);\ns",
+    )
+    .unwrap();
+    let missing = s(&dir.path("missing.ods"));
+    let script = s(&script);
+    let out = s(&dir.path("out.fods"));
+    for (args, status, kind) in [
+        (
+            vec!["sheet", "eval", &book, "A1", "=SUM(1,2)"],
+            1,
+            Some("refused"),
+        ),
+        (vec!["sheet", "get", &missing, "A1"], 3, Some("unreadable")),
+        (vec!["sheet", "frobnicate"], 2, Some("usage")),
+        (vec!["build", &script, "-o", &out], 1, Some("script")),
+        (vec!["test", &s(&failing)], 4, None),
+    ] {
+        let text = grind(&args);
+        assert_eq!(text.status.code(), Some(status), "{args:?}");
+        let mut json_args = vec!["--format", "json"];
+        json_args.extend(&args);
+        let json = grind(&json_args);
+        assert_eq!(json.status.code(), Some(status), "{json_args:?}");
+        if let Some(kind) = kind {
+            let stderr = String::from_utf8_lossy(&json.stderr);
+            assert_eq!(field(&stderr, "kind"), kind, "{stderr}");
+            assert_eq!(field(&stderr, "exit"), status.to_string(), "{stderr}");
+            assert!(json.stdout.is_empty(), "{json_args:?}");
+        }
+    }
+    // A script's failure says where, as fields rather than a prefix to parse.
+    let json = grind(&["--format", "json", "build", &script, "-o", &out]);
+    let stderr = String::from_utf8_lossy(&json.stderr);
+    assert_eq!(field(&stderr, "line"), "2", "{stderr}");
+    assert_eq!(field(&stderr, "column"), "3", "{stderr}");
+    assert!(stderr.contains("did you mean `push`?"), "{stderr}");
+}
+
 /// `build --help` teaches by example, so each example in it is a script that builds: the help
 /// cannot drift from the language it describes.
 #[test]
