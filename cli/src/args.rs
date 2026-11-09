@@ -52,6 +52,35 @@ Examples:
 
   In a shell, put a formula in single quotes: $ [ ] ; and \" mean something there.";
 
+/// How a script is written, for `build` and `test`: enough to write a first one, and where the
+/// rest of the vocabulary is.
+const SCRIPT_PRIMER: &str = "\
+Writing a script:
+  A script is Rhai, and its last expression is the document it built. A spreadsheet:
+
+    let s = sheet(\"Sales\");
+    s.push(row([\"Region\", \"Q1\", \"Q2\"]).bold());
+    s.push([\"North\", 4200, 4800]);
+    s.push([\"South\", 3100, 3300]);
+    s.push(row([\"Total\", sum_above(), sum_above()]).bold());
+    s
+
+  A text document:
+
+    let d = text();
+    d.heading(1, \"Quarterly report\");
+    d.para(\"Revenue rose **12%** on the year.\");
+    d
+
+  In a row, a number is a number, a string is text, and a string starting with = is a
+  formula in OpenFormula syntax (`grind sheet set --help` has it), checked as `set` checks
+  one: \"=[.B2]*2\". formula(\"B2*2\") takes the spelling a formula bar shows instead, and
+  () leaves a cell empty. A mistake fails the build with the script's line and column.
+
+  `grind definitions` prints every function a script can call, with its parameters and what
+  it does; calling one that does not exist names the nearest. `grind init` writes a starter
+  script with its tests, and `grind test` runs a script's test_ functions.";
+
 #[derive(Parser)]
 #[command(
     name = "grind",
@@ -187,6 +216,7 @@ pub(crate) enum Top {
     /// A script cannot touch the filesystem (beyond reading JSON data, see --data), the network,
     /// the clock or randomness, so the same script builds the same file on every machine. One that
     /// runs too long stops with an error and a line number.
+    #[command(after_long_help = SCRIPT_PRIMER)]
     Build {
         /// The script to run
         script: PathBuf,
@@ -223,6 +253,7 @@ pub(crate) enum Top {
     /// `fn test_total(d) { assert_eq(d.cell("B6").value, 15400); }`. Each failure is reported
     /// with the line of the assertion that failed, and the command fails if any test did, or if
     /// the script defines none. Nothing is written.
+    #[command(after_long_help = SCRIPT_PRIMER)]
     Test {
         /// The script to test
         script: PathBuf,

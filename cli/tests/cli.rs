@@ -230,6 +230,39 @@ fn eval_reads_the_document_and_refuses_what_set_refuses() {
     );
 }
 
+/// `build --help` teaches by example, so each example in it is a script that builds: the help
+/// cannot drift from the language it describes.
+#[test]
+fn the_scripts_in_build_help_build() {
+    let help = succeeds(grind(&["build", "--help"]), &["build", "--help"]);
+    let dir = Sandbox::new("build-help");
+    let mut scripts = 0;
+    let mut lines = help.lines().peekable();
+    while let Some(line) = lines.next() {
+        if !line.starts_with("    let ") {
+            continue;
+        }
+        // An example runs from its `let` to its bare last expression, indented by four.
+        let mut source = vec![line.trim_start()];
+        while let Some(next) = lines.next_if(|l| l.starts_with("    ")) {
+            source.push(next.trim_start());
+        }
+        let script = dir.path(&format!("example{scripts}.rhai"));
+        std::fs::write(&script, source.join("\n")).unwrap();
+        let out = dir.path(&format!("example{scripts}.fods"));
+        let built = grind(&["build", &s(&script), "-o", &s(&out)]);
+        assert!(
+            built.status.success(),
+            "{}\n{}",
+            source.join("\n"),
+            String::from_utf8_lossy(&built.stderr)
+        );
+        scripts += 1;
+    }
+    assert_eq!(scripts, 2, "a spreadsheet and a text document\n{help}");
+    assert!(help.contains("grind definitions"));
+}
+
 /// `eval --trace` (`doc/formula-workbench.md` §3.2): every sub-expression on its own line in
 /// display syntax, its answer aligned beside it, a branch not taken never evaluated, text
 /// quoted so it cannot pass for a number — and the file untouched.

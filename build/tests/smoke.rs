@@ -180,6 +180,25 @@ fn a_formula_string_set_would_refuse_fails_where_it_was_written() {
     assert_eq!(at(&app, "A1"), CellValue::Text("=SUM(B1:B2)".into()));
 }
 
+/// A function that does not exist names the nearest one, and one called with the wrong types
+/// says how it is called — both from the vocabulary `grind definitions` prints.
+#[test]
+fn a_function_not_found_says_what_was_meant() {
+    let message = error("let s = sheet(\"S\");\ns.pushh([1]);\ns");
+    assert!(message.starts_with("model.rhai:2:"), "{message}");
+    assert!(message.contains("did you mean `push`?"), "{message}");
+    assert!(message.contains("`grind definitions`"), "{message}");
+    // A swap of two letters is near enough.
+    assert!(error("let r = rwo([1]);\nsheet(\"S\")").contains("`row`"));
+    let message = error("let s = sheet(\"S\");\ns.push(1);\ns");
+    assert!(
+        message.contains("push(sheet: Sheet, cells: array)"),
+        "{message}"
+    );
+    // Nothing near is no guess.
+    assert!(!error("zzzzzzzz();\nsheet(\"S\")").contains("did you mean"));
+}
+
 /// Widths and heights are ODF lengths, and a whole-column range means the column the script
 /// actually filled — which is why the decorations are applied after the cells.
 #[test]

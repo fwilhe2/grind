@@ -320,12 +320,63 @@ fn single(value: Dynamic, script: &str) -> Result<Artifact, Error> {
 /// A Rhai failure as ours, with its position carried across.
 pub(crate) fn position(script: &str, error: &rhai::EvalAltResult) -> Error {
     let at = error.position();
+    let mut message = without_position(&error.to_string());
+    if let rhai::EvalAltResult::ErrorFunctionNotFound(signature, _) = error {
+        message.push_str(&not_found(signature));
+    }
     Error {
         script: script.to_owned(),
         line: at.line().map(|l| l as u32),
         column: at.position().map(|c| c as u32),
-        message: without_position(&error.to_string()),
+        message,
     }
+}
+
+/// What to call instead of a function Rhai did not find (`push (Sheet, i64)`): the ways the name
+/// can be called if it exists, the nearest name if it does not, and where the whole list is.
+fn not_found(signature: &str) -> String {
+    let name = signature.split([' ', '(']).next().unwrap_or_default();
+    let vocabulary = definitions();
+    let functions: Vec<(&str, &str)> = vocabulary
+        .lines()
+        .filter_map(|line| {
+            let declared = line.strip_prefix("fn ")?.trim_end_matches(';');
+            Some((declared.split('(').next()?, declared))
+        })
+        .collect();
+    let same: Vec<&str> = functions
+        .iter()
+        .filter(|(n, _)| *n == name)
+        .map(|(_, declared)| *declared)
+        .collect();
+    let nearest = functions
+        .iter()
+        .map(|(n, _)| (distance(name, n), *n))
+        // Two edits from three letters up, so a swap (`rwo`) finds `row`.
+        .filter(|(d, _)| *d <= (name.chars().count() / 3).max(1 + usize::from(name.len() >= 3)))
+        .min();
+    let hint = match (same.is_empty(), nearest) {
+        (false, _) => format!("; it takes {}", same.join(", or ")),
+        (true, Some((_, n))) => format!("; did you mean `{n}`?"),
+        (true, None) => String::new(),
+    };
+    format!("{hint} (`grind definitions` lists every function a script can call)")
+}
+
+/// Edits between two names, for the nearest one a typo meant.
+fn distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut previous = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let replaced = previous + usize::from(ca != *cb);
+            previous = row[j + 1];
+            row[j + 1] = replaced.min(row[j] + 1).min(previous + 1);
+        }
+    }
+    row[b.len()]
 }
 
 /// Rhai appends ` (line 3, position 5)` to its own `Display`, and [`Error`] prints the
