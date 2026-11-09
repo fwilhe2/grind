@@ -371,6 +371,8 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, String> 
         } => {
             let app = load(file, cli)?;
             let (sheet, pos, _) = single(&app, address)?;
+            // What `set` would refuse is an error here too, not a `#NAME?` that hides why.
+            app.check_formula(formula).say()?;
             // A read, not an edit: nothing is stored and nothing is written.
             let mut entries = Vec::new();
             for entry in with {

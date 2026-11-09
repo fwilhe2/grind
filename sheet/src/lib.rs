@@ -507,6 +507,7 @@ impl App {
             if state.doc.sheet(sheet).is_none() {
                 return Err(Error::NoSuchSheet(sheet));
             }
+            check_formula(&state.doc, input)?;
             let (kind, edit, reading) = typed(&state.doc, sheet, pos, input);
             let recalc = commit(state, sheet, vec![edit], recalc)?;
             Ok(EnterOutcome {
@@ -546,6 +547,8 @@ impl App {
             for (r, row) in rows.iter().enumerate() {
                 for (c, input) in row.iter().enumerate() {
                     let pos = Pos::new(anchor.row + r as u32, anchor.col + c as u32);
+                    check_formula(&state.doc, input)
+                        .map_err(|e| Error::Formula(format!("{}: {e}", a1::format(None, pos))))?;
                     let (this, edit, read) = typed(&state.doc, sheet, pos, input);
                     if (r, c) == (0, 0) {
                         kind = this;
@@ -778,6 +781,12 @@ impl App {
         })
     }
 
+    /// Whether [`App::enter`] would take `formula` as typed: `Err` says why not, as entering it
+    /// would.
+    pub fn check_formula(&self, formula: &str) -> Result<()> {
+        check_formula(&self.state.read().unwrap().doc, formula)
+    }
+
     /// What a formula would evaluate to, without storing anything: a read lock only, no observer
     /// notified and no undo entry, so a live result or a status-bar sum can be recomputed while
     /// someone types.
@@ -823,6 +832,7 @@ impl App {
             if state.doc.sheet(sheet).is_none() {
                 return Err(Error::NoSuchSheet(sheet));
             }
+            check_formula(&state.doc, input)?;
             let Action::SetFormula { value, .. } = typed(&state.doc, sheet, pos, input).1 else {
                 unreachable!("the typing rule only ever sets a cell");
             };
@@ -976,8 +986,8 @@ impl App {
     /// undo step (`doc/dsl.md` §6.5). Returns how many references were rewritten.
     ///
     /// The rewrite is an AST substitution ([`formula::rename`]), never a textual one. A formula
-    /// that will not parse is left as it was and not counted; `grind sheet lint`'s `missing-sheet`
-    /// finds it.
+    /// that will not parse is left as it was and not counted; `grind sheet lint`'s
+    /// `unreadable-formula` finds it.
     pub fn rename_sheet(&self, sheet: usize, name: &str) -> Result<usize> {
         self.mutate(|state| {
             check_sheet_name(&state.doc, name, Some(sheet))?;
@@ -1819,6 +1829,56 @@ fn input_of(doc: &Document, sheet: usize, pos: Pos) -> Result<String> {
 /// The typing rule: what a string a user typed means (`doc/sheet-shell.md` C3). One
 /// [`Action::SetFormula`] whatever the answer, so typing `5` over `=SUM(A1:A4)` removes the formula.
 /// A formula's cached value is computed against the document as it stands.
+/// What the typing rule refuses to store: a formula that does not parse, and a cell address
+/// written without its brackets, which would parse as an undefined name and read `#NAME?`.
+fn check_formula(doc: &Document, input: &str) -> Result<()> {
+    if !input.starts_with('=') {
+        return Ok(());
+    }
+    let expr = formula::parse::parse(input).map_err(|e| Error::Formula(e.to_string()))?;
+    match unbracketed(doc, &expr) {
+        Some(written) => Err(Error::Formula(format!(
+            "{written} is not a reference in an ODF formula, which brackets every reference: \
+             write {}",
+            bracketed(&written)
+        ))),
+        None => Ok(()),
+    }
+}
+
+/// The first cell-shaped name in `expr` the document does not define, as written: `S2`,
+/// `Data.S2`, or a range of two of them, `S2:S3`.
+fn unbracketed(doc: &Document, expr: &formula::parse::Expr) -> Option<String> {
+    use formula::parse::Expr;
+    let cell = |e: &Expr| match e {
+        Expr::Name(n) if formula::display::reads_as_reference(n) && doc.name(n).is_none() => {
+            Some(n.clone())
+        }
+        _ => None,
+    };
+    match expr {
+        Expr::Binary(formula::lex::Op::Range, a, b) => match (cell(a), cell(b)) {
+            (Some(a), Some(b)) => Some(format!("{a}:{b}")),
+            _ => unbracketed(doc, a).or_else(|| unbracketed(doc, b)),
+        },
+        Expr::Binary(_, a, b) => unbracketed(doc, a).or_else(|| unbracketed(doc, b)),
+        Expr::Name(_) => cell(expr),
+        Expr::Call { args, .. } => args.iter().find_map(|arg| unbracketed(doc, arg)),
+        Expr::Prefix(_, e) | Expr::Postfix(_, e) | Expr::Paren(e) => unbracketed(doc, e),
+        _ => None,
+    }
+}
+
+/// `S2` → `[.S2]`, `Data.s2` → `[Data.S2]`, `S2:S3` → `[.S2:.S3]`.
+fn bracketed(written: &str) -> String {
+    let end = |e: &str| match e.rsplit_once('.') {
+        Some((sheet, cell)) => format!("{sheet}.{}", cell.to_uppercase()),
+        None => format!(".{}", e.to_uppercase()),
+    };
+    let ends: Vec<String> = written.split(':').map(end).collect();
+    format!("[{}]", ends.join(":"))
+}
+
 fn typed(
     doc: &Document,
     sheet: usize,

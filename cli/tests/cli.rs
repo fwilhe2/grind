@@ -172,6 +172,64 @@ fn values_and_a_formula_survive_being_written_and_read_back() {
     );
 }
 
+/// `eval` reads the document — same sheet, another sheet, a range — and a formula `set` would
+/// refuse is the same error from every form of `eval`, never a `#NAME?` that hides why.
+#[test]
+fn eval_reads_the_document_and_refuses_what_set_refuses() {
+    let dir = Sandbox::new("eval");
+    let file = dir.path("book.fods");
+    ok(&["new", &s(&file)]);
+    ok(&["rename", &s(&file), "Sheet1", "Raw"]);
+    ok(&["add", &s(&file), "Report"]);
+    ok(&["set", &s(&file), "Raw.S2", "5"]);
+    ok(&["set", &s(&file), "Raw.S3", "7"]);
+    for (at, formula, value) in [
+        ("Raw.A1", "=[.S2]", "5"),
+        ("Report.A1", "=[Raw.S2]", "5"),
+        ("Report.A1", "=SUM([Raw.S2:Raw.S3])", "12"),
+        ("Report.A1", "=SUM([Raw.S2:.S3])", "12"),
+    ] {
+        assert_eq!(
+            ok(&["eval", &s(&file), at, formula]).trim(),
+            value,
+            "{formula}"
+        );
+    }
+
+    let path = s(&file);
+    let before = std::fs::read(&file).unwrap();
+    for (formula, says) in [
+        ("=SUM(1,2)", "unexpected character ','"),
+        (
+            "=SUM([Raw.S2:S3])",
+            "the second end of a range needs its own `.`",
+        ),
+        ("=SUM(S2:S3)", "write [.S2:.S3]"),
+        ("=Raw.S2", "write [Raw.S2]"),
+    ] {
+        for flags in [&[][..], &["--trace"], &["--with", "Raw.S2=1"]] {
+            let mut args = vec!["eval", &path, "Raw.A1", formula];
+            args.extend_from_slice(flags);
+            let failed = sheet(&args);
+            let stderr = String::from_utf8_lossy(&failed.stderr);
+            assert!(
+                !failed.status.success() && stderr.contains(says),
+                "{args:?}: {stderr}"
+            );
+        }
+        let failed = sheet(&["set", &path, "Raw.A1", formula]);
+        assert!(
+            String::from_utf8_lossy(&failed.stderr).contains(says),
+            "set {formula}"
+        );
+    }
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        before,
+        "nothing refused was stored"
+    );
+}
+
 /// `eval --trace` (`doc/formula-workbench.md` §3.2): every sub-expression on its own line in
 /// display syntax, its answer aligned beside it, a branch not taken never evaluated, text
 /// quoted so it cannot pass for a number — and the file untouched.

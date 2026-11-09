@@ -618,6 +618,41 @@ fn renaming_a_sheet_carries_every_reference_that_named_it() {
     );
 }
 
+/// Typing is where a formula is checked: one that will not parse, or a cell address without its
+/// brackets, is refused with what to write instead, and nothing is stored.
+#[test]
+fn entering_a_formula_that_cannot_mean_what_it_says_is_refused() {
+    let app = App::new();
+    app.add_sheet("Data").unwrap();
+    let refused = |input: &str| {
+        let message = app
+            .enter(0, p(0, 0), input, RecalcMode::Document)
+            .unwrap_err()
+            .to_string();
+        assert!(app.formula(0, p(0, 0)).unwrap().is_none(), "{input} stored");
+        message
+    };
+    assert!(refused("=SUM(1,2)").contains("unexpected character ','"));
+    assert!(refused("=SUM([.A1:A2])").contains("second end of a range"));
+    assert!(refused("=S2*2").ends_with("write [.S2]"));
+    assert!(refused("=SUM(A1:b3)").ends_with("write [.A1:.B3]"));
+    assert!(refused("=Data.A1").ends_with("write [Data.A1]"));
+    let message = app
+        .enter_range(
+            0,
+            p(0, 0),
+            &[vec!["1".into(), "=A1".into()]],
+            RecalcMode::Document,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(message.starts_with("B1: "), "{message}");
+
+    // A name that is not cell-shaped is a name, defined or not.
+    app.enter(0, p(0, 0), "=Total*2", RecalcMode::Document)
+        .unwrap();
+}
+
 /// A formula that will not parse is left exactly as it was — rewriting text nobody understood is
 /// how a refactoring corrupts a document; `grind sheet lint` finds the leftovers.
 #[test]
@@ -625,8 +660,7 @@ fn a_rename_leaves_a_formula_it_cannot_read_alone() {
     let app = App::new();
     app.add_sheet("Data").unwrap();
     app.set_formula(0, p(0, 0), "=[Data.A1]").unwrap();
-    // A formula that will not parse is stored verbatim rather than refused — `App::input_text`
-    // hands one back the way it found it, and so does this.
+    // `set_formula` stores what a reader found; only typing refuses a formula that will not parse.
     app.set_formula(0, p(1, 0), "=SUM([Data.A1]").unwrap();
 
     assert_eq!(

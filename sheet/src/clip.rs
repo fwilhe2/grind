@@ -41,14 +41,15 @@ pub fn rect_text(
 }
 
 /// Clipboard text back to the rows [`App::enter_range`] wants, display syntax converted to
-/// canonical cell by cell. A formula that will not parse passes through as typed. `\r\n` and `\n`
+/// canonical cell by cell. A formula that will not parse stays text, its characters kept (`'=(`), as
+/// [`crate::csv::input`] keeps one. `\r\n` and `\n`
 /// read alike, and a trailing line ending is not an extra row.
 pub fn parse_rows(text: &str) -> Vec<Vec<String>> {
     text.lines()
         .map(|line| {
             line.split('\t')
                 .map(|cell| match cell.starts_with('=') {
-                    true => display::from_display(cell).unwrap_or_else(|_| cell.to_owned()),
+                    true => display::from_display(cell).unwrap_or_else(|_| format!("'{cell}")),
                     false => cell.to_owned(),
                 })
                 .collect()
@@ -121,9 +122,9 @@ mod tests {
         assert_eq!(rows.len(), 2);
     }
 
-    /// Not a formula at all, or one this build cannot read: kept as typed.
+    /// Not a formula at all, or one this build cannot read: kept as its characters.
     #[test]
-    fn what_will_not_parse_is_passed_through() {
-        assert_eq!(parse_rows("=(\tplain"), vec![vec!["=(", "plain"]]);
+    fn what_will_not_parse_stays_text() {
+        assert_eq!(parse_rows("=(\tplain"), vec![vec!["'=(", "plain"]]);
     }
 }
