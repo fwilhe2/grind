@@ -139,6 +139,9 @@ pub(crate) enum Top {
     /// A cell is addressed as A1, a cell on another sheet as Data.A1, a range as B2:D40 or
     /// Data.B2:D40, whole columns as C:C. Those addresses are arguments; inside a formula,
     /// references are written in OpenFormula's brackets instead, as below.
+    ///
+    /// Every command reads the file and writes it back. To fill many cells, `paste` takes
+    /// tab-separated rows in one call; `view` and `get` read, with --format json for a script.
     #[command(after_long_help = FORMULA_SYNTAX)]
     Sheet {
         #[command(subcommand)]
@@ -1214,6 +1217,10 @@ pub(crate) enum Command {
     /// A leading '=' makes it a formula, in OpenFormula syntax (below), and a leading apostrophe
     /// forces text; otherwise the value is taken as a number, TRUE or FALSE, or text. "-" reads
     /// the value from stdin. `get --formula` prints a formula back as stored.
+    ///
+    /// Each call reads and rewrites the whole file. For many cells, `paste` writes a rectangle of
+    /// tab-separated rows in one call and one undo step — hundreds of times faster than a loop
+    /// of `set` — and `grind build` writes a whole document from a script.
     #[command(after_long_help = FORMULA_SYNTAX)]
     Set {
         file: PathBuf,

@@ -331,6 +331,15 @@ fn a_failure_has_a_documented_status_and_a_json_form() {
     assert!(stderr.contains("did you mean `push`?"), "{stderr}");
 }
 
+/// Where a loop of `set` calls is the slow way, the help says what the fast one is.
+#[test]
+fn the_help_points_bulk_writes_at_paste() {
+    for command in [&["sheet", "--help"][..], &["sheet", "set", "--help"]] {
+        let help = succeeds(grind(command), command);
+        assert!(help.contains("`paste`"), "{command:?}");
+    }
+}
+
 /// `build --help` teaches by example, so each example in it is a script that builds: the help
 /// cannot drift from the language it describes.
 #[test]

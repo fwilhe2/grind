@@ -38,13 +38,15 @@ pub const STALE_VALUE: Rule = Rule {
     what: "a cell whose cached value disagrees with its formula",
 };
 
-/// A formula this build cannot parse, with the parser's reason. A warning: syntax outside
-/// what grind reads (an inline array) is this build's gap, but a slip is the document's, and
-/// either way the cell recalculates to `#NAME?`.
+/// A formula typing would refuse ([`crate::formula::check`]): one that does not parse, a cell
+/// address without its brackets, Excel's spelling of a sheet or of a `COM.MICROSOFT.` function.
+/// What a `.grind` or another program can still store. A warning: syntax outside what grind
+/// reads (an inline array) is this build's gap, but a slip is the document's, and either way
+/// the cell recalculates to an error.
 pub const UNREADABLE_FORMULA: Rule = Rule {
     id: "unreadable-formula",
     severity: Severity::Warning,
-    what: "a formula that does not parse",
+    what: "a formula that does not parse, or cannot mean what it says",
 };
 
 /// A formula naming a sheet the document does not have — what deleting a sheet leaves behind. An
@@ -232,11 +234,17 @@ fn shown(value: &crate::CellValue) -> String {
 fn unreadable_formulas(doc: &Document, report: &mut Report) {
     for (index, sheet) in doc.sheets.iter().enumerate() {
         for (pos, formula) in sheet.formulas() {
-            let Err(e) = parse(formula) else { continue };
+            let message = match parse(formula) {
+                Err(e) => format!("{formula} does not parse: {e}"),
+                Ok(_) => match crate::formula::check(formula, |name| doc.name(name).is_some()) {
+                    Err(e) => format!("{formula}: {e}"),
+                    Ok(()) => continue,
+                },
+            };
             if !report.push(Diagnostic::new(
                 &UNREADABLE_FORMULA,
                 at(doc, Address::new(index, pos)),
-                format!("{formula} does not parse: {e}"),
+                message,
             )) {
                 return;
             }
@@ -912,6 +920,15 @@ mod tests {
         doc.sheets[0].set_formula(Pos::new(0, 0), "=BESSELJ(1;1)".to_owned());
         doc.sheets[0].set(Pos::new(0, 0), CellValue::Number(0.44).clone());
         assert!(lint(&doc, &quiet()).is_empty());
+    }
+
+    #[test]
+    fn a_formula_typing_would_refuse_says_what_to_write() {
+        let mut doc = doc(&[]);
+        doc.sheets[0].set_formula(Pos::new(2, 0), "=SUM(A1:A2)".to_owned());
+        let report = lint(&doc, &quiet());
+        assert_eq!(ids(&report), ["unreadable-formula"]);
+        assert!(report.diagnostics[0].message.ends_with("write [.A1:.A2]"));
     }
 
     #[test]
