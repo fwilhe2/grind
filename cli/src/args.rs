@@ -90,7 +90,8 @@ Writing a script:
     version,
     long_version = long_version(),
     about = "Drive the ODF suite from the shell",
-    long_about = "Drive the ODF suite from the shell.\n\n\
+    long_about = "Drive the ODF suite from the shell. New to it, or a program driving it? `grind \
+        guide` is one page on how the commands fit together.\n\n\
         Commands are grouped by the kind of document they act on — `grind sheet …` for \
         spreadsheets — with a few verbs at the top level that work on any ODF document and \
         decide what it is by reading it.\n\n\
@@ -282,6 +283,13 @@ pub(crate) enum Top {
         #[arg(long, value_name = "DIR")]
         data: Option<PathBuf>,
     },
+
+    /// How the commands fit together, on one page — start here
+    ///
+    /// For a person or a program driving grind from a script: a spreadsheet and a text document
+    /// from start to finish, the address and formula rules, writing many cells at once, undo,
+    /// and what an error looks like.
+    Guide,
 
     /// Print what an editor needs to help you write a script or a projection
     ///

@@ -331,6 +331,54 @@ fn a_failure_has_a_documented_status_and_a_json_form() {
     assert!(stderr.contains("did you mean `push`?"), "{stderr}");
 }
 
+/// `grind guide` is the page an agent reads first, so every command in it is run here, in order,
+/// against the files the ones before it made: a guide that has drifted from the CLI fails.
+#[test]
+fn every_command_in_the_guide_runs() {
+    let guide = ok_top(&["guide"]);
+    let dir = Sandbox::new("guide");
+    let bin = Path::new(env!("CARGO_BIN_EXE_grind")).parent().unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let mut ran = 0;
+    for line in guide.lines() {
+        let Some(command) = line
+            .strip_prefix("  ")
+            .filter(|c| c.starts_with("grind ") || c.starts_with("printf "))
+        else {
+            continue;
+        };
+        let output = Command::new("sh")
+            .args(["-c", command])
+            .current_dir(&dir.0)
+            .env("PATH", &path)
+            .env_remove("GRIND_LOCALE")
+            .env_remove("XDG_CONFIG_HOME")
+            .env_remove("HOME")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{command}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        // The guide's examples are what it says they are: none of them leaves a stale cell.
+        assert!(
+            !String::from_utf8_lossy(&output.stderr).contains("disagree"),
+            "{command}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        ran += 1;
+    }
+    assert!(ran >= 15, "only {ran} commands found in\n{guide}");
+    let book = s(&dir.path("book.ods"));
+    assert_eq!(ok(&["get", &book, "B4"]).trim(), "7400");
+    assert_eq!(ok(&["get", &book, "C4", "--formula"]).trim(), "=[.B4]*1.19");
+}
+
 /// Where a loop of `set` calls is the slow way, the help says what the fast one is.
 #[test]
 fn the_help_points_bulk_writes_at_paste() {

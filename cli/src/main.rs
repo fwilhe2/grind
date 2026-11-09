@@ -19,6 +19,7 @@ mod failure;
 mod fit;
 #[cfg(feature = "grammar")]
 mod grammar;
+mod guide;
 mod init;
 mod report;
 mod sheet;
@@ -611,6 +612,8 @@ fn run(cli: &Cli) -> Result<Report, Failure> {
         // The projection's snippets are the exception: written by hand, held to the grammar by
         // `cli/tests/editor.rs`, and compiled in so an installed `grind` can hand them to a
         // project with no copy of this repository.
+        Top::Guide => text_lines(guide::GUIDE.lines().map(str::to_owned).collect()),
+
         Top::Definitions {
             snippets,
             projection,
