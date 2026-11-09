@@ -464,7 +464,19 @@ fn parse_reference(inside: &str, at: usize) -> Result<Reference, SyntaxError> {
     };
 
     let start = parse_cell_ref(first, at)?;
-    let mut end = second.map(|s| parse_cell_ref(s, at)).transpose()?;
+    let mut end = second
+        .map(|s| {
+            parse_cell_ref(s, at).map_err(|e| match e.message == NO_DOT {
+                true => SyntaxError {
+                    message: "the second end of a range needs its own `.` too (as in [.A1:.B2] or \
+                              [Sheet1.A1:.B2])"
+                        .into(),
+                    ..e
+                },
+                false => e,
+            })
+        })
+        .transpose()?;
     // §5.8: "if the first part contains a SheetLocator and the second part does not, the
     // second part inherits the SheetLocator from the first part."
     if let Some(end) = &mut end
@@ -475,6 +487,8 @@ fn parse_reference(inside: &str, at: usize) -> Result<Reference, SyntaxError> {
     }
     Ok(Reference { source, start, end })
 }
+
+const NO_DOT: &str = "a reference needs a `.` before its cell address (as in [.A1], or [Sheet1.A1] on another sheet)";
 
 /// `SheetLocatorOrEmpty '.' Column? Row?` — one end of a reference.
 fn parse_cell_ref(src: &[char], at: usize) -> Result<CellRef, SyntaxError> {
@@ -499,9 +513,13 @@ fn parse_cell_ref(src: &[char], at: usize) -> Result<CellRef, SyntaxError> {
     }
     sheet_absolute &= sheet.is_some();
     if src.get(i) != Some(&'.') {
-        return err("a reference needs a `.` before its cell address", at);
+        return err(NO_DOT, at);
     }
     i += 1;
+    if matches!(src.get(i + usize::from(src.get(i) == Some(&'$'))), Some(c) if c.is_ascii_lowercase())
+    {
+        return err("a column is written in capitals (as in [.A1])", at);
+    }
 
     let col_absolute = src.get(i) == Some(&'$');
     if col_absolute {
@@ -610,6 +628,18 @@ mod tests {
         assert_eq!(tokens("SUM(")[0], Token::Func("SUM".into()));
         assert_eq!(tokens("SUM (")[0], Token::Name("SUM".into()));
         assert_eq!(tokens(" SUM(")[0], Token::Func("SUM".into()));
+    }
+
+    #[test]
+    fn a_malformed_reference_says_what_it_is_missing() {
+        let message = |src: &str| lex(src).unwrap_err().message;
+        assert!(message("[A1]").starts_with("a reference needs a `.`"));
+        // §5.8: each end has its own `.`; only the sheet is inherited.
+        assert!(message("[.A1:B2]").starts_with("the second end of a range"));
+        assert!(message("[Data.A1:B2]").starts_with("the second end of a range"));
+        assert!(message("[.a1]").starts_with("a column is written in capitals"));
+        assert!(message("[.$a$1]").starts_with("a column is written in capitals"));
+        assert!(lex("[Data.A1:.B2]").is_ok());
     }
 
     #[test]

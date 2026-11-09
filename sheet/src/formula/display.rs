@@ -506,6 +506,16 @@ fn scan_end(chars: &[(usize, char)], start: usize) -> Option<(usize, bool)> {
 mod tests {
     use super::*;
 
+    /// A name spelled like a cell stays a name in display form, so a trace of `=S2` reads the
+    /// name `S2` exactly as evaluating it does.
+    #[test]
+    fn a_cell_shaped_name_is_quoted_in_display_form() {
+        assert_eq!(to_display("=S2").unwrap(), "=$$'S2'");
+        assert_eq!(to_display("=SUM(S2:S3)").unwrap(), "=SUM($$'S2':$$'S3')");
+        assert_eq!(from_display("=$$'S2'").unwrap(), "=S2");
+        assert_eq!(to_display("=Total").unwrap(), "=Total");
+    }
+
     #[test]
     fn typed_input_is_a_formula_converted_or_anything_else_untouched() {
         assert_eq!(to_input("=SUM(B2:B4)").unwrap(), "=SUM([.B2:.B4])");

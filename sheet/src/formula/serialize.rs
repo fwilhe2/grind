@@ -25,23 +25,44 @@ pub struct Bare<'a>(pub &'a Expr);
 
 impl fmt::Display for Bare<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        expr(f, self.0, true)
+        expr(f, self.0, DISPLAY)
     }
 }
+
+/// How [`expr`] spells what it writes: `display` is the formula bar's form as a whole, and
+/// `bare` whether a reference at this point goes without its brackets.
+#[derive(Clone, Copy)]
+struct Form {
+    display: bool,
+    bare: bool,
+}
+
+const CANONICAL: Form = Form {
+    display: false,
+    bare: false,
+};
+const DISPLAY: Form = Form {
+    display: true,
+    bare: true,
+};
 
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        expr(f, self, false)
+        expr(f, self, CANONICAL)
     }
 }
 
-fn expr(f: &mut fmt::Formatter<'_>, e: &Expr, bare: bool) -> fmt::Result {
+fn expr(f: &mut fmt::Formatter<'_>, e: &Expr, form: Form) -> fmt::Result {
     match e {
         Expr::Number(n) => f.write_str(&format_number(*n)),
         // §5.4: a literal `"` is written doubled.
         Expr::Text(s) => write!(f, "\"{}\"", s.replace('"', "\"\"")),
         Expr::Error(e) => f.write_str(e.name()),
-        Expr::Ref(r) => reference(f, r, bare),
+        Expr::Ref(r) => reference(f, r, form.bare),
+        // In display form a bare `S2` is the cell, so a name spelled like one is quoted.
+        Expr::Name(name) if form.display && super::display::reads_as_reference(name) => {
+            write!(f, "$$'{}'", name.replace('\'', "''"))
+        }
         Expr::Name(name) => write!(f, "{}", name_text(name)),
         Expr::Call { name, args } => {
             write!(f, "{name}(")?;
@@ -49,33 +70,36 @@ fn expr(f: &mut fmt::Formatter<'_>, e: &Expr, bare: bool) -> fmt::Result {
                 if i > 0 {
                     f.write_str(";")?;
                 }
-                expr(f, arg, bare)?;
+                expr(f, arg, form)?;
             }
             f.write_str(")")
         }
         Expr::Prefix(op, operand) => {
             f.write_str(op.text())?;
-            child(f, operand, PREFIX_BP, bare)
+            child(f, operand, PREFIX_BP, form)
         }
         Expr::Postfix(op, operand) => {
-            child(f, operand, POSTFIX_BP, bare)?;
+            child(f, operand, POSTFIX_BP, form)?;
             f.write_str(op.text())
         }
         Expr::Binary(op, lhs, rhs) => {
             // The range operator over two references (`[Sheet2.C22]:[.C33]`) keeps its brackets:
             // display form would spell it like `[Sheet2.C22:.C33]`, where the second end inherits
             // the sheet.
-            let bare = bare && *op != Op::Range;
+            let form = Form {
+                bare: form.bare && *op != Op::Range,
+                ..form
+            };
             let bp = infix_bp(*op);
-            child(f, lhs, bp, bare)?;
+            child(f, lhs, bp, form)?;
             f.write_str(op.text())?;
             // Every infix operator in §5.5 Table 1 is left-associative, so a right
             // child of equal precedence needs brackets: `1-(2-3)` is not `1-2-3`.
-            child(f, rhs, bp + 1, bare)
+            child(f, rhs, bp + 1, form)
         }
         Expr::Paren(inner) => {
             f.write_str("(")?;
-            expr(f, inner, bare)?;
+            expr(f, inner, form)?;
             f.write_str(")")
         }
         Expr::Empty => Ok(()),
@@ -84,13 +108,13 @@ fn expr(f: &mut fmt::Formatter<'_>, e: &Expr, bare: bool) -> fmt::Result {
 
 /// Write `e` as the child of something binding at `parent_bp`, bracketing if it would
 /// otherwise re-associate.
-fn child(f: &mut fmt::Formatter<'_>, e: &Expr, parent_bp: u8, bare: bool) -> fmt::Result {
+fn child(f: &mut fmt::Formatter<'_>, e: &Expr, parent_bp: u8, form: Form) -> fmt::Result {
     if binding_power(e) < parent_bp {
         f.write_str("(")?;
-        expr(f, e, bare)?;
+        expr(f, e, form)?;
         f.write_str(")")
     } else {
-        expr(f, e, bare)
+        expr(f, e, form)
     }
 }
 
