@@ -119,7 +119,7 @@ type from a spelling here would be a second rule that can disagree with the firs
 | `4200`, `-12.5` | a number |
 | `true` / `false` | a logical |
 | `"North"`, `"2042"` | **text, exactly as written** — `"2042"` is the text, not the number |
-| `"=SUM([.B2:.B7])"` | a formula in **ODF syntax**, verbatim, stored unchecked |
+| `"=SUM([.B2:.B7])"` | a formula in **ODF syntax**, stored as written — checked as `grind sheet set` checks one, so a formula that does not parse, a bare `B2` or Excel's `MAXIFS` fails the build at its line |
 | `formula("SUM(B2:B7)")` | a formula in **display syntax** — what a formula bar shows — converted, and therefore *validated* |
 | `"'=not a formula"` | text beginning with `=`; the leading quote is the core's own escape and is removed |
 | `()` | nothing — the cell is left empty |

@@ -251,7 +251,7 @@
     "body": [
       "formula(${1:source})"
     ],
-    "description": "A formula written the way a formula bar shows one — `formula(\"SUM(B2:B7)\")`.\n\nConverted to ODF syntax by the core's own converter, so a formula that does not\nparse is an error here. The other spelling is a plain string starting with `=`,\nwhich is stored exactly as written.",
+    "description": "A formula written the way a formula bar shows one — `formula(\"SUM(B2:B7)\")`.\n\nConverted to ODF syntax by the core's own converter, so a formula that does not\nparse is an error here. The other spelling is a plain string starting with `=`,\nin ODF syntax, stored as written once it is checked the way `grind sheet set`\nchecks one.",
     "prefix": "formula",
     "scope": "rhai"
   },

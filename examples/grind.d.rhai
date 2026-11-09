@@ -126,7 +126,8 @@ fn format_percent(fraction: ?, decimals: int, locale: string) -> string;
 ///
 /// Converted to ODF syntax by the core's own converter, so a formula that does not
 /// parse is an error here. The other spelling is a plain string starting with `=`,
-/// which is stored exactly as written.
+/// in ODF syntax, stored as written once it is checked the way `grind sheet set`
+/// checks one.
 fn formula(source: string) -> Cell;
 
 /// How many blocks have been said.

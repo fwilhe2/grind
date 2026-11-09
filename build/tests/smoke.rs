@@ -158,6 +158,28 @@ fn a_colour_outside_the_vocabulary_is_an_error_where_it_was_written() {
     assert!(message.starts_with("model.rhai:4:"), "{message}");
 }
 
+/// A `"=…"` string is checked as `grind sheet set` checks one, at the line that wrote it: a
+/// formula that would be stored and read `#NAME?` or `#VALUE!` fails the build instead.
+#[test]
+fn a_formula_string_set_would_refuse_fails_where_it_was_written() {
+    for (formula, says) in [
+        ("=SUM(B1:B2)", "write [.B1:.B2]"),
+        ("=SUM([.A1],1)", "unexpected character ','"),
+        ("=SUM([.A1:A2])", "the second end of a range"),
+        ("=MAXIFS([.A1:.A2];[.A1:.A2];1)", "COM.MICROSOFT.MAXIFS"),
+    ] {
+        let message = error(&format!(
+            "let s = sheet(\"S\");\ns.push([1, 2]);\ns.push([\"{}\"]);\ns",
+            formula.replace('"', "\\\"")
+        ));
+        assert!(message.starts_with("model.rhai:3:"), "{message}");
+        assert!(message.contains(says), "{formula}: {message}");
+    }
+    // `'` keeps such a string as the text it is.
+    let app = spreadsheet(r#"let s = sheet("S"); s.push(["'=SUM(B1:B2)"]); s"#);
+    assert_eq!(at(&app, "A1"), CellValue::Text("=SUM(B1:B2)".into()));
+}
+
 /// Widths and heights are ODF lengths, and a whole-column range means the column the script
 /// actually filled — which is why the decorations are applied after the cells.
 #[test]

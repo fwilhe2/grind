@@ -228,7 +228,8 @@ pub fn register(engine: &mut Engine) {
             "///",
             "/// Converted to ODF syntax by the core's own converter, so a formula that does not",
             "/// parse is an error here. The other spelling is a plain string starting with `=`,",
-            "/// which is stored exactly as written.",
+            "/// in ODF syntax, stored as written once it is checked the way `grind sheet set`",
+            "/// checks one.",
         ],
         |source: &str| -> Res<Cell> { Cell::formula(source) },
     );
@@ -792,7 +793,7 @@ impl Cell {
         }
         if value.is_string() {
             let text = value.into_immutable_string().unwrap();
-            return Ok(Cell::of_str(&text));
+            return Cell::of_str(&text);
         }
         Err(bad(format!(
             "{} is not something a cell can hold — a number, a string, a logical, () or a \
@@ -801,13 +802,20 @@ impl Cell {
         )))
     }
 
-    fn of_str(text: &str) -> Cell {
+    /// A string as a cell takes it: `'` forces text, and a leading `=` is a formula in ODF
+    /// syntax, refused here — where the script's line is still known — if `set` would refuse it.
+    /// A script can define no cell-shaped name, so none is ever one.
+    fn of_str(text: &str) -> Res<Cell> {
         if let Some(text) = text.strip_prefix('\'') {
-            return Cell::Value(CellValue::Text(text.to_owned()));
+            return Ok(Cell::Value(CellValue::Text(text.to_owned())));
         }
         match text.starts_with('=') {
-            true => Cell::Formula(text.to_owned()),
-            false => Cell::Value(CellValue::Text(text.to_owned())),
+            true => {
+                grind_sheet::formula::check(text, |_| false)
+                    .map_err(|e| bad(format!("{text}: {e}")))?;
+                Ok(Cell::Formula(text.to_owned()))
+            }
+            false => Ok(Cell::Value(CellValue::Text(text.to_owned()))),
         }
     }
 

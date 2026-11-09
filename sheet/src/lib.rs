@@ -1829,64 +1829,9 @@ fn input_of(doc: &Document, sheet: usize, pos: Pos) -> Result<String> {
 /// The typing rule: what a string a user typed means (`doc/sheet-shell.md` C3). One
 /// [`Action::SetFormula`] whatever the answer, so typing `5` over `=SUM(A1:A4)` removes the formula.
 /// A formula's cached value is computed against the document as it stands.
-/// What the typing rule refuses to store: a formula that does not parse, a cell address written
-/// without its brackets, which would parse as an undefined name, and Excel's name for a function
-/// ODF spells `COM.MICROSOFT.…` — the last two would be stored and read `#NAME?`.
+/// [`formula::check`] against this document's names.
 fn check_formula(doc: &Document, input: &str) -> Result<()> {
-    if !input.starts_with('=') {
-        return Ok(());
-    }
-    let expr = formula::parse::parse(input).map_err(|e| Error::Formula(e.to_string()))?;
-    let implemented = formula::funcs::implemented();
-    for name in formula::funcs::used(input).unwrap_or_default() {
-        let odf = format!("COM.MICROSOFT.{name}");
-        if !implemented.contains(&name.as_str()) && implemented.contains(&odf.as_str()) {
-            return Err(Error::Formula(format!(
-                "{name} is Excel's name: an ODF formula writes it {odf}"
-            )));
-        }
-    }
-    match unbracketed(doc, &expr) {
-        Some(written) => Err(Error::Formula(format!(
-            "{written} is not a reference in an ODF formula, which brackets every reference: \
-             write {}",
-            bracketed(&written)
-        ))),
-        None => Ok(()),
-    }
-}
-
-/// The first cell-shaped name in `expr` the document does not define, as written: `S2`,
-/// `Data.S2`, or a range of two of them, `S2:S3`.
-fn unbracketed(doc: &Document, expr: &formula::parse::Expr) -> Option<String> {
-    use formula::parse::Expr;
-    let cell = |e: &Expr| match e {
-        Expr::Name(n) if formula::display::reads_as_reference(n) && doc.name(n).is_none() => {
-            Some(n.clone())
-        }
-        _ => None,
-    };
-    match expr {
-        Expr::Binary(formula::lex::Op::Range, a, b) => match (cell(a), cell(b)) {
-            (Some(a), Some(b)) => Some(format!("{a}:{b}")),
-            _ => unbracketed(doc, a).or_else(|| unbracketed(doc, b)),
-        },
-        Expr::Binary(_, a, b) => unbracketed(doc, a).or_else(|| unbracketed(doc, b)),
-        Expr::Name(_) => cell(expr),
-        Expr::Call { args, .. } => args.iter().find_map(|arg| unbracketed(doc, arg)),
-        Expr::Prefix(_, e) | Expr::Postfix(_, e) | Expr::Paren(e) => unbracketed(doc, e),
-        _ => None,
-    }
-}
-
-/// `S2` → `[.S2]`, `Data.s2` → `[Data.S2]`, `S2:S3` → `[.S2:.S3]`.
-fn bracketed(written: &str) -> String {
-    let end = |e: &str| match e.rsplit_once('.') {
-        Some((sheet, cell)) => format!("{sheet}.{}", cell.to_uppercase()),
-        None => format!(".{}", e.to_uppercase()),
-    };
-    let ends: Vec<String> = written.split(':').map(end).collect();
-    format!("[{}]", ends.join(":"))
+    formula::check(input, |name| doc.name(name).is_some()).map_err(Error::Formula)
 }
 
 fn typed(
