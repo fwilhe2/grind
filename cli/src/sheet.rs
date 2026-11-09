@@ -209,11 +209,12 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             address,
             value,
             text,
+            display,
             recalc,
         } => {
             let app = load(file, cli)?;
             let (sheet, pos, _) = single(&app, address)?;
-            let value = read_stdin_if_dash(value)?;
+            let value = typed(&read_stdin_if_dash(value)?, *display)?;
             // `App::enter` is the typing rule, shared with every GUI: a leading `=` is a
             // formula stored verbatim with its cached value, a leading `'` is text, and
             // `--text` is that same rule spelled as a flag.
@@ -234,6 +235,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             file,
             anchor,
             rows,
+            display,
             recalc,
         } => {
             let app = load(file, cli)?;
@@ -241,8 +243,8 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             let text = read_stdin_if_dash(rows)?;
             let rows: Vec<Vec<String>> = text
                 .lines()
-                .map(|line| line.split('\t').map(str::to_owned).collect())
-                .collect();
+                .map(|line| line.split('\t').map(|cell| typed(cell, *display)).collect())
+                .collect::<Result<_, _>>()?;
             let outcome = app.enter_range(sheet, pos, &rows, mode(*recalc)).say()?;
             if let Some(note) = outcome.note(app.locale().as_ref()) {
                 eprintln!("grind: {note}");
@@ -367,6 +369,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             file,
             address,
             formula,
+            display,
             trace,
             with,
             pretty,
@@ -374,6 +377,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
         } => {
             let app = load(file, cli)?;
             let (sheet, pos, _) = single(&app, address)?;
+            let formula = &typed(formula, *display)?;
             // What `set` would refuse is an error here too, not a `#NAME?` that hides why.
             app.check_formula(formula).say()?;
             unknown_functions(formula);
@@ -1656,6 +1660,17 @@ fn laid_out(
 
 /// `eval --trace`: the formula in display syntax, one sub-expression a line indented by its
 /// depth, and each one's answer in a column — `App::trace`, read top to bottom.
+/// What was typed, with a formula converted from the spelling a formula bar shows when `display`
+/// says it is in that spelling.
+fn typed(input: &str, display: bool) -> Result<String, String> {
+    match display && input.starts_with('=') {
+        true => {
+            grind_sheet::formula::display::from_display(input).map_err(|e| format!("{input}: {e}"))
+        }
+        false => Ok(input.to_owned()),
+    }
+}
+
 /// Name, on standard error, each function a formula calls that this build does not have: the
 /// formula is stored or evaluated all the same, and reads #NAME?.
 fn unknown_functions(input: &str) {

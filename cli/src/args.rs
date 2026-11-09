@@ -28,7 +28,9 @@ Formula syntax:
        [Data.A1:.B9]      a range on another sheet; the second end inherits the sheet
        [.$A$1]            absolute column and row, which fill leaves alone
        [.A:.A]  [.2:.5]   whole columns, whole rows
-     Column letters are capitals. A bare A1 is not a reference, and is refused.
+     Column letters are capitals. A bare A1 is not a reference, and is refused — unless
+     --display says the formula is spelled as a formula bar shows it, =SUM(B2:B4), which
+     set, paste and eval then convert.
   2. Arguments are separated by ; never by ,     =ROUND([.A1];2)
   3. A decimal point is a dot, in every locale:  =[.A1]*1.5
   4. A function Excel has and ODF does not is written with COM.MICROSOFT. in front:
@@ -47,6 +49,7 @@ Examples:
   grind sheet set book.ods Summary.B1 '=SUM([Data.B2:.B100])'
   grind sheet set book.ods D1 '=SUMIFS([.C2:.C9];[.A2:.A9];\"east\";[.B2:.B9];\">100\")'
   grind sheet eval book.ods A1 '=AVERAGE([Data.B2:.B100])'   evaluate without storing
+  grind sheet set book.ods C2 --display '=A2*B2'              stores =[.A2]*[.B2]
   grind sheet fmt --from-display '=SUM(B2:B4)'                prints =SUM([.B2:.B4])
   grind sheet functions --long --filter IFS                   how to call each function
 
@@ -1221,8 +1224,12 @@ pub(crate) enum Command {
         #[arg(allow_hyphen_values = true)]
         value: String,
         /// Store the value as text, whatever it looks like
-        #[arg(long)]
+        #[arg(long, conflicts_with = "display")]
         text: bool,
+        /// Read a formula as a formula bar spells it — =SUM(B2:B4), Data.A1 — and store its
+        /// OpenFormula form, =SUM([.B2:.B4]); a formula that will not convert is refused
+        #[arg(long)]
+        display: bool,
         /// Recalculate the document in the same undo step, unless that would spoil a cell
         #[arg(long)]
         recalc: bool,
@@ -1240,6 +1247,10 @@ pub(crate) enum Command {
         /// Tab-separated rows, one per line; "-" reads them from stdin
         #[arg(allow_hyphen_values = true)]
         rows: String,
+        /// Read a formula as a formula bar spells it — =SUM(B2:B4), Data.A1 — and store its
+        /// OpenFormula form, =SUM([.B2:.B4]); a formula that will not convert is refused
+        #[arg(long)]
+        display: bool,
         /// Recalculate the document in the same undo step, unless that would spoil a cell
         #[arg(long)]
         recalc: bool,
@@ -1357,6 +1368,9 @@ pub(crate) enum Command {
         /// The formula, in OpenFormula syntax, e.g. '=SUM([.B2:.B4])'
         #[arg(allow_hyphen_values = true)]
         formula: String,
+        /// Read the formula as a formula bar spells it — =SUM(B2:B4) — rather than as stored
+        #[arg(long)]
+        display: bool,
         /// Take the formula apart: every sub-expression on its own line, indented by depth,
         /// with what it comes to in place ("not evaluated" for a branch not taken)
         #[arg(long)]

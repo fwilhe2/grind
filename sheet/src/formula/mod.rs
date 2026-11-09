@@ -38,6 +38,12 @@ pub fn check(input: &str, defined: impl Fn(&str) -> bool) -> Result<(), String> 
             ));
         }
     }
+    if let Some((sheet, cells)) = excel_sheet(&defined, &expr) {
+        return Err(format!(
+            "{sheet}!{cells} is Excel's way to name a sheet; an ODF formula writes [{sheet}.{}]",
+            cells.replace(':', ":.")
+        ));
+    }
     match unbracketed(&defined, &expr) {
         Some(written) => Err(format!(
             "{written} is not a reference in an ODF formula, which brackets every reference: \
@@ -65,6 +71,29 @@ fn unbracketed(defined: &impl Fn(&str) -> bool, expr: &parse::Expr) -> Option<St
         Expr::Name(_) => cell(expr),
         Expr::Call { args, .. } => args.iter().find_map(|arg| unbracketed(defined, arg)),
         Expr::Prefix(_, e) | Expr::Postfix(_, e) | Expr::Paren(e) => unbracketed(defined, e),
+        _ => None,
+    }
+}
+
+/// `Data!A1`, or `Data![.A1]` as display form converts it — Excel's sheet syntax, where `!` is
+/// ODF's intersection and `Data` an undefined name. The sheet and the cells, as written.
+fn excel_sheet(defined: &impl Fn(&str) -> bool, expr: &parse::Expr) -> Option<(String, String)> {
+    use parse::Expr;
+    match expr {
+        Expr::Binary(lex::Op::Intersect, a, b) => match (a.as_ref(), b.as_ref()) {
+            (Expr::Name(sheet), Expr::Ref(r)) if !defined(sheet) && r.start.sheet.is_none() => {
+                Some((sheet.clone(), display::reference_text(r)))
+            }
+            (Expr::Name(sheet), Expr::Name(cell))
+                if !defined(sheet) && display::reads_as_reference(cell) =>
+            {
+                Some((sheet.clone(), cell.to_uppercase()))
+            }
+            _ => excel_sheet(defined, a).or_else(|| excel_sheet(defined, b)),
+        },
+        Expr::Binary(_, a, b) => excel_sheet(defined, a).or_else(|| excel_sheet(defined, b)),
+        Expr::Call { args, .. } => args.iter().find_map(|arg| excel_sheet(defined, arg)),
+        Expr::Prefix(_, e) | Expr::Postfix(_, e) | Expr::Paren(e) => excel_sheet(defined, e),
         _ => None,
     }
 }

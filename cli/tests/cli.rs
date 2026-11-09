@@ -230,6 +230,57 @@ fn eval_reads_the_document_and_refuses_what_set_refuses() {
     );
 }
 
+/// `--display` takes the spelling a formula bar shows and stores OpenFormula, in each command
+/// that takes a formula; Excel's `Sheet!A1`, which it cannot mean, is refused with the fix.
+#[test]
+fn display_syntax_is_read_when_asked_for() {
+    let dir = Sandbox::new("display");
+    let file = dir.path("book.fods");
+    let path = s(&file);
+    ok(&["new", &path]);
+    ok(&["add", &path, "Data"]);
+    ok(&["set", &path, "Data.B2", "4"]);
+    ok(&["set", &path, "Data.B3", "6"]);
+    ok(&["set", &path, "C1", "=SUM(Data.B2:B3)*2", "--display"]);
+    assert_eq!(
+        ok(&["get", &path, "C1", "--formula"]).trim(),
+        "=SUM([Data.B2:.B3])*2"
+    );
+    assert_eq!(ok(&["get", &path, "C1"]).trim(), "20");
+    assert_eq!(
+        ok(&["eval", &path, "A1", "=AVERAGE(Data.B2:B3)", "--display"]).trim(),
+        "5"
+    );
+    let pasted = Command::new(env!("CARGO_BIN_EXE_grind"))
+        .args(["sheet", "paste", &path, "D1", "-", "--display"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(b"=C1/2\t=D1+1\n")?;
+            child.wait()
+        })
+        .unwrap();
+    assert!(pasted.success());
+    assert_eq!(ok(&["get", &path, "E1", "--formula"]).trim(), "=[.D1]+1");
+
+    // Without the flag the same text is refused, and so is Excel's sheet syntax either way.
+    for (formula, says) in [
+        ("=SUM(Data.B2:B3)", "write [Data.B2:.B3]"),
+        ("=Data!B2*2", "writes [Data.B2]"),
+    ] {
+        let refused = sheet(&["set", &path, "F1", formula]);
+        assert_eq!(refused.status.code(), Some(1));
+        assert!(
+            String::from_utf8_lossy(&refused.stderr).contains(says),
+            "{formula}"
+        );
+    }
+    let refused = sheet(&["set", &path, "F1", "=Data!B2", "--display"]);
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("writes [Data.B2]"));
+}
+
 /// Each status `grind --help` documents, and the JSON a failure is under `--format json`: what a
 /// script branches on instead of reading the sentence.
 #[test]
