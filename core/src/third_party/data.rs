@@ -2310,6 +2310,15 @@ pub(super) const COMPONENTS: &[Component] = &[
         notices: &[3, 178],
     },
     Component {
+        name: "signal-hook",
+        version: "0.4.6",
+        licence: "MIT OR Apache-2.0",
+        copyright: "Copyright (c) 2017 tokio-jsonrpc developers",
+        source: "https://github.com/vorner/signal-hook",
+        kind: Kind::Crate,
+        notices: &[3, 178],
+    },
+    Component {
         name: "signal-hook-mio",
         version: "0.2.5",
         licence: "MIT OR Apache-2.0",
