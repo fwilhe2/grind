@@ -65,7 +65,7 @@ serde_json = "1"
 
 [target.'cfg(unix)'.dependencies]
 # `grind serve` as a container's PID 1 gets no default action for SIGTERM.
-signal-hook = { version = "0.3", optional = true, default-features = false, features = ["iterator"] }
+signal-hook = { version = "0.4", optional = true, default-features = false, features = ["iterator"] }
 
 # Read by `cargo deb` (artifacts.yml). No runtime deps beyond libc: `grind-sheet` is
 # format-neutral plumbing, not a system library.
