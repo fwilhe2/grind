@@ -718,7 +718,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "flate2",
-        version: "1.1.10",
+        version: "1.1.11",
         licence: "MIT OR Apache-2.0",
         copyright: "Copyright (c) 2014-2026 Alex Crichton",
         source: "https://github.com/rust-lang/flate2-rs",
@@ -3364,7 +3364,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "zip",
-        version: "9.3.0",
+        version: "9.4.1",
         licence: "MIT",
         copyright: "Copyright (c) 2014 Mathijs van de Nes",
         source: "https://github.com/zip-rs/zip2",
