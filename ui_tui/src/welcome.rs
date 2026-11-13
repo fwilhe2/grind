@@ -100,10 +100,10 @@ impl Welcome {
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit = true,
             KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
-                self.selected = (self.selected + 1) % self.targets()
+                self.selected = (self.selected + 1) % self.targets();
             }
             KeyCode::Up | KeyCode::Char('k') | KeyCode::BackTab => {
-                self.selected = (self.selected + self.targets() - 1) % self.targets()
+                self.selected = (self.selected + self.targets() - 1) % self.targets();
             }
             KeyCode::Enter => self.choose(self.selected),
             _ => {}

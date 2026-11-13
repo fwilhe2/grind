@@ -714,7 +714,7 @@ impl Sheet {
             // Everything the sheet *uses*, with the active cell at A1 so that the view goes
             // home rather than to the far corner. An empty sheet selects the one cell it has.
             keymap::Action::SelectAll => {
-                self.selection = grind_sheet::nav::all(&self.app, self.sheet)
+                self.selection = grind_sheet::nav::all(&self.app, self.sheet);
             }
             keymap::Action::GoTo => {}
         }
@@ -4047,7 +4047,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::UnmergeCells => merge_cells(hwnd, false),
         Command::InsertChart => insert_chart(hwnd, None),
         Command::InsertBarChart | Command::InsertLineChart | Command::InsertPieChart => {
-            insert_chart(hwnd, command.inserts_chart_kind())
+            insert_chart(hwnd, command.inserts_chart_kind());
         }
         Command::ChartToBar | Command::ChartToLine | Command::ChartToPie => {
             if let Some(kind) = command.chart_kind() {
@@ -4777,7 +4777,7 @@ fn find_calculation(hwnd: HWND) {
                 state.say(Some(
                     "Nothing here is calculated, or nothing matches. A cell starting with = is."
                         .to_owned(),
-                ))
+                ));
             })
         };
         return refresh(hwnd);
@@ -8086,7 +8086,7 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::Paragraph => text_set_kind(hwnd, grind_text::BlockKind::Paragraph, None),
         Command::Title => text_set_kind(hwnd, grind_text::BlockKind::Paragraph, Some("Title")),
         Command::Subtitle => {
-            text_set_kind(hwnd, grind_text::BlockKind::Paragraph, Some("Subtitle"))
+            text_set_kind(hwnd, grind_text::BlockKind::Paragraph, Some("Subtitle"));
         }
         Command::Heading1 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 1 }, None),
         Command::Heading2 => text_set_kind(hwnd, grind_text::BlockKind::Heading { level: 2 }, None),
@@ -8659,7 +8659,7 @@ fn text_alt_text(hwnd: HWND) {
         // SAFETY: one borrow.
         unsafe {
             with_text(hwnd, |text| {
-                text.say(Some("Put the caret beside a picture first.".to_owned()))
+                text.say(Some("Put the caret beside a picture first.".to_owned()));
             });
         }
         refresh(hwnd);

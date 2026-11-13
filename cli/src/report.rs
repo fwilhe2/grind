@@ -893,7 +893,7 @@ impl Report {
                 for diagnostic in &lint.diagnostics {
                     match diagnostic.location {
                         Some(at) => {
-                            println!("{}:{}:{}: {diagnostic}", lint.path, at.line, at.column)
+                            println!("{}:{}:{}: {diagnostic}", lint.path, at.line, at.column);
                         }
                         None => println!("{diagnostic}"),
                     }

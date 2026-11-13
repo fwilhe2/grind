@@ -1317,7 +1317,7 @@ impl Shell {
         match self.download(&name, &bytes) {
             Ok(()) => {
                 recent::note(&name, &bytes);
-                self.set_message(format!("Saved {name} to your downloads"))
+                self.set_message(format!("Saved {name} to your downloads"));
             }
             Err(_) => self.set_message(format!("The browser refused to download {name}")),
         }
@@ -1710,7 +1710,7 @@ impl Shell {
         };
         match server::history(&id).await {
             Ok(versions) if versions.is_empty() => {
-                self.set_message("The server has no earlier versions of this document".to_owned())
+                self.set_message("The server has no earlier versions of this document".to_owned());
             }
             Ok(versions) => {
                 *self.versions.borrow_mut() = versions;

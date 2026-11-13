@@ -1741,7 +1741,7 @@ impl Ui {
             // meaning this pane decides rather than the keymap.
             Action::Tab { back } => match self.block_at(self.caret.get().block) {
                 Some(block) if matches!(block.kind, BlockKind::ListItem { .. }) => {
-                    self.renest(if back { -1 } else { 1 })
+                    self.renest(if back { -1 } else { 1 });
                 }
                 _ if !back => {
                     self.erase_selection();
@@ -2163,7 +2163,7 @@ fn wire(ui: &Rc<Ui>) -> Result<(), JsValue> {
     listen(&dialog, "close", move |_: Event| closed.close_alt())?;
     let cancel: HtmlElement = element(&ui.dom.document, "alt-cancel")?;
     listen(&cancel, "click", move |_: Event| {
-        dialog.close_with_return_value("cancel")
+        dialog.close_with_return_value("cancel");
     })?;
 
     // On the *window*, not the pane: a drag that ends outside it still ends.

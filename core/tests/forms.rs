@@ -156,7 +156,7 @@ fn what_a_flat_file_has_no_place_for_is_refused_by_name() {
             assert!(
                 what[0].starts_with("Basic/Standard/Module1.xml"),
                 "{what:?}"
-            )
+            );
         }
         other => panic!("{other:?}"),
     }

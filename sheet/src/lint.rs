@@ -312,7 +312,7 @@ fn sheet_names(expr: &Expr, out: &mut Vec<String>) {
         }
         Expr::Call { args, .. } => args.iter().for_each(|arg| sheet_names(arg, out)),
         Expr::Prefix(_, inner) | Expr::Postfix(_, inner) | Expr::Paren(inner) => {
-            sheet_names(inner, out)
+            sheet_names(inner, out);
         }
         Expr::Binary(_, left, right) => {
             sheet_names(left, out);
@@ -581,14 +581,14 @@ fn aggregated<'e>(expr: &'e Expr, out: &mut Vec<&'e crate::formula::lex::Referen
                                     .all(|c| c.row.is_some() && c.col.is_some())
                             }) =>
                     {
-                        out.push(reference)
+                        out.push(reference);
                     }
                     _ => aggregated(arg, out),
                 }
             }
         }
         Expr::Prefix(_, inner) | Expr::Postfix(_, inner) | Expr::Paren(inner) => {
-            aggregated(inner, out)
+            aggregated(inner, out);
         }
         Expr::Binary(_, left, right) => {
             aggregated(left, out);
@@ -705,7 +705,7 @@ fn numbers(expr: &Expr, out: &mut Vec<f64>) {
             }
         }
         Expr::Prefix(_, inner) | Expr::Postfix(_, inner) | Expr::Paren(inner) => {
-            numbers(inner, out)
+            numbers(inner, out);
         }
         Expr::Binary(_, left, right) => {
             numbers(left, out);

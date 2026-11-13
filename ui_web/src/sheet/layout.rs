@@ -72,7 +72,7 @@ pub struct Drawn;
 
 impl grind_core::layout::Metrics for Drawn {
     fn advances(&self, text: &str, style: &grind_core::style::TextStyle, out: &mut Vec<f32>) {
-        Estimate.advances(text, style, out)
+        Estimate.advances(text, style, out);
     }
 
     fn line_height(&self, style: &grind_core::style::TextStyle) -> f32 {

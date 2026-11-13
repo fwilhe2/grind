@@ -260,7 +260,7 @@ impl TextPane {
         if let Some(view) = self.view() {
             // SAFETY: as in `act_on`.
             unsafe {
-                NSAccessibilityPostNotification(&view, NSAccessibilityValueChangedNotification)
+                NSAccessibilityPostNotification(&view, NSAccessibilityValueChangedNotification);
             };
         }
     }
@@ -405,7 +405,7 @@ impl TextPane {
                 NSAccessibilityPostNotification(
                     &view,
                     NSAccessibilitySelectedTextChangedNotification,
-                )
+                );
             };
         }
     }
@@ -423,7 +423,7 @@ impl TextPane {
                 Ok(())
             }),
             PageAction::Erase { unit, forward } => {
-                self.act_on(|page, app, faces| page.erase(app, faces, unit, forward))
+                self.act_on(|page, app, faces| page.erase(app, faces, unit, forward));
             }
             PageAction::Split => self.act_on(|page, app, _| page.split(app)),
             PageAction::LineBreak => self.act_on(|page, app, _| page.insert_plain(app, "\n")),

@@ -1434,7 +1434,7 @@ impl Ui {
                         match row_named(&list, &name) {
                             Some(row) => row.set_text(&definition_text(&expression)),
                             None => {
-                                list.append(&name_row(&app, &name, &expression, &say, &sync_empty))
+                                list.append(&name_row(&app, &name, &expression, &say, &sync_empty));
                             }
                         }
                         new_name.set_text("");
@@ -2394,10 +2394,10 @@ fn actions() -> Vec<Verb> {
     vec![
         // --- the document ---
         verb("new", &["<Control>n"], "New Document", "Document", |ui| {
-            ui.new_document()
+            ui.new_document();
         }),
         verb("open", &["<Control>o"], "Open…", "Document", |ui| {
-            ui.open()
+            ui.open();
         }),
         verb("save", &["<Control>s"], "Save", "Document", |ui| ui.save()),
         verb(
@@ -2411,7 +2411,7 @@ fn actions() -> Vec<Verb> {
         // has. No accelerator: neither is a verb anybody presses twice a minute, and the
         // palette is the growth valve this window put verbs in.
         verb("csv-import", &[], "Import CSV…", "Document", |ui| {
-            ui.import_csv()
+            ui.import_csv();
         }),
         verb(
             "csv-import-with",
@@ -2421,7 +2421,7 @@ fn actions() -> Vec<Verb> {
             |ui| ui.import_csv_with(),
         ),
         verb("csv-export", &[], "Export CSV…", "Document", |ui| {
-            ui.export_csv()
+            ui.export_csv();
         }),
         verb("undo", &["<Control>z"], "Undo", "Document", |ui| {
             ui.app.undo();
@@ -2436,18 +2436,18 @@ fn actions() -> Vec<Verb> {
             },
         ),
         verb("recalc", &["F9"], "Recalculate", "Document", |ui| {
-            ui.recalculate()
+            ui.recalculate();
         }),
         // F8 is the "next problem" key every IDE has; nothing in the grid's own key map
         // claims it. `doc/dsl.md` §4.3 — the rules are the core's, this is a list in front
         // of them.
         verb("lint", &["F8"], "Check the Document", "Document", |ui| {
-            lint::present(&ui.window, &ui.app, &ui.grid)
+            lint::present(&ui.window, &ui.app, &ui.grid);
         }),
         // Ctrl+F and Ctrl+H, the two keys every spreadsheet gives them — Ctrl+H is the same
         // bar with its replace row already open, not a second dialog.
         verb("find", &["<Control>f"], "Find…", "Document", |ui| {
-            ui.find.open(false)
+            ui.find.open(false);
         }),
         verb(
             "find-replace",
@@ -2477,7 +2477,7 @@ fn actions() -> Vec<Verb> {
                     &ui.app,
                     ui.grid.sheet(),
                     ui.grid.selection().rect(),
-                )
+                );
             },
         ),
         // Each formula in the selection dropped, the cell keeping the value it last computed —
@@ -2490,7 +2490,7 @@ fn actions() -> Vec<Verb> {
             |ui| ui.formulas_to_values(),
         ),
         verb("functions", &[], "Functions…", "Document", |ui| {
-            ui.explore_functions()
+            ui.explore_functions();
         }),
         verb(
             "spelling-language",
@@ -2525,16 +2525,16 @@ fn actions() -> Vec<Verb> {
         verb("cut", &[], "Cut", "Selection", |ui| ui.grid.copy(true)),
         verb("paste", &[], "Paste", "Selection", |ui| ui.grid.paste()),
         verb("copy-value", &[], "Copy Value", "Selection", |ui| {
-            ui.grid.copy_value()
+            ui.grid.copy_value();
         }),
         verb("clear", &[], "Clear Contents", "Selection", |ui| {
-            ui.grid.clear()
+            ui.grid.clear();
         }),
         verb("merge", &[], "Merge Cells", "Selection", |ui| {
-            ui.grid.merge(true)
+            ui.grid.merge(true);
         }),
         verb("unmerge", &[], "Unmerge Cells", "Selection", |ui| {
-            ui.grid.merge(false)
+            ui.grid.merge(false);
         }),
         verb(
             "select-all",
@@ -2544,10 +2544,10 @@ fn actions() -> Vec<Verb> {
             |ui| ui.grid.select_all(),
         ),
         verb("fill-down", &[], "Fill Down", "Selection", |ui| {
-            ui.grid.fill(keymap::Dir::Down)
+            ui.grid.fill(keymap::Dir::Down);
         }),
         verb("fill-right", &[], "Fill Right", "Selection", |ui| {
-            ui.grid.fill(keymap::Dir::Right)
+            ui.grid.fill(keymap::Dir::Right);
         }),
         // Ctrl+Shift+L is the filter key both other spreadsheets use, and nothing in the
         // grid's own key map claims it.
@@ -2559,10 +2559,10 @@ fn actions() -> Vec<Verb> {
             |ui| ui.grid.toggle_filter(),
         ),
         verb("chart-insert", &[], "Insert a Chart…", "Selection", |ui| {
-            ui.chart_dialog(None)
+            ui.chart_dialog(None);
         }),
         verb("chart-edit", &[], "Edit a Chart…", "Selection", |ui| {
-            ui.choose_chart()
+            ui.choose_chart();
         }),
         verb(
             "format-table",
@@ -2580,13 +2580,13 @@ fn actions() -> Vec<Verb> {
         ),
         // --- the sheets ---
         verb("sheet-add", &[], "Add a Sheet", "Sheets", |ui| {
-            ui.add_sheet()
+            ui.add_sheet();
         }),
         verb("sheet-rename", &[], "Rename This Sheet…", "Sheets", |ui| {
-            ui.rename_sheet()
+            ui.rename_sheet();
         }),
         verb("sheet-delete", &[], "Delete This Sheet", "Sheets", |ui| {
-            ui.delete_sheet()
+            ui.delete_sheet();
         }),
         // --- the view ---
         //
@@ -2615,20 +2615,20 @@ fn actions() -> Vec<Verb> {
             |ui| ui.grid.set_zoom(1.0),
         ),
         verb("autofit-all", &[], "Fit Content to Cells", "View", |ui| {
-            ui.grid.autofit_all()
+            ui.grid.autofit_all();
         }),
         verb("fit-cols", &[], "Fit Column Width", "View", |ui| {
-            ui.grid.fit_selection(false)
+            ui.grid.fit_selection(false);
         }),
         verb("fit-rows", &[], "Fit Row Height", "View", |ui| {
-            ui.grid.fit_selection(true)
+            ui.grid.fit_selection(true);
         }),
         // --- the window ---
         //
         // The palette cannot list itself: a row that opens the box it is being read in is a
         // row that does nothing, which is why this one has no title.
         verb("palette", &["<Control>k"], "", "Window", |ui| {
-            palette::present(&ui.window, palette_rows())
+            palette::present(&ui.window, palette_rows());
         }),
         verb(
             "shortcuts",

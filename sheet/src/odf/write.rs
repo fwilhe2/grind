@@ -154,7 +154,7 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
                     }
                 }
                 (None, Some(ours)) => {
-                    replace.push(("styles.xml".to_owned(), ours.clone().into_bytes()))
+                    replace.push(("styles.xml".to_owned(), ours.clone().into_bytes()));
                 }
                 (None, None) => {}
             }
@@ -1128,7 +1128,7 @@ fn origin_body(
             )),
             Some(existing) => patches.push((existing.range.clone(), ours.trim().to_owned())),
             None if !ours.is_empty() => {
-                patches.push((after_tables..after_tables, beside(bytes, anchor, &ours)))
+                patches.push((after_tables..after_tables, beside(bytes, anchor, &ours)));
             }
             None => {}
         }
@@ -1147,7 +1147,7 @@ fn origin_body(
             None if !ours.is_empty() => {
                 // After the names, wherever they are.
                 let at = part(PartKind::NamedExpressions).map_or(after_tables, |p| p.range.end);
-                patches.push((at..at, beside(bytes, anchor, &ours)))
+                patches.push((at..at, beside(bytes, anchor, &ours)));
             }
             None => {}
         }

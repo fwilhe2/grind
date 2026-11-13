@@ -517,7 +517,7 @@ impl App {
                     self.status = format!(
                         "no dictionary for {arg} \u{2014} :spell auto|{}|off",
                         have.join("|")
-                    )
+                    );
                 }
             },
         }
@@ -1095,7 +1095,7 @@ impl App {
     /// cell — the terminal draws it in whole columns.
     fn indent(&mut self, step: i8) {
         self.toggle_style(|style| {
-            *style = grind_sheet::format::indented(style, step).unwrap_or_default()
+            *style = grind_sheet::format::indented(style, step).unwrap_or_default();
         });
     }
 
@@ -1138,7 +1138,7 @@ impl App {
             Some(format) => self.write_format(Some(format), "thousands grouping"),
             None => {
                 self.status =
-                    "only a number, a percentage or a currency has thousands to group".to_owned()
+                    "only a number, a percentage or a currency has thousands to group".to_owned();
             }
         }
     }
@@ -1248,7 +1248,7 @@ impl App {
             }
             KeyCode::Enter => {
                 self.point = None;
-                self.commit_edit()
+                self.commit_edit();
             }
             _ => {}
         }
@@ -1508,7 +1508,7 @@ impl App {
             "chart preview" => self.cmd_chart_preview(""),
             _ if let Some(rest) = cmd.strip_prefix("chart new ") => self.cmd_chart(rest.trim()),
             _ if let Some(rest) = cmd.strip_prefix("chart preview ") => {
-                self.cmd_chart_preview(rest.trim())
+                self.cmd_chart_preview(rest.trim());
             }
             "chart!" => self.cmd_unchart(),
             "chart here" => self.cmd_move_chart(),
@@ -1554,7 +1554,7 @@ impl App {
             _ if let Some(rest) = cmd.strip_prefix("csv-in ") => self.cmd_csv_in(rest.trim()),
             _ if let Some(rest) = cmd.strip_prefix("csv-out ") => self.cmd_csv_out(rest.trim()),
             _ if let Some(rest) = cmd.strip_prefix("sheet-rename ") => {
-                self.cmd_sheet_rename(rest.trim())
+                self.cmd_sheet_rename(rest.trim());
             }
             _ if let Some(rest) = cmd.strip_prefix("w ") => {
                 self.cmd_write(Some(rest.trim()));
@@ -2630,7 +2630,7 @@ impl App {
     fn cmd_recalc(&mut self) {
         match self.core.recalc() {
             Ok(r) if r.spoiled > 0 => {
-                self.status = format!("recalculated — {} cell(s) spoiled", r.spoiled)
+                self.status = format!("recalculated — {} cell(s) spoiled", r.spoiled);
             }
             Ok(r) => self.status = format!("recalculated {} cell(s)", r.changed),
             Err(e) => self.status = e.to_string(),
@@ -2678,7 +2678,7 @@ impl App {
         match parse_format(what) {
             Ok(format) => {
                 let kind = what.split_whitespace().next().unwrap_or_default();
-                self.write_format(format, kind)
+                self.write_format(format, kind);
             }
             Err(message) => self.status = message,
         }
@@ -2715,7 +2715,7 @@ impl App {
             Ok(0) => self.status = format!("renamed to {name}"),
             Ok(rewritten) => {
                 self.status =
-                    format!("renamed to {name} — {rewritten} reference(s) rewritten, u undoes all")
+                    format!("renamed to {name} — {rewritten} reference(s) rewritten, u undoes all");
             }
             Err(e) => self.status = e.to_string(),
         }

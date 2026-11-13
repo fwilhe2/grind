@@ -355,10 +355,10 @@ mod windows_impl {
                         grind_text::grammar::Kind::Typography | grind_text::grammar::Kind::Style
                     ) {
                         true => {
-                            gdi::dotted(dc, left, right, top, scale(1.5, page.dpi), theme.accent)
+                            gdi::dotted(dc, left, right, top, scale(1.5, page.dpi), theme.accent);
                         }
                         false => {
-                            gdi::squiggle(dc, left, right, top, scale(2.0, page.dpi), theme.accent)
+                            gdi::squiggle(dc, left, right, top, scale(2.0, page.dpi), theme.accent);
                         }
                     }
                 }

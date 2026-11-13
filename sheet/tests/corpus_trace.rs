@@ -179,7 +179,7 @@ fn every_corpus_formula_traces_with_true_spans_and_the_evaluators_answer() {
                             laid_out += usize::from(laid.contains('\n'));
                         }
                         Ok((again, _)) => {
-                            fail("laid out differently", format!("{laid} -> {again}"))
+                            fail("laid out differently", format!("{laid} -> {again}"));
                         }
                         Err(e) => fail("layout did not parse", format!("{laid}: {e}")),
                     },

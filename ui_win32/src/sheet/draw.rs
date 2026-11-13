@@ -1805,7 +1805,7 @@ mod tests {
     #[test]
     fn turned_text_is_placed_about_its_middle() {
         let near = |(x, y): (f64, f64), (ex, ey): (f64, f64)| {
-            assert!((x - ex).abs() < 1e-9 && (y - ey).abs() < 1e-9, "{x},{y}")
+            assert!((x - ex).abs() < 1e-9 && (y - ey).abs() < 1e-9, "{x},{y}");
         };
         near(turned_origin(40.0, 10.0, (50.0, 50.0), 0.0), (30.0, 45.0));
         near(turned_origin(40.0, 10.0, (50.0, 50.0), 90.0), (45.0, 70.0));

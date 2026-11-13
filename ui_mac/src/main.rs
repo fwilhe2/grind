@@ -237,7 +237,7 @@ fn render_to(opening: &Opening) -> Result<(), String> {
             let selection = grind_sheet::nav::Selection::default();
             let ops = paint::frame(&app, 0, &grid, FRAME, (0.0, 0.0), selection, &look);
             let (w, h, rgba) = render::bitmap(FRAME.0, FRAME.1, SCALE, |context| {
-                render::draw(context, &ops, &text)
+                render::draw(context, &ops, &text);
             })?;
             std::fs::write(target, png::encode(w, h, &rgba))
                 .map_err(|error| format!("{}: {error}", target.display()))
@@ -283,7 +283,7 @@ fn render_to(opening: &Opening) -> Result<(), String> {
                 ignored: &[],
             });
             let (w, h, rgba) = render::bitmap(FRAME.0, FRAME.1, SCALE, |context| {
-                render::draw(context, &ops, &fonts)
+                render::draw(context, &ops, &fonts);
             })?;
             std::fs::write(target, png::encode(w, h, &rgba))
                 .map_err(|error| format!("{}: {error}", target.display()))
@@ -298,7 +298,7 @@ fn render_to(opening: &Opening) -> Result<(), String> {
             let ops = welcome::frame(&welcome::Welcome::default(), &palette);
             let text = metrics::CoreText::new(metrics::BASE_PT);
             let (w, h, rgba) = render::bitmap(welcome::WIDTH, welcome::HEIGHT, SCALE, |context| {
-                render::draw(context, &ops, &text)
+                render::draw(context, &ops, &text);
             })?;
             std::fs::write(target, png::encode(w, h, &rgba))
                 .map_err(|error| format!("{}: {error}", target.display()))

@@ -145,7 +145,7 @@ fn picture(chart: &grind_sheet::Chart, data: &grind_sheet::ChartData) -> Option<
         &text,
     );
     let (w, h, rgba) = render::bitmap(WIDTH, HEIGHT, SCALE, |context| {
-        render::draw(context, &ops, &text)
+        render::draw(context, &ops, &text);
     })
     .ok()?;
     let image = NSImage::initWithData(

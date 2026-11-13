@@ -120,7 +120,7 @@ fn every_imported_sample_recalculates_to_the_value_it_carried() {
                         reached.insert((file.clone(), bare.to_owned()));
                     }
                     (true, true) => {
-                        failures.push(format!("{file}: {bare} agrees now — delete its entry"))
+                        failures.push(format!("{file}: {bare} agrees now — delete its entry"));
                     }
                     (false, false) => failures.push(format!(
                         "{file} {}!{:?}: {bare} — carried {stored:?}, recalculated {computed:?}",

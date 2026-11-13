@@ -993,7 +993,7 @@ impl App {
             "alt!" => self.cmd_alt(Some(""), Some("")),
             _ if let Some(rest) = cmd.strip_prefix("alt ") => self.cmd_alt(Some(rest.trim()), None),
             _ if let Some(rest) = cmd.strip_prefix("desc ") => {
-                self.cmd_alt(None, Some(rest.trim()))
+                self.cmd_alt(None, Some(rest.trim()));
             }
             // The word processor's half of inline names (§3.6). A verb rather than a key,
             // and the same word turns it off: nothing is written either way.
@@ -1036,16 +1036,16 @@ impl App {
             // what `/g` means.
             _ if let Some(rest) = cmd.strip_prefix("s/") => self.cmd_substitute(rest),
             _ if let Some(rest) = cmd.strip_prefix("font ") => {
-                self.cmd_char(grind_text::format::Change::Family(non_empty(rest)))
+                self.cmd_char(grind_text::format::Change::Family(non_empty(rest)));
             }
             "font" => self.cmd_char(grind_text::format::Change::Family(None)),
             _ if let Some(rest) = cmd.strip_prefix("size ") => {
-                self.cmd_char(grind_text::format::Change::Size(non_empty(rest)))
+                self.cmd_char(grind_text::format::Change::Size(non_empty(rest)));
             }
             "size" => self.cmd_char(grind_text::format::Change::Size(None)),
             _ if let Some(rest) = cmd.strip_prefix("color ") => self.cmd_color(rest.trim(), false),
             _ if let Some(rest) = cmd.strip_prefix("highlight ") => {
-                self.cmd_color(rest.trim(), true)
+                self.cmd_color(rest.trim(), true);
             }
             _ if let Some(rest) = cmd.strip_prefix("li") => self.cmd_list(rest.trim()),
             _ if let Some(rest) = cmd.strip_prefix("w ") => {
@@ -1636,7 +1636,7 @@ impl App {
                     self.status = format!(
                         "no dictionary for {arg} \u{2014} :spell auto|{}|off",
                         have.join("|")
-                    )
+                    );
                 }
             },
         }

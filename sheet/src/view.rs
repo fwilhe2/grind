@@ -867,7 +867,7 @@ mod tests {
             match role.hue() {
                 Hue::None => assert_eq!(role, CellRole::Empty),
                 Hue::Palette(name) => {
-                    assert!(grind_core::style::palette(name).is_some(), "{name}")
+                    assert!(grind_core::style::palette(name).is_some(), "{name}");
                 }
                 Hue::Ink | Hue::Quiet => {}
             }

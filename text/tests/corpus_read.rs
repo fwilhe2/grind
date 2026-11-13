@@ -151,7 +151,7 @@ fn every_corpus_document_loads() {
             // *other* error over the same file is still a failure: the exclusion excuses the
             // file, not every way of going wrong on it.
             Err(grind_core::Error::Xml(_) | grind_core::Error::Package(_)) if excused.is_some() => {
-                malformed += 1
+                malformed += 1;
             }
             Err(e) => failures.push((path, e.to_string())),
         }

@@ -1589,7 +1589,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("import-markdown", &[][..], |ui| ui.import_markdown()),
         ("export-markdown", &[][..], |ui| ui.export_markdown()),
         ("save-markdown", &["<Control><Alt>s"][..], |ui| {
-            ui.save_and_export_markdown()
+            ui.save_and_export_markdown();
         }),
         // The page, three ways (`doc/pdf-export.md`): one typesetting for all of them.
         ("export-pdf", &["<Control><Shift>e"][..], print::export_pdf),
@@ -1643,7 +1643,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         ("table", &["<Control><Shift>t"][..], |ui| ui.insert_table()),
         ("link", &["<Control>k"][..], |ui| ui.link.open()),
         ("paragraph", &["<Control>0"][..], |ui| {
-            ui.set_kind(BlockKind::Paragraph, None)
+            ui.set_kind(BlockKind::Paragraph, None);
         }),
         ("heading-1", &["<Control>1"][..], |ui| ui.heading(1)),
         ("heading-2", &["<Control>2"][..], |ui| ui.heading(2)),
@@ -1656,13 +1656,13 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
         // The two named paragraph styles this window can both apply and draw
         // (`grind_text::look::TITLE_SCALE`), and the only two it will ever apply — see `set_kind`.
         ("title", &[][..], |ui| {
-            ui.set_kind(BlockKind::Paragraph, Some("Title"))
+            ui.set_kind(BlockKind::Paragraph, Some("Title"));
         }),
         ("subtitle", &[][..], |ui| {
-            ui.set_kind(BlockKind::Paragraph, Some("Subtitle"))
+            ui.set_kind(BlockKind::Paragraph, Some("Subtitle"));
         }),
         ("list-item", &["<Control>l"][..], |ui| {
-            ui.set_kind(BlockKind::ListItem { depth: 1 }, None)
+            ui.set_kind(BlockKind::ListItem { depth: 1 }, None);
         }),
         // Whole paragraphs, from the page's context menu: the touched blocks swapped past their
         // neighbour or deleted (`grind_text::blocks`), a bookmark anchored on the caret's block,

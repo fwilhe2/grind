@@ -641,7 +641,7 @@ impl Pane {
                     &grid,
                     NSAccessibilityAnnouncementRequestedNotification,
                     Some(&info),
-                )
+                );
             };
         }
         *self.announced.borrow_mut() = said;

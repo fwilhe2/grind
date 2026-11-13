@@ -2584,7 +2584,7 @@ impl Context<Builder> for TableCell {
         // The columns this element stands for, expanded, as `Row::end` does rows.
         if self.owns {
             repeat_blocks(b, self.before, self.repeated, |cell, copy| {
-                cell.column += copy
+                cell.column += copy;
             });
         }
         b.cell = self.outer.take();

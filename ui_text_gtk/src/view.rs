@@ -912,7 +912,7 @@ mod imp {
                             match quiet {
                                 true => dotted(snapshot, left, right, under, palette.dim),
                                 false => {
-                                    squiggle(snapshot, left, right, under - 1.0, palette.grammar)
+                                    squiggle(snapshot, left, right, under - 1.0, palette.grammar);
                                 }
                             }
                         }
@@ -2141,7 +2141,7 @@ mod tests {
 
         let went = Rc::new(std::cell::RefCell::new(String::new()));
         let dialog = crate::lint::dialog(&app, move |address: &str| {
-            went.borrow_mut().push_str(address)
+            went.borrow_mut().push_str(address);
         });
         assert_eq!(dialog.title().as_str(), "Check Document");
         assert!(dialog.child().is_some(), "it has content to show");

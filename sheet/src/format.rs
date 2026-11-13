@@ -104,7 +104,7 @@ pub const BORDER: &str = "0.06pt solid #000000";
 /// A hairline round the cell (`on`), or every edge taken away — *All Borders* and *No Borders*.
 pub fn bordered(style: &CellStyle, on: bool) -> Option<CellStyle> {
     restyled(style, |style| {
-        style.set_border(on.then(|| BORDER.to_owned()))
+        style.set_border(on.then(|| BORDER.to_owned()));
     })
 }
 

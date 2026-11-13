@@ -2561,7 +2561,7 @@ mod tests {
                 let visible = text.trim_end().len() == text.len();
                 match ends.last_mut() {
                     Some((line, right)) if *line == *y => {
-                        *right = right.max(if visible { end } else { *right })
+                        *right = right.max(if visible { end } else { *right });
                     }
                     _ => ends.push((*y, end)),
                 }

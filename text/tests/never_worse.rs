@@ -36,13 +36,13 @@ const EDITS: &[Edit] = &[
         a.delete(1..2).unwrap();
     }),
     ("insert", |a| {
-        a.insert(0, BlockKind::Paragraph, "new first").unwrap()
+        a.insert(0, BlockKind::Paragraph, "new first").unwrap();
     }),
     ("heading", |a| {
-        a.set_kind(1, BlockKind::Heading { level: 2 }).unwrap()
+        a.set_kind(1, BlockKind::Heading { level: 2 }).unwrap();
     }),
     ("list", |a| {
-        a.set_kind(2, BlockKind::ListItem { depth: 1 }).unwrap()
+        a.set_kind(2, BlockKind::ListItem { depth: 1 }).unwrap();
     }),
     ("bold", |a| {
         let bold = CharStyle {

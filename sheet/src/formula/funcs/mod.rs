@@ -83,7 +83,7 @@ fn collect(expr: &Expr, names: &mut Vec<String>) {
             args.iter().for_each(|arg| collect(arg, names));
         }
         Expr::Prefix(_, inner) | Expr::Postfix(_, inner) | Expr::Paren(inner) => {
-            collect(inner, names)
+            collect(inner, names);
         }
         Expr::Binary(_, left, right) => {
             collect(left, names);

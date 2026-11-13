@@ -489,7 +489,7 @@ impl InitReport {
         for entry in &self.entries {
             match &entry.note {
                 Some(note) => {
-                    println!("{:<9} {:<width$}  {note}", entry.action.label(), entry.path)
+                    println!("{:<9} {:<width$}  {note}", entry.action.label(), entry.path);
                 }
                 None => println!("{:<9} {}", entry.action.label(), entry.path),
             }

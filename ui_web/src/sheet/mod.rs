@@ -1068,11 +1068,11 @@ impl Ui {
                 else {
                     return;
                 };
-                self.merge_style(|s| format::rotated(s, degrees))
+                self.merge_style(|s| format::rotated(s, degrees));
             }
             "style.border" => style(|s| {
                 format::restyled(s, |s| {
-                    s.set_border(Some(grind_sheet::format::BORDER.to_owned()))
+                    s.set_border(Some(grind_sheet::format::BORDER.to_owned()));
                 })
             }),
             "style.border-clear" => style(|s| format::restyled(s, |s| s.set_border(None))),
@@ -2128,7 +2128,7 @@ impl Ui {
             match grind_sheet::verbs::preview_insert_chart(&self.app, sheet, start, end, Some(kind))
             {
                 Ok((chart_, data)) => {
-                    pictures.push((kind, chart::svg(&chart_, &data, 420.0, 260.0)))
+                    pictures.push((kind, chart::svg(&chart_, &data, 420.0, 260.0)));
                 }
                 Err(error) => return self.set_message(error.to_string()),
             }

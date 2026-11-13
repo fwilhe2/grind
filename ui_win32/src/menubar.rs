@@ -717,7 +717,7 @@ mod native {
                 WM_KEYDOWN | WM_SYSKEYDOWN => {
                     if key == VK_LEFT || key == VK_RIGHT {
                         BAR.with_borrow_mut(|bar| {
-                            bar.focus = Some(super::step(at, count, key == VK_RIGHT))
+                            bar.focus = Some(super::step(at, count, key == VK_RIGHT));
                         });
                         nc_paint(hwnd);
                     } else if key == VK_RETURN || key == VK_DOWN || key == VK_UP {

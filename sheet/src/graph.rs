@@ -202,7 +202,7 @@ fn collect(
             }
         }
         Expr::Prefix(_, inner) | Expr::Postfix(_, inner) | Expr::Paren(inner) => {
-            collect(doc, engine, inner, at, depth, out)
+            collect(doc, engine, inner, at, depth, out);
         }
         Expr::Binary(_, lhs, rhs) => {
             collect(doc, engine, lhs, at, depth, out);

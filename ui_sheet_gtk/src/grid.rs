@@ -1041,7 +1041,7 @@ mod imp {
         fn set_property(&self, _id: usize, value: &glib::Value, pspec: &glib::ParamSpec) {
             match pspec.name() {
                 "hadjustment" => {
-                    self.set_adjustment(gtk::Orientation::Horizontal, value.get().ok())
+                    self.set_adjustment(gtk::Orientation::Horizontal, value.get().ok());
                 }
                 "vadjustment" => self.set_adjustment(gtk::Orientation::Vertical, value.get().ok()),
                 "hscroll-policy" => self.hscroll_policy.set(value.get().unwrap()),

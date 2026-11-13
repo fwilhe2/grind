@@ -442,11 +442,11 @@ impl Document {
             // A track style lives in `office:automatic-styles` and is named from a
             // `<table:table-column>`, neither of which the splice touches.
             Action::SetColWidth { .. } | Action::SetRowHeight { .. } => {
-                self.edits.only_values = false
+                self.edits.only_values = false;
             }
             // `table:visibility="collapse"` is on the row or column element, not in a cell.
             Action::SetColHidden { .. } | Action::SetRowHidden { .. } => {
-                self.edits.only_values = false
+                self.edits.only_values = false;
             }
             // `table:database-ranges` is its own element, and the visibility it implies is on
             // rows.

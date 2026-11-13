@@ -246,19 +246,19 @@ struct Pen(PathBuilder);
 
 impl OutlinePen for Pen {
     fn move_to(&mut self, x: f32, y: f32) {
-        self.0.move_to(x, y)
+        self.0.move_to(x, y);
     }
     fn line_to(&mut self, x: f32, y: f32) {
-        self.0.line_to(x, y)
+        self.0.line_to(x, y);
     }
     fn quad_to(&mut self, cx: f32, cy: f32, x: f32, y: f32) {
-        self.0.quad_to(cx, cy, x, y)
+        self.0.quad_to(cx, cy, x, y);
     }
     fn curve_to(&mut self, a: f32, b: f32, c: f32, d: f32, x: f32, y: f32) {
-        self.0.cubic_to(a, b, c, d, x, y)
+        self.0.cubic_to(a, b, c, d, x, y);
     }
     fn close(&mut self) {
-        self.0.close()
+        self.0.close();
     }
 }
 

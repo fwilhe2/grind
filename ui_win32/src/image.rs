@@ -101,7 +101,7 @@ pub fn decode(data: &[u8]) -> Option<Decoded> {
     unsafe {
         converter
             .CopyPixels(std::ptr::null(), stride, &mut pixels)
-            .ok()?
+            .ok()?;
     };
     Some(Decoded {
         width: w,

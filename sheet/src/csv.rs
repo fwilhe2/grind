@@ -389,7 +389,7 @@ impl Import {
                     self.locale = Some(
                         Locale::parse(value)
                             .ok_or_else(|| format!("{value:?} is not a locale (try de-DE)"))?,
-                    )
+                    );
                 }
                 None if word == "text" => self.text = true,
                 None if word == "formulas" => self.formulas = true,

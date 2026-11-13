@@ -599,7 +599,7 @@ fn dxf(reader: &mut Reader<'_>) -> crate::Result<Dxf> {
                         out.size = attrs
                             .plain("val")
                             .and_then(|v| v.trim().parse::<f64>().ok())
-                            .filter(|v| v.is_finite() && *v > 0.0)
+                            .filter(|v| v.is_finite() && *v > 0.0);
                     }
                     "color" => out.color = Some(color::read(attrs)),
                     "name" => out.family = true,
@@ -861,13 +861,13 @@ fn font(reader: &mut Reader<'_>) -> crate::Result<Font> {
             "strike" => font.strike = on(attrs),
             "u" => (font.underline, font.double) = underline(attrs),
             "vertAlign" => {
-                font.script = matches!(attrs.plain("val"), Some("superscript" | "subscript"))
+                font.script = matches!(attrs.plain("val"), Some("superscript" | "subscript"));
             }
             "sz" => {
                 font.size = attrs
                     .plain("val")
                     .and_then(|v| v.trim().parse::<f64>().ok())
-                    .filter(|v| v.is_finite() && *v > 0.0)
+                    .filter(|v| v.is_finite() && *v > 0.0);
             }
             "color" => font.color = Some(color::read(attrs)),
             "name" => font.family = attrs.plain("val").map(str::to_owned),
@@ -875,7 +875,7 @@ fn font(reader: &mut Reader<'_>) -> crate::Result<Font> {
                 font.family = attrs
                     .plain("val")
                     .filter(|v| *v != "none")
-                    .map(|v| format!("scheme:{v}"))
+                    .map(|v| format!("scheme:{v}"));
             }
             _ => return Ok(Handled::No),
         }

@@ -148,7 +148,7 @@ impl<'a> RoleFace<'a> {
 
 impl Metrics for RoleFace<'_> {
     fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>) {
-        self.setter.advances(text, &self.style(style), out)
+        self.setter.advances(text, &self.style(style), out);
     }
 
     fn line_height(&self, style: &TextStyle) -> f32 {

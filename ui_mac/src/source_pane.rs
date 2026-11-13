@@ -150,7 +150,7 @@ impl SourcePane {
                         NSForegroundColorAttributeName,
                         &color(tint),
                         ns_range(range),
-                    )
+                    );
                 };
             }
             storage.endEditing();

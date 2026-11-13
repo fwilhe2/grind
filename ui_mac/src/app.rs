@@ -216,7 +216,7 @@ impl Delegate {
                     match command {
                         Command::FriendlyFormulas => pane.toggle_friendly(),
                         Command::ExplainFormula => {
-                            alert(self.mtm(), "Explain Formula", &pane.explanation())
+                            alert(self.mtm(), "Explain Formula", &pane.explanation());
                         }
                         _ => {
                             if let Some(at) = ask_function(self.mtm()) {

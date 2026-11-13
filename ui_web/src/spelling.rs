@@ -337,7 +337,7 @@ impl Shell {
                     }
                     match kind {
                         DocumentKind::Spreadsheet => {
-                            *self.sheet_speller.borrow_mut() = Some(speller)
+                            *self.sheet_speller.borrow_mut() = Some(speller);
                         }
                         _ => *self.text_speller.borrow_mut() = Some(speller),
                     }

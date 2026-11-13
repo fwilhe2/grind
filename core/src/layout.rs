@@ -551,7 +551,7 @@ mod tests {
 
     impl Metrics for Tall {
         fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>) {
-            Fixed.advances(text, style, out)
+            Fixed.advances(text, style, out);
         }
         fn line_height(&self, style: &TextStyle) -> f32 {
             10.0 * scale(style)
