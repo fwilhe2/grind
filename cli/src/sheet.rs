@@ -4,6 +4,7 @@
 //! `grind sheet …`: one arm per subcommand, each driving [`App`].
 
 use super::*;
+use std::fmt::Write as _;
 
 /// [`load`], with spelling checked the way the person has said spreadsheets should be
 /// (`grind sheet spelling`) — what `lint` opens with, so its `misspelt` rule has something to ask,
@@ -1215,11 +1216,12 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
                     funcs::SMALL_GROUP
                 );
                 if !beyond.is_empty() {
-                    line.push_str(&format!(
+                    let _ = write!(
+                        line,
                         " — plus {} beyond it: {}",
                         beyond.len(),
                         beyond.join(", ")
-                    ));
+                    );
                 }
                 line
             });

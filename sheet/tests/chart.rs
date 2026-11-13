@@ -7,6 +7,7 @@
 //! `text/tests/image.rs`'s sibling test in this crate cover the file format.
 
 use grind_sheet::{App, ChartAxis, ChartKind, Form};
+use std::fmt::Write as _;
 
 /// The old positional vocabulary, as the [`grind_sheet::ChartSpec`] `add_chart` and `edit_chart`
 /// take now — so a test says what its chart is in one line.
@@ -742,20 +743,26 @@ fn a_bar_chart_written_per_point_by_an_older_build_reads_back_untouched() {
         grind_sheet::series_color(1),
         grind_sheet::series_color(2),
     ];
-    let styles: String = cycle
-        .iter()
-        .enumerate()
-        .map(|(point, hex)| {
-            format!(
-                "<style:style style:name=\"old0-{point}\" style:family=\"chart\">\
+    let styles: String =
+        cycle
+            .iter()
+            .enumerate()
+            .fold(String::new(), |mut joined, (point, hex)| {
+                let _ = write!(
+                    joined,
+                    "<style:style style:name=\"old0-{point}\" style:family=\"chart\">\
                  <style:graphic-properties svg:stroke-color=\"{hex}\" draw:fill-color=\"{hex}\"/>\
                  </style:style>"
-            )
-        })
-        .collect();
-    let points: String = (0..3)
-        .map(|point| format!("<chart:data-point chart:style-name=\"old0-{point}\"/>"))
-        .collect();
+                );
+                joined
+            });
+    let points: String = (0..3).fold(String::new(), |mut joined, point| {
+        let _ = write!(
+            joined,
+            "<chart:data-point chart:style-name=\"old0-{point}\"/>"
+        );
+        joined
+    });
     let start = flat.find("<chart:series ").unwrap();
     let end = flat.find("</chart:series>").unwrap() + "</chart:series>".len();
     let old_series = format!(

@@ -8,6 +8,7 @@
 //! carry the same logical content model, and only the packaging differs
 //! (doc/ods-format.md §1). Nothing below is spreadsheet-specific.
 
+use std::fmt::Write as _;
 use std::io::{Cursor, Read};
 
 use crate::{Error, Result};
@@ -227,7 +228,7 @@ fn manifest_with(mimetype: &str, styles: bool, subdocuments: &[SubDocument]) -> 
     }
     for sub in subdocuments {
         for entry in subdocument_entries(sub) {
-            entries.push_str(&format!("\x20{entry}\n"));
+            let _ = writeln!(entries, "\x20{entry}");
         }
     }
     format!(

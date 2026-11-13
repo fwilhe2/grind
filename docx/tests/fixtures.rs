@@ -11,6 +11,7 @@
 //! what a shell shows and a save keeps.
 
 use std::assert_matches;
+use std::fmt::Write as _;
 use std::io::{Cursor, Write};
 
 use grind_docx::{Dropped, Flavour};
@@ -49,14 +50,15 @@ fn docx(body: &str, parts: &[(&str, &str, Vec<u8>)]) -> Vec<u8> {
         .iter()
         .enumerate()
         .filter(|(_, (_, kind, _))| !kind.is_empty())
-        .map(|(i, (name, kind, _))| {
+        .fold(String::new(), |mut joined, (i, (name, kind, _))| {
             let target = name.trim_prefix("word/");
-            format!(
+            let _ = write!(
+                joined,
                 r#"<Relationship Id="rId{}" Type="{R}/{kind}" Target="{target}"/>"#,
                 i + 1
-            )
-        })
-        .collect();
+            );
+            joined
+        });
     let mut all = vec![
         (
             "_rels/.rels",

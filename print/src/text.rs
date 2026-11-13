@@ -1963,6 +1963,7 @@ mod tests {
     use crate::fonts::Fonts;
     use crate::ops::{Op, Rgb};
     use grind_text::{BlockKind, Caret, CharStyle};
+    use std::fmt::Write as _;
 
     fn setter() -> Typesetter {
         Typesetter::new(Fonts::bundled())
@@ -2719,9 +2720,10 @@ mod tests {
     /// page 1 on it — no header here — and the pages after it on its `next-style-name`'s.
     #[test]
     fn the_first_page_wears_its_own_master_and_the_rest_the_next() {
-        let fill: String = (0..70)
-            .map(|i| format!("<text:p>Line {i} of filler text.</text:p>"))
-            .collect();
+        let fill: String = (0..70).fold(String::new(), |mut joined, i| {
+            let _ = write!(joined, "<text:p>Line {i} of filler text.</text:p>");
+            joined
+        });
         let bytes = format!(
             r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
             <office:automatic-styles>
@@ -3260,9 +3262,10 @@ mod tests {
 
     #[test]
     fn headers_and_footers_take_their_room_and_number_the_pages() {
-        let lines: String = (1..=120)
-            .map(|i| format!(r#"<text:p text:style-name="N">fill {i}</text:p>"#))
-            .collect();
+        let lines: String = (1..=120).fold(String::new(), |mut joined, i| {
+            let _ = write!(joined, r#"<text:p text:style-name="N">fill {i}</text:p>"#);
+            joined
+        });
         let bytes = format!(
             r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
             <office:automatic-styles>
@@ -3498,8 +3501,8 @@ mod tests {
     #[test]
     fn a_table_prints_its_own_look_and_repeats_its_heading() {
         let rows: String = (1..=80)
-            .map(|i| format!(r#"<table:table-row><table:table-cell table:style-name="Body"><text:p>row {i}</text:p></table:table-cell><table:table-cell><text:p>b</text:p></table:table-cell></table:table-row>"#))
-            .collect();
+            .fold(String::new(), |mut joined, i| {
+let _ = write!(joined, r#"<table:table-row><table:table-cell table:style-name="Body"><text:p>row {i}</text:p></table:table-cell><table:table-cell><text:p>b</text:p></table:table-cell></table:table-row>"#); joined });
         let bytes = format!(
             r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
             <office:styles>
@@ -3947,12 +3950,8 @@ mod tests {
         .concat();
         let body: String = ["E", "S", "C", "D", "G"]
             .iter()
-            .map(|n| {
-                format!(
-                    r#"<text:list text:style-name="{n}"><text:list-item><text:p text:style-name="Standard">{n}x</text:p></text:list-item></text:list>"#
-                )
-            })
-            .collect();
+            .fold(String::new(), |mut joined, n| {
+let _ = write!(joined, r#"<text:list text:style-name="{n}"><text:list-item><text:p text:style-name="Standard">{n}x</text:p></text:list-item></text:list>"#); joined });
         let app = styled_with(&styles, "", &body);
         let doc = typeset(&app, &setter(), &Options::default());
         let margin = 72.0 * 2.0 / 2.54;
@@ -4323,9 +4322,13 @@ mod tests {
     /// break a paragraph keeps its margin too.
     #[test]
     fn a_paragraph_starting_a_page_keeps_its_box_and_after_a_break_its_margin() {
-        let lines: String = (0..51)
-            .map(|i| format!(r#"<text:p text:style-name="Standard">line{i}</text:p>"#))
-            .collect();
+        let lines: String = (0..51).fold(String::new(), |mut joined, i| {
+            let _ = write!(
+                joined,
+                r#"<text:p text:style-name="Standard">line{i}</text:p>"#
+            );
+            joined
+        });
         let inset = 2.0 + 0.2 * CM;
         let flowed = typeset(
             &boxed(&format!(

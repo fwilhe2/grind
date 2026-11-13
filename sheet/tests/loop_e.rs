@@ -24,6 +24,7 @@
 //!     GRIND_FUZZ_SEED=12345 GRIND_LOOP_E_FORMULAS=5000 cargo test --test loop_e
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -430,15 +431,17 @@ fn document(formulas: &[(&'static str, String)]) -> String {
         xml.push_str("</table:table-row>");
     }
     let gap = FIRST_ROW - data().len() as u32;
-    xml.push_str(&format!(
+    let _ = write!(
+        xml,
         "<table:table-row table:number-rows-repeated=\"{gap}\"><table:table-cell/>\
          </table:table-row>"
-    ));
+    );
     for (_, formula) in formulas {
-        xml.push_str(&format!(
+        let _ = write!(
+            xml,
             "<table:table-row><table:table-cell table:formula=\"of:={}\"/></table:table-row>",
             escape(formula)
-        ));
+        );
     }
     xml.push_str("</table:table></office:spreadsheet></office:body></office:document>\n");
     xml

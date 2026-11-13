@@ -12,6 +12,7 @@
 //! render, and one escaping function for every path.
 
 use grind_core::projection::{Projection, TokenKind};
+use std::fmt::Write as _;
 
 /// The whole projection as markup: one `<div class="code-line">` per line, with its gutter and
 /// coloured pieces. `cursor` is the line the selection is on; `None` when the projection does not
@@ -25,18 +26,22 @@ pub fn html(projection: &Projection, cursor: Option<usize>) -> String {
         } else {
             ""
         };
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<div class=\"code-line{current}\" data-line=\"{index}\">\
              <span class=\"code-gutter\">{}</span>",
             index + 1
-        ));
+        );
         for piece in projection.line_pieces(index) {
             match piece.kind {
-                Some(kind) => out.push_str(&format!(
-                    "<span class=\"code-{}\">{}</span>",
-                    class(kind),
-                    escape(piece.text)
-                )),
+                Some(kind) => {
+                    let _ = write!(
+                        out,
+                        "<span class=\"code-{}\">{}</span>",
+                        class(kind),
+                        escape(piece.text)
+                    );
+                }
                 // The stretches the writer never named — indentation, braces, the spaces
                 // between values — are emitted too, and unwrapped. A page that dropped them
                 // would show a projection that does not parse.

@@ -13,6 +13,7 @@
 use libadwaita as adw;
 use libadwaita::gtk;
 use libadwaita::prelude::*;
+use std::fmt::Write as _;
 
 use grind_core::third_party::{self, Component};
 use gtk::glib;
@@ -26,7 +27,7 @@ pub fn add_to(about: &adw::AboutDialog) {
         "Grind is built from the third-party components below, each under its own licence.\n\n",
     );
     for component in third_party::components() {
-        index.push_str(&format!("{}  ({})\n", component.title(), component.licence));
+        let _ = writeln!(index, "{}  ({})", component.title(), component.licence);
     }
     let markup = format!(
         "{}\n<a href=\"{URI}\">Show every licence text</a>",

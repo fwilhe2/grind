@@ -7,6 +7,7 @@
 //! line per rule ignored. A line this build cannot read is ignored rather than read as something
 //! else.
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 /// Whether the checker runs, with which rules, and what is left alone.
@@ -59,9 +60,9 @@ impl Setting {
     pub fn to_text(&self) -> String {
         let flag = |b: bool| if b { "on" } else { "off" };
         let mut out = format!("builtin {}\n", flag(self.builtin));
-        out += &format!("style {}\n", flag(self.style));
+        let _ = writeln!(out, "style {}", flag(self.style));
         for rule in &self.ignored {
-            out += &format!("ignore {rule}\n");
+            let _ = writeln!(out, "ignore {rule}");
         }
         out
     }

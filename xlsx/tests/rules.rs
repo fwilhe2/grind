@@ -6,6 +6,7 @@
 //! workbook `doc/xlsx-format.md` §4.12 measured LibreOffice's conversion of — four `dxf`s and
 //! six `cfRule`s, in XML a reviewer can read here.
 
+use std::fmt::Write as _;
 use std::io::{Cursor, Write};
 
 use grind_sheet::Pos;
@@ -32,16 +33,18 @@ fn package(parts: &[(&str, String)]) -> Vec<u8> {
 }
 
 fn workbook(rules: &str, dxfs: &str) -> Vec<u8> {
-    let rows: String = (1..=5)
-        .map(|r| {
-            let cells: String = ["A", "B", "C", "D"]
+    let rows = (1..=5).fold(String::new(), |mut rows, r| {
+        let cells: String =
+            ["A", "B", "C", "D"]
                 .iter()
                 .enumerate()
-                .map(|(i, c)| format!(r#"<c r="{c}{r}"><v>{}</v></c>"#, r * (i + 1)))
-                .collect();
-            format!(r#"<row r="{r}">{cells}</row>"#)
-        })
-        .collect();
+                .fold(String::new(), |mut joined, (i, c)| {
+                    let _ = write!(joined, r#"<c r="{c}{r}"><v>{}</v></c>"#, r * (i + 1));
+                    joined
+                });
+        let _ = write!(rows, r#"<row r="{r}">{cells}</row>"#);
+        rows
+    });
     package(&[
         (
             "_rels/.rels",

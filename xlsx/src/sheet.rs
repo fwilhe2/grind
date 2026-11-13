@@ -952,6 +952,7 @@ fn number(v: &str) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fmt::Write as _;
 
     const MAIN: &str = crate::names::MAIN_T;
 
@@ -1140,9 +1141,13 @@ mod tests {
             text: "x".repeat(300 << 10),
             rich: false,
         }];
-        let cells: String = (1..=10)
-            .map(|row| format!(r#"<row r="{row}"><c r="A{row}" t="s"><v>0</v></c></row>"#))
-            .collect();
+        let cells: String = (1..=10).fold(String::new(), |mut joined, row| {
+            let _ = write!(
+                joined,
+                r#"<row r="{row}"><c r="A{row}" t="s"><v>0</v></c></row>"#
+            );
+            joined
+        });
         let (sheet, report) = sheet_of(&cells, &strings, &Styles::default(), false);
         assert_eq!(report.cells, 3);
         assert_eq!(report.over_budget, 7);

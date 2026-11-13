@@ -17,6 +17,7 @@ mod layout;
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
+use std::fmt::Write as _;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -3158,16 +3159,18 @@ fn replaced(what: &str, done: &find::Replaced) -> String {
         n => format!("Replaced in {n} cells — Ctrl+Z takes them back"),
     };
     if let Some((hit, _)) = done.refused.first() {
-        said.push_str(&match done.refused.len() {
-            1 => format!(
+        let _ = match done.refused.len() {
+            1 => write!(
+                said,
                 "; {} was left alone, since its formula would not parse",
                 hit.address()
             ),
-            n => format!(
+            n => write!(
+                said,
                 "; {n} formulas were left alone, since they would not parse (first {})",
                 hit.address()
             ),
-        });
+        };
     }
     if done.recalc.is_some_and(|recalc| recalc.spoiled > 0) {
         said.push_str(" — not recalculated, since that would spoil a saved value");
@@ -3331,7 +3334,7 @@ fn css_of(style: Option<&CellStyle>, numeric: bool, dark: bool) -> String {
     };
     fn set(css: &mut String, property: &str, value: Option<&String>) {
         if let Some(value) = value {
-            css.push_str(&format!("{property}:{value};"));
+            let _ = write!(css, "{property}:{value};");
         }
     }
     set(&mut css, "font-weight", style.font_weight.as_ref());
@@ -3345,7 +3348,7 @@ fn css_of(style: Option<&CellStyle>, numeric: bool, dark: bool) -> String {
     .filter_map(|(on, line)| on.then_some(line))
     .collect();
     if !lines.is_empty() {
-        css.push_str(&format!("text-decoration:{};", lines.join(" ")));
+        let _ = write!(css, "text-decoration:{};", lines.join(" "));
     }
     // An indent is ODF's paragraph margin, which in a cell is CSS's first-line indent: the
     // cell's own padding stays where the grid put it.

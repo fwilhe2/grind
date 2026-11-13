@@ -9,6 +9,7 @@
 //! the `table:visibility="filter"` attributes in the file — so the file's attributes are
 //! the oracle here, and this is the test that says the derivation agrees with LibreOffice.
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use grind_sheet::{App, CellValue, Filter, Pos};
@@ -153,14 +154,12 @@ fn filtered(body: &str) -> Vec<u32> {
     let rows: String = [("Shop", None), ("Market Hall", Some(86.4)), ("Bakery", Some(12.75)),
         ("Green Grocer", Some(23.6)), ("Bakery", Some(9.3))]
         .iter()
-        .map(|(shop, amount)| {
+        .fold(String::new(), |mut joined, (shop, amount)| {
             let amount = amount.map_or_else(
                 || r#"<table:table-cell office:value-type="string"><text:p>Amount</text:p></table:table-cell>"#.to_owned(),
                 |n| format!(r#"<table:table-cell office:value-type="float" office:value="{n}"><text:p>{n}</text:p></table:table-cell>"#),
             );
-            format!(r#"<table:table-row><table:table-cell office:value-type="string"><text:p>{shop}</text:p></table:table-cell>{amount}</table:table-row>"#)
-        })
-        .collect();
+             let _ = write!(joined, r#"<table:table-row><table:table-cell office:value-type="string"><text:p>{shop}</text:p></table:table-cell>{amount}</table:table-row>"#); joined });
     let fods = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"

@@ -24,6 +24,7 @@
 //! can hang off (R8).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Write as _;
 use std::io::{Cursor, Write};
 
 use quick_xml::NsReader;
@@ -124,11 +125,12 @@ fn to_package(flat: &[u8]) -> Result<Vec<u8>> {
         esc(&split.mimetype)
     );
     for (path, media) in &split.manifest {
-        manifest.push_str(&format!(
-            " <manifest:file-entry manifest:full-path=\"{}\" manifest:media-type=\"{}\"/>\n",
+        let _ = writeln!(
+            manifest,
+            " <manifest:file-entry manifest:full-path=\"{}\" manifest:media-type=\"{}\"/>",
             esc(path),
             esc(media)
-        ));
+        );
     }
     manifest.push_str("</manifest:manifest>\n");
     w.start_file("META-INF/manifest.xml", deflated)
@@ -382,8 +384,10 @@ fn declared_on(element: &[u8], declarations: &[(String, String)]) -> Vec<u8> {
             let needle = format!("xmlns:{prefix}=");
             !tag.windows(needle.len()).any(|w| w == needle.as_bytes())
         })
-        .map(|(prefix, uri)| format!(" xmlns:{prefix}=\"{}\"", super::xml::esc(uri)))
-        .collect();
+        .fold(String::new(), |mut joined, (prefix, uri)| {
+            let _ = write!(joined, " xmlns:{prefix}=\"{}\"", super::xml::esc(uri));
+            joined
+        });
     [&element[..at], extra.as_bytes(), &element[at..]].concat()
 }
 
@@ -701,8 +705,10 @@ fn flat_of(
     let extra: String = declarations
         .iter()
         .filter(|(p, _)| !tree.declarations.iter().any(|(q, _)| q == p))
-        .map(|(p, uri)| format!(" xmlns:{p}=\"{}\"", super::xml::esc(uri)))
-        .collect();
+        .fold(String::new(), |mut joined, (p, uri)| {
+            let _ = write!(joined, " xmlns:{p}=\"{}\"", super::xml::esc(uri));
+            joined
+        });
     tag = envelope::set_attributes(&tag, &[(&format!("{prefix}:mimetype"), Some(mimetype))]);
     let at = tag.find('>').unwrap_or(tag.len());
     let at = if tag[..at].ends_with('/') { at - 1 } else { at };
@@ -856,7 +862,7 @@ fn inline(
                 base64::engine::general_purpose::STANDARD.encode(data)
             );
             if empty {
-                replacement.push_str(&format!("</{name}>"));
+                let _ = write!(replacement, "</{name}>");
             }
             edits.push((span, replacement.into_bytes()));
         } else if archive.is_directory(&path) {

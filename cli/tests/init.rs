@@ -7,6 +7,7 @@
 //! byte; and nothing is written outside the directory named.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -253,11 +254,13 @@ fn the_vocabulary_is_this_binarys() {
             written.contains(&format!("grind {}", args.join(" "))),
             "{path}"
         );
-        let body: String = written
-            .lines()
-            .skip_while(|l| l.starts_with("//"))
-            .map(|l| format!("{l}\n"))
-            .collect();
+        let body: String = written.lines().skip_while(|l| l.starts_with("//")).fold(
+            String::new(),
+            |mut joined, l| {
+                let _ = writeln!(joined, "{l}");
+                joined
+            },
+        );
         assert_eq!(body, ok_in(dir, args), "{path} is what the command prints");
     }
     assert!(jsonc(&read(".vscode/grind.code-snippets")).is_object());

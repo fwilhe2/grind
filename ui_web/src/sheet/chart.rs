@@ -13,6 +13,7 @@
 use grind_sheet::{
     Chart, ChartAxis, ChartData, ChartKind, ChartLegend, axis_ticks, effective_color,
 };
+use std::fmt::Write as _;
 
 /// How far the plot is inset from the frame, in the SVG's own units (which are CSS pixels,
 /// since the `<svg>` is sized in them and its `viewBox` matches).
@@ -37,7 +38,7 @@ pub fn svg(chart: &Chart, data: &ChartData, w: f64, h: f64) -> String {
     // The chart's own title and legend take their bands first — the GTK painter's order — and
     // the plot and its axes are drawn in what is left, translated there as one group.
     let (x0, y0, w, h) = dress(&mut out, chart, data, w, h);
-    out.push_str(&format!("<g transform=\"translate({x0:.1} {y0:.1})\">"));
+    let _ = write!(out, "<g transform=\"translate({x0:.1} {y0:.1})\">");
     let ticks = axis_ticks(max_value(data));
     let (x_axis, y_axis) = axes(chart, data);
     let plot = plot_rect(&x_axis, &y_axis, data, &ticks, w, h);
@@ -71,12 +72,13 @@ fn dress(out: &mut String, chart: &Chart, data: &ChartData, w: f64, h: f64) -> P
     if let Some(title) = &chart.title
         && h > 4.0 * TICK_H
     {
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<text class=\"chart-title\" text-anchor=\"middle\" x=\"{:.1}\" y=\"{:.1}\">{}</text>",
             w / 2.0,
             INSET + TICK_H,
             escape(title)
-        ));
+        );
         y0 += TICK_H + INSET + 6.0;
         fh -= TICK_H + INSET + 6.0;
     }
@@ -90,7 +92,8 @@ fn dress(out: &mut String, chart: &Chart, data: &ChartData, w: f64, h: f64) -> P
     let text_w = |label: &str| label.chars().count() as f64 * TICK_CHAR_W;
     let line = TICK_H + 4.0;
     let entry = |out: &mut String, x: f64, y: f64, label: &str, color: &str| {
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<rect class=\"swatch\" rx=\"2\" x=\"{x:.1}\" y=\"{:.1}\" width=\"{SWATCH}\" \
              height=\"{SWATCH}\" fill=\"{color}\"/><text class=\"legend\" x=\"{:.1}\" \
              y=\"{:.1}\">{}</text>",
@@ -98,7 +101,7 @@ fn dress(out: &mut String, chart: &Chart, data: &ChartData, w: f64, h: f64) -> P
             x + SWATCH + SWATCH_GAP,
             y + TICK_H - 2.0,
             escape(label)
-        ));
+        );
     };
     match position {
         ChartLegend::Start | ChartLegend::End => {
@@ -315,9 +318,10 @@ fn grid(
 }
 
 fn line(out: &mut String, x1: f64, y1: f64, x2: f64, y2: f64) {
-    out.push_str(&format!(
+    let _ = write!(
+        out,
         "<line class=\"axis\" x1=\"{x1:.1}\" y1=\"{y1:.1}\" x2=\"{x2:.1}\" y2=\"{y2:.1}\"/>"
-    ));
+    );
 }
 
 fn bars(out: &mut String, chart: &Chart, data: &ChartData, ticks: &grind_sheet::Ticks, plot: Plot) {
@@ -337,11 +341,12 @@ fn bars(out: &mut String, chart: &Chart, data: &ChartData, ticks: &grind_sheet::
             let y = value_y(*value, ticks, plot);
             let x = plot.0 + cat as f64 * group + gap + s as f64 * (width + gap);
             let height = plot.1 + plot.3 - y;
-            out.push_str(&format!(
+            let _ = write!(
+                out,
                 "<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{width:.1}\" height=\"{height:.1}\" \
                  fill=\"{}\"/>",
                 effective_color(chart, s, Some(cat))
-            ));
+            );
         }
     }
 }
@@ -373,12 +378,13 @@ fn lines(
                 )
             })
             .collect();
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<polyline fill=\"none\" stroke-width=\"2\" stroke-linejoin=\"round\" \
              stroke-linecap=\"round\" stroke=\"{}\" points=\"{}\"/>",
             effective_color(chart, s, None),
             points.join(" ")
-        ));
+        );
     }
 }
 
@@ -394,15 +400,16 @@ fn pie(out: &mut String, chart: &Chart, data: &ChartData, plot: Plot) {
         // arc primitive and this does.
         let large = i32::from(slice.sweep.abs() > std::f64::consts::PI);
         let sweep = i32::from(slice.sweep > 0.0);
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<path fill=\"{}\" d=\"M{cx:.1} {cy:.1} L{:.2} {:.2} A{r:.2} {r:.2} 0 {large} {sweep} \
              {:.2} {:.2} Z\"/>",
             effective_color(chart, 0, Some(slice.point)),
             cx + r * slice.start.cos(),
             cy + r * slice.start.sin(),
             cx + r * end.cos(),
-            cy + r * end.sin(),
-        ));
+            cy + r * end.sin()
+        );
     }
 }
 
@@ -417,12 +424,13 @@ fn ticks_text(
     if y_axis.tick_labels {
         for value in &ticks.values {
             let y = value_y(*value, ticks, plot);
-            out.push_str(&format!(
+            let _ = write!(
+                out,
                 "<text class=\"tick\" text-anchor=\"end\" x=\"{:.1}\" y=\"{:.1}\">{}</text>",
                 plot.0 - TICK_GAP,
                 y + TICK_H / 3.0,
                 escape(&data.tick_label(ticks, *value))
-            ));
+            );
         }
     }
     if x_axis.tick_labels {
@@ -441,18 +449,20 @@ fn ticks_text(
             };
             if names.turned {
                 let (x, y) = turned_origin(x, plot.1 + plot.3, TICK_GAP, width(&text), TICK_H);
-                out.push_str(&format!(
+                let _ = write!(
+                    out,
                     "<text class=\"tick\" x=\"{x:.1}\" y=\"{:.1}\" transform=\"rotate({:.0} {x:.1} {y:.1})\">{}</text>",
                     y + TICK_H * 0.8,
                     -TURN_DEGREES,
                     escape(&text)
-                ));
+                );
             } else {
-                out.push_str(&format!(
-                "<text class=\"tick\" text-anchor=\"middle\" x=\"{x:.1}\" y=\"{:.1}\">{}</text>",
-                plot.1 + plot.3 + TICK_GAP + TICK_H * 0.8,
-                escape(&text)
-            ));
+                let _ = write!(
+                    out,
+                    "<text class=\"tick\" text-anchor=\"middle\" x=\"{x:.1}\" y=\"{:.1}\">{}</text>",
+                    plot.1 + plot.3 + TICK_GAP + TICK_H * 0.8,
+                    escape(&text)
+                );
             }
         }
     }
@@ -460,22 +470,24 @@ fn ticks_text(
 
 fn titles(out: &mut String, x_axis: &ChartAxis, y_axis: &ChartAxis, w: f64, h: f64) {
     if let Some(text) = &x_axis.label {
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<text class=\"axis-title\" text-anchor=\"middle\" x=\"{:.1}\" y=\"{:.1}\">{}</text>",
             w / 2.0,
             h - INSET,
             escape(text)
-        ));
+        );
     }
     if let Some(text) = &y_axis.label {
         // Rotated about its own anchor, which is the middle of the left edge.
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<text class=\"axis-title\" text-anchor=\"middle\" transform=\"translate({:.1} {:.1}) \
              rotate(-90)\">{}</text>",
             INSET + TITLE_SPACE * 0.6,
             h / 2.0,
             escape(text)
-        ));
+        );
     }
 }
 

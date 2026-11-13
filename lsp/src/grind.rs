@@ -8,6 +8,7 @@
 //! (`App::source_anchors`) — so nothing here can disagree with `grind lint`. Nothing is written:
 //! inline values are **shown**, and `grind sheet recalc` stays the verb that writes them.
 
+use std::fmt::Write as _;
 use std::ops::Range;
 
 use grind_core::kind::DocumentKind;
@@ -201,12 +202,13 @@ pub fn hover(grind: &Grind, lines: &Lines, at: Position) -> Option<Hover> {
             let shown = app.value_text(sheet, pos).ok()?;
             let mut text = format!("**{}**", anchor.address);
             if let Ok(Some(formula)) = app.named_formula(sheet, pos) {
-                text.push_str(&format!("\n\n`{formula}`"));
+                let _ = write!(text, "\n\n`{formula}`");
             }
-            text.push_str(&format!(
+            let _ = write!(
+                text,
                 "\n\nshows **{}**",
                 if shown.is_empty() { "nothing" } else { &shown }
-            ));
+            );
             Some(markdown(text, anchor.span.clone()))
         }
         Opened::Text(_) => {

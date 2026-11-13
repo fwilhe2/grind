@@ -7,41 +7,42 @@
 //! backdrop; each component is a `<details>`, one line until opened.
 
 use grind_core::third_party;
+use std::fmt::Write as _;
 
 /// The dialog's content.
 #[must_use]
 pub fn html() -> String {
     let mut out = String::new();
     out.push_str("<h2>Grind</h2>");
-    out.push_str(&format!(
+    let _ = write!(
+        out,
         "<pre class=\"about-build\">{}</pre>",
         escape(&grind_core::build_info::describe(
             "grind-web",
             env!("CARGO_PKG_VERSION")
         ))
-    ));
+    );
     out.push_str(
         "<p>Free software under the GNU Affero General Public License, version 3 or later. \
          <a href=\"https://github.com/fwilhe2/grind\" target=\"_blank\" rel=\"noopener\">\
          Source</a></p>",
     );
-    out.push_str(&format!(
+    let _ = write!(
+        out,
         "<h3>Third-party components ({})</h3><div class=\"about-list\">",
         third_party::components().len()
-    ));
+    );
     for component in third_party::components() {
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<details><summary>{} <span class=\"about-licence\">{}</span></summary>",
             escape(&component.title()),
             escape(component.licence)
-        ));
+        );
         if !component.copyright.is_empty() {
-            out.push_str(&format!("<p>{}</p>", escape(component.copyright)));
+            let _ = write!(out, "<p>{}</p>", escape(component.copyright));
         }
-        out.push_str(&format!(
-            "<pre>{}</pre></details>",
-            escape(&component.text())
-        ));
+        let _ = write!(out, "<pre>{}</pre></details>", escape(&component.text()));
     }
     out.push_str("</div>");
     out.push_str(

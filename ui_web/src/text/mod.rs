@@ -18,6 +18,7 @@ mod table;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -2007,7 +2008,7 @@ fn class_of(block: &BlockView) -> String {
     // A named style this shell gives a face to is a class too, so the stylesheet can space it
     // — the two that are not headings and would otherwise be indistinguishable paragraphs.
     if let Some(style @ ("Title" | "Subtitle")) = block.style.as_deref() {
-        class.push_str(&format!(" {}", style.to_lowercase()));
+        let _ = write!(class, " {}", style.to_lowercase());
     }
     // ODF's own name for a code paragraph, which is what ``` fences (`grind_text::markdown`).
     if block.style.as_deref() == Some(grind_text::markdown::PREFORMATTED) {

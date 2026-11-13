@@ -18,6 +18,7 @@
 //! (`office:`) and a style's identity (`style:name`, `style:family`).
 
 use std::collections::{BTreeMap, HashSet};
+use std::fmt::Write as _;
 use std::io::{Cursor, Write};
 use std::ops::Range;
 
@@ -281,8 +282,12 @@ pub fn merge(original: &[u8], generated: &[u8]) -> Option<Vec<u8>> {
     for (prefix, uri) in g.declarations.iter().filter(|(prefix, _)| uses(prefix)) {
         match o.binding(prefix) {
             Some(bound) if bound == uri => {}
-            Some(_) => local.push_str(&format!(" xmlns:{prefix}=\"{uri}\"")),
-            None => on_root.push_str(&format!(" xmlns:{prefix}=\"{uri}\"")),
+            Some(_) => {
+                let _ = write!(local, " xmlns:{prefix}=\"{uri}\"");
+            }
+            None => {
+                let _ = write!(on_root, " xmlns:{prefix}=\"{uri}\"");
+            }
         }
     }
 
@@ -709,7 +714,7 @@ pub fn patch_style(
                 out.push_str(text);
             }
             let name = String::from_utf8_lossy(qname(tag.as_bytes())).into_owned();
-            out.push_str(&format!("</{name}>"));
+            let _ = write!(out, "</{name}>");
             return Some(out);
         }
         true => return Some(tag),
@@ -1011,7 +1016,7 @@ pub fn set_attributes(element: &str, changes: &[(&str, Option<&str>)]) -> String
                 None => tag.replace_range(at..value_end, ""),
             }
         } else if let Some(v) = value {
-            tag.push_str(&format!(" {name}=\"{}\"", crate::odf::xml::esc(v)));
+            let _ = write!(tag, " {name}=\"{}\"", crate::odf::xml::esc(v));
         }
     }
     // An attribute removed from the end of a tag that broke its lines leaves the break behind.

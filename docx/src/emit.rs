@@ -246,10 +246,11 @@ pub fn write(input: Input, report: &mut Report) -> String {
         out.push_str("   <text:tracked-changes>\n");
         for (n, change) in input.changes.iter().enumerate() {
             let mut info = String::from("<office:change-info>");
-            info.push_str(&format!(
+            let _ = write!(
+                info,
                 "<dc:creator>{}</dc:creator>",
                 esc(change.author.as_deref().unwrap_or(""))
-            ));
+            );
             // `dc:date` is required in a change's info (rng:7652); a change Word did not date
             // is given none rather than an invented one — the epoch says "unknown" in a way a
             // reader can tell.
@@ -258,10 +259,11 @@ pub fn write(input: Input, report: &mut Report) -> String {
                 .as_deref()
                 .filter(|d| is_date_time(d))
                 .unwrap_or("1970-01-01T00:00:00");
-            info.push_str(&format!(
+            let _ = write!(
+                info,
                 "<dc:date>{}</dc:date></office:change-info>",
                 esc(date)
-            ));
+            );
             let _ = write!(
                 out,
                 "    <text:changed-region xml:id=\"ct{n}\" text:id=\"ct{n}\">"

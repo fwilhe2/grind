@@ -8,6 +8,7 @@
 
 use crate::about::escape;
 use crate::command::Command;
+use std::fmt::Write as _;
 
 /// The keys the palette itself answers, over either pane.
 const CHROME: &[(&str, &str)] = &[
@@ -71,11 +72,12 @@ pub fn html(table: &[Command], grid: bool) -> String {
             continue;
         }
         seen.push(keys);
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<tr><th><kbd>{}</kbd></th><td>{}</td></tr>",
             escape(keys),
             escape(what)
-        ));
+        );
     }
     out.push_str("</table>");
     out.push_str(

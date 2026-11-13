@@ -18,6 +18,7 @@ pub mod text;
 
 use grind_core::page::PageGeometry;
 use grind_text::App;
+use std::fmt::Write as _;
 
 pub use fonts::Fonts;
 pub use metrics::{Substitution, Typesetter};
@@ -57,7 +58,8 @@ impl Report {
             if self.pages == 1 { "" } else { "s" }
         );
         for sub in &self.substitutions {
-            out.push_str(&format!(
+            let _ = write!(
+                out,
                 " \u{201c}{}\u{201d} set in {}{}.",
                 sub.asked,
                 sub.used,
@@ -66,14 +68,15 @@ impl Report {
                 } else {
                     ""
                 }
-            ));
+            );
         }
         if self.missing_glyphs > 0 {
-            out.push_str(&format!(
+            let _ = write!(
+                out,
                 " {} character{} had no glyph in any font.",
                 self.missing_glyphs,
                 if self.missing_glyphs == 1 { "" } else { "s" }
-            ));
+            );
         }
         out
     }

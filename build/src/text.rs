@@ -20,6 +20,7 @@
 //! have no spelling.
 
 use std::cell::RefCell;
+use std::fmt::Write as _;
 use std::rc::Rc;
 
 use grind_text::{App, BlockKind, Caret};
@@ -346,16 +347,12 @@ fn with_break_styles(template: Option<&str>, parents: &[Option<String>]) -> Stri
     const OFFICE: &str = "urn:oasis:names:tc:opendocument:xmlns:office:1.0";
     let declared: String = parents
         .iter()
-        .map(|parent| {
+        .fold(String::new(), |mut joined, parent| {
             let parent_attr = parent.as_deref().map_or(String::new(), |p| {
                 format!(r#" style:parent-style-name="{}""#, xml_attr(p))
             });
-            format!(
-                r#"<style:style style:name="{}" style:family="paragraph"{parent_attr}><style:paragraph-properties xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" fo:break-before="page"/></style:style>"#,
-                xml_attr(&break_style(parent.as_deref())),
-            )
-        })
-        .collect();
+             let _ = write!(joined, r#"<style:style style:name="{}" style:family="paragraph"{parent_attr}><style:paragraph-properties xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" fo:break-before="page"/></style:style>"#,
+                xml_attr(&break_style(parent.as_deref()))); joined });
     let bare = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?><office:document xmlns:office="{OFFICE}" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text"><office:body><office:text/></office:body></office:document>"#
     );

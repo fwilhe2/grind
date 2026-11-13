@@ -14,6 +14,7 @@
 //! formula line, the completion band (`super::assist`, only while it is up) and the status bar.
 
 use std::collections::HashSet;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -3296,19 +3297,19 @@ impl App {
                 .as_ref()
                 .and_then(|v| v.name_at(self.active.row, self.active.col))
             {
-                reading.push_str(&format!("  \u{2039}{name}\u{203a}"));
+                let _ = write!(reading, "  \u{2039}{name}\u{203a}");
             }
             if let Ok(Some(formula)) = self.core.named_formula(self.sheet, self.active)
                 && formula != content
             {
-                reading.push_str(&format!("  {formula}"));
+                let _ = write!(reading, "  {formula}");
             }
         }
         if let Some(role) = viewport
             .as_ref()
             .and_then(|v| v.role(self.active.row, self.active.col))
         {
-            reading.push_str(&format!("  [{}]", role.name()));
+            let _ = write!(reading, "  [{}]", role.name());
         }
         // The name box, then what the cell holds — an `fx` badge when that is a formula, which is
         // the one thing a reader needs to know before reading the rest of the line.

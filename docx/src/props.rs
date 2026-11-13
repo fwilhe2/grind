@@ -12,6 +12,7 @@
 //! here is in `pt` — `708` twips is `35.4pt`.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use crate::xml::{Attrs, Handled, Reader, Word as _, WordAttrs as _};
 
@@ -51,7 +52,7 @@ impl Props {
     pub fn attributes(&self) -> String {
         let mut out = String::new();
         for (k, v) in &self.0 {
-            out.push_str(&format!(" {k}=\"{}\"", grind_core::odf::xml::esc(v)));
+            let _ = write!(out, " {k}=\"{}\"", grind_core::odf::xml::esc(v));
         }
         out
     }

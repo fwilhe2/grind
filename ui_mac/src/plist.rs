@@ -12,6 +12,8 @@
 //! way in, never out); every ODF form is an **Editor**.
 
 /// How strongly Grind claims a type.
+use std::fmt::Write as _;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Rank {
     /// The one application that opens it.
@@ -175,28 +177,25 @@ fn escape(s: &str) -> String {
 }
 
 fn key(out: &mut String, indent: usize, name: &str) {
-    out.push_str(&format!(
-        "{}<key>{}</key>\n",
-        "\t".repeat(indent),
-        escape(name)
-    ));
+    let _ = writeln!(out, "{}<key>{}</key>", "\t".repeat(indent), escape(name));
 }
 
 fn string(out: &mut String, indent: usize, value: &str) {
-    out.push_str(&format!(
-        "{}<string>{}</string>\n",
+    let _ = writeln!(
+        out,
+        "{}<string>{}</string>",
         "\t".repeat(indent),
         escape(value)
-    ));
+    );
 }
 
 fn strings(out: &mut String, indent: usize, values: &[&str]) {
     let tabs = "\t".repeat(indent);
-    out.push_str(&format!("{tabs}<array>\n"));
+    let _ = writeln!(out, "{tabs}<array>");
     for value in values {
         string(out, indent + 1, value);
     }
-    out.push_str(&format!("{tabs}</array>\n"));
+    let _ = writeln!(out, "{tabs}</array>");
 }
 
 fn pair(out: &mut String, indent: usize, name: &str, value: &str) {

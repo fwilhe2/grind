@@ -9,6 +9,7 @@
 
 use grind_core::lint::{Report, Severity};
 use grind_sheet::Calculation;
+use std::fmt::Write as _;
 
 /// What the pane is listing. The findings were its first and only use; a spreadsheet's
 /// calculations are the second (*Find a calculation…*, the GNOME window's explorer and the
@@ -49,7 +50,8 @@ pub fn calculations_html(found: &[Calculation]) -> String {
     let mut out = format!("<div class=\"problems-summary\">{}</div>", escape(&header));
     for calc in found {
         let address = calc.address();
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<div class=\"problem problem-hint\" data-address=\"{at}\" role=\"button\" tabindex=\"0\">\
              <span class=\"problem-mark\" aria-hidden=\"true\">=</span>\
              <span class=\"problem-at\">{at}</span>\
@@ -57,8 +59,8 @@ pub fn calculations_html(found: &[Calculation]) -> String {
              <span class=\"problem-rule\">{value}</span></div>",
             at = escape(&address),
             formula = escape(&calc.formula),
-            value = escape(&calc.value),
-        ));
+            value = escape(&calc.value)
+        );
     }
     out
 }
@@ -68,12 +70,14 @@ pub fn calculations_html(found: &[Calculation]) -> String {
 #[must_use]
 pub fn html(report: &Report) -> String {
     let mut out = String::new();
-    out.push_str(&format!(
+    let _ = write!(
+        out,
         "<div class=\"problems-summary\">{}</div>",
         escape(&summary(report))
-    ));
+    );
     for diagnostic in &report.diagnostics {
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<div class=\"problem problem-{severity}\" data-address=\"{address}\" \
              role=\"button\" tabindex=\"0\">\
              <span class=\"problem-mark\" aria-hidden=\"true\">{mark}</span>\
@@ -85,8 +89,8 @@ pub fn html(report: &Report) -> String {
             mark = mark(diagnostic.severity),
             at = escape(&diagnostic.at),
             message = escape(&diagnostic.message),
-            rule = escape(diagnostic.rule),
-        ));
+            rule = escape(diagnostic.rule)
+        );
     }
     out
 }

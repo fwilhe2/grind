@@ -18,6 +18,7 @@
 //!
 //! The ranking is [`grind_core::search::score`].
 
+use std::fmt::Write as _;
 use std::rc::Rc;
 
 use libadwaita as adw;
@@ -126,7 +127,7 @@ fn markup(title: &str, hits: &[usize]) -> String {
     for (at, character) in title.chars().enumerate() {
         let piece = glib::markup_escape_text(&character.to_string());
         if hits.contains(&at) {
-            out.push_str(&format!("<b>{piece}</b>"));
+            let _ = write!(out, "<b>{piece}</b>");
         } else {
             out.push_str(&piece);
         }

@@ -13,6 +13,7 @@
 //! CLDR), and `number:truncate-on-overflow="false"` — hours wrap at 24, the attribute's default.
 
 use serde::{Deserialize, Serialize};
+use std::fmt::Write as _;
 
 use crate::formula::date;
 use crate::formula::value::format_number;
@@ -433,17 +434,21 @@ impl Format {
                     embedded,
                     locale::separators(locale).0,
                 )),
-                Part::Year { long } => out.push_str(&if *long {
-                    format!("{y:04}")
-                } else {
-                    format!("{:02}", y.rem_euclid(100))
-                }),
+                Part::Year { long } => {
+                    let _ = if *long {
+                        write!(out, "{y:04}")
+                    } else {
+                        write!(out, "{:02}", y.rem_euclid(100))
+                    };
+                }
                 Part::Month { long, textual } => {
                     let index = (m.clamp(1, 12) - 1) as usize;
                     match (textual, long) {
                         (true, true) => out.push_str(MONTHS[index]),
                         (true, false) => out.push_str(&MONTHS[index][..3]),
-                        (false, true) => out.push_str(&format!("{m:02}")),
+                        (false, true) => {
+                            let _ = write!(out, "{m:02}");
+                        }
                         (false, false) => out.push_str(&m.to_string()),
                     }
                 }
@@ -479,10 +484,11 @@ impl Format {
                         + 1
                         + usize::from(*decimals > 0)
                         + usize::from(*decimals);
-                    out.push_str(&format!(
+                    let _ = write!(
+                        out,
                         "{s:0width$.decimals$}",
                         decimals = usize::from(*decimals)
-                    ));
+                    );
                 }
                 Part::AmPm => out.push_str(if seconds.rem_euclid(86_400) < 43_200 {
                     "AM"

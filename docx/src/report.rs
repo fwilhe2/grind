@@ -7,6 +7,7 @@
 //! non-zero exit.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 
 pub use grind_ooxml::Flavour;
 
@@ -134,10 +135,10 @@ impl Report {
             plural(self.paragraphs, "paragraph")
         );
         if self.tables > 0 {
-            carried.push_str(&format!(", {}", plural(self.tables, "table")));
+            let _ = write!(carried, ", {}", plural(self.tables, "table"));
         }
         if self.images > 0 {
-            carried.push_str(&format!(", {}", plural(self.images, "picture")));
+            let _ = write!(carried, ", {}", plural(self.images, "picture"));
         }
         if self.lossless() {
             return format!("{carried}; nothing was lost.");

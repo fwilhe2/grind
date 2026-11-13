@@ -1675,6 +1675,8 @@ fn every_milestone_is_one_the_plan_names() {
 /// dependency this crate does not otherwise want, for forty lines of arithmetic that has one
 /// right answer and published test vectors. FIPS 180-4; the vectors are in the test below.
 mod sha256 {
+    use std::fmt::Write as _;
+
     const K: [u32; 64] = [
         0x428a_2f98,
         0x7137_4491,
@@ -1803,7 +1805,10 @@ mod sha256 {
             }
         }
 
-        h.iter().map(|word| format!("{word:08x}")).collect()
+        h.iter().fold(String::new(), |mut joined, word| {
+            let _ = write!(joined, "{word:08x}");
+            joined
+        })
     }
 }
 

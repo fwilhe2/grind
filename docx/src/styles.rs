@@ -15,6 +15,7 @@
 //! table.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Write as _;
 
 use crate::props::{self, Fonts, ParaProps, Props};
 use crate::xml::{Handled, Reader, Word as _, WordAttrs as _};
@@ -196,7 +197,7 @@ pub fn encode(display: &str) -> String {
         if ok {
             out.push(c);
         } else {
-            out.push_str(&format!("_{:x}_", c as u32));
+            let _ = write!(out, "_{:x}_", c as u32);
         }
     }
     if out.is_empty() { "_".into() } else { out }

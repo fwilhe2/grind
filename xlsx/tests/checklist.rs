@@ -20,6 +20,7 @@
 //! The merges, the checkboxes (Excel's form controls in the sheet's VML, each linked to its tick)
 //! and the rules (`doc/conditional-format.md`) are carried: ticking a box turns its row green.
 
+use std::fmt::Write as _;
 use std::io::{Cursor, Write};
 
 use grind_sheet::{CellValue, Pos, Span};
@@ -76,10 +77,10 @@ fn checklist() -> Vec<u8> {
     let shared = format!(
         r#"<sst xmlns="{MAIN}" count="{n}" uniqueCount="{n}">{items}</sst>"#,
         n = strings.len(),
-        items = strings
-            .iter()
-            .map(|s| format!("<si><t>{s}</t></si>"))
-            .collect::<String>()
+        items = strings.iter().fold(String::new(), |mut joined, s| {
+            let _ = write!(joined, "<si><t>{s}</t></si>");
+            joined
+        })
     );
 
     let styles = format!(

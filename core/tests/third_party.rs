@@ -25,6 +25,7 @@
 //! satisfiable from [`ALLOWED`], which is a list of licences checked against AGPL-3.0-or-later.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -809,7 +810,8 @@ fn render(rows: &[Row]) -> String {
                 id.to_string()
             })
             .collect();
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "    Component {{\n        name: {:?},\n        version: {:?},\n        licence: {:?},\n        copyright: {:?},\n        source: {:?},\n        kind: Kind::{},\n        notices: &[{}],\n    }},\n",
             row.name,
             row.version,
@@ -818,7 +820,7 @@ fn render(rows: &[Row]) -> String {
             row.source,
             row.kind,
             ids.join(", ")
-        ));
+        );
     }
     out.push_str("];\n\npub(super) const NOTICES: &[&str] = &[\n");
     for text in texts {

@@ -13,6 +13,7 @@
 
 use grind_core::locale::Locale;
 use rhai::{Dynamic, Engine, EvalAltResult};
+use std::fmt::Write as _;
 
 use crate::hint::hint;
 
@@ -71,11 +72,12 @@ pub fn number(x: f64, decimals: u32, tag: &str) -> Res<String> {
     }
     if decimals > 0 {
         grouped.push(locale.decimal());
-        grouped.push_str(&format!(
+        let _ = write!(
+            grouped,
             "{:0width$}",
             units % scale as u64,
             width = decimals as usize
-        ));
+        );
     }
     Ok(if negative {
         format!("\u{2212}{grouped}")

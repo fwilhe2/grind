@@ -17,6 +17,7 @@
 //! ponytail: linear search; §6.14.9 permits binary search on sorted data.
 
 use std::cmp::Ordering;
+use std::fmt::Write as _;
 
 use crate::model::Pos;
 
@@ -241,18 +242,19 @@ fn address(args: &mut Args) -> Answer {
         if plain {
             out.push_str(&sheet);
         } else {
-            out.push_str(&format!("'{}'", sheet.replace('\'', "''")));
+            let _ = write!(out, "'{}'", sheet.replace('\'', "''"));
         }
         out.push(if a1 { '.' } else { '!' });
     }
     let dollar = |absolute: bool| if absolute { "$" } else { "" };
     if a1 {
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "{}{}{}{row}",
             dollar(col_absolute),
             column_name(col as u32 - 1),
             dollar(row_absolute)
-        ));
+        );
     } else {
         let part = |axis: char, n: i64, absolute: bool| {
             if absolute {

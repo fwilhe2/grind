@@ -7,6 +7,7 @@
 //! a set of boundaries in the block's offsets and a piece is what falls between two. Pure
 //! arithmetic, tested on the host — a bold run starting mid-selection, a caret on a boundary.
 
+use std::fmt::Write as _;
 use std::ops::Range;
 
 use grind_text::RunView;
@@ -168,19 +169,19 @@ pub fn css(piece: &Piece, dark: bool) -> String {
         .as_deref()
         .filter(|_| !piece.selected);
     if let Some(color) = crate::ink::color(piece.props.color.as_deref(), fill, dark) {
-        css.push_str(&format!("color:{color};"));
+        let _ = write!(css, "color:{color};");
     }
     // A highlight loses to the selection, which has to stay legible as a selection.
     if let Some(background) = &piece.props.background
         && !piece.selected
     {
-        css.push_str(&format!("background-color:{background};"));
+        let _ = write!(css, "background-color:{background};");
     }
     if let Some(family) = &piece.props.font_family {
-        css.push_str(&format!("font-family:{family};"));
+        let _ = write!(css, "font-family:{family};");
     }
     if let Some(size) = &piece.props.font_size {
-        css.push_str(&format!("font-size:{size};"));
+        let _ = write!(css, "font-size:{size};");
     }
     css
 }

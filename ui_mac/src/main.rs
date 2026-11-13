@@ -314,6 +314,7 @@ fn render_to(_: &Opening) -> Result<(), String> {
 fn handlers(file: &Path) -> Result<String, String> {
     use objc2_app_kit::NSWorkspace;
     use objc2_foundation::NSURL;
+    use std::fmt::Write as _;
     let url = NSURL::from_file_path(file).ok_or("not a file path")?;
     let workspace = NSWorkspace::sharedWorkspace();
     let path = |url: &NSURL| {
@@ -322,12 +323,12 @@ fn handlers(file: &Path) -> Result<String, String> {
     };
     let mut said = String::new();
     for app in &workspace.URLsForApplicationsToOpenURL(&url) {
-        said.push_str(&format!("offered: {}\n", path(&app)));
+        let _ = writeln!(said, "offered: {}", path(&app));
     }
     let default = workspace
         .URLForApplicationToOpenURL(&url)
         .map_or_else(|| "none".to_owned(), |app| path(&app));
-    said.push_str(&format!("default: {default}\n"));
+    let _ = writeln!(said, "default: {default}");
     Ok(said)
 }
 
