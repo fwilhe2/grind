@@ -163,7 +163,9 @@ const check = (label, actual, expected) => {
   check("a stale save is refused, and the file left alone", onDisk("budget.fods").includes('office:value="8"'), true);
   agree = true;
   byId("save").click();
-  await until(() => onDisk("budget.fods").includes('office:value="9"'), "replacing theirs is a choice");
+  // The file is written before the page hears back, so wait for the page too.
+  await until(() => onDisk("budget.fods").includes('office:value="9"') && message().startsWith("Saved"),
+    "replacing theirs is a choice");
   check("replacing theirs is a choice", message(), "Saved budget.fods on the server");
 
   await command("Earlier versions");
