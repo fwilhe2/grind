@@ -271,9 +271,10 @@ fn checklist() -> Vec<u8> {
 /// an offset carrying it down, the way a real file placed one of its boxes, and row 5's is ticked.
 fn vml() -> String {
     let shape = |row0: u32, dy: u32, row1: u32, dy1: u32, link: &str, checked: bool| {
-        let checked = match checked {
-            true => "<x:Checked>1</x:Checked>",
-            false => "",
+        let checked = if checked {
+            "<x:Checked>1</x:Checked>"
+        } else {
+            ""
         };
         format!(
             r##"<v:shape type="#_x0000_t201" style='position:absolute;width:16.5pt;height:21pt' filled="f" stroked="f">

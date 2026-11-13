@@ -125,9 +125,10 @@ fn markup(title: &str, hits: &[usize]) -> String {
     let mut out = String::new();
     for (at, character) in title.chars().enumerate() {
         let piece = glib::markup_escape_text(&character.to_string());
-        match hits.contains(&at) {
-            true => out.push_str(&format!("<b>{piece}</b>")),
-            false => out.push_str(&piece),
+        if hits.contains(&at) {
+            out.push_str(&format!("<b>{piece}</b>"));
+        } else {
+            out.push_str(&piece);
         }
     }
     out

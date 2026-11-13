@@ -115,14 +115,15 @@ fn problems(report: &Report) -> Vec<Row> {
 }
 
 fn problem(diagnostic: &Diagnostic) -> Row {
-    let title = match diagnostic.at.is_empty() {
-        true => format!("{} {}", mark(diagnostic.severity), diagnostic.message),
-        false => format!(
+    let title = if diagnostic.at.is_empty() {
+        format!("{} {}", mark(diagnostic.severity), diagnostic.message)
+    } else {
+        format!(
             "{} {}: {}",
             mark(diagnostic.severity),
             diagnostic.at,
             diagnostic.message
-        ),
+        )
     };
     Row {
         title,
@@ -146,9 +147,10 @@ fn calculations(app: &grind_sheet::App, needle: &str) -> Vec<Row> {
         .into_iter()
         .filter(|calc| calc.matches(needle))
         .collect();
-    let heading = match needle.is_empty() {
-        true => "Calculations".to_owned(),
-        false => format!("Calculations: {needle}"),
+    let heading = if needle.is_empty() {
+        "Calculations".to_owned()
+    } else {
+        format!("Calculations: {needle}")
     };
     let mut rows = vec![Row::heading(&heading)];
     if found.is_empty() {

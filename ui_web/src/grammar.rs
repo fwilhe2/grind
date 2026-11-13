@@ -52,9 +52,10 @@ pub fn offers(finding: &grind_text::grammar::Finding, covered: &str, query: &str
         .take(5)
         .enumerate()
         .map(|(n, with)| {
-            let title = match with.trim().is_empty() && with.len() < 2 {
-                true if with.is_empty() => format!("Remove \u{201c}{covered}\u{201d}"),
-                _ => format!("Replace \u{201c}{covered}\u{201d} with \u{201c}{with}\u{201d}"),
+            let title = if with.trim().is_empty() && with.len() < 2 && with.is_empty() {
+                format!("Remove \u{201c}{covered}\u{201d}")
+            } else {
+                format!("Replace \u{201c}{covered}\u{201d} with \u{201c}{with}\u{201d}")
             };
             Entry::target(
                 format!("grammar.fix:{n}"),

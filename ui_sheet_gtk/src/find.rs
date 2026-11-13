@@ -203,12 +203,11 @@ impl Find {
         let keys = gtk::EventControllerKey::new();
         keys.connect_key_pressed(move |_, key, _, state| {
             let enter = matches!(key, gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter);
-            match enter && state.contains(gtk::gdk::ModifierType::SHIFT_MASK) {
-                true => {
-                    back();
-                    glib::Propagation::Stop
-                }
-                false => glib::Propagation::Proceed,
+            if enter && state.contains(gtk::gdk::ModifierType::SHIFT_MASK) {
+                back();
+                glib::Propagation::Stop
+            } else {
+                glib::Propagation::Proceed
             }
         });
         find.entry.add_controller(keys);
@@ -276,9 +275,10 @@ impl Find {
     #[cfg(test)]
     pub fn replace(&self, with: &str, all: bool) {
         self.with.set_text(with);
-        match all {
-            true => self.replace_all(),
-            false => self.replace_one(),
+        if all {
+            self.replace_all();
+        } else {
+            self.replace_one();
         }
     }
 

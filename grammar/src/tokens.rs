@@ -122,15 +122,14 @@ pub fn starts_sentence(tokens: &[Token], at: usize) -> bool {
 
 /// `word` with its first letter as `like`'s: `An` for `an` after `A`.
 pub fn cased(word: &str, like: &str) -> String {
-    match like.chars().next().is_some_and(char::is_uppercase) {
-        true => {
-            let mut chars = word.chars();
-            chars
-                .next()
-                .map(|c| c.to_uppercase().chain(chars).collect())
-                .unwrap_or_default()
-        }
-        false => word.to_owned(),
+    if like.chars().next().is_some_and(char::is_uppercase) {
+        let mut chars = word.chars();
+        chars
+            .next()
+            .map(|c| c.to_uppercase().chain(chars).collect())
+            .unwrap_or_default()
+    } else {
+        word.to_owned()
     }
 }
 

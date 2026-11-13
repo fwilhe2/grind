@@ -79,9 +79,10 @@ pub fn erase_to(app: &App, at: Caret, other: Caret) -> crate::Result<Caret> {
 pub fn word(app: &App, at: Caret, delta: i32) -> Caret {
     let text = app.input_text(at.block).unwrap_or_default();
     let len = text.chars().count();
-    let within = match delta > 0 {
-        true => crate::word::next_end(&text, at.offset),
-        false => crate::word::previous_start(&text, at.offset),
+    let within = if delta > 0 {
+        crate::word::next_end(&text, at.offset)
+    } else {
+        crate::word::previous_start(&text, at.offset)
     };
     let here = |offset| Caret {
         block: at.block,

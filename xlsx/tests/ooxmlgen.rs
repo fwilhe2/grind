@@ -510,9 +510,10 @@ impl Cell {
         let want = self.display.as_ref()?;
         let pos = grind_xlsx::address::cell(&self.address).expect("a manifest address");
         let got = grind_sheet::render(sheet, pos, null_date);
-        Some(match got == *want {
-            true => Ok(()),
-            false => Err(format!("{got:?}")),
+        Some(if got == *want {
+            Ok(())
+        } else {
+            Err(format!("{got:?}"))
         })
     }
 
@@ -527,9 +528,10 @@ impl Cell {
             .formula(pos)
             .map(|stored| stored[grind_sheet::formula::parse::intro(stored).len()..].to_owned());
         match (&self.formula, &self.excel) {
-            (Some(want), _) => Some(match got.as_deref() == Some(want.as_str()) {
-                true => Ok(()),
-                false => Err(format!("{got:?}")),
+            (Some(want), _) => Some(if got.as_deref() == Some(want.as_str()) {
+                Ok(())
+            } else {
+                Err(format!("{got:?}"))
             }),
             // An `<f>` the manifest states no translation for must be refused.
             (None, Some(_)) => Some(match got {
@@ -583,9 +585,10 @@ impl Cell {
                     "Date" => NumberKind::Date,
                     _ => NumberKind::Time,
                 };
-                match kind == Some(wanted) {
-                    true => number(want.parse().expect("checked")),
-                    false => Err(held()),
+                if kind == Some(wanted) {
+                    number(want.parse().expect("checked"))
+                } else {
+                    Err(held())
                 }
             }
             "Date" => match (kind, date::parse_date(want, null_date)) {

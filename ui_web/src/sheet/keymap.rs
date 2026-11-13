@@ -74,10 +74,7 @@ pub enum Action {
 /// keeps it — Ctrl+T and F5 are not ours to take.
 #[must_use]
 pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
-    let reverse = |a, b| match chord.shift {
-        true => a,
-        false => b,
-    };
+    let reverse = |a, b| if chord.shift { a } else { b };
     // These end an edit whatever else is going on, so they are decided first and in
     // both modes: Tab and Return are motions below, and editing must not lose them.
     match chord.key {
@@ -159,14 +156,16 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
         // A printable key starts an edit and *is* its first character. The browser
         // spells every named key with more than one character, which is exactly the
         // test for "printable" — `"a"` is a key, `"ArrowUp"` is a name.
-        key => match key.chars().count() == 1 {
-            true => key
-                .chars()
-                .next()
-                .filter(|c| !c.is_control())
-                .map(|c| Action::Begin(Some(c))),
-            false => None,
-        },
+        key => {
+            if key.chars().count() == 1 {
+                key.chars()
+                    .next()
+                    .filter(|c| !c.is_control())
+                    .map(|c| Action::Begin(Some(c)))
+            } else {
+                None
+            }
+        }
     }
 }
 

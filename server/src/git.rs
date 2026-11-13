@@ -64,13 +64,14 @@ impl Git {
             .stdin(Stdio::null())
             .output()
             .map_err(|e| format!("git: {e}"))?;
-        match out.status.success() {
-            true => Ok(out.stdout),
-            false => Err(format!(
+        if out.status.success() {
+            Ok(out.stdout)
+        } else {
+            Err(format!(
                 "git {}: {}",
                 args.first().unwrap_or(&""),
                 String::from_utf8_lossy(&out.stderr).trim()
-            )),
+            ))
         }
     }
 

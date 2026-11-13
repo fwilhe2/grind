@@ -149,9 +149,10 @@ impl App {
                 faces,
                 &state.doc.char_styles,
             );
-            let line = match step > 0 {
-                true => 0,
-                false => layout.lines().len().saturating_sub(1),
+            let line = if step > 0 {
+                0
+            } else {
+                layout.lines().len().saturating_sub(1)
             };
             offset = layout.offset_at(line, goal_x);
         }

@@ -58,17 +58,19 @@ define_class!(
 fn advise(line: &NSTextField, title: &str) {
     let count = title.trim().chars().count();
     let advice = grind_text::picture::advice(title).unwrap_or("");
-    let said = match advice.is_empty() {
-        true => format!(
+    let said = if advice.is_empty() {
+        format!(
             "{count} of about {} characters.",
             grind_text::picture::SHORT
-        ),
-        false => format!("{advice} {count} of about {}.", grind_text::picture::SHORT),
+        )
+    } else {
+        format!("{advice} {count} of about {}.", grind_text::picture::SHORT)
     };
     line.setStringValue(&NSString::from_str(&said));
-    line.setTextColor(Some(&*match count > grind_text::picture::SHORT {
-        true => NSColor::systemOrangeColor(),
-        false => NSColor::secondaryLabelColor(),
+    line.setTextColor(Some(&*if count > grind_text::picture::SHORT {
+        NSColor::systemOrangeColor()
+    } else {
+        NSColor::secondaryLabelColor()
     }));
 }
 

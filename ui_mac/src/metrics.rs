@@ -211,10 +211,7 @@ mod mac {
     /// its figures.
     fn make(font: &Font) -> CFRetained<CTFont> {
         let made = styled(font);
-        match font.tabular {
-            true => tabular(&made),
-            false => made,
-        }
+        if font.tabular { tabular(&made) } else { made }
     }
 
     /// `font` with monospaced numbers: the AAT number-spacing feature, which is how AppKit's
@@ -256,9 +253,10 @@ mod mac {
                 // The system face's bold is its own emphasized type rather than a trait applied
                 // afterwards, which is how AppKit asks for it too.
                 Family::System => CTFont::new_ui_font_for_language(
-                    match font.bold {
-                        true => CTFontUIFontType::EmphasizedSystem,
-                        false => CTFontUIFontType::System,
+                    if font.bold {
+                        CTFontUIFontType::EmphasizedSystem
+                    } else {
+                        CTFontUIFontType::System
                     },
                     size,
                     None,

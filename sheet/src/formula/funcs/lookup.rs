@@ -254,9 +254,12 @@ fn address(args: &mut Args) -> Answer {
             dollar(row_absolute)
         ));
     } else {
-        let part = |axis: char, n: i64, absolute: bool| match absolute {
-            true => format!("{axis}{n}"),
-            false => format!("{axis}[{n}]"),
+        let part = |axis: char, n: i64, absolute: bool| {
+            if absolute {
+                format!("{axis}{n}")
+            } else {
+                format!("{axis}[{n}]")
+            }
         };
         out.push_str(&part('R', row, row_absolute));
         out.push_str(&part('C', col, col_absolute));

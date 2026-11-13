@@ -49,35 +49,38 @@ impl Search {
         if self.needle.is_empty() {
             return Vec::new();
         }
-        let fold = |c: char| match self.match_case {
-            true => c,
-            false => c.to_lowercase().next().unwrap_or(c),
+        let fold = |c: char| {
+            if self.match_case {
+                c
+            } else {
+                c.to_lowercase().next().unwrap_or(c)
+            }
         };
         let needle: Vec<char> = self.needle.chars().map(fold).collect();
         let chars: Vec<(usize, char)> =
             haystack.char_indices().map(|(i, c)| (i, fold(c))).collect();
         let end_of = |i: usize| chars.get(i).map_or(haystack.len(), |(at, _)| *at);
         if self.whole_cell {
-            return match chars.len() == needle.len()
+            return if chars.len() == needle.len()
                 && chars.iter().zip(&needle).all(|((_, a), b)| a == b)
             {
-                true => std::iter::once(0..haystack.len()).collect(),
-                false => Vec::new(),
+                std::iter::once(0..haystack.len()).collect()
+            } else {
+                Vec::new()
             };
         }
         let mut hits = Vec::new();
         let mut at = 0;
         while at + needle.len() <= chars.len() {
-            match chars[at..at + needle.len()]
+            if chars[at..at + needle.len()]
                 .iter()
                 .zip(&needle)
                 .all(|((_, a), b)| a == b)
             {
-                true => {
-                    hits.push(chars[at].0..end_of(at + needle.len()));
-                    at += needle.len();
-                }
-                false => at += 1,
+                hits.push(chars[at].0..end_of(at + needle.len()));
+                at += needle.len();
+            } else {
+                at += 1;
             }
         }
         hits

@@ -51,9 +51,10 @@ pub fn subtitle(pages: usize, paper: &grind_core::page::PageGeometry) -> String 
 
 /// One step in or out from zoom `at`, staying inside [`ZOOMS`].
 pub fn zoom_step(at: usize, inward: bool) -> usize {
-    match inward {
-        true => (at + 1).min(ZOOMS.len() - 1),
-        false => at.saturating_sub(1),
+    if inward {
+        (at + 1).min(ZOOMS.len() - 1)
+    } else {
+        at.saturating_sub(1)
     }
 }
 

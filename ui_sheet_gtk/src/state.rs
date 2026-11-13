@@ -117,10 +117,7 @@ fn navigate(key: Key, mods: Mods) -> Outcome {
 }
 
 fn editing(at: Where, key: Key, mods: Mods) -> Outcome {
-    let reverse = |a, b| match mods.shift {
-        true => a,
-        false => b,
-    };
+    let reverse = |a, b| if mods.shift { a } else { b };
     // These end an edit whatever else is going on, which is why they are decided first: Tab
     // and Return are motions in the keymap, and pointing must not swallow them.
     match key {

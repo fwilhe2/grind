@@ -158,16 +158,19 @@ impl Page {
                 },
                 _ => Caret { offset: 0, ..at },
             },
-            Motion::ParagraphOn => match at.offset == len(at.block) {
-                true if at.block + 1 < app.block_count() => Caret {
-                    block: at.block + 1,
-                    offset: len(at.block + 1),
-                },
-                _ => Caret {
-                    offset: len(at.block),
-                    ..at
-                },
-            },
+            Motion::ParagraphOn => {
+                if at.offset == len(at.block) && at.block + 1 < app.block_count() {
+                    Caret {
+                        block: at.block + 1,
+                        offset: len(at.block + 1),
+                    }
+                } else {
+                    Caret {
+                        offset: len(at.block),
+                        ..at
+                    }
+                }
+            }
             Motion::DocStart => START,
             Motion::DocEnd => caret::end(app),
         }
@@ -191,9 +194,10 @@ impl Page {
             return;
         }
         let vertical = matches!(motion, Motion::Line(_) | Motion::Page(_));
-        let goal = match vertical {
-            true => self.goal_x.or_else(|| app.caret_x(self.caret, faces).ok()),
-            false => None,
+        let goal = if vertical {
+            self.goal_x.or_else(|| app.caret_x(self.caret, faces).ok())
+        } else {
+            None
         };
         let to = self.moved(app, faces, motion, page);
         self.place(to, extend);
@@ -494,9 +498,12 @@ impl Page {
     /// them. Refused at the top or the bottom, where there is nowhere to go.
     pub fn move_paragraphs(&mut self, app: &App, up: bool) -> Result<(), Refused> {
         grind_text::blocks::shift(app, self.blocks(), up)?;
-        let step = |caret: &mut Caret| match up {
-            true => caret.block -= 1,
-            false => caret.block += 1,
+        let step = |caret: &mut Caret| {
+            if up {
+                caret.block -= 1;
+            } else {
+                caret.block += 1;
+            }
         };
         step(&mut self.caret);
         step(&mut self.anchor);

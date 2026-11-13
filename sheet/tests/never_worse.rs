@@ -125,9 +125,10 @@ fn every_edit_to_somebody_elses_spreadsheet_saves_or_is_refused() {
     for path in documents() {
         let bytes = std::fs::read(&path).expect("reads");
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
-        let form = match bytes.starts_with(b"PK") {
-            true => Form::Package,
-            false => Form::Flat,
+        let form = if bytes.starts_with(b"PK") {
+            Form::Package
+        } else {
+            Form::Flat
         };
         for (label, edit) in EDITS {
             let app = App::new();

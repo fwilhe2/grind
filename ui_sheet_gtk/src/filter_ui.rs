@@ -176,9 +176,10 @@ impl FilterMenu {
 
         let mut checks = Vec::with_capacity(values.len());
         for value in values {
-            let label = match value.is_empty() {
-                true => EMPTY_LABEL,
-                false => value.as_str(),
+            let label = if value.is_empty() {
+                EMPTY_LABEL
+            } else {
+                value.as_str()
             };
             let check = gtk::CheckButton::with_label(label);
             check.set_active(kept.is_none_or(|k| k.contains(value)));
@@ -243,9 +244,10 @@ impl FilterMenu {
     fn refresh_apply(&self) {
         let any = self.checks.borrow().iter().any(|(_, c)| c.is_active());
         self.apply.set_sensitive(any);
-        self.apply.set_tooltip_text(match any {
-            true => None,
-            false => Some("Keep at least one value, or Clear to show every row"),
+        self.apply.set_tooltip_text(if any {
+            None
+        } else {
+            Some("Keep at least one value, or Clear to show every row")
         });
     }
 

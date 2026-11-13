@@ -39,9 +39,10 @@ pub fn setting(
             return Err(format!("{rule} is not ignored"));
         }
     }
-    let path = match setting != before {
-        true => Some(setting.save().map_err(|e| e.to_string())?),
-        false => Setting::path(),
+    let path = if setting == before {
+        Setting::path()
+    } else {
+        Some(setting.save().map_err(|e| e.to_string())?)
     };
     let mut lines: Vec<String> = setting.to_text().lines().map(str::to_owned).collect();
     if let Some(path) = path {

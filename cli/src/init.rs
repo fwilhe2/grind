@@ -451,12 +451,13 @@ fn textconv(dir: &Path) -> Entry {
         Err(_) => entry(Action::Skipped, "git is not on PATH"),
         Ok(out) if out.status.success() => {
             let current = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-            match current == TEXTCONV {
-                true => entry(Action::Unchanged, "diff.grind.textconv"),
-                false => entry(
+            if current == TEXTCONV {
+                entry(Action::Unchanged, "diff.grind.textconv")
+            } else {
+                entry(
                     Action::Kept,
                     &format!("diff.grind.textconv is already \"{current}\", and is yours"),
-                ),
+                )
             }
         }
         Ok(_) => match git(&["config", "--local", "diff.grind.textconv", TEXTCONV]) {
@@ -473,13 +474,15 @@ fn textconv(dir: &Path) -> Entry {
 /// space in it is quoted.
 fn shown(path: &Path) -> String {
     let path = path.trim_prefix(".");
-    let text = match path.as_os_str().is_empty() {
-        true => ".".to_owned(),
-        false => path.display().to_string(),
+    let text = if path.as_os_str().is_empty() {
+        ".".to_owned()
+    } else {
+        path.display().to_string()
     };
-    match text.contains(' ') {
-        true => format!("\"{text}\""),
-        false => text,
+    if text.contains(' ') {
+        format!("\"{text}\"")
+    } else {
+        text
     }
 }
 

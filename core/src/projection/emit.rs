@@ -130,13 +130,12 @@ impl Emitter {
         let start = self.text.len();
         let printed = KdlValue::String(text.to_owned()).to_string();
         let printed = escape_disallowed(&printed);
-        match printed.starts_with('"') {
-            true => self.text.push_str(&printed),
-            false => {
-                self.text.push('"');
-                self.text.push_str(&printed);
-                self.text.push('"');
-            }
+        if printed.starts_with('"') {
+            self.text.push_str(&printed);
+        } else {
+            self.text.push('"');
+            self.text.push_str(&printed);
+            self.text.push('"');
         }
         self.token(TokenKind::Text, start);
     }
@@ -274,9 +273,12 @@ fn escape_disallowed(printed: &str) -> String {
     }
     printed
         .chars()
-        .map(|c| match is_disallowed(c) {
-            true => format!("\\u{{{:x}}}", c as u32),
-            false => c.to_string(),
+        .map(|c| {
+            if is_disallowed(c) {
+                format!("\\u{{{:x}}}", c as u32)
+            } else {
+                c.to_string()
+            }
         })
         .collect()
 }

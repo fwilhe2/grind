@@ -326,12 +326,11 @@ pub fn split_pieces(pieces: Pieces, width: usize) -> (Pieces, Pieces) {
         let (mut head, mut tail) = (String::new(), String::new());
         for c in piece.chars() {
             let w = c.width().unwrap_or(0);
-            match tail.is_empty() && used + w <= width {
-                true => {
-                    used += w;
-                    head.push(c);
-                }
-                false => tail.push(c),
+            if tail.is_empty() && used + w <= width {
+                used += w;
+                head.push(c);
+            } else {
+                tail.push(c);
             }
         }
         if !head.is_empty() {

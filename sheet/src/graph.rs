@@ -284,13 +284,11 @@ mod tests {
             let mut sheet = Sheet::new(*name);
             for (row, col, text) in *cells {
                 let pos = Pos::new(*row, *col);
-                match text.starts_with('=') {
-                    // A formula cell needs a value, or `used_rows` does not count it.
-                    true => {
-                        sheet.set(pos, CellValue::Number(0.0));
-                        sheet.set_formula(pos, (*text).to_owned());
-                    }
-                    false => sheet.set(pos, CellValue::Number(text.parse().unwrap())),
+                if text.starts_with('=') {
+                    sheet.set(pos, CellValue::Number(0.0));
+                    sheet.set_formula(pos, (*text).to_owned());
+                } else {
+                    sheet.set(pos, CellValue::Number(text.parse().unwrap()));
                 }
             }
             document.sheets.push(sheet);

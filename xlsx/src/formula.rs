@@ -125,9 +125,10 @@ pub fn translate_in(src: &str, scope: Option<&Scope<'_>>) -> Result<Expr, Refusa
     };
     let (expr, _) = p.expr(0)?;
     p.space();
-    match p.at == p.src.len() {
-        true => Ok(expr),
-        false => Err(Refusal::Syntax),
+    if p.at == p.src.len() {
+        Ok(expr)
+    } else {
+        Err(Refusal::Syntax)
     }
 }
 
@@ -330,9 +331,10 @@ impl Parser<'_> {
                 if self.peek() == Some(',') {
                     return Err(Refusal::Union);
                 }
-                match self.eat(')') {
-                    true => Ok((Expr::Paren(Box::new(inner)), depth + 1)),
-                    false => Err(Refusal::Syntax),
+                if self.eat(')') {
+                    Ok((Expr::Paren(Box::new(inner)), depth + 1))
+                } else {
+                    Err(Refusal::Syntax)
                 }
             }
             c if c.is_ascii_digit()
@@ -431,13 +433,12 @@ impl Parser<'_> {
             loop {
                 self.space();
                 // An omitted parameter is present and empty: `OFFSET(A1,1,,2)`.
-                args.push(match matches!(self.peek(), Some(',' | ')')) {
-                    true => Expr::Empty,
-                    false => {
-                        let (arg, depth) = self.expr(0)?;
-                        deepest = deepest.max(depth);
-                        arg
-                    }
+                args.push(if matches!(self.peek(), Some(',' | ')')) {
+                    Expr::Empty
+                } else {
+                    let (arg, depth) = self.expr(0)?;
+                    deepest = deepest.max(depth);
+                    arg
                 });
                 self.space();
                 if self.eat(',') {
@@ -512,13 +513,12 @@ impl Parser<'_> {
             if matches!(self.peek(), Some('+' | '-')) {
                 self.at += 1;
             }
-            match matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
-                true => {
-                    while matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
-                        self.at += 1;
-                    }
+            if matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
+                while matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
+                    self.at += 1;
                 }
-                false => self.at = save,
+            } else {
+                self.at = save;
             }
         }
         let text: String = self.src[start..self.at].iter().collect();
@@ -535,9 +535,10 @@ impl Parser<'_> {
         while matches!(self.peek(), Some(c) if c.is_alphanumeric() || matches!(c, '_' | '.')) {
             self.at += 1;
         }
-        match self.at > start {
-            true => Some(self.src[start..self.at].iter().collect()),
-            false => None,
+        if self.at > start {
+            Some(self.src[start..self.at].iter().collect())
+        } else {
+            None
         }
     }
 
@@ -589,15 +590,16 @@ impl Parser<'_> {
     fn sheet_prefix(&mut self) -> Option<(String, Option<String>)> {
         let save = self.at;
         let first = self.sheet_name()?;
-        let second = match self.eat(':') {
-            true => match self.sheet_name() {
+        let second = if self.eat(':') {
+            match self.sheet_name() {
                 Some(name) => Some(name),
                 None => {
                     self.at = save;
                     return None;
                 }
-            },
-            false => None,
+            }
+        } else {
+            None
         };
         if !self.eat('!') {
             self.at = save;
@@ -681,19 +683,21 @@ impl Parser<'_> {
             self.at = save;
             return None;
         }
-        let col = match letters.is_empty() {
-            true => None,
-            false => Some(Axis {
+        let col = if letters.is_empty() {
+            None
+        } else {
+            Some(Axis {
                 index: column_index(&letters)?,
                 absolute: col_absolute,
-            }),
+            })
         };
-        let row = match digits.is_empty() {
-            true => None,
-            false => Some(Axis {
+        let row = if digits.is_empty() {
+            None
+        } else {
+            Some(Axis {
                 index: row_index(&digits)?,
                 absolute: row_absolute,
-            }),
+            })
         };
         if col.is_none() && row.is_none() {
             self.at = save;

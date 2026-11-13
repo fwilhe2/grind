@@ -118,18 +118,21 @@ impl Help {
             .lines()
             .skip(self.scroll)
             .take(height.saturating_sub(2))
-            .map(|line| match line.starts_with(' ') || line.is_empty() {
-                // A section's own heading is the line that does not start indented.
-                true => Line::from(Span::raw(line.to_owned())),
-                false => Line::from(Span::styled(
-                    line.to_owned(),
-                    Style::default().add_modifier(Modifier::BOLD),
-                )),
+            .map(|line| {
+                if line.starts_with(' ') || line.is_empty() {
+                    Line::from(Span::raw(line.to_owned()))
+                } else {
+                    Line::from(Span::styled(
+                        line.to_owned(),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ))
+                }
             })
             .collect();
-        let more = match self.scroll + height.saturating_sub(2) < text.lines().count() {
-            true => "  j/k scroll  ",
-            false => "  any key closes  ",
+        let more = if self.scroll + height.saturating_sub(2) < text.lines().count() {
+            "  j/k scroll  "
+        } else {
+            "  any key closes  "
         };
         frame.render_widget(
             Paragraph::new(lines).block(

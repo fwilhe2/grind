@@ -611,14 +611,13 @@ pub fn run(oracle: &Oracle, floor: usize) {
         let theirs_path = oracle.answer(&cache, &fixture.sha256);
         let named = oracle.unconverted.iter().any(|(f, _)| *f == fixture.file);
         let Ok(theirs) = grind_sheet::read_file(&theirs_path) else {
-            match named {
-                true => {
-                    unconverted.insert(fixture.file.as_str());
-                }
-                false => failures.push(format!(
+            if named {
+                unconverted.insert(fixture.file.as_str());
+            } else {
+                failures.push(format!(
                     "{}: the oracle produced nothing we can read",
                     fixture.file
-                )),
+                ));
             }
             continue;
         };
@@ -780,13 +779,14 @@ pub fn run_outside(oracle: &Oracle) {
             .extension()
             .and_then(|e| e.to_str())
             .is_some_and(|e| e.eq_ignore_ascii_case("ods") || e.eq_ignore_ascii_case("fods"));
-        let read = match odf {
-            true => grind_sheet::read_bytes(&file, &bytes)
+        let read = if odf {
+            grind_sheet::read_bytes(&file, &bytes)
                 .map(|doc| (doc, Vec::new()))
-                .map_err(|e| e.to_string()),
-            false => grind_xlsx::import_bytes(&bytes)
+                .map_err(|e| e.to_string())
+        } else {
+            grind_xlsx::import_bytes(&bytes)
                 .map(|(doc, report)| (doc, report.renamed))
-                .map_err(|e| e.to_string()),
+                .map_err(|e| e.to_string())
         };
         let (ours, renamed) = match read {
             Ok(pair) => pair,
@@ -797,9 +797,10 @@ pub fn run_outside(oracle: &Oracle) {
         };
         compared += 1;
         let defaults = Defaults::of(&odf_text(&theirs_path));
-        let mine = match odf {
-            true => Defaults::of(&odf_text(path)),
-            false => Defaults::default(),
+        let mine = if odf {
+            Defaults::of(&odf_text(path))
+        } else {
+            Defaults::default()
         };
         for difference in differences_with(&ours, &theirs, (&mine, &defaults), &renamed) {
             if let Some(d) = oracle

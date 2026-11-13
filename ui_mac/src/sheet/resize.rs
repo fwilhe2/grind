@@ -85,9 +85,10 @@ pub fn tracks(selection: Selection, axis: Axis, track: u32) -> Range<u32> {
             start.row..end.row + 1,
         ),
     };
-    match whole && range.contains(&track) {
-        true => range,
-        false => track..track + 1,
+    if whole && range.contains(&track) {
+        range
+    } else {
+        track..track + 1
     }
 }
 

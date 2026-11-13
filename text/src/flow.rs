@@ -152,10 +152,10 @@ impl Flow {
     /// Add a block below the others with the space above and below it. `space_before` collapses
     /// against the gap already left, so a heading after a paragraph does not get both.
     pub fn push(&mut self, index: usize, height: f64, indent: f64, space_before: f64, gap: f64) {
-        let top = match self.slots.is_empty() {
-            // Nothing above the first block for its own space to sit under.
-            true => self.height,
-            false => self.height - self.pending + self.pending.max(space_before),
+        let top = if self.slots.is_empty() {
+            self.height
+        } else {
+            self.height - self.pending + self.pending.max(space_before)
         };
         self.slots.push(Slot {
             index,

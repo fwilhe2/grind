@@ -1160,9 +1160,10 @@ fn what_an_editor_shows_enters_back_as_the_same_cell() {
         let shown = app.input_text(0, p(row, 0)).unwrap();
         // The one step a shell always takes: what an editor holds is display form, and
         // `enter` takes the canonical syntax the file stores.
-        let typed = match shown.starts_with('=') {
-            true => grind_sheet::formula::display::from_display(&shown).unwrap(),
-            false => shown.clone(),
+        let typed = if shown.starts_with('=') {
+            grind_sheet::formula::display::from_display(&shown).unwrap()
+        } else {
+            shown.clone()
         };
         app.enter(0, p(row, 0), &typed, RecalcMode::No).unwrap();
         assert_eq!(

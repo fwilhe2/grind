@@ -369,12 +369,11 @@ impl Ui {
         self.dom.head.append_child(&corner)?;
         for &col in &shown {
             let cell = self.dom.document.create_element("th")?;
-            cell.set_class_name(
-                match selection.contains(Pos::new(selection.active.row, col)) {
-                    true => "head col current",
-                    false => "head col",
-                },
-            );
+            cell.set_class_name(if selection.contains(Pos::new(selection.active.row, col)) {
+                "head col current"
+            } else {
+                "head col"
+            });
             // The one trace a hidden run leaves: an accent edge on the heading after it, with
             // a tooltip saying what is there and how to have it back.
             if col > 0 && hidden_cols.contains(&(col - 1)) {
@@ -411,9 +410,10 @@ impl Ui {
                 line.set_attribute("style", &format!("height:{:.1}px", heights.size(row)))?;
             }
             let header = self.dom.document.create_element("th")?;
-            header.set_class_name(match row == selection.active.row {
-                true => "head row current",
-                false => "head row",
+            header.set_class_name(if row == selection.active.row {
+                "head row current"
+            } else {
+                "head row"
             });
             header.set_attribute("data-row", &row.to_string())?;
             header.set_text_content(Some(&(row + 1).to_string()));
@@ -455,10 +455,10 @@ impl Ui {
                 // While editing, the active cell shows what is being typed. The
                 // text still comes from the one `<input>` that holds it — this is a
                 // second *view*, never a second copy.
-                let text = match active && editing {
-                    true => self.dom.formula.value(),
-                    false => self
-                        .formulas
+                let text = if active && editing {
+                    self.dom.formula.value()
+                } else {
+                    self.formulas
                         .get()
                         .then(|| self.app.formula(self.sheet.get(), pos).ok().flatten())
                         .flatten()
@@ -466,7 +466,7 @@ impl Ui {
                         .unwrap_or_else(|| match merge {
                             Some(m) => m.text.clone(),
                             None => viewport.text(row, col).unwrap_or_default().to_owned(),
-                        }),
+                        })
                 };
                 // The words the checker underlines, in what the cell *shows*: not while it is
                 // being edited, and not under a formula's own text.
@@ -585,9 +585,10 @@ impl Ui {
                     cell.class_list().add_1("has-filter")?;
                     let button = self.dom.document.create_element("button")?;
                     button.set_attribute("type", "button")?;
-                    button.set_class_name(match filter.keep.contains_key(&field) {
-                        true => "filter-btn on",
-                        false => "filter-btn",
+                    button.set_class_name(if filter.keep.contains_key(&field) {
+                        "filter-btn on"
+                    } else {
+                        "filter-btn"
                     });
                     button.set_attribute("data-field", &field.to_string())?;
                     button.set_attribute("title", "Filter this column")?;
@@ -632,9 +633,10 @@ impl Ui {
                 continue;
             };
             let element = self.dom.document.create_element("div")?;
-            element.set_class_name(match selected == Some(index) {
-                true => "chart selected",
-                false => "chart",
+            element.set_class_name(if selected == Some(index) {
+                "chart selected"
+            } else {
+                "chart"
             });
             element.set_attribute("data-chart", &index.to_string())?;
             element.set_attribute(
@@ -671,9 +673,10 @@ impl Ui {
                 continue;
             };
             let tab = self.dom.document.create_element("button")?;
-            tab.set_class_name(match index == self.sheet.get() {
-                true => "tab current",
-                false => "tab",
+            tab.set_class_name(if index == self.sheet.get() {
+                "tab current"
+            } else {
+                "tab"
             });
             tab.set_attribute("type", "button")?;
             tab.set_attribute("data-sheet", &index.to_string())?;
@@ -725,9 +728,10 @@ impl Ui {
         // under the caret would make it impossible to type a second character.
         if self.dom.document.active_element().as_ref() != Some(self.dom.address.as_ref()) {
             let (start, end) = selection.rect();
-            self.dom.address.set_value(&match start == end {
-                true => a1::format(None, active),
-                false => format!("{}:{}", a1::format(None, start), a1::format(None, end)),
+            self.dom.address.set_value(&if start == end {
+                a1::format(None, active)
+            } else {
+                format!("{}:{}", a1::format(None, start), a1::format(None, end))
             });
         }
 
@@ -990,9 +994,10 @@ impl Ui {
                 self.friendly.set(!self.friendly.get());
                 self.request_repaint();
                 self.set_message(
-                    match self.friendly.get() {
-                        true => "Formulas are read in plain words beside the bar",
-                        false => "Formulas are shown as stored only",
+                    if self.friendly.get() {
+                        "Formulas are read in plain words beside the bar"
+                    } else {
+                        "Formulas are shown as stored only"
                     }
                     .to_owned(),
                 );
@@ -1000,10 +1005,7 @@ impl Ui {
             "view.formulas" => {
                 self.formulas.set(!self.formulas.get());
                 self.request_repaint();
-                self.set_message(match self.formulas.get() {
-                    true => "Formulas are shown instead of their results — nothing was written; run it again to stop".to_owned(),
-                    false => "Results are shown again".to_owned(),
-                });
+                self.set_message(if self.formulas.get() { "Formulas are shown instead of their results — nothing was written; run it again to stop".to_owned() } else { "Results are shown again".to_owned() });
             }
             "edit.clear" => self.clear(),
             "edit.fill-down" => self.fill(true),
@@ -1427,9 +1429,10 @@ impl Ui {
         }
         self.set_selection(Selection::at(wrong.pos));
         let suggestions: Vec<String> = self.app.suggest(&wrong.word).into_iter().take(3).collect();
-        self.set_message(match suggestions.is_empty() {
-            true => format!("{} \u{2014} no suggestion", wrong.word),
-            false => format!("{} \u{2014} {}", wrong.word, suggestions.join(", ")),
+        self.set_message(if suggestions.is_empty() {
+            format!("{} \u{2014} no suggestion", wrong.word)
+        } else {
+            format!("{} \u{2014} {}", wrong.word, suggestions.join(", "))
         });
     }
 
@@ -1455,9 +1458,10 @@ impl Ui {
             .find(|(name, _)| name.eq_ignore_ascii_case(where_))
             .map(|(_, expression)| expression);
         let address = expression.as_deref().unwrap_or(where_);
-        let parsed = match address.starts_with('[') {
-            true => a1::parse_bracketed(address),
-            false => a1::parse(address),
+        let parsed = if address.starts_with('[') {
+            a1::parse_bracketed(address)
+        } else {
+            a1::parse(address)
         };
         let Ok(reference) = parsed else {
             return self.set_message(format!("{where_} is not an address"));
@@ -1763,9 +1767,10 @@ impl Ui {
         let (start, end) = self.rect();
         let lines = grind_sheet::nav::fill_lines(start, end, down);
         if lines.is_empty() {
-            return self.set_message(match down {
-                true => "Select the cells to fill into as well — more than one row".to_owned(),
-                false => "Select the cells to fill into as well — more than one column".to_owned(),
+            return self.set_message(if down {
+                "Select the cells to fill into as well — more than one row".to_owned()
+            } else {
+                "Select the cells to fill into as well — more than one column".to_owned()
             });
         }
         let mut cells = 0;
@@ -1795,19 +1800,20 @@ impl Ui {
             },
             used,
         );
-        let said = match merge {
-            true => match self.app.merge(sheet, start, end) {
+        let said = if merge {
+            match self.app.merge(sheet, start, end) {
                 Ok(_) => {
                     self.set_selection(Selection::at(start));
                     "Merged — what the other cells held is kept, out of sight".to_owned()
                 }
                 Err(error) => error.to_string(),
-            },
-            false => match self.app.unmerge(sheet, start, end) {
+            }
+        } else {
+            match self.app.unmerge(sheet, start, end) {
                 Ok(0) => "Nothing here is merged".to_owned(),
                 Ok(n) => format!("Unmerged {n} range(s)"),
                 Err(error) => error.to_string(),
-            },
+            }
         };
         self.set_message(said);
     }
@@ -1874,9 +1880,10 @@ impl Ui {
     /// row or column in one undo step; empty puts the default back. `App` checks the length.
     fn track_size(&self, rows: bool) {
         let Some(answer) = self.ask(
-            match rows {
-                true => "Row height — 2.5cm, 1in or 64pt; empty for the default",
-                false => "Column width — 2.5cm, 1in or 64pt; empty for the default",
+            if rows {
+                "Row height — 2.5cm, 1in or 64pt; empty for the default"
+            } else {
+                "Column width — 2.5cm, 1in or 64pt; empty for the default"
             },
             "",
         ) else {
@@ -1884,15 +1891,12 @@ impl Ui {
         };
         let size = Some(answer.trim().to_owned()).filter(|size| !size.is_empty());
         let selection = self.nav_selection();
-        let result = match rows {
-            true => {
-                self.app
-                    .set_row_height(self.sheet.get(), grind_sheet::verbs::rows(selection), size)
-            }
-            false => {
-                self.app
-                    .set_col_width(self.sheet.get(), grind_sheet::verbs::cols(selection), size)
-            }
+        let result = if rows {
+            self.app
+                .set_row_height(self.sheet.get(), grind_sheet::verbs::rows(selection), size)
+        } else {
+            self.app
+                .set_col_width(self.sheet.get(), grind_sheet::verbs::cols(selection), size)
         };
         self.set_message(match result {
             Ok(0) => "That was the size already".to_owned(),
@@ -1989,9 +1993,10 @@ impl Ui {
         let Some(name) = self.ask("Delete which name?", "") else {
             return;
         };
-        self.set_message(match self.app.clear_name(name.trim()) {
-            true => format!("“{}” deleted", name.trim()),
-            false => format!("There is no name “{}”", name.trim()),
+        self.set_message(if self.app.clear_name(name.trim()) {
+            format!("“{}” deleted", name.trim())
+        } else {
+            format!("There is no name “{}”", name.trim())
         });
     }
 
@@ -2385,9 +2390,10 @@ impl Ui {
             .app
             .set_row_hidden(self.sheet.get(), start.row..end.row + 1, hidden)
         {
-            Ok(n) => self.set_message(match hidden {
-                true => format!("Hid {n} row(s)"),
-                false => format!("Unhid {n} row(s)"),
+            Ok(n) => self.set_message(if hidden {
+                format!("Hid {n} row(s)")
+            } else {
+                format!("Unhid {n} row(s)")
             }),
             Err(error) => self.set_message(error.to_string()),
         }
@@ -2400,9 +2406,10 @@ impl Ui {
             .app
             .set_col_hidden(self.sheet.get(), start.col..end.col + 1, hidden)
         {
-            Ok(n) => self.set_message(match hidden {
-                true => format!("Hid {n} column(s)"),
-                false => format!("Unhid {n} column(s)"),
+            Ok(n) => self.set_message(if hidden {
+                format!("Hid {n} column(s)")
+            } else {
+                format!("Unhid {n} column(s)")
             }),
             Err(error) => self.set_message(error.to_string()),
         }
@@ -2595,13 +2602,11 @@ impl Ui {
             check.set_checked(kept.is_none_or(|k| k.contains(value)));
             row.append_child(&check)?;
             let label = self.dom.document.create_element("span")?;
-            match value.is_empty() {
-                // Italic, so "(empty)" cannot be confused with a cell that literally says it.
-                true => {
-                    label.set_class_name("filter-empty");
-                    label.set_text_content(Some(filter_ui::EMPTY_LABEL));
-                }
-                false => label.set_text_content(Some(value)),
+            if value.is_empty() {
+                label.set_class_name("filter-empty");
+                label.set_text_content(Some(filter_ui::EMPTY_LABEL));
+            } else {
+                label.set_text_content(Some(value));
             }
             row.append_child(&label)?;
             self.dom.filter_list.append_child(&row)?;
@@ -2922,24 +2927,23 @@ impl Ui {
     /// colours (`doc/view-modes.md` §4.5), and §9 asks for the mode to say it is on.
     fn overlay(&self, roles: bool) {
         let mut overlays = self.overlays.get();
-        let on = match roles {
-            true => {
-                overlays.roles = !overlays.roles;
-                overlays.roles
-            }
-            false => {
-                overlays.names = !overlays.names;
-                overlays.names
-            }
+        let on = if roles {
+            overlays.roles = !overlays.roles;
+            overlays.roles
+        } else {
+            overlays.names = !overlays.names;
+            overlays.names
         };
         self.overlays.set(overlays);
-        let what = match roles {
-            true => "Cell colours say what each cell is",
-            false => "Names are shown where they live",
+        let what = if roles {
+            "Cell colours say what each cell is"
+        } else {
+            "Names are shown where they live"
         };
-        self.set_message(match on {
-            true => format!("{what} — nothing was written; run it again to stop"),
-            false => "Back to the document's own colours".to_owned(),
+        self.set_message(if on {
+            format!("{what} — nothing was written; run it again to stop")
+        } else {
+            "Back to the document's own colours".to_owned()
         });
     }
 
@@ -2998,9 +3002,10 @@ impl Ui {
                 }));
                 return Ok(());
             }
-            let anchor = match event.shift_key() {
-                true => self.selection.get().anchor,
-                false => Pos::new(0, col),
+            let anchor = if event.shift_key() {
+                self.selection.get().anchor
+            } else {
+                Pos::new(0, col)
             };
             self.set_selection(Selection {
                 anchor,
@@ -3015,9 +3020,10 @@ impl Ui {
             if self.editing.get() {
                 self.commit(None)?;
             }
-            let anchor = match event.shift_key() {
-                true => self.selection.get().anchor,
-                false => Pos::new(row, 0),
+            let anchor = if event.shift_key() {
+                self.selection.get().anchor
+            } else {
+                Pos::new(row, 0)
             };
             self.set_selection(Selection {
                 anchor,
@@ -3068,23 +3074,20 @@ impl Ui {
         if self.editing.get() {
             self.commit(None)?;
         }
-        match event.detail() >= 2 {
-            // A double-click edits, keeping what the cell holds.
-            true => {
-                self.set_selection(Selection::at(pos));
-                self.begin(None)?;
-            }
-            false => {
-                let anchor = match event.shift_key() {
-                    true => self.selection.get().anchor,
-                    false => pos,
-                };
-                self.set_selection(Selection {
-                    anchor,
-                    active: pos,
-                });
-                self.dom.surface.focus()?;
-            }
+        if event.detail() >= 2 {
+            self.set_selection(Selection::at(pos));
+            self.begin(None)?;
+        } else {
+            let anchor = if event.shift_key() {
+                self.selection.get().anchor
+            } else {
+                pos
+            };
+            self.set_selection(Selection {
+                anchor,
+                active: pos,
+            });
+            self.dom.surface.focus()?;
         }
         Ok(())
     }
@@ -3115,10 +3118,10 @@ impl Ui {
         // The surface scrolls by whole cells rather than pixels: the viewport is
         // addressed in rows and columns, so anything else would ask the core for a
         // fraction of a cell it has no way to give.
-        let (rows, cols) = match event.shift_key() {
-            // Shift+wheel is sideways, the convention every browser already has.
-            true => (0.0, event.delta_y() + event.delta_x()),
-            false => (event.delta_y(), event.delta_x()),
+        let (rows, cols) = if event.shift_key() {
+            (0.0, event.delta_y() + event.delta_x())
+        } else {
+            (event.delta_y(), event.delta_x())
         };
         let step = |delta: f64| match delta {
             d if d > 0.0 => 3,
@@ -3660,9 +3663,10 @@ fn spill(cells: &[(web_sys::Element, Align, VAlign)]) -> Result<(), JsValue> {
     /// How far the empty cells after (or before) `cell` reach, in pixels.
     fn run(cell: &web_sys::Element, forward: bool) -> i32 {
         let mut reach = 0;
-        let mut next = match forward {
-            true => cell.next_element_sibling(),
-            false => cell.previous_element_sibling(),
+        let mut next = if forward {
+            cell.next_element_sibling()
+        } else {
+            cell.previous_element_sibling()
         };
         while let Some(neighbour) = next {
             let empty = neighbour.class_list().contains("cell")
@@ -3675,9 +3679,10 @@ fn spill(cells: &[(web_sys::Element, Align, VAlign)]) -> Result<(), JsValue> {
             reach += neighbour
                 .dyn_ref::<HtmlElement>()
                 .map_or(0, HtmlElement::offset_width);
-            next = match forward {
-                true => neighbour.next_element_sibling(),
-                false => neighbour.previous_element_sibling(),
+            next = if forward {
+                neighbour.next_element_sibling()
+            } else {
+                neighbour.previous_element_sibling()
             };
         }
         reach

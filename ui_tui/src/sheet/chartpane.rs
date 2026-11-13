@@ -122,9 +122,12 @@ impl Charts {
         let mut lines: Vec<Line> = rows
             .iter()
             .enumerate()
-            .map(|(index, row)| match index == self.selected {
-                true => crate::pick::selected_row(vec![Span::raw(row.clone())], width),
-                false => Line::from(Span::raw(row.clone())),
+            .map(|(index, row)| {
+                if index == self.selected {
+                    crate::pick::selected_row(vec![Span::raw(row.clone())], width)
+                } else {
+                    Line::from(Span::raw(row.clone()))
+                }
             })
             .collect();
         lines.push(Line::from(Span::styled(

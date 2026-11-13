@@ -103,18 +103,8 @@ const RED: gdk::RGBA = gdk::RGBA::new(0.88, 0.11, 0.14, 1.0);
 /// they are data colours, like a chart's series. The theme decides only which set: darker on a
 /// light sheet, lighter on a dark one.
 pub fn reference_palette(dark: bool) -> [gdk::RGBA; 8] {
-    let hex = match dark {
-        false => [
-            (0x1c, 0x71, 0xd8), // blue
-            (0x2e, 0xc2, 0x7e), // green
-            (0xc6, 0x46, 0x00), // orange
-            (0x81, 0x3d, 0x9c), // purple
-            (0xc0, 0x1c, 0x28), // red
-            (0x18, 0x65, 0x6a), // teal
-            (0xa5, 0x1d, 0x2d), // maroon
-            (0x86, 0x5e, 0x3c), // brown
-        ],
-        true => [
+    let hex = if dark {
+        [
             (0x78, 0xae, 0xed),
             (0x8f, 0xf0, 0xa4),
             (0xff, 0xbe, 0x6f),
@@ -123,7 +113,18 @@ pub fn reference_palette(dark: bool) -> [gdk::RGBA; 8] {
             (0x5b, 0xc8, 0xaf),
             (0xf6, 0x61, 0x51),
             (0xcd, 0xab, 0x8f),
-        ],
+        ]
+    } else {
+        [
+            (0x1c, 0x71, 0xd8), // blue
+            (0x2e, 0xc2, 0x7e), // green
+            (0xc6, 0x46, 0x00), // orange
+            (0x81, 0x3d, 0x9c), // purple
+            (0xc0, 0x1c, 0x28), // red
+            (0x18, 0x65, 0x6a), // teal
+            (0xa5, 0x1d, 0x2d), // maroon
+            (0x86, 0x5e, 0x3c), // brown
+        ]
     };
     hex.map(|(r, g, b): (u8, u8, u8)| {
         gdk::RGBA::new(
@@ -242,9 +243,10 @@ pub fn ink(color: Option<&str>, fill: Option<&str>, palette: &Palette) -> gdk::R
             );
             // The theme's ink kept on a fill is the theme's ink, alpha and all: Adwaita's is
             // translucent, and the opaque three bytes made every shaded row a shade bolder.
-            match own.is_none() && ink == rgb8(palette.foreground) {
-                true => palette.foreground,
-                false => rgba(ink),
+            if own.is_none() && ink == rgb8(palette.foreground) {
+                palette.foreground
+            } else {
+                rgba(ink)
             }
         }
     }

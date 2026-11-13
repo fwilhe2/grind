@@ -60,9 +60,10 @@ pub fn read(bytes: &[u8]) -> Result<Document> {
 
 /// Serialise a document in the requested physical form.
 fn form_of(bytes: &[u8]) -> Form {
-    match package::is_package(bytes) {
-        true => Form::Package,
-        false => Form::Flat,
+    if package::is_package(bytes) {
+        Form::Package
+    } else {
+        Form::Flat
     }
 }
 

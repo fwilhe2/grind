@@ -583,9 +583,10 @@ fn track_index(node: &KdlNode) -> Result<u32> {
 /// One cell address (`B5`) as a position.
 fn position(node: &KdlNode, index: usize) -> Result<Pos> {
     let (start, end) = span(node, index)?;
-    match start == end {
-        true => Ok(start),
-        false => Err(at(node, "needs one cell, not a range".to_owned())),
+    if start == end {
+        Ok(start)
+    } else {
+        Err(at(node, "needs one cell, not a range".to_owned()))
     }
 }
 
@@ -617,9 +618,10 @@ fn span(node: &KdlNode, index: usize) -> Result<(Pos, Pos)> {
     };
     let start = Pos::new(corner(&reference.start.row)?, corner(&reference.start.col)?);
     let stop = Pos::new(corner(&end.row)?, corner(&end.col)?);
-    match start.row <= stop.row && start.col <= stop.col {
-        true => Ok((start, stop)),
-        false => Err(at(node, format!("`{text}` runs backwards"))),
+    if start.row <= stop.row && start.col <= stop.col {
+        Ok((start, stop))
+    } else {
+        Err(at(node, format!("`{text}` runs backwards")))
     }
 }
 

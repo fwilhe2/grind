@@ -284,9 +284,10 @@ fn quote_family(value: &str) -> String {
     let needs = !value.contains(',')
         && value.contains(char::is_whitespace)
         && !value.starts_with(['\'', '"']);
-    match needs {
-        true => format!("'{value}'"),
-        false => value.to_owned(),
+    if needs {
+        format!("'{value}'")
+    } else {
+        value.to_owned()
     }
 }
 

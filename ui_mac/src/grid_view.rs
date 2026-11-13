@@ -536,9 +536,10 @@ impl Pane {
     /// fresh on every paint and never stored in the document.
     pub fn toggle_overlay(&self, roles: bool) {
         let mut overlays = self.overlays.get();
-        match roles {
-            true => overlays.roles = !overlays.roles,
-            false => overlays.names = !overlays.names,
+        if roles {
+            overlays.roles = !overlays.roles;
+        } else {
+            overlays.names = !overlays.names;
         }
         self.overlays.set(overlays);
         for view in self.views.borrow().iter().filter_map(Weak::load) {
@@ -1260,14 +1261,16 @@ impl GridView {
         menu.addItem(&all);
         menu.addItem(&NSMenuItem::separatorItem(mtm));
         for (index, value) in values.iter().enumerate() {
-            let title = match value.is_empty() {
-                true => "(empty)",
-                false => value.as_str(),
+            let title = if value.is_empty() {
+                "(empty)"
+            } else {
+                value.as_str()
             };
             let row = item(title, index as isize);
-            row.setState(match crate::sheet::filter::shown(&filter, field, value) {
-                true => NSControlStateValueOn,
-                false => NSControlStateValueOff,
+            row.setState(if crate::sheet::filter::shown(&filter, field, value) {
+                NSControlStateValueOn
+            } else {
+                NSControlStateValueOff
             });
             menu.addItem(&row);
         }

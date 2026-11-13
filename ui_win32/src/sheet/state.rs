@@ -130,10 +130,7 @@ fn navigate(key: Key, mods: Mods) -> Outcome {
 }
 
 fn editing(mode: Mode, key: Key, mods: Mods) -> Outcome {
-    let reverse = |a, b| match mods.shift {
-        true => a,
-        false => b,
-    };
+    let reverse = |a, b| if mods.shift { a } else { b };
     match key {
         Key::Escape => Outcome::Cancel,
         Key::F2 => Outcome::ToggleMode,

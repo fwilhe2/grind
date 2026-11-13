@@ -302,9 +302,10 @@ impl Store {
             return Ok(());
         };
         let now = etag(&std::fs::read(self.root.join(name))?);
-        match wanted == "*" || unquote(wanted) == unquote(&now) {
-            true => Ok(()),
-            false => Err(Refusal::Stale(now)),
+        if wanted == "*" || unquote(wanted) == unquote(&now) {
+            Ok(())
+        } else {
+            Err(Refusal::Stale(now))
         }
     }
 
@@ -374,9 +375,10 @@ fn check_bytes(name: &str, bytes: &[u8]) -> Result<(), Refusal> {
     let (_, kind, package) = extension(name).ok_or(Refusal::NotFound)?;
     let unreadable = |why: String| Err(Refusal::Unreadable(format!("{name}: {why}")));
     if bytes.starts_with(b"PK") != package {
-        return unreadable(match package {
-            true => "not a package, which the name says it is".to_owned(),
-            false => "not a flat document, which the name says it is".to_owned(),
+        return unreadable(if package {
+            "not a package, which the name says it is".to_owned()
+        } else {
+            "not a flat document, which the name says it is".to_owned()
         });
     }
     if grind_core::kind::kind(bytes) != Some(kind) {

@@ -179,9 +179,10 @@ fn write_series(
 /// unless `--bundled-fonts` asks for output that is the same everywhere.
 #[cfg(feature = "pdf")]
 fn fonts(app: &TextApp, bundled_only: bool) -> grind_print::Fonts {
-    match bundled_only {
-        true => grind_print::Fonts::bundled(),
-        false => grind_print::fonts_for(app),
+    if bundled_only {
+        grind_print::Fonts::bundled()
+    } else {
+        grind_print::fonts_for(app)
     }
 }
 
@@ -526,16 +527,18 @@ fn run(cli: &Cli) -> Result<Report, Failure> {
         } => match document_kind(file)? {
             DocumentKind::Spreadsheet => {
                 let app = open_as(file, DocumentKind::Spreadsheet, cli)?;
-                match as_read {
-                    true => as_read_report(file, app.source_anchors()),
-                    false => project_report(&app.project(), *tokens, *anchors),
+                if *as_read {
+                    as_read_report(file, app.source_anchors())
+                } else {
+                    project_report(&app.project(), *tokens, *anchors)
                 }
             }
             DocumentKind::Text => {
                 let app = open_text(file)?;
-                match as_read {
-                    true => as_read_report(file, app.source_anchors()),
-                    false => project_report(&app.project(), *tokens, *anchors),
+                if *as_read {
+                    as_read_report(file, app.source_anchors())
+                } else {
+                    project_report(&app.project(), *tokens, *anchors)
                 }
             }
             kind => Err(unsupported(file, Some(kind)).into()),
@@ -863,11 +866,12 @@ fn finish(app: &App, cli: &Cli, file: &Path, changed: bool) -> Result<Report, Fa
     // Only after a change, and only over a document that has formulas — `stale` costs a
     // recalculation, and asking it of `sheet info` would make reading a document as
     // expensive as recalculating one.
-    let stale =
-        match changed && (0..app.sheet_count()).any(|i| app.formula_count(i).unwrap_or(0) > 0) {
-            true => app.stale(),
-            false => Default::default(),
-        };
+    let stale = if changed && (0..app.sheet_count()).any(|i| app.formula_count(i).unwrap_or(0) > 0)
+    {
+        app.stale()
+    } else {
+        Default::default()
+    };
     if stale.changed > 0 {
         eprintln!(
             "grind: {} formula cell(s) now disagree with their cached value — \

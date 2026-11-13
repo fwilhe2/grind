@@ -89,10 +89,7 @@ impl Face {
         bold: bool,
         family: &str,
     ) -> Self {
-        let weight = match bold {
-            true => "bold ",
-            false => "",
-        };
+        let weight = if bold { "bold " } else { "" };
         Face {
             ctx,
             font: format!("{weight}{size}px {family}"),
@@ -544,13 +541,15 @@ impl Ui {
         // The selection, clipped to *this block* — it may start pages above and end below.
         let within = selection.as_ref().and_then(|(from, to)| {
             (from.block <= block.index && block.index <= to.block).then(|| {
-                let start = match from.block == block.index {
-                    true => from.offset,
-                    false => 0,
+                let start = if from.block == block.index {
+                    from.offset
+                } else {
+                    0
                 };
-                let end = match to.block == block.index {
-                    true => to.offset,
-                    false => text.len(),
+                let end = if to.block == block.index {
+                    to.offset
+                } else {
+                    text.len()
                 };
                 start..end
             })
@@ -559,14 +558,15 @@ impl Ui {
         // A tick at a bookmark's own offset says exactly where it is; the name at the line's end
         // says only which line. A boundary between two pieces places it against the browser's own
         // kerning.
-        let anchors_here: Vec<usize> = match self.names.get() {
-            true => block
+        let anchors_here: Vec<usize> = if self.names.get() {
+            block
                 .marks
                 .iter()
                 .map(|(at, _)| *at)
                 .filter(|at| line.contains(at))
-                .collect(),
-            false => Vec::new(),
+                .collect()
+        } else {
+            Vec::new()
         };
 
         let mut drawn = false;
@@ -675,9 +675,10 @@ impl Ui {
             (1, minutes) => format!("1 word · {minutes} min read"),
             (n, minutes) => format!("{n} words · {minutes} min read"),
         };
-        let line = match here.is_empty() {
-            true => format!("{words}{selected}"),
-            false => format!("{here} · {words}{selected}"),
+        let line = if here.is_empty() {
+            format!("{words}{selected}")
+        } else {
+            format!("{here} · {words}{selected}")
         };
         self.dom.summary.set_text_content(Some(&line));
         let _ = self.dom.summary.set_attribute(
@@ -704,9 +705,10 @@ impl Ui {
             return None;
         }
         Some(
-            match (anchor.block, anchor.offset) <= (caret.block, caret.offset) {
-                true => (anchor, caret),
-                false => (caret, anchor),
+            if (anchor.block, anchor.offset) <= (caret.block, caret.offset) {
+                (anchor, caret)
+            } else {
+                (caret, anchor)
             },
         )
     }
@@ -734,9 +736,10 @@ impl Ui {
     fn select_around(&self, block: bool) {
         let caret = self.caret.get();
         let text = self.app.input_text(caret.block).unwrap_or_default();
-        let (start, end) = match block {
-            true => (0, text.chars().count()),
-            false => grind_text::word::around(&text, caret.offset),
+        let (start, end) = if block {
+            (0, text.chars().count())
+        } else {
+            grind_text::word::around(&text, caret.offset)
         };
         self.anchor.set(Some(Caret {
             block: caret.block,
@@ -807,11 +810,12 @@ impl Ui {
             "view.names" => {
                 let on = !self.names.get();
                 self.names.set(on);
-                self.set_message(match on {
-                    true => "Bookmarks are shown where they anchor — nothing was written; \
-                             run it again to stop"
-                        .to_owned(),
-                    false => "Bookmarks are invisible again".to_owned(),
+                self.set_message(if on {
+                    "Bookmarks are shown where they anchor — nothing was written; \
+                     run it again to stop"
+                        .to_owned()
+                } else {
+                    "Bookmarks are invisible again".to_owned()
                 });
             }
             id => match (id.strip_prefix("goto:"), id.strip_prefix("find:")) {
@@ -942,9 +946,10 @@ impl Ui {
         };
         self.set_caret(wrong.caret());
         let suggestions: Vec<String> = self.app.suggest(&wrong.word).into_iter().take(3).collect();
-        self.set_message(match suggestions.is_empty() {
-            true => format!("{} \u{2014} no suggestion", wrong.word),
-            false => format!("{} \u{2014} {}", wrong.word, suggestions.join(", ")),
+        self.set_message(if suggestions.is_empty() {
+            format!("{} \u{2014} no suggestion", wrong.word)
+        } else {
+            format!("{} \u{2014} {}", wrong.word, suggestions.join(", "))
         });
     }
 
@@ -952,11 +957,12 @@ impl Ui {
 
     /// Attach the built-in checker as `setting` says, and leave its ignored rules undrawn.
     pub fn apply_grammar(&self, setting: &grind_grammar::setting::Setting) {
-        let checker: Option<Arc<dyn grind_core::grammar::Checker>> = match setting.builtin {
-            true => Some(Arc::new(grind_grammar::Builtin {
+        let checker: Option<Arc<dyn grind_core::grammar::Checker>> = if setting.builtin {
+            Some(Arc::new(grind_grammar::Builtin {
                 picky: setting.style,
-            })),
-            false => None,
+            }))
+        } else {
+            None
         };
         self.app.set_checker(checker);
         self.grammar_ignored.replace(setting.ignored.clone());
@@ -1119,9 +1125,10 @@ impl Ui {
         title.set_value(image.title.as_deref().unwrap_or(""));
         description.set_value(image.description.as_deref().unwrap_or(""));
         if let Some(more) = self.dom.document.get_element_by_id("alt-more") {
-            match image.description.is_some() {
-                true => more.set_attribute("open", ""),
-                false => more.remove_attribute("open"),
+            if image.description.is_some() {
+                more.set_attribute("open", "")
+            } else {
+                more.remove_attribute("open")
             }
             .ok();
         }
@@ -1181,9 +1188,10 @@ impl Ui {
         if dialog.return_value() == "save" {
             match grind_text::picture::set_alt(&self.app, at, &title.value(), &description.value())
             {
-                Ok(()) => self.set_message(match title.value().trim().is_empty() {
-                    true => "The picture has no alt text".to_owned(),
-                    false => "Alt text saved".to_owned(),
+                Ok(()) => self.set_message(if title.value().trim().is_empty() {
+                    "The picture has no alt text".to_owned()
+                } else {
+                    "Alt text saved".to_owned()
                 }),
                 Err(error) => self.set_message(error.to_string()),
             }
@@ -1280,9 +1288,10 @@ impl Ui {
         match self.app.set_bookmark(name, Some(self.caret.get().block)) {
             Ok(moved) => {
                 self.names.set(true);
-                self.set_message(match moved {
-                    true => format!("#{name} moved here"),
-                    false => format!("#{name} anchored here"),
+                self.set_message(if moved {
+                    format!("#{name} moved here")
+                } else {
+                    format!("#{name} anchored here")
                 });
             }
             Err(error) => self.set_message(error.to_string()),
@@ -1310,9 +1319,10 @@ impl Ui {
         let name = name.trim();
         let style = (!name.is_empty()).then(|| name.to_owned());
         match self.app.set_style(from.block..to.block + 1, style) {
-            Ok(_) => self.set_message(match name.is_empty() {
-                true => "Style name removed".to_owned(),
-                false => format!("Style “{name}” set"),
+            Ok(_) => self.set_message(if name.is_empty() {
+                "Style name removed".to_owned()
+            } else {
+                format!("Style “{name}” set")
             }),
             Err(error) => self.set_message(error.to_string()),
         }
@@ -1621,13 +1631,11 @@ impl Ui {
         for index in from.block..=to.block {
             let text = self.app.input_text(index).ok()?;
             let chars: Vec<char> = text.chars().collect();
-            let start = match index == from.block {
-                true => from.offset,
-                false => 0,
-            };
-            let end = match index == to.block {
-                true => to.offset,
-                false => chars.len(),
+            let start = if index == from.block { from.offset } else { 0 };
+            let end = if index == to.block {
+                to.offset
+            } else {
+                chars.len()
             };
             if index > from.block {
                 out.push('\n');
@@ -1762,14 +1770,12 @@ impl Ui {
         if self.app.block_count() == 0 {
             return;
         }
-        match extend {
-            // The anchor is set on the *first* extending move, from wherever the caret was.
-            true => {
-                if self.anchor.get().is_none() {
-                    self.anchor.set(Some(self.caret.get()));
-                }
+        if extend {
+            if self.anchor.get().is_none() {
+                self.anchor.set(Some(self.caret.get()));
             }
-            false => self.anchor.set(None),
+        } else {
+            self.anchor.set(None);
         }
         let caret = self.caret.get();
         let faces = self.column();
@@ -1948,13 +1954,12 @@ impl Ui {
         let Some(caret) = self.caret_at(event)? else {
             return Ok(());
         };
-        match extend {
-            true => {
-                if self.anchor.get().is_none() {
-                    self.anchor.set(Some(self.caret.get()));
-                }
+        if extend {
+            if self.anchor.get().is_none() {
+                self.anchor.set(Some(self.caret.get()));
             }
-            false => self.anchor.set(None),
+        } else {
+            self.anchor.set(None);
         }
         self.goal_x.set(None);
         self.set_caret(caret);
@@ -2052,10 +2057,7 @@ fn base64(bytes: &[u8]) -> String {
                 0 => chunk.len() < 3,
                 _ => false,
             };
-            out.push(match pad {
-                true => '=',
-                false => ALPHABET[sextet] as char,
-            });
+            out.push(if pad { '=' } else { ALPHABET[sextet] as char });
         }
     }
     out

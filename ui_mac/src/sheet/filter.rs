@@ -85,9 +85,10 @@ pub fn toggled(filter: &Filter, field: u32, value: &str, offered: &[String]) -> 
     if !kept.remove(value) {
         kept.insert(value.to_owned());
     }
-    match offered.iter().all(|value| kept.contains(value)) {
-        true => next.keep.remove(&field),
-        false => next.keep.insert(field, kept),
+    if offered.iter().all(|value| kept.contains(value)) {
+        next.keep.remove(&field)
+    } else {
+        next.keep.insert(field, kept)
     };
     next
 }
@@ -108,9 +109,10 @@ pub fn ops(filter: &Filter, grid: &Grid, view: &Rect, palette: &Palette) -> Vec<
             continue;
         }
         let filtered = filter.keep.contains_key(&field);
-        let (ground, ink): (Rgb, Rgb) = match filtered {
-            true => (palette.accent, palette.page),
-            false => (palette.header, palette.header_ink),
+        let (ground, ink): (Rgb, Rgb) = if filtered {
+            (palette.accent, palette.page)
+        } else {
+            (palette.header, palette.header_ink)
         };
         ops.push(Op::Fill {
             rect,

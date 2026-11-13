@@ -385,9 +385,10 @@ fn table<T: PartialEq>(a: &[T], b: &[T]) -> Vec<(usize, usize)> {
     let mut lengths = vec![0u32; (a.len() + 1) * width];
     for i in (0..a.len()).rev() {
         for j in (0..b.len()).rev() {
-            lengths[i * width + j] = match a[i] == b[j] {
-                true => lengths[(i + 1) * width + j + 1] + 1,
-                false => lengths[(i + 1) * width + j].max(lengths[i * width + j + 1]),
+            lengths[i * width + j] = if a[i] == b[j] {
+                lengths[(i + 1) * width + j + 1] + 1
+            } else {
+                lengths[(i + 1) * width + j].max(lengths[i * width + j + 1])
             };
         }
     }

@@ -92,18 +92,20 @@ impl Code {
                 return Nav::Closed;
             }
         }
-        match self.line == was {
-            true => Nav::Stayed,
-            false => Nav::Moved,
+        if self.line == was {
+            Nav::Stayed
+        } else {
+            Nav::Moved
         }
     }
 
     /// `Ctrl+f` / `Ctrl+b`, which arrive as a modifier rather than as their own `KeyCode`.
     pub fn page(&mut self, down: bool, projection: &Projection, height: usize) -> Nav {
         self.on_key(
-            match down {
-                true => KeyCode::PageDown,
-                false => KeyCode::PageUp,
+            if down {
+                KeyCode::PageDown
+            } else {
+                KeyCode::PageUp
             },
             projection,
             height,
@@ -138,9 +140,10 @@ impl Code {
                 };
                 spans.push(Span::styled(piece.text.to_owned(), style));
             }
-            lines.push(match cursor {
-                true => crate::pick::selected_row(spans, usize::from(area.width).saturating_sub(2)),
-                false => Line::from(spans),
+            lines.push(if cursor {
+                crate::pick::selected_row(spans, usize::from(area.width).saturating_sub(2))
+            } else {
+                Line::from(spans)
             });
         }
 

@@ -303,9 +303,10 @@ impl Pane {
         // ⌃U is bound to nothing in the standard bindings, so inside the field it arrives as
         // `noop:`; the event behind it says which key it was, and makes it the mode toggle the
         // grid's own ⌃U already is (`state::TOGGLE`).
-        let selector = match selector == "noop:" && control_u(text_view) {
-            true => state::TOGGLE,
-            false => selector,
+        let selector = if selector == "noop:" && control_u(text_view) {
+            state::TOGGLE
+        } else {
+            selector
         };
         let Some((mode, offering, pending, field)) = self.edit.borrow().as_ref().map(|edit| {
             (
@@ -558,11 +559,10 @@ impl Pane {
         let ended = self.edit.borrow_mut().take();
         if let Some(edit) = &ended {
             edit.hint.removeFromSuperview();
-            match edit.in_bar {
-                // The bar stays, a read-out again once the grid has the keyboard back.
-                // SAFETY: no delegate is always allowed.
-                true => unsafe { edit.field.setDelegate(None) },
-                false => edit.field.removeFromSuperview(),
+            if edit.in_bar {
+                unsafe { edit.field.setDelegate(None) }
+            } else {
+                edit.field.removeFromSuperview();
             }
         }
         self.focus_grid();

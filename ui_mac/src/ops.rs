@@ -82,9 +82,10 @@ fn bounds(points: &[(f64, f64)]) -> Rect {
     for (x, y) in points {
         (x0, y0, x1, y1) = (x0.min(*x), y0.min(*y), x1.max(*x), y1.max(*y));
     }
-    match points.is_empty() {
-        true => Rect::new(0.0, 0.0, 0.0, 0.0),
-        false => Rect::new(x0, y0, x1 - x0, y1 - y0),
+    if points.is_empty() {
+        Rect::new(0.0, 0.0, 0.0, 0.0)
+    } else {
+        Rect::new(x0, y0, x1 - x0, y1 - y0)
     }
 }
 

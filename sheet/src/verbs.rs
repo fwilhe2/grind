@@ -33,9 +33,10 @@ pub fn cols(selection: Selection) -> Range<u32> {
 pub fn name_target(sheet: &str, selection: Selection) -> String {
     let (start, end) = selection.rect();
     let one = crate::a1::format(Some(sheet), start);
-    match start == end {
-        true => one,
-        false => format!("{one}:{}", crate::a1::format(None, end)),
+    if start == end {
+        one
+    } else {
+        format!("{one}:{}", crate::a1::format(None, end))
     }
 }
 
@@ -361,9 +362,10 @@ pub fn move_chart(
 /// or why it could not be worked out. Nothing is stored (`App::preview`).
 pub fn evaluated(app: &App, sheet: usize, at: Pos, typed: &str) -> Result<String, String> {
     let typed = typed.trim();
-    let written = match typed.starts_with('=') {
-        true => typed.to_owned(),
-        false => format!("={typed}"),
+    let written = if typed.starts_with('=') {
+        typed.to_owned()
+    } else {
+        format!("={typed}")
     };
     let canonical = display::from_display(&written)
         .map_err(|error| format!("{} (at character {})", error.message, error.at + 1))?;
@@ -403,11 +405,12 @@ pub fn shown_definition(expression: &str) -> String {
 /// formula when it starts `=`, otherwise an address (`crate::a1::definition`).
 pub fn definition(app: &App, typed: &str) -> Result<String, String> {
     let typed = typed.trim();
-    match typed.starts_with('=') {
-        true => display::from_display(typed)
+    if typed.starts_with('=') {
+        display::from_display(typed)
             .map(|canonical| canonical.trim_start_matches('=').to_owned())
-            .map_err(|error| error.message),
-        false => crate::a1::definition(app, typed).map_err(|error| error.to_string()),
+            .map_err(|error| error.message)
+    } else {
+        crate::a1::definition(app, typed).map_err(|error| error.to_string())
     }
 }
 

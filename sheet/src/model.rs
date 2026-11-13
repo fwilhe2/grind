@@ -475,9 +475,10 @@ impl Sheet {
 
     /// Set or clear a column's manual hidden state.
     pub fn set_col_hidden(&mut self, col: u32, hidden: bool) {
-        match hidden {
-            true => self.hidden_cols.insert(col),
-            false => self.hidden_cols.remove(&col),
+        if hidden {
+            self.hidden_cols.insert(col)
+        } else {
+            self.hidden_cols.remove(&col)
         };
     }
 
@@ -494,9 +495,10 @@ impl Sheet {
 
     /// Set or clear a row's manual hidden state.
     pub fn set_row_hidden(&mut self, row: u32, hidden: bool) {
-        match hidden {
-            true => self.manually_hidden_rows.insert(row),
-            false => self.manually_hidden_rows.remove(&row),
+        if hidden {
+            self.manually_hidden_rows.insert(row)
+        } else {
+            self.manually_hidden_rows.remove(&row)
         };
     }
 
@@ -575,9 +577,10 @@ impl Sheet {
 
     /// [`Sheet::set_style`] with a style other cells may hold too.
     pub fn set_style_shared(&mut self, pos: Pos, style: Arc<CellStyle>) {
-        match style.is_plain() {
-            true => self.styles.remove(&pos),
-            false => self.styles.insert(pos, style),
+        if style.is_plain() {
+            self.styles.remove(&pos)
+        } else {
+            self.styles.insert(pos, style)
         };
     }
 

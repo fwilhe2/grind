@@ -42,18 +42,19 @@ impl Reading {
             ),
             Reading::Ambiguous { typed, value } => {
                 let shown = numfmt::spell_number(*value, locale);
-                match typed.contains(decimal) {
-                    true => format!(
+                if typed.contains(decimal) {
+                    format!(
                         "Read {typed} as {shown}, a decimal: this document writes decimals with \
-                         a {decimal_name}. For a thousand and more, type {}.",
+                     a {decimal_name}. For a thousand and more, type {}.",
                         typed.replace(decimal, "")
-                    ),
-                    false => format!(
+                    )
+                } else {
+                    format!(
                         "Read {typed} as {shown}: in this document a {} groups thousands. For a \
-                         decimal, type {}.",
+                     decimal, type {}.",
                         locale::separator_name(group),
                         typed.replace(group, &decimal.to_string())
-                    ),
+                    )
                 }
             }
         }

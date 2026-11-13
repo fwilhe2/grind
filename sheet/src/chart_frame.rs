@@ -242,14 +242,8 @@ pub fn dragged(start: &Frame, grip: Grip, dx: f64, dy: f64, min: f64, keep_ratio
     }
     let w = w.max(min);
     let h = h.max(min);
-    let x = match left {
-        true => start.right() - w,
-        false => start.x,
-    };
-    let y = match top {
-        true => start.bottom() - h,
-        false => start.y,
-    };
+    let x = if left { start.right() - w } else { start.x };
+    let y = if top { start.bottom() - h } else { start.y };
     Frame::new(x, y, w, h)
 }
 
@@ -273,10 +267,7 @@ pub enum Key {
 /// What an arrow does, `large` with Shift: `(dx, dy)` in CSS pixels at 1× for the shell to scale.
 #[must_use]
 pub fn nudge(dx: i8, dy: i8, large: bool) -> Key {
-    let step = match large {
-        true => NUDGE_LARGE,
-        false => NUDGE,
-    };
+    let step = if large { NUDGE_LARGE } else { NUDGE };
     Key::Nudge(f64::from(dx) * step, f64::from(dy) * step)
 }
 

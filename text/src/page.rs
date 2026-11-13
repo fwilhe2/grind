@@ -263,9 +263,10 @@ pub fn paginate_slots(
                 // A block opening a page on its own master: a new page unless this one is empty,
                 // set on that master.
                 if let Some(&(slot_of, restart)) = starts.get(&slot.index) {
-                    match cut.fresh() {
-                        true => cut.origin += shift,
-                        false => cut.turn(unit.broken_top()),
+                    if cut.fresh() {
+                        cut.origin += shift;
+                    } else {
+                        cut.turn(unit.broken_top());
                     }
                     cut.set_slot(slot_of, restart);
                 }
@@ -383,9 +384,10 @@ pub fn paginate_slots(
                         // break may end.
                         break;
                     }
-                    part = match from.iter().all(|&start| start == 0) {
-                        true => *top,
-                        false => rest - spacing.cell_pad,
+                    part = if from.iter().all(|&start| start == 0) {
+                        *top
+                    } else {
+                        rest - spacing.cell_pad
                     };
                     turn(&mut cut, part);
                     turned = true;

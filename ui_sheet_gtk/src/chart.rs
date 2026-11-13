@@ -276,9 +276,10 @@ fn legend_items(chart: &Chart, data: &ChartData) -> Vec<(String, usize, Option<u
             .iter()
             .enumerate()
             .map(|(i, (name, _))| {
-                let name = match name.is_empty() {
-                    true => format!("Series {}", i + 1),
-                    false => name.clone(),
+                let name = if name.is_empty() {
+                    format!("Series {}", i + 1)
+                } else {
+                    name.clone()
                 };
                 (name, i, None)
             })
@@ -493,9 +494,10 @@ fn layout(rect: Rect, chart: &Chart, data: &ChartData, measure: &Measure) -> Lay
     // The topmost y tick label is centred on the top of the plot, so half of it sits above —
     // room for that, or it is clipped by the frame.
     let top = INSET
-        + match y_axis.tick_labels {
-            true => tick_h / 2.0,
-            false => 0.0,
+        + if y_axis.tick_labels {
+            tick_h / 2.0
+        } else {
+            0.0
         };
     Layout {
         plot: Rect {
@@ -606,23 +608,22 @@ fn draw_ticks(
                 continue;
             };
             let (w, h) = measure(&text);
-            match names.turned {
-                true => {
-                    let (x, y) = turned_origin(x, plot.y + plot.h, TICK_GAP, w, h);
-                    snapshot.save();
-                    snapshot.translate(&graphene::Point::new(x as f32, y as f32));
-                    snapshot.rotate(-TURN_DEGREES as f32);
-                    place(widget, snapshot, &text, 0.0, 0.0, paint.foreground);
-                    snapshot.restore();
-                }
-                false => place(
+            if names.turned {
+                let (x, y) = turned_origin(x, plot.y + plot.h, TICK_GAP, w, h);
+                snapshot.save();
+                snapshot.translate(&graphene::Point::new(x as f32, y as f32));
+                snapshot.rotate(-TURN_DEGREES as f32);
+                place(widget, snapshot, &text, 0.0, 0.0, paint.foreground);
+                snapshot.restore();
+            } else {
+                place(
                     widget,
                     snapshot,
                     &text,
                     x - w / 2.0,
                     plot.y + plot.h + TICK_GAP,
                     paint.foreground,
-                ),
+                );
             }
         }
     }
@@ -1217,9 +1218,10 @@ mod tests {
             chart.legend = Some(position);
             let laid = layout(FRAME, &chart, &data, &measure);
             assert_eq!(laid.legend.len(), 2, "{position:?}");
-            match narrower {
-                true => assert!(laid.plot.w < without.w && laid.plot.h == without.h),
-                false => assert!(laid.plot.h < without.h),
+            if narrower {
+                assert!(laid.plot.w < without.w && laid.plot.h == without.h);
+            } else {
+                assert!(laid.plot.h < without.h);
             }
             let costs = &laid.legend[1];
             let hit = mark_at(

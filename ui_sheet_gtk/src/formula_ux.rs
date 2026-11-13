@@ -32,9 +32,12 @@ pub fn signature_markup(name: &str, argument: usize, friendly: bool) -> Option<S
     let parts: Vec<String> = parts
         .iter()
         .enumerate()
-        .map(|(i, part)| match i == emphasised {
-            true => format!("<b>{}</b>", glib_escape(part)),
-            false => glib_escape(part),
+        .map(|(i, part)| {
+            if i == emphasised {
+                format!("<b>{}</b>", glib_escape(part))
+            } else {
+                glib_escape(part)
+            }
         })
         .collect();
     Some(format!("{}({})", glib_escape(&head), parts.join("; ")))

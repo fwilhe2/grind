@@ -20,9 +20,10 @@ use grind_core::projection::{Projection, TokenKind};
 pub fn html(projection: &Projection, cursor: Option<usize>) -> String {
     let mut out = String::with_capacity(projection.text().len() * 2);
     for index in 0..projection.line_count() {
-        let current = match Some(index) == cursor {
-            true => " code-line-current",
-            false => "",
+        let current = if Some(index) == cursor {
+            " code-line-current"
+        } else {
+            ""
         };
         out.push_str(&format!(
             "<div class=\"code-line{current}\" data-line=\"{index}\">\

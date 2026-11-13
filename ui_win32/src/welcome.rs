@@ -421,10 +421,7 @@ mod windows_impl {
             // hover.
             let fill = control_fill(theme, state, false, true).unwrap_or(theme.card);
             let focused = frame.focus == at;
-            let border = match focused {
-                true => theme.accent,
-                false => theme.stroke,
-            };
+            let border = if focused { theme.accent } else { theme.stroke };
             let (l, t, r, b) = card.edges();
             gdi::round_rect(
                 dc,

@@ -143,9 +143,10 @@ pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
     let go = |motion, extend| Some(Action::Move { motion, extend });
     let arrow = |dir| {
         go(
-            match mods.ctrl {
-                true => Motion::Edge(dir),
-                false => Motion::By(dir),
+            if mods.ctrl {
+                Motion::Edge(dir)
+            } else {
+                Motion::By(dir)
             },
             mods.shift,
         )
@@ -164,17 +165,11 @@ pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
         // Tab and Return walk the sheet the way they will while typing, so the habit is the
         // same before there is anything to type. Shift reverses rather than extends.
         Key::Tab if !mods.ctrl => go(
-            Motion::By(match mods.shift {
-                true => Dir::Left,
-                false => Dir::Right,
-            }),
+            Motion::By(if mods.shift { Dir::Left } else { Dir::Right }),
             false,
         ),
         Key::Return if !mods.ctrl => go(
-            Motion::By(match mods.shift {
-                true => Dir::Up,
-                false => Dir::Down,
-            }),
+            Motion::By(if mods.shift { Dir::Up } else { Dir::Down }),
             false,
         ),
         // F5 is Excel's Go To and Ctrl+G is everybody's; both land in the name box, which is

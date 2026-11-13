@@ -573,12 +573,11 @@ fn section(code: &str) -> Section {
 
     // The `m` runs, decided now that their neighbours are known.
     for (part, token, len) in months {
-        match minutes(&tokens, token, len) {
-            true => {
-                out.time = true;
-                out.parts[part] = Part::Minutes { long: len >= 2 };
-            }
-            false => out.date = true,
+        if minutes(&tokens, token, len) {
+            out.time = true;
+            out.parts[part] = Part::Minutes { long: len >= 2 };
+        } else {
+            out.date = true;
         }
     }
     out
@@ -764,38 +763,31 @@ fn number(chars: &[char], from: usize, out: &mut Section) -> usize {
     }) = out.parts.get_mut(at)
     {
         *g |= grouping;
-        match had_point {
-            // Still among the whole digits: this run's are to the right of everything so far,
-            // so every earlier text has that many more digits on its right.
-            false => {
-                for e in embedded.iter_mut().filter(|e| e.position >= 0) {
-                    e.position += i32::from(whole);
-                }
-                embedded.push(grind_sheet::numfmt::Embedded {
-                    position: i32::from(whole),
-                    text: between,
-                });
-                // A `0` already seen forces every digit to its right as well.
-                *mi = match *mi {
-                    0 => min_int,
-                    zeros => zeros.saturating_add(whole),
-                };
-                (*d, *md) = (decimals, min_decimals);
-                out.point = point;
+        if had_point {
+            embedded.push(grind_sheet::numfmt::Embedded {
+                position: -i32::from(*d) - 1,
+                text: between,
+            });
+            let more = whole.saturating_add(decimals);
+            if min_int + min_decimals > 0 {
+                *md = d.saturating_add(min_int + min_decimals);
             }
-            // Among the decimals: the text follows the ones so far, and every placeholder of
-            // this run is one more decimal.
-            true => {
-                embedded.push(grind_sheet::numfmt::Embedded {
-                    position: -i32::from(*d) - 1,
-                    text: between,
-                });
-                let more = whole.saturating_add(decimals);
-                if min_int + min_decimals > 0 {
-                    *md = d.saturating_add(min_int + min_decimals);
-                }
-                *d = d.saturating_add(more);
+            *d = d.saturating_add(more);
+        } else {
+            for e in embedded.iter_mut().filter(|e| e.position >= 0) {
+                e.position += i32::from(whole);
             }
+            embedded.push(grind_sheet::numfmt::Embedded {
+                position: i32::from(whole),
+                text: between,
+            });
+            // A `0` already seen forces every digit to its right as well.
+            *mi = match *mi {
+                0 => min_int,
+                zeros => zeros.saturating_add(whole),
+            };
+            (*d, *md) = (decimals, min_decimals);
+            out.point = point;
         }
     }
     i

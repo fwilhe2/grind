@@ -160,9 +160,10 @@ impl Pick {
             let label = format!("{}{}", "  ".repeat(row.depth), row.label);
             // The selected row is one bar across the pane, styled on the `Line`: a reversed
             // coloured span is a block of its own colour.
-            lines.push(match index == self.selected {
-                true => selected_row(vec![Span::raw(address), Span::raw(label)], inner),
-                false => Line::from(vec![
+            lines.push(if index == self.selected {
+                selected_row(vec![Span::raw(address), Span::raw(label)], inner)
+            } else {
+                Line::from(vec![
                     Span::styled(
                         address,
                         Style::default()
@@ -170,18 +171,19 @@ impl Pick {
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::raw(label),
-                ]),
+                ])
             });
         }
 
-        let footer = match self.rows.is_empty() {
-            true => "  any key closes  ".to_owned(),
-            false => format!(
+        let footer = if self.rows.is_empty() {
+            "  any key closes  ".to_owned()
+        } else {
+            format!(
                 "  {} of {}  \u{00b7}  {}, j/k moves, any other key closes  ",
                 self.selected + 1,
                 self.rows.len(),
                 self.enter.as_deref().unwrap_or("Enter goes there")
-            ),
+            )
         };
         frame.render_widget(
             Paragraph::new(lines).block(

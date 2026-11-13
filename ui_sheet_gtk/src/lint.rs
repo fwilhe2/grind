@@ -33,9 +33,10 @@ pub fn icon(severity: Severity) -> &'static str {
 /// The line under a finding: where, and which rule — shown because it is what `grind sheet lint
 /// --off <rule>` takes.
 pub fn detail(diagnostic: &Diagnostic) -> String {
-    match diagnostic.at.is_empty() {
-        true => diagnostic.rule.to_owned(),
-        false => format!("{} · {}", diagnostic.at, diagnostic.rule),
+    if diagnostic.at.is_empty() {
+        diagnostic.rule.to_owned()
+    } else {
+        format!("{} · {}", diagnostic.at, diagnostic.rule)
     }
 }
 

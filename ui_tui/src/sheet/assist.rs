@@ -42,9 +42,10 @@ pub fn line(assist: &Assist, friendly: bool) -> Vec<Span<'static>> {
             }
             spans.push(Span::styled(
                 offer.name.clone(),
-                match index == assist.chosen {
-                    true => strong,
-                    false => muted,
+                if index == assist.chosen {
+                    strong
+                } else {
+                    muted
                 },
             ));
         }
@@ -82,10 +83,7 @@ pub fn line(assist: &Assist, friendly: bool) -> Vec<Span<'static>> {
         }
         spans.push(Span::styled(
             part.clone(),
-            match index == emphasised {
-                true => strong,
-                false => muted,
-            },
+            if index == emphasised { strong } else { muted },
         ));
     }
     spans.push(Span::styled(")", muted));

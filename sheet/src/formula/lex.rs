@@ -467,14 +467,18 @@ fn parse_reference(inside: &str, at: usize) -> Result<Reference, SyntaxError> {
     let start = parse_cell_ref(first, at)?;
     let mut end = second
         .map(|s| {
-            parse_cell_ref(s, at).map_err(|e| match e.message == NO_DOT {
-                true => SyntaxError {
-                    message: "the second end of a range needs its own `.` too (as in [.A1:.B2] or \
-                              [Sheet1.A1:.B2])"
-                        .into(),
-                    ..e
-                },
-                false => e,
+            parse_cell_ref(s, at).map_err(|e| {
+                if e.message == NO_DOT {
+                    SyntaxError {
+                        message:
+                            "the second end of a range needs its own `.` too (as in [.A1:.B2] or \
+                          [Sheet1.A1:.B2])"
+                                .into(),
+                        ..e
+                    }
+                } else {
+                    e
+                }
             })
         })
         .transpose()?;

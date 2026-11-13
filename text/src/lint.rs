@@ -297,9 +297,10 @@ fn unspellable(doc: &Document, report: &mut Report) {
                 at(index),
                 format!(
                     "holds a {} image of {} bytes, which the projection has no node for",
-                    match mime.is_empty() {
-                        true => "(untyped)",
-                        false => mime.as_str(),
+                    if mime.is_empty() {
+                        "(untyped)"
+                    } else {
+                        mime.as_str()
                     },
                     data.len()
                 ),

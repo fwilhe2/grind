@@ -73,9 +73,10 @@ pub fn number(x: f64, decimals: u32, tag: &str) -> Res<String> {
             width = decimals as usize
         ));
     }
-    Ok(match negative {
-        true => format!("\u{2212}{grouped}"),
-        false => grouped,
+    Ok(if negative {
+        format!("\u{2212}{grouped}")
+    } else {
+        grouped
     })
 }
 
@@ -88,21 +89,23 @@ fn after(tag: &str) -> Res<bool> {
 
 pub fn money(x: f64, symbol: &str, tag: &str) -> Res<String> {
     let amount = number(x, 2, tag)?;
-    Ok(match after(tag)? {
-        true => format!("{amount} {symbol}"),
-        false => match amount.strip_prefix('\u{2212}') {
+    Ok(if after(tag)? {
+        format!("{amount} {symbol}")
+    } else {
+        match amount.strip_prefix('\u{2212}') {
             Some(rest) => format!("\u{2212}{symbol}{rest}"),
             None => format!("{symbol}{amount}"),
-        },
+        }
     })
 }
 
 /// A fraction as a percentage: `0.1648` is `16,48 %`.
 pub fn percent(fraction: f64, decimals: u32, tag: &str) -> Res<String> {
     let amount = number(fraction * 100.0, decimals, tag)?;
-    Ok(match after(tag)? {
-        true => format!("{amount} %"),
-        false => format!("{amount}%"),
+    Ok(if after(tag)? {
+        format!("{amount} %")
+    } else {
+        format!("{amount}%")
     })
 }
 

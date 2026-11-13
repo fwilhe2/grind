@@ -722,15 +722,17 @@ impl Sheet {
 
     fn track(&mut self, columns: bool, range: &str, length: &str) {
         // `A` and `A:A` mean the same run of one, as they do at the command line.
-        let range = match range.contains(':') {
-            true => range.to_owned(),
-            false => format!("{range}:{range}"),
+        let range = if range.contains(':') {
+            range.to_owned()
+        } else {
+            format!("{range}:{range}")
         };
         let length = length.to_owned();
         let mut spec = self.0.borrow_mut();
-        spec.ops.push(match columns {
-            true => Op::Width { range, length },
-            false => Op::Height { range, length },
+        spec.ops.push(if columns {
+            Op::Width { range, length }
+        } else {
+            Op::Height { range, length }
         });
     }
 
@@ -810,22 +812,22 @@ impl Cell {
         if let Some(text) = text.strip_prefix('\'') {
             return Ok(Cell::Value(CellValue::Text(text.to_owned())));
         }
-        match text.starts_with('=') {
-            true => {
-                grind_sheet::formula::check(text, |_| false)
-                    .map_err(|e| bad(format!("{text}: {e}")))?;
-                Ok(Cell::Formula(text.to_owned()))
-            }
-            false => Ok(Cell::Value(CellValue::Text(text.to_owned()))),
+        if text.starts_with('=') {
+            grind_sheet::formula::check(text, |_| false)
+                .map_err(|e| bad(format!("{text}: {e}")))?;
+            Ok(Cell::Formula(text.to_owned()))
+        } else {
+            Ok(Cell::Value(CellValue::Text(text.to_owned())))
         }
     }
 
     /// A formula as a formula bar shows it — `SUM(B2:B7)` — converted by the core's converter. The
     /// leading `=` is optional.
     fn formula(source: &str) -> Res<Cell> {
-        let display = match source.starts_with('=') {
-            true => source.to_owned(),
-            false => format!("={source}"),
+        let display = if source.starts_with('=') {
+            source.to_owned()
+        } else {
+            format!("={source}")
         };
         let canonical = grind_sheet::formula::display::from_display(&display)
             .map_err(|e| bad(format!("{source}: {e}")))?;
@@ -1073,11 +1075,12 @@ fn decoration(app: &App, sheet: usize, op: &Op, styles: &mut Layered) -> Result<
         // The bound `App::set_format` puts on a rectangle, since the layering walks the cells
         // itself.
         let cells = (u64::from(end.row - start.row) + 1) * (u64::from(end.col - start.col) + 1);
-        match cells > MAX_CELLS {
-            true => Err(format!(
+        if cells > MAX_CELLS {
+            Err(format!(
                 "{range}: {cells} cells is more than one script may decorate"
-            )),
-            false => Ok((sheet, start, end)),
+            ))
+        } else {
+            Ok((sheet, start, end))
         }
     };
     match op {

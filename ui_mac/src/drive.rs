@@ -435,9 +435,10 @@ mod mac {
             return Ok(());
         }
         let controller = NSDocumentController::sharedDocumentController(app.mtm());
-        match deliver(app, &controller, item)? {
-            true => Ok(()),
-            false => Err(format!("nothing answers {}", item.title())),
+        if deliver(app, &controller, item)? {
+            Ok(())
+        } else {
+            Err(format!("nothing answers {}", item.title()))
         }
     }
 
@@ -530,9 +531,10 @@ mod mac {
         let responder = window(app)?
             .firstResponder()
             .ok_or("nothing has the keyboard")?;
-        match responder.respondsToSelector(sel!(setMarkedText:selectedRange:replacementRange:)) {
-            true => Ok(responder),
-            false => Err("what has the keyboard takes no input method's text".into()),
+        if responder.respondsToSelector(sel!(setMarkedText:selectedRange:replacementRange:)) {
+            Ok(responder)
+        } else {
+            Err("what has the keyboard takes no input method's text".into())
         }
     }
 

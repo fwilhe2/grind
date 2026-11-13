@@ -573,9 +573,10 @@ fn stand_in(root: &Path, package: &Value, licence: &str) -> String {
         .iter()
         .map(|a| a.as_str().unwrap())
         .collect();
-    let holders = match authors.is_empty() {
-        true => format!("the {name} authors"),
-        false => authors.join(", "),
+    let holders = if authors.is_empty() {
+        format!("the {name} authors")
+    } else {
+        authors.join(", ")
     };
     let said = format!(
         "({name} packages no licence file; this is the standard text of the licence it states.)\n\n"
@@ -660,9 +661,10 @@ fn copyright(notices: &[String], authors: &[String]) -> String {
             }
         }
     }
-    match authors.is_empty() {
-        true => String::new(),
-        false => format!("By {}", authors.join(", ")),
+    if authors.is_empty() {
+        String::new()
+    } else {
+        format!("By {}", authors.join(", "))
     }
 }
 

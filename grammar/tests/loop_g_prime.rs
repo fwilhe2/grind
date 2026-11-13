@@ -57,14 +57,15 @@ fn the_built_in_checker_finds_slips_and_leaves_correct_sentences_alone() {
     let found = check(&Builtin::default(), &samples);
     let mut caught = 0;
     for (sample, findings) in samples.iter().zip(&found) {
-        match sample.wrong {
-            true => caught += usize::from(!findings.is_empty()),
-            false => assert!(
+        if sample.wrong {
+            caught += usize::from(!findings.is_empty());
+        } else {
+            assert!(
                 findings.is_empty(),
                 "a correct sentence drew {:?}: {:?}",
                 findings.iter().map(|f| &f.rule).collect::<Vec<_>>(),
                 sample.text
-            ),
+            );
         }
     }
     let wrong = samples.iter().filter(|s| s.wrong).count();

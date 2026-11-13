@@ -127,10 +127,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
                 pos,
                 pos,
                 u32::MAX,
-                match *raw {
-                    true => Shown::Value,
-                    false => Shown::Text,
-                },
+                if *raw { Shown::Value } else { Shown::Text },
                 Overlays::NONE,
             )?))
         }
@@ -179,9 +176,10 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             as_read,
         } => {
             let app = load(file, cli)?;
-            match as_read {
-                true => as_read_report(file, app.source_anchors()),
-                false => project_report(&app.project(), *tokens, *anchors),
+            if *as_read {
+                as_read_report(file, app.source_anchors())
+            } else {
+                project_report(&app.project(), *tokens, *anchors)
             }
         }
 
@@ -190,13 +188,16 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             hints,
             off,
             rules,
-        } => match rules {
-            true => Ok(rule_list(&grind_sheet::lint::RULES)),
-            false => Ok(lint_report(
-                file,
-                load_checked(file, cli)?.lint(&lint_options(*hints, off)),
-            )),
-        },
+        } => {
+            if *rules {
+                Ok(rule_list(&grind_sheet::lint::RULES))
+            } else {
+                Ok(lint_report(
+                    file,
+                    load_checked(file, cli)?.lint(&lint_options(*hints, off)),
+                ))
+            }
+        }
 
         Command::Set {
             file,
@@ -321,9 +322,10 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
                 bom: *bom,
                 formulas: *formulas,
             };
-            let csv = match empty {
-                true => String::new(),
-                false => app.export_csv(sheet, start, end, &options).say()?,
+            let csv = if empty {
+                String::new()
+            } else {
+                app.export_csv(sheet, start, end, &options).say()?
             };
             match out {
                 Some(path) => {
@@ -387,9 +389,10 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             if *pretty {
                 let shown = grind_sheet::formula::display::to_display(formula).say()?;
                 let laid = grind_sheet::formula::display::pretty(&shown, *width).say()?;
-                let lines = match trace {
-                    true => laid_out(&app, sheet, pos, &laid, &overlay)?,
-                    false => laid.lines().map(str::to_owned).collect(),
+                let lines = if *trace {
+                    laid_out(&app, sheet, pos, &laid, &overlay)?
+                } else {
+                    laid.lines().map(str::to_owned).collect()
                 };
                 return Ok(Report::Text(TextReport { lines }));
             }
@@ -572,13 +575,12 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             match tracks {
                 Some(spec) => {
                     let (sheet, range, is_cols) = hide_tracks(&app, spec)?;
-                    changed += match is_cols {
-                        true => {
-                            let cols = grind_sheet::fit::columns_in_use(&app, sheet, range);
-                            let widths = fit::widths(&app, sheet, cols, &metrics);
-                            app.fit(sheet, widths, 0..0).say()?
-                        }
-                        false => app.fit(sheet, Vec::new(), range).say()?,
+                    changed += if is_cols {
+                        let cols = grind_sheet::fit::columns_in_use(&app, sheet, range);
+                        let widths = fit::widths(&app, sheet, cols, &metrics);
+                        app.fit(sheet, widths, 0..0).say()?
+                    } else {
+                        app.fit(sheet, Vec::new(), range).say()?
                     };
                 }
                 None => {
@@ -612,9 +614,10 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
                 return Ok(lines(hidden.into_iter()));
             };
             let (sheet, range, is_cols) = hide_tracks(&app, spec)?;
-            let changed = match is_cols {
-                true => app.set_col_hidden(sheet, range, !unhide).say()?,
-                false => app.set_row_hidden(sheet, range, !unhide).say()?,
+            let changed = if is_cols {
+                app.set_col_hidden(sheet, range, !unhide).say()?
+            } else {
+                app.set_row_hidden(sheet, range, !unhide).say()?
             };
             finish(&app, cli, file, changed > 0)
         }
@@ -639,9 +642,10 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
                 return Ok(lines(merged.into_iter()));
             };
             let (sheet, start, end) = a1::resolve(&app, &a1::parse(range).say()?).say()?;
-            let changed = match unmerge {
-                true => app.unmerge(sheet, start, end).say()? > 0,
-                false => app.merge(sheet, start, end).say()?,
+            let changed = if *unmerge {
+                app.unmerge(sheet, start, end).say()? > 0
+            } else {
+                app.merge(sheet, start, end).say()?
             };
             finish(&app, cli, file, changed)
         }
@@ -679,13 +683,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             }
             if *toggle {
                 let ticked = app.toggle_checkbox(sheet, pos).say()?;
-                eprintln!(
-                    "grind: {}",
-                    match ticked {
-                        true => "ticked",
-                        false => "not ticked",
-                    }
-                );
+                eprintln!("grind: {}", if ticked { "ticked" } else { "not ticked" });
                 return finish(&app, cli, file, true);
             }
             let link = match link {
@@ -756,9 +754,10 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
                         let ranges: Vec<String> = rule
                             .ranges
                             .iter()
-                            .map(|(a, b)| match a == b {
-                                true => a1::format(None, *a),
-                                false => {
+                            .map(|(a, b)| {
+                                if a == b {
+                                    a1::format(None, *a)
+                                } else {
                                     format!("{}:{}", a1::format(None, *a), a1::format(None, *b))
                                 }
                             })
@@ -1169,16 +1168,17 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
                 1 => "1 calculation".to_owned(),
                 n => format!("{n} calculations"),
             };
-            let summary = match tally.is_empty() {
-                true => counted,
-                false => format!(
+            let summary = if tally.is_empty() {
+                counted
+            } else {
+                format!(
                     "{counted} — {}",
                     tally
                         .iter()
                         .map(|(name, count)| format!("{name} ×{count}"))
                         .collect::<Vec<_>>()
                         .join(", ")
-                ),
+                )
             };
             lines.push(summary);
             Ok(Report::Text(TextReport { lines }))
@@ -1561,16 +1561,18 @@ fn dress(chart: &grind_sheet::Chart) -> String {
     }
     if chart.kind == grind_sheet::ChartKind::Pie {
         parts.push(
-            match chart.clockwise {
-                true => "clockwise",
-                false => "counter-clockwise",
+            if chart.clockwise {
+                "clockwise"
+            } else {
+                "counter-clockwise"
             }
             .to_owned(),
         );
     }
-    match parts.is_empty() {
-        true => "-".to_owned(),
-        false => parts.join(" "),
+    if parts.is_empty() {
+        "-".to_owned()
+    } else {
+        parts.join(" ")
     }
 }
 
@@ -1595,9 +1597,10 @@ fn axes(chart: &grind_sheet::Chart) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join(" ");
-    match both.is_empty() {
-        true => "-".to_owned(),
-        false => both,
+    if both.is_empty() {
+        "-".to_owned()
+    } else {
+        both
     }
 }
 
@@ -1653,11 +1656,10 @@ fn laid_out(
 /// What was typed, with a formula converted from the spelling a formula bar shows when `display`
 /// says it is in that spelling.
 fn typed(input: &str, display: bool) -> Result<String, String> {
-    match display && input.starts_with('=') {
-        true => {
-            grind_sheet::formula::display::from_display(input).map_err(|e| format!("{input}: {e}"))
-        }
-        false => Ok(input.to_owned()),
+    if display && input.starts_with('=') {
+        grind_sheet::formula::display::from_display(input).map_err(|e| format!("{input}: {e}"))
+    } else {
+        Ok(input.to_owned())
     }
 }
 
@@ -1696,12 +1698,13 @@ fn traced(
         .map(|(depth, node)| {
             let indent = "  ".repeat(depth);
             // An omitted parameter (§5.6) has no text to show and nothing to come to.
-            match node.range.is_empty() {
-                true => (format!("{indent}(omitted)"), String::new()),
-                false => (
+            if node.range.is_empty() {
+                (format!("{indent}(omitted)"), String::new())
+            } else {
+                (
                     format!("{indent}{}", &shown[node.range.clone()]),
                     node.came_to.spelled(&sheets, sheet),
-                ),
+                )
             }
         })
         .collect();
@@ -1714,9 +1717,10 @@ fn traced(
         .into_iter()
         .map(|(left, answer)| {
             let pad = width - left.chars().count();
-            match answer.is_empty() {
-                true => left,
-                false => format!("{left}{}  {answer}", " ".repeat(pad)),
+            if answer.is_empty() {
+                left
+            } else {
+                format!("{left}{}  {answer}", " ".repeat(pad))
             }
         })
         .collect())
@@ -1775,9 +1779,10 @@ fn cells(
                 text: viewport.text(row, col).unwrap_or_default().to_owned(),
                 kind: report::kind(&value),
                 formula: app.formula(sheet, pos).say()?,
-                named_formula: match overlays.names {
-                    true => app.named_formula(sheet, pos).say()?,
-                    false => None,
+                named_formula: if overlays.names {
+                    app.named_formula(sheet, pos).say()?
+                } else {
+                    None
                 },
                 role: viewport.role(row, col).map(|r| r.name()),
                 name: viewport.name_at(row, col).map(str::to_owned),
@@ -1801,9 +1806,10 @@ fn cells(
 /// two lines and does no index arithmetic — §5.8's whole-column and whole-row forms are
 /// already what a lone `B` or `3` means, and the only `+ 1` in the workspace stays in `a1`.
 fn tracks(app: &App, spec: &str) -> Result<(usize, Pos, Pos), String> {
-    let spec = match spec.contains(':') {
-        true => spec.to_owned(),
-        false => format!("{spec}:{spec}"),
+    let spec = if spec.contains(':') {
+        spec.to_owned()
+    } else {
+        format!("{spec}:{spec}")
     };
     a1::resolve(app, &a1::parse(&spec).say()?).say()
 }
@@ -1813,16 +1819,18 @@ fn tracks(app: &App, spec: &str) -> Result<(usize, Pos, Pos), String> {
 /// round, which is what `hide` needs to know and `width`/`height` do not, since each of
 /// those already commits to one axis by its own name.
 fn hide_tracks(app: &App, spec: &str) -> Result<(usize, std::ops::Range<u32>, bool), String> {
-    let full = match spec.contains(':') {
-        true => spec.to_owned(),
-        false => format!("{spec}:{spec}"),
+    let full = if spec.contains(':') {
+        spec.to_owned()
+    } else {
+        format!("{spec}:{spec}")
     };
     let reference = a1::parse(&full).say()?;
     let is_cols = reference.start.col.is_some() && reference.start.row.is_none();
     let (sheet, start, end) = a1::resolve(app, &reference).say()?;
-    let range = match is_cols {
-        true => start.col..end.col + 1,
-        false => start.row..end.row + 1,
+    let range = if is_cols {
+        start.col..end.col + 1
+    } else {
+        start.row..end.row + 1
     };
     Ok((sheet, range, is_cols))
 }
@@ -1885,13 +1893,15 @@ fn shown(
         path: file.display().to_string(),
         sheet: app.sheet_name(sheet).say()?,
         address: a1::format(None, pos),
-        style: match style {
-            true => app.style_at(sheet, pos).say()?,
-            false => None,
+        style: if style {
+            app.style_at(sheet, pos).say()?
+        } else {
+            None
         },
-        format: match format {
-            true => app.format_at(sheet, pos).say()?,
-            false => None,
+        format: if format {
+            app.format_at(sheet, pos).say()?
+        } else {
+            None
         },
     })))
 }
@@ -1900,16 +1910,18 @@ fn shown(
 /// document edited from a shell and one edited from the CLI cannot disagree about what
 /// `123` in a cell means.
 fn forced_text(value: &str, force: bool) -> String {
-    match force {
-        true => format!("'{value}"),
-        false => value.to_owned(),
+    if force {
+        format!("'{value}")
+    } else {
+        value.to_owned()
     }
 }
 
 fn mode(recalc: bool) -> RecalcMode {
-    match recalc {
-        true => RecalcMode::Document,
-        false => RecalcMode::No,
+    if recalc {
+        RecalcMode::Document
+    } else {
+        RecalcMode::No
     }
 }
 

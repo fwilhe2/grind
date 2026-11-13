@@ -137,9 +137,10 @@ pub fn present(
             advice.set_label(picture::advice(text).unwrap_or(""));
             let n = text.trim().chars().count();
             count.set_label(&format!("{n} / {}", picture::SHORT));
-            match n > picture::SHORT {
-                true => count.add_css_class("warning"),
-                false => count.remove_css_class("warning"),
+            if n > picture::SHORT {
+                count.add_css_class("warning");
+            } else {
+                count.remove_css_class("warning");
             }
         }
     };

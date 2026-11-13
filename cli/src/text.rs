@@ -198,10 +198,7 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
                 let (start, finish) = app
                     .caret_line_bounds(caret, &faces)
                     .map_err(|e| e.to_string())?;
-                match home {
-                    true => start,
-                    false => finish,
-                }
+                if *home { start } else { finish }
             } else {
                 // The goal column is the caret's own x, because a single move from a script has
                 // no run of keystrokes to remember one from.
@@ -527,9 +524,10 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             as_read,
         } => {
             let app = open_text(file)?;
-            match as_read {
-                true => as_read_report(file, app.source_anchors()),
-                false => project_report(&app.project(), *tokens, *anchors),
+            if *as_read {
+                as_read_report(file, app.source_anchors())
+            } else {
+                project_report(&app.project(), *tokens, *anchors)
             }
         }
 
@@ -538,13 +536,16 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             hints,
             off,
             rules,
-        } => match rules {
-            true => Ok(rule_list(&grind_text::lint::RULES)),
-            false => Ok(lint_report(
-                file,
-                open_text_checked(file, *hints)?.lint(&lint_options(*hints, off)),
-            )),
-        },
+        } => {
+            if *rules {
+                Ok(rule_list(&grind_text::lint::RULES))
+            } else {
+                Ok(lint_report(
+                    file,
+                    open_text_checked(file, *hints)?.lint(&lint_options(*hints, off)),
+                ))
+            }
+        }
 
         TextCommand::Delete { file, range } => {
             let app = open_text(file)?;
@@ -656,12 +657,12 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
                 return finish_text(&app, cli, file, changed > 0);
             }
             let Some(target) = target else {
-                let shown = match from == to {
-                    true => link_at(from)?.map(|link| (link.from, link.to, link.href)),
-                    false => app
-                        .link(from, to)
+                let shown = if from == to {
+                    link_at(from)?.map(|link| (link.from, link.to, link.href))
+                } else {
+                    app.link(from, to)
                         .map_err(|e| e.to_string())?
-                        .map(|href| (from, to, href)),
+                        .map(|href| (from, to, href))
                 };
                 return text_lines(
                     shown
@@ -708,9 +709,10 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             ignore_case,
         } => {
             let app = open_text(file)?;
-            let hits = match ignore_case {
-                true => app.find_ignoring_case(needle),
-                false => app.find(needle),
+            let hits = if *ignore_case {
+                app.find_ignoring_case(needle)
+            } else {
+                app.find(needle)
             };
             text_lines(
                 hits.into_iter()
@@ -766,14 +768,17 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             text_lines(
                 app.misspellings(blocks)
                     .into_iter()
-                    .map(|wrong| match suggest {
-                        true => format!(
-                            "{}\t{}\t{}",
-                            wrong.address(),
-                            wrong.word,
-                            app.suggest(&wrong.word).join(", ")
-                        ),
-                        false => format!("{}\t{}", wrong.address(), wrong.word),
+                    .map(|wrong| {
+                        if *suggest {
+                            format!(
+                                "{}\t{}\t{}",
+                                wrong.address(),
+                                wrong.word,
+                                app.suggest(&wrong.word).join(", ")
+                            )
+                        } else {
+                            format!("{}\t{}", wrong.address(), wrong.word)
+                        }
                     })
                     .collect(),
             )

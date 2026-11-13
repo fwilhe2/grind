@@ -322,18 +322,22 @@ pub fn guess(
     shape: Option<Shape>,
     null_date: i64,
 ) -> Guess {
-    let (start, end) = match start == end {
-        true => region(sheet, start),
-        false => (start, end),
+    let (start, end) = if start == end {
+        region(sheet, start)
+    } else {
+        (start, end)
     };
     let shape = shape.unwrap_or_else(|| read_shape(sheet, start, end));
     let body = Pos::new(
         start.row + u32::from(shape.header_row),
         start.col + u32::from(shape.label_column),
     );
-    let range = |from: Pos, to: Pos| match from == to {
-        true => a1::format(None, from),
-        false => format!("{}:{}", a1::format(None, from), a1::format(None, to)),
+    let range = |from: Pos, to: Pos| {
+        if from == to {
+            a1::format(None, from)
+        } else {
+            format!("{}:{}", a1::format(None, from), a1::format(None, to))
+        }
     };
     let mut spec = Spec::new(ChartKind::Bar);
     // Nothing to chart — the labels took the block, or nothing left is a number: an empty spec,
@@ -352,17 +356,19 @@ pub fn guess(
             spec,
         };
     }
-    let category_cells: Vec<Pos> = match shape.by_rows {
-        false => (body.row..=end.row)
-            .map(|row| Pos::new(row, start.col))
-            .collect(),
-        true => (body.col..=end.col)
+    let category_cells: Vec<Pos> = if shape.by_rows {
+        (body.col..=end.col)
             .map(|col| Pos::new(start.row, col))
-            .collect(),
+            .collect()
+    } else {
+        (body.row..=end.row)
+            .map(|row| Pos::new(row, start.col))
+            .collect()
     };
-    let has_categories = match shape.by_rows {
-        false => shape.label_column,
-        true => shape.header_row,
+    let has_categories = if shape.by_rows {
+        shape.header_row
+    } else {
+        shape.label_column
     };
     if has_categories
         && let (Some(first), Some(last)) = (category_cells.first(), category_cells.last())
@@ -375,24 +381,21 @@ pub fn guess(
             spec.kind = ChartKind::Line;
         }
     }
-    match shape.by_rows {
-        false => {
-            for col in body.col..=end.col {
-                let values = range(Pos::new(body.row, col), Pos::new(end.row, col));
-                let label = shape
-                    .header_row
-                    .then(|| a1::format(None, Pos::new(start.row, col)));
-                spec.series.push((values, label));
-            }
+    if shape.by_rows {
+        for row in body.row..=end.row {
+            let values = range(Pos::new(row, body.col), Pos::new(row, end.col));
+            let label = shape
+                .label_column
+                .then(|| a1::format(None, Pos::new(row, start.col)));
+            spec.series.push((values, label));
         }
-        true => {
-            for row in body.row..=end.row {
-                let values = range(Pos::new(row, body.col), Pos::new(row, end.col));
-                let label = shape
-                    .label_column
-                    .then(|| a1::format(None, Pos::new(row, start.col)));
-                spec.series.push((values, label));
-            }
+    } else {
+        for col in body.col..=end.col {
+            let values = range(Pos::new(body.row, col), Pos::new(end.row, col));
+            let label = shape
+                .header_row
+                .then(|| a1::format(None, Pos::new(start.row, col)));
+            spec.series.push((values, label));
         }
     }
     // One series needs no legend, and its name is the chart's title.
@@ -576,9 +579,10 @@ pub(crate) fn rename_sheet_in_range(addr: &str, from: &str, to: &str) -> Option<
     };
     let (start, stop) = (spell(&renamed.start)?, spell(&end)?);
     // A one-cell label address stays one cell.
-    Some(match renamed.end.is_some() {
-        true => format!("{start}:{stop}"),
-        false => start,
+    Some(if renamed.end.is_some() {
+        format!("{start}:{stop}")
+    } else {
+        start
     })
 }
 
@@ -683,10 +687,7 @@ pub fn pie_slices(data: &ChartData, clockwise: bool) -> Vec<Slice> {
     if total <= 0.0 || !total.is_finite() {
         return Vec::new();
     }
-    let direction = match clockwise {
-        true => 1.0,
-        false => -1.0,
-    };
+    let direction = if clockwise { 1.0 } else { -1.0 };
     let mut start = TWELVE;
     let mut slices = Vec::new();
     for (point, &value) in values.iter().enumerate() {
@@ -711,9 +712,10 @@ pub fn pie_slices(data: &ChartData, clockwise: bool) -> Vec<Slice> {
 pub fn pie_slice_at(data: &ChartData, clockwise: bool, angle: f64) -> Option<usize> {
     let slices = pie_slices(data, clockwise);
     // How far round from twelve o'clock the point is, travelling the way this pie runs.
-    let travelled = match clockwise {
-        true => angle - TWELVE,
-        false => TWELVE - angle,
+    let travelled = if clockwise {
+        angle - TWELVE
+    } else {
+        TWELVE - angle
     }
     .rem_euclid(std::f64::consts::TAU);
     let mut reached = 0.0;
@@ -799,9 +801,10 @@ impl ChartData {
             .values
             .array_windows()
             .all(|&[prev, next]| spell(prev) != spell(next));
-        match distinct {
-            true => spell(value),
-            false => ticks.label(value),
+        if distinct {
+            spell(value)
+        } else {
+            ticks.label(value)
         }
     }
 }

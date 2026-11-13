@@ -160,16 +160,15 @@ impl Grid {
     pub fn fit_selection(&self, rows: bool) {
         let imp = self.imp();
         let (start, end) = imp.selection.get().rect();
-        match rows {
-            true => imp.fit(0..0, start.row..end.row + 1),
-            false => {
-                let Some(app) = imp.app.borrow().clone() else {
-                    return;
-                };
-                let cols =
-                    grind_sheet::fit::columns_in_use(&app, imp.sheet.get(), start.col..end.col + 1);
-                imp.fit(cols, 0..0);
-            }
+        if rows {
+            imp.fit(0..0, start.row..end.row + 1);
+        } else {
+            let Some(app) = imp.app.borrow().clone() else {
+                return;
+            };
+            let cols =
+                grind_sheet::fit::columns_in_use(&app, imp.sheet.get(), start.col..end.col + 1);
+            imp.fit(cols, 0..0);
         }
     }
 
@@ -435,16 +434,18 @@ fn hide_range_for_hit(selection: Selection, hit: crate::geom::Hit) -> Option<(bo
     match hit {
         Hit::ColHeader(col) | Hit::ColEdge(col) => {
             let whole = start.row == 0 && end.row == MAX_ROWS - 1;
-            match whole && (start.col..=end.col).contains(&col) {
-                true => Some((true, start.col, end.col + 1)),
-                false => Some((true, col, col + 1)),
+            if whole && (start.col..=end.col).contains(&col) {
+                Some((true, start.col, end.col + 1))
+            } else {
+                Some((true, col, col + 1))
             }
         }
         Hit::RowHeader(row) | Hit::RowEdge(row) => {
             let whole = start.col == 0 && end.col == MAX_COLS - 1;
-            match whole && (start.row..=end.row).contains(&row) {
-                true => Some((false, start.row, end.row + 1)),
-                false => Some((false, row, row + 1)),
+            if whole && (start.row..=end.row).contains(&row) {
+                Some((false, start.row, end.row + 1))
+            } else {
+                Some((false, row, row + 1))
             }
         }
         _ => None,
@@ -1127,9 +1128,10 @@ mod imp {
                 move |_| {
                     let imp = grid.imp();
                     if let Some((is_cols, from, to)) = imp.hide_target.take() {
-                        match is_cols {
-                            true => imp.hide_cols(from, to),
-                            false => imp.hide_rows(from, to),
+                        if is_cols {
+                            imp.hide_cols(from, to);
+                        } else {
+                            imp.hide_rows(from, to);
                         }
                     }
                     if let Some(menu) = imp.hide_menu.get() {
@@ -1706,9 +1708,12 @@ mod imp {
             let app = self.app.borrow();
             let sizes = app
                 .as_ref()
-                .and_then(|app| match rows {
-                    true => app.row_heights(sheet).ok(),
-                    false => app.col_widths(sheet).ok(),
+                .and_then(|app| {
+                    if rows {
+                        app.row_heights(sheet).ok()
+                    } else {
+                        app.col_widths(sheet).ok()
+                    }
                 })
                 .unwrap_or_default();
             sizes
@@ -1878,12 +1883,11 @@ mod imp {
                     let text_style = look::text_style(style);
                     // A width of zero is `wrap`'s own "do not wrap" sentinel — one line per
                     // mandatory break, which is what the un-wrapped case wants.
-                    let width = match wrapping {
-                        true => {
-                            let across: f64 = span.map(|c| cols.size_of(c)).sum();
-                            (across - 2.0 * PAD).max(1.0) as f32
-                        }
-                        false => 0.0,
+                    let width = if wrapping {
+                        let across: f64 = span.map(|c| cols.size_of(c)).sum();
+                        (across - 2.0 * PAD).max(1.0) as f32
+                    } else {
+                        0.0
                     };
                     let fragment = grind_core::layout::Fragment {
                         text,
@@ -3538,12 +3542,13 @@ mod imp {
             let Some(target) = self.selection_for(hit) else {
                 return;
             };
-            self.set_selection(match extend {
-                true => Selection {
+            self.set_selection(if extend {
+                Selection {
                     anchor: self.selection.get().anchor,
                     active: target.active,
-                },
-                false => target,
+                }
+            } else {
+                target
             });
         }
 
@@ -4201,9 +4206,10 @@ mod imp {
             // anything drawn from that edge starts after it. A right-aligned number is
             // untouched: it is at the other end.
             let roles = self.overlays.get().roles;
-            let lead = match roles {
-                true => pad + ROLE_MARK * self.zoom.get(),
-                false => pad,
+            let lead = if roles {
+                pad + ROLE_MARK * self.zoom.get()
+            } else {
+                pad
             };
             for row in rows.clone() {
                 for col in fetch.clone() {
@@ -4286,9 +4292,10 @@ mod imp {
                     // A wrapped cell is drawn inside its width, and its row was grown to fit
                     // (`measure_rows`) unless the document set the row a height, which still
                     // clips.
-                    layout.set_width(match wrapping {
-                        true => ((cell.w - 2.0 * pad).max(1.0) * f64::from(pango::SCALE)) as i32,
-                        false => -1,
+                    layout.set_width(if wrapping {
+                        ((cell.w - 2.0 * pad).max(1.0) * f64::from(pango::SCALE)) as i32
+                    } else {
+                        -1
                     });
                     layout.set_text(text);
                     let (text_w, text_h) = layout.pixel_size();
@@ -4297,9 +4304,10 @@ mod imp {
                     // A heading too wide for the room its button leaves keeps its *start*:
                     // centred, it would lose a letter at each end and read as neither word. A
                     // wrapped one too, when a word in it is wider than the room.
-                    let align = match capped && !within {
-                        true => Align::Left,
-                        false => align,
+                    let align = if capped && !within {
+                        Align::Left
+                    } else {
+                        align
                     };
                     align_lines(&layout, wrapping, align, text_w);
 
@@ -4459,21 +4467,20 @@ mod imp {
                     continue;
                 }
                 let r = rect(b.x, b.y, b.w, b.h);
-                match ticked {
-                    true => {
-                        f.snapshot.append_color(&f.palette.accent, &r);
-                        layout.set_attributes(self.chrome(None, 0.9).as_ref());
-                        layout.set_text("\u{2713}");
-                        let (w, h) = layout.pixel_size();
-                        f.snapshot.save();
-                        f.snapshot.translate(&graphene::Point::new(
-                            (b.x + (b.w - f64::from(w)) / 2.0) as f32,
-                            (b.y + (b.h - f64::from(h)) / 2.0) as f32,
-                        ));
-                        f.snapshot.append_layout(&layout, &f.palette.background);
-                        f.snapshot.restore();
-                    }
-                    false => f.snapshot.append_color(&f.palette.background, &r),
+                if ticked {
+                    f.snapshot.append_color(&f.palette.accent, &r);
+                    layout.set_attributes(self.chrome(None, 0.9).as_ref());
+                    layout.set_text("\u{2713}");
+                    let (w, h) = layout.pixel_size();
+                    f.snapshot.save();
+                    f.snapshot.translate(&graphene::Point::new(
+                        (b.x + (b.w - f64::from(w)) / 2.0) as f32,
+                        (b.y + (b.h - f64::from(h)) / 2.0) as f32,
+                    ));
+                    f.snapshot.append_layout(&layout, &f.palette.background);
+                    f.snapshot.restore();
+                } else {
+                    f.snapshot.append_color(&f.palette.background, &r);
                 }
                 outline(f.snapshot, b, f.palette.foreground, 1.0);
             }
@@ -4539,9 +4546,10 @@ mod imp {
                 let cell = f
                     .geom
                     .range_rect((m.anchor.row, m.anchor.col), (m.end.row, m.end.col));
-                layout.set_width(match wrapping {
-                    true => ((cell.w - 2.0 * pad).max(1.0) * f64::from(pango::SCALE)) as i32,
-                    false => -1,
+                layout.set_width(if wrapping {
+                    ((cell.w - 2.0 * pad).max(1.0) * f64::from(pango::SCALE)) as i32
+                } else {
+                    -1
                 });
                 layout.set_text(text);
                 let (mut w, mut h) = layout.pixel_size();
@@ -4780,9 +4788,10 @@ mod imp {
                 draw_text(
                     snapshot,
                     &layout,
-                    match selected {
-                        true => palette.accent,
-                        false => palette.header_text,
+                    if selected {
+                        palette.accent
+                    } else {
+                        palette.header_text
                     },
                     &head,
                     head,
@@ -4812,9 +4821,10 @@ mod imp {
                 draw_text(
                     snapshot,
                     &layout,
-                    match selected {
-                        true => palette.accent,
-                        false => palette.header_text,
+                    if selected {
+                        palette.accent
+                    } else {
+                        palette.header_text
                     },
                     &head,
                     head,
@@ -4918,17 +4928,19 @@ mod imp {
                     );
                 }
                 f.snapshot.pop();
-                let edge = match on {
-                    true => f.palette.accent,
-                    false => f.palette.lines,
+                let edge = if on {
+                    f.palette.accent
+                } else {
+                    f.palette.lines
                 };
                 f.snapshot.append_border(&rounded, &[1.0; 4], &[edge; 4]);
                 draw_text(
                     f.snapshot,
                     &layout,
-                    match on {
-                        true => f.palette.accent,
-                        false => f.palette.foreground,
+                    if on {
+                        f.palette.accent
+                    } else {
+                        f.palette.foreground
                     },
                     &button,
                     button,

@@ -50,12 +50,11 @@ fn svg(bytes: &[u8]) -> bool {
 /// caption.
 pub fn insert_below(app: &App, block: usize, mime: &str, data: Vec<u8>) -> Result<usize> {
     let empty = app.input_text(block).is_ok_and(|text| text.is_empty());
-    let at = match empty {
-        true => block,
-        false => {
-            app.insert(block + 1, BlockKind::Paragraph, "")?;
-            block + 1
-        }
+    let at = if empty {
+        block
+    } else {
+        app.insert(block + 1, BlockKind::Paragraph, "")?;
+        block + 1
     };
     app.insert_image(
         Caret {

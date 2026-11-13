@@ -669,9 +669,10 @@ fn value_of(value: &CellValue) -> KdlValue {
 /// being exact).
 fn number(n: f64) -> KdlValue {
     const EXACT: f64 = 9_007_199_254_740_992.0;
-    match n.is_finite() && n.fract() == 0.0 && n.abs() < EXACT {
-        true => KdlValue::Integer(n as i128),
-        false => KdlValue::Float(n),
+    if n.is_finite() && n.fract() == 0.0 && n.abs() < EXACT {
+        KdlValue::Integer(n as i128)
+    } else {
+        KdlValue::Float(n)
     }
 }
 
@@ -683,9 +684,10 @@ pub(super) fn address(sheet: &Sheet, pos: Pos) -> String {
 
 /// A rectangle as a person writes one — `B5` when it is a single cell.
 fn range(start: Pos, end: Pos) -> String {
-    match start == end {
-        true => a1::format(None, start),
-        false => format!("{}:{}", a1::format(None, start), a1::format(None, end)),
+    if start == end {
+        a1::format(None, start)
+    } else {
+        format!("{}:{}", a1::format(None, start), a1::format(None, end))
     }
 }
 

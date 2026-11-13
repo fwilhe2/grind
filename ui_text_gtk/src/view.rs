@@ -745,13 +745,13 @@ mod imp {
             let selection = self.selection();
             // The word still being typed is not underlined: the caret at its end with nothing
             // selected is somebody halfway through it, and every word processor waits.
-            let misspelt: Vec<grind_text::Misspelling> = match self.speller.borrow().is_some() {
-                true => app
-                    .misspellings(first.index..last.index + 1)
+            let misspelt: Vec<grind_text::Misspelling> = if self.speller.borrow().is_some() {
+                app.misspellings(first.index..last.index + 1)
                     .into_iter()
                     .filter(|m| selection.is_some() || !m.being_typed(caret))
-                    .collect(),
-                false => Vec::new(),
+                    .collect()
+            } else {
+                Vec::new()
             };
             let misspelt_ink = palette.misspelt;
             // Grammar findings, but not one ending at the caret: that is still being typed.
@@ -895,9 +895,10 @@ mod imp {
                 // decision 2). An empty one (a missing comma) is marked across its neighbours.
                 for flag in flagged.iter().filter(|f| f.block == slot.index) {
                     let range = &flag.finding.range;
-                    let (from, to) = match range.is_empty() {
-                        true => (range.start.saturating_sub(1), range.end + 1),
-                        false => (range.start, range.end),
+                    let (from, to) = if range.is_empty() {
+                        (range.start.saturating_sub(1), range.end + 1)
+                    } else {
+                        (range.start, range.end)
                     };
                     let quiet = matches!(
                         flag.finding.kind,
@@ -909,11 +910,10 @@ mod imp {
                         {
                             let (left, right) = (x + f64::from(left), x + f64::from(right));
                             let under = y + f64::from(line.top + line.height) - 1.0;
-                            match quiet {
-                                true => dotted(snapshot, left, right, under, palette.dim),
-                                false => {
-                                    squiggle(snapshot, left, right, under - 1.0, palette.grammar);
-                                }
+                            if quiet {
+                                dotted(snapshot, left, right, under, palette.dim);
+                            } else {
+                                squiggle(snapshot, left, right, under - 1.0, palette.grammar);
                             }
                         }
                     }
@@ -1302,9 +1302,10 @@ mod imp {
                 return;
             };
             let text = app.input_text(caret.block).unwrap_or_default();
-            let (start, end) = match block {
-                true => (0, text.chars().count()),
-                false => grind_text::word::around(&text, caret.offset),
+            let (start, end) = if block {
+                (0, text.chars().count())
+            } else {
+                grind_text::word::around(&text, caret.offset)
             };
             self.anchor.set(Some(Caret {
                 block: caret.block,
@@ -1692,9 +1693,10 @@ mod imp {
         pub fn erase_word(&self, delta: i32) {
             let Some(app) = self.app() else { return };
             if self.selection().is_some() {
-                return match delta > 0 {
-                    true => self.erase_forward(),
-                    false => self.erase_back(),
+                return if delta > 0 {
+                    self.erase_forward();
+                } else {
+                    self.erase_back();
                 };
             }
             self.anchor.set(None);

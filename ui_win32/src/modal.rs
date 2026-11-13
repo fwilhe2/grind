@@ -155,9 +155,10 @@ pub fn frame(w: f64, h: f64, dpi: u32, titled: bool) -> Frame {
 pub fn wanted(body: (f64, f64), dpi: u32, titled: bool) -> (i32, i32) {
     let s = |v: f64| scale(v, dpi);
     let pad = s(size::PAD);
-    let title = match titled {
-        true => s(size::TITLE_LINE) + s(size::TITLE_GAP),
-        false => 0.0,
+    let title = if titled {
+        s(size::TITLE_LINE) + s(size::TITLE_GAP)
+    } else {
+        0.0
     };
     let w = (body.0 + pad * 2.0).max(s(size::MIN_W));
     let h = pad + title + body.1 + pad + s(size::FOOTER);

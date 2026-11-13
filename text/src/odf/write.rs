@@ -600,14 +600,13 @@ fn content(
     // An index's generated entries are never written as blocks; the index element is carried
     // whole.
     let without;
-    let doc = match doc.blocks.iter().any(|block| block.generated) {
-        true => {
-            let mut copy = doc.clone();
-            copy.blocks.retain(|block| !block.generated);
-            without = copy;
-            &without
-        }
-        false => doc,
+    let doc = if doc.blocks.iter().any(|block| block.generated) {
+        let mut copy = doc.clone();
+        copy.blocks.retain(|block| !block.generated);
+        without = copy;
+        &without
+    } else {
+        doc
     };
     let pool = Pool::of(doc, source, reserved);
     let mut used = Used::of(doc, &pool);
@@ -1122,9 +1121,10 @@ fn table(
                 // Nothing names this position: covered by a span above or to the left (the covered
                 // element, counted as a column), or a gap (an empty cell).
                 None => {
-                    let element = match covered(blocks_in, row, column) {
-                        true => "table:covered-table-cell",
-                        false => "table:table-cell",
+                    let element = if covered(blocks_in, row, column) {
+                        "table:covered-table-cell"
+                    } else {
+                        "table:table-cell"
                     };
                     // A position no block names is written as the file had it, when it had it.
                     let element = recorded
@@ -1248,9 +1248,10 @@ fn blocks(out: &mut String, list: &[Block], extra: u32, pool: &Pool, origin: Opt
                 "{}<text:list{attributes}>",
                 pad(base + 2 * open, origin)
             );
-            let (name, attributes) = match open + 1 == depth {
-                true => item(block),
-                false => ("text:list-item", String::new()),
+            let (name, attributes) = if open + 1 == depth {
+                item(block)
+            } else {
+                ("text:list-item", String::new())
             };
             let _ = writeln!(
                 out,

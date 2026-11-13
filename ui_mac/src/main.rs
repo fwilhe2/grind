@@ -222,10 +222,7 @@ fn render_to(opening: &Opening) -> Result<(), String> {
             }
             let text = metrics::CoreText::new(metrics::BASE_PT);
             let grid = sheet::geom::Grid::measured(&app, 0, &text);
-            let palette = match dark {
-                true => Palette::DARK,
-                false => Palette::LIGHT,
-            };
+            let palette = if *dark { Palette::DARK } else { Palette::LIGHT };
             let look = Look {
                 palette: &palette,
                 metrics: &text,
@@ -263,10 +260,7 @@ fn render_to(opening: &Opening) -> Result<(), String> {
                 .collect();
             // Laid out at the frame's width, as a window that size lays it out.
             let laid = text::face::lay_out(&app, &faces, FRAME.0, &render::ImageDecoder);
-            let palette = match dark {
-                true => Palette::DARK,
-                false => Palette::LIGHT,
-            };
+            let palette = if *dark { Palette::DARK } else { Palette::LIGHT };
             // The caret where a window opens with it, at the top, and drawn: the page has the
             // keyboard in a new window.
             let state = text::state::Page::default();
@@ -292,9 +286,10 @@ fn render_to(opening: &Opening) -> Result<(), String> {
         // Nothing named: the welcome window, with no recent documents — a frame is a function
         // of its command line alone, and this machine's recent list is not on it.
         _ => {
-            let palette = match dark {
-                true => welcome::Palette::DARK,
-                false => welcome::Palette::LIGHT,
+            let palette = if *dark {
+                welcome::Palette::DARK
+            } else {
+                welcome::Palette::LIGHT
             };
             let ops = welcome::frame(&welcome::Welcome::default(), &palette);
             let text = metrics::CoreText::new(metrics::BASE_PT);

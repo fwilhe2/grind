@@ -371,9 +371,10 @@ pub fn wrap_tabbed(
     let chars: Vec<char> = text.chars().collect();
     let text_chars = &chars;
     let tabbed = !tabs.is_empty() && chars.contains(&'\t');
-    let advance: Vec<f32> = match tabbed {
-        true => xs.array_windows().map(|[prev, next]| next - prev).collect(),
-        false => Vec::new(),
+    let advance: Vec<f32> = if tabbed {
+        xs.array_windows().map(|[prev, next]| next - prev).collect()
+    } else {
+        Vec::new()
     };
     // The cumulative x of each character from `start` to `end`, on a line that begins `origin`
     // in from the paragraph's left edge, with every tab on it at its stop.
@@ -437,14 +438,15 @@ pub fn wrap_tabbed(
         hang
     };
     let scratch = std::cell::RefCell::new(Vec::new());
-    let span = |from: usize, to: usize, first_line: bool| match tabbed {
-        false => xs[to] - xs[from],
-        true => {
+    let span = |from: usize, to: usize, first_line: bool| {
+        if tabbed {
             let mut out = scratch.borrow_mut();
             let hang = place(from, to, if first_line { first } else { 0.0 }, &mut out);
             // Text right-aligned at a stop on the margin ends *at* the margin, which the
             // arithmetic of getting there may overshoot by a rounding error.
             out.last().copied().unwrap_or(0.0) - hang - 1e-3
+        } else {
+            xs[to] - xs[from]
         }
     };
 
@@ -498,25 +500,24 @@ pub fn wrap_tabbed(
 
     // The tabs are placed line by line now the lines are known: every caret x on a line is then
     // measured past its tabs' stops, which is what a caret, a click and the ink all read.
-    let xs = match tabbed {
-        false => xs,
-        true => {
-            let mut placed = Vec::with_capacity(xs.len());
-            placed.push(0.0);
-            let mut out = Vec::new();
-            for (i, line) in lines.iter_mut().enumerate() {
-                place(
-                    line.start,
-                    line.end,
-                    if i == 0 { first } else { 0.0 },
-                    &mut out,
-                );
-                let base = *placed.last().expect("starts with one element");
-                placed.extend(out[1..].iter().map(|x| base + x));
-                line.width = out.last().copied().unwrap_or(0.0);
-            }
-            placed
+    let xs = if tabbed {
+        let mut placed = Vec::with_capacity(xs.len());
+        placed.push(0.0);
+        let mut out = Vec::new();
+        for (i, line) in lines.iter_mut().enumerate() {
+            place(
+                line.start,
+                line.end,
+                if i == 0 { first } else { 0.0 },
+                &mut out,
+            );
+            let base = *placed.last().expect("starts with one element");
+            placed.extend(out[1..].iter().map(|x| base + x));
+            line.width = out.last().copied().unwrap_or(0.0);
         }
+        placed
+    } else {
+        xs
     };
 
     Layout {

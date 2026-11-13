@@ -95,9 +95,10 @@ impl Font {
         underline: bool,
         strike: bool,
     ) -> Self {
-        let weight = match bold {
-            true => FW_BOLD.0 as i32,
-            false => FW_NORMAL.0 as i32,
+        let weight = if bold {
+            FW_BOLD.0 as i32
+        } else {
+            FW_NORMAL.0 as i32
         };
         Self::with_weight(face, height, weight, italic, underline, strike)
     }

@@ -450,18 +450,17 @@ impl Painter<'_> {
                     continue;
                 };
                 let w = self.text_w(&label, &style);
-                match names.turned {
-                    true => {
-                        let (x, top) = turned_origin(x, plot.bottom(), TICK_GAP, w, tick_h);
-                        self.turned(x, top, &label, style.clone(), ink, TURN_DEGREES);
-                    }
-                    false => self.text(
+                if names.turned {
+                    let (x, top) = turned_origin(x, plot.bottom(), TICK_GAP, w, tick_h);
+                    self.turned(x, top, &label, style.clone(), ink, TURN_DEGREES);
+                } else {
+                    self.text(
                         x - w / 2.0,
                         plot.bottom() + TICK_GAP,
                         &label,
                         style.clone(),
                         ink,
-                    ),
+                    );
                 }
             }
         }
@@ -596,9 +595,10 @@ fn legend_items(chart: &Chart, data: &ChartData) -> Vec<(String, (usize, Option<
             .iter()
             .enumerate()
             .map(|(i, (name, _))| {
-                let name = match name.is_empty() {
-                    true => format!("Series {}", i + 1),
-                    false => name.clone(),
+                let name = if name.is_empty() {
+                    format!("Series {}", i + 1)
+                } else {
+                    name.clone()
                 };
                 (name, (i, None))
             })

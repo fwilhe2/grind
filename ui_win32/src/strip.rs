@@ -177,10 +177,7 @@ mod paint {
             right - chevron,
             bottom,
             Align::Left,
-            match set {
-                true => theme.text,
-                false => theme.text_tertiary,
-            },
+            if set { theme.text } else { theme.text_tertiary },
             pad,
         );
         gdi::triangle_down(
@@ -236,10 +233,13 @@ mod paint {
             // On a fill the letter has to read against the *document's* colour, which can be any
             // of `PALETTE`'s — so it is chosen for contrast rather than fixed.
             let ink = match (ground, fill) {
-                (true, Some(colour)) => match colour.contrast(theme.text) > 3.0 {
-                    true => theme.text,
-                    false => Rgb(0, 0, 0),
-                },
+                (true, Some(colour)) => {
+                    if colour.contrast(theme.text) > 3.0 {
+                        theme.text
+                    } else {
+                        Rgb(0, 0, 0)
+                    }
+                }
                 _ => theme.text,
             };
             draw_text(

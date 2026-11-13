@@ -2307,10 +2307,10 @@ impl Context<Builder> for NumberStyle {
         let number = matches!(part, Part::Number { .. });
         self.general |= number && attrs.get(Ns::Number, "decimal-places").is_none();
         b.parts.push(part);
-        match number {
-            // Its `number:embedded-text` children are read onto it.
-            true => Some(Box::new(NumberPiece)),
-            false => Some(Box::new(super::context::Ignore)),
+        if number {
+            Some(Box::new(NumberPiece))
+        } else {
+            Some(Box::new(super::context::Ignore))
         }
     }
 
@@ -2397,9 +2397,10 @@ impl Context<Builder> for StyleText {
         if text.is_empty() && !self.currency {
             return;
         }
-        b.parts.push(match self.currency {
-            true => Part::Currency(text),
-            false => Part::Text(text),
+        b.parts.push(if self.currency {
+            Part::Currency(text)
+        } else {
+            Part::Text(text)
         });
     }
 }

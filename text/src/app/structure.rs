@@ -275,10 +275,7 @@ impl App {
                 })
                 .collect();
             // After the removals, indices past the range have shifted down by its length.
-            let landing = match to > blocks.start {
-                true => to - count,
-                false => to,
-            };
+            let landing = if to > blocks.start { to - count } else { to };
             for (offset, block) in moved.into_iter().enumerate() {
                 batch.push(Action::InsertBlock {
                     index: landing + offset,

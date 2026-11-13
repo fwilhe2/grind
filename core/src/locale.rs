@@ -93,9 +93,10 @@ impl Locale {
         let ok = |s: &str| s.chars().all(|c| c.is_ascii_alphabetic());
         // `none` is ODF's word for no country and stays as spelled, or a file and its projection
         // would be two locales (`tdf160368.ods`, loop F).
-        let country = match country.eq_ignore_ascii_case("none") {
-            true => "none".to_owned(),
-            false => country.to_uppercase(),
+        let country = if country.eq_ignore_ascii_case("none") {
+            "none".to_owned()
+        } else {
+            country.to_uppercase()
         };
         (!language.is_empty() && ok(language) && ok(&country))
             .then(|| Locale::new(language.to_lowercase(), country))
@@ -104,9 +105,10 @@ impl Locale {
     /// [`Locale::parse`]'s inverse — how a shell shows and takes a locale back.
     #[must_use]
     pub fn tag(&self) -> String {
-        match self.country.is_empty() {
-            true => self.language.clone(),
-            false => format!("{}-{}", self.language, self.country),
+        if self.country.is_empty() {
+            self.language.clone()
+        } else {
+            format!("{}-{}", self.language, self.country)
         }
     }
 
@@ -126,10 +128,7 @@ impl Locale {
 
     #[must_use]
     pub fn decimal(&self) -> char {
-        match self.comma_decimal() {
-            true => ',',
-            false => '.',
-        }
+        if self.comma_decimal() { ',' } else { '.' }
     }
 
     #[must_use]
@@ -138,10 +137,7 @@ impl Locale {
             // A no-break space: a thousands separator that wraps is not one.
             return '\u{a0}';
         }
-        match self.comma_decimal() {
-            true => '.',
-            false => ',',
-        }
+        if self.comma_decimal() { '.' } else { ',' }
     }
 }
 

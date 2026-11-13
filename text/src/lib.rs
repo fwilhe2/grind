@@ -745,16 +745,15 @@ impl App {
             let mut at = 0;
             // Non-overlapping, left to right — the same hits `match_indices` gives `find`.
             while at + needle.len() <= chars.len() {
-                match chars[at..at + needle.len()] == needle[..] {
-                    true => {
-                        hits.push(Match {
-                            index,
-                            offset: at,
-                            text: text.clone(),
-                        });
-                        at += needle.len();
-                    }
-                    false => at += 1,
+                if chars[at..at + needle.len()] == needle[..] {
+                    hits.push(Match {
+                        index,
+                        offset: at,
+                        text: text.clone(),
+                    });
+                    at += needle.len();
+                } else {
+                    at += 1;
                 }
             }
         }
@@ -1254,9 +1253,10 @@ fn apply_notation(block: &mut Block, caret: &mut usize) -> Option<CharStyle> {
     if markdown::is_fence(&text, *caret) {
         block.runs = without(block, 0, *caret);
         *caret = 0;
-        block.style = match markdown::is_preformatted(block.style.as_deref()) {
-            true => None,
-            false => Some(markdown::PREFORMATTED.to_owned()),
+        block.style = if markdown::is_preformatted(block.style.as_deref()) {
+            None
+        } else {
+            Some(markdown::PREFORMATTED.to_owned())
         };
         return None;
     }

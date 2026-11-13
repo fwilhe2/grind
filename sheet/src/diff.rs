@@ -208,9 +208,10 @@ fn compare(was: &Sheet, now: &Sheet) -> Changed {
             before,
             after,
         };
-        match same_formula && was.formula(pos).is_some() {
-            true => out.recomputed.push(change),
-            false => out.edited.push(change),
+        if same_formula && was.formula(pos).is_some() {
+            out.recomputed.push(change);
+        } else {
+            out.edited.push(change);
         }
     }
 
@@ -305,9 +306,10 @@ pub fn ranges(mut cells: Vec<Pos>) -> Vec<String> {
 }
 
 fn range((start, end): (Pos, Pos)) -> String {
-    match start == end {
-        true => a1::format(None, start),
-        false => format!("{}:{}", a1::format(None, start), a1::format(None, end)),
+    if start == end {
+        a1::format(None, start)
+    } else {
+        format!("{}:{}", a1::format(None, start), a1::format(None, end))
     }
 }
 
@@ -325,13 +327,14 @@ mod tests {
             let mut sheet = Sheet::new(*name);
             for &(row, col, text) in *cells {
                 let pos = Pos::new(row, col);
-                match text.starts_with('=') || text.starts_with("of:=") {
-                    true => sheet.set_formula(pos, text.to_owned()),
-                    false => sheet.set(
+                if text.starts_with('=') || text.starts_with("of:=") {
+                    sheet.set_formula(pos, text.to_owned());
+                } else {
+                    sheet.set(
                         pos,
                         text.parse()
                             .map_or_else(|_| CellValue::Text(text.to_owned()), CellValue::Number),
-                    ),
+                    );
                 }
             }
             doc.sheets.push(sheet);

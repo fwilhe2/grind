@@ -62,9 +62,10 @@ pub fn grown_rows(
                 look::wraps(style) && !viewport.get(row, col).is_some_and(crate::numfmt::is_number);
             let text_style = look::text_style(style);
             // Width zero is `wrap`'s "do not wrap", for a cell here only for its larger face.
-            let width = match wrapping {
-                true => (span.map(col_width).sum::<f64>() - 2.0 * pad_x).max(1.0) as f32,
-                false => 0.0,
+            let width = if wrapping {
+                (span.map(col_width).sum::<f64>() - 2.0 * pad_x).max(1.0) as f32
+            } else {
+                0.0
             };
             let fragment = Fragment {
                 text,

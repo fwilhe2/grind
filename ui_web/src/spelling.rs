@@ -281,26 +281,29 @@ impl Shell {
             "spell.next" if sheet => self.sheet.next_misspelling(),
             "spell.next" => self.text.next_misspelling(),
             "spell.ignore" | "spell.add" => {
-                let word = match sheet {
-                    true => self.sheet.misspelt_here().map(|wrong| wrong.word),
-                    false => self.text.misspelt_here().map(|wrong| wrong.word),
+                let word = if sheet {
+                    self.sheet.misspelt_here().map(|wrong| wrong.word)
+                } else {
+                    self.text.misspelt_here().map(|wrong| wrong.word)
                 };
                 let Some(word) = word else {
                     return self.set_message("No misspelt word here".to_owned());
                 };
-                let speller = match sheet {
-                    true => &self.sheet_speller,
-                    false => &self.text_speller,
+                let speller = if sheet {
+                    &self.sheet_speller
+                } else {
+                    &self.text_speller
                 };
                 if let Some(speller) = speller.borrow().as_ref() {
                     speller.accept(&word);
                 }
-                let said = match id == "spell.add" {
-                    false => format!("{word} is ignored for this visit"),
-                    true => match add_word(&word) {
+                let said = if id == "spell.add" {
+                    match add_word(&word) {
                         Ok(()) => format!("{word} added to your dictionary"),
                         Err(why) => format!("{word} is ignored, but not kept: {why}"),
-                    },
+                    }
+                } else {
+                    format!("{word} is ignored for this visit")
                 };
                 self.set_message(said);
                 request_repaint(&self.pending);

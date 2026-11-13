@@ -96,9 +96,10 @@ fn automatic_styles(head: &str) -> &str {
 /// `head` with `office:automatic-styles`' inside taken out.
 fn without_automatic_styles(head: &str) -> String {
     let inside = automatic_styles(head);
-    match inside.is_empty() {
-        true => head.to_owned(),
-        false => head.replacen(inside, "", 1),
+    if inside.is_empty() {
+        head.to_owned()
+    } else {
+        head.replacen(inside, "", 1)
     }
 }
 

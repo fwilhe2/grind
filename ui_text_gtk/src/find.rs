@@ -128,12 +128,11 @@ impl Find {
         let b = go(&find, Towards::Previous);
         keys.connect_key_pressed(move |_, key, _, state| {
             let enter = matches!(key, gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter);
-            match enter && state.contains(gtk::gdk::ModifierType::SHIFT_MASK) {
-                true => {
-                    b();
-                    glib::Propagation::Stop
-                }
-                false => glib::Propagation::Proceed,
+            if enter && state.contains(gtk::gdk::ModifierType::SHIFT_MASK) {
+                b();
+                glib::Propagation::Stop
+            } else {
+                glib::Propagation::Proceed
             }
         });
         find.entry.add_controller(keys);

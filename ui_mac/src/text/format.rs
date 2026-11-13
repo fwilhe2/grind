@@ -90,9 +90,10 @@ pub struct Facts {
 /// a tenth, since a size the panel's slider happens to land on is not a size anybody chose.
 pub fn points(size: f64) -> String {
     let tenths = (size * 10.0).round() / 10.0;
-    match tenths.fract() == 0.0 {
-        true => format!("{}pt", tenths as i64),
-        false => format!("{tenths}pt"),
+    if tenths.fract() == 0.0 {
+        format!("{}pt", tenths as i64)
+    } else {
+        format!("{tenths}pt")
     }
 }
 

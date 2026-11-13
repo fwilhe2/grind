@@ -107,16 +107,17 @@ impl Problems {
         let end = (self.scroll + height).min(self.report.len());
         for index in self.scroll..end {
             let diagnostic = &self.report.diagnostics[index];
-            let at = match diagnostic.at.is_empty() {
-                true => String::new(),
-                false => format!("{} ", diagnostic.at),
+            let at = if diagnostic.at.is_empty() {
+                String::new()
+            } else {
+                format!("{} ", diagnostic.at)
             };
             let severity = format!(" {} ", mark(diagnostic.severity));
             let rule = format!(" [{}]", diagnostic.rule);
             // One bar across the pane for the selected row (`crate::pick::SELECTED`), with the
             // row's own colours set aside on it — a reversed coloured span is a block of its colour.
-            lines.push(match index == self.selected {
-                true => crate::pick::selected_row(
+            lines.push(if index == self.selected {
+                crate::pick::selected_row(
                     vec![
                         Span::raw(severity),
                         Span::raw(at),
@@ -124,23 +125,25 @@ impl Problems {
                         Span::raw(rule),
                     ],
                     inner,
-                ),
-                false => Line::from(vec![
+                )
+            } else {
+                Line::from(vec![
                     Span::styled(severity, Style::default().fg(colour(diagnostic.severity))),
                     Span::styled(at, Style::default().add_modifier(Modifier::BOLD)),
                     Span::raw(diagnostic.message.clone()),
                     Span::styled(rule, Style::default().add_modifier(Modifier::DIM)),
-                ]),
+                ])
             });
         }
 
-        let footer = match self.report.is_empty() {
-            true => "  any key closes  ".to_owned(),
-            false => format!(
+        let footer = if self.report.is_empty() {
+            "  any key closes  ".to_owned()
+        } else {
+            format!(
                 "  {} of {}  ·  Enter goes there, j/k moves, any other key closes  ",
                 self.selected + 1,
                 self.report.len()
-            ),
+            )
         };
         frame.render_widget(
             Paragraph::new(lines).block(

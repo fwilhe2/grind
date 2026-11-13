@@ -262,9 +262,10 @@ fn every_example_still_holds_its_spelling_after_a_round_trip() {
         // table is written one node per line and its row here is one line. Everything else is
         // compared exactly, which matters most for the notation rows — `p "two  spaces"` has to
         // come back with both spaces, and collapsing that comparison would hide it.
-        let (want, got) = match example.contains('{') {
-            true => (collapsed(example), collapsed(&text)),
-            false => (example.to_owned(), text.clone()),
+        let (want, got) = if example.contains('{') {
+            (collapsed(example), collapsed(&text))
+        } else {
+            (example.to_owned(), text.clone())
         };
         assert!(
             got.contains(&want),

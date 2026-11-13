@@ -221,9 +221,10 @@ fn declarations(out: &mut String, exported: bool) {
     key(
         out,
         1,
-        match exported {
-            true => "UTExportedTypeDeclarations",
-            false => "UTImportedTypeDeclarations",
+        if exported {
+            "UTExportedTypeDeclarations"
+        } else {
+            "UTImportedTypeDeclarations"
         },
     );
     out.push_str("\t<array>\n");

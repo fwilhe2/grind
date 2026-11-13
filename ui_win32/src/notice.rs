@@ -154,9 +154,10 @@ pub fn formulas_dropped(count: usize) -> String {
 
 /// What hiding or showing a run of rows or columns did.
 pub fn tracks_hidden(count: usize, rows: bool, hidden: bool) -> String {
-    let what = match rows {
-        true => counted(count, "row", "rows"),
-        false => counted(count, "column", "columns"),
+    let what = if rows {
+        counted(count, "row", "rows")
+    } else {
+        counted(count, "column", "columns")
     };
     match (count, hidden) {
         (0, true) => "Those are hidden already.".to_owned(),
@@ -175,9 +176,10 @@ fn pronoun(count: usize) -> &'static str {
 
 /// What a row height or column width did.
 pub fn track_sized(count: usize, rows: bool) -> String {
-    let what = match rows {
-        true => counted(count, "row", "rows"),
-        false => counted(count, "column", "columns"),
+    let what = if rows {
+        counted(count, "row", "rows")
+    } else {
+        counted(count, "column", "columns")
     };
     match count {
         0 => "That was the size already.".to_owned(),

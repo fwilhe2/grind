@@ -763,12 +763,13 @@ impl Report {
             Report::Diff(diff) => diff.print_text(),
             Report::Functions(report) => {
                 for f in &report.functions {
-                    match report.long {
-                        true => println!(
+                    if report.long {
+                        println!(
                             "{}\t{}\t{}\t{}\t§{}",
                             f.syntax, f.call, f.category, f.summary, f.section
-                        ),
-                        false => println!("{}", f.name),
+                        );
+                    } else {
+                        println!("{}", f.name);
                     }
                 }
                 if let Some(coverage) = &report.coverage {
@@ -904,12 +905,13 @@ impl Report {
                 println!(
                     "{}: {}",
                     lint.path,
-                    match lint.diagnostics.is_empty() {
-                        true => "no problems found".to_owned(),
-                        false => format!(
+                    if lint.diagnostics.is_empty() {
+                        "no problems found".to_owned()
+                    } else {
+                        format!(
                             "{} error(s), {} warning(s), {} hint(s)",
                             lint.errors, lint.warnings, lint.hints
-                        ),
+                        )
                     }
                 );
             }

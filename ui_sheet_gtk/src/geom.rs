@@ -117,9 +117,10 @@ pub fn hint_rect(
     }
     let w = hint_w.min(room);
     Some(Rect {
-        x: match value_right {
-            true => cell.x + pad,
-            false => cell.x + cell.w - pad - w,
+        x: if value_right {
+            cell.x + pad
+        } else {
+            cell.x + cell.w - pad - w
         },
         y: cell.y,
         w,

@@ -32,9 +32,10 @@ pub fn parse(hex: &str) -> Option<Rgb> {
 pub fn luminance((r, g, b): Rgb) -> f64 {
     let channel = |value: u8| {
         let v = f64::from(value) / 255.0;
-        match v <= 0.040_45 {
-            true => v / 12.92,
-            false => ((v + 0.055) / 1.055).powf(2.4),
+        if v <= 0.040_45 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
         }
     };
     0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
@@ -44,10 +45,7 @@ pub fn luminance((r, g, b): Rgb) -> f64 {
 #[must_use]
 pub fn contrast(a: Rgb, b: Rgb) -> f64 {
     let (a, b) = (luminance(a), luminance(b));
-    let (light, dark) = match a > b {
-        true => (a, b),
-        false => (b, a),
-    };
+    let (light, dark) = if a > b { (a, b) } else { (b, a) };
     (light + 0.05) / (dark + 0.05)
 }
 
@@ -67,9 +65,10 @@ pub fn hsl((r, g, b): Rgb) -> (f64, f64, f64) {
         return (0.0, 0.0, l);
     }
     let d = max - min;
-    let s = match l > 0.5 {
-        true => d / (2.0 - max - min),
-        false => d / (max + min),
+    let s = if l > 0.5 {
+        d / (2.0 - max - min)
+    } else {
+        d / (max + min)
     };
     let h = if (max - r).abs() < f64::EPSILON {
         (g - b) / d + if g < b { 6.0 } else { 0.0 }
@@ -110,9 +109,10 @@ pub fn automatic_ink(ground: Rgb, ink: Rgb) -> Rgb {
         return ink;
     }
     let (black, white) = ((0, 0, 0), (0xff, 0xff, 0xff));
-    match contrast(black, ground) > contrast(white, ground) {
-        true => black,
-        false => white,
+    if contrast(black, ground) > contrast(white, ground) {
+        black
+    } else {
+        white
     }
 }
 
@@ -141,10 +141,7 @@ pub fn legible(color: Rgb, ground: Rgb, floor: f64) -> Rgb {
         return color;
     }
     let (h, s, l) = hsl(color);
-    let step = match luminance(ground) < 0.5 {
-        true => 0.02,
-        false => -0.02,
-    };
+    let step = if luminance(ground) < 0.5 { 0.02 } else { -0.02 };
     let mut best = color;
     for n in 1..=50 {
         let candidate = from_hsl(h, s, l + step * f64::from(n));

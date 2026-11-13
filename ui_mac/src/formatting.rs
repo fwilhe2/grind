@@ -385,9 +385,10 @@ impl Formats for TextPane {
 
     fn set_color(&self, color: &NSColor, background: bool) {
         let value = Some(hex(rgb(color)));
-        self.apply(&[match background {
-            true => text_format::Change::Highlight(value),
-            false => text_format::Change::Color(value),
+        self.apply(&[if background {
+            text_format::Change::Highlight(value)
+        } else {
+            text_format::Change::Color(value)
         }]);
     }
 

@@ -258,9 +258,10 @@ fn print_block(change: &BlockReport) {
         ("reformatted", _) => ", reformatted".to_owned(),
         _ => String::new(),
     };
-    let text = match change.words.is_empty() {
-        true => side.text.clone(),
-        false => change
+    let text = if change.words.is_empty() {
+        side.text.clone()
+    } else {
+        change
             .words
             .iter()
             .map(|piece| match piece {
@@ -268,7 +269,7 @@ fn print_block(change: &BlockReport) {
                 PieceReport::Removed(s) => format!("[-{s}-]"),
                 PieceReport::Added(s) => format!("{{+{s}+}}"),
             })
-            .collect(),
+            .collect()
     };
     println!("{} {} {kind}{note}: {text}", change.mark, side.at);
 }

@@ -46,16 +46,18 @@ fn palette() -> Palette {
     let card = rgb(&NSColor::controlBackgroundColor());
     // A card must stand off the ground in both appearances; the control background is the
     // ground itself in some, and a step towards the ink is the card then.
-    let card = match card == ground {
-        true => {
-            let dark = luminance(ground) < 0.5;
-            let step = |c: u8| match dark {
-                true => c.saturating_add(14),
-                false => c.saturating_sub(8),
-            };
-            (step(ground.0), step(ground.1), step(ground.2))
-        }
-        false => card,
+    let card = if card == ground {
+        let dark = luminance(ground) < 0.5;
+        let step = |c: u8| {
+            if dark {
+                c.saturating_add(14)
+            } else {
+                c.saturating_sub(8)
+            }
+        };
+        (step(ground.0), step(ground.1), step(ground.2))
+    } else {
+        card
     };
     Palette {
         ground,

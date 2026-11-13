@@ -124,9 +124,10 @@ pub fn resolve_in(app: &App, sheet: usize, reference: &Reference) -> Result<(usi
 
 /// A position for an error message, without pretending a column past `XFD` has a name.
 fn format_pos(pos: Pos) -> String {
-    match pos.col < crate::MAX_COLS {
-        true => format(None, pos),
-        false => format!("column {}", pos.col + 1),
+    if pos.col < crate::MAX_COLS {
+        format(None, pos)
+    } else {
+        format!("column {}", pos.col + 1)
     }
 }
 

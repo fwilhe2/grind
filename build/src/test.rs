@@ -327,9 +327,10 @@ pub fn register(engine: &mut Engine) {
         ["condition: bool", "()"],
         ["/// Fail this test unless `condition` is true."],
         |condition: bool| -> Result<(), Box<EvalAltResult>> {
-            match condition {
-                true => Ok(()),
-                false => Err(failed("assertion failed".to_owned())),
+            if condition {
+                Ok(())
+            } else {
+                Err(failed("assertion failed".to_owned()))
             }
         },
     );
@@ -339,9 +340,10 @@ pub fn register(engine: &mut Engine) {
         ["condition: bool", "message: string", "()"],
         ["/// Fail this test with `message` unless `condition` is true."],
         |condition: bool, message: ImmutableString| -> Result<(), Box<EvalAltResult>> {
-            match condition {
-                true => Ok(()),
-                false => Err(failed(format!("assertion failed: {message}"))),
+            if condition {
+                Ok(())
+            } else {
+                Err(failed(format!("assertion failed: {message}")))
             }
         },
     );
@@ -354,13 +356,14 @@ pub fn register(engine: &mut Engine) {
             "/// `assert_eq(d.cell(\"B6\").value, 15400)` holds for the float the cell holds.",
         ],
         |actual: Dynamic, expected: Dynamic| -> Result<(), Box<EvalAltResult>> {
-            match same(&actual, &expected) {
-                true => Ok(()),
-                false => Err(failed(format!(
+            if same(&actual, &expected) {
+                Ok(())
+            } else {
+                Err(failed(format!(
                     "expected {}, got {}",
                     shown(&expected),
                     shown(&actual)
-                ))),
+                )))
             }
         },
     );
@@ -370,12 +373,13 @@ pub fn register(engine: &mut Engine) {
         ["actual: ?", "unexpected: ?", "()"],
         ["/// Fail this test if the two values are equal."],
         |actual: Dynamic, unexpected: Dynamic| -> Result<(), Box<EvalAltResult>> {
-            match same(&actual, &unexpected) {
-                false => Ok(()),
-                true => Err(failed(format!(
+            if same(&actual, &unexpected) {
+                Err(failed(format!(
                     "expected anything but {}",
                     shown(&unexpected)
-                ))),
+                )))
+            } else {
+                Ok(())
             }
         },
     );
@@ -396,9 +400,10 @@ pub fn register(engine: &mut Engine) {
             else {
                 return Err(failed("assert_near compares numbers".to_owned()));
             };
-            match (a - e).abs() <= t {
-                true => Ok(()),
-                false => Err(failed(format!("expected {e} ± {t}, got {a}"))),
+            if (a - e).abs() <= t {
+                Ok(())
+            } else {
+                Err(failed(format!("expected {e} ± {t}, got {a}")))
             }
         },
     );

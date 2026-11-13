@@ -233,9 +233,10 @@ impl Analysis {
         // A magic constant takes both signals: read by address from more than one place
         // (`MAGIC_READERS`) and not one of a line of literals ([`in_a_run`]). Either alone flags
         // whole data tables.
-        match self.refs.singled_out_by(at) >= MAGIC_READERS && !in_a_run(sheet, at.pos) {
-            true => CellRole::ConstantUnnamed,
-            false => CellRole::InputUnnamed,
+        if self.refs.singled_out_by(at) >= MAGIC_READERS && !in_a_run(sheet, at.pos) {
+            CellRole::ConstantUnnamed
+        } else {
+            CellRole::InputUnnamed
         }
     }
 
@@ -431,14 +432,17 @@ impl Names {
 /// by two formula columns beside it was painted as unnamed constants. The scan stops two cells
 /// each way, and a formula cell breaks a run.
 fn in_a_run(sheet: &Sheet, pos: Pos) -> bool {
-    let kind = |pos: Pos| match sheet.formula(pos).is_some() {
-        true => None,
-        false => match sheet.get(pos) {
-            CellValue::Empty => None,
-            CellValue::Number(_) => Some(1u8),
-            CellValue::Text(_) => Some(2),
-            CellValue::Bool(_) => Some(3),
-        },
+    let kind = |pos: Pos| {
+        if sheet.formula(pos).is_some() {
+            None
+        } else {
+            match sheet.get(pos) {
+                CellValue::Empty => None,
+                CellValue::Number(_) => Some(1u8),
+                CellValue::Text(_) => Some(2),
+                CellValue::Bool(_) => Some(3),
+            }
+        }
     };
     let Some(mine) = kind(pos) else { return false };
     // How far the run of like literals reaches from `pos` in one direction, up to two.

@@ -320,9 +320,10 @@ pub fn frame(welcome: &Welcome, palette: &Palette) -> Vec<Op> {
             heading,
         ));
         for (at, (rect, name)) in welcome.recents().iter().zip(&welcome.recent).enumerate() {
-            let color = match focused == Target::Recent(at) {
-                true => palette.accent,
-                false => palette.ink,
+            let color = if focused == Target::Recent(at) {
+                palette.accent
+            } else {
+                palette.ink
             };
             ops.push(text(rect.x, rect.y + 2.0, name, size(13), color, *rect));
         }

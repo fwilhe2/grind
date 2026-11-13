@@ -23,12 +23,13 @@ fn names(cell: &CellRef, from: &str) -> bool {
 }
 
 fn rename_cellref(cell: &CellRef, from: &str, to: &str) -> CellRef {
-    match names(cell, from) {
-        true => CellRef {
+    if names(cell, from) {
+        CellRef {
             sheet: Some(to.to_owned()),
             ..cell.clone()
-        },
-        false => cell.clone(),
+        }
+    } else {
+        cell.clone()
     }
 }
 
@@ -40,13 +41,17 @@ pub fn rename_in_reference(r: &Reference, from: &str, to: &str) -> Reference {
         // An external document's sheets are not this document's, so a reference into one is
         // left exactly as it is (§5.8 Source) — the same line `Engine::area` draws.
         source: r.source.clone(),
-        start: match r.source.is_some() {
-            true => r.start.clone(),
-            false => rename_cellref(&r.start, from, to),
+        start: if r.source.is_some() {
+            r.start.clone()
+        } else {
+            rename_cellref(&r.start, from, to)
         },
-        end: r.end.as_ref().map(|end| match r.source.is_some() {
-            true => end.clone(),
-            false => rename_cellref(end, from, to),
+        end: r.end.as_ref().map(|end| {
+            if r.source.is_some() {
+                end.clone()
+            } else {
+                rename_cellref(end, from, to)
+            }
         }),
     }
 }

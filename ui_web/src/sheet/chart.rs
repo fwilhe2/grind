@@ -173,9 +173,10 @@ fn legend_items(chart: &Chart, data: &ChartData) -> Vec<(String, String)> {
             .iter()
             .enumerate()
             .map(|(i, (name, _))| {
-                let name = match name.is_empty() {
-                    true => format!("Series {}", i + 1),
-                    false => name.clone(),
+                let name = if name.is_empty() {
+                    format!("Series {}", i + 1)
+                } else {
+                    name.clone()
                 };
                 (name, effective_color(chart, i, None))
             })
@@ -229,9 +230,10 @@ fn plot_rect(
     }
     // The topmost tick label is centred on the plot's own top edge, so half of it is above.
     let top = INSET
-        + match y_axis.tick_labels {
-            true => TICK_H / 2.0,
-            false => 0.0,
+        + if y_axis.tick_labels {
+            TICK_H / 2.0
+        } else {
+            0.0
         };
     (
         left,
@@ -437,23 +439,20 @@ fn ticks_text(
             let Some(text) = shorten(text, names.room, width) else {
                 continue;
             };
-            match names.turned {
-                // Set from its box's top-left, turned about it; SVG text sits on its baseline,
-                // most of a line below that corner.
-                true => {
-                    let (x, y) = turned_origin(x, plot.1 + plot.3, TICK_GAP, width(&text), TICK_H);
-                    out.push_str(&format!(
-                        "<text class=\"tick\" x=\"{x:.1}\" y=\"{:.1}\" transform=\"rotate({:.0} {x:.1} {y:.1})\">{}</text>",
-                        y + TICK_H * 0.8,
-                        -TURN_DEGREES,
-                        escape(&text)
-                    ));
-                }
-                false => out.push_str(&format!(
-                    "<text class=\"tick\" text-anchor=\"middle\" x=\"{x:.1}\" y=\"{:.1}\">{}</text>",
-                    plot.1 + plot.3 + TICK_GAP + TICK_H * 0.8,
+            if names.turned {
+                let (x, y) = turned_origin(x, plot.1 + plot.3, TICK_GAP, width(&text), TICK_H);
+                out.push_str(&format!(
+                    "<text class=\"tick\" x=\"{x:.1}\" y=\"{:.1}\" transform=\"rotate({:.0} {x:.1} {y:.1})\">{}</text>",
+                    y + TICK_H * 0.8,
+                    -TURN_DEGREES,
                     escape(&text)
-                )),
+                ));
+            } else {
+                out.push_str(&format!(
+                "<text class=\"tick\" text-anchor=\"middle\" x=\"{x:.1}\" y=\"{:.1}\">{}</text>",
+                plot.1 + plot.3 + TICK_GAP + TICK_H * 0.8,
+                escape(&text)
+            ));
             }
         }
     }

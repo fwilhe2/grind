@@ -433,9 +433,10 @@ impl Format {
                     embedded,
                     locale::separators(locale).0,
                 )),
-                Part::Year { long } => out.push_str(&match long {
-                    true => format!("{y:04}"),
-                    false => format!("{:02}", y.rem_euclid(100)),
+                Part::Year { long } => out.push_str(&if *long {
+                    format!("{y:04}")
+                } else {
+                    format!("{:02}", y.rem_euclid(100))
                 }),
                 Part::Month { long, textual } => {
                     let index = (m.clamp(1, 12) - 1) as usize;
@@ -449,10 +450,7 @@ impl Format {
                 Part::Day { long } => out.push_str(&pad(d, *long)),
                 Part::DayOfWeek { long } => {
                     let name = WEEKDAYS[date::weekday(n, null_date).clamp(1, 7) as usize - 1];
-                    out.push_str(match long {
-                        true => name,
-                        false => &name[..3],
-                    });
+                    out.push_str(if *long { name } else { &name[..3] });
                 }
                 Part::Hours { long } => {
                     let h = seconds.div_euclid(3600).rem_euclid(24);
@@ -487,14 +485,12 @@ impl Format {
                         decimals = usize::from(*decimals)
                     ));
                 }
-                Part::AmPm => out.push_str(match seconds.rem_euclid(86_400) < 43_200 {
-                    true => "AM",
-                    false => "PM",
+                Part::AmPm => out.push_str(if seconds.rem_euclid(86_400) < 43_200 {
+                    "AM"
+                } else {
+                    "PM"
                 }),
-                Part::Boolean => out.push_str(match n != 0.0 {
-                    true => "TRUE",
-                    false => "FALSE",
-                }),
+                Part::Boolean => out.push_str(if n == 0.0 { "FALSE" } else { "TRUE" }),
                 // §16.27.28's text content is the cell's own text, and a number has one: 1234.5678
                 // under a `number:text-style` shows 1234.5678, as the oracle renders a cell
                 // formatted `@` (`doc/ods-format.md` §5.2).
@@ -515,9 +511,10 @@ fn sign_carrying(parts: &[Part]) -> bool {
 }
 
 fn pad(n: i64, long: bool) -> String {
-    match long {
-        true => format!("{n:02}"),
-        false => n.to_string(),
+    if long {
+        format!("{n:02}")
+    } else {
+        n.to_string()
     }
 }
 
@@ -584,9 +581,10 @@ fn digits(
     let decimals = decimals.max(min_decimals);
     // Rounded before formatting: `{:.2}` rounds half to even, a spreadsheet half away from zero.
     let scale = 10f64.powi(i32::from(decimals));
-    let n = match scale.is_finite() && scale > 0.0 {
-        true => (n * scale).round() / scale,
-        false => n,
+    let n = if scale.is_finite() && scale > 0.0 {
+        (n * scale).round() / scale
+    } else {
+        n
     };
     let text = format!("{n:.*}", usize::from(decimals));
     let (whole, fraction) = text.split_once('.').unwrap_or((text.as_str(), ""));
@@ -609,9 +607,10 @@ fn digits(
             whole.insert(i, thousands);
         }
     }
-    match fraction.is_empty() {
-        true => whole,
-        false => format!("{whole}{decimal_point}{fraction}"),
+    if fraction.is_empty() {
+        whole
+    } else {
+        format!("{whole}{decimal_point}{fraction}")
     }
 }
 
@@ -747,9 +746,10 @@ pub fn general_in(
             let (y, m, d) = date::ymd(*n, null_date);
             let day = format!("{y:04}-{m:02}-{d:02}");
             // A Date with a fraction is a DateTime (§4.3.4); shown with a space rather than `T`.
-            match n.fract() == 0.0 {
-                true => day,
-                false => format!("{day} {}", clock(*n)),
+            if n.fract() == 0.0 {
+                day
+            } else {
+                format!("{day} {}", clock(*n))
             }
         }
         // The clock, not the `xsd:duration` the file stores — `PT12H00M00S` is a
@@ -846,17 +846,19 @@ pub fn narrower(n: f64, locale: Option<&Locale>) -> Vec<String> {
 /// `n` rounded to `keep` decimals, half away from zero.
 fn round_away(n: f64, keep: usize) -> f64 {
     let scale = 10f64.powi(keep as i32);
-    match scale.is_finite() {
-        true => (n * scale).round() / scale,
-        false => n,
+    if scale.is_finite() {
+        (n * scale).round() / scale
+    } else {
+        n
     }
 }
 
 /// A decimal's trailing zeros taken off, and its point with them when nothing is left after it.
 fn trim_fraction(text: &str) -> &str {
-    match text.contains('.') {
-        true => text.trim_end_matches('0').trim_end_matches('.'),
-        false => text,
+    if text.contains('.') {
+        text.trim_end_matches('0').trim_end_matches('.')
+    } else {
+        text
     }
 }
 
@@ -869,9 +871,10 @@ fn trim_fraction(text: &str) -> &str {
 /// one `#`, and bounded for a pathological width.
 #[must_use]
 pub fn overflow(room: f64, hash: f64) -> String {
-    let count = match hash > 0.0 && room.is_finite() {
-        true => (room / hash).floor().clamp(1.0, 256.0) as usize,
-        false => 1,
+    let count = if hash > 0.0 && room.is_finite() {
+        (room / hash).floor().clamp(1.0, 256.0) as usize
+    } else {
+        1
     };
     "#".repeat(count)
 }

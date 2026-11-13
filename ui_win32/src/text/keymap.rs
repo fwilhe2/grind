@@ -89,9 +89,10 @@ pub fn action_for(key: Key, mods: Mods, page: isize) -> Option<Action> {
 
 /// The two ends of a selection, in document order — a tuple comparison of block and offset.
 pub fn ordered(anchor: Caret, active: Caret) -> (Caret, Caret) {
-    match (anchor.block, anchor.offset) <= (active.block, active.offset) {
-        true => (anchor, active),
-        false => (active, anchor),
+    if (anchor.block, anchor.offset) <= (active.block, active.offset) {
+        (anchor, active)
+    } else {
+        (active, anchor)
     }
 }
 

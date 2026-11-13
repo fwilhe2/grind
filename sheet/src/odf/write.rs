@@ -598,9 +598,10 @@ fn rewrite(
     while col < at.cols.end {
         let pos = Pos::new(row, col);
         let (value, formula, kind) = (sheet.get(pos), sheet.formula(pos), sheet.kind(pos));
-        let repeat = match formula.is_some() || sheet.checkbox(pos).is_some() {
-            true => 1,
-            false => (col..at.cols.end)
+        let repeat = if formula.is_some() || sheet.checkbox(pos).is_some() {
+            1
+        } else {
+            (col..at.cols.end)
                 .take_while(|c| {
                     let p = Pos::new(row, *c);
                     sheet.get(p) == value
@@ -608,7 +609,7 @@ fn rewrite(
                         && sheet.kind(p) == kind
                         && sheet.checkbox(p).is_none()
                 })
-                .count() as u32,
+                .count() as u32
         };
         let mut one = String::new();
         cell(
@@ -743,9 +744,10 @@ fn calculation_settings(doc: &Document) -> String {
     if doc.null_date == date::DEFAULT_NULL_DATE && doc.null_year == date::DEFAULT_NULL_YEAR {
         return String::new();
     }
-    let year = match doc.null_year != date::DEFAULT_NULL_YEAR {
-        true => format!(" table:null-year=\"{}\"", doc.null_year),
-        false => String::new(),
+    let year = if doc.null_year == date::DEFAULT_NULL_YEAR {
+        String::new()
+    } else {
+        format!(" table:null-year=\"{}\"", doc.null_year)
     };
     format!(
         "   <table:calculation-settings{year}><table:null-date table:value-type=\"date\" \
@@ -951,9 +953,10 @@ fn plan(doc: &Document, source: &super::source::Source) -> Vec<Plan> {
                 }
                 // A cell past what the file's row spells is written from the model, so the
                 // pool needs its look whatever touched it.
-                rows.push(match patches.is_empty() {
-                    true => RowFix::Keep,
-                    false => RowFix::Patch(patches),
+                rows.push(if patches.is_empty() {
+                    RowFix::Keep
+                } else {
+                    RowFix::Patch(patches)
                 });
             }
             let append = (extent > covered).then_some(covered..extent);
@@ -1010,9 +1013,10 @@ fn indent_of(bytes: &[u8], start: usize) -> String {
         .rposition(|c| *c == b'\n')
         .map_or(0, |p| p + 1);
     let lead = &bytes[line..start];
-    match lead.iter().all(u8::is_ascii_whitespace) {
-        true => String::from_utf8_lossy(lead).into_owned(),
-        false => String::new(),
+    if lead.iter().all(u8::is_ascii_whitespace) {
+        String::from_utf8_lossy(lead).into_owned()
+    } else {
+        String::new()
     }
 }
 
@@ -1087,13 +1091,14 @@ fn origin_body(
                 let placed = beside(bytes, anchor, &text);
                 // After a table: a line of its own following it. Before the first: ahead of
                 // it, on a line of its own, and the newline goes after.
-                let placed = match cursor_is_end {
-                    true => placed,
-                    false => format!(
+                let placed = if cursor_is_end {
+                    placed
+                } else {
+                    format!(
                         "{}\n{}",
                         placed.trim_start_matches('\n'),
                         indent_of(bytes, cursor)
-                    ),
+                    )
                 };
                 patches.push((cursor..cursor, placed));
             }
@@ -1364,22 +1369,19 @@ fn patched_forms(
             // No `form:form` with room in it: one of our own, before the forms element closes —
             // or the whole element again when the file wrote it self-closed.
             let element = &bytes[forms.clone()];
-            match element.ends_with(b"/>") {
-                true => {
-                    let mut ours = String::new();
-                    write_forms(&mut ours, sheet);
-                    patches.push((forms.clone(), ours.trim().to_owned()));
-                }
-                false => {
-                    let close = element
-                        .iter()
-                        .rposition(|c| *c == b'<')
-                        .map_or(forms.end, |p| forms.start + p);
-                    patches.push((
-                        close..close,
-                        format!("<form:form form:name=\"Form\">{fresh}</form:form>"),
-                    ));
-                }
+            if element.ends_with(b"/>") {
+                let mut ours = String::new();
+                write_forms(&mut ours, sheet);
+                patches.push((forms.clone(), ours.trim().to_owned()));
+            } else {
+                let close = element
+                    .iter()
+                    .rposition(|c| *c == b'<')
+                    .map_or(forms.end, |p| forms.start + p);
+                patches.push((
+                    close..close,
+                    format!("<form:form form:name=\"Form\">{fresh}</form:form>"),
+                ));
             }
         }
     }
@@ -1583,9 +1585,10 @@ fn patched_row(
                 &attr,
             );
             let one = with_control(one, sheet, pos);
-            match sheet.covered(pos) {
-                true => ours.push_str(&covered_element(&one)),
-                false => ours.push_str(&one),
+            if sheet.covered(pos) {
+                ours.push_str(&covered_element(&one));
+            } else {
+                ours.push_str(&one);
             }
             col += 1;
         }
@@ -1721,11 +1724,12 @@ fn remerge(
                     ],
                 );
                 let look = pool.look(sheet, pos);
-                let style = match sheet.origin.looks.contains(&pos) {
-                    true => pool.attr(look),
-                    false => tag_attr(&element.keep, &styled)
+                let style = if sheet.origin.looks.contains(&pos) {
+                    pool.attr(look)
+                } else {
+                    tag_attr(&element.keep, &styled)
                         .map(|s| format!(" table:style-name=\"{s}\""))
-                        .unwrap_or_default(),
+                        .unwrap_or_default()
                 };
                 let spans = match m {
                     Merging::Anchor(span) => spanned(span),
@@ -1933,9 +1937,10 @@ fn rewrite_cells(
         let (value, formula, kind) = (sheet.get(pos), sheet.formula(pos), sheet.kind(pos));
         let restyled = looks.contains(&pos);
         let look = pool.look(sheet, pos);
-        let repeat = match formula.is_some() || sheet.checkbox(pos).is_some() {
-            true => 1,
-            false => (col..at.cols.end)
+        let repeat = if formula.is_some() || sheet.checkbox(pos).is_some() {
+            1
+        } else {
+            (col..at.cols.end)
                 .take_while(|c| {
                     let p = Pos::new(row, *c);
                     sheet.get(p) == value
@@ -1945,11 +1950,12 @@ fn rewrite_cells(
                         && (!restyled || pool.look(sheet, p) == look)
                         && sheet.checkbox(p).is_none()
                 })
-                .count() as u32,
+                .count() as u32
         };
-        let attrs = match restyled {
-            true => format!("{restyled_keep}{}", pool.attr(look)),
-            false => at.keep.clone(),
+        let attrs = if restyled {
+            format!("{restyled_keep}{}", pool.attr(look))
+        } else {
+            at.keep.clone()
         };
         let mut one = String::new();
         cell(
@@ -2272,13 +2278,13 @@ impl<'a> Pool<'a> {
             .get(sheet.name.as_str())
             .and_then(|cells| cells.get(&pos))
             .copied();
-        let maps = match sheet.rules().is_empty() {
-            true => None,
-            false => self
-                .map_index
+        let maps = if sheet.rules().is_empty() {
+            None
+        } else {
+            self.map_index
                 .get(sheet.name.as_str())
                 .and_then(|sets| sets.get(&covering(sheet, pos)))
-                .copied(),
+                .copied()
         };
         (effective(sheet, pos), sheet.style(pos), base, maps)
     }
@@ -2461,9 +2467,10 @@ impl<'a> Pool<'a> {
                  <style:table-row-properties style:row-height=\"{}\"{}/></style:style>",
                 self.ro(i),
                 esc(height),
-                match measured {
-                    true => " style:use-optimal-row-height=\"true\"",
-                    false => "",
+                if *measured {
+                    " style:use-optimal-row-height=\"true\""
+                } else {
+                    ""
                 }
             );
         }
@@ -2631,10 +2638,7 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
     for part in &format.parts {
         // `number:style="long"` is the spec's spelling of "padded"; short is the default and
         // is written by omission, which is what LibreOffice does too.
-        let long = |long: &bool| match long {
-            true => " number:style=\"long\"",
-            false => "",
-        };
+        let long = |long: &bool| if *long { " number:style=\"long\"" } else { "" };
         match part {
             Part::Text(text) => {
                 let _ = write!(out, "<number:text>{}</number:text>", esc(text));
@@ -2658,25 +2662,25 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
                     "<number:number number:decimal-places=\"{decimals}\" \
                      number:min-decimal-places=\"{min_decimals}\" \
                      number:min-integer-digits=\"{min_int}\"{}",
-                    match grouping {
-                        true => " number:grouping=\"true\"",
-                        false => "",
+                    if *grouping {
+                        " number:grouping=\"true\""
+                    } else {
+                        ""
                     }
                 );
-                match embedded.is_empty() {
-                    true => out.push_str("/>"),
-                    false => {
-                        out.push('>');
-                        for e in embedded {
-                            let _ = write!(
-                                out,
-                                "<number:embedded-text number:position=\"{}\">{}</number:embedded-text>",
-                                e.position,
-                                esc(&e.text)
-                            );
-                        }
-                        out.push_str("</number:number>");
+                if embedded.is_empty() {
+                    out.push_str("/>");
+                } else {
+                    out.push('>');
+                    for e in embedded {
+                        let _ = write!(
+                            out,
+                            "<number:embedded-text number:position=\"{}\">{}</number:embedded-text>",
+                            e.position,
+                            esc(&e.text)
+                        );
                     }
+                    out.push_str("</number:number>");
                 }
             }
             Part::Year { long: l } => {
@@ -2687,9 +2691,10 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
                     out,
                     "<number:month{}{}/>",
                     long(l),
-                    match textual {
-                        true => " number:textual=\"true\"",
-                        false => "",
+                    if *textual {
+                        " number:textual=\"true\""
+                    } else {
+                        ""
                     }
                 );
             }
@@ -3422,12 +3427,13 @@ fn patched_conditional_formats(
                     .map(unescape)
                     .is_some_and(|v| modelled_calcext(&v))
         });
-        match superseded {
-            true => patches.push((
+        if superseded {
+            patches.push((
                 with_leading_space(bytes, block.start + start..block.start + end),
                 String::new(),
-            )),
-            false => kept += 1,
+            ));
+        } else {
+            kept += 1;
         }
         cursor = end;
     }
@@ -3452,9 +3458,10 @@ fn modelled_calcext(value: &str) -> bool {
 /// `table:visibility="collapse"` for a column hidden by hand — a column has no filter, so
 /// this is the only spelling it ever needs (§5.4).
 fn collapse(hidden: bool) -> &'static str {
-    match hidden {
-        true => " table:visibility=\"collapse\"",
-        false => "",
+    if hidden {
+        " table:visibility=\"collapse\""
+    } else {
+        ""
     }
 }
 
@@ -3492,14 +3499,15 @@ fn write_row(
         if let Some((anchor, span)) = merge.filter(|(anchor, _)| *anchor != pos) {
             let end = span.end(anchor).col.min(last);
             let empty = |p: Pos| sheet.get(p).is_empty() && sheet.formula(p).is_none();
-            let repeat = match empty(pos) {
-                true => (col..=end)
+            let repeat = if empty(pos) {
+                (col..=end)
                     .take_while(|c| {
                         let p = Pos::new(row, *c);
                         empty(p) && pool.look(sheet, p) == look
                     })
-                    .count() as u32,
-                false => 1,
+                    .count() as u32
+            } else {
+                1
             };
             let mut one = String::new();
             cell(

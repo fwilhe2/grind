@@ -524,9 +524,10 @@ impl TextPane {
 
 impl crate::watch::Watched for TextPane {
     fn document_changed(&self) {
-        match self.busy.get() {
-            true => self.stale.set(true),
-            false => self.settle(),
+        if self.busy.get() {
+            self.stale.set(true);
+        } else {
+            self.settle();
         }
     }
 }

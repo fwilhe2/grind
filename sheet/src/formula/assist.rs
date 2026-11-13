@@ -359,9 +359,10 @@ fn offers_band(assist: &Assist) -> Vec<Piece> {
         if at > 0 {
             pieces.push(Piece::new("   ", Ink::Muted));
         }
-        let ink = match at == assist.chosen {
-            true => Ink::Strong,
-            false => Ink::Muted,
+        let ink = if at == assist.chosen {
+            Ink::Strong
+        } else {
+            Ink::Muted
         };
         pieces.push(Piece::new(offer.name.clone(), ink));
     }
@@ -388,9 +389,10 @@ fn signature_band(name: &str, argument: usize, friendly: bool) -> Vec<Piece> {
         if at > 0 {
             pieces.push(Piece::new("; ", Ink::Muted));
         }
-        let ink = match at == emphasised {
-            true => Ink::Strong,
-            false => Ink::Plain,
+        let ink = if at == emphasised {
+            Ink::Strong
+        } else {
+            Ink::Plain
         };
         pieces.push(Piece::new(part.clone(), ink));
     }
@@ -438,9 +440,10 @@ pub fn function_lines() -> Vec<String> {
 #[must_use]
 pub fn function_insert(at: usize, editing: bool) -> Option<String> {
     let info = funcs::catalog().get(at)?;
-    Some(match editing {
-        true => format!("{}(", info.name),
-        false => format!("={}(", info.name),
+    Some(if editing {
+        format!("{}(", info.name)
+    } else {
+        format!("={}(", info.name)
     })
 }
 

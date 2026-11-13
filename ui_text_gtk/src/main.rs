@@ -572,18 +572,13 @@ impl Ui {
 
     /// Switch between the document and its source.
     fn show_source(self: &Rc<Self>, on: bool) {
-        self.stack.set_visible_child_name(match on {
-            true => "source",
-            false => "document",
-        });
-        match on {
-            true => {
-                self.fill_source();
-                let _ = self.source.grab_focus();
-            }
-            false => {
-                gtk::prelude::GtkWindowExt::set_focus(&self.window, Some(&self.doc));
-            }
+        self.stack
+            .set_visible_child_name(if on { "source" } else { "document" });
+        if on {
+            self.fill_source();
+            let _ = self.source.grab_focus();
+        } else {
+            gtk::prelude::GtkWindowExt::set_focus(&self.window, Some(&self.doc));
         }
     }
 
@@ -629,9 +624,10 @@ impl Ui {
     fn refresh(self: &Rc<Self>) {
         self.title
             .set_title(&document_name(self.path.borrow().as_deref()));
-        self.title.set_subtitle(match self.dirty.get() {
-            true => "Unsaved changes",
-            false => "",
+        self.title.set_subtitle(if self.dirty.get() {
+            "Unsaved changes"
+        } else {
+            ""
         });
         self.undo.set_sensitive(self.app.can_undo());
         self.redo.set_sensitive(self.app.can_redo());
@@ -664,9 +660,10 @@ impl Ui {
         };
         // The language is the picker's to say, at the line's end.
         self.reconsider_spelling(counts.words);
-        self.status.set_text(&match here.is_empty() {
-            true => words,
-            false => format!("{here}  ·  {words}"),
+        self.status.set_text(&if here.is_empty() {
+            words
+        } else {
+            format!("{here}  ·  {words}")
         });
         self.status.set_tooltip_text(Some(&format!(
             "At {} — {} blocks",
@@ -707,11 +704,12 @@ impl Ui {
     fn check_grammar(self: &Rc<Self>) {
         let setting = grind_grammar::setting::Setting::load();
         self.doc.set_grammar_ignored(setting.ignored.clone());
-        let checker: Option<Arc<dyn grind_core::grammar::Checker>> = match setting.builtin {
-            true => Some(Arc::new(grind_grammar::Builtin {
+        let checker: Option<Arc<dyn grind_core::grammar::Checker>> = if setting.builtin {
+            Some(Arc::new(grind_grammar::Builtin {
                 picky: setting.style,
-            })),
-            false => None,
+            }))
+        } else {
+            None
         };
         self.app.set_checker(checker);
         self.doc.queue_draw();
@@ -857,9 +855,10 @@ impl Ui {
                 self.loading.set(false);
                 // Cross-app handoff (`doc/suite.md`): opening a spreadsheet here must not
                 // fail obscurely. `grind_core::kind` knows before any parsing does.
-                match is_spreadsheet(path) {
-                    true => self.offer_handoff(path),
-                    false => self.toast(&format!("Could not open: {error}")),
+                if is_spreadsheet(path) {
+                    self.offer_handoff(path);
+                } else {
+                    self.toast(&format!("Could not open: {error}"));
                 }
             }
         }
@@ -1078,16 +1077,15 @@ impl Ui {
             list.append(&row);
         }
 
-        let body: gtk::Widget = match headings.is_empty() {
-            true => {
-                let empty = gtk::Label::builder()
-                    .label("No headings yet. A heading is what makes a section addressable.")
-                    .wrap(true)
-                    .build();
-                empty.add_css_class("dim-label");
-                empty.upcast()
-            }
-            false => list.upcast(),
+        let body: gtk::Widget = if headings.is_empty() {
+            let empty = gtk::Label::builder()
+                .label("No headings yet. A heading is what makes a section addressable.")
+                .wrap(true)
+                .build();
+            empty.add_css_class("dim-label");
+            empty.upcast()
+        } else {
+            list.upcast()
         };
         let page = gtk::ScrolledWindow::builder()
             .propagate_natural_height(true)

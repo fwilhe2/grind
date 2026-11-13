@@ -91,15 +91,14 @@ fn write_table(out: &mut Emitter, doc: &Document, range: std::ops::Range<usize>)
                         .is_some_and(|c| c.is_same(&cell))
                 })
                 .collect();
-            match content.is_empty() {
-                true => out.end(),
-                false => {
-                    out.open();
-                    for index in content {
-                        write_block(out, doc, index, &doc.blocks[index]);
-                    }
-                    out.close();
+            if content.is_empty() {
+                out.end();
+            } else {
+                out.open();
+                for index in content {
+                    write_block(out, doc, index, &doc.blocks[index]);
                 }
+                out.close();
             }
             column += cell.columns_spanned.max(1);
         }
@@ -176,9 +175,10 @@ fn write_block(out: &mut Emitter, doc: &Document, index: usize, block: &Block) {
         inline::write(&without)
     });
     if let Some(line) = spelled {
-        match line.raw {
-            true => out.arg_raw(&line.text),
-            false => out.arg_string(&line.text),
+        if line.raw {
+            out.arg_raw(&line.text);
+        } else {
+            out.arg_string(&line.text);
         }
     }
 

@@ -509,9 +509,10 @@ pub fn card_in(band: Rect, dpi: u32) -> Rect {
 fn step(sizes: &Sizes, from: u32, delta: i64, max: u32) -> u32 {
     let mut at = from;
     for _ in 0..delta.unsigned_abs() {
-        let next = match delta > 0 {
-            true => at.checked_add(1).and_then(|i| sizes.next_visible(i)),
-            false => at.checked_sub(1).and_then(|i| sizes.prev_visible(i)),
+        let next = if delta > 0 {
+            at.checked_add(1).and_then(|i| sizes.next_visible(i))
+        } else {
+            at.checked_sub(1).and_then(|i| sizes.prev_visible(i))
         };
         match next {
             Some(next) => at = next,

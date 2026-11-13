@@ -379,22 +379,21 @@ pub fn cells(
             let text = one_line(text);
             // Text wider than its cell runs on over the empty cells it is aligned towards, as in
             // every spreadsheet; a number never does — it shows `###` instead (`cell_text`).
-            let reach = match numfmt::is_number(&value) {
-                true => cell,
-                false => {
-                    let needed = width(metrics, &text, &look::text_style(style)) + 2.0 * PAD_X;
-                    let empty = |col: u32| {
-                        fetch.contains(&col)
-                            && viewport.merge_at(row, col).is_none()
-                            && viewport.text(row, col).is_none_or(str::is_empty)
-                            && app
-                                .formula(sheet, Pos::new(row, col))
-                                .ok()
-                                .flatten()
-                                .is_none()
-                    };
-                    spill(grid, row, col, needed, look::align(&value, style), &empty)
-                }
+            let reach = if numfmt::is_number(&value) {
+                cell
+            } else {
+                let needed = width(metrics, &text, &look::text_style(style)) + 2.0 * PAD_X;
+                let empty = |col: u32| {
+                    fetch.contains(&col)
+                        && viewport.merge_at(row, col).is_none()
+                        && viewport.text(row, col).is_none_or(str::is_empty)
+                        && app
+                            .formula(sheet, Pos::new(row, col))
+                            .ok()
+                            .flatten()
+                            .is_none()
+                };
+                spill(grid, row, col, needed, look::align(&value, style), &empty)
             };
             if reach.intersection(&view).is_empty() {
                 continue;
@@ -512,10 +511,7 @@ pub fn cells(
         let inner = Rect::new(b.x + 1.0, b.y + 1.0, b.w - 2.0, b.h - 2.0);
         ops.push(Op::Fill {
             rect: inner,
-            color: match ticked {
-                true => palette.accent,
-                false => palette.page,
-            },
+            color: if ticked { palette.accent } else { palette.page },
         });
         if ticked {
             ops.push(Op::Path {

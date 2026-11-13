@@ -246,9 +246,10 @@ fn attributes(out: &mut String, style: Option<&str>, props: &CharStyle, href: Op
         first = false;
         out.push_str(name);
         out.push('=');
-        match bare {
-            true => out.push_str(value),
-            false => out.push_str(&quote(value)),
+        if bare {
+            out.push_str(value);
+        } else {
+            out.push_str(&quote(value));
         }
     };
     switch(
@@ -434,9 +435,10 @@ fn parse_attributes(list: &str) -> (Option<String>, CharStyle, Option<String>) {
     let mut href = None;
     for (name, value) in pairs(list) {
         let set = |slot: &mut Option<String>, canonical: &str| {
-            *slot = Some(match value == "#true" {
-                true => canonical.to_owned(),
-                false => value.clone(),
+            *slot = Some(if value == "#true" {
+                canonical.to_owned()
+            } else {
+                value.clone()
             });
         };
         match name.as_str() {

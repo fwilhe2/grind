@@ -73,9 +73,10 @@ impl Dialect {
                 continue;
             };
             let consistent = rows.iter().all(|row| row.len() == first);
-            let score = match consistent && first > 1 {
-                true => 1000 + first.min(999) as u32,
-                false => 0,
+            let score = if consistent && first > 1 {
+                1000 + first.min(999) as u32
+            } else {
+                0
             };
             if score > best.0 {
                 best = (score, dialect);
@@ -285,10 +286,7 @@ impl Default for Export {
 /// Everything else stays readable and diffable.
 #[must_use]
 pub fn write(rows: &[Vec<String>], options: &Export) -> String {
-    let newline = match options.crlf {
-        true => "\r\n",
-        false => "\n",
-    };
+    let newline = if options.crlf { "\r\n" } else { "\n" };
     let mut out = String::new();
     if options.bom {
         out.push('\u{feff}');
@@ -298,18 +296,17 @@ pub fn write(rows: &[Vec<String>], options: &Export) -> String {
             if at > 0 {
                 out.push(options.dialect.delimiter);
             }
-            match options.quote_all || needs_quoting(field, &options.dialect) {
-                true => {
-                    out.push(options.dialect.quote);
-                    for c in field.chars() {
-                        if c == options.dialect.quote {
-                            out.push(c);
-                        }
+            if options.quote_all || needs_quoting(field, &options.dialect) {
+                out.push(options.dialect.quote);
+                for c in field.chars() {
+                    if c == options.dialect.quote {
                         out.push(c);
                     }
-                    out.push(options.dialect.quote);
+                    out.push(c);
                 }
-                false => out.push_str(field),
+                out.push(options.dialect.quote);
+            } else {
+                out.push_str(field);
             }
         }
         out.push_str(newline);
@@ -427,9 +424,10 @@ pub fn dated(field: &str, null_date: i64) -> Option<crate::numfmt::Format> {
         .split_once('-')
         .is_some_and(|(year, _)| year.len() == 4 && year.chars().all(|c| c.is_ascii_digit()));
     if year && crate::formula::date::parse_date(field, null_date).is_some() {
-        return Some(match field.contains(['T', ' ']) {
-            true => datetime_preset(),
-            false => preset(Kind::Date, 0, false, ""),
+        return Some(if field.contains(['T', ' ']) {
+            datetime_preset()
+        } else {
+            preset(Kind::Date, 0, false, "")
         });
     }
     // A clock only: `parse_time` also reads ODF's `PT17H20M00S`, which nobody exports into a
@@ -450,10 +448,7 @@ pub fn dated(field: &str, null_date: i64) -> Option<crate::numfmt::Format> {
 /// * A leading `'`, doubled so it stays in the cell.
 #[must_use]
 pub fn input(field: &str, options: &Import) -> String {
-    let field = match options.trim {
-        true => field.trim(),
-        false => field,
-    };
+    let field = if options.trim { field.trim() } else { field };
     // An empty field clears its cell rather than storing an empty string.
     if field.is_empty() {
         return String::new();
@@ -480,9 +475,10 @@ pub fn input(field: &str, options: &Import) -> String {
         return number;
     }
     // Anything Rust reads as a number and this does not is text, deliberately.
-    match field.parse::<f64>().is_ok() {
-        true => as_text(),
-        false => field.to_owned(),
+    if field.parse::<f64>().is_ok() {
+        as_text()
+    } else {
+        field.to_owned()
     }
 }
 
@@ -491,17 +487,17 @@ pub fn input(field: &str, options: &Import) -> String {
 pub(crate) fn number(field: &str, decimal: char, group: char) -> Option<String> {
     // A no-break space groups in French and Russian; a plain one means the same.
     let owned;
-    let field = match group == '\u{a0}' && field.contains([' ', '\u{202f}']) {
-        true => {
-            owned = field.replace([' ', '\u{202f}'], "\u{a0}");
-            owned.as_str()
-        }
-        false => field,
+    let field = if group == '\u{a0}' && field.contains([' ', '\u{202f}']) {
+        owned = field.replace([' ', '\u{202f}'], "\u{a0}");
+        owned.as_str()
+    } else {
+        field
     };
 
-    let (sign, rest) = match field.starts_with(['+', '-']) {
-        true => field.split_at(1),
-        false => ("", field),
+    let (sign, rest) = if field.starts_with(['+', '-']) {
+        field.split_at(1)
+    } else {
+        ("", field)
     };
     // Split off the exponent first: `1e5` is a number, `1e5,000` is not.
     let (mantissa, exponent) = match rest.split_once(['e', 'E']) {
@@ -518,18 +514,17 @@ pub(crate) fn number(field: &str, decimal: char, group: char) -> Option<String> 
     };
 
     let digits = |s: &str| s.chars().all(|c| c.is_ascii_digit());
-    let whole = match whole.contains(group) {
-        true => {
-            let groups: Vec<&str> = whole.split(group).collect();
-            let grouped = (1..=3).contains(&groups[0].len())
-                && groups[1..].iter().all(|g| g.len() == 3)
-                && groups.iter().all(|g| digits(g));
-            if !grouped {
-                return None;
-            }
-            groups.concat()
+    let whole = if whole.contains(group) {
+        let groups: Vec<&str> = whole.split(group).collect();
+        let grouped = (1..=3).contains(&groups[0].len())
+            && groups[1..].iter().all(|g| g.len() == 3)
+            && groups.iter().all(|g| digits(g));
+        if !grouped {
+            return None;
         }
-        false => whole.to_owned(),
+        groups.concat()
+    } else {
+        whole.to_owned()
     };
 
     if !digits(&whole) || !fraction.is_none_or(digits) {
@@ -551,10 +546,7 @@ pub(crate) fn number(field: &str, decimal: char, group: char) -> Option<String> 
     }
 
     let mut out = String::from(sign);
-    out.push_str(match whole.is_empty() {
-        true => "0",
-        false => &whole,
-    });
+    out.push_str(if whole.is_empty() { "0" } else { &whole });
     if let Some(fraction) = fraction.filter(|f| !f.is_empty()) {
         out.push('.');
         out.push_str(fraction);

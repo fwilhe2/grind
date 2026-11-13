@@ -380,9 +380,10 @@ impl Ui {
                     ui.grid.invalidate();
                     // A document just opened is checked in its own language; one being edited
                     // may still be deciding what its language is.
-                    match opened {
-                        true => ui.check_spelling(false),
-                        false => ui.reconsider_spelling(),
+                    if opened {
+                        ui.check_spelling(false);
+                    } else {
+                        ui.reconsider_spelling();
                     }
                     if ui.app.take_recalc_owed() {
                         ui.recalc_in_background(true, false);
@@ -409,9 +410,10 @@ impl Ui {
         self.banner.connect_button_clicked(glib::clone!(
             #[strong(rename_to = ui)]
             self,
-            move |_| match ui.handoff.borrow().is_some() {
-                true => ui.hand_over(),
-                false => ui.recalculate(),
+            move |_| if ui.handoff.borrow().is_some() {
+                ui.hand_over();
+            } else {
+                ui.recalculate();
             }
         ));
 
@@ -450,9 +452,10 @@ impl Ui {
         // The two overlays, stateful: a way of looking at the document, so the toggle carries its
         // own state, and neither writes a byte — no confirmation, no dirty flag, no undo entry.
         for (name, names, roles) in [("show-names", true, false), ("show-roles", false, true)] {
-            let on = match names {
-                true => self.grid.overlays().names,
-                false => self.grid.overlays().roles,
+            let on = if names {
+                self.grid.overlays().names
+            } else {
+                self.grid.overlays().roles
             };
             let action = gio::SimpleAction::new_stateful(name, None, &on.to_variant());
             action.connect_activate(glib::clone!(
@@ -577,18 +580,13 @@ impl Ui {
 
     /// Switch between the grid and its source.
     fn show_source(self: &Rc<Self>, on: bool) {
-        self.stack.set_visible_child_name(match on {
-            true => "source",
-            false => "grid",
-        });
-        match on {
-            true => {
-                self.fill_source();
-                let _ = self.source.grab_focus();
-            }
-            false => {
-                gtk::prelude::GtkWindowExt::set_focus(&self.window, Some(&self.grid));
-            }
+        self.stack
+            .set_visible_child_name(if on { "source" } else { "grid" });
+        if on {
+            self.fill_source();
+            let _ = self.source.grab_focus();
+        } else {
+            gtk::prelude::GtkWindowExt::set_focus(&self.window, Some(&self.grid));
         }
     }
 
@@ -646,9 +644,10 @@ impl Ui {
             (path, _) => document_name(path.as_deref()),
         };
         self.title.set_title(&title);
-        self.title.set_subtitle(match self.dirty.get() {
-            true => "Unsaved changes",
-            false => "",
+        self.title.set_subtitle(if self.dirty.get() {
+            "Unsaved changes"
+        } else {
+            ""
         });
         self.undo.set_sensitive(self.app.can_undo());
         self.redo.set_sensitive(self.app.can_redo());
@@ -1378,9 +1377,10 @@ impl Ui {
         // Adding: a name and a definition, prefilled with the selection, because naming what
         // is selected is why the dialog was opened nine times in ten.
         let (start, end) = self.grid.selection().rect();
-        let selected = match start == end {
-            true => a1::format(None, start),
-            false => format!("{}:{}", a1::format(None, start), a1::format(None, end)),
+        let selected = if start == end {
+            a1::format(None, start)
+        } else {
+            format!("{}:{}", a1::format(None, start), a1::format(None, end))
         };
         let new_name = adw::EntryRow::builder().title("Name").build();
         let new_definition = adw::EntryRow::builder()
@@ -2117,9 +2117,10 @@ fn palette_rows() -> &'static [palette::Row] {
                 group: "View",
                 // A slice of one, or none — the same shape `Verb::accels` has, built from the
                 // single accelerator a reading carries.
-                accels: match accel.is_empty() {
-                    true => &[],
-                    false => std::slice::from_ref(accel),
+                accels: if accel.is_empty() {
+                    &[]
+                } else {
+                    std::slice::from_ref(accel)
                 },
             }))
             .collect()
@@ -2318,16 +2319,17 @@ fn tally(found: &[grind_sheet::Calculation]) -> String {
         n => format!("{n} calculations"),
     };
     let functions = grind_sheet::function_tally(found);
-    match functions.is_empty() {
-        true => counted,
-        false => format!(
+    if functions.is_empty() {
+        counted
+    } else {
+        format!(
             "{counted} — {}",
             functions
                 .iter()
                 .map(|(name, count)| format!("{name} ×{count}"))
                 .collect::<Vec<_>>()
                 .join(", ")
-        ),
+        )
     }
 }
 
@@ -2366,9 +2368,10 @@ fn define(app: &App, name: &str, target: &str) -> Result<String, String> {
 /// is a *formula* and needs the `=` that says so, or retyping what was shown would be read
 /// as an address.
 fn definition_text(expression: &str) -> String {
-    match expression.starts_with('[') {
-        true => expression.to_owned(),
-        false => format!("={expression}"),
+    if expression.starts_with('[') {
+        expression.to_owned()
+    } else {
+        format!("={expression}")
     }
 }
 

@@ -284,15 +284,15 @@ fn lines(e: &Expr, width: usize) -> Vec<String> {
 /// [`lines`] for the child of something binding at `parent_bp`, bracketed by [`child`]'s
 /// rule — the one rule, so a laid-out formula cannot re-associate where a flat one would not.
 fn child_lines(e: &Expr, parent_bp: u8, width: usize) -> Vec<String> {
-    match binding_power(e) < parent_bp {
-        true => {
-            let flat = format!("({})", Bare(e));
-            match flat.chars().count() <= width.max(UNBROKEN) {
-                true => vec![flat],
-                false => bracketed(lines(e, width.saturating_sub(INDENT))),
-            }
+    if binding_power(e) < parent_bp {
+        let flat = format!("({})", Bare(e));
+        if flat.chars().count() <= width.max(UNBROKEN) {
+            vec![flat]
+        } else {
+            bracketed(lines(e, width.saturating_sub(INDENT)))
         }
-        false => lines(e, width),
+    } else {
+        lines(e, width)
     }
 }
 

@@ -154,12 +154,13 @@ pub fn moved(
         Motion::SheetStart => Pos::new(0, 0),
         Motion::SheetEnd => Pos::new(extent.last_row(), extent.last_col()),
     };
-    match extend {
-        true => Selection {
+    if extend {
+        Selection {
             anchor: selection.anchor,
             active,
-        },
-        false => Selection::at(active),
+        }
+    } else {
+        Selection::at(active)
     }
 }
 
@@ -172,13 +173,15 @@ pub fn moved(
 pub fn target(selection: Selection, used: (u32, u32)) -> (Pos, Pos) {
     let (start, end) = selection.rect();
     let (rows, cols) = used;
-    let row = match start.row == 0 && end.row >= MAX_ROWS - 1 {
-        true => end.row.min(rows.saturating_sub(1)).max(start.row),
-        false => end.row,
+    let row = if start.row == 0 && end.row >= MAX_ROWS - 1 {
+        end.row.min(rows.saturating_sub(1)).max(start.row)
+    } else {
+        end.row
     };
-    let col = match start.col == 0 && end.col >= MAX_COLS - 1 {
-        true => end.col.min(cols.saturating_sub(1)).max(start.col),
-        false => end.col,
+    let col = if start.col == 0 && end.col >= MAX_COLS - 1 {
+        end.col.min(cols.saturating_sub(1)).max(start.col)
+    } else {
+        end.col
     };
     (start, Pos::new(row, col))
 }
@@ -267,12 +270,13 @@ pub fn onto_visible(selection: Selection, motion: Motion, rows: &Sizes, cols: &S
         rows.nearest_visible(active.row, row_forward),
         cols.nearest_visible(active.col, col_forward),
     );
-    match selection.is_single() {
-        true => Selection::at(active),
-        false => Selection {
+    if selection.is_single() {
+        Selection::at(active)
+    } else {
+        Selection {
             anchor: selection.anchor,
             active,
-        },
+        }
     }
 }
 
@@ -344,9 +348,12 @@ fn data_edge(from: Pos, dir: Dir, extent: Extent, occupied: &dyn Fn(Pos) -> bool
         Dir::Up | Dir::Down => (extent.rows, from.row, &|r| Pos::new(r, from.col)),
     };
     let forward = matches!(dir, Dir::Right | Dir::Down);
-    let next = |i: u32| match forward {
-        true => (i + 1 < limit.max(1)).then(|| i + 1),
-        false => i.checked_sub(1),
+    let next = |i: u32| {
+        if forward {
+            (i + 1 < limit.max(1)).then(|| i + 1)
+        } else {
+            i.checked_sub(1)
+        }
     };
 
     let Some(mut i) = next(index) else {

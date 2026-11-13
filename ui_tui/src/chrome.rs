@@ -186,12 +186,13 @@ pub fn tabs(names: &[String], active: usize, room: usize) -> Vec<Span<'static>> 
     for index in first..=last {
         out.push(Span::styled(
             label(index),
-            match index == active {
-                true => Style::default()
+            if index == active {
+                Style::default()
                     .fg(Color::Blue)
                     .bg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-                false => title_style().fg(Color::Gray),
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                title_style().fg(Color::Gray)
             },
         ));
     }

@@ -49,9 +49,12 @@ pub fn parse_rows(text: &str) -> Vec<Vec<String>> {
     text.lines()
         .map(|line| {
             line.split('\t')
-                .map(|cell| match cell.starts_with('=') {
-                    true => display::from_display(cell).unwrap_or_else(|_| format!("'{cell}")),
-                    false => cell.to_owned(),
+                .map(|cell| {
+                    if cell.starts_with('=') {
+                        display::from_display(cell).unwrap_or_else(|_| format!("'{cell}"))
+                    } else {
+                        cell.to_owned()
+                    }
                 })
                 .collect()
         })

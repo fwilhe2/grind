@@ -212,9 +212,10 @@ impl Sizes {
         if !self.is_hidden(index) {
             return index;
         }
-        let (first, second) = match forward {
-            true => (self.next_visible(index), self.prev_visible(index)),
-            false => (self.prev_visible(index), self.next_visible(index)),
+        let (first, second) = if forward {
+            (self.next_visible(index), self.prev_visible(index))
+        } else {
+            (self.prev_visible(index), self.next_visible(index))
         };
         first.or(second).unwrap_or(index)
     }

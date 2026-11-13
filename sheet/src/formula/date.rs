@@ -64,9 +64,10 @@ const DAY: f64 = 86_400.0;
 /// `DATE(1899;1;1)` is 1899.
 #[must_use]
 pub fn expand_year(y: i64, null_year: i64) -> i64 {
-    match (0..=99).contains(&y) {
-        true => null_year + (y - null_year).rem_euclid(100),
-        false => y,
+    if (0..=99).contains(&y) {
+        null_year + (y - null_year).rem_euclid(100)
+    } else {
+        y
     }
 }
 
@@ -192,9 +193,10 @@ pub fn format_date(serial: f64, null_date: i64) -> String {
     let date = format!("{y:04}-{m:02}-{d:02}");
     // `{:04}` pads the digits and leaves the sign outside, which is the ISO 8601 spelling
     // for a negative year (`-0001-11-25`) once the minus is accounted for.
-    let date = match y < 0 {
-        true => format!("-{:04}-{m:02}-{d:02}", -y),
-        false => date,
+    let date = if y < 0 {
+        format!("-{:04}-{m:02}-{d:02}", -y)
+    } else {
+        date
     };
     // Only the time *within* the day: the date half already carries the days.
     let (h, m, s) = hms((serial - serial.floor()) * DAY);

@@ -28,9 +28,10 @@ fn category(data: &ChartData, i: usize) -> String {
 }
 
 fn number(n: f64) -> String {
-    match n.fract() == 0.0 && n.abs() < 1e15 {
-        true => format!("{n:.0}"),
-        false => format!("{n:.2}"),
+    if n.fract() == 0.0 && n.abs() < 1e15 {
+        format!("{n:.0}")
+    } else {
+        format!("{n:.2}")
     }
 }
 
@@ -50,9 +51,12 @@ fn spark(values: &[f64]) -> String {
         .fold((f64::MAX, f64::MIN), |(l, h), v| (l.min(*v), h.max(*v)));
     values
         .iter()
-        .map(|v| match high > low {
-            true => STEPS[(((v - low) / (high - low)) * 7.0).round() as usize],
-            false => STEPS[3],
+        .map(|v| {
+            if high > low {
+                STEPS[(((v - low) / (high - low)) * 7.0).round() as usize]
+            } else {
+                STEPS[3]
+            }
         })
         .collect()
 }
@@ -136,9 +140,10 @@ pub fn lines(chart: &Chart, data: &ChartData, width: usize) -> Vec<String> {
             let room = width.saturating_sub(label_w + 12).max(4);
             if let Some((_, values)) = data.series.first() {
                 for (i, v) in values.iter().enumerate() {
-                    let share = match total > 0.0 {
-                        true => v.max(0.0) / total * 100.0,
-                        false => 0.0,
+                    let share = if total > 0.0 {
+                        v.max(0.0) / total * 100.0
+                    } else {
+                        0.0
                     };
                     out.push(format!(
                         "  {:<label_w$} {} {share:.0}%",

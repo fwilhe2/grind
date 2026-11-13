@@ -501,9 +501,10 @@ fn allowing_libreoffices_paragraph<'a>(want: &Document, got: &'a Document) -> &'
             .blocks
             .last()
             .is_some_and(|b| b.cell.is_none() && b.kind == BlockKind::Paragraph && b.is_empty());
-    match ended_with_a_table {
-        true => &got.blocks[..got.blocks.len() - 1],
-        false => &got.blocks,
+    if ended_with_a_table {
+        &got.blocks[..got.blocks.len() - 1]
+    } else {
+        &got.blocks
     }
 }
 

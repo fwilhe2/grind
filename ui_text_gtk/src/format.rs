@@ -312,9 +312,10 @@ impl Swatch {
         let shown: Rc<Cell<Option<gdk::RGBA>>> = Rc::new(Cell::new(None));
         let face = area(shown.clone(), 16, 4);
 
-        let head = gtk::Image::from_icon_name(match text {
-            true => "format-text-rich-symbolic",
-            false => "color-select-symbolic",
+        let head = gtk::Image::from_icon_name(if text {
+            "format-text-rich-symbolic"
+        } else {
+            "color-select-symbolic"
         });
         let stack = gtk::Box::new(gtk::Orientation::Vertical, 2);
         stack.set_halign(gtk::Align::Center);

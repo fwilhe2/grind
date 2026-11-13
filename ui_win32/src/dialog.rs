@@ -604,9 +604,10 @@ fn register(
             // The drop shadow is the one a menu has, and it is what lets a caption-less surface
             // read as lifted off the window behind it where the compositor draws no shadow of its
             // own (Windows 10, a remote session).
-            style: match smoke {
-                true => Default::default(),
-                false => CS_DROPSHADOW,
+            style: if smoke {
+                Default::default()
+            } else {
+                CS_DROPSHADOW
             },
             lpfnWndProc: proc,
             hInstance: instance.into(),
@@ -614,9 +615,10 @@ fn register(
             hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
             // The smoke is nothing but its ground, and black is a stock object — not created, so
             // never freed. The modal paints itself, so a class brush would only flash.
-            hbrBackground: match smoke {
-                true => HBRUSH(GetStockObject(BLACK_BRUSH).0),
-                false => HBRUSH::default(),
+            hbrBackground: if smoke {
+                HBRUSH(GetStockObject(BLACK_BRUSH).0)
+            } else {
+                HBRUSH::default()
             },
             ..Default::default()
         };
@@ -920,13 +922,16 @@ fn run<T>(spec: Spec<'_>, read: impl FnOnce(&mut Modal) -> T) -> Option<T> {
     unsafe {
         let _ = EnableWindow(owner, false);
         let _ = ShowWindow(popup, SW_SHOW);
-        let focus = with_modal(popup, |modal| match modal.control.is_invalid() {
-            false => modal.control,
-            true => modal
-                .buttons
-                .iter()
-                .find(|button| button.role == Role::Default)
-                .map_or(HWND::default(), |button| button.hwnd),
+        let focus = with_modal(popup, |modal| {
+            if modal.control.is_invalid() {
+                modal
+                    .buttons
+                    .iter()
+                    .find(|button| button.role == Role::Default)
+                    .map_or(HWND::default(), |button| button.hwnd)
+            } else {
+                modal.control
+            }
         });
         if let Some(focus) = focus.filter(|hwnd| !hwnd.is_invalid()) {
             let _ = SetFocus(Some(focus));
@@ -1123,38 +1128,37 @@ fn create_children(popup: HWND, natural: &[f64], titled: bool) {
                     x: body.x,
                     y: body.y + label_h,
                     w: body.w,
-                    h: match reading {
-                        true => (body.h - label_h).max(0.0),
-                        false => scale(modal::size::CONTROL_H, dpi),
+                    h: if reading {
+                        (body.h - label_h).max(0.0)
+                    } else {
+                        scale(modal::size::CONTROL_H, dpi)
                     },
                 };
                 // Inside the frame: a single line is centred on it, the reader fills it less a
                 // margin. The EDIT has no border of its own — the frame is drawn.
                 let line = px(crate::theme::text::BODY * 1.4);
-                let inner = match reading {
-                    true => RECT {
+                let inner = if reading {
+                    RECT {
                         left: well.x as i32 + px(12.0),
                         top: well.y as i32 + px(8.0),
                         right: (well.x + well.w) as i32 - px(4.0),
                         bottom: (well.y + well.h) as i32 - px(8.0),
-                    },
-                    false => {
-                        let top = well.y as i32 + (well.h as i32 - line) / 2;
-                        RECT {
-                            left: well.x as i32 + px(11.0),
-                            top,
-                            right: (well.x + well.w) as i32 - px(11.0),
-                            bottom: top + line,
-                        }
+                    }
+                } else {
+                    let top = well.y as i32 + (well.h as i32 - line) / 2;
+                    RECT {
+                        left: well.x as i32 + px(11.0),
+                        top,
+                        right: (well.x + well.w) as i32 - px(11.0),
+                        bottom: top + line,
                     }
                 };
-                let style = match reading {
-                    true => {
-                        WINDOW_STYLE((ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32)
-                            | WS_VSCROLL
-                            | WS_TABSTOP
-                    }
-                    false => WINDOW_STYLE(ES_AUTOHSCROLL as u32) | WS_TABSTOP,
+                let style = if reading {
+                    WINDOW_STYLE((ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32)
+                        | WS_VSCROLL
+                        | WS_TABSTOP
+                } else {
+                    WINDOW_STYLE(ES_AUTOHSCROLL as u32) | WS_TABSTOP
                 };
                 let edit = make("EDIT", "", style, ID_EDIT, inner);
                 set_font(edit);
@@ -1227,25 +1231,22 @@ fn create_children(popup: HWND, natural: &[f64], titled: bool) {
                         Some(LPARAM(row.as_ptr() as isize)),
                     );
                 }
-                match multi {
-                    true => {
-                        for (i, ticked) in rows.2.iter().enumerate() {
-                            if *ticked {
-                                SendMessageW(
-                                    list,
-                                    LB_SETSEL,
-                                    Some(WPARAM(1)),
-                                    Some(LPARAM(i as isize)),
-                                );
-                            }
+                if multi {
+                    for (i, ticked) in rows.2.iter().enumerate() {
+                        if *ticked {
+                            SendMessageW(
+                                list,
+                                LB_SETSEL,
+                                Some(WPARAM(1)),
+                                Some(LPARAM(i as isize)),
+                            );
                         }
                     }
-                    false => {
-                        // Windows scrolls a listbox to the row a program selects, the same as
-                        // it does for one a person clicks.
-                        let initial = rows.1.min(rows.0.len().saturating_sub(1));
-                        SendMessageW(list, LB_SETCURSEL, Some(WPARAM(initial)), Some(LPARAM(0)));
-                    }
+                } else {
+                    // Windows scrolls a listbox to the row a program selects, the same as
+                    // it does for one a person clicks.
+                    let initial = rows.1.min(rows.0.len().saturating_sub(1));
+                    SendMessageW(list, LB_SETCURSEL, Some(WPARAM(initial)), Some(LPARAM(0)));
                 }
                 (list, well)
             }
@@ -1416,9 +1417,10 @@ extern "system" fn modal_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: 
                 with_modal(hwnd, |modal| {
                     let dc = HDC(wparam.0 as *mut std::ffi::c_void);
                     // Which field is asking: each has its own focus, where a body has two.
-                    let focused = match HWND(lparam.0 as *mut std::ffi::c_void) == modal.second {
-                        true => modal.second_focused,
-                        false => modal.focused,
+                    let focused = if HWND(lparam.0 as *mut std::ffi::c_void) == modal.second {
+                        modal.second_focused
+                    } else {
+                        modal.focused
                     };
                     let (ground, brush) = match (message, focused) {
                         (WM_CTLCOLORLISTBOX, _) => (modal.theme.background, &modal.active),
@@ -1544,9 +1546,10 @@ fn command(hwnd: HWND, id: i32, code: u32) {
             }
             // Enter on a modal whose only answer is Close means Close, not an `IDOK` nobody
             // offered.
-            let id = match modal.buttons.iter().any(|button| button.id == id) || id == IDCANCEL.0 {
-                true => id,
-                false => modal.default_id(),
+            let id = if modal.buttons.iter().any(|button| button.id == id) || id == IDCANCEL.0 {
+                id
+            } else {
+                modal.default_id()
             };
             modal.answer = Some(id);
             modal.finished = true;
@@ -1782,9 +1785,10 @@ fn paint_body(modal: &mut Modal, out: HDC, body: Rect) {
                     ..room
                 },
                 Across::Left,
-                match count > grind_text::picture::SHORT {
-                    true => theme.banner_edge,
-                    false => theme.text_secondary,
+                if count > grind_text::picture::SHORT {
+                    theme.banner_edge
+                } else {
+                    theme.text_secondary
                 },
             );
             gdi::line(
@@ -1875,9 +1879,10 @@ fn paint_body(modal: &mut Modal, out: HDC, body: Rect) {
 fn text_box(modal: &Modal, out: HDC, well: RECT, focused: bool) {
     let theme = modal.theme;
     let radius = modal.px(crate::theme::space::RADIUS);
-    let (ground, line, thick) = match focused {
-        true => (theme.background, theme.accent, modal.px(2.0).max(2)),
-        false => (theme.card, theme.text_tertiary, 1),
+    let (ground, line, thick) = if focused {
+        (theme.background, theme.accent, modal.px(2.0).max(2))
+    } else {
+        (theme.card, theme.text_tertiary, 1)
     };
     gdi::round_rect(out, well, radius, ground, theme.stroke);
     gdi::fill(
@@ -2061,12 +2066,11 @@ fn draw_row(modal: &Modal, item: &DRAWITEMSTRUCT) {
             right: inner.left + px(8.0) + size,
             bottom: top + size,
         };
-        match selected {
-            true => {
-                gdi::round_rect(dc, check, radius, theme.accent, theme.accent);
-                gdi::check_mark(dc, check, theme.on_accent, px(1.5).max(2));
-            }
-            false => gdi::round_rect(dc, check, radius, theme.card, theme.text_tertiary),
+        if selected {
+            gdi::round_rect(dc, check, radius, theme.accent, theme.accent);
+            gdi::check_mark(dc, check, theme.on_accent, px(1.5).max(2));
+        } else {
+            gdi::round_rect(dc, check, radius, theme.card, theme.text_tertiary);
         }
         text_left = check.right + px(12.0);
     } else if selected {
@@ -2173,9 +2177,10 @@ extern "system" fn button_proc(
             let enabled = unsafe { IsWindowEnabled(hwnd) }.as_bool();
             LRESULT(
                 (DLGC_BUTTON
-                    | match focused && enabled {
-                        true => DLGC_DEFPUSHBUTTON,
-                        false => DLGC_UNDEFPUSHBUTTON,
+                    | if focused && enabled {
+                        DLGC_DEFPUSHBUTTON
+                    } else {
+                        DLGC_UNDEFPUSHBUTTON
                     }) as isize,
             )
         }

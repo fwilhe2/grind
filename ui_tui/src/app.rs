@@ -83,9 +83,10 @@ fn base64(bytes: &[u8]) -> String {
             .enumerate()
             .fold(0u32, |n, (i, b)| n | u32::from(*b) << (16 - 8 * i));
         for i in 0..4 {
-            match i <= chunk.len() {
-                true => out.push(ALPHABET[(n >> (18 - 6 * i) & 63) as usize] as char),
-                false => out.push('='),
+            if i <= chunk.len() {
+                out.push(ALPHABET[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                out.push('=');
             }
         }
     }

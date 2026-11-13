@@ -1494,16 +1494,17 @@ impl Writer<'_, '_> {
                     let _ = write!(attributes, " text:start-value=\"{}\"", level.start.max(0));
                 }
             }
-            let _ = match self.outline_levels.contains(&(i as i64)) {
-                true => writeln!(
+            let _ = if self.outline_levels.contains(&(i as i64)) {
+                writeln!(
                     out,
                     "   <text:outline-level-style text:level=\"{n}\"{attributes}>{}</text:outline-level-style>",
                     label_position(level, n)
-                ),
-                false => writeln!(
+                )
+            } else {
+                writeln!(
                     out,
                     "   <text:outline-level-style text:level=\"{n}\"{attributes}/>"
-                ),
+                )
             };
         }
         out.push_str("  </text:outline-style>\n");

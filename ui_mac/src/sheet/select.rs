@@ -52,12 +52,13 @@ pub fn apply(
 pub fn click(grid: &Grid, selection: Selection, x: f64, y: f64, extend: bool) -> Selection {
     let (row, col) = grid.hit(x, y);
     let at = Pos::new(row, col);
-    match extend {
-        true => Selection {
+    if extend {
+        Selection {
             anchor: selection.anchor,
             active: at,
-        },
-        false => Selection::at(at),
+        }
+    } else {
+        Selection::at(at)
     }
 }
 
@@ -79,14 +80,13 @@ pub fn checkbox_click(app: &App, sheet: usize, grid: &Grid, x: f64, y: f64) -> O
 pub fn column_click(grid: &Grid, selection: Selection, x: f64, extend: bool) -> Selection {
     let (_, col) = grid.hit(x, 0.0);
     let whole = Selection::whole_col(col);
-    match extend {
-        // Every row of every column from the anchor's to this one: the anchor keeps its column
-        // and goes to the foot of the sheet, as `Selection::whole_col` puts it.
-        true => Selection {
+    if extend {
+        Selection {
             anchor: Pos::new(MAX_ROWS - 1, selection.anchor.col),
             active: whole.active,
-        },
-        false => whole,
+        }
+    } else {
+        whole
     }
 }
 
@@ -95,12 +95,13 @@ pub fn column_click(grid: &Grid, selection: Selection, x: f64, extend: bool) -> 
 pub fn row_click(grid: &Grid, selection: Selection, y: f64, extend: bool) -> Selection {
     let (row, _) = grid.hit(0.0, y);
     let whole = Selection::whole_row(row);
-    match extend {
-        true => Selection {
+    if extend {
+        Selection {
             anchor: Pos::new(selection.anchor.row, MAX_COLS - 1),
             active: whole.active,
-        },
-        false => whole,
+        }
+    } else {
+        whole
     }
 }
 

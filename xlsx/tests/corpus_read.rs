@@ -216,9 +216,10 @@ fn every_corpus_workbook_imports() {
         eprintln!(
             "  {:32} {count}{}",
             class.label(),
-            match class.refuses() {
-                true => "  (the cell shows its plain value)",
-                false => "",
+            if class.refuses() {
+                "  (the cell shows its plain value)"
+            } else {
+                ""
             }
         );
     }

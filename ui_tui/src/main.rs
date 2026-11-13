@@ -127,9 +127,10 @@ fn main() -> ExitCode {
 /// and `:new` and `:open` (`app::Switch`) replace it without leaving the terminal.
 fn session(kind: DocumentKind, path: Option<PathBuf>, welcome: bool) -> io::Result<()> {
     // Read before the terminal is taken, so an unreadable file is an error on a normal screen.
-    let mut next = Some(match welcome {
-        true => welcome_pane(),
-        false => prepare(kind, path)?,
+    let mut next = Some(if welcome {
+        welcome_pane()
+    } else {
+        prepare(kind, path)?
     });
     let mut terminal = setup_terminal()?;
     let mut result = Ok(());

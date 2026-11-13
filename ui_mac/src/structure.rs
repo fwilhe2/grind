@@ -50,9 +50,10 @@ impl Pane {
             Command::Merge(merge) => {
                 let used = self.app.used_extent(sheet).unwrap_or((0, 0));
                 let (start, end) = grind_sheet::nav::target(selection, used);
-                match merge {
-                    true => self.app.merge(sheet, start, end).map(|_| ()),
-                    false => self.app.unmerge(sheet, start, end).map(|_| ()),
+                if merge {
+                    self.app.merge(sheet, start, end).map(|_| ())
+                } else {
+                    self.app.unmerge(sheet, start, end).map(|_| ())
                 }
             }
             Command::Rows(Track::Hide) => self
@@ -97,13 +98,12 @@ impl Pane {
                 ) else {
                     return;
                 };
-                match rows {
-                    true => self
-                        .app
-                        .set_row_height(sheet, verbs::rows(selection), Some(size)),
-                    false => self
-                        .app
-                        .set_col_width(sheet, verbs::cols(selection), Some(size)),
+                if rows {
+                    self.app
+                        .set_row_height(sheet, verbs::rows(selection), Some(size))
+                } else {
+                    self.app
+                        .set_col_width(sheet, verbs::cols(selection), Some(size))
                 }
                 .map(|_| ())
             }
@@ -386,20 +386,19 @@ impl Pane {
         };
         // The options in words (`csv::Import::amended`), asked after the file so the panel that
         // chose it is not left open under a question.
-        let words = match with_options {
-            true => {
-                let Some(words) = prompt::ask(
-                    mtm,
-                    "Import Options",
-                    "delimiter=semicolon locale=de-DE text formulas trim no-dates — or leave it empty to let the file decide.",
-                    "Import",
-                    "",
-                ) else {
-                    return;
-                };
-                words
-            }
-            false => String::new(),
+        let words = if with_options {
+            let Some(words) = prompt::ask(
+                mtm,
+                "Import Options",
+                "delimiter=semicolon locale=de-DE text formulas trim no-dates — or leave it empty to let the file decide.",
+                "Import",
+                "",
+            ) else {
+                return;
+            };
+            words
+        } else {
+            String::new()
         };
         let at = self.selection.get().active;
         let options = match grind_sheet::csv::Import::sniffed(&text).amended(&words) {
@@ -431,10 +430,10 @@ impl Pane {
         // One past the last used row and column — and an empty sheet is an empty file, as the
         // CLI writes one, rather than one blank field.
         let (rows, cols) = self.app.used_extent(sheet).unwrap_or((0, 0));
-        let text = match rows == 0 || cols == 0 {
-            true => Ok(String::new()),
-            // The name picks the delimiter — `.tsv` is tabs — as every other window's save does.
-            false => self.app.export_csv(
+        let text = if rows == 0 || cols == 0 {
+            Ok(String::new())
+        } else {
+            self.app.export_csv(
                 sheet,
                 Pos::new(0, 0),
                 Pos::new(rows - 1, cols - 1),
@@ -442,7 +441,7 @@ impl Pane {
                     dialect: grind_sheet::csv::Dialect::for_name(&path.display().to_string()),
                     ..Default::default()
                 },
-            ),
+            )
         };
         let written = text.map_err(|error| error.to_string()).and_then(|text| {
             grind_core::atomic::write(&path, text)
@@ -582,12 +581,11 @@ impl TextPane {
         };
         let blocks = {
             let state = self.state.borrow();
-            match state.selection().is_some() {
-                true => {
-                    let blocks = state.blocks();
-                    *blocks.start()..*blocks.end() + 1
-                }
-                false => 0..self.app.block_count(),
+            if state.selection().is_some() {
+                let blocks = state.blocks();
+                *blocks.start()..*blocks.end() + 1
+            } else {
+                0..self.app.block_count()
             }
         };
         // The pictures go in a directory beside it (`notes.images/`), named for their bytes.

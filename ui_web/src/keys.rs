@@ -57,10 +57,7 @@ const PAGE: &[(&str, &str)] = &[
 
 /// The dialog's content for a pane: its moves (`grid`), then the table's rows that have a key.
 pub fn html(table: &[Command], grid: bool) -> String {
-    let moves = match grid {
-        true => GRID,
-        false => PAGE,
-    };
+    let moves = if grid { GRID } else { PAGE };
     let mut out = String::from("<h2>Keyboard shortcuts</h2><table class=\"keys\">");
     let rows = CHROME.iter().chain(moves).copied().chain(
         table

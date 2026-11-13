@@ -350,16 +350,13 @@ mod windows_impl {
                     };
                     let (left, right) = (x + f64::from(left), x + f64::from(right));
                     let top = line_top + f64::from(line.height) - scale(3.0, page.dpi);
-                    match matches!(
+                    if matches!(
                         flag.finding.kind,
                         grind_text::grammar::Kind::Typography | grind_text::grammar::Kind::Style
                     ) {
-                        true => {
-                            gdi::dotted(dc, left, right, top, scale(1.5, page.dpi), theme.accent);
-                        }
-                        false => {
-                            gdi::squiggle(dc, left, right, top, scale(2.0, page.dpi), theme.accent);
-                        }
+                        gdi::dotted(dc, left, right, top, scale(1.5, page.dpi), theme.accent);
+                    } else {
+                        gdi::squiggle(dc, left, right, top, scale(2.0, page.dpi), theme.accent);
                     }
                 }
 
@@ -521,10 +518,7 @@ mod windows_impl {
             let on = frame.format[index];
             button(*rect, hit, on, false);
             let (l, t, r, b) = rect.edges();
-            let ink = match on {
-                true => theme.accent,
-                false => theme.text,
-            };
+            let ink = if on { theme.accent } else { theme.text };
             // Bold's own label is bold, Italic's italic, and so on: the control shows what it
             // does rather than naming it, which is the one place a letter can carry its own icon.
             let font = Font::styled(

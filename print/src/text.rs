@@ -544,9 +544,10 @@ fn page_kinds(app: &App) -> (Vec<Kind>, grind_text::page::Starts) {
         let differs = master
             .as_ref()
             .is_some_and(|m| m.left.is_some() || m.usage == grind_text::PageUsage::Mirrored);
-        let left_twin = match differs {
-            true => kind_of(&mut kinds, name.as_deref(), first, true),
-            false => at,
+        let left_twin = if differs {
+            kind_of(&mut kinds, name.as_deref(), first, true)
+        } else {
+            at
         };
         let hand = master.as_ref().and_then(|m| match m.usage {
             grind_text::PageUsage::Left => Some(grind_text::page::Hand::Left),
@@ -625,23 +626,25 @@ fn block_faces<'a>(
         .filter_map(|view| {
             let resolved = app.paragraph(view.index)?;
             let props = resolved.props;
-            let stated = match resolved.declared {
-                true => TextStyle {
+            let stated = if resolved.declared {
+                TextStyle {
                     font_family: props.font_family,
                     font_size: props.font_size,
                     font_weight: props.font_weight,
                     font_style: props.font_style,
-                },
-                false => TextStyle {
+                }
+            } else {
+                TextStyle {
                     font_family: props.font_family,
                     ..TextStyle::default()
-                },
+                }
             };
             // A declared style is the whole answer, so its block is set as body text under it:
             // a heading style that states no size or weight is not given the screen's.
-            let role = match resolved.declared {
-                true => grind_text::look::Role::Body,
-                false => grind_text::look::Role::of(&view.kind, view.style.as_deref()),
+            let role = if resolved.declared {
+                grind_text::look::Role::Body
+            } else {
+                grind_text::look::Role::of(&view.kind, view.style.as_deref())
             };
             let line = crate::faces::LineRule::parse(props.line_height.as_deref());
             (resolved.declared || stated != TextStyle::default() || line.is_some()).then(|| {
@@ -991,9 +994,10 @@ fn level_labels(
                 text - applied
             }
         };
-        match first == 0.0 {
-            true => indents.remove(&view.index),
-            false => indents.insert(view.index, first as f32),
+        if first == 0.0 {
+            indents.remove(&view.index)
+        } else {
+            indents.insert(view.index, first as f32)
         };
     }
     labels
@@ -1104,10 +1108,7 @@ fn styled_cell(
         _ => 0.0,
     };
     // The bottom band is inside the cell on the table's last row and the next row's otherwise.
-    let bottom = match last_row {
-        true => y1,
-        false => y1 + thickness(BOTTOM),
-    };
+    let bottom = if last_row { y1 } else { y1 + thickness(BOTTOM) };
     for (side, edge) in [TOP, RIGHT, BOTTOM, LEFT].into_iter().zip(&edges) {
         let Some(edge) = edge else {
             continue;
@@ -1162,16 +1163,18 @@ fn aligned_width(
     visible_end: usize,
     last: bool,
 ) -> f32 {
-    let end = match last {
-        true => (visible_end..line.end)
+    let end = if last {
+        (visible_end..line.end)
             .take_while(|&i| chars.get(i) == Some(&' '))
             .last()
-            .map_or(visible_end, |i| i + 1),
-        false => visible_end,
+            .map_or(visible_end, |i| i + 1)
+    } else {
+        visible_end
     };
-    match end == line.end {
-        true => line.width,
-        false => layout.x_at(end),
+    if end == line.end {
+        line.width
+    } else {
+        layout.x_at(end)
     }
 }
 
@@ -1329,9 +1332,10 @@ fn lines(
                 glyphs,
                 text: mark.to_owned(),
                 color: Rgb::BLACK,
-                mark: match piece.repeat {
-                    true => Mark::Decoration,
-                    false => Mark::Label(view.index),
+                mark: if piece.repeat {
+                    Mark::Decoration
+                } else {
+                    Mark::Label(view.index)
                 },
             });
         }
@@ -1418,9 +1422,10 @@ fn lines(
                     text: text.to_owned(),
                     color,
                     // A heading row repeated on a later page is drawn, not read again.
-                    mark: match piece.repeat {
-                        true => Mark::Decoration,
-                        false => Mark::Content(view.index),
+                    mark: if piece.repeat {
+                        Mark::Decoration
+                    } else {
+                        Mark::Content(view.index)
                     },
                 });
                 // Where an underline and a strike sit, as fractions of the size: close to what
@@ -2882,10 +2887,7 @@ mod tests {
             .map(|page| {
                 let texts: Vec<String> = texts(page).into_iter().map(|t| t.2).collect();
                 let has = |want: &str| texts.iter().any(|t| t == want);
-                let again = match has("again") {
-                    true => "again ",
-                    false => "",
-                };
+                let again = if has("again") { "again " } else { "" };
                 match (has("HEADFIRST"), has("HEADREST"), has("FOOTREST")) {
                     (true, false, false) => format!("{again}first"),
                     (false, true, true) => format!("{again}rest"),

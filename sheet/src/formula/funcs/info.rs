@@ -106,12 +106,11 @@ fn shape(args: &mut Args, rows: bool) -> Answer {
 /// `IF(MOD(ROW();15)=0;…)`.
 fn where_am_i(args: &mut Args, rows: bool) -> Answer {
     args.arity(0..=1)?;
-    let (row, col) = match args.is_empty() {
-        true => (args.at.pos.row, args.at.pos.col),
-        false => {
-            let area = args.area(0).ok_or(FormulaError::Value)?;
-            (area.rows.start, area.cols.start)
-        }
+    let (row, col) = if args.is_empty() {
+        (args.at.pos.row, args.at.pos.col)
+    } else {
+        let area = args.area(0).ok_or(FormulaError::Value)?;
+        (area.rows.start, area.cols.start)
     };
     Ok(Value::number(f64::from(if rows { row } else { col }) + 1.0))
 }

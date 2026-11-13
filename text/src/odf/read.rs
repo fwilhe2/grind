@@ -1601,9 +1601,10 @@ impl Context<Builder> for MarginalRoom {
             });
             let room = (length("min-height"), spacing);
             let entry = b.layout_marginals.entry(self.layout.clone()).or_default();
-            match self.header {
-                true => entry.0 = Some(room),
-                false => entry.1 = Some(room),
+            if self.header {
+                entry.0 = Some(room);
+            } else {
+                entry.1 = Some(room);
             }
         }
         None
@@ -2557,9 +2558,10 @@ struct TableCell {
 impl TableCell {
     fn open(cell: crate::model::Cell, repeated: u32, b: &mut Builder) -> Self {
         let owns = b.cell.is_none();
-        let outer = match owns {
-            true => b.cell.replace(cell),
-            false => b.cell.clone(),
+        let outer = if owns {
+            b.cell.replace(cell)
+        } else {
+            b.cell.clone()
         };
         TableCell {
             before: b.doc.blocks.len(),
@@ -2994,9 +2996,10 @@ impl Context<Builder> for AltText {
 
     fn end(&mut self, b: &mut Builder) {
         if let Some(pending) = &mut b.image {
-            let slot = match self.long {
-                true => &mut pending.description,
-                false => &mut pending.title,
+            let slot = if self.long {
+                &mut pending.description
+            } else {
+                &mut pending.title
             };
             if slot.is_none() && !self.text.is_empty() {
                 *slot = Some(std::mem::take(&mut self.text));

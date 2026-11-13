@@ -95,9 +95,12 @@ impl Toggle {
 /// attribute removed.
 #[must_use]
 pub fn coloured(style: &CellStyle, background: bool, value: Option<String>) -> Option<CellStyle> {
-    restyled(style, |style| match background {
-        true => style.background = value,
-        false => style.color = value,
+    restyled(style, |style| {
+        if background {
+            style.background = value;
+        } else {
+            style.color = value;
+        }
     })
 }
 

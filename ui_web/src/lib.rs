@@ -414,9 +414,10 @@ impl Shell {
         };
         // The tab says the application's name on its own with nothing open, rather than the name
         // of a document there isn't one of.
-        self.dom.document.set_title(&match what.is_empty() {
-            true => "grind".to_owned(),
-            false => format!("{name} — {what}"),
+        self.dom.document.set_title(&if what.is_empty() {
+            "grind".to_owned()
+        } else {
+            format!("{name} — {what}")
         });
         // The tool row shows what the *selection* already is, so pressing Bold on bold text
         // reads as "this is bold" rather than as "make it bold again".
@@ -621,13 +622,14 @@ impl Shell {
             "doc.export-markdown" => self.export_markdown(),
             "doc.export-pdf" => spawn_local(self.clone().paper(Paper::Export)),
             "doc.print-pdf" => spawn_local(self.clone().paper(Paper::Print)),
-            "doc.print-preview" => match self.previewing.get() {
-                true => {
+            "doc.print-preview" => {
+                if self.previewing.get() {
                     self.previewing.set(false);
                     let _ = self.show(self.mode.get());
+                } else {
+                    spawn_local(self.clone().paper(Paper::Preview));
                 }
-                false => spawn_local(self.clone().paper(Paper::Preview)),
-            },
+            }
             "doc.export-csv" => self.export_csv("csv"),
             "doc.export-tsv" => self.export_csv("tsv"),
             "doc.undo" => self.undo(),
@@ -679,15 +681,16 @@ impl Shell {
     /// current, and clicking a line selects what it projects.
     fn toggle_source(&self) {
         let open = self.source.borrow().is_some();
-        *self.source.borrow_mut() = match open {
-            true => None,
-            false => match self.mode.get() {
+        *self.source.borrow_mut() = if open {
+            None
+        } else {
+            match self.mode.get() {
                 Mode::Sheet => Some(self.sheet.project()),
                 Mode::Text => Some(self.text.project()),
                 // Nothing to project. Unreachable — `command::WELCOME` has no such row — and
                 // answered rather than unwrapped, so a stale id leaves the pane as it was.
                 Mode::Welcome => None,
-            },
+            }
         };
         if !open {
             self.render_source();
@@ -716,13 +719,14 @@ impl Shell {
     /// code view's shape, with a list where the projection is.
     fn toggle_problems(&self) {
         let open = self.problems.borrow().is_some();
-        *self.problems.borrow_mut() = match open {
-            true => None,
-            false => match self.mode.get() {
+        *self.problems.borrow_mut() = if open {
+            None
+        } else {
+            match self.mode.get() {
                 Mode::Sheet => Some(problems::Listing::Lint(self.sheet.lint())),
                 Mode::Text => Some(problems::Listing::Lint(self.text.lint())),
                 Mode::Welcome => None,
-            },
+            }
         };
         if !open {
             self.render_problems();
@@ -844,9 +848,10 @@ impl Shell {
         if cut {
             self.delete_selection();
         }
-        self.set_message(match cut {
-            true => "Cut".to_owned(),
-            false => "Copied".to_owned(),
+        self.set_message(if cut {
+            "Cut".to_owned()
+        } else {
+            "Copied".to_owned()
         });
     }
 
@@ -1610,12 +1615,13 @@ impl Shell {
                     "Somebody saved {name} on the server since you opened it. Replace their \
                      version with yours?"
                 ));
-                match replace {
-                    true => Box::pin(self.save_remote(true)).await,
-                    false => self.set_message(format!(
+                if replace {
+                    Box::pin(self.save_remote(true)).await;
+                } else {
+                    self.set_message(format!(
                         "{name} is not saved. Download a copy, or save it to the server under \
-                         another name."
-                    )),
+                     another name."
+                    ));
                 }
             }
             Err(server::Refused::Said(why)) => self.set_message(format!("Not saved: {why}")),
@@ -2078,9 +2084,10 @@ fn wire_palette(shell: &Rc<Shell>) -> Result<(), JsValue> {
             "k" | "K" if primary => {
                 event.prevent_default();
                 event.stop_propagation();
-                match keys.palette.is_open() {
-                    true => keys.close_palette(),
-                    false => keys.open_palette(),
+                if keys.palette.is_open() {
+                    keys.close_palette();
+                } else {
+                    keys.open_palette();
                 }
             }
             "Escape" if keys.palette.is_open() => {
@@ -2203,13 +2210,10 @@ fn wire_swatches(shell: &Rc<Shell>) -> Result<(), JsValue> {
         let target = target.to_owned();
         let anchor = button.clone();
         listen(&button, "click", move |_: Event| {
-            match shell.swatches.target().as_deref() == Some(target.as_str()) {
-                true => shell.swatches.close(),
-                false => {
-                    if let Err(error) = shell.swatches.open(&anchor, target.clone()) {
-                        web_sys::console::error_1(&error);
-                    }
-                }
+            if shell.swatches.target().as_deref() == Some(target.as_str()) {
+                shell.swatches.close();
+            } else if let Err(error) = shell.swatches.open(&anchor, target.clone()) {
+                web_sys::console::error_1(&error);
             }
         })?;
         keep_focus(&button)?;

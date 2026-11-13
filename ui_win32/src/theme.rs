@@ -149,12 +149,13 @@ pub fn accent_for(base: Rgb, mode: Mode) -> Rgb {
     }
     // Nothing on this hue reads on this ground — a fully saturated yellow on white is the real
     // case. Fall back to the ground's own ink, which always does.
-    match best.contrast(ground) >= VISIBLE {
-        true => best,
-        false => match mode {
+    if best.contrast(ground) >= VISIBLE {
+        best
+    } else {
+        match mode {
             Mode::Light => Rgb::from_hsl(h, s, 0.25),
             Mode::Dark => Rgb::from_hsl(h, s, 0.78),
-        },
+        }
     }
 }
 
@@ -368,10 +369,10 @@ impl Theme {
             // wash is diluted to a fifth, so the legibility argument does not apply, and the tint
             // would make a light theme's selection too pale.
             selection: system,
-            on_accent: match accent.contrast(Rgb(0, 0, 0)) > accent.contrast(Rgb(0xff, 0xff, 0xff))
-            {
-                true => Rgb(0, 0, 0),
-                false => Rgb(0xff, 0xff, 0xff),
+            on_accent: if accent.contrast(Rgb(0, 0, 0)) > accent.contrast(Rgb(0xff, 0xff, 0xff)) {
+                Rgb(0, 0, 0)
+            } else {
+                Rgb(0xff, 0xff, 0xff)
             },
             ..base
         }
@@ -637,9 +638,10 @@ fn dark_controls(hwnd: windows::Win32::Foundation::HWND, theme: Theme) {
             let flush: unsafe extern "system" fn() = std::mem::transmute(flush);
             flush();
         }
-        let class = match dark {
-            true => w!("DarkMode_Explorer"),
-            false => w!("Explorer"),
+        let class = if dark {
+            w!("DarkMode_Explorer")
+        } else {
+            w!("Explorer")
         };
         let _ = SetWindowTheme(hwnd, class, PCWSTR::null());
     }

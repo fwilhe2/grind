@@ -352,9 +352,10 @@ impl Swatches {
     /// and the sheet's background for a fill.
     fn show(&self, value: Option<&str>, text: bool) {
         let palette = crate::theme::Palette::of(&self.face);
-        let unset = match text {
-            true => palette.foreground,
-            false => palette.background,
+        let unset = if text {
+            palette.foreground
+        } else {
+            palette.background
         };
         self.shown
             .set(value.and_then(crate::theme::color).unwrap_or(unset));
@@ -680,12 +681,13 @@ impl Picker {
         };
         let (kind, decimals, grouping, symbol) = format.preset_params();
         let datetime = *format == numfmt::datetime_preset().in_locale(format.locale.clone());
-        let selected = match datetime {
-            true => DATETIME,
-            false => KINDS
+        let selected = if datetime {
+            DATETIME
+        } else {
+            KINDS
                 .iter()
                 .position(|(_, k)| *k == Some(kind))
-                .unwrap_or(0) as u32,
+                .unwrap_or(0) as u32
         };
         self.kind.set_selected(selected);
         self.decimals.set_value(f64::from(decimals));
@@ -693,9 +695,10 @@ impl Picker {
         self.show_currency(&symbol);
         self.note.set_visible(!format.is_preset());
         self.sensitivity();
-        match datetime {
-            true => "Date".to_owned(),
-            false => face(Some(kind), &symbol),
+        if datetime {
+            "Date".to_owned()
+        } else {
+            face(Some(kind), &symbol)
         }
     }
 
@@ -770,10 +773,8 @@ impl Picker {
                 self.built(app).as_ref(),
             )
             .unwrap_or_default();
-        self.sample.set_label(match shown.is_empty() {
-            true => "—",
-            false => &shown,
-        });
+        self.sample
+            .set_label(if shown.is_empty() { "—" } else { &shown });
     }
 
     /// Press the button for `symbol` — one of the three, the fourth carrying a document's own,
@@ -798,18 +799,18 @@ impl Picker {
 
     /// The symbol whose button is down.
     fn symbol(&self) -> String {
-        match self.other.is_active() {
-            true => self
-                .other
+        if self.other.is_active() {
+            self.other
                 .label()
                 .map(|l| l.to_string())
-                .unwrap_or_default(),
-            false => numfmt::CURRENCIES
+                .unwrap_or_default()
+        } else {
+            numfmt::CURRENCIES
                 .iter()
                 .zip(&self.currencies)
                 .find(|(_, button)| button.is_active())
                 .map_or(numfmt::DEFAULT_CURRENCY, |((symbol, _), _)| *symbol)
-                .to_owned(),
+                .to_owned()
         }
     }
 

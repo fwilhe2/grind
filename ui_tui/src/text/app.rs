@@ -546,9 +546,10 @@ impl App {
             return None;
         }
         Some(
-            match (anchor.block, anchor.offset) <= (self.caret.block, self.caret.offset) {
-                true => (anchor, self.caret),
-                false => (self.caret, anchor),
+            if (anchor.block, anchor.offset) <= (self.caret.block, self.caret.offset) {
+                (anchor, self.caret)
+            } else {
+                (self.caret, anchor)
             },
         )
     }
@@ -578,13 +579,11 @@ impl App {
         let mut out = String::new();
         for index in from.block..=to.block {
             let chars: Vec<char> = self.core.input_text(index).ok()?.chars().collect();
-            let start = match index == from.block {
-                true => from.offset,
-                false => 0,
-            };
-            let end = match index == to.block {
-                true => to.offset,
-                false => chars.len(),
+            let start = if index == from.block { from.offset } else { 0 };
+            let end = if index == to.block {
+                to.offset
+            } else {
+                chars.len()
             };
             if index > from.block {
                 out.push('\n');
@@ -848,9 +847,10 @@ impl App {
     }
 
     fn history(&mut self, changed: bool, when_nothing_happened: &str) {
-        self.status = match changed {
-            true => String::new(),
-            false => when_nothing_happened.to_owned(),
+        self.status = if changed {
+            String::new()
+        } else {
+            when_nothing_happened.to_owned()
         };
         // History moves blocks around underneath the caret, so put it somewhere that exists.
         self.clamp_caret();
@@ -935,11 +935,10 @@ impl App {
                 return;
             }
             KeyCode::Backspace => {
-                match buf.is_empty() {
-                    true => self.mode = Mode::Normal,
-                    false => {
-                        buf.pop();
-                    }
+                if buf.is_empty() {
+                    self.mode = Mode::Normal;
+                } else {
+                    buf.pop();
                 }
                 return;
             }
@@ -999,9 +998,10 @@ impl App {
             // and the same word turns it off: nothing is written either way.
             "names" => {
                 self.names = !self.names;
-                self.status = match self.names {
-                    true => "names on — :names to turn it off".to_owned(),
-                    false => "names off".to_owned(),
+                self.status = if self.names {
+                    "names on — :names to turn it off".to_owned()
+                } else {
+                    "names off".to_owned()
                 };
             }
             "words" => self.cmd_words(),
@@ -1306,9 +1306,10 @@ impl App {
             self.status = "no picture beside the caret".to_owned();
             return;
         };
-        let (verb, now) = match long {
-            false => ("alt", image.title),
-            true => ("desc", image.description),
+        let (verb, now) = if long {
+            ("desc", image.description)
+        } else {
+            ("alt", image.title)
         };
         let now = now.unwrap_or_default();
         self.mode = Mode::Command {
@@ -1372,9 +1373,10 @@ impl App {
         match self.core.set_bookmark(name, Some(self.caret.block)) {
             Ok(moved) => {
                 self.names = true;
-                self.status = match moved {
-                    true => format!("#{name} moved here \u{2014} :names shows where"),
-                    false => format!("#{name} anchored here \u{2014} :names shows where"),
+                self.status = if moved {
+                    format!("#{name} moved here \u{2014} :names shows where")
+                } else {
+                    format!("#{name} anchored here \u{2014} :names shows where")
                 };
             }
             Err(e) => self.status = e.to_string(),
@@ -1512,32 +1514,33 @@ impl App {
         let here = (self.caret.block, self.caret.offset);
         let at = hits.iter().position(|hit| *hit >= here).unwrap_or(0);
         self.find = Find::new(needle, hits, at);
-        match self.find.hits.is_empty() {
-            true => self.status = format!("no match for {needle}"),
-            false => {
-                self.go_to_match();
-                self.status = format!(
-                    "{} of {} \u{00b7} n next, N previous",
-                    self.find.at + 1,
-                    self.find.hits.len()
-                );
-            }
+        if self.find.hits.is_empty() {
+            self.status = format!("no match for {needle}");
+        } else {
+            self.go_to_match();
+            self.status = format!(
+                "{} of {} \u{00b7} n next, N previous",
+                self.find.at + 1,
+                self.find.hits.len()
+            );
         }
     }
 
     /// `n` / `N` — the next or previous match, wrapping round the ends the way vi's do.
     fn step_match(&mut self, forward: bool) {
         if !self.find.is_on() {
-            self.status = match self.find.needle.is_empty() {
-                true => "nothing to step \u{2014} :find <text> first".to_owned(),
-                false => format!("no match for {}", self.find.needle),
+            self.status = if self.find.needle.is_empty() {
+                "nothing to step \u{2014} :find <text> first".to_owned()
+            } else {
+                format!("no match for {}", self.find.needle)
             };
             return;
         }
         let count = self.find.hits.len();
-        self.find.at = match forward {
-            true => (self.find.at + 1) % count,
-            false => (self.find.at + count - 1) % count,
+        self.find.at = if forward {
+            (self.find.at + 1) % count
+        } else {
+            (self.find.at + count - 1) % count
         };
         self.go_to_match();
         self.status = format!("{} of {count}", self.find.at + 1);
@@ -1660,9 +1663,10 @@ impl App {
         }
         let all = self.core.misspellings(0..usize::MAX);
         let carets: Vec<Caret> = all.iter().map(|m| m.caret()).collect();
-        let towards = match forward {
-            true => grind_text::find::Towards::Next,
-            false => grind_text::find::Towards::Previous,
+        let towards = if forward {
+            grind_text::find::Towards::Next
+        } else {
+            grind_text::find::Towards::Previous
         };
         let Some(at) = grind_text::find::step(&carets, self.caret, towards) else {
             self.status = "no misspelt words".to_owned();
@@ -1685,9 +1689,10 @@ impl App {
             at + 1,
             all.len(),
             wrong.word,
-            match offers.is_empty() {
-                true => "no suggestions".to_owned(),
-                false => offers.join("  "),
+            if offers.is_empty() {
+                "no suggestions".to_owned()
+            } else {
+                offers.join("  ")
             }
         );
     }
@@ -1735,12 +1740,13 @@ impl App {
             return;
         };
         speller.accept(&wrong.word);
-        self.status = match forever {
-            false => format!("{} is ignored for this session", wrong.word),
-            true => match grind_spell::personal::add(&wrong.word) {
+        self.status = if forever {
+            match grind_spell::personal::add(&wrong.word) {
                 Ok(path) => format!("{} added to {}", wrong.word, path.display()),
                 Err(e) => format!("{} is ignored, but not saved: {e}", wrong.word),
-            },
+            }
+        } else {
+            format!("{} is ignored for this session", wrong.word)
         };
     }
 
@@ -1748,11 +1754,12 @@ impl App {
 
     /// Attach the built-in checker as [`App::grammar`] says, or none.
     fn check_grammar(&mut self) {
-        let checker: Option<Arc<dyn grind_core::grammar::Checker>> = match self.grammar.builtin {
-            true => Some(Arc::new(grind_grammar::Builtin {
+        let checker: Option<Arc<dyn grind_core::grammar::Checker>> = if self.grammar.builtin {
+            Some(Arc::new(grind_grammar::Builtin {
                 picky: self.grammar.style,
-            })),
-            false => None,
+            }))
+        } else {
+            None
         };
         self.core.set_checker(checker);
         self.redraw.raise();
@@ -1788,9 +1795,10 @@ impl App {
         }
         let all = self.grammar_flags(0..usize::MAX);
         let carets: Vec<Caret> = all.iter().map(|f| f.caret()).collect();
-        let towards = match forward {
-            true => grind_text::find::Towards::Next,
-            false => grind_text::find::Towards::Previous,
+        let towards = if forward {
+            grind_text::find::Towards::Next
+        } else {
+            grind_text::find::Towards::Previous
         };
         let Some(at) = grind_text::find::step(&carets, self.caret, towards) else {
             self.status = "no grammar findings".to_owned();
@@ -1805,9 +1813,12 @@ impl App {
             .iter()
             .take(5)
             .enumerate()
-            .map(|(i, with)| match with.trim().is_empty() {
-                true => format!("{} (remove)", i + 1),
-                false => format!("{} {with}", i + 1),
+            .map(|(i, with)| {
+                if with.trim().is_empty() {
+                    format!("{} (remove)", i + 1)
+                } else {
+                    format!("{} {with}", i + 1)
+                }
             })
             .collect();
         self.status = format!(
@@ -1815,9 +1826,10 @@ impl App {
             at + 1,
             all.len(),
             finding.message,
-            match offers.is_empty() {
-                true => "no replacement".to_owned(),
-                false => offers.join("  "),
+            if offers.is_empty() {
+                "no replacement".to_owned()
+            } else {
+                offers.join("  ")
             }
         );
     }
@@ -1867,9 +1879,10 @@ impl App {
         let mut words = arg.split_whitespace();
         match (words.next(), words.next()) {
             (None, _) => {
-                self.status = match self.grammar.builtin {
-                    false => "grammar is off \u{2014} :grammar on turns it on".to_owned(),
-                    true => "grammar by the built-in checker".to_owned(),
+                self.status = if self.grammar.builtin {
+                    "grammar by the built-in checker".to_owned()
+                } else {
+                    "grammar is off \u{2014} :grammar on turns it on".to_owned()
                 };
                 return;
             }
@@ -1955,24 +1968,26 @@ impl App {
             },
         };
         let mut style = self.core.char_style(from, to).unwrap_or_default();
-        match background {
-            true => style.background = value,
-            false => style.color = value,
+        if background {
+            style.background = value;
+        } else {
+            style.color = value;
         }
         self.set_selection_style(&style, name);
     }
 
     /// `:li` makes the caret's block a list item, `:li 2` nests it one level deeper.
     fn cmd_list(&mut self, depth: &str) {
-        let depth = match depth.is_empty() {
-            true => 1,
-            false => match depth.parse::<u32>() {
+        let depth = if depth.is_empty() {
+            1
+        } else {
+            match depth.parse::<u32>() {
                 Ok(depth) if depth >= 1 => depth,
                 _ => {
                     self.status = format!("not a list depth: {depth}");
                     return;
                 }
-            },
+            }
         };
         match self
             .core
@@ -2038,9 +2053,10 @@ impl App {
             hints,
             off: Vec::new(),
         });
-        self.status = match report.is_empty() {
-            true => "no problems found".to_owned(),
-            false => format!("{} finding(s) — Enter goes to one", report.len()),
+        self.status = if report.is_empty() {
+            "no problems found".to_owned()
+        } else {
+            format!("{} finding(s) — Enter goes to one", report.len())
         };
         self.problems.open(report);
     }
@@ -2093,13 +2109,12 @@ impl App {
                 let rows = self.table_rows(table);
                 // Opening mid-table (scrolled into it from above) starts on the row the top of
                 // the window is actually on rather than at the table's own first rule.
-                let from = match out.is_empty() {
-                    true => rows
-                        .iter()
+                let from = if out.is_empty() {
+                    rows.iter()
                         .position(|row| row.holds(block, skip))
-                        .unwrap_or(0),
-                    // Reached from above, so the whole table is drawn — rule first.
-                    false => 0,
+                        .unwrap_or(0)
+                } else {
+                    0
                 };
                 for row in rows.into_iter().skip(from) {
                     if out.len() == height {
@@ -2307,9 +2322,10 @@ impl App {
                     f.finding.kind,
                     grind_text::grammar::Kind::Typography | grind_text::grammar::Kind::Style
                 );
-                match range.is_empty() {
-                    true => (range.start.saturating_sub(1)..range.end, quiet),
-                    false => (range, quiet),
+                if range.is_empty() {
+                    (range.start.saturating_sub(1)..range.end, quiet)
+                } else {
+                    (range, quiet)
                 }
             })
             .collect();
@@ -2317,13 +2333,15 @@ impl App {
         // The selection, clipped to this block — it may start pages above and end below.
         let within = selection.as_ref().and_then(|(from, to)| {
             (from.block <= view.index && view.index <= to.block).then(|| {
-                let start = match from.block == view.index {
-                    true => from.offset,
-                    false => 0,
+                let start = if from.block == view.index {
+                    from.offset
+                } else {
+                    0
                 };
-                let end = match to.block == view.index {
-                    true => to.offset,
-                    false => chars.len(),
+                let end = if to.block == view.index {
+                    to.offset
+                } else {
+                    chars.len()
                 };
                 start..end
             })
@@ -2569,13 +2587,14 @@ impl App {
                     // wrapped paragraph reads as one paragraph.
                     let first = *line == 0;
                     let mut spans = vec![Span::styled(
-                        match first {
-                            true => format!(
+                        if first {
+                            format!(
                                 "{:<4}{:<3} ",
                                 grind_text::loc::format(*block),
                                 describe_block(&view.kind, view.style.as_deref())
-                            ),
-                            false => " ".repeat(GUTTER as usize),
+                            )
+                        } else {
+                            " ".repeat(GUTTER as usize)
                         },
                         gutter_style(&view.kind, view.style.as_deref()),
                     )];
@@ -2646,10 +2665,7 @@ impl App {
                     let mut drawn = String::from(start);
                     for column in 0..*columns {
                         drawn.push_str(&"\u{2500}".repeat(usize::from(*width)));
-                        drawn.push(match column + 1 == *columns {
-                            true => end,
-                            false => join,
-                        });
+                        drawn.push(if column + 1 == *columns { end } else { join });
                     }
                     Line::from(vec![
                         Span::styled(
@@ -2808,11 +2824,10 @@ fn fit(spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
 /// How many characters a selection covers, for the status line. Across blocks it counts the
 /// boundaries as one character each, which is what erasing the same span would take out.
 fn span_len(from: Caret, to: Caret) -> usize {
-    match from.block == to.block {
-        true => to.offset.saturating_sub(from.offset),
-        // Only the two ends are known here without reading every block between them; a
-        // rough count is what a status line is for.
-        false => to.block - from.block + to.offset,
+    if from.block == to.block {
+        to.offset.saturating_sub(from.offset)
+    } else {
+        to.block - from.block + to.offset
     }
 }
 
@@ -2898,12 +2913,13 @@ fn spool(pdf: &[u8], title: &str) -> Result<String, String> {
     }
     let out = lp.wait_with_output().map_err(|e| format!("lp: {e}"))?;
     let said = |bytes: &[u8]| String::from_utf8_lossy(bytes).trim().to_owned();
-    match out.status.success() {
-        true => Ok(match said(&out.stdout) {
+    if out.status.success() {
+        Ok(match said(&out.stdout) {
             text if text.is_empty() => "sent to the printer".to_owned(),
             text => text,
-        }),
-        false => Err(format!("lp: {}", said(&out.stderr))),
+        })
+    } else {
+        Err(format!("lp: {}", said(&out.stderr)))
     }
 }
 

@@ -36,9 +36,10 @@ pub struct Function {
 impl Function {
     /// The parameters a caller writes: the receiver dropped for a method.
     fn written(&self) -> &[(String, String)] {
-        match self.method {
-            true => &self.params[1..],
-            false => &self.params,
+        if self.method {
+            &self.params[1..]
+        } else {
+            &self.params
         }
     }
 
@@ -48,9 +49,10 @@ impl Function {
             .iter()
             .map(|(name, ty)| format!("{name}: {ty}"))
             .collect();
-        let receiver = match self.method {
-            true => format!("{}.", self.params[0].1),
-            false => String::new(),
+        let receiver = if self.method {
+            format!("{}.", self.params[0].1)
+        } else {
+            String::new()
         };
         let returns = self
             .returns
@@ -58,9 +60,10 @@ impl Function {
             .filter(|r| *r != "()")
             .map(|r| format!(" -> {r}"))
             .unwrap_or_default();
-        match self.property {
-            true => format!("{receiver}{}{returns}", self.name),
-            false => format!("{receiver}{}({}){returns}", self.name, params.join(", ")),
+        if self.property {
+            format!("{receiver}{}{returns}", self.name)
+        } else {
+            format!("{receiver}{}({}){returns}", self.name, params.join(", "))
         }
     }
 
@@ -69,17 +72,16 @@ impl Function {
     }
 
     fn completion(&self) -> CompletionItem {
-        let insert = match self.property {
-            true => self.name.clone(),
-            false => {
-                let stops: Vec<String> = self
-                    .written()
-                    .iter()
-                    .enumerate()
-                    .map(|(i, (name, _))| format!("${{{}:{name}}}", i + 1))
-                    .collect();
-                format!("{}({})", self.name, stops.join(", "))
-            }
+        let insert = if self.property {
+            self.name.clone()
+        } else {
+            let stops: Vec<String> = self
+                .written()
+                .iter()
+                .enumerate()
+                .map(|(i, (name, _))| format!("${{{}:{name}}}", i + 1))
+                .collect();
+            format!("{}({})", self.name, stops.join(", "))
         };
         let params: Vec<&str> = self.written().iter().map(|(n, _)| n.as_str()).collect();
         CompletionItem {

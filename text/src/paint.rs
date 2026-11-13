@@ -78,13 +78,11 @@ pub fn covered(block: usize, from: Caret, to: Caret) -> Option<(usize, usize)> {
     if from == to || block < from.block || block > to.block {
         return None;
     }
-    let start = match block == from.block {
-        true => from.offset,
-        false => 0,
-    };
-    let end = match block == to.block {
-        true => to.offset,
-        false => usize::MAX,
+    let start = if block == from.block { from.offset } else { 0 };
+    let end = if block == to.block {
+        to.offset
+    } else {
+        usize::MAX
     };
     Some((start, end))
 }
@@ -100,9 +98,10 @@ pub fn band(layout: &Layout, line: &Line, start: usize, end: usize) -> Option<(f
     if from >= to {
         return None;
     }
-    let right = match to == line.end {
-        true => line.width,
-        false => layout.x_at(to),
+    let right = if to == line.end {
+        line.width
+    } else {
+        layout.x_at(to)
     };
     Some((layout.x_at(from), right))
 }

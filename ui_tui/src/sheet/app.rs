@@ -561,15 +561,14 @@ impl App {
             ),
         };
         let on_word = self.misspelt_here().is_some();
-        let at = match forward {
-            true => all
-                .iter()
+        let at = if forward {
+            all.iter()
                 .position(|m| key(m) > here || (!on_word && key(m) == here))
-                .unwrap_or(0),
-            false => all
-                .iter()
+                .unwrap_or(0)
+        } else {
+            all.iter()
                 .rposition(|m| key(m) < here)
-                .unwrap_or(all.len() - 1),
+                .unwrap_or(all.len() - 1)
         };
         let wrong = all[at].clone();
         self.sheet = wrong.sheet;
@@ -588,9 +587,10 @@ impl App {
             at + 1,
             all.len(),
             wrong.word,
-            match offers.is_empty() {
-                true => "no suggestions".to_owned(),
-                false => offers.join("  "),
+            if offers.is_empty() {
+                "no suggestions".to_owned()
+            } else {
+                offers.join("  ")
             }
         );
         self.misspelt_at = Some(wrong);
@@ -634,12 +634,13 @@ impl App {
         };
         speller.accept(&wrong.word);
         self.misspelt_at = None;
-        self.status = match forever {
-            false => format!("\u{201c}{}\u{201d} ignored for this session", wrong.word),
-            true => match grind_spell::personal::add(&wrong.word) {
+        self.status = if forever {
+            match grind_spell::personal::add(&wrong.word) {
                 Ok(path) => format!("\u{201c}{}\u{201d} added to {}", wrong.word, path.display()),
                 Err(e) => format!("could not add {}: {e}", wrong.word),
-            },
+            }
+        } else {
+            format!("\u{201c}{}\u{201d} ignored for this session", wrong.word)
         };
     }
 
@@ -669,16 +670,15 @@ impl App {
             .position(|(s, p)| (*s, p.row, p.col) >= here)
             .unwrap_or(0);
         self.find = Find::new(needle, hits, at);
-        match self.find.hits.is_empty() {
-            true => self.status = format!("no cell holds {needle}"),
-            false => {
-                self.go_to_match();
-                self.status = format!(
-                    "{} of {} \u{00b7} n next, N previous",
-                    self.find.at + 1,
-                    self.find.hits.len()
-                );
-            }
+        if self.find.hits.is_empty() {
+            self.status = format!("no cell holds {needle}");
+        } else {
+            self.go_to_match();
+            self.status = format!(
+                "{} of {} \u{00b7} n next, N previous",
+                self.find.at + 1,
+                self.find.hits.len()
+            );
         }
     }
 
@@ -719,16 +719,18 @@ impl App {
     /// `n` / `N` — the next or previous match, wrapping round the ends the way vi's do.
     fn step_match(&mut self, forward: bool) {
         if !self.find.is_on() {
-            self.status = match self.find.needle.is_empty() {
-                true => "nothing to step \u{2014} :find <text> first".to_owned(),
-                false => format!("no cell holds {}", self.find.needle),
+            self.status = if self.find.needle.is_empty() {
+                "nothing to step \u{2014} :find <text> first".to_owned()
+            } else {
+                format!("no cell holds {}", self.find.needle)
             };
             return;
         }
         let count = self.find.hits.len();
-        self.find.at = match forward {
-            true => (self.find.at + 1) % count,
-            false => (self.find.at + count - 1) % count,
+        self.find.at = if forward {
+            (self.find.at + 1) % count
+        } else {
+            (self.find.at + count - 1) % count
         };
         self.go_to_match();
         self.status = format!("{} of {count}", self.find.at + 1);
@@ -872,9 +874,10 @@ impl App {
             hints,
             off: Vec::new(),
         });
-        self.status = match report.is_empty() {
-            true => "no problems found".to_owned(),
-            false => format!("{} finding(s) — Enter goes to one", report.len()),
+        self.status = if report.is_empty() {
+            "no problems found".to_owned()
+        } else {
+            format!("{} finding(s) — Enter goes to one", report.len())
         };
         self.problems.open(report);
     }
@@ -1171,12 +1174,12 @@ impl App {
     }
 
     fn begin_edit(&mut self, from_empty: bool) {
-        let text = match from_empty {
-            true => String::new(),
-            false => self
-                .core
+        let text = if from_empty {
+            String::new()
+        } else {
+            self.core
                 .input_text(self.sheet, self.active)
-                .unwrap_or_default(),
+                .unwrap_or_default()
         };
         let buf: Vec<char> = text.chars().collect();
         let cursor = buf.len();
@@ -1186,9 +1189,10 @@ impl App {
     }
 
     fn report(&mut self, when_nothing_happened: &str, changed: bool) {
-        self.status = match changed {
-            true => String::new(),
-            false => when_nothing_happened.to_owned(),
+        self.status = if changed {
+            String::new()
+        } else {
+            when_nothing_happened.to_owned()
         };
     }
 
@@ -1401,11 +1405,10 @@ impl App {
                 return;
             }
             KeyCode::Backspace => {
-                match buf.is_empty() {
-                    true => self.mode = Mode::Normal,
-                    false => {
-                        buf.pop();
-                    }
+                if buf.is_empty() {
+                    self.mode = Mode::Normal;
+                } else {
+                    buf.pop();
                 }
                 return;
             }
@@ -1461,9 +1464,10 @@ impl App {
             "names" => self.cmd_overlay(false),
             "formulas" => {
                 self.formulas = !self.formulas;
-                self.status = match self.formulas {
-                    true => "formulas shown instead of their results \u{2014} :formulas again puts them back".to_owned(),
-                    false => "results shown again".to_owned(),
+                self.status = if self.formulas {
+                    "formulas shown instead of their results \u{2014} :formulas again puts them back".to_owned()
+                } else {
+                    "results shown again".to_owned()
                 };
             }
             "bold" => self.toggle_style(|style| toggle(&mut style.font_weight, "bold")),
@@ -1574,9 +1578,10 @@ impl App {
         let (start, end) = self.rect();
         let lines = grind_sheet::nav::fill_lines(start, end, down);
         if lines.is_empty() {
-            self.status = match down {
-                true => "select more than one row first".to_owned(),
-                false => "select more than one column first".to_owned(),
+            self.status = if down {
+                "select more than one row first".to_owned()
+            } else {
+                "select more than one column first".to_owned()
             };
             return;
         }
@@ -1829,10 +1834,7 @@ impl App {
                 let side =
                     |length: &str| grind_sheet::style::mm_length((mm(length) * factor).max(10.0));
                 let (w, h) = (side(&chart.width), side(&chart.height));
-                let word = match factor > 1.0 {
-                    true => "bigger",
-                    false => "smaller",
-                };
+                let word = if factor > 1.0 { "bigger" } else { "smaller" };
                 self.reshape(index, &chart.x, &chart.y, &w, &h, word);
             }
         }
@@ -2083,9 +2085,10 @@ impl App {
     /// `:friendly` — the formula line's plain-words reading turned off, or back on.
     fn cmd_friendly(&mut self) {
         self.friendly = !self.friendly;
-        self.status = match self.friendly {
-            true => "formulas read in plain words at rest — :friendly again shows them as stored",
-            false => "formulas shown as stored — :friendly again reads them in plain words",
+        self.status = if self.friendly {
+            "formulas read in plain words at rest — :friendly again shows them as stored"
+        } else {
+            "formulas shown as stored — :friendly again reads them in plain words"
         }
         .to_owned();
     }
@@ -2156,15 +2159,16 @@ impl App {
     /// `:eval <formula>` — what it would come to, storing nothing. Display syntax, evaluated at
     /// the active cell, as `grind sheet eval` does.
     fn cmd_eval(&mut self, formula: &str) {
-        let canonical = match formula.starts_with('=') {
-            true => match display::from_display(formula) {
+        let canonical = if formula.starts_with('=') {
+            match display::from_display(formula) {
                 Ok(canonical) => canonical,
                 Err(e) => {
                     self.status = format!("{} (at {})", e.message, e.at);
                     return;
                 }
-            },
-            false => format!("={formula}"),
+            }
+        } else {
+            format!("={formula}")
         };
         self.status = match self.core.preview(self.sheet, self.active, &canonical) {
             Ok(value) => format!("{formula} \u{2192} {}", show_value(&self.core, &value)),
@@ -2279,15 +2283,14 @@ impl App {
     /// undo step either way. What the covered cells held stays, out of sight.
     fn cmd_merge(&mut self, merge: bool) {
         let (start, end) = self.rect();
-        let done = match merge {
-            true => self
-                .core
+        let done = if merge {
+            self.core
                 .merge(self.sheet, start, end)
-                .map(|_| "merged \u{2014} u takes it back".to_owned()),
-            false => self
-                .core
+                .map(|_| "merged \u{2014} u takes it back".to_owned())
+        } else {
+            self.core
                 .unmerge(self.sheet, start, end)
-                .map(|n| format!("unmerged {n} range(s)")),
+                .map(|n| format!("unmerged {n} range(s)"))
         };
         match done {
             Ok(said) => {
@@ -2303,22 +2306,15 @@ impl App {
     /// Explicit rather than guessed: a rectangle covers both axes.
     fn cmd_hide(&mut self, hidden: bool, rows: bool) {
         let (start, end) = self.rect();
-        let done = match rows {
-            true => self
-                .core
-                .set_row_hidden(self.sheet, start.row..end.row + 1, hidden),
-            false => self
-                .core
-                .set_col_hidden(self.sheet, start.col..end.col + 1, hidden),
+        let done = if rows {
+            self.core
+                .set_row_hidden(self.sheet, start.row..end.row + 1, hidden)
+        } else {
+            self.core
+                .set_col_hidden(self.sheet, start.col..end.col + 1, hidden)
         };
-        let what = match rows {
-            true => "row",
-            false => "column",
-        };
-        let how = match hidden {
-            true => "hid",
-            false => "showed",
-        };
+        let what = if rows { "row" } else { "column" };
+        let how = if hidden { "hid" } else { "showed" };
         match done {
             Ok(changed) => {
                 self.leave_visual();
@@ -2497,9 +2493,10 @@ impl App {
             Some(_) => self.rect(),
             None => {
                 let (rows, cols) = self.core.used_extent(self.sheet).unwrap_or((0, 0));
-                match rows == 0 || cols == 0 {
-                    true => (Pos::new(0, 0), Pos::new(0, 0)),
-                    false => (Pos::new(0, 0), Pos::new(rows - 1, cols - 1)),
+                if rows == 0 || cols == 0 {
+                    (Pos::new(0, 0), Pos::new(0, 0))
+                } else {
+                    (Pos::new(0, 0), Pos::new(rows - 1, cols - 1))
                 }
             }
         };
@@ -2526,23 +2523,18 @@ impl App {
     /// indication that is always visible, and here that is the only place there is).
     fn cmd_overlay(&mut self, roles: bool) {
         let overlays = &mut self.overlays;
-        let on = match roles {
-            true => {
-                overlays.roles = !overlays.roles;
-                overlays.roles
-            }
-            false => {
-                overlays.names = !overlays.names;
-                overlays.names
-            }
+        let on = if roles {
+            overlays.roles = !overlays.roles;
+            overlays.roles
+        } else {
+            overlays.names = !overlays.names;
+            overlays.names
         };
-        let what = match roles {
-            true => "roles",
-            false => "names",
-        };
-        self.status = match on {
-            true => format!("{what} on — :{what} to turn it off"),
-            false => format!("{what} off"),
+        let what = if roles { "roles" } else { "names" };
+        self.status = if on {
+            format!("{what} on — :{what} to turn it off")
+        } else {
+            format!("{what} off")
         };
     }
 
@@ -2666,9 +2658,12 @@ impl App {
                 }
             },
         };
-        self.toggle_style(|style| match background {
-            true => style.background = value.clone(),
-            false => style.color = value.clone(),
+        self.toggle_style(|style| {
+            if background {
+                style.background = value.clone();
+            } else {
+                style.color = value.clone();
+            }
         });
     }
 
@@ -2962,10 +2957,10 @@ impl App {
                 )
                 .ok();
             let rows = fitted(&rows, viewport.as_ref(), &cols, &heights, visible_rows);
-            match rows.iter().any(|(row, _)| *row == at) || at < self.top.row || rows.len() < 2 {
-                true => break (rows, viewport),
-                false => self.top.row = rows[1].0,
+            if rows.iter().any(|(row, _)| *row == at) || at < self.top.row || rows.len() < 2 {
+                break (rows, viewport);
             }
+            self.top.row = rows[1].0;
         };
 
         // --- the title bar: which document, and which of its sheets ---
@@ -3000,9 +2995,10 @@ impl App {
                     Align::Centre,
                     geom::Fit::Text,
                 ),
-                match *col == self.active.col {
-                    true => HEADER_ACTIVE,
-                    false => HEADER,
+                if *col == self.active.col {
+                    HEADER_ACTIVE
+                } else {
+                    HEADER
                 },
             ));
             painted += width;
@@ -3027,9 +3023,10 @@ impl App {
                         number,
                         width = (ROW_HEADER_WIDTH - 1) as usize
                     ),
-                    match r == self.active.row {
-                        true => HEADER_ACTIVE,
-                        false => HEADER_ROW,
+                    if r == self.active.row {
+                        HEADER_ACTIVE
+                    } else {
+                        HEADER_ROW
                     },
                 )];
                 let mut index = 0;
@@ -3054,9 +3051,10 @@ impl App {
                             .iter()
                             .map(|(row, _)| *row)
                             .find(|row| (m.anchor.row..=m.end.row).contains(row));
-                        let text = match first_row == Some(r) && k == 0 {
-                            true => m.text.as_str(),
-                            false => "",
+                        let text = if first_row == Some(r) && k == 0 {
+                            m.text.as_str()
+                        } else {
+                            ""
                         };
                         let numeric = matches!(m.value, CellValue::Number(_));
                         let mut style = terminal_style(m.style.as_ref());
@@ -3068,9 +3066,10 @@ impl App {
                                 text,
                                 span,
                                 alignment(m.style.as_ref(), numeric),
-                                match numeric {
-                                    true => geom::Fit::Number,
-                                    false => geom::Fit::Text,
+                                if numeric {
+                                    geom::Fit::Number
+                                } else {
+                                    geom::Fit::Text
                                 },
                             ),
                             style,
@@ -3092,13 +3091,11 @@ impl App {
                                 .as_deref()
                                 .or_else(|| viewport.as_ref().and_then(|v| v.text(r, c)))
                                 .unwrap_or("");
-                            let mark = match ticked {
-                                true => "[x]",
-                                false => "[ ]",
-                            };
-                            match text.is_empty() {
-                                true => mark.to_owned(),
-                                false => format!("{mark} {text}"),
+                            let mark = if ticked { "[x]" } else { "[ ]" };
+                            if text.is_empty() {
+                                mark.to_owned()
+                            } else {
+                                format!("{mark} {text}")
                             }
                         });
                     let text = boxed
@@ -3147,9 +3144,10 @@ impl App {
                     if let (true, Some(role)) = (marked, role) {
                         spans.push(Span::styled(role.marker().to_owned(), style));
                     }
-                    let width = match marked {
-                        true => usize::from(*width) - 1,
-                        false => usize::from(*width),
+                    let width = if marked {
+                        usize::from(*width) - 1
+                    } else {
+                        usize::from(*width)
                     };
                     // A plain number too wide for its column narrows first — fewer decimals, then
                     // scientific — as LibreOffice's General format does (`Viewport::narrower`); only
@@ -3164,9 +3162,10 @@ impl App {
                     };
                     let text = narrowed.as_deref().unwrap_or(text);
                     // A wrapped cell shows its `k`th line, any other its whole text on the first.
-                    let lines = match boxed.is_none() && shown_formula.is_none() {
-                        true => viewport.as_ref().and_then(|v| cell_lines(v, r, c, column)),
-                        false => None,
+                    let lines = if boxed.is_none() && shown_formula.is_none() {
+                        viewport.as_ref().and_then(|v| cell_lines(v, r, c, column))
+                    } else {
+                        None
                     };
                     let line = match (&lines, k) {
                         (Some(lines), _) => lines.get(k).cloned().unwrap_or(0..0),
@@ -3219,54 +3218,53 @@ impl App {
                                 .flatten()
                                 .is_some())
                     };
-                    let pieces = match text.is_empty() && !carry.is_empty() {
-                        true => {
-                            let (here, rest) =
-                                geom::split_pieces(std::mem::take(&mut carry), width);
-                            carry = rest;
-                            here
-                        }
-                        false => {
-                            carry.clear();
-                            let reach = match k == 0
-                                && lines.is_none()
-                                && !numeric
-                                && alignment(cell, numeric) == Align::Left
-                                && unicode_width::UnicodeWidthStr::width(text) >= width
-                            {
-                                true => cols[index..]
-                                    .iter()
-                                    .take_while(|(next, _)| empty(*next))
-                                    .map(|(_, w)| usize::from(*w))
-                                    .sum(),
-                                false => 0,
-                            };
-                            let all = geom::pad_marked(
-                                text,
-                                width + reach,
-                                alignment(cell, numeric),
-                                match numeric {
-                                    true => geom::Fit::Number,
-                                    false => geom::Fit::Text,
-                                },
-                                &marks,
-                            );
-                            match reach {
-                                0 => all,
-                                _ => {
-                                    let (here, rest) = geom::split_pieces(all, width);
-                                    carry = rest;
-                                    here
-                                }
+                    let pieces = if text.is_empty() && !carry.is_empty() {
+                        let (here, rest) = geom::split_pieces(std::mem::take(&mut carry), width);
+                        carry = rest;
+                        here
+                    } else {
+                        carry.clear();
+                        let reach = if k == 0
+                            && lines.is_none()
+                            && !numeric
+                            && alignment(cell, numeric) == Align::Left
+                            && unicode_width::UnicodeWidthStr::width(text) >= width
+                        {
+                            cols[index..]
+                                .iter()
+                                .take_while(|(next, _)| empty(*next))
+                                .map(|(_, w)| usize::from(*w))
+                                .sum()
+                        } else {
+                            0
+                        };
+                        let all = geom::pad_marked(
+                            text,
+                            width + reach,
+                            alignment(cell, numeric),
+                            if numeric {
+                                geom::Fit::Number
+                            } else {
+                                geom::Fit::Text
+                            },
+                            &marks,
+                        );
+                        match reach {
+                            0 => all,
+                            _ => {
+                                let (here, rest) = geom::split_pieces(all, width);
+                                carry = rest;
+                                here
                             }
                         }
                     };
                     for (piece, marked) in pieces {
-                        let style = match marked {
-                            true => style
+                        let style = if marked {
+                            style
                                 .add_modifier(Modifier::UNDERLINED)
-                                .underline_color(Color::Red),
-                            false => style,
+                                .underline_color(Color::Red)
+                        } else {
+                            style
                         };
                         spans.push(Span::styled(piece, style));
                     }
@@ -3352,10 +3350,7 @@ impl App {
         if let Mode::Insert { buf, cursor } = &self.mode {
             use unicode_width::UnicodeWidthStr;
             let before: String = buf[..(*cursor).min(buf.len())].iter().collect();
-            let badge = match is_formula {
-                true => " fx ".width(),
-                false => 1,
-            };
+            let badge = if is_formula { " fx ".width() } else { 1 };
             let x =
                 usize::from(formula_area.x) + format!(" {addr} ").width() + badge + before.width();
             let right = usize::from(formula_area.x + formula_area.width.saturating_sub(1));
@@ -3508,9 +3503,10 @@ const CURRENCY: &str = grind_sheet::numfmt::DEFAULT_CURRENCY;
 /// Turn a property on, or — when it is already that value — off. What a *toggle* means, as
 /// opposed to a value a picker sets.
 fn toggle(field: &mut Option<String>, value: &str) {
-    *field = match field.as_deref() == Some(value) {
-        true => None,
-        false => Some(value.to_owned()),
+    *field = if field.as_deref() == Some(value) {
+        None
+    } else {
+        Some(value.to_owned())
     };
 }
 

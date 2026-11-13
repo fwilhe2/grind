@@ -2055,11 +2055,12 @@ fn check_sheet_name(doc: &Document, name: &str, except: Option<usize>) -> Result
         .iter()
         .enumerate()
         .any(|(i, s)| Some(i) != except && s.name.eq_ignore_ascii_case(name));
-    match taken {
-        true => Err(Error::BadSheet(format!(
+    if taken {
+        Err(Error::BadSheet(format!(
             "a sheet is already called {name:?}"
-        ))),
-        false => Ok(()),
+        )))
+    } else {
+        Ok(())
     }
 }
 

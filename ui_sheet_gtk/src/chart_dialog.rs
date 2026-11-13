@@ -701,9 +701,10 @@ impl Dialog {
         }
         let spec = self.read();
         let spec = ChartSpec {
-            legend: match self.legend_touched.get() {
-                true => spec.legend,
-                false => spec.default_legend(),
+            legend: if self.legend_touched.get() {
+                spec.legend
+            } else {
+                spec.default_legend()
             },
             ..spec
         };
@@ -906,9 +907,10 @@ fn glyph(kind: ChartKind) -> gtk::DrawingArea {
 
 /// A block as a person types one: `A1:C5`, or `B2` for one cell.
 fn block_text(start: Pos, end: Pos) -> String {
-    match start == end {
-        true => a1::format(None, start),
-        false => format!("{}:{}", a1::format(None, start), a1::format(None, end)),
+    if start == end {
+        a1::format(None, start)
+    } else {
+        format!("{}:{}", a1::format(None, start), a1::format(None, end))
     }
 }
 
@@ -1000,9 +1002,10 @@ fn axis_summary(axis: &grind_sheet::ChartAxis) -> String {
     if let Some(title) = &axis.label {
         parts.push(format!("“{title}”"));
     }
-    parts.push(match axis.tick_labels {
-        true => "labels".to_owned(),
-        false => "no labels".to_owned(),
+    parts.push(if axis.tick_labels {
+        "labels".to_owned()
+    } else {
+        "no labels".to_owned()
     });
     if axis.gridlines {
         parts.push("gridlines".to_owned());

@@ -92,10 +92,7 @@ pub fn words(text: &str) -> Vec<Range<usize>> {
                 && (apostrophe(chars[at]) || chars[at] == '-')
                 && chars[at - 1].is_alphabetic()
                 && chars[at + 1].is_alphabetic();
-            match joins {
-                true => at += 1,
-                false => break,
-            }
+            if joins { at += 1 } else { break }
         }
         out.push(start..at);
     }

@@ -290,16 +290,13 @@ pub fn names(workbook: &Workbook, document: &mut Document, report: &mut Report) 
             lex::lex(&defined.name).as_deref(),
             Ok([lex::Token::Name(n)]) if *n == defined.name
         );
-        let translated = match spelled {
-            false => Err(Refusal::Syntax),
-            // Parenthesised, then unwrapped: in a cell a comma belongs to a function call, but
-            // at the top of a name it is Excel's union operator (`A1:A2,B4:B5`), and inside
-            // parentheses is where the translator reads it as one — refused by *class*, not as
-            // unreadable. `(expr)` is otherwise the same expression.
-            true => formula::translate(&format!("({})", defined.text)).map(|expr| match expr {
+        let translated = if spelled {
+            formula::translate(&format!("({})", defined.text)).map(|expr| match expr {
                 Expr::Paren(inner) => *inner,
                 other => other,
-            }),
+            })
+        } else {
+            Err(Refusal::Syntax)
         };
         match translated {
             Ok(expr) => {

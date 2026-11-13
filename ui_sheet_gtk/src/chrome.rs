@@ -319,9 +319,10 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
 
             // The caret is the focused editable's; when the formula bar does not have it,
             // the end of the text is where the typing is.
-            let caret = match typing_here(&entry) {
-                true => byte_offset(&text, entry.position()),
-                false => grid.caret(),
+            let caret = if typing_here(&entry) {
+                byte_offset(&text, entry.position())
+            } else {
+                grid.caret()
             };
             match crate::state::call_at(&text, caret).and_then(|(name, argument)| {
                 crate::formula_ux::signature_markup(&name, argument, friendly.get())
@@ -364,15 +365,12 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
                             ),
                         };
                     chip.set_text(&preview);
-                    match unfinished {
-                        true => {
-                            chip.remove_css_class("dim-label");
-                            chip.add_css_class("warning");
-                        }
-                        false => {
-                            chip.remove_css_class("warning");
-                            chip.add_css_class("dim-label");
-                        }
+                    if unfinished {
+                        chip.remove_css_class("dim-label");
+                        chip.add_css_class("warning");
+                    } else {
+                        chip.remove_css_class("warning");
+                        chip.add_css_class("dim-label");
                     }
                     chip.set_visible(true);
                 },

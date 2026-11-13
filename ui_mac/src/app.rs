@@ -149,9 +149,10 @@ impl Delegate {
             item.setSubtitle(sample.map(|sample| NSString::from_str(&sample)).as_deref());
         }
         let on = applies && document.is_some_and(|document| document.format_checked(command));
-        item.setState(match on {
-            true => NSControlStateValueOn,
-            false => NSControlStateValueOff,
+        item.setState(if on {
+            NSControlStateValueOn
+        } else {
+            NSControlStateValueOff
         });
         applies
     }

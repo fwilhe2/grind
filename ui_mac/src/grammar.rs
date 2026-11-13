@@ -25,11 +25,12 @@ impl TextPane {
     /// whenever the setting changes.
     pub(crate) fn check_grammar(&self) {
         let setting = self.grammar.borrow().clone();
-        let checker: Option<Arc<dyn grind_core::grammar::Checker>> = match setting.builtin {
-            true => Some(Arc::new(grind_grammar::Builtin {
+        let checker: Option<Arc<dyn grind_core::grammar::Checker>> = if setting.builtin {
+            Some(Arc::new(grind_grammar::Builtin {
                 picky: setting.style,
-            })),
-            false => None,
+            }))
+        } else {
+            None
         };
         self.app.set_checker(checker);
     }
@@ -159,9 +160,10 @@ pub fn lead_menu(pane: &TextPane, menu: &NSMenu, caret: Caret, mtm: MainThreadMa
         .take(usize::from(REPLACEMENTS))
         .enumerate()
     {
-        let title = match with.is_empty() {
-            true => format!("Remove \u{201c}{covered}\u{201d}"),
-            false => with.clone(),
+        let title = if with.is_empty() {
+            format!("Remove \u{201c}{covered}\u{201d}")
+        } else {
+            with.clone()
         };
         rows.push(item(
             &title,

@@ -25,13 +25,14 @@ pub const WASH: f64 = 0.22;
 /// "paint nothing", the window's background being down already. The **active cell is never
 /// washed**, even inside a selection, so it reads as the cursor's cell.
 pub fn ground(background: Option<Rgb>, theme: Theme, selected: bool, active: bool) -> Option<Rgb> {
-    match selected && !active {
-        false => background,
-        true => Some(
+    if selected && !active {
+        Some(
             background
                 .unwrap_or(theme.background)
                 .blend(theme.selection, WASH),
-        ),
+        )
+    } else {
+        background
     }
 }
 
@@ -95,13 +96,14 @@ impl Appearance {
 /// as `\n`), which `DT_SINGLELINE` draws as a box glyph, so every control character becomes a
 /// space, keeping the two sides two words. A wrapping cell is drawn line by line elsewhere.
 pub fn one_line(text: &str) -> std::borrow::Cow<'_, str> {
-    match text.contains(|c: char| c.is_control()) {
-        false => std::borrow::Cow::Borrowed(text),
-        true => std::borrow::Cow::Owned(
+    if text.contains(|c: char| c.is_control()) {
+        std::borrow::Cow::Owned(
             text.chars()
                 .map(|c| if c.is_control() { ' ' } else { c })
                 .collect(),
-        ),
+        )
+    } else {
+        std::borrow::Cow::Borrowed(text)
     }
 }
 
@@ -452,9 +454,10 @@ mod windows_impl {
                     // share one line. Past the used extent they are quieter — the empty rest of
                     // the sheet is paper.
                     let (used_rows, used_cols) = frame.used;
-                    let line = match row < used_rows && col < used_cols {
-                        true => theme.grid_line,
-                        false => theme.grid_line_soft,
+                    let line = if row < used_rows && col < used_cols {
+                        theme.grid_line
+                    } else {
+                        theme.grid_line_soft
                     };
                     gdi::fill(dc, right - 1, top, right, bottom, line);
                     gdi::fill(dc, left, bottom - 1, right, bottom, line);
@@ -540,9 +543,10 @@ mod windows_impl {
                         continue;
                     }
                     if grind_sheet::look::wraps(style) && !grind_sheet::numfmt::is_number(value) {
-                        let misspelt = match frame.formula_text.contains_key(&(row, col)) {
-                            true => &[][..],
-                            false => frame.viewport.misspelt(row, col),
+                        let misspelt = if frame.formula_text.contains_key(&(row, col)) {
+                            &[][..]
+                        } else {
+                            frame.viewport.misspelt(row, col)
                         };
                         draw_wrapped(
                             dc,
@@ -562,26 +566,26 @@ mod windows_impl {
                     let pad = crate::sheet::geom::scale(PAD, g.dpi);
                     let room = f64::from(text_right - text_left) - 2.0 * pad.round() - 1.0;
                     let hashes;
-                    let text = match grind_sheet::numfmt::is_number(value)
+                    let text = if grind_sheet::numfmt::is_number(value)
                         && f64::from(gdi::text_width(dc, text)) > room
                     {
-                        true => {
-                            // A plain number narrows first — fewer decimals, then scientific —
-                            // as LibreOffice's General format does (`Viewport::narrower`).
-                            let narrower = match frame.formula_text.contains_key(&(row, col)) {
-                                true => Vec::new(),
-                                false => frame.viewport.narrower(row, col),
-                            };
-                            hashes = narrower
-                                .into_iter()
-                                .find(|shorter| f64::from(gdi::text_width(dc, shorter)) <= room)
-                                .unwrap_or_else(|| {
-                                    let hash = f64::from(gdi::text_width(dc, "#"));
-                                    grind_sheet::numfmt::overflow(room, hash)
-                                });
-                            hashes.as_str()
-                        }
-                        false => text,
+                        // A plain number narrows first — fewer decimals, then scientific —
+                        // as LibreOffice's General format does (`Viewport::narrower`).
+                        let narrower = if frame.formula_text.contains_key(&(row, col)) {
+                            Vec::new()
+                        } else {
+                            frame.viewport.narrower(row, col)
+                        };
+                        hashes = narrower
+                            .into_iter()
+                            .find(|shorter| f64::from(gdi::text_width(dc, shorter)) <= room)
+                            .unwrap_or_else(|| {
+                                let hash = f64::from(gdi::text_width(dc, "#"));
+                                grind_sheet::numfmt::overflow(room, hash)
+                            });
+                        hashes.as_str()
+                    } else {
+                        text
                     };
                     // An indent (`fo:margin-left`) moves text in from the leading edge — not text
                     // set against the right one, which a left margin does not reach.
@@ -699,9 +703,10 @@ mod windows_impl {
                     theme,
                 );
                 let style = m.style.as_ref();
-                let misspelt = match frame.formula_text.contains_key(&(row, col)) {
-                    true => &[][..],
-                    false => frame.viewport.misspelt(row, col),
+                let misspelt = if frame.formula_text.contains_key(&(row, col)) {
+                    &[][..]
+                } else {
+                    frame.viewport.misspelt(row, col)
                 };
                 if grind_sheet::look::wraps(style) && !grind_sheet::numfmt::is_number(&m.value) {
                     draw_wrapped(
@@ -718,15 +723,14 @@ mod windows_impl {
                 let pad = crate::sheet::geom::scale(PAD, g.dpi);
                 let room = f64::from(right - left) - 2.0 * pad.round() - 1.0;
                 let hashes;
-                let text = match grind_sheet::numfmt::is_number(&m.value)
+                let text = if grind_sheet::numfmt::is_number(&m.value)
                     && f64::from(gdi::text_width(dc, text)) > room
                 {
-                    true => {
-                        let hash = f64::from(gdi::text_width(dc, "#"));
-                        hashes = grind_sheet::numfmt::overflow(room, hash);
-                        hashes.as_str()
-                    }
-                    false => text,
+                    let hash = f64::from(gdi::text_width(dc, "#"));
+                    hashes = grind_sheet::numfmt::overflow(room, hash);
+                    hashes.as_str()
+                } else {
+                    text
                 };
                 draw_text(dc, text, left, top, right, bottom, look.align, ink, pad);
                 draw_squiggles(
@@ -752,9 +756,10 @@ mod windows_impl {
                 }
                 let (left, top, right, bottom) = b.edges();
                 gdi::fill(dc, left, top, right, bottom, theme.text);
-                let inner = match ticked {
-                    true => theme.accent,
-                    false => theme.background,
+                let inner = if ticked {
+                    theme.accent
+                } else {
+                    theme.background
                 };
                 gdi::fill(dc, left + 1, top + 1, right - 1, bottom - 1, inner);
                 if ticked {
@@ -1017,9 +1022,10 @@ mod windows_impl {
                 // bar, and — in the accent — that what follows is a formula's friendly reading
                 // rather than its text.
                 let badge = crate::sheet::geom::scale(BADGE_W, g.dpi).round() as i32;
-                let ink = match frame.friendly {
-                    true => theme.accent,
-                    false => theme.text_tertiary,
+                let ink = if frame.friendly {
+                    theme.accent
+                } else {
+                    theme.text_tertiary
                 };
                 {
                     let italic = Font::styled(frame.face, frame.body_px, false, true, false, false);
@@ -1242,9 +1248,10 @@ mod windows_impl {
                         right,
                         bottom,
                         Align::Center,
-                        match current {
-                            true => theme.text,
-                            false => theme.text_secondary,
+                        if current {
+                            theme.text
+                        } else {
+                            theme.text_secondary
                         },
                         pad,
                     );
@@ -1269,9 +1276,10 @@ mod windows_impl {
 
     /// A header button's lettering: the theme's own, or the accent when its track is selected.
     fn header_ink(theme: Theme, active: bool) -> Rgb {
-        match active {
-            true => theme.accent,
-            false => theme.text_secondary,
+        if active {
+            theme.accent
+        } else {
+            theme.text_secondary
         }
     }
 
@@ -1495,10 +1503,7 @@ mod windows_impl {
                 Shape::Toggle => {
                     let on = format::pressed(strip_view.style, control);
                     strip::button_ground(dc, rect, look(control), on, false);
-                    let ink = match on {
-                        true => theme.accent,
-                        false => theme.text,
-                    };
+                    let ink = if on { theme.accent } else { theme.text };
                     match control {
                         Control::Bold | Control::Italic | Control::Underline | Control::Strike => {
                             let font = Font::styled(
@@ -1523,9 +1528,10 @@ mod windows_impl {
                 Shape::Swatch => {
                     strip::button_ground(dc, rect, look(control), false, false);
                     let background = control == Control::Background;
-                    let value = match background {
-                        true => strip_view.style.background.as_deref(),
-                        false => strip_view.style.color.as_deref(),
+                    let value = if background {
+                        strip_view.style.background.as_deref()
+                    } else {
+                        strip_view.style.color.as_deref()
                     };
                     strip::swatch(
                         dc,
@@ -1605,10 +1611,7 @@ mod windows_impl {
         let depth = long - short - unit(2.0);
         for i in 0..depth.max(1) {
             let reach = half - half * i / depth.max(1);
-            let x = match more {
-                true => base + i,
-                false => base + depth - 1 - i,
-            };
+            let x = if more { base + i } else { base + depth - 1 - i };
             gdi::fill(dc, x, mid - reach, x + 1, mid + reach, ink);
         }
     }
@@ -1634,16 +1637,17 @@ mod windows_impl {
         let (from, to) = (left + pad, (right - pad - 1).max(left + pad));
         let room = to - from;
         let full = gdi::text_width(dc, &text);
-        let (origin, limit) = match full > room {
-            true => (from, to - gdi::text_width(dc, "\u{2026}")),
-            false => (
+        let (origin, limit) = if full > room {
+            (from, to - gdi::text_width(dc, "\u{2026}"))
+        } else {
+            (
                 match align {
                     Align::Left => from,
                     Align::Right => to - full,
                     Align::Center => from + (room - full) / 2,
                 },
                 to,
-            ),
+            )
         };
         let height = gdi::line_height(dc);
         let line_top = top + (bottom - top - height) / 2;
@@ -1749,9 +1753,10 @@ mod windows_impl {
         let format = DT_SINGLELINE
             | DT_VCENTER
             | DT_NOPREFIX
-            | match elide {
-                true => DT_END_ELLIPSIS,
-                false => Default::default(),
+            | if elide {
+                DT_END_ELLIPSIS
+            } else {
+                Default::default()
             }
             | match align {
                 Align::Left => DT_LEFT,

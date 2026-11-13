@@ -457,9 +457,10 @@ pub fn materialise(doc: &Doc) -> Result<App, String> {
                 if let Some(name) = &block.bookmark {
                     app.set_bookmark(name, Some(index)).map_err(say)?;
                 }
-                let style = match block.page_break {
-                    true => Some(break_style(block.style.as_deref())),
-                    false => block.style.clone(),
+                let style = if block.page_break {
+                    Some(break_style(block.style.as_deref()))
+                } else {
+                    block.style.clone()
                 };
                 if let Some(style) = style {
                     app.set_style(index..index + 1, Some(style)).map_err(say)?;

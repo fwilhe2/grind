@@ -106,12 +106,13 @@ fn parse_with(formula: &str, spanned: bool) -> Result<(Expr, Option<Shape>), Syn
         nesting: 0,
         spanned,
     };
-    let parsed = p
-        .expr(0)
-        .and_then(|(expr, _, shape)| match p.pos == p.tokens.len() {
-            true => Ok((expr, shape)),
-            false => p.fail("unexpected trailing input"),
-        });
+    let parsed = p.expr(0).and_then(|(expr, _, shape)| {
+        if p.pos == p.tokens.len() {
+            Ok((expr, shape))
+        } else {
+            p.fail("unexpected trailing input")
+        }
+    });
     let length = body.chars().count();
     // The parser counts in tokens, which is the only unit it has; a caller wants a caret.
     let (expr, shape) = parsed.map_err(|e| SyntaxError {
@@ -127,9 +128,10 @@ fn parse_with(formula: &str, spanned: bool) -> Result<(Expr, Option<Shape>), Syn
 
 /// A shape counted in tokens → the same shape counted in characters.
 fn in_chars(shape: &Shape, start: &dyn Fn(usize) -> usize, end: &dyn Fn(usize) -> usize) -> Shape {
-    let range = match shape.range.is_empty() {
-        true => start(shape.range.start)..start(shape.range.start),
-        false => start(shape.range.start)..end(shape.range.end - 1),
+    let range = if shape.range.is_empty() {
+        start(shape.range.start)..start(shape.range.start)
+    } else {
+        start(shape.range.start)..end(shape.range.end - 1)
     };
     Shape {
         range,
@@ -218,10 +220,7 @@ impl Parser {
     fn shape(&self, start: usize, children: impl FnOnce() -> Vec<Shape>) -> Shape {
         Shape {
             range: start..self.pos,
-            children: match self.spanned {
-                true => children(),
-                false => Vec::new(),
-            },
+            children: if self.spanned { children() } else { Vec::new() },
         }
     }
 

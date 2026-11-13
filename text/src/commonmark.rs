@@ -434,14 +434,13 @@ impl Reader<'_> {
 fn data_uri(uri: &str) -> Option<Vec<u8>> {
     use base64::Engine as _;
     let (head, body) = uri.split_once(',')?;
-    match head.ends_with(";base64") {
-        true => {
-            let cleaned: String = body.chars().filter(|c| !c.is_whitespace()).collect();
-            base64::engine::general_purpose::STANDARD
-                .decode(cleaned)
-                .ok()
-        }
-        false => Some(percent_decode(body).into_bytes()),
+    if head.ends_with(";base64") {
+        let cleaned: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+        base64::engine::general_purpose::STANDARD
+            .decode(cleaned)
+            .ok()
+    } else {
+        Some(percent_decode(body).into_bytes())
     }
 }
 
@@ -818,9 +817,10 @@ fn inline(runs: &[Run], pictures: &mut Out) -> String {
                 let alt = title.as_deref().or(description.as_deref()).unwrap_or("");
                 let alt = alt.replace('\n', " ");
                 let target = pictures.target(mime, data);
-                let target = match target.contains([' ', '(', ')', '<', '>']) {
-                    true => format!("<{target}>"),
-                    false => target,
+                let target = if target.contains([' ', '(', ')', '<', '>']) {
+                    format!("<{target}>")
+                } else {
+                    target
                 };
                 let _ = write!(out, "![{}]({target}", escape(&alt));
                 // The long text is the link's title, so it comes back as the long text.

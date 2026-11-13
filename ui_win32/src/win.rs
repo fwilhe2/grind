@@ -310,10 +310,7 @@ impl Pane {
         }
         // A leading `*` for unsaved changes: Windows' own convention, and one that survives being
         // truncated in a taskbar button where a trailing marker would not.
-        let mark = match self.dirty() {
-            true => "*",
-            false => "",
-        };
+        let mark = if self.dirty() { "*" } else { "" };
         format!("{mark}{} — {APP_NAME}", self.document_name())
     }
 
@@ -818,9 +815,10 @@ impl Sheet {
     fn editor_rect(&self) -> Rect {
         let active = self.selection.active;
         let cell = self.geom.editor_rect(active.row, active.col);
-        match self.editor_on_bar || cell.w <= 0.0 || cell.h <= 0.0 {
-            true => self.geom.formula_rect(),
-            false => cell,
+        if self.editor_on_bar || cell.w <= 0.0 || cell.h <= 0.0 {
+            self.geom.formula_rect()
+        } else {
+            cell
         }
     }
 }
@@ -901,13 +899,13 @@ impl Text {
     /// changes.
     fn check_grammar(&mut self) {
         let setting = &self.grammar;
-        let checker: Option<std::sync::Arc<dyn grind_core::grammar::Checker>> =
-            match setting.builtin {
-                true => Some(std::sync::Arc::new(grind_grammar::Builtin {
-                    picky: setting.style,
-                })),
-                false => None,
-            };
+        let checker: Option<std::sync::Arc<dyn grind_core::grammar::Checker>> = if setting.builtin {
+            Some(std::sync::Arc::new(grind_grammar::Builtin {
+                picky: setting.style,
+            }))
+        } else {
+            None
+        };
         self.app.set_checker(checker);
     }
 
@@ -1221,9 +1219,10 @@ impl Text {
     /// started in.
     fn navigate(&mut self, motion: text::keymap::Motion, extend: bool) {
         let vertical = matches!(motion, text::keymap::Motion::Line(_));
-        let goal = match vertical {
-            true => self.goal_x.or_else(|| self.caret_x()),
-            false => None,
+        let goal = if vertical {
+            self.goal_x.or_else(|| self.caret_x())
+        } else {
+            None
         };
         self.resume = None;
         self.caret = self.moved(motion, goal.unwrap_or(0.0));
@@ -1295,9 +1294,10 @@ fn banner_h(notice: Option<&str>, dpi: u32) -> f64 {
 
 /// The same question for the assist band: zero when there is nothing to assist with.
 fn hint_h(hint: &[assist::Piece], dpi: u32) -> f64 {
-    match hint.is_empty() {
-        true => 0.0,
-        false => scale(draw::HINT_H, dpi),
+    if hint.is_empty() {
+        0.0
+    } else {
+        scale(draw::HINT_H, dpi)
     }
 }
 
@@ -1529,10 +1529,7 @@ pub fn render(
     // The palette is the **flag's**, never the machine's: two renders on two machines must be the
     // same bytes, and `--dark` is how the dark palette is looked at without a Windows machine set
     // to dark.
-    let mode = match dark {
-        true => Mode::Dark,
-        false => Mode::Light,
-    };
+    let mode = if dark { Mode::Dark } else { Mode::Light };
     let mut pane = opened(kind, path, Theme::of(mode))?;
     let (w, h) = (f64::from(RENDER_W), f64::from(RENDER_H));
     let dib = Dib::new(RENDER_W, RENDER_H).ok_or("could not make the drawing surface")?;
@@ -1823,17 +1820,20 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
         // A character, after the keyboard layout and after the IME — which is why a printable
         // key is decided here and not in `WM_KEYDOWN`. Deciding "is this printable" on a
         // virtual-key code is the bug that makes an accented character unable to start an edit.
-        WM_CHAR => match typed_char(hwnd, wparam.0 as u32) {
-            true => LRESULT(0),
-            // SAFETY: a character this shell does not start an edit with, handed back.
-            false => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
-        },
-        WM_KEYDOWN => match key_down(hwnd, wparam.0 as u32) {
-            true => LRESULT(0),
-            // SAFETY: a key this shell does not own, handed back with the arguments it came
-            // with — which is what leaves Alt+F4 and the system menu working.
-            false => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
-        },
+        WM_CHAR => {
+            if typed_char(hwnd, wparam.0 as u32) {
+                LRESULT(0)
+            } else {
+                unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+            }
+        }
+        WM_KEYDOWN => {
+            if key_down(hwnd, wparam.0 as u32) {
+                LRESULT(0)
+            } else {
+                unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+            }
+        }
         // A composing IME is about to show its candidate window — moved to the caret before
         // `DefWindowProcW` draws it. The rest of composing (the list, the committed `WM_CHAR`s) is
         // the default handling; this is the one IME message answered.
@@ -2185,10 +2185,7 @@ fn build_menu(hwnd: HWND) {
                             _ => None,
                         };
                         if let Some(checked) = checked {
-                            let flag = match checked {
-                                true => MF_CHECKED,
-                                false => MF_UNCHECKED,
-                            };
+                            let flag = if checked { MF_CHECKED } else { MF_UNCHECKED };
                             let _ = CheckMenuItem(
                                 popup,
                                 u32::from(command.id()),
@@ -2281,31 +2278,30 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
             Command::SheetDelete,
             Command::SheetAdd,
         ]
+    } else if is_text(hwnd) {
+        &[
+            Command::Cut,
+            Command::Copy,
+            Command::Paste,
+            Command::Bold,
+            Command::Italic,
+            Command::Underline,
+            Command::Strike,
+            Command::Code,
+            Command::ClearFormatting,
+        ]
     } else {
-        match is_text(hwnd) {
-            true => &[
-                Command::Cut,
-                Command::Copy,
-                Command::Paste,
-                Command::Bold,
-                Command::Italic,
-                Command::Underline,
-                Command::Strike,
-                Command::Code,
-                Command::ClearFormatting,
-            ],
-            false => &[
-                Command::Cut,
-                Command::Copy,
-                Command::Paste,
-                Command::ClearCells,
-                Command::NumberFormat,
-                Command::CurrencyEuro,
-                Command::CurrencyDollar,
-                Command::CurrencyPound,
-                Command::ClearFormatting,
-            ],
-        }
+        &[
+            Command::Cut,
+            Command::Copy,
+            Command::Paste,
+            Command::ClearCells,
+            Command::NumberFormat,
+            Command::CurrencyEuro,
+            Command::CurrencyDollar,
+            Command::CurrencyPound,
+            Command::ClearFormatting,
+        ]
     };
     // `(-1, -1)` is Windows' own spelling of "the keyboard asked, not the mouse" — Shift+F10 or
     // the Menu key carry no position, so the menu opens over a point of this window's choosing
@@ -2331,9 +2327,10 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
         let wrong = unsafe {
             with_text(hwnd, |text| {
                 text.checked?;
-                let caret = match keyboard {
-                    true => text.caret,
-                    false => text.caret_at(f64::from(client.x), f64::from(client.y))?,
+                let caret = if keyboard {
+                    text.caret
+                } else {
+                    text.caret_at(f64::from(client.x), f64::from(client.y))?
                 };
                 text.misspelt_at(caret)
             })
@@ -2344,9 +2341,10 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
         // SAFETY: one borrow, released before the popup.
         let picture = unsafe {
             with_text(hwnd, |text| {
-                let caret = match keyboard {
-                    true => text.caret,
-                    false => text.caret_at(f64::from(client.x), f64::from(client.y))?,
+                let caret = if keyboard {
+                    text.caret
+                } else {
+                    text.caret_at(f64::from(client.x), f64::from(client.y))?
                 };
                 let viewport = text.app.get_viewport(caret.block..caret.block + 1);
                 let (offset, _) =
@@ -2370,9 +2368,10 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
         // SAFETY: one borrow, released before the popup.
         let finding = unsafe {
             with_text(hwnd, |text| {
-                let caret = match keyboard {
-                    true => text.caret,
-                    false => text.caret_at(f64::from(client.x), f64::from(client.y))?,
+                let caret = if keyboard {
+                    text.caret
+                } else {
+                    text.caret_at(f64::from(client.x), f64::from(client.y))?
                 };
                 text.grammar_at(caret)
             })
@@ -2398,12 +2397,13 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
         let wrong = unsafe {
             with_sheet(hwnd, |state| {
                 state.checked?;
-                let pos = match keyboard {
-                    true => state.selection.active,
-                    false => match state.geom.hit(f64::from(client.x), f64::from(client.y)) {
+                let pos = if keyboard {
+                    state.selection.active
+                } else {
+                    match state.geom.hit(f64::from(client.x), f64::from(client.y)) {
                         crate::sheet::geom::Hit::Cell { row, col } => Pos::new(row, col),
                         _ => return None,
-                    },
+                    }
                 };
                 state
                     .app
@@ -2578,9 +2578,10 @@ fn scroll(hwnd: HWND, wparam: WPARAM, vertical: bool) {
     unsafe {
         with_sheet(hwnd, |state| {
             let g = &mut state.geom;
-            let (at, page) = match vertical {
-                true => (g.first_row, g.page_rows()),
-                false => (g.first_col, g.page_cols()),
+            let (at, page) = if vertical {
+                (g.first_row, g.page_rows())
+            } else {
+                (g.first_col, g.page_cols())
             };
             // Every arm becomes a signed number of tracks, so that the clamping and the
             // hidden-track stepping happen in one portable place rather than in five arms.
@@ -2596,9 +2597,10 @@ fn scroll(hwnd: HWND, wparam: WPARAM, vertical: bool) {
                 SB_THUMBPOSITION | SB_THUMBTRACK => i64::from(thumb) - i64::from(at),
                 _ => return,
             };
-            match vertical {
-                true => g.scroll_rows(delta),
-                false => g.scroll_cols(delta),
+            if vertical {
+                g.scroll_rows(delta);
+            } else {
+                g.scroll_cols(delta);
             }
             sync_scrollbars(hwnd, state);
         });
@@ -3931,9 +3933,10 @@ fn editor_changed(hwnd: HWND) {
     let Some(moved) = (unsafe { with_sheet(hwnd, |state| state.assist(&text, caret)) }) else {
         return;
     };
-    match moved {
-        true => refresh(hwnd),
-        false => refresh_bands(hwnd),
+    if moved {
+        refresh(hwnd);
+    } else {
+        refresh_bands(hwnd);
     }
 }
 
@@ -4180,9 +4183,10 @@ fn history(hwnd: HWND, undo: bool) {
     // SAFETY: one borrow. `App::undo` notifies, and the observer posts rather than sends.
     unsafe {
         with_sheet(hwnd, |state| {
-            let did = match undo {
-                true => state.app.undo(),
-                false => state.app.redo(),
+            let did = if undo {
+                state.app.undo()
+            } else {
+                state.app.redo()
             };
             if did {
                 // Whatever the banner said was about the document as it was.
@@ -4309,18 +4313,19 @@ fn merge_cells(hwnd: HWND, merge: bool) {
         with_sheet(hwnd, |state| {
             let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
             let (start, end) = grind_sheet::nav::target(state.selection, used);
-            let said = match merge {
-                true => match state.app.merge(state.sheet, start, end) {
+            let said = if merge {
+                match state.app.merge(state.sheet, start, end) {
                     Ok(_) => {
                         state.selection = Selection::at(start);
                         None
                     }
                     Err(error) => Some(error.to_string()),
-                },
-                false => match state.app.unmerge(state.sheet, start, end) {
+                }
+            } else {
+                match state.app.unmerge(state.sheet, start, end) {
                     Ok(_) => None,
                     Err(error) => Some(error.to_string()),
-                },
+                }
             };
             state.say(said);
         });
@@ -4601,17 +4606,18 @@ fn hide_tracks(hwnd: HWND, rows: bool, hidden: bool) {
     // SAFETY: one borrow, no dialog.
     unsafe {
         with_sheet(hwnd, |state| {
-            let result = match rows {
-                true => state.app.set_row_hidden(
+            let result = if rows {
+                state.app.set_row_hidden(
                     state.sheet,
                     grind_sheet::verbs::rows(state.selection),
                     hidden,
-                ),
-                false => state.app.set_col_hidden(
+                )
+            } else {
+                state.app.set_col_hidden(
                     state.sheet,
                     grind_sheet::verbs::cols(state.selection),
                     hidden,
-                ),
+                )
             };
             state.say(Some(match result {
                 Ok(count) => notice::tracks_hidden(count, rows, hidden),
@@ -4626,14 +4632,12 @@ fn hide_tracks(hwnd: HWND, rows: bool, hidden: bool) {
 /// selected row or column. `App` checks the length, so a nonsense one is the notice's problem,
 /// not a column that silently vanishes. An empty answer clears the size back to the default.
 fn track_size(hwnd: HWND, rows: bool) {
-    let prompt = match rows {
-        true => "Row height — 2.5cm, 1in or 64pt; empty for the default:",
-        false => "Column width — 2.5cm, 1in or 64pt; empty for the default:",
+    let prompt = if rows {
+        "Row height — 2.5cm, 1in or 64pt; empty for the default:"
+    } else {
+        "Column width — 2.5cm, 1in or 64pt; empty for the default:"
     };
-    let title = match rows {
-        true => "Row Height",
-        false => "Column Width",
-    };
+    let title = if rows { "Row Height" } else { "Column Width" };
     let Some(answer) = dialog::prompt(hwnd, title, prompt, "") else {
         return;
     };
@@ -4641,17 +4645,18 @@ fn track_size(hwnd: HWND, rows: bool) {
     // SAFETY: one borrow, taken after the dialog.
     unsafe {
         with_sheet(hwnd, |state| {
-            let result = match rows {
-                true => state.app.set_row_height(
+            let result = if rows {
+                state.app.set_row_height(
                     state.sheet,
                     grind_sheet::verbs::rows(state.selection),
                     size,
-                ),
-                false => state.app.set_col_width(
+                )
+            } else {
+                state.app.set_col_width(
                     state.sheet,
                     grind_sheet::verbs::cols(state.selection),
                     size,
-                ),
+                )
             };
             state.say(Some(match result {
                 Ok(count) => notice::track_sized(count, rows),
@@ -4921,9 +4926,10 @@ fn delete_name(hwnd: HWND) {
     // SAFETY: one borrow, after the dialog.
     unsafe {
         with_sheet(hwnd, |state| {
-            state.say(Some(match state.app.clear_name(&name) {
-                true => format!("“{name}” deleted. Ctrl+Z takes it back."),
-                false => format!("There is no name “{name}”."),
+            state.say(Some(if state.app.clear_name(&name) {
+                format!("“{name}” deleted. Ctrl+Z takes it back.")
+            } else {
+                format!("There is no name “{name}”.")
             }));
         });
     }
@@ -5010,9 +5016,12 @@ fn check_document(hwnd: HWND) {
 fn toggle_overlay(hwnd: HWND, names: bool) {
     // SAFETY: one borrow; nothing inside dispatches.
     unsafe {
-        with_sheet(hwnd, |state| match names {
-            true => state.overlays.names = !state.overlays.names,
-            false => state.overlays.roles = !state.overlays.roles,
+        with_sheet(hwnd, |state| {
+            if names {
+                state.overlays.names = !state.overlays.names;
+            } else {
+                state.overlays.roles = !state.overlays.roles;
+            }
         });
     }
     build_menu(hwnd);
@@ -5074,30 +5083,25 @@ fn function_list(hwnd: HWND) {
     let Some(insert) = assist::function_insert(at, editing) else {
         return;
     };
-    match editing {
-        // Into the edit that is already open, at the caret — `EM_REPLACESEL`, the same call an
-        // accepted completion uses, so both land one undo step in the control's own history.
-        true => {
-            let Some((edit, _)) = editor_text(hwnd) else {
-                return;
-            };
-            let wide = gdi::wide(&insert);
-            // SAFETY: nothing is borrowed; the buffer is a NUL-terminated local that outlives
-            // the call, and both calls dispatch synchronously to this window's own control.
-            unsafe {
-                let _ = SetFocus(Some(edit));
-                SendMessageW(
-                    edit,
-                    EM_REPLACESEL,
-                    Some(WPARAM(1)),
-                    Some(LPARAM(wide.as_ptr() as isize)),
-                );
-            }
-            editor_changed(hwnd);
+    if editing {
+        let Some((edit, _)) = editor_text(hwnd) else {
+            return;
+        };
+        let wide = gdi::wide(&insert);
+        // SAFETY: nothing is borrowed; the buffer is a NUL-terminated local that outlives
+        // the call, and both calls dispatch synchronously to this window's own control.
+        unsafe {
+            let _ = SetFocus(Some(edit));
+            SendMessageW(
+                edit,
+                EM_REPLACESEL,
+                Some(WPARAM(1)),
+                Some(LPARAM(wide.as_ptr() as isize)),
+            );
         }
-        // Nothing open: this starts the edit, seeded with `=NAME(` and the caret after it, which
-        // is where the first argument goes.
-        false => begin_edit_with(hwnd, insert, state::Mode::Enter, false),
+        editor_changed(hwnd);
+    } else {
+        begin_edit_with(hwnd, insert, state::Mode::Enter, false);
     }
 }
 
@@ -5488,15 +5492,17 @@ fn format_pick_color(hwnd: HWND, background: bool) {
     let Some(style) = (unsafe { with_sheet(hwnd, |state| active_style(state)) }) else {
         return;
     };
-    let current = match background {
-        true => style.background.as_deref(),
-        false => style.color.as_deref(),
+    let current = if background {
+        style.background.as_deref()
+    } else {
+        style.color.as_deref()
     };
     let items = crate::strip::colour_choices();
     let initial = crate::strip::colour_row(current);
-    let title = match background {
-        true => format::Control::Background.name(),
-        false => format::Control::Color.name(),
+    let title = if background {
+        format::Control::Background.name()
+    } else {
+        format::Control::Color.name()
     };
     let Some(choice) = dialog::choose(hwnd, title, &items, initial) else {
         return;
@@ -5655,9 +5661,10 @@ fn check_chart_kind(hwnd: HWND, popup: HMENU) {
         .into_iter()
         .zip(grind_sheet::ChartKind::ALL)
     {
-        let flag = match kind == Some(each) {
-            true => MF_CHECKED,
-            false => MF_UNCHECKED,
+        let flag = if kind == Some(each) {
+            MF_CHECKED
+        } else {
+            MF_UNCHECKED
         };
         // SAFETY: `popup` is the menu Windows is about to show, alive for this message.
         unsafe {
@@ -5688,10 +5695,7 @@ fn check_format(hwnd: HWND, popup: HMENU) {
         return;
     };
     let check = |command: Command, on: bool| {
-        let flag = match on {
-            true => MF_CHECKED,
-            false => MF_UNCHECKED,
-        };
+        let flag = if on { MF_CHECKED } else { MF_UNCHECKED };
         // SAFETY: `popup` is the menu Windows is about to show, alive for this message.
         unsafe {
             let _ = CheckMenuItem(popup, u32::from(command.id()), (MF_BYCOMMAND | flag).0);
@@ -6059,12 +6063,13 @@ fn offers_for(suggestions: Vec<String>) -> Vec<String> {
 fn accept_word(speller: Option<&grind_spell::Speller>, word: &str, add: bool) -> Option<String> {
     let speller = speller?;
     speller.accept(word);
-    Some(match add {
-        false => notice::accepted(word, None),
-        true => match grind_spell::personal::add(word) {
+    Some(if add {
+        match grind_spell::personal::add(word) {
             Ok(path) => notice::accepted(word, Some(&path.display().to_string())),
             Err(error) => error.to_string(),
-        },
+        }
+    } else {
+        notice::accepted(word, None)
     })
 }
 
@@ -6221,9 +6226,10 @@ fn sheet_next_misspelling(hwnd: HWND) {
                 .iter()
                 .position(|m| {
                     let k = key(m);
-                    match fresh {
-                        true => (k.0, k.1, k.2) >= (after.0, after.1, after.2),
-                        false => k > after,
+                    if fresh {
+                        (k.0, k.1, k.2) >= (after.0, after.1, after.2)
+                    } else {
+                        k > after
                     }
                 })
                 .unwrap_or(0);
@@ -6290,9 +6296,10 @@ fn personal_dictionary(hwnd: HWND) {
     let tell = |word: &str, add: bool| {
         let act = |speller: &Option<std::sync::Arc<grind_spell::Speller>>| {
             if let Some(speller) = speller {
-                match add {
-                    true => speller.accept(word),
-                    false => speller.forget(word),
+                if add {
+                    speller.accept(word);
+                } else {
+                    speller.forget(word);
                 }
             }
         };
@@ -6470,9 +6477,10 @@ fn grammar_popup(hwnd: HWND, at: POINT, flag: grind_text::grammar::Flag, command
         append(MF_STRING | MF_GRAYED, 0, &flag.finding.message);
         let _ = AppendMenuW(popup, MF_SEPARATOR, 0, PCWSTR::null());
         for (i, with) in offers.iter().enumerate() {
-            let label = match with.is_empty() {
-                true => format!("Remove \u{201c}{covered}\u{201d}"),
-                false => with.clone(),
+            let label = if with.is_empty() {
+                format!("Remove \u{201c}{covered}\u{201d}")
+            } else {
+                with.clone()
             };
             append(MF_STRING, menu::GRAMMAR_FIRST_ID + i as u16, &label);
         }
@@ -6610,8 +6618,8 @@ fn import_csv(hwnd: HWND, with_options: bool) {
     };
     // The options, in words, when they were asked for (`csv::Import::amended`) — after the file,
     // so the dialog that chose it is not left open under a prompt.
-    let words = match with_options {
-        true => match dialog::prompt(
+    let words = if with_options {
+        match dialog::prompt(
             hwnd,
             "Import CSV",
             "Options — delimiter=semicolon locale=de-DE text formulas trim no-dates:",
@@ -6619,8 +6627,9 @@ fn import_csv(hwnd: HWND, with_options: bool) {
         ) {
             Some(words) => words,
             None => return,
-        },
-        false => String::new(),
+        }
+    } else {
+        String::new()
     };
     // SAFETY: one borrow, taken after the dialog has closed.
     unsafe {
@@ -7245,9 +7254,10 @@ fn draw_frame(dc: HDC, state: &Sheet) {
     // read-out of *the cell* rather than of the document underneath it. When the control is on
     // the bar it is covering this text, and reading it back would be drawing under a window.
     let editing = state.mode.is_editing();
-    let formula = match editing && !state.editor_on_bar {
-        true => window_text(state.editor),
-        false => status::formula_bar_text(&state.app, state.sheet, state.selection),
+    let formula = if editing && !state.editor_on_bar {
+        window_text(state.editor)
+    } else {
+        status::formula_bar_text(&state.app, state.sheet, state.selection)
     };
     // The friendly reading, if it is on and there is a formula to read — never while editing,
     // because the text under the caret has to be the text that will be stored. A formula this
@@ -8482,23 +8492,26 @@ fn text_pick_size(hwnd: HWND) {
 /// `dialog::choose` popup a colour name is one row of.
 fn text_pick_color(hwnd: HWND, highlight: bool) {
     let style = unsafe { with_text(hwnd, |text| text_style_here(text)) }.unwrap_or_default();
-    let current = match highlight {
-        true => style.background,
-        false => style.color,
+    let current = if highlight {
+        style.background
+    } else {
+        style.color
     };
     let items = crate::strip::colour_choices();
     let initial = crate::strip::colour_row(current.as_deref());
-    let title = match highlight {
-        true => "Highlight",
-        false => "Text Colour",
+    let title = if highlight {
+        "Highlight"
+    } else {
+        "Text Colour"
     };
     let Some(choice) = dialog::choose(hwnd, title, &items, initial) else {
         return;
     };
     let value = (choice != 0).then(|| grind_core::style::PALETTE[choice - 1].1.to_owned());
-    let change = match highlight {
-        true => grind_text::format::Change::Highlight(value),
-        false => grind_text::format::Change::Color(value),
+    let change = if highlight {
+        grind_text::format::Change::Highlight(value)
+    } else {
+        grind_text::format::Change::Color(value)
     };
     text_format(hwnd, change);
 }
@@ -8677,9 +8690,10 @@ fn text_alt_text(hwnd: HWND) {
         with_text(hwnd, |text| {
             let done = grind_text::picture::set_alt(&text.app, at, &title, &description);
             if done.is_ok() {
-                text.say(Some(match title.trim().is_empty() {
-                    true => "The picture has no alt text.".to_owned(),
-                    false => "Alt text saved.".to_owned(),
+                text.say(Some(if title.trim().is_empty() {
+                    "The picture has no alt text.".to_owned()
+                } else {
+                    "Alt text saved.".to_owned()
                 }));
             }
             done
@@ -8742,9 +8756,10 @@ fn text_bookmark(hwnd: HWND) {
                 .set_bookmark(&name, Some(text.caret.block))
                 .map(|moved| {
                     text.show_names = true;
-                    let said = match moved {
-                        true => format!("#{name} moved here."),
-                        false => format!("#{name} anchored here."),
+                    let said = if moved {
+                        format!("#{name} moved here.")
+                    } else {
+                        format!("#{name} anchored here.")
                     };
                     text.say(Some(said));
                 })
@@ -8816,9 +8831,12 @@ fn text_move_paragraphs(hwnd: HWND, up: bool) {
         with_text(hwnd, |text| {
             match grind_text::blocks::shift(&text.app, text_blocks(text), up) {
                 Ok(()) => {
-                    let step = |caret: &mut Caret| match up {
-                        true => caret.block -= 1,
-                        false => caret.block += 1,
+                    let step = |caret: &mut Caret| {
+                        if up {
+                            caret.block -= 1;
+                        } else {
+                            caret.block += 1;
+                        }
                     };
                     step(&mut text.caret);
                     step(&mut text.anchor);
@@ -8910,12 +8928,11 @@ fn text_export_markdown(hwnd: HWND) {
     // SAFETY: one borrow, taken after the dialog has closed.
     let written = unsafe {
         with_text(hwnd, |text| {
-            let blocks = match text.anchor == text.caret {
-                true => 0..text.app.block_count(),
-                false => {
-                    let blocks = text_blocks(text);
-                    *blocks.start()..*blocks.end() + 1
-                }
+            let blocks = if text.anchor == text.caret {
+                0..text.app.block_count()
+            } else {
+                let blocks = text_blocks(text);
+                *blocks.start()..*blocks.end() + 1
             };
             // The pictures go in a directory beside it (`notes.images\`), named for their bytes.
             let pictures = grind_text::commonmark::Pictures::beside(&path.display().to_string());
@@ -9111,9 +9128,10 @@ fn text_print(hwnd: HWND) {
     // SAFETY: one borrow, no dialog.
     unsafe {
         with_text(hwnd, |text| {
-            text.say(Some(match printed {
-                true => format!("Sent {} page(s) to the printer.", doc.pages.len()),
-                false => "The printer did not take the document.".to_owned(),
+            text.say(Some(if printed {
+                format!("Sent {} page(s) to the printer.", doc.pages.len())
+            } else {
+                "The printer did not take the document.".to_owned()
             }));
         });
     }
@@ -9124,9 +9142,10 @@ fn text_history(hwnd: HWND, undo: bool) {
     // SAFETY: one borrow. `App::undo` notifies, and the observer posts rather than sends.
     unsafe {
         with_text(hwnd, |text| {
-            let did = match undo {
-                true => text.app.undo(),
-                false => text.app.redo(),
+            let did = if undo {
+                text.app.undo()
+            } else {
+                text.app.redo()
             };
             if did {
                 // Whatever the banner said was about the document as it was — and the caret may
@@ -9159,13 +9178,15 @@ fn text_copy(hwnd: HWND, cut: bool) {
             let mut out = String::new();
             for block in from.block..=to.block.min(text.app.block_count().saturating_sub(1)) {
                 let line: Vec<char> = text.block_text(block).chars().collect();
-                let start = match block == from.block {
-                    true => from.offset.min(line.len()),
-                    false => 0,
+                let start = if block == from.block {
+                    from.offset.min(line.len())
+                } else {
+                    0
                 };
-                let end = match block == to.block {
-                    true => to.offset.min(line.len()),
-                    false => line.len(),
+                let end = if block == to.block {
+                    to.offset.min(line.len())
+                } else {
+                    line.len()
                 };
                 if block > from.block {
                     out.push_str("\r\n");

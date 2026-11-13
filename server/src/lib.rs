@@ -92,12 +92,13 @@ impl Server {
                 .split_once("://")
                 .is_some_and(|(_, authority)| known(authority))
         });
-        match request.header("X-Grind-Request").is_some() && origin_ok {
-            true => None,
-            false => Some(Response::error(
+        if request.header("X-Grind-Request").is_some() && origin_ok {
+            None
+        } else {
+            Some(Response::error(
                 403,
                 "not a request from this server's page",
-            )),
+            ))
         }
     }
 

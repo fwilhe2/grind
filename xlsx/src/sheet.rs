@@ -780,21 +780,21 @@ fn store_formula(
         return;
     }
     let renamed;
-    let expr = match context.renames.is_empty() {
-        true => expr,
-        false => {
-            renamed = crate::workbook::renamed(expr, context.renames);
-            &renamed
-        }
+    let expr = if context.renames.is_empty() {
+        expr
+    } else {
+        renamed = crate::workbook::renamed(expr, context.renames);
+        &renamed
     };
     // `=` rather than `of:=`: both are legal (§5.2) and this is the spelling everything else
     // in the workspace stores, so an imported formula and a typed one are the same string.
     let text = format!("={expr}");
     // Asked of the text rather than of the tree, so that what is reported is what the document
     // now says — one walker, the core's, and no second idea of what a call is.
-    let used = match scan {
-        true => funcs::used(&text).unwrap_or_default(),
-        false => Vec::new(),
+    let used = if scan {
+        funcs::used(&text).unwrap_or_default()
+    } else {
+        Vec::new()
     };
     for name in used {
         if !funcs::implemented().contains(&name.as_str()) {

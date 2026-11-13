@@ -221,10 +221,7 @@ pub fn border_strokes(
             }
             _ => vec![(at - width / 2.0, width)],
         };
-        let (start, length) = match vertical {
-            true => (y, h),
-            false => (x, w),
-        };
+        let (start, length) = if vertical { (y, h) } else { (x, w) };
         let runs = match line {
             // LibreOffice's own dash kinds drawn as the nearest ODF one.
             "dashed" | "fine-dashed" | "dash-dot" | "dash-dot-dot" => {
@@ -235,9 +232,10 @@ pub fn border_strokes(
         };
         for (from, thickness) in strokes {
             for &(along, run) in &runs {
-                let rect = match vertical {
-                    true => (from, along, thickness, run),
-                    false => (along, from, run, thickness),
+                let rect = if vertical {
+                    (from, along, thickness, run)
+                } else {
+                    (along, from, run, thickness)
                 };
                 out.push(Stroke { rect, color });
             }

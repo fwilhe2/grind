@@ -143,9 +143,10 @@ impl Toolbar {
                         )
                     })
                     .collect();
-                let mode = match toggles {
-                    true => NSSegmentSwitchTracking::SelectAny,
-                    false => NSSegmentSwitchTracking::Momentary,
+                let mode = if *toggles {
+                    NSSegmentSwitchTracking::SelectAny
+                } else {
+                    NSSegmentSwitchTracking::Momentary
                 };
                 // SAFETY: the target is this object, which answers the action, and the
                 // selector takes one sender.
@@ -251,13 +252,14 @@ impl Toolbar {
         let formats = &self.ivars().formats;
         // A toggle's segment is the one whose state no longer says what the selection is — a
         // click flipped it; a momentary control's is simply the one pressed.
-        let chosen = match toggles {
-            true => segments.iter().enumerate().find(|(at, segment)| {
+        let chosen = if *toggles {
+            segments.iter().enumerate().find(|(at, segment)| {
                 control.isSelectedForSegment(*at as NSInteger) != formats.checked(segment.command)
-            }),
-            false => usize::try_from(control.selectedSegment())
+            })
+        } else {
+            usize::try_from(control.selectedSegment())
                 .ok()
-                .and_then(|at| segments.get(at).map(|segment| (at, segment))),
+                .and_then(|at| segments.get(at).map(|segment| (at, segment)))
         };
         if let Some((_, segment)) = chosen {
             formats.format(segment.command);
@@ -328,9 +330,10 @@ impl Toolbar {
             Some(Tool::Well { background, .. }) => {
                 if let Some(well) = control.downcast_ref::<NSColorWell>() {
                     let (text, behind) = formats.colors();
-                    let color = match background {
-                        true => ns_color(behind.as_deref(), NSColor::clearColor()),
-                        false => ns_color(text.as_deref(), NSColor::textColor()),
+                    let color = if *background {
+                        ns_color(behind.as_deref(), NSColor::clearColor())
+                    } else {
+                        ns_color(text.as_deref(), NSColor::textColor())
                     };
                     well.setColor(&color);
                 }

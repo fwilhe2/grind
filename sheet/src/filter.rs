@@ -90,13 +90,15 @@ impl Filter {
         end: Pos,
         used: (u32, u32),
     ) -> std::result::Result<Self, &'static str> {
-        let end = match start == end {
-            true => Pos::new(used.0.saturating_sub(1), used.1.saturating_sub(1)),
-            false => end,
+        let end = if start == end {
+            Pos::new(used.0.saturating_sub(1), used.1.saturating_sub(1))
+        } else {
+            end
         };
-        match end.row > start.row && end.col >= start.col {
-            true => Ok(Self::new(ANONYMOUS, start, end)),
-            false => Err("Select the rows to filter, including their headings."),
+        if end.row > start.row && end.col >= start.col {
+            Ok(Self::new(ANONYMOUS, start, end))
+        } else {
+            Err("Select the rows to filter, including their headings.")
         }
     }
 
@@ -121,9 +123,10 @@ impl Filter {
     /// The first row the filter may hide — past the heading, if there is one.
     #[must_use]
     pub fn first_data_row(&self) -> u32 {
-        match self.contains_header {
-            true => self.start.row.saturating_add(1),
-            false => self.start.row,
+        if self.contains_header {
+            self.start.row.saturating_add(1)
+        } else {
+            self.start.row
         }
     }
 

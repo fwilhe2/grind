@@ -261,9 +261,10 @@ mod tests {
                     );
                 }
                 if let Tool::Well { background, .. } = tool {
-                    let twin = match background {
-                        true => Command::Background(Some(0)),
-                        false => Command::TextColor(Some(0)),
+                    let twin = if *background {
+                        Command::Background(Some(0))
+                    } else {
+                        Command::TextColor(Some(0))
                     };
                     assert!(menu.contains(&twin), "{}", tool.id());
                 }

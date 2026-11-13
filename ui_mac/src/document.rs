@@ -599,13 +599,14 @@ mod mac {
             let selection = pane.selection.get();
             let (start, end) = selection.rect();
             let named = grind_sheet::place::name_box(&pane.app, pane.sheet.get(), selection);
-            match selection.is_single() {
-                true => named,
-                false => format!(
+            if selection.is_single() {
+                named
+            } else {
+                format!(
                     "{}:{} (active {named})",
                     grind_sheet::a1::format(None, start),
                     grind_sheet::a1::format(None, end)
-                ),
+                )
             }
         }
 

@@ -147,9 +147,10 @@ pub fn from_odf_condition(condition: &str, base: Pos) -> Option<String> {
             let (low, high) = split_pair(inner)?;
             parse(low).ok()?;
             parse(high).ok()?;
-            return Some(match negated {
-                false => format!("AND({me}>={low};{me}<={high})"),
-                true => format!("OR({me}<{low};{me}>{high})"),
+            return Some(if negated {
+                format!("OR({me}<{low};{me}>{high})")
+            } else {
+                format!("AND({me}>={low};{me}<={high})")
             });
         }
     }
@@ -392,9 +393,10 @@ pub fn look_text(style: &CellStyle) -> String {
     if let Some(size) = &style.font_size {
         out.push(size.clone());
     }
-    match out.is_empty() {
-        true => "other formatting".to_owned(),
-        false => out.join(", "),
+    if out.is_empty() {
+        "other formatting".to_owned()
+    } else {
+        out.join(", ")
     }
 }
 
@@ -464,13 +466,14 @@ pub fn condition_hint(start: Pos) -> String {
 /// What a new rule's range field starts with: the selection.
 #[must_use]
 pub fn range_hint(start: Pos, end: Pos) -> String {
-    match start == end {
-        true => crate::a1::format(None, start),
-        false => format!(
+    if start == end {
+        crate::a1::format(None, start)
+    } else {
+        format!(
             "{}:{}",
             crate::a1::format(None, start),
             crate::a1::format(None, end)
-        ),
+        )
     }
 }
 

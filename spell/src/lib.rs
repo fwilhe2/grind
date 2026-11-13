@@ -343,18 +343,20 @@ impl Choice {
     /// What a status bar shows: `All languages`, or the one language's own name.
     #[must_use]
     pub fn name(self) -> &'static str {
-        match self.every() {
-            true => Setting::Automatic.label(),
-            false => self.language.name(),
+        if self.every() {
+            Setting::Automatic.label()
+        } else {
+            self.language.name()
         }
     }
 
     /// The short form, for a narrow status line: `all`, or the one language's tag.
     #[must_use]
     pub fn tag(self) -> &'static str {
-        match self.every() {
-            true => "all",
-            false => self.language.tag(),
+        if self.every() {
+            "all"
+        } else {
+            self.language.tag()
         }
     }
 
@@ -362,13 +364,14 @@ impl Choice {
     /// from the text)`, or `Deutsch (chosen)`.
     #[must_use]
     pub fn describe(self) -> String {
-        match self.every() {
-            true => format!(
+        if self.every() {
+            format!(
                 "every language, suggestions in {} ({})",
                 self.language.name(),
                 self.source.label()
-            ),
-            false => format!("{} ({})", self.language.name(), self.source.label()),
+            )
+        } else {
+            format!("{} ({})", self.language.name(), self.source.label())
         }
     }
 }
@@ -591,12 +594,11 @@ pub fn attach(
             Err(Unchecked::NotLoaded(choice.language))
         }
         Ok(choice) => {
-            let speller = Arc::new(match choice.every() {
-                true => {
-                    warm();
-                    Speller::every(choice.language, personal::load())
-                }
-                false => Speller::new(choice.language, personal::load()),
+            let speller = Arc::new(if choice.every() {
+                warm();
+                Speller::every(choice.language, personal::load())
+            } else {
+                Speller::new(choice.language, personal::load())
             });
             app.set_lexicon(Some(speller.clone()));
             Ok((choice, speller))

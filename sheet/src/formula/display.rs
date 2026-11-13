@@ -108,9 +108,10 @@ pub fn reference_text(reference: &Reference) -> String {
 /// open with the caret on the problem. Every shell's Enter comes through here, as does
 /// [`crate::App::replace`].
 pub fn to_input(text: &str) -> Result<String, DisplayError> {
-    match text.starts_with('=') {
-        true => from_display(text),
-        false => Ok(text.to_owned()),
+    if text.starts_with('=') {
+        from_display(text)
+    } else {
+        Ok(text.to_owned())
     }
 }
 
@@ -229,9 +230,10 @@ impl Canonical {
             .get(shape.range.start)
             .copied()
             .unwrap_or(length);
-        let range = match shape.range.is_empty() {
-            true => start..start,
-            false => start..self.origin_end[shape.range.end - 1],
+        let range = if shape.range.is_empty() {
+            start..start
+        } else {
+            start..self.origin_end[shape.range.end - 1]
         };
         Shape {
             range,
@@ -310,11 +312,12 @@ pub fn spans(text: &str) -> Vec<Span> {
                 } else {
                     let end = plain_ident(&chars, i);
                     let word: String = chars[start..end].iter().map(|(_, c)| *c).collect();
-                    let kind = match word.eq_ignore_ascii_case("TRUE")
+                    let kind = if word.eq_ignore_ascii_case("TRUE")
                         || word.eq_ignore_ascii_case("FALSE")
                     {
-                        true => TokenKind::Bool,
-                        false => TokenKind::Name,
+                        TokenKind::Bool
+                    } else {
+                        TokenKind::Name
                     };
                     out.push(span(&chars, text, start, end, kind));
                     i = end;

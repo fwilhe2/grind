@@ -93,15 +93,12 @@ fn text(rgb: Rgb) -> Option<Color> {
         return None;
     }
     READABLE.iter().find_map(|&(from, to, dark, light)| {
-        let within = match from < to {
-            true => (from..to).contains(&hue),
-            // The one family that wraps round zero.
-            false => hue >= from || hue < to,
+        let within = if from < to {
+            (from..to).contains(&hue)
+        } else {
+            hue >= from || hue < to
         };
-        within.then_some(match lightness < 0.5 {
-            true => dark,
-            false => light,
-        })
+        within.then_some(if lightness < 0.5 { dark } else { light })
     })
 }
 

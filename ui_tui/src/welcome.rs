@@ -180,9 +180,10 @@ impl Welcome {
         for (i, (name, key, hint)) in CARDS.iter().enumerate() {
             let on = i == self.selected;
             let marker = if on { "▸" } else { " " };
-            let style = match on {
-                true => Style::default().add_modifier(Modifier::REVERSED),
-                false => Style::default(),
+            let style = if on {
+                Style::default().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::default()
             };
             lines.push(Line::from(vec![
                 Span::styled(format!(" {marker} [{key}] {name} "), style),
@@ -203,9 +204,10 @@ impl Welcome {
         for (i, path) in self.recent.iter().enumerate() {
             let on = CARDS.len() + i == self.selected;
             let marker = if on { "▸" } else { " " };
-            let style = match on {
-                true => Style::default().add_modifier(Modifier::REVERSED),
-                false => Style::default(),
+            let style = if on {
+                Style::default().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::default()
             };
             let name = path.file_name().unwrap_or(path.as_os_str());
             let dir = path.parent().map(|dir| dir.display().to_string());

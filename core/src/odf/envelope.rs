@@ -662,9 +662,10 @@ pub fn patch_style(
                 let patched = set_attributes(&element[whole.clone()], &changes);
                 let bare = format!("<{child}/>");
                 let open = format!("<{child}></{child}>");
-                let replacement = match patched.trim() == bare || patched.trim() == open {
-                    true => String::new(),
-                    false => patched,
+                let replacement = if patched.trim() == bare || patched.trim() == open {
+                    String::new()
+                } else {
+                    patched
                 };
                 edits.push((whole.clone(), replacement));
             }
@@ -844,9 +845,10 @@ fn vocabulary_within(
                 let element = format!("{{{uri}}}{}", local.as_ref());
                 let counted = ranges.is_none_or(|ranges| ranges.iter().any(|r| r.contains(&from)));
                 if inside == 0 {
-                    let opens = match whole {
-                        true => true,
-                        false => Ns::from_uri(&uri) == Ns::Office && local.as_ref() == "body",
+                    let opens = if whole {
+                        true
+                    } else {
+                        Ns::from_uri(&uri) == Ns::Office && local.as_ref() == "body"
                     };
                     if opens && !empty {
                         inside = 1;
@@ -1163,12 +1165,11 @@ fn rewrite_manifest(
                             let start = text[..span.start]
                                 .rfind(|c: char| !c.is_whitespace())
                                 .map_or(span.start, |p| p + 1);
-                            let end = match empty {
-                                true => span.end,
-                                false => {
-                                    crate::odf::xml::element_extent(text.as_bytes(), span.clone())
-                                        .map_or(span.end, |r| r.end)
-                                }
+                            let end = if empty {
+                                span.end
+                            } else {
+                                crate::odf::xml::element_extent(text.as_bytes(), span.clone())
+                                    .map_or(span.end, |r| r.end)
                             };
                             cut.push(start..end);
                         }

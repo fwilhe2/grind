@@ -397,14 +397,14 @@ impl Pane {
 /// what a `Spell::Correct(n)` row later means. Nothing at all over a cell spelled right, or with
 /// spelling off.
 pub fn lead_grid_menu(pane: &Pane, menu: &NSMenu, cell: Pos, mtm: MainThreadMarker) {
-    let wrong = match pane.speller.borrow().is_some() {
-        true => pane
-            .app
+    let wrong = if pane.speller.borrow().is_some() {
+        pane.app
             .misspellings(Some(pane.sheet.get()), Some((cell, cell)))
             .unwrap_or_default()
             .into_iter()
-            .next(),
-        false => None,
+            .next()
+    } else {
+        None
     };
     let Some(wrong) = wrong else {
         *pane.offers.borrow_mut() = None;

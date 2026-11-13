@@ -24,10 +24,7 @@ const DARK: (Rgb, Rgb) = ((18, 18, 18), (255, 255, 255));
 
 /// The CSS `color` a run or a cell is drawn in, or `None` for the page's own.
 pub fn color(own: Option<&str>, fill: Option<&str>, dark: bool) -> Option<String> {
-    let (ground, ink) = match dark {
-        true => DARK,
-        false => LIGHT,
-    };
+    let (ground, ink) = if dark { DARK } else { LIGHT };
     match (own, own.and_then(parse), fill.and_then(parse)) {
         // A colour this shell cannot parse is still the document's, and CSS may know it.
         (Some(own), None, _) => Some(own.to_owned()),
